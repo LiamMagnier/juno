@@ -180,6 +180,8 @@ model User {
   agentPayments               AgentPayment[]
   toolRuns                    ToolRun[]
 
+  messageRecallIndex MessageRecallIndex[]
+  skillCandidates    SkillCandidate[]
   @@index([image])
 }
 
@@ -886,6 +888,7 @@ model Message {
   versions                MessageVersion[]
   researchRuns            ResearchRun[]            @relation("ResearchRunAssistantMessage")
   researchReportRevisions ResearchReportRevision[]
+  recallIndex             MessageRecallIndex?
 
   @@unique([conversationId, clientId])
   @@index([conversationId, createdAt])
@@ -1236,6 +1239,65 @@ model ConversationMemory {
 
 // A periodically-regenerated, deduped summary of the user's memories (markdown,
 // organized into sections). Used in context instead of the raw entry list.
+/// Session recall: one row per indexed message — BLIND tokens only, never a
+/// word (src/lib/recall/index-core.ts). Each token is an HMAC of one word
+/// under a per-account key derived from the message key `keyId`, so the
+/// database can match a query's tokens without being able to read either.
+/// Deleting the message deletes its row; a changed body drops it for
+/// re-indexing (src/lib/recall/indexer.ts).
+model MessageRecallIndex {
+  messageId      String   @id
+  userId         String
+  conversationId String
+  role           Role
+  /// The message's own time, copied so ranking needs no join for recency.
+  createdAt      DateTime
+  /// The message-encryption key the blind-token key was derived from.
+  keyId          String
+  /// RECALL_INDEX_VERSION when indexed; older rows are re-indexed.
+  version        Int      @default(1)
+  tokens         String[]
+  tokenCount     Int      @default(0)
+  indexedAt      DateTime @default(now())
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([conversationId])
+  @@index([tokens], type: Gin)
+}
+
+/// Procedural memory (Layer G): a method the person's own Work runs repeated
+/// successfully, proposed as a Skill. A PROPOSAL only — nothing is created or
+/// selected until the person accepts it, and a dismissed one is never proposed
+/// again (`key`). Kept apart from MemoryEntry on purpose: memory is what is
+/// known, a skill is how to do something (src/lib/procedural-memory.ts).
+model SkillCandidate {
+  id        String   @id @default(cuid())
+  userId    String
+  projectId String?
+  /// Stable identity of the repeated method, so a refresh updates rather than duplicates.
+  key       String
+  /// Taken from the runs' own titles — never written by a model.
+  title     String
+  /// { examples: string[], tools: string[], sessionIds: string[] }
+  method    Json
+  runCount  Int      @default(0)
+  lastSeenAt DateTime
+  /// pending | accepted | dismissed
+  status    String   @default("pending")
+  /// The skill it became, once accepted.
+  skillId   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, key])
+  @@index([userId, status])
+}
+
 model MemorySummary {
   id         String   @id @default(cuid())
   userId     String   @unique
@@ -4304,6 +4366,10 @@ model Agent {
   status    String  @default("active")
   /// Whether it reflects on its own (ideas and goal check-ins).
   proactive Boolean @default(true)
+  /// none | profile | full. How much of the person's own memory its turns and
+  /// tasks may read (src/lib/memory-scope.ts). Its own notes are always its own.
+  /// Set by the person only — never by the agent's self-configuration tools.
+  memoryAccess String @default("profile")
   /// The starting point it was hired from. Copy and defaults only.
   template  String?
 

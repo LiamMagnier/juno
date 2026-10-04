@@ -183,6 +183,15 @@ export async function finalizeOutputs({
     }
   }
 
+  // Session recall: keep this account's blind-token index current, a bounded
+  // slice per turn (src/lib/recall). Search bookkeeping, not memory: it runs
+  // whether or not memory is on, makes no model call, and stores no words.
+  await import("@/lib/recall")
+    .then(({ recallDeps, indexPendingMessages }) => indexPendingMessages(recallDeps, user.id, { limit: 200 }))
+    .catch((error) => {
+      console.error("[recall] index pass failed:", error instanceof Error ? error.message : error);
+    });
+
   /*
    * Retire frame logs that have served their purpose (finished ~10 minutes
    * ago, or abandoned for a day). Sampled rather than run on every turn: the

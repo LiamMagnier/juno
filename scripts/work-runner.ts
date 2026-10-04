@@ -146,6 +146,7 @@ import { consentReasonsOf } from "@/lib/skills/workflow";
 import { skillPermittedRunTools } from "@/lib/work/skills";
 import { RUN_CODE_TOOL_ID } from "@/lib/tools/types";
 import { getMemoryProfile } from "@/lib/memory";
+import { agentMemoryAccessOf } from "@/lib/memory-scope";
 import { workMemoryContext, workMemoryEnabled } from "@/lib/work/memory-context";
 import type { Prisma } from "@prisma/client";
 
@@ -863,17 +864,25 @@ async function memorySource(input: {
   projectId: string | null;
   goal: string;
   conversationProvider: string;
+  /** The Orbit agent this task runs as: its memory grant narrows what the run reads. */
+  agentId: string | null;
 }): Promise<UntrustedSource | null> {
   try {
-    const settings = await prisma.settings.findUnique({
-      where: { userId: input.userId },
-      select: { memoryEnabled: true },
-    });
+    const [settings, agent] = await Promise.all([
+      prisma.settings.findUnique({ where: { userId: input.userId }, select: { memoryEnabled: true } }),
+      input.agentId
+        ? prisma.agent.findFirst({
+            where: { id: input.agentId, userId: input.userId, deletedAt: null },
+            select: { id: true, memoryAccess: true },
+          })
+        : Promise.resolve(null),
+    ]);
     if (!workMemoryEnabled(settings)) return null;
     const profile = await getMemoryProfile(input.userId, {
       projectId: input.projectId,
       query: input.goal,
       conversationProvider: input.conversationProvider,
+      agent: agent ? { id: agent.id, access: agentMemoryAccessOf(agent.memoryAccess) } : null,
     });
     const body = workMemoryContext({ summary: profile.summary, recent: profile.recent });
     return body ? { label: "what Juno remembers about the user", body } : null;
@@ -994,6 +1003,7 @@ async function openingContext(input: {
     projectId: input.session.projectId,
     goal: input.session.goal,
     conversationProvider: input.provider,
+    agentId: input.session.agentId ?? null,
   });
   if (memory) sources.push(memory);
   sources.push(...(await attachedSources(input.runId, input.userId, input.skillResources)));

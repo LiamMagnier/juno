@@ -2,6 +2,7 @@ import "server-only";
 import { prisma } from "@/lib/prisma";
 import { decryptMessageTextSafe } from "@/lib/message-crypto";
 import { runUnifiedSearch, type SearchRequest } from "@/lib/search/engine";
+import { recallDeps, searchRecall } from "@/lib/recall";
 import type { UnifiedSearchResult } from "@/lib/search/types";
 
 /**
@@ -55,8 +56,16 @@ export async function searchEverything(
       run: (statement) => prisma.$queryRaw(statement) as Promise<never[]>,
     },
     decryptMessage: decryptMessageTextSafe,
+    // Full-history message search over the blind-token index. A search also
+    // indexes a bounded slice of whatever is still pending, newest first, so
+    // an account's index fills by being used as well as by the backfill job.
+    recall: (request) =>
+      searchRecall(recallDeps, { ...request, catchUp: RECALL_SEARCH_CATCH_UP }),
   });
 }
+
+/** Pending messages indexed per search before it runs (bounded, newest first). */
+const RECALL_SEARCH_CATCH_UP = 300;
 
 export type { SearchRequest } from "@/lib/search/engine";
 export type {

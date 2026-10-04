@@ -1,0 +1,203 @@
+{
+  "note": "Recorded results of the memory evaluation suite (npm run memory:bench -- --suite). `current` must match a fresh run exactly, latency aside (tests/memory-eval.test.ts). `baseline` was measured before the 2026-10-04 memory vertical.",
+  "baseline": {
+    "recordedAt": "2026-10-04",
+    "legacyAgentScope": true,
+    "results": {
+      "lifecycle": {
+        "live": {
+          "recall": 1,
+          "stale": 0.2857142857142857,
+          "forgotten": 0,
+          "precision": 0.975609756097561,
+          "retrieval": 0.8181818181818182,
+          "leaks": 1,
+          "contradictionResolution": 0.7143
+        },
+        "re-read": {
+          "recall": 1,
+          "stale": 0.2857142857142857,
+          "forgotten": 0,
+          "precision": 0.975609756097561,
+          "retrieval": 0.8181818181818182,
+          "leaks": 1,
+          "contradictionResolution": 0.7143
+        }
+      },
+      "corrections": {
+        "cases": 15,
+        "passed": 8,
+        "passedReread": 7,
+        "falseContradictions": 2,
+        "failures": [
+          "answer-length (in order)",
+          "answer-length (re-read)",
+          "register (in order)",
+          "register (re-read)",
+          "no-longer-employer (in order)",
+          "no-longer-employer (re-read)",
+          "no-longer-vegetarian (re-read)",
+          "job-search-ends (in order)",
+          "job-search-ends (re-read)",
+          "graduated (in order)",
+          "graduated (re-read)",
+          "denial-other-value (in order)",
+          "denial-other-value (re-read)",
+          "pet-died (in order)",
+          "pet-died (re-read)"
+        ]
+      },
+      "falseMemory": {
+        "believedNotTrue": 4,
+        "believed": 164,
+        "dreamInvented": 0
+      },
+      "consolidation": {
+        "mergedWhenSame": 0,
+        "same": 4,
+        "mergedWhenDifferent": 0,
+        "different": 5
+      },
+      "scope": {
+        "checks": 91,
+        "leaks": 11,
+        "misses": 0,
+        "leakDetail": [
+          "A:agent-profile ← The user's partner is called Sam.",
+          "A:agent-profile ← The user was diagnosed with ADHD.",
+          "A:agent-profile ← The user is studying for a law degree.",
+          "A:agent-profile ← The user has a dentist appointment tomorrow.",
+          "A:agent-none ← The user prefers concise answers.",
+          "A:agent-none ← The user writes code in TypeScript.",
+          "A:agent-none ← The user lives in Bristol.",
+          "A:agent-none ← The user's partner is called Sam.",
+          "A:agent-none ← The user was diagnosed with ADHD.",
+          "A:agent-none ← The user is studying for a law degree.",
+          "A:agent-none ← The user has a dentist appointment tomorrow."
+        ]
+      },
+      "sensitive": {
+        "sensitive": 12,
+        "storedWithoutOptIn": 1,
+        "benign": 10,
+        "benignRefused": 2,
+        "optInStored": 12
+      },
+      "summary": {
+        "scenarios": 4,
+        "staleInjectedCountOnly": 1,
+        "staleInjectedLifecycle": 0,
+        "rebuildMissedCountOnly": 1,
+        "rebuildMissedLifecycle": 0
+      },
+      "tokens": {
+        "questions": 23,
+        "mean": 167.3,
+        "p95": 318,
+        "max": 320,
+        "budget": 600
+      },
+      "recall": {
+        "messages": 20016,
+        "conversations": 1008,
+        "questions": 6,
+        "hitAt1": 6,
+        "hitAt5": 6,
+        "legacyWindowHitAt5": 1
+      }
+    },
+    "latency": {
+      "factSelectP50Ms": 2.45,
+      "factSelectP95Ms": 3.31,
+      "recallRankP50Ms": 0.01,
+      "recallRankP95Ms": 0.16
+    }
+  },
+  "current": {
+    "recordedAt": "2026-10-04",
+    "results": {
+      "lifecycle": {
+        "live": {
+          "recall": 1,
+          "stale": 0,
+          "forgotten": 0,
+          "precision": 1,
+          "retrieval": 0.8181818181818182,
+          "leaks": 0,
+          "contradictionResolution": 1
+        },
+        "re-read": {
+          "recall": 1,
+          "stale": 0,
+          "forgotten": 0,
+          "precision": 1,
+          "retrieval": 0.8181818181818182,
+          "leaks": 0,
+          "contradictionResolution": 1
+        }
+      },
+      "corrections": {
+        "cases": 15,
+        "passed": 14,
+        "passedReread": 14,
+        "falseContradictions": 0,
+        "failures": [
+          "pet-died (in order)",
+          "pet-died (re-read)"
+        ]
+      },
+      "falseMemory": {
+        "believedNotTrue": 0,
+        "believed": 160,
+        "dreamInvented": 0
+      },
+      "consolidation": {
+        "mergedWhenSame": 4,
+        "same": 4,
+        "mergedWhenDifferent": 0,
+        "different": 5
+      },
+      "scope": {
+        "checks": 91,
+        "leaks": 0,
+        "misses": 0,
+        "leakDetail": []
+      },
+      "sensitive": {
+        "sensitive": 12,
+        "storedWithoutOptIn": 0,
+        "benign": 10,
+        "benignRefused": 2,
+        "optInStored": 12
+      },
+      "summary": {
+        "scenarios": 4,
+        "staleInjectedCountOnly": 3,
+        "staleInjectedLifecycle": 0,
+        "rebuildMissedCountOnly": 1,
+        "rebuildMissedLifecycle": 0
+      },
+      "tokens": {
+        "questions": 23,
+        "mean": 163.3,
+        "p95": 318,
+        "max": 320,
+        "budget": 600
+      },
+      "recall": {
+        "messages": 20016,
+        "conversations": 1008,
+        "questions": 6,
+        "hitAt1": 6,
+        "hitAt5": 6,
+        "legacyWindowHitAt5": 1
+      }
+    },
+    "latency": {
+      "factSelectP50Ms": 2.29,
+      "factSelectP95Ms": 2.84,
+      "recallRankP50Ms": 0.01,
+      "recallRankP95Ms": 0.14
+    }
+  }
+}

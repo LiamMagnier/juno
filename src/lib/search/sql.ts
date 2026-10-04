@@ -535,3 +535,134 @@ export function knowledgeReadinessSql(userId: string): Prisma.Sql {
        AND d."supersededById" IS NULL
   `;
 }
+
+// ---------------------------------------------------------------------------
+// Session recall (src/lib/recall). Blind tokens only — see index-core.ts.
+// Every statement is scoped by userId on the index row AND, where a
+// conversation is joined, on the conversation: the index row's userId is a
+// copy, and the join is what proves the message is still this account's.
+// ---------------------------------------------------------------------------
+
+export interface RecallCandidateRow {
+  messageId: string;
+  conversationId: string;
+  conversationTitle: string;
+  projectId: string | null;
+  role: string;
+  createdAt: Date;
+  tokenCount: number;
+  matched: string[];
+}
+
+/**
+ * Messages sharing at least one blind token with the query, most tokens
+ * matched first. The GIN index on "tokens" answers `&&`; the ordering is a
+ * cheap pre-rank, and the real ranking (BM25-style IDF, entity, time,
+ * project, recency) happens in index-core.ts over this bounded set.
+ */
+export function recallCandidatesSql(o: {
+  userId: string;
+  tokens: readonly string[];
+  projectId: string | null;
+  since: Date | null;
+  limit: number;
+}): Prisma.Sql {
+  const tokens = [...o.tokens];
+  // MATERIALIZED pins the plan: the GIN overlap runs first, over this account's
+  // rows, and only its hits meet the conversation join. Left to itself the
+  // planner, misled by stale statistics on a newly busy account, walked every
+  // conversation into the index instead (47 ms against 1.4 ms, measured).
+  return Prisma.sql`
+    WITH hits AS MATERIALIZED (
+      SELECT r."messageId", r."conversationId", r."role", r."createdAt", r."tokenCount",
+             ARRAY(SELECT t FROM unnest(r."tokens") t WHERE t = ANY(${tokens}::text[])) AS matched
+        FROM "MessageRecallIndex" r
+       WHERE r."userId" = ${o.userId}
+         AND r."tokens" && ${tokens}::text[]${optional(o.since ? Prisma.sql`r."createdAt" >= ${o.since}` : null)}
+    )
+    SELECT h."messageId",
+           h."conversationId",
+           c."title" AS "conversationTitle",
+           c."projectId",
+           h."role"::text AS role,
+           h."createdAt",
+           h."tokenCount",
+           h.matched
+      FROM hits h
+      JOIN "Conversation" c ON c."id" = h."conversationId"
+     WHERE c."userId" = ${o.userId}${optional(o.projectId ? Prisma.sql`c."projectId" = ${o.projectId}` : null)}
+     ORDER BY cardinality(h.matched) DESC, h."createdAt" DESC
+     LIMIT ${o.limit}
+  `;
+}
+
+/** How many of this account's indexed messages contain each blind token (BM25 document frequency). */
+export function recallDocumentFrequencySql(o: { userId: string; tokens: readonly string[] }): Prisma.Sql {
+  return Prisma.sql`
+    SELECT t AS token,
+           (SELECT count(*)::int FROM "MessageRecallIndex" r
+             WHERE r."userId" = ${o.userId} AND r."tokens" @> ARRAY[t]) AS df
+      FROM unnest(${[...o.tokens]}::text[]) t
+  `;
+}
+
+/** Corpus statistics and the message keys this account's index was built under. */
+export function recallStatsSql(userId: string): Prisma.Sql {
+  return Prisma.sql`
+    SELECT count(*)::int AS n,
+           coalesce(avg(r."tokenCount"), 0)::float AS "meanTokens",
+           coalesce(array_agg(DISTINCT r."keyId") FILTER (WHERE r."keyId" IS NOT NULL), '{}') AS "keyIds"
+      FROM "MessageRecallIndex" r
+     WHERE r."userId" = ${userId}
+  `;
+}
+
+/**
+ * Messages of this account not yet in the index — never indexed, indexed by
+ * an older tokeniser, or under a retired key — newest first. `before` keeps
+ * out messages still being written (an assistant reply is updated while it
+ * streams); the unified search's recent-window scan covers those meanwhile.
+ */
+export function recallPendingSql(o: {
+  userId: string;
+  version: number;
+  keyId: string;
+  before: Date;
+  limit: number;
+}): Prisma.Sql {
+  return Prisma.sql`
+    SELECT m."id", m."conversationId", m."role"::text AS role, m."content", m."createdAt"
+      FROM "Message" m
+      JOIN "Conversation" c ON c."id" = m."conversationId"
+      LEFT JOIN "MessageRecallIndex" r ON r."messageId" = m."id"
+     WHERE c."userId" = ${o.userId}
+       AND m."createdAt" < ${o.before}
+       AND (r."messageId" IS NULL OR r."version" <> ${o.version} OR r."keyId" <> ${o.keyId})
+     ORDER BY m."createdAt" DESC
+     LIMIT ${o.limit}
+  `;
+}
+
+/** How many messages `recallPendingSql` would still return, unbounded — the number the coverage line states. */
+export function recallPendingCountSql(o: { userId: string; version: number; keyId: string; before: Date }): Prisma.Sql {
+  return Prisma.sql`
+    SELECT count(*)::int AS pending
+      FROM "Message" m
+      JOIN "Conversation" c ON c."id" = m."conversationId"
+      LEFT JOIN "MessageRecallIndex" r ON r."messageId" = m."id"
+     WHERE c."userId" = ${o.userId}
+       AND m."createdAt" < ${o.before}
+       AND (r."messageId" IS NULL OR r."version" <> ${o.version} OR r."keyId" <> ${o.keyId})
+  `;
+}
+
+/** The bodies of a few already-authorised candidates, for verification and excerpts. */
+export function recallBodiesSql(o: { userId: string; messageIds: readonly string[] }): Prisma.Sql {
+  return Prisma.sql`
+    SELECT m."id", m."content"
+      FROM "Message" m
+      JOIN "Conversation" c ON c."id" = m."conversationId"
+     WHERE c."userId" = ${o.userId}
+       AND m."id" IN (${Prisma.join([...o.messageIds])})
+  `;
+}

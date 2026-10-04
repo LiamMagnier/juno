@@ -310,7 +310,8 @@ function RowMeta({ memory, showProject }: { memory: Memory; showProject: boolean
       // "why does Juno think this" question is one click from here.
       <Link
         key="source"
-        href={`/chat/${chatId}`}
+        // The exact message it was learned from, when that is known.
+        href={memory.sourceMessageId ? `/chat/${chatId}?m=${encodeURIComponent(memory.sourceMessageId)}` : `/chat/${chatId}`}
         className="rounded-xs underline-offset-2 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline motion-reduce:transition-none"
       >
         From a chat
@@ -319,7 +320,39 @@ function RowMeta({ memory, showProject }: { memory: Memory; showProject: boolean
       <span key="source">From your chats</span>
     )
   );
-  parts.push(<span key="when">{relativeTime(memory.createdAt)}</span>);
+  parts.push(
+    <span key="when" title={`Learned ${shortDate(memory.createdAt)}`}>
+      {relativeTime(memory.createdAt)}
+    </span>
+  );
+  // Provenance that changes how much to trust it, and only when it says
+  // something: confidence only when it was inferred rather than said; a
+  // confirmation only when it came later than the learning; use only when
+  // it was actually used (stamped by retrieval, so "used" means used).
+  if (!status && memory.source === "AUTO" && memory.confidence < 0.6) {
+    parts.push(
+      <span key="confidence" title={`${PRODUCT_NAME} inferred this rather than being told it.`}>
+        Inferred
+      </span>
+    );
+  }
+  if (
+    memory.lastVerifiedAt &&
+    new Date(memory.lastVerifiedAt).getTime() - new Date(memory.createdAt).getTime() > 24 * 60 * 60 * 1000
+  ) {
+    parts.push(
+      <span key="confirmed" title={`You said it again ${shortDate(memory.lastVerifiedAt)}`}>
+        <span>Confirmed</span> <span>{relativeTime(memory.lastVerifiedAt)}</span>
+      </span>
+    );
+  }
+  if (!status && memory.lastUsedAt) {
+    parts.push(
+      <span key="used" data-memory-used="" title={`Last used in a reply ${shortDate(memory.lastUsedAt)}`}>
+        <span>Used</span> <span>{relativeTime(memory.lastUsedAt)}</span>
+      </span>
+    );
+  }
   // Learned in the last three days: the facts most worth a second look, since
   // the newest is the likeliest to be wrong. Real state, in presence blue.
   if (!status && Date.now() - new Date(memory.createdAt).getTime() < NEW_FOR_MS) {

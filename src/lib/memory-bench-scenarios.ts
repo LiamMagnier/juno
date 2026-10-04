@@ -96,9 +96,9 @@ export const MEMORY_BENCH_SCENARIOS: BenchScenario[] = [
         at: "2026-09-14T15:00:00Z",
         turns: [
           {
-            // Juno's rules miss this one: the stored fact carries no
-            // correction marker and "answer style" is not a single-valued
-            // slot, so both preferences stay believed. Left in on purpose.
+            // Missed until 2026-10-04: the stored fact carries no correction
+            // marker, and preferences are additive. The subject-aware style
+            // slot (answer length: short vs detailed) now retires the older one.
             text: "Actually, I prefer detailed answers now, with sources.",
             facts: ["The user prefers detailed answers with sources."],
           },
@@ -344,8 +344,8 @@ export const MEMORY_BENCH_SCENARIOS: BenchScenario[] = [
         { projectId: null, fact: "The user is a data analyst." },
       ],
       stale: [
-        // No rule connects "joined Hooli" to "looking for a new job". Left in:
-        // this is the kind of belief only a reader of the whole history retires.
+        // Missed until 2026-10-04: no rule connected "works at Hooli" to
+        // "looking for a new job". The job-search transition now ends it.
         { projectId: null, fact: "The user is looking for a new job." },
         { projectId: null, fact: "The user has a job interview at Hooli next week." },
       ],

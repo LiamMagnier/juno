@@ -34,6 +34,7 @@ import type {
 } from "@/lib/agents/types";
 import type { WorkPermissionPolicy } from "@/lib/work/domain";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import type { AgentMemoryAccess } from "@/lib/memory-scope";
 
 export type AgentOutcome<T> =
   | { kind: "ok"; value: T }
@@ -164,6 +165,11 @@ export interface AgentPatch {
 
 export function updateAgent(id: string, patch: AgentPatch): Promise<AgentOutcome<ClientAgent>> {
   return call(base(id), { method: "PATCH", body: patch }, (d) => d.agent as ClientAgent);
+}
+
+/** What the agent may read of the person's memory. Person-only: the agent's own tools cannot reach this route. */
+export function setAgentMemoryAccess(id: string, access: AgentMemoryAccess): Promise<AgentOutcome<AgentMemoryAccess>> {
+  return call(`${base(id)}/memory-access`, { method: "PATCH", body: { access } }, (d) => d.memoryAccess as AgentMemoryAccess);
 }
 
 export function duplicateAgent(id: string): Promise<AgentOutcome<ClientAgent>> {

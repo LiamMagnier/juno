@@ -138,6 +138,7 @@ async function handleChat(req: Request) {
         workspaceConfig,
         projectId: conversation.projectId,
         latestUserMessage: [...turnHistory.baseHistory].reverse().find((m) => m.role === "USER")?.content,
+        agentId: roomSetup ? roomSetup.speaker.agentId : conversation.agentId,
       }),
       resolveProjectContext({
         user,

@@ -222,5 +222,10 @@ export async function dreamForAccount(
       return { ...fallback, expired: outcome.expired + fallback.expired, batchFellBack: true };
     }
   }
+  // Procedural memory: repeated successful methods, proposed (never created)
+  // as skills. Model-free and bounded; see src/lib/procedural-memory.ts.
+  await import("@/lib/procedural-memory-store")
+    .then(({ refreshSkillCandidates }) => refreshSkillCandidates(userId))
+    .catch(() => {});
   return outcome;
 }

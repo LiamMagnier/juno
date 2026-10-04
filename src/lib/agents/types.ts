@@ -9,6 +9,7 @@
 
 import type { Agent, AgentEvent, AgentGoal, AgentIdea, AgentNote } from "@prisma/client";
 import { normalizeAgentAvatar, type AgentAvatar } from "@/lib/agents/avatar";
+import { agentMemoryAccessOf, type AgentMemoryAccess } from "@/lib/memory-scope";
 import {
   agentApprovalMode,
   agentNotifyLevel,
@@ -87,6 +88,11 @@ export interface ClientAgent {
    * before it; the server always sends it.
    */
   budgetMicroUsd?: number | null;
+  /**
+   * How much of the person's own memory it reads (src/lib/memory-scope.ts).
+   * Optional for clients written before it; the server always sends it.
+   */
+  memoryAccess?: AgentMemoryAccess;
 }
 
 export interface ClientAgentGoal {
@@ -217,6 +223,7 @@ export function serializeAgent(agent: Agent, derived: AgentDerived): ClientAgent
     newIdeas: derived.newIdeas,
     computer: derived.computer ?? null,
     budgetMicroUsd: agent.budgetMicroUsd ?? null,
+    memoryAccess: agentMemoryAccessOf((agent as Agent & { memoryAccess?: string }).memoryAccess),
   };
 }
 

@@ -8,6 +8,12 @@
  *                                         (tests/fixtures/memory-recall-record.json)
  *   npm run memory:bench -- --live        a real model reads the chats instead of
  *                                         the recordings (needs a configured provider)
+ *   npm run memory:bench -- --suite       the full evaluation suite (src/lib/memory-eval.ts):
+ *                                         corrections, false memory, consolidation, scope
+ *                                         leakage, sensitive filtering, summary injection,
+ *                                         token overhead, latency and session recall
+ *   npm run memory:bench -- --suite --record [--baseline] [--legacy-agent-scope]
+ *                                         write tests/fixtures/memory-eval-record.json
  *
  * What it measures and why is in src/lib/memory-bench.ts; the histories are in
  * src/lib/memory-bench-scenarios.ts. Offline runs are exact and repeatable —
@@ -68,7 +74,54 @@ function row(label: string, s: BenchSummary): string {
   return `${label.padEnd(44)} ${pct(s.recall)}  ${pct(s.stale)}  ${String(s.forgotten).padStart(9)}  ${pct(s.precision)}  ${pct(s.retrieval)}  ${String(s.leaks).padStart(5)}`;
 }
 
+const SUITE_RECORD_PATH = new URL("../tests/fixtures/memory-eval-record.json", import.meta.url);
+
+async function suite() {
+  const { runMemorySuite, deterministicPart } = await import("../src/lib/memory-eval");
+  const result = await runMemorySuite({ legacyAgentScope: args.has("--legacy-agent-scope") });
+  if (json) {
+    console.log(JSON.stringify(result, null, 2));
+  } else {
+    const p = (n: number, d: number) => (d ? `${((n / d) * 100).toFixed(1)}%` : "n/a");
+    const l = result.lifecycle;
+    const lines = [
+      `Memory evaluation suite — offline, deterministic (latency is this machine's)\n`,
+      `lifecycle (live / re-read)   recall ${p(l.live.recall, 1)} / ${p(l["re-read"].recall, 1)} · precision ${p(l.live.precision, 1)} / ${p(l["re-read"].precision, 1)} · contradiction resolution ${p(l.live.contradictionResolution, 1)} / ${p(l["re-read"].contradictionResolution, 1)} · retrieval ${p(l.live.retrieval, 1)} · leaks ${l.live.leaks} / ${l["re-read"].leaks} · forgotten resurrected ${l.live.forgotten}`,
+      `corrections                  ${result.corrections.passed}/${result.corrections.cases} in order · ${result.corrections.passedReread}/${result.corrections.cases} re-read · false contradictions ${result.corrections.falseContradictions}${result.corrections.failures.length ? ` · failing: ${result.corrections.failures.join(", ")}` : ""}`,
+      `false memory                 believed-not-true ${result.falseMemory.believedNotTrue}/${result.falseMemory.believed} · invented by consolidation ${result.falseMemory.dreamInvented}`,
+      `consolidation                merged same ${result.consolidation.mergedWhenSame}/${result.consolidation.same} · merged different ${result.consolidation.mergedWhenDifferent}/${result.consolidation.different}`,
+      `scope                        leaks ${result.scope.leaks}/${result.scope.checks} · misses ${result.scope.misses}${result.scope.leakDetail.length ? `\n                             ${result.scope.leakDetail.join("\n                             ")}` : ""}`,
+      `sensitive                    stored without opt-in ${result.sensitive.storedWithoutOptIn}/${result.sensitive.sensitive} · benign refused ${result.sensitive.benignRefused}/${result.sensitive.benign} · stored with opt-in ${result.sensitive.optInStored}/${result.sensitive.sensitive}`,
+      `summary injection            stale facts injected: count-only gate ${result.summary.staleInjectedCountOnly} · lifecycle gate ${result.summary.staleInjectedLifecycle} · rebuild missed ${result.summary.rebuildMissedCountOnly} / ${result.summary.rebuildMissedLifecycle} (${result.summary.scenarios} histories)`,
+      `token overhead               mean ${result.tokens.mean} · p95 ${result.tokens.p95} · max ${result.tokens.max} of a ${result.tokens.budget}-token budget (${result.tokens.questions} questions)`,
+      `latency                      fact selection p50 ${result.latency.factSelectP50Ms} ms · p95 ${result.latency.factSelectP95Ms} ms (2,000 facts) · recall ranking p50 ${result.latency.recallRankP50Ms} ms · p95 ${result.latency.recallRankP95Ms} ms`,
+      `session recall               ${result.recall.messages} messages / ${result.recall.conversations} chats · hit@1 ${result.recall.hitAt1}/${result.recall.questions} · hit@5 ${result.recall.hitAt5}/${result.recall.questions} · old 50-chat scan window could see ${result.recall.legacyWindowHitAt5}/${result.recall.questions}`,
+    ];
+    console.log(lines.join("\n"));
+  }
+  if (record) {
+    let existing: Record<string, unknown> = {};
+    try {
+      existing = JSON.parse(readFileSync(SUITE_RECORD_PATH, "utf8"));
+    } catch {
+      existing = {
+        note: "Recorded results of the memory evaluation suite (npm run memory:bench -- --suite). `current` must match a fresh run exactly, latency aside (tests/memory-eval.test.ts). `baseline` was measured before the 2026-10-04 memory vertical.",
+      };
+    }
+    const key = args.has("--baseline") ? "baseline" : "current";
+    existing[key] = {
+      recordedAt: new Date().toISOString().slice(0, 10),
+      ...(args.has("--legacy-agent-scope") ? { legacyAgentScope: true } : {}),
+      results: deterministicPart(result),
+      latency: result.latency,
+    };
+    writeFileSync(SUITE_RECORD_PATH, `${JSON.stringify(existing, null, 2)}\n`);
+    console.log(`\nRecorded ${key} to ${SUITE_RECORD_PATH.pathname}`);
+  }
+}
+
 async function main() {
+  if (args.has("--suite")) return suite();
   const reader = live ? await liveReader() : recordedReader(MEMORY_BENCH_SCENARIOS);
   const results: Record<string, Record<BenchSetting, BenchSummary>> = {};
   const details: Record<string, Record<BenchSetting, ScenarioScore[]>> = {};

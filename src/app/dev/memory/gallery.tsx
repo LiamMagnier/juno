@@ -9,6 +9,7 @@ import type { MemoryEditRecord, Memory, Operation, ProjectSummaryData, SummaryDa
 import type { BackfillState } from "@/components/memory/use-backfill";
 import type { MemoryState } from "@/components/memory/use-memory";
 import type { RecapExtras } from "@/components/memory/recap-view";
+import type { SkillCandidateTransport, SkillCandidateView } from "@/components/memory/skill-candidates";
 
 /*
  * Fixture state for the memory page. Every action mutates local state the way
@@ -65,7 +66,7 @@ export function richMemories(): Memory[] {
     fact("Was born in Dublin and moved to Portugal in 2019", "identity", 64),
     fact("Has a dog called Miso", "identity", 90),
     fact("Prefers short answers that lead with the recommendation", "preferences", 1, { sourceRef: "edit", source: "MANUAL" }),
-    fact("Likes code examples in TypeScript rather than JavaScript", "preferences", 2),
+    fact("Likes code examples in TypeScript rather than JavaScript", "preferences", 9, { lastVerifiedAt: ago(1), sourceMessageId: "msg-1" }),
     fact("Wants metric units and 24-hour times", "preferences", 6, { sourceRef: "manual", source: "MANUAL" }),
     fact("Dislikes bullet points for anything that reads better as prose", "preferences", 9),
     fact("Prefers British spelling", "preferences", 22),
@@ -79,7 +80,7 @@ export function richMemories(): Memory[] {
     fact("Takes an evening course in urban climate at Nova", "studies", 35),
     fact("Works in Next.js, Prisma and Postgres day to day", "workflows", 1),
     fact("Reviews pull requests first thing in the morning", "workflows", 11),
-    fact("Keeps notes in Obsidian with a daily note template", "workflows", 26),
+    fact("Keeps notes in Obsidian with a daily note template", "workflows", 26, { confidence: 0.5 }),
     fact("Deploys with GitHub Actions to a single VPS", "workflows", 50),
     fact("The thesis compares surface temperatures across three Lisbon parishes", "projects", 5, THESIS),
     fact("Cites in APA 7th edition", "projects", 5, { ...THESIS, sourceRef: "manual", source: "MANUAL" }),
@@ -334,6 +335,13 @@ function useFixtureMemory(initial: {
       return true;
     },
     exportMemory: () => toast.success("Memory exported."),
+    clearProjectMemory: async (projectId: string) => {
+      await wait();
+      setMemories((current) => (current ?? []).filter((m) => m.projectId !== projectId));
+      setProjectSummaries((current) => current.filter((s) => s.projectId !== projectId));
+      toast.success("This project’s memory is cleared.");
+      return true;
+    },
   };
 }
 
@@ -426,9 +434,43 @@ function Fixture({ state }: { state: string }) {
       onWantProjects={() => {}}
       onOpenSettings={() => toast.message("Settings would open here.")}
       loadRecapExtras={loadRecapExtras}
+      skillCandidates={SKILL_CANDIDATES}
     />
   );
 }
+
+/** Two proposals, as the dreamer would leave them; deciding mutates locally. */
+const SKILL_CANDIDATES: SkillCandidateTransport = (() => {
+  let list: SkillCandidateView[] = [
+    {
+      id: "sc1",
+      title: "Weekly investor update",
+      examples: [
+        "Draft this week's investor update from the metrics sheet and the changelog",
+        "Write the Friday investor update with the new MRR numbers",
+      ],
+      tools: ["read_spreadsheet", "write_document"],
+      runCount: 4,
+      lastSeenAt: ago(2),
+    },
+    {
+      id: "sc2",
+      title: "Triage new GitHub issues",
+      examples: ["Go through the new issues on juno-web and label them", "Label and prioritise this morning's issues"],
+      tools: ["github_issues", "github_label"],
+      runCount: 3,
+      lastSeenAt: ago(5),
+    },
+  ];
+  return {
+    load: async () => list,
+    decide: async (id, action) => {
+      await wait();
+      if (action === "dismiss") list = list.filter((c) => c.id !== id);
+      return { ok: true, href: action === "accept" ? "/skills" : undefined };
+    },
+  };
+})();
 
 export function MemoryGallery({ state }: { state: string }) {
   return (

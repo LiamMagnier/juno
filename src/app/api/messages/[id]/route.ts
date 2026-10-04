@@ -39,6 +39,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       data: { messageId: message.id, content: message.content },
     });
     await tx.message.update({ where: { id }, data: { content: encryptMessageText(parsed.data.content) } });
+    // Its session-recall tokens describe the old wording: drop them, and the
+    // next index pass re-reads the new one (src/lib/recall).
+    await tx.messageRecallIndex.deleteMany({ where: { messageId: id, userId: user.id } });
     // The later messages' attachments survive their delete (messageId is
     // SetNull). A file the reader had taken out of the Library stayed only
     // because one of these messages used it; with the message gone it is

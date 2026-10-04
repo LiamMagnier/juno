@@ -65,6 +65,13 @@ export const OWNER_COLUMN = new Map<string, "userId" | "accountId">([
   // read is a leak of instructions, not just rows. Every call site (routes +
   // src/app/api/memory/edits/ledger.ts) already filters on userId.
   ["MemoryEdit", "userId"],
+  // Session recall's blind-token index (src/lib/recall). Holds no words, but
+  // which of one person's messages share words with which is still theirs:
+  // read and written by raw SQL scoped on userId in src/lib/search/sql.ts,
+  // and guarded here for the one model call (dropping a row on edit).
+  ["MessageRecallIndex", "userId"],
+  // Procedural memory: methods proposed as skills from the person's own runs.
+  ["SkillCandidate", "userId"],
   ["Attachment", "userId"],
   ["Usage", "userId"],
   // Reservations gate a paid quota, so an unscoped read here is a cross-account
