@@ -13,6 +13,7 @@ import {
   artifactVerificationTitle,
   verifyAndRepairChatArtifacts,
 } from "@/lib/chat-artifact-verification";
+import { chatTurnSource } from "./chat-turn-source";
 
 /*
  * A STOPPED OR CUT-OFF REVISION NEVER BECOMES THE CURRENT VERSION (X-07).
@@ -196,7 +197,7 @@ test("the route's pipeline, run on a Stop mid-revision, saves the text and no ve
 });
 
 test("both of the route's persistence spots write only finished artifacts", () => {
-  const route = read("src/app/api/chat/route.ts");
+  const route = chatTurnSource();
   const writes = [...route.matchAll(/persistArtifacts\(\s*conversationId,\s*assistant\.id,\s*([^;]*?)\)\s*;/g)];
   assert.equal(writes.length, 2, "the finished turn and the stopped one");
   for (const [, argument] of writes) {

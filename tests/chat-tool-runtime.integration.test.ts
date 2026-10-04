@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { PrismaClient } from "@prisma/client";
+import { chatTurnSource, turnModule } from "./chat-turn-source";
 
 /*
  * THE TOOL CONTRACT THROUGH POST /api/chat (TOOL_RUNTIME_DESIGN §7 L1, V5–V7).
@@ -33,13 +34,14 @@ import { PrismaClient } from "@prisma/client";
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
 test("the route decides execution tools from the entitlement rows and the verified verdict", () => {
-  const route = read("src/app/api/chat/route.ts");
+  const route = chatTurnSource();
   // Bound to the adapter this turn uses: Pro mode moves an OpenAI model onto Responses.
   assert.match(route, /const toolCallingVerdict = modelToolCallingVerdict\(modelInfo, capabilityProbes, new Date\(\), \{ proMode: useProMode \}\);/);
   assert.match(route, /const execution = executionEntitlements\(\{/);
   assert.match(route, /attachmentToolToggles\.code = execution\.legacyCodeInterpreter;/);
   assert.match(route, /toolSpecs: toolProviderSessions\?\.specs\.length \? toolProviderSessions\.specs : undefined,/);
-  assert.match(route, /toolWatch\.observe\(ev\);/);
+  assert.match(route, /toolWatch\?\.observe\(ev\);/);
+  assert.match(turnModule("run-turn"), /pumpTurnStream\(modelStream, \{[\s\S]*?toolWatch,/);
   // Providers hear of a skill only once it APPLIED (blocked, unscanned and
   // consent-pending skills are not armed), never the slug the request named.
   const toolTurn = route.slice(route.indexOf("const toolTurn: ToolTurn = {"), route.indexOf("const execution = executionEntitlements({"));

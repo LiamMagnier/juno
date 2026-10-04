@@ -17,6 +17,7 @@ import {
   type ProjectTreeNode,
 } from "../src/lib/projects/project-tree";
 import { buildProjectContext, buildProjectReferenceFiles } from "../src/lib/chat/context-assembly";
+import { chatTurnSource } from "./chat-turn-source";
 
 /*
  * PROJECT FOLDERS: projects nest inside projects (Project.parentId). The rules
@@ -162,7 +163,7 @@ test("the routes apply the rules (moves validated, deletes planned, chats inheri
   assert.match(detail, /children"\) === "cascade"/, "cascade only when asked");
   const list = read("src/app/api/projects/route.ts");
   assert.match(list, /validateNewChild\(/, "a new subfolder is depth-checked");
-  const chat = read("src/app/api/chat/route.ts");
+  const chat = chatTurnSource();
   assert.match(chat, /loadProjectLineage\(/, "a chat in a folder inherits its lineage");
   const sync = read("src/app/api/v1/mutations/route.ts");
   assert.match(sync, /where: \{ parentId: op\.entityId, userId: accountId \}/, "sync deletes lift children too");

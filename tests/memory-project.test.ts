@@ -20,6 +20,7 @@ import {
   type Memory,
 } from "@/components/memory/memory-model";
 import { buildSystemPromptSections } from "@/lib/chat/system-prompt";
+import { chatTurnSource } from "./chat-turn-source";
 
 /*
  * Per-project memory.
@@ -228,7 +229,7 @@ test("the ownership guard and the key rotation both know the new table", () => {
 
 test("the chat turn and the dreamer both keep project summaries current", () => {
   assert.match(
-    src("src/app/api/chat/route.ts"),
+    chatTurnSource(),
     /if \(conversation\.projectId\) \{\s+await maybeConsolidateProject\(user\.id, conversation\.projectId, modelInfo\.provider\)/
   );
   assert.match(src("src/lib/memory-dreamer.ts"), /await maybeConsolidateProject\(userId, projectId, null\)/);

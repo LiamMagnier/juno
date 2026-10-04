@@ -3,6 +3,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { chatTurnFiles } from "./chat-turn-source";
 
 /*
  * A source guard, in the style of tests/security-regressions.test.ts.
@@ -40,11 +41,22 @@ function walk(dir: string, out: string[] = []): string[] {
 // ---------------------------------------------------------------------------
 
 test("every write of Message.activity goes through encryptJsonField", () => {
-  // The chat route is the hot path (three writes: the private turn, the saved
-  // turn, and the research-partial turn); code-task-outcome persists a Juno Code
-  // outcome; the import route ingests an uploaded package.
+  // The chat turn is the hot path: its writes live in the persist stage
+  // (src/lib/chat/turn/persist.ts) — the row's activity on create/supersede,
+  // and `sealActivity` once the turn's last row exists (finished and partial
+  // turns alike). No other stage of the turn writes the column (checked
+  // below). code-task-outcome persists a Juno Code outcome; the import route
+  // ingests an uploaded package.
+  for (const file of chatTurnFiles()) {
+    const text = source(file);
+    if (file.endsWith("/persist.ts")) continue;
+    const writes = text
+      .split("\n")
+      .filter((line) => /\bactivity:/.test(line) && /InputJsonValue|jsonInput/.test(line));
+    assert.deepEqual(writes, [], `${file} writes Message.activity outside the persist stage`);
+  }
   for (const [file, expected] of [
-    ["src/app/api/chat/route.ts", 3],
+    ["src/lib/chat/turn/persist.ts", 2],
     ["src/lib/code-task-outcome.ts", 1],
     ["src/app/api/import/route.ts", 1],
   ] as const) {

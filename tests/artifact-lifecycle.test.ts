@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { PrismaClient } from "@prisma/client";
+import { chatTurnSource } from "./chat-turn-source";
 
 /*
  * EDITING A MESSAGE OR REGENERATING AN ANSWER NEVER DELETES AN ARTIFACT.
@@ -39,7 +40,7 @@ const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.ur
 test("no route deletes an artifact because a message went away", () => {
   const edit = read("src/app/api/messages/[id]/route.ts");
   assert.doesNotMatch(edit, /artifact\.delete/, "an edit leaves artifacts to the SetNull foreign key");
-  const chat = read("src/app/api/chat/route.ts");
+  const chat = chatTurnSource();
   assert.doesNotMatch(chat, /artifact\.delete/);
   // The regenerate overwrites the answer in place, so no foreign key fires:
   // it lets go of the answer's artifacts explicitly, in the same transaction.

@@ -16,6 +16,7 @@ import {
 import { chatRuntimeToolAllowlist } from "@/lib/chat/tool-policy";
 import { emptySkillContract, type SkillCandidate } from "@/lib/work/skills";
 import { UNTRUSTED_CLOSE, UNTRUSTED_OPEN, wrapUntrusted } from "@/lib/untrusted-content";
+import { chatTurnSource, turnModule } from "./chat-turn-source";
 
 /*
  * A skill applied to a chat turn.
@@ -244,9 +245,11 @@ test("a refused skill is said to the reader on both paths, once the stream is op
   // The composer showed the skill armed, so a refusal that only reached the
   // audit log left the reader believing it ran. Pinned on the source because
   // both call sites sit inside stream bodies no unit test can reach.
-  const route = readFileSync(new URL("../src/app/api/chat/route.ts", import.meta.url), "utf8");
-  const privateBranch = route.slice(route.indexOf("if (input.privateMode) {"), route.indexOf("const durableFirstSubmission"));
-  const savedStream = route.slice(route.indexOf("const generate = async ("));
+  // The private turn and the saved turn's stream are pipeline stages now
+  // (tests/chat-turn-source.ts); the count below is over the whole turn.
+  const route = chatTurnSource();
+  const privateBranch = turnModule("private-turn");
+  const savedStream = turnModule("run-turn").slice(turnModule("run-turn").indexOf("const generate = async ("));
   const refusalRow = (outcome: string) =>
     new RegExp(
       `if \\(${outcome} && !${outcome}\\.applied\\) \\{\\s*sendActivity\\(\\{\\s*kind: "warning",\\s*title: "Skill not applied",\\s*detail: CHAT_SKILL_REFUSAL_MESSAGES\\[${outcome}\\.reason\\],`
@@ -266,9 +269,11 @@ test("an applied skill is said to the reader on both paths, once the stream is o
   // The success twin of the refusal row. Progressive disclosure is the whole
   // point of loading a skill's body: if the run does not name it, the reader
   // cannot tell a skilled answer from an ordinary one.
-  const route = readFileSync(new URL("../src/app/api/chat/route.ts", import.meta.url), "utf8");
-  const privateBranch = route.slice(route.indexOf("if (input.privateMode) {"), route.indexOf("const durableFirstSubmission"));
-  const savedStream = route.slice(route.indexOf("const generate = async ("));
+  // The private turn and the saved turn's stream are pipeline stages now
+  // (tests/chat-turn-source.ts); the count below is over the whole turn.
+  const route = chatTurnSource();
+  const privateBranch = turnModule("private-turn");
+  const savedStream = turnModule("run-turn").slice(turnModule("run-turn").indexOf("const generate = async ("));
   const appliedRow = (outcome: string) =>
     new RegExp(
       `if \\(${outcome}\\?\\.applied\\) \\{\\s*sendActivity\\(skillAppliedActivity\\(${outcome}\\.application\\)\\);`

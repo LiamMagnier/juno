@@ -34,6 +34,7 @@ import {
   decideActionPolicy,
   mayCreateStandingApproval,
 } from "@/lib/action-approval";
+import { chatTurnSource, turnModule } from "./chat-turn-source";
 
 /*
  * `start_task`: the chat model deciding that a request is a job, not an answer.
@@ -436,7 +437,7 @@ test("streamChat offers native tools beside the toolset, never through the regis
 });
 
 test("the chat route gates the tool and its prompt section on one flag", () => {
-  const route = read("../src/app/api/chat/route.ts");
+  const route = chatTurnSource();
   assert.match(route, /const taskToolOn = chatTaskToolEnabled\(\{/);
   assert.match(route, /workHandoff: input\.workHandoff,/);
   assert.match(route, /taskHandoff: taskToolOn,/);
@@ -451,9 +452,9 @@ test("the chat route gates the tool and its prompt section on one flag", () => {
   assert.match(route, /const createRoomTool =\s*agentConfigToolsOn && userMessageId\s*\? createCreateRoomTool\(\{/);
   assert.match(route, /nativeTools: nativeTools\.length > 0 \? nativeTools : undefined,/);
   assert.match(route, /send\(\{ type: "work", session \}\);/);
-  // The private branch builds no task or handoff tool: it sits above the saved
-  // path's stream and must never reach either declaration.
-  const privateBranch = route.slice(route.indexOf("if (input.privateMode) {"), route.indexOf("const durableFirstSubmission"));
+  // The private turn builds no task or handoff tool: it is its own stage
+  // (src/lib/chat/turn/private-turn.ts) and must never reach either declaration.
+  const privateBranch = turnModule("private-turn");
   assert.doesNotMatch(privateBranch, /createStartTaskTool|createHandoffTool|nativeTools|taskHandoff|handoff/);
 });
 
@@ -461,7 +462,7 @@ test("a task started from a turn with any file in it asks first", () => {
   // The memory rule's flag misses pictures: an image reaches a vision model as
   // pixels with no envelope, and a screenshot of an email is as much outside
   // content as the email's text would be.
-  const route = read("../src/app/api/chat/route.ts");
+  const route = chatTurnSource();
   const call = route.slice(route.indexOf("createStartTaskTool({"));
   assert.match(
     call.slice(0, call.indexOf("})")),

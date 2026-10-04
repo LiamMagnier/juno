@@ -71,7 +71,7 @@ function describe(site: CallSite): string {
 test("the scanner finds the guarded call sites at all", () => {
   // Vacuity check: if the scan collapses, every assertion below passes.
   assert.ok(sites.length > 1000, `expected over a thousand guarded call sites, found ${sites.length}`);
-  assert.ok(sites.some((site) => site.file === "src/app/api/chat/route.ts" && site.model === "Project"));
+  assert.ok(sites.some((site) => site.file === "src/lib/chat/turn/identity.ts" && site.model === "Project"));
 });
 
 test("no guarded Prisma call reaches the ownership guard without an owner filter", () => {

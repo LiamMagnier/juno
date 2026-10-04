@@ -16,6 +16,7 @@ import {
 } from "@/lib/spend-ceiling";
 import { runBudgetForWindow } from "@/lib/work/budget";
 import { runLimitFrom } from "@/components/work/clarify/run-disclosure";
+import { chatTurnSource } from "./chat-turn-source";
 
 /*
  * The windows, now that they refuse work rather than describe it.
@@ -338,7 +339,8 @@ test("the windows are enforced and not merely metered", () => {
     "../src/app/api/agent/[...path]/route.ts",
     "../src/app/api/agent/usage/route.ts",
   ]) {
-    const source = readFileSync(new URL(file, import.meta.url), "utf8");
+    // The chat turn is the route plus its pipeline (tests/chat-turn-source.ts).
+    const source = file === "../src/app/api/chat/route.ts" ? chatTurnSource() : readFileSync(new URL(file, import.meta.url), "utf8");
     assert.match(source, /checkUsageWindows\(/, file);
   }
 });
