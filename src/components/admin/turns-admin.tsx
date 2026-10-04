@@ -38,30 +38,30 @@ function TurnRow({ trace }: { trace: TurnTrace }) {
   return (
     <li className="grid gap-1 border-b border-border/60 py-3 last:border-b-0">
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <span className="text-sm text-foreground">
+        <span className="text-ui text-foreground">
           {trace.outcome ?? "unfinished"}
           <span className="text-muted-foreground"> · {trace.finishReason ?? "—"}</span>
         </span>
-        <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
+        <span className="font-mono text-caption tabular-nums text-muted-foreground">
           {new Date(trace.startedAt).toLocaleTimeString("en-GB")} · {ms(trace.latency.totalMs)} total · first token{" "}
           {ms(trace.latency.ttftMs)}
         </span>
       </div>
-      <div className="font-mono text-[11px] text-muted-foreground">
+      <div className="font-mono text-caption text-muted-foreground">
         {trace.surface} · {trace.provider}/{trace.model}
         {trace.requestedModel ? ` (asked ${trace.requestedModel})` : ""}
         {trace.reasoningEffort ? ` · ${trace.reasoningEffort}` : ""} · {trace.usage.promptTokens ?? "—"} in /{" "}
         {trace.usage.completionTokens ?? "—"} out · {usd(trace.usage.costUsd)}
       </div>
       {(tools.length > 0 || trace.approvals > 0) && (
-        <div className="font-mono text-[11px] text-muted-foreground">
+        <div className="font-mono text-caption text-muted-foreground">
           {tools.length} tool call{tools.length === 1 ? "" : "s"}
           {failedTools ? ` (${failedTools} failed)` : ""}: {tools.map((call) => call.name).join(", ") || "—"}
           {trace.approvals ? ` · ${trace.approvals} approval${trace.approvals === 1 ? "" : "s"} asked` : ""}
         </div>
       )}
       {(trace.error || trace.failureCode || cancellation) && (
-        <div className="font-mono text-[11px] text-muted-foreground">
+        <div className="font-mono text-caption text-muted-foreground">
           {[
             trace.failureCode,
             trace.error && `${trace.error.class}${trace.error.status ? ` ${trace.error.status}` : ""}${trace.error.retryable ? " (retryable)" : ""}`,
@@ -71,7 +71,7 @@ function TurnRow({ trace }: { trace: TurnTrace }) {
             .join(" · ")}
         </div>
       )}
-      <div className="font-mono text-[11px] text-muted-foreground/70">
+      <div className="font-mono text-caption text-muted-foreground/70">
         run {trace.runId}
         {trace.requestId ? ` · request ${trace.requestId}` : ""} · account {trace.accountId}
         {trace.conversationId ? ` · chat ${trace.conversationId}` : ""}
@@ -92,11 +92,11 @@ export function TurnsAdmin({ traces, models }: { traces: TurnTrace[]; models: Mo
       />
 
       <section aria-labelledby="models-heading" className="grid gap-2">
-        <h2 id="models-heading" className="font-mono text-[11px] uppercase tracking-wide text-muted-foreground">
+        <h2 id="models-heading" className="font-mono text-caption uppercase tracking-wide text-muted-foreground">
           By model
         </h2>
         {models.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No turns have finished on this process since it started.</p>
+          <p className="text-ui text-muted-foreground">No turns have finished on this process since it started.</p>
         ) : (
           <ul className="border-t border-border/60">
             {models.map((model) => (
@@ -104,8 +104,8 @@ export function TurnsAdmin({ traces, models }: { traces: TurnTrace[]; models: Mo
                 key={model.modelId}
                 className="flex flex-wrap items-baseline justify-between gap-x-4 border-b border-border/60 py-2"
               >
-                <span className="text-sm">{model.provider}/{model.modelId}</span>
-                <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
+                <span className="text-ui">{model.provider}/{model.modelId}</span>
+                <span className="font-mono text-caption tabular-nums text-muted-foreground">
                   {model.requests} turns · {Math.round(model.successRate * 100)}% ok · p95 {ms(model.p95LatencyMs)} · p95
                   first token {ms(model.p95TtftMs)}
                 </span>
@@ -116,11 +116,11 @@ export function TurnsAdmin({ traces, models }: { traces: TurnTrace[]; models: Mo
       </section>
 
       <section aria-labelledby="turns-heading" className="grid gap-2">
-        <h2 id="turns-heading" className="font-mono text-[11px] uppercase tracking-wide text-muted-foreground">
+        <h2 id="turns-heading" className="font-mono text-caption uppercase tracking-wide text-muted-foreground">
           Latest {traces.length} turns
         </h2>
         {traces.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Nothing recorded yet. Traces are per process and start empty after a restart.</p>
+          <p className="text-ui text-muted-foreground">Nothing recorded yet. Traces are per process and start empty after a restart.</p>
         ) : (
           <ul className="border-t border-border/60">
             {traces.map((trace) => (
