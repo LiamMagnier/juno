@@ -12,7 +12,8 @@
  * the `server-only` guard in the crypto import chain resolves to a no-op.
  */
 import { prismaUnguarded } from "@/lib/db";
-import { isSealedWithPrimary, reencryptSecret } from "@/lib/crypto";
+import { isBoundSealedWithPrimary, isSealedWithPrimary, reencryptSecret, reencryptSecretBound } from "@/lib/crypto";
+import { credentialContext } from "@/lib/secrets/store";
 
 const DRY = process.argv.includes("--dry") || process.argv.includes("--dry-run");
 
@@ -106,18 +107,50 @@ async function rotateUserMcpServers(): Promise<Tally> {
   return { changed, failed };
 }
 
+/**
+ * Alevr Secrets credentials are sealed with their owner and id as additional
+ * data (encryptSecretBound), so they are re-sealed with that same context. A
+ * revoked row's value has already been overwritten and is skipped.
+ */
+async function rotateSecretCredentials(): Promise<Tally> {
+  const rows = await prismaUnguarded.secretCredential.findMany({
+    where: { revokedAt: null },
+    select: { id: true, userId: true, sealed: true },
+  });
+  let changed = 0,
+    failed = 0;
+  for (const row of rows) {
+    try {
+      if (isBoundSealedWithPrimary(row.sealed)) continue;
+      const sealed = reencryptSecretBound(row.sealed, credentialContext(row.userId, row.id));
+      changed++;
+      if (!DRY) {
+        await prismaUnguarded.secretCredential.updateMany({ where: { id: row.id, userId: row.userId }, data: { sealed } });
+      }
+    } catch (err) {
+      failed++;
+      console.error(`  ✗ saved login ${row.id}: ${(err as Error).message}`);
+    }
+  }
+  return { changed, failed };
+}
+
 async function main() {
   console.log(DRY ? "Rotation dry-run (no writes)…" : "Rotating secrets onto the primary key…");
   const connections = await rotateConnections();
   const accounts = await rotateAccounts();
   const userMcpServers = await rotateUserMcpServers();
+  const secretCredentials = await rotateSecretCredentials();
   const verb = DRY ? "would be re-sealed" : "re-sealed";
   console.log(`Connections ${verb}: ${connections.changed}` + (connections.failed ? ` (${connections.failed} FAILED)` : ""));
   console.log(`Accounts ${verb}:    ${accounts.changed}` + (accounts.failed ? ` (${accounts.failed} FAILED)` : ""));
   console.log(
     `User MCP servers ${verb}: ${userMcpServers.changed}` + (userMcpServers.failed ? ` (${userMcpServers.failed} FAILED)` : "")
   );
-  const failed = connections.failed + accounts.failed + userMcpServers.failed;
+  console.log(
+    `Saved logins ${verb}: ${secretCredentials.changed}` + (secretCredentials.failed ? ` (${secretCredentials.failed} FAILED)` : "")
+  );
+  const failed = connections.failed + accounts.failed + userMcpServers.failed + secretCredentials.failed;
   if (failed > 0) {
     console.error(`\n${failed} row(s) could not be rotated — keep every old key in TOKEN_ENCRYPTION_KEYS until this reports 0 failures, then re-run.`);
     process.exitCode = 1;

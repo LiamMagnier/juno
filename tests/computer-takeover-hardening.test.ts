@@ -30,6 +30,7 @@ const store = req("../src/lib/computer/store") as typeof import("@/lib/computer/
 const takeover = req("../src/lib/computer/takeover") as typeof import("@/lib/computer/takeover");
 const page = req("../src/lib/work/browser-page") as typeof import("@/lib/work/browser-page");
 const domain = req("../src/lib/work/domain") as typeof import("@/lib/work/domain");
+const remote = req("../src/lib/computer/remote-browser") as typeof import("@/lib/computer/remote-browser");
 
 type Runtime = typeof import("../runner/agent-core/src/work/index.js");
 const loadRuntime = async (): Promise<Runtime> =>
@@ -207,5 +208,18 @@ describe("pixel keys and credential fills on the approval ladder", () => {
     assert.match(listed.output, /No saved credentials were granted/);
     const refused = await tool.execute(input, CTX);
     assert.equal(refused.isError, true, "no fill without a trusted fill dependency");
+  });
+});
+
+describe("site policy on the agent computer's browser", () => {
+  it("refuses a top-level navigation the agent caused, and never filters the person", () => {
+    const policy = (url: string) => (new URL(url).hostname.endsWith("allowed.example") ? null : "Not for this skill.");
+    const base = { isNavigation: true, isMainFrame: true, policy };
+    assert.equal(remote.agentNavigationVerdict({ ...base, agentActing: true, url: "https://evil.example/x" }), "Not for this skill.");
+    assert.equal(remote.agentNavigationVerdict({ ...base, agentActing: true, url: "https://docs.allowed.example/" }), null);
+    assert.equal(remote.agentNavigationVerdict({ ...base, agentActing: false, url: "https://evil.example/x" }), null, "the person during a takeover");
+    assert.equal(remote.agentNavigationVerdict({ ...base, agentActing: true, isMainFrame: false, url: "https://evil.example/ad" }), null, "subframes are the page's business");
+    assert.equal(remote.agentNavigationVerdict({ ...base, agentActing: true, isNavigation: false, url: "https://evil.example/pixel.gif" }), null);
+    assert.equal(remote.agentNavigationVerdict({ ...base, agentActing: true, policy: undefined, url: "https://evil.example/" }), null);
   });
 });

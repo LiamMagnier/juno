@@ -30,6 +30,8 @@ interface World {
   deliverableVersions: Row[];
   importObjects: Row[];
   toolRuns: Array<{ logKey: string | null }>;
+  /** Agent ids with a computer. */
+  computers: string[];
   /** Keys whose delete throws, as an S3 outage would. */
   failing: Set<string>;
 }
@@ -40,13 +42,13 @@ let events: string[];
 let queries: Record<string, unknown>;
 
 function reset(partial: Partial<World> = {}) {
-  world = { attachments: [], attachmentVersions: [], deliverableVersions: [], importObjects: [], toolRuns: [], failing: new Set(), ...partial };
+  world = { attachments: [], attachmentVersions: [], deliverableVersions: [], importObjects: [], toolRuns: [], computers: [], failing: new Set(), ...partial };
   events = [];
   queries = {};
 }
 reset();
 
-const findMany = (name: keyof Omit<World, "failing">) => async (args: unknown) => {
+const findMany = (name: keyof Omit<World, "failing" | "computers">) => async (args: unknown) => {
   queries[name] = args;
   events.push(`query:${name}`);
   return world[name];
@@ -64,6 +66,10 @@ if (!canMockModules) {
         workArtifactVersion: { findMany: findMany("deliverableVersions") },
         importObject: { findMany: findMany("importObjects") },
         toolRun: { findMany: findMany("toolRuns") },
+        workSkillVersion: { findMany: async () => [] },
+        agentComputer: {
+          findMany: async () => world.computers.map((agentId) => ({ agentId })),
+        },
         user: {
           delete: async (args: unknown) => {
             queries.userDelete = args;
@@ -87,6 +93,14 @@ if (!canMockModules) {
       deleteObject: async (key: string) => {
         events.push(`delete:${key}`);
         if (world.failing.has(key)) throw new Error("SlowDown: storage is unavailable");
+      },
+    },
+  });
+  mock.module("@/lib/computer/store", {
+    namedExports: {
+      disableComputer: async (userId: string, agentId: string) => {
+        events.push(`computer.destroy:${userId}:${agentId}`);
+        if (agentId === "agent-broken") throw new Error("docker host unreachable");
       },
     },
   });
@@ -239,5 +253,18 @@ if (!canMockModules) {
     } finally {
       prisma.workArtifactVersion.findMany = original;
     }
+  });
+
+  test("agent computers are destroyed with their volumes and posters before the rows cascade", async () => {
+    reset({ computers: ["agent-a", "agent-broken"] });
+    const { deleteAccountPermanently } = await load();
+    const report = await deleteAccountPermanently(user);
+    const destroyed = events.filter((event) => event.startsWith("computer.destroy:"));
+    assert.deepEqual(destroyed, ["computer.destroy:user-1:agent-a", "computer.destroy:user-1:agent-broken"]);
+    assert.ok(events.indexOf("computer.destroy:user-1:agent-a") < events.indexOf("user.delete"));
+    assert.ok(deleted().includes("computers/user-1/agent-a/poster.jpg"));
+    assert.equal(report.computers, 2);
+    assert.equal(report.failedComputers, 1, "a host outage is counted, and the account is still deleted");
+    assert.ok(events.includes("user.delete"));
   });
 }

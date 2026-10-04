@@ -115,7 +115,10 @@ describe("(a) running code or typing on a crew computer always asks", () => {
     assert.deepEqual(refusal, { outcome: "refuse", reason: "not_standing_allowable" });
     // The executor itself never remembers an "always" for a sensitive step.
     const session = readFileSync("runner/agent-core/src/work/session.ts", "utf8");
-    assert.match(session, /answer === 'allowed_always' && risk !== 'irreversible' && risk !== 'sensitive'/);
+    assert.match(session, /answer === 'allowed_always' && mayHoldStandingAllowance\(action, risk\)/);
+    for (const risk of ["sensitive", "irreversible"] as const) {
+      assert.equal(runtime.mayHoldStandingAllowance("work.computer.shell", risk), false, risk);
+    }
   });
 
   it("refuses file writes that would run code later, and keeps ordinary work files", async () => {

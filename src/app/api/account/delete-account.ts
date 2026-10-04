@@ -19,6 +19,9 @@ export interface DeletionReport {
   deliverableVersionCount: number;
   purgedObjects: number;
   failedObjects: number;
+  /** Agent computers (container + volumes) destroyed before the rows cascade. */
+  computers?: number;
+  failedComputers?: number;
 }
 
 export async function deleteAccountPermanently(user: {
@@ -108,6 +111,33 @@ export async function deleteAccountPermanently(user: {
     keys.add(`${logKey}stderr.log`);
   }
   for (const { bundleKey } of skillBundles) if (bundleKey) keys.add(bundleKey);
+
+  // Agent computers (Computer Use audit 2026-10-04, gap 8): each one is a
+  // container and two volumes OUTSIDE Postgres, and the browser volume holds
+  // the account's signed-in sessions. The rows cascade with the user, after
+  // which nothing names the containers, so they are destroyed first, along
+  // with each computer's stored poster frame. Best-effort, like the storage
+  // purge: a container host outage is counted, never a reason to keep the
+  // account alive; the sweep's orphan reconciliation is the backstop.
+  const computerAgents = await (async () => {
+    try {
+      return await prisma.agentComputer.findMany({ where: { userId: user.id }, select: { agentId: true } });
+    } catch (err) {
+      console.error(`[account-delete] could not list agent computers for ${user.id}:`, err);
+      return [] as Array<{ agentId: string }>;
+    }
+  })();
+  let failedComputers = 0;
+  for (const { agentId } of computerAgents) {
+    keys.add(`computers/${user.id}/${agentId}/poster.jpg`);
+    try {
+      const { disableComputer } = await import("@/lib/computer/store");
+      await disableComputer(user.id, agentId);
+    } catch (err) {
+      failedComputers += 1;
+      if (failedComputers === 1) console.error(`[account-delete] computer teardown failed for ${user.id}:`, err);
+    }
+  }
   // The avatar, stored as a /api/files/<key> URL on User.image.
   const avatarKey = user.image?.startsWith("/api/files/") ? user.image.slice("/api/files/".length) : null;
   if (avatarKey) keys.add(avatarKey);
@@ -151,5 +181,6 @@ export async function deleteAccountPermanently(user: {
     deliverableVersionCount: deliverableVersions.length,
     purgedObjects: purged,
     failedObjects: failed,
+    ...(computerAgents.length > 0 ? { computers: computerAgents.length, failedComputers } : {}),
   };
 }

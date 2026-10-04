@@ -25,6 +25,28 @@ export interface ConnectAgentBrowserOptions {
   provider?: ComputerProvider;
   navigationTimeoutMs?: number;
   actionTimeoutMs?: number;
+  /**
+   * Site policy for navigations the AGENT causes (security audit, computer
+   * gap 7): a refusal sentence, or null to allow. Applied to top-level
+   * navigations only, and only while an agent action is in flight — the
+   * person driving the same Chromium during a takeover is never filtered.
+   */
+  navigationRefusal?: (url: string) => string | null;
+}
+
+/**
+ * The navigation rule, pure for tests: a top-level navigation during an agent
+ * action is refused when the policy says so; everything else continues.
+ */
+export function agentNavigationVerdict(input: {
+  agentActing: boolean;
+  isNavigation: boolean;
+  isMainFrame: boolean;
+  url: string;
+  policy?: (url: string) => string | null;
+}): string | null {
+  if (!input.agentActing || !input.isNavigation || !input.isMainFrame || !input.policy) return null;
+  return input.policy(input.url);
 }
 
 export interface RemoteAgentBrowser extends WorkBrowser {
@@ -137,6 +159,19 @@ export function connectAgentBrowser(
   let unavailable: string | null = null;
   let elements: BrowserElement[] = [];
   let takesPayment = false;
+  /** True only while one of the agent's own actions runs (see navigationRefusal). */
+  let agentActing = false;
+  let navigationRefused: string | null = null;
+
+  async function asAgent<T>(run: () => Promise<T>): Promise<T> {
+    agentActing = true;
+    navigationRefused = null;
+    try {
+      return await run();
+    } finally {
+      agentActing = false;
+    }
+  }
 
   function resolveWsEndpoint(baseCdpUrl: string): string {
     const endpoint = new URL(baseCdpUrl);
@@ -171,6 +206,25 @@ export function connectAgentBrowser(
       context.on("page", (opened) => {
         page = opened;
       });
+      if (options?.navigationRefusal) {
+        const policy = options.navigationRefusal;
+        await context.route("**/*", async (route) => {
+          const request = route.request();
+          const refusal = agentNavigationVerdict({
+            agentActing,
+            isNavigation: request.isNavigationRequest(),
+            isMainFrame: request.frame() === request.frame().page().mainFrame(),
+            url: request.url(),
+            policy,
+          });
+          if (refusal) {
+            navigationRefused = refusal;
+            await route.abort("blockedbyclient").catch(() => {});
+            return;
+          }
+          await route.continue().catch(() => {});
+        });
+      }
       const existingPages = context.pages();
       page = existingPages[0] ?? (await context.newPage());
       return page;
@@ -197,11 +251,12 @@ export function connectAgentBrowser(
       return { ok: false, message: "Nothing is open yet. Open a URL first." };
     }
     try {
-      const refusal = await run(current);
+      const refusal = await asAgent(() => run(current));
       if (refusal) return { ok: false, message: refusal };
+      if (navigationRefused) return { ok: false, message: navigationRefused };
       return { ok: true, page: await snapshot(page ?? current) };
     } catch (error) {
-      return { ok: false, message: describeBrowserError(error) };
+      return { ok: false, message: navigationRefused ?? describeBrowserError(error) };
     }
   }
 
@@ -232,17 +287,20 @@ export function connectAgentBrowser(
       const current = await ensurePage();
       if (typeof current === "string") return { ok: false, message: current };
       try {
-        const response = await current.goto(url, {
-          waitUntil: "domcontentloaded",
-          timeout: navigationTimeout,
-        });
+        const response = await asAgent(() =>
+          current.goto(url, {
+            waitUntil: "domcontentloaded",
+            timeout: navigationTimeout,
+          }),
+        );
+        if (navigationRefused) return { ok: false, message: navigationRefused };
         const status = response?.status() ?? 0;
         if (status >= 400) {
           return { ok: false, message: `${url} answered ${status}.` };
         }
         return { ok: true, page: await snapshot(page ?? current) };
       } catch (error) {
-        return { ok: false, message: describeBrowserError(error) };
+        return { ok: false, message: navigationRefused ?? describeBrowserError(error) };
       }
     },
 

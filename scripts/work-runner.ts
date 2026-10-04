@@ -3478,6 +3478,16 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
       const remoteBrowser = guardBrowserForTakeover(
         connectAgentBrowser(computerAttachment.handle, computerAttachment.secrets, {
           provider: computerAttachment.provider,
+          // The same site policy the browser tool applies to `open`, now also
+          // to every navigation the agent's clicks and submits cause.
+          navigationRefusal: (url) => {
+            const blocked = runtime.blockedFetchTarget(url);
+            if (blocked) return `Juno will not open that: ${blocked}`;
+            const allowedDomains = egressDomains.current;
+            if (allowedDomains === null) return null;
+            const egress = runtime.evaluateEgress(url, { allowedDomains, allowedPorts: [443] });
+            return egress.allowed ? null : `Juno will not open that for this skill: ${egress.reason}.`;
+          },
         }),
         () => computerTakeoverFence(input.userId, takeoverAgentId)
       );
