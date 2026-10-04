@@ -27,7 +27,7 @@ import {
 } from "@/lib/research/domain";
 import { extractJsonObject, parseStructuredPlan, plannerSystemPrompt } from "@/lib/research/plan-format";
 import { researchLeadModel } from "@/lib/research/agents/worker";
-import { draftResearchPlan, languageName, looksLikeJson, type PlannerCompletion } from "@/lib/research/planner";
+import { draftResearchPlan, languageName, looksLikeJson, parsePlannerOutput, type PlannerCompletion } from "@/lib/research/planner";
 import { packCorpus, writerCorpusBudgetTokens } from "@/lib/research/corpus-pack";
 import { researchLanguageLine } from "@/lib/research/planner.prompt";
 import { getModelMetrics } from "@/lib/model-metrics";
@@ -301,34 +301,87 @@ function configuredModel(id: string | null | undefined): ModelInfo | null {
  * with the schema, retried once, and otherwise `planner_invalid` (B5).
  */
 export const draftResearchPlanWithModel: NonNullable<ResearchDeps["draftPlan"]> = async (input) => {
-  const model = configuredModel(input.leadModel) ?? researchPlannerModel();
-  if (!model) return { ok: false, reason: "planner_invalid", costMicroUsd: 0 };
-  const complete: PlannerCompletion = (request) =>
-    utilityCompletion({
-      userId: input.userId,
-      model,
-      system: request.system,
-      prompt: request.prompt,
-      maxTokens: request.maxTokens,
-      timeoutMs: PLAN_TIMEOUT_MS,
-      signal: input.signal,
-      label: request.attempt === 1 ? "plan" : "plan (retry)",
-      responseSchema: request.responseSchema,
-    });
-  return draftResearchPlan(
-    {
-      goal: input.goal,
-      context: input.context,
-      constraints: input.constraints,
-      pinnedSources: input.pinnedSources,
-      dateLine: input.dateLine,
-      languageName: input.languageName,
-      revision: input.revision,
-      signal: input.signal,
-    },
-    complete
-  );
+  // The chat's own model first, then the strongest other configured model.
+  // A lead that cannot hold the plan's schema (a provider's structured mode
+  // refusing it, a thinking budget eating the reply) used to fail the run
+  // outright: "The research planner could not draft a plan for this question".
+  // A second model is one more call; a failed run is the whole question lost.
+  const candidates = plannerCandidates(input.leadModel);
+  if (!candidates.length) return { ok: false, reason: "planner_invalid", costMicroUsd: 0 };
+  let costMicroUsd = 0;
+  for (const model of candidates) {
+    const complete: PlannerCompletion = async (request) => {
+      const reply = await utilityCompletion({
+        userId: input.userId,
+        model,
+        system: request.system,
+        prompt: request.prompt,
+        maxTokens: request.maxTokens,
+        timeoutMs: PLAN_TIMEOUT_MS,
+        signal: input.signal,
+        label: request.attempt === 1 ? "plan" : "plan (retry)",
+        responseSchema: request.responseSchema,
+      });
+      if (!parsePlannerOutput(reply.text)) {
+        // Why, never what: the reply carries the person's question.
+        console.warn("[research] planner reply unusable", {
+          model: model.id,
+          attempt: request.attempt,
+          ...plannerReplyShape(reply.text),
+        });
+      }
+      return reply;
+    };
+    const drafted = await draftResearchPlan(
+      {
+        goal: input.goal,
+        context: input.context,
+        constraints: input.constraints,
+        pinnedSources: input.pinnedSources,
+        dateLine: input.dateLine,
+        languageName: input.languageName,
+        revision: input.revision,
+        signal: input.signal,
+      },
+      complete
+    );
+    costMicroUsd += drafted.costMicroUsd;
+    if (drafted.ok) return { ...drafted, costMicroUsd };
+    if (input.signal?.aborted) break;
+  }
+  return { ok: false, reason: "planner_invalid", costMicroUsd };
 };
+
+/** The lead model, then one fallback: the strongest other configured model. */
+export function plannerCandidates(leadId: string | null | undefined): ModelInfo[] {
+  const out: ModelInfo[] = [];
+  for (const model of [configuredModel(leadId), researchPlannerModel(), ...utilityModelCandidates()]) {
+    if (model && !out.some((m) => m.id === model.id)) out.push(model);
+    if (out.length === 2) break;
+  }
+  return out;
+}
+
+/** A reply's shape for the log: how it failed, with none of its words. */
+export function plannerReplyShape(text: string): { chars: number; kind: string } {
+  const trimmed = text.trim();
+  if (!trimmed) return { chars: 0, kind: "empty" };
+  const start = trimmed.indexOf("{");
+  if (start < 0) return { chars: trimmed.length, kind: "no_json" };
+  const body = trimmed.slice(start);
+  let depth = 0;
+  for (const ch of body) {
+    if (ch === "{") depth++;
+    else if (ch === "}") depth--;
+  }
+  if (depth > 0) return { chars: trimmed.length, kind: "cut_off_json" };
+  try {
+    JSON.parse(body.slice(0, body.lastIndexOf("}") + 1));
+    return { chars: trimmed.length, kind: "wrong_shape" };
+  } catch {
+    return { chars: trimmed.length, kind: "malformed_json" };
+  }
+}
 
 /**
  * CLARIFY — what does the goal not say?
