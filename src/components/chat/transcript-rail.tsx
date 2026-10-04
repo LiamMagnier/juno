@@ -148,9 +148,9 @@ export function TranscriptRail({
         {drawn && cardIndex >= 0 && (
           <div className="rounded-card border bg-popover p-3 shadow-float">
             <div key={drawn.id} className="motion-safe:animate-fade-in">
-              <p className="line-clamp-1 text-xs font-medium leading-4 text-foreground">{drawn.label}</p>
+              <p className="line-clamp-1 text-ui font-medium text-foreground">{drawn.label}</p>
               {drawn.description && (
-                <p className="mt-1 line-clamp-2 text-xs leading-4 text-muted-foreground">{drawn.description}</p>
+                <p className="mt-1 line-clamp-2 text-caption text-muted-foreground">{drawn.description}</p>
               )}
             </div>
           </div>
