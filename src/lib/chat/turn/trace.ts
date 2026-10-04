@@ -63,10 +63,13 @@ export interface TurnTrace {
     ttftMs: number | null;
   };
   /**
-   * Provider attempts for this turn. Always 1 from the chat route: SDK
-   * retries are off (anthropic.ts, openai-compat.ts) because a streamed
-   * request can bill before a transport error is seen, and nothing above the
-   * adapter replays a turn. Recorded so a future retry shows up here.
+   * Route-level provider attempts for this turn. Always 1: nothing above the
+   * adapter replays a turn, and the Anthropic and OpenAI-compatible SDKs run
+   * with retries off (a streamed request can bill before a transport error is
+   * seen). The one retry below this line is Gemini's, before any byte of the
+   * stream (gemini-network.ts: retryable statuses only, at most 4 attempts,
+   * Retry-After honoured, abortable), logged there as `gemini_request_failed`.
+   * Recorded so a future route-level retry shows up here.
    */
   attempts: number;
   toolCalls: TurnTraceToolCall[];
