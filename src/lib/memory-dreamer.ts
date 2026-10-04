@@ -164,5 +164,10 @@ export async function dreamForAccount(userId: string, now: Date = new Date()): P
       await maybeConsolidateProject(userId, projectId, null).catch(() => {});
     }
   }
+  // Procedural memory: repeated successful methods, proposed (never created)
+  // as skills. Model-free and bounded; see src/lib/procedural-memory.ts.
+  await import("@/lib/procedural-memory-store")
+    .then(({ refreshSkillCandidates }) => refreshSkillCandidates(userId))
+    .catch(() => {});
   return outcome;
 }

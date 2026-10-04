@@ -70,6 +70,8 @@ export const OWNER_COLUMN = new Map<string, "userId" | "accountId">([
   // read and written by raw SQL scoped on userId in src/lib/search/sql.ts,
   // and guarded here for the one model call (dropping a row on edit).
   ["MessageRecallIndex", "userId"],
+  // Procedural memory: methods proposed as skills from the person's own runs.
+  ["SkillCandidate", "userId"],
   ["Attachment", "userId"],
   ["Usage", "userId"],
   // Reservations gate a paid quota, so an unscoped read here is a cross-account

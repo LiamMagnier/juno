@@ -172,6 +172,7 @@ model User {
   toolRuns                    ToolRun[]
 
   messageRecallIndex MessageRecallIndex[]
+  skillCandidates    SkillCandidate[]
   @@index([image])
 }
 
@@ -1251,6 +1252,36 @@ model MessageRecallIndex {
   @@index([userId, createdAt])
   @@index([conversationId])
   @@index([tokens], type: Gin)
+}
+
+/// Procedural memory (Layer G): a method the person's own Work runs repeated
+/// successfully, proposed as a Skill. A PROPOSAL only — nothing is created or
+/// selected until the person accepts it, and a dismissed one is never proposed
+/// again (`key`). Kept apart from MemoryEntry on purpose: memory is what is
+/// known, a skill is how to do something (src/lib/procedural-memory.ts).
+model SkillCandidate {
+  id        String   @id @default(cuid())
+  userId    String
+  projectId String?
+  /// Stable identity of the repeated method, so a refresh updates rather than duplicates.
+  key       String
+  /// Taken from the runs' own titles — never written by a model.
+  title     String
+  /// { examples: string[], tools: string[], sessionIds: string[] }
+  method    Json
+  runCount  Int      @default(0)
+  lastSeenAt DateTime
+  /// pending | accepted | dismissed
+  status    String   @default("pending")
+  /// The skill it became, once accepted.
+  skillId   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, key])
+  @@index([userId, status])
 }
 
 model MemorySummary {

@@ -32,6 +32,8 @@ export function MemoryFooter({
   onExport,
   onReset,
   onSettings,
+  project,
+  onClearProject,
 }: {
   paused: boolean;
   /** Nothing is remembered anywhere: export and reset have nothing to act on. */
@@ -40,6 +42,9 @@ export function MemoryFooter({
   onExport: () => void;
   onReset: () => void;
   onSettings: () => void;
+  /** The project the page is showing, when it is showing one. */
+  project?: { id: string; name: string } | null;
+  onClearProject?: () => void;
 }) {
   return (
     <footer className="mt-10 border-t border-border pt-4 text-caption text-muted-foreground">
@@ -62,6 +67,16 @@ export function MemoryFooter({
         <button type="button" onClick={onExport} disabled={empty} className={linkClass}>
           Export
         </button>
+        <span aria-hidden="true">·</span>
+        {project && onClearProject ? (
+          <>
+            <span aria-hidden="true">·</span>
+            <button type="button" onClick={onClearProject} className={linkClass} data-clear-project="">
+              <span>Clear</span> <span translate="no">{project.name}</span>
+              <span>…</span>
+            </button>
+          </>
+        ) : null}
         <span aria-hidden="true">·</span>
         <button type="button" onClick={onReset} disabled={empty} className={linkClass}>
           Reset memory…
@@ -119,6 +134,49 @@ export function ResetDialog({
               Reset memory
             </Button>
           </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** Clearing one project's memory: the same weight as reset, for a smaller thing. */
+export function ClearProjectDialog({
+  project,
+  onOpenChange,
+  clearing,
+  onClear,
+}: {
+  project: { id: string; name: string } | null;
+  onOpenChange: (open: boolean) => void;
+  clearing: boolean;
+  onClear: (projectId: string) => Promise<boolean>;
+}) {
+  return (
+    <Dialog open={project !== null} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>
+            <span>Clear</span> <span translate="no">{project?.name}</span>
+            <span>?</span>
+          </DialogTitle>
+          <DialogDescription>
+            {`This permanently deletes what ${PRODUCT_NAME} remembers inside this project and its summary. Your account-wide memory, your chats, and other members’ memory stay as they are.`}
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button
+            variant="destructive"
+            loading={clearing}
+            onClick={async () => {
+              if (project && (await onClear(project.id))) onOpenChange(false);
+            }}
+          >
+            Clear project memory
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
