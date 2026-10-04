@@ -37,6 +37,7 @@ export function isTaskClass(value: unknown): value is TaskClass {
 export interface TaskProfile {
   /** The primary class — the telemetry key. */
   taskClass: TaskClass;
+  /** The grader's level, raised one step for agentic and long-context work (stakes). */
   complexity: PromptComplexity;
   /** Every dimension that applies, not only the primary one. */
   needs: {
@@ -168,9 +169,17 @@ export function classifyTask(input: TaskInput): TaskProfile {
   const priorToolRounds = agentic ? 3 : research ? 2 : toolReliability ? 1 : 0;
   const estOutputTokens = Math.round(OUTPUT_TOKENS[level] * (coding ? 1.4 : 1) * (structuredOutput ? 1.2 : 1));
 
+  // Stakes, not wording: an action taken on the reader's behalf, or an answer
+  // that has to hold across a very long document, costs more to get wrong than
+  // a chat reply of the same length. A short agentic ask is graded "simple" by
+  // its words; routed as simple it would go to the cheapest model that can
+  // call a tool once.
+  const stakesLevel: PromptComplexity =
+    (agentic || longContext) && level === "simple" ? "medium" : level;
+
   return {
     taskClass,
-    complexity: level,
+    complexity: stakesLevel,
     needs: {
       reasoning,
       coding,
