@@ -17,7 +17,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.107.0",
     "diff": "^7.0.0",
-    "openai": "^6.45.0",
+    "openai": "^7.27.0",
     "fast-glob": "^3.3.2",
     "ws": "^8.18.0"
   },
