@@ -1,3 +1,4 @@
+import JunoCore
 import JunoDesignSystem
 import Testing
 
@@ -28,9 +29,11 @@ import Testing
             #expect(DesktopProductMode(product).shell == product)
             #expect(DesktopProductMode(product).icon == product.icon)
         }
-        // Juno does not gate a product by plan today; the web greys a locked
-        // one rather than hiding it, and the Mac has no locked segment yet.
-        #expect(JunoShellProduct.allCases.allSatisfy { $0.minPlan == .free })
+        // Code is Pro and up; Chat is for everyone. The Mac's gate asks the
+        // shared catalogue, so the two must name the same plan.
+        #expect(JunoShellProduct.chat.minPlan == .free)
+        #expect(JunoShellProduct.code.minPlan == .pro)
+        #expect(JunoShellProduct.code.minPlan.rawValue == JunoPlanFeature.code.minimumTier.rawValue)
     }
 
     // MARK: Chat's sidebar
@@ -149,9 +152,11 @@ import Testing
     // MARK: Plans
 
     @Test func plansRankLowestToHighest() {
-        #expect(JunoShellPlan.allCases == [.free, .pro, .max, .max20, .owner])
-        #expect(JunoShellPlan.free < .pro)
-        #expect(JunoShellPlan.max20 < .owner)
+        #expect(JunoShellPlan.allCases == [.free, .lite, .pro, .plus, .max, .max20, .ultra, .owner])
+        #expect(JunoShellPlan.free < .lite && JunoShellPlan.lite < .pro)
+        #expect(JunoShellPlan.max20 < .ultra && JunoShellPlan.ultra < .owner)
+        // The contract's plans are the shared catalogue's, in the same order.
+        #expect(JunoShellPlan.allCases.map(\.rawValue) == JunoPlanTier.allCases.map(\.rawValue))
         let gated = JunoShellMoreItem(destination: .skills, minPlan: .pro)
         #expect(!gated.isUnlocked(for: .free))
         #expect(gated.isUnlocked(for: .pro))

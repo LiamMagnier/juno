@@ -273,7 +273,9 @@ struct DesktopDestinationView: View {
         case .artifacts:
             artifactsPage
         case .agents:
-            if let model = configuration.agentsModel {
+            if !DesktopPlanGate.shared.allows(.agents) {
+                DesktopPlanLockedPage(feature: .agents, title: "Orbit", icon: JunoShellDestination.agents.icon)
+            } else if let model = configuration.agentsModel {
                 DesktopAgentsRoster(
                     model: model,
                     apps: agentApps,

@@ -1,5 +1,6 @@
 import AVFoundation
 import JunoChatKit
+import JunoCore
 import JunoDesignSystem
 import JunoVoiceKit
 import SwiftUI
@@ -38,7 +39,7 @@ struct DesktopSettingsVoicePane: View {
     /// and then the picker shows, as it always has on the Mac.
     private var planHasVoice: Bool {
         guard let plan = context.planID else { return true }
-        return plan != "FREE"
+        return JunoAccountPlan(serverID: plan).includes(.voice)
     }
 
     var body: some View {
@@ -47,7 +48,7 @@ struct DesktopSettingsVoicePane: View {
                 if planHasVoice {
                     voiceRow(settings)
                 } else {
-                    DesktopSettingRow(title: "Voice", description: "Choosing a voice needs a plan with voice.")
+                    DesktopSettingRow(title: "Voice", description: JunoPlanFeature.voice.upgradePrompt)
                 }
             } header: {
                 DesktopSettingsGroupHeader(title: "Read aloud")

@@ -128,29 +128,66 @@ import Testing
 
     @Test func thePlanCatalogueMatchesTheWeb() {
         let plans = DesktopPlanCatalog.all
-        #expect(plans.map(\.id) == ["FREE", "PRO", "MAX", "MAX20", "OWNER"])
-        #expect(plans.map(\.name) == ["Free", "Pro", "Max ×5", "Max ×10", "Owner"])
-        #expect(plans.map(\.price) == [0, 20, 100, 200, 0])
-        #expect(plans.map(\.rank) == [0, 1, 2, 3, 4])
-        #expect(DesktopPlanCatalog.free.monthlyMessages == 0)
-        #expect(DesktopPlanCatalog.free.tagline == "Create an account and look around.")
-        #expect(DesktopPlanCatalog.free.features.first == "No messages included — chatting needs a paid plan")
+        #expect(plans.map(\.id) == ["FREE", "LITE", "PRO", "PLUS", "MAX", "MAX20", "ULTRA", "OWNER"])
+        #expect(plans.map(\.name) == ["Free", "Lite", "Pro", "Plus", "Max ×5", "Max ×10", "Ultra", "Owner"])
+        #expect(plans.map(\.priceHT) == [0, 9, 20, 50, 100, 200, 500, 0])
+        #expect(DesktopPlanCatalog.everyday.map(\.id) == ["LITE", "PRO", "PLUS"])
+        #expect(DesktopPlanCatalog.moreUsage.map(\.id) == ["MAX", "MAX20", "ULTRA"])
+        #expect(DesktopPlanCatalog.free.tagline == "Try it, no card needed.")
+        #expect(DesktopPlanCatalog.free.features.first == "A small monthly allowance on fast models")
         #expect(DesktopPlanCatalog.pro.tagline == "For everyday power use.")
-        #expect(DesktopPlanCatalog.pro.features.first == "Access to every model (Claude Opus, GPT-5.5, Gemini Pro, GLM, Kimi)")
-        #expect(DesktopPlanCatalog.max20.features.count == 5)
-        #expect(!DesktopPlanCatalog.free.voice && DesktopPlanCatalog.pro.voice)
+        #expect(!DesktopPlanCatalog.free.voice && !DesktopPlanCatalog.lite.voice && DesktopPlanCatalog.pro.voice)
+        #expect(!DesktopPlanCatalog.lite.code && DesktopPlanCatalog.pro.code)
         #expect(DesktopPlanCatalog.plan(id: "pro") == DesktopPlanCatalog.pro)
-        #expect(DesktopPlanCatalog.questions.count == 4, "the Yearly question waits for annual plans")
+        #expect(DesktopPlanCatalog.plan(id: "TEAM") == nil)
+        #expect(DesktopPlanCatalog.questions.contains { $0.question == "What does yearly billing save?" })
+        for plan in DesktopPlanCatalog.everyday + DesktopPlanCatalog.moreUsage {
+            #expect(!DesktopUpgradeSheet.highlights(plan).isEmpty, "\(plan.id)")
+        }
     }
 
     @Test func pricesReadAsTheWebWritesThem() {
-        #expect(DesktopPlanCatalog.price(20) == "€20")
+        let english = Locale(identifier: "en_US")
+        #expect(DesktopPlanCatalog.price(cents: 2400, locale: english) == "€24")
+        #expect(DesktopPlanCatalog.price(cents: 1080, locale: english) == "€10.80")
         let renews = Date(timeIntervalSince1970: 1_791_331_200) // Oct 7, 2026
-        #expect(DesktopSettingsPlanPane.priceSentence(price: 20, renewsAt: renews, cancelAtPeriodEnd: false)
-            .hasPrefix("€20 a month, excluding VAT. Renews Oct"))
+        #expect(DesktopSettingsPlanPane.priceSentence(price: 20, renewsAt: renews, cancelAtPeriodEnd: false, locale: english)
+            .hasPrefix("€24 a month incl. VAT. Renews Oct"))
+        #expect(DesktopSettingsPlanPane.priceSentence(price: 9, renewsAt: nil, cancelAtPeriodEnd: false, locale: english)
+            == "€10.80 a month incl. VAT.")
         #expect(DesktopSettingsPlanPane.priceSentence(price: 0, renewsAt: nil, cancelAtPeriodEnd: false) == "Free.")
         #expect(DesktopSettingsPlanPane.priceSentence(price: 100, renewsAt: renews, cancelAtPeriodEnd: true)
             .contains("Access ends"))
+    }
+
+    @Test func theGateOpensOnlyForPlansThatIncludeTheFeature() {
+        let presenter = DesktopUpgradePresenter()
+        let gate = DesktopPlanGate()
+        #expect(gate.allows(.code), "open until a plan has been read")
+        gate.update(planID: "lite")
+        #expect(!gate.allows(.code) && !gate.allows(.agents) && !gate.allows(.research) && !gate.allows(.voice))
+        #expect(gate.allows(.webSearch))
+        #expect(!gate.require(.code, presenter: presenter))
+        #expect(presenter.reason == .code)
+        #expect(presenter.presented != nil)
+        presenter.dismiss()
+        #expect(presenter.reason == nil)
+        gate.update(planID: "free")
+        #expect(!gate.require(.webSearch, presenter: presenter))
+        #expect(presenter.reason?.minimumTier == .lite)
+        gate.update(planID: "PRO")
+        #expect(JunoPlanFeature.allCases.allSatisfy(gate.allows))
+        gate.update(planID: "STUDIO")
+        #expect(JunoPlanFeature.allCases.allSatisfy(gate.allows), "an unknown plan is not locked out")
+        gate.update(planID: nil)
+        #expect(gate.plan?.id == "STUDIO", "a failed read keeps the last plan")
+    }
+
+    @Test func checkoutUsesTheChosenInterval() {
+        let model = DesktopUpgradeModel(sender: nil, accountID: nil, currentPlanID: "max20")
+        #expect(model.interval == .month)
+        #expect(model.currentPlan.displayName == "Max ×10")
+        #expect(model.currentPlan.upgrades == [.ultra])
     }
 
     @Test func theMetersSpeakTheWebsWords() {

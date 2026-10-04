@@ -1365,7 +1365,7 @@ struct ChatComposer: View {
             case .research(let question):
                 // "Research this": the question, sent as Research — only over
                 // an empty draft, like a follow-up.
-                guard draftIsEmpty, researchAvailable else { return }
+                guard draftIsEmpty, researchAvailable, DesktopPlanGate.shared.require(.research) else { return }
                 deepResearch = true
                 prompt = question
                 submit()
@@ -1717,16 +1717,29 @@ struct ChatComposer: View {
             skillsLoading: skillLibrary?.isLoading == true,
             skillSlug: $skillSlug,
             manageSkills: manageSkills,
-            deepResearch: researchAvailable ? $deepResearch : nil,
+            deepResearch: researchAvailable ? gated($deepResearch, by: .research) : nil,
             // A private turn carries only its words: the private route takes
             // no web search and no local documents, so the rows are absent
             // rather than on and ignored.
-            webSearch: voiceActive || isPrivate ? nil : $webSearch,
+            webSearch: voiceActive || isPrivate ? nil : gated($webSearch, by: .webSearch),
             webSearchAvailable: webSearchAvailable,
             memory: voiceActive || memorySettings == nil ? nil : memoryBinding,
             memoryUnavailableReason: isPrivate ? "Incognito" : nil,
             documents: voiceActive || isPrivate || documentIndex == nil ? nil : $documentContext,
             documentCount: indexedDocumentCount
+        )
+    }
+
+    /// A `+` menu switch whose feature the plan may not include: the row
+    /// stays where it is, and turning it on opens the Upgrade sheet on the
+    /// plan that does instead (`DesktopPlanGate`).
+    private func gated(_ binding: Binding<Bool>, by feature: JunoPlanFeature) -> Binding<Bool> {
+        Binding(
+            get: { binding.wrappedValue && DesktopPlanGate.shared.allows(feature) },
+            set: { isOn in
+                if isOn, !DesktopPlanGate.shared.require(feature) { return }
+                binding.wrappedValue = isOn
+            }
         )
     }
 
@@ -2330,6 +2343,7 @@ struct ChatComposer: View {
     /// The disc's voice face: a spoken conversation, on whatever the chip
     /// shows — Auto before the catalog lands.
     private func startVoice() {
+        guard DesktopPlanGate.shared.require(.voice) else { return }
         openVoiceMode(selectedModelID)
     }
 

@@ -2889,5 +2889,6 @@ struct DesktopConversationView: View {
         }
         planReadAt = Date()
         plan = loaded
+        DesktopPlanGate.shared.update(planID: loaded.planID)
     }
 }

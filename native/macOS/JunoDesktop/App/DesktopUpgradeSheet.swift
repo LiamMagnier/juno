@@ -9,114 +9,111 @@ import SwiftUI
 
 // MARK: - Plans
 
-/// A Swift copy of `src/lib/plans.ts`: the names, prices, taglines, message
-/// caps and features the Upgrade sheet and Plan & usage draw.
-/// `DesktopPlanCatalogTests` pins it to the web's values.
+/// The Mac's names for the shared plan catalogue (`JunoPlanCatalog` in
+/// JunoCore, a Swift copy of `src/lib/plans.ts`): the names, prices, taglines
+/// and features the Upgrade sheet and Plan & usage draw.
 enum DesktopPlanCatalog {
-    struct Plan: Identifiable, Equatable {
-        let id: String
-        let name: String
-        /// Whole euros a month, excluding VAT.
-        let price: Int
-        let tagline: String
-        let monthlyMessages: Int?
-        let voice: Bool
-        let features: [String]
-        /// `planRank`.
-        let rank: Int
-    }
+    typealias Plan = JunoPlanInfo
 
-    static let free = Plan(
-        id: "FREE", name: "Free", price: 0,
-        tagline: "Create an account and look around.",
-        monthlyMessages: 0, voice: false,
-        features: [
-            "No messages included — chatting needs a paid plan",
-            "Import your ChatGPT or Claude history",
-            "Browse the app and read your conversations",
-            "Export everything you own, any time",
-        ],
-        rank: 0
-    )
+    static let free = JunoPlanCatalog.free
+    static let lite = JunoPlanCatalog.lite
+    static let pro = JunoPlanCatalog.pro
+    static let plus = JunoPlanCatalog.plus
+    static let max = JunoPlanCatalog.max
+    static let max20 = JunoPlanCatalog.max20
+    static let ultra = JunoPlanCatalog.ultra
+    static let owner = JunoPlanCatalog.owner
 
-    static let pro = Plan(
-        id: "PRO", name: "Pro", price: 20,
-        tagline: "For everyday power use.",
-        monthlyMessages: nil, voice: true,
-        features: [
-            "Access to every model (Claude Opus, GPT-5.5, Gemini Pro, GLM, Kimi)",
-            "Monthly usage limit based on tokens",
-            "Voice mode & voice-to-chat",
-            "Memory across conversations",
-            "Canvas, artifacts & file uploads",
-            "Priority streaming",
-        ],
-        rank: 1
-    )
+    static let all = JunoPlanCatalog.all
 
-    static let max = Plan(
-        id: "MAX", name: "Max ×5", price: 100,
-        tagline: "For professionals who live in Juno.",
-        monthlyMessages: nil, voice: true,
-        features: [
-            "Access to every model, at highest priority",
-            "5× more tokens than Pro every month",
-            "Voice mode & voice-to-chat",
-            "Memory across conversations",
-            "Canvas, artifacts & file uploads",
-            "Highest priority access",
-        ],
-        rank: 2
-    )
+    /// The everyday plans, the sheet's first group.
+    static let everyday: [Plan] = [lite, pro, plus]
+    /// The plans that buy more of Pro, the sheet's second group.
+    static let moreUsage: [Plan] = [max, max20, ultra]
 
-    static let max20 = Plan(
-        id: "MAX20", name: "Max ×10", price: 200,
-        tagline: "For teams of one who never stop.",
-        monthlyMessages: nil, voice: true,
-        features: [
-            "Access to every model, at highest priority",
-            "The most tokens of any plan — for your heaviest days",
-            "Voice mode & voice-to-chat",
-            "Memory across conversations",
-            "Canvas, artifacts & file uploads",
-        ],
-        rank: 3
-    )
-
-    static let owner = Plan(
-        id: "OWNER", name: "Owner", price: 0,
-        tagline: "Full, unlimited access to everything.",
-        monthlyMessages: nil, voice: true,
-        features: [
-            "Unlimited messages & tokens",
-            "Every model, incl. experimental",
-            "No rate limits",
-            "Uploads up to 1 GB",
-            "All current and future features",
-        ],
-        rank: 4
-    )
-
-    static let all = [free, pro, max, max20, owner]
-
+    /// A known plan for a server id, however it is cased; nil otherwise.
     static func plan(id: String?) -> Plan? {
-        guard let id else { return nil }
-        return all.first { $0.id == id.uppercased() }
+        JunoPlanTier(serverID: id)?.info
     }
 
-    /// The web's `formatEurWhole`: "€20".
-    static func price(_ euros: Int) -> String {
-        euros.formatted(.currency(code: "EUR").precision(.fractionLength(0)).locale(Locale(identifier: "en_US")))
+    /// A tax-included amount: "€24", "€10.80" — "24 €" in French.
+    static func price(cents: Int, locale: Locale = .current) -> String {
+        JunoPlanPrice.format(cents: cents, locale: locale)
     }
 
-    /// The FAQ, less the Yearly question, which the web shows only when annual
-    /// plans are for sale (the Mac offers Monthly only, P3-8).
+    /// The FAQ under the plans.
     static let questions: [(question: String, answer: String)] = [
-        ("What does a plan actually buy?", "A monthly budget of real model usage, metered at the providers' own list prices. Every reply shows its cost on the receipt. Light models stretch the budget; frontier models spend it faster — your call, visibly."),
-        ("Which models come with each plan?", "Every model needs a paid plan — Free is an account to import and browse, with no messages included. Every paid plan unlocks the whole lineup, flagships included; Max tiers add more monthly headroom and the highest priority."),
+        ("What does a plan actually buy?", "A monthly budget of real model usage, metered at the providers’ own list prices. Every reply shows its cost on the receipt. Light models stretch the budget; frontier models spend it faster — your call, visibly."),
+        ("Which models come with each plan?", "Free has a small monthly allowance on the fastest models. Lite opens the everyday models and web search. Pro and every plan above it open every model, Code, agents, deep research and voice; Plus, Max and Ultra add more monthly usage and priority."),
+        ("What does yearly billing save?", "A year costs ten months: two months free, billed once. You can switch between monthly and yearly from the billing portal."),
+        ("Is VAT included?", JunoPlanPrice.vatNote),
         ("Can I change or cancel later?", "Any time. Upgrades apply instantly. If you cancel, paid features stay on until the end of the billing period you have already paid for, and your data stays yours to export."),
-        ("What does fair use mean?", "Fair use keeps Juno fast for everyone. If your usage ever looks like it needs a conversation, we reach out first — nothing changes on your account without notice."),
     ]
+}
+
+// MARK: - Plan gate
+
+/// The account's plan as the Mac last read it, and the one gate every locked
+/// entry point asks: Code, agents, research, voice and web search.
+///
+/// Until a plan has been read the gate is open — the server enforces its own
+/// gates, and a paying customer must never meet an upgrade prompt because the
+/// usage route was slow. A plan id this build does not know is open too
+/// (`JunoAccountPlan.includes`).
+@MainActor
+@Observable
+final class DesktopPlanGate {
+    static let shared = DesktopPlanGate()
+
+    private(set) var plan: JunoAccountPlan?
+
+    init(plan: JunoAccountPlan? = nil) {
+        self.plan = plan
+    }
+
+    /// Records a plan read from the usage route.
+    func update(planID: String?) {
+        guard let planID else { return }
+        let next = JunoAccountPlan(serverID: planID)
+        if next != plan { plan = next }
+    }
+
+    func allows(_ feature: JunoPlanFeature) -> Bool {
+        plan?.includes(feature) ?? true
+    }
+
+    /// True when the plan includes `feature`; otherwise opens the Upgrade
+    /// sheet on the plan that does, and returns false.
+    @discardableResult
+    func require(_ feature: JunoPlanFeature, presenter: DesktopUpgradePresenter = .shared) -> Bool {
+        if allows(feature) { return true }
+        presenter.present(for: feature)
+        return false
+    }
+}
+
+/// A page whose feature the plan does not include: what it is, the plan that
+/// unlocks it, and the one button that opens the Upgrade sheet there. Shown in
+/// place of the page, never instead of the row that leads to it — a locked
+/// destination stays in the sidebar.
+struct DesktopPlanLockedPage: View {
+    let feature: JunoPlanFeature
+    let title: String
+    let icon: JunoIcon
+    var presenter: DesktopUpgradePresenter = .shared
+
+    var body: some View {
+        JunoEmptyState(
+            title: title,
+            message: feature.upgradePrompt,
+            icon: icon
+        ) {
+            Button(feature.upgradeAction) { presenter.present(for: feature) }
+                .buttonStyle(.junoProminent)
+                .contentShape(.rect)
+                .accessibilityIdentifier("juno.desktop.locked.\(feature.rawValue)")
+        }
+    }
 }
 
 // MARK: - Presenter
@@ -136,6 +133,9 @@ final class DesktopUpgradePresenter {
 
     /// Which window's sheet is up, or nil.
     var presented: Host?
+    /// The locked feature that opened the sheet, when one did: the sheet
+    /// leads with it and with the plan that unlocks it.
+    var reason: JunoPlanFeature?
 
     init() {}
 
@@ -145,11 +145,19 @@ final class DesktopUpgradePresenter {
     }
 
     func present(in host: Host) {
+        reason = nil
         presented = host
+    }
+
+    /// Opens the sheet because `feature` is locked on this plan.
+    func present(for feature: JunoPlanFeature) {
+        present(in: Self.keyWindowIsSettings ? .settings : .chat)
+        reason = feature
     }
 
     func dismiss() {
         presented = nil
+        reason = nil
     }
 
     func binding(for host: Host) -> Binding<Bool> {
@@ -185,7 +193,12 @@ private struct DesktopUpgradeSheetModifier: ViewModifier {
     func body(content: Content) -> some View {
         content.sheet(isPresented: presenter.binding(for: host)) {
             DesktopUpgradeSheet(
-                model: DesktopUpgradeModel(sender: sender, accountID: accountID),
+                model: DesktopUpgradeModel(
+                    sender: sender,
+                    accountID: accountID,
+                    currentPlanID: DesktopPlanGate.shared.plan?.id
+                ),
+                reason: presenter.reason,
                 done: { presenter.dismiss() }
             )
         }
@@ -213,18 +226,26 @@ final class DesktopUpgradeModel {
         self.currentPlanID = currentPlanID
     }
 
+    /// Monthly or yearly — what every price on the sheet and checkout use.
+    var interval: JunoBillingInterval = .month
+
+    var currentPlan: JunoAccountPlan { JunoAccountPlan(serverID: currentPlanID) }
+
     func load() async {
-        guard currentPlanID == nil, let sender, let accountID else { return }
-        currentPlanID = await NativeUsageClient(sender: sender).loadPlan(for: accountID)?.planID.uppercased()
+        guard let sender, let accountID else { return }
+        guard let id = await NativeUsageClient(sender: sender).loadPlan(for: accountID)?.planID else { return }
+        currentPlanID = id.uppercased()
+        DesktopPlanGate.shared.update(planID: id)
     }
 
     func checkout(_ plan: DesktopPlanCatalog.Plan) {
         guard let sender, let accountID, let billingPlan = NativeBillingClient.Plan(rawValue: plan.id) else { return }
+        let interval: NativeBillingClient.Interval = self.interval == .year ? .year : .month
         redirecting = plan.id
         failure = nil
         Task {
             do {
-                let url = try await NativeBillingClient(sender: sender).checkout(plan: billingPlan, for: accountID)
+                let url = try await NativeBillingClient(sender: sender).checkout(plan: billingPlan, interval: interval, for: accountID)
                 NSWorkspace.shared.open(url)
             } catch {
                 redirecting = nil
@@ -233,14 +254,17 @@ final class DesktopUpgradeModel {
         }
     }
 
-    func manage(from plan: DesktopPlanCatalog.Plan) {
+    /// The billing portal, where a subscription is changed, moved to yearly
+    /// or cancelled. A failure lands under `planID`'s row, or nowhere visible
+    /// but the footer's own button when nil.
+    func manage(planID: String? = nil) {
         guard let sender, let accountID else { return }
         failure = nil
         Task {
             do {
                 NSWorkspace.shared.open(try await NativeBillingClient(sender: sender).portal(for: accountID))
             } catch {
-                failure = (plan.id, NativeFailureMessage.presentable(error))
+                failure = (planID ?? "", NativeFailureMessage.presentable(error))
             }
         }
     }
@@ -248,43 +272,66 @@ final class DesktopUpgradeModel {
 
 // MARK: - Sheet
 
-/// Upgrade (`src/app/(app)/upgrade/page.tsx`) as a native sheet: Monthly only
-/// until the server says which plans and intervals are for sale (P3-8).
+/// Upgrade (`src/app/(app)/upgrade/page.tsx`) as a native sheet: the six plans
+/// for sale as a ledger in two groups — the everyday plans, then the ones that
+/// buy more of Pro — with Monthly and Yearly over both.
 ///
-/// Signature detail: the recommended card is the only one with a coral button,
-/// so the choice reads before the prices do.
+/// Calm on purpose (owner rules): no status pills or dots, two weights, the
+/// system sheet's own glass. The current plan is said in the header and on its
+/// own disabled button.
+///
+/// Signature detail: one coral button on the whole sheet — the plan the
+/// reader most likely wants (Pro, or the plan that unlocks the feature that
+/// opened the sheet) — so the choice reads before the prices do, and the
+/// prices sit in one right-aligned column of tabular figures so the ladder
+/// from Lite to Ultra reads as a single scale.
 struct DesktopUpgradeSheet: View {
     @State var model: DesktopUpgradeModel
+    var reason: JunoPlanFeature?
     let done: () -> Void
 
-    @State private var maxTier = "MAX"
+    /// Fixed for the snapshot tests; the reader's own otherwise.
+    var locale: Locale = .current
+    /// The sheet's height; a snapshot draws it taller to show every row.
+    var height: CGFloat = 680
 
-    private var current: String { model.currentPlanID ?? "FREE" }
+    private var current: JunoAccountPlan { model.currentPlan }
+
+    /// The plan that gets the sheet's one prominent button.
+    private var recommended: JunoPlanTier? {
+        let target = reason?.minimumTier ?? .pro
+        // Already there or above: nothing is pushed.
+        if current.isAtLeast(target) {
+            return current.upgrades.first
+        }
+        return target
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: JunoSpace.section) {
                     header
-                    HStack(alignment: .top, spacing: JunoSpace.regular) {
-                        card(DesktopPlanCatalog.free, recommended: false)
-                        card(DesktopPlanCatalog.pro, recommended: true)
-                        card(maxTier == "MAX20" ? DesktopPlanCatalog.max20 : DesktopPlanCatalog.max, recommended: false, isMax: true)
-                    }
-                    .fixedSize(horizontal: false, vertical: true)
-                    HStack(spacing: JunoSpace.tight) {
-                        JunoIconView(.info, size: 13)
-                        Text("Fair-use applies to keep Juno fast for everyone; we’ll always reach out before anything changes.")
-                    }
-                    .junoType(.label.weight(.regular))
-                    .foregroundStyle(Color.junoSecondaryInk)
+                    intervalRow
+                    group("Everyday", plans: DesktopPlanCatalog.everyday)
+                    group("More usage", note: "The same plan as Pro, with more of it every month.", plans: DesktopPlanCatalog.moreUsage)
+                    Text(JunoPlanPrice.vatNote)
+                        .junoType(.label.weight(.regular))
+                        .foregroundStyle(Color.junoSecondaryInk)
+                        .fixedSize(horizontal: false, vertical: true)
                     questions
                     terms
                 }
                 .padding(JunoSpace.region)
             }
             Divider()
-            HStack {
+            HStack(spacing: JunoSpace.snug) {
+                if current.isPaid {
+                    Button("Manage Billing") { model.manage() }
+                        .buttonStyle(.bordered)
+                        .tint(nil)
+                        .contentShape(.rect)
+                }
                 Spacer()
                 Button("Done", action: done)
                     .buttonStyle(.bordered)
@@ -295,121 +342,157 @@ struct DesktopUpgradeSheet: View {
             .padding(.horizontal, JunoSpace.section)
             .padding(.vertical, JunoSpace.regular)
         }
-        .frame(width: 760, height: 640)
+        .frame(width: 720, height: height)
         .presentationSizing(.page)
-        .task {
-            await model.load()
-            if model.currentPlanID == "MAX20" { maxTier = "MAX20" }
-        }
+        .task { await model.load() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
             model.redirecting = nil
         }
     }
 
-    private var currentName: String {
-        current == "OWNER" ? "Owner" : (DesktopPlanCatalog.plan(id: current)?.name ?? "Free")
-    }
+    // MARK: Header
 
     private var header: some View {
         VStack(alignment: .leading, spacing: JunoSpace.snug) {
-            Text("Upgrade")
+            Text(reason.map { "\($0.title) comes with \($0.minimumTier.info.name)" } ?? "Plans")
                 .junoType(.pageTitle)
                 .foregroundStyle(Color.junoForeground)
                 .accessibilityAddTraits(.isHeader)
-            Text("You’re on the \(Text(currentName).foregroundStyle(Color.junoForeground)) plan. Every paid plan unlocks all models with a monthly limit based on tokens — upgrade any time, changes apply instantly.")
+            Text(headerSentence)
                 .junoType(.body)
                 .foregroundStyle(Color.junoSecondaryInk)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
 
-    private func card(_ plan: DesktopPlanCatalog.Plan, recommended: Bool, isMax: Bool = false) -> some View {
-        let isCurrent = plan.id == current
-        return VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .center, spacing: JunoSpace.snug) {
-                Text(isMax ? "Max" : plan.name)
-                    .junoType(JunoType.bodyLarge.weight(.semibold))
+    private var headerSentence: AttributedString {
+        var sentence = AttributedString("You’re on ")
+        var name = AttributedString(current.displayName)
+        name.foregroundColor = Color.junoForeground
+        sentence += name
+        sentence += AttributedString(". ")
+        if let reason {
+            sentence += AttributedString("\(reason.upgradePrompt) Upgrades apply the moment checkout completes.")
+        } else {
+            sentence += AttributedString("Every plan is a monthly budget of real model usage. Upgrades apply the moment checkout completes.")
+        }
+        return sentence
+    }
+
+    private var intervalRow: some View {
+        HStack(spacing: JunoSpace.cozy) {
+            JunoSegmented(
+                options: [JunoSegmentedOption(JunoBillingInterval.month, "Monthly"), JunoSegmentedOption(JunoBillingInterval.year, "Yearly")],
+                selection: $model.interval,
+                accessibilityLabel: "Billing"
+            )
+            .fixedSize()
+            Text(JunoPlanPrice.annualOffer.prefix(1).uppercased() + JunoPlanPrice.annualOffer.dropFirst() + " on yearly billing")
+                .junoType(.label.weight(.regular))
+                .foregroundStyle(model.interval == .year ? Color.junoForeground : Color.junoSecondaryInk)
+        }
+    }
+
+    // MARK: Groups
+
+    private func group(_ title: String, note: String? = nil, plans: [DesktopPlanCatalog.Plan]) -> some View {
+        VStack(alignment: .leading, spacing: JunoSpace.snug) {
+            HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
+                Text(title)
+                    .junoType(.heading)
                     .foregroundStyle(Color.junoForeground)
-                if isCurrent {
-                    pill("Current plan")
-                } else if recommended {
-                    pill("Recommended")
-                }
-                Spacer(minLength: 0)
-                if isMax {
-                    JunoSegmented(
-                        options: [JunoSegmentedOption("MAX", "×5"), JunoSegmentedOption("MAX20", "×10")],
-                        selection: $maxTier,
-                        accessibilityLabel: "Max tier"
-                    )
-                    .fixedSize()
+                    .accessibilityAddTraits(.isHeader)
+                if let note {
+                    Text(note)
+                        .junoType(.label.weight(.regular))
+                        .foregroundStyle(Color.junoSecondaryInk)
                 }
             }
-            .frame(minHeight: 32)
-            Text(plan.tagline)
-                .junoType(.ui)
-                .foregroundStyle(Color.junoSecondaryInk)
-                // Two lines reserved, so the three prices sit on one line.
-                .lineLimit(2)
-                .frame(height: 40, alignment: .topLeading)
-                .padding(.top, JunoSpace.micro)
-            HStack(alignment: .firstTextBaseline, spacing: JunoSpace.tight) {
-                Text("\(plan.price) €")
-                    .junoFont(size: 26, relativeTo: .largeTitle, weight: .semibold)
-                    .monospacedDigit()
-                    .foregroundStyle(Color.junoForeground)
-                Text(plan.id == "FREE" ? "/ mo" : "excl. VAT / mo")
-                    .junoType(.label.weight(.regular))
-                    .foregroundStyle(Color.junoSecondaryInk)
-            }
-            .padding(.top, JunoSpace.cozy)
-            action(plan, recommended: recommended)
-                .padding(.top, JunoSpace.cozy)
-            if let failure = model.failure, failure.planID == plan.id {
-                Text(failure.message)
-                    .junoType(.label.weight(.regular))
-                    .foregroundStyle(Color.junoDestructiveInk)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, JunoSpace.snug)
-            }
-            Divider()
-                .padding(.vertical, JunoSpace.regular)
-            VStack(alignment: .leading, spacing: JunoSpace.snug) {
-                ForEach(plan.features, id: \.self) { feature in
-                    HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
-                        JunoIconView(.check, size: 13)
-                            .foregroundStyle(Color.junoSecondaryInk)
-                        Text(feature)
-                            .junoType(.label.weight(.regular))
-                            .foregroundStyle(Color.junoForeground)
-                            .fixedSize(horizontal: false, vertical: true)
+            VStack(spacing: 0) {
+                ForEach(plans) { plan in
+                    row(plan)
+                    if plan.id != plans.last?.id {
+                        Divider().padding(.horizontal, JunoSpace.roomy)
                     }
                 }
             }
-            Spacer(minLength: 0)
+            .background(Color.junoCard, in: RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
+                    .strokeBorder(Color.junoBorder, lineWidth: 1)
+            )
         }
-        .padding(JunoSpace.roomy)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(Color.junoCard, in: RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
-                .strokeBorder(Color.junoBorder, lineWidth: 1)
-        )
     }
 
-    private func pill(_ text: String) -> some View {
-        Text(text)
-            .junoType(.label)
-            .foregroundStyle(Color.junoSecondaryInk)
-            .padding(.horizontal, JunoSpace.snug)
-            .padding(.vertical, JunoSpace.micro)
-            .background(Color.junoSecondary, in: Capsule())
+    private func row(_ plan: DesktopPlanCatalog.Plan) -> some View {
+        HStack(alignment: .center, spacing: JunoSpace.section) {
+            VStack(alignment: .leading, spacing: JunoSpace.micro) {
+                Text(plan.name)
+                    .junoType(JunoType.bodyLarge.weight(.semibold))
+                    .foregroundStyle(Color.junoForeground)
+                Text(plan.tagline)
+                    .junoType(.ui)
+                    .foregroundStyle(Color.junoSecondaryInk)
+                Text(Self.highlights(plan))
+                    .junoType(.label.weight(.regular))
+                    .foregroundStyle(Color.junoSecondaryInk)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, JunoSpace.micro)
+                if let failure = model.failure, failure.planID == plan.id {
+                    Text(failure.message)
+                        .junoType(.label.weight(.regular))
+                        .foregroundStyle(Color.junoDestructiveInk)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, JunoSpace.micro)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            price(plan)
+                .frame(width: 170, alignment: .trailing)
+            action(plan)
+                .frame(width: 148)
+        }
+        .padding(.horizontal, JunoSpace.roomy)
+        .padding(.vertical, JunoSpace.regular)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("juno.desktop.upgrade.\(plan.id.lowercased())")
+    }
+
+    /// The row's third line: what this plan adds, in a few words.
+    static func highlights(_ plan: DesktopPlanCatalog.Plan) -> String {
+        switch plan.tier {
+        case .lite: "Everyday models · Web search"
+        case .pro: "Every model · Code, agents, research"
+        case .plus: "2.5× Pro’s usage · Higher priority"
+        case .max: "5× Pro’s usage · Highest priority"
+        case .max20: "10× Pro’s usage · Highest priority"
+        case .ultra: "25× Pro’s usage · Uploads up to 200 MB"
+        case .free, .owner: plan.features.prefix(2).joined(separator: " · ")
+        }
+    }
+
+    private func price(_ plan: DesktopPlanCatalog.Plan) -> some View {
+        let yearly = model.interval == .year
+        let amount = yearly ? plan.price.yearlyPerMonth(locale: locale) : plan.price.monthly(locale: locale)
+        return VStack(alignment: .trailing, spacing: JunoSpace.micro) {
+            Text(amount)
+                .junoFont(size: 22, relativeTo: .title, weight: .semibold)
+                .monospacedDigit()
+                .foregroundStyle(Color.junoForeground)
+                .contentTransition(.numericText())
+            Text(yearly ? "a month · \(plan.price.yearly(locale: locale)) a year" : "a month")
+                .junoType(.label.weight(.regular))
+                .monospacedDigit()
+                .foregroundStyle(Color.junoSecondaryInk)
+        }
+        .animation(JunoMotion.fast, value: yearly)
+        .accessibilityElement(children: .combine)
     }
 
     @ViewBuilder
-    private func action(_ plan: DesktopPlanCatalog.Plan, recommended: Bool) -> some View {
-        let currentRank = DesktopPlanCatalog.plan(id: current)?.rank ?? 0
-        if plan.id == current {
+    private func action(_ plan: DesktopPlanCatalog.Plan) -> some View {
+        let tier = plan.tier
+        if current.tier == tier {
             Button {} label: {
                 Text("Current Plan").frame(maxWidth: .infinity)
             }
@@ -417,16 +500,9 @@ struct DesktopUpgradeSheet: View {
             .tint(nil)
             .disabled(true)
             .contentShape(.rect)
-        } else if plan.id == "FREE" {
-            Button { model.manage(from: plan) } label: {
-                Text("Downgrade").frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.bordered)
-            .tint(nil)
-            .contentShape(.rect)
-        } else if plan.rank > currentRank {
-            let label = model.redirecting == plan.id ? "Redirecting…" : "Upgrade to \(plan.name)"
-            if recommended {
+        } else if current.upgrades.contains(tier) {
+            let label = model.redirecting == plan.id ? "Redirecting…" : "Upgrade"
+            if tier == recommended {
                 Button { model.checkout(plan) } label: {
                     Text(label).frame(maxWidth: .infinity)
                 }
@@ -443,8 +519,10 @@ struct DesktopUpgradeSheet: View {
                 .contentShape(.rect)
             }
         } else {
-            Button { model.manage(from: plan) } label: {
-                Text("Manage").frame(maxWidth: .infinity)
+            // Below the current plan, or any plan when this build does not
+            // know the current one: the portal changes a subscription.
+            Button { model.manage(planID: plan.id) } label: {
+                Text("Switch").frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)
             .tint(nil)
@@ -452,15 +530,14 @@ struct DesktopUpgradeSheet: View {
         }
     }
 
+    // MARK: Questions
+
     private var questions: some View {
         VStack(alignment: .leading, spacing: JunoSpace.snug) {
             Text("Questions")
                 .junoType(.heading)
                 .foregroundStyle(Color.junoForeground)
                 .accessibilityAddTraits(.isHeader)
-            Text("The short version of the terms, before you agree to them.")
-                .junoType(.body)
-                .foregroundStyle(Color.junoSecondaryInk)
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(DesktopPlanCatalog.questions, id: \.question) { entry in
                     DisclosureGroup {
@@ -471,7 +548,7 @@ struct DesktopUpgradeSheet: View {
                             .padding(.vertical, JunoSpace.tight)
                     } label: {
                         Text(entry.question)
-                            .junoType(JunoType.ui.weight(.medium))
+                            .junoType(.ui)
                             .foregroundStyle(Color.junoForeground)
                     }
                     .padding(.horizontal, JunoSpace.cozy)
@@ -487,10 +564,11 @@ struct DesktopUpgradeSheet: View {
 
     private var terms: some View {
         let base = JunoBackend.productionURLString
-        let markdown = "By subscribing you accept the [terms of service](\(base)/legal/cgu) and the [privacy policy](\(base)/legal/confidentialite)."
+        let markdown = "By subscribing you accept the [terms of service](\(base)/legal/cgu) and the [privacy policy](\(base)/legal/confidentialite), and ask for your subscription to start at once: the 14-day right of withdrawal ends when it does."
         return Text((try? AttributedString(markdown: markdown)) ?? AttributedString(markdown))
             .junoType(.label.weight(.regular))
             .foregroundStyle(Color.junoSecondaryInk)
             .tint(Color.junoAccentInk)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
