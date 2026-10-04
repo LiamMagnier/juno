@@ -83,6 +83,8 @@ import { emptyTurnOutcome, type TurnOutcome } from "./finalize";
 import type { TurnTraceFinish, TurnTraceRecorder } from "./trace";
 import { traceUsage } from "./trace";
 import type { TurnUser } from "./types";
+import { recordToolFees } from "@/lib/tools/metering";
+import { recordSpend } from "@/lib/spend";
 
 /*
  * Pipeline stage — runTurn: the saved turn's generation, from the spend hold
@@ -1088,6 +1090,11 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
           finishReason: outcome.finishReason,
           costMicroUsd: outcome.costMicroUsd,
         });
+      }
+      // Paid search engines this turn called, billed once whatever the turn's
+      // ending (a failed turn that searched still searched).
+      if (alevrSearchTurn) {
+        await recordToolFees(alevrSearchTurn.fees, recordSpend, { userId: user.id, source: legacyClient }).catch(() => 0);
       }
       trace.finish(traceEnd ?? { finishReason: "error", outcome: "failed", failureCode: INTERNAL_ERROR_FAILURE_CODE });
       toolWatch.releaseAll();

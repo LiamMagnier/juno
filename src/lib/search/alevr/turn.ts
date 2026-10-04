@@ -33,6 +33,8 @@ import type { LazyUrlLedger, PrivateSpanSet, TurnWebLimits } from "@/lib/web/typ
 import type { ReasoningEffort } from "@/types/chat";
 import type { ClientSource } from "@/types/chat";
 import type { ChatSourceOrigin } from "@/types/run";
+import { ToolFeeAccumulator } from "@/lib/tools/metering";
+import type { CanonicalToolId } from "@/types/run";
 
 /** The Alevr Search tool family, in offer order. */
 export const ALEVR_SEARCH_TOOL_IDS = ["web_search", "search_news", "web_fetch", "find_in_page"] as const;
@@ -64,6 +66,12 @@ export interface AlevrSearchTurn {
   ledger: LazyUrlLedger;
   /** Sources the tools produced since the last drain, with their origin. */
   drainSources(): Array<{ sources: ClientSource[]; origin: ChatSourceOrigin }>;
+  /**
+   * The paid engine calls this turn made, for `recordToolFees`. Each search
+   * outcome carries its fee; nothing used to collect it, so paid discovery
+   * was never billed to the person who asked.
+   */
+  fees: ToolFeeAccumulator;
 }
 
 export function createAlevrSearchTurn(input: AlevrSearchTurnInput): AlevrSearchTurn {
@@ -90,6 +98,7 @@ export function createAlevrSearchTurn(input: AlevrSearchTurnInput): AlevrSearchT
   // consistent within the turn; the route's accumulator persists the sources.
   const registry = new SourceRegistry();
   const pending: Array<{ sources: ClientSource[]; origin: ChatSourceOrigin }> = [];
+  const fees = new ToolFeeAccumulator();
 
   const bind = (spec: ToolSpec): ToolSpec => ({
     ...spec,
@@ -104,6 +113,7 @@ export function createAlevrSearchTurn(input: AlevrSearchTurnInput): AlevrSearchT
         taint,
         limits,
       });
+      if (outcome.feeMicroUsd) fees.add(spec.id as CanonicalToolId, outcome.feeMicroUsd);
       if (outcome.status === "succeeded" && outcome.sources?.length) {
         const origin: ChatSourceOrigin = spec.id === "web_search" || spec.id === "search_news" ? "juno_search" : "juno_fetch";
         pending.push({ sources: outcome.sources, origin });
@@ -119,5 +129,6 @@ export function createAlevrSearchTurn(input: AlevrSearchTurnInput): AlevrSearchT
     limits,
     ledger,
     drainSources: () => pending.splice(0),
+    fees,
   };
 }
