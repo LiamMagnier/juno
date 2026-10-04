@@ -20,6 +20,9 @@
 import { prismaUnguarded } from "@/lib/db";
 import { DREAM_ACCOUNTS_PER_TICK, DREAM_INTERVAL_MS } from "@/lib/memory-dreaming";
 import { dreamForAccount, findAccountsToDream } from "@/lib/memory-dreamer";
+import { pollBatchJobs, prepareBatchDreaming } from "@/lib/batch/dream";
+import { accountsWithEndedBatches } from "@/lib/batch/store";
+import { batchApiEnabled } from "@/lib/batch/plan";
 
 let running = false;
 
@@ -28,16 +31,42 @@ async function tick(): Promise<boolean> {
   if (running) return true;
   running = true;
   try {
-    const accounts = await findAccountsToDream(DREAM_ACCOUNTS_PER_TICK);
+    /*
+     * Batch API mode (BATCH_API_ENABLED, default on; src/lib/batch/dream.ts):
+     * first collect what finished since the last tick — billed at the batch
+     * price as it is downloaded — then visit the accounts with answers waiting
+     * as well as those with history to read. A poll failure is logged and the
+     * tick goes on; batches are simply polled again next time.
+     */
+    const batching = batchApiEnabled();
+    if (batching) {
+      const polled = await pollBatchJobs().catch((error) => {
+        console.error("[memory-dreamer] batch poll failed", error instanceof Error ? error.message : String(error));
+        return null;
+      });
+      if (polled && (polled.ended > 0 || polled.failed > 0)) {
+        console.log(`[memory-dreamer] batches ended=${polled.ended} failed=${polled.failed} running=${polled.stillRunning}`);
+      }
+    }
+    const waiting = batching ? await accountsWithEndedBatches(DREAM_ACCOUNTS_PER_TICK).catch(() => []) : [];
+    const accounts = [...new Set([...waiting, ...(await findAccountsToDream(DREAM_ACCOUNTS_PER_TICK))])];
     for (const userId of accounts) {
       try {
-        const outcome = await dreamForAccount(userId);
+        const outcome = await dreamForAccount(userId, new Date(), batching ? { batching: (id) => prepareBatchDreaming(id) } : {});
         if (outcome.skipped) continue;
-        if (outcome.processedConversations > 0 || outcome.expired > 0 || outcome.rereadQueued > 0 || outcome.rejudged > 0) {
+        if (
+          outcome.processedConversations > 0 ||
+          outcome.expired > 0 ||
+          outcome.rereadQueued > 0 ||
+          outcome.rejudged > 0 ||
+          (outcome.batchQueued ?? 0) > 0
+        ) {
           console.log(
             `[memory-dreamer] account=${userId} read=${outcome.processedConversations} ` +
               `learned=${outcome.created} expired=${outcome.expired} remaining=${outcome.remaining} ` +
-              `reread_queued=${outcome.rereadQueued} rejudged=${outcome.rejudged}`
+              `reread_queued=${outcome.rereadQueued} rejudged=${outcome.rejudged}` +
+              (outcome.batchQueued ? ` batch_queued=${outcome.batchQueued}` : "") +
+              (outcome.batchFellBack ? " batch_fell_back=1" : "")
           );
         }
       } catch (error) {

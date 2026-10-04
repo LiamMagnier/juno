@@ -168,7 +168,25 @@ async function run(req: AdapterRequest, responses: Ev[][], runTools?: ToolRoundR
 }
 
 type Msg = { role: string; content: unknown };
-const messagesOf = (body: Record<string, unknown>) => body.messages as Msg[];
+/**
+ * The request's messages without the conversation prompt-cache marker, which
+ * rides on whichever block is newest (src/lib/anthropic-cache.ts, pinned by
+ * tests/anthropic-cache-breakpoint.test.ts). `markerOf` reads it back.
+ */
+const messagesOf = (body: Record<string, unknown>) =>
+  (body.messages as Msg[]).map((message) =>
+    typeof message.content === "string"
+      ? message
+      : {
+          ...message,
+          content: (message.content as Array<Record<string, unknown>>).map(({ cache_control: _marker, ...block }) => block),
+        },
+  ) as Msg[];
+const markerOf = (body: Record<string, unknown>) => {
+  const raw = body.messages as Array<{ content: unknown }>;
+  const content = raw[raw.length - 1]?.content;
+  return Array.isArray(content) ? (content[content.length - 1] as { cache_control?: unknown }).cache_control : undefined;
+};
 const last = <T>(list: T[]): T => list[list.length - 1];
 const ofType = <T extends LlmEvent["type"]>(events: LlmEvent[], type: T) =>
   events.filter((e): e is Extract<LlmEvent, { type: T }> => e.type === type);
@@ -204,6 +222,9 @@ test("a tool round: raw arguments to the runner, one tool_result message back, t
   // One user message of tool_result blocks and nothing else, answering the provider id.
   const followUp = last(messagesOf(bodies[1]));
   assert.equal(followUp.role, "user");
+  // The conversation cache marker moved onto the newest tool result, so the
+  // next round reads this one's prefix from cache.
+  assert.deepEqual(markerOf(bodies[1]), { type: "ephemeral" });
   assert.deepEqual(followUp.content, [
     { type: "tool_result", tool_use_id: "toolu_1", content: wrapUntrusted("GitHub", "result of github__list_issues") },
   ]);

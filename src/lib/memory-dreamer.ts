@@ -12,7 +12,9 @@ import {
   sweepExpiredMemories,
 } from "@/lib/memory";
 import { EXTRACTOR_VERSION } from "@/lib/memory-extraction";
+import type { UtilityLlm } from "@/lib/memory";
 import {
+  DREAM_BATCH_CONVERSATIONS_PER_ACCOUNT,
   DREAM_CONVERSATIONS_PER_ACCOUNT,
   DREAM_PROJECT_SUMMARIES_PER_ACCOUNT,
   DREAM_REREADS_PER_ACCOUNT,
@@ -76,6 +78,19 @@ export interface DreamOutcome {
   rereadQueued: number;
   /** Beliefs the re-judge pass corrected. */
   rejudged: number;
+  /** Prompts queued for the next provider batch (Batch API mode only). */
+  batchQueued?: number;
+  /** A batch submission failed and the pass was re-run synchronously. */
+  batchFellBack?: boolean;
+}
+
+/**
+ * The Batch API seam (src/lib/batch/dream.ts): a model layer for the pass and
+ * a hook to run after it. Optional — absent, the pass runs exactly as before.
+ */
+export interface DreamBatching {
+  llm: UtilityLlm;
+  finish(): Promise<{ submitted: number; queued: number; submitFailed: boolean }>;
 }
 
 /**
@@ -92,7 +107,14 @@ export interface DreamOutcome {
  * uses — so the background-provider policy, the sensitive-subject gate, the
  * block-list and the spend ledger all apply exactly as they do in a live chat.
  */
-export async function dreamForAccount(userId: string, now: Date = new Date()): Promise<DreamOutcome> {
+export async function dreamForAccount(
+  userId: string,
+  now: Date = new Date(),
+  options: {
+    /** Prepares the Batch API layer for this account, after eligibility passed. Null/absent: synchronous. */
+    batching?: (userId: string) => Promise<DreamBatching | null>;
+  } = {}
+): Promise<DreamOutcome> {
   const outcome: DreamOutcome = {
     userId,
     skipped: null,
@@ -130,7 +152,25 @@ export async function dreamForAccount(userId: string, now: Date = new Date()): P
   if (!eligibility.ok) return { ...outcome, skipped: eligibility.reason };
 
   outcome.expired = await sweepExpiredMemories(userId, now);
-  const pass = await backfillMemories({ userId, maxConversations: DREAM_CONVERSATIONS_PER_ACCOUNT });
+  /*
+   * Batch API mode (BATCH_API_ENABLED, default on): the pass's model calls are
+   * answered from batches that have ended, and whatever has no answer yet is
+   * queued for the next batch at half price — see src/lib/batch/plan.ts. A
+   * failure to prepare is a synchronous pass, never a skipped one.
+   */
+  const batching = options.batching
+    ? await options.batching(userId).catch((error) => {
+        console.error("[memory-dreamer] batch layer unavailable:", error instanceof Error ? error.message : String(error));
+        return null;
+      })
+    : null;
+  const llm = batching?.llm;
+  const pass = await backfillMemories({
+    userId,
+    maxConversations: batching ? DREAM_BATCH_CONVERSATIONS_PER_ACCOUNT : DREAM_CONVERSATIONS_PER_ACCOUNT,
+    llm,
+    continueOnUnavailable: !!batching,
+  });
   outcome.processedConversations = pass.processedConversations;
   outcome.created = pass.created;
   outcome.remaining = pass.remaining;
@@ -154,14 +194,32 @@ export async function dreamForAccount(userId: string, now: Date = new Date()): P
   // is safe to call on every productive pass. `null` provider: there is no
   // conversation behind a dream, so the account's own default model decides
   // what `same_provider` means — the rule consolidateMemories documents.
-  if (outcome.created > 0 || outcome.expired > 0 || outcome.rejudged > 0) {
-    await maybeConsolidate(userId, null).catch(() => {});
+  // In Batch API mode the summary rebuild is offered on every pass: its answer
+  // arrives a pass or more after it was queued, when nothing new may have been
+  // learned, and maybeConsolidate's own "did anything change" test keeps an
+  // unchanged account to four indexed reads and no call.
+  if (batching || outcome.created > 0 || outcome.expired > 0 || outcome.rejudged > 0) {
+    await maybeConsolidate(userId, null, llm).catch(() => {});
     // History distilled from a project's chats lands in that project, so its
     // summary is the one that moved. Bounded — each rebuild is a model call —
     // and each project runs the same "did anything change" test first, so an
     // untouched project costs four indexed reads and no call.
     for (const projectId of await projectsWithMemory(userId, DREAM_PROJECT_SUMMARIES_PER_ACCOUNT)) {
-      await maybeConsolidateProject(userId, projectId, null).catch(() => {});
+      await maybeConsolidateProject(userId, projectId, null, llm).catch(() => {});
+    }
+  }
+
+  if (batching) {
+    const finished = await batching.finish().catch((error) => {
+      console.error("[memory-dreamer] batch finish failed:", error instanceof Error ? error.message : String(error));
+      return { submitted: 0, queued: 0, submitFailed: true };
+    });
+    outcome.batchQueued = finished.queued;
+    if (finished.submitFailed) {
+      // The provider would not take the batch: do this tick's work the
+      // ordinary way rather than leave it for a batch that will not come.
+      const fallback = await dreamForAccount(userId, now);
+      return { ...fallback, expired: outcome.expired + fallback.expired, batchFellBack: true };
     }
   }
   return outcome;

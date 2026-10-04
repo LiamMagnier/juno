@@ -239,6 +239,17 @@ export type UtilityLlm = (opts: {
   userMsg: string;
   maxTokens: number;
   label: string;
+  /*
+   * Everything else the caller gave runUtilityPrompt, passed through as is
+   * (it hands its whole options object to the layer). A layer that falls back
+   * to the real provider walk — the Batch API layer does, for work it cannot
+   * batch — needs them to stay inside the caller's policy and ledger.
+   */
+  userId?: string | null;
+  policy?: BackgroundProviderPolicy;
+  conversationProvider?: string | null;
+  purpose?: BackgroundPurpose;
+  parse?: (text: string) => unknown;
 }) => Promise<string | null>;
 
 export async function runUtilityPrompt<T>(opts: {
@@ -279,6 +290,12 @@ export async function runUtilityPrompt<T>(opts: {
   purpose?: BackgroundPurpose;
   /** Receives what was decided, for the audit trail. Never given content. */
   onDecision?: (record: BackgroundProcessingRecord) => void;
+  /**
+   * Walk the eligible models cheapest first (by cost tier, fastest within a
+   * tier) instead of fastest first. For work where a cost-1 model is as good
+   * as any — summarising history — and that runs often enough to matter.
+   */
+  cheapestFirst?: boolean;
 }): Promise<{
   result: T | null;
   transient: boolean;
@@ -323,7 +340,9 @@ export async function runUtilityPrompt<T>(opts: {
   const decision = resolveBackgroundCandidates({
     policy: opts.policy ?? { mode: DEFAULT_BACKGROUND_PROVIDER_MODE },
     conversationProvider: opts.conversationProvider,
-    candidates: utilityModelCandidates(),
+    candidates: opts.cheapestFirst
+      ? [...utilityModelCandidates()].sort((a, b) => a.cost - b.cost)
+      : utilityModelCandidates(),
   });
 
   if (decision.candidates.length === 0) {
@@ -1366,6 +1385,8 @@ export async function backfillMemories(opts: {
   userId: string;
   maxConversations?: number;
   llm?: UtilityLlm;
+  /** Batch API mode: a queued prompt returns nothing by design, so keep going (see the loop). */
+  continueOnUnavailable?: boolean;
 }): Promise<{ processedConversations: number; created: number; remaining: number }> {
   const batch = (await pendingBackfill(opts.userId)).slice(0, opts.maxConversations ?? 2);
   let created = 0;
@@ -1382,7 +1403,13 @@ export async function backfillMemories(opts: {
       llm: opts.llm,
     });
     created += res.created;
-    if (res.chunksProcessed === 0 && !res.done) break; // model unavailable — stop the batch
+    if (res.chunksProcessed === 0 && !res.done) {
+      // The Batch API layer returns nothing for every prompt it QUEUES, and
+      // should queue one chunk from each pending conversation, not stop at
+      // the first. Everyone else: nothing back means no model is answering.
+      if (opts.continueOnUnavailable) continue;
+      break; // model unavailable — stop the batch
+    }
     processed++;
   }
   const remaining = (await pendingBackfill(opts.userId)).length;
@@ -1950,7 +1977,12 @@ export async function consolidateWithFallback(
  * business (maybeConsolidateProject); counting it here rebuilt the account
  * summary — an LLM call — for a change it would never contain.
  */
-export async function maybeConsolidate(userId: string, conversationProvider: string | null): Promise<void> {
+export async function maybeConsolidate(
+  userId: string,
+  conversationProvider: string | null,
+  /** The dreamer's Batch API layer; absent everywhere else. */
+  llm?: UtilityLlm
+): Promise<void> {
   const now = new Date();
   const [count, summary, forgottenAt, changes] = await Promise.all([
     prisma.memoryEntry.count({ where: { userId, kind: "FACT", projectId: null } }),
@@ -1972,7 +2004,7 @@ export async function maybeConsolidate(userId: string, conversationProvider: str
   // The CONVERSATION's provider, not the background model's — see
   // consolidateMemories. Passing the model that is about to do the work would
   // make `same_provider` a tautology.
-  await consolidateMemories({ userId, conversationProvider }).catch(() => {});
+  await consolidateMemories({ userId, conversationProvider, llm }).catch(() => {});
 }
 
 // ---------------------------------------------------------------------------
@@ -2133,7 +2165,9 @@ export async function consolidateProjectMemory(opts: {
 export async function maybeConsolidateProject(
   userId: string,
   projectId: string,
-  conversationProvider: string | null
+  conversationProvider: string | null,
+  /** The dreamer's Batch API layer; absent everywhere else. */
+  llm?: UtilityLlm
 ): Promise<void> {
   const now = new Date();
   const [count, summary, forgottenAt, changes] = await Promise.all([
@@ -2154,7 +2188,7 @@ export async function maybeConsolidateProject(
   });
   if (decision !== "rebuild") return;
   await reconcileMemoryTimeline(userId, now).catch(() => {});
-  await consolidateProjectMemory({ userId, projectId, conversationProvider }).catch(() => {});
+  await consolidateProjectMemory({ userId, projectId, conversationProvider, llm }).catch(() => {});
 }
 
 /**

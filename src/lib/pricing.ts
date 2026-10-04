@@ -387,8 +387,39 @@ export function tokenRate(model: ModelInfo, fastMode = false): TokenRate {
       cacheWrite1h: input * 2,
     };
   }
-  if (model.provider === "google" && /3\.[5678]-flash/.test(model.providerModel)) {
+  if (model.provider === "google") {
+    // Every Gemini text model Juno serves prices a cached token at 10% of its
+    // input rate (ai.google.dev/gemini-api/docs/pricing, read 2026-10-04:
+    // 3.1 Pro $0.20 on $2, 3.5 Flash $0.15 on $1.50, 2.5 Pro $0.125 on $1.25,
+    // 2.5 Flash-Lite $0.01 on $0.10). Only the 3.5-3.8 Flash rows used to get
+    // it; Pro, Flash-Lite and 3 Flash fell through to the 0.25x default and a
+    // reader was billed 2.5x the real price on every implicit-cache hit.
+    // Implicit caching has no storage fee, so writes cost plain input.
     return { input, output, cacheRead: input * 0.1, cacheWrite: input, cacheWrite5m: input, cacheWrite1h: input };
+  }
+  if (model.provider === "deepseek") {
+    // api-docs.deepseek.com/quick_start/pricing (2026-10-04): a cache hit is
+    // $0.003 on $0.15 for V4.1 Flash (2%) and $0.022 on $0.66 for V4 Pro
+    // (3.3%). The 0.25x fallback billed a Flash cache hit at 12x its price,
+    // on the longest conversations, because those are the ones that cache.
+    // The legacy V4 Flash ids share the Flash ratio. No write premium.
+    const pm = model.providerModel.toLowerCase();
+    return {
+      input,
+      output,
+      cacheRead: input * (pm.includes("v4-pro") ? 0.0333 : 0.02),
+      cacheWrite: input,
+      cacheWrite5m: input,
+      cacheWrite1h: input,
+    };
+  }
+  if (model.provider === "moonshot") {
+    // platform.kimi.ai/docs/pricing/chat (2026-10-04): K3 $0.30 on $3 (10%),
+    // K2.7 Code and its High-Speed tier 20% ($0.19 / $0.38), K2.6 $0.16 on
+    // $0.95 (~17%). Older K2 rows keep the conservative 0.25x.
+    const pm = model.providerModel.toLowerCase();
+    const ratio = pm.includes("kimi-k3") ? 0.1 : pm.includes("k2.7") ? 0.2 : pm.includes("k2.6") ? 0.168 : 0.25;
+    return { input, output, cacheRead: input * ratio, cacheWrite: input, cacheWrite5m: input, cacheWrite1h: input };
   }
   if (model.provider === "zhipu") {
     // Z.ai bills GLM cached input at $0.26 vs $1.40 fresh (GLM-5.2) ≈ 0.186x;
@@ -618,6 +649,24 @@ function tokenCostUsd(model: ModelInfo, u: RawUsage, fastMode = false): number {
   return Number.isFinite(cost) && cost > 0 ? cost : 0;
 }
 
+/**
+ * What a request sent through a provider's asynchronous Batch API costs, as a
+ * fraction of the interactive price. Anthropic Message Batches, the OpenAI
+ * Batch API and the Gemini Batch API all bill every token at 50% of standard.
+ * `null` for a provider whose batch API Juno does not use, so a caller can
+ * never apply a discount the provider did not give.
+ */
+export function batchPriceMultiplier(provider: ModelInfo["provider"] | string): number | null {
+  switch (provider) {
+    case "anthropic":
+    case "openai":
+    case "google":
+      return 0.5;
+    default:
+      return null;
+  }
+}
+
 /** Estimated USD cost of one generation (tokens + tool fees). */
 export function estimateCostUsd(
   model: ModelInfo,
@@ -717,6 +766,12 @@ export type GenerationCostOpts = {
   webSearchRequests?: number | null;
   xSearchRequests?: number | null;
   toolFeesUsd?: number | null;
+  /**
+   * Served through the provider's asynchronous Batch API: tokens bill at
+   * `batchPriceMultiplier` (50%). Ignored for a provider with no batch price,
+   * so the flag can never invent a discount.
+   */
+  batch?: boolean;
 };
 
 /**
@@ -754,8 +809,11 @@ export function estimateGenerationCostUsd(
     !!opts.fastMode,
     extras
   );
+  const batchMultiplier = opts.batch ? batchPriceMultiplier(model.provider) : null;
+  // Tool fees are per call, not per token: the batch discount never applies to them.
+  const billedUsd = batchMultiplier != null ? Math.max(0, (costUsd - fees) * batchMultiplier + fees) : costUsd;
   return {
-    costUsd,
+    costUsd: billedUsd,
     promptTokens: tokens.promptTokens,
     completionTokens: tokens.completionTokens,
     cacheRead: tokens.cacheRead,

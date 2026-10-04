@@ -103,6 +103,7 @@ model User {
   codeSessionCommands         CodeSessionCommand[]
   codeRemoteSessionEvents     CodeRemoteSessionEvent[]
   apiSpend                    ApiSpend[]
+  batchJobs                   BatchJob[]
   moderationFlags             ModerationFlag[]
   shares                      Share[]
   artifacts                   Artifact[]
@@ -647,6 +648,15 @@ model Conversation {
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
   lastMessageAt     DateTime  @default(now())
+  // Context trimming (src/lib/chat/history-summary-store.ts): the rolling
+  // summary of the messages that have left the model's history window,
+  // encrypted like a message body; how many of the oldest messages it covers;
+  // and the id of the first message it does not cover (a check that the
+  // history it read is still the history).
+  historySummary        String?
+  historySummaryCount   Int       @default(0)
+  historySummaryUntilId String?
+  historySummaryAt      DateTime?
 
   user                    User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
   folder                  Folder?                  @relation(fields: [folderId], references: [id], onDelete: SetNull)
@@ -1715,6 +1725,38 @@ model ApiSpend {
   // fastest-growing table in the schema, once a minute per process, before a
   // chat can start streaming.
   @@index([createdAt])
+}
+
+// ----------------------------------------------------------------------------
+// Provider Batch API jobs (src/lib/batch/*): background work nobody is waiting
+// on — memory dreaming first — sent through Anthropic Message Batches or the
+// OpenAI Batch API at half price, submitted on one dreamer tick and applied on
+// a later one. `requests` maps each custom_id to the prompt's key (never the
+// prompt itself); `results` holds each answer, encrypted, once the batch ends.
+// ----------------------------------------------------------------------------
+
+model BatchJob {
+  id              String    @id @default(cuid())
+  userId          String
+  provider        String // anthropic | openai
+  model           String // Juno model id
+  purpose         String // memory_dreaming
+  providerBatchId String?
+  status          String    @default("submitted") // submitted | ended | applied | failed
+  requestCount    Int       @default(0)
+  matchedCount    Int       @default(0)
+  requests        Json
+  results         Json?
+  error           String?
+  createdAt       DateTime  @default(now())
+  endedAt         DateTime?
+  billedAt        DateTime?
+  appliedAt       DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@index([status, createdAt])
 }
 
 // ----------------------------------------------------------------------------

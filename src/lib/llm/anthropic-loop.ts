@@ -25,6 +25,7 @@ import {
   type AnthropicToolUse,
 } from "@/lib/anthropic-round";
 import { buildAnthropicThinkingBits } from "@/lib/anthropic-thinking";
+import { withConversationCacheBreakpoint } from "@/lib/anthropic-cache";
 import { normalizeFinishReason } from "@/lib/finish-reason";
 import { providerSearchCapFor } from "@/lib/llm/loop";
 import { structuredInvalidText, structuredNudgeText, structuredToolDescription } from "@/lib/llm/structured.prompt";
@@ -69,7 +70,6 @@ export async function* anthropicLoop(req: AdapterRequest, deps: AnthropicLoopDep
   const toolset = runTools ? req.toolset : undefined;
 
   const messages = [...deps.messages];
-  markConversationCacheBreakpoint(messages);
   const thinking = buildAnthropicThinkingBits(model.providerModel, req.maxTokens, req.reasoningEffort);
   const tools = structured
     ? [structuredTool(structured.name, structured.schema)]
@@ -115,7 +115,8 @@ export async function* anthropicLoop(req: AdapterRequest, deps: AnthropicLoopDep
     const { final } = loop.beginRequest();
     const params = {
       ...base,
-      messages,
+      // Each request's newest message carries the marker (anthropic-cache.ts).
+      messages: withConversationCacheBreakpoint(messages),
       // Never a forced choice: `any`/`tool` are a 400 on Fable 5.1 and Opus 5.5.
       ...(tools.length ? { tool_choice: { type: final && !structured ? "none" : "auto" } } : {}),
     } as Params;
@@ -318,24 +319,7 @@ export function structuredTool(name: string, schema: PortableSchema): Record<str
   return { name, description: structuredToolDescription(name), input_schema: portableToAnthropic(schema) };
 }
 
-/**
- * Add a prompt-cache breakpoint to the last content block of the last message.
- * With the cached system prompt this caches the whole growing conversation
- * prefix: each turn reads the previous turn's cache (~0.1x input cost) and
- * writes only the delta. Anthropic ignores the marker below its minimum size.
- */
-export function markConversationCacheBreakpoint(messages: Anthropic.MessageParam[]): void {
-  const last = messages[messages.length - 1];
-  if (!last) return;
-  const cacheControl = { type: "ephemeral" as const };
-  if (typeof last.content === "string") {
-    last.content = [{ type: "text", text: last.content || "(no content)", cache_control: cacheControl }];
-    return;
-  }
-  const block = last.content[last.content.length - 1];
-  // cache_control is honored on text/image/document blocks — exactly what history holds.
-  if (block) (block as { cache_control?: typeof cacheControl }).cache_control = cacheControl;
-}
+export { isVolatileBlock, markConversationCacheBreakpoint, volatileTextBlock, withConversationCacheBreakpoint } from "@/lib/anthropic-cache";
 
 /**
  * The follow-up user message of a tool round: one `tool_result` per call, in
