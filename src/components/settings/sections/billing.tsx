@@ -139,7 +139,7 @@ export function BillingSection() {
                   <span>{price.suffix}</span>
                 </>
               ) : (
-                <span>Free, with a small monthly allowance on the fast models.</span>
+                <span>A small monthly allowance on the fast models, at no cost.</span>
               )}
               {renewsAtMs != null && (
                 <>

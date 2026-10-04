@@ -131,15 +131,21 @@ function PlanCard({ item, index, action }: { item: PlanCardItem; index: number; 
         </div>
         {header}
       </div>
-      <p className="mt-1 text-ui text-muted-foreground">{tagline}</p>
+      {/* Two lines reserved, so a one-line tagline does not lift its price
+          above its neighbours' and four cards keep one baseline. */}
+      <p className="mt-1 min-h-10 text-ui text-muted-foreground">{tagline}</p>
 
-      <p className="mt-4 flex items-baseline gap-1.5">
-        <span className="text-display tabular-nums">{price}</span>
-        <span className="font-mono text-caption text-muted-foreground">{suffix}</span>
+      {/* The figure alone on its line, its unit on the next: "€10.80 /mo
+          incl. VAT" does not fit a quarter of the page, and a suffix that
+          wraps under some figures and not others breaks the row. The yearly
+          charge, when there is one, sits under the unit. */}
+      <p className="mt-4 text-display tabular-nums">{price}</p>
+      <p className="mt-1 font-mono text-caption tabular-nums text-muted-foreground">
+        {suffix}
+        {/* Always present (a no-break space when empty) so a Free card on
+            yearly billing lines up with the paid ones beside it. */}
+        <span className="block font-sans">{item.priceNote ?? "\u00a0"}</span>
       </p>
-      {/* Reserved on every card, so four cards keep one baseline whether or
-          not the interval adds a yearly line. */}
-      <p className="mt-1 min-h-5 text-caption tabular-nums text-muted-foreground">{item.priceNote ?? ""}</p>
 
       <ul className="mt-4 space-y-2.5">
         {features.map((feature) => (
