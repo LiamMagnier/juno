@@ -23,7 +23,7 @@
   },
   "devDependencies": {
     "@types/diff": "^7.0.0",
-    "@types/node": "^22.10.0",
+    "@types/node": "^26.6.4",
     "@types/ws": "^8.5.13",
     "typescript": "^5.7.0"
   }
