@@ -6,6 +6,8 @@ import { ensureUserDefaults } from "@/lib/auth";
 import { env, isStripeConfigured } from "@/lib/env";
 import { getStripe, priceIdForPlan } from "@/lib/stripe";
 import { subscriptionConsentMarkdown } from "@/lib/billing/consent";
+import { ensureStripeCustomer, stripeErrorMessage } from "@/lib/billing/stripe-customer";
+import type Stripe from "stripe";
 
 const schema = z.object({
   plan: z.enum(["LITE", "PRO", "PLUS", "MAX", "MAX20", "ULTRA"]),
@@ -34,21 +36,21 @@ export async function POST(req: Request) {
 
   await ensureUserDefaults(user.id);
   const stripe = getStripe();
-  let sub = await prisma.subscription.findUnique({ where: { userId: user.id } });
+  const sub = await prisma.subscription.findUnique({ where: { userId: user.id } });
 
-  // Ensure a Stripe customer exists for this user.
-  let customerId = sub?.stripeCustomerId ?? undefined;
-  if (!customerId) {
-    const customer = await stripe.customers.create({
-      email: user.email ?? undefined,
-      name: user.name ?? undefined,
-      metadata: { userId: user.id },
-    });
-    customerId = customer.id;
-    sub = await prisma.subscription.update({ where: { userId: user.id }, data: { stripeCustomerId: customerId } });
+  // A customer that exists in the key's own mode (a test-mode id stored
+  // before the switch to live is replaced, see stripe-customer.ts).
+  let customerId: string;
+  try {
+    customerId = await ensureStripeCustomer(stripe, user, sub?.stripeCustomerId);
+  } catch (error) {
+    console.error("[stripe] checkout customer failed", { message: stripeErrorMessage(error, "unknown") });
+    return NextResponse.json({ error: stripeErrorMessage(error, "Couldn’t reach the payment provider.") }, { status: 502 });
   }
 
-  const session = await stripe.checkout.sessions.create({
+  let session: Stripe.Checkout.Session;
+  try {
+  session = await stripe.checkout.sessions.create({
     mode: "subscription",
     customer: customerId,
     client_reference_id: user.id,
@@ -97,6 +99,10 @@ export async function POST(req: Request) {
     metadata: { userId: user.id, plan: parsed.data.plan, interval },
     subscription_data: { metadata: { userId: user.id } },
   });
+  } catch (error) {
+    console.error("[stripe] checkout session failed", { message: stripeErrorMessage(error, "unknown") });
+    return NextResponse.json({ error: stripeErrorMessage(error, "Couldn’t start checkout.") }, { status: 502 });
+  }
 
   if (parsed.data.embedded) return NextResponse.json({ clientSecret: session.client_secret });
   return NextResponse.json({ url: session.url });

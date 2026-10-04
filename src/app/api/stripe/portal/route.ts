@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 import { env, isStripeConfigured } from "@/lib/env";
 import { getStripe } from "@/lib/stripe";
+import { isMissingResource, stripeErrorMessage } from "@/lib/billing/stripe-customer";
 
 export async function POST() {
   const user = await getCurrentUser();
@@ -14,10 +15,18 @@ export async function POST() {
     return NextResponse.json({ error: "No billing account found." }, { status: 400 });
   }
 
-  const session = await getStripe().billingPortal.sessions.create({
-    customer: sub.stripeCustomerId,
-    return_url: `${env.appUrl}/settings`,
-  });
-
-  return NextResponse.json({ url: session.url });
+  try {
+    const session = await getStripe().billingPortal.sessions.create({
+      customer: sub.stripeCustomerId,
+      return_url: `${env.appUrl}/settings`,
+    });
+    return NextResponse.json({ url: session.url });
+  } catch (error) {
+    // A customer stored under the test key does not exist live: there is no
+    // live subscription to manage yet, which is what the reader should hear.
+    if (isMissingResource(error)) {
+      return NextResponse.json({ error: "There is no paid subscription to manage on this account yet." }, { status: 400 });
+    }
+    return NextResponse.json({ error: stripeErrorMessage(error, "Couldn’t open billing portal.") }, { status: 502 });
+  }
 }

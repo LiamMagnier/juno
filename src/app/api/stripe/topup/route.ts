@@ -8,6 +8,7 @@ import { env, isStripeConfigured } from "@/lib/env";
 import { getStripe, priceIdForTopUp } from "@/lib/stripe";
 import { TOP_UP_PACKS, canBuyTopUp } from "@/lib/credits";
 import { topUpConsentMarkdown } from "@/lib/billing/consent";
+import { ensureStripeCustomer, stripeErrorMessage } from "@/lib/billing/stripe-customer";
 
 /**
  * One-time usage top-up: POST { pack: "5" | "20" } → { url } of a Stripe
@@ -49,16 +50,13 @@ export async function POST(req: Request) {
   await ensureUserDefaults(user.id);
   const stripe = getStripe();
   const sub = await prisma.subscription.findUnique({ where: { userId: user.id } });
-  let customerId = sub?.stripeCustomerId ?? undefined;
-  if (!customerId) {
-    // A paid plan bought in the App Store has no Stripe customer yet.
-    const customer = await stripe.customers.create({
-      email: user.email ?? undefined,
-      name: user.name ?? undefined,
-      metadata: { userId: user.id },
-    });
-    customerId = customer.id;
-    await prisma.subscription.update({ where: { userId: user.id }, data: { stripeCustomerId: customerId } });
+  // A customer in the key's own mode; a paid plan bought in the App Store, or
+  // an id stored under the test key, gets a new one (stripe-customer.ts).
+  let customerId: string;
+  try {
+    customerId = await ensureStripeCustomer(stripe, user, sub?.stripeCustomerId);
+  } catch (error) {
+    return NextResponse.json({ error: stripeErrorMessage(error, "Couldn’t reach the payment provider.") }, { status: 502 });
   }
 
   const metadata = { userId: user.id, kind: "topup", pack: pack.id };
