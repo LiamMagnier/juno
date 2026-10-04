@@ -130,7 +130,7 @@ function runIsPalindrome(code: string): { ok: boolean; detail: string } {
     input: code,
     timeout: 2_000,
     encoding: "utf8",
-    env: {},
+    env: { NODE_ENV: "production" } as NodeJS.ProcessEnv,
   });
   if (run.error || run.status !== 0) return { ok: false, detail: run.signal ? "timed out" : "crashed" };
   try {

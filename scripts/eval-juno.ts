@@ -36,9 +36,9 @@ const liveCall: LiveCall = async ({ model, effort, prompt, webSearch, probeTools
     system: "You are a careful assistant. Follow the user's formatting instructions exactly.",
     history: [{ role: "USER", content: prompt, attachments: [] }],
     maxTokens: 4_000,
-    reasoningEffort: effort,
+    reasoningEffort: effort ?? undefined,
     webSearch,
-    ...(tools ? { toolLoop: tools } : {}),
+    ...(tools ? { toolset: tools } : {}),
   })) {
     if (event.type === "text") text += event.text;
     else if (event.type === "sources") sources.push(...event.sources);

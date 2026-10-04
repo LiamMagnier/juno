@@ -351,16 +351,83 @@ export const CANONICAL_CAPABILITY_REGISTRY: Record<string, CapabilityEntry> = {
   auto_routing: {
     id: "auto_routing",
     name: "Auto model routing",
-    summary: "Existing model/provider routing; success/cost/privacy acceptance remains required.",
+    summary:
+      "Task-success router: task classification, provider data-use policy, expected total cost (call + tool rounds + retries + failure × recovery + latency), availability/budget fallbacks, content-free outcome telemetry with shrinkage, and the Auto receipt.",
     status: "beta",
     platforms: ["web"],
     maturity: surfaces(
-      implemented("src/lib/provider-routing.ts"),
-      implemented("src/lib/provider-routing.ts"),
-      planned("Native integration and acceptance have not been verified in this audit."),
-      planned("Native integration and acceptance have not been verified in this audit."),
+      verified(
+        "NODE_OPTIONS=--conditions=react-server npx tsx --test tests/router-decide.test.ts tests/auto-model.test.ts tests/plan-paywall.test.ts tests/eval-harness.test.ts; JUNO_ROUTER_TEST_DATABASE_URL=… npx tsx --test tests/router-telemetry.integration.test.ts",
+        "src/lib/router/decide.ts",
+        "src/lib/router/data-policy.ts",
+        "src/lib/router/telemetry-store.ts",
+        "prisma/migrations/20261004120000_auto_router_telemetry/migration.sql",
+        "docs/rework/program/AUTO_ROUTER.md",
+      ),
+      implemented("src/components/chat/auto-receipt.tsx", "src/app/dev/routing/page.tsx", "src/components/settings/sections/models.tsx"),
+      planned("Native clients do not render Message.routing yet (the receipt) nor the Auto settings."),
+      planned("Native clients do not render Message.routing yet (the receipt) nor the Auto settings."),
     ),
-    production: { accepted: false, evidence: [], blockers: ["Real workflow, deployment and cross-platform acceptance are pending."] },
+    production: {
+      accepted: false,
+      evidence: ["docs/rework/program/evidence/eval-2026-10-04-mock.json"],
+      blockers: [
+        "No live provider evaluation has run: this checkout has no eligible provider key (scripts/eval-juno.ts with EVAL_LIVE=1).",
+        "Owner: verify data-use terms for zhipu, moonshot, minimax, mimo, longcat, seedance (ineligible for Auto until then) and attest paid tiers via AUTO_ROUTER_PAID_TIER_PROVIDERS for google/mistral.",
+        "Priors come from catalogue grades; no measured RoutingOutcome evidence exists until the migration is deployed and turns accumulate.",
+        "Authenticated chat UI check of the receipt is pending (verified only in /dev/routing with the real MessageItem).",
+      ],
+    },
+  },
+  cost_budgets: {
+    id: "cost_budgets",
+    name: "Account, agent, routine and run budgets",
+    summary:
+      "One budget vocabulary (hard ceiling, current spend, held, window) over the existing account, agent, routine and run stores; enforcement unchanged.",
+    status: "beta",
+    platforms: ["web"],
+    maturity: surfaces(
+      verified(
+        "NODE_OPTIONS=--conditions=react-server npx tsx --test tests/budgets.test.ts tests/agents-budget.test.ts; JUNO_ROUTER_TEST_DATABASE_URL=… npx tsx --test tests/budgets-store.integration.test.ts",
+        "src/lib/budgets.ts",
+        "src/lib/budgets-store.ts",
+      ),
+      implemented("src/components/agents/agent-panel.tsx", "src/components/work/work-schedule-editor.tsx", "src/components/settings/sections/billing.tsx"),
+      planned("Native budget surfaces have not been built for the shared vocabulary."),
+      planned("Native budget surfaces have not been built for the shared vocabulary."),
+    ),
+    production: {
+      accepted: false,
+      evidence: [],
+      blockers: ["Deployment and signed-in acceptance of the agent and routine budget surfaces are pending."],
+    },
+  },
+  evaluation_harness: {
+    id: "evaluation_harness",
+    name: "Evaluation harness",
+    summary:
+      "All §53 categories with labelled mock/live/not_run records (success, latency, cost, tools, model, errors, citation quality) and a router evaluation; pure-function checks renamed to domain checks.",
+    status: "experimental",
+    platforms: ["web"],
+    maturity: surfaces(
+      verified(
+        "NODE_OPTIONS=--conditions=react-server npx tsx --test tests/eval-harness.test.ts && npm run eval:juno",
+        "src/lib/eval/suite.ts",
+        "src/lib/eval/runner.ts",
+        "scripts/eval-juno.ts",
+      ),
+      planned("Not a user-facing surface."),
+      planned("Not a user-facing surface."),
+      planned("Not a user-facing surface."),
+    ),
+    production: {
+      accepted: false,
+      evidence: ["docs/rework/program/evidence/eval-2026-10-04-mock.json"],
+      blockers: [
+        "Mock mode proves graders and routing only; a live run needs provider keys.",
+        "Deep Research, memory, agent persistence, browser and Computer Use categories are recorded not_run until replayable harnesses exist.",
+      ],
+    },
   },
   orbit_agents: {
     id: "orbit_agents",
