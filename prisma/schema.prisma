@@ -554,6 +554,13 @@ model Settings {
   // that emptying the field cannot disable the ceiling by accident. Every
   // surface that reads the budget must say loudly when this is on.
   spendCapDisabled           Boolean  @default(false)
+  // What Auto optimises for: balanced | quality | economy (src/lib/router/decide.ts).
+  // TEXT so a new value is a rollback-safe change; unknown values read as balanced.
+  autoPreference             String   @default("balanced")
+  // Which providers Auto may choose by their data-use terms:
+  // verified_no_training | exclude_prc | eu_us_only (src/lib/router/data-policy.ts).
+  // Every value already excludes training and unverified terms; this only narrows.
+  autoDataBoundary           String   @default("verified_no_training")
   createdAt                  DateTime @default(now())
   updatedAt                  DateTime @updatedAt
 
@@ -863,6 +870,12 @@ model Message {
   costMicroUsd     Int?
   sources          Json? // web-search citations: [{ title, url, snippet }]
   activity         Json? // visible generation timeline: [{ id, kind, title, detail?, url?, createdAt }]
+  // Auto's receipt for this turn (src/lib/router/receipt.ts): { v, effort,
+  // taskClass, reasons[] } — the "Auto · model · effort" line and its
+  // "Selected for:" list, read from the decision that actually ran. NULL for
+  // every turn the reader routed by hand, and for every turn written before
+  // Auto Router 2.0. Cleared (not kept) when a regenerate supersedes the row.
+  routing          Json?
   createdAt        DateTime  @default(now())
 
   conversation            Conversation             @relation(fields: [conversationId], references: [id], onDelete: Cascade)
@@ -4549,4 +4562,44 @@ model ToolRun {
   @@index([status, leaseUntil])
   @@index([conversationId])
   @@index([workRunId])
+}
+
+/// One routed chat turn, for Auto's feedback loop (BRIEF §26,
+/// src/lib/router/telemetry-store.ts). Deliberately NOT linked to a user:
+/// no userId, no conversation id, no content, no prompt hash. `messageId` is
+/// the only link and exists so later signals (regenerate, model switch,
+/// prompt edit, thumbs) can mark the outcome; it is cleared after 30 days and
+/// the row deleted after 180 (ROUTING_LINK_TTL / ROUTING_ROW_TTL). Private
+/// chats write nothing.
+model RoutingOutcome {
+  id                String   @id @default(cuid())
+  messageId         String?  @unique
+  routerVersion     Int
+  /// Auto chose the model (true) or the reader did (false).
+  auto              Boolean
+  taskClass         String
+  complexity        String
+  modelId           String
+  provider          String
+  effort            String?
+  latencyMs         Int?
+  firstTokenMs      Int?
+  toolRounds        Int      @default(0)
+  retryCount        Int      @default(0)
+  /// completed | partial | failed | stopped
+  completionState   String
+  finishReason      String?
+  userRegenerated   Boolean  @default(false)
+  userSwitchedModel Boolean  @default(false)
+  /// The reader edited the prompt and re-sent, discarding this answer.
+  userEdited        Boolean  @default(false)
+  /// UP | DOWN, mirrored from Message.feedback.
+  feedback          String?
+  costMicroUsd      Int?
+  /// The router's expected total for the pick, to measure calibration.
+  expectedMicroUsd  Int?
+  createdAt         DateTime @default(now())
+
+  @@index([modelId, taskClass, createdAt])
+  @@index([createdAt])
 }

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { PLANS, canUseModel, effectiveMinPlan } from "@/lib/plans";
 import { MODEL_LIST } from "@/lib/models";
 import { pickAutoModel } from "@/lib/auto-model";
+import { NoAutoCandidateError } from "@/lib/router/decide";
 
 /*
  * The paywall, pinned from both sides: a Free account cannot call any model —
@@ -43,11 +44,13 @@ test("Auto stays selectable on FREE, but the router has nothing FREE may call", 
   // is what the composer reads to show the upgrade notice instead of sending.
   assert.equal(canUseModel("FREE", "juno:auto"), true);
   assert.equal(canUseModel("FREE", "auto"), true);
-  const pick = pickAutoModel({ message: "hi", plan: "FREE" });
-  assert.equal(
-    canUseModel("FREE", pick.model.id),
-    false,
-    "Auto's last resort must not be a model FREE is entitled to; the route's own gates refuse it"
+  // Even with every provider configured, the router finds nothing FREE may
+  // call and says so — it has no "last resort" that ignores the plan (Auto
+  // Router 2.0, src/lib/router/decide.ts). The route answers that with a 503
+  // naming the reason, after the early 402 for a plan with no messages.
+  assert.throws(
+    () => pickAutoModel({ message: "hi", plan: "FREE", context: { isConfigured: () => true } }),
+    NoAutoCandidateError
   );
 });
 
@@ -59,7 +62,7 @@ test("PRO can use the Pro tier, and plan floors still order above it", () => {
   for (const m of proTier) {
     assert.ok(canUseModel("PRO", m.id), `${m.id} (${m.minPlan}) is locked for PRO`);
   }
-  const pick = pickAutoModel({ message: "hi", plan: "PRO" });
+  const pick = pickAutoModel({ message: "hi", plan: "PRO", context: { isConfigured: () => true } });
   assert.ok(canUseModel("PRO", pick.model.id), `Auto picked ${pick.model.id}, which PRO cannot call`);
 
   const maxOnly = MODEL_LIST.find((m) => m.minPlan === "MAX");

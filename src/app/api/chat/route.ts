@@ -9,7 +9,14 @@ import { rateLimit } from "@/lib/rate-limit";
 import { getQuota, planFromAccount, consumeMessage, consumeRefusalBody, refundMessage } from "@/lib/usage";
 import { canUseModel, PLANS } from "@/lib/plans";
 import { isModelId, getModel, DEFAULT_MODEL, MODEL_LIST, type ModelInfo } from "@/lib/models";
-import { AUTO_MODEL_ID, isAutoModelId, pickAutoModel } from "@/lib/auto-model";
+import { AUTO_MODEL_ID, classifyPromptComplexity, isAutoModelId, pickAutoModel, pickAutoReasoningEffort } from "@/lib/auto-model";
+import { receiptFromDecision, type RoutingReceipt } from "@/lib/router/receipt";
+import { NoAutoCandidateError, ROUTER_VERSION, isAutoPreference, type RouteDecision } from "@/lib/router/decide";
+import { autoDataUseVerdict, isAutoDataBoundary } from "@/lib/router/data-policy";
+import { providerRetryPressure, recordProviderRateLimit } from "@/lib/router/provider-pressure";
+import { classifyProviderError } from "@/lib/provider-error";
+import { autoBudgetRoom, autoContextTokens, autoPaidTierProviders, classifyTaskForTelemetry } from "@/lib/router/chat-inputs";
+import { completionStateFor, loadRoutingEvidence, markRoutingSignal, recordRoutingOutcome } from "@/lib/router/telemetry-store";
 import { isProviderConfigured, configuredProviders, PROVIDERS, type Provider } from "@/lib/providers";
 import { providerHealthy } from "@/lib/provider-health";
 import { loadModelCapabilityMap, modelCanRoute, modelToolCallingVerdict } from "@/lib/model-capability";
@@ -395,7 +402,8 @@ function privateAssistantMessage(
   model: string,
   usage: { totalInput: number; output: number; cost: number },
   finishReason: ChatFinishReason,
-  activity: ClientActivityEvent[]
+  activity: ClientActivityEvent[],
+  routing: RoutingReceipt | null = null
 ) {
   return {
     id: `private-${Date.now()}`,
@@ -414,6 +422,7 @@ function privateAssistantMessage(
     completionTokens: usage.output || undefined,
     costUsd: usage.cost || undefined,
     ...cacheTokenFields(acc),
+    ...(routing ? { routing } : {}),
   };
 }
 
@@ -1012,6 +1021,15 @@ async function handleChat(req: Request) {
   let routingNote: string | null = null;
   /** Set when the model actually used is NOT the one that was asked for. */
   let routingWarning: string | null = null;
+  /** Auto's full decision record, when Auto routed: the receipt and the telemetry read it. */
+  let autoDecision: RouteDecision | null = null;
+  /*
+   * The capability rows, kept for the whole request: routing reads the
+   * transport verdict here, and the tool entitlements below read the tool
+   * round-trip verdict from the same snapshot (src/lib/model-tool-probe.ts).
+   * Empty under the deterministic smoke provider, so every model is untested.
+   */
+  let capabilityProbes: Awaited<ReturnType<typeof loadModelCapabilityMap>> = new Map();
   if (isAutoModelId(requestedId)) {
     const routingMessage =
       input.preflightClarification
@@ -1030,27 +1048,55 @@ async function handleChat(req: Request) {
       });
       hasImages = !!imageHit;
     }
+    // The router's environment, read once: measured outcomes, the capability
+    // probes (tool reliability), and the room left under the account's binding
+    // window — Auto never plans a turn the account cannot pay for.
+    const [evidence, probes, budgetRoom] = await Promise.all([
+      loadRoutingEvidence(),
+      deterministicSmokeProviderEnabled ? Promise.resolve(capabilityProbes) : loadModelCapabilityMap(MODEL_LIST.map((model) => model.id)),
+      autoBudgetRoom(user.id, plan, period, effective),
+    ]);
+    capabilityProbes = probes;
     try {
       const pick = pickAutoModel({
         message: routingMessage,
         plan,
         hasImages,
         wantsWebSearch: !!input.webSearch,
+        context: {
+          toolsOffered: input.connectors?.length ?? 0,
+          contextTokens: autoContextTokens(input, privateHistory),
+          preference: isAutoPreference(settings?.autoPreference) ? settings.autoPreference : undefined,
+          boundary: isAutoDataBoundary(settings?.autoDataBoundary) ? settings.autoDataBoundary : undefined,
+          paidTier: autoPaidTierProviders(),
+          evidence,
+          isProviderAvailable: (provider) => providerHealthy(provider as Provider),
+          retryPressure: providerRetryPressure,
+          toolVerdict: (modelId) => {
+            const m = getModel(modelId);
+            return m ? modelToolCallingVerdict(m, capabilityProbes) : "untested";
+          },
+          remainingBudgetMicroUsd: budgetRoom,
+        },
       });
       modelInfo = pick.model;
       autoReasoningEffort = pick.reasoningEffort;
-      routingNote = `Auto picked ${pick.model.name} — ${pick.complexity.level} prompt${
-        pick.complexity.reasons.length ? ` (${pick.complexity.reasons.slice(0, 2).join(", ")})` : ""
-      }`;
+      autoDecision = pick.decision;
+      routingNote = `Auto picked ${pick.model.name} — ${pick.decision.reasons.slice(0, 2).join(", ")}`;
       logDebug("chat.auto", {
         level: pick.complexity.level,
-        minIntelligence: pick.complexity.minIntelligence,
-        reasons: pick.complexity.reasons,
+        taskClass: pick.decision.profile.taskClass,
         picked: modelInfo.id,
         reasoning: pick.reasoningEffort ?? "instant",
         candidates: pick.candidatesConsidered,
+        expectedMicroUsd: pick.decision.ranked[0]?.expectedTotalMicroUsd,
+        excluded: pick.decision.excluded,
+        degraded: pick.decision.degraded,
       });
     } catch (err) {
+      if (err instanceof NoAutoCandidateError) {
+        return NextResponse.json({ error: err.message, code: "AUTO_NO_ELIGIBLE_MODEL" }, { status: 503 });
+      }
       console.error("[chat:auto] routing failed", err);
       modelInfo = undefined;
     }
@@ -1059,13 +1105,6 @@ async function handleChat(req: Request) {
   }
 
   let eligible: (model: ModelInfo) => boolean;
-  /*
-   * The capability rows, kept for the whole request: routing reads the
-   * transport verdict here, and the tool entitlements below read the tool
-   * round-trip verdict from the same snapshot (src/lib/model-tool-probe.ts).
-   * Empty under the deterministic smoke provider, so every model is untested.
-   */
-  let capabilityProbes: Awaited<ReturnType<typeof loadModelCapabilityMap>> = new Map();
   if (deterministicSmokeProviderEnabled) {
     // Keep the requested model's identity in receipts and UI diagnostics while
     // replacing only the external generation call below. This makes the E2E
@@ -1078,7 +1117,7 @@ async function handleChat(req: Request) {
     // keeps every fallback decision in this request on the same snapshot: a
     // model cannot pass the explicit-selection check and fail the platform
     // budget degradation check because two probes changed between them.
-    capabilityProbes = await loadModelCapabilityMap(MODEL_LIST.map((model) => model.id));
+    if (!autoDecision) capabilityProbes = await loadModelCapabilityMap(MODEL_LIST.map((model) => model.id));
 
     // Eligibility and fallback now live in `lib/model-selection.ts`. The rules
     // decide what a turn costs, and inline here they were reachable only by
@@ -1088,14 +1127,30 @@ async function handleChat(req: Request) {
     // substitution branch below. Concrete selector choices never do: a user who
     // picks Claude/GPT/etc. must not have that prompt silently sent to Gemini (or
     // any other provider) just because it is the only healthy configured lab.
+    // Under Auto, every substitute below (provider down, platform budget) must
+    // clear the same data-use terms the router applied: a reroute is still Auto
+    // choosing, and it may not land on terms the reader never accepted.
+    const autoPaidTier = autoPaidTierProviders();
+    const autoBoundary = isAutoDataBoundary(settings?.autoDataBoundary) ? settings.autoDataBoundary : undefined;
     eligible = (m: ModelInfo) =>
       m.modality === "chat" &&
       !m.comingSoon &&
       !isAutoModelId(m.id) &&
       isProviderConfigured(m.provider) &&
       canUseModel(plan, m.id) &&
-      modelCanRoute(m, capabilityProbes);
+      modelCanRoute(m, capabilityProbes) &&
+      (!isAutoModelId(requestedId) || autoDataUseVerdict(m, { paidTier: autoPaidTier, boundary: autoBoundary }).eligible);
 
+    // Auto's own runner-up before the generic fallback: when the pick cannot
+    // route here (an unprobed discovered model, a provider that went down
+    // since), the next candidate in the decision's ranking is the router's
+    // answer, not whichever eligible model is cheapest.
+    if (autoDecision && modelInfo && !(eligible(modelInfo) && providerHealthy(modelInfo.provider as Provider))) {
+      const next = autoDecision.ranked
+        .map((c) => getModel(c.modelId))
+        .find((m): m is ModelInfo => !!m && eligible(m) && providerHealthy(m.provider as Provider));
+      if (next) modelInfo = next;
+    }
     const selection = selectModel<ModelInfo>({
       requestedId,
       requested: modelInfo && !isAutoModelId(modelInfo.id) ? modelInfo : null,
@@ -1162,6 +1217,31 @@ async function handleChat(req: Request) {
     return NextResponse.json({ error: msg, code }, { status });
   }
   const modelId = modelInfo.id;
+  /**
+   * Auto's receipt for this turn ("Auto · model · effort" + "Selected for:"),
+   * from the decision that ran. Null for a turn routed by hand. When the pick
+   * was replaced after routing, the effort is recomputed for the model that
+   * actually answers and the receipt says it was rerouted.
+   */
+  let routingReceipt: RoutingReceipt | null = null;
+  if (autoDecision) {
+    const rerouted = modelInfo.id !== autoDecision.model.id;
+    if (rerouted) autoReasoningEffort = pickAutoReasoningEffort(modelInfo, autoDecision.complexity);
+    routingReceipt = {
+      ...receiptFromDecision({ ...autoDecision, reasoningEffort: autoReasoningEffort ?? null }),
+      rerouted: rerouted ? autoDecision.model.id : null,
+    };
+  }
+  /** Telemetry for this turn's outcome; written once, in the generation's `finally`. */
+  const routingTelemetryBase = {
+    routerVersion: ROUTER_VERSION,
+    auto: !!autoDecision,
+    taskClass: autoDecision?.profile.taskClass ?? classifyTaskForTelemetry(input.message ?? ""),
+    complexity: autoDecision?.complexity.level ?? classifyPromptComplexity(input.message ?? "").level,
+    modelId,
+    provider: modelInfo.provider,
+    expectedMicroUsd: autoDecision?.ranked.find((c) => c.modelId === modelId)?.expectedTotalMicroUsd ?? null,
+  };
   // Persist the user's *selection* on the conversation (keep requested model sticky). The
   // concrete `modelId` is what every generation / message version records.
   const conversationModelId = isAutoModelId(requestedId) ? AUTO_MODEL_ID : requestedId;
@@ -1544,7 +1624,7 @@ async function handleChat(req: Request) {
 
           send({
             type: "done",
-            message: privateAssistantMessage(acc, modelId, usage, finishReason, activityLog),
+            message: privateAssistantMessage(acc, modelId, usage, finishReason, activityLog, routingReceipt),
             artifacts: [],
             memoryUpdated: false,
             quota: consumed.quota,
@@ -1619,7 +1699,7 @@ async function handleChat(req: Request) {
             );
             send({
               type: "done",
-              message: privateAssistantMessage(acc, modelId, partialUsage, reason, activityLog),
+              message: privateAssistantMessage(acc, modelId, partialUsage, reason, activityLog, routingReceipt),
               artifacts: [],
               memoryUpdated: false,
               quota: consumed.quota,
@@ -2079,7 +2159,15 @@ async function handleChat(req: Request) {
     });
     // A room's follow-up turn answers the same message as a NEW reply: the
     // answer before it is another member's and must stay.
-    if (last?.role === "ASSISTANT" && roomSetup?.mode.kind !== "follow_up") staleAssistantId = last.id;
+    if (last?.role === "ASSISTANT" && roomSetup?.mode.kind !== "follow_up") {
+      staleAssistantId = last.id;
+      // The reader's verdict on the answer being replaced, for Auto's feedback
+      // loop: a regenerate is a miss, and a regenerate on another model is a
+      // stronger one. Marked before the new outcome takes over the message id.
+      if (!input.privateMode && !deterministicSmokeProviderEnabled) {
+        await markRoutingSignal(last.id, { regenerated: true, switchedModel: !!last.model && last.model !== modelId });
+      }
+    }
     // The native clients append the user turn first and then regenerate, so
     // their file tokens arrive here: cloned onto the turn being answered,
     // once — a retry that re-sends them finds the file already there.
@@ -3158,6 +3246,14 @@ async function handleChat(req: Request) {
       const acc = new GenerationAccumulator({ requestedFastMode: useFastMode });
       let targetedArtifactContent: string | null = null;
       let spendRecorded = false;
+      /** Routing telemetry for this turn, filled by whichever terminal path runs. */
+      const turnStartedAt = Date.now();
+      let turnOutcome: {
+        messageId: string | null;
+        finishReason: string | null;
+        persistedPartial: boolean;
+        costMicroUsd: number | null;
+      } | null = null;
 
       /**
        * Persist the assistant's answer. A normal turn appends a new Message row.
@@ -3202,6 +3298,9 @@ async function handleChat(req: Request) {
         const base = {
           ...assistantTurnFields({ ...data, model: modelId }, encryptMessageText),
           activity: encryptJsonField(activityLog) as unknown as Prisma.InputJsonValue,
+          // Explicit DbNull for a hand-routed turn: a regenerate that switches
+          // from Auto to a chosen model must not keep the old Auto receipt.
+          routing: routingReceipt ? (routingReceipt as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
         };
         const sources = acc.sources;
         // Metadata for the pager rides along on the done chunk.
@@ -3937,6 +4036,12 @@ async function handleChat(req: Request) {
           cacheWriteTokens: acc.tokens.cacheWriteTokens,
           costMicroUsd: researchNotice ? 0 : usage.costMicroUsd || null,
         });
+        turnOutcome = {
+          messageId: assistant.id,
+          finishReason,
+          persistedPartial: false,
+          costMicroUsd: researchNotice ? null : usage.costMicroUsd || null,
+        };
 
         // Artifacts + memory side effects. Only a finished artifact becomes a
         // version: a reply cut off at the output limit ends inside its last
@@ -4093,6 +4198,9 @@ async function handleChat(req: Request) {
           }
         );
         const reason = terminal.finishReason;
+        // Overwritten below if the partial answer is saved.
+        turnOutcome = { messageId: null, finishReason: reason, persistedPartial: false, costMicroUsd: null };
+        if (classifyProviderError(err).class === "rate_limit") recordProviderRateLimit(modelInfo.provider);
         console.error("[chat] generation error", {
           generationId,
           conversationId,
@@ -4135,6 +4243,12 @@ async function handleChat(req: Request) {
               cacheWriteTokens: acc.tokens.cacheWriteTokens,
               costMicroUsd: researchNotice ? 0 : partialUsage.costMicroUsd || null,
             });
+            turnOutcome = {
+              messageId: assistant.id,
+              finishReason: reason,
+              persistedPartial: true,
+              costMicroUsd: researchNotice ? null : partialUsage.costMicroUsd || null,
+            };
             // Only finished artifacts, as on the success path. A Stop inside a
             // block leaves it unfinished: the partial answer is still saved,
             // and the artifact keeps its current version (X-07).
@@ -4281,6 +4395,24 @@ async function handleChat(req: Request) {
           });
         }
       } finally {
+        // Auto's feedback loop: one content-free row per saved-chat turn
+        // (src/lib/router/telemetry-store.ts). Research notices are not model
+        // turns; the smoke provider is not a model at all.
+        if (turnOutcome && !researchNotice && !deterministicSmokeProviderEnabled) {
+          const outcome = turnOutcome;
+          void recordRoutingOutcome({
+            ...routingTelemetryBase,
+            messageId: outcome.messageId,
+            effort: (autoReasoningEffort !== undefined ? autoReasoningEffort : requestedEffort) ?? null,
+            latencyMs: Date.now() - turnStartedAt,
+            firstTokenMs: null,
+            toolRounds: acc.currentRound,
+            retryCount: 0,
+            completionState: completionStateFor(outcome.finishReason, outcome.persistedPartial),
+            finishReason: outcome.finishReason,
+            costMicroUsd: outcome.costMicroUsd,
+          });
+        }
         toolWatch.releaseAll();
         stallWatchdog.stop();
         stopGenerationTimers();
