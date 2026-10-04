@@ -115,6 +115,33 @@ export function geminiDelegateRequest(
 }
 
 /**
+ * What one delegate call cost, in USD, from the response's own usageMetadata.
+ *
+ * Gemini 3.8 Flash: $1.50/M input, $7.50/M output (thinking tokens are billed
+ * as output), Google Search grounding $14 per 1,000 grounded prompts beyond the
+ * free quota (ai.google.dev/gemini-api/docs/pricing, read 2026-10-04). The
+ * January 2027 rates — twice the 2026 promotion — so the figure never reads
+ * low; the grounding fee is charged whenever the answer was grounded, because
+ * the relay cannot see how much of the shared free quota is left.
+ *
+ * Without usage (a failed or cut-off call), the characters sent and received
+ * at four to a token. This was the voice call's one model request that no
+ * meter saw: the relay priced the Live audio, never the backend it asked.
+ */
+export function geminiDelegateCostUsd(input: {
+  promptTokens?: number;
+  outputTokens?: number;
+  thoughtsTokens?: number;
+  grounded?: boolean;
+  promptChars?: number;
+  answerChars?: number;
+}): number {
+  const prompt = input.promptTokens ?? Math.ceil((input.promptChars ?? 0) / 4);
+  const output = (input.outputTokens ?? Math.ceil((input.answerChars ?? 0) / 4)) + (input.thoughtsTokens ?? 0);
+  return (prompt * 1.5 + output * 7.5) / 1_000_000 + (input.grounded ? 0.014 : 0);
+}
+
+/**
  * Ask the delegate. Resolves to the text the voice model should speak from;
  * a failure resolves to an `error` the voice model can say plainly rather
  * than a thrown error that would end the call.
@@ -123,25 +150,43 @@ export async function askGeminiDelegate(
   delegate: VoiceDelegate,
   args: { question?: unknown; context?: unknown },
   signal?: AbortSignal,
-  fetchImpl: typeof fetch = fetch
+  fetchImpl: typeof fetch = fetch,
+  /** Receives what the call cost, in USD, whenever a request was sent. */
+  onCostUsd?: (usd: number) => void
 ): Promise<{ answer: string } | { error: string }> {
   const key = process.env.GEMINI_LIVE_API_KEY || process.env.GOOGLE_API_KEY;
   if (!key) return { error: "The backend model is not configured on this relay." };
+  const request = geminiDelegateRequest(delegate, args);
+  const promptChars = JSON.stringify(request.contents).length;
   try {
     const res = await fetchImpl(
       `${restBase()}/v1beta/models/${encodeURIComponent(delegate.model)}:generateContent`,
       {
         method: "POST",
         headers: { "x-goog-api-key": key, "content-type": "application/json" },
-        body: JSON.stringify(geminiDelegateRequest(delegate, args)),
+        body: JSON.stringify(request),
         signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(90_000)]) : AbortSignal.timeout(90_000),
       }
     );
     const text = await res.text();
     if (!res.ok) return { error: `The backend model failed (${res.status}).` };
     const body = JSON.parse(text) as {
-      candidates?: Array<{ content?: { parts?: Array<{ text?: string; thought?: boolean }> } }>;
+      candidates?: Array<{
+        content?: { parts?: Array<{ text?: string; thought?: boolean }> };
+        groundingMetadata?: unknown;
+      }>;
+      usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number; thoughtsTokenCount?: number };
     };
+    onCostUsd?.(
+      geminiDelegateCostUsd({
+        promptTokens: body.usageMetadata?.promptTokenCount,
+        outputTokens: body.usageMetadata?.candidatesTokenCount,
+        thoughtsTokens: body.usageMetadata?.thoughtsTokenCount,
+        grounded: body.candidates?.some((c) => c.groundingMetadata != null) ?? false,
+        promptChars,
+        answerChars: text.length,
+      })
+    );
     const answer = (body.candidates?.[0]?.content?.parts ?? [])
       .filter((part) => part.text && !part.thought)
       .map((part) => part.text)
@@ -149,6 +194,9 @@ export async function askGeminiDelegate(
       .trim();
     return answer ? { answer: answer.slice(0, 12_000) } : { error: "The backend model returned no answer." };
   } catch (err) {
+    // Sent but never answered (cancelled, timed out): the provider may still
+    // have run it, so the request side is billed at its character floor.
+    onCostUsd?.(geminiDelegateCostUsd({ promptChars, answerChars: 0 }));
     if (signal?.aborted) return { error: "cancelled" };
     return { error: `The backend model could not be reached: ${err instanceof Error ? err.message : String(err)}` };
   }

@@ -146,6 +146,12 @@ export interface GeneratedImage {
   bytes: Buffer;
   mimeType: string;
   ext: string;
+  /**
+   * What the provider's own usage says the WHOLE response cost, set on the
+   * first image only. GPT Image bills tokens and `quality: "auto"` may render
+   * at "high" (4x the flat estimate); the route bills the higher of the two.
+   */
+  providerCostMicroUsd?: number;
 }
 
 const FORMAT_MIME: Record<string, string> = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp" };

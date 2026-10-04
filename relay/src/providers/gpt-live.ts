@@ -8,6 +8,7 @@ import type {
 import { requiredEnv } from "./types.js";
 import { providerText, withWebSearchLimit } from "../voice-context.js";
 import { resamplePcm16 } from "../audio.js";
+import { gptLiveDelegationEstimateUsd, gptLiveDelegationUsageUsd } from "./delegate-pricing.js";
 import { DEFAULT_VOICE_REASONING_EFFORT, type VoiceDelegate, type VoiceReasoningEffort } from "../protocol.js";
 
 const DEFAULT_LIVE_URL = "wss://api.openai.com/v1/live/sessions";
@@ -52,6 +53,12 @@ function liveUrl(): string {
  *
  * Audio is PCM16 mono 24 kHz in both directions.
  */
+/** The slice of a backend Responses object the meter reads. */
+type DelegateResponse = {
+  usage?: { input_tokens?: number; output_tokens?: number };
+  output?: Array<{ type?: string }>;
+};
+
 export class GptLiveSession implements VoiceProviderSession {
   readonly provider = "openai" as const;
   private ws: WebSocket | null = null;
@@ -60,6 +67,8 @@ export class GptLiveSession implements VoiceProviderSession {
   private assistantSpeaking = false;
   private userTranscriptPending = false;
   private assistantTranscriptPending = false;
+  /** Delegations charged at the estimate whose real usage has not arrived. */
+  private delegationsAtEstimate = 0;
   /** Discard output that belongs to a turn the caller already interrupted. */
   private suppressAssistantOutput = false;
   private speechGapTimer: ReturnType<typeof setTimeout> | null = null;
@@ -269,6 +278,8 @@ export class GptLiveSession implements VoiceProviderSession {
       delta?: string;
       error?: { message?: string } | string;
       message?: string;
+      event?: { type?: string; response?: DelegateResponse };
+      response?: DelegateResponse;
     };
     try {
       msg = JSON.parse(data.toString());
@@ -279,6 +290,28 @@ export class GptLiveSession implements VoiceProviderSession {
     if (!ev) return;
 
     switch (msg.type) {
+      case "session.delegation.created": {
+        // Charged now, at the estimate: a delegate may run long after the
+        // caller hangs up, and nothing guarantees its usage ever reaches us.
+        this.delegationsAtEstimate += 1;
+        ev.onUsage({ extraCostUsd: gptLiveDelegationEstimateUsd(this.effort, this.webSearch) });
+        return;
+      }
+
+      case "response.completed":
+      case "response.event": {
+        const response = msg.type === "response.completed" ? msg.response : msg.event?.type === "response.completed" ? msg.event.response : undefined;
+        const searches = (response?.output ?? []).filter((item) => item?.type === "web_search_call").length;
+        const priced = gptLiveDelegationUsageUsd(response?.usage, searches);
+        // Only a delegation's own report tops up its estimate; anything else
+        // carrying usage is the voice layer, already billed per minute.
+        if (priced == null || this.delegationsAtEstimate === 0) return;
+        this.delegationsAtEstimate -= 1;
+        const extra = Math.max(0, priced - gptLiveDelegationEstimateUsd(this.effort, this.webSearch));
+        if (extra > 0) ev.onUsage({ extraCostUsd: extra });
+        return;
+      }
+
       case "session.started":
         this.startedResolve?.();
         this.startedResolve = null;

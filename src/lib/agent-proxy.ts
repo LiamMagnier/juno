@@ -395,6 +395,64 @@ export function inspectAgentRequest(wire: ProviderWire, raw: string): AgentReque
 }
 
 /**
+ * Clamp a proxied request's output allowance to what the account can still pay
+ * for (USAGE_METERING_AUDIT.md, "per-request cap").
+ *
+ * The proxy checks the month and the windows before forwarding, but a single
+ * request could still ask a frontier model for 128k output tokens with a few
+ * cents left — and the provider bills every one. When `cap` is below what the
+ * request asks for (or it asks for nothing), the allowance is lowered to `cap`:
+ *  - anthropic: `max_tokens`, and an extended-thinking `budget_tokens` that no
+ *    longer fits under it is lowered to `cap - 1024` (it must stay below
+ *    max_tokens and at least 1,024), so pass a cap of at least 2,048;
+ *  - openai-chat: whichever of `max_completion_tokens` / `max_tokens` is set,
+ *    or `missingField` when neither is;
+ *  - openai-responses: `max_output_tokens`.
+ * Returns the body unchanged when nothing needed lowering.
+ */
+export function capOutputTokens(
+  wire: ProviderWire,
+  body: string,
+  cap: number | null,
+  missingField: "max_tokens" | "max_completion_tokens" = "max_tokens"
+): string {
+  if (cap == null || !Number.isFinite(cap) || cap <= 0) return body;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return body;
+  }
+  if (!isRecord(parsed)) return body;
+  const limit = Math.floor(cap);
+  const over = (value: unknown) => typeof value !== "number" || !Number.isFinite(value) || value > limit;
+  let changed = false;
+  if (wire === "anthropic") {
+    if (over(parsed.max_tokens)) {
+      parsed.max_tokens = limit;
+      changed = true;
+    }
+    const thinking = isRecord(parsed.thinking) ? parsed.thinking : null;
+    const maxTokens = parsed.max_tokens as number;
+    if (thinking && typeof thinking.budget_tokens === "number" && thinking.budget_tokens >= maxTokens) {
+      parsed.thinking = { ...thinking, budget_tokens: Math.max(1_024, maxTokens - 1_024) };
+      changed = true;
+    }
+  } else if (wire === "openai-chat") {
+    const field =
+      parsed.max_completion_tokens != null ? "max_completion_tokens" : parsed.max_tokens != null ? "max_tokens" : missingField;
+    if (over(parsed[field])) {
+      parsed[field] = limit;
+      changed = true;
+    }
+  } else if (over(parsed.max_output_tokens)) {
+    parsed.max_output_tokens = limit;
+    changed = true;
+  }
+  return changed ? JSON.stringify(parsed) : body;
+}
+
+/**
  * Whether any object in `raw`, already known to be valid JSON, names a key
  * twice. JSON.parse keeps the last; some parsers keep the first, and some
  * refuse. Keys are compared decoded, so `"mod\u0065l"` repeats `"model"`.

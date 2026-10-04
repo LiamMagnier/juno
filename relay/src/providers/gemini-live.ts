@@ -395,6 +395,7 @@ export class GeminiLiveSession implements VoiceProviderSession {
         outputTranscription?: { text?: string };
         modelTurn?: { parts?: Array<{ inlineData?: { mimeType?: string; data?: string }; text?: string }> };
       };
+      usageMetadata?: { thoughtsTokenCount?: number };
     };
     try {
       msg = JSON.parse(data.toString());
@@ -403,6 +404,12 @@ export class GeminiLiveSession implements VoiceProviderSession {
     }
     const ev = this.events;
     if (!ev) return;
+
+    // Extended Thinking bills its reasoning as output tokens, which the
+    // per-minute audio estimate cannot see. Priced at the Live audio-output
+    // rate ($12/M, the dearest Live rate) — high rather than low.
+    const thoughts = msg.usageMetadata?.thoughtsTokenCount;
+    if (typeof thoughts === "number" && thoughts > 0) ev.onUsage({ extraCostUsd: (thoughts * 12) / 1_000_000 });
 
     if (msg.setupComplete !== undefined) {
       this.setupResolve?.();
@@ -501,7 +508,10 @@ export class GeminiLiveSession implements VoiceProviderSession {
     }
     const controller = new AbortController();
     this.pendingDelegations.set(id, controller);
-    const result = await askGeminiDelegate(this.delegate, call.args ?? {}, controller.signal);
+    // Billed whether or not the answer is still wanted: the request was made.
+    const result = await askGeminiDelegate(this.delegate, call.args ?? {}, controller.signal, fetch, (usd) =>
+      this.events?.onUsage({ extraCostUsd: usd })
+    );
     // Cancelled (the caller moved on) or the call has ended: nothing to answer.
     if (!this.pendingDelegations.has(id) || controller.signal.aborted || this.closedByUs) return;
     this.pendingDelegations.delete(id);

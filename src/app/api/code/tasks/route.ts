@@ -17,6 +17,8 @@ import {
   TASK_STATUSES,
 } from "@/lib/code-remote";
 import { CloudDispatchError, dispatchCloudRunner, getCloudRunnerReadiness } from "@/lib/cloud-code";
+import { PLANS } from "@/lib/plans";
+import { getUserPlan } from "@/lib/usage";
 import { CODE_PERMISSION_MODES, isCodePermissionMode, type CodePermissionMode } from "@/lib/code-environments";
 import { codeRunLockKey } from "@/lib/code-run-lock";
 import { foldAttachmentsIntoPrompt } from "@/lib/code-attachment-prompt";
@@ -222,6 +224,16 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   const { user, error } = await requireUser();
   if (!user) return error;
+
+  // Code is a Pro feature. Every model call a run makes is already refused at
+  // the /api/agent proxy for a plan without it, but the task was still created
+  // and a cloud runner dispatched for it, only to fail on its first request.
+  if (!PLANS[await getUserPlan(user.id)].code) {
+    return NextResponse.json(
+      { error: "Code is included from the Pro plan.", code: "PLAN_REQUIRED" },
+      { status: 402 },
+    );
+  }
 
   const parsed = postSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid input" }, { status: 400 });

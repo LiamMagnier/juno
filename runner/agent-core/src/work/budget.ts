@@ -41,6 +41,13 @@ export const systemClock: Clock = { now: () => Date.now() };
 export interface WorkModelPricing {
   inputMicroUsdPerMillion: number;
   outputMicroUsdPerMillion: number;
+  /**
+   * What a token WRITTEN to the prompt cache costs. Anthropic bills a 5-minute
+   * cache write at 1.25x input; `inputTokens` counts those tokens at the plain
+   * input rate, so without this every cached Work step was under-billed by a
+   * quarter of its prefix. Optional: absent means "same as input".
+   */
+  cacheWriteMicroUsdPerMillion?: number;
 }
 
 /** Fraction of a ceiling at which the user is warned, once, per limit. */
@@ -190,9 +197,18 @@ export class WorkBudgetGuard {
     // Rounded once per step rather than once at the end: the run's recorded
     // cost has to match the sum of the steps a user can be shown, and a total
     // rounded separately from its parts is a total that does not add up.
+    // Cache writes are inside `inputTokens`; only the premium above the input
+    // rate is added. Cache READS stay at the full input rate — over-billing a
+    // discount the run did get, never under-billing.
+    const writePremium = Math.max(
+      0,
+      (this.pricing.cacheWriteMicroUsdPerMillion ?? this.pricing.inputMicroUsdPerMillion) -
+        this.pricing.inputMicroUsdPerMillion,
+    );
     this.costMicroUsd += Math.round(
       (step.inputTokens * this.pricing.inputMicroUsdPerMillion) / 1_000_000 +
-        (step.outputTokens * this.pricing.outputMicroUsdPerMillion) / 1_000_000,
+        (step.outputTokens * this.pricing.outputMicroUsdPerMillion) / 1_000_000 +
+        ((step.cacheWriteTokens ?? 0) * writePremium) / 1_000_000,
     );
   }
 

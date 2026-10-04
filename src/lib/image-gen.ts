@@ -1,4 +1,5 @@
 import "server-only";
+import { openAIImageUsageCostMicroUsd, type OpenAIImageUsage } from "@/lib/metering/unit-prices";
 import OpenAI, { toFile } from "openai";
 import { providerApiKey, providerBaseUrl, PROVIDERS } from "@/lib/providers";
 import { imageEditSupport, type ModelInfo } from "@/lib/models";
@@ -149,6 +150,14 @@ async function editMiniMaxImage(
   return image;
 }
 
+/** Stamp the response's token cost on its first image (OpenAI GPT Image only). */
+function withProviderCost(model: ModelInfo, images: GeneratedImage[], usage: OpenAIImageUsage | undefined): GeneratedImage[] {
+  if (model.provider !== "openai" || images.length === 0) return images;
+  const cost = openAIImageUsageCostMicroUsd(model.id, usage);
+  if (cost == null) return images;
+  return [{ ...images[0], providerCostMicroUsd: cost }, ...images.slice(1)];
+}
+
 // OpenAI + xAI (and other OpenAI-compatible labs) expose /images/generations.
 async function generateOpenAICompatImage(model: ModelInfo, prompt: string, wire: MediaWire | null, count: number): Promise<GeneratedImage[]> {
   const apiKey = providerApiKey(model.provider);
@@ -166,7 +175,10 @@ async function generateOpenAICompatImage(model: ModelInfo, prompt: string, wire:
   const items = openAIImageItems(result, count);
   if (!items.length) throw new Error("No image was returned.");
   // The bytes say what the file is; the format asked for is only the fallback.
-  return Promise.all(items.map(async (item) => imageFrom(item.b64 ? Buffer.from(item.b64, "base64") : await downloadBytes(item.url!), format)));
+  const images = await Promise.all(
+    items.map(async (item) => imageFrom(item.b64 ? Buffer.from(item.b64, "base64") : await downloadBytes(item.url!), format))
+  );
+  return withProviderCost(model, images, (result as { usage?: OpenAIImageUsage }).usage);
 }
 
 // OpenAI-compatible /images/edits: image + optional mask (transparent = edit here).
@@ -204,8 +216,9 @@ async function editOpenAICompatImage(
 
   const result = await client.images.edit(params as OpenAI.Images.ImageEditParamsNonStreaming);
   const [item] = openAIImageItems(result, 1);
-  if (item?.b64) return imageFrom(Buffer.from(item.b64, "base64"), format);
-  if (item?.url) return imageFrom(await downloadBytes(item.url), format);
+  const usage = (result as { usage?: OpenAIImageUsage }).usage;
+  if (item?.b64) return withProviderCost(model, [imageFrom(Buffer.from(item.b64, "base64"), format)], usage)[0];
+  if (item?.url) return withProviderCost(model, [imageFrom(await downloadBytes(item.url), format)], usage)[0];
   throw new Error("No edited image was returned.");
 }
 

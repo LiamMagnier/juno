@@ -425,6 +425,21 @@ export async function pollVideoJob(handle: VideoJobHandle): Promise<VideoJobPoll
 }
 
 /** Start a job, poll it to completion (~4s interval, 240s cap), download the result. */
+/**
+ * A video job that failed AFTER the provider accepted and (probably) rendered
+ * it: our deadline ran out while it was still going, or the finished file
+ * could not be downloaded. The provider bills those, so the caller does too.
+ * A job the provider itself reported as failed is a plain Error and is not
+ * billed.
+ */
+export class BillableVideoError extends Error {
+  readonly billable = true;
+  constructor(message: string) {
+    super(message);
+    this.name = "BillableVideoError";
+  }
+}
+
 export async function generateVideo(
   model: ModelInfo,
   prompt: string,
@@ -437,7 +452,7 @@ export async function generateVideo(
   const deadline = Date.now() + OVERALL_CAP_MS;
   while (true) {
     if (Date.now() > deadline) {
-      throw new Error(`${model.name} took longer than ${Math.round(OVERALL_CAP_MS / 1000)}s — try again in a bit.`);
+      throw new BillableVideoError(`${model.name} took longer than ${Math.round(OVERALL_CAP_MS / 1000)}s — try again in a bit.`);
     }
     await sleep(POLL_INTERVAL_MS);
     const poll = await pollVideoJob(handle);
@@ -451,7 +466,9 @@ export async function generateVideo(
     }
     if (!poll.url) throw new Error(`${model.name} returned no video — try again.`);
     onProgress?.({ stage: "downloading" });
-    const file = await downloadVideo(poll.url, poll.downloadHeaders);
+    const file = await downloadVideo(poll.url, poll.downloadHeaders).catch((err: unknown) => {
+      throw new BillableVideoError(err instanceof Error ? err.message : String(err));
+    });
     const mimeType = file.mimeType.startsWith("video/") ? file.mimeType : poll.mimeType ?? "video/mp4";
     return { bytes: file.bytes, mimeType, ext: extForVideo(mimeType) };
   }

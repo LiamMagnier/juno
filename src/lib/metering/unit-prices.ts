@@ -260,3 +260,22 @@ export function affordableOutputTokens(input: {
   if (input.outputMicroUsdPerToken <= 0) return null;
   return Math.max(floor, Math.floor(left / input.outputMicroUsdPerToken));
 }
+
+// ── Media bill ─────────────────────────────────────────────────────────────
+
+/**
+ * What a media response is billed: the catalog's per-output price times the
+ * outputs actually returned, or the provider's own usage-priced total when it
+ * is higher. Never the lower of the two.
+ */
+export function mediaBillMicroUsd(input: {
+  perOutputMicroUsd: number;
+  outputs: number;
+  providerCostMicroUsd?: number | null;
+}): { perOutputMicroUsd: number; totalMicroUsd: number } {
+  const outputs = Math.max(1, Math.floor(input.outputs || 0));
+  const flat = Math.max(0, Math.round(input.perOutputMicroUsd)) * outputs;
+  const provider = Math.max(0, Math.round(input.providerCostMicroUsd ?? 0));
+  const total = Math.max(flat, provider);
+  return { perOutputMicroUsd: Math.ceil(total / outputs), totalMicroUsd: Math.ceil(total / outputs) * outputs };
+}
