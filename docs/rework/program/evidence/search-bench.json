@@ -1,0 +1,134 @@
+{
+  "generatedAt": "2026-10-04T16:31:21.035Z",
+  "label": "SIMULATED backends (synthetic web, list prices, virtual-clock latency). Real Alevr Search service, ranker, selection and caches.",
+  "workload": {
+    "calls": 240,
+    "seed": 20261004,
+    "topics": 22,
+    "minutesBetweenCalls": 3,
+    "openedPerSearch": 2
+  },
+  "results": [
+    {
+      "scenario": "A. one paid API (Serper), no Alevr cache",
+      "calls": 240,
+      "servedBy": {
+        "query_cache": 0,
+        "index": 0,
+        "discovery": 239,
+        "none": 1
+      },
+      "cacheHitRate": 0,
+      "backendAnswered": {
+        "serper": 235
+      },
+      "meanLatencyMs": 673,
+      "p95LatencyMs": 883,
+      "discoveryMedianMs": 668,
+      "totalCostUsd": 0.239,
+      "costPerQueryUsd": 0.001,
+      "costPer1kQueriesUsd": 1,
+      "opens": 470,
+      "pageFetches": 470,
+      "pageCacheServes": 0,
+      "emptyResults": 5
+    },
+    {
+      "scenario": "B. one paid API (Serper) + Alevr caches",
+      "calls": 240,
+      "servedBy": {
+        "query_cache": 180,
+        "index": 0,
+        "discovery": 60,
+        "none": 0
+      },
+      "cacheHitRate": 0.75,
+      "backendAnswered": {
+        "serper": 60
+      },
+      "meanLatencyMs": 162,
+      "p95LatencyMs": 794,
+      "discoveryMedianMs": 650,
+      "totalCostUsd": 0.06,
+      "costPerQueryUsd": 0.00025,
+      "costPer1kQueriesUsd": 0.25,
+      "opens": 480,
+      "pageFetches": 54,
+      "pageCacheServes": 426,
+      "emptyResults": 0
+    },
+    {
+      "scenario": "C. self-hosted SearXNG first, Serper escalation, + caches",
+      "calls": 240,
+      "servedBy": {
+        "query_cache": 180,
+        "index": 1,
+        "discovery": 59,
+        "none": 0
+      },
+      "cacheHitRate": 0.754,
+      "backendAnswered": {
+        "searxng": 48,
+        "serper": 11
+      },
+      "meanLatencyMs": 320,
+      "p95LatencyMs": 1566,
+      "discoveryMedianMs": 1303,
+      "totalCostUsd": 0.011,
+      "costPerQueryUsd": 0.00005,
+      "costPer1kQueriesUsd": 0.05,
+      "opens": 480,
+      "pageFetches": 52,
+      "pageCacheServes": 428,
+      "emptyResults": 0
+    },
+    {
+      "scenario": "D. Tavily only (highest list price), no cache",
+      "calls": 240,
+      "servedBy": {
+        "query_cache": 0,
+        "index": 0,
+        "discovery": 239,
+        "none": 1
+      },
+      "cacheHitRate": 0,
+      "backendAnswered": {
+        "tavily": 235
+      },
+      "meanLatencyMs": 1346,
+      "p95LatencyMs": 1766,
+      "discoveryMedianMs": 1337,
+      "totalCostUsd": 1.912,
+      "costPerQueryUsd": 0.00797,
+      "costPer1kQueriesUsd": 7.97,
+      "opens": 470,
+      "pageFetches": 470,
+      "pageCacheServes": 0,
+      "emptyResults": 5
+    },
+    {
+      "scenario": "E. Tavily + Alevr caches",
+      "calls": 240,
+      "servedBy": {
+        "query_cache": 180,
+        "index": 0,
+        "discovery": 60,
+        "none": 0
+      },
+      "cacheHitRate": 0.75,
+      "backendAnswered": {
+        "tavily": 60
+      },
+      "meanLatencyMs": 325,
+      "p95LatencyMs": 1587,
+      "discoveryMedianMs": 1300,
+      "totalCostUsd": 0.48,
+      "costPerQueryUsd": 0.002,
+      "costPer1kQueriesUsd": 2,
+      "opens": 480,
+      "pageFetches": 48,
+      "pageCacheServes": 432,
+      "emptyResults": 0
+    }
+  ]
+}

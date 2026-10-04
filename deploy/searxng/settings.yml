@@ -1,0 +1,45 @@
+# Alevr Search's SearXNG settings (deploy/searxng/docker-compose.yml).
+#
+# Private instance: JSON output on (Alevr reads /search?format=json), the
+# public-facing limiter off because only the app on this host can reach it,
+# no query logging. Engines: official APIs with permitted programmatic access
+# only. Engine names change between SearXNG releases — check each against
+# `docker exec alevr-searxng cat /usr/local/searxng/searx/settings.yml` for the
+# image you run, and re-run scripts/alevr-search-bench.ts after any change to
+# set ALEVR_SEARXNG_QUALITY from measurement rather than hope.
+use_default_settings:
+  engines:
+    keep_only:
+      - wikipedia
+      - wikidata
+      - wikinews
+      - arxiv
+      - pubmed
+      - crossref
+      - semantic scholar
+      - github
+      - stackoverflow
+      - mdn
+
+general:
+  instance_name: "alevr-search"
+  enable_metrics: false
+
+server:
+  # Overridden by SEARXNG_SECRET from the environment.
+  secret_key: "set-by-environment"
+  limiter: false
+  public_instance: false
+  image_proxy: false
+  method: "GET"
+
+search:
+  safe_search: 1
+  formats:
+    - html
+    - json
+
+outgoing:
+  request_timeout: 4.0
+  max_request_timeout: 8.0
+  useragent_suffix: "alevr-search (operator-run)"

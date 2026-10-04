@@ -162,6 +162,18 @@ test("stale index pages never answer on their own", async () => {
   assert.equal(outcome.servedBy, "discovery");
 });
 
+test("a backend whose terms forbid storage is never written to the query cache", async () => {
+  const store = new MemorySearchStore();
+  const { run } = runner();
+  const env = { ...KEYS, ALEVR_SEARCH_NO_STORE_BACKENDS: "serper" };
+  await alevrSearch(
+    { query: "no store", count: 5, vertical: "web", surface: "bench", private: false },
+    { backends: alevrBackends({ env, runner: run }), store, env, now: () => NOW, clock },
+  );
+  assert.equal(store.queries.size, 0);
+  assert.equal(store.calls.length, 1, "the call is still recorded");
+});
+
 test("a private search reads the caches and writes nothing", async () => {
   const store = new MemorySearchStore();
   const { run } = runner();
@@ -251,8 +263,9 @@ test("freshness halves per half-life; undated is neutral", () => {
 
 test("ranking: dedup by canonical URL, content hash and syndicated title; one host cannot fill the list", () => {
   const hits: DiscoveryHit[] = [
-    { title: "Grants for heat pumps announced today", url: "https://wire.example/story?utm_source=x", snippet: "heat pump grants", backend: "serper", rank: 0 },
-    { title: "Grants for heat pumps announced today | Daily", url: "https://daily.example/copy", snippet: "heat pump grants", backend: "serper", rank: 1 },
+    { title: "Grants for heat pumps announced today", url: "https://wire.example/story?utm_source=x", snippet: "The ministry announced new heat pump grants for households today", backend: "serper", rank: 0 },
+    { title: "Grants for heat pumps announced today | Daily", url: "https://daily.example/copy", snippet: "The ministry announced new heat pump grants for households today.", backend: "serper", rank: 1 },
+    { title: "Grants for heat pumps announced today - Opinion", url: "https://opinion.example/take", snippet: "Why the new subsidy scheme misses renters entirely, and what to fix", backend: "brave", rank: 2 },
     { title: "Grants page", url: "https://wire.example/story", snippet: "heat pump grants", backend: "brave", rank: 0 },
     ...[2, 3, 4, 5, 6].map((i) => ({ title: `Big site ${i}`, url: `https://big.example/${i}`, snippet: "heat pump grants", backend: "serper", rank: i })),
     { title: "Government scheme", url: "https://energy.gov.example.gov/scheme", snippet: "heat pump grants scheme", backend: "brave", rank: 1 },
@@ -262,6 +275,10 @@ test("ranking: dedup by canonical URL, content hash and syndicated title; one ho
   const ranked = rankResults(candidates, { query: "heat pump grants", vertical: "web", count: 5, now: NOW });
   const urls = ranked.map((r) => r.url);
   assert.ok(!urls.includes("https://daily.example/copy"), "the syndicated copy is dropped");
+  assert.ok(
+    rankResults(candidates, { query: "heat pump grants", vertical: "web", count: 10, now: NOW }).some((r) => r.url === "https://opinion.example/take"),
+    "the same title over a different text is a different source",
+  );
   assert.ok(urls.filter((u) => u.startsWith("https://big.example")).length <= 3, "diversity discount");
   assert.ok(urls.includes("https://energy.gov.example.gov/scheme"));
   const top = ranked[0];

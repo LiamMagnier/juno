@@ -22,7 +22,7 @@ public struct JunoProductCapability: Sendable {
 
 public enum JunoProductCapabilityRegistry {
     public static let version = 1
-    public static let digest = "4a02a4b3104f3f9d3e272ca75978e987053ea02463159ca884dfa57c4f873527"
+    public static let digest = "48616474ddd1ba73c6089b519821270fd7310f17161461141a05f1c63f43552e"
     public static let entries: [JunoProductCapability] = [
         JunoProductCapability(
             id: "chat_streaming",
@@ -128,8 +128,8 @@ public enum JunoProductCapabilityRegistry {
         ),
         JunoProductCapability(
             id: "alevr_search",
-            maturity: ["backend": .implemented, "web": .implemented, "macos": .planned, "ios": .planned, "ipados": .planned],
-            supportedPlatforms: ["web"],
+            maturity: ["backend": .verified, "web": .implemented, "macos": .implemented, "ios": .implemented, "ipados": .implemented],
+            supportedPlatforms: ["web", "macos", "ios", "ipados"],
             productionAccepted: false
         ),
         JunoProductCapability(

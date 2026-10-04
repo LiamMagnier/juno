@@ -267,16 +267,20 @@ export function rankResults(candidates: readonly RankCandidate[], opts: RankOpti
   const discount = opts.hostDiscount ?? 0.6;
   const seenKeys = new Set<string>();
   const seenHashes = new Set<string>();
-  const seenTitles = new Set<string>();
+  // A syndicated copy: the same title (site suffix stripped) AND nearly the
+  // same snippet. The title alone is not enough — two sites' own articles
+  // called "How to make a sourdough starter" are two sources, not one.
+  const seenTitles = new Map<string, Set<string>[]>();
   const pool = scored.filter((r) => {
     const key = canonicalUrl(r.url);
     const title = titleKey(r.title);
     if (seenKeys.has(key)) return false;
     if (r.contentHash && seenHashes.has(r.contentHash)) return false;
-    if (title && seenTitles.has(title)) return false;
+    const words = new Set(tokenize(r.snippet));
+    if (title && words.size >= 4 && (seenTitles.get(title) ?? []).some((other) => jaccard(words, other) >= 0.8)) return false;
     seenKeys.add(key);
     if (r.contentHash) seenHashes.add(r.contentHash);
-    if (title) seenTitles.add(title);
+    if (title && words.size >= 4) seenTitles.set(title, [...(seenTitles.get(title) ?? []), words]);
     return true;
   });
 
@@ -300,4 +304,11 @@ export function rankResults(candidates: readonly RankCandidate[], opts: RankOpti
     out.push(picked);
   }
   return out;
+}
+
+function jaccard(a: ReadonlySet<string>, b: ReadonlySet<string>): number {
+  let both = 0;
+  for (const x of a) if (b.has(x)) both += 1;
+  const union = a.size + b.size - both;
+  return union === 0 ? 0 : both / union;
 }

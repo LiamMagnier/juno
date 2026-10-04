@@ -1,0 +1,38 @@
+# Alevr Search: an optional, operator-run SearXNG (BRIEF §16, docs/rework/program/SEARCH.md).
+#
+# Alevr never asks a public SearXNG instance. This runs YOUR instance, bound to
+# loopback only, for the app server on the same host:
+#
+#   SEARXNG_SECRET=$(openssl rand -hex 32) docker compose -f deploy/searxng/docker-compose.yml up -d
+#   # then in the app's environment:
+#   SEARXNG_URL=http://127.0.0.1:8888
+#   ALEVR_SEARXNG_QUALITY=0.6        # your measured rating, 0..1 (see SEARCH.md); below 0.55 it never answers chat alone
+#   ALEVR_SEARXNG_COST_MICRO_USD=0    # optional: amortised infra cost per query, for the ledger
+#
+# Which upstream engines it queries — and on what terms — is decided in
+# settings.yml next to this file. The shipped file keeps only engines that are
+# official, documented APIs. Enabling engines that scrape commercial result
+# pages is the operator's terms-of-service decision, not Alevr's default.
+services:
+  searxng:
+    image: docker.io/searxng/searxng:latest
+    container_name: alevr-searxng
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8888:8080"
+    environment:
+      - SEARXNG_BASE_URL=http://127.0.0.1:8888/
+      - SEARXNG_SECRET=${SEARXNG_SECRET:?set SEARXNG_SECRET}
+    volumes:
+      - ./settings.yml:/etc/searxng/settings.yml:ro
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+    logging:
+      driver: json-file
+      options:
+        max-size: "1m"
+        max-file: "1"

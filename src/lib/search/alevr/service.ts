@@ -402,7 +402,11 @@ export async function alevrSearch(input: AlevrSearchInput, deps: AlevrSearchDeps
   const failed = (r: BackendReport) => r.status !== "ok" && r.status !== "empty";
   const degraded = mode === "single" ? reports.length > 0 && failed(reports[0]) : reports.some(failed);
 
-  if (store && !input.private && hits.length > 0 && answeredBy) {
+  // A provider whose terms forbid storing its results is listed by the
+  // operator; its answers are used for this call and never cached.
+  const noStore = new Set((env.ALEVR_SEARCH_NO_STORE_BACKENDS ?? "").split(",").map((id) => id.trim()).filter(Boolean));
+  const storable = !!answeredBy && !answeredBy.split("+").some((id) => noStore.has(id));
+  if (store && !input.private && hits.length > 0 && answeredBy && storable) {
     await store
       .putQuery({
         key,
