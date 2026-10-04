@@ -37,6 +37,7 @@ import * as https from "node:https";
 
 import { prisma, prismaUnguarded } from "@/lib/db";
 import { deliverRunNotification } from "@/lib/work/notify/deliver";
+import { advanceTeams } from "@/lib/agents/team-store";
 import { isAttendedOrigin } from "@/lib/work/notifications";
 import {
   WORK_LEASED_STATUSES,
@@ -2775,6 +2776,9 @@ async function findQueuedRuns(limit: number) {
       status: "queued",
       effectiveTarget: "cloud",
       OR: [{ leaseExpiresAt: null }, { leaseExpiresAt: { lt: new Date() } }],
+      // A team's lead task is coordinated, not executed: its members' tasks
+      // run here like any other, and `advanceTeams` below drives the lead.
+      session: { OR: [{ teamRole: null }, { teamRole: { not: "lead" } }] },
     },
     orderBy: { createdAt: "asc" },
     take: limit,
@@ -2802,12 +2806,26 @@ async function tick(): Promise<boolean> {
   }
   let busy = swept.reclaimed.length > 0;
 
+  // Temporary specialist teams (src/lib/agents/team-store.ts): start members
+  // whose dependencies ended, retry one interrupted before it acted, write the
+  // lead's final answer. Their member tasks are claimed below like any other.
+  const teams = await advanceTeams({ executorId: `${EXECUTOR_ID}:team` }).catch((error: unknown) => {
+    log("team coordination failed", { error: String(error) });
+    return { teams: 0, finished: 0 };
+  });
+  if (teams.teams > 0) busy = true;
+
   const slots = MAX_CONCURRENT_RUNS - active.size;
   // Full is the opposite of idle: keep the short cadence so a finishing run
   // frees its slot to the next candidate within seconds.
   if (slots <= 0) return true;
 
-  for (const candidate of await findQueuedRuns(slots)) {
+  // Three candidates per free slot: a run whose session still waits on another
+  // task (dependencies, src/lib/work/board.ts) is refused by `claimRun`, and
+  // must not take the slot from a run behind it that could start.
+  let claimedThisTick = 0;
+  for (const candidate of await findQueuedRuns(slots * 3)) {
+    if (claimedThisTick >= slots) break;
     busy = true;
     if (stopping) return true;
     const claim = await claimRun({
@@ -2816,6 +2834,7 @@ async function tick(): Promise<boolean> {
       executorId: EXECUTOR_ID,
     });
     if (!claim.claimed) continue;
+    claimedThisTick += 1;
 
     const renew = startLeaseRenewal(candidate.id, candidate.userId);
     active.set(candidate.id, { renew });

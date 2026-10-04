@@ -135,6 +135,26 @@ export function projectTaskBoard(tasks: readonly BoardTaskInput[], now = new Dat
   });
 }
 
+/**
+ * Whether a task's dependencies let it start. `completed` (the default) needs
+ * every dependency completed; `settled` needs every one ended, however it
+ * ended. A dependency that no longer exists (deleted, or another account's id
+ * that was never readable) is unmet: refusing is the safe reading.
+ */
+export function dependenciesSatisfied(input: {
+  mode: string;
+  expected: number;
+  statuses: readonly string[];
+}): boolean {
+  if (input.expected === 0) return true;
+  if (input.statuses.length < input.expected) return false;
+  return input.statuses.every((status) => {
+    const state = boardStateForWorkStatus(status);
+    if (input.mode === "settled") return TASK_BOARD_TERMINAL.includes(state) || state === "blocked";
+    return state === "completed";
+  });
+}
+
 export type DependencyRefusal = "too_many" | "self" | "unknown" | "cycle";
 
 /**

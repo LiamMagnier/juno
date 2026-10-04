@@ -16,6 +16,7 @@ import { loadModelCapabilityMap, modelCanRoute, modelToolCallingVerdict } from "
 import { isPlatformBudgetExceeded } from "@/lib/platform-budget";
 import { isOwnerEmail } from "@/lib/owner";
 import { buildSystemPromptSections, buildDynamicContext } from "@/lib/anthropic";
+import { backgroundWorkHint, detectBackgroundWork } from "@/lib/chat/work-intent";
 import { finishReasonTitle } from "@/lib/finish-reason";
 import {
   cancelGeneration,
@@ -2910,7 +2911,12 @@ async function handleChat(req: Request) {
     artifactEditTarget && input.artifactEdit
       ? buildArtifactEditPrompt(artifactEditTarget, input.artifactEdit)
       : null;
-  const system = withRegenerateInstruction(
+  // Work as an internal runtime (src/lib/chat/work-intent.ts): a message that
+  // reads as a long multi-deliverable job gets one line telling the model so,
+  // only when it can actually start a task this turn.
+  const backgroundHint =
+    taskToolOn && !input.regenerate ? backgroundWorkHint(detectBackgroundWork(input.message)) : null;
+  const systemBase = withRegenerateInstruction(
     appendAgentBlock(
       appendSkillBlock(
         composeSystemPrompt({
@@ -2933,6 +2939,7 @@ async function handleChat(req: Request) {
     ),
     input
   );
+  const system = backgroundHint ? `${systemBase}\n\n${backgroundHint}` : systemBase;
   const conversationId = conversation.id;
   const convoTitle = conversation.title;
   const convoTitleSource = coerceTitleSource(conversation.titleSource);

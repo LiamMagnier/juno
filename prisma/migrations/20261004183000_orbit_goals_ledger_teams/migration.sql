@@ -1,4 +1,5 @@
--- Orbit durable goals and the work ledger's task fields (docs/rework/program/ORBIT.md).
+-- Orbit durable goals, the work ledger's task fields and temporary specialist
+-- teams (docs/rework/program/ORBIT.md).
 -- Additive only: every new column has a default or is nullable, so existing
 -- goals keep working as before: maxRuns 0 means a goal is not driven, so
 -- nothing starts work for an existing goal until its owner turns driving on.
@@ -25,6 +26,9 @@ ALTER TABLE "WorkSession"
   ADD COLUMN "dependsOnSessionIds" TEXT[] DEFAULT ARRAY[]::TEXT[],
   ADD COLUMN "deadlineAt" TIMESTAMP(3),
   ADD COLUMN "completionCriteria" TEXT,
-  ADD COLUMN "maxAttempts" INTEGER NOT NULL DEFAULT 1;
+  ADD COLUMN "maxAttempts" INTEGER NOT NULL DEFAULT 1,
+  ADD COLUMN "dependencyMode" TEXT NOT NULL DEFAULT 'completed',
+  ADD COLUMN "teamRole" TEXT;
 
 CREATE INDEX "WorkSession_userId_goalId_createdAt_idx" ON "WorkSession"("userId", "goalId", "createdAt");
+CREATE INDEX "WorkSession_teamRole_status_idx" ON "WorkSession"("teamRole", "status");

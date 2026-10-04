@@ -40,6 +40,7 @@ import {
 } from "@/lib/spend";
 import { DEFAULT_ESTIMATE_MICRO_USD, unattendedRunCeiling } from "@/lib/spend-ceiling";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { dependenciesSatisfied } from "@/lib/work/board";
 
 /**
  * The session and run lifecycle: create, append, claim, finish.
@@ -1043,6 +1044,23 @@ export type ClaimRunResult =
  */
 export async function claimRun(input: ClaimRunInput): Promise<ClaimRunResult> {
   const now = input.now ?? new Date();
+  // Dependencies (WorkSession.dependsOnSessionIds) are part of the claim: a
+  // run whose session waits on another task is not claimable yet, whoever
+  // created it. One extra indexed read, only for a session that has any.
+  const gate = await prisma.workRun.findFirst({
+    where: { id: input.runId, userId: input.userId },
+    select: { session: { select: { dependsOnSessionIds: true, dependencyMode: true } } },
+  });
+  const dependsOn = gate?.session.dependsOnSessionIds ?? [];
+  if (dependsOn.length > 0) {
+    const deps = await prisma.workSession.findMany({
+      where: { userId: input.userId, id: { in: dependsOn }, deletedAt: null },
+      select: { status: true },
+    });
+    if (!dependenciesSatisfied({ mode: gate!.session.dependencyMode, expected: new Set(dependsOn).size, statuses: deps.map((d) => d.status) })) {
+      return { claimed: false, run: await prisma.workRun.findFirst({ where: { id: input.runId, userId: input.userId } }) };
+    }
+  }
   const claimed = await prisma.workRun.updateMany({
     where: {
       id: input.runId,

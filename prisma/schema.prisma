@@ -2697,6 +2697,15 @@ model WorkSession {
   completionCriteria   String?  @db.Text
   /// Attempts this task may get from automatic retries (a person may always retry).
   maxAttempts          Int      @default(1)
+  /// completed: every dependency must have completed. settled: every dependency
+  /// must have ended, however it ended (a team's critic and lead work with
+  /// whatever the specialists produced; that is failure containment).
+  dependencyMode       String   @default("completed")
+  /// A temporary specialist team (src/lib/agents/team.ts): "lead" on the task
+  /// the person asked for, the node's role (researcher | engineer | designer |
+  /// critic | synthesis) on each member's task, whose `parentSessionId` is the
+  /// lead. Null for every ordinary task.
+  teamRole             String?
 
   title       String
   titleSource String @default("default")
@@ -2766,6 +2775,7 @@ model WorkSession {
   @@index([userId, agentId, lastActivityAt])
   @@index([parentSessionId])
   @@index([userId, goalId, createdAt])
+  @@index([teamRole, status])
 }
 
 /// One connected app a single task is allowed to reach.
