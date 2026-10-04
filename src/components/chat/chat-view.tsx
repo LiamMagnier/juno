@@ -1,11 +1,12 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import nextDynamic from "next/dynamic";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { EyeOff, GitFork, GripVertical, Loader2 } from "@/components/ui/icons";
-import { ActionIcons, AppIcons, StatusIcons } from "@/lib/app-icons";
+import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useChat, type ChatMessage } from "@/hooks/use-chat";
 import { useSplitPane } from "@/hooks/use-split-pane";
@@ -2218,6 +2219,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
 
   const headerConversation = currentConversationId ? conversations.find((c) => c.id === currentConversationId) : undefined;
   const headerTitle = headerConversation?.title ?? "";
+  const showProjectCrumb = Boolean(activeProjectId && !privateMode && currentConversationId && projectMeta?.id === activeProjectId);
   const headerTitleSource = headerConversation?.titleSource;
 
   return (
@@ -2282,6 +2284,23 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                 spacer instead: it keeps `justify-between` pushing the cluster
                 right and the h-11 collapse exactly as it was. */}
             {headerTitle ? (
+              <div className="flex min-w-0 flex-1 items-baseline gap-2">
+              {/* Filed in a project: the project leads the title as a
+                  breadcrumb ("Perf project / Perf project chat"), in the
+                  title's own face but quiet, and opens the project. It
+                  replaces the floating pill that sat over the transcript;
+                  leaving the project is in the composer's + menu. */}
+              {showProjectCrumb && projectMeta && (
+                <>
+                  <Link
+                    href={`/projects/${projectMeta.id}`}
+                    className="shell-title min-w-0 max-w-[16rem] shrink truncate text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground motion-reduce:transition-none"
+                  >
+                    {projectMeta.name}
+                  </Link>
+                  <span aria-hidden className="shell-title shrink-0 text-muted-foreground/45">/</span>
+                </>
+              )}
               <h1 className="shell-title min-w-0 flex-1 text-foreground">
                 <AnimatedTitle
                   title={headerTitle}
@@ -2300,6 +2319,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                   </span>
                 )}
               </h1>
+              </div>
             ) : (
               <div className="min-w-0 flex-1" aria-hidden="true" />
             )}
@@ -2310,76 +2330,6 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                 same rhythm at either side of the window. On the 32px gutter it
                 floated 50px in, reading as lost in the page rather than placed. */}
             <div className="-mr-[calc(var(--page-gutter)-0.375rem)] hidden shrink-0 items-center gap-1.5 md:flex">{actionsContent}</div>
-          </div>
-        )}
-
-        {/* Project scope indicator — persistent while this chat is filed in a
-            project. Brand-new chats use the composer chip until they exist.
-
-            Floats over the thread rather than occupying a full-width band, so
-            the reply keeps the vertical space. It keeps the same inset the
-            top-right action cluster used to answer it with (left-3/top-3, md:4)
-            now that the cluster has moved up into the shell's header row — the
-            inset is the page's own margin for a thing floating over the
-            transcript, not a relationship to a control that is no longer there.
-            Anchored to the chat column, not the chat root: the root also hosts
-            the canvas panel, and a root-anchored pill would strand itself over
-            the canvas on the breakpoint where this column is hidden. */}
-        {activeProjectId && !privateMode && currentConversationId && (
-          // Below sm the pill also has to leave room for the top-right action
-          // cluster (share / incognito ≈ 6rem incl. coarse targets) sharing
-          // the same row — 18rem alone overlaps it on the narrowest phones.
-          <div className="pointer-events-none absolute left-3 top-3 z-20 flex max-w-[min(18rem,calc(100%-10rem))] sm:max-w-[min(18rem,calc(100%-1.5rem))] md:left-4 md:top-[4.5rem]">
-            {/* `bg-popover`, opaque. This pill is absolutely positioned over the
-                live transcript, and `bg-card/70` behind a blur resolves to ~4.6%
-                on the black ground with nothing for the blur to smear — message
-                text scrolled straight through the project name. */}
-            <div className="pointer-events-auto flex min-w-0 items-center gap-2 rounded-full border border-border/60 bg-popover py-1 pl-1 pr-1 shadow-soft motion-safe:animate-fade-in">
-              {/* A neutral tile, not a coral one: the pill names where the chat
-                  is filed, which is information rather than state, and the
-                  accent belongs to state and the primary action. */}
-              <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-secondary text-muted-foreground">
-                <AppIcons.projects className="size-3.5" />
-              </span>
-              <span className="hidden font-mono text-label text-muted-foreground sm:inline">
-                Project
-              </span>
-              <span aria-hidden className="hidden h-3 w-px shrink-0 bg-border/70 sm:block" />
-              {projectMeta ? (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      onClick={() => router.push(`/projects/${activeProjectId}`)}
-                      className="min-w-0 truncate text-ui font-medium text-foreground underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-primary hover:underline motion-reduce:transition-none"
-                    >
-                      {projectMeta.name}
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent>Open project</TooltipContent>
-                </Tooltip>
-              ) : (
-                <span className="skeleton h-3.5 w-24 rounded-full" aria-hidden />
-              )}
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  {/* Was 24px / 28px on touch — below every icon rung, and a
-                      28px touch target on a page that commits to 44 everywhere
-                      else. `sm` is the smallest rung that exists (28/36). */}
-                  <Pressable
-                    kind="icon"
-                    size="sm"
-                    onClick={() => handlePickProject(null)}
-                    disabled={chat.isBusy}
-                    aria-label="Remove from project"
-                    className="shrink-0"
-                  >
-                    <ActionIcons.dismiss className="size-3.5" />
-                  </Pressable>
-                </TooltipTrigger>
-                <TooltipContent>Remove from project</TooltipContent>
-              </Tooltip>
-            </div>
           </div>
         )}
 
