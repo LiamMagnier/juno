@@ -185,3 +185,62 @@ export function verifyState(token: string): string | null {
   if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
   return Buffer.from(body, "base64url").toString("utf8");
 }
+
+/*
+ * Context-bound sealing for Alevr Secrets (src/lib/secrets/store.ts).
+ *
+ * Same key ring and rotation story as `encryptSecret`, plus GCM additional
+ * authenticated data: the ciphertext only opens under the exact context it was
+ * sealed for (`alevr.secret.v1:<userId>:<credentialId>`). Copying a sealed value
+ * into another account's row, or another credential's row, makes it
+ * undecryptable rather than usable — the database alone cannot move a secret
+ * between owners. A distinct version tag keeps the two formats apart, so a
+ * bound payload is never accepted by the unbound reader or the reverse.
+ */
+const BOUND_VERSION = "v1b";
+
+export function encryptSecretBound(plain: string, context: string): string {
+  if (!context) throw new Error("A bound secret needs a context");
+  const { primaryId, keys } = keyRegistry();
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", keys.get(primaryId)!, iv);
+  cipher.setAAD(Buffer.from(context, "utf8"));
+  const enc = Buffer.concat([cipher.update(plain, "utf8"), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return `${BOUND_VERSION}.${primaryId}.${iv.toString("base64")}.${tag.toString("base64")}.${enc.toString("base64")}`;
+}
+
+export function decryptSecretBound(payload: string, context: string): string {
+  const parts = payload.split(".");
+  if (parts.length !== 5 || parts[0] !== BOUND_VERSION) throw new Error("Malformed bound secret");
+  const [, keyId, ivB64, tagB64, dataB64] = parts;
+  const key = keyRegistry().keys.get(keyId);
+  if (!key) throw new Error(`No decryption key available for id "${keyId}"`);
+  const decipher = createDecipheriv("aes-256-gcm", key, Buffer.from(ivB64, "base64"));
+  decipher.setAAD(Buffer.from(context, "utf8"));
+  decipher.setAuthTag(Buffer.from(tagB64, "base64"));
+  return Buffer.concat([decipher.update(Buffer.from(dataB64, "base64")), decipher.final()]).toString("utf8");
+}
+
+/** Whether a bound payload is sealed under the current primary key (rotation backfill). */
+export function isBoundSealedWithPrimary(payload: string): boolean {
+  const parts = payload.split(".");
+  return parts.length === 5 && parts[0] === BOUND_VERSION && parts[1] === keyRegistry().primaryId;
+}
+
+/** Re-seal a bound payload under the primary key, keeping its context. */
+export function reencryptSecretBound(payload: string, context: string): string {
+  return encryptSecretBound(decryptSecretBound(payload, context), context);
+}
+
+/** HMAC over AUTH_SECRET in a named domain, for opaque references. */
+export function domainMac(domain: string, value: string): string {
+  return createHmac("sha256", env.authSecret).update(`${domain}\n${value}`).digest("base64url");
+}
+
+/** Constant-time comparison of two MACs. */
+export function macEquals(a: string, b: string): boolean {
+  const x = Buffer.from(a);
+  const y = Buffer.from(b);
+  return x.length === y.length && timingSafeEqual(x, y);
+}

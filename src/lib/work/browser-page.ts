@@ -55,13 +55,24 @@ export async function snapshotPage(
                 ? "dropdown"
                 : tag === "input" && (type === "checkbox" || type === "radio")
                   ? type
-                  : "textbox";
+                  : tag === "input" && type === "password"
+                    ? "password field"
+                    : "textbox";
+        // A secret input's value is never a label: a password typed during a
+        // takeover, or mirrored into the attribute by a framework, would
+        // otherwise reach the model on the next read.
+        const autocompleteHint = (element.getAttribute("autocomplete") ?? "").toLowerCase();
+        const secretInput =
+          tag === "input" &&
+          (type === "password" ||
+            type === "hidden" ||
+            /one-time-code|current-password|new-password|cc-/.test(autocompleteHint));
         const label =
           (element.innerText || "").trim() ||
           element.getAttribute("aria-label") ||
           element.getAttribute("placeholder") ||
           element.getAttribute("name") ||
-          element.getAttribute("value") ||
+          (secretInput ? "" : element.getAttribute("value")) ||
           element.getAttribute("title") ||
           "";
         const submits =
@@ -111,7 +122,7 @@ export async function snapshotPage(
     page: {
       url: current.url(),
       title: await current.title().catch(() => ""),
-      html: await current.content(),
+      html: redactSecretInputs(await current.content()),
       elements: collected.found,
     },
     elements: collected.found,
@@ -158,3 +169,51 @@ export function describeBrowserError(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   return message.split("\n")[0] ?? message;
 }
+
+/**
+ * Strip the value of every secret-shaped input from serialized HTML before it
+ * leaves the browser driver: password, hidden, one-time-code and card fields.
+ * `page.content()` serializes attributes, and a site that mirrors what was
+ * typed into `value` (common for controlled inputs) would otherwise hand the
+ * model a password the person typed during a takeover, or one a credential
+ * fill injected. Pure, so it is tested without a browser.
+ */
+const INPUT_TAG = /<input\b[^>]*>/gi;
+const SECRET_INPUT_SHAPE =
+  /\btype\s*=\s*["']?(?:password|hidden)\b|\bautocomplete\s*=\s*["']?[^"'>]*(?:one-time-code|current-password|new-password|cc-)/i;
+const VALUE_ATTRIBUTE = /\svalue\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi;
+
+export function redactSecretInputs(html: string): string {
+  return html.replace(INPUT_TAG, (tag) =>
+    SECRET_INPUT_SHAPE.test(tag) ? tag.replace(VALUE_ATTRIBUTE, ' value="[hidden]"') : tag,
+  );
+}
+
+/** What kind of field a target is, read by trusted code, never by the model. */
+export type FieldKind = "password" | "secret" | "text" | "other";
+
+export async function fieldKindOnPage(current: Page, selector: string): Promise<FieldKind | null> {
+  return (await current
+    .evaluate((sel: string) => {
+      const element = document.querySelector(sel);
+      if (!element) return null;
+      const tag = element.tagName.toLowerCase();
+      const type = (element.getAttribute("type") ?? "text").toLowerCase();
+      const autocomplete = (element.getAttribute("autocomplete") ?? "").toLowerCase();
+      if (tag === "input" && type === "password") return "password";
+      if (tag === "input" && /one-time-code|cc-/.test(autocomplete)) return "secret";
+      if ((tag === "input" && ["text", "email", "tel", "search", "url", ""].includes(type)) || tag === "textarea") {
+        return "text";
+      }
+      return "other";
+    }, selector)
+    .catch(() => null)) as FieldKind | null;
+}
+
+/**
+ * Typing into a password or one-time-code field is refused for the model:
+ * a password the model can type is a password the model has seen. Saved
+ * credentials go through `fill_credential`, which the broker redeems.
+ */
+export const SECRET_FIELD_REFUSAL =
+  'That is a password or one-time-code field. Alevr does not type secrets the model knows. If this task was granted a saved credential for this site, use action "fill_credential" with its reference; otherwise ask the user to take over and type it themselves.';

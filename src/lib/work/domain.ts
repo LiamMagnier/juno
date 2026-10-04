@@ -1,4 +1,5 @@
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { hardFloorCategories, mayGrant, tierOf } from "@/lib/permissions/taxonomy";
 
 /**
  * The Juno Work vocabulary.
@@ -662,7 +663,12 @@ export function requiresExplicitApproval(action: string, risk: WorkRiskLevel): b
  */
 export function mayBeCoveredByStandingAllowance(action: string, risk: WorkRiskLevel): boolean {
   if (ALWAYS_CONFIRM.has(action)) return false;
-  return risk === "safe" || risk === "edit" || risk === "command";
+  if (risk !== "safe" && risk !== "edit" && risk !== "command") return false;
+  // The shared floor (BRIEF §6, src/lib/permissions/taxonomy.ts): a Work
+  // "always" lasts the rest of one task, so it is `allow_for_task`, and no
+  // action in a hard-floor category (delete, pay, credential, account or
+  // security) may hold one whatever risk a tool graded it.
+  return mayGrant({ tier: tierOf("work", risk), categories: hardFloorCategories(action) }, "allow_for_task");
 }
 
 /**

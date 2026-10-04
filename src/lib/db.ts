@@ -104,6 +104,10 @@ export const OWNER_COLUMN = new Map<string, "userId" | "accountId">([
   ["ToolInvocation", "userId"],
   ["ActionApprovalReceipt", "userId"],
   ["ActionApprovalGrant", "userId"],
+  // Alevr Secrets: a missing scope here would hand one account another's credential.
+  ["SecretCredential", "userId"],
+  ["SecretGrant", "userId"],
+  ["SecretAccessEvent", "userId"],
   // Knowledge, Research and the spend ceiling. Every one of these holds content
   // derived from a single person's files or a single person's money, so they are
   // exactly the tables where a missing scope would be a leak rather than a bug.

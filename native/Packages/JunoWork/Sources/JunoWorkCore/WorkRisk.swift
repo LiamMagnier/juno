@@ -182,6 +182,30 @@ public enum WorkRisk {
         risk <= .command
     }
 
+    /// Hard-floor word tokens (BRIEF §6). Mirrors `HARD_FLOOR_TOKENS` in
+    /// src/lib/permissions/taxonomy.ts; both are checked against
+    /// contracts/permissions/permission-taxonomy.v1.json by their own tests
+    /// (PermissionConformanceTests here).
+    public static let hardFloorTokens: [String: [String]] = [
+        "destructive": ["delete", "destroy", "drop", "erase", "trash", "remove", "wipe", "merge", "deploy", "empty", "purge"],
+        "sensitive": [],
+        "financial": ["pay", "payment", "purchase", "buy", "checkout", "refund", "transfer", "invoice", "order", "subscribe", "charge"],
+        "credential": ["credential", "credentials", "password", "passphrase", "token", "secret", "otp", "2fa", "mfa", "login"],
+        "account_security": ["account", "security", "permission", "permissions", "role", "roles", "sharing", "invite", "lock", "unlock", "revoke", "reset"],
+    ]
+
+    /// Whether an "Allow for this task" answer may stop the next ask for this
+    /// named action: never an irreversible action, never above `command`, and
+    /// never an action whose name falls in a hard-floor category (delete, pay,
+    /// credential, account or security), whatever risk a tool graded it.
+    public static func mayHoldStandingAllowance(action: String, risk: WorkRiskLevel) -> Bool {
+        if WorkIrreversibleAction(rawValue: action) != nil { return false }
+        guard mayBeCoveredByStandingAllowance(risk) else { return false }
+        let words = Set(hardFloorTokens.values.flatMap { $0 })
+        let tokens = action.lowercased().split(whereSeparator: { !($0.isLetter || $0.isNumber) }).map(String.init)
+        return !tokens.contains(where: words.contains)
+    }
+
     /// The ruling for a risk under a policy, with an optional standing
     /// allowance.
     ///

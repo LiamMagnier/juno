@@ -77,10 +77,11 @@ describe("(a) running code or typing on a crew computer always asks", () => {
     const byName = (name: string) => tools.find((tool) => tool.spec.name === name)!;
     assert.equal(byName("computer_shell").riskFor({ command: "curl -X POST https://api.example/send" }), "sensitive");
     assert.equal(byName("computer_type").riskFor({ text: "rm -rf ~" }), "sensitive");
-    for (const keys of ["a", "ctrl+v", "ctrl+shift+v", "ctrl+alt+t", "r e t", "super"]) {
+    // Return, Enter and Space press the focused button or send the focused form.
+    for (const keys of ["a", "ctrl+v", "ctrl+shift+v", "ctrl+alt+t", "r e t", "super", "Return", "Enter", "KP_Enter", "space", "Tab Return"]) {
       assert.equal(byName("computer_key").riskFor({ keys }), "sensitive", keys);
     }
-    for (const keys of ["Return", "Tab", "Escape", "Page_Down", "ctrl+l", "Up Up Down"]) {
+    for (const keys of ["Tab", "Escape", "Page_Down", "ctrl+l", "Up Up Down"]) {
       assert.equal(byName("computer_key").riskFor({ keys }), "command", keys);
     }
   });
@@ -114,7 +115,10 @@ describe("(a) running code or typing on a crew computer always asks", () => {
     assert.deepEqual(refusal, { outcome: "refuse", reason: "not_standing_allowable" });
     // The executor itself never remembers an "always" for a sensitive step.
     const session = readFileSync("runner/agent-core/src/work/session.ts", "utf8");
-    assert.match(session, /answer === 'allowed_always' && risk !== 'irreversible' && risk !== 'sensitive'/);
+    assert.match(session, /answer === 'allowed_always' && mayHoldStandingAllowance\(action, risk\)/);
+    for (const risk of ["sensitive", "irreversible"] as const) {
+      assert.equal(runtime.mayHoldStandingAllowance("work.computer.shell", risk), false, risk);
+    }
   });
 
   it("refuses file writes that would run code later, and keeps ordinary work files", async () => {

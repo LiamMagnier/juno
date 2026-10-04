@@ -357,6 +357,11 @@ export function decideActionPolicy(input: {
   return "ask";
 }
 
+// The unified permission model (BRIEF §6) lives in a dependency-free module so
+// Work's domain, client components and the native generators can import it
+// without node:crypto; this broker re-exports it as the one authority.
+export * from "@/lib/permissions/taxonomy";
+
 /** The connector id Juno's own chat tools reach the broker under. */
 export const JUNO_RUNTIME_CONNECTOR_ID = "juno_runtime";
 

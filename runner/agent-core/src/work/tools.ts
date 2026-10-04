@@ -678,18 +678,39 @@ export interface BrowserToolDeps {
   pageTakesPayment?(): boolean;
   /** Late-bound skill egress grant; an empty list denies every navigation. */
   allowedDomains?(): readonly string[] | null;
+  /**
+   * The saved credentials the user granted THIS task (Alevr Secrets): opaque
+   * references, labels and sites. Never a username or a value.
+   */
+  credentials?(): Promise<Array<{ ref: string; label: string; hosts: string[] }>>;
+  /**
+   * Redeem a credential reference at the trusted boundary and fill it. The
+   * executor checks the grant (account, task, site, scope, expiry, budget) and
+   * the field type itself; the value never comes back to this side.
+   */
+  fillCredential?(
+    target: { ref?: number; selector?: string },
+    request: { credential: string; field: 'username' | 'password' },
+  ): Promise<BrowserOutcome>;
   onCitation?(citation: WorkCitation): void;
   now?(): Date;
   /** Screen/page epoch incremented on mutating actions for stall signature discrimination. */
   screenEpoch?(): number;
 }
 
-export type BrowserAction = 'open' | 'read' | 'click' | 'type' | 'submit';
+export type BrowserAction = 'open' | 'read' | 'click' | 'type' | 'submit' | 'credentials' | 'fill_credential';
 
 /** The action a call is making, defaulting to the one that changes nothing. */
 export function browserAction(input: Record<string, unknown>): BrowserAction {
   const raw = String(input.action ?? 'read');
-  return raw === 'open' || raw === 'click' || raw === 'type' || raw === 'submit' ? raw : 'read';
+  return raw === 'open' ||
+    raw === 'click' ||
+    raw === 'type' ||
+    raw === 'submit' ||
+    raw === 'credentials' ||
+    raw === 'fill_credential'
+    ? raw
+    : 'read';
 }
 
 /**
@@ -732,6 +753,10 @@ const BROWSER_ACTIONS: Record<BrowserAction, { intent: string; action: string }>
   click: { intent: 'browser.click', action: 'work.browser.click' },
   type: { intent: 'browser.type', action: 'work.browser.type' },
   submit: { intent: 'browser.submit', action: 'work.browser.submit' },
+  credentials: { intent: 'browser.read', action: 'work.browser.list_credentials' },
+  // A credential action (BRIEF §6 destructive/sensitive): asks every time, under
+  // every mode, and no "Always allow" covers it.
+  fill_credential: { intent: 'browser.type', action: 'work.browser.fill_credential' },
 };
 
 /**
@@ -791,6 +816,7 @@ export function browserTool(deps: BrowserToolDeps): WorkToolDefinition {
       if (action === 'submit') {
         return deps.submitMethod?.(targetOf(input)) === 'get' ? 'command' : 'irreversible';
       }
+      if (action === 'fill_credential') return 'sensitive';
       return action === 'click' || action === 'type' ? 'edit' : 'safe';
     },
     provenanceFor: (input) => ({
@@ -825,9 +851,9 @@ export function browserTool(deps: BrowserToolDeps): WorkToolDefinition {
         properties: {
           action: {
             type: 'string',
-            enum: ['open', 'read', 'click', 'type', 'submit'],
+            enum: ['open', 'read', 'click', 'type', 'submit', 'credentials', 'fill_credential'],
             description:
-              'open a URL, read the page again, click something, type into a field, or submit the form a field or button belongs to. Defaults to read.',
+              'open a URL, read the page again, click something, type into a field, or submit the form a field or button belongs to. credentials lists the saved logins the user granted this task (references only); fill_credential fills one into a field — the user is asked each time, and you never see the value. Defaults to read.',
           },
           url: { type: 'string', description: 'The http or https URL, for open.' },
           ref: {
@@ -840,6 +866,15 @@ export function browserTool(deps: BrowserToolDeps): WorkToolDefinition {
               'A CSS selector, when you have a reason to prefer one to a ref. Use ref where you can.',
           },
           text: { type: 'string', description: 'What to type, for type.' },
+          credential: {
+            type: 'string',
+            description: 'For fill_credential: a reference exactly as credentials listed it (asec_…). Never a password.',
+          },
+          field: {
+            type: 'string',
+            enum: ['username', 'password'],
+            description: 'For fill_credential: which part to fill. A password only goes into a password field.',
+          },
         },
         required: ['action'],
       },
@@ -861,6 +896,17 @@ export function browserTool(deps: BrowserToolDeps): WorkToolDefinition {
           return deps.pageTakesPayment?.() === true
             ? `Buy something at ${deps.currentUrl() || 'the page'}`
             : `Submit the form at ${deps.currentUrl() || 'the page'}`;
+        case 'credentials':
+          return 'List the saved logins granted to this task';
+        case 'fill_credential': {
+          let host = 'the page';
+          try {
+            host = new URL(deps.currentUrl()).hostname || host;
+          } catch {
+            // Nothing open yet.
+          }
+          return `Fill your saved ${input.field === 'username' ? 'username' : 'password'} into ${target} on ${host}`;
+        }
       }
     },
     async execute(input): Promise<ToolResult> {
@@ -879,6 +925,21 @@ export function browserTool(deps: BrowserToolDeps): WorkToolDefinition {
           ? { selector: input.selector.trim() }
           : {}),
       };
+      if (action === 'credentials') {
+        const list = deps.credentials ? await deps.credentials() : [];
+        if (list.length === 0) {
+          return {
+            output:
+              'No saved credentials were granted to this task. If a site needs a login, ask the user to take over and sign in, or to grant a saved credential to this task.',
+          };
+        }
+        return {
+          output: [
+            'Saved credentials granted to this task. Pass the reference to fill_credential; you will never see the values, and the user is asked before each fill.',
+            ...list.map((item) => `- ${item.ref} — ${item.label} (${item.hosts.join(', ')})`),
+          ].join('\n'),
+        };
+      }
       if (action !== 'open' && action !== 'read' && target.ref === undefined && !target.selector) {
         return {
           output: 'A ref (from the list in the last page you read) or a selector is required.',
@@ -923,6 +984,18 @@ export function browserTool(deps: BrowserToolDeps): WorkToolDefinition {
         case 'submit':
           outcome = await deps.submit(target);
           break;
+        case 'fill_credential': {
+          if (!deps.fillCredential) {
+            return { output: 'Saved credentials are not available on this deployment.', isError: true };
+          }
+          const credential = input.credential;
+          const field = input.field === 'username' ? 'username' : input.field === 'password' ? 'password' : null;
+          if (typeof credential !== 'string' || !field) {
+            return { output: 'fill_credential needs a credential reference and field "username" or "password".', isError: true };
+          }
+          outcome = await deps.fillCredential(target, { credential, field });
+          break;
+        }
       }
 
       if (!outcome.ok) return { output: outcome.message, isError: true };

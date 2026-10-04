@@ -5,6 +5,7 @@ import { ChevronRight } from "@/components/ui/icons";
 import { Collapse } from "@/components/ui/collapse";
 import { NeedsLead, QuietButton, TELL_INSTEAD_LABEL, VerbButton } from "@/components/chat/decision";
 import { TIMING } from "@/lib/interaction";
+import { PERMISSION_GRANT_LABEL } from "@/lib/permissions/taxonomy";
 import { Textarea } from "@/components/ui/textarea";
 import type { WorkRiskLevel } from "@/lib/work/domain";
 import type { WorkApprovalDecisionInput } from "@/components/work/work-transport";
@@ -246,7 +247,7 @@ export function ApprovalCard({
                   ? [
                       { label: `${verb.verb} once`, line: `${PRODUCT_NAME} asks again next time.`, onSelect: () => onDecide(approval, "allowed") },
                       {
-                        label: `${verb.verb}, and stop asking`,
+                        label: PERMISSION_GRANT_LABEL.allow_for_task,
                         line: `Covers “${actionLabel(approval.action)}” for the rest of this task only. It lapses when the task ends.`,
                         onSelect: () => onDecide(approval, "allowed_always"),
                       },

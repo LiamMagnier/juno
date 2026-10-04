@@ -22,7 +22,7 @@ public struct JunoProductCapability: Sendable {
 
 public enum JunoProductCapabilityRegistry {
     public static let version = 1
-    public static let digest = "fe6b8ab78b06715b6e9d487d79ea3d0a0f82edab2b867038abf8e33a7c677ab1"
+    public static let digest = "a107cf1243fd56f15a337e6ca29b7158445d90c7babedc731f9f63aa53e0fd1f"
     public static let entries: [JunoProductCapability] = [
         JunoProductCapability(
             id: "chat_streaming",
@@ -170,7 +170,7 @@ public enum JunoProductCapabilityRegistry {
         ),
         JunoProductCapability(
             id: "action_permissions",
-            maturity: ["backend": .verified, "web": .implemented, "macos": .implemented, "ios": .planned, "ipados": .planned],
+            maturity: ["backend": .verified, "web": .implemented, "macos": .verified, "ios": .planned, "ipados": .planned],
             supportedPlatforms: ["web", "macos"],
             productionAccepted: false
         ),
@@ -182,8 +182,8 @@ public enum JunoProductCapabilityRegistry {
         ),
         JunoProductCapability(
             id: "credential_broker",
-            maturity: ["backend": .planned, "web": .planned, "macos": .planned, "ios": .planned, "ipados": .planned],
-            supportedPlatforms: [],
+            maturity: ["backend": .verified, "web": .implemented, "macos": .planned, "ios": .planned, "ipados": .planned],
+            supportedPlatforms: ["web"],
             productionAccepted: false
         ),
         JunoProductCapability(
