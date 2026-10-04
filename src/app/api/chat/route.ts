@@ -53,6 +53,14 @@ import {
   type ArtifactSourceForEdit,
 } from "@/lib/artifact-edit";
 import {
+  applySemanticEditReply,
+  buildSemanticArtifactContext,
+  buildSemanticEditPrompt,
+  resolveArtifactOps,
+} from "@/lib/artifact-ops";
+import { isSemanticArtifactType, outlineSemantic, SEMANTIC_ARTIFACT_TYPES } from "@/lib/work/deliverables/semantic";
+import { SemanticError } from "@/lib/work/deliverables/semantic/shared";
+import {
   describeHeldArtifactsForModel,
   holdArtifactBodies,
   parseArtifacts,
@@ -580,6 +588,52 @@ function createToolActivity(
  * the message so a later reload can see what was checked and why anything was
  * withheld.
  */
+function safeOutline(type: string, content: string, maxChars: number): string {
+  if (!isSemanticArtifactType(type)) return content;
+  try {
+    return outlineSemantic(type, content, maxChars);
+  } catch {
+    return "(this version could not be read)";
+  }
+}
+
+/** Budget for every outline in one prompt; the most recently updated come first. */
+const SEMANTIC_CONTEXT_CHARS = 24_000;
+
+async function semanticArtifactContext(conversationId: string, userId: string): Promise<string | null> {
+  const rows = await prisma.artifact.findMany({
+    where: { conversationId, userId, deletedAt: null, type: { in: [...SEMANTIC_ARTIFACT_TYPES] } },
+    orderBy: { updatedAt: "desc" },
+    take: 4,
+    select: { identifier: true, type: true, title: true, currentVersion: true, versions: { orderBy: { version: "desc" }, take: 1, select: { content: true, version: true } } },
+  });
+  if (!rows.length) return null;
+  const budget = Math.floor(SEMANTIC_CONTEXT_CHARS / rows.length);
+  return buildSemanticArtifactContext(
+    rows
+      .filter((row) => row.versions[0])
+      .map((row) => ({
+        identifier: row.identifier,
+        type: row.type,
+        title: row.title,
+        version: row.versions[0].version,
+        outline: safeOutline(row.type, row.versions[0].content, budget),
+      }))
+  );
+}
+
+/** The current version of an artifact an ops block names, in this chat only. */
+async function loadOpsTarget(conversationId: string, identifier: string, userId: string) {
+  // A design-style draft would be sealed first; semantic artifacts have none,
+  // but sealing is a no-op then and keeps the rule uniform.
+  const row = await prisma.artifact.findFirst({
+    where: { conversationId, userId, identifier, deletedAt: null },
+    select: { identifier: true, type: true, title: true, currentVersion: true, versions: { orderBy: { version: "desc" }, take: 1, select: { content: true, version: true } } },
+  });
+  if (!row?.versions[0]) return null;
+  return { identifier: row.identifier, type: row.type, title: row.title, version: row.versions[0].version, content: row.versions[0].content };
+}
+
 function prepareChatArtifactOutput(
   text: string,
   sendActivity: SseSender["sendActivity"]
@@ -2908,13 +2962,26 @@ async function handleChat(req: Request) {
     : baseSystemSections.stable;
   const targetedArtifactEditPrompt =
     artifactEditTarget && input.artifactEdit
-      ? buildArtifactEditPrompt(artifactEditTarget, input.artifactEdit)
+      ? isSemanticArtifactType(artifactEditTarget.type)
+        ? buildSemanticEditPrompt(
+            artifactEditTarget,
+            input.artifactEdit,
+            safeOutline(artifactEditTarget.type, artifactEditTarget.content, 16_000)
+          )
+        : buildArtifactEditPrompt(artifactEditTarget, input.artifactEdit)
+      : null;
+  // The CURRENT versions of this chat's workbooks, documents and decks, as
+  // addressable outlines, so an edit is a few operations rather than a
+  // regenerated body (src/lib/artifact-ops.ts).
+  const semanticArtifactSection =
+    canvasOn && !artifactEditTarget && conversation
+      ? await semanticArtifactContext(conversation.id, user.id)
       : null;
   const system = withRegenerateInstruction(
     appendAgentBlock(
       appendSkillBlock(
         composeSystemPrompt({
-          base: baseSystem,
+          base: semanticArtifactSection ? `${baseSystem}\n\n${semanticArtifactSection}` : baseSystem,
           webSearch: useWebSearch,
           documentTool: attachmentToolToggles.documents,
           imageTool: attachmentToolToggles.images,
@@ -3864,13 +3931,46 @@ async function handleChat(req: Request) {
         // already succeeded.
         stallWatchdog.stop();
 
-        if (artifactEditTarget) {
+        if (artifactEditTarget && isSemanticArtifactType(artifactEditTarget.type)) {
+          // A workbook, document or deck takes operations, applied by the
+          // engine to the selected version; a failure is the same refusal a
+          // bad patch is.
+          let edited: ReturnType<typeof applySemanticEditReply>;
+          try {
+            edited = applySemanticEditReply(artifactEditTarget, acc.text, { author: user.name ?? undefined });
+          } catch (error) {
+            throw new ArtifactPatchError(error instanceof SemanticError ? error.message : "The edit could not be applied.");
+          }
+          targetedArtifactContent = edited.content;
+          acc.replaceText(
+            buildArtifactEditMessage(artifactEditTarget, targetedArtifactContent, edited.summary ?? edited.changes.join("; "))
+          );
+        } else if (artifactEditTarget) {
           const patch = parseArtifactPatch(acc.text);
           targetedArtifactContent = applyArtifactPatch(artifactEditTarget.content, patch);
           // Replaces the persisted text but NOT the emitted-character count the
           // accumulator holds: the model wrote the patch, not the whole
           // artifact, and billing the rebuilt text inflates the receipt.
           acc.replaceText(buildArtifactEditMessage(artifactEditTarget, targetedArtifactContent, patch.summary));
+        } else {
+          // Operations on an existing workbook, document or deck in an ordinary
+          // turn: applied to its current version and rewritten into the
+          // artifact tag, so verification, the re-emit guard and versioning
+          // below treat the result like any other revision.
+          const resolvedOps = await resolveArtifactOps(
+            acc.text,
+            (identifier) => loadOpsTarget(conversationId, identifier, user.id),
+            { author: user.name ?? undefined }
+          );
+          if (resolvedOps) {
+            acc.replaceText(resolvedOps.text);
+            for (const applied of resolvedOps.applied) {
+              sendActivity({ kind: "artifact", title: `Edited ${applied.title}`, detail: applied.changes.slice(0, 3).join(" · ") });
+            }
+            for (const failed of resolvedOps.failed) {
+              sendActivity({ kind: "artifact", title: "Edit not applied", detail: failed.reason });
+            }
+          }
         }
 
         const preparedArtifacts = prepareChatArtifactOutput(acc.text, sendActivity);

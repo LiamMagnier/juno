@@ -3,7 +3,7 @@
 import * as React from "react";
 import nextDynamic from "next/dynamic";
 import { toast } from "sonner";
-import { Code2, FileCode2, GitBranch, Globe, Image as ImageIcon, PanelRightOpen, Terminal } from "@/components/ui/icons";
+import { Code2, FileCode2, GitBranch, Globe, Image as ImageIcon, PanelRightOpen, Terminal, Table2, FileText, Presentation } from "@/components/ui/icons";
 import { ActionIcons, AppIcons, CodeIcons, StatusIcons } from "@/lib/app-icons";
 import { Markdown } from "@/components/chat/markdown";
 import type { ConsoleEntry, RunStatus } from "@/components/canvas/sandbox-frame";
@@ -62,6 +62,9 @@ const ICONS: Record<ArtifactType, typeof Code2> = {
   MARKDOWN: CodeIcons.file,
   MERMAID: GitBranch,
   DESIGN: AppIcons.design,
+  SPREADSHEET: Table2,
+  DOCUMENT: FileText,
+  PRESENTATION: Presentation,
 };
 
 /**

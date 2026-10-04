@@ -1,5 +1,7 @@
 import { serializeDesignDocument } from "@/lib/design/migrations";
 import { checkDesignDocumentSave } from "@/lib/design/document-save";
+import { canonicalSemanticBody, isSemanticArtifactType } from "@/lib/work/deliverables/semantic";
+import { SemanticError } from "@/lib/work/deliverables/semantic/shared";
 
 /** The artifact body's budget, the same one chat output and designs have. */
 export const MAX_ARTIFACT_CONTENT_CHARS = 200_000;
@@ -18,6 +20,18 @@ export function storableContent(
   type: string,
   content: string
 ): { ok: true; content: string } | { ok: false; error: string; issues: string[] } {
+  if (isSemanticArtifactType(type)) {
+    // A workbook, document or deck saved whole (a restore, a client's Save)
+    // must be a model the engines can open, stored canonically.
+    try {
+      const stored = canonicalSemanticBody(type, content);
+      if (stored.length > MAX_ARTIFACT_CONTENT_CHARS) return { ok: false, error: "This artifact is too large to save.", issues: [] };
+      return { ok: true, content: stored };
+    } catch (error) {
+      const message = error instanceof SemanticError ? error.message : "The body could not be read.";
+      return { ok: false, error: message, issues: [message] };
+    }
+  }
   if (type !== "DESIGN") return { ok: true, content };
   const check = checkDesignDocumentSave(content);
   if (!check.ok) return check;

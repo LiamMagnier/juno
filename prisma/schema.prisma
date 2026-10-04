@@ -1672,6 +1672,14 @@ enum ArtifactType {
   // every other type so history, restore, sharing and the library work
   // unchanged. Added last so existing enum ordinals are untouched.
   DESIGN
+  // Semantic deliverables (BRIEF §29). The version body is the model JSON
+  // (src/lib/work/deliverables/semantic/*): a workbook with formulas and
+  // charts, a block document with comments and tracked revisions, a themed
+  // deck. Same Artifact/ArtifactVersion rows, so history, restore, proposals,
+  // the Library and publication work unchanged. Appended; no ordinal moves.
+  SPREADSHEET
+  DOCUMENT
+  PRESENTATION
 }
 
 // ----------------------------------------------------------------------------

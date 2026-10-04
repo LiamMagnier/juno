@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Code2, FileCode2, FileText, GitBranch, Globe, Image as ImageIcon } from "@/components/ui/icons";
+import { Code2, FileCode2, FileText, GitBranch, Globe, Image as ImageIcon, Table2, Presentation } from "@/components/ui/icons";
 import { AppIcons } from "@/lib/app-icons";
 import { designPosterUrl } from "@/lib/design/poster-url";
 import type { ArtifactType } from "@/lib/message-content";
@@ -52,6 +52,9 @@ const GLYPHS: Record<ArtifactType, typeof Code2> = {
   MARKDOWN: FileText,
   MERMAID: GitBranch,
   DESIGN: AppIcons.design,
+  SPREADSHEET: Table2,
+  DOCUMENT: FileText,
+  PRESENTATION: Presentation,
 };
 
 /** Lines of source a tile shows before the fade takes over. */
