@@ -1005,6 +1005,11 @@
           "ios": "planned",
           "screen": "DesktopUpgradeSheet",
           "note": "A sheet on the Mac, monthly only (register #127). The phone has no plan purchase yet (JunoStoreKit is in the shared package)."
+        },
+        "/upgrade/welcome": {
+          "mac": "web-only",
+          "ios": "web-only",
+          "note": "Where the web's in-app Stripe checkout returns after paying; the apps buy through the App Store."
         }
       },
       "routes": {

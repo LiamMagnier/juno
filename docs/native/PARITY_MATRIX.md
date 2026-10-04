@@ -22,7 +22,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 
 ## Summary
 
-317 routes: 183 native, 66 planned, 55 web only, 13 internal. 48 pages: on the Mac 33 native, 4 partial, 3 planned, 8 web only; on iOS 17 native, 8 partial, 15 planned, 8 web only.
+317 routes: 183 native, 66 planned, 55 web only, 13 internal. 49 pages: on the Mac 33 native, 4 partial, 3 planned, 9 web only; on iOS 17 native, 8 partial, 15 planned, 9 web only.
 
 | Feature | Pages (Mac) | Pages (iOS) | Routes native | Planned | Web only | Internal |
 |---|---|---|---|---|---|---|
@@ -46,7 +46,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 | [Voice](#voice) | – | – | 4 | 0 | 3 | 0 |
 | [Juno Code](#code) | 2/4 (+2 partial) | 0/4 (+3 partial) | 15 | 13 | 3 | 0 |
 | [Settings, notifications and announcements](#settings) | 2/3 | 2/3 | 11 | 6 | 2 | 0 |
-| [Plans and billing](#billing) | 1/1 | 0/1 | 3 | 2 | 2 | 1 |
+| [Plans and billing](#billing) | 1/2 | 0/2 | 3 | 2 | 2 | 1 |
 | [Roadmap and Compare](#community) | 0/3 | 0/3 | 0 | 0 | 4 | 0 |
 | [Owner tools](#admin) | 0/6 | 0/6 | 0 | 0 | 15 | 0 |
 | [Platform endpoints](#platform) | – | – | 1 | 0 | 0 | 10 |
@@ -576,6 +576,7 @@ Owned by the Code rework (`docs/native/code-rework/`), which audits Code's parit
 | Page | Mac | iOS | Native screen | Note |
 |---|---|---|---|---|
 | `/upgrade` | Native | Planned | DesktopUpgradeSheet | A sheet on the Mac, monthly only (register #127). The phone has no plan purchase yet (JunoStoreKit is in the shared package). |
+| `/upgrade/welcome` | Web only | Web only |  | Where the web's in-app Stripe checkout returns after paying; the apps buy through the App Store. |
 
 | Route | Methods | Status | Called from | Note |
 |---|---|---|---|---|
