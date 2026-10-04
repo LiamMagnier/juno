@@ -231,7 +231,8 @@ test("the chat turn and the dreamer both keep project summaries current", () => 
     src("src/app/api/chat/route.ts"),
     /if \(conversation\.projectId\) \{\s+await maybeConsolidateProject\(user\.id, conversation\.projectId, modelInfo\.provider\)/
   );
-  assert.match(src("src/lib/memory-dreamer.ts"), /await maybeConsolidateProject\(userId, projectId, null\)/);
+  // `llm` is the Batch API layer in batch mode (src/lib/batch/dream.ts), undefined otherwise.
+  assert.match(src("src/lib/memory-dreamer.ts"), /await maybeConsolidateProject\(userId, projectId, null(, llm)?\)/);
 });
 
 test("a reset erases every project's summary with the facts it was built from", () => {
