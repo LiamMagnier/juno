@@ -32,6 +32,13 @@ import { PRODUCT_NAME } from "@/lib/brand/names";
 export type ConnectorId = "github" | "figma" | "notion" | "apple-calendar" | "apple-mail" | "apple-music";
 export type ConnectorKind = "oauth_app" | "mcp_oauth" | "credentials";
 
+/**
+ * Header carrying the user's IANA time zone to our own MCP route
+ * (app/api/mcp/[connector]) for credentials connectors, so "the 5th" and
+ * "09:00" mean the user's day and clock, not the server's UTC.
+ */
+export const CONNECTOR_TIME_ZONE_HEADER = "x-alevr-time-zone";
+
 export interface ConnectorTokens {
   accessToken: string;
   refreshToken?: string;

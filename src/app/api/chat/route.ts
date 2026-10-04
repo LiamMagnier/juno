@@ -1223,7 +1223,7 @@ async function handleChat(req: Request) {
   const turnConnectorIDs = [...new Set([...requestedConnectorIDs, ...turnContext.connectorIds])];
   const activeConnectors =
     !input.privateMode && turnConnectorIDs.length
-      ? await getActiveConnectors(user.id, turnConnectorIDs)
+      ? await getActiveConnectors(user.id, turnConnectorIDs, { timeZone: input.timeZone })
       : [];
   turnContext.settleConnectors(activeConnectors);
   /** The skill this message runs under: armed the ordinary way, else named by a token. One per message. */
@@ -1485,7 +1485,7 @@ async function handleChat(req: Request) {
             // reach `streamChat`'s "connectors without an audit identity" branch,
             // which logs the same refusal as an internal bug.
             connectors: [],
-            dynamicContext: buildDynamicContext(),
+            dynamicContext: buildDynamicContext(input.timeZone),
             // Private chats have no stable conversation id; group the cache by
             // user (their system prompt is the shared prefix).
             cacheKey: `private-${user.id}`,
@@ -3780,7 +3780,7 @@ async function handleChat(req: Request) {
             }),
             appliedSkill
           ),
-          dynamicContext: buildDynamicContext(),
+          dynamicContext: buildDynamicContext(input.timeZone),
           // One conversation = one stable prompt prefix (system + history).
           cacheKey: conversationId,
           fastMode: useFastMode,

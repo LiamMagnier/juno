@@ -3,7 +3,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { prisma } from "@/lib/prisma";
 import type { Connection } from "@prisma/client";
-import { DEFAULT_TOKEN_TTL_MS, getConnector, isConnectorConfigured, refreshTokens, type ConnectorDef } from "@/lib/connectors";
+import { CONNECTOR_TIME_ZONE_HEADER, DEFAULT_TOKEN_TTL_MS, getConnector, isConnectorConfigured, refreshTokens, type ConnectorDef } from "@/lib/connectors";
 import { mintConnectorToken } from "@/lib/connector-token";
 import { decryptSecret, encryptSecret } from "@/lib/crypto";
 import { composioSlugFromId, isComposioAppId } from "@/lib/composio";
@@ -97,8 +97,29 @@ async function refreshConnection(def: ConnectorDef, row: Connection): Promise<st
   }
 }
 
-/** Resolve the connectors the user asked for into usable (configured, linked) endpoints. */
-export async function getActiveConnectors(userId: string, requestedIds?: string[]): Promise<ActiveConnector[]> {
+/** A valid IANA zone, or undefined. */
+function validTimeZone(zone: string | null | undefined): string | undefined {
+  const z = zone?.trim();
+  if (!z || z.length > 64) return undefined;
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: z });
+    return z;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Resolve the connectors the user asked for into usable (configured, linked)
+ * endpoints. `timeZone` (the user's IANA zone) rides along to the connectors
+ * Juno serves itself, whose date arguments are read on the user's clock.
+ */
+export async function getActiveConnectors(
+  userId: string,
+  requestedIds?: string[],
+  opts: { timeZone?: string | null } = {}
+): Promise<ActiveConnector[]> {
+  const timeZone = validTimeZone(opts.timeZone);
   if (!requestedIds || requestedIds.length === 0) return [];
   const ids = [...new Set(requestedIds)];
   const out: ActiveConnector[] = [];
@@ -180,7 +201,15 @@ export async function getActiveConnectors(userId: string, requestedIds?: string[
     // Credentials connectors point at our own MCP route: hand out a short-lived
     // signed token instead of the stored credential (which never leaves the server).
     if (def.kind === "credentials") {
-      out.push({ id: def.id, label: def.label, mcpUrl: def.cfg.mcpUrl, headers: { Authorization: `Bearer ${mintConnectorToken(userId, def.id)}` } });
+      out.push({
+        id: def.id,
+        label: def.label,
+        mcpUrl: def.cfg.mcpUrl,
+        headers: {
+          Authorization: `Bearer ${mintConnectorToken(userId, def.id)}`,
+          ...(timeZone ? { [CONNECTOR_TIME_ZONE_HEADER]: timeZone } : {}),
+        },
+      });
       continue;
     }
 

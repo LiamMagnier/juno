@@ -84,37 +84,133 @@ function addressLine(addrs?: Array<{ name?: string; address?: string }>): string
     .join(", ");
 }
 
+/** Special-use flags a person (or a model) names in words. */
+const SPECIAL_USE_ALIASES: Record<string, string> = {
+  sent: "\\Sent",
+  "sent messages": "\\Sent",
+  "sent mail": "\\Sent",
+  archive: "\\Archive",
+  archives: "\\Archive",
+  trash: "\\Trash",
+  bin: "\\Trash",
+  "deleted messages": "\\Trash",
+  junk: "\\Junk",
+  spam: "\\Junk",
+  drafts: "\\Drafts",
+  draft: "\\Drafts",
+};
+
+/**
+ * The real path of the mailbox a caller named. iCloud calls its sent folder
+ * "Sent Messages" and its bin "Deleted Messages"; a model asks for "Sent" and
+ * "Trash", and IMAP answers an unknown path with a bare "Command failed".
+ * Exported for tests: exact path, then case-insensitive path or name, then
+ * special-use role.
+ */
+export function resolveMailboxPath(boxes: MailboxInfo[], requested: string): string | null {
+  const want = requested.trim();
+  if (!want) return null;
+  const lower = want.toLowerCase();
+  if (lower === "inbox") return "INBOX";
+  const exact = boxes.find((b) => b.path === want);
+  if (exact) return exact.path;
+  const loose = boxes.find((b) => b.path.toLowerCase() === lower || b.name.toLowerCase() === lower);
+  if (loose) return loose.path;
+  const role = SPECIAL_USE_ALIASES[lower] ?? (want.startsWith("\\") ? want : undefined);
+  const byRole = role ? boxes.find((b) => b.specialUse?.toLowerCase() === role.toLowerCase()) : undefined;
+  return byRole?.path ?? null;
+}
+
+/** Mailboxes an "everywhere" search reads: everything but trash, junk and drafts. */
+export function searchableMailboxes(boxes: MailboxInfo[]): string[] {
+  const skip = new Set(["\\trash", "\\junk", "\\drafts", "\\all", "\\flagged"]);
+  return boxes
+    .filter((b) => !(b.specialUse && skip.has(b.specialUse.toLowerCase())))
+    .filter((b) => !/^(?:\[gmail\])$/i.test(b.path))
+    .map((b) => b.path);
+}
+
+export interface MailSearchResult {
+  messages: Array<MailSummary & { mailbox: string }>;
+  /** The mailbox paths actually searched. */
+  searched: string[];
+  /** Every mailbox on the account, for an honest empty answer. */
+  available: string[];
+  /** Matches found before the limit cut the list. */
+  total: number;
+}
+
 export async function searchMessages(
   creds: MailCredentials,
   opts: { mailbox?: string; query?: string; from?: string; since?: Date; limit?: number }
-): Promise<MailSummary[]> {
-  const mailbox = opts.mailbox ?? "INBOX";
-  const limit = Math.min(Math.max(opts.limit ?? 25, 1), 25);
+): Promise<MailSearchResult> {
+  const limit = Math.min(Math.max(opts.limit ?? 25, 1), 50);
   return withImap(creds, async (client) => {
-    const lock = await client.getMailboxLock(mailbox, { readOnly: true });
-    try {
-      const criteria: SearchObject = {};
-      if (opts.query) criteria.or = [{ subject: opts.query }, { body: opts.query }];
-      if (opts.from) criteria.from = opts.from;
-      if (opts.since) criteria.since = opts.since;
-      if (!opts.query && !opts.from && !opts.since) criteria.all = true;
-      const uids = await client.search(criteria, { uid: true });
-      if (!uids || uids.length === 0) return [];
-      const newest = uids.sort((a, b) => a - b).slice(-limit);
-      const out: MailSummary[] = [];
-      for await (const msg of client.fetch(newest.join(","), { uid: true, envelope: true, flags: true }, { uid: true })) {
-        out.push({
-          uid: msg.uid,
-          date: msg.envelope?.date?.toISOString(),
-          from: addressLine(msg.envelope?.from),
-          subject: msg.envelope?.subject ?? "(no subject)",
-          seen: msg.flags?.has("\\Seen") ?? false,
-        });
-      }
-      return out.sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""));
-    } finally {
-      lock.release();
+    const boxes = (await client.list()).map((b) => ({ path: b.path, name: b.name, specialUse: b.specialUse || undefined }));
+    const available = boxes.map((b) => b.path);
+    const requested = opts.mailbox?.trim();
+    let paths: string[];
+    if (!requested) paths = ["INBOX"];
+    else if (/^(?:all|\*|everywhere|all mail)$/i.test(requested)) paths = searchableMailboxes(boxes);
+    else {
+      const path = resolveMailboxPath(boxes, requested);
+      if (!path) throw new Error(`No mailbox named “${requested}”. Available: ${available.join(", ")}.`);
+      paths = [path];
     }
+
+    const criteria: SearchObject = {};
+    if (opts.query) criteria.or = [{ subject: opts.query }, { body: opts.query }];
+    if (opts.from) criteria.from = opts.from;
+    // IMAP SINCE is a whole date (no time, server's zone): it selects a superset,
+    // and the exact instant is applied to each message's received time below.
+    if (opts.since) criteria.since = opts.since;
+    if (!opts.query && !opts.from && !opts.since) criteria.all = true;
+
+    const found: Array<MailSummary & { mailbox: string; received: number }> = [];
+    let total = 0;
+    for (const mailbox of paths) {
+      let lock;
+      try {
+        lock = await client.getMailboxLock(mailbox, { readOnly: true });
+      } catch {
+        continue; // a \Noselect parent folder in an "all" search
+      }
+      try {
+        const uids = await client.search(criteria, { uid: true });
+        if (!uids || uids.length === 0) continue;
+        const newest = [...uids].sort((a, b) => a - b).slice(-limit * 2);
+        for await (const msg of client.fetch(
+          newest.join(","),
+          { uid: true, envelope: true, flags: true, internalDate: true },
+          { uid: true }
+        )) {
+          const internal = msg.internalDate ? new Date(msg.internalDate) : undefined;
+          const received = internal?.getTime() ?? msg.envelope?.date?.getTime() ?? 0;
+          if (opts.since && received && received < opts.since.getTime()) continue;
+          total++;
+          found.push({
+            mailbox,
+            uid: msg.uid,
+            date: (internal ?? msg.envelope?.date)?.toISOString(),
+            from: addressLine(msg.envelope?.from),
+            subject: msg.envelope?.subject ?? "(no subject)",
+            seen: msg.flags?.has("\\Seen") ?? false,
+            received,
+          });
+        }
+        // Matches beyond the fetched window still count toward the total.
+        if (uids.length > newest.length) total += uids.length - newest.length;
+      } finally {
+        lock.release();
+      }
+    }
+    found.sort((a, b) => b.received - a.received);
+    return {
+      messages: found.slice(0, limit).map(({ received: _received, ...m }) => m),
+      searched: paths,
+      available,
+      total,
+    };
   });
 }
 

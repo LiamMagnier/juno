@@ -47,7 +47,10 @@ test("resolveConnectorsWithStatus verdicts: not linked, misconfigured, auth expi
   assert.equal(connectorFailureFor({ linked: true, configured: true, credential: "usable" }), null);
 
   // mcp.ts: beside getActiveConnectors (Work keeps its array), one shared resolver, request order.
-  assert.match(mcp, /export async function getActiveConnectors\(userId: string, requestedIds\?: string\[\]\): Promise<ActiveConnector\[\]>/);
+  assert.match(
+    mcp,
+    /export async function getActiveConnectors\(\s*userId: string,\s*requestedIds\?: string\[\],\s*opts: \{ timeZone\?: string \| null \} = \{\}\s*\): Promise<ActiveConnector\[\]>/
+  );
   assert.match(mcp, /export async function resolveConnectorsWithStatus\(/);
   assert.match(mcp, /for \(const id of ids \?\? \[\]\) \{/);
   // resolveConnectorsWithStatus delegates credential resolution to getActiveConnectors.

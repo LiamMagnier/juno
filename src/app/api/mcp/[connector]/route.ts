@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getConnector } from "@/lib/connectors";
+import { CONNECTOR_TIME_ZONE_HEADER, getConnector } from "@/lib/connectors";
 import { verifyConnectorToken } from "@/lib/connector-token";
 import { decryptSecret } from "@/lib/crypto";
 import * as caldav from "@/lib/apple/caldav";
 import * as mail from "@/lib/apple/mail";
 import * as music from "@/lib/apple/music";
+import { formatInZone, isIanaZone, parseUserInstant, resolveWindow } from "@/lib/apple/ical";
+import { renderEventSearch, type CallContext } from "@/lib/apple/tool-text";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -22,6 +24,8 @@ export const maxDuration = 60;
 const LATEST_PROTOCOL = "2025-06-18";
 const KNOWN_PROTOCOLS = new Set(["2024-11-05", "2025-03-26", "2025-06-18"]);
 const DEFAULT_RANGE_DAYS = 14;
+const DEFAULT_EVENT_LIMIT = 50;
+const MAX_EVENT_LIMIT = 200;
 
 interface JsonRpcMessage {
   jsonrpc?: string;
@@ -66,24 +70,33 @@ const TOOLS: Record<string, ToolSpec[]> = {
     },
     {
       name: "list_events",
-      description: `List events in a time range. Defaults to all calendars, from now to +${DEFAULT_RANGE_DAYS} days. Times are ISO 8601. Recurring events are flagged, not expanded.`,
+      description:
+        `List events in a time range across the user's iCloud calendars, including calendars they subscribed to with iCloud as the location. ` +
+        `Recurring events are expanded: each occurrence in the range is listed on its own date. ` +
+        `Give dates as the user means them: "2026-10-05" is that whole day on the user's clock, "2026-10-05T09:00" is 09:00 their time; ` +
+        `an explicit Z or offset is taken as an exact instant. Results are shown in the user's time zone. ` +
+        `Defaults to every calendar, from now to +${DEFAULT_RANGE_DAYS} days.`,
       inputSchema: obj({
         calendar: { type: "string", description: "Calendar name; omit to search every calendar." },
-        from: { type: "string", description: "Range start, ISO 8601. Defaults to now." },
-        to: { type: "string", description: `Range end, ISO 8601. Defaults to ${DEFAULT_RANGE_DAYS} days from the start.` },
-        limit: { type: "number", description: "Max events to return (default 25, max 50)." },
+        from: { type: "string", description: "Range start: YYYY-MM-DD (start of that day, user's time) or ISO 8601. Defaults to now." },
+        to: {
+          type: "string",
+          description: `Range end: YYYY-MM-DD (end of that day, inclusive, user's time) or ISO 8601. Defaults to ${DEFAULT_RANGE_DAYS} days after the start.`,
+        },
+        limit: { type: "number", description: `Max events to return (default ${DEFAULT_EVENT_LIMIT}, max ${MAX_EVENT_LIMIT}).` },
       }),
       annotations: READS,
     },
     {
       name: "create_event",
-      description: "Create a calendar event. Times are ISO 8601 (converted to UTC).",
+      description:
+        "Create a calendar event. Times are ISO 8601; a time without Z or an offset is read on the user's clock (their time zone).",
       inputSchema: obj(
         {
-          calendar: { type: "string", description: "Calendar name; defaults to the first calendar." },
+          calendar: { type: "string", description: "Calendar name; defaults to the first calendar that accepts new events." },
           title: { type: "string" },
-          start: { type: "string", description: "Start time, ISO 8601." },
-          end: { type: "string", description: "End time, ISO 8601." },
+          start: { type: "string", description: "Start time, ISO 8601 (user's time unless it carries Z or an offset)." },
+          end: { type: "string", description: "End time, ISO 8601 (user's time unless it carries Z or an offset)." },
           location: { type: "string" },
           notes: { type: "string" },
         },
@@ -113,13 +126,20 @@ const TOOLS: Record<string, ToolSpec[]> = {
     },
     {
       name: "search_messages",
-      description: "Search messages in a mailbox (default INBOX). Returns up to 25 newest matches with UIDs.",
+      description:
+        'Search messages in one mailbox (default INBOX), or in every mailbox except Trash, Junk and Drafts with mailbox "all". Returns the newest matches with their mailbox and UID.',
       inputSchema: obj({
-        mailbox: { type: "string", description: "Mailbox path; defaults to INBOX." },
+        mailbox: {
+          type: "string",
+          description: 'Mailbox path or name ("Sent", "Archive" work too), or "all". Defaults to INBOX.',
+        },
         query: { type: "string", description: "Text to match in the subject or body." },
         from: { type: "string", description: "Match the From address." },
-        since: { type: "string", description: "Only messages received on/after this date (ISO 8601)." },
-        limit: { type: "number", description: "Max results (default 25, max 25)." },
+        since: {
+          type: "string",
+          description: "Only messages received on/after this: YYYY-MM-DD (start of that day, user's time) or ISO 8601.",
+        },
+        limit: { type: "number", description: "Max results (default 25, max 50)." },
       }),
       annotations: READS,
     },
@@ -226,60 +246,65 @@ function appleCreds(creds: StoredCredentials): { appleId: string; appPassword: s
   return { appleId: creds.appleId, appPassword: creds.appPassword };
 }
 
-async function resolveCalendar(creds: caldav.CalDavCredentials, name?: string): Promise<caldav.CalDavCalendar> {
-  const calendars = await caldav.listCalendars(creds);
-  if (calendars.length === 0) throw new Error("No calendars found on this iCloud account.");
-  if (!name) return calendars[0];
-  const t = name.toLowerCase();
-  const hit = calendars.find((c) => c.name.toLowerCase() === t) ?? calendars.find((c) => c.name.toLowerCase().includes(t));
-  if (!hit) throw new Error(`No calendar named “${name}”. Available: ${calendars.map((c) => c.name).join(", ")}.`);
-  return hit;
+function writableCalendars(calendars: caldav.CalDavCalendar[]): caldav.CalDavCalendar[] {
+  // A subscription's events belong to its feed; iCloud refuses writes to it.
+  return calendars.filter((c) => c.kind === "calendar");
 }
 
-function formatEvent(e: caldav.CalDavEvent, calendarName: string): string {
-  const when = e.end ? `${e.start} → ${e.end}` : e.start;
-  const extras = [e.location, e.recurring ? "recurring" : undefined].filter(Boolean).join(" · ");
-  return `• ${e.summary} — ${when}${extras ? ` (${extras})` : ""} · uid: ${e.uid} · calendar: ${calendarName}`;
+async function resolveWritableCalendar(creds: caldav.CalDavCredentials, name?: string): Promise<caldav.CalDavCalendar> {
+  const calendars = writableCalendars(await caldav.listCalendars(creds));
+  if (calendars.length === 0) throw new Error("No calendars on this iCloud account accept new events.");
+  return name ? caldav.pickCalendar(calendars, name) : calendars[0];
 }
 
-async function callCalendarTool(name: string, args: Record<string, unknown>, creds: StoredCredentials): Promise<string> {
+async function callCalendarTool(
+  name: string,
+  args: Record<string, unknown>,
+  creds: StoredCredentials,
+  ctx: CallContext
+): Promise<string> {
   const c = appleCreds(creds);
   switch (name) {
     case "list_calendars": {
-      const calendars = await caldav.listCalendars(c);
-      if (calendars.length === 0) return "No calendars found on this iCloud account.";
-      return `Calendars (${calendars.length}):\n${calendars.map((cal) => `• ${cal.name}`).join("\n")}`;
+      const home = await caldav.listCalendarHome(c);
+      if (home.calendars.length === 0) return "No event calendars found on this iCloud account.";
+      const lines = home.calendars.map((cal) => `• ${cal.name}${cal.kind === "subscribed" ? " (subscribed, read-only)" : ""}`);
+      const skipped = home.skipped.map((s) => `• ${s.name} — not listed: ${s.reason}`);
+      return `Calendars (${home.calendars.length}):\n${[...lines, ...skipped].join("\n")}`;
     }
     case "list_events": {
-      const from = argStr(args, "from") ?? new Date().toISOString();
-      const to = argStr(args, "to") ?? new Date(new Date(from).getTime() + DEFAULT_RANGE_DAYS * 86_400_000).toISOString();
-      const limit = Math.min(Math.max(argNum(args, "limit") ?? 25, 1), 50);
-      const calendarName = argStr(args, "calendar");
-      const calendars = calendarName ? [await resolveCalendar(c, calendarName)] : await caldav.listCalendars(c);
-      const results = await Promise.all(
-        calendars.map(async (cal) => (await caldav.listEvents(c, cal.url, from, to)).map((e) => ({ e, cal: cal.name })))
-      );
-      const merged = results
-        .flat()
-        .sort((a, b) => a.e.start.localeCompare(b.e.start))
-        .slice(0, limit);
-      if (merged.length === 0) return `No events between ${from} and ${to}.`;
-      return `Events between ${from} and ${to} (${merged.length}):\n${merged.map(({ e, cal }) => formatEvent(e, cal)).join("\n")}`;
+      const window = resolveWindow(argStr(args, "from"), argStr(args, "to"), ctx.zone, Date.now(), DEFAULT_RANGE_DAYS);
+      const limit = Math.min(Math.max(Math.floor(argNum(args, "limit") ?? DEFAULT_EVENT_LIMIT), 1), MAX_EVENT_LIMIT);
+      const result = await caldav.searchEvents(c, {
+        fromMs: window.fromMs,
+        toMs: window.toMs,
+        zone: ctx.zone,
+        calendar: argStr(args, "calendar"),
+      });
+      return renderEventSearch(result, window, ctx, limit);
     }
     case "create_event": {
-      const cal = await resolveCalendar(c, argStr(args, "calendar"));
+      const cal = await resolveWritableCalendar(c, argStr(args, "calendar"));
       const title = requireStr(args, "title");
+      const startRaw = requireStr(args, "start");
+      const endRaw = requireStr(args, "end");
+      const startMs = parseUserInstant(startRaw, ctx.zone, "start");
+      // A bare end date means "through that day".
+      const endMs = parseUserInstant(endRaw, ctx.zone, "end");
+      if (startMs === null) throw new Error(`Invalid start date: ${startRaw}`);
+      if (endMs === null) throw new Error(`Invalid end date: ${endRaw}`);
       const { uid } = await caldav.createEvent(c, cal.url, {
         title,
-        start: requireStr(args, "start"),
-        end: requireStr(args, "end"),
+        startMs,
+        endMs,
         location: argStr(args, "location"),
         notes: argStr(args, "notes"),
       });
-      return `Created “${title}” on ${cal.name} (uid: ${uid}).`;
+      return `Created “${title}” on ${cal.name}, ${formatInZone(startMs, ctx.zone)} → ${formatInZone(endMs, ctx.zone)} (uid: ${uid}).`;
     }
     case "delete_event": {
-      const cal = await resolveCalendar(c, requireStr(args, "calendar"));
+      const calendars = writableCalendars(await caldav.listCalendars(c));
+      const cal = caldav.pickCalendar(calendars, requireStr(args, "calendar"));
       const uid = requireStr(args, "uid");
       await caldav.deleteEvent(c, cal.url, uid);
       return `Deleted event ${uid} from ${cal.name}.`;
@@ -289,7 +314,12 @@ async function callCalendarTool(name: string, args: Record<string, unknown>, cre
   }
 }
 
-async function callMailTool(name: string, args: Record<string, unknown>, creds: StoredCredentials): Promise<string> {
+async function callMailTool(
+  name: string,
+  args: Record<string, unknown>,
+  creds: StoredCredentials,
+  ctx: CallContext
+): Promise<string> {
   const c = appleCreds(creds);
   switch (name) {
     case "list_mailboxes": {
@@ -301,20 +331,38 @@ async function callMailTool(name: string, args: Record<string, unknown>, creds: 
     }
     case "search_messages": {
       const sinceStr = argStr(args, "since");
-      const since = sinceStr ? new Date(sinceStr) : undefined;
-      if (since && Number.isNaN(since.getTime())) throw new Error(`Invalid ISO 8601 date: ${sinceStr}`);
-      const mailbox = argStr(args, "mailbox") ?? "INBOX";
-      const messages = await mail.searchMessages(c, {
-        mailbox,
+      const sinceMs = sinceStr ? parseUserInstant(sinceStr, ctx.zone, "start") : null;
+      if (sinceStr && sinceMs === null) throw new Error(`Invalid date: ${sinceStr}`);
+      const result = await mail.searchMessages(c, {
+        mailbox: argStr(args, "mailbox"),
         query: argStr(args, "query"),
         from: argStr(args, "from"),
-        since,
+        since: sinceMs === null ? undefined : new Date(sinceMs),
         limit: argNum(args, "limit"),
       });
-      if (messages.length === 0) return `No matching messages in ${mailbox}.`;
-      return `Messages in ${mailbox} (${messages.length}, newest first):\n${messages
-        .map((m) => `• [uid ${m.uid}] ${m.subject} — from ${m.from ?? "unknown"}${m.date ? ` · ${m.date}` : ""}${m.seen ? "" : " · unread"}`)
-        .join("\n")}`;
+      const where = result.searched.length === 1 ? result.searched[0] : `${result.searched.length} mailboxes`;
+      if (result.messages.length === 0) {
+        const others = result.available.filter((p) => !result.searched.includes(p));
+        return [
+          `No matching messages in ${where}.`,
+          others.length > 0 && result.searched.length === 1
+            ? `Not searched: ${others.join(", ")}. Pass mailbox (or "all") to look there.`
+            : null,
+        ]
+          .filter(Boolean)
+          .join("\n");
+      }
+      const more = result.total - result.messages.length;
+      return [
+        `Messages in ${where} (${result.messages.length}${more > 0 ? ` of ${result.total}` : ""}, newest first):`,
+        ...result.messages.map(
+          (m) =>
+            `• [${result.searched.length > 1 ? `${m.mailbox} · ` : ""}uid ${m.uid}] ${m.subject} — from ${m.from ?? "unknown"}${
+              m.date ? ` · ${formatInZone(Date.parse(m.date), ctx.zone)}` : ""
+            }${m.seen ? "" : " · unread"}`
+        ),
+        ...(more > 0 ? [`…${more} older match${more === 1 ? "" : "es"} not shown; narrow the search to see them.`] : []),
+      ].join("\n");
     }
     case "read_message": {
       const mailbox = requireStr(args, "mailbox");
@@ -381,9 +429,15 @@ async function callMusicTool(name: string, args: Record<string, unknown>, creds:
   }
 }
 
-async function callTool(connectorId: string, name: string, args: Record<string, unknown>, creds: StoredCredentials): Promise<string> {
-  if (connectorId === "apple-calendar") return callCalendarTool(name, args, creds);
-  if (connectorId === "apple-mail") return callMailTool(name, args, creds);
+async function callTool(
+  connectorId: string,
+  name: string,
+  args: Record<string, unknown>,
+  creds: StoredCredentials,
+  ctx: CallContext
+): Promise<string> {
+  if (connectorId === "apple-calendar") return callCalendarTool(name, args, creds, ctx);
+  if (connectorId === "apple-mail") return callMailTool(name, args, creds, ctx);
   if (connectorId === "apple-music") return callMusicTool(name, args, creds);
   throw new Error(`Unknown connector: ${connectorId}`);
 }
@@ -398,7 +452,12 @@ function rpcError(id: number | string | null, code: number, message: string) {
   return { jsonrpc: "2.0", id, error: { code, message } };
 }
 
-async function handleMessage(msg: JsonRpcMessage, connectorId: string, creds: StoredCredentials): Promise<object | null> {
+async function handleMessage(
+  msg: JsonRpcMessage,
+  connectorId: string,
+  creds: StoredCredentials,
+  ctx: CallContext
+): Promise<object | null> {
   const { method, params } = msg;
   const id = msg.id ?? null;
   const isNotification = msg.id === undefined || method?.startsWith("notifications/");
@@ -424,7 +483,7 @@ async function handleMessage(msg: JsonRpcMessage, connectorId: string, creds: St
         return rpcError(id, -32602, `Unknown tool: ${name}`);
       }
       try {
-        const text = await callTool(connectorId, name, args, creds);
+        const text = await callTool(connectorId, name, args, creds, ctx);
         return rpcResult(id, { content: [{ type: "text", text: text.slice(0, 30_000) }] });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -469,16 +528,22 @@ export async function POST(req: Request, { params }: { params: Promise<{ connect
     return NextResponse.json(rpcError(null, -32700, "Parse error"), { status: 400 });
   }
 
+  // The caller's zone (sent by lib/mcp.ts from the chat request) decides what
+  // "the 5th" and "09:00" mean; without one, UTC stands in and the answer says so.
+  const requestedZone = req.headers.get(CONNECTOR_TIME_ZONE_HEADER)?.trim() ?? "";
+  const zoneKnown = requestedZone.length > 0 && requestedZone.length <= 64 && isIanaZone(requestedZone);
+  const ctx: CallContext = { zone: zoneKnown ? requestedZone : "UTC", zoneKnown };
+
   // JSON response mode per the MCP streamable-http spec — no SSE stream needed.
   if (Array.isArray(body)) {
     const responses = (
-      await Promise.all(body.map((m) => handleMessage(m as JsonRpcMessage, connector, creds)))
+      await Promise.all(body.map((m) => handleMessage(m as JsonRpcMessage, connector, creds, ctx)))
     ).filter((r): r is object => r !== null);
     if (responses.length === 0) return new Response(null, { status: 202 });
     return NextResponse.json(responses);
   }
 
-  const response = await handleMessage(body as JsonRpcMessage, connector, creds);
+  const response = await handleMessage(body as JsonRpcMessage, connector, creds, ctx);
   if (!response) return new Response(null, { status: 202 });
   return NextResponse.json(response);
 }

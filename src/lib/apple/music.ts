@@ -87,9 +87,20 @@ export async function searchCatalog(
   return out;
 }
 
+/** Most library playlists one call reads (Apple pages them 100 at a time). */
+const MAX_PLAYLISTS = 500;
+
 export async function listPlaylists(musicUserToken: string): Promise<MusicItem[]> {
-  const data = (await musicRequest("/v1/me/library/playlists?limit=25", musicUserToken)) as { data?: MusicResource[] };
-  return (data?.data ?? []).map(toItem);
+  // Follow `next`: one 25-item page used to be the whole answer, so a playlist
+  // past the 25th was reported as not existing.
+  const out: MusicItem[] = [];
+  let path: string | null = "/v1/me/library/playlists?limit=100";
+  while (path && out.length < MAX_PLAYLISTS) {
+    const page = (await musicRequest(path, musicUserToken)) as { data?: MusicResource[]; next?: string } | null;
+    out.push(...(page?.data ?? []).map(toItem));
+    path = page?.next && page.next.startsWith("/v1/") ? page.next : null;
+  }
+  return out.slice(0, MAX_PLAYLISTS);
 }
 
 export async function getRecentlyPlayed(musicUserToken: string): Promise<MusicItem[]> {

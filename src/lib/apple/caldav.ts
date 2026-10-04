@@ -1,11 +1,25 @@
 import "server-only";
 import { randomUUID } from "crypto";
+import { PRODUCT_NAME } from "@/lib/brand/names";
+import { fetchPinnedPublicUrl } from "@/lib/search/pinned-fetch";
+import {
+  parseCalendarHome,
+  parseCalendarQuery,
+  tagBlocks,
+  tagContent,
+  xmlEscape,
+  xmlUnescape,
+  type CalendarCollection,
+  type CalendarHomeListing,
+} from "@/lib/apple/caldav-xml";
+import { occurrencesInRange, type EventOccurrence, type Zone } from "@/lib/apple/ical";
 
 /*
  * Minimal hand-rolled CalDAV client for iCloud (caldav.icloud.com), enough for
  * discovery, listing calendars/events, and creating/deleting events. Auth is
- * HTTP Basic with an Apple ID + app-specific password. XML in/out is handled
- * with small namespace-agnostic string helpers — no XML dependency.
+ * HTTP Basic with an Apple ID + app-specific password. The XML is read in
+ * caldav-xml.ts and the iCalendar (zones, recurrence) in ical.ts, both pure so
+ * they are tested against recorded iCloud payloads.
  */
 
 export interface CalDavCredentials {
@@ -13,22 +27,9 @@ export interface CalDavCredentials {
   appPassword: string;
 }
 
-export interface CalDavCalendar {
-  name: string;
-  /** Absolute collection URL on the user's iCloud partition host. */
-  url: string;
-}
+export type CalDavCalendar = CalendarCollection;
 
-export interface CalDavEvent {
-  uid: string;
-  summary: string;
-  start: string;
-  end?: string;
-  location?: string;
-  description?: string;
-  /** True when the event carries an RRULE (we flag recurrence, we don't expand it). */
-  recurring: boolean;
-}
+const USER_AGENT = `${PRODUCT_NAME}/1.0 (CalDAV)`;
 
 /** Thrown when iCloud rejects the Basic credentials (401/403). */
 export class CalDavAuthError extends Error {
@@ -56,6 +57,7 @@ async function davRequest(
       redirect: "manual",
       headers: {
         Authorization: auth,
+        "User-Agent": USER_AGENT,
         "Content-Type": init.contentType ?? "text/xml; charset=utf-8",
         ...(init.depth !== undefined ? { Depth: init.depth } : {}),
         ...init.headers,
@@ -81,44 +83,6 @@ async function davRequest(
     return { status: res.status, text: await res.text(), url: current };
   }
   throw new Error("Too many redirects from the CalDAV server");
-}
-
-/* ---------- Namespace-agnostic XML helpers ---------- */
-
-function tagContent(xml: string, tag: string): string | null {
-  const m = xml.match(new RegExp(`<(?:[\\w-]+:)?${tag}(?:\\s[^>]*)?>([\\s\\S]*?)</(?:[\\w-]+:)?${tag}>`, "i"));
-  return m ? m[1].trim() : null;
-}
-
-function tagBlocks(xml: string, tag: string): string[] {
-  const out: string[] = [];
-  const re = new RegExp(`<(?:[\\w-]+:)?${tag}(?:\\s[^>]*)?>([\\s\\S]*?)</(?:[\\w-]+:)?${tag}>`, "gi");
-  for (const m of xml.matchAll(re)) out.push(m[1]);
-  return out;
-}
-
-function hasEmptyOrPairedTag(xml: string, tag: string): boolean {
-  return new RegExp(`<(?:[\\w-]+:)?${tag}(?:\\s[^>]*)?/?>`, "i").test(xml);
-}
-
-function xmlEscape(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-}
-
-function xmlUnescape(s: string): string {
-  return s
-    .replace(/&#(\d+);/g, (_, n: string) => String.fromCharCode(Number(n)))
-    .replace(/&#x([0-9a-fA-F]+);/g, (_, n: string) => String.fromCharCode(parseInt(n, 16)))
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'")
-    .replace(/&amp;/g, "&");
-}
-
-function unwrapCdata(s: string): string {
-  const m = s.match(/^\s*<!\[CDATA\[([\s\S]*)\]\]>\s*$/);
-  return m ? m[1] : xmlUnescape(s);
 }
 
 /* ---------- Discovery ---------- */
@@ -158,128 +122,195 @@ export async function validateCalDavCredentials(creds: CalDavCredentials): Promi
   await discoverCalendarHome(creds);
 }
 
-export async function listCalendars(creds: CalDavCredentials): Promise<CalDavCalendar[]> {
+export async function listCalendarHome(creds: CalDavCredentials): Promise<CalendarHomeListing> {
   const home = await discoverCalendarHome(creds);
   const res = await davRequest(
     home,
     {
       method: "PROPFIND",
       depth: "1",
-      body: `<?xml version="1.0" encoding="UTF-8"?><propfind xmlns="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav"><prop><displayname/><resourcetype/><c:supported-calendar-component-set/></prop></propfind>`,
+      body:
+        `<?xml version="1.0" encoding="UTF-8"?>` +
+        `<propfind xmlns="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav" xmlns:cs="http://calendarserver.org/ns/">` +
+        `<prop><displayname/><resourcetype/><c:supported-calendar-component-set/><cs:source/></prop></propfind>`,
     },
     creds
   );
   if (res.status >= 400) throw new Error(`CalDAV calendar listing failed (${res.status})`);
-
-  const calendars: CalDavCalendar[] = [];
-  for (const block of tagBlocks(res.text, "response")) {
-    const href = tagContent(block, "href");
-    if (!href) continue;
-    const resourceType = tagContent(block, "resourcetype") ?? "";
-    if (!hasEmptyOrPairedTag(resourceType, "calendar")) continue;
-    // Skip VTODO-only collections (Reminders) when the server declares components.
-    const components = tagContent(block, "supported-calendar-component-set");
-    if (components && !/name="VEVENT"/i.test(components)) continue;
-    const url = new URL(xmlUnescape(href), res.url).toString();
-    const displayName = tagContent(block, "displayname");
-    const fallback = decodeURIComponent(url.replace(/\/$/, "").split("/").pop() ?? "Calendar");
-    calendars.push({ name: displayName ? xmlUnescape(displayName) : fallback, url });
-  }
-  return calendars;
+  return parseCalendarHome(res.text, res.url);
 }
 
-/* ---------- ICS parsing / building ---------- */
-
-function icsUnescape(s: string): string {
-  return s.replace(/\\n/gi, "\n").replace(/\\([\\;,])/g, "$1");
+/** The calendars the user can read events from: iCloud calendars and iCloud-stored subscriptions. */
+export async function listCalendars(creds: CalDavCredentials): Promise<CalDavCalendar[]> {
+  return (await listCalendarHome(creds)).calendars;
 }
+
+/* ---------- ICS building ---------- */
 
 function icsEscape(s: string): string {
   return s.replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\r?\n/g, "\\n");
 }
 
-/** 20260705 → 2026-07-05 · 20260705T120000[Z] → 2026-07-05T12:00:00[Z]. */
-function icsDateToIso(value: string): string {
-  const m = value.match(/^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})(Z)?)?$/);
-  if (!m) return value;
-  if (!m[4]) return `${m[1]}-${m[2]}-${m[3]}`;
-  return `${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6]}${m[7] ?? ""}`;
-}
-
-function isoToIcsUtc(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) throw new Error(`Invalid ISO 8601 date: ${iso}`);
+function msToIcsUtc(ms: number): string {
+  const d = new Date(ms);
+  if (Number.isNaN(d.getTime())) throw new Error("Invalid date");
   return d.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
 }
 
-/** Read one property from an unfolded VEVENT body, ignoring parameters (;TZID=…). */
-function icsProp(vevent: string, name: string): string | null {
-  const m = vevent.match(new RegExp(`^${name}(?:;[^:\\r\\n]*)?:(.*)$`, "im"));
-  return m ? m[1].trim() : null;
+/* ---------- Reading events ---------- */
+
+function calendarQueryBody(range: { fromMs: number; toMs: number } | null): string {
+  return (
+    `<?xml version="1.0" encoding="UTF-8"?>` +
+    `<c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">` +
+    `<d:prop><d:getetag/><c:calendar-data/></d:prop>` +
+    `<c:filter><c:comp-filter name="VCALENDAR"><c:comp-filter name="VEVENT">` +
+    (range ? `<c:time-range start="${msToIcsUtc(range.fromMs)}" end="${msToIcsUtc(range.toMs)}"/>` : "") +
+    `</c:comp-filter></c:comp-filter></c:filter>` +
+    `</c:calendar-query>`
+  );
 }
 
-/** Parse the VEVENTs of an ICS payload into our minimal event shape. */
-export function parseIcsEvents(ics: string): CalDavEvent[] {
-  const unfolded = ics.replace(/\r?\n[ \t]/g, "");
-  const events: CalDavEvent[] = [];
-  for (const m of unfolded.matchAll(/BEGIN:VEVENT([\s\S]*?)END:VEVENT/g)) {
-    const body = m[1];
-    const uid = icsProp(body, "UID");
-    const start = icsProp(body, "DTSTART");
-    if (!uid || !start) continue;
-    const end = icsProp(body, "DTEND");
-    const location = icsProp(body, "LOCATION");
-    const description = icsProp(body, "DESCRIPTION");
-    events.push({
-      uid: icsUnescape(uid),
-      summary: icsUnescape(icsProp(body, "SUMMARY") ?? "(untitled)"),
-      start: icsDateToIso(start),
-      end: end ? icsDateToIso(end) : undefined,
-      location: location ? icsUnescape(location) : undefined,
-      description: description ? icsUnescape(description) : undefined,
-      recurring: /^RRULE(?:;|:)/im.test(body) || /^RECURRENCE-ID(?:;|:)/im.test(body),
-    });
-  }
-  return events;
-}
-
-export async function listEvents(
+/**
+ * The ICS objects of one iCloud calendar that have an instance in the window
+ * (server-side time-range), or every event object when `range` is null.
+ * Recurring events come back as their MASTER: expansion happens in ical.ts.
+ */
+async function queryCalendarObjects(
   creds: CalDavCredentials,
   calendarUrl: string,
-  fromIso: string,
-  toIso: string
-): Promise<CalDavEvent[]> {
-  const res = await davRequest(
-    calendarUrl,
-    {
-      method: "REPORT",
-      depth: "1",
-      body:
-        `<?xml version="1.0" encoding="UTF-8"?>` +
-        `<c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">` +
-        `<d:prop><d:getetag/><c:calendar-data/></d:prop>` +
-        `<c:filter><c:comp-filter name="VCALENDAR"><c:comp-filter name="VEVENT">` +
-        `<c:time-range start="${isoToIcsUtc(fromIso)}" end="${isoToIcsUtc(toIso)}"/>` +
-        `</c:comp-filter></c:comp-filter></c:filter>` +
-        `</c:calendar-query>`,
-    },
-    creds
-  );
+  range: { fromMs: number; toMs: number } | null
+): Promise<string[]> {
+  const res = await davRequest(calendarUrl, { method: "REPORT", depth: "1", body: calendarQueryBody(range) }, creds);
   if (res.status >= 400) throw new Error(`CalDAV event query failed (${res.status})`);
+  return parseCalendarQuery(res.text);
+}
 
-  const events: CalDavEvent[] = [];
-  const seen = new Set<string>();
-  for (const block of tagBlocks(res.text, "response")) {
-    const data = tagContent(block, "calendar-data");
-    if (!data) continue;
-    for (const event of parseIcsEvents(unwrapCdata(data))) {
-      if (seen.has(event.uid)) continue; // recurrence overrides share the master's UID
-      seen.add(event.uid);
-      events.push(event);
+const FEED_MAX_BYTES = 8 * 1024 * 1024;
+const FEED_TIMEOUT_MS = 15_000;
+const FEED_MAX_REDIRECTS = 3;
+
+/**
+ * Fetch a subscribed calendar's ICS feed. The URL comes from the user's own
+ * iCloud account but is still an arbitrary URL dialled from our network, so
+ * every hop goes through the pinned public-address fetcher (no private,
+ * loopback or metadata hosts; no DNS rebinding) and no credential is sent.
+ */
+async function fetchFeed(url: string): Promise<string> {
+  let current = url;
+  const signal = AbortSignal.timeout(FEED_TIMEOUT_MS);
+  for (let hop = 0; hop <= FEED_MAX_REDIRECTS; hop++) {
+    const res = await fetchPinnedPublicUrl(
+      current,
+      { headers: { Accept: "text/calendar, */*;q=0.5", "User-Agent": USER_AGENT } },
+      signal,
+      { maxBytes: FEED_MAX_BYTES }
+    );
+    if (res.status >= 300 && res.status < 400) {
+      const loc = res.headers.get("location");
+      await res.body?.cancel().catch(() => {});
+      if (!loc) throw new Error(`feed redirect (${res.status}) without a Location`);
+      current = new URL(loc.replace(/^webcals?:\/\//i, "https://"), current).toString();
+      continue;
     }
+    if (!res.ok) throw new Error(`feed answered ${res.status}`);
+    const text = await res.text();
+    if (!/BEGIN:VCALENDAR/i.test(text)) throw new Error("feed is not an iCalendar file");
+    return text;
   }
-  events.sort((a, b) => a.start.localeCompare(b.start));
-  return events;
+  throw new Error("feed redirected too many times");
+}
+
+export interface CalendarOccurrence extends EventOccurrence {
+  calendar: string;
+}
+
+export interface EventSearch {
+  occurrences: CalendarOccurrence[];
+  /** Every calendar actually read, in order. */
+  searched: string[];
+  /** Calendars that could not be read, with why. */
+  failed: Array<{ name: string; reason: string }>;
+  /** Collections that are not event calendars (reminders lists…). */
+  skipped: Array<{ name: string; reason: string }>;
+}
+
+/**
+ * Every event occurrence overlapping [fromMs, toMs) across the user's
+ * calendars — iCloud calendars over CalDAV, iCloud-stored subscriptions from
+ * their feeds — expanded and placed in `zone`. One unreadable calendar is
+ * reported, never allowed to sink the others or to read as "no events".
+ */
+export async function searchEvents(
+  creds: CalDavCredentials,
+  opts: { fromMs: number; toMs: number; zone: Zone; calendar?: string },
+  /** Test seam: how a subscribed calendar's feed is fetched. */
+  deps: { fetchFeed?: (url: string) => Promise<string> } = {}
+): Promise<EventSearch> {
+  const readFeed = deps.fetchFeed ?? fetchFeed;
+  const home = await listCalendarHome(creds);
+  let calendars = home.calendars;
+  if (opts.calendar) calendars = [pickCalendar(calendars, opts.calendar)];
+  const range = { fromMs: opts.fromMs, toMs: opts.toMs };
+  const failed: EventSearch["failed"] = [];
+
+  const read = async (cal: CalDavCalendar, filtered: boolean): Promise<CalendarOccurrence[]> => {
+    const payloads =
+      cal.kind === "subscribed" && cal.sourceUrl
+        ? [await readFeed(cal.sourceUrl)]
+        : await queryCalendarObjects(creds, cal.url, filtered ? range : null);
+    return payloads.flatMap((ics) =>
+      occurrencesInRange(ics, opts.fromMs, opts.toMs, opts.zone).map((o) => ({ ...o, calendar: cal.name }))
+    );
+  };
+
+  const settle = async (filtered: boolean, which: CalDavCalendar[]) =>
+    Promise.all(
+      which.map(async (cal) => {
+        try {
+          return await read(cal, filtered);
+        } catch (err) {
+          if (err instanceof CalDavAuthError) throw err;
+          failed.push({ name: cal.name, reason: err instanceof Error ? err.message : String(err) });
+          return [];
+        }
+      })
+    );
+
+  let occurrences = (await settle(true, calendars)).flat();
+  // Belt and braces: when the server-side time-range found nothing anywhere,
+  // read the iCloud calendars whole once and filter here. A wrong empty answer
+  // is the failure that makes the model tell someone their day is free.
+  const caldavCalendars = calendars.filter((c) => c.kind === "calendar" && !failed.some((f) => f.name === c.name));
+  if (occurrences.length === 0 && caldavCalendars.length > 0) {
+    occurrences = (await settle(false, caldavCalendars)).flat();
+  }
+
+  const seen = new Set<string>();
+  occurrences = occurrences
+    .filter((o) => {
+      const key = `${o.calendar}|${o.uid}|${o.startMs}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .sort((a, b) => a.startMs - b.startMs || a.calendar.localeCompare(b.calendar));
+
+  return {
+    occurrences,
+    searched: calendars.filter((c) => !failed.some((f) => f.name === c.name)).map((c) => c.name),
+    failed,
+    skipped: home.skipped,
+  };
+}
+
+/** Exact name first, then a substring match. */
+export function pickCalendar(calendars: CalDavCalendar[], name: string): CalDavCalendar {
+  if (calendars.length === 0) throw new Error("No calendars found on this iCloud account.");
+  const t = name.trim().toLowerCase();
+  const hit = calendars.find((c) => c.name.toLowerCase() === t) ?? calendars.find((c) => c.name.toLowerCase().includes(t));
+  if (!hit) throw new Error(`No calendar named “${name}”. Available: ${calendars.map((c) => c.name).join(", ")}.`);
+  return hit;
 }
 
 /** Fold an ICS content line at 74 octets per RFC 5545 (continuation = leading space). */
@@ -297,18 +328,19 @@ function foldIcsLine(line: string): string {
 export async function createEvent(
   creds: CalDavCredentials,
   calendarUrl: string,
-  input: { title: string; start: string; end: string; location?: string; notes?: string }
+  input: { title: string; startMs: number; endMs: number; location?: string; notes?: string }
 ): Promise<{ uid: string }> {
+  if (!(input.endMs > input.startMs)) throw new Error("The event must end after it starts.");
   const uid = randomUUID().toUpperCase();
   const lines = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
-    "PRODID:-//Juno//Connector//EN",
+    `PRODID:-//${PRODUCT_NAME}//Connector//EN`,
     "BEGIN:VEVENT",
     `UID:${uid}`,
-    `DTSTAMP:${isoToIcsUtc(new Date().toISOString())}`,
-    `DTSTART:${isoToIcsUtc(input.start)}`,
-    `DTEND:${isoToIcsUtc(input.end)}`,
+    `DTSTAMP:${msToIcsUtc(Date.now())}`,
+    `DTSTART:${msToIcsUtc(input.startMs)}`,
+    `DTEND:${msToIcsUtc(input.endMs)}`,
     `SUMMARY:${icsEscape(input.title)}`,
     ...(input.location ? [`LOCATION:${icsEscape(input.location)}`] : []),
     ...(input.notes ? [`DESCRIPTION:${icsEscape(input.notes)}`] : []),

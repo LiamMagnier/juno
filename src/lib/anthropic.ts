@@ -66,16 +66,37 @@ export {
   type SystemPromptOptions,
 } from "@/lib/chat/system-prompt";
 
-/** Per-request dynamic context (currently the date). Kept OUT of the cached
- *  prefix: each adapter appends it after its stable region. */
-export function buildDynamicContext(): string {
-  const today = new Date().toLocaleDateString("en-US", {
+/** Per-request dynamic context (the date, and the user's zone when known). Kept
+ *  OUT of the cached prefix: each adapter appends it after its stable region.
+ *
+ *  The date is the USER's date: the server runs in UTC, so a Paris evening
+ *  after 22:00 used to read as the next day. And the zone is named, so a
+ *  model filling a tool argument ("my events tomorrow") asks for the user's
+ *  day instead of a UTC one. */
+export function buildDynamicContext(timeZone?: string | null): string {
+  let zone: string | undefined;
+  if (timeZone && timeZone.length <= 64) {
+    try {
+      new Intl.DateTimeFormat("en-US", { timeZone });
+      zone = timeZone;
+    } catch {
+      zone = undefined;
+    }
+  }
+  const now = new Date();
+  const today = now.toLocaleDateString("en-US", {
     weekday: "long",
     year: "numeric",
     month: "long",
     day: "numeric",
+    ...(zone ? { timeZone: zone } : {}),
   });
-  return `Today is ${today}.`;
+  if (!zone) return `Today is ${today}.`;
+  const offset =
+    new Intl.DateTimeFormat("en-US", { timeZone: zone, timeZoneName: "longOffset" })
+      .formatToParts(now)
+      .find((p) => p.type === "timeZoneName")?.value ?? zone;
+  return `Today is ${today}. The user's time zone is ${zone} (${offset}); dates and times they mention are on that clock.`;
 }
 
 /** Convert persisted messages (+ their attachments) into Anthropic message params. */
