@@ -1048,13 +1048,25 @@ function ComposerImpl({
   // Empty-state suggestions seed the real composer rather than navigating to a
   // fake flow or auto-sending a side effect. The event keeps the greeting
   // independent from the composer's sizeable transport contract.
+  //
+  // A research cover's "Go further" and "Try again" seed `{ text, research }`:
+  // the question, with research armed for the one send (it never sticks), so
+  // the follow-up is the person's own send and still passes the plan gate.
+  const researchSeedAllowed = planAllowsResearch && researchAvailable;
+  const researchSeedAllowedRef = React.useRef(researchSeedAllowed);
+  researchSeedAllowedRef.current = researchSeedAllowed;
   React.useEffect(() => {
     const seed = (event: Event) => {
+      const detail = event instanceof CustomEvent ? (event.detail as unknown) : null;
       const value =
-        event instanceof CustomEvent && typeof event.detail === "string"
-          ? event.detail
-          : "";
-      if (!value) return;
+        typeof detail === "string"
+          ? detail
+          : detail && typeof detail === "object" && typeof (detail as { text?: unknown }).text === "string"
+            ? (detail as { text: string }).text
+            : "";
+      const armResearch = !!detail && typeof detail === "object" && (detail as { research?: unknown }).research === true;
+      if (!value && !armResearch) return;
+      if (armResearch && researchSeedAllowedRef.current) setResearch(true);
       setText(value);
       requestAnimationFrame(() => {
         const field = textareaRef.current;

@@ -83,6 +83,7 @@ import {
   countsOf,
   dtoEffort,
   estimateOf,
+  emergingAnswersOf,
   latestFindingsOf,
   pagesReadOf,
   phaseDetailFor,
@@ -1242,7 +1243,10 @@ export async function readResearchRun(input: {
   const store = createPrismaResearchStore();
   const run = await store.loadRun(input.runId, input.userId);
   if (!run) return null;
-  const [events, sources, auditEvent, latestEvent, phaseEvent, findings] = await Promise.all([
+  // The notes behind "What we know so far" (RESEARCH_V2 §3): live runs only —
+  // a finished run has its report — strongest first, claims only, bounded.
+  const live = !isTerminalResearchState(run.state);
+  const [events, sources, auditEvent, latestEvent, phaseEvent, findings, notes] = await Promise.all([
     store.readEvents({
       runId: run.id,
       userId: run.userId,
@@ -1276,6 +1280,14 @@ export async function readResearchRun(input: {
       take: 5,
       select: { id: true, workerId: true, round: true, objectiveId: true, sourceId: true, claim: true, quote: true, locator: true, confidence: true, createdAt: true, source: { select: { url: true } } },
     }),
+    live
+      ? prisma.researchFinding.findMany({
+          where: { runId: run.id, userId: run.userId, objectiveId: { not: null } },
+          orderBy: [{ confidence: { sort: "desc", nulls: "last" } }, { createdAt: "desc" }],
+          take: 80,
+          select: { objectiveId: true, sourceId: true, claim: true, confidence: true, createdAt: true, source: { select: { url: true } } },
+        })
+      : Promise.resolve([]),
   ]);
   const plan = parsePlan(run.plan);
   const state = isResearchState(run.state) ? run.state : "failed";
@@ -1311,6 +1323,17 @@ export async function readResearchRun(input: {
       findings.map((finding) => ({ ...finding, url: finding.source?.url ?? "" })),
       sources
     ),
+    ...(live
+      ? {
+          emergingAnswers: emergingAnswersOf(
+            notes.map((note) => ({ ...note, url: note.source?.url ?? "" })),
+            sources,
+            plan.objectives
+          ),
+        }
+      : {}),
+    plannedBy: plan.plannedBy ?? null,
+    ...(plan.digest ? { digest: true } : {}),
     spend: {
       microUsd: run.costMicroUsd.toString(),
       ceilingMicroUsd: run.budgetMicroUsd === null ? null : run.budgetMicroUsd.toString(),

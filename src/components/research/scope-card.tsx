@@ -301,6 +301,12 @@ function ScopeCardBody({
             {approach}
           </p>
         )}
+        {(run.plannedBy === "goal" || run.plannedBy === "lines") && (
+          // RESEARCH_V2 F4: the plan nobody (or a simpler planner) drafted says so, before anything is spent.
+          <p role="note" className="rf-planned-by text-ui text-muted-foreground">
+            <Phrase text={run.plannedBy === "goal" ? RESEARCH_COPY.scope.plannedByGoal : RESEARCH_COPY.scope.plannedByLines} />
+          </p>
+        )}
 
         <div className="space-y-2">
           <h3 className="rf-annot text-foreground">

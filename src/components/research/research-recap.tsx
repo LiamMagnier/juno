@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ArrowRight, ChevronDown, ShieldCheck } from "@/components/ui/icons";
+import { ArrowRight, ArrowUpRight, ChevronDown, RotateCcw, ShieldCheck } from "@/components/ui/icons";
 import { ActionIcons } from "@/lib/app-icons";
 import { auditHeadline } from "@/components/chat/citation-audit";
 import { formatMicroUsd, runDuration } from "@/components/research/run-format";
@@ -14,6 +14,7 @@ import type { ResearchRunView } from "@/components/research/use-research-run";
 import { FEATURE_NAMES } from "@/lib/brand/names";
 import { DeepField, Figure, QuestionRail } from "./deep-field";
 import { answeredCount, researchAuditClean, researchWorkspace } from "./workspace-model";
+import { NEXT_STEPS_COPY, followUpSuggestions } from "./next-steps";
 
 /**
  * What a finished run leaves in the conversation: the report's cover.
@@ -43,7 +44,23 @@ const RECAP_COPY = {
   showWork: "How it was researched",
   hideWork: "Hide how it was researched",
   dismiss: "Hide this research",
+  digest: "Evidence, without the report",
+  openDigest: "Read the evidence",
+  goFurther: "Go further",
+  goFurtherNote: "What this research left open",
+  seeded: "In the composer, with research on. Send it to plan the next run.",
+  retry: "Try again",
+  retryNote: "Puts the question back in the composer with research on.",
 } as const;
+
+/**
+ * Hands a question to the composer with research armed for one send
+ * (RESEARCH_V2 §3). The person sends it; nothing starts on its own.
+ */
+function seedResearch(text: string) {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent("juno:composer-seed", { detail: { text, research: true } }));
+}
 
 export function ResearchRecap({
   run,
@@ -59,6 +76,7 @@ export function ResearchRecap({
   className?: string;
 }) {
   const [workOpen, setWorkOpen] = React.useState(false);
+  const [seeded, setSeeded] = React.useState<string | null>(null);
   const state: ResearchState = isResearchState(run.state) ? run.state : "failed";
   const model = React.useMemo(() => researchWorkspace(run, []), [run]);
   const elapsed = runDuration(run.createdAt ?? "", run.finishedAt ?? null);
@@ -66,9 +84,16 @@ export function ResearchRecap({
   const subtitle = title.trim() !== run.goal.trim() ? run.goal : null;
   const audit = run.auditSummary;
   const auditClean = audit ? researchAuditClean(audit) : false;
-  const verdict =
-    state === "completed" ? RECAP_COPY.ready : state === "cancelled" ? RECAP_COPY.cancelled : RESEARCH_STATE_MESSAGE[state];
+  const verdict = run.digest
+    ? RECAP_COPY.digest
+    : state === "completed" ? RECAP_COPY.ready : state === "cancelled" ? RECAP_COPY.cancelled : RESEARCH_STATE_MESSAGE[state];
   const tone = state === "completed" ? undefined : state === "failed" ? "error" : state === "cancelled" ? undefined : "attention";
+  const suggestions = run.report && (state === "completed" || state === "partially_completed") ? followUpSuggestions(run) : [];
+  const canRetry = state === "failed" && !run.report;
+  const seed = (id: string, text: string) => {
+    seedResearch(text);
+    setSeeded(id);
+  };
 
   return (
     <section aria-label={`${FEATURE_NAMES.research.label} ${RECAP_COPY.report}`} data-state={state} className={cn("rf min-w-0", className)}>
@@ -134,16 +159,50 @@ export function ResearchRecap({
         {onOpenReport ? (
           <>
             <Button type="button" onClick={onOpenReport}>
-              {RECAP_COPY.openReport}
+              {run.digest ? RECAP_COPY.openDigest : RECAP_COPY.openReport}
               <ArrowRight aria-hidden className="size-4 shrink-0" />
             </Button>
             {/* Completion writes the report into Library in the same transaction as this message. */}
             {run.assistantMessageId && <span className="rf-annot ms-2">{RECAP_COPY.library}</span>}
           </>
+        ) : canRetry ? (
+          <>
+            <Button type="button" variant="secondary" onClick={() => seed("retry", run.goal)}>
+              <RotateCcw aria-hidden className="size-4 shrink-0" />
+              {RECAP_COPY.retry}
+            </Button>
+            <span className="rf-annot ms-2">{seeded === "retry" ? RECAP_COPY.seeded : RECAP_COPY.retryNote}</span>
+          </>
         ) : (
           <p className="text-ui text-muted-foreground">{RECAP_COPY.noReport}</p>
         )}
       </div>
+
+      {suggestions.length > 0 && (
+        <section className="rf-next rf-rise" style={{ ["--i" as string]: 5 }} aria-label={RECAP_COPY.goFurther}>
+          <p className="rf-annot flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+            <span className="text-foreground">{RECAP_COPY.goFurther}</span>
+            <span>{RECAP_COPY.goFurtherNote}</span>
+          </p>
+          <ul className="rf-next-list">
+            {suggestions.map((suggestion) => (
+              <li key={suggestion.id}>
+                <button
+                  type="button"
+                  className="rf-next-row"
+                  data-seeded={seeded === suggestion.id || undefined}
+                  onClick={() => seed(suggestion.id, suggestion.text)}
+                >
+                  <span className="rf-annot rf-next-why">{NEXT_STEPS_COPY.why[suggestion.why]}</span>
+                  <span lang={run.language ?? undefined} className="rf-next-q">{suggestion.text}</span>
+                  <ArrowUpRight aria-hidden className="rf-next-arrow size-4 shrink-0" />
+                </button>
+              </li>
+            ))}
+          </ul>
+          <p role="status" className="rf-annot mt-2 min-h-4">{seeded && seeded !== "retry" ? RECAP_COPY.seeded : ""}</p>
+        </section>
+      )}
 
       {work && (
         <div className="rf-details">

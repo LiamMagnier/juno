@@ -57,3 +57,11 @@ Decisions:
 ## 4. Not done here
 
 Live provider runs and a cost/quality comparison; native (Mac/iOS) parity for the new rows; streaming the plan as it is drafted (a single structured call cannot stream validated questions).
+
+## 5. Shipped on `rework/research-v2` (not pushed, not deployed)
+
+- Engine: `planner.ts` (lenient parse, `repairTruncatedJson`, `planFromLines`, `goalFloorPlan`), `planner.prompt.ts` (smaller retry, lines prompt), `tools.ts` (light thinking, ladder, writer retry on second model), `stages/planning.ts` (floor, narration), `stages/coverage-stage.ts` + `broaden.ts` (wider sweep), `stages/synthesis.ts` + `digest.ts` + `stages/validation.ts` (evidence digest), `engine.ts` (bounded stage retries, degrade), `domain.ts` (`plannedBy`, `broadenedAt`, `stageFailures`, `digest`).
+- Surface: `view.ts`/`run.ts` (`emergingAnswers`, `plannedBy`, `digest`), `emerging-answers.tsx` (What we know so far), `next-steps.ts` (follow-ups, recovery line), `research-console.tsx`, `research-recap.tsx` (Go further, Try again, digest verdict), `scope-card.tsx` (floor note), `composer.tsx` (`juno:composer-seed` can arm research for one send), `research.css` (dot rules replace every research hairline).
+- Gallery states added: `planner-fallback`, `recovering`, `digest`; `completed` and `failed` show the new rows.
+- Verification: `npx tsc --noEmit -p .` clean; `npm run lint` 0 errors (8 pre-existing warnings in untouched files); research suite 396 tests, 393 pass, 3 skipped (database-gated); new `tests/research-resilience.test.ts` (12) and `tests/research-v2-surface.test.ts` (5); chat-wire and capability checks pass.
+- Known limits: the digest's fixed headings are English whatever the content language; follow-ups are deterministic, not model-written.

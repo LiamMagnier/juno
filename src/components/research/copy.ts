@@ -108,6 +108,8 @@ export const RESEARCH_COPY = {
     planReady: "Plan ready",
     review: "Review",
     couldNotStart: "The research couldn't start. Try again.",
+    plannedByGoal: "Planned from your question as asked, because the planner was unavailable. Add or reword questions before you start.",
+    plannedByLines: "A simpler plan, because the planner's full plan was unavailable. Edit the questions before you start if you like.",
   },
 
   /** The composer's explicit steering mode (§9.7, DECISIONS R6). */

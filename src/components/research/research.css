@@ -1,6 +1,7 @@
 /*
  * Deep Field, in the language of the homepage and Memory (home.css,
- * memory.css): hairlines instead of boxes, Newsreader for what is read as a
+ * memory.css): dot rules instead of boxes and hairlines — the construction's
+ * dot matrix laid out as a line — Newsreader for what is read as a
  * page (the question, figures, claims), mono annotations for facts, and
  * presence blue for the one live object (the page being read now). Colours
  * resolve from the semantic theme; radii from the app's ladder.
@@ -17,17 +18,29 @@
   --rf-presence-soft: rgb(45 73 201 / 0.1);
   --rf-attention: hsl(var(--attention));
   --rf-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  /* The dot rule: the construction's matrix as a divider, 4px pitch. */
+  --rf-dot: hsl(var(--foreground) / 0.3);
+  --rf-dot-soft: hsl(var(--foreground) / 0.18);
+  --rf-rule-x: radial-gradient(circle at 1.5px 1px, var(--rf-dot) 0.7px, transparent 1.1px);
+  --rf-rule-x-soft: radial-gradient(circle at 1.5px 1px, var(--rf-dot-soft) 0.7px, transparent 1.1px);
+  --rf-rule-y: radial-gradient(circle at 1px 1.5px, var(--rf-dot) 0.7px, transparent 1.1px);
   container-type: inline-size;
   color: hsl(var(--foreground));
   padding-block: 8px 4px;
 }
 .dark .rf {
+  --rf-dot: hsl(var(--foreground) / 0.34);
+  --rf-dot-soft: hsl(var(--foreground) / 0.2);
   --rf-line: hsl(var(--foreground) / 0.14);
   --rf-hair: hsl(var(--foreground) / 0.08);
   --rf-presence: #97a6e6;
   --rf-presence-soft: rgb(151 166 230 / 0.12);
 }
 .rf ::selection { background: var(--rf-presence-soft); }
+
+/* Dot rules, by edge. Backgrounds, so a rule never shifts the layout by a pixel. */
+.rf-rule-b { background: var(--rf-rule-x) left bottom / 4px 2px repeat-x; }
+.rf-rule-t { background: var(--rf-rule-x) left top / 4px 2px repeat-x; }
 
 /* Type */
 .rf-annot {
@@ -85,7 +98,7 @@
   gap: 8px 28px;
   margin-top: 20px;
   padding-block: 4px 20px;
-  border-bottom: 1px solid var(--rf-line);
+  background: var(--rf-rule-x) left bottom / 4px 2px repeat-x;
 }
 .rf-map { position: relative; min-height: 280px; aspect-ratio: 16 / 11; max-height: 340px; }
 .rf-dots { --dots-pitch: 3.6px; --dots-strength: 0.7; }
@@ -158,14 +171,14 @@ a.rf-label:hover { color: hsl(var(--foreground)); }
 .rf-more-toggle:hover { color: hsl(var(--foreground)); }
 
 /* Figures, as Memory's. */
-.rf-figures { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); padding-block: 20px; border-bottom: 1px solid var(--rf-line); }
-.rf-figures > div { display: flex; flex-direction: column; min-width: 0; padding-inline: 16px; border-inline-start: 1px solid var(--rf-line); }
-.rf-figures > div:first-child { padding-inline-start: 0; border-inline-start: 0; }
+.rf-figures { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); padding-block: 20px; background: var(--rf-rule-x) left bottom / 4px 2px repeat-x; }
+.rf-figures > div { display: flex; flex-direction: column; min-width: 0; padding-inline: 16px; background: var(--rf-rule-y) left top / 2px 4px repeat-y; }
+.rf-figures > div:first-child { padding-inline-start: 0; background: none; }
 
 /* Evidence in the sources' own words. */
 .rf-evidence { padding-block: 20px 4px; }
 .rf-evidence ul { display: grid; gap: 16px; margin-top: 12px; }
-.rf-finding { display: grid; gap: 6px; padding-inline-start: 16px; border-inline-start: 1px solid var(--rf-line); }
+.rf-finding { display: grid; gap: 6px; padding-inline-start: 16px; background: var(--rf-rule-y) left top / 2px 4px repeat-y; }
 .rf-claim { font-family: var(--font-serif), Newsreader, serif; font-size: 18px; line-height: 1.4; letter-spacing: -0.006em; text-wrap: pretty; }
 
 /* The finished cover. */
@@ -174,27 +187,68 @@ a.rf-label:hover { color: hsl(var(--foreground)); }
 .rf-verdict[data-tone="error"] { color: hsl(var(--destructive)); }
 .rf-figure-of { font-size: 0.6em; color: hsl(var(--muted-foreground)); letter-spacing: 0; }
 .rf-stage-still .rf-map { max-height: 300px; }
-.rf-audit { display: flex; align-items: center; gap: 10px; padding-block: 16px; border-bottom: 1px solid var(--rf-line); font-size: 14px; line-height: 20px; }
+.rf-audit { display: flex; align-items: center; gap: 10px; padding-block: 16px; background: var(--rf-rule-x) left bottom / 4px 2px repeat-x; font-size: 14px; line-height: 20px; }
 
 /* Controls, guidance, details. */
 .rf-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 20px; }
-.rf-guidance { margin-top: 16px; padding-block: 18px; border-block: 1px solid var(--rf-line); }
+.rf-guidance { margin-top: 16px; padding-block: 18px; background: var(--rf-rule-x) left top / 4px 2px repeat-x, var(--rf-rule-x) left bottom / 4px 2px repeat-x; }
 .rf-guidance textarea { width: 100%; min-height: 84px; resize: vertical; border: 1px solid hsl(var(--input)); border-radius: 10px; background: hsl(var(--background)); padding: 12px 14px; font-size: 14px; line-height: 1.5; caret-color: var(--rf-presence); transition: border-color 160ms; }
 .rf-guidance textarea:focus-visible { outline: none; border-color: hsl(var(--foreground) / 0.4); }
 .rf-guidance textarea::placeholder { color: hsl(var(--muted-foreground)); }
 .rf-steering { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin-top: 14px; font-size: 13px; line-height: 19px; }
-.rf-notice { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-top: 18px; padding-block: 12px; border-block: 1px solid var(--rf-line); font-size: 13px; color: var(--rf-attention); overflow-wrap: anywhere; }
-.rf-gate { margin-top: 22px; padding-top: 6px; border-top: 1px solid var(--rf-line); }
-.rf-details { margin-top: 20px; border-top: 1px solid var(--rf-line); }
+.rf-notice { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-top: 18px; padding-block: 12px; background: var(--rf-rule-x) left top / 4px 2px repeat-x, var(--rf-rule-x) left bottom / 4px 2px repeat-x; font-size: 13px; color: var(--rf-attention); overflow-wrap: anywhere; }
+/* A notice straight after a ruled block shares its rule instead of doubling it. */
+:is(.rf-figures, .rf-audit) + .rf-notice { margin-top: 0; background: var(--rf-rule-x) left bottom / 4px 2px repeat-x; }
+.rf-gate { margin-top: 22px; padding-top: 6px; background: var(--rf-rule-x) left top / 4px 2px repeat-x; }
+.rf-details { margin-top: 20px; background: var(--rf-rule-x) left top / 4px 2px repeat-x; }
 .rf-disclosure { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 44px; gap: 12px; font-size: 13px; color: hsl(var(--muted-foreground)); transition: color 160ms; }
 .rf-disclosure:hover { color: hsl(var(--foreground)); }
-.rf-tabs { display: flex; gap: 22px; overflow-x: auto; border-bottom: 1px solid var(--rf-line); scrollbar-width: none; }
+.rf-tabs { display: flex; gap: 22px; overflow-x: auto; background: var(--rf-rule-x) left bottom / 4px 2px repeat-x; scrollbar-width: none; }
 .rf-tabs button { position: relative; flex-shrink: 0; min-height: 40px; font-family: var(--font-mono), "JetBrains Mono", monospace; font-size: 11px; letter-spacing: 0.02em; color: hsl(var(--muted-foreground)); transition: color 160ms; }
-.rf-tabs button::after { content: ""; position: absolute; inset: auto 0 -1px; height: 1px; background: hsl(var(--foreground)); transform: scaleX(0); transition: transform 320ms var(--rf-ease); }
+.rf-tabs button::after { content: ""; position: absolute; inset: auto 0 0; height: 1px; background: hsl(var(--foreground)); transform: scaleX(0); transition: transform 320ms var(--rf-ease); }
 .rf-tabs button:hover { color: hsl(var(--foreground)); }
 .rf-tabs button[aria-selected="true"] { color: hsl(var(--foreground)); }
 .rf-tabs button[aria-selected="true"]::after { transform: none; }
-.rf-rows > li { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; padding-block: 12px; font-size: 14px; border-bottom: 1px solid var(--rf-hair); }
+.rf-rows > li { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; padding-block: 12px; font-size: 14px; background: var(--rf-rule-x-soft) left bottom / 4px 2px repeat-x; }
+
+/* The engine recovering, in its own words (RESEARCH_V2 F3–F7). */
+.rf-recovery { display: flex; align-items: center; gap: 8px; color: hsl(var(--foreground) / 0.78); }
+
+/* What we know so far: each question's strongest note, under dot rules. */
+.rf-known { padding-block: 22px 4px; }
+.rf-known-list { display: grid; margin-top: 6px; }
+.rf-known-row { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 10px; padding-block: 16px; background: var(--rf-rule-x-soft) left bottom / 4px 2px repeat-x; }
+.rf-known-row:last-child { background: none; padding-bottom: 8px; }
+.rf-known-n { padding-top: 1px; text-align: end; font-family: var(--font-mono), "JetBrains Mono", monospace; font-size: 11px; line-height: 19px; color: hsl(var(--muted-foreground)); font-variant-numeric: tabular-nums; }
+.rf-known-q { font-size: 13px; line-height: 19px; color: hsl(var(--muted-foreground)); text-wrap: pretty; }
+.rf-known-note { margin-top: 4px; padding-top: 12px; background: var(--rf-rule-x-soft) left top / 4px 2px repeat-x; }
+
+/* Go further: what the run left open, one press from the composer. */
+.rf-next { margin-top: 24px; padding-top: 18px; background: var(--rf-rule-x) left top / 4px 2px repeat-x; }
+.rf-next-list { display: grid; margin-top: 6px; }
+.rf-next-row {
+  display: grid;
+  grid-template-columns: minmax(0, 8.5rem) minmax(0, 1fr) 16px;
+  align-items: baseline;
+  gap: 4px 16px;
+  width: 100%;
+  min-height: 44px;
+  padding-block: 14px;
+  text-align: start;
+  background: var(--rf-rule-x-soft) left bottom / 4px 2px repeat-x;
+  border-radius: 0;
+  color: hsl(var(--foreground));
+}
+.rf-next-row:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; border-radius: 6px; }
+.rf-next-q { font-family: var(--font-serif), Newsreader, serif; font-size: 17px; line-height: 1.4; letter-spacing: -0.006em; text-wrap: pretty; }
+.rf-next-arrow { align-self: center; color: hsl(var(--muted-foreground)); transition: transform 320ms var(--rf-ease), color 200ms; }
+.rf-next-row:hover .rf-next-arrow { color: hsl(var(--foreground)); transform: translate(2px, -2px); }
+.rf-next-row:hover .rf-next-why { color: hsl(var(--foreground)); }
+/* The one now in the composer is the live object. */
+.rf-next-row[data-seeded] .rf-next-arrow { color: var(--rf-presence); }
+
+/* The scope card's note when nobody (or a simpler planner) drafted the plan. */
+.rf-planned-by { max-width: 40rem; text-wrap: pretty; }
 
 /* Narrow: the questions go under the field, which keeps only its points. */
 @container (max-width: 600px) {
@@ -203,7 +257,9 @@ a.rf-label:hover { color: hsl(var(--foreground)); }
   .rf-label:not([data-current]) { display: none; }
   .rf-rail { padding-top: 4px; }
   .rf-figures { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 18px; }
-  .rf-figures > div:nth-child(3) { padding-inline-start: 0; border-inline-start: 0; }
+  .rf-figures > div:nth-child(3) { padding-inline-start: 0; background: none; }
+  .rf-next-row { grid-template-columns: minmax(0, 1fr) 16px; }
+  .rf-next-why { grid-column: 1 / -1; }
 }
 
 /* Motion */
@@ -213,6 +269,8 @@ a.rf-label:hover { color: hsl(var(--foreground)); }
   .rf-point { animation: rf-arrive 700ms var(--rf-ease) backwards; transition: left 900ms var(--rf-ease), top 900ms var(--rf-ease), width 300ms, height 300ms, background-color 300ms, box-shadow 300ms; }
   .rf-label { animation: rf-fade 500ms var(--rf-ease) 200ms backwards; transition: left 900ms var(--rf-ease), top 900ms var(--rf-ease), color 300ms; }
   .rf-finding { animation: rf-rise-in 700ms var(--rf-ease) backwards; }
+  .rf-known-row { animation: rf-rise-in 700ms var(--rf-ease) backwards; }
+  .rf-recovery { animation: rf-fade 400ms var(--rf-ease) backwards; }
   .rf-view-enter { animation: rf-rise-in 360ms var(--rf-ease) backwards; }
 }
 @media (prefers-reduced-motion: no-preference) {
@@ -240,4 +298,7 @@ a.rf-label:hover { color: hsl(var(--foreground)); }
 .research-document-reader h3:first-child { font-size: clamp(30px, 4vw, 40px); line-height: 1.15; }
 
 /* The dev gallery's reduced-motion switch, honoured like the system setting. */
-[data-motion="reduce"] :is(.rf-rise, .rf-point, .rf-label, .rf-finding, .rf-view-enter, .rf-mark, .rf-tabs button::after) { animation: none; transition: none; }
+[data-motion="reduce"] :is(.rf-rise, .rf-point, .rf-label, .rf-finding, .rf-known-row, .rf-recovery, .rf-next-arrow, .rf-view-enter, .rf-mark, .rf-tabs button::after) { animation: none; transition: none; }
+
+/* The embedded scope card's sticky footer: a dot rule over its own ground. */
+.rf-gate .rf-scope > footer { border-top-color: transparent; background: var(--rf-rule-x) left top / 4px 2px repeat-x, hsl(var(--background)); }
