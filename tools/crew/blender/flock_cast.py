@@ -8,6 +8,9 @@ Three candidate style sheets (pass 1), six characters each:
   B  "Snack bar"     food icons (onigiri, toast, jelly bean, macaron, acorn,
                      peach bun); flat white STICKER eyes with black pupils and
                      closed arcs; food-part accessories built into the shape.
+  D  "Alevr"         the brand's orbits and mathematics (orbit belt, aleph,
+                     infinity, pi, golden spiral, the open ring); graphite and
+                     warm neutrals, at most one presence-blue thing each.
   C  "Soft symbols"  glyph shapes (soft star, crescent, sparkle, bolt, droplet,
                      flower); round button eyes, happy half-moons, sleepy arcs,
                      one-piece shades. Agents never become planets.
@@ -61,6 +64,14 @@ PAL = {
     "cocoa": "#8a5636",
     "nori": "#1f2a24",
     "cream": "#fff3dd",
+    # D, the Alevr brand sheet: graphite, warm neutrals, one presence blue
+    "graphite": "#2b2c31",
+    "chalk": "#f3efe7",
+    "oat": "#e6d9c3",
+    "sand": "#d9c19c",
+    "stone": "#c4bdb1",
+    "presence": "#2d49c9",
+    "presence_soft": "#97a6e6",
 }
 
 
@@ -327,6 +338,145 @@ def b_bolt():
     return flat(f, 0.04), dict(z=0.80, gap=0.18, w=0.05, h=0.084, dx=0.05)
 
 
+# ---------------------------------------------------------------- D: Alevr's orbits and mathematics
+
+
+def polyline2(x, z, pts):
+    """Distance to an open polyline of (x, z) points."""
+    d = None
+    for i in range(len(pts) - 1):
+        s = S.seg2(x, z, pts[i], pts[i + 1], 0.0)
+        d = s if d is None else np.minimum(d, s)
+    return d
+
+
+def tapered2(x, z, pts, radii):
+    """A 2D stroke along a polyline whose half-width goes from radii[i] to radii[i+1] (union of soft discs)."""
+    d = None
+    for i in range(len(pts) - 1):
+        ax, az = pts[i]
+        bx, bz = pts[i + 1]
+        px, pz = x - ax, z - az
+        dx, dz = bx - ax, bz - az
+        h = np.clip((px * dx + pz * dz) / (dx * dx + dz * dz + 1e-12), 0, 1)
+        r = radii[i] + (radii[i + 1] - radii[i]) * h
+        s = np.sqrt((px - h * dx) ** 2 + (pz - h * dz) ** 2) - r
+        d = s if d is None else smin(d, s, 0.01)
+    return d
+
+
+def b_tallpill():
+    """Orbi's body: a tall soft pill, the room for an orbit belt below the eyes."""
+
+    def f(p):
+        q = p / np.array([1.0, 0.86, 1.0])
+        return S.capsule(q, (0, 0, 0.4), (0, 0, 0.72), 0.36)
+
+    return flat(f, 0.06), dict(z=0.62, gap=0.21, w=0.054, h=0.09)
+
+
+ALEPH_STEM = [(-0.3, 0.9), (0.28, 0.1)]
+
+
+def aleph2(x, z):
+    """A soft aleph: the long diagonal, an arm up to the right, a leg down to the left, a round heart."""
+    stem = S.seg2(x, z, ALEPH_STEM[0], ALEPH_STEM[1], 0.15)
+    arm = S.seg2(x, z, (0.06, 0.56), (0.3, 0.86), 0.105)
+    leg = S.seg2(x, z, (-0.05, 0.44), (-0.3, 0.1), 0.105)
+    heart = S.circle2(x, z, (0.0, 0.5), 0.22)
+    d = smin(stem, heart, 0.08)
+    d = smin(d, arm, 0.05)
+    return smin(d, leg, 0.05)
+
+
+def b_aleph():
+    def f(p):
+        return pillow2d(aleph2(p[:, 0], p[:, 2]), 0.14, 0.08, 0.12, p, cap=0.2)
+
+    return flat(f, 0.05), dict(z=0.47, gap=0.17, w=0.046, h=0.078)
+
+
+def lemniscate_pts(a=0.6, cz=0.36, n=96):
+    t = np.linspace(0, 2 * math.pi, n + 1)
+    d = 1 + np.sin(t) ** 2
+    return list(zip(a * np.cos(t) / d, cz + a * np.sin(t) * np.cos(t) / d))
+
+
+LEMNISCATE = lemniscate_pts()
+
+
+def b_loop():
+    """Infinity: a fat lemniscate tube on its edge, the crossing swelled into a face."""
+
+    def f(p):
+        x, z = p[:, 0], p[:, 2]
+        d2 = polyline2(x, z, LEMNISCATE)
+        tube = np.sqrt(d2 * d2 + (p[:, 1] / 0.95) ** 2) - 0.15
+        heart = S.ellipsoid(p, (0, 0, 0.36), (0.23, 0.19, 0.22))
+        return smin(tube, heart, 0.07)
+
+    return flat(f, 0.05), dict(z=0.35, gap=0.15, w=0.042, h=0.07)
+
+
+def pi2(x, z):
+    bar = S.rrect2(x, z, (0.0, 0.8), 0.47, 0.15, 0.13)
+    curl = S.seg2(x, z, (-0.44, 0.84), (-0.52, 0.94), 0.07)
+    left = tapered2(x, z, [(-0.2, 0.74), (-0.22, 0.36), (-0.26, 0.07)], [0.105, 0.095, 0.1])
+    right = tapered2(x, z, [(0.2, 0.74), (0.2, 0.4), (0.27, 0.16), (0.37, 0.07)], [0.105, 0.095, 0.095, 0.1])
+    d = smin(bar, curl, 0.05)
+    d = smin(d, left, 0.06)
+    return smin(d, right, 0.06)
+
+
+def b_pi():
+    def f(p):
+        return pillow2d(pi2(p[:, 0], p[:, 2]), 0.14, 0.07, 0.11, p, cap=0.18)
+
+    return flat(f, 0.04), dict(z=0.79, gap=0.24, w=0.05, h=0.084)
+
+
+PHI_B = math.log((1 + 5**0.5) / 2) / (math.pi / 2)
+
+
+def spiral_pts(n=56):
+    """A golden spiral that ends big at the lower right; tube radius grows with it."""
+    th1 = -math.pi / 2 + 0.45
+    th = np.linspace(th1 - 2.1 * math.pi, th1, n)
+    r = 0.36 * np.exp(PHI_B * (th - th1))
+    cx, cz = -0.04, 0.62
+    pts = list(zip(cx + r * np.cos(th), cz + r * np.sin(th)))
+    radii = list(np.maximum(0.8 * r, 0.03))
+    return pts, radii
+
+
+SPIRAL = spiral_pts()
+
+
+def b_spiral():
+    def f(p):
+        d2 = tapered2(p[:, 0], p[:, 2], *SPIRAL)
+        return pillow2d(d2, 0.15, 0.1, 0.12, p, cap=0.22)
+
+    return flat(f, 0.06), dict(z=0.27, gap=0.21, w=0.052, h=0.086, dx=0.06)
+
+
+RING_R = 0.34
+RING_T = 0.175
+RING_C = (0.0, RING_T + RING_R)
+RING_GAP = (math.radians(12), math.radians(78))
+
+
+def b_ring():
+    """The open ring of the mark, as a fat tube on its edge (gap at the upper right)."""
+
+    def f(p):
+        x, z = p[:, 0], p[:, 2]
+        a = S.arc2(x, z, RING_C, RING_R, RING_GAP[1], RING_GAP[0] + 2 * math.pi, 0.0)
+        return np.sqrt(a * a + (p[:, 1] / 0.92) ** 2) - RING_T
+
+    return flat(f, 0.05), dict(z=0.19, gap=0.2, w=0.05, h=0.084)
+
+
 BODIES = {
     "bolt": b_bolt,
     "peanut": b_peanut,
@@ -348,6 +498,12 @@ BODIES = {
     "planet": b_planet,
     "drop": b_drop,
     "flower": b_flower,
+    "tallpill": b_tallpill,
+    "aleph": b_aleph,
+    "loop": b_loop,
+    "pi": b_pi,
+    "spiral": b_spiral,
+    "ring": b_ring,
 }
 
 
@@ -793,6 +949,45 @@ def acc_band(c, color, z0, z1):
     c.decal("band", reg, (c.lo[0], c.hi[0], z0, z1), color, 0.0, 0.012, ycut=None, h=0.004)
 
 
+def acc_orbit(c, color, moon=None, R=0.6, zc=0.42, tilt=16, roll=-10, moon_at=-28):
+    """An orbit belt: a flat ring round the waist, tipped so its front arc passes under the
+    eyes and its back rises behind; a small moon rides it (the one presence-blue thing)."""
+    pitch = math.radians(tilt)
+    rl = math.radians(roll)
+
+    def frame(p):
+        q = S.rot(p, (0, 0, zc), "y", rl)
+        return S.rot(q, (0, 0, zc), "x", -pitch)
+
+    def f(p):
+        q = frame(p)
+        rho = np.sqrt(q[:, 0] ** 2 + q[:, 1] ** 2)
+        return smax(np.abs(rho - R) - 0.06, np.abs(q[:, 2] - zc) - 0.024, 0.022)
+
+    c.add("orbit", f, 0.005, "felt", color, lo=(-R - 0.15, -R - 0.15, zc - 0.4), hi=(R + 0.15, R + 0.15, zc + 0.4))
+    if moon:
+        a = math.radians(moon_at)
+        m = np.array([R * math.cos(a), R * math.sin(a), zc])
+        # back out of the ring frame (inverse rotations, reverse order)
+        m = S.rot(m[None, :], (0, 0, zc), "x", pitch)
+        m = S.rot(m, (0, 0, zc), "y", -rl)[0]
+        m = m + np.array([0, 0, 0.075])
+        c.add("moon", lambda p, m=m: S.sphere(p, m, 0.085), 0.004, "felt", moon, fuzz_len=1.4)
+
+
+def acc_bead(c, color, at, r=0.085):
+    """A round bead (the ball terminal of the mark) at a point in the character's frame."""
+    k = np.asarray(at, float)
+    c.add("bead", lambda p: S.sphere(p, k, r), 0.004, "felt", color, fuzz_len=1.4)
+
+
+def acc_ringball(c, color):
+    """The ball of the open ring, sitting in the gap like the mark's."""
+    a = 0.5 * (RING_GAP[0] + RING_GAP[1])
+    k = (RING_C[0] + RING_R * math.cos(a), 0.0, RING_C[1] + RING_R * math.sin(a))
+    acc_bead(c, color, k, r=0.105)
+
+
 ACCESSORIES = {
     "bucket": lambda c, a, e: acc_bucket(c, a.get("color", INK), a.get("tilt", -7), a.get("size", 1.0), a.get("sink", 0.17)),
     "beanie": lambda c, a, e: acc_beanie(c, a.get("color", INK), pom_color=a.get("pom")),
@@ -813,6 +1008,9 @@ ACCESSORIES = {
     "clip": lambda c, a, e: acc_clip(c, a.get("color", INK), a.get("x", 0.2)),
     "band": lambda c, a, e: acc_band(c, a.get("color", INK), a["z0"], a["z1"]),
     "nori": lambda c, a, e: acc_nori(c, a.get("color", PAL["nori"]), z1=a.get("z1", 0.2)),
+    "orbit": lambda c, a, e: acc_orbit(c, a.get("color", PAL["chalk"]), a.get("moon"), a.get("R", 0.6), a.get("zc", 0.42), a.get("tilt", 16), a.get("roll", -10), a.get("moon_at", -28)),
+    "bead": lambda c, a, e: acc_bead(c, a.get("color", PAL["presence"]), a["at"], a.get("r", 0.085)),
+    "ringball": lambda c, a, e: acc_ringball(c, a.get("color", PAL["presence"])),
 }
 
 
@@ -846,6 +1044,17 @@ CAST = {
         dict(id="drip", name="Drip", shape="drop", color=PAL["emerald"], eyes=dict(style="sleep"), acc=[]),
         dict(id="daisy", name="Daisy", shape="flower", color=PAL["bubblegum"], center=PAL["butter"], eyes=dict(style="round", gap=1.15), acc=[]),
     ],
+    # D — Alevr: orbits and mathematics. Graphite and warm neutrals, at most one
+    # presence-blue thing each (a moon, a bead, the ring's ball). No planets: the
+    # orbit is a belt round a body, never a ball with a ring.
+    "D": [
+        dict(id="orbi", name="Orbi", shape="tallpill", color=PAL["graphite"], eyes=dict(style="round", color=WHITE, round=0.72), acc=[dict(id="orbit", color=PAL["chalk"], moon=PAL["presence"])]),
+        dict(id="alef", name="Alef", shape="aleph", color=PAL["oat"], eyes=dict(style="dot"), acc=[dict(id="bead", color=PAL["presence"], at=(0.33, 0.0, 0.93), r=0.075)]),
+        dict(id="loop", name="Loop", shape="loop", color=PAL["chalk"], eyes=dict(style="pill"), acc=[]),
+        dict(id="pi", name="Pi", shape="pi", color=PAL["sand"], eyes=dict(style="dot"), acc=[]),
+        dict(id="fib", name="Fib", shape="spiral", color=PAL["oat"], gradient=("#f6f1e8", "#d4b48a"), eyes=dict(style="arc"), acc=[]),
+        dict(id="ringo", name="Ringo", shape="ring", color=PAL["graphite"], eyes=dict(style="dot", color=WHITE), acc=[dict(id="ringball", color=PAL["presence"])]),
+    ],
 }
 
 
@@ -854,6 +1063,7 @@ LINEUP = {
     "A": ["pip", "gus", "cubby", "momo", "belle", "bo"],
     "B": ["toasty", "jelly", "nori", "acorn", "mac", "bun"],
     "C": ["luna", "zap", "sol", "drip", "volt", "daisy"],
+    "D": ["alef", "orbi", "loop", "ringo", "pi", "fib"],
 }
 
 
@@ -910,7 +1120,7 @@ VARIANTS = {
 # same character (the words always sit beside it; no state by colour alone).
 
 STATE_LABELS = ["Ready", "Thinking", "Working", "Needs your answer", "Blocked", "Finished"]
-STATES = {"A": "pip", "B": "jelly", "C": "zap"}
+STATES = {"A": "pip", "B": "jelly", "C": "zap", "D": "orbi"}
 
 
 def state_overrides(base):
