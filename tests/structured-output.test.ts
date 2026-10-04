@@ -152,7 +152,9 @@ test("Anthropic: prose instead of a call gets one nudge; prose that is itself fi
   const nudged = await runAnthropic(anthropicRequest(), [prose("Sure! Here is a plan."), toolCall(VALID)]);
   const nudge = (nudged.bodies[1].messages as Array<{ role: string; content: unknown }>).at(-1);
   assert.equal(nudge?.role, "user");
-  assert.match(String(nudge?.content), new RegExp(`Call the ${NAME} tool`));
+  // The newest message carries the conversation cache marker, so it arrives as a text block.
+  const nudgeText = typeof nudge?.content === "string" ? nudge.content : (nudge?.content as Array<{ text?: string }>)?.map((b) => b.text ?? "").join("");
+  assert.match(String(nudgeText), new RegExp(`Call the ${NAME} tool`));
   assert.deepEqual(ofType(nudged.events, "text").map((t) => JSON.parse(t.text)), [JSON.parse(VALID)]);
 
   const fenced = await runAnthropic(anthropicRequest(), [prose("```json\n" + VALID + "\n```")]);

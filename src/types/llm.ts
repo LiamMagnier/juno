@@ -19,7 +19,16 @@ export type MessageForModel = {
   reasoning?: string | null;
   /** ASSISTANT rows only: the model that wrote the row, so a replay rule can
    *  tell its own lab's turns from a foreign one's. */
-  model?: string | null;
+  model?: string | null;  /**
+   * USER rows only: the tail of `content` that is context for THIS generation
+   * (retrieved passages, the memory notes ranked for this question, named
+   * references) rather than the user's words. `content` already ends with it,
+   * so every adapter sends it; an adapter with explicit cache breakpoints
+   * (Anthropic) places the conversation breakpoint BEFORE it, because the tail
+   * changes every turn and is never persisted — a breakpoint after it would
+   * write a cache entry the next turn can never read.
+   */
+  volatileTail?: string;
 };
 
 /** Events yielded by a provider stream. */

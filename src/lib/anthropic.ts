@@ -1,6 +1,7 @@
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { buildAnthropicThinkingBits } from "@/lib/anthropic-thinking";
+import { splitVolatileTail, volatileTextBlock, withConversationCacheBreakpoint } from "@/lib/anthropic-cache";
 import { attachedFileText } from "@/lib/attachment-context";
 import { attachmentTextBudget } from "@/lib/knowledge/document-text";
 import { getModelMetrics } from "@/lib/model-metrics";
@@ -118,8 +119,18 @@ export async function toAnthropicMessages(
     const msg = messages[i];
     if (msg.role === "SYSTEM") continue;
     const role = msg.role === "ASSISTANT" ? "assistant" : "user";
+    // Per-generation context rides as its own trailing block, so the
+    // conversation breakpoint can sit in front of it (see MessageForModel).
+    const { own: ownText, tail } = splitVolatileTail(msg);
 
     if (role === "assistant" || msg.attachments.length === 0) {
+      if (tail) {
+        result.push({
+          role,
+          content: [...(ownText.trim() ? [{ type: "text" as const, text: ownText }] : []), volatileTextBlock(tail)],
+        });
+        continue;
+      }
       result.push({ role, content: msg.content || "(no content)" });
       continue;
     }
@@ -128,7 +139,7 @@ export async function toAnthropicMessages(
 
     // User message with attachments → multimodal content blocks.
     const blocks: Anthropic.ContentBlockParam[] = [];
-    if (msg.content.trim()) blocks.push({ type: "text", text: msg.content });
+    if (ownText.trim()) blocks.push({ type: "text", text: ownText });
 
     for (const att of msg.attachments) {
       try {
@@ -179,30 +190,11 @@ export async function toAnthropicMessages(
       }
     }
 
+    if (tail) blocks.push(volatileTextBlock(tail));
     result.push({ role, content: blocks.length ? blocks : msg.content || "(no content)" });
   }
 
   return result;
-}
-
-/**
- * Add an Anthropic prompt-cache breakpoint to the last content block of the last
- * message. Combined with the cached system prompt, this caches the whole growing
- * conversation prefix: each turn reads the previous turn's cache (~0.1x input
- * cost) and only writes the delta — a large saving on long, expensive, or
- * high-thinking chats. Anthropic ignores the marker below its min-cacheable size.
- */
-function markConversationCacheBreakpoint(messages: Anthropic.MessageParam[]): void {
-  const last = messages[messages.length - 1];
-  if (!last) return;
-  const cacheControl = { type: "ephemeral" as const };
-  if (typeof last.content === "string") {
-    last.content = [{ type: "text", text: last.content || "(no content)", cache_control: cacheControl }];
-    return;
-  }
-  const block = last.content[last.content.length - 1];
-  // cache_control is honored on text/image/document blocks — exactly what we emit.
-  if (block) (block as { cache_control?: typeof cacheControl }).cache_control = cacheControl;
 }
 
 /**
@@ -254,7 +246,6 @@ export async function* streamAnthropic(
 ): AsyncGenerator<LlmEvent> {
   const toolset = tools?.toolset;
   const messages = await toAnthropicMessages(history, attachmentTextBudget(getModelMetrics(model).contextTokens));
-  markConversationCacheBreakpoint(messages);
   // Cache the (large, stable) system prompt so it isn't re-billed every turn.
   // A 1h TTL (vs the 5m default) keeps the prefix warm across the pauses a real
   // chat has between turns — a reader who replies 10-40 min later still hits the
@@ -370,7 +361,9 @@ export async function* streamAnthropic(
     const isFinalRound = roundIndex === maxRounds - 1;
     const params = {
       ...baseParams,
-      messages,
+      // The conversation marker follows the newest message every round, so a
+      // tool loop reads its own earlier rounds from cache (anthropic-cache.ts).
+      messages: withConversationCacheBreakpoint(messages),
       ...(hasTools ? { tool_choice: { type: isFinalRound ? "none" : "auto" } } : {}),
     } as Anthropic.Messages.MessageCreateParamsStreaming;
 
