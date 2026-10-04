@@ -102,15 +102,18 @@ export async function getAppBootstrap(user: SessionUser): Promise<AppBootstrap> 
   const subscription = account?.subscription ?? null;
   const plan = planFromAccount(account?.email ?? null, subscription);
 
-  const [quota, conversations, folders] = await Promise.all([
+  const period = billingPeriodFor(subscription);
+  const [quota, conversations, folders, creditMicroUsd] = await Promise.all([
     // The plan is passed, so `getQuota` does not re-derive it — that is the
     // User+Subscription join above, a second time.
     getQuota(user.id, plan),
     listConversations(user.id),
     prisma.folder.findMany({ where: { userId: user.id }, orderBy: { createdAt: "asc" }, select: { id: true, name: true } }),
+    // Usage credit (top-ups, referral rewards) on this period's ceiling; in
+    // the same wave as the rest so it costs no extra round trip of its own.
+    periodCreditMicroUsd(user.id, plan, period),
   ]);
 
-  const period = billingPeriodFor(subscription);
   // The settings row is already in hand, so the effective ceiling costs nothing
   // extra here — and passing it to both calls keeps the gate and the meters
   // reading the same number, which is the whole point of there being one.
@@ -119,7 +122,7 @@ export async function getAppBootstrap(user: SessionUser): Promise<AppBootstrap> 
     userCapEur: settings?.monthlySpendCapEur ?? null,
     capDisabled: settings?.spendCapDisabled ?? false,
     eurPerUsd: eurPerUsd(),
-    creditMicroUsd: await periodCreditMicroUsd(user.id, quota.plan, period),
+    creditMicroUsd,
   });
   const [budget, windows, pushPublicKey] = await Promise.all([
     // `reap: false` — the bootstrap is a READ that paints two meters, and the

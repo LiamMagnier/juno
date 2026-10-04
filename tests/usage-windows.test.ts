@@ -311,8 +311,14 @@ test("the windows are enforced and not merely metered", () => {
   assert.match(spend, /export async function checkUsageWindows\(/);
   assert.match(spend, /openReservedMicroUsd\(/);
   // The gauge and the gate read ONE derivation, so what a reader is shown and
-  // what refuses them cannot be different numbers.
-  assert.match(spend, /getUsageWindows\(userId, eff\.budgetMicroUsd, p, now\)/);
+  // what refuses them cannot be different numbers. Both slice the ceiling
+  // WITHOUT usage credits (`windowBaseMicroUsd`): a top-up buys more month,
+  // never a bigger window.
+  assert.match(spend, /getUsageWindows\(userId, windowBaseMicroUsd\(eff\), p, now\)/);
+  for (const meter of ["../src/lib/app-data.ts", "../src/app/api/profile/usage/route.ts"]) {
+    const src = readFileSync(new URL(meter, import.meta.url), "utf8");
+    assert.match(src, /getUsageWindows\(user\.id, windowBaseMicroUsd\(effective\), period\)/, meter);
+  }
 
   for (const file of [
     "../src/app/api/chat/route.ts",
