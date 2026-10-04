@@ -3,6 +3,7 @@ import { admitChatRequest } from "@/lib/chat-admission";
 import { cheapestEligible, selectModel } from "@/lib/model-selection";
 import { Prisma, type Plan } from "@prisma/client";
 import { effectiveBudget, windowLimitMessage, type EffectiveBudget } from "@/lib/spend-ceiling";
+import { budgetExceededBody } from "@/lib/billing/budget-fallback";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 import { rateLimit } from "@/lib/rate-limit";
@@ -89,10 +90,11 @@ import {
   recordSpend,
   releaseSpend,
   reserveSpend,
-  budgetExceededMessage,
   modelRatesMicroUsdPerToken,
+  periodCreditMicroUsd,
   type BillingPeriod,
 } from "@/lib/spend";
+import { isBudgetLow } from "@/lib/credits";
 import { runDeepResearch, type ResearchCorpusPage } from "@/lib/deep-research";
 import { researchEffortFor } from "@/lib/research/auto-effort";
 import { recordCitationAudit } from "@/lib/research/claims";
@@ -858,6 +860,8 @@ async function handleChat(req: Request) {
     userCapEur: settings?.monthlySpendCapEur ?? null,
     capDisabled: settings?.spendCapDisabled ?? false,
     eurPerUsd: eurPerUsd(),
+    // Top-ups and referral rewards extend the monthly ceiling (credits.ts).
+    creditMicroUsd: await periodCreditMicroUsd(user.id, plan, period),
   });
 
   // Every model needs a paid plan. A plan that includes no messages is refused
@@ -866,7 +870,7 @@ async function handleChat(req: Request) {
   // reads like an outage — or a per-model 403, instead of the paywall.
   if (PLANS[plan].monthlyMessages === 0) {
     return NextResponse.json(
-      { error: "budget_exceeded", code: "PLAN_REQUIRED", message: budgetExceededMessage(plan) },
+      budgetExceededBody(plan, null, { code: "PLAN_REQUIRED" }),
       { status: 402 }
     );
   }
@@ -1030,18 +1034,22 @@ async function handleChat(req: Request) {
       });
       hasImages = !!imageHit;
     }
+    // The fair fallback: with under 10% of the month left, Auto keeps to the
+    // cost-1 models. A read only (no reaping); the gate proper runs below.
+    const autoBudget = await checkBudget(user.id, plan, period, effective, { reap: false }).catch(() => null);
     try {
       const pick = pickAutoModel({
         message: routingMessage,
         plan,
         hasImages,
         wantsWebSearch: !!input.webSearch,
+        lowBudget: autoBudget ? isBudgetLow(autoBudget.remainingMicroUsd, autoBudget.budgetMicroUsd) : false,
       });
       modelInfo = pick.model;
       autoReasoningEffort = pick.reasoningEffort;
       routingNote = `Auto picked ${pick.model.name} — ${pick.complexity.level} prompt${
         pick.complexity.reasons.length ? ` (${pick.complexity.reasons.slice(0, 2).join(", ")})` : ""
-      }`;
+      }${pick.budgetSaver ? " · saving your remaining budget" : ""}`;
       logDebug("chat.auto", {
         level: pick.complexity.level,
         minIntelligence: pick.complexity.minIntelligence,
@@ -1241,7 +1249,7 @@ async function handleChat(req: Request) {
 
     const budget = await checkBudget(user.id, plan, period, effective);
     if (!budget.allowed) {
-      return NextResponse.json({ error: "budget_exceeded", message: budgetExceededMessage(plan, budget.resetsAtMs) }, { status: 402 });
+      return NextResponse.json(budgetExceededBody(plan, budget.resetsAtMs), { status: 402 });
     }
     const windowed = await usageWindowRefusal(user.id, plan, period, effective);
     if (windowed) return windowed;
@@ -1729,7 +1737,7 @@ async function handleChat(req: Request) {
     usageWindowRefusal(user.id, plan, period, effective),
   ]);
   if (!budget.allowed) {
-    return NextResponse.json({ error: "budget_exceeded", message: budgetExceededMessage(plan, budget.resetsAtMs) }, { status: 402 });
+    return NextResponse.json(budgetExceededBody(plan, budget.resetsAtMs), { status: 402 });
   }
   if (windowed) return windowed;
 

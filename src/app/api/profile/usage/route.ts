@@ -9,6 +9,7 @@ import {
   billingPeriodFor,
   resolveEffectiveBudget,
 } from "@/lib/spend";
+import { windowBaseMicroUsd } from "@/lib/spend-ceiling";
 
 export const runtime = "nodejs";
 
@@ -31,7 +32,7 @@ export async function GET() {
   const effective = await resolveEffectiveBudget(user.id, quota.plan);
   const [budget, windows] = await Promise.all([
     checkBudget(user.id, quota.plan, period, effective),
-    getUsageWindows(user.id, effective.budgetMicroUsd, period),
+    getUsageWindows(user.id, windowBaseMicroUsd(effective), period),
   ]);
 
   return NextResponse.json({

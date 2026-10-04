@@ -44,6 +44,13 @@ export interface AutoPickInput {
   wantsWebSearch?: boolean;
   /** Prefer current generation models unless nothing else fits. */
   preferCurrent?: boolean;
+  /**
+   * Less than 10% of the month's budget is left (`isBudgetLow` in credits.ts).
+   * Auto then keeps to cost-1 models so what remains lasts, instead of one
+   * frontier turn ending the month. Only Auto bends: a model the user picked
+   * by name is still the model they get.
+   */
+  lowBudget?: boolean;
 }
 
 export interface AutoPickResult {
@@ -56,6 +63,8 @@ export interface AutoPickResult {
   reasoningEffort: ReasoningEffort;
   /** Models considered, cheapest-first among eligible (for logging). */
   candidatesConsidered: number;
+  /** True when a low budget narrowed the pick to cost-1 models. */
+  budgetSaver: boolean;
 }
 
 const MIN_INTEL: Record<PromptComplexity, number> = {
@@ -371,6 +380,17 @@ export function pickAutoModel(input: AutoPickInput): AutoPickResult {
 
   let pool = MODEL_LIST.filter((m) => isEligibleChatModel(m, input.plan, needsVision, needsWebSearch));
 
+  // The fair fallback: near the end of the budget, only the cheapest tier —
+  // as long as one of them can take this request at all.
+  let budgetSaver = false;
+  if (input.lowBudget) {
+    const cheap = pool.filter((m) => m.cost <= 1);
+    if (cheap.length > 0) {
+      pool = cheap;
+      budgetSaver = true;
+    }
+  }
+
   // Prefer current generation; fall back to legacy if the floor can't be met.
   if (preferCurrent) {
     const currentOnly = pool.filter((m) => m.status === "current" || !m.status);
@@ -418,6 +438,7 @@ export function pickAutoModel(input: AutoPickInput): AutoPickResult {
     complexity,
     reasoningEffort,
     candidatesConsidered: ranked.length || pool.length,
+    budgetSaver,
   };
 }
 

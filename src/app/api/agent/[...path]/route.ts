@@ -6,6 +6,7 @@ import { rateLimit } from "@/lib/rate-limit";
 import { getUserPlan } from "@/lib/usage";
 import { PLANS } from "@/lib/plans";
 import { checkBudget, checkUsageWindows, budgetExceededMessage, recordSpend } from "@/lib/spend";
+import { budgetExceededBody } from "@/lib/billing/budget-fallback";
 import { windowLimitMessage } from "@/lib/spend-ceiling";
 import {
   createUpstreamAbort,
@@ -122,7 +123,10 @@ export async function POST(
     const budget = await checkBudget(user.id, plan);
     if (!budget.allowed) {
       return NextResponse.json(
-        { error: budgetExceededMessage(plan, budget.resetsAtMs), code: "QUOTA_EXCEEDED" },
+        budgetExceededBody(plan, budget.resetsAtMs, {
+          error: budgetExceededMessage(plan, budget.resetsAtMs),
+          code: "QUOTA_EXCEEDED",
+        }),
         { status: 402 },
       );
     }

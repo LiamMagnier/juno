@@ -74,12 +74,22 @@ interface AppStoreVerificationOptions {
  * Standard Juno App Store product identifiers.
  */
 export const APP_STORE_PRODUCT_IDS: Record<string, { plan: Plan; interval: "month" | "year" }> = {
+  // October 2026 lineup. The ids keep the original `com.liammagnier.juno.`
+  // prefix: an App Store product id can never be renamed or reused, so the
+  // Alevr rename does not reach them. The full list, with prices, is in
+  // docs/pricing/APP_STORE_PRODUCTS.md — keep the two in step.
+  "com.liammagnier.juno.lite.monthly": { plan: "LITE", interval: "month" },
+  "com.liammagnier.juno.lite.yearly": { plan: "LITE", interval: "year" },
   "com.liammagnier.juno.pro.monthly": { plan: "PRO", interval: "month" },
   "com.liammagnier.juno.pro.yearly": { plan: "PRO", interval: "year" },
+  "com.liammagnier.juno.plus.monthly": { plan: "PLUS", interval: "month" },
+  "com.liammagnier.juno.plus.yearly": { plan: "PLUS", interval: "year" },
   "com.liammagnier.juno.max.monthly": { plan: "MAX", interval: "month" },
   "com.liammagnier.juno.max.yearly": { plan: "MAX", interval: "year" },
   "com.liammagnier.juno.max20.monthly": { plan: "MAX20", interval: "month" },
   "com.liammagnier.juno.max20.yearly": { plan: "MAX20", interval: "year" },
+  "com.liammagnier.juno.ultra.monthly": { plan: "ULTRA", interval: "month" },
+  "com.liammagnier.juno.ultra.yearly": { plan: "ULTRA", interval: "year" },
 };
 
 /**

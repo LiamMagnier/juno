@@ -3,8 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { ensureUserDefaults } from "@/lib/auth";
 import { listConversations } from "@/lib/queries";
 import { getQuota, planFromAccount } from "@/lib/usage";
-import { budgetForPlan, checkBudget, eurPerUsd, getUsageWindows, billingPeriodFor } from "@/lib/spend";
-import { effectiveBudget } from "@/lib/spend-ceiling";
+import { budgetForPlan, checkBudget, eurPerUsd, getUsageWindows, billingPeriodFor, periodCreditMicroUsd } from "@/lib/spend";
+import { effectiveBudget, windowBaseMicroUsd } from "@/lib/spend-ceiling";
 import { isStripeConfigured, isStorageAvailable, isServerTtsConfigured, activeTtsProvider } from "@/lib/env";
 import { isAnySttAvailable } from "@/lib/stt";
 import { isEmailEnabled } from "@/lib/email";
@@ -119,6 +119,7 @@ export async function getAppBootstrap(user: SessionUser): Promise<AppBootstrap> 
     userCapEur: settings?.monthlySpendCapEur ?? null,
     capDisabled: settings?.spendCapDisabled ?? false,
     eurPerUsd: eurPerUsd(),
+    creditMicroUsd: await periodCreditMicroUsd(user.id, quota.plan, period),
   });
   const [budget, windows, pushPublicKey] = await Promise.all([
     // `reap: false` — the bootstrap is a READ that paints two meters, and the
@@ -126,7 +127,7 @@ export async function getAppBootstrap(user: SessionUser): Promise<AppBootstrap> 
     // write transactions on every single page render. The sweep stays on the
     // paths that are about to spend; the argument is on the option itself.
     checkBudget(user.id, quota.plan, period, effective, { reap: false }),
-    getUsageWindows(user.id, effective.budgetMicroUsd, period),
+    getUsageWindows(user.id, windowBaseMicroUsd(effective), period),
     // Cached per process after the first call and never throws: a VAPID key
     // that cannot be had turns browser push off, not the page.
     webPushPublicKey(),

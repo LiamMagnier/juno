@@ -9,6 +9,7 @@ import {
   resolveCodeUsageReservation,
 } from "@/lib/usage";
 import { checkBudget, checkUsageWindows, budgetExceededMessage } from "@/lib/spend";
+import { budgetExceededBody } from "@/lib/billing/budget-fallback";
 import { windowLimitMessage } from "@/lib/spend-ceiling";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 
@@ -70,7 +71,10 @@ export async function POST(req: NextRequest) {
     const budget = await checkBudget(user.id, plan);
     if (!budget.allowed) {
       return NextResponse.json(
-        { error: budgetExceededMessage(plan, budget.resetsAtMs), code: "QUOTA_EXCEEDED" },
+        budgetExceededBody(plan, budget.resetsAtMs, {
+          error: budgetExceededMessage(plan, budget.resetsAtMs),
+          code: "QUOTA_EXCEEDED",
+        }),
         { status: 402 },
       );
     }

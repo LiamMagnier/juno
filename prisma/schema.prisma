@@ -122,6 +122,11 @@ model User {
   toolInvocations             ToolInvocation[]
   actionApprovalReceipts      ActionApprovalReceipt[]
   spendPeriods                SpendPeriod[]
+  usageCredits                UsageCredit[]
+  referralCode                ReferralCode?
+  referralsMade               Referral[]                   @relation("ReferralReferrer")
+  referredBy                  Referral?                    @relation("ReferralReferred")
+  renewalReminders            RenewalReminder[]
   spendReservations           SpendReservation[]
   knowledgeDocuments          KnowledgeDocument[]
   knowledgeBlocks             KnowledgeBlock[]
@@ -3666,6 +3671,10 @@ model SpendPeriod {
   /// Estimated cost of work that is in flight. Held against the ceiling so a
   /// long stream cannot be joined by a second one that only sees settled spend.
   reservedMicroUsd  BigInt   @default(0)
+  /// Spend above the plan budget that this period has drawn from usage
+  /// credits (UsageCredit). Part of the period's ceiling: plan budget + this +
+  /// credit still available. See src/lib/credits.ts.
+  creditDrawnMicroUsd BigInt @default(0)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
@@ -3674,6 +3683,78 @@ model SpendPeriod {
 
   @@unique([userId, period])
   @@index([userId, period])
+}
+
+/// Extra model budget on top of a plan: a paid top-up pack, a referral reward,
+/// or an operator grant. Extends the MONTHLY ceiling only and is drawn once the
+/// plan budget for the period is used, soonest-expiring first. Arithmetic in
+/// src/lib/credits.ts; I/O in src/lib/billing/credit-ledger.ts.
+model UsageCredit {
+  id                String   @id @default(cuid())
+  userId            String
+  /// topup | referral | admin
+  source            String
+  amountMicroUsd    BigInt
+  remainingMicroUsd BigInt
+  expiresAt         DateTime
+  /// Idempotency key: the Checkout Session id for a top-up,
+  /// "referral:<referralId>:<side>" for a referral reward.
+  stripeId          String?  @unique
+  note              String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+}
+
+/// One shareable code per account, minted on first read of /api/referrals.
+model ReferralCode {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  code      String   @unique
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// A referred sign-up. Rewarded (both sides get REFERRAL_CREDIT_EUR) on the
+/// referred account's first successful paid subscription payment.
+model Referral {
+  id             String    @id @default(cuid())
+  referrerId     String
+  referredUserId String    @unique
+  code           String
+  /// pending | rewarded | rejected
+  status         String    @default("pending")
+  /// Why a referral was not rewarded (self_referral, referrer_cap, ...).
+  reason         String?
+  rewardedAt     DateTime?
+  /// The Stripe invoice that triggered the reward.
+  stripeInvoiceId String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  referrer     User @relation("ReferralReferrer", fields: [referrerId], references: [id], onDelete: Cascade)
+  referredUser User @relation("ReferralReferred", fields: [referredUserId], references: [id], onDelete: Cascade)
+
+  @@index([referrerId, status])
+}
+
+/// The annual-renewal notice (Code de la consommation L215-1), once per
+/// subscription period.
+model RenewalReminder {
+  id                   String   @id @default(cuid())
+  userId               String
+  stripeSubscriptionId String
+  periodEnd            DateTime
+  sentAt               DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([stripeSubscriptionId, periodEnd])
+  @@index([userId])
 }
 
 model SpendReservation {

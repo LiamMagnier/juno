@@ -236,6 +236,13 @@ export const OWNER_COLUMN = new Map<string, "userId" | "accountId">([
   // id through prismaUnguarded, like the billing webhook does.
   ["AgentSpendLimit", "userId"],
   ["AgentPayment", "userId"],
+  // Billing ledgers (src/lib/billing/credit-ledger.ts): usage credits, the
+  // account's referral code and the renewal-notice log. The Stripe webhook and
+  // the renewal sweep reach them by customer or subscription id, through
+  // prismaUnguarded, exactly as the subscription sync does.
+  ["UsageCredit", "userId"],
+  ["ReferralCode", "userId"],
+  ["RenewalReminder", "userId"],
 ]);
 
 /**

@@ -3,6 +3,7 @@ import { buildCsp } from "@/lib/csp";
 import { documentPolicyFor, sandboxOrigin } from "@/lib/sandbox-policy";
 import { evaluateCsrf } from "@/lib/csrf";
 import { REQUEST_ID_HEADER, RESPONSE_REQUEST_ID_HEADER } from "@/lib/request-id";
+import { REFERRAL_COOKIE, REFERRAL_COOKIE_MAX_AGE_SEC, normalizeReferralCode } from "@/lib/credits";
 
 /**
  * Cross-origin write protection for the API.
@@ -112,7 +113,21 @@ export function middleware(req: NextRequest) {
   // route handler's header only when the middleware has not already set it,
   // so stamping the page policy here would silently replace the poster's.
   if (!pathname.startsWith("/api/")) {
-    return withRequestContext(req, !SHARE_POSTER_PATH.test(pathname));
+    const res = withRequestContext(req, !SHARE_POSTER_PATH.test(pathname));
+    // `?ref=<code>` on any page (a shared link to the homepage, /sign-up, the
+    // pricing page) remembers the referral exactly as /r/<code> does; the
+    // account it belongs to is linked once it exists.
+    const ref = normalizeReferralCode(req.nextUrl.searchParams.get("ref"));
+    if (ref && !req.cookies.has(REFERRAL_COOKIE)) {
+      res.cookies.set(REFERRAL_COOKIE, ref, {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: req.nextUrl.protocol === "https:",
+        path: "/",
+        maxAge: REFERRAL_COOKIE_MAX_AGE_SEC,
+      });
+    }
+    return res;
   }
 
   const authHeader = req.headers.get("authorization");
