@@ -15,6 +15,8 @@ import { generateAudio, isAudioGenSupported } from "@/lib/audio-gen";
 import { lyricsMarkdown } from "@/lib/audio-gen-core";
 import { generationCost, outputFileName, planGeneration, promptWithSuffix } from "@/lib/media-gen-core";
 import { buildObjectKey, deleteObject, putObject, getObjectBytes } from "@/lib/storage";
+import { markAiGenerated } from "@/lib/ai-content-marking";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 import { encryptMessageText } from "@/lib/message-crypto";
 import { serializeMessage } from "@/lib/serializers";
 import { encodeChunk, SSE_HEADERS } from "@/lib/chat-stream";
@@ -307,6 +309,17 @@ export async function POST(req: Request) {
         }
 
         send({ type: "progress", stage: "uploading" });
+        // AI Act art. 50(2): every file says, in machine-readable metadata,
+        // that it was made by AI (src/lib/ai-content-marking.ts). Images get
+        // an IPTC XMP packet; video and audio pass through unchanged.
+        outputs = outputs.map((output) => ({
+          ...output,
+          bytes: markAiGenerated(output.bytes, output.mimeType, {
+            generator: model.name,
+            edited: !!(edit && editSource),
+            product: PRODUCT_NAME,
+          }).bytes,
+        }));
         const files = outputs.map((output, index) => ({
           ...output,
           key: buildObjectKey(user.id, `juno-${model.providerModel}.${output.ext}`),

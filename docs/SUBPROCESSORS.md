@@ -9,7 +9,15 @@ does not currently match this list.
 Generated 2026-07-31 from `src/lib/providers.ts`, `src/lib/env.ts` and the
 service modules named below. Re-derive it when a provider is added.
 
-## What the published policy says today
+> **Update 2026-10-04 (branch `pricing/legal`):** `/legal/confidentialite`
+> now names every party below, reads the model providers from `PROVIDERS`,
+> states each one's country and intended transfer safeguard, and adds Stripe
+> Tax, Deepgram, ElevenLabs and Apple. The host is filled (Microsoft Azure,
+> Sweden Central; the "Oracle Cloud or GCP" note below is out of date). The
+> section that follows describes the policy as it was on 2026-07-31. What
+> remains (DPAs, SCCs, DPF checks) is in `docs/pricing/LEGAL_CHECKLIST.md` §5.
+
+## What the published policy said on 2026-07-31
 
 `/legal/confidentialite` §4 "Destinataires et sous-traitants" lists three
 entries:

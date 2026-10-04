@@ -7,7 +7,8 @@
  * tax included (Directive 98/6/EC; Code de la consommation art. L112-1). So the
  * figure on screen is HT × (1 + the French rate), labelled "incl. VAT". A buyer
  * in another EU country pays their own country's rate (OSS) and a business with
- * a valid VAT number pays HT (reverse charge) — checkout states the exact
+ * a valid VAT number in ANOTHER EU state pays HT (reverse charge, art. 196 of
+ * Directive 2006/112/EC); a French business pays French VAT like anyone else — checkout states the exact
  * amount before anyone pays, and the pricing page says so in one line
  * (VAT_NOTE).
  */
@@ -72,12 +73,12 @@ export function perMonthSuffix(locale = "en"): string {
 /** The one line under a price list. */
 export function vatNote(locale = "en"): string {
   if (locale.startsWith("fr")) {
-    return "Prix TTC, TVA française de 20 % incluse. Le montant exact selon votre pays est affiché avant le paiement ; les entreprises de l'UE avec un numéro de TVA paient HT (autoliquidation).";
+    return "Prix TTC, TVA française de 20 % incluse. Le montant exact selon votre pays est affiché avant le paiement ; les entreprises établies dans un autre pays de l'UE avec un numéro de TVA paient HT (autoliquidation).";
   }
   if (locale.startsWith("de")) {
-    return "Preise inkl. 20 % französischer MwSt. Der genaue Betrag für Ihr Land wird vor der Zahlung angezeigt; Unternehmen in der EU mit USt-IdNr. zahlen netto (Reverse Charge).";
+    return "Preise inkl. 20 % französischer MwSt. Der genaue Betrag für Ihr Land wird vor der Zahlung angezeigt; Unternehmen mit USt-IdNr. in einem anderen EU-Land als Frankreich zahlen netto (Reverse Charge).";
   }
-  return "Prices include 20% French VAT. Checkout shows the exact amount for your country before you pay; EU businesses with a VAT number pay excl. VAT (reverse charge).";
+  return "Prices include 20% French VAT. Checkout shows the exact amount for your country before you pay; businesses with a VAT number in an EU country other than France pay excl. VAT (reverse charge).";
 }
 
 /** The suffix after a zero price, or any price with no VAT on it. */
