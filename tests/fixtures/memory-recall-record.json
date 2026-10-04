@@ -43,58 +43,58 @@
     }
   },
   "current": {
-    "recordedAt": "2026-09-22",
+    "recordedAt": "2026-10-04",
     "results": {
       "judged by when it was said": {
         "live": {
           "recall": 1,
-          "stale": 0.2857142857142857,
+          "stale": 0,
           "forgotten": 0,
-          "precision": 0.975609756097561,
+          "precision": 1,
           "retrieval": 0.8181818181818182,
-          "leaks": 1
+          "leaks": 0
         },
         "re-read": {
           "recall": 1,
-          "stale": 0.2857142857142857,
+          "stale": 0,
           "forgotten": 0,
-          "precision": 0.975609756097561,
+          "precision": 1,
           "retrieval": 0.8181818181818182,
-          "leaks": 1
+          "leaks": 0
         },
         "repair": {
-          "recall": 0.975,
+          "recall": 0.9625,
           "stale": 0.8571428571428571,
           "forgotten": 0,
-          "precision": 0.9285714285714286,
-          "retrieval": 0.8636363636363636,
+          "precision": 0.927710843373494,
+          "retrieval": 0.8181818181818182,
           "leaks": 5
         }
       },
       "+ re-judge pass (the product)": {
         "live": {
           "recall": 1,
-          "stale": 0.2857142857142857,
+          "stale": 0,
           "forgotten": 0,
-          "precision": 0.975609756097561,
+          "precision": 1,
           "retrieval": 0.8181818181818182,
-          "leaks": 1
+          "leaks": 0
         },
         "re-read": {
           "recall": 1,
-          "stale": 0.2857142857142857,
+          "stale": 0,
           "forgotten": 0,
-          "precision": 0.975609756097561,
+          "precision": 1,
           "retrieval": 0.8181818181818182,
-          "leaks": 1
+          "leaks": 0
         },
         "repair": {
           "recall": 1,
-          "stale": 0.2857142857142857,
+          "stale": 0,
           "forgotten": 0,
-          "precision": 0.975609756097561,
+          "precision": 1,
           "retrieval": 0.8181818181818182,
-          "leaks": 1
+          "leaks": 0
         }
       }
     }

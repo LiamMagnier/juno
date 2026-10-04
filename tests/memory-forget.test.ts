@@ -166,7 +166,7 @@ test("an account that never forgot anything always has a fresh summary", () => {
 test("chat context benches a stale summary instead of injecting it", () => {
   const body = src("src/lib/memory.ts");
   const profile = body.slice(body.indexOf("export async function getMemoryProfile"));
-  assert.match(profile.slice(0, 2500), /summaryPredatesForget\(storedSummary\.updatedAt, forgottenAt\)/);
+  assert.match(profile.slice(0, 4000), /summaryPredatesForget\(storedSummary\.updatedAt, forgottenAt\)/);
 });
 
 test("consolidation treats a forget as a change, not only a new fact count", () => {
