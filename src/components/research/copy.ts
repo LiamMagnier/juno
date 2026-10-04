@@ -281,7 +281,7 @@ export const RESEARCH_COPY = {
   /** Why Research was refused (§9.9). A reset date rides as its own phrase. */
   refusal: {
     skipped: "Research was skipped",
-    plan: "Research is available on paid plans.",
+    plan: "Research is included from the Pro plan.",
     notConfigured: "Research isn't set up on this server.",
     workspace: "This project doesn't allow Research.",
     private: "Research isn't available in private chats.",

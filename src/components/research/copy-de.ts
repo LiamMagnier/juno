@@ -179,7 +179,7 @@ export const RESEARCH_COPY_DE: Readonly<Record<string, string>> = {
   "Keep researching": "Weiter recherchieren",
   "Research report ready": "Recherchebericht fertig",
   "Research was skipped": "Recherche wurde übersprungen",
-  "Research is available on paid plans.": "Recherche ist in bezahlten Tarifen verfügbar.",
+  "Research is included from the Pro plan.": "Recherche ist ab dem Pro-Tarif enthalten.",
   "Research isn't set up on this server.": "Recherche ist auf diesem Server nicht eingerichtet.",
   "This project doesn't allow Research.": "Dieses Projekt erlaubt keine Recherche.",
   "Research isn't available in private chats.": "Recherche ist in privaten Chats nicht verfügbar.",

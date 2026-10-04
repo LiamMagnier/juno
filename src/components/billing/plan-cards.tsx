@@ -33,12 +33,17 @@ import { cn } from "@/lib/utils";
 
 export interface PlanCardItem {
   plan: PlanConfig;
-  /** Overrides `plan.name` — /upgrade shows one "Max" card that switches tier. */
+  /** Overrides `plan.name`. */
   name?: string;
-  /** Formatted price. Defaults to `${plan.price} €`. */
-  price?: string;
-  /** The caption after the price — "/ mo", "HT / yr". */
+  /**
+   * Formatted, tax-included price (planPriceParts() in price-display.ts).
+   * Required: the HT figure in `plan.price` must never reach a consumer.
+   */
+  price: string;
+  /** The caption after the price: "/mo incl. VAT". */
   priceSuffix?: string;
+  /** One quiet line under the price: the yearly charge on annual billing. */
+  priceNote?: string | null;
   tagline?: string;
   features?: readonly string[];
   /** The tier the page is steering toward: bigger throw, coral edge, a badge. */
@@ -91,8 +96,8 @@ export function PlanCards({
 function PlanCard({ item, index, action }: { item: PlanCardItem; index: number; action: ReactNode }) {
   const { plan, recommended, current, header } = item;
   const name = item.name ?? plan.name;
-  const price = item.price ?? `${plan.price} €`;
-  const suffix = item.priceSuffix ?? "/ mo";
+  const price = item.price;
+  const suffix = item.priceSuffix ?? "/mo";
   const tagline = item.tagline ?? plan.tagline;
   const features = item.features ?? plan.features;
 
@@ -126,14 +131,23 @@ function PlanCard({ item, index, action }: { item: PlanCardItem; index: number; 
         </div>
         {header}
       </div>
-      <p className="mt-1 text-ui text-muted-foreground">{tagline}</p>
+      {/* Two lines reserved, so a one-line tagline does not lift its price
+          above its neighbours' and four cards keep one baseline. */}
+      <p className="mt-1 min-h-10 text-ui text-muted-foreground">{tagline}</p>
 
-      <p className="mt-4 flex items-baseline gap-1.5">
-        <span className="text-display tabular-nums">{price}</span>
-        <span className="font-mono text-caption text-muted-foreground">{suffix}</span>
+      {/* The figure alone on its line, its unit on the next: "€10.80 /mo
+          incl. VAT" does not fit a quarter of the page, and a suffix that
+          wraps under some figures and not others breaks the row. The yearly
+          charge, when there is one, sits under the unit. */}
+      <p className="mt-4 text-display tabular-nums">{price}</p>
+      <p className="mt-1 font-mono text-caption tabular-nums text-muted-foreground">
+        {suffix}
+        {/* Always present (a no-break space when empty) so a Free card on
+            yearly billing lines up with the paid ones beside it. */}
+        <span className="block font-sans">{item.priceNote ?? "\u00a0"}</span>
       </p>
 
-      <ul className="mt-5 space-y-2.5">
+      <ul className="mt-4 space-y-2.5">
         {features.map((feature) => (
           <li key={feature} className="flex items-start gap-2 text-ui">
             <StatusIcons.success className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />

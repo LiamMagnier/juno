@@ -98,7 +98,7 @@ import {
 } from "@/lib/model-metrics";
 import { supportsFastMode } from "@/lib/pricing";
 import { PROVIDERS } from "@/lib/providers";
-import { PLANS } from "@/lib/plans";
+import { PLANS, cheapestPlanWith } from "@/lib/plans";
 import { ProviderLogo } from "@/components/brand/provider-logo";
 import { useUploads } from "@/hooks/use-uploads";
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
@@ -230,8 +230,8 @@ interface ComposerProps {
    */
   voiceCall?: VoiceCallParts;
   quotaReached?: boolean;
-  /** The plan grants no messages at all, rather than having exhausted them. */
-  planIncludesNoMessages?: boolean;
+  /** Free's monthly allowance is spent, as opposed to a paid plan's limit. */
+  freeAllowanceUsed?: boolean;
   webSearchEnabled?: boolean;
   onToggleWebSearch?: (v: boolean) => void;
   reasoningEffort: ReasoningEffort | null;
@@ -510,7 +510,7 @@ export function Composer({
   onOpenVoiceMode,
   voiceCall,
   quotaReached,
-  planIncludesNoMessages,
+  freeAllowanceUsed,
   webSearchEnabled = false,
   onToggleWebSearch,
   reasoningEffort,
@@ -633,6 +633,20 @@ export function Composer({
   // Deep research — per-send flag (resets after each send, unlike the sticky
   // web-search pref). Hidden entirely when the server has no Tavily key or in
   const [research, setResearch] = React.useState(initialResearch);
+  // Research is a Pro-and-up feature (PLANS[plan].research). Below that the
+  // row stays visible, because a missing feature reads as a missing product,
+  // and choosing it says which plan has it and opens /upgrade instead of
+  // arming a send the server would refuse.
+  const router = useRouter();
+  const planAllowsResearch = PLANS[quota.plan].research;
+  const toggleResearch = React.useCallback(() => {
+    if (!planAllowsResearch) {
+      toast.message(`Deep research is included from ${PLANS[cheapestPlanWith("research")].name}.`);
+      router.push("/upgrade");
+      return;
+    }
+    setResearch((on) => !on);
+  }, [planAllowsResearch, router]);
   // Depth is not a second decision: it follows the model and the thinking
   // effort already chosen on this row (see src/lib/research/auto-effort.ts).
   // The chip says what was derived, so a person who wants a deeper run knows
@@ -1520,7 +1534,6 @@ export function Composer({
   );
 
   // ——— Composer palette: "/" for commands, "@" for tools + connectors ———
-  const router = useRouter();
 
   const toggleMemory = React.useCallback(
     (v: boolean) => {
@@ -1668,7 +1681,7 @@ export function Composer({
               group: "tools" as const,
               icon: ComposerIcons.research,
               on: research,
-              run: () => setResearch((v) => !v),
+              run: toggleResearch,
             },
           ]
         : []),
@@ -1708,6 +1721,7 @@ export function Composer({
       onToggleWebSearch,
       researchAvailable,
       research,
+      toggleResearch,
       onOpenVoiceMode,
       router,
       skillsAvailable,
@@ -2471,7 +2485,7 @@ export function Composer({
           ariaLabel: FEATURE_NAMES.research.accessibleLabel,
           icon: ComposerIcons.research,
           checked: research,
-          onToggle: () => setResearch((on) => !on),
+          onToggle: toggleResearch,
         }
       : null;
 
@@ -2681,14 +2695,14 @@ export function Composer({
           role="status"
           className="mb-2 rounded-control border border-primary/30 bg-primary/5 px-3 py-2 text-center text-ui text-foreground"
         >
-          {planIncludesNoMessages ? (
+          {freeAllowanceUsed ? (
             <>
-              The Free plan doesn&apos;t include any messages.{" "}
+              You&apos;ve used this month&apos;s free allowance.{" "}
               <a
                 href="/upgrade"
                 className="font-medium text-primary underline-offset-2 hover:underline"
               >
-                Upgrade to start chatting
+                Upgrade to keep chatting
               </a>
             </>
           ) : (

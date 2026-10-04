@@ -16,11 +16,12 @@ import {
   formatCountdown,
   formatDate,
   formatEur,
-  formatEurWhole,
   formatResetMoment,
   useFormatLocale,
 } from "@/components/settings/format";
 import { PLANS } from "@/lib/plans";
+import { planPriceParts } from "@/lib/price-display";
+import { usePriceLocale } from "@/components/billing/use-price-locale";
 import { describeCapSource } from "@/lib/spend-ceiling";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 
@@ -62,7 +63,9 @@ export function BillingSection() {
   const formatAt = useFormatLocale();
   const windows = spend.windows;
   const unlimited = spend.budgetMicroUsd == null;
-  const generating = quota.plan !== "FREE" && !spend.capDisabled;
+  const generating = !spend.capDisabled;
+  const priceLocale = usePriceLocale();
+  const price = planPriceParts(plan.price, "month", priceLocale);
 
   // The Stripe portal holds the subscription, invoices and payment method, so
   // it is one button. There used to be a second row, "Invoices and payment
@@ -129,13 +132,14 @@ export function BillingSection() {
             </div>
             <p className="mt-0.5 text-ui text-muted-foreground">{plan.tagline}</p>
             <p className="mt-2 text-ui text-muted-foreground">
+              {/* Tax-included, the figure the reader is charged (price-display.ts). */}
               {plan.price > 0 ? (
                 <>
-                  <span className="tabular-nums text-foreground">{formatEurWhole(plan.price, formatAt)}</span>{" "}
-                  <span>a month, excluding VAT.</span>
+                  <span className="tabular-nums text-foreground">{price.amount}</span>{" "}
+                  <span>{price.suffix}</span>
                 </>
               ) : (
-                <span>Free.</span>
+                <span>A small monthly allowance on the fast models, at no cost.</span>
               )}
               {renewsAtMs != null && (
                 <>
@@ -172,15 +176,11 @@ export function BillingSection() {
           <p className="py-4 text-ui text-muted-foreground">
             {`Nothing is metering this account. A task ${PRODUCT_NAME} starts on its own still stops at a small backstop ceiling, so an unattended loop can’t run all night.`}
           </p>
-        ) : quota.plan === "FREE" ? (
-          <p className="py-4 text-ui text-muted-foreground">
-            <span>The Free plan doesn’t include any messages. Pro unlocks every model and a monthly budget.</span>
-          </p>
         ) : (
           <>
             {budgetEur != null && (
               <WindowRow
-                label="This month"
+                label={quota.plan === "FREE" ? "Free allowance" : "This month"}
                 description={
                   <>
                     <span className="tabular-nums">{formatEur(remainingEur ?? 0, formatAt)}</span> <span>left of</span>{" "}
@@ -245,7 +245,7 @@ export function BillingSection() {
       </SettingsGroup>
 
       <SettingsGroup title="History" description="Replies per day across chat, code and tasks.">
-        <UsageHistory eurPerUsd={eurPerUsd} showCost={quota.plan !== "FREE"} />
+        <UsageHistory eurPerUsd={eurPerUsd} showCost />
       </SettingsGroup>
     </>
   );

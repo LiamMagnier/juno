@@ -12,6 +12,8 @@ import { resolveModel, type ModelId, type ModelInfo } from "@/lib/models";
 import { AUTO_MODEL_ID, AUTO_MODEL_INFO, isAutoModelId } from "@/lib/auto-model";
 import { useApp } from "@/components/app/app-provider";
 import { isModelLocked, pushRecent } from "@/lib/model-picker";
+import { PLANS, modelRequiredPlan } from "@/lib/plans";
+import { toast } from "sonner";
 import { composerChevronClass, composerChipClass } from "@/components/ui/composer-shell";
 import { COMPOSER_MENU_COLLISION_PADDING } from "@/components/chat/composer-menu";
 import { cn } from "@/lib/utils";
@@ -134,6 +136,9 @@ export function ModelSelector({
     if (m.comingSoon) return;
     if (isModelLocked(m, plan)) {
       setOpen(false);
+      // Say why the click went to /upgrade, and name the cheapest plan that
+      // has the model, so the page is read with that card in mind.
+      toast.message(`${m.name} is included from ${PLANS[modelRequiredPlan(m)].name}.`);
       router.push("/upgrade");
       return;
     }

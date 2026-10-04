@@ -178,7 +178,7 @@ export const PANEL_COPY_DE: Readonly<Record<string, string>> = {
   "Took too long to connect": "Verbindung hat zu lange gedauert",
   "Isn’t linked": "Nicht verknüpft",
   "Research isn’t set up on this server.": "Recherche ist auf diesem Server nicht eingerichtet.",
-  "Research is available on paid plans.": "Recherche ist in kostenpflichtigen Tarifen verfügbar.",
+  "Research is included from the Pro plan.": "Recherche ist ab dem Pro-Tarif enthalten.",
   "This project doesn’t allow Research.": "Dieses Projekt erlaubt keine Recherche.",
   "Research isn’t available in private chats.": "Recherche ist in privaten Chats nicht verfügbar.",
   "Research is off (Lockdown).": "Recherche ist aus (Lockdown).",

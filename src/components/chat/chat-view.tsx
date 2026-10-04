@@ -72,7 +72,7 @@ import { VoiceCallNotices, voiceCallParts } from "@/components/voice/realtime-vo
 import { resolveModel, type ModelId } from "@/lib/models";
 import { AUTO_MODEL_ID, isAutoModelId } from "@/lib/auto-model";
 import { STEP_LAB_DEMO_MESSAGE } from "@/lib/step-lab-fixture";
-import { PLANS } from "@/lib/plans";
+import { PLANS, cheapestPlanWith } from "@/lib/plans";
 import { stripMemoryTags } from "@/lib/message-content";
 import { speechForReply } from "@/lib/chat/tool-run-speech";
 import { MAX_CHAT_CONNECTORS } from "@/lib/connector-intent";
@@ -184,6 +184,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
     composerPrefs,
     setComposerPrefs,
     models,
+    spend,
   } = useApp();
   const router = useRouter();
   const pathname = usePathname();
@@ -1543,14 +1544,26 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   }, [handoff]);
 
   // NB: `quota.limit != null` is load-bearing and must not be "tidied" into a
-  // truthiness check — Free's limit is 0, and `0 != null` is what keeps the
-  // gate on for that plan at all.
-  const quotaReached = quota.limit != null && quota.remaining != null && quota.remaining <= 0;
-  // A plan with no allowance at all is a different situation from one that has
-  // been used up, and telling someone they "reached their limit" on their first
-  // visit — before they have sent anything — is simply untrue.
-  const planIncludesNoMessages = quota.limit === 0;
+  // truthiness check: a limit of 0 is a real (exhausted) limit. Every plan is
+  // token-metered today (monthlyMessages is null throughout plans.ts), so this
+  // gate only ever closes for a plan that reintroduces a message cap.
+  const messageCapReached = quota.limit != null && quota.remaining != null && quota.remaining <= 0;
+  // Free's allowance (~0.20 € of model cost a month on the fast models) is
+  // used up. Only Free is gated here, from the bootstrap meter: a paid plan
+  // that runs out meets the server's 402 with its own reset date, and a
+  // composer that locked on a stale snapshot would be the worse failure.
+  const freeAllowanceUsed =
+    quota.plan === "FREE" &&
+    spend.budgetMicroUsd != null &&
+    spend.spentMicroUsd + spend.reservedMicroUsd >= spend.budgetMicroUsd;
+  const quotaReached = messageCapReached || freeAllowanceUsed;
   const planAllowsVoice = PLANS[quota.plan].voice;
+  // Below Pro the voice control stays on screen and says which plan has it,
+  // rather than vanishing (a missing control reads as a missing product).
+  const nudgeVoiceUpgrade = React.useCallback(() => {
+    toast.message(`Voice mode is included from ${PLANS[cheapestPlanWith("voice")].name}.`);
+    router.push("/upgrade");
+  }, [router]);
 
   // Whether the composer — and so its Stop button — is on screen. The dock is
   // `hidden` behind a canvas or the thought dock below the split, and a
@@ -2024,9 +2037,9 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       onSkipClarification={() => chat.resolvePendingClarification([], true)}
       onCancelClarification={chat.cancelPendingClarification}
       voiceCall={voiceOpen ? voiceCallParts({ voice: realtimeVoice, onClose: closeVoice, speakerName: agent?.name }) : undefined}
-      onOpenVoiceMode={planAllowsVoice && !privateMode && !voiceOpen && !voiceSaving && !voiceSaveError && !voiceTurnSending && !chat.pendingClarification ? openVoice : undefined}
+      onOpenVoiceMode={!privateMode && !voiceOpen && !voiceSaving && !voiceSaveError && !voiceTurnSending && !chat.pendingClarification ? (planAllowsVoice ? openVoice : nudgeVoiceUpgrade) : undefined}
       quotaReached={quotaReached}
-      planIncludesNoMessages={planIncludesNoMessages}
+      freeAllowanceUsed={freeAllowanceUsed}
       webSearchEnabled={webSearchEnabled}
       onToggleWebSearch={setWebSearchEnabled}
       reasoningEffort={reasoningEffort}

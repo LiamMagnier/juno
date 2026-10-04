@@ -75,7 +75,7 @@ test("every refusal has a line, and none says Deep or names a depth (§9.9)", ()
     assert.ok(line.detail.length > 0, reason);
     assert.doesNotMatch(line.detail, /deep|quick|standard|\bmax\b/i, reason);
   }
-  assert.equal(RESEARCH_REFUSAL_COPY.reasons.plan, "Research is available on paid plans.");
+  assert.equal(RESEARCH_REFUSAL_COPY.reasons.plan, "Research is included from the Pro plan.");
   assert.equal(RESEARCH_REFUSAL_COPY.reasons.not_configured, "Research isn't set up on this server.");
 });
 

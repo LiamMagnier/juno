@@ -336,6 +336,7 @@ export function AppSidebar({
     setSidebarOpen,
     user,
     quota,
+    spend,
   } = useApp();
   const [renamingId, setRenamingId] = React.useState<string | null>(null);
   const [confirm, setConfirm] = React.useState<ConfirmState>(null);
@@ -847,27 +848,28 @@ export function AppSidebar({
    * Usage in the footer is a WORD, not a meter.
    *
    * The account menu behind this row already draws the same quota as a
-   * `DotFillBar` with a `Messages 12 / 15` header, so a bar here would be a
+   * `DotFillBar` with a `This month 42% used` header, so a bar here would be a
    * second read of one number, and a bar at 12% full is furniture. Below 80%
    * the plan line names the plan and nothing else; above it a toned note joins
    * it, which is the only moment the number is worth a person's attention.
-   * `quota.remaining` is preferred over `limit - used` so the copy matches
-   * whatever the server computed, and it is nullable (types/chat.ts) so it is
-   * guarded.
    */
+  // Every plan is token-metered now (Free's allowance included), so the
+  // share is the month's spend against the enforced budget, the same figure
+  // the account menu draws.
   const usagePct =
-    quota.limit != null && quota.limit > 0 ? Math.min(100, Math.round((quota.used / quota.limit) * 100)) : null;
-  const remaining = quota.remaining ?? (quota.limit != null ? Math.max(0, quota.limit - quota.used) : null);
+    spend.budgetMicroUsd != null && spend.budgetMicroUsd > 0
+      ? Math.min(100, Math.round(((spend.spentMicroUsd + spend.reservedMicroUsd) / spend.budgetMicroUsd) * 100))
+      : null;
   const usageNote =
     usagePct == null || usagePct < 80
       ? null
       : usagePct >= 100
-        ? { label: "Limit reached", tone: "text-destructive" }
-        : { label: `${remaining ?? 0} left`, tone: "text-warning" };
+        ? { label: quota.plan === "FREE" ? "Allowance used" : "Limit reached", tone: "text-destructive" }
+        : { label: `${usagePct}% used`, tone: "text-warning" };
   // The whole truth always rides the accessible name, so nothing a sighted
   // reader can see is lost to the truncation on that one line.
   const accountLabel = `${user.name ?? user.email ?? "Account"}, ${plan.name} plan${
-    quota.limit == null ? ", no message cap" : `, ${quota.used} of ${quota.limit} messages used`
+    usagePct == null ? ", no usage cap" : `, ${usagePct}% of this month's usage`
   }`;
 
   /*

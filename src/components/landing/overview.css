@@ -45,9 +45,15 @@
 .alevr-pricing-plan { padding:28px 24px; display:flex; flex-direction:column; min-width:0; }
 .alevr-pricing-plan + .alevr-pricing-plan { border-left:1px solid hsl(var(--border)); }
 .alevr-pricing-plan[data-plan="PRO"] { background:hsl(var(--card)); }
-.alevr-pricing-plan details { margin:24px 0; font-size:13px; line-height:1.6; }
-.alevr-pricing-plan summary { min-height:32px; cursor:pointer; color:hsl(var(--muted-foreground)); }
-.alevr-pricing-plan ul { display:grid; gap:12px; margin-top:16px; }
+.alevr-pricing-plan ul { display:grid; gap:10px; margin:24px 0 28px; font-size:13px; line-height:1.55; color:hsl(var(--muted-foreground)); }
+.alevr-pricing-heavy { margin-top:16px; display:grid; grid-template-columns:minmax(0,1fr) minmax(0,2fr); gap:24px 48px; padding:28px 24px; border:1px solid hsl(var(--border)); border-radius:14px; }
+.alevr-pricing-heavy-head p { margin-top:6px; max-width:32ch; }
+.alevr-pricing-heavy ul { display:grid; }
+.alevr-pricing-heavy li { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1.2fr) 7rem; align-items:baseline; gap:16px; padding:12px 0; }
+.alevr-pricing-heavy li + li { border-top:1px solid hsl(var(--border)); }
+.alevr-pricing-heavy-price { text-align:right; white-space:nowrap; }
+.alevr-pricing-heavy-link { justify-self:end; white-space:nowrap; text-decoration:underline; text-underline-offset:4px; text-decoration-color:hsl(var(--border)); transition:text-decoration-color 160ms ease; }
+.alevr-pricing-heavy-link:hover { text-decoration-color:currentColor; }
 .alevr-pricing-plan > a { margin-top:auto; white-space:nowrap; }
 .alevr-platforms { display:grid; grid-template-columns:1.3fr 1fr; gap:48px; margin-top:40px; }
 .alevr-platforms > div:last-child { display:grid; gap:28px; }
@@ -63,6 +69,7 @@
 .alevr-brand-story > :last-child { border-radius:0; aspect-ratio:3/4; }
 .alevr-labs { padding:48px 0; border-top:0; border-bottom:0; }
 .alevr-pricing-grid { border-radius:0; border-left:0; border-right:0; }
+.alevr-pricing-heavy { margin-top:0; border-radius:0; border-left:0; border-right:0; border-top:0; padding:28px; }
 .alevr-pricing-plan { padding:36px 28px; }
 .alevr-pricing-plan[data-plan="PRO"] { background:hsl(var(--muted) / .35); }
 .alevr-closing .alevr-site-column { padding-top:104px; padding-bottom:104px; }
@@ -87,6 +94,7 @@
   .alevr-pricing-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
   .alevr-pricing-plan:nth-child(3) { border-left:0; }
   .alevr-pricing-plan:nth-child(n+3) { border-top:1px solid hsl(var(--border)); }
+  .alevr-pricing-heavy { grid-template-columns:minmax(0,1fr); }
 }
 @media(max-width:767px) {
   .alevr-site-column { padding-left:24px; padding-right:24px; }
@@ -112,6 +120,8 @@
   .alevr-brand-story > :last-child { order:2; aspect-ratio:4/3; }
   .alevr-pricing-grid { grid-template-columns:minmax(0,1fr); }
   .alevr-pricing-plan + .alevr-pricing-plan { border-left:0; border-top:1px solid hsl(var(--border)); }
+  .alevr-pricing-heavy li { grid-template-columns:minmax(0,1fr) auto; gap:4px 16px; }
+  .alevr-pricing-heavy-price { text-align:left; }
   .alevr-closing .alevr-site-column { padding-top:72px; padding-bottom:72px; }
 }
 @media(prefers-reduced-motion:reduce) {

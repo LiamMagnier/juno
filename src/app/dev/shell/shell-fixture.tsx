@@ -183,12 +183,14 @@ function bootstrap(nearCap: boolean, many: boolean): AppBootstrap {
       emailBudgetAlerts: false,
       emailWeeklyDigest: false,
     },
+    // Near cap: a Free account 88% into its monthly allowance (~0.20 € in
+    // micro-USD), which is what turns the sidebar's usage note on.
     quota: nearCap
-      ? { plan: "FREE", used: 13, limit: 15, remaining: 2 }
+      ? { plan: "FREE", used: 13, limit: null, remaining: null }
       : { plan: "PRO", used: 120, limit: null, remaining: null },
     spend: {
-      spentMicroUsd: 0,
-      budgetMicroUsd: null,
+      spentMicroUsd: nearCap ? 191_000 : 0,
+      budgetMicroUsd: nearCap ? 217_000 : null,
       eurPerUsd: 0.92,
       reservedMicroUsd: 0,
       capSource: "plan",
@@ -205,7 +207,7 @@ function bootstrap(nearCap: boolean, many: boolean): AppBootstrap {
     folders: [],
     features: {
       billing: true,
-      purchasablePlans: ["PRO", "MAX"],
+      purchasablePlans: ["LITE", "PRO", "PLUS", "MAX", "MAX20", "ULTRA"],
       purchasableAnnualPlans: [],
       serverStt: false,
       serverTts: false,

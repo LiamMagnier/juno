@@ -239,7 +239,7 @@ export const PANEL_COPY = {
   /** Why a Research request was refused (SPEC §9.9), shown after "Research was skipped". */
   researchRefusal: {
     not_configured: "Research isn’t set up on this server.",
-    plan: "Research is available on paid plans.",
+    plan: "Research is included from the Pro plan.",
     workspace: "This project doesn’t allow Research.",
     private: "Research isn’t available in private chats.",
     lockdown: "Research is off (Lockdown).",

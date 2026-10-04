@@ -71,10 +71,10 @@ type Product = {
    * can never be a decoration: it appears if and only if the account cannot
    * open that route.
    *
-   * Both surfaces are "FREE" today because Juno does not gate a product by
-   * plan. The capability is built, not faked: the day Code (say) becomes a
-   * paid surface, this one literal turns the segment greyed-with-a-sparkle and
-   * points it at `/upgrade`, on every width, with nothing else to change.
+   * Code is "PRO": it is the first product gated by plan (PLANS[plan].code),
+   * so below Pro its segment draws greyed with a lock and points at
+   * `/upgrade`, on every width. The /code layout enforces the same policy on
+   * the server for anyone who arrives by URL.
    */
   minPlan: PlanId;
 };

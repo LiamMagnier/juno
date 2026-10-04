@@ -26,7 +26,7 @@ import { DotIdenticon } from "@/components/signature/dot-matrix";
 import { PLANS } from "@/lib/plans";
 import { staggerDelay } from "@/lib/motion";
 
-const PLAN_OPTIONS: Plan[] = ["FREE", "PRO", "MAX", "MAX20", "OWNER"];
+const PLAN_OPTIONS: Plan[] = ["FREE", "LITE", "PRO", "PLUS", "MAX", "MAX20", "ULTRA", "OWNER"];
 const STRIKE_LIMIT = 3;
 
 type AdminUser = {
