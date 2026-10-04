@@ -279,6 +279,12 @@ export async function runUtilityPrompt<T>(opts: {
   purpose?: BackgroundPurpose;
   /** Receives what was decided, for the audit trail. Never given content. */
   onDecision?: (record: BackgroundProcessingRecord) => void;
+  /**
+   * Walk the eligible models cheapest first (by cost tier, fastest within a
+   * tier) instead of fastest first. For work where a cost-1 model is as good
+   * as any — summarising history — and that runs often enough to matter.
+   */
+  cheapestFirst?: boolean;
 }): Promise<{
   result: T | null;
   transient: boolean;
@@ -323,7 +329,9 @@ export async function runUtilityPrompt<T>(opts: {
   const decision = resolveBackgroundCandidates({
     policy: opts.policy ?? { mode: DEFAULT_BACKGROUND_PROVIDER_MODE },
     conversationProvider: opts.conversationProvider,
-    candidates: utilityModelCandidates(),
+    candidates: opts.cheapestFirst
+      ? [...utilityModelCandidates()].sort((a, b) => a.cost - b.cost)
+      : utilityModelCandidates(),
   });
 
   if (decision.candidates.length === 0) {

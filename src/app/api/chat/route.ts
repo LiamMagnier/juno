@@ -193,6 +193,8 @@ import { chatBodySchema } from "@/lib/chat/request";
 import { rangesForStoredText } from "@/lib/chat/context-tokens";
 import { contextActivityRows, TurnContext } from "@/lib/chat/context-resolution";
 import { appendVolatileTail, buildTurnContextTail } from "@/lib/chat/turn-context-tail";
+import { compactHistoryWindow } from "@/lib/chat/history-summary-store";
+import { getModelMetrics } from "@/lib/model-metrics";
 import { prismaContextPort, regenerateContextTokens } from "@/lib/chat/context-resolve";
 import { actionPolicyFromSetting } from "@/lib/chat/app-approval-preview";
 import { cloneLibraryAttachments } from "@/lib/library-attach";
@@ -2284,18 +2286,35 @@ async function handleChat(req: Request) {
   // regenerated. `historyWindowStart` anchors the window to blocks so the
   // prompt prefix stays cache-stable across turns — see chat/context-assembly.
   const totalMessages = await prisma.message.count({ where: { conversationId: conversation.id } });
-  const recent = await prisma.message.findMany({
+  const countStart = historyWindowStart(totalMessages);
+  const countWindow = await prisma.message.findMany({
     where: { conversationId: conversation.id },
     orderBy: { createdAt: "asc" },
     include: { attachments: { where: { deletedAt: null } } },
-    skip: historyWindowStart(totalMessages),
+    skip: countStart,
   });
+  /*
+   * Context trimming (src/lib/chat/history-compaction.ts): the count window is
+   * also held to a token budget — min(60K, 40% of this model's window) — in
+   * HISTORY_STEP blocks, and everything before it is shown as a stored rolling
+   * summary written by a cheap model, recomputed only when the window's start
+   * moves. Both are stable between jumps, so the cached prefix holds.
+   */
+  const compaction = await compactHistoryWindow({
+    userId: user.id,
+    conversationId: conversation.id,
+    window: countWindow.map((m) => ({ ...m, content: decryptMessageText(m.content) })),
+    countStart,
+    contextTokens: getModelMetrics(modelInfo).contextTokens,
+    conversationProvider: modelInfo.provider,
+  });
+  const recent = compaction.window;
   // A held re-emit is saved as an empty tag (the body waits in its
   // suggestion); the model reads a line that says so instead, or it would take
   // the empty tag for "I wrote nothing" or for a change that landed.
   const decryptedHistory = recent
     .filter((m) => m.id !== staleAssistantId)
-    .map((m) => ({ ...m, content: describeHeldArtifactsForModel(decryptMessageText(m.content)) }));
+    .map((m) => ({ ...m, content: describeHeldArtifactsForModel(m.content) }));
   // In a room, every other member's reply reads "[Scout] …", so the answering
   // agent can tell its own words from a colleague's.
   const history = roomSetup
@@ -2576,7 +2595,12 @@ async function handleChat(req: Request) {
   const historyHasToolNotes = historyCarriesToolNotes(
     baseHistory.map((message) => ({ role: message.role, activity: toolNoteActivity.get(message.id) })),
   );
-  const modelHistory = prependToFirstUserTurn(baseHistory, projectReferenceFiles).map((message) =>
+  // The earlier-conversation summary leads the window, then the project's
+  // reference files: both stable until the window jumps.
+  const modelHistory = prependToFirstUserTurn(
+    prependToFirstUserTurn(baseHistory, projectReferenceFiles),
+    compaction.summaryBlock,
+  ).map((message) =>
     message.role === "ASSISTANT" && toolNoteActivity.has(message.id)
       ? { ...message, content: withHistoryNote(message.content, toolNoteActivity.get(message.id)) }
       : message,

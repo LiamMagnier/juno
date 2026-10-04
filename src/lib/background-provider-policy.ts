@@ -239,6 +239,12 @@ export type BackgroundPurpose =
   | "follow_ups"
   | "translation"
   /**
+   * Folding the oldest turns of a long conversation into its rolling summary
+   * (src/lib/chat/history-summary-store.ts). The conversation itself goes to
+   * a model, so the same policy binds it.
+   */
+  | "history_summary"
+  /**
    * Embedding a user's uploaded documents. The most content-revealing
    * background job there is — indexing a library sends every paragraph of every
    * file to a provider, not a summary of one conversation — so it goes through
