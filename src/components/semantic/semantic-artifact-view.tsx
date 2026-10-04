@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import "@/components/semantic/semantic.css";
 import { DeckView } from "@/components/semantic/deck-view";
 import { DocumentView } from "@/components/semantic/document-view";
 import { SpreadsheetView } from "@/components/semantic/spreadsheet-view";

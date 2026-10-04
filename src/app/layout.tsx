@@ -9,6 +9,8 @@ import "@/components/ui/juno-icons/icons.css";
 import "@/components/home/alv-base.css";
 import "@/components/home/dot-construction.css";
 import "@/components/app/editorial.css";
+// Workbooks, documents and decks render on chat, canvas, library and share pages.
+import "@/components/semantic/semantic.css";
 import { headers } from "next/headers";
 import { Providers } from "@/components/providers";
 import { FONT_SIZE_BOOT_SCRIPT } from "@/components/settings/font-size";
