@@ -87,6 +87,8 @@ import type { DocumentAsk } from "@/components/documents/types";
 import type { ClientArtifact, ClientAttachment, ClientMessage, ClientConversation, ReasoningEffort, TitleSource } from "@/types/chat";
 import { Pressable } from "@/components/ui/pressable";
 import { announceReplyFinished } from "@/lib/ui-prefs";
+import { cachedJson } from "@/lib/client-cache";
+import { useLatestHandler } from "@/hooks/use-latest-handler";
 
 interface ChatViewProps {
   conversationId: string | null;
@@ -250,6 +252,8 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   // Tracks a conversation created on the new-chat page so we can switch to its
   // real /chat/[id] route once the first reply finishes streaming.
   const createdIdRef = React.useRef<string | null>(null);
+  /** The conversation this view created, kept after the URL sync clears `createdIdRef`. */
+  const ownedConversationIdRef = React.useRef<string | null>(null);
   const [model, setModel] = React.useState<ModelId>(
     () => {
       // Existing conversations keep their recorded choice and fail honestly if
@@ -429,6 +433,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
         // Don't navigate mid-stream (it would remount and drop the stream).
         // Remember the id; we switch to /chat/[id] once the reply completes.
         createdIdRef.current = id;
+        ownedConversationIdRef.current = id;
         setActiveConversationId(id);
         if (typeof window !== "undefined") {
           window.history.replaceState(null, "", `/chat/${id}`);
@@ -513,7 +518,17 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
     }
   }, [chat.status, privateMode, conversationId]);
 
-  const currentConversationId = activeConversationId ?? createdIdRef.current ?? conversationId;
+  // The route's own id first. `activeConversationId` is app-wide state that a
+  // mount effect updates, so on the first render after moving from thread A to
+  // thread B it still names A — and every per-conversation read below (research
+  // run, tasks) fired once for A and again for B (measured: 3 wasted requests
+  // per conversation switch). It only adds information for a chat created in
+  // this view, where the route id is null — and then only when it names the
+  // chat this view created, not the thread the reader just left (/chat/B →
+  // /chat used to read B's research run and tasks once more on the way in).
+  const currentConversationId =
+    conversationId ??
+    (activeConversationId && activeConversationId === ownedConversationIdRef.current ? activeConversationId : createdIdRef.current);
 
   /**
    * The durable research run attached to this conversation, if there is one.
@@ -766,6 +781,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       setVoiceSaveError(null);
       setVoiceTurnSending(false);
       createdIdRef.current = null;
+      ownedConversationIdRef.current = null;
       localGenerationSeenRef.current = false;
       forkPayloadRef.current = null;
       chat.reset();
@@ -789,6 +805,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
     chat.reset();
     setActiveConversationId(null);
     createdIdRef.current = null;
+    ownedConversationIdRef.current = null;
     forkPayloadRef.current = null;
     setOpenArtifactId(null);
     setComposerQuote(null);
@@ -806,6 +823,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
     }
     const next = true;
     createdIdRef.current = null;
+    ownedConversationIdRef.current = null;
     forkPayloadRef.current = null;
     setPrivateMode(next);
     setForkedFrom(null);
@@ -861,8 +879,9 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
     }
     if (projectMeta?.id === activeProjectId) return;
     let cancelled = false;
-    fetch("/api/projects")
-      .then((r) => (r.ok ? r.json() : null))
+    // The sidebar has almost always read this list already; reuse it.
+    cachedJson<{ projects?: { id: string; name: string }[] }>("/api/projects")
+      .catch(() => null)
       .then((d) => {
         if (cancelled) return;
         const p = ((d?.projects ?? []) as { id: string; name: string }[]).find((x) => x.id === activeProjectId);
@@ -878,6 +897,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   const applyFork = React.useCallback(
     (payload: ForkPayload) => {
       createdIdRef.current = null;
+      ownedConversationIdRef.current = null;
       setPrivateMode(true);
       setEnabledConnectors([]);
       setOpenArtifactId(null);
@@ -1844,6 +1864,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
           });
           if (!detached) {
             createdIdRef.current = data.conversationId;
+            ownedConversationIdRef.current = data.conversationId;
             setActiveConversationId(data.conversationId);
             if (typeof window !== "undefined") {
               window.history.replaceState(null, "", `/chat/${data.conversationId}`);
@@ -1942,6 +1963,27 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
     </div>
   ) : null;
 
+
+  // Stable identities for the composer, which is memoised (composer.tsx): it
+  // used to re-render — all 3,000 lines of it — on every streamed token,
+  // because these arrived as fresh closures each time (PERFORMANCE.md).
+  const onComposerSend = useLatestHandler(sendFromComposer);
+  const onSubmitClarification = useLatestHandler((answers: Parameters<typeof chat.resolvePendingClarification>[0]) => chat.resolvePendingClarification(answers));
+  const onSkipClarification = useLatestHandler(() => chat.resolvePendingClarification([], true));
+  const onOpenVoice = useLatestHandler(openVoice);
+  const onClearQuote = React.useCallback(() => setComposerQuote(null), []);
+  const composerFootnote = React.useMemo(
+    () =>
+      forkedFrom ? (
+        <p className="py-1">This branch isn’t saved. It continues from the fork point with full context.</p>
+      ) : privateMode ? (
+        <p className="py-1">Incognito chats are not saved or added to memory.</p>
+      ) : (
+        <p className="hidden sm:block">{`${PRODUCT_NAME} can make mistakes. Check important info.`}</p>
+      ),
+    [forkedFrom, privateMode],
+  );
+
   const composer = (
     <Composer
       conversationId={conversationId}
@@ -1953,7 +1995,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       initialResearch={!!initialPromptResearch && !initialPrompt}
       model={model}
       onModelChange={setModel}
-      onSend={sendFromComposer}
+      onSend={onComposerSend}
       modeControl={researchSteering?.accepting ? (
         <GuideModeSwitch mode={researchGuideMode} onModeChange={setResearchGuideMode} disabled={research.busy || research.disconnected || research.failed} className="mb-2" />
       ) : undefined}
@@ -2020,11 +2062,11 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
             : null
       }
       pendingClarification={chat.pendingClarification}
-      onSubmitClarification={(answers) => chat.resolvePendingClarification(answers)}
-      onSkipClarification={() => chat.resolvePendingClarification([], true)}
+      onSubmitClarification={onSubmitClarification}
+      onSkipClarification={onSkipClarification}
       onCancelClarification={chat.cancelPendingClarification}
       voiceCall={voiceOpen ? voiceCallParts({ voice: realtimeVoice, onClose: closeVoice, speakerName: agent?.name }) : undefined}
-      onOpenVoiceMode={planAllowsVoice && !privateMode && !voiceOpen && !voiceSaving && !voiceSaveError && !voiceTurnSending && !chat.pendingClarification ? openVoice : undefined}
+      onOpenVoiceMode={planAllowsVoice && !privateMode && !voiceOpen && !voiceSaving && !voiceSaveError && !voiceTurnSending && !chat.pendingClarification ? onOpenVoice : undefined}
       quotaReached={quotaReached}
       planIncludesNoMessages={planIncludesNoMessages}
       webSearchEnabled={webSearchEnabled}
@@ -2039,7 +2081,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       onToggleConnector={toggleConnector}
       onEnableConnectors={enableConnectors}
       quote={composerQuote}
-      onClearQuote={() => setComposerQuote(null)}
+      onClearQuote={onClearQuote}
       privateMode={privateMode}
       voiceActive={voiceOpen}
       voiceCanSeeImages={realtimeVoice.capabilities?.videoInput ?? true}
@@ -2067,15 +2109,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       // The line under the dock. What is different about this chat outranks
       // the standing notice, which is hidden on phones, where the dock has no
       // room to spare (the slot keeps its height either way).
-      footnote={
-        forkedFrom ? (
-          <p className="py-1">This branch isn’t saved. It continues from the fork point with full context.</p>
-        ) : privateMode ? (
-          <p className="py-1">Incognito chats are not saved or added to memory.</p>
-        ) : (
-          <p className="hidden sm:block">{`${PRODUCT_NAME} can make mistakes. Check important info.`}</p>
-        )
-      }
+      footnote={composerFootnote}
     />
   );
 

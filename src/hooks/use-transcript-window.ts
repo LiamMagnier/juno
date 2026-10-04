@@ -8,7 +8,15 @@ import {
 } from "@/lib/chat/transcript-window";
 
 const GAP = 24;
-const VIRTUALIZE_AFTER = 80;
+/**
+ * Windowing starts at 24 messages (twelve turns). It started at 80, which
+ * left every ordinary conversation rendering all of its rows on open: an agent
+ * thread of 30 messages mounted 30 Markdown renderers before the first paint
+ * (measured as a 50–107 ms task on Orbit → agent, PERFORMANCE.md). The window
+ * covers the viewport plus 700px either side, so a short chat still mounts
+ * whole; a longer one mounts what can be seen.
+ */
+export const VIRTUALIZE_AFTER = 24;
 const BOTTOM_SLOP = 24;
 
 /** Keep rich message renderers bounded; measurements include inline runs/media. */
