@@ -2,17 +2,11 @@
 
 import * as React from "react";
 import { SourceFavicon } from "@/components/chat/source-chip";
-import { RESEARCH_COPY } from "@/components/research/copy";
-import type { SourceRowView, SourceSections } from "@/components/research/research-view";
-import { Phrase } from "@/lib/i18n-phrase";
+import type { SourceRowView } from "@/components/research/research-view";
 
 /*
- * The Sources tab (SPEC §9.11.4) and the report's own sources list (§9.12):
- * "Cited" (after the report, numbered in citation order), "Read" (opened, not
- * cited) and "Found" (searched, never opened), each with its count in the
- * heading. One count vocabulary everywhere (bug 11). The empty state is in
- * the right tense: "No sources yet" while the run works, "No sources were
- * read" once it is over (bug 21).
+ * The report's own sources list (§9.12): one row per source, numbered in
+ * citation order when `numbered`.
  */
 
 export function SourceRows({ rows, numbered = false }: { rows: readonly SourceRowView[]; numbered?: boolean }) {
@@ -40,38 +34,5 @@ export function SourceRows({ rows, numbered = false }: { rows: readonly SourceRo
         </li>
       ))}
     </ol>
-  );
-}
-
-function Group({ label, rows, numbered }: { label: string; rows: readonly SourceRowView[]; numbered?: boolean }) {
-  if (rows.length === 0) return null;
-  return (
-    <section className="space-y-1">
-      <h3 className="flex items-baseline gap-2 px-2 text-ui font-medium text-foreground">
-        <Phrase text={label} />
-        <span className="font-mono text-caption tabular-nums text-muted-foreground" data-no-auto-translate>
-          {rows.length}
-        </span>
-      </h3>
-      <SourceRows rows={rows} numbered={numbered} />
-    </section>
-  );
-}
-
-export function ResearchSources({ sections, live }: { sections: SourceSections; live: boolean }) {
-  const empty = sections.cited.length + sections.read.length + sections.found.length === 0;
-  if (empty) {
-    return (
-      <p className="text-caption text-muted-foreground">
-        <Phrase text={live ? RESEARCH_COPY.sources.noneYet : RESEARCH_COPY.sources.noneRead} />
-      </p>
-    );
-  }
-  return (
-    <div className="space-y-5">
-      <Group label={RESEARCH_COPY.sources.cited} rows={sections.cited} numbered />
-      <Group label={RESEARCH_COPY.sources.read} rows={sections.read} />
-      <Group label={RESEARCH_COPY.sources.found} rows={sections.found} />
-    </div>
   );
 }

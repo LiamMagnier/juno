@@ -46,4 +46,4 @@ Verification:
 
 ## Remaining scope
 
-Provider-neutral search, broader orchestration decomposition, memory evaluation, permission and credential migrations, platform acceptance and repeatable live research quality/cost benchmarks. Legacy research row/side-panel components remain reachable only from `/dev/research?surface=legacy`; remove them once nothing else imports them.
+Provider-neutral search, broader orchestration decomposition, memory evaluation, permission and credential migrations, platform acceptance and repeatable live research quality/cost benchmarks. The legacy research row/side-panel components and the `/dev/research?surface=legacy` gallery surface were removed on 2026-10-04 after an import graph from the production `src/app` entry points confirmed nothing reached them; `reportTitle` moved to `report-structure.ts` as `reportTitleOf`.

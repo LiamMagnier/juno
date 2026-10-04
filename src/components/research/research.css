@@ -227,7 +227,7 @@ a.rf-label:hover { color: hsl(var(--foreground)); }
 .rf-gate .rf-scope > div:first-child > * + * { margin-top: 28px; }
 .rf-gate [role="group"] > footer { padding-inline: 0; background: transparent; }
 
-/* The report document's headings (report-document.tsx, report-reader.tsx). */
+/* The report document's headings (report-document.tsx). */
 .research-document :is(h3, h4, h5) {
   font-family: var(--font-serif), Newsreader, serif;
   font-optical-sizing: auto;

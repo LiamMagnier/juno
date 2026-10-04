@@ -128,9 +128,6 @@ const REPORT = [
   "Four researchers read 14 pages over two rounds.",
 ].join("\n");
 
-export const SUMMARY =
-  "Modern cold-climate heat pumps keep a seasonal COP above 2 even at -20 °C [1][2]. Field trials in Norway measured 2.7 across three winters [4], and laboratory ratings overstate cold output by about 10 % [1]. Backup heat is rarely needed above -20 °C [3].";
-
 const CITED = [SOURCES[0], SOURCES[1], SOURCES[2], SOURCES[3]];
 
 export const AUDIT: CitationAudit = {
@@ -476,6 +473,5 @@ export function summaryOf(run: ResearchRunView): ResearchRunSummary {
   };
 }
 
-/** The message sources a completion message carries: cited first, in citation order. */
+/** The cited sources as message sources, in citation order (the citation card's input). */
 export const MESSAGE_SOURCES = CITED.map((s) => ({ title: s.title, url: s.url, snippet: "", cited: true }));
-export const REPORT_MARKDOWN = REPORT;

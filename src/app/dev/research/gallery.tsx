@@ -4,23 +4,17 @@ import * as React from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useTheme } from "next-themes";
-import { Markdown } from "@/components/chat/markdown";
 import { USER_BUBBLE_CLASS } from "@/components/chat/user-bubble";
 import { CitationCard } from "@/components/research/citation-card";
 import { estimateLine, researchRefusalLine } from "@/components/research/copy";
 import { GuideModeSwitch } from "@/components/research/guide-mode-switch";
 import { useReportModel } from "@/components/research/report-document";
 import { ReportFullscreen } from "@/components/research/report-fullscreen";
-import { ResearchFactLine, ResearchReportCard } from "@/components/research/report-card";
 import { citationPassages } from "@/components/research/report-structure";
-import { ResearchPanel } from "@/components/research/research-panel";
-import { ResearchRow } from "@/components/research/research-row";
 import { HistoricalResearchRunPanel } from "@/components/chat/research-run-panel";
-import { ScopeCard } from "@/components/research/scope-card";
 import { NOTIFY_ASKED_KEY, draftEstimate, removeQuestion, seedDraft } from "@/components/research/scope-draft";
 import { steerTarget, type GuideMode } from "@/components/research/steer";
 import { useResearchRun, type ResearchRunView } from "@/components/research/use-research-run";
-import type { SplitPane } from "@/hooks/use-split-pane";
 import { ACCENT_IDS } from "@/lib/accents";
 import { PhraseWithArgs } from "@/lib/i18n-phrase";
 import type { ResearchEventDTO } from "@/lib/research/domain";
@@ -30,8 +24,6 @@ import {
   CONVERSATION_ID,
   GALLERY_STATES,
   MESSAGE_SOURCES,
-  REPORT_MARKDOWN,
-  SUMMARY,
   fixturesFor,
   isGalleryState,
   summaryOf,
@@ -165,27 +157,6 @@ if (typeof window !== "undefined" && !(window as unknown as { __junoResearchShim
 // ── The gallery ───────────────────────────────────────────────────────────────
 
 const WIDTHS = [375, 800, 1440] as const;
-const FAKE_PANE: SplitPane = {
-  width: null,
-  bounds: { minWidth: 360, maxWidth: 720 },
-  resizing: false,
-  reset: () => {},
-  reclamp: () => {},
-  separatorProps: {
-    role: "separator",
-    "aria-orientation": "vertical",
-    "aria-valuenow": 480,
-    "aria-valuemin": 360,
-    "aria-valuemax": 720,
-    onPointerDown: () => {},
-    onPointerMove: () => {},
-    onPointerUp: () => {},
-    onPointerCancel: () => {},
-    onLostPointerCapture: () => {},
-    onDoubleClick: () => {},
-    onKeyDown: () => {},
-  },
-};
 
 function Toggle<T extends string | number>({ label, value, options, onChange }: { label: string; value: T; options: readonly T[]; onChange(v: NoInfer<T>): void }) {
   return (
@@ -218,39 +189,6 @@ function Readout() {
     <p className="font-mono text-caption text-muted-foreground">
       animations {numbers.animations} (≤ 20) · loop owners {numbers.owners} (1 while anything works)
     </p>
-  );
-}
-
-function CompletionMessage({ runId, onOpen }: { runId: string; onOpen(runId: string, view: "report" | "progress"): void }) {
-  const { run } = useResearchRun(runId);
-  if (!run || !run.report) return null;
-  return (
-    <div className="space-y-3 motion-safe:animate-fade-in">
-      <ResearchFactLine
-        fact={{
-          key: "research",
-          runId,
-          title: run.title ?? "",
-          workedMs: run.workingMs ?? 0,
-          cited: run.counts?.cited ?? 0,
-          read: run.counts?.read ?? 0,
-          pages: run.counts?.pages ?? 0,
-          leadModel: run.leadModel?.label ?? "",
-          state: run.state === "partially_completed" ? "partially_completed" : "completed",
-        }}
-        onOpen={(id) => onOpen(id, "report")}
-      />
-      <div lang={run.language ?? undefined}>
-        <Markdown content={SUMMARY} sources={MESSAGE_SOURCES} className="text-reading" />
-      </div>
-      <ResearchReportCard
-        identifier={`research-report-${runId}`}
-        title={run.title ?? ""}
-        content={REPORT_MARKDOWN}
-        sources={MESSAGE_SOURCES}
-        onOpenReport={(id) => onOpen(id, "report")}
-      />
-    </div>
   );
 }
 
@@ -317,17 +255,7 @@ export function ResearchGallery() {
   const [accent, setAccent] = React.useState<string>("coral");
   const [textSize, setTextSize] = React.useState<16 | 20>(16);
   const [reduced, setReduced] = React.useState<"off" | "on">("off");
-  const [shell, setShell] = React.useState<"frame" | "shell">("frame");
-  // "chat" is what the conversation mounts (ResearchRunPanel: the live Deep
-  // Field console, the gates and the finished recap); "legacy" is the older
-  // row + side panel set kept for comparison until it is removed.
-  const surface: "chat" | "legacy" = params.get("surface") === "legacy" ? "legacy" : "chat";
-
-  const gateStates: GalleryState[] = ["planning", "scope", "scope-edited", "tiny", "revising", "scope-not-at-tail", "notify-prompt", "mobile-scope"];
-  const doneStates: GalleryState[] = ["completed", "report-fullscreen", "citation-card", "export", "refused-budget", "refused-live-runs", "partial"];
-  const [panel, setPanel] = React.useState<{ runId: string; view: "progress" | "sources" | "plan" | "report" | "details" } | null>(null);
   React.useEffect(() => {
-    setPanel(surface === "chat" || gateStates.includes(state) ? null : { runId, view: doneStates.includes(state) ? "report" : "progress" });
     if (state === "notify-prompt") {
       try {
         window.localStorage.removeItem(NOTIFY_ASKED_KEY);
@@ -335,17 +263,13 @@ export function ResearchGallery() {
         // Storage refused: the line may not show.
       }
     }
-    // The lists are constants of this component; the state and run decide.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state, runId, surface]);
+  }, [state]);
 
   React.useEffect(() => {
     document.documentElement.lang = locale;
     document.documentElement.dataset.accent = accent;
     document.documentElement.style.fontSize = `${textSize}px`;
   }, [locale, accent, textSize]);
-
-  const open = (id: string, view: "progress" | "sources" | "plan" | "report" | "details") => setPanel({ runId: id, view });
 
   return (
     <div dir={dir} data-motion={reduced === "on" ? "reduce" : undefined} className="min-h-dvh bg-background text-foreground">
@@ -362,16 +286,12 @@ export function ResearchGallery() {
           <Toggle label="accent" value={accent} options={ACCENT_IDS} onChange={setAccent} />
           <Toggle label="root text" value={textSize} options={[16, 20] as const} onChange={setTextSize} />
           <Toggle label="reduced motion" value={reduced} options={["off", "on"] as const} onChange={setReduced} />
-          <Toggle label="panel" value={shell} options={["frame", "shell"] as const} onChange={setShell} />
-          <Link href={`/dev/research?state=${state}${surface === "chat" ? "&surface=legacy" : ""}`} className="text-caption text-muted-foreground underline">
-            surface: {surface}
-          </Link>
         </div>
         <nav className="flex flex-wrap gap-1">
           {GALLERY_STATES.map((s) => (
             <Link
               key={s}
-              href={`/dev/research?state=${s}${surface === "legacy" ? "&surface=legacy" : ""}`}
+              href={`/dev/research?state=${s}`}
               className={cn("rounded-full border px-2 py-0.5 font-mono text-caption", s === state ? "border-primary text-foreground" : "border-border text-muted-foreground hover:text-foreground")}
             >
               {s}
@@ -393,16 +313,9 @@ export function ResearchGallery() {
                 <div className="flex justify-end">
                   <div className={cn(USER_BUBBLE_CLASS, "max-w-[85%]")}>How well do heat pumps work in cold climates?</div>
                 </div>
-                {runIds.map((id) =>
-                  surface === "chat" ? (
-                    <HistoricalResearchRunPanel key={id} runId={id} />
-                  ) : (
-                    <div key={id} className="space-y-3">
-                      <ScopeCard runId={id} atTail={state !== "scope-not-at-tail"} />
-                      <ResearchRow runId={id} onOpen={open} />
-                    </div>
-                  ),
-                )}
+                {runIds.map((id) => (
+                  <HistoricalResearchRunPanel key={id} runId={id} />
+                ))}
                 {state === "scope-not-at-tail" && (
                   <>
                     <div className="flex justify-end">
@@ -412,7 +325,6 @@ export function ResearchGallery() {
                   </>
                 )}
                 {state === "scope-edited" && <ScopeEditedNote runId={runId} />}
-                {surface === "legacy" && (doneStates.includes(state) || state === "completed-while-panel-open") && <CompletionMessage runId={runId} onOpen={open} />}
                 {(state === "refused-budget" || state === "refused-live-runs") && (
                   <p className="text-caption text-warning-foreground">
                     <PhraseWithArgs spec={researchRefusalLine(state === "refused-budget" ? "budget" : "live_runs", state === "refused-budget" ? { resetsOn: "2026-10-01T00:00:00.000Z" } : {})} />
@@ -437,19 +349,6 @@ export function ResearchGallery() {
             )}
           </div>
 
-          {panel && (
-            <div className="h-full w-[min(480px,50%)] shrink-0 border-s border-border/70">
-              <ResearchPanel
-                runId={panel.runId}
-                view={panel.view}
-                onViewChange={(view) => setPanel((p) => (p ? { ...p, view } : p))}
-                onClose={() => setPanel(null)}
-                coversChat={() => width < 800}
-                eurPerUsd={0.92}
-                shell={shell === "shell" ? { open: true, pane: FAKE_PANE, mode: width < 800 ? "sheet" : "column" } : undefined}
-              />
-            </div>
-          )}
         </div>
       </div>
       <p className="px-4 pb-4 text-caption text-muted-foreground">Conversation {CONVERSATION_ID} · state {state}</p>

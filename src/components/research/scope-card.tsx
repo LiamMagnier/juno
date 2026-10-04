@@ -3,7 +3,6 @@
 import * as React from "react";
 import { RunGlyph } from "@/components/chat/run/run-glyph";
 import { RESEARCH_COPY, estimateLine, isResearchRefusal, phrase, researchRefusalLine } from "@/components/research/copy";
-import { focusResearchRow } from "@/components/research/research-row";
 import {
   MAX_QUESTION_CHARS,
   addQuestion,
@@ -58,7 +57,7 @@ import { cn } from "@/lib/utils";
  *   never falls back to the skeleton. The draft re-seeds when the rewritten
  *   plan lands (keyed by run and plan revision, bug 29).
  * - Start sends the edited questions, answers and sources, collapses the card
- *   in place and moves focus to the run's row (bug 12). Controls are disabled
+ *   in place and hands focus to the host (bug 12). Controls are disabled
  *   while a request is out (bug 28).
  * - Below 28rem the footer is sticky, so Start stays reachable above the
  *   composer dock.
@@ -70,8 +69,8 @@ export interface ScopeCardProps {
   runId: string;
   /** Full size only at the transcript tail; elsewhere a one-line "Plan ready · Review" row. */
   atTail: boolean;
-  /** After Start: focus moves to the run's Research row. */
-  onStarted?(runId: string): void;
+  /** After Start: the host moves focus to what replaces the card. */
+  onStarted(runId: string): void;
   /** In the transcript workspace: reuse the gate without a second surface. */
   embedded?: boolean;
 }
@@ -125,7 +124,7 @@ export function ScopeCard({ runId, atTail, onStarted, embedded = false }: ScopeC
   const [collapsing, setCollapsing] = React.useState(false);
   const [gone, setGone] = React.useState(false);
 
-  // Start collapses the card in place, then it leaves the transcript to the row.
+  // Start collapses the card in place, then it leaves the transcript to the console.
   React.useEffect(() => {
     if (!collapsing) return;
     const timer = window.setTimeout(() => setGone(true), COLLAPSE_MS);
@@ -133,15 +132,14 @@ export function ScopeCard({ runId, atTail, onStarted, embedded = false }: ScopeC
   }, [collapsing]);
 
   // A typed "yes" confirms from the chat (§9.6.1): the run leaves the gate
-  // without this card's Start, and focus moves to the row all the same.
+  // without this card's Start, and the host moves focus all the same.
   const wasAtGate = React.useRef(false);
   React.useEffect(() => {
     if (!phase) return;
     const left = wasAtGate.current && !atGate && phase !== "stopped" && phase !== "failed";
     wasAtGate.current = atGate;
     if (!left || holding || collapsing) return;
-    onStarted?.(runId);
-    if (!onStarted) focusResearchRow(runId);
+    onStarted(runId);
   }, [phase, atGate, holding, collapsing, onStarted, runId]);
 
   if (!run || gone) return null;
@@ -179,8 +177,7 @@ export function ScopeCard({ runId, atTail, onStarted, embedded = false }: ScopeC
           onStartAnswered={(ok) => {
             if (ok) {
               setCollapsing(true);
-              onStarted?.(runId);
-              if (!onStarted) window.setTimeout(() => focusResearchRow(runId), COLLAPSE_MS);
+              onStarted(runId);
             }
             setHolding(false);
           }}

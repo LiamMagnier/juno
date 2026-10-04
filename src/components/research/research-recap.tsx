@@ -5,7 +5,7 @@ import { ArrowRight, ChevronDown, ShieldCheck } from "@/components/ui/icons";
 import { ActionIcons } from "@/lib/app-icons";
 import { auditHeadline } from "@/components/chat/citation-audit";
 import { formatMicroUsd, runDuration } from "@/components/research/run-format";
-import { reportTitle } from "@/components/research/report-dialog";
+import { reportTitleOf } from "@/components/research/report-structure";
 import { Button } from "@/components/ui/button";
 import { Collapse } from "@/components/ui/collapse";
 import { cn } from "@/lib/utils";
@@ -62,7 +62,7 @@ export function ResearchRecap({
   const state: ResearchState = isResearchState(run.state) ? run.state : "failed";
   const model = React.useMemo(() => researchWorkspace(run, []), [run]);
   const elapsed = runDuration(run.createdAt ?? "", run.finishedAt ?? null);
-  const title = (run.report ? reportTitle(run.report) : null) ?? run.title ?? run.goal;
+  const title = (run.report ? reportTitleOf(run.report) : null) ?? run.title ?? run.goal;
   const subtitle = title.trim() !== run.goal.trim() ? run.goal : null;
   const audit = run.auditSummary;
   const auditClean = audit ? researchAuditClean(audit) : false;

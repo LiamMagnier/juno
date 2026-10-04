@@ -18,10 +18,10 @@ import { RunClock, type RunClockProps } from "@/components/chat/run/run-clock";
 import { RunGlyph, type RunGlyphProps } from "@/components/chat/run/run-glyph";
 import { RunLabel, type RunLabelProps } from "@/components/chat/run/run-label";
 import { RunLine, type RunLineProps } from "@/components/chat/run/run-line";
-import { ResearchCompletionWatcher } from "@/components/research/completion-watcher";
 import { GuideModeSwitch } from "@/components/research/guide-mode-switch";
-import { ResearchPanel } from "@/components/research/research-panel";
-import { ResearchRow } from "@/components/research/research-row";
+import { ReportFullscreen } from "@/components/research/report-fullscreen";
+import { ResearchConsole } from "@/components/research/research-console";
+import { ResearchRecap } from "@/components/research/research-recap";
 import { ScopeCard } from "@/components/research/scope-card";
 import { RunPanelStates } from "@/app/dev/run/panel-states";
 import { MAX_COMMENTARY_BYTES, PRESERVED_BLOCKS, splitAnswer, type TextSegment } from "@/lib/chat/answer-split";
@@ -223,7 +223,7 @@ const EXPORTS: Record<string, Record<string, unknown>> = {
   WS6: { RightColumnShell, ActivityPanel, rightPanelReducer, reconcileRightPanel, RunPanelStates },
   WS7: { researchEntitlement, researchBudgetFor },
   WS0: { estimateFor, setTitleOverride, useTitleOverride },
-  WS8: { ScopeCard, ResearchRow, ResearchPanel, ResearchCompletionWatcher, GuideModeSwitch, RESEARCH_PHASE_UI },
+  WS8: { ScopeCard, ResearchConsole, ResearchRecap, ReportFullscreen, GuideModeSwitch, RESEARCH_PHASE_UI },
 };
 
 test("every importable §12.7 function, class and component is exported", () => {
@@ -327,7 +327,7 @@ test("no module this file loads pulls server-only into a test's import graph", (
     "src/types/llm.ts",
     "src/components/chat/run/run-block.tsx",
     "src/components/chat/panel/right-column-shell.tsx",
-    "src/components/research/research-row.tsx",
+    "src/components/chat/research-run-panel.tsx",
     "src/app/dev/run/panel-states.tsx",
     "tests/fixtures/turn-scripts.ts",
   ];

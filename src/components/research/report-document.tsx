@@ -34,8 +34,8 @@ import { cn } from "@/lib/utils";
 import type { ClientSource } from "@/types/chat";
 
 /*
- * The report as a document (SPEC §9.12, DECISIONS R5), shared by the panel's
- * Report tab (`report-view.tsx`) and the full-screen reader.
+ * The report as a document (SPEC §9.12, DECISIONS R5), rendered by the
+ * full-screen reader (`report-fullscreen.tsx`).
  *
  * The report renders through the existing `Markdown` (the chat's prose
  * system, citations resolved against the run's sources), split at the

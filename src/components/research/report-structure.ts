@@ -33,9 +33,28 @@ import type { ClientSource } from "@/types/chat";
  * blank reader.
  */
 export function reportBodyOf(report: string): string {
+  return reportArtifact(report)?.content.trim() || report.trim();
+}
+
+/**
+ * What the finished document is CALLED.
+ *
+ * RESEARCH_OUTPUT_CONTRACT instructs the writer to title the artifact after the
+ * actual subject rather than "Research Report", so this is a real name and the
+ * right thing for the recap to lead with — a finished document is referred to
+ * by its title, not by the question that produced it. Null when the turn
+ * carried no artifact, which is the caller's cue to fall back to the goal rather
+ * than invent a heading.
+ */
+export function reportTitleOf(report: string): string | null {
+  const title = reportArtifact(report)?.title?.trim();
+  return title && title.toLowerCase() !== "research report" ? title : null;
+}
+
+/** The artifact the writer produced, if it produced one. */
+function reportArtifact(report: string) {
   const artifacts = parseArtifacts(report);
-  const artifact = artifacts.find((a) => a.type === "MARKDOWN") ?? artifacts[0];
-  return artifact?.content.trim() || report.trim();
+  return artifacts.find((a) => a.type === "MARKDOWN") ?? artifacts[0] ?? null;
 }
 
 /**
