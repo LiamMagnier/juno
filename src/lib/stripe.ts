@@ -33,20 +33,25 @@ export function planFromPriceId(priceId?: string | null): Plan | null {
   return null;
 }
 
-const PAID_PLANS = ["PRO", "MAX", "MAX20"] as const;
+const PAID_PLANS = ["LITE", "PRO", "PLUS", "MAX", "MAX20", "ULTRA"] as const;
+export type PaidPlan = (typeof PAID_PLANS)[number];
 const BILLING_INTERVALS: readonly BillingInterval[] = ["month", "year"];
 
+export function isPaidPlanId(plan: string): plan is PaidPlan {
+  return (PAID_PLANS as readonly string[]).includes(plan);
+}
+
 export function priceIdForPlan(plan: Plan, interval: BillingInterval = "month"): string | undefined {
-  if (interval === "year") {
-    if (plan === "PRO") return env.stripe.priceProYearly;
-    if (plan === "MAX") return env.stripe.priceMaxYearly;
-    if (plan === "MAX20") return env.stripe.priceMax20Yearly;
-    return undefined;
-  }
-  if (plan === "PRO") return env.stripe.pricePro;
-  if (plan === "MAX") return env.stripe.priceMax;
-  if (plan === "MAX20") return env.stripe.priceMax20;
-  return undefined;
+  const s = env.stripe;
+  const ids: Partial<Record<Plan, { month?: string; year?: string }>> = {
+    LITE: { month: s.priceLite, year: s.priceLiteYearly },
+    PRO: { month: s.pricePro, year: s.priceProYearly },
+    PLUS: { month: s.pricePlus, year: s.pricePlusYearly },
+    MAX: { month: s.priceMax, year: s.priceMaxYearly },
+    MAX20: { month: s.priceMax20, year: s.priceMax20Yearly },
+    ULTRA: { month: s.priceUltra, year: s.priceUltraYearly },
+  };
+  return ids[plan]?.[interval] || undefined;
 }
 
 /**

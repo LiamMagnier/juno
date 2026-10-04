@@ -70,17 +70,17 @@ describe("native model catalog", () => {
   });
 
   it("floors the required plan the same way canUseModel does", () => {
-    // Every model needs a paid plan: a FREE-labelled model is Pro-floored by
-    // effectiveMinPlan, so a FREE account must be told "Pro", not "Free".
+    // A FREE-labelled mid-price model (cost 2) needs Lite under
+    // modelRequiredPlan, so a FREE account must be told "Lite", not "Free".
     const catalog = nativeModelCatalog([fakeModel()], "FREE");
     const gated = entry(catalog, "anthropic:claude-sonnet-4-6");
 
     assert.equal(gated.availability, "requires_plan");
     assert.equal(gated.minimumPlan, "free");
-    assert.equal(gated.requiredPlan, "pro");
+    assert.equal(gated.requiredPlan, "lite");
 
     // The same model is available the moment the account pays.
-    const pro = entry(nativeModelCatalog([fakeModel()], "PRO"), "anthropic:claude-sonnet-4-6");
+    const pro = entry(nativeModelCatalog([fakeModel()], "LITE"), "anthropic:claude-sonnet-4-6");
     assert.equal(pro.availability, "available");
   });
 

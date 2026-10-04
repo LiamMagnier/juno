@@ -14,8 +14,10 @@ import { PLANS } from "@/lib/plans";
  * of the product while Stripe kept charging them.
  */
 
-test("FREE really does grant zero messages (the premise of the unknown-price guard)", () => {
-  assert.equal(PLANS.FREE.monthlyMessages, 0);
+test("FREE is far less than any paid plan (the premise of the unknown-price guard)", () => {
+  // A spurious FREE would drop a paying customer to a 0.20 € allowance with
+  // no voice, Code or agents while Stripe keeps billing them.
+  for (const flag of ["voice", "code", "agents", "research"] as const) assert.equal(PLANS.FREE[flag], false);
 });
 
 test("a recognised price id sets that plan", () => {
@@ -30,7 +32,7 @@ test("a recognised price id sets that plan", () => {
 });
 
 test("an unknown price id never downgrades a paying customer", () => {
-  for (const currentPlan of ["PRO", "MAX", "MAX20"] as const) {
+  for (const currentPlan of ["LITE", "PRO", "PLUS", "MAX", "MAX20", "ULTRA"] as const) {
     assert.equal(
       resolveSubscriptionPlan({ status: "active", mappedPlan: null, currentPlan }),
       currentPlan,

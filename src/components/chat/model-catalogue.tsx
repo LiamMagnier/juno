@@ -59,7 +59,7 @@ import { JunoMark } from "@/components/brand/logo";
 import { type ModelId, type ModelInfo, type Modality } from "@/lib/models";
 import { AUTO_MODEL_INFO, isAutoModelId } from "@/lib/auto-model";
 import { PROVIDERS, PROVIDER_LIST, type Provider } from "@/lib/providers";
-import { PLANS, effectiveMinPlan } from "@/lib/plans";
+import { PLANS, modelRequiredPlan } from "@/lib/plans";
 import { useApp } from "@/components/app/app-provider";
 import { useSettingsSave } from "@/components/settings/use-settings-save";
 import {
@@ -335,7 +335,7 @@ function DetailPanel({
             : model.comingSoon
               ? "Not available yet"
               : locked
-                ? `Get ${PLANS[effectiveMinPlan(model.minPlan)].name}`
+                ? `Get ${PLANS[modelRequiredPlan(model)].name}`
                 : "Use this model"}
         </Button>
         {!auto && (
@@ -729,7 +729,7 @@ export function ModelCatalogue({
         aria-selected={active}
         // The row shows a name; the label carries what the panel shows, so a
         // screen reader is not made to travel to a second pane for the facts.
-        aria-label={`${m.name}, ${auto ? PRODUCT_NAME : providerName(m.provider)}${caps.length ? `, ${caps.join(", ")}` : ""}${price ? `, ${price}${m.modality === "audio" ? "" : " per million tokens"}` : ""}${locked ? `, needs ${PLANS[effectiveMinPlan(m.minPlan)].name}` : ""}`}
+        aria-label={`${m.name}, ${auto ? PRODUCT_NAME : providerName(m.provider)}${caps.length ? `, ${caps.join(", ")}` : ""}${price ? `, ${price}${m.modality === "audio" ? "" : " per million tokens"}` : ""}${locked ? `, needs ${PLANS[modelRequiredPlan(m)].name}` : ""}`}
         disabled={soon}
         onPointerMove={() => {
           if (pointerActive.current) setCursorKey(key);

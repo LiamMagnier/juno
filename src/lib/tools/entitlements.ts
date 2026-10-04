@@ -108,7 +108,7 @@ function turnReason(input: ExecutionEntitlementInput, paidOnly: boolean): Withhe
   if (input.private) return "private";
   if (input.lockdown) return "lockdown";
   if (input.artifactEdit) return "artifact_edit";
-  if (paidOnly && input.plan === "FREE") return "plan";
+  if (paidOnly && !(PLANS[input.plan as keyof typeof PLANS]?.code ?? false)) return "plan";
   if (paidOnly && input.workspaceRestrictsTools) return "workspace";
   if (!input.toolsReachModel) return "tools_cannot_reach_model";
   return null;
@@ -190,7 +190,7 @@ function skillToolNames(skill: import("@/lib/chat/skills").ChatSkillApplication 
 function derivedResearchEntitled(input: EntitlementInput): boolean {
   return (
     PLANS[input.plan].webSearch &&
-    input.plan !== "FREE" &&
+    PLANS[input.plan].research &&
     !input.private &&
     !input.lockdown &&
     !input.voice &&
@@ -211,7 +211,8 @@ export function chatToolEntitlements(input: EntitlementInput): ChatToolPlan {
 
   const functions = caps.supported && input.model.modality === "chat";
   const blocked = input.lockdown || input.approvalPolicy === "block";
-  const paid = input.plan !== "FREE";
+  // Sandboxed execution is a Code-plan feature (Pro and up), not merely "paid".
+  const paid = PLANS[input.plan].code;
   const skillNames = skillToolNames(input.skill);
   const skillAllows = (name: string) => !skillNames || skillNames.has(name);
   const webWorkspace = workspacePermits(input.workspace, "webSearch");

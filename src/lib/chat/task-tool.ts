@@ -44,6 +44,7 @@ import {
   conversationAtCapMessage,
 } from "@/lib/work/conversation-tasks";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { PLANS } from "@/lib/plans";
 
 /** The tool's name on the wire, and the name the approval receipt records. */
 export const START_TASK_TOOL_ID = "start_task";
@@ -152,8 +153,8 @@ export interface TaskToolGate {
   /** The plan includes at least one model that can drive a Work run. */
   planHasWorkModel: boolean;
   /**
-   * The account's plan. FREE never carries the tool (DECISIONS §4c): Work
-   * refuses a FREE run anyway, so offering it only invites a refusal. Optional
+   * The account's plan. Only a plan with agents (Pro and up) carries the tool:
+   * Work refuses a Free or Lite run anyway, so offering it only invites a refusal. Optional
    * while the route is being moved over; absent is read as "not FREE".
    */
   plan?: Plan;
@@ -185,7 +186,7 @@ export function chatTaskToolEnabled(gate: TaskToolGate): boolean {
     gate.skillPermits &&
     !gate.lockdown &&
     gate.planHasWorkModel &&
-    gate.plan !== "FREE"
+    (gate.plan === undefined || PLANS[gate.plan].agents)
   );
 }
 

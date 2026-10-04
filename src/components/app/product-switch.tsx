@@ -105,7 +105,7 @@ type Product = {
  */
 export const PRODUCTS = [
   { id: "chat", label: BRAND.chat.label, href: "/chat", kind: "home", chord: "⌘⇧1", minPlan: "FREE" },
-  { id: "code", label: BRAND.code.label, href: "/code", kind: "code", chord: "⌘⇧2", minPlan: "FREE" },
+  { id: "code", label: BRAND.code.label, href: "/code", kind: "code", chord: "⌘⇧2", minPlan: "PRO" },
 ] as const satisfies readonly Product[];
 
 /**

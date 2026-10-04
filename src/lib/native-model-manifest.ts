@@ -4,7 +4,7 @@ import { AUTO_MODEL_INFO, isAutoModelId } from "@/lib/auto-model";
 import { getModelMetrics, reasoningCaps, supportsProMode } from "@/lib/model-metrics";
 import { toolCapabilitiesFor } from "@/lib/model-tools";
 import { imageEditSupport, isSupersededModel, type ModelInfo } from "@/lib/models";
-import { effectiveMinPlan, planRank } from "@/lib/plans";
+import { modelRequiredPlan, planRank } from "@/lib/plans";
 import { fastModeMultiplier, supportsFastMode } from "@/lib/pricing";
 import { providerSearchServed } from "@/lib/provider-routing";
 import { PROVIDERS } from "@/lib/providers";
@@ -23,7 +23,7 @@ const isLegacy = isSupersededModel;
 function usable(model: ModelInfo, plan: Plan | undefined): boolean {
   if (!plan) return true;
   if (isAutoModelId(model.id)) return true;
-  return planRank(plan) >= planRank(effectiveMinPlan(model.minPlan));
+  return planRank(plan) >= planRank(modelRequiredPlan(model));
 }
 
 /**
@@ -159,7 +159,7 @@ export function nativeModelCatalog(
       minimumPlan: model.minPlan.toLowerCase(),
       // The plan `canUseModel` actually enforces (paid models are Pro-floored).
       // Auto is exempt — the router only ever picks models the plan can call.
-      requiredPlan: auto ? model.minPlan.toLowerCase() : effectiveMinPlan(model.minPlan).toLowerCase(),
+      requiredPlan: auto ? model.minPlan.toLowerCase() : modelRequiredPlan(model).toLowerCase(),
       modalities: {
         input: model.vision ? ["text", "image"] : ["text"],
         output: [model.modality === "chat" ? "text" : model.modality],

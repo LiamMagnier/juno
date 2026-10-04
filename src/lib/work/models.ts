@@ -30,7 +30,7 @@
  */
 
 import { AUTO_MODEL_ID, classifyPromptComplexity, isAutoModelId } from "@/lib/auto-model";
-import { canUseModel, effectiveMinPlan, planRank } from "@/lib/plans";
+import { PLANS, canUseModel, modelRequiredPlan, planRank } from "@/lib/plans";
 import { DEFAULT_MODEL, trainsOnPrompts, type ModelId, type ModelInfo } from "@/lib/models";
 // Pure scoring, no environment: `getModelMetrics` reads the generated benchmark
 // table and `averageRequestCostMicroUsd` is arithmetic over the catalog's own
@@ -107,7 +107,7 @@ export function workModelOptions(
 
 /** Is this model locked behind a plan the account does not hold? */
 export function workModelLocked(model: ModelInfo, plan: Plan): boolean {
-  return planRank(plan) < planRank(effectiveMinPlan(model.minPlan));
+  return planRank(plan) < planRank(modelRequiredPlan(model));
 }
 
 /**
@@ -155,6 +155,8 @@ export function isWorkModelAllowed(modelId: string | null | undefined, plan: Pla
  * server can know.
  */
 export function cheapestWorkModel(models: readonly ModelInfo[], plan: Plan): ModelInfo | null {
+  // Agents are a Pro-and-up feature: Free and Lite get no agent floor at all.
+  if (!PLANS[plan].agents) return null;
   const eligible = models
     .filter((model) => isWorkCapableModel(model) && !trainsOnPrompts(model) && canUseModel(plan, model.id))
     .sort((a, b) => a.cost - b.cost || a.name.localeCompare(b.name));

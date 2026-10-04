@@ -43,23 +43,26 @@ import {
  * null here into PERSONAL_DEFAULT_CAP_EUR, or into whatever lower number the
  * account set for itself; only `Settings.spendCapDisabled` removes the ceiling.
  *
- * Sized against NET revenue, not the sticker price: plans are sold HT and
- * URSSAF cotisations (micro-entrepreneur, ~21%) come off the top, so a plan
- * nets price × 0.79. Budgets are ~70% of that net so each plan keeps a real
- * margin after cotisations (Pro 20€ → nets 15.80€ → 11€ budget ≈ 4.80€
- * margin; Max 100€ → 79€ → 55€; Max x20 200€ → 158€ → 110€). The 5-hour and
- * weekly windows derive from these proportionally.
+ * Sized against the HT price (VAT is collected on top by Stripe Tax and never
+ * counts as revenue): every paid budget is 55% of the HT price, which leaves
+ * ~45% for card fees, infrastructure, tax and margin even for a subscriber who
+ * spends every cent of it — and most do not. Lite 9 € → 5 €; Pro 20 € → 11 €;
+ * Plus 50 € → 27.50 €; Max ×5 100 € → 55 €; Max ×10 200 € → 110 €; Ultra
+ * 500 € → 275 €. The "×N" in each plan name is this budget over Pro's. The
+ * 5-hour and weekly windows derive from these proportionally.
  *
- * FREE is 0: a Free account cannot call any model (PLANS.FREE.monthlyMessages
- * is 0 and effectiveMinPlan floors every model at Pro), and this ceiling is the
- * spend-side twin of that paywall — any path that slipped past the message
- * quota still meets a zero budget.
+ * FREE is the free allowance: 0.20 € of model cost a month, and only on the
+ * cost-1 models modelRequiredPlan() admits Free to — roughly 50 to 150 short
+ * turns. Worst case it costs 0.20 € per free account per month.
  */
 const BUDGET_EUR: Record<Plan, number | null> = {
-  FREE: 0,
+  FREE: 0.2,
+  LITE: 5,
   PRO: 11,
+  PLUS: 27.5,
   MAX: 55,
   MAX20: 110,
+  ULTRA: 275,
   OWNER: null,
 };
 
@@ -1339,7 +1342,7 @@ export function nextResetLabel(now = new Date()): string {
 /** Friendly sentence for the 402 budget_exceeded response. */
 export function budgetExceededMessage(plan: Plan, resetsAtMs?: number | null): string {
   if (plan === "FREE") {
-    return "The Free plan doesn't include a model budget. Upgrade to Pro to start chatting.";
+    return "You've used this month's free allowance. Upgrade to Lite or Pro to keep chatting.";
   }
   const when = resetsAtMs
     ? new Date(resetsAtMs).toLocaleDateString("en-US", { month: "long", day: "numeric" })

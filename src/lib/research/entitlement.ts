@@ -31,7 +31,7 @@ export function researchEntitlement(input: {
   workspace: WorkspaceConfig | null;        // workspacePermits(workspace, "deepResearch")
   configured: boolean;                       // isWebSearchConfigured()
 }): { allowed: true } | { allowed: false; reason: ResearchRefusal } {
-  if (!PLANS[input.plan].webSearch || !RESEARCH_PLAN_CAPS[input.plan].entitled) return { allowed: false, reason: "plan" };
+  if (!PLANS[input.plan].research || !PLANS[input.plan].webSearch || !RESEARCH_PLAN_CAPS[input.plan].entitled) return { allowed: false, reason: "plan" };
   if (!input.configured) return { allowed: false, reason: "not_configured" };
   // A run is durable — rows, events, a completion message — and a private chat
   // leaves nothing behind (INV-32).

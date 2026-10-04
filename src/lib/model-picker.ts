@@ -19,7 +19,7 @@
  */
 
 import { isAutoModelId } from "@/lib/auto-model";
-import { effectiveMinPlan, planRank } from "@/lib/plans";
+import { modelRequiredPlan, planRank } from "@/lib/plans";
 import type { ModelInfo } from "@/lib/models";
 
 /** Most recently chosen models, newest first. Per browser, like a draft. */
@@ -52,5 +52,5 @@ export function pushRecent(id: string) {
  * /upgrade can never disagree — and they live in different files now.
  */
 export function isModelLocked(m: ModelInfo, plan: Parameters<typeof planRank>[0]): boolean {
-  return !isAutoModelId(m.id) && !m.comingSoon && planRank(plan) < planRank(effectiveMinPlan(m.minPlan));
+  return !isAutoModelId(m.id) && !m.comingSoon && planRank(plan) < planRank(modelRequiredPlan(m));
 }

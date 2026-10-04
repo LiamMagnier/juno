@@ -19,7 +19,7 @@ import { ComparePane } from "@/components/compare/compare-pane";
 import { IDLE_RUN, useCompare } from "@/components/compare/use-compare";
 import { resolveModel, DEFAULT_MODEL, type ModelId, type ModelInfo } from "@/lib/models";
 import { getModelMetrics, costScore } from "@/lib/model-metrics";
-import { planRank, effectiveMinPlan } from "@/lib/plans";
+import { planRank, modelRequiredPlan } from "@/lib/plans";
 import { promptPlaceholderTitle } from "@/lib/title-ownership";
 import { cn } from "@/lib/utils";
 import type { Provider } from "@/lib/providers";
@@ -59,7 +59,7 @@ function eligibleModels(models: ModelInfo[], plan: ClientQuota["plan"]): ModelIn
     (m) =>
       (m.modality ?? "chat") === "chat" &&
       !m.comingSoon &&
-      planRank(plan) >= planRank(effectiveMinPlan(m.minPlan))
+      planRank(plan) >= planRank(modelRequiredPlan(m))
   );
 }
 

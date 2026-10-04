@@ -135,14 +135,27 @@ export const env = {
   stripe: {
     secretKey: process.env.STRIPE_SECRET_KEY,
     webhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
+    priceLite: process.env.STRIPE_PRICE_LITE,
     pricePro: process.env.STRIPE_PRICE_PRO,
+    pricePlus: process.env.STRIPE_PRICE_PLUS,
     priceMax: process.env.STRIPE_PRICE_MAX,
     priceMax20: process.env.STRIPE_PRICE_MAX20,
-    // Annual equivalents. Same entitlement, different Stripe billing interval —
-    // the Plan enum is unchanged, so there is no migration and no fourth tier.
+    priceUltra: process.env.STRIPE_PRICE_ULTRA,
+    // Annual equivalents. Same entitlement, different Stripe billing interval:
+    // ten months' price for twelve (ANNUAL_MONTHS_BILLED in price-display.ts).
+    priceLiteYearly: process.env.STRIPE_PRICE_LITE_YEARLY,
     priceProYearly: process.env.STRIPE_PRICE_PRO_YEARLY,
+    pricePlusYearly: process.env.STRIPE_PRICE_PLUS_YEARLY,
     priceMaxYearly: process.env.STRIPE_PRICE_MAX_YEARLY,
     priceMax20Yearly: process.env.STRIPE_PRICE_MAX20_YEARLY,
+    priceUltraYearly: process.env.STRIPE_PRICE_ULTRA_YEARLY,
+    // One-time usage top-up packs (Stripe one-off prices, see src/lib/credits.ts).
+    priceTopUp5: process.env.STRIPE_PRICE_TOPUP_5,
+    priceTopUp20: process.env.STRIPE_PRICE_TOPUP_20,
+    // Stripe Tax computes and collects the buyer's VAT (FR 20%, OSS for other
+    // EU consumers, reverse charge for EU businesses with a VAT number). On by
+    // default; "false" only for a test account without Stripe Tax set up.
+    automaticTax: process.env.STRIPE_AUTOMATIC_TAX !== "false",
   },
 
   // App Store Server API / StoreKit 2 (optional — native billing is refused

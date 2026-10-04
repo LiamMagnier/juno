@@ -8,7 +8,7 @@ import { ProviderLogo } from "@/components/brand/provider-logo";
 import { JunoMark } from "@/components/brand/logo";
 import { choiceTriggerClass } from "@/components/settings/choice-menu";
 import { AUTO_MODEL_ID_SETTING, providerName, type PickerModel } from "@/components/settings/model-list";
-import { PLANS, canUseModel, effectiveMinPlan } from "@/lib/plans";
+import { PLANS, canUseModel, modelRequiredPlan } from "@/lib/plans";
 import { cn } from "@/lib/utils";
 import type { ClientQuota } from "@/types/chat";
 
@@ -267,7 +267,7 @@ export function ModelCombobox({
                 </span>
                 {row.kind === "model" && row.locked && (
                   <span className="shrink-0 text-caption text-muted-foreground" translate="no">
-                    {PLANS[effectiveMinPlan(row.model.minPlan)].name}
+                    {PLANS[modelRequiredPlan(row.model)].name}
                   </span>
                 )}
                 {row.kind === "model" && !row.locked && model?.legacy && (

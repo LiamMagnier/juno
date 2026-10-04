@@ -1,54 +1,80 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { PLANS, canUseModel, effectiveMinPlan } from "@/lib/plans";
+import { PLANS, PLAN_LIST, canUseModel, effectiveMinPlan, modelRequiredPlan, planRank } from "@/lib/plans";
 import { MODEL_LIST } from "@/lib/models";
 import { pickAutoModel } from "@/lib/auto-model";
 
 /*
- * The paywall, pinned from both sides: a Free account cannot call any model —
- * not even the ones the catalog itself prices at minPlan FREE — and every paid
- * plan can call what it pays for. The matching zero spend ceiling
- * (BUDGET_EUR.FREE, spend.ts) and the chat route's early 402 are enforced at
- * runtime and deliberately not imported here: their module chains are
- * server-only.
+ * The paywall, pinned from both sides: a Free account gets a small allowance
+ * on cost-1 models only, Lite adds the rest of the catalog's FREE-priced
+ * models, and Pro-priced models stay Pro. The matching spend ceilings
+ * (BUDGET_EUR, spend.ts) and the chat route's 402 are enforced at runtime and
+ * deliberately not imported here: their module chains are server-only.
  */
 
-test("FREE includes no messages, and says so first", () => {
+test("FREE leads with its allowance and promises nothing it cannot deliver", () => {
   const free = PLANS.FREE;
-  assert.equal(free.monthlyMessages, 0);
-  // Settings renders only the first three feature lines — the constraint must
-  // lead, and nothing may promise a model reply.
-  assert.match(free.features[0], /No messages/);
+  assert.equal(free.monthlyMessages, null, "Free is metered by its token budget, not a message count");
+  assert.match(free.features[0], /allowance/);
   for (const line of [free.tagline, ...free.features]) {
-    assert.doesNotMatch(line, /\b\d+ messages\b|trial|everyday models|canvas|artifact|upload/i, line);
+    assert.doesNotMatch(line, /\b\d+ messages\b|unlimited|voice|web search|agents/i, line);
+  }
+  for (const flag of ["voice", "webSearch", "code", "agents", "research"] as const) {
+    assert.equal(free[flag], false, `Free must not include ${flag}`);
   }
 });
 
-test("every model is floored at Pro", () => {
-  assert.equal(effectiveMinPlan("FREE"), "PRO");
+test("Lite is chat-first: web search yes, Code, agents, research and voice no", () => {
+  const lite = PLANS.LITE;
+  assert.equal(lite.webSearch, true);
+  for (const flag of ["voice", "code", "agents", "research"] as const) {
+    assert.equal(lite[flag], false, `Lite must not include ${flag}`);
+  }
+  for (const plan of ["PRO", "PLUS", "MAX", "MAX20", "ULTRA"] as const) {
+    assert.equal(PLANS[plan].code, true, `${plan} includes Code`);
+    assert.equal(PLANS[plan].agents, true, `${plan} includes agents`);
+  }
+});
+
+test("tier order runs Free < Lite < Pro < Plus < Max ×5 < Max ×10 < Ultra", () => {
+  const order = ["FREE", "LITE", "PRO", "PLUS", "MAX", "MAX20", "ULTRA", "OWNER"] as const;
+  for (let i = 1; i < order.length; i++) {
+    assert.ok(planRank(order[i]) > planRank(order[i - 1]), `${order[i]} ranks above ${order[i - 1]}`);
+  }
+  assert.deepEqual(
+    PLAN_LIST.map((p) => p.id),
+    ["FREE", "LITE", "PRO", "PLUS", "MAX", "MAX20", "ULTRA"]
+  );
+});
+
+test("FREE-priced models split by cost: cost 1 is Free, the rest is Lite; Pro stays Pro", () => {
+  for (const m of MODEL_LIST) {
+    const required = modelRequiredPlan(m);
+    if (m.minPlan === "FREE") assert.equal(required, m.cost <= 1 ? "FREE" : "LITE", m.id);
+    else assert.equal(required, m.minPlan, m.id);
+  }
+  assert.equal(effectiveMinPlan("FREE"), "LITE");
   assert.equal(effectiveMinPlan("PRO"), "PRO");
   assert.equal(effectiveMinPlan("MAX"), "MAX", "a higher catalog minimum is kept");
 });
 
-test("FREE cannot use any model, even the ones the catalog prices at FREE", () => {
-  const freePriced = MODEL_LIST.filter((m) => m.minPlan === "FREE");
-  assert.ok(freePriced.length > 0, "the catalog still prices some models at FREE");
+test("FREE can use exactly the cost-1 FREE-priced models", () => {
+  const cheap = MODEL_LIST.filter((m) => m.minPlan === "FREE" && m.cost <= 1);
+  assert.ok(cheap.length > 0, "the catalog has cost-1 FREE models for the allowance");
   for (const m of MODEL_LIST) {
-    assert.equal(canUseModel("FREE", m.id), false, `${m.id} (${m.minPlan}) is usable on FREE`);
+    assert.equal(canUseModel("FREE", m.id), m.minPlan === "FREE" && m.cost <= 1, `${m.id} on FREE`);
+    assert.equal(canUseModel("LITE", m.id), m.minPlan === "FREE", `${m.id} on LITE`);
   }
 });
 
-test("Auto stays selectable on FREE, but the router has nothing FREE may call", () => {
-  // The sentinel is selectable so the picker has a default; the quota (limit 0)
-  // is what the composer reads to show the upgrade notice instead of sending.
+test("Auto stays selectable on FREE, and routes only inside the plan when a provider is configured", () => {
   assert.equal(canUseModel("FREE", "juno:auto"), true);
   assert.equal(canUseModel("FREE", "auto"), true);
   const pick = pickAutoModel({ message: "hi", plan: "FREE" });
-  assert.equal(
-    canUseModel("FREE", pick.model.id),
-    false,
-    "Auto's last resort must not be a model FREE is entitled to; the route's own gates refuse it"
-  );
+  // With no provider keys in the test env the router falls through to its
+  // plan-blind last resort, which the route's own gates refuse; with any key
+  // set, the pool is filtered by canUseModel and the pick must be inside it.
+  if (pick.candidatesConsidered > 0) assert.equal(canUseModel("FREE", pick.model.id), true);
 });
 
 test("PRO can use the Pro tier, and plan floors still order above it", () => {

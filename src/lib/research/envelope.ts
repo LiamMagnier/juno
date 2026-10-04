@@ -85,6 +85,16 @@ export const RESEARCH_PLAN_CAPS: Record<Plan, ResearchPlanCaps> = {
     clockMinutes: 0,
     leadInputUsdPerMTokMax: null,
   },
+  // Lite is chat-first: research is a Pro feature (PLANS.LITE.research).
+  LITE: {
+    entitled: false,
+    ceilingEur: 0,
+    shareOfMonth: 0,
+    liveRuns: 0,
+    startsPerDay: 0,
+    clockMinutes: 0,
+    leadInputUsdPerMTokMax: null,
+  },
   PRO: {
     entitled: true,
     ceilingEur: 2.5,
@@ -94,6 +104,16 @@ export const RESEARCH_PLAN_CAPS: Record<Plan, ResearchPlanCaps> = {
     clockMinutes: 15,
     // Sonnet class.
     leadInputUsdPerMTokMax: 3,
+  },
+  PLUS: {
+    entitled: true,
+    ceilingEur: 5,
+    shareOfMonth: 0.2,
+    liveRuns: 1,
+    startsPerDay: 10,
+    clockMinutes: 20,
+    // Opus class.
+    leadInputUsdPerMTokMax: 5,
   },
   MAX: {
     entitled: true,
@@ -111,6 +131,15 @@ export const RESEARCH_PLAN_CAPS: Record<Plan, ResearchPlanCaps> = {
     shareOfMonth: 0.15,
     liveRuns: 3,
     startsPerDay: 30,
+    clockMinutes: 60,
+    leadInputUsdPerMTokMax: null,
+  },
+  ULTRA: {
+    entitled: true,
+    ceilingEur: 30,
+    shareOfMonth: 0.1,
+    liveRuns: 5,
+    startsPerDay: null,
     clockMinutes: 60,
     leadInputUsdPerMTokMax: null,
   },

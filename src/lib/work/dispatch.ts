@@ -9,7 +9,7 @@ import { rateLimit } from "@/lib/rate-limit";
 import { MODEL_LIST, resolveModel } from "@/lib/models";
 import { configuredProviders } from "@/lib/providers";
 import { getUserPlan } from "@/lib/usage";
-import { canUseModel } from "@/lib/plans";
+import { PLANS, canUseModel } from "@/lib/plans";
 import type { SessionUser } from "@/lib/session";
 import { serializeRun, serializeSession } from "@/lib/work/serializers";
 import {
@@ -382,8 +382,20 @@ export async function createWorkSessionForUser(
   // Read only when a model was actually named. `isWorkModelAllowed` answers
   // true for an absent id, so the plan lookup would be a query asked in order
   // to be ignored.
+  // Agents (Work, Orbit, Code sessions) are a Pro-and-up feature: refuse a
+  // Free or Lite account before anything is created, whatever model it named.
+  const plan = await getUserPlan(user.id);
+  if (!PLANS[plan].agents && !PLANS[plan].code) {
+    return {
+      status: 402,
+      body: {
+        error: "plan_locked",
+        message: "Agents are included from the Pro plan, so nothing was created. Upgrade to Pro to run them.",
+      },
+      session: null,
+    };
+  }
   if (model) {
-    const plan = await getUserPlan(user.id);
     if (!isWorkModelAllowed(model, plan)) {
       return {
         status: 403,

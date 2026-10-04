@@ -214,9 +214,10 @@ test("the fallback is a model the runtime can actually drive", () => {
  */
 
 test("a plan with no entitlement gets no model at all, rather than the first one in the catalog", () => {
-  // Every model needs a paid plan, so FREE's eligible pool is empty — even the
-  // models the catalog itself prices at FREE are floored at Pro.
+  // Agents are Pro and up, so FREE and LITE get no agent floor at all — even
+  // though both may chat with the models the catalog prices at FREE.
   assert.equal(cheapestWorkModel(MODEL_LIST, "FREE"), null);
+  assert.equal(cheapestWorkModel(MODEL_LIST, "LITE"), null);
 });
 
 test("the floor is the cheapest thing the account may actually use, and it can be driven", () => {

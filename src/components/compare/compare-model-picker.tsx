@@ -12,7 +12,7 @@ import { ProviderLogo } from "@/components/brand/provider-logo";
 import { useApp } from "@/components/app/app-provider";
 import { resolveModel, type ModelId, type ModelInfo } from "@/lib/models";
 import { PROVIDERS } from "@/lib/providers";
-import { PLANS, planRank, effectiveMinPlan } from "@/lib/plans";
+import { PLANS, planRank, modelRequiredPlan } from "@/lib/plans";
 import { cn } from "@/lib/utils";
 
 /**
@@ -56,7 +56,7 @@ export function CompareModelPicker({
   );
 
   const select = (m: ModelInfo) => {
-    if (planRank(plan) < planRank(effectiveMinPlan(m.minPlan))) {
+    if (planRank(plan) < planRank(modelRequiredPlan(m))) {
       setOpen(false);
       router.push("/upgrade");
       return;
@@ -105,7 +105,7 @@ export function CompareModelPicker({
             <EmptyState size="panel" icon={SearchX} title="No models found" description="Try a different name or provider." />
           ) : (
             visible.map((m) => {
-              const locked = planRank(plan) < planRank(effectiveMinPlan(m.minPlan));
+              const locked = planRank(plan) < planRank(modelRequiredPlan(m));
               const active = m.id === value;
               return (
                 <Pressable
@@ -125,7 +125,7 @@ export function CompareModelPicker({
                   </span>
                   {locked ? (
                     <span className="flex shrink-0 items-center gap-1 font-mono text-caption font-medium text-primary">
-                      <Lock className="size-3 shrink-0" /> {PLANS[effectiveMinPlan(m.minPlan)].name}
+                      <Lock className="size-3 shrink-0" /> {PLANS[modelRequiredPlan(m)].name}
                     </span>
                   ) : active ? (
                     <StatusIcons.success className={cn("size-3.5 shrink-0 text-primary")} />

@@ -4,6 +4,7 @@ import { isTerminalTaskStatus, taskTokenAuth } from "@/lib/code-remote";
 import { PROVIDERS, providerApiKey, providerBaseUrl, type Provider } from "@/lib/providers";
 import { rateLimit } from "@/lib/rate-limit";
 import { getUserPlan } from "@/lib/usage";
+import { PLANS } from "@/lib/plans";
 import { checkBudget, checkUsageWindows, budgetExceededMessage, recordSpend } from "@/lib/spend";
 import { windowLimitMessage } from "@/lib/spend-ceiling";
 import {
@@ -104,6 +105,15 @@ export async function POST(
   // app usage would be unlimited and invisible to plan limits. The generous
   // burst limit accommodates multi-iteration agent turns.
   const plan = await getUserPlan(user.id);
+  // Code and agents are Pro-and-up features (PLANS[plan].code / .agents). Free
+  // and Lite carry a chat budget sized for chat; an agent loop would spend a
+  // Lite month in one task.
+  if (!PLANS[plan].code && !PLANS[plan].agents) {
+    return NextResponse.json(
+      { error: "Code and agents are included from the Pro plan.", code: "PLAN_REQUIRED" },
+      { status: 402 },
+    );
+  }
   if (plan !== "OWNER") {
     const rl = await rateLimit({ key: `agent:${user.id}`, limit: 120, windowSec: 60 });
     if (!rl.success) {
