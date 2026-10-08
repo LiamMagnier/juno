@@ -223,6 +223,7 @@ private struct JunoMobileFeatureHubModifier: ViewModifier {
           EmptyView()
         }
       }
+      .tint(Color.junoAccent)
     }
   }
 #endif

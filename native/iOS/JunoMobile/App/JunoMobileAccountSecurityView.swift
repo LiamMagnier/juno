@@ -64,6 +64,8 @@ struct JunoMobileAccountSecurityView: View {
           Button("Change Password") { sheet = .password }
             .disabled(client == nil)
             .accessibilityIdentifier("juno.mobile.security.password")
+          // Ink, not the accent: the page's one accent is Set Up.
+          .tint(Color.primary)
         } else {
           Text("This account signs in with Google or Apple, so it has no password.")
             .foregroundStyle(Color.junoSecondaryInk)
@@ -71,6 +73,8 @@ struct JunoMobileAccountSecurityView: View {
         Button("Change Email Address") { sheet = .email }
           .disabled(client == nil)
           .accessibilityIdentifier("juno.mobile.security.email")
+          // Ink, not the accent: the page's one accent is Set Up.
+          .tint(Color.primary)
       } header: {
         Text("Sign-in")
       } footer: {

@@ -82,6 +82,18 @@ struct JunoMobileSearchView: View {
                 server = made
             }
         }
+        #if DEBUG
+            // `--juno-preview-search <query>` types a query, for screenshots,
+            // once the preview world has settled the store.
+            .task {
+                let arguments = CommandLine.arguments
+                guard let index = arguments.firstIndex(of: "--juno-preview-search"), index + 1 < arguments.count
+                else { return }
+                try? await Task.sleep(for: .seconds(2.5))
+                draft = arguments[index + 1]
+                model.setQuery(draft, debounced: false)
+            }
+        #endif
         .onChange(of: draft) { _, text in
             model.setQuery(text)
             server?.setQuery(text)
