@@ -477,7 +477,7 @@ private struct JunoMobileIncognitoTurnRow: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
                     HStack(spacing: JunoSpace.cozy) {
-                        JunoThinkingMatrix()
+                        JunoGalaxyMark(size: 18)
                             .foregroundStyle(Color.junoMutedForeground)
                         Text("Thinking about your request")
                             .junoFont(size: 17, relativeTo: .body)

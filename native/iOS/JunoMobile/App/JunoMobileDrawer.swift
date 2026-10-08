@@ -643,10 +643,8 @@ struct JunoMobileSidebarDrawer: View {
 
   private var header: some View {
     HStack(spacing: 9) {
-      JunoMark(size: 24)
-      Text(verbatim: "Juno")
-        .font(JunoMobileType.display(26, relativeTo: .title2))
-        .tracking(-0.4)
+      // The Alevr lockup: the Continuum and the outlined wordmark.
+      JunoLogo(height: 26)
         .accessibilityAddTraits(.isHeader)
       Spacer(minLength: 0)
     }

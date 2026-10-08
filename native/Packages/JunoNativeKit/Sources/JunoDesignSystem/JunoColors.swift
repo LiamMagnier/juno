@@ -510,3 +510,27 @@ private extension NSColor {
     }
 }
 #endif
+
+// MARK: - Presence
+
+/// Presence ink and the galaxy's warm core.
+///
+/// The web states these in its brand layer, not in `globals.css`: presence is
+/// `--tm-presence` in `thinking-mark.css` (#2D49C9 / #97A6E6, BRAND_IDENTITY.md:
+/// "Presence — live work, voice"), and the core warmth is the galaxy spec's
+/// #8A6A3E / #F3D9B1. The generator has no variable to project, so they are
+/// typed here once and registered in `JunoTokenConsumptionTests`.
+public extension JunoColorToken {
+    static let presenceLight = JunoColorToken(unchecked: 0.1765, 0.2863, 0.7882)
+    static let presenceDark = JunoColorToken(unchecked: 0.5922, 0.6510, 0.9020)
+    static let galaxyCoreLight = JunoColorToken(unchecked: 0.5412, 0.4157, 0.2431)
+    static let galaxyCoreDark = JunoColorToken(unchecked: 0.9529, 0.8510, 0.6941)
+}
+
+public extension Color {
+    /// The brand's one live colour: what is working right now. Spent on a few
+    /// stars of ``JunoGalaxyMark`` and nowhere else by default.
+    static let junoPresence = Color.junoAdaptive(light: .presenceLight, dark: .presenceDark)
+    /// The warmth the galaxy's core is mixed toward (12%).
+    static let junoGalaxyCore = Color.junoAdaptive(light: .galaxyCoreLight, dark: .galaxyCoreDark)
+}

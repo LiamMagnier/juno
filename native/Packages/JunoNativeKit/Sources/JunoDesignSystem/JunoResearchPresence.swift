@@ -1,113 +1,24 @@
 import SwiftUI
 
-/// Research presence, drawn from the web Continuum optical masters. Four stationary
-/// paths pass tone once on a real phase/event change; elapsed time never drives it.
+/// Research's working indicator: the galaxy (``JunoGalaxyMark``), turning while
+/// the run works and holding its still frame otherwise.
+///
+/// It used to be the Continuum mark passing tone blade by blade — the brand
+/// mark doing double duty as a spinner. The owner's direction (2026-10-08)
+/// moved every working state to the galaxy and left the Continuum to be the
+/// brand. The signature is unchanged so research's call sites swap as they
+/// stand; `eventKey` no longer drives anything, because the galaxy's motion is
+/// continuous rather than a pass per event.
 public struct JunoResearchPresence: View {
     private let active: Bool
-    private let eventKey: String
     private let size: CGFloat
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.displayScale) private var displayScale
-    @State private var litBlade: Int? = nil
-    @State private var lastPass: Date = .distantPast
 
     public init(active: Bool, eventKey: String, size: CGFloat = 20) {
         self.active = active
-        self.eventKey = eventKey
         self.size = size
     }
 
-    private var opticalSize: Int {
-        let pixels = size * displayScale
-        if pixels <= 17 { return 16 }
-        if pixels <= 21 { return 20 }
-        if pixels <= 27 { return 24 }
-        if pixels <= 40 { return 32 }
-        return 0
-    }
-
     public var body: some View {
-        ZStack {
-            ForEach(0..<4, id: \.self) { blade in
-                ResearchContinuumBlade(points: Self.optical[opticalSize]![blade], units: opticalSize == 0 ? 240.5 : CGFloat(opticalSize))
-                    .fill(Color.junoSecondaryInk)
-                    .overlay {
-                        ResearchContinuumBlade(points: Self.optical[opticalSize]![blade], units: opticalSize == 0 ? 240.5 : CGFloat(opticalSize))
-                            .fill(Color.junoAccent)
-                            .opacity(litBlade == blade ? 0.65 : 0)
-                    }
-            }
-        }
-        .frame(width: size, height: size)
-        .accessibilityHidden(true)
-        .task(id: "\(active):\(eventKey):\(reduceMotion)") {
-            litBlade = nil
-            guard active, !reduceMotion, Date().timeIntervalSince(lastPass) >= 1.6 else { return }
-            do {
-                // Preserve the pending indicator delay; no animation on trivial work.
-                try await Task.sleep(for: .milliseconds(200))
-                lastPass = .now
-                for blade in 0..<4 {
-                    try Task.checkCancellation()
-                    withAnimation(JunoMotion.base) { litBlade = blade }
-                    try await Task.sleep(for: .milliseconds(290))
-                }
-                withAnimation(JunoMotion.base) { litBlade = nil }
-            } catch { litBlade = nil }
-        }
-        .onDisappear { litBlade = nil }
-    }
-
-    // Generated directly from continuum-geometry.ts; M, then cubic segments, Z.
-    private static let optical: [Int: [[CGFloat]]] = [
-        0: [
-            [0, 122.25, 27.65, 90.81, 98.24, 36.25, 138.5, 36.25, 155.31, 36.25, 162.5, 45.9, 162.5, 60.25, 162.5, 80.15, 148.9, 104.25, 137, 117.25, 135.85, 96.71, 128.3, 82.75, 101.5, 82.75, 68.18, 82.75, 29.9, 103.75, 0, 122.25],
-            [171, 61.75, 186.66, 75.13, 217, 107.97, 217, 127.75, 217, 150.65, 177.4, 155.25, 160, 155.25, 147.17, 155.25, 122.75, 152.75, 113.5, 147.75, 140.98, 128.52, 173, 97.5, 171, 61.75],
-            [240.5, 156.25, 210.2, 175.77, 143.04, 200.25, 108, 200.25, 85.63, 200.25, 68.5, 190.25, 68.5, 166.25, 68.5, 155.4, 72, 145.05, 77, 135.25, 78.33, 166.25, 114.03, 168.75, 138, 168.75, 171.9, 168.75, 208.67, 163.75, 240.5, 156.25],
-            [61.5, 184.25, 42.22, 180.77, 11, 157.5, 11, 138.25, 11, 109.78, 80.19, 96.15, 99, 98.25, 82.85, 113.28, 57.5, 141.25, 57.5, 167.75, 57.5, 174.2, 59, 178.05, 61.5, 184.25]
-        ],
-        16: [
-            [-0.02, 6.614, 1.801, 4.83, 6.334, 1.837, 8.778, 2.02, 9.798, 2.096, 10.191, 2.714, 10.126, 3.585, 10.036, 4.793, 9.101, 6.195, 8.32, 6.93, 8.343, 5.678, 7.948, 4.796, 6.321, 4.675, 4.298, 4.524, 1.879, 5.626, -0.02, 6.614],
-            [11.373, 4.165, 12.293, 5.036, 14.054, 7.147, 13.993, 8.362, 13.921, 9.769, 11.475, 9.928, 10.406, 9.873, 9.618, 9.833, 8.126, 9.604, 7.573, 9.268, 9.321, 8.172, 11.385, 6.367, 11.373, 4.165],
-            [15.7, 10.677, 13.799, 11.786, 9.636, 13.098, 7.499, 13.004, 6.134, 12.943, 5.117, 12.287, 5.181, 10.823, 5.211, 10.162, 5.452, 9.54, 5.783, 8.955, 5.781, 10.85, 7.952, 11.099, 9.414, 11.163, 11.482, 11.255, 13.738, 11.049, 15.7, 10.677],
-            [3.917, 11.487, 2.709, 11.257, 0.764, 9.777, 0.776, 8.569, 0.793, 6.782, 5.144, 5.97, 6.323, 6.113, 5.301, 7.046, 3.692, 8.786, 3.676, 10.449, 3.672, 10.854, 3.764, 11.097, 3.917, 11.487]
-        ],
-        20: [
-            [-0.023, 9.764, 2.191, 7.254, 7.841, 2.902, 11.059, 2.907, 12.403, 2.91, 12.977, 3.682, 12.975, 4.829, 12.972, 6.42, 11.882, 8.345, 10.929, 9.382, 10.84, 7.74, 10.238, 6.623, 8.096, 6.62, 5.432, 6.615, 2.369, 8.289, -0.023, 9.764],
-            [14.278, 5.396, 15.546, 6.484, 18.001, 9.154, 17.997, 10.758, 17.992, 12.616, 14.779, 12.981, 13.368, 12.978, 12.327, 12.975, 10.346, 12.768, 9.597, 12.36, 11.83, 10.806, 14.434, 8.296, 14.278, 5.396],
-            [19.945, 13.095, 17.545, 14.721, 12.189, 16.813, 9.372, 16.878, 7.573, 16.919, 6.177, 16.146, 6.133, 14.216, 6.113, 13.344, 6.375, 12.505, 6.759, 11.708, 6.923, 14.198, 9.799, 14.333, 11.726, 14.289, 14.452, 14.227, 17.4, 13.757, 19.945, 13.095],
-            [5.099, 15.167, 3.552, 14.91, 1.025, 13.081, 1.004, 11.54, 0.972, 9.26, 6.498, 8.091, 8.007, 8.238, 6.73, 9.46, 4.731, 11.728, 4.761, 13.85, 4.768, 14.367, 4.892, 14.674, 5.099, 15.167]
-        ],
-        24: [
-            [-0.002, 12.216, 2.79, 9.176, 9.628, 3.634, 13.828, 3.634, 15.087, 3.634, 16.159, 4.285, 16.159, 5.632, 16.159, 7.997, 15.216, 9.75, 13.724, 11.517, 13.603, 11.067, 13.558, 10.636, 13.409, 10.201, 12.885, 8.673, 11.6, 8.274, 10.113, 8.274, 7.748, 8.274, 4.493, 9.54, 2.439, 10.686, 1.623, 11.141, 0.795, 11.711, -0.002, 12.216],
-            [17.141, 6.311, 18.608, 7.361, 21.654, 10.878, 21.654, 12.797, 21.654, 15.081, 17.576, 15.504, 15.912, 15.504, 14.63, 15.504, 12.497, 15.295, 11.339, 14.768, 12.233, 14.061, 13.546, 13.103, 14.353, 12.32, 15.834, 10.882, 17.186, 8.436, 17.141, 6.311],
-            [24, 15.609, 20.924, 17.545, 14.373, 20, 10.764, 20, 8.573, 20, 6.858, 19.019, 6.858, 16.63, 6.858, 15.607, 7.189, 14.734, 7.648, 13.84, 7.797, 14.342, 7.93, 14.782, 8.249, 15.209, 9.406, 16.754, 12.083, 16.857, 13.847, 16.857, 17.213, 16.857, 20.723, 16.371, 24, 15.609],
-            [6.141, 18.43, 5.562, 18.209, 5.359, 18.221, 4.699, 17.892, 3.319, 17.205, 1.098, 15.489, 1.098, 13.804, 1.098, 11.232, 7.669, 9.628, 9.873, 9.827, 7.943, 11.646, 5.716, 13.975, 5.716, 16.776, 5.716, 17.356, 5.872, 17.925, 6.141, 18.43]
-        ],
-        32: [
-            [0, 16.443, 3.621, 12.4, 12.915, 5, 18.443, 5, 20.477, 5, 21.608, 6.094, 21.608, 8.137, 21.608, 10.926, 19.976, 13.677, 18.236, 15.752, 17.978, 12.578, 16.747, 11.188, 13.447, 11.188, 8.944, 11.188, 3.747, 14.131, 0, 16.443],
-            [22.744, 8.388, 24.738, 10.161, 28.873, 14.425, 28.873, 17.185, 28.873, 20.252, 23.501, 20.833, 21.256, 20.833, 19.547, 20.833, 16.648, 20.549, 15.107, 19.839, 18.588, 17.291, 23.166, 13.179, 22.744, 8.388],
-            [32, 20.967, 27.91, 23.542, 19.165, 26.821, 14.368, 26.821, 11.38, 26.821, 9.116, 25.499, 9.116, 22.253, 9.116, 20.686, 9.62, 19.562, 10.259, 18.194, 10.168, 22.269, 15.504, 22.63, 18.414, 22.63, 22.885, 22.63, 27.648, 21.978, 32, 20.967],
-            [8.183, 24.694, 5.632, 24.114, 1.465, 21.29, 1.465, 18.523, 1.465, 14.936, 10.338, 12.974, 13.162, 13.259, 10.745, 15.537, 7.65, 19.016, 7.65, 22.528, 7.65, 23.373, 7.873, 23.931, 8.183, 24.694]
-        ]
-    ]
-}
-
-private struct ResearchContinuumBlade: Shape {
-    let points: [CGFloat]
-    let units: CGFloat
-
-    func path(in rect: CGRect) -> Path {
-        func point(_ index: Int) -> CGPoint {
-            CGPoint(x: rect.minX + points[index] / units * rect.width,
-                    y: rect.minY + points[index + 1] / units * rect.height)
-        }
-        var path = Path()
-        path.move(to: point(0))
-        for index in stride(from: 2, to: points.count, by: 6) {
-            path.addCurve(to: point(index + 4), control1: point(index), control2: point(index + 2))
-        }
-        path.closeSubpath()
-        return path
+        JunoGalaxyMark(size: size, active: active)
     }
 }

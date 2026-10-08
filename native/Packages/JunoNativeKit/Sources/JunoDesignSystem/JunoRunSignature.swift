@@ -35,7 +35,11 @@ public enum JunoRunGlyphPhase: Equatable, Sendable {
     }
 }
 
-/// Juno's run signature: an 18pt 3 × 3 grid of 4pt points, 3pt apart (14pt of
+/// Juno's run signature. **While the run works** (``JunoRunGlyphPhase/moves``)
+/// it is the galaxy, ``JunoGalaxyMark``; the grid below is what it rests,
+/// waits, fails and settles as.
+///
+/// The grid: an 18pt 3 × 3 grid of 4pt points, 3pt apart (14pt of
 /// 3pt points at ``Size/small``), in one muted ink.
 ///
 /// **Only opacity loops.** Each point has a resting layer that never leaves
@@ -98,7 +102,44 @@ public struct JunoRunSignature: View {
 
     private var animates: Bool { loops && !reduceMotion && phase.moves }
 
+    /// The galaxy's side: the grid's, but never under the 16pt the galaxy needs
+    /// to read as one. It overhangs the small grid's slot rather than moving
+    /// the words beside it.
+    private var galaxySide: CGFloat { max(side, 16) }
+
     public var body: some View {
+        ZStack {
+            if phase.moves {
+                // Every working phase is the galaxy (owner, 2026-10-08): the
+                // run's words already say *which* work it is, and one calm
+                // mark reads better than five patterns on nine dots. It holds
+                // its still frame when this line does not own the loop.
+                JunoGalaxyMark(size: galaxySide, active: loops)
+                    .frame(width: side, height: side)
+                    .transition(.opacity)
+            } else {
+                grid
+                    .transition(.opacity)
+            }
+        }
+        .frame(width: side, height: side)
+        .animation(JunoMotion.reduced(JunoMotion.base, when: reduceMotion, tier: .tint), value: phase.moves)
+        .onChange(of: phase == .settled) { _, settled in
+            withAnimation(JunoMotion.reduced(settled ? JunoMotion.riseIn : JunoMotion.base, when: reduceMotion, tier: .tint)) {
+                gathered = settled
+            }
+        }
+        .onChange(of: phase) { _, _ in
+            swapFade = 0.35
+            withAnimation(JunoMotion.reduced(JunoMotion.base, when: reduceMotion, tier: .tint)) {
+                swapFade = 1
+            }
+        }
+        .accessibilityHidden(true)
+    }
+
+    /// The nine-point grid: the resting, waiting, failed and settled states.
+    private var grid: some View {
         TimelineView(.animation(paused: !(animates || (reduceMotion && loops && phase.moves)))) { context in
             let now = context.date.timeIntervalSinceReferenceDate
             ZStack {
@@ -112,18 +153,6 @@ public struct JunoRunSignature: View {
             .opacity(reduceMotion && loops && phase.moves ? Self.breath(now) : 1)
         }
         .frame(width: side, height: side)
-        .onChange(of: phase == .settled) { _, settled in
-            withAnimation(JunoMotion.reduced(settled ? JunoMotion.riseIn : JunoMotion.base, when: reduceMotion, tier: .tint)) {
-                gathered = settled
-            }
-        }
-        .onChange(of: phase) { _, _ in
-            swapFade = 0.35
-            withAnimation(JunoMotion.reduced(JunoMotion.base, when: reduceMotion, tier: .tint)) {
-                swapFade = 1
-            }
-        }
-        .accessibilityHidden(true)
     }
 
     private func point(_ index: Int, now: TimeInterval?) -> some View {

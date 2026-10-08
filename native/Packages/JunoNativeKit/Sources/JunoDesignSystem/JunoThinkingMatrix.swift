@@ -1,7 +1,10 @@
 import SwiftUI
 
-/// Juno's thinking mark: a compact 3×3 matrix of points with one brighter point
-/// travelling through it.
+/// The former thinking mark: a compact 3×3 matrix of points with one brighter
+/// point travelling through it.
+///
+/// **Superseded by ``JunoGalaxyMark``** (owner, 2026-10-08): every working
+/// state now shows the galaxy. Kept only until nothing references it.
 ///
 /// This is the *brand's* waiting signal, ported from the web's `ThinkingDots`
 /// (`src/components/signature/thinking-dots.tsx`) — the same grid, the same

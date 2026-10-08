@@ -587,7 +587,8 @@ struct JunoDesktopSignInView: View {
             if width < Self.splitWidth {
                 VStack(spacing: JunoSpace.cozy) {
                     JunoMark(size: Self.markSize)
-                    JunoWordmark()
+                    JunoWordmark(height: 16)
+                        .accessibilityHidden(true)
                 }
             }
 
@@ -803,23 +804,6 @@ private struct JunoDesktopLocalStoreRecoveryNotice: View {
     }
 }
 
-/// The mono wordmark, matching the web's `AsciiWordmark`.
-///
-/// A logotype rather than a label, which is why it keeps the wide tracking the
-/// rest of Juno's mono voice dropped.
-private struct JunoWordmark: View {
-    /// The web's `tracking-[0.12em]` resolved against its 14px mono size.
-    private static let tracking: CGFloat = 1.7
-
-    var body: some View {
-        Text("Juno")
-            .junoMono()
-            .fontWeight(.semibold)
-            .tracking(Self.tracking)
-            .accessibilityHidden(true)
-    }
-}
-
 /// The faint dotted grid the website paints behind its auth and marketing
 /// surfaces (`src/components/signature/dot-field.tsx`).
 ///
@@ -875,7 +859,7 @@ struct JunoDesktopSignInPlate: View {
                     .foregroundStyle(plate == nil ? Color.junoForeground : Color.white)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityAddTraits(.isHeader)
-                Text("Juno for Mac")
+                Text("Alevr for Mac")
                     .junoType(.ui)
                     .foregroundStyle(plate == nil ? Color.junoSecondaryInk : Color.white.opacity(0.8))
             }

@@ -150,10 +150,16 @@ struct DesktopMessageRow: View {
     /// A reply's parts as the row draws them: its words without the trailing
     /// "Sources" section the sources pill replaces, split around artifacts.
     nonisolated static func parts(of message: NativeChatMessage) -> [NativeMessageContent.Part] {
+        parts(of: message, content: message.content)
+    }
+
+    /// The same, for `content` standing in for the message's own — the paced
+    /// prefix of a reply being written.
+    nonisolated static func parts(of message: NativeChatMessage, content: String) -> [NativeMessageContent.Part] {
         NativeMessageContent.parts(
             of: message.sources.isEmpty
-                ? message.content
-                : NativeMessageContent.strippingTrailingSourcesSection(message.content)
+                ? content
+                : NativeMessageContent.strippingTrailingSourcesSection(content)
         )
     }
 
@@ -717,32 +723,42 @@ struct DesktopMessageRow: View {
                 )
             }
             if !parts.isEmpty {
-                VStack(alignment: .leading, spacing: JunoProseMetrics.blockGap) {
-                    ForEach(Array(parts.enumerated()), id: \.offset) { index, part in
-                        switch part {
-                        case .text(let text):
-                            JunoLessonText(text, streaming: shown.isPending)
-                                .environment(\.junoFindHighlight, findHighlight?.shifted(by: bases.indices.contains(index) ? bases[index] : 0))
-                        case .artifact(let artifact):
-                            let card = artifactResolver.card(
-                                for: artifact,
-                                message: shown,
-                                messageIsPending: shown.isPending
-                            )
-                            let message = shown
-                            DesktopInlineArtifactCard(
-                                card: card,
-                                open: card.isStreaming ? nil : { actions.openArtifact(artifact, message) }
-                            )
-                        }
-                    }
+                // Paced: the words are released at a steady cadence and the
+                // newest fade in where the writing is (JunoPacedStream), in
+                // place of the old 30% tail band.
+                JunoPacedStream(shown.content, live: shown.isPending) { paced in
+                    pacedParts(Self.parts(of: shown, content: paced), bases: bases)
                 }
-                .junoStreamingTail(shown.isPending && shown.content.count > JunoProseMetrics.tailFadeCharacters)
             }
         }
         .environment(\.junoProseStyle, .reading)
         .environment(\.junoCitationCount, citations)
         .environment(\.junoCitationPopover, citations > 0 ? citationPopover : nil)
+    }
+
+    /// The reply's parts as drawn: prose runs and the artifacts between them.
+    private func pacedParts(_ parts: [NativeMessageContent.Part], bases: [Int]) -> some View {
+        VStack(alignment: .leading, spacing: JunoProseMetrics.blockGap) {
+            ForEach(Array(parts.enumerated()), id: \.offset) { index, part in
+                switch part {
+                case .text(let text):
+                    JunoLessonText(text, streaming: shown.isPending)
+                        .environment(\.junoFindHighlight, findHighlight?.shifted(by: bases.indices.contains(index) ? bases[index] : 0))
+                case .artifact(let artifact):
+                    let card = artifactResolver.card(
+                        for: artifact,
+                        message: shown,
+                        messageIsPending: shown.isPending
+                    )
+                    let message = shown
+                    DesktopInlineArtifactCard(
+                        card: card,
+                        open: card.isStreaming ? nil : { actions.openArtifact(artifact, message) }
+                    )
+                    .junoStreamBlockReveal()
+                }
+            }
+        }
     }
 
     /// Where each prose part's find matches start within the reply.

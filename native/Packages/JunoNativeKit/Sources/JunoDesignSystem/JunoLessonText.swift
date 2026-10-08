@@ -51,8 +51,10 @@ public struct JunoLessonText: View {
                     // the writing is happening.
                     JunoMarkdownText(text, streaming: streaming && index == lastMarkdownIndex)
                         .environment(\.junoFindHighlight, find?.shifted(by: bases[safe: index] ?? 0))
+                        .junoStreamRevealScope(isLast: index == segments.count - 1)
                 case .block(let parsed):
                     JunoLearningBlockView(parsed: parsed, messageStreaming: streaming)
+                        .junoStreamBlockReveal()
                 }
             }
         }

@@ -340,10 +340,14 @@ struct DesktopTranscript: View {
             atBottom = isAtBottom
             if userScrolling { follows = isAtBottom }
         }
-        // The stream growing the reply: kept in view only while following.
+        // The stream growing the reply: kept in view only while following,
+        // and glided rather than snapped — the paced reply grows a line at a
+        // time, and a 26pt jump per line read as the page twitching.
         .onScrollGeometryChange(for: CGFloat.self) { $0.contentSize.height } action: { old, new in
             guard follows, !userScrolling, new > old else { return }
-            position.scrollTo(edge: .bottom)
+            withAnimation(JunoMotion.reduced(JunoMotion.base, when: reduceMotion)) {
+                position.scrollTo(edge: .bottom)
+            }
         }
         .onScrollPhaseChange { _, phase in
             switch phase {
@@ -357,14 +361,16 @@ struct DesktopTranscript: View {
             }
         }
         .overlay(alignment: .bottom) {
-            ScrollToLatestButton(isShown: !atBottom && !model.selectedMessages.isEmpty) {
+            // Only once the reader has left: while following, the glide can
+            // trail the growing reply by a line, which is not "away".
+            ScrollToLatestButton(isShown: !atBottom && !follows && !model.selectedMessages.isEmpty) {
                 follows = true
                 withAnimation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion)) {
                     position.scrollTo(edge: .bottom)
                 }
             }
             .padding(.bottom, 12)
-            .animation(JunoMotion.reduced(JunoMotion.base, when: reduceMotion, tier: .tint), value: atBottom)
+            .animation(JunoMotion.reduced(JunoMotion.base, when: reduceMotion, tier: .tint), value: !atBottom && !follows)
         }
         .onChange(of: model.selectedMessages, initial: true) { previous, current in
             noteMessages(from: previous.count, to: current.count)

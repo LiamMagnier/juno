@@ -89,16 +89,11 @@ private struct JunoMobileFrontDoorArt: View {
 /// The mark and the wordmark, set small at the top of the art.
 private struct JunoMobileWordmark: View {
   var body: some View {
-    HStack(spacing: JunoSpace.snug) {
-      JunoMark(size: 24)
-      Text(verbatim: "Juno")
-        .font(JunoMobileType.display(24, relativeTo: .title3))
-        .tracking(-0.3)
-    }
-    .foregroundStyle(Color.junoForeground)
-    .accessibilityElement(children: .ignore)
-    .accessibilityLabel("Juno")
-    .accessibilityAddTraits(.isHeader)
+    JunoLogo(height: 26)
+      .foregroundStyle(Color.junoForeground)
+      .accessibilityElement(children: .ignore)
+      .accessibilityLabel("Alevr")
+      .accessibilityAddTraits(.isHeader)
   }
 }
 

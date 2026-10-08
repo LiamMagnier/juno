@@ -62,6 +62,8 @@ public struct JunoMarkdownText: View {
             VStack(alignment: .leading, spacing: Self.blockSpacing) {
                 ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
                     JunoMarkdownBlockView(block: block, caret: index == caretIndex)
+                        .junoStreamRevealScope(isLast: index == blocks.count - 1)
+                        .junoStreamBlockReveal()
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -83,6 +85,8 @@ public struct JunoMarkdownText: View {
             ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
                 JunoReadingBlockView(block: block, isFirst: index == 0)
                     .environment(\.junoFindHighlight, find?.shifted(by: bases[safe: index] ?? 0))
+                    .junoStreamRevealScope(isLast: index == blocks.count - 1)
+                    .junoStreamBlockReveal()
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -321,6 +325,8 @@ private struct JunoReadingList: View {
                 }
                 .padding(.leading, Double(item.depth) * JunoProseMetrics.listIndent * textScale)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .junoStreamRevealScope(isLast: index == items.count - 1)
+                .junoStreamBlockReveal()
             }
         }
     }
@@ -409,6 +415,7 @@ struct JunoInlineText: View {
     @Environment(\.junoFindHighlight) private var find
     @Environment(\.junoCitationCount) private var citations
     @Environment(\.junoCitationPopover) private var citationPopover
+    @Environment(\.junoStreamReveal) private var reveal
 
     init(_ source: String, caret: Bool = false, baseSize: CGFloat = JunoProseMetrics.bodySize) {
         self.source = source
@@ -417,10 +424,18 @@ struct JunoInlineText: View {
     }
 
     var body: some View {
+        // The newest words of a paced reply fade in (JunoStreamReveal.swift).
+        styled.junoStreamRevealText()
+    }
+
+    @ViewBuilder
+    private var styled: some View {
         switch style {
         case .standard:
             let attributed = AttributedString.junoInline(source)
-            if caret {
+            // A paced reply's fading tail says where the writing is; the
+            // caret is for text that arrives unpaced.
+            if caret, reveal == nil {
                 HStack(alignment: .firstTextBaseline, spacing: 3) {
                     Text(attributed)
                     JunoStreamingCursor()
@@ -532,6 +547,8 @@ private struct JunoMarkdownList: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .padding(.leading, Double(item.depth) * JunoSpace.regular)
+                .junoStreamRevealScope(isLast: index == items.count - 1)
+                .junoStreamBlockReveal()
             }
         }
     }
