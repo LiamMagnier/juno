@@ -22,7 +22,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 
 ## Summary
 
-317 routes: 183 native, 66 planned, 55 web only, 13 internal. 49 pages: on the Mac 33 native, 4 partial, 3 planned, 9 web only; on iOS 17 native, 8 partial, 15 planned, 9 web only.
+317 routes: 189 native, 61 planned, 54 web only, 13 internal. 49 pages: on the Mac 33 native, 4 partial, 3 planned, 9 web only; on iOS 17 native, 8 partial, 15 planned, 9 web only.
 
 | Feature | Pages (Mac) | Pages (iOS) | Routes native | Planned | Web only | Internal |
 |---|---|---|---|---|---|---|
@@ -33,7 +33,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 | [Search and recents](#search) | – | – | 2 | 0 | 0 | 0 |
 | [Projects](#projects) | 0/2 (+2 partial) | 0/2 (+2 partial) | 1 | 1 | 1 | 0 |
 | [Library, files and knowledge](#library) | 1/2 | 1/2 | 12 | 5 | 2 | 0 |
-| [Artifacts and Design](#artifacts) | 4/4 | 3/4 (+1 partial) | 6 | 12 | 4 | 0 |
+| [Artifacts and Design](#artifacts) | 4/4 | 3/4 (+1 partial) | 12 | 7 | 3 | 0 |
 | [Memory](#memory) | 1/1 | 1/1 | 12 | 2 | 0 | 0 |
 | [Connections](#connections) | 2/2 | 2/2 | 15 | 2 | 4 | 2 |
 | [Skills](#skills) | 4/4 | 0/4 | 10 | 3 | 0 | 0 |
@@ -224,11 +224,11 @@ Design is a type of artifact (register #73).
 
 | Route | Methods | Status | Called from | Note |
 |---|---|---|---|---|
-| `/api/artifacts` | GET | Web only |  | The apps list artifacts from sync; the web's grid asks for previews here. |
+| `/api/artifacts` | GET | Native | JunoChatKit | The apps list live artifacts from sync; they call this route for Recently deleted (?deleted=1) on the Mac Artifacts page and the iPhone Artifacts list. |
 | `/api/artifacts/[id]` | GET, POST, PATCH, DELETE | Native | JunoChatKit |  |
-| `/api/artifacts/[id]/download` | GET | Planned |  | Download one version as a file, or a design (or any artifact, format=zip) as a ZIP bundle with a README and optional history. The apps still share a design's source through the system share sheet. |
+| `/api/artifacts/[id]/download` | GET | Native | JunoChatKit | Download this version, or a ZIP with history (format=zip&history=1), from the Mac's artifact page and list (save panel) and the iPhone's artifact menu (file exporter). |
 | `/api/artifacts/[id]/draft` | POST | Web only |  | Seals or discards the web design editor's working copy (ArtifactDraft). The Mac and iPhone hosted editors keep their own draft and save a whole document through /api/artifacts/[id] with a base version. |
-| `/api/artifacts/[id]/duplicate` | POST | Planned |  | Duplicate an artifact into a new one in the same project, with derivedFrom provenance. No Duplicate command in the apps yet. |
+| `/api/artifacts/[id]/duplicate` | POST | Native | JunoChatKit | Make a Copy (of the version shown, or any version from history) on the Mac's artifact page, list and history sheet, and the iPhone's artifact menu and history. |
 | `/api/artifacts/[id]/export` | GET | Native | JunoChatKit |  |
 | `/api/artifacts/[id]/poster` | GET | Native | JunoChatKit |  |
 | `/api/artifacts/[id]/proposals/[proposalId]` | GET | Planned |  | Compare a held re-emit (the re-emit guard's suggestion) with the current version. The apps show neither the suggestion bar nor Compare yet; a held tag draws no card there. |
@@ -237,15 +237,15 @@ Design is a type of artifact (register #73).
 | `/api/artifacts/[id]/proposals/[proposalId]/poster` | GET | Planned |  | The picture of a suggested design, for Compare. |
 | `/api/artifacts/[id]/publication` | GET, POST, DELETE | Native | JunoChatKit | The apps read an existing publication (GET) to share its live link; opening an artifact never publishes it. Publish, Update, Roll back and Unpublish stay on the web until the native lane adds the panel. |
 | `/api/artifacts/[id]/publication/reset` | POST | Planned |  | Reset a published link: the old token answers link gone, a new token serves. |
-| `/api/artifacts/[id]/restore` | POST | Planned |  | Restore from Recently deleted. A delete from the apps now moves the artifact to Recently deleted (the sync feed tombstones it); the apps have no Recently deleted view yet. |
-| `/api/artifacts/[id]/versions` | GET | Planned |  | Paginated version history (newest first, bodies on request). The apps read versions from sync and the windowed /api/artifacts/[id]. |
-| `/api/artifacts/[id]/versions/[version]` | GET | Planned |  | One version's body, for paged history. |
+| `/api/artifacts/[id]/restore` | POST | Native | JunoChatKit | Restore from Recently deleted: the Mac's Recently Deleted sheet on Artifacts and the iPhone's Recently Deleted list. A delete from the apps moves the artifact there (the sync feed tombstones it); a restore brings it back through sync. |
+| `/api/artifacts/[id]/versions` | GET | Native | JunoChatKit | Paginated version history (newest first): the Mac's Version History sheet and the iPhone's Version history, fifty at a time. |
+| `/api/artifacts/[id]/versions/[version]` | GET | Native | JunoChatKit | One version's body: restoring a version older than the synced window fetches it here first. |
 | `/api/design` | POST | Native | JunoDesktop |  |
 | `/api/design/[artifactId]` | GET | Web only |  | The Mac reads a design's document from its artifact and hands it to the hosted editor. |
 | `/api/design/[artifactId]/edit` | POST | Planned |  | Ask Juno to change the selected layers of a design; the Mac's hosted editor has no Ask Juno yet. |
 | `/api/design/[artifactId]/export` | GET | Native | JunoChatKit |  |
 | `/api/design/[artifactId]/transactions` | GET, POST | Planned |  | The web's editor commits each edit here as it goes; the Mac's host saves edits its own way and does not call it. |
-| `/api/artifacts/[id]/ops` | POST | Web only |  | Targeted edits to a semantic spreadsheet, document or deck. Native clients are given the Markdown artifact contract instead, so no semantic artifact reaches them to edit. |
+| `/api/artifacts/[id]/ops` | POST | Web only |  | Targeted edits to a semantic spreadsheet, document or deck. The apps now draw semantic artifacts read-only (SemanticArtifactView in JunoChatKit) and read a streaming <juno:artifact-ops> block as an Editing card; editing them stays on the web and in the chat. |
 
 <a id="memory"></a>
 
