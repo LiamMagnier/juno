@@ -212,11 +212,17 @@ public enum PreviewFixtures {
 
         // Projects (one starred).
         out.append(record(a, "project", "proj-1", 8, """
-        {"id":"proj-1","name":"Astro research","nameSource":"user","instructions":"\(promptShapedInstructions)","starred":true,"createdAt":"\(iso(-200000))","updatedAt":"\(iso(-1200))"}
+        {"id":"proj-1","name":"Astro research","nameSource":"user","parentId":null,"instructions":"\(promptShapedInstructions)","starred":true,"createdAt":"\(iso(-200000))","updatedAt":"\(iso(-1200))"}
         """))
         out.append(record(a, "project", "proj-2", 4, """
-        {"id":"proj-2","name":"Native apps","nameSource":"user","instructions":"Ship the macOS and iOS clients with real backend transport.","starred":false,"createdAt":"\(iso(-400000))","updatedAt":"\(iso(-80000))"}
+        {"id":"proj-2","name":"Native apps","nameSource":"user","parentId":null,"instructions":"Ship the macOS and iOS clients with real backend transport.","starred":false,"createdAt":"\(iso(-400000))","updatedAt":"\(iso(-80000))"}
         """))
+        // Folders inside Astro research (project subfolders).
+        for folder in PreviewProjectFolderFixtures.folders {
+            out.append(record(a, "project", folder.id, 2, """
+            {"id":"\(folder.id)","name":"\(folder.name)","nameSource":"user","parentId":"\(folder.parentID)","instructions":"\(folder.instructions)","starred":false,"createdAt":"\(iso(-150000))","updatedAt":"\(iso(folder.updated))"}
+            """))
+        }
 
         // Files (project + conversation).
         out.append(record(a, "attachment", "file-1", 2, """
