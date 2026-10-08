@@ -22,7 +22,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 
 ## Summary
 
-317 routes: 183 native, 66 planned, 55 web only, 13 internal. 49 pages: on the Mac 33 native, 4 partial, 3 planned, 9 web only; on iOS 17 native, 8 partial, 15 planned, 9 web only.
+317 routes: 184 native, 65 planned, 55 web only, 13 internal. 49 pages: on the Mac 33 native, 4 partial, 3 planned, 9 web only; on iOS 17 native, 8 partial, 15 planned, 9 web only.
 
 | Feature | Pages (Mac) | Pages (iOS) | Routes native | Planned | Web only | Internal |
 |---|---|---|---|---|---|---|
@@ -32,7 +32,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 | [Conversations, messages and sharing](#conversations) | – | – | 9 | 2 | 3 | 0 |
 | [Search and recents](#search) | – | – | 2 | 0 | 0 | 0 |
 | [Projects](#projects) | 0/2 (+2 partial) | 0/2 (+2 partial) | 1 | 1 | 1 | 0 |
-| [Library, files and knowledge](#library) | 1/2 | 1/2 | 12 | 5 | 2 | 0 |
+| [Library, files and knowledge](#library) | 1/2 | 1/2 | 13 | 4 | 2 | 0 |
 | [Artifacts and Design](#artifacts) | 4/4 | 3/4 (+1 partial) | 6 | 12 | 4 | 0 |
 | [Memory](#memory) | 1/1 | 1/1 | 12 | 2 | 0 | 0 |
 | [Connections](#connections) | 2/2 | 2/2 | 15 | 2 | 4 | 2 |
@@ -202,7 +202,7 @@ The Mac's ⌘K panel searches chats, messages, projects, files and artifacts on 
 | `/api/knowledge/documents/[id]` | GET | Planned |  | As /api/knowledge/documents. |
 | `/api/library` | GET | Native | JunoChatKit |  |
 | `/api/library/[id]` | DELETE | Native | JunoChatKit |  |
-| `/api/library/made` | GET | Planned |  | Everything Juno made in one paged list: chat artifacts and task deliverables (docx, xlsx, pptx…), each with a kind and a type. The apps list artifacts from sync and deliverables from /api/work/artifacts. |
+| `/api/library/made` | GET | Native | JunoChatKit |  |
 | `/api/library/attach` | POST | Native | JunoChatKit |  |
 | `/api/prompts` | GET, POST | Planned |  | The saved-prompt library (insert, use counts); the apps read saved prompts through sync but have no library dialog. |
 | `/api/prompts/[id]` | POST, PATCH, DELETE | Planned |  | As /api/prompts. |

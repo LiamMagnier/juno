@@ -129,6 +129,8 @@ struct JunoMobileRootView: View {
   /// and wipe it. It takes no transport, because nothing indexed here is
   /// uploaded — extraction, chunking and ranking all happen on the device.
   @State private var documentIndex = NativeDocumentIndexModel()
+  /// What Alevr made, for the Library's "Made by Alevr" (`/api/library/made`).
+  @State private var libraryMadeModel: NativeLibraryMadeModel?
   /// The account's agents (docs/design/AGENTS.md). Built at sign-in over the
   /// same bearer transport as everything else here, and held by the shell
   /// rather than the screen so the roster survives leaving it and the store
@@ -1464,7 +1466,10 @@ struct JunoMobileRootView: View {
           attachmentClient: requestSender.map { NativeAttachmentAPIClient(sender: $0) },
           generateClient: generateClient,
           modelCatalog: conversationModel?.modelCatalog ?? [],
-          openConversation: openConversation
+          openConversation: openConversation,
+          madeModel: madeModel(),
+          artifactModel: artifactModel,
+          workClient: workClient
         )
       } else {
         unavailable
@@ -1532,6 +1537,18 @@ struct JunoMobileRootView: View {
     #endif
     if case .signedIn(let s) = authModel.phase { return s }
     return nil
+  }
+
+  /// The Library's made list, built once per signed-in account.
+  private func madeModel() -> NativeLibraryMadeModel? {
+    guard let requestSender, let accountID = currentSession?.profile.id else { return nil }
+    if let libraryMadeModel {
+      libraryMadeModel.start(for: accountID)
+      return libraryMadeModel
+    }
+    let model = NativeLibraryMadeModel(client: NativeLibraryMadeClient(sender: requestSender), accountID: accountID)
+    Task { @MainActor in libraryMadeModel = model }
+    return model
   }
 
   private var unavailable: some View {

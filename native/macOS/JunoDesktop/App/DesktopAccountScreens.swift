@@ -265,7 +265,9 @@ struct DesktopDestinationView: View {
                     generateClient: configuration.generateClient,
                     modelCatalog: conversationModel.modelCatalog,
                     fileAccess: fileAccess,
-                    openConversation: openLibraryConversation
+                    openConversation: openLibraryConversation,
+                    madeModel: configuration.libraryMadeModel,
+                    deliverableClient: configuration.deliverableClient
                 )
             } else {
                 unavailable("Library", "The authenticated file library is unavailable.")

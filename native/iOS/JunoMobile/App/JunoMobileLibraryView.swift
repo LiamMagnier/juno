@@ -2,6 +2,7 @@ import JunoChatKit
 import JunoCore
 import JunoDesignSystem
 import JunoStorage
+import JunoWorkKit
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -35,8 +36,14 @@ struct JunoMobileLibraryView: View {
     var generateClient: NativeChatAPIClient?
     var modelCatalog: [NativeChatModelOption] = []
     var openConversation: ((String) -> Void)?
+    /// What Alevr made (`/api/library/made`); nil hides the row that opens it.
+    var madeModel: NativeLibraryMadeModel? = nil
+    var artifactModel: NativeArtifactModel<SQLiteAccountRepository>? = nil
+    var workClient: NativeWorkClient? = nil
 
     @State private var editing: NativeProjectFile?
+    /// Opens "Made by Alevr" straight away: `--juno-preview-library-made` (DEBUG).
+    @State private var showingMade = false
 
     @State private var filter: JunoLibraryFilter = .all
     @State private var sort: JunoLibrarySort = .newest
@@ -124,6 +131,25 @@ struct JunoMobileLibraryView: View {
         // by name; this is what makes the same keystrokes look *inside* the
         // documents indexed on this phone.
         .onChange(of: searchText) { _, value in documentIndex?.setQuery(value) }
+        .navigationDestination(isPresented: $showingMade) {
+            if let madeModel {
+                JunoMobileLibraryMadeView(
+                    model: madeModel,
+                    artifactModel: artifactModel,
+                    accountID: accountID,
+                    workClient: workClient,
+                    openConversation: openConversation
+                )
+            }
+        }
+        #if DEBUG
+        .task {
+            if CommandLine.arguments.contains("--juno-preview-library-made"), madeModel != nil {
+                try? await Task.sleep(for: .milliseconds(600))
+                showingMade = true
+            }
+        }
+        #endif
         .sheet(item: $editing) { file in
             if let accountID, let attachmentClient, let generateClient {
                 NativeImageEditSheet(
@@ -188,6 +214,10 @@ struct JunoMobileLibraryView: View {
         ScrollView {
             filterBar
 
+            if let madeModel {
+                madeRow(madeModel)
+            }
+
             documentIndexPanel
 
             LazyVGrid(columns: columns, spacing: JunoSpace.regular) {
@@ -222,6 +252,40 @@ struct JunoMobileLibraryView: View {
         .scrollDismissesKeyboard(.interactively)
         .accessibilityIdentifier("juno.mobile.file-list")
         .safeAreaInset(edge: .bottom) { searchField }
+    }
+
+    /// The way into the Library's other half: what Alevr made.
+    private func madeRow(_: NativeLibraryMadeModel) -> some View {
+        Button {
+            showingMade = true
+        } label: {
+            HStack(spacing: JunoSpace.cozy) {
+                Image(systemName: "square.stack")
+                    .font(.body)
+                    .foregroundStyle(Color.junoSecondaryInk)
+                    .frame(width: 32, height: 32)
+                    .background(Color.junoSecondary, in: .rect(cornerRadius: 8, style: .continuous))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Made by Alevr")
+                        .font(.body)
+                        .foregroundStyle(Color.junoForeground)
+                    Text("Pages, documents, spreadsheets and decks")
+                        .font(.footnote)
+                        .foregroundStyle(Color.junoSecondaryInk)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(Color.junoSecondaryInk)
+            }
+            .padding(JunoSpace.regular)
+            .background(Color.junoSurface, in: .rect(cornerRadius: 16, style: .continuous))
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, JunoSpace.regular)
+        .padding(.bottom, JunoSpace.regular)
+        .accessibilityIdentifier("juno.mobile.library-made")
     }
 
     /// All · Images · Documents. A filter, not navigation — the reader is

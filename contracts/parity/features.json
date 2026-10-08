@@ -250,10 +250,7 @@
         },
         "/api/library": "native",
         "/api/library/[id]": "native",
-        "/api/library/made": {
-          "status": "planned",
-          "note": "Everything Juno made in one paged list: chat artifacts and task deliverables (docx, xlsx, pptx…), each with a kind and a type. The apps list artifacts from sync and deliverables from /api/work/artifacts."
-        },
+        "/api/library/made": "native",
         "/api/library/attach": "native",
         "/api/prompts": {
           "status": "planned",
