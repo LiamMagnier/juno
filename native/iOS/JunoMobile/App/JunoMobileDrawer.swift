@@ -552,7 +552,7 @@ struct JunoMobileSidebarDrawer: View {
         openDestination(.search)
       } label: {
         Image(systemName: "magnifyingglass")
-          .font(.system(size: 17, weight: .regular))
+          .junoFont(size: 17, relativeTo: .body, weight: .regular)
           .foregroundStyle(Color.primary)
           .frame(width: 44, height: 44)
           .contentShape(Circle())
@@ -593,7 +593,7 @@ struct JunoMobileSidebarDrawer: View {
         } label: {
           HStack(spacing: 8) {
             Image(systemName: "square.and.pencil")
-              .font(.system(size: 16, weight: .regular))
+              .junoFont(size: 16, relativeTo: .body, weight: .regular)
             Text("Chat")
               .junoFont(size: 16, relativeTo: .body, weight: .semibold)
           }
@@ -613,7 +613,7 @@ struct JunoMobileSidebarDrawer: View {
 
         Button(action: { openDestination(.settings) }) {
           Image(systemName: "gearshape")
-            .font(.system(size: 19, weight: .regular))
+            .junoFont(size: 19, relativeTo: .body, weight: .regular)
             .foregroundStyle(Color.primary)
             .frame(width: 48, height: 48)
             .contentShape(Circle())
@@ -948,7 +948,7 @@ struct JunoMobileDrawerRow: View {
     Button(action: action) {
       HStack(spacing: 14) {
         Image(systemName: symbol)
-          .font(.system(size: 17, weight: .regular))
+          .junoFont(size: 17, relativeTo: .body, weight: .regular)
           .foregroundStyle(Color.junoForeground)
           .frame(width: 24)
         Text(title)

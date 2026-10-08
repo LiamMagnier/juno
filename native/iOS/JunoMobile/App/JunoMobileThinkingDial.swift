@@ -178,14 +178,11 @@ struct JunoMobileComposerPrimaryButton: View {
   var body: some View {
     Button(action: action) {
       Image(systemName: symbol)
-        .font(.system(size: face == .stop ? 13 : 16, weight: face == .voice ? .bold : .semibold))
+        .junoFont(size: face == .stop ? 13 : 16, relativeTo: .body, weight: face == .voice ? .bold : .semibold)
         .foregroundStyle(enabled ? Color.junoCanvas : Color.junoSecondaryInk)
         .contentTransition(.symbolEffect(.replace.downUp))
         .frame(width: 36, height: 36)
-        .glassEffect(
-          .regular.tint(enabled ? Color.primary : Color.junoMuted).interactive(),
-          in: Circle()
-        )
+        .modifier(JunoComposerSendBackground(active: enabled, tint: Color.primary))
         .frame(width: 44, height: 44)
         .contentShape(Rectangle())
     }
@@ -225,15 +222,15 @@ struct JunoMobileComposerToken: View {
     Button(action: remove) {
       HStack(spacing: 5) {
         Image(systemName: symbol)
-          .font(.system(size: 13, weight: .regular))
+          .junoFont(size: 13, relativeTo: .body, weight: .regular)
         Text(title)
           .junoFont(size: 15, relativeTo: .subheadline)
         Image(systemName: "xmark")
-          .font(.system(size: 10, weight: .semibold))
+          .junoFont(size: 10, relativeTo: .body, weight: .semibold)
           .foregroundStyle(Color.junoSecondaryInk)
       }
       .foregroundStyle(Color.junoAccent)
-      .frame(minHeight: 32)
+      .frame(minHeight: 44)
       .contentShape(Rectangle())
     }
     .buttonStyle(.junoQuietPress)

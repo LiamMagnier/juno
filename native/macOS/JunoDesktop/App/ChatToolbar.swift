@@ -141,7 +141,7 @@ private struct DesktopPrivateChatButton: View {
                     Image(systemName: "circle.dashed")
                     if isPrivate {
                         Image(systemName: "checkmark")
-                            .font(.system(size: 7, weight: .bold))
+                            .junoFont(size: 7, relativeTo: .body, weight: .bold)
                     }
                 }
             }

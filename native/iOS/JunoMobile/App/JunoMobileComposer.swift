@@ -893,7 +893,7 @@ struct JunoMobileComposer: View {
       }
     } label: {
       Image(systemName: "plus")
-        .font(.system(size: 21, weight: .regular))
+        .junoFont(size: 21, relativeTo: .body, weight: .regular)
         .foregroundStyle(.primary)
         .frame(width: 44, height: 44)
         .contentShape(Rectangle())
@@ -926,7 +926,7 @@ struct JunoMobileComposer: View {
       setDictating(true)
     } label: {
       Image(systemName: "mic")
-        .font(.system(size: 19, weight: .regular))
+        .junoFont(size: 19, relativeTo: .body, weight: .regular)
         .foregroundStyle(Color.primary)
         .frame(width: 40, height: 44)
         .contentShape(Rectangle())

@@ -1020,7 +1020,7 @@ private struct JunoMobileConversationDetail: View {
       if !messages.isEmpty, let newChat {
         Button(action: newChat) {
           Image(systemName: "square.and.pencil")
-            .font(.system(size: 17, weight: .regular))
+            .junoFont(size: 17, relativeTo: .body, weight: .regular)
             .foregroundStyle(Color.primary)
             .frame(width: 32, height: 32)
             .contentShape(Rectangle())
@@ -1066,7 +1066,7 @@ private struct JunoMobileConversationDetail: View {
         }
       } label: {
         Image(systemName: "ellipsis")
-          .font(.system(size: 17, weight: .regular))
+          .junoFont(size: 17, relativeTo: .body, weight: .regular)
           .foregroundStyle(Color.primary)
           .frame(width: 44, height: 44)
           .contentShape(Rectangle())
@@ -2193,7 +2193,7 @@ private struct JunoMobileMessageRow: View {
             copy()
           } label: {
             Image(systemName: copied ? "checkmark" : "doc.on.doc")
-              .font(.system(size: 15, weight: .regular))
+              .junoFont(size: 15, relativeTo: .body, weight: .regular)
               .foregroundStyle(Color.junoSecondaryInk)
               .contentTransition(.symbolEffect(.replace))
               .frame(width: 40, height: 44)
@@ -2278,7 +2278,7 @@ private struct JunoMobileMessageRow: View {
         }
       } label: {
         Image(systemName: "ellipsis")
-          .font(.system(size: 15, weight: .regular))
+          .junoFont(size: 15, relativeTo: .body, weight: .regular)
           .foregroundStyle(Color.junoSecondaryInk)
           .frame(width: 40, height: 44)
           .contentShape(Rectangle())
@@ -2297,7 +2297,7 @@ private struct JunoMobileMessageRow: View {
   ) -> some View {
     Button(action: action) {
       Image(systemName: symbol)
-        .font(.system(size: 15, weight: .regular))
+        .junoFont(size: 15, relativeTo: .body, weight: .regular)
         .foregroundStyle(Color.junoSecondaryInk)
         .contentTransition(.symbolEffect(.replace))
         .frame(width: 40, height: 44)
@@ -2521,16 +2521,15 @@ struct JunoMobileResumeRow: View {
     Button(action: action) {
       HStack(spacing: 10) {
         Image(systemName: "arrow.uturn.backward")
-          .font(.system(size: 14, weight: .regular))
+          .junoFont(size: 14, relativeTo: .body, weight: .regular)
           .foregroundStyle(Color.junoSecondaryInk)
-          .frame(width: 20)
         Text(title)
           .junoFont(size: 16, relativeTo: .subheadline)
           .foregroundStyle(Color.junoForeground.opacity(0.82))
           .lineLimit(1)
       }
       .padding(.horizontal, JunoSpace.tight)
-      .frame(minHeight: 40)
+      .frame(minHeight: 44)
       .contentShape(Rectangle())
     }
     .buttonStyle(.junoQuietPress)

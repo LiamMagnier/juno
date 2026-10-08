@@ -193,10 +193,10 @@ struct JunoMobileTemporaryChatGlyph: View {
   var body: some View {
     ZStack {
       Image(systemName: "circle.dashed")
-        .font(.system(size: 18, weight: .regular))
+        .junoFont(size: 18, relativeTo: .body, weight: .regular)
       if active {
         Image(systemName: "checkmark")
-          .font(.system(size: 8.5, weight: .bold))
+          .junoFont(size: 8.5, relativeTo: .body, weight: .bold)
           .transition(.scale(scale: 0.4).combined(with: .opacity))
       }
     }

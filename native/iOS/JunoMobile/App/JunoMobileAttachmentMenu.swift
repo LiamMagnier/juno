@@ -190,7 +190,7 @@ struct JunoMobileComposerActions: View {
                 // Each glyph on a small round ground, as ChatGPT's "+" rows
                 // are drawn — the glass popover's one texture.
                 Image(systemName: symbol)
-                    .font(.system(size: 15, weight: .regular))
+                    .junoFont(size: 15, relativeTo: .body, weight: .regular)
                     .frame(width: 32, height: 32)
                     .background(Circle().fill(Color.junoMuted))
                 Text(title)
@@ -205,7 +205,7 @@ struct JunoMobileComposerActions: View {
                 }
                 if checked == true {
                     Image(systemName: "checkmark")
-                        .font(.system(size: 14, weight: .semibold))
+                        .junoFont(size: 14, relativeTo: .body, weight: .semibold)
                         .foregroundStyle(Color.junoAccent)
                         .transition(.scale.combined(with: .opacity))
                 }
@@ -234,7 +234,7 @@ struct JunoMobileComposerActions: View {
                 // Each glyph on a small round ground, as ChatGPT's "+" rows
                 // are drawn — the glass popover's one texture.
                 Image(systemName: symbol)
-                    .font(.system(size: 15, weight: .regular))
+                    .junoFont(size: 15, relativeTo: .body, weight: .regular)
                     .frame(width: 32, height: 32)
                     .background(Circle().fill(Color.junoMuted))
                 Text(verbatim: title)
@@ -242,7 +242,7 @@ struct JunoMobileComposerActions: View {
                     .lineLimit(1)
                 Spacer(minLength: 8)
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .semibold))
+                    .junoFont(size: 12, relativeTo: .body, weight: .semibold)
                     .foregroundStyle(Color.junoSecondaryInk)
             }
             .foregroundStyle(Color.junoForeground)
@@ -271,6 +271,7 @@ struct JunoMobileComposerActions: View {
             openPlugins()
         } label: {
             Label("composer.manage-connections", systemImage: "puzzlepiece.extension")
+                .contentShape(.rect)
         }
         .disabled(!canOpenPlugins)
     }
@@ -294,6 +295,7 @@ struct JunoMobileComposerActions: View {
                 startCanvas()
             } label: {
                 Label("composer.create-canvas", systemImage: "square.on.square")
+                    .contentShape(.rect)
             }
         }
         Toggle(isOn: $tools.canvas) {
@@ -472,7 +474,7 @@ struct JunoMobileComposerActions: View {
     /// A bare "+", as ChatGPT draws it: the card's glass is the only glass.
     private var plus: some View {
         Image(systemName: "plus")
-            .font(.system(size: 21, weight: .regular))
+            .junoFont(size: 21, relativeTo: .body, weight: .regular)
             .foregroundStyle(Color.primary)
             .frame(width: 44, height: 44)
             .modifier(JunoMobileOptionalGlassID(id: "composer.plus", namespace: nil))

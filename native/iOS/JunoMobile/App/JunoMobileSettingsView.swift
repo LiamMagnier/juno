@@ -321,7 +321,7 @@ struct JunoMobileSettingsView: View {
           } label: {
             HStack(spacing: 12) {
               Image(systemName: "rectangle.portrait.and.arrow.right")
-                .font(.system(size: 16, weight: .regular))
+                .junoFont(size: 16, relativeTo: .body, weight: .regular)
                 .frame(width: 28)
               Text("Log out")
             }

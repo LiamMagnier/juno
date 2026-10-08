@@ -715,7 +715,7 @@ struct ComposerPrimaryDisc: View {
         switch face {
         case .voice, .send, .stop:
             Image(systemName: symbol)
-                .font(.system(size: face.kind == ChatComposerFace.stop.kind ? 10 : 13, weight: .bold))
+                .junoFont(size: face.kind == ChatComposerFace.stop.kind ? 10 : 13, relativeTo: .body, weight: .bold)
                 .foregroundStyle(Color.junoCanvas)
                 .contentTransition(.symbolEffect(.replace.downUp))
         case .busy:

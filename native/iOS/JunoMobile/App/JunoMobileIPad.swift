@@ -144,14 +144,11 @@ struct JunoMobileSidebarStatusText: View {
 
   var body: some View {
     if status.needsYou > 0 {
-      HStack(spacing: 3) {
-        Image(systemName: "exclamationmark.circle")
-          .imageScale(.small)
-        Text(verbatim: "\(status.needsYou)")
-          .monospacedDigit()
-      }
-      .font(.footnote.weight(.medium))
-      .foregroundStyle(Color.junoCaution)
+      // Plain words, as the phone drawer says it — no glyph, no count chip.
+      Text("\(status.needsYou) waiting")
+        .font(.footnote)
+        .monospacedDigit()
+        .foregroundStyle(Color.junoCaution)
       .accessibilityElement(children: .ignore)
       .accessibilityLabel("\(status.needsYou) waiting on you")
     } else if status.running > 0 {
