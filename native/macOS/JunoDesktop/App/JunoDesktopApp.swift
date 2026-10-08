@@ -158,6 +158,9 @@ private final class JunoDesktopAppDelegate: NSObject, NSApplicationDelegate, UNU
             // While Juno uses other apps: the caption, the takeover glow and
             // the start and stop notifications (CODE_AGENT_SPEC §3.7).
             DesktopScreenPresence.shared.install()
+            // Computer use for every model (Code v2 SPEC §3.12): the action
+            // overlay, and the bridge connected agents reach the Mac through.
+            ComputerUseDesktopHost.shared.install()
             // After the monitor, which claims the same slot when it installs.
             UNUserNotificationCenter.current().delegate = self
             // Every launch, as Apple asks: the token can change, and asking
@@ -283,6 +286,7 @@ private final class JunoDesktopAppDelegate: NSObject, NSApplicationDelegate, UNU
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        ComputerUseDesktopHost.shared.uninstall()
         MainActor.assumeIsolated {
             // Never swapped in under a run the reader chose to stop: it is
             // interrupted, and Resume needs the build that was running it.
