@@ -29,6 +29,7 @@
  * declared floor was not treated as a reason to pin an older version or to add a
  * polyfill here. `npm ci` on the Node 20 CI image warns EBADENGINE and installs.
  */
+import { layoutPageText, type PositionedItem } from "./pdf-layout";
 import { isDisallowedHost } from "./url-safety";
 
 /**
@@ -127,7 +128,7 @@ function classifyParseError(e: unknown): PdfFailureReason {
  * merge normaliser, which is not exported. */
 function normalize(pages: string[]): string {
   return pages
-    .join("\n")
+    .join("\n\n")
     .replace(/[^\S\n]+/g, " ")
     .replace(/ ?\n ?/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
@@ -198,9 +199,24 @@ export async function extractPdfText(
       const content = await page.getTextContent();
       // pdf.js emits marked-content markers alongside text items; those carry no
       // `str` at all, and `item.str` on a real item can legitimately be "".
-      const text = content.items
-        .map((item) => ("str" in item ? item.str + (item.hasEOL ? "\n" : "") : ""))
-        .join("");
+      // The rest are laid out by position (`pdf-layout.ts`): columns in
+      // reading order, tables as Markdown, paragraph gaps as blank lines.
+      const positioned: PositionedItem[] = [];
+      for (const item of content.items) {
+        if (!("str" in item)) continue;
+        const [a = 1, b = 0, c = 0, d = 1, e = NaN, f = NaN] = item.transform as number[];
+        positioned.push({
+          str: item.str,
+          x: e,
+          y: f,
+          width: item.width,
+          height: item.height || Math.hypot(c, d),
+          hasEOL: item.hasEOL,
+          upright: a > 0 && Math.abs(b) < 1e-3 && Math.abs(c) < 1e-3,
+          rtl: item.dir === "rtl",
+        });
+      }
+      const text = layoutPageText(positioned);
       pageTexts.push(text);
       chars += text.length;
 

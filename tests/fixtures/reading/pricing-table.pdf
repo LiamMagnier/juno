@@ -1,0 +1,54 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [4 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
+endobj
+4 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 5 0 R >>
+endobj
+5 0 obj
+<< /Length 1276 >>
+stream
+BT /F1 14 Tf 1 0 0 1 72 740 Tm (Acme Cloud pricing, effective 1 March 2026) Tj ET
+BT /F1 10 Tf 1 0 0 1 72 712 Tm (All prices are per seat per month, billed annually. Monthly billing adds 20 percent.) Tj ET
+BT /F1 10 Tf 1 0 0 1 72 660 Tm (Plan) Tj ET
+BT /F1 10 Tf 1 0 0 1 190 660 Tm (Price per seat) Tj ET
+BT /F1 10 Tf 1 0 0 1 330 660 Tm (Included seats) Tj ET
+BT /F1 10 Tf 1 0 0 1 450 660 Tm (Storage) Tj ET
+BT /F1 10 Tf 1 0 0 1 72 642 Tm (Free) Tj ET
+BT /F1 10 Tf 1 0 0 1 190 642 Tm ($0) Tj ET
+BT /F1 10 Tf 1 0 0 1 330 642 Tm (1) Tj ET
+BT /F1 10 Tf 1 0 0 1 450 642 Tm (5 GB) Tj ET
+BT /F1 10 Tf 1 0 0 1 72 624 Tm (Team) Tj ET
+BT /F1 10 Tf 1 0 0 1 190 624 Tm ($12 per month) Tj ET
+BT /F1 10 Tf 1 0 0 1 330 624 Tm (10) Tj ET
+BT /F1 10 Tf 1 0 0 1 450 624 Tm (100 GB) Tj ET
+BT /F1 10 Tf 1 0 0 1 72 606 Tm (Business) Tj ET
+BT /F1 10 Tf 1 0 0 1 190 606 Tm ($24 per month) Tj ET
+BT /F1 10 Tf 1 0 0 1 330 606 Tm (50) Tj ET
+BT /F1 10 Tf 1 0 0 1 450 606 Tm (1 TB) Tj ET
+BT /F1 10 Tf 1 0 0 1 72 588 Tm (Enterprise) Tj ET
+BT /F1 10 Tf 1 0 0 1 190 588 Tm (Contact sales) Tj ET
+BT /F1 10 Tf 1 0 0 1 330 588 Tm (Unlimited) Tj ET
+BT /F1 10 Tf 1 0 0 1 450 588 Tm (Unlimited) Tj ET
+BT /F1 10 Tf 1 0 0 1 72 548 Tm (Seats above the included number are billed at the plan's per-seat price.) Tj ET
+endstream
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000212 00000 n 
+0000000338 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+1665
+%%EOF

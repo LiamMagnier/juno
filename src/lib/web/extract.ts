@@ -188,6 +188,9 @@ export const MAX_EXTRACT_CHARS = 200_000;
 /** HTML is untrusted network input; bound bytes before decoding/parsing it. */
 export const MAX_HTML_BYTES = 4 * 1024 * 1024;
 
+/** Recovered (JSON) text at least this long stands as the page; the crawler's own "real page" floor. */
+const MIN_RECOVERED_TEXT = 250;
+
 const RESEARCH_USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 JunoResearch/2.0";
 
@@ -362,7 +365,10 @@ export async function extractUrlDocument(
     // resolving a page's relative links against the pre-redirect address points
     // the hop stage at URLs that do not exist.
     const parsed = await htmlToCleanTextAsync(html, finalUrl, active);
-    const shell = looksLikeShell(parsed.text.length, parsed.shellMarkup);
+    // A shell whose JSON (app state, JSON-LD) held the page is read, not
+    // rendered: the text is the page's own data, and a headless browser
+    // would only re-render what is already here.
+    const shell = looksLikeShell(parsed.text.length, parsed.shellMarkup) && !(parsed.recovered && parsed.text.length >= MIN_RECOVERED_TEXT);
     if (!parsed.text || parsed.text.length < 50) return { ok: false, failure: { reason: "empty_document", shell } };
     const cache = cacheHeadersOf(res, html);
 

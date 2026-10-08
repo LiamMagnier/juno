@@ -79,7 +79,7 @@ test("the audit's cap is the run's judgeCalls and its claim cap the scope's targ
   assert.match(claims, /const judgeCap = Math\.max\(1, Math\.floor\(opts\.maxJudgeCalls \?\? MAX_JUDGE_CALLS\)\);/);
   assert.match(claims, /if \(!settledByText && judgeCalls >= judgeCap\) \{\n\s+judgeCapReached = verdicts\.length === 0;/);
   assert.match(claims, /resolveClaimStatus\(verdicts, \{ judgeCapReached \}\)/);
-  assert.match(claims, /extractClaims\(opts\.report\)\.slice\(0, Math\.max\(1, Math\.floor\(opts\.maxClaims \?\? MAX_CLAIMS\)\)\)/);
+  assert.match(claims, /claimsForAudit\(extractClaims\(opts\.report\), Math\.max\(1, Math\.floor\(opts\.maxClaims \?\? MAX_CLAIMS\)\)\)/);
   const run = readSource("src/lib/research/run.ts");
   assert.match(run, /maxJudgeCalls: plan\.envelope\?\.judgeCalls/);
   assert.match(run, /maxClaims: plan\.scope \? targetClaimsFor\(plan\.scope\.questions\) : undefined/);

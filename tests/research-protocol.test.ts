@@ -259,7 +259,10 @@ test("stage 5: the writer contract asks for verdict, matrix, deep dives, gotchas
   assert.deepEqual([...order].sort((a, b) => a - b), order, "in the protocol's order");
   assert.match(contract, /decision matrix/);
   assert.match(contract, /traceab/);
-  assert.match(contract, /Every figure that appears in a table must also be stated, cited, in the prose/);
+  // Table cells are audited directly now (tableClaims), so the contract asks
+  // for in-cell citations instead of repeating every figure in prose.
+  assert.match(contract, /Tables are citation-checked cell by cell/);
+  assert.doesNotMatch(contract, /must also be stated, cited, in the prose/);
   assert.ok(REPORT_SECTION_ORDER.includes("matrix") && REPORT_SECTION_ORDER.includes("gotchas"));
 
   const report = [

@@ -97,6 +97,8 @@ export function createCoverageStage(ctx: EngineContext, stages: Pick<ReturnType<
       now: deps.now(),
       subject: subjectOf(plan.title || run.goal),
       issued: issuedAll,
+      goal: run.goal,
+      ...(plan.gapAudit?.confirmed?.length ? { confirmed: plan.gapAudit.confirmed } : {}),
     });
     // Leads the last worker round opened that no round went on to chase.
     const unchasedLeads = dedupeQueries(plan.rounds?.[plan.rounds.length - 1]?.leads ?? [], issuedAll);
@@ -118,6 +120,7 @@ export function createCoverageStage(ctx: EngineContext, stages: Pick<ReturnType<
         pass: (plan.gapAudit?.pass ?? 0) + 1,
         entries: audit.entries,
         queries: audit.queries,
+        ...(plan.gapAudit?.confirmed?.length ? { confirmed: plan.gapAudit.confirmed } : {}),
       },
     };
     const round = plan.followUpRound ?? 0;

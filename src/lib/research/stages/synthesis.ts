@@ -2,6 +2,7 @@
  * Research engine stage — writer: synthesise the report from the packed corpus, inside its timebox, with one smaller retry.
  * Moved verbatim out of createResearchEngine (engine.ts).
  */
+import { footprintOf } from "@/lib/research/depth";
 import type { ResearchRunRow, ResearchSourceRow, StepOutcome } from "./types";
 import { WRITER_RETRY_CORPUS_SCALE, WRITER_TIMEBOX_MAX_MS, writerParts } from "./writer-text";
 import { citableSources, synthesisEstimateMicroUsd } from "./limits";
@@ -36,7 +37,10 @@ export function createSynthesisStage(ctx: EngineContext) {
     // and the run is about to make it anyway. Filtered to the citable rows
     // BEFORE the cap, so a readable row past position 250 is not dropped by a
     // slice that counted unread rows ahead of it.
-    const sources = citableSources(await store.listSources(run.id, run.userId));
+    const allSources = await store.listSources(run.id, run.userId);
+    const sources = citableSources(allSources);
+    // Found versus read, for the methodology section (depth.ts).
+    const footprint = footprintOf(plan, allSources.length, sources.length);
     const estimate = synthesisEstimateMicroUsd(sources, !!revision);
     if (!(await affordable(run, estimate))) {
       return stopForBudget(run, estimate);
@@ -53,6 +57,7 @@ export function createSynthesisStage(ctx: EngineContext) {
             goal: run.goal,
             plan,
             sources,
+            footprint,
             findings,
             signal,
             ...(revision ? { revision } : {}),

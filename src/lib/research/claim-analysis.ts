@@ -101,15 +101,26 @@ const STOPWORDS = new Set(
     .split(" ")
 );
 
+/** Runs of Chinese, Japanese and Korean script, which have no spaces between words. */
+const CJK_RUN = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}ー\u3099\u309A]{2,}/gu;
+
 /** Content words of a sentence: what is left once the grammar is thrown away. */
 export function contentTokens(s: string): Set<string> {
   const out = new Set<string>();
-  for (const raw of normalizeText(s).split(/[^a-z0-9%$€£.]+/)) {
+  const normal = normalizeText(s);
+  for (const raw of normal.split(/[^a-z0-9%$€£.]+/)) {
     const w = raw.replace(/^[.]+|[.]+$/g, "");
     if (w.length < 3 && !/^\d+$/.test(w)) continue;
     if (STOPWORDS.has(w)) continue;
     // Crude singularisation: "vaccines" and "vaccine" are the same evidence.
     out.add(w.length > 4 && w.endsWith("s") && !w.endsWith("ss") ? w.slice(0, -1) : w);
+  }
+  // CJK text has no word spaces: its character bigrams stand in for words,
+  // so overlap and near-duplicate checks see something rather than nothing.
+  // NFKD leaves these scripts intact (bar width forms), so the normalised text is used.
+  for (const run of normal.match(CJK_RUN) ?? []) {
+    const chars = [...run];
+    for (let i = 0; i + 1 < chars.length && out.size < 400; i += 1) out.add(chars[i]! + chars[i + 1]!);
   }
   return out;
 }
@@ -470,6 +481,12 @@ export interface ExtractedClaim {
   answerSpan: string;
   /** 1-based source numbers cited on this sentence, in order, deduplicated. */
   citations: number[];
+  /**
+   * `table`: built from a Markdown table row (`tableClaims`). Its text names
+   * the row and the column headers; its span is the last cell it covers, so
+   * a repair annotates that cell and leaves the table's pipes intact.
+   */
+  form?: "table";
 }
 
 export function formatAnswerSpan(start: number, end: number): string {
@@ -567,6 +584,14 @@ export function extractClaims(report: string): ExtractedClaim[] {
   let offset = 0;
   let fenced = false;
   let stop = false;
+  /** The Markdown table being accumulated, line by line with offsets. */
+  let table: Array<{ text: string; start: number }> = [];
+  /** Inside the methodology section, whose tables attribute sources rather than state facts. */
+  let methodology = false;
+  const flushTable = () => {
+    if (table.length && !methodology) claims.push(...tableClaims(table));
+    table = [];
+  };
   // The prose block being accumulated, as offsets into the report.
   let blockStart = -1;
   let blockEnd = -1;
@@ -604,6 +629,14 @@ export function extractClaims(report: string): ExtractedClaim[] {
     offset += line.length + 1;
     if (stop) continue;
     const trimmed = line.trim();
+    // A table row is cells rather than sentences: rows are collected and read
+    // as a table (`tableClaims`) when the table ends.
+    if (!fenced && /^\|/.test(trimmed)) {
+      flush();
+      table.push({ text: line, start: lineStart });
+      continue;
+    }
+    flushTable();
     if (/^(?:```|~~~)/.test(trimmed)) {
       flush();
       fenced = !fenced;
@@ -619,10 +652,16 @@ export function extractClaims(report: string): ExtractedClaim[] {
       stop = true;
       continue;
     }
-    // Headings assert nothing on their own, and a table row is cells rather
-    // than sentences. Both end whatever paragraph preceded them.
-    if (/^#{1,6}\s/.test(trimmed) || /^\|/.test(trimmed)) {
+    const marker = /<!--\s*juno:section\s*=\s*([a-z0-9:_-]+)\s*-->/i.exec(trimmed);
+    if (marker) {
+      methodology = marker[1]!.toLowerCase() === "method";
       flush();
+      continue;
+    }
+    // Headings assert nothing on their own and end whatever paragraph preceded them.
+    if (/^#{1,6}\s/.test(trimmed)) {
+      flush();
+      if (METHOD_HEADING.test(trimmed)) methodology = true;
       continue;
     }
     const lead = /^\s*(?:[-*+]\s+|\d+[.)]\s+|>\s*)/.exec(line)?.[0];
@@ -636,7 +675,127 @@ export function extractClaims(report: string): ExtractedClaim[] {
     blockEnd = lineStart + line.length;
   }
   flush();
-  return claims;
+  flushTable();
+  return claims.sort((a, b) => (parseAnswerSpan(a.answerSpan)?.start ?? 0) - (parseAnswerSpan(b.answerSpan)?.start ?? 0));
+}
+
+/** A methodology / traceability heading, in the report languages the writer uses. */
+const METHOD_HEADING = /^#{1,6}\s.*(?:method|traceab|m[ée]thodolog|methodik|metodolog|quellen|fuentes|fonti|fontes|方法|出典|来源|來源)/i;
+/** Cells that state that nothing is known: nothing to check. */
+const EMPTY_CELL = /^(?:not published|not disclosed|unknown|n\/?a|none|tbd|[-–—✓✗✔✘×]|yes|no|—)$/i;
+
+interface TableCellSpan {
+  text: string;
+  start: number;
+  end: number;
+}
+
+/** A row's cells, split on unescaped pipes, each with its trimmed content's offsets in the report. */
+function rowCells(line: string, lineStart: number): TableCellSpan[] {
+  const pipes: number[] = [];
+  for (let i = 0; i < line.length; i += 1) if (line[i] === "|" && line[i - 1] !== "\\") pipes.push(i);
+  const cells: TableCellSpan[] = [];
+  const bounds = [...pipes];
+  if (line.trim() && !line.trimEnd().endsWith("|")) bounds.push(line.length);
+  for (let k = 0; k + 1 < bounds.length; k += 1) {
+    const raw = line.slice(bounds[k]! + 1, bounds[k + 1]);
+    const lead = raw.length - raw.trimStart().length;
+    const text = raw.trim();
+    const start = lineStart + bounds[k]! + 1 + lead;
+    cells.push({ text, start, end: start + text.length });
+  }
+  return cells;
+}
+
+function citationsIn(text: string): number[] {
+  const out: number[] = [];
+  CITATION_MARKER_RE.lastIndex = 0;
+  for (let m = CITATION_MARKER_RE.exec(text); m; m = CITATION_MARKER_RE.exec(text)) {
+    const n = Number(m[1]);
+    if (n >= 1 && !out.includes(n)) out.push(n);
+  }
+  return out;
+}
+
+/** Most claims a single table contributes; a 60-row matrix is not 60 times as checkable. */
+const MAX_TABLE_CLAIMS = 24;
+
+/**
+ * The claims of one Markdown table (research protocol Stage 5's decision and
+ * comparative matrices).
+ *
+ * A row states facts about its first cell under each column's header, so a
+ * cell becomes "row — header: value". Each cell is cited by its own [n]
+ * markers; a cell without any falls back to the row label's markers (one
+ * source for the whole row), then to its column header's (one source per
+ * option in a comparison). Cells of one row that share a citation set are
+ * one claim, so a row backed by one page is one check and a comparison row
+ * with a source per option is one check per option. A cell with a figure and
+ * no citation at all is still a claim — uncited, as an uncited figure in
+ * prose is. Each claim's span is the last cell it covers.
+ */
+export function tableClaims(lines: ReadonlyArray<{ text: string; start: number }>): ExtractedClaim[] {
+  const rows = lines.map((line) => rowCells(line.text, line.start)).filter((cells) => cells.length > 0);
+  if (rows.length < 2) return [];
+  const isSeparator = (cells: TableCellSpan[]) => cells.every((cell) => /^:?-{2,}:?$/.test(cell.text));
+  const separatorAt = rows.findIndex(isSeparator);
+  const header = separatorAt === 1 ? rows[0]! : null;
+  const body = rows.filter((cells, i) => !isSeparator(cells) && !(header && i === 0));
+  const out: ExtractedClaim[] = [];
+  for (const cells of body) {
+    const label = plainify(cells[0]?.text ?? "");
+    const labelCites = citationsIn(cells[0]?.text ?? "");
+    const groups = new Map<string, { parts: string[]; citations: number[]; last: TableCellSpan; figure: boolean }>();
+    const valueCells = cells.length === 1 ? cells.map((cell, c) => ({ cell, c })) : cells.slice(1).map((cell, i) => ({ cell, c: i + 1 }));
+    for (const { cell, c } of valueCells) {
+      const value = plainify(cell.text);
+      if (!value || EMPTY_CELL.test(value)) continue;
+      const own = citationsIn(cell.text);
+      const head = header?.[c];
+      const citations = own.length ? own : labelCites.length ? labelCites : head ? citationsIn(head.text) : [];
+      const dates = extractDates(value);
+      const figure = extractNumbers(value, dates).length > 0 || dates.length > 0;
+      const headText = head ? plainify(head.text) : "";
+      const key = citations.join(",");
+      const group = groups.get(key) ?? { parts: [], citations, last: cell, figure: false };
+      group.parts.push(headText ? `${headText}: ${value}` : value);
+      group.last = cell;
+      group.figure ||= figure;
+      groups.set(key, group);
+    }
+    for (const group of groups.values()) {
+      if (!group.citations.length && !group.figure) continue;
+      const text = `${label && cells.length > 1 ? `${label} — ` : ""}${group.parts.join("; ")}`.slice(0, MAX_CLAIM_CHARS);
+      out.push({
+        text,
+        type: classify(text),
+        answerSpan: formatAnswerSpan(group.last.start, group.last.end),
+        citations: group.citations,
+        form: "table",
+      });
+      if (out.length >= MAX_TABLE_CLAIMS) return out;
+    }
+  }
+  return out;
+}
+
+/**
+ * The claims one audit checks, at most `cap`: table claims may take at most
+ * `TABLE_CLAIM_SHARE` of the slots so a long matrix cannot crowd the deep
+ * dives' prose out of the audit, and what is kept stays in reading order.
+ */
+export const TABLE_CLAIM_SHARE = 0.4;
+
+export function claimsForAudit(claims: readonly ExtractedClaim[], cap: number): ExtractedClaim[] {
+  const limit = Math.max(1, Math.floor(cap));
+  if (claims.length <= limit) return [...claims];
+  const tableCap = Math.max(1, Math.ceil(limit * TABLE_CLAIM_SHARE));
+  const tables = claims.filter((claim) => claim.form === "table");
+  const prose = claims.filter((claim) => claim.form !== "table");
+  const keptTables = tables.slice(0, Math.max(tableCap, limit - prose.length));
+  const keptProse = prose.slice(0, limit - Math.min(keptTables.length, limit));
+  const kept = new Set([...keptTables, ...keptProse]);
+  return claims.filter((claim) => kept.has(claim)).slice(0, limit);
 }
 
 export interface RepairableClaim extends ExtractedClaim {
@@ -669,6 +828,16 @@ export function repairReportFromClaims(report: string, claims: readonly Repairab
       const span = parseAnswerSpan(claim.answerSpan);
       if (!span) return null;
       const label = supportLabel(claim.status, claim.supportStrength);
+      if (claim.form === "table") {
+        // A cell is annotated in place: the table keeps its pipes and its shape.
+        const note =
+          claim.status === "contradicted"
+            ? "conflicting evidence"
+            : label === "partially supported"
+            ? "only partly supported"
+            : "not established by the cited source";
+        return { ...span, replacement: `${report.slice(span.start, span.end).trim()} (${note})` };
+      }
       const prefix =
         claim.status === "contradicted"
           ? "Conflicting evidence: "
@@ -752,6 +921,18 @@ export function splitPassages(body: string, opts: { maxPassages?: number } = {})
       flush(cursor);
       continue;
     }
+    // An overlong Markdown table (the extractor writes page tables that way):
+    // cut between rows, each passage carrying the header so a cell is still
+    // read under its column's name.
+    const tableChunks = splitTableBlock(buf, bufStart);
+    if (tableChunks) {
+      for (const chunk of tableChunks) {
+        if (out.length >= max) break;
+        out.push({ ...chunk, ordinal: out.length });
+      }
+      buf = "";
+      continue;
+    }
     // Overlong block: cut on sentence ends so a passage never opens mid-word.
     for (const s of splitSentences(buf, bufStart)) {
       if (out.length >= max) break;
@@ -763,6 +944,43 @@ export function splitPassages(body: string, opts: { maxPassages?: number } = {})
   }
   flush(cursor);
   return out.slice(0, max);
+}
+
+/**
+ * A block that is (mostly) one Markdown table, cut into passages of whole
+ * rows with the header and separator repeated; null when it is not a table.
+ * The locator spans the rows the passage quotes.
+ */
+function splitTableBlock(block: string, blockStart: number): Array<Omit<PassageDraft, "ordinal">> | null {
+  const lines = block.split("\n");
+  const tableAt = lines.findIndex((line) => line.trim().startsWith("|"));
+  if (tableAt < 0) return null;
+  const rows = lines.slice(tableAt);
+  if (!rows.every((line) => line.trim().startsWith("|")) || rows.length < 3) return null;
+  if (!/^\|(?:\s*:?-{2,}:?\s*\|)+\s*$/.test(rows[1]!.trim())) return null;
+  const header = `${rows[0]!.trim()}\n${rows[1]!.trim()}`;
+  const out: Array<Omit<PassageDraft, "ordinal">> = [];
+  // Text above the table (a caption, a lead-in sentence) rides on the first passage.
+  const lead = lines.slice(0, tableAt).join("\n").trim();
+  let offset = blockStart + lines.slice(0, tableAt + 2).reduce((n, line) => n + line.length + 1, 0);
+  let chunk: string[] = [];
+  let chunkStart = offset;
+  const flushChunk = (end: number) => {
+    if (!chunk.length) return;
+    const prefix = out.length === 0 && lead ? `${lead}\n\n` : "";
+    out.push({ text: `${prefix}${header}\n${chunk.join("\n")}`, locator: `chars:${chunkStart}-${end}` });
+    chunk = [];
+  };
+  for (const row of rows.slice(2)) {
+    if (chunk.length && header.length + chunk.join("\n").length + row.length > MAX_PASSAGE_CHARS) {
+      flushChunk(offset - 1);
+      chunkStart = offset;
+    }
+    chunk.push(row.trim());
+    offset += row.length + 1;
+  }
+  flushChunk(offset - 1);
+  return out;
 }
 
 // ---------------------------------------------------------------------------

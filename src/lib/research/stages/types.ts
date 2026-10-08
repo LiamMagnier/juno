@@ -3,6 +3,7 @@
  * engine works with, and the engine's public interface. Split out of engine.ts
  * (docs/rework/program/ORCHESTRATION.md); engine.ts re-exports the public names.
  */
+import type { ResearchFootprint } from "@/lib/research/depth";
 import type { PlannerDraft } from "@/lib/research/planner";
 import type { ResearchBudgetRefusal } from "@/lib/research/envelope";
 import type {
@@ -452,12 +453,25 @@ export interface ResearchDeps {
   runWorker?(input: RunWorkerInput): Promise<WorkerResult>;
   /** The lead's review between rounds. Optional; a deterministic review stands in. */
   reviewRound?(input: ReviewRoundInput): Promise<ReviewRoundOutput>;
+  /**
+   * One cheap-model pass per round over the round's findings, for what the
+   * deterministic gap audit and lead patterns cannot read: a metric stated
+   * in words the normaliser does not fold, and leads in a phrasing or
+   * language the patterns miss. Optional, batched (one call per round), only
+   * made when there is something ambiguous to read and the ceiling can pay
+   * for it with the writer's reserve held back. Its answers only REMOVE gaps
+   * (each confirmation must name a finding that carries a figure) and only
+   * ADD leads that pass the same dedupe and caps as pattern leads.
+   */
+  auditAssist?(input: AuditAssistInput): Promise<AuditAssistOutput>;
   /** Writes the report. Optional: the chat path streams synthesis itself. */
   synthesize?(input: {
     userId: string;
     goal: string;
     plan: ResearchPlan;
     sources: ResearchSourceRow[];
+    /** What the run found and read, for the methodology (`depth.ts`). */
+    footprint?: ResearchFootprint;
     /** The workers' findings, when the store keeps them. */
     findings?: ResearchFindingRow[];
     signal?: AbortSignal;
@@ -760,4 +774,27 @@ export interface ResearchEngine {
   resume(input: { runId: string; userId: string }): Promise<ControlResult>;
   /** `reason` is recorded on the event: "chat_stopped" when the chat that started it stopped (B2). */
   cancel(input: { runId: string; userId: string; reason?: string }): Promise<ControlResult>;
+}
+
+/** What the per-round audit assist reads (`ResearchDeps.auditAssist`). */
+export interface AuditAssistInput {
+  userId: string;
+  goal: string;
+  /** The report's language, for the leads' wording. */
+  language?: string | null;
+  /** Each vector and the figures the deterministic audit could not find. */
+  objectives: Array<{ id: string; question: string; missing: string[] }>;
+  /** Numbered findings: this round's, plus earlier ones on vectors with a missing figure. */
+  findings: Array<{ index: number; objectiveId: string | null; claim: string; quote: string; url: string }>;
+  /** Searches already made, so leads do not repeat them. */
+  issued: string[];
+  signal?: AbortSignal;
+}
+
+export interface AuditAssistOutput {
+  /** A missing metric that finding `finding` does state. */
+  confirmed: Array<{ objectiveId: string; metric: string; finding: number }>;
+  /** A micro-query a finding opens. */
+  leads: Array<{ objectiveId: string; query: string; signal: string; finding: number }>;
+  costMicroUsd: number;
 }

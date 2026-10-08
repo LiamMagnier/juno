@@ -14,6 +14,7 @@ import {
 import {
   auditEvidence,
   detectSyndication,
+  claimsForAudit,
   extractClaims,
   extractEventDate,
   hostOfUrl,
@@ -295,7 +296,9 @@ export async function recordCitationAudit(opts: {
   today?: string;
 }): Promise<CitationAuditResult | null> {
   const judgeCap = Math.max(1, Math.floor(opts.maxJudgeCalls ?? MAX_JUDGE_CALLS));
-  const claims = extractClaims(opts.report).slice(0, Math.max(1, Math.floor(opts.maxClaims ?? MAX_CLAIMS)));
+  // Table cells are claims too (comparative and decision matrices); the
+  // selection keeps them to a share of the cap so prose is still checked.
+  const claims = claimsForAudit(extractClaims(opts.report), Math.max(1, Math.floor(opts.maxClaims ?? MAX_CLAIMS)));
   if (claims.length === 0 || opts.sources.length === 0) return null;
 
   // The message id is a user-visible foreign key, not a convenience string.
