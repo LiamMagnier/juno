@@ -760,6 +760,7 @@ struct JunoMobileArtifactsView: View {
   let openConversation: (String) -> Void
   @State private var searchText = ""
   @State private var kindFilter: NativeArtifactKind?
+  @State private var showingDeleted = false
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   private var filteredArtifacts: [NativeArtifact] {
@@ -824,6 +825,21 @@ struct JunoMobileArtifactsView: View {
         .id(artifact.id)
       }
     }
+    .toolbar {
+      ToolbarItem(placement: .topBarTrailing) {
+        Button {
+          showingDeleted = true
+        } label: {
+          Label("Recently Deleted", systemImage: "trash")
+        }
+        .accessibilityIdentifier("juno.mobile.artifacts-recently-deleted")
+        .contentShape(.rect)
+      }
+    }
+    .sheet(isPresented: $showingDeleted) {
+      JunoMobileRecentlyDeletedArtifacts(model: model) { showingDeleted = false }
+    }
+    .modifier(JunoMobileArtifactsPreviewHooks(model: model, showingDeleted: $showingDeleted))
   }
 
   @ViewBuilder
@@ -932,9 +948,11 @@ struct JunoMobileArtifactsView: View {
               .junoFont(size: 11, relativeTo: .caption2, weight: .semibold)
               .junoMetaInk()
             Spacer(minLength: 4)
-            JunoStatusPill(
-              text: "v\(artifact.currentVersion)", tint: Color.junoAccent
-            )
+            // Plain secondary text, not a pill (owner rule: no status pills).
+            Text("Version \(artifact.currentVersion)")
+              .font(.caption)
+              .monospacedDigit()
+              .junoSecondaryInk()
           }
           Text(artifact.title)
             .font(JunoSerif.cardTitle)
@@ -969,6 +987,9 @@ struct JunoMobileArtifactsView: View {
     case .svg: .artifacts
     case .mermaid: .branch
     case .design: .writing
+    case .spreadsheet: .grid
+    case .document: .file
+    case .presentation: .squareStack
     }
   }
 
@@ -981,6 +1002,9 @@ struct JunoMobileArtifactsView: View {
     case .svg: "Vector"
     case .mermaid: "Diagram"
     case .design: "Design"
+    case .spreadsheet: "Spreadsheet"
+    case .document: "Document"
+    case .presentation: "Deck"
     }
   }
 }
@@ -1827,6 +1851,9 @@ struct JunoMobileArtifactDetail: View {
   @State private var designBaseVersion: Int?
   @State private var designDraft: String?
   @State private var designReloadToken = UUID()
+  @State private var showingHistory = false
+  @State private var download: JunoMobileArtifactDownloadFile?
+  @State private var notice: String?
 
   private var version: NativeArtifactVersion? {
     let target = selectedVersion == 0 ? artifact.currentVersion : selectedVersion
@@ -1906,6 +1933,9 @@ struct JunoMobileArtifactDetail: View {
     case .svg: "SVG"
     case .mermaid: "Diagram"
     case .design: "Design"
+    case .spreadsheet: "Spreadsheet"
+    case .document: "Document"
+    case .presentation: "Deck"
     }
   }
 
@@ -1917,6 +1947,9 @@ struct JunoMobileArtifactDetail: View {
     case .design: .writing
     case .markdown: .file
     case .code: .code
+    case .spreadsheet: .grid
+    case .document: .file
+    case .presentation: .squareStack
     }
   }
 
@@ -2169,6 +2202,12 @@ struct JunoMobileArtifactDetail: View {
         renameValue = artifact.title
         showingRename = true
       }
+      Button("Version history") { showingHistory = true }
+      Button("Make a copy") { makeCopy(version: version?.version) }
+      Section("Download") {
+        Button("This version") { downloadFile(.file) }
+        Button("With history (.zip)") { downloadFile(.zipWithHistory) }
+      }
       if !model.availableExportFormats.isEmpty {
         Section("Export") {
           ForEach(model.availableExportFormats, id: \.rawValue) { format in
@@ -2176,7 +2215,7 @@ struct JunoMobileArtifactDetail: View {
           }
         }
       }
-      Button("Delete", role: .destructive) { showingDelete = true }
+      Button("Move to Recently Deleted", role: .destructive) { showingDelete = true }
     } label: {
       JunoIconView(.ellipsis, size: 16)
     }
@@ -2201,7 +2240,7 @@ struct JunoMobileArtifactDetail: View {
     pageChrome(surface)
       .onAppear {
         selectedVersion = artifact.currentVersion
-        displayMode = artifact.kind.supportsRenderedPreview ? .preview : .source
+        displayMode = artifact.kind.supportsRenderedPreview || artifact.kind.isSemantic ? .preview : .source
         designDraft = nil
         Task { await model.openArtifact(id: artifact.id) }
       }
@@ -2231,9 +2270,33 @@ struct JunoMobileArtifactDetail: View {
           Task { await model.renameArtifact(id: artifact.id, title: renameValue) }
         }
       }
-      .alert("Delete artifact?", isPresented: $showingDelete) {
+      .sheet(isPresented: $showingHistory) {
+        JunoMobileArtifactHistory(
+          model: model,
+          artifact: artifact,
+          show: { selectedVersion = $0 },
+          copied: { notice = "Copy made. You’ll find it in Artifacts." },
+          done: { showingHistory = false }
+        )
+      }
+      .fileExporter(
+        isPresented: Binding(get: { download != nil }, set: { if !$0 { download = nil } }),
+        document: download?.document,
+        contentType: .data,
+        defaultFilename: download?.name
+      ) { result in
+        if case .failure(let error) = result { localError = error.localizedDescription }
+        download = nil
+      }
+      .alert(
+        notice ?? "",
+        isPresented: Binding(get: { notice != nil }, set: { if !$0 { notice = nil } })
+      ) {
+        Button("OK") { notice = nil }.contentShape(.rect)
+      }
+      .alert("Move to Recently Deleted?", isPresented: $showingDelete) {
         Button("Cancel", role: .cancel) {}
-        Button("Delete", role: .destructive) {
+        Button("Move", role: .destructive) {
           Task {
             await model.deleteArtifact(id: artifact.id)
             if model.lastErrorDescription == nil {
@@ -2244,8 +2307,8 @@ struct JunoMobileArtifactDetail: View {
       } message: {
         Text(
           isDesignDirty
-            ? "All versions and these unsaved design edits will be removed."
-            : "All versions of this artifact will be removed.")
+            ? "These unsaved design edits will be lost. You can restore the artifact from Recently Deleted for 30 days."
+            : "Its public links stop working until you restore it. You can restore it from Recently Deleted for 30 days.")
       }
       .alert(
         "Artifact unavailable",
@@ -2284,6 +2347,30 @@ struct JunoMobileArtifactDetail: View {
         }
         .junoSheetSurface(.page)
       }
+  }
+
+  private func makeCopy(version: Int?) {
+    Task {
+      if await model.duplicateArtifact(id: artifact.id, version: version) != nil {
+        notice = "Copy made. You’ll find it in Artifacts."
+      } else {
+        localError = model.lastErrorDescription ?? "Couldn’t make a copy."
+      }
+    }
+  }
+
+  private func downloadFile(_ format: NativeArtifactDownloadFormat) {
+    Task {
+      guard let file = await model.downloadArtifact(
+        id: artifact.id, version: version?.version ?? artifact.currentVersion, format: format
+      ) else {
+        localError = model.lastErrorDescription ?? "Couldn’t download the artifact."
+        return
+      }
+      download = JunoMobileArtifactDownloadFile(
+        document: JunoMobileArtifactDownloadDocument(data: file.data), name: file.fileName
+      )
+    }
   }
 
   private func export(_ format: NativeArtifactExportFormat) {

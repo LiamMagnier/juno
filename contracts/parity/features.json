@@ -295,21 +295,24 @@
       },
       "routes": {
         "/api/artifacts": {
-          "status": "web-only",
-          "note": "The apps list artifacts from sync; the web's grid asks for previews here."
+          "status": "native",
+          "swift": "NativeArtifactAPIClient.recentlyDeleted in JunoChatKit/NativeArtifactLifecycle.swift (GET ?deleted=1)",
+          "note": "The apps list live artifacts from sync; they call this route for Recently deleted (?deleted=1) on the Mac Artifacts page and the iPhone Artifacts list."
         },
         "/api/artifacts/[id]": "native",
         "/api/artifacts/[id]/download": {
-          "status": "planned",
-          "note": "Download one version as a file, or a design (or any artifact, format=zip) as a ZIP bundle with a README and optional history. The apps still share a design's source through the system share sheet."
+          "status": "native",
+          "swift": "NativeArtifactAPIClient.download in JunoChatKit/NativeArtifactLifecycle.swift",
+          "note": "Download this version, or a ZIP with history (format=zip&history=1), from the Mac's artifact page and list (save panel) and the iPhone's artifact menu (file exporter)."
         },
         "/api/artifacts/[id]/draft": {
           "status": "web-only",
           "note": "Seals or discards the web design editor's working copy (ArtifactDraft). The Mac and iPhone hosted editors keep their own draft and save a whole document through /api/artifacts/[id] with a base version."
         },
         "/api/artifacts/[id]/duplicate": {
-          "status": "planned",
-          "note": "Duplicate an artifact into a new one in the same project, with derivedFrom provenance. No Duplicate command in the apps yet."
+          "status": "native",
+          "swift": "NativeArtifactAPIClient.duplicate in JunoChatKit/NativeArtifactLifecycle.swift",
+          "note": "Make a Copy (of the version shown, or any version from history) on the Mac's artifact page, list and history sheet, and the iPhone's artifact menu and history."
         },
         "/api/artifacts/[id]/export": "native",
         "/api/artifacts/[id]/poster": "native",
@@ -338,16 +341,19 @@
           "note": "Reset a published link: the old token answers link gone, a new token serves."
         },
         "/api/artifacts/[id]/restore": {
-          "status": "planned",
-          "note": "Restore from Recently deleted. A delete from the apps now moves the artifact to Recently deleted (the sync feed tombstones it); the apps have no Recently deleted view yet."
+          "status": "native",
+          "swift": "NativeArtifactAPIClient.restoreDeleted in JunoChatKit/NativeArtifactLifecycle.swift",
+          "note": "Restore from Recently deleted: the Mac's Recently Deleted sheet on Artifacts and the iPhone's Recently Deleted list. A delete from the apps moves the artifact there (the sync feed tombstones it); a restore brings it back through sync."
         },
         "/api/artifacts/[id]/versions": {
-          "status": "planned",
-          "note": "Paginated version history (newest first, bodies on request). The apps read versions from sync and the windowed /api/artifacts/[id]."
+          "status": "native",
+          "swift": "NativeArtifactAPIClient.versionPage and NativeArtifactHistory in JunoChatKit/NativeArtifactLifecycle.swift",
+          "note": "Paginated version history (newest first): the Mac's Version History sheet and the iPhone's Version history, fifty at a time."
         },
         "/api/artifacts/[id]/versions/[version]": {
-          "status": "planned",
-          "note": "One version's body, for paged history."
+          "status": "native",
+          "swift": "NativeArtifactAPIClient.versionContent in JunoChatKit/NativeArtifactLifecycle.swift",
+          "note": "One version's body: restoring a version older than the synced window fetches it here first."
         },
         "/api/design": "native",
         "/api/design/[artifactId]": {
@@ -365,7 +371,7 @@
         },
         "/api/artifacts/[id]/ops": {
           "status": "web-only",
-          "note": "Targeted edits to a semantic spreadsheet, document or deck. Native clients are given the Markdown artifact contract instead, so no semantic artifact reaches them to edit."
+          "note": "Targeted edits to a semantic spreadsheet, document or deck. The apps now draw semantic artifacts read-only (SemanticArtifactView in JunoChatKit) and read a streaming <juno:artifact-ops> block as an Editing card; editing them stays on the web and in the chat."
         }
       }
     },

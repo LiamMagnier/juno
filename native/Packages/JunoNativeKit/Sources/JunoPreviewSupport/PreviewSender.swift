@@ -43,6 +43,11 @@ public actor PreviewSender: NativeChatRequestSending {
                 body: PreviewWorkFixtures.artifactDownloadBytes
             )
         }
+        // The semantic artifacts' detail, history, copy, download and
+        // Recently deleted (`PreviewArtifactFixtures`).
+        if let response = PreviewArtifactFixtures.response(for: request) {
+            return response
+        }
         // A design's picture, as the transcript's inline design card asks for
         // it: the server's SVG export of the stored document.
         if request.path == "/api/design/art-design/export" {

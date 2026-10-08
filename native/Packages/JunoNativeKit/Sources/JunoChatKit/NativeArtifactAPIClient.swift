@@ -20,6 +20,13 @@ public enum NativeArtifactKind: String, Codable, CaseIterable, Sendable {
     /// A Juno Design scene document. Its body is DesignDocument JSON, and it is
     /// opened in the design editor rather than previewed or executed.
     case design = "DESIGN"
+    /// A semantic workbook (`src/lib/work/deliverables/semantic/workbook`):
+    /// JSON sheets of typed cells and formulas, drawn by ``SemanticArtifactView``.
+    case spreadsheet = "SPREADSHEET"
+    /// A semantic block document with comments and tracked suggestions.
+    case document = "DOCUMENT"
+    /// A semantic slide deck.
+    case presentation = "PRESENTATION"
 
     /// Whether ``NativeArtifactPreview`` can draw this kind, and therefore whether
     /// a Preview/Source switch over it means anything.
@@ -49,7 +56,17 @@ public enum NativeArtifactKind: String, Codable, CaseIterable, Sendable {
     public var supportsRenderedPreview: Bool {
         switch self {
         case .html, .markdown, .svg: true
-        case .react, .code, .mermaid, .design: false
+        case .react, .code, .mermaid, .design, .spreadsheet, .document, .presentation: false
+        }
+    }
+
+    /// A spreadsheet, document or deck: a JSON model drawn natively by
+    /// ``SemanticArtifactView`` rather than run or shown as source. Like a
+    /// design, it is diverted before ``NativeArtifactPreview`` is asked.
+    public var isSemantic: Bool {
+        switch self {
+        case .spreadsheet, .document, .presentation: true
+        default: false
         }
     }
 
@@ -89,7 +106,7 @@ public enum NativeArtifactKind: String, Codable, CaseIterable, Sendable {
     public var supportsLiveCanvas: Bool {
         switch self {
         case .html, .svg, .react: true
-        case .code, .markdown, .mermaid, .design: false
+        case .code, .markdown, .mermaid, .design, .spreadsheet, .document, .presentation: false
         }
     }
 }
@@ -200,7 +217,7 @@ public enum NativeArtifactAPIError: Error, Equatable, LocalizedError, Sendable {
 /// Uses the existing owner-scoped artifact routes. Durable list and version
 /// state arrive through JunoSync; direct reads keep an opened editor current.
 public struct NativeArtifactAPIClient: Sendable {
-    private let sender: any NativeAuthenticatedRequestSending
+    let sender: any NativeAuthenticatedRequestSending
 
     public init(sender: any NativeAuthenticatedRequestSending) {
         self.sender = sender
@@ -341,12 +358,12 @@ public struct NativeArtifactAPIClient: Sendable {
         )
     }
 
-    private func decodeArtifact(_ data: Data, expectedID: String) throws -> NativeArtifactDetail {
+    func decodeArtifact(_ data: Data, expectedID: String?) throws -> NativeArtifactDetail {
         let wire: ArtifactResponseWire
         do { wire = try JSONDecoder().decode(ArtifactResponseWire.self, from: data) }
         catch { throw NativeArtifactAPIError.malformedResponse }
         let artifact = wire.artifact
-        guard artifact.id == expectedID, !artifact.identifier.isEmpty,
+        guard expectedID == nil || artifact.id == expectedID, !artifact.identifier.isEmpty,
             !artifact.title.isEmpty, artifact.currentVersion > 0,
             let kind = NativeArtifactKind(rawValue: artifact.type),
             let createdAt = parseDate(artifact.createdAt),
@@ -384,7 +401,7 @@ public struct NativeArtifactAPIClient: Sendable {
         )
     }
 
-    private func requireSuccess(_ response: HTTPResponse) throws {
+    func requireSuccess(_ response: HTTPResponse) throws {
         guard !(200...299).contains(response.statusCode) else { return }
         throw NativeArtifactAPIError.server(
             statusCode: response.statusCode,
@@ -394,7 +411,7 @@ public struct NativeArtifactAPIClient: Sendable {
         )
     }
 
-    private func requireIdentifier(_ value: String) throws {
+    func requireIdentifier(_ value: String) throws {
         guard !value.isEmpty, value.utf8.count <= 200,
             value.utf8.allSatisfy({ byte in
                 switch byte {
@@ -405,7 +422,7 @@ public struct NativeArtifactAPIClient: Sendable {
         else { throw NativeArtifactAPIError.invalidIdentifier }
     }
 
-    private func parseDate(_ value: String) -> Date? {
+    func parseDate(_ value: String) -> Date? {
         let precise = ISO8601DateFormatter()
         precise.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         if let date = precise.date(from: value) { return date }
@@ -422,7 +439,7 @@ public struct NativeArtifactAPIClient: Sendable {
         return nil
     }
 
-    private func safeFileName(title: String, extension value: String) -> String {
+    func safeFileName(title: String, extension value: String) -> String {
         let cleaned = title.unicodeScalars.map { scalar -> Character in
             let forbidden = CharacterSet(charactersIn: "\\/:*?\"<>|")
                 .union(.controlCharacters)
@@ -433,7 +450,7 @@ public struct NativeArtifactAPIClient: Sendable {
     }
 }
 
-private enum JSONHeaders {
+enum JSONHeaders {
     static func value() throws -> HTTPHeaders {
         try HTTPHeaders([
             "accept": "application/json",

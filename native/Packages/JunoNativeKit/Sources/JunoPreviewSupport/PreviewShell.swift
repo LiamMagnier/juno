@@ -44,6 +44,24 @@ public enum JunoPreviewEnvironment {
         value(for: "--juno-preview-project", env: "JUNO_PREVIEW_PROJECT")
     }
 
+    /// Opens one stored artifact over the Artifacts list, from
+    /// `--juno-preview-artifact <id>` (e.g. `art-sheet`, `art-doc`, `art-deck`).
+    public static var initialArtifact: String? {
+        value(for: "--juno-preview-artifact", env: "JUNO_PREVIEW_ARTIFACT")
+    }
+
+    /// Opens Artifacts' Recently Deleted, from `--juno-preview-artifacts-deleted`.
+    public static var showsRecentlyDeletedArtifacts: Bool {
+        CommandLine.arguments.contains("--juno-preview-artifacts-deleted")
+    }
+
+    /// Opens one conversation, from `--juno-preview-conversation <id>` or
+    /// `JUNO_PREVIEW_CONVERSATION` — e.g. `conv-deliverables`, the chat that
+    /// made a spreadsheet, a document and a deck (``PreviewArtifactFixtures``).
+    public static var initialConversation: String? {
+        value(for: "--juno-preview-conversation", env: "JUNO_PREVIEW_CONVERSATION")
+    }
+
     /// Opens one Juno Code session's log, from `--juno-preview-code-session <id>`
     /// or `JUNO_PREVIEW_CODE_SESSION`.
     ///

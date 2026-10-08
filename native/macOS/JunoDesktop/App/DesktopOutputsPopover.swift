@@ -72,6 +72,9 @@ struct ChatSessionOutputs: Equatable {
         case .svg: "Image"
         case .mermaid: "Diagram"
         case .design: "Design"
+        case .spreadsheet: "Spreadsheet"
+        case .document: "Document"
+        case .presentation: "Deck"
         }
     }
 
@@ -751,6 +754,9 @@ private struct DesktopOutputPreview: View {
         case .markdown: .file
         case .mermaid: .branch
         case .design: .design
+        case .spreadsheet: .grid
+        case .document: .file
+        case .presentation: .squareStack
         }
     }
 
