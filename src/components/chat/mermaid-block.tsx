@@ -2,76 +2,170 @@
 
 import * as React from "react";
 import { toast } from "sonner";
+import { Maximize2 } from "@/components/ui/icons";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
-import { buildSandboxDoc } from "@/components/canvas/sandbox-frame";
+import {
+  MERMAID_CLICK_MESSAGE,
+  MERMAID_SIZE_MESSAGE,
+  buildInlineMermaidDoc,
+  type MermaidTheme,
+} from "@/components/canvas/sandbox-frame";
 import { SandboxDocumentFrame, useSandboxProfile } from "@/components/canvas/sandbox-document-frame";
 import { IconSwap } from "@/components/ui/icon-swap";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
-/**
- * Mermaid's default theme is drawn for a light canvas, which is why this block
- * used to force `bg-white` — a full-width #fff panel dropped into a pure-black
- * transcript, the brightest object on the chat surface by a mile. The sandbox
- * document is built outside this file, so the theme is set the one way that
- * travels with the source: a `%%{init}%%` directive, which Mermaid applies at
- * parse time and which an author's own directive further down still overrides.
+/*
+ * An inline Mermaid diagram in a chat answer.
  *
- * Skipped when the source opens with `---` (YAML frontmatter must be the very
- * first thing in the document, so prepending anything there breaks the parse).
+ * It runs in the same sandbox the canvas uses for MERMAID artifacts (opaque
+ * origin, allow-scripts only; Mermaid itself with securityLevel strict), so a
+ * diagram's source can never reach the app. What changed is how it sits in
+ * the answer. It used to be a fixed 18rem frame holding Mermaid's light
+ * default, centred: in dark mode a small diagram in a large white box. Now:
+ *
+ * - The colours come from the app's own tokens (read here, passed in), so the
+ *   diagram is drawn on the block's surface in either theme, and redrawn when
+ *   the theme changes.
+ * - The drawing is fitted to the column between a minimum and maximum scale,
+ *   and the frame takes exactly the drawing's height (the document reports
+ *   it), so there is no empty canvas around a small chart and no microscopic
+ *   text in a wide one; past the minimum it scrolls sideways instead.
+ * - Clicking it, or Expand, opens it large in a dialog.
  */
-function themedSource(code: string, dark: boolean): string {
-  if (!dark) return code;
-  if (code.trimStart().startsWith("---")) return code;
-  return `%%{init: {"theme":"dark"}}%%\n${code}`;
+
+const INLINE_MIN_SCALE = 0.6;
+const INLINE_MAX_SCALE = 1;
+const INLINE_MAX_HEIGHT = 560;
+
+/** "30 6% 92%" (a token's HSL triplet) → "#ebe9e7". */
+function hslTriplet(value: string): [number, number, number] | null {
+  const m = /^\s*(-?[\d.]+)(?:deg)?[\s,]+([\d.]+)%[\s,]+([\d.]+)%/.exec(value);
+  return m ? [Number(m[1]), Number(m[2]) / 100, Number(m[3]) / 100] : null;
 }
 
-/**
- * Inline Mermaid diagram for chat messages, rendered through the exact same
- * sandboxed-iframe mechanism the canvas uses for MERMAID artifacts:
- * buildSandboxDoc wraps the code with the Mermaid 11 CDN and the preview shell
- * runs it with an opaque origin (allow-scripts only, no allow-same-origin), so
- * diagram code can never touch the app, cookies, or storage. Malformed mermaid
- * fails inside the sandbox — this component only owns the frame and its states.
- */
+function toHex([h, s, l]: [number, number, number]): string {
+  const k = (n: number) => (n + h / 30) % 12;
+  const a = s * Math.min(l, 1 - l);
+  const f = (n: number) => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+  return `#${[f(0), f(8), f(4)].map((x) => Math.round(x * 255).toString(16).padStart(2, "0")).join("")}`;
+}
+
+function mix(a: [number, number, number], b: [number, number, number], t: number): [number, number, number] {
+  return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+}
+
+function readTheme(): MermaidTheme {
+  const root = document.documentElement;
+  const dark = root.classList.contains("dark");
+  const css = getComputedStyle(root);
+  const token = (name: string, fallback: [number, number, number]) => hslTriplet(css.getPropertyValue(name)) ?? fallback;
+  const fg = token("--foreground", dark ? [30, 0.06, 0.92] : [30, 0.06, 0.1]);
+  const card = token("--card", dark ? [30, 0.06, 0.12] : [0, 0, 1]);
+  const muted = token("--muted-foreground", dark ? [30, 0.05, 0.62] : [30, 0.05, 0.42]);
+  return {
+    dark,
+    surface: toHex(card),
+    fill: toHex(mix(card, fg, dark ? 0.07 : 0.035)),
+    stroke: toHex(mix(card, fg, dark ? 0.3 : 0.26)),
+    line: toHex(muted),
+    text: toHex(fg),
+    muted: toHex(muted),
+  };
+}
+
+function useAppTheme(): MermaidTheme | null {
+  const [theme, setTheme] = React.useState<MermaidTheme | null>(null);
+  React.useEffect(() => {
+    const root = document.documentElement;
+    const read = () => setTheme((prev) => {
+      const next = readTheme();
+      return prev && JSON.stringify(prev) === JSON.stringify(next) ? prev : next;
+    });
+    read();
+    // The theme toggle swaps a class on <html>: redraw in the new palette.
+    const observer = new MutationObserver(read);
+    observer.observe(root, { attributes: true, attributeFilter: ["class", "data-accent"] });
+    return () => observer.disconnect();
+  }, []);
+  return theme;
+}
+
+/** One sandboxed drawing that sizes itself to what it drew. */
+function DiagramFrame({
+  doc,
+  maxHeight,
+  onExpand,
+  className,
+}: {
+  doc: string;
+  maxHeight: number;
+  onExpand?: () => void;
+  className?: string;
+}) {
+  const ref = React.useRef<HTMLIFrameElement | null>(null);
+  const [height, setHeight] = React.useState<number | null>(null);
+  const expandRef = React.useRef(onExpand);
+  React.useLayoutEffect(() => {
+    expandRef.current = onExpand;
+  });
+
+  React.useEffect(() => {
+    setHeight(null);
+  }, [doc]);
+
+  React.useEffect(() => {
+    const onMessage = (event: MessageEvent) => {
+      if (!ref.current || event.source !== ref.current.contentWindow) return;
+      const data = event.data as { type?: unknown; height?: unknown } | null;
+      if (!data || typeof data !== "object") return;
+      if (data.type === MERMAID_SIZE_MESSAGE && typeof data.height === "number" && Number.isFinite(data.height)) {
+        setHeight(Math.max(64, Math.min(maxHeight, Math.round(data.height))));
+      } else if (data.type === MERMAID_CLICK_MESSAGE) {
+        expandRef.current?.();
+      }
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [maxHeight]);
+
+  return (
+    <div className="relative" style={{ height: height ?? 160 }}>
+      <SandboxDocumentFrame
+        ref={ref}
+        title="Diagram"
+        html={doc}
+        // Opaque origin (no allow-same-origin) so diagram code cannot reach the app.
+        sandbox="allow-scripts"
+        className={className ?? "block h-full w-full border-0 bg-transparent"}
+      />
+      {height === null ? <div aria-hidden="true" className="skeleton absolute inset-3 rounded-control" /> : null}
+    </div>
+  );
+}
+
 export const MermaidBlock = React.memo(function MermaidBlock({ code }: { code: string }) {
   const [copied, setCopied] = React.useState(false);
-  // The check reverts after 1.5s; the id is held so a second copy restarts the
-  // receipt and an unmount does not leave it to fire into a dead component.
+  const [open, setOpen] = React.useState(false);
   const copiedTimer = React.useRef<number | null>(null);
   React.useEffect(
     () => () => {
       if (copiedTimer.current !== null) window.clearTimeout(copiedTimer.current);
     },
-    []
+    [],
   );
-  const [loaded, setLoaded] = React.useState(false);
-  // Rendered light-first so the server HTML and the first client paint agree;
-  // the effect corrects it before the iframe has finished booting.
-  const [dark, setDark] = React.useState(false);
-
-  React.useEffect(() => {
-    const root = document.documentElement;
-    const read = () => setDark(root.classList.contains("dark"));
-    read();
-    // The theme toggle swaps a class on <html>; without this the diagram keeps
-    // whichever palette it was born with for the rest of the session.
-    const observer = new MutationObserver(read);
-    observer.observe(root, { attributes: true, attributeFilter: ["class"] });
-    return () => observer.disconnect();
-  }, []);
-
+  const theme = useAppTheme();
   // A Mermaid block inside a public share takes the share's profile: `public`
   // runs the diagram, `static` (the default there) shows its source instead.
   const profile = useSandboxProfile();
-  const doc = React.useMemo(
-    () => buildSandboxDoc("MERMAID", themedSource(code, dark), undefined, profile),
-    [code, dark, profile]
+  const inlineDoc = React.useMemo(
+    () => (theme ? buildInlineMermaidDoc(code, { theme, minScale: INLINE_MIN_SCALE, maxScale: INLINE_MAX_SCALE }, profile) : null),
+    [code, theme, profile],
   );
-
-  // New source => the frame reloads; bring the skeleton back until it has drawn.
-  React.useEffect(() => {
-    setLoaded(false);
-  }, [doc]);
+  const largeDoc = React.useMemo(
+    () => (theme && open ? buildInlineMermaidDoc(code, { theme, minScale: 0.8, maxScale: 2 }, profile) : null),
+    [code, theme, profile, open],
+  );
 
   const copy = async () => {
     try {
@@ -84,61 +178,58 @@ export const MermaidBlock = React.memo(function MermaidBlock({ code }: { code: s
     }
   };
 
+  const action =
+    "pressable inline-flex items-center gap-1.5 rounded-control border border-transparent px-2 py-1 text-caption text-muted-foreground hover:border-border/60 hover:bg-accent hover:text-foreground coarse:px-2.5 coarse:py-1.5";
+
   return (
-    // `bg-card`, not `bg-card/90`. The diagram frame sits on the transcript
-    // ground, which is #000, so 90% of a 6.5% fill resolved to ~5.9%. Flat:
-    // the hairline is the edge, with no `shadow-pop` under it and no sheen
-    // gradient or blur on the header strip (FLAT_UI §2 — clean paper, and
-    // nothing in the reading column casts a shadow).
-    <div className="my-4 overflow-hidden rounded-popover border border-border/70 bg-card">
-      <div className="flex items-center justify-between border-b border-border/60 px-3 py-2">
-        <span className="font-mono text-micro font-semibold text-muted-foreground">
-          Diagram · Mermaid
+    <figure className="my-5 overflow-hidden rounded-popover border border-border/70 bg-card">
+      <figcaption className="flex items-center justify-between gap-2 border-b border-border/60 py-1.5 pl-3.5 pr-1.5">
+        <span className="text-caption text-muted-foreground">Diagram</span>
+        <span className="flex items-center gap-0.5">
+          {profile !== "static" ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button type="button" onClick={() => setOpen(true)} aria-label="Expand diagram" className={action}>
+                  <Maximize2 className="size-3.5" aria-hidden />
+                  <span className="hidden sm:inline">Expand</span>
+                </button>
+              </TooltipTrigger>
+              <TooltipContent className="sm:hidden">Expand diagram</TooltipContent>
+            </Tooltip>
+          ) : null}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button type="button" onClick={copy} aria-label={copied ? "Copied" : "Copy diagram source"} className={action}>
+                <IconSwap
+                  curve="spring"
+                  swapped={copied}
+                  from={<ActionIcons.copy className="size-3.5" />}
+                  to={<StatusIcons.success className="size-3.5 text-success-ink" />}
+                />
+                <span className="hidden sm:inline">{copied ? "Copied" : "Copy"}</span>
+              </button>
+            </TooltipTrigger>
+            <TooltipContent className="sm:hidden">{copied ? "Copied" : "Copy diagram source"}</TooltipContent>
+          </Tooltip>
         </span>
-        {/* Glyph-only below `sm`, so the tooltip names it there; from `sm` up
-            the word is on the button and the tooltip would only repeat it. */}
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              type="button"
-              onClick={copy}
-              aria-label={copied ? "Copied" : "Copy diagram source"}
-              className="pressable inline-flex items-center gap-1.5 rounded-control border border-transparent px-2 py-1 font-mono text-caption text-muted-foreground hover:border-border/60 hover:bg-accent hover:text-foreground coarse:px-2.5 coarse:py-1.5"
-            >
-              <IconSwap
-                curve="spring"
-                swapped={copied}
-                from={<ActionIcons.copy className="size-3.5" />}
-                to={<StatusIcons.success className="size-3.5 text-success-ink" />}
-              />
-              <span className="hidden sm:inline">{copied ? "Copied" : "Copy"}</span>
-            </button>
-          </TooltipTrigger>
-          <TooltipContent className="sm:hidden">{copied ? "Copied" : "Copy diagram source"}</TooltipContent>
-        </Tooltip>
-      </div>
-      {/* The diagram now follows the app theme (see themedSource), so the canvas
-          can sit on the same near-black rung as the block's own chrome instead
-          of punching a white hole in the transcript. */}
+      </figcaption>
       {profile === "static" ? (
         // A public share while scripted previews are off: Mermaid draws with a
         // script, so the diagram is shown as the source it was written in.
-        <pre className="max-h-72 overflow-auto whitespace-pre-wrap bg-card px-4 py-3 font-mono text-caption text-foreground">
-          {code}
-        </pre>
+        <pre className="max-h-72 overflow-auto whitespace-pre-wrap px-4 py-3 font-mono text-caption text-foreground">{code}</pre>
+      ) : inlineDoc ? (
+        <DiagramFrame doc={inlineDoc} maxHeight={INLINE_MAX_HEIGHT} onExpand={() => setOpen(true)} />
       ) : (
-        <div className="relative bg-card">
-          <SandboxDocumentFrame
-            title="Mermaid diagram"
-            html={doc}
-            // Opaque origin (no allow-same-origin) so diagram code cannot reach the app.
-            sandbox="allow-scripts"
-            className="h-72 w-full border-0 bg-card"
-            onDocumentLoad={() => setLoaded(true)}
-          />
-          {!loaded && <div aria-hidden="true" className="skeleton absolute inset-0" />}
-        </div>
+        <div aria-hidden="true" className="skeleton m-3 h-32 rounded-control" />
       )}
-    </div>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="w-[min(96vw,72rem)] max-w-none bg-card p-0">
+          <DialogTitle className="border-b border-border/60 px-5 py-3 text-ui font-medium">Diagram</DialogTitle>
+          <div className="max-h-[80vh] overflow-auto px-2 pb-2">
+            {largeDoc ? <DiagramFrame doc={largeDoc} maxHeight={4000} /> : null}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </figure>
   );
 });

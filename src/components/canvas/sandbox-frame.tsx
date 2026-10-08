@@ -577,6 +577,142 @@ mermaid.initialize({ startOnLoad: true });
 </${"script"}></body></html>`;
 }
 
+/** The diagram's colours, read from the app's own tokens so it sits on the page in either theme. */
+export interface MermaidTheme {
+  dark: boolean;
+  /** The surface the diagram sits on (the block's card). */
+  surface: string;
+  fill: string;
+  stroke: string;
+  line: string;
+  text: string;
+  muted: string;
+}
+
+export interface InlineMermaidOptions {
+  theme: MermaidTheme;
+  /** Never drawn larger than this (a two-node chart should not fill the column). */
+  maxScale: number;
+  /** Never drawn smaller than this; past it the diagram scrolls sideways instead. */
+  minScale: number;
+}
+
+/** What an inline diagram tells its block: its drawn size, and that it was clicked. */
+export const MERMAID_SIZE_MESSAGE = "juno:mermaid-size";
+export const MERMAID_CLICK_MESSAGE = "juno:mermaid-click";
+
+/**
+ * A Mermaid diagram for the chat column (not the canvas): transparent on the
+ * block's own surface, themed from the app's tokens, drawn at its natural size
+ * then fitted to the width between `minScale` and `maxScale`, and reporting its
+ * height so the frame is exactly as tall as the drawing. The old inline frame
+ * was a fixed 18rem with Mermaid's light default centred in it: a small
+ * diagram in a large white box in dark mode.
+ */
+function mermaidInlineDoc(code: string, o: InlineMermaidOptions): string {
+  const t = o.theme;
+  const font = "ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif";
+  const vars = {
+    darkMode: t.dark,
+    background: t.surface,
+    fontFamily: font,
+    fontSize: "14px",
+    primaryColor: t.fill,
+    primaryBorderColor: t.stroke,
+    primaryTextColor: t.text,
+    secondaryColor: t.fill,
+    secondaryBorderColor: t.stroke,
+    secondaryTextColor: t.text,
+    tertiaryColor: t.surface,
+    tertiaryBorderColor: t.stroke,
+    tertiaryTextColor: t.text,
+    lineColor: t.line,
+    textColor: t.text,
+    mainBkg: t.fill,
+    nodeBorder: t.stroke,
+    clusterBkg: t.surface,
+    clusterBorder: t.stroke,
+    titleColor: t.text,
+    edgeLabelBackground: t.surface,
+    actorBkg: t.fill,
+    actorBorder: t.stroke,
+    actorTextColor: t.text,
+    signalColor: t.line,
+    signalTextColor: t.text,
+    labelBoxBkgColor: t.fill,
+    labelTextColor: t.text,
+    noteBkgColor: t.fill,
+    noteBorderColor: t.stroke,
+    noteTextColor: t.text,
+  };
+  const config = {
+    startOnLoad: false,
+    securityLevel: "strict",
+    theme: "base",
+    themeVariables: vars,
+    fontFamily: font,
+    flowchart: { useMaxWidth: false, htmlLabels: true, curve: "basis", padding: 12 },
+    sequence: { useMaxWidth: false },
+    gantt: { useMaxWidth: false },
+    journey: { useMaxWidth: false },
+    class: { useMaxWidth: false },
+    state: { useMaxWidth: false },
+    er: { useMaxWidth: false },
+    mindmap: { useMaxWidth: false },
+    timeline: { useMaxWidth: false },
+  };
+  return `<!doctype html><html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<style>
+:root{color-scheme:${t.dark ? "dark" : "light"}}
+html,body{margin:0;background:transparent;color:${t.text};font-family:${font}}
+#d{padding:12px 0;overflow-x:auto;overflow-y:hidden;cursor:zoom-in;text-align:center}
+#d svg{display:inline-block;max-width:none;height:auto;vertical-align:top}
+#e{margin:0;padding:12px 16px;white-space:pre-wrap;font:12px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;color:${t.muted}}
+</style></head>
+<body><div id="d" role="img" aria-label="Diagram"></div><script type="text/plain" id="src">${esc(code)}</${"script"}>
+<script type="module">
+const d = document.getElementById("d");
+const src = document.getElementById("src").textContent;
+let last = -1;
+function post(h) { if (h !== last) { last = h; try { parent.postMessage({ type: "${MERMAID_SIZE_MESSAGE}", height: h }, "*"); } catch (e) {} } }
+function fit() {
+  const svg = d.querySelector("svg");
+  if (!svg) { post(Math.ceil(document.body.scrollHeight)); return; }
+  const vb = svg.viewBox && svg.viewBox.baseVal;
+  const w = vb && vb.width ? vb.width : svg.getBBox().width;
+  const h = vb && vb.height ? vb.height : svg.getBBox().height;
+  const avail = Math.max(1, document.documentElement.clientWidth - 16);
+  const s = Math.max(${o.minScale}, Math.min(${o.maxScale}, avail / w));
+  svg.setAttribute("width", String(Math.round(w * s)));
+  svg.setAttribute("height", String(Math.round(h * s)));
+  svg.style.maxWidth = "none";
+  const scrolls = w * s > avail + 1;
+  post(Math.ceil(h * s) + 24 + (scrolls ? 12 : 0));
+}
+d.addEventListener("click", () => { try { parent.postMessage({ type: "${MERMAID_CLICK_MESSAGE}" }, "*"); } catch (e) {} });
+try {
+  const { default: mermaid } = await import("${MERMAID_CDN}");
+  mermaid.initialize(${JSON.stringify(config)});
+  const { svg } = await mermaid.render("juno-mermaid", src);
+  d.innerHTML = svg;
+  fit();
+  new ResizeObserver(fit).observe(document.documentElement);
+} catch (err) {
+  d.remove();
+  const e = document.createElement("pre");
+  e.id = "e";
+  e.textContent = "This diagram could not be drawn. " + (err && err.message ? String(err.message).split("\\n")[0] : "");
+  document.body.appendChild(e);
+  fit();
+}
+</${"script"}></body></html>`;
+}
+
+/** An inline chat diagram's document (MermaidBlock). The static profile never gets here; it shows the source. */
+export function buildInlineMermaidDoc(code: string, o: InlineMermaidOptions, profile: SandboxProfile = "private"): string {
+  return withChrome(mermaidInlineDoc(code, o), profile, true);
+}
+
 const TERMINAL_STYLE = `<style>
 :root{color-scheme:dark}
 html,body{margin:0;height:100%;background:#0b0b0e;color:#e7e7ea}
