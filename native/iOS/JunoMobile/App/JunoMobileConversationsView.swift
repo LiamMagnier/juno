@@ -512,6 +512,12 @@ private struct JunoMobileConversationDetail: View {
   /// change is explained rather than silent.
   @State private var thinkingNotice: String?
   @State private var isNearBottom = true
+  /// New content keeps the transcript at its end: true until the reader drags
+  /// away from the bottom, and again when they come back, jump or send.
+  @State private var follows = true
+  /// The reader's finger is on the transcript, so a change of position is
+  /// theirs rather than the stream's.
+  @State private var userScrolling = false
   /// When the run in flight began, and — once it settles — which answer it
   /// produced and how long it took.
   ///
@@ -978,6 +984,7 @@ private struct JunoMobileConversationDetail: View {
   /// callback still owns the value — it will put it back to `false` if the
   /// scroll did not in fact reach the bottom.
   private func jumpToLatest() {
+    follows = true
     withAnimation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion)) {
       scrollPosition.scrollTo(edge: .bottom)
       isNearBottom = true
@@ -1001,11 +1008,14 @@ private struct JunoMobileConversationDetail: View {
           composerFocused = false
         }
       )
-      // Both are needed and they do different jobs. `defaultScrollAnchor`
-      // keeps the bottom pinned as the answer grows — that is what makes a
-      // streaming reply stay in view without anyone asking it to. The
-      // position binding is how a *deliberate* jump is expressed.
-      .defaultScrollAnchor(.bottom)
+      // The transcript opens at its end and stays aligned there; growth is
+      // followed explicitly below, and only while the reader is following.
+      // (A blanket `.defaultScrollAnchor(.bottom)` also anchors size changes,
+      // which kept pulling the page under a reader who had scrolled up to
+      // read — the stream must stop following the moment they leave.) The
+      // position binding is how every follow and jump is expressed.
+      .defaultScrollAnchor(.bottom, for: .initialOffset)
+      .defaultScrollAnchor(.bottom, for: .alignment)
       .scrollPosition($scrollPosition)
       .onScrollGeometryChange(for: Bool.self) { geometry in
         let distance =
@@ -1019,15 +1029,45 @@ private struct JunoMobileConversationDetail: View {
           || distance < 120
       } action: { _, nearBottom in
         isNearBottom = nearBottom
+        if userScrolling { follows = nearBottom }
+      }
+      // The paced reply growing a line, a block arriving, a tool result
+      // landing: followed smoothly, but only while following and never under
+      // the reader's finger.
+      .onScrollGeometryChange(for: CGFloat.self) { $0.contentSize.height } action: { old, new in
+        guard follows, !userScrolling, new > old else { return }
+        withAnimation(JunoMotion.reduced(JunoMotion.base, when: reduceMotion)) {
+          scrollPosition.scrollTo(edge: .bottom)
+        }
+      }
+      .onScrollPhaseChange { _, phase in
+        switch phase {
+        case .tracking, .interacting, .decelerating:
+          userScrolling = true
+        case .idle, .animating:
+          if userScrolling { follows = isNearBottom }
+          userScrolling = false
+        @unknown default:
+          userScrolling = false
+        }
+      }
+      .onChange(of: messages.count) { previous, current in
+        // A turn arriving is the reader's own send or its reply: back to the
+        // end, and following again.
+        guard current > previous else { return }
+        follows = true
+        withAnimation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion)) {
+          scrollPosition.scrollTo(edge: .bottom)
+        }
       }
       .onChange(of: streamSignature) { _, _ in
-        guard isNearBottom else { return }
+        guard follows, !userScrolling else { return }
         withAnimation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion)) {
           scrollPosition.scrollTo(edge: .bottom)
         }
       }
       .overlay(alignment: .bottomTrailing) {
-        if !isNearBottom && !messages.isEmpty {
+        if !isNearBottom && !follows && !messages.isEmpty {
           Button {
             jumpToLatest()
           } label: {
@@ -1819,28 +1859,35 @@ private struct JunoMobileMessageRow: View {
           .padding(.vertical, JunoSpace.tight)
       }
 
-      ForEach(Array(parts.enumerated()), id: \.offset) { _, part in
-        switch part {
-        case .text(let text):
-          // AIcss's caret rides the last paragraph while tokens are
-          // still arriving — the one live signal the answer body had
-          // none of, since the thought-process row above settles the
-          // moment the first token lands.
-          JunoLessonText(text, streaming: message.isPending)
-            .textSelection(.enabled)
-            .frame(maxWidth: .infinity, alignment: .leading)
-        case .artifact(let artifact):
-          JunoMobileArtifactInlineCard(
-            artifact: artifact,
-            // Inert only while it is still *writing*: half an artifact
-            // is not something to open. Once the closing tag lands the
-            // card is always live, because the resolver can now always
-            // answer — from the store when the row has synced, and from
-            // the tag's own body when it has not.
-            open: artifact.streaming || openArtifact == nil
-              ? nil
-              : { openArtifact?(artifact) }
-          )
+      // The words are paced: released at a steady cadence with the newest
+      // fading in (JunoPacedStream), so a burst from the network never lands
+      // as a block of text.
+      JunoPacedStream(displayContent, live: message.isPending) { paced in
+        VStack(alignment: .leading, spacing: JunoSpace.hairline) {
+          ForEach(Array(NativeMessageContent.parts(of: paced).enumerated()), id: \.offset) { _, part in
+            switch part {
+            case .text(let text):
+              // While tokens arrive the newest words fade in where the
+              // writing is (JunoStreamReveal) — the answer body's live
+              // signal once the thought-process row above has settled.
+              JunoLessonText(text, streaming: message.isPending)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            case .artifact(let artifact):
+              JunoMobileArtifactInlineCard(
+                artifact: artifact,
+                // Inert only while it is still *writing*: half an artifact
+                // is not something to open. Once the closing tag lands the
+                // card is always live, because the resolver can now always
+                // answer — from the store when the row has synced, and from
+                // the tag's own body when it has not.
+                open: artifact.streaming || openArtifact == nil
+                  ? nil
+                  : { openArtifact?(artifact) }
+              )
+              .junoStreamBlockReveal()
+            }
+          }
         }
       }
 
@@ -2204,7 +2251,7 @@ private struct JunoMobileArtifactInlineCard: View {
       .frame(maxWidth: .infinity, alignment: .leading)
 
       if artifact.streaming {
-        JunoThinkingMatrix(dot: 3, spacing: 2)
+        JunoGalaxyMark(size: 16)
           .foregroundStyle(Color.junoMutedForeground)
       } else if open != nil {
         JunoIconView(.chevronRight, size: 13)

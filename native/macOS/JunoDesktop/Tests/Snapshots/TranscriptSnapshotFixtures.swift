@@ -380,6 +380,19 @@ enum TranscriptSnapshotFixtures {
                     }, newest: true, generating: true)
                 })
             },
+            // The paced reply mid-stream, posed: the newest ~44 characters
+            // fading in where the writing is (JunoStreamReveal).
+            TranscriptFixture(name: "prose-streaming-fade", stage: 4) {
+                AnyView(column {
+                    row(proseReply.with {
+                        $0.isPending = true
+                        $0.content = String($0.content.prefix(620))
+                        $0.runStartedAt = Date().addingTimeInterval(-9)
+                        $0.answerStartedAt = Date().addingTimeInterval(-3)
+                    }, newest: true, generating: true)
+                    .environment(\.junoStreamReveal, JunoStreamReveal(span: 44))
+                })
+            },
             TranscriptFixture(name: "sources-pill", stage: 4) {
                 AnyView(column { row(sourcedReply, newest: true) })
             },
