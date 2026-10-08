@@ -299,6 +299,36 @@ test("a tiny scope confirms itself, sized and frozen (R2)", async () => {
   assert.deepEqual(confirmed?.payload, { by: "auto", tiny: true });
 });
 
+test("a run an app's chat handed off confirms itself as `handoff`, keeps its delivery, and sizes like any auto run (§9.6.1)", async () => {
+  const { store, events } = memoryStore();
+  const engine = createResearchEngine({
+    ...reworkDeps(store),
+    async draftPlan() {
+      return { ok: true, output: plannerOutput(), costMicroUsd: 0 };
+    },
+    async sizeRun() {
+      return envelopeFor();
+    },
+  });
+  const run = await engine.start({ userId: "u", goal: GOAL, confirmation: "auto", delivery: "background" });
+  assert.equal(parsePlan(run.plan).delivery, "background");
+  const started = events.find((e) => e.runId === run.id && e.kind === "run_started");
+  assert.equal((started?.payload as { delivery?: string }).delivery, "background");
+  await engine.drive({ runId: run.id, userId: "u", until: "investigating" });
+  const row = (await store.loadRun(run.id, "u"))!;
+  assert.equal(row.state, "investigating", "no plan gate: the app's Research toggle is the confirmation");
+  const plan = parsePlan(row.plan);
+  assert.equal(plan.delivery, "background", "the delivery survives the planner's rewrite of the plan");
+  assert.ok(plan.envelope, "sized and frozen like every auto run");
+  const confirmed = events.find((e) => e.runId === run.id && e.kind === "plan_confirmed");
+  assert.deepEqual(confirmed?.payload, { by: "handoff" }, "never `auto`, which the apps read as the in-chat path and do not draw");
+
+  const inChat = await engine.start({ userId: "u", goal: GOAL, confirmation: "auto" });
+  await engine.drive({ runId: inChat.id, userId: "u", until: "investigating" });
+  assert.deepEqual(events.find((e) => e.runId === inChat.id && e.kind === "plan_confirmed")?.payload, { by: "auto" });
+  assert.equal(parsePlan((await store.loadRun(inChat.id, "u"))!.plan).delivery, undefined);
+});
+
 test("F4: a planner that never validates no longer fails the run — the question as asked waits at the card, billed, searching nothing", async () => {
   const { store, events } = memoryStore();
   let searched = 0;

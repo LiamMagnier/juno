@@ -1138,6 +1138,15 @@ export interface ResearchPlan {
   summary?: string;
   /** The chat's selected model, preferred as the lead when the plan's class allows it (§9.5.1). */
   preferredLead?: string;
+  /**
+   * How the run was handed its report's reader (SPEC §9.6.1). `background`:
+   * an app's chat turn handed the run off (the `handoff` frame) and ended;
+   * the engine writes the report and the completion message on its own, and
+   * the run lives on past the request that started it. Absent: the run was
+   * started from the research surface, or by the in-chat path that writes the
+   * report through the chat model.
+   */
+  delivery?: "background";
   /** Paused time so far, which the clocks do not count (B13). */
   pausedMs?: number;
   /**
@@ -1733,6 +1742,7 @@ function parseReworkFields(raw: Record<string, unknown>): Partial<ResearchPlan> 
     ...(typeof raw.pausedFrom === "string" && isResearchState(raw.pausedFrom) ? { pausedFrom: raw.pausedFrom } : {}),
     ...(typeof raw.summary === "string" && raw.summary.trim() ? { summary: raw.summary.trim().slice(0, MAX_PLAN_SUMMARY_CHARS) } : {}),
     ...(oneLine(raw.preferredLead, 120) ? { preferredLead: oneLine(raw.preferredLead, 120) } : {}),
+    ...(raw.delivery === "background" ? { delivery: "background" as const } : {}),
     ...(typeof raw.pausedMs === "number" && Number.isFinite(raw.pausedMs) && raw.pausedMs > 0
       ? { pausedMs: Math.floor(raw.pausedMs) }
       : {}),

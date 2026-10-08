@@ -607,9 +607,11 @@ export type StreamChunk =
       phase?: "commentary" | "answer";
     }
   /**
-   * Web only (`research_background`). Ends a chat request that started a
-   * research run. Terminal: the client stops reading and follows the run.
-   * Never sent to profile 1 (INV-1, INV-27).
+   * Only to a client that declared `research_background` (the Mac and
+   * iPhone apps today). Ends a chat request that started a research run: the
+   * run is a durable background job the engine finishes on its own, writing
+   * the report message and notifying when it is ready. Terminal: the client
+   * stops reading and follows the run. Never sent to profile 1 (INV-1, INV-27).
    */
   | { type: "handoff"; to: "research"; runId: string; userMessageId: string | null }
   | { type: "progress"; stage: GenerationProgressStage; pct?: number; note?: string }

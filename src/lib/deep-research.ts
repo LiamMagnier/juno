@@ -10,7 +10,17 @@ import {
   type ResearchEffort,
   type ResearchEventDTO,
 } from "@/lib/research/domain";
-import { createPrismaResearchStore, gatheringOnlyEngine } from "@/lib/research/run";
+import {
+  createPrismaResearchStore,
+  driveResearchInBackground,
+  gatheringOnlyEngine,
+  researchAccountFacts,
+  researchEngine,
+  researchStartCheck,
+} from "@/lib/research/run";
+import type { ResearchEngine } from "@/lib/research/engine";
+import { RESEARCH_REFUSAL_COPY, researchRefusalLine } from "@/lib/research/entitlement";
+import type { Plan } from "@prisma/client";
 import { researchSearchConfigured } from "@/lib/research/tools";
 import { buildResearchCorpus, corpusFindings } from "@/lib/research/corpus";
 import { citableSources } from "@/lib/research/engine";
@@ -20,7 +30,9 @@ import type { ClientActivityEvent, ClientSource } from "@/types/chat";
 import { prisma } from "@/lib/db";
 
 /** Durable research adapter. Web chat reviews the plan inline before paid
- * investigation; native clients retain their existing streaming hand-off. */
+ * investigation; a client that declared `research_background` (the apps)
+ * hands the turn off to a background run (`startBackgroundResearch`); a
+ * client that declared nothing keeps the in-chat path (`runDeepResearch`). */
 
 type SendActivity = (event: Omit<ClientActivityEvent, "id" | "createdAt">) => ClientActivityEvent;
 
@@ -233,6 +245,127 @@ const ERROR_TITLE: Record<string, string> = {
   search: "Widening the searches",
   stage: "A research step is being retried",
 };
+
+/** What became of an app's research request (SPEC §9.6.1). */
+export type BackgroundResearchStart =
+  /** The run exists and is being driven off the request: send the `handoff` frame. */
+  | { kind: "handoff"; runId: string }
+  /** No run was started: the turn answers with this notice instead. */
+  | { kind: "notice"; notice: string; title: string; detail?: string };
+
+/**
+ * Starts an app's research as a durable background run and hands the chat
+ * turn off to it (SPEC §9.6.1, for a client that declared
+ * `research_background`).
+ *
+ * The in-chat path (`runDeepResearch`) gathers inside the turn and has the
+ * chat model write the report while the request is open, so the run lives
+ * and dies with one HTTP request on one process. This is the other shape:
+ * the run is created auto-confirmed (an app's Research toggle IS the
+ * confirmation, as on the in-chat path), driven by the full engine — the
+ * writer and the citation audit included — off the request, and finished by
+ * the engine's own completion, which writes the conversation's report
+ * message and sends the "your research is ready" notification. The chat
+ * request only reports the run id. Closing the app, losing the network or a
+ * server restart therefore no longer touch the run: a restart leaves a
+ * leased run whose lease lapses, and the research worker adopts it. Only an
+ * explicit Stop (`POST /api/research/{id}/control`) cancels it.
+ *
+ * A reply to a plan still waiting in this conversation is read the same way
+ * the in-chat path reads it: yes starts that plan in the background, no
+ * cancels it, anything else is a new question. The run checks (live runs,
+ * starts today, the usage windows) are the research surface's own.
+ */
+export async function startBackgroundResearch(opts: {
+  userId: string;
+  plan: Plan;
+  prompt: string;
+  conversationId: string;
+  effort?: ResearchEffort;
+  history?: ContextTurn[];
+  timeZone?: string | null;
+  locale?: string | null;
+  preferredModel?: string | null;
+  /** Injected by tests; production uses the full engine and its background driver. */
+  deps?: {
+    engine?: ResearchEngine;
+    drive?: (input: { runId: string; userId: string }) => void;
+    startCheck?: typeof researchStartCheck;
+    accountFacts?: typeof researchAccountFacts;
+  };
+}): Promise<BackgroundResearchStart> {
+  const goal = opts.prompt.trim();
+  if (!goal || !researchSearchConfigured()) {
+    return { kind: "notice", notice: NOT_STARTED_NOTICE, title: "Research did not start", detail: RESEARCH_REFUSAL_COPY.reasons.not_configured };
+  }
+  const engine = opts.deps?.engine ?? researchEngine();
+  const drive = opts.deps?.drive ?? ((input: { runId: string; userId: string }) => driveResearchInBackground(input));
+  const startCheck = opts.deps?.startCheck ?? researchStartCheck;
+  const accountFacts = opts.deps?.accountFacts ?? researchAccountFacts;
+
+  const parked = await prisma.researchRun.findMany({
+    where: { userId: opts.userId, conversationId: opts.conversationId, state: PLAN_GATE },
+    orderBy: { createdAt: "desc" },
+    select: { id: true },
+  });
+  const [pendingRun, ...stranded] = parked;
+  for (const orphan of stranded) {
+    await engine.decidePlan({ runId: orphan.id, userId: opts.userId, decision: "cancel" }).catch(() => undefined);
+  }
+  if (pendingRun) {
+    const reply = goal.toLowerCase();
+    if (CONFIRM_REPLY.test(reply)) {
+      const decided = await engine.decidePlan({ runId: pendingRun.id, userId: opts.userId, decision: "confirm" });
+      if (decided.ok) {
+        drive({ runId: pendingRun.id, userId: opts.userId });
+        return { kind: "handoff", runId: pendingRun.id };
+      }
+      return { kind: "notice", notice: NOT_STARTED_NOTICE, title: "Research did not start" };
+    }
+    await engine.decidePlan({ runId: pendingRun.id, userId: opts.userId, decision: "cancel" }).catch(() => undefined);
+    if (REJECT_REPLY.test(reply)) {
+      return { kind: "notice", notice: "I’ve cancelled that research plan.", title: "Research plan cancelled" };
+    }
+  }
+
+  const check = await startCheck({ userId: opts.userId, plan: opts.plan, timeZone: opts.timeZone ?? null });
+  if ("refused" in check) {
+    const line = researchRefusalLine(check.reason, check.params);
+    return {
+      kind: "notice",
+      notice: `${line.detail} Your research has not started.`,
+      title: line.title,
+      detail: line.detail,
+    };
+  }
+
+  try {
+    const facts = await accountFacts(opts.userId, opts.conversationId).catch(() => null);
+    const created = await engine.start({
+      userId: opts.userId,
+      goal,
+      conversationId: opts.conversationId,
+      budgetMicroUsd: null,
+      effort: opts.effort ?? "deep",
+      confirmation: "auto",
+      delivery: "background",
+      context: opts.history?.length ? researchGoalContext(opts.history) : null,
+      timeZone: opts.timeZone ?? null,
+      locale: opts.locale ?? null,
+      language: facts?.responseLanguage ?? null,
+      preferredModel: opts.preferredModel ?? null,
+    });
+    // Fire and forget: the drive must outlive this request. Its lease owner
+    // is stable per run, so the research worker never drives it twice.
+    drive({ runId: created.id, userId: opts.userId });
+    return { kind: "handoff", runId: created.id };
+  } catch (e) {
+    console.error("[deep-research] could not start a background run", e);
+    return { kind: "notice", notice: NOT_STARTED_NOTICE, title: "Research did not start" };
+  }
+}
+
+const NOT_STARTED_NOTICE = "Research could not start right now. Your research has not started; try again in a moment.";
 
 export async function runDeepResearch(opts: {
   userId: string;

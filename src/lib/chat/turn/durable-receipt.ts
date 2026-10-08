@@ -25,6 +25,9 @@ import type { ChatFinishReason } from "@/types/chat";
  * inline closures behaved.
  */
 
+/** The receipt's finish reason for a turn that handed off to a research run (SPEC §9.6.1). */
+export const RESEARCH_HANDOFF_FINISH = "research_handoff";
+
 /** How often a receipt-backed generation reads its durable cancel flag. */
 export const CHAT_CANCEL_POLL_MS = 2_000;
 
@@ -35,7 +38,13 @@ export interface DurableReceipt {
   markRunning(): Promise<void>;
   /** Extends the lease before a persistence step; false when it was lost. */
   renew(): Promise<boolean>;
-  markCompleted(assistantMessageId: string, finishReason: ChatFinishReason): Promise<boolean>;
+  /**
+   * Completed with no assistant row because the turn became a research run
+   * (SPEC §9.6.1): `assistantMessageId: null`, `finishReason:
+   * "research_handoff"` — a string column, not a `ChatFinishReason`, read by
+   * first-submission recovery as "the turn became a run", never as a failure.
+   */
+  markCompleted(assistantMessageId: string | null, finishReason: ChatFinishReason | typeof RESEARCH_HANDOFF_FINISH): Promise<boolean>;
   markFailed(finishReason: ChatFinishReason, failureCode: string): Promise<void>;
   /** The 15s heartbeat's lease renewal; aborts the generation if the lease is gone. */
   heartbeat(abort: () => void): void;

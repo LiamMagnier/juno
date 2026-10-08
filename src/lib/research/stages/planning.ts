@@ -42,6 +42,19 @@ export const PLANNER_FALLBACK_MESSAGE = {
   lines: "Drafting a simpler plan.",
 } as const;
 
+/**
+ * Who the `plan_confirmed` event says confirmed a plan nobody was asked about.
+ *
+ * `auto` is the in-chat path, whose answer row is the working view and which
+ * the apps therefore never draw as a run row. A run an app's chat handed off
+ * (`delivery: "background"`, SPEC §9.6.1) has no answer row while it works —
+ * its run row IS the working view — so it says `handoff`, which every shipped
+ * app already draws like any other background run.
+ */
+export function autoConfirmer(plan: Pick<ResearchPlan, "delivery">): "auto" | "handoff" {
+  return plan.delivery === "background" ? "handoff" : "auto";
+}
+
 export function createPlanningStage(ctx: EngineContext) {
   const { deps, store, beat, append, advance, finish, affordable, stopForBudget, bill } = ctx;
   const doClarifying = async (
@@ -279,7 +292,7 @@ export function createPlanningStage(ctx: EngineContext) {
         sized && !isRefusal(sized) ? { budgetMicroUsd: BigInt(sized.ceilingMicroUsd) } : undefined,
         [
           { kind: "plan_drafted", payload: drafted_ },
-          { kind: "plan_confirmed", payload: { by: "auto", ...(tiny ? { tiny: true } : {}) } },
+          { kind: "plan_confirmed", payload: { by: autoConfirmer(next), ...(tiny ? { tiny: true } : {}) } },
         ]
       );
       return moved ? { kind: "advanced", state: "investigating" } : { kind: "raced" };
@@ -386,7 +399,7 @@ export function createPlanningStage(ctx: EngineContext) {
     if (planIsConfirmed(next)) {
       const moved = await advance(reloaded, "investigating", undefined, [
         { kind: "plan_drafted", payload: drafted_ },
-        { kind: "plan_confirmed", payload: { by: "auto" } },
+        { kind: "plan_confirmed", payload: { by: autoConfirmer(next) } },
       ]);
       return moved ? { kind: "advanced", state: "investigating" } : { kind: "raced" };
     }

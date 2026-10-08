@@ -444,6 +444,7 @@ export function createResearchEngine(deps: ResearchDeps): ResearchEngine {
         ...(input.context?.trim() ? { context: input.context.slice(0, MAX_PLAN_CONTEXT_CHARS) } : {}),
         ...(explicitLanguage && explicitLanguage !== "auto" ? { language: explicitLanguage } : {}),
         ...(input.preferredModel ? { preferredLead: input.preferredModel } : {}),
+        ...(input.delivery === "background" ? { delivery: "background" as const } : {}),
       };
       const created = await store.createRun({
         userId: input.userId,
@@ -458,6 +459,7 @@ export function createResearchEngine(deps: ResearchDeps): ResearchEngine {
           payload: {
             goal: created.goal,
             confirmation: plan.confirmation,
+            ...(plan.delivery ? { delivery: plan.delivery } : {}),
             budgetMicroUsd: created.budgetMicroUsd === null ? null : created.budgetMicroUsd.toString(),
           },
         },

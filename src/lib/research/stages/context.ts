@@ -257,7 +257,10 @@ export function createEngineContext(deps: ResearchDeps) {
               threadId: run.conversationId ? `research-${run.conversationId}` : `research-${run.id}`,
               collapseId: `research-${run.id}`,
               interruption: "active",
-              data: run.conversationId ? { conversationId: run.conversationId } : {},
+              // The run id too: an app opens the report itself from the
+              // notification (`/research/<id>`), and falls back to the
+              // conversation where it cannot.
+              data: run.conversationId ? { conversationId: run.conversationId, runId: run.id } : { runId: run.id },
             },
           })
         )

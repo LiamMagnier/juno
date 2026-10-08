@@ -663,6 +663,8 @@ export interface StartRunInput {
   language?: string | null;
   /** The chat's selected model, preferred as the lead when the plan's class allows it (§9.5.1). */
   preferredModel?: string | null;
+  /** `background`: an app's chat handed the run off and ended (§9.6.1) — see `ResearchPlan.delivery`. */
+  delivery?: "background";
 }
 
 export type ControlReason =

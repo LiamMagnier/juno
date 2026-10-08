@@ -4,7 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { PLANS } from "@/lib/plans";
 import { isAutoModelId } from "@/lib/auto-model";
 import type { ModelInfo } from "@/lib/models";
-import { runDeepResearch } from "@/lib/deep-research";
+import { runDeepResearch, startBackgroundResearch } from "@/lib/deep-research";
+import type { ContextTurn } from "@/lib/research/planner";
 import { researchEffortFor } from "@/lib/research/auto-effort";
 import { wrapUntrusted } from "@/lib/untrusted-content";
 import type { SseSender } from "@/lib/chat-stream";
@@ -38,6 +39,7 @@ export async function resolveResearchStage({
   modelHistory,
   researchActive,
   researchRequested,
+  researchHandsOff = false,
   acc,
   send,
   sendActivity,
@@ -56,12 +58,24 @@ export async function resolveResearchStage({
   modelHistory: MessageForModel[];
   researchActive: boolean;
   researchRequested: boolean;
+  /**
+   * The client declared `research_background` (SPEC §9.6.1): research starts
+   * as a background run and the turn hands off to it instead of gathering
+   * and writing inside this request.
+   */
+  researchHandsOff?: boolean;
   acc: GenerationAccumulator;
   send: SseSender["send"];
   sendActivity: SseSender["sendActivity"];
   signal: AbortSignal;
   outcome: TurnOutcome;
-}): Promise<{ synthesisSystem: string; researchCostUsd: number; researchNotice: string | null }> {
+}): Promise<{
+  synthesisSystem: string;
+  researchCostUsd: number;
+  researchNotice: string | null;
+  /** Set when the turn became a background run: send the terminal `handoff` frame and write no answer. */
+  handoffRunId: string | null;
+}> {
   // Web research parks at the editable plan; only a ready corpus may be
   // synthesized. Planning spend is recorded inside runDeepResearch.
   let synthesisSystem = system;
@@ -84,6 +98,36 @@ export async function resolveResearchStage({
       acc.seedSources(completedResearch.sources.map(source => ({ ...source, snippet: "", cited: true })));
       if (acc.sources.length) send({ type: "sources", sources: acc.sources });
     }
+  }
+  if (researchActive && researchHandsOff) {
+    const lastUser = modelHistory.map((m) => m.role).lastIndexOf("USER");
+    const researchPrompt = (lastUser >= 0 ? modelHistory[lastUser].content : null) ?? input.message?.trim() ?? "";
+    const history: ContextTurn[] = modelHistory
+      .slice(0, lastUser >= 0 ? lastUser : modelHistory.length)
+      .filter((m) => m.role === "USER" || m.role === "ASSISTANT")
+      .map((m) => ({ role: m.role as ContextTurn["role"], content: m.content }));
+    const started = await startBackgroundResearch({
+      userId: user.id,
+      plan,
+      prompt: researchPrompt,
+      conversationId,
+      effort: modelInfo
+        ? researchEffortFor({
+            cost: isAutoModelId(requestedId) ? null : modelInfo.cost,
+            reasoningEffort,
+            proMode: !!input.proMode,
+          })
+        : input.researchEffort,
+      history,
+      timeZone: input.timeZone ?? null,
+      locale: input.locale ?? null,
+      preferredModel: isAutoModelId(requestedId) ? null : modelInfo.id,
+    });
+    if (started.kind === "handoff") {
+      return { synthesisSystem, researchCostUsd, researchNotice, handoffRunId: started.runId };
+    }
+    sendActivity({ kind: "warning", title: started.title, ...(started.detail ? { detail: started.detail } : {}) });
+    return { synthesisSystem, researchCostUsd, researchNotice: started.notice, handoffRunId: null };
   }
   if (researchActive) {
     const researchPrompt =
@@ -147,5 +191,5 @@ export async function resolveResearchStage({
       detail: "Deep research isn't available on this plan right now.",
     });
   }
-  return { synthesisSystem, researchCostUsd, researchNotice };
+  return { synthesisSystem, researchCostUsd, researchNotice, handoffRunId: null };
 }

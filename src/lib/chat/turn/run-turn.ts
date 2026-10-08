@@ -70,7 +70,7 @@ import type { legacyChatClientForOrigin } from "@/lib/chat-origin";
 import type { buildSystemPromptSections } from "@/lib/anthropic";
 import { createToolActivity, planTurnHolds, prepareChatArtifactOutput } from "./activity";
 import { createApprovalRequester, type TurnApprovals } from "./approvals";
-import { createDurableReceipt } from "./durable-receipt";
+import { createDurableReceipt, RESEARCH_HANDOFF_FINISH } from "./durable-receipt";
 import type { TurnMemory } from "./memory";
 import { streamDeterministicSmokeResponse, streamResearchNotice } from "./model-streams";
 import { createAssistantTurnWriter } from "./persist";
@@ -455,7 +455,7 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
 
     // Web research parks at the editable plan; only a ready corpus may be
     // synthesized. Planning spend is recorded inside runDeepResearch.
-    const { synthesisSystem, researchCostUsd, researchNotice } = await resolveResearchStage({
+    const { synthesisSystem, researchCostUsd, researchNotice, handoffRunId } = await resolveResearchStage({
       user,
       input,
       plan,
@@ -468,6 +468,10 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
       modelHistory,
       researchActive,
       researchRequested,
+      // SPEC §9.6.1: a client that follows background runs gets one. Not on
+      // a regenerate — the answer being replaced has to be superseded by an
+      // answer, so that turn keeps the in-chat path.
+      researchHandsOff: researchActive && !staleAssistantId && (input.clientFeatures?.includes("research_background") ?? false),
       acc,
       send,
       sendActivity,
@@ -539,6 +543,28 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
     });
 
     try {
+      /*
+       * THE TURN BECAME A RESEARCH RUN (SPEC §9.6.1).
+       *
+       * The run is already being driven off this request, and the engine's
+       * own completion writes the report message and sends the "ready"
+       * notification. So this request writes no assistant row and ends on
+       * the terminal `handoff` frame (no `done` follows, §2.3 rule 6); the
+       * client follows the run. Returning from inside the `try` runs the
+       * `finally` below, which closes the stream log and releases the spend
+       * hold this turn never used. Nothing here is tied to the request any
+       * more: an app that closes now leaves the run running.
+       */
+      if (handoffRunId) {
+        if (!(await receipt.markCompleted(null, RESEARCH_HANDOFF_FINISH))) {
+          receipt.leaseLost = true;
+          throw new DurableReceiptLeaseLostError();
+        }
+        send({ type: "handoff", to: "research", runId: handoffRunId, userMessageId });
+        traceEnd = { finishReason: "stop", outcome: "completed" };
+        console.info("[chat] research handed off", { generationId, conversationId, runId: handoffRunId });
+        return;
+      }
       const modelStream = researchNotice
         ? streamResearchNotice(researchNotice)
         : deterministicSmokeProviderEnabled
