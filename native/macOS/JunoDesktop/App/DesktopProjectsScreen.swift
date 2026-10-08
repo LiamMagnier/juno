@@ -40,11 +40,20 @@ struct DesktopProjectsScreen: View {
     @State private var renaming: JunoRenameRequest?
     @State private var confirmation: JunoConfirmation?
     @State private var dealt = false
+    @State private var deleting: NativeProject?
+    @State private var moving: NativeProject?
+    @State private var newFolderParent: NativeProject?
 
     private var sort: DesktopProjectSort { DesktopProjectSort(rawValue: storedSort) ?? .updated }
 
+    /// Top-level projects; a folder is reached from the project it sits in.
+    /// A search looks through every project, folders included.
+    private var listed: [NativeProject] {
+        query.trimmingCharacters(in: .whitespaces).isEmpty ? model.topLevelProjects : model.projects
+    }
+
     private var summaries: [DesktopProjectSummary] {
-        model.projects.map { DesktopProjectSummary(project: $0, model: model) }
+        listed.map { DesktopProjectSummary(project: $0, model: model) }
     }
 
     private var visible: [DesktopProjectSummary] {
@@ -89,6 +98,19 @@ struct DesktopProjectsScreen: View {
         }
         .junoRenameSheet($renaming)
         .junoConfirmation($confirmation)
+        .desktopProjectDelete($deleting, model: model)
+        .sheet(item: $moving) { project in
+            DesktopMoveProjectSheet(projectID: project.id, model: model)
+        }
+        .sheet(item: $newFolderParent) { parent in
+            DesktopNewFolderSheet(parentName: parent.name) { name in
+                guard let id = await model.createFolder(name: name, in: parent.id) else {
+                    return model.lastErrorDescription ?? "Alevr couldn’t create this folder."
+                }
+                push(.project(id))
+                return nil
+            }
+        }
         .onChange(of: isLoading) { _, loading in if !loading { dealt = true } }
     }
 
@@ -99,8 +121,8 @@ struct DesktopProjectsScreen: View {
             JunoPageSearchField(text: $query, prompt: "Search projects…")
             JunoSegmented(
                 options: [
-                    .init(Filter.all, "All", count: model.projects.count),
-                    .init(Filter.pinned, "Pinned", count: model.projects.filter(\.starred).count),
+                    .init(Filter.all, "All", count: listed.count),
+                    .init(Filter.pinned, "Pinned", count: listed.filter(\.starred).count),
                 ],
                 selection: $filter,
                 accessibilityLabel: "Filter projects"
@@ -111,12 +133,12 @@ struct DesktopProjectsScreen: View {
                 accessibilityLabel: "Sort projects"
             )
         } trailing: {
-            Text("\(visible.count) of \(model.projects.count)")
+            Text("\(visible.count) of \(listed.count)")
                 .junoType(.ui)
                 .monospacedDigit()
                 .foregroundStyle(Color.junoSecondaryInk)
                 .fixedSize()
-                .accessibilityLabel("\(visible.count) of \(model.projects.count) projects")
+                .accessibilityLabel("\(visible.count) of \(listed.count) projects")
         }
     }
 
@@ -207,8 +229,14 @@ struct DesktopProjectsScreen: View {
             .contentShape(.rect)
         Button("Rename…") { rename(project) }
             .contentShape(.rect)
+        if model.newFolderRefusal(in: project.id) == nil {
+            Button("New Folder Inside…") { newFolderParent = project }
+                .contentShape(.rect)
+        }
+        Button("Move To…") { moving = project }
+            .contentShape(.rect)
         Divider()
-        Button("Delete…", role: .destructive) { confirmDelete(project) }
+        Button("Delete…", role: .destructive) { deleting = project }
             .contentShape(.rect)
     }
 
@@ -223,9 +251,6 @@ struct DesktopProjectsScreen: View {
         renaming = DesktopProjectActions.rename(project, model: model, toast: toast)
     }
 
-    private func confirmDelete(_ project: NativeProject) {
-        confirmation = DesktopProjectActions.delete(project, model: model, toast: toast) {}
-    }
 }
 
 // MARK: - Shared project actions

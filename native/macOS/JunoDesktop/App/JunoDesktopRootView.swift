@@ -240,6 +240,7 @@ struct JunoDesktopRootView: View {
         configuration.privateChatModel?.start(for: accountID)
         configuration.libraryModel?.start(for: accountID)
         configuration.libraryPageModel?.start(for: accountID)
+        configuration.libraryMadeModel?.start(for: accountID)
         configuration.documentIndexModel?.start(for: accountID)
         // Account only: both read when their page first appears.
         configuration.memoryPageModel?.start(for: accountID)
@@ -467,6 +468,7 @@ struct JunoDesktopRootView: View {
         configuration.workHostModel?.detach()
         configuration.libraryModel?.stop()
         configuration.libraryPageModel?.stop()
+        configuration.libraryMadeModel?.stop()
         // Not merely "forget the list": the plaintext of every indexed document
         // is in that index, so `stop()` wipes the account's partition. Signing
         // out has to leave nothing behind for the next person at this Mac.

@@ -290,6 +290,10 @@ const loaders: Record<string, EntityLoader> = {
           id: row.id,
           name: row.name,
           nameSource: row.nameSource,
+          // The folder this project sits in (null = top level), so the native
+          // apps can draw the tree from their cache. Every move is an UPDATE on
+          // "Project", which the change trigger already records.
+          parentId: row.parentId,
           instructions: row.instructions,
           starred: row.starred,
           createdAt: row.createdAt.toISOString(),

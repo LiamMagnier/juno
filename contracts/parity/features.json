@@ -20,8 +20,8 @@
         "/api/account/password": "native",
         "/api/account/sessions/revoke": "native",
         "/api/account/username": {
-          "status": "planned",
-          "note": "Choosing the @username (Settings › Account › Username on the web). The apps do not show or edit it yet, and have no profile screen to show it on (/profile is planned)."
+          "status": "native",
+          "note": "Settings › Account › Username on both apps (DesktopUsernameRow on the Mac, JunoMobileUsernameView on the iPhone), with the web's debounced ?check= and its words; NativeUsernameClient/NativeUsernameModel in JunoChatKit/NativeUsername.swift."
         },
         "/api/account/verification": {
           "status": "planned",
@@ -104,12 +104,12 @@
         "/api/approvals": "native",
         "/api/approvals/[id]": "native",
         "/api/approvals/grants": {
-          "status": "planned",
-          "note": "The standing \"always allow\" grants listed under Customize › Apps on the web, so a person can see what Juno may do without asking. The apps answer approvals but do not list standing grants yet."
+          "status": "native",
+          "swift": "NativeAppAccessClient.grants(for:) in JunoChatKit/NativeAppDetail.swift; an app's details sheet (DesktopConnectionsScreen, JunoMobileConnectionsView)"
         },
         "/api/approvals/grants/[id]": {
-          "status": "planned",
-          "note": "Revoking one standing grant from that list (DELETE). As /api/approvals/grants."
+          "status": "native",
+          "swift": "NativeAppAccessClient.revokeGrant(id:for:) in JunoChatKit/NativeAppDetail.swift (DELETE), the sheet's Ask first"
         },
         "/api/chat": "native",
         "/api/chat/cancel": "native",
@@ -185,23 +185,23 @@
       "title": "Projects",
       "pages": {
         "/projects": {
-          "mac": "partial",
-          "ios": "partial",
-          "screen": "DesktopProjectsScreen",
-          "note": "Folders (Project.parentId) are planned: the apps list every project flat and do not yet nest folders under their project, move one with Move to… or drag and drop, or ask whether a deleted folder's subfolders go up a level or go with it."
+          "mac": "native",
+          "ios": "native",
+          "screen": "DesktopProjectsScreen, JunoMobileProjectsView",
+          "note": "Folders (Project.parentId): the index lists top-level projects only (a search still finds folders), and a project's menu has New folder inside, Move to… and a Delete that asks whether its subfolders go up a level or go with it (DesktopProjectFolders, JunoMobileProjectFolders). Moving is Move to… in the apps; the web's drag and drop has no native counterpart."
         },
         "/projects/[id]": {
-          "mac": "partial",
-          "ios": "partial",
-          "screen": "DesktopProjectPage",
-          "note": "Folders are planned: no breadcrumbs, Folders section or New folder yet, and the app does not show the instructions and files a folder inherits from the projects above it (the server already prepends them to its chats)."
+          "mac": "native",
+          "ios": "native",
+          "screen": "DesktopProjectPage, JunoMobileProjectDetail",
+          "note": "Breadcrumbs over a folder (each ancestor opens its page), a Folders section (a tab on iPhone) with New folder, the instructions and files inherited from the projects above shown read-only (From <Parent>), Move to… and the lift/cascade Delete."
         }
       },
       "routes": {
         "/api/projects": "native",
         "/api/projects/[id]": {
-          "status": "web-only",
-          "note": "The apps change projects through sync (/api/v1/mutations); only a blank-name create goes to POST /api/projects (register #89). Moving a project into a folder (PATCH parentId), the folder fields on GET (breadcrumbs, children, inherited) and DELETE ?children=lift|cascade are web-only until native folders land; a sync project.delete lifts a folder's subfolders up a level, as the web does by default."
+          "status": "native",
+          "note": "NativeProjectFoldersClient (JunoChatKit/NativeProjectFolders.swift): GET reads the folder fields (breadcrumbs, children, inherited), PATCH sends parentId for Move to…, DELETE sends ?children=lift|cascade for a project that holds folders. Other edits still go through sync (/api/v1/mutations); New folder is POST /api/projects with parentId, and the project sync entity carries parentId."
         },
         "/api/projects/[id]/members": {
           "status": "planned",
@@ -250,10 +250,7 @@
         },
         "/api/library": "native",
         "/api/library/[id]": "native",
-        "/api/library/made": {
-          "status": "planned",
-          "note": "Everything Juno made in one paged list: chat artifacts and task deliverables (docx, xlsx, pptx…), each with a kind and a type. The apps list artifacts from sync and deliverables from /api/work/artifacts."
-        },
+        "/api/library/made": "native",
         "/api/library/attach": "native",
         "/api/prompts": {
           "status": "planned",
@@ -298,21 +295,24 @@
       },
       "routes": {
         "/api/artifacts": {
-          "status": "web-only",
-          "note": "The apps list artifacts from sync; the web's grid asks for previews here."
+          "status": "native",
+          "swift": "NativeArtifactAPIClient.recentlyDeleted in JunoChatKit/NativeArtifactLifecycle.swift (GET ?deleted=1)",
+          "note": "The apps list live artifacts from sync; they call this route for Recently deleted (?deleted=1) on the Mac Artifacts page and the iPhone Artifacts list."
         },
         "/api/artifacts/[id]": "native",
         "/api/artifacts/[id]/download": {
-          "status": "planned",
-          "note": "Download one version as a file, or a design (or any artifact, format=zip) as a ZIP bundle with a README and optional history. The apps still share a design's source through the system share sheet."
+          "status": "native",
+          "swift": "NativeArtifactAPIClient.download in JunoChatKit/NativeArtifactLifecycle.swift",
+          "note": "Download this version, or a ZIP with history (format=zip&history=1), from the Mac's artifact page and list (save panel) and the iPhone's artifact menu (file exporter)."
         },
         "/api/artifacts/[id]/draft": {
           "status": "web-only",
           "note": "Seals or discards the web design editor's working copy (ArtifactDraft). The Mac and iPhone hosted editors keep their own draft and save a whole document through /api/artifacts/[id] with a base version."
         },
         "/api/artifacts/[id]/duplicate": {
-          "status": "planned",
-          "note": "Duplicate an artifact into a new one in the same project, with derivedFrom provenance. No Duplicate command in the apps yet."
+          "status": "native",
+          "swift": "NativeArtifactAPIClient.duplicate in JunoChatKit/NativeArtifactLifecycle.swift",
+          "note": "Make a Copy (of the version shown, or any version from history) on the Mac's artifact page, list and history sheet, and the iPhone's artifact menu and history."
         },
         "/api/artifacts/[id]/export": "native",
         "/api/artifacts/[id]/poster": "native",
@@ -341,16 +341,19 @@
           "note": "Reset a published link: the old token answers link gone, a new token serves."
         },
         "/api/artifacts/[id]/restore": {
-          "status": "planned",
-          "note": "Restore from Recently deleted. A delete from the apps now moves the artifact to Recently deleted (the sync feed tombstones it); the apps have no Recently deleted view yet."
+          "status": "native",
+          "swift": "NativeArtifactAPIClient.restoreDeleted in JunoChatKit/NativeArtifactLifecycle.swift",
+          "note": "Restore from Recently deleted: the Mac's Recently Deleted sheet on Artifacts and the iPhone's Recently Deleted list. A delete from the apps moves the artifact there (the sync feed tombstones it); a restore brings it back through sync."
         },
         "/api/artifacts/[id]/versions": {
-          "status": "planned",
-          "note": "Paginated version history (newest first, bodies on request). The apps read versions from sync and the windowed /api/artifacts/[id]."
+          "status": "native",
+          "swift": "NativeArtifactAPIClient.versionPage and NativeArtifactHistory in JunoChatKit/NativeArtifactLifecycle.swift",
+          "note": "Paginated version history (newest first): the Mac's Version History sheet and the iPhone's Version history, fifty at a time."
         },
         "/api/artifacts/[id]/versions/[version]": {
-          "status": "planned",
-          "note": "One version's body, for paged history."
+          "status": "native",
+          "swift": "NativeArtifactAPIClient.versionContent in JunoChatKit/NativeArtifactLifecycle.swift",
+          "note": "One version's body: restoring a version older than the synced window fetches it here first."
         },
         "/api/design": "native",
         "/api/design/[artifactId]": {
@@ -368,7 +371,7 @@
         },
         "/api/artifacts/[id]/ops": {
           "status": "web-only",
-          "note": "Targeted edits to a semantic spreadsheet, document or deck. Native clients are given the Markdown artifact contract instead, so no semantic artifact reaches them to edit."
+          "note": "Targeted edits to a semantic spreadsheet, document or deck. The apps now draw semantic artifacts read-only (SemanticArtifactView in JunoChatKit) and read a streaming <juno:artifact-ops> block as an Editing card; editing them stays on the web and in the chat."
         }
       }
     },
@@ -396,12 +399,12 @@
         "/api/memory/recap": "native",
         "/api/projects/[id]/memory": "native",
         "/api/memory/skill-candidates": {
-          "status": "planned",
-          "note": "Methods Alevr noticed the person repeat, offered as draft skills on the web's Memory page. The apps do not list them yet."
+          "status": "native",
+          "swift": "NativeMemoryClient.skillCandidates(for:) in JunoChatKit/NativeMemorySkillCandidates.swift; Suggested skills on DesktopMemoryScreen and JunoMobileMemoryView"
         },
         "/api/memory/skill-candidates/[id]": {
-          "status": "planned",
-          "note": "Accepting or dismissing a proposed skill; web first, like the list."
+          "status": "native",
+          "swift": "NativeMemoryClient.decideSkillCandidate(id:action:for:) in JunoChatKit/NativeMemorySkillCandidates.swift (accept / dismiss)"
         }
       }
     },
@@ -425,8 +428,8 @@
         "/api/connectors": "native",
         "/api/connectors/[id]": "native",
         "/api/connectors/usage": {
-          "status": "planned",
-          "note": "When each app was last used (tool, chat), for the app's details under Customize › Apps on the web. The apps do not show a last-used line yet."
+          "status": "native",
+          "swift": "NativeAppAccessClient.usage(for:) in JunoChatKit/NativeAppDetail.swift; the Last used line of an app's details sheet"
         },
         "/api/connectors/[id]/callback": {
           "status": "web-only",
@@ -507,34 +510,34 @@
       "pages": {
         "/skills": {
           "mac": "native",
-          "ios": "planned",
-          "screen": "DesktopSkillsScreen",
-          "note": "No Skills pages on the phone yet."
+          "ios": "native",
+          "screen": "DesktopSkillsScreen · JunoMobileSkillsView",
+          "note": "On the phone: Customize › Skills, a list with on/off, search and Import from GitHub."
         },
         "/skills/[id]": {
           "mac": "native",
-          "ios": "planned",
-          "screen": "DesktopSkillPage",
-          "note": "As /skills."
+          "ios": "partial",
+          "screen": "DesktopSkillPage · JunoMobileSkillDetailView",
+          "note": "The phone reads a skill, switches it on or off and deletes it; editing instructions, versions, usage and consent stay on the Mac and the web."
         },
         "/skills/new": {
           "mac": "native",
           "ios": "planned",
           "screen": "DesktopSkillPage (new)",
-          "note": "As /skills."
+          "note": "Writing a new skill is Mac and web only; the phone imports skills from GitHub."
         },
         "/skills/import": {
           "mac": "native",
-          "ios": "planned",
-          "screen": "DesktopSkillSheets (Import from GitHub)",
-          "note": "A sheet on the Mac; no Skills pages on the phone yet."
+          "ios": "native",
+          "screen": "DesktopSkillSheets (Import from GitHub) · JunoMobileSkillImportView",
+          "note": "A sheet on both apps."
         }
       },
       "routes": {
         "/api/skills": "native",
         "/api/skills/import/file": {
           "status": "native",
-          "note": "Mac only: previews an uploaded SKILL.md (the web parses it in the browser); no Skills pages on the phone yet."
+          "note": "Mac only: previews an uploaded SKILL.md (the web parses it in the browser); the phone imports from GitHub only."
         },
         "/api/skills/import/github": "native",
         "/api/skills/import/package": {
@@ -630,21 +633,21 @@
       "pages": {
         "/automations": {
           "mac": "native",
-          "ios": "planned",
-          "screen": "DesktopAutomationsScreen",
-          "note": "No Automations on the phone yet."
+          "ios": "native",
+          "screen": "DesktopAutomationsScreen · JunoMobileRoutinesView",
+          "note": "On the phone: Customize › Routines, with Run Now, Pause/Resume and Delete."
         },
         "/automations/new": {
           "mac": "native",
-          "ios": "planned",
-          "screen": "DesktopAutomationEditor",
-          "note": "As /automations."
+          "ios": "partial",
+          "screen": "DesktopAutomationEditor · JunoMobileRoutineEditor",
+          "note": "The phone's editor sets a name, a prompt and one clock (hourly, daily, weekdays, weekly or monthly); event triggers, targets, budgets and policies stay on the Mac and the web."
         },
         "/automations/[id]": {
           "mac": "native",
-          "ios": "planned",
-          "screen": "DesktopAutomationPage",
-          "note": "As /automations."
+          "ios": "native",
+          "screen": "DesktopAutomationPage · JunoMobileRoutineDetailView",
+          "note": "Schedule in words, next and last run, recent runs, Run Now, Pause/Resume, Edit and Delete."
         }
       },
       "routes": {
@@ -945,9 +948,9 @@
           "note": "The web's Customize › Instructions tab renders the same personalization section as Settings."
         },
         "/profile": {
-          "mac": "planned",
-          "ios": "planned",
-          "note": "The profile page (2026-10-03): lifetime tokens, streaks, a year of daily activity and usage by model. The apps still show usage in Settings › Account."
+          "mac": "native",
+          "ios": "native",
+          "screen": "NativeProfileView (DesktopProfileScreen from the account menu's Profile row; JunoMobileProfileView under Settings › Account)"
         }
       },
       "routes": {
@@ -975,8 +978,8 @@
         "/api/settings": "native",
         "/api/v1/devices/apns": "native",
         "/api/profile/activity": {
-          "status": "planned",
-          "note": "The profile page's activity read (tokens per local day, by model, longest run). The apps have no profile screen yet."
+          "status": "native",
+          "note": "The profile page's activity read, with the reader's zone as ?tz=; NativeProfileClient in JunoChatKit/NativeProfileActivity.swift, drawn by NativeProfileView on both apps."
         },
         "/api/secrets": {
           "status": "planned",
@@ -1021,20 +1024,20 @@
         "/api/stripe/portal": "native",
         "/api/v1/billing/app-store": "native",
         "/api/billing/credits": {
-          "status": "planned",
-          "note": "Top-up credit balance and expiry, shown in the web's Billing section. The apps buy plans through the App Store and do not sell top-ups yet."
+          "status": "native",
+          "note": "Mac only: the Top-ups block of Settings › Plan & usage (DesktopBillingExtras). The iPhone buys through the App Store and does not show top-ups."
         },
         "/api/stripe/topup": {
-          "status": "web-only",
-          "note": "Buying a top-up pack through Stripe Checkout; App Store rules keep this purchase on the web."
+          "status": "native",
+          "note": "Mac only: Add opens the Stripe Checkout page in the browser, like the Mac's plan checkout. App Store rules keep this purchase off the iPhone."
         },
         "/api/stripe/cancel": {
-          "status": "web-only",
-          "note": "Cancelling a Stripe subscription with the legal confirmation; an App Store subscription is cancelled in the App Store."
+          "status": "native",
+          "note": "Mac only: Cancel subscription with the recap and the web's consent text (DesktopCancelSubscriptionSheet), and Keep my subscription. An App Store subscription is cancelled in the App Store; the iPhone does not show it."
         },
         "/api/referrals": {
-          "status": "planned",
-          "note": "The referral code and its rewards in the web's Billing section; the apps do not show it yet."
+          "status": "native",
+          "note": "Mac only: Invite a friend in Settings › Plan & usage (link, Copy, rewards). The iPhone does not show it yet."
         }
       }
     },

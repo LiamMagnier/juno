@@ -265,7 +265,9 @@ struct DesktopDestinationView: View {
                     generateClient: configuration.generateClient,
                     modelCatalog: conversationModel.modelCatalog,
                     fileAccess: fileAccess,
-                    openConversation: openLibraryConversation
+                    openConversation: openLibraryConversation,
+                    madeModel: configuration.libraryMadeModel,
+                    deliverableClient: configuration.deliverableClient
                 )
             } else {
                 unavailable("Library", "The authenticated file library is unavailable.")
@@ -330,6 +332,8 @@ struct DesktopDestinationView: View {
             } else {
                 unavailable("Memory", "The synchronized settings store is unavailable.")
             }
+        case .profile:
+            DesktopProfileScreen(configuration: configuration, session: session, startChat: { destination = .chat })
         case .skills:
             if let model = configuration.skillLibraryModel {
                 DesktopSkillsScreen(model: model, startDraft: startDraft)

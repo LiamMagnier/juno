@@ -469,6 +469,8 @@ struct DesktopArtifactWindowContent: View {
                 // accepted edits here would be collecting work it could only throw
                 // away when the window closed.
                 DesktopDesignSurface(content: content, readOnly: true)
+            } else if kind.isSemantic, mode == .preview {
+                SemanticArtifactView(kind: kind, content: content)
             } else if mode == .canvas {
                 // The canvas torn off into its own window is the best version of
                 // it there is: `.sideBySide` at 820pt gives the source and the
@@ -517,6 +519,9 @@ enum DesktopArtifactKindName {
         case .svg: "Graphic"
         case .mermaid: "Diagram"
         case .design: "Design"
+        case .spreadsheet: "Spreadsheet"
+        case .document: "Document"
+        case .presentation: "Deck"
         }
     }
 
@@ -537,6 +542,9 @@ enum DesktopArtifactKindName {
         case .svg: "Graphics"
         case .mermaid: "Diagrams"
         case .design: "Designs"
+        case .spreadsheet: "Spreadsheets"
+        case .document: "Documents"
+        case .presentation: "Decks"
         }
     }
 
@@ -550,6 +558,9 @@ enum DesktopArtifactKindName {
         case .svg: .image
         case .mermaid: .branch
         case .design: .design
+        case .spreadsheet: .grid
+        case .document: .file
+        case .presentation: .squareStack
         }
     }
 
@@ -595,6 +606,7 @@ enum DesktopArtifactKindName {
         case .svg: "svg"
         case .mermaid: "mmd"
         case .design: "juno.design.json"
+        case .spreadsheet, .document, .presentation: "json"
         case .code: codeExtension(language)
         }
     }

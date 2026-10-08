@@ -133,6 +133,8 @@ struct JunoMobileRootView: View {
   /// and wipe it. It takes no transport, because nothing indexed here is
   /// uploaded — extraction, chunking and ranking all happen on the device.
   @State private var documentIndex = NativeDocumentIndexModel()
+  /// What Alevr made, for the Library's "Made by Alevr" (`/api/library/made`).
+  @State private var libraryMadeModel: NativeLibraryMadeModel?
   /// The account's agents (docs/design/AGENTS.md). Built at sign-in over the
   /// same bearer transport as everything else here, and held by the shell
   /// rather than the screen so the roster survives leaving it and the store
@@ -204,6 +206,10 @@ struct JunoMobileRootView: View {
     .preferredColorScheme(preferredColorScheme)
     // The plans page, wherever a locked feature or Settings asks for it.
     .junoMobilePlansSheet()
+    // Inbox, announcements, server search, account security, Skills and
+    // Routines: one environment value the newer screens read
+    // (JunoMobileFeatureHub.swift).
+    .junoMobileFeatures(sender: requestSender, accountID: currentSession?.profile.id)
     // NOTE: `.tint(Color.junoAccent)` must NOT go here. Reading the accent in
     // this body makes the body re-evaluate whenever it changes, and this body is
     // an ancestor of the Settings sheet — so choosing a colour tore the sheet
@@ -248,7 +254,9 @@ struct JunoMobileRootView: View {
           if CommandLine.arguments.contains("--juno-preview-sidebar") {
             showingHistory = true
           }
-          if CommandLine.arguments.contains("--juno-preview-settings") {
+          if CommandLine.arguments.contains("--juno-preview-settings")
+            || ["profile", "username"].contains(JunoPreviewEnvironment.initialRoute ?? "")
+          {
             showingSettings = true
           }
           // Opens straight into incognito, so the mode's own look is one
@@ -1443,7 +1451,8 @@ struct JunoMobileRootView: View {
           openProject: { id in
             projectModel?.selectedProjectID = id
             show(.projects)
-          }
+          },
+          openServerHit: openSearchHit
         )
       } else {
         unavailable
@@ -1518,7 +1527,10 @@ struct JunoMobileRootView: View {
           attachmentClient: requestSender.map { NativeAttachmentAPIClient(sender: $0) },
           generateClient: generateClient,
           modelCatalog: conversationModel?.modelCatalog ?? [],
-          openConversation: openConversation
+          openConversation: openConversation,
+          madeModel: madeModel(),
+          artifactModel: artifactModel,
+          workClient: workClient
         )
       } else {
         unavailable
@@ -1588,11 +1600,37 @@ struct JunoMobileRootView: View {
     return nil
   }
 
+  /// The Library's made list, built once per signed-in account.
+  private func madeModel() -> NativeLibraryMadeModel? {
+    guard let requestSender, let accountID = currentSession?.profile.id else { return nil }
+    if let libraryMadeModel {
+      libraryMadeModel.start(for: accountID)
+      return libraryMadeModel
+    }
+    let model = NativeLibraryMadeModel(client: NativeLibraryMadeClient(sender: requestSender), accountID: accountID)
+    Task { @MainActor in libraryMadeModel = model }
+    return model
+  }
+
   private var unavailable: some View {
     ContentUnavailableView {
       JunoIconLabel("shell.unavailable.title", icon: .error)
     } description: {
       Text("shell.unavailable.description")
+    }
+  }
+
+  /// Where a server search hit (memory, knowledge, tasks) opens.
+  private func openSearchHit(_ destination: NativeSearchHitDestination) {
+    switch destination {
+    case .conversation(let id, _): openConversation(id)
+    case .workSession(let id): openWorkSession(id)
+    case .project(let id):
+      projectModel?.selectedProjectID = id
+      show(.projects)
+    case .artifact: show(.artifacts)
+    case .library: show(.library)
+    case .memory: show(.settings)
     }
   }
 
