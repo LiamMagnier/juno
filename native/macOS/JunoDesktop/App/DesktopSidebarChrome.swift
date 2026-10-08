@@ -284,46 +284,25 @@ struct DesktopSidebarAgentRow: View {
     }
 }
 
-// MARK: - The content panel
+// MARK: - The content column
 
-/// The chat or Code column as the web draws it beside the sidebar: a rounded
-/// panel of the reading canvas, inset from the window's edges, on the
-/// sidebar's ground — with a soft shadow in light and a hairline in dark,
-/// where a shadow cannot separate two dark surfaces.
+/// The chat or Code column beside the sidebar: the reading canvas, full-bleed
+/// to the window's edges, as a native Mac app draws its detail column. The
+/// rounded, inset card the web uses read as a frame around the conversation on
+/// the Mac (owner, 2026-10-08), so the column has no inset, corner, hairline
+/// or shadow; the split view's own divider and the sidebar's glass separate
+/// the two columns.
 ///
-/// Everything inside stays native: the transcript still scrolls under the
-/// unified toolbar (the panel's top is under the toolbar too), the sidebar
-/// collapse still animates the split view, and the panel simply follows the
-/// detail column's frame.
+/// The transcript still scrolls under the unified toolbar and the sidebar
+/// collapse still animates the split view.
 struct DesktopContentPanel: ViewModifier {
-    static let inset: CGFloat = 8
-    static let radius: CGFloat = 14
-
-    @Environment(\.colorScheme) private var colorScheme
-
     func body(content: Content) -> some View {
-        let shape = RoundedRectangle(cornerRadius: Self.radius, style: .continuous)
-        content
-            .background(Color.junoCanvas)
-            .clipShape(shape)
-            .overlay {
-                if colorScheme == .dark {
-                    shape.strokeBorder(Color.white.opacity(0.07), lineWidth: 1)
-                }
-            }
-            .background {
-                shape
-                    .fill(Color.junoCanvas)
-                    .shadow(color: .black.opacity(colorScheme == .dark ? 0.35 : 0.09), radius: 18, y: 2)
-            }
-            .padding(.top, Self.inset)
-            .padding(.trailing, Self.inset)
-            .padding(.bottom, Self.inset)
+        content.background(Color.junoCanvas)
     }
 }
 
 extension View {
-    /// The web's content panel around a detail column (``DesktopContentPanel``).
+    /// The full-bleed canvas behind a detail column (``DesktopContentPanel``).
     func desktopContentPanel() -> some View {
         modifier(DesktopContentPanel())
     }
