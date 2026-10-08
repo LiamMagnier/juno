@@ -62,8 +62,8 @@ struct DesktopAboutPanel: View {
                 .opacity(isSettled ? 1 : 0)
 
             VStack(spacing: JunoSpace.tight) {
-                Text("Juno")
-                    .junoType(.display(size: 34))
+                // The outlined Alevr wordmark, not the name set in type.
+                JunoWordmark(height: 30)
                     .foregroundStyle(Color.junoForeground)
                     .accessibilityAddTraits(.isHeader)
                 Text("Chat and code, in one calm place.")

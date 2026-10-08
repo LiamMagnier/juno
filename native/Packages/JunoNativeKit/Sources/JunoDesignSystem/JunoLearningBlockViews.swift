@@ -1025,7 +1025,7 @@ public struct JunoLearningBlockView: View {
     private func placeholder(kind: JunoLearningBlocks.Kind) -> some View {
         JunoLessonShell {
             HStack(spacing: 12) {
-                JunoThinkingMatrix()
+                JunoGalaxyMark(size: 18)
                     .foregroundStyle(Color.junoMutedForeground)
                 JunoLessonMicrocap(text: "Building \(kind.label)")
             }

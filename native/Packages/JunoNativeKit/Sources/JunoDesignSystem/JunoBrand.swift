@@ -22,53 +22,240 @@ func JunoPlatformImage(data: Data) -> Image? {
     #endif
 }
 
-/// Juno's mark: the chat-bubble glyph the website renders at every entry point.
+/// Alevr's mark: the Continuum — four blades turning around an open aperture.
 ///
-/// The asset is the very same `public/juno-mark.png` the web serves, imported
-/// with a *template* rendering intent. That is the native equivalent of the
-/// web's `dark:invert`: a template image contributes only its alpha, so the mark
-/// takes the current foreground colour and is correct in light and dark from one
-/// asset, with no second file to keep in sync.
+/// Drawn as vector paths from the web's own construction data
+/// (`src/components/brand/continuum-geometry.ts`, projected into
+/// ``JunoBrandGeometry`` by `scripts/generate-native-brand-geometry.mjs`), not
+/// from a raster. That buys three things the old chat-bubble PNG could not:
+/// it is crisp at every size and scale; it picks the web's **optical master**
+/// for the mark's width in device pixels (a 16pt mark on a 2x screen draws the
+/// 32 master, as `continuumDrawingSet` does), so the channels between the
+/// blades stay open at sidebar sizes; and it renders in offscreen snapshot
+/// tests, where asset-catalog images come out blank.
 ///
-/// It is intentionally not tinted coral by default. On the website the mark is
-/// ink-coloured and the coral is reserved for emphasis; tinting the mark would
-/// spend the accent on chrome that is always on screen.
+/// The blades fill with the current foreground style — the native equivalent
+/// of the web's `currentColor` — so the mark is correct in light and dark with
+/// no second drawing. It is intentionally not tinted: the mark is ink, and the
+/// accent is reserved for what is active.
+///
+/// The mark is the *brand*. The working indicator is ``JunoGalaxyMark``; the
+/// two are never swapped for one another.
 public struct JunoMark: View {
     private let size: CGFloat
+
+    @Environment(\.displayScale) private var displayScale
 
     public init(size: CGFloat = 22) {
         self.size = size
     }
 
     public var body: some View {
-        Image("JunoMark")
-            .resizable()
-            .renderingMode(.template)
-            .scaledToFit()
+        JunoContinuumShape(drawing: JunoContinuumShape.drawing(forDevicePixels: size * displayScale))
+            .fill(.foreground)
             .frame(width: size, height: size)
             .accessibilityHidden(true)
     }
 }
 
-/// The Juno lockup: mark plus wordmark, as it appears in the sidebar header.
-public struct JunoLogo: View {
-    private let showsWordmark: Bool
+/// The Continuum's four blades as one shape, in a square box.
+///
+/// `drawing` is a ``JunoBrandGeometry/continuum`` key: 16, 20, 24 or 32 for an
+/// optical master, 0 for the master itself.
+public struct JunoContinuumShape: Shape {
+    public let drawing: Int
 
-    public init(showsWordmark: Bool = true) {
-        self.showsWordmark = showsWordmark
+    public init(drawing: Int = 0) {
+        self.drawing = JunoBrandGeometry.continuum[drawing] == nil ? 0 : drawing
+    }
+
+    /// The web's `opticalSizeFor`: the master that suits a rendered width in
+    /// device pixels, or the master above 40.
+    public static func drawing(forDevicePixels width: CGFloat) -> Int {
+        if width <= 17 { return 16 }
+        if width <= 21 { return 20 }
+        if width <= 27 { return 24 }
+        if width <= 40 { return 32 }
+        return 0
+    }
+
+    public func path(in rect: CGRect) -> Path {
+        var path = Path()
+        for blade in 0..<4 {
+            path.addPath(Self.blade(blade, drawing: drawing, in: rect))
+        }
+        return path
+    }
+
+    /// One blade, numbered clockwise from the upper sweep.
+    public static func blade(_ index: Int, drawing: Int, in rect: CGRect) -> Path {
+        let blades = JunoBrandGeometry.continuum[drawing] ?? JunoBrandGeometry.continuum[0]!
+        let points = blades[index]
+        let units = drawing == 0 ? JunoBrandGeometry.continuumMasterSide : CGFloat(drawing)
+        func point(_ i: Int) -> CGPoint {
+            CGPoint(x: rect.minX + points[i] / units * rect.width,
+                    y: rect.minY + points[i + 1] / units * rect.height)
+        }
+        var path = Path()
+        path.move(to: point(0))
+        for i in stride(from: 2, to: points.count, by: 6) {
+            path.addCurve(to: point(i + 4), control1: point(i), control2: point(i + 2))
+        }
+        path.closeSubpath()
+        return path
+    }
+}
+
+/// The "Alevr" wordmark: Newsreader SemiBold outlined to paths, as the web
+/// sets it (`alevr-wordmark-geometry.ts`). A logotype, never live text, so it
+/// does not depend on a font being installed and never reflows.
+///
+/// Sized by height; the width follows the word's own aspect. Fills with the
+/// current foreground style.
+public struct JunoWordmark: View {
+    private let height: CGFloat
+
+    public init(height: CGFloat = 18) {
+        self.height = height
     }
 
     public var body: some View {
-        HStack(spacing: JunoSpace.snug) {
-            JunoMark(size: 24)
-            if showsWordmark {
-                Text("Juno")
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(.primary)
+        let bounds = JunoBrandGeometry.wordmarkBounds
+        JunoWordmarkShape()
+            .fill(.foreground)
+            .frame(width: height * bounds.width / bounds.height, height: height)
+            .accessibilityElement()
+            .accessibilityLabel("Alevr")
+    }
+}
+
+/// The wordmark's outlines, fitted to their ink bounds.
+public struct JunoWordmarkShape: Shape {
+    public init() {}
+
+    private static let outline: Path = {
+        var path = Path()
+        for glyph in JunoBrandGeometry.wordmark {
+            path.addPath(JunoSVGPath.parse(glyph))
+        }
+        return path
+    }()
+
+    public func path(in rect: CGRect) -> Path {
+        let bounds = JunoBrandGeometry.wordmarkBounds
+        let scale = min(rect.width / bounds.width, rect.height / bounds.height)
+        let transform = CGAffineTransform(translationX: rect.minX, y: rect.minY)
+            .scaledBy(x: scale, y: scale)
+            .translatedBy(x: -bounds.minX, y: -bounds.minY)
+        return Self.outline.applying(transform)
+    }
+}
+
+/// The few SVG path commands the brand geometry is written in: absolute and
+/// relative M, L, H, V, C, Q and Z.
+enum JunoSVGPath {
+    static func parse(_ data: String) -> Path {
+        var path = Path()
+        var tokens: [String] = []
+        var number = ""
+        func flush() {
+            if !number.isEmpty { tokens.append(number); number = "" }
+        }
+        for character in data {
+            if character.isLetter, character != "e" {
+                flush()
+                tokens.append(String(character))
+            } else if character == "-", !number.isEmpty, number.last != "e" {
+                flush()
+                number = "-"
+            } else if character == " " || character == "," {
+                flush()
+            } else {
+                number.append(character)
             }
         }
+        flush()
+
+        var index = 0
+        var command: Character = "M"
+        var current = CGPoint.zero
+        var start = CGPoint.zero
+        func next() -> CGFloat {
+            defer { index += 1 }
+            return index < tokens.count ? CGFloat(Double(tokens[index]) ?? 0) : 0
+        }
+        func point(relative: Bool) -> CGPoint {
+            let x = next(), y = next()
+            return relative ? CGPoint(x: current.x + x, y: current.y + y) : CGPoint(x: x, y: y)
+        }
+        while index < tokens.count {
+            if let letter = tokens[index].first, letter.isLetter {
+                command = letter
+                index += 1
+            }
+            let relative = command.isLowercase
+            switch command.uppercased() {
+            case "M":
+                current = point(relative: relative)
+                start = current
+                path.move(to: current)
+                // Further pairs after a move are lines.
+                command = relative ? "l" : "L"
+            case "L":
+                current = point(relative: relative)
+                path.addLine(to: current)
+            case "H":
+                let x = next()
+                current = CGPoint(x: relative ? current.x + x : x, y: current.y)
+                path.addLine(to: current)
+            case "V":
+                let y = next()
+                current = CGPoint(x: current.x, y: relative ? current.y + y : y)
+                path.addLine(to: current)
+            case "C":
+                let c1 = point(relative: relative), c2 = point(relative: relative), to = point(relative: relative)
+                path.addCurve(to: to, control1: c1, control2: c2)
+                current = to
+            case "Q":
+                let c = point(relative: relative), to = point(relative: relative)
+                path.addQuadCurve(to: to, control: c)
+                current = to
+            case "Z":
+                path.closeSubpath()
+                current = start
+            default:
+                index += 1
+            }
+        }
+        return path
+    }
+}
+
+/// The Alevr lockup: mark plus wordmark, the mark's mass one and a half path
+/// widths from the word, as `alevr-lockup-geometry.ts` sets it.
+public struct JunoLogo: View {
+    private let showsWordmark: Bool
+    private let height: CGFloat
+
+    /// - Parameter height: the mark's side. The word's cap height follows the
+    ///   web's lockup (the mark is 1.1 cap heights tall).
+    public init(showsWordmark: Bool = true, height: CGFloat = 24) {
+        self.showsWordmark = showsWordmark
+        self.height = height
+    }
+
+    public var body: some View {
+        HStack(spacing: height * 0.2) {
+            JunoMark(size: height)
+            if showsWordmark {
+                // The wordmark's ink box (ascender to baseline) is ~1.08 cap
+                // heights; the mark sits at 1.1 cap heights.
+                JunoWordmark(height: height * 0.72)
+            }
+        }
+        .foregroundStyle(.primary)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Juno")
+        .accessibilityLabel("Alevr")
     }
 }
 

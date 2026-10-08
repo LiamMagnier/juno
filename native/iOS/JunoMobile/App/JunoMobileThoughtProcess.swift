@@ -102,7 +102,7 @@ struct JunoMobileThoughtProcessRow: View {
             // settles, so its sentence slides 18pt left→right at the moment the
             // strip changes state. One gutter for both states keeps the text on a
             // single axis, which is the point of the two states being one object.
-            JunoThinkingMatrix()
+            JunoGalaxyMark(size: 18)
                 .foregroundStyle(Color.junoMutedForeground)
                 .frame(width: Self.gutter)
             liveCopy

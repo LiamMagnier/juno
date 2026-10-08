@@ -52,9 +52,18 @@ public struct JunoProviderMark: View {
         #endif
     }
 
+    /// Alevr's own models wear the Continuum, drawn as vectors (``JunoMark``)
+    /// rather than from a raster that could fall behind the brand.
+    private var isHouse: Bool {
+        ["juno", "alevr"].contains(providerID.lowercased())
+    }
+
     public var body: some View {
         Group {
-            if assetExists {
+            if isHouse {
+                JunoMark(size: size)
+                    .foregroundStyle(Color.junoForeground)
+            } else if assetExists {
                 Image(assetName)
                     .resizable()
                     .scaledToFit()

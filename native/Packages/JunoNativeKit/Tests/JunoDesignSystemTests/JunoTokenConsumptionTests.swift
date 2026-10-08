@@ -138,6 +138,10 @@ final class JunoTokenConsumptionTests: XCTestCase {
             "junoCaution": .nativeOnly(
                 "The shipped status ramp. Migrates to junoWarningInk (text) / junoWarning (fill)."
             ),
+            "junoPresence": .nativeOnly(
+                "Presence ink, the brand's live colour. The web states it in thinking-mark.css (--tm-presence), not globals.css."
+            ),
+            "junoGalaxyCore": .nativeOnly("The galaxy thinking mark's warm core (GALAXY_SPEC). No web token."),
             // Builders.
             "junoAdaptive": .builder,
         ]
@@ -316,6 +320,12 @@ final class JunoTokenConsumptionTests: XCTestCase {
                 "The phone's incognito ink ground over a light app; the web states no incognito ground. Shipped (96ad8299); moves to a generated token in the iOS pass.",
             "JunoMobileIncognito.swift:deep":
                 "The phone's incognito ink ground over a dark app, a step below the canvas; no web token. Shipped (96ad8299); moves with `ground`.",
+            "JunoColors.swift:presenceLight":
+                "Presence ink (#2D49C9), which the web states in thinking-mark.css rather than globals.css.",
+            "JunoColors.swift:presenceDark":
+                "Presence ink on charcoal (#97A6E6), stated in thinking-mark.css rather than globals.css.",
+            "JunoColors.swift:galaxyCoreLight": "The galaxy mark's warm core on paper (#8A6A3E); the web lane types it in galaxy-mark.tsx.",
+            "JunoColors.swift:galaxyCoreDark": "The galaxy mark's warm core on charcoal (#F3D9B1); the web lane types it in galaxy-mark.tsx.",
             "JunoMobilePremium.swift:shadow":
                 "The phone front door's umber shadow hue, warmer than the web's --shadow-ink. Shipped (42d77b79); moves to JunoGeneratedColors.shadowInk in the iOS pass.",
         ]

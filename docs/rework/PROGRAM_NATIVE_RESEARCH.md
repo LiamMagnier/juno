@@ -10,7 +10,7 @@ Plan and clarification gates use the same editorial hierarchy. Finished receipts
 
 The iOS research component beside the composer replaces the linear stage rail with the last actual phase, real query when searching, and an expandable evidence ledger with the observed searches and read sources. Source links are usable 44-point targets. Ready-state depth describes the next run; active work has the existing generation Stop action. Unknown found/cited counts are omitted. Historical activity is identified as last activity once generation stops. Degradation and reported warnings remain visible.
 
-`JunoResearchPresence` in the shared design system projects the exact four optical paths and high-resolution master from `src/components/brand/continuum-geometry.ts`. `node scripts/generate-native-research-presence.mjs --check` verifies the projection; the same command without `--check` regenerates it. It does one stationary tone pass on a real phase/event change, delays the first pass 200 ms, coalesces changes within 1.6 seconds, uses shared `JunoMotion.base` and stops on cancellation/disappearance. No clock-driven loop, spinning mark or decorative progress. Reduce Motion stays entirely still. Neutral semantic native tokens handle appearance; accent is confined to active presence.
+`JunoResearchPresence` in the shared design system projects the exact four optical paths and high-resolution master from `src/components/brand/continuum-geometry.ts`. `node scripts/generate-native-brand-geometry.mjs --check` verifies the projection (now `JunoBrandGeometry.swift`, shared with `JunoMark`); the same command without `--check` regenerates it. Since 2026-10-08 `JunoResearchPresence` draws the galaxy working mark (`JunoGalaxyMark`) and the Continuum is the static brand mark only. It does one stationary tone pass on a real phase/event change, delays the first pass 200 ms, coalesces changes within 1.6 seconds, uses shared `JunoMotion.base` and stops on cancellation/disappearance. No clock-driven loop, spinning mark or decorative progress. Reduce Motion stays entirely still. Neutral semantic native tokens handle appearance; accent is confined to active presence.
 
 ## Deliberate capability boundaries
 
@@ -42,6 +42,6 @@ The iOS research component beside the composer replaces the linear stage rail wi
 - `native/iOS/JunoMobile/App/JunoMobileResearchProgress.swift`
 - `native/iOS/JunoMobile/App/JunoMobileComposer.swift`
 - `native/macOS/JunoDesktop/Tests/Snapshots/ResearchStageBSnapshotTests.swift`
-- `scripts/generate-native-research-presence.mjs`
+- `scripts/generate-native-brand-geometry.mjs`
 
 Build logs: `/tmp/juno-native-research-macos.log`, `/tmp/juno-native-research-ios-final.log`; test logs: `/tmp/juno-native-research-tests.log`, `/tmp/juno-native-research-desktop-tests-final.log`.

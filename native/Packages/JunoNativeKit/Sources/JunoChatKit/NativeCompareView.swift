@@ -391,7 +391,7 @@ struct NativeComparePane: View {
 
     private var thinking: some View {
         HStack(spacing: JunoSpace.cozy) {
-            JunoThinkingMatrix()
+            JunoGalaxyMark(size: 18)
                 .foregroundStyle(Color.junoMutedForeground.opacity(0.65))
             JunoAIcssThinkingLabel(
                 run.status == .writing ? "Writing the response" : "Thinking about your request",
