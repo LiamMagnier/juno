@@ -307,6 +307,9 @@ public enum CodeV2 {
         case wait
         case openApp = "open_app"
         case zoom
+        case axFind = "ax_find"
+        case axPress = "ax_press"
+        case menu
     }
 
     // contract: SUBAGENT_STATUS_VALUES
@@ -577,6 +580,229 @@ public enum CodeV2 {
         public var target: String?
         public var screenshotRef: String?
         public var status: ItemStatus
+        public var app: String?
+        public var summary: String?
+        /// Where it landed, as a fraction (0…1 each way) of the screenshot.
+        public var point: UnitPoint?
+        public var frameSize: FrameSize?
+        public var error: String?
+        public var durationMs: Double?
+
+        public struct UnitPoint: Codable, Sendable, Hashable {
+            public var x: Double
+            public var y: Double
+            public init(x: Double, y: Double) {
+                self.x = x
+                self.y = y
+            }
+        }
+
+        public struct FrameSize: Codable, Sendable, Hashable {
+            public var width: Int
+            public var height: Int
+            public init(width: Int, height: Int) {
+                self.width = width
+                self.height = height
+            }
+        }
+
+        public init(
+            id: String,
+            turnId: String? = nil,
+            createdAt: String,
+            callId: String,
+            action: ComputerActionKind,
+            target: String? = nil,
+            screenshotRef: String? = nil,
+            status: ItemStatus,
+            app: String? = nil,
+            summary: String? = nil,
+            point: UnitPoint? = nil,
+            frameSize: FrameSize? = nil,
+            error: String? = nil,
+            durationMs: Double? = nil
+        ) {
+            self.id = id
+            self.turnId = turnId
+            self.createdAt = createdAt
+            self.callId = callId
+            self.action = action
+            self.target = target
+            self.screenshotRef = screenshotRef
+            self.status = status
+            self.app = app
+            self.summary = summary
+            self.point = point
+            self.frameSize = frameSize
+            self.error = error
+            self.durationMs = durationMs
+        }
+    }
+
+    // MARK: Computer use (SPEC §3.12)
+
+    /// The provider-agnostic computer tool's name (`ALEVR_COMPUTER_TOOL_NAME`).
+    public static let computerToolName = "computer_use"
+    /// `DESKTOP_LOCK_STALE_MS`.
+    public static let desktopLockStaleMilliseconds = 15_000
+
+    // contract: COMPUTER_COORDINATE_SPACE_VALUES
+    public enum ComputerCoordinateSpace: String, Codable, Sendable, CaseIterable, Hashable {
+        case pixels
+        case normalized1000 = "normalized_1000"
+    }
+
+    /// One `computer_use` call's arguments, snake_case as on the wire.
+    public struct ComputerToolArgs: Codable, Sendable, Hashable {
+        public enum Direction: String, Codable, Sendable, Hashable { case up, down, left, right }
+        public var action: ComputerActionKind
+        public var app: String?
+        public var x: Double?
+        public var y: Double?
+        public var toX: Double?
+        public var toY: Double?
+        public var element: String?
+        public var query: String?
+        public var text: String?
+        public var direction: Direction?
+        public var amount: Int?
+        public var seconds: Double?
+        public var region: [Double]?
+        public var path: [String]?
+        public var coordinateSpace: ComputerCoordinateSpace?
+
+        enum CodingKeys: String, CodingKey {
+            case action, app, x, y, element, query, text, direction, amount, seconds, region, path
+            case toX = "to_x"
+            case toY = "to_y"
+            case coordinateSpace = "coordinate_space"
+        }
+
+        public init(
+            action: ComputerActionKind,
+            app: String? = nil,
+            x: Double? = nil,
+            y: Double? = nil,
+            toX: Double? = nil,
+            toY: Double? = nil,
+            element: String? = nil,
+            query: String? = nil,
+            text: String? = nil,
+            direction: Direction? = nil,
+            amount: Int? = nil,
+            seconds: Double? = nil,
+            region: [Double]? = nil,
+            path: [String]? = nil,
+            coordinateSpace: ComputerCoordinateSpace? = nil
+        ) {
+            self.action = action
+            self.app = app
+            self.x = x
+            self.y = y
+            self.toX = toX
+            self.toY = toY
+            self.element = element
+            self.query = query
+            self.text = text
+            self.direction = direction
+            self.amount = amount
+            self.seconds = seconds
+            self.region = region
+            self.path = path
+            self.coordinateSpace = coordinateSpace
+        }
+    }
+
+    /// The cross-process desktop lock file's record.
+    public struct DesktopLockRecord: Codable, Sendable, Hashable {
+        public enum Kind: String, Codable, Sendable, Hashable {
+            case codeSession = "code_session"
+            case workTask = "work_task"
+            case envServer = "env_server"
+        }
+        public var holderId: String
+        public var kind: Kind
+        public var title: String
+        public var pid: Int32
+        public var app: String?
+        public var acquiredAt: String
+        public var heartbeatAt: String
+
+        public init(holderId: String, kind: Kind, title: String, pid: Int32, app: String? = nil, acquiredAt: String, heartbeatAt: String) {
+            self.holderId = holderId
+            self.kind = kind
+            self.title = title
+            self.pid = pid
+            self.app = app
+            self.acquiredAt = acquiredAt
+            self.heartbeatAt = heartbeatAt
+        }
+    }
+
+    public struct ComputerBridgeRequest: Codable, Sendable, Hashable {
+        public enum RequestType: String, Codable, Sendable, Hashable {
+            case call = "computer.call"
+            case status = "computer.status"
+            case release = "computer.release"
+        }
+        public var id: String
+        public var type: RequestType
+        public var token: String
+        public var sessionId: String
+        public var title: String?
+        public var runtimeMode: RuntimeMode?
+        public var callId: String?
+        public var args: ComputerToolArgs?
+
+        public init(
+            id: String, type: RequestType, token: String, sessionId: String, title: String? = nil,
+            runtimeMode: RuntimeMode? = nil, callId: String? = nil, args: ComputerToolArgs? = nil
+        ) {
+            self.id = id
+            self.type = type
+            self.token = token
+            self.sessionId = sessionId
+            self.title = title
+            self.runtimeMode = runtimeMode
+            self.callId = callId
+            self.args = args
+        }
+    }
+
+    public struct ComputerBridgeImage: Codable, Sendable, Hashable {
+        public var mediaType: String
+        /// Base64.
+        public var data: String
+        public init(mediaType: String, data: String) {
+            self.mediaType = mediaType
+            self.data = data
+        }
+    }
+
+    public struct ComputerBridgeResponse: Codable, Sendable, Hashable {
+        public var id: String
+        public var ok: Bool
+        public var text: String
+        public var image: ComputerBridgeImage?
+        /// Always a `.computerAction`; typed as the union so it encodes its `kind`.
+        public var item: TurnItem?
+        public var missingPermissions: [String]?
+        public var holder: DesktopLockRecord?
+        public var endsTurn: Bool?
+
+        public init(
+            id: String, ok: Bool, text: String, image: ComputerBridgeImage? = nil, item: TurnItem? = nil,
+            missingPermissions: [String]? = nil, holder: DesktopLockRecord? = nil, endsTurn: Bool? = nil
+        ) {
+            self.id = id
+            self.ok = ok
+            self.text = text
+            self.image = image
+            self.item = item
+            self.missingPermissions = missingPermissions
+            self.holder = holder
+            self.endsTurn = endsTurn
+        }
     }
 
     /// One normalized thread item (SPEC §3.2), discriminated by `kind`.
