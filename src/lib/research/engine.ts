@@ -718,7 +718,7 @@ export function createResearchEngine(deps: ResearchDeps): ResearchEngine {
         return { ok: true, state: latest.state };
       }
       const keepIds = (plan.pendingRevision?.questions ?? []).map((q) => q.id);
-      const planned = plannedResearch(drafted.output, { keepIds });
+      const planned = plannedResearch(drafted.output, { keepIds, goal: run.goal });
       const known = new Set(asked.map((c) => c.id));
       const kept = Object.fromEntries(Object.entries(plan.pendingRevision?.answers ?? {}).filter(([id]) => known.has(id)));
       let next: ResearchPlan = {

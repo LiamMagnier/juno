@@ -14,6 +14,8 @@ import {
 import type { ResearchRunRow, StepOutcome } from "./types";
 import { computeCoverage } from "./coverage";
 import { broadenedQueries } from "@/lib/research/broaden";
+import { auditGaps, renderGapAudit } from "@/lib/research/gap-audit";
+import { dedupeQueries, subjectOf } from "@/lib/research/query-dedupe";
 import type { EngineContext } from "./context";
 import type { createCorpusStage } from "./corpus";
 
@@ -78,11 +80,26 @@ export function createCoverageStage(ctx: EngineContext, stages: Pick<ReturnType<
 
     // The lead's latest review, when there is one, decides the statuses and
     // the gaps; the heuristic decides only when no worker round has run.
-    const computed = computeCoverage(
-      plan,
-      await store.listSources(run.id, run.userId),
-      plan.rounds?.[plan.rounds.length - 1]?.review
-    );
+    const sources = await store.listSources(run.id, run.userId);
+    const computed = computeCoverage(plan, sources, plan.rounds?.[plan.rounds.length - 1]?.review);
+    /*
+     * Protocol Stage 4, before any writing: the gap audit over everything the
+     * run recorded — figures the vectors named that nothing states, figures
+     * two pages state differently, figures resting on old or undated pages,
+     * claims nobody verified. Its targeted searches go first in the follow-up
+     * below; its verdict is stored for the writer either way.
+     */
+    const issuedAll = [...plan.queries, ...(plan.issuedQueries ?? []), ...(plan.workerQueries ?? [])];
+    const audit = auditGaps({
+      objectives: computed.objectives,
+      findings: store.listFindings ? await store.listFindings(run.id, run.userId) : [],
+      sources: sources.map((source) => ({ id: source.id, url: source.url, publishedAt: source.publishedAt })),
+      now: deps.now(),
+      subject: subjectOf(plan.title || run.goal),
+      issued: issuedAll,
+    });
+    // Leads the last worker round opened that no round went on to chase.
+    const unchasedLeads = dedupeQueries(plan.rounds?.[plan.rounds.length - 1]?.leads ?? [], issuedAll);
     // Merged, not replaced: the conflicts already on the plan are the lead's
     // contradictions and the syndication groups, and replacing them with the
     // heuristic's exact-hash duplicates here used to erase them one stage
@@ -96,6 +113,12 @@ export function createCoverageStage(ctx: EngineContext, stages: Pick<ReturnType<
         ...(plan.conflicts ?? []),
         ...computed.conflicts.filter((conflict) => !knownConflicts.has(conflict.id)),
       ].slice(0, MAX_CONFLICTS),
+      gapAudit: {
+        at: deps.now().toISOString(),
+        pass: (plan.gapAudit?.pass ?? 0) + 1,
+        entries: audit.entries,
+        queries: audit.queries,
+      },
     };
     const round = plan.followUpRound ?? 0;
     const availableSlots = Math.max(0, MAX_PLAN_QUERIES - nextPlan.queries.length);
@@ -113,7 +136,12 @@ export function createCoverageStage(ctx: EngineContext, stages: Pick<ReturnType<
      * a failure falls through to the templates rather than ending the round.
      */
     const roundLimit = Math.min(MAX_FOLLOW_UP_ROUNDS, Math.max(0, planBudget(plan).rounds - 1));
-    let followUps = round < roundLimit ? computed.followUps.slice(0, availableSlots) : [];
+    // Targeted first: the audit's searches and the unchased leads name a
+    // record and a figure; the templates only name the question again.
+    let followUps =
+      round < roundLimit
+        ? dedupeQueries([...audit.queries, ...unchasedLeads, ...computed.followUps], issuedAll).slice(0, availableSlots)
+        : [];
     // "Finish now" stops the rounds here (§9.7), and so does a follow-up sweep
     // that would eat the writer's and the audit's reservation (B8).
     if (plan.finishRequestedAt) followUps = [];
@@ -130,7 +158,7 @@ export function createCoverageStage(ctx: EngineContext, stages: Pick<ReturnType<
     if (
       deps.expandQueries &&
       followUps.length > 0 &&
-      computed.gaps.length > 0 &&
+      (computed.gaps.length > 0 || audit.hasGaps) &&
       (await affordable(run, EXPANSION_ESTIMATE_MICRO_USD + reserve))
     ) {
       const expanded = await beat(
@@ -138,7 +166,13 @@ export function createCoverageStage(ctx: EngineContext, stages: Pick<ReturnType<
           deps.expandQueries!({
             userId: run.userId,
             goal: run.goal,
-            gaps: computed.gaps,
+            gaps: [
+              ...computed.gaps,
+              // The audit's missing figures and conflicts, as gaps the expander can aim at.
+              ...renderGapAudit(audit.entries, (id) => computed.objectives.find((objective) => objective.id === id)?.question ?? id).map(
+                (line) => ({ question: line.replace(/^- /, ""), status: "missing_figures" })
+              ),
+            ],
             // The sweep's queries and then the workers', newest last, so the
             // expander is told what the team actually tried and not only the
             // seed list it was told about last round.
@@ -159,7 +193,11 @@ export function createCoverageStage(ctx: EngineContext, stages: Pick<ReturnType<
           return true;
         })
         .slice(0, availableSlots);
-      if (fresh.length > 0) followUps = fresh;
+      // Merged after the audit's own queries rather than replacing them: the
+      // audit's are already aimed at a named record and figure.
+      if (fresh.length > 0) {
+        followUps = dedupeQueries([...audit.queries, ...unchasedLeads, ...fresh], issuedAll).slice(0, availableSlots);
+      }
     }
     await store.savePlan({
       runId: run.id,
@@ -189,6 +227,9 @@ export function createCoverageStage(ctx: EngineContext, stages: Pick<ReturnType<
           coverage: computed.coverage,
           conflicts: nextPlan.conflicts,
           policyExcluded: computed.policyExcluded,
+          ...(audit.hasGaps
+            ? { gapAudit: renderGapAudit(audit.entries, (id) => computed.objectives.find((objective) => objective.id === id)?.question ?? id).slice(0, 8) }
+            : {}),
         },
       },
     ]);
@@ -196,7 +237,12 @@ export function createCoverageStage(ctx: EngineContext, stages: Pick<ReturnType<
       await append(run.id, run.userId, [
         {
           kind: "follow_up_scheduled",
-          payload: { round: round + 1, queries: followUps, reason: "coverage_insufficient" },
+          payload: {
+            round: round + 1,
+            queries: followUps,
+            reason: "coverage_insufficient",
+            ...(audit.queries.length ? { gapAuditQueries: followUps.filter((query) => audit.queries.includes(query)).length } : {}),
+          },
         },
       ]);
       const searching = await advance(

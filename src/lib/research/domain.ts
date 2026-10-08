@@ -520,6 +520,48 @@ export interface ResearchObjective {
   status: ResearchObjectiveStatus;
   evidenceRequirements: EvidenceRequirement[];
   childObjectiveIds: string[];
+  /**
+   * The investigative vector behind the question (research protocol Stage 1):
+   * the concrete figures it must produce, the primary sources that hold them,
+   * and the claims or controversies it must verify. Absent on plans drafted
+   * before the protocol and on plans built from the question as asked.
+   */
+  vector?: ResearchVector;
+}
+
+/** What one investigative vector must establish, and from where (protocol Stage 1). */
+export interface ResearchVector {
+  /** Exact figures, limits, dates or terms the vector must produce: "per-seat price", "requests per minute". */
+  metrics: string[];
+  /** Primary records to target: "official pricing page", "API rate-limit docs", "GitHub releases". */
+  sources: string[];
+  /** Marketing claims, controversies or failure modes to confirm or refute against a primary record. */
+  verify: string[];
+}
+
+export const MAX_VECTOR_ITEMS = 5;
+export const MAX_VECTOR_ITEM_CHARS = 160;
+
+/** The pre-writing self-audit (protocol Stage 4), per vector. */
+export interface ResearchGapAuditEntry {
+  objectiveId: string;
+  /** Metrics the vector named that no finding states with a figure. */
+  missingFigures: string[];
+  /** Claims-to-verify no finding addresses. */
+  unverified: string[];
+  /** Findings that state different figures for the same thing, from different hosts. */
+  conflicts: Array<{ description: string; sourceIds: string[] }>;
+  /** Figures that rest only on undated or old pages, for a vector where recency matters. */
+  stale: string[];
+}
+
+export interface ResearchGapAudit {
+  at: string;
+  /** How many audits the run has run; the follow-up they scheduled is bounded by the rounds. */
+  pass: number;
+  entries: ResearchGapAuditEntry[];
+  /** The targeted searches the audit scheduled. */
+  queries: string[];
 }
 
 /** The evidence contract the controller must satisfy before it stops. */
@@ -737,6 +779,53 @@ export function parseClarificationAnswers(value: Record<string, unknown>): Recor
   return out;
 }
 
+/** A stored vector, or undefined when it carries nothing. */
+export function parseVector(value: unknown): ResearchVector | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const raw = value as Record<string, unknown>;
+  const vector = {
+    metrics: cleanStringArray(raw.metrics, MAX_VECTOR_ITEMS, MAX_VECTOR_ITEM_CHARS),
+    sources: cleanStringArray(raw.sources, MAX_VECTOR_ITEMS, MAX_VECTOR_ITEM_CHARS),
+    verify: cleanStringArray(raw.verify, MAX_VECTOR_ITEMS, MAX_VECTOR_ITEM_CHARS),
+  };
+  return vector.metrics.length || vector.sources.length || vector.verify.length ? vector : undefined;
+}
+
+function parseGapAudit(value: unknown): ResearchGapAudit | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const raw = value as Record<string, unknown>;
+  if (!Array.isArray(raw.entries)) return undefined;
+  const entries: ResearchGapAuditEntry[] = [];
+  for (const item of raw.entries.slice(0, MAX_RESEARCH_OBJECTIVES)) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    const entry = item as Record<string, unknown>;
+    if (typeof entry.objectiveId !== "string" || !entry.objectiveId) continue;
+    const conflicts = Array.isArray(entry.conflicts)
+      ? entry.conflicts
+          .filter((c): c is Record<string, unknown> => !!c && typeof c === "object" && !Array.isArray(c))
+          .map((c) => ({
+            description: typeof c.description === "string" ? c.description.slice(0, 400) : "",
+            sourceIds: cleanStringArray(c.sourceIds, 4, 80),
+          }))
+          .filter((c) => c.description)
+          .slice(0, 6)
+      : [];
+    entries.push({
+      objectiveId: entry.objectiveId.slice(0, 80),
+      missingFigures: cleanStringArray(entry.missingFigures, MAX_VECTOR_ITEMS, MAX_VECTOR_ITEM_CHARS),
+      unverified: cleanStringArray(entry.unverified, MAX_VECTOR_ITEMS, MAX_VECTOR_ITEM_CHARS),
+      conflicts,
+      stale: cleanStringArray(entry.stale, MAX_VECTOR_ITEMS, 240),
+    });
+  }
+  return {
+    at: typeof raw.at === "string" ? raw.at : "",
+    pass: typeof raw.pass === "number" && Number.isFinite(raw.pass) ? Math.max(0, Math.floor(raw.pass)) : 0,
+    entries,
+    queries: cleanStringArray(raw.queries, 16, MAX_QUERY_CHARS),
+  };
+}
+
 function parseObjectives(value: unknown): ResearchObjective[] {
   if (!Array.isArray(value)) return [];
   const out: ResearchObjective[] = [];
@@ -792,6 +881,7 @@ function parseObjectives(value: unknown): ResearchObjective[] {
       status: parseObjectiveStatus(item.status),
       evidenceRequirements: requirements,
       childObjectiveIds: cleanStringArray(item.childObjectiveIds, MAX_RESEARCH_OBJECTIVES, 80),
+      ...(parseVector(item.vector) ? { vector: parseVector(item.vector)! } : {}),
     });
     seen.add(id);
     if (out.length >= MAX_RESEARCH_OBJECTIVES) break;
@@ -987,6 +1077,10 @@ export interface ResearchPlan {
    * link again and re-emitting the same error line.
    */
   unreadable?: string[];
+  /** The latest pre-writing gap audit (protocol Stage 4). The writer is shown it. */
+  gapAudit?: ResearchGapAudit;
+  /** URLs the sweep fetched, so a follow-up pass does not fetch a short page again. Newest last. */
+  sweepFetched?: string[];
 
   /*
    * The rework's fields (SPEC §9.2–§9.7). Every one is optional and has a
@@ -1284,6 +1378,12 @@ export interface ResearchRound {
    * had flagged as unanswered.
    */
   openQuestions?: string[];
+  /**
+   * Micro-queries the round's findings opened (protocol Stage 3, multi-hop):
+   * a new tier name, a deprecation, a rate limit, an incident — each turned
+   * into one specific search the next round is sent to run.
+   */
+  leads?: string[];
 }
 
 /** What the lead concluded from one round. */
@@ -1440,6 +1540,8 @@ export function parsePlan(value: unknown): ResearchPlan {
     ...(Array.isArray(raw.unreadable)
       ? { unreadable: cleanList(raw.unreadable.slice(-MAX_UNREADABLE_SOURCES), MAX_UNREADABLE_SOURCES, MAX_QUERY_CHARS) }
       : {}),
+    ...(parseGapAudit(raw.gapAudit) ? { gapAudit: parseGapAudit(raw.gapAudit)! } : {}),
+    ...(Array.isArray(raw.sweepFetched) ? { sweepFetched: cleanList(raw.sweepFetched.slice(-250), 250, 2_000) } : {}),
     ...parseReworkFields(raw),
   };
 }
@@ -1805,6 +1907,7 @@ function parseRounds(value: unknown): ResearchRound[] {
       ...(Array.isArray(item.openQuestions)
         ? { openQuestions: cleanList(item.openQuestions, MAX_ROUND_OPEN_QUESTIONS, MAX_QUERY_CHARS) }
         : {}),
+      ...(Array.isArray(item.leads) && item.leads.length ? { leads: cleanList(item.leads, MAX_ROUND_OPEN_QUESTIONS, MAX_QUERY_CHARS) } : {}),
     });
   }
   return out;
@@ -1963,16 +2066,17 @@ export const REVISION_REPORT_CHARS = 48_000;
  * Allowance for the system prompt riding each model call.
  *
  * One number rather than four because a per-prompt constant would be four
- * things to keep in step for no extra accuracy. 4,000 covers the largest of
- * them — the structured planner's contract (plan-format.ts) runs ~3,500
- * characters; the worker, lead and writer prompts are well under.
+ * things to keep in step for no extra accuracy. 6,000 covers the largest of
+ * them — the protocol planner's contract (planner.prompt.ts) runs ~5,300
+ * characters; the worker, lead and writer prompts are under.
  */
-export const SYSTEM_PROMPT_CHARS = 4_000;
+export const SYSTEM_PROMPT_CHARS = 6_000;
 /**
  * Fixed characters of `buildResearchCorpus` before any source: the report
- * contract, the untrusted-content rule and the restated goal.
+ * contract, the untrusted-content rule and the restated goal. 6,500 since the
+ * research protocol's Stage 5 contract and the vector block (PROTOCOL_UPGRADE.md).
  */
-export const CORPUS_PREAMBLE_CHARS = 4_000;
+export const CORPUS_PREAMBLE_CHARS = 6_500;
 /**
  * Per-source characters the corpus adds around the snapshot itself — the
  * ordinal, a title capped at 200, the URL twice (once as the citation line,

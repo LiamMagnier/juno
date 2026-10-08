@@ -97,7 +97,7 @@ export const WORKER_TOOLS: readonly WorkerToolDefinition[] = [
   {
     name: "search",
     description:
-      "Search the web. Start with short, broad queries (2-5 words) and narrow only once you know the vocabulary the field uses. Returns numbered results; results already read by this run are marked so you can skip them.",
+      "Search the web. Aim each search at a primary record (official docs, pricing page, changelog, filing, repository, benchmark) and name the entity. Returns numbered results, primary records first, each labelled by source quality; results already read by this run are marked so you can skip them. A near-duplicate of a search the team already ran is refused without cost.",
     parameters: {
       type: "object",
       properties: { query: { type: "string", description: "The search query." } },
@@ -278,6 +278,8 @@ export interface WorkerSearchHit {
   snippet: string;
   /** Already opened by this run — the worker is told, so it can skip it. */
   read: boolean;
+  /** The source policy's label ("primary record", "aggregator/affiliate — avoid citing"), protocol Stage 2. */
+  quality?: string;
 }
 
 export type WorkerPageDigest =
@@ -428,6 +430,10 @@ export interface ReviewRoundInput {
   pagesLeft: number;
   /** The previous review, so coverage cannot silently regress between rounds. */
   previous?: ResearchRoundReview;
+  /** The deterministic gap audit's lines (protocol Stage 4): missing figures, conflicts, stale figures. */
+  audit?: string[];
+  /** Micro-queries the round's findings opened (protocol Stage 3). */
+  leads?: string[];
   /** "Today is …" — the run's frozen date line (SPEC §9.3). */
   today?: string;
   /** The run's lead model id, frozen on its envelope (§9.5.1). Absent: the strongest configured. */
@@ -492,7 +498,10 @@ export function renderSearchDigest(hits: WorkerSearchHit[], note?: string): stri
   if (hits.length === 0) return note ?? "No results.";
   return [
     ...(note ? [note, ""] : []),
-    ...hits.map((hit, i) => `${i + 1}. ${hit.title}${hit.read ? " (already read)" : ""}\n   ${hit.url}\n   ${hit.snippet}`),
+    ...hits.map(
+      (hit, i) =>
+        `${i + 1}. ${hit.title}${hit.quality ? ` [${hit.quality}]` : ""}${hit.read ? " (already read)" : ""}\n   ${hit.url}\n   ${hit.snippet}`
+    ),
   ].join("\n");
 }
 

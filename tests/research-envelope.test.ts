@@ -145,7 +145,10 @@ test("an unreduced scope is limitedBy scope; a reduced one names the window or t
   const tiny = envelope(size({ plan: "MAX20", scope: scope({ questions: 1, breadth: "focused" }) }));
   assert.equal(tiny.limitedBy, "scope");
   assert.equal(tiny.workers, 1);
-  assert.equal(tiny.rounds, 1);
+  // Research protocol RULE 0.3: two rounds unless the planner called it quick.
+  assert.equal(tiny.rounds, 2);
+  const quick = envelope(size({ plan: "MAX20", scope: scope({ questions: 1, breadth: "focused", quick: true }) }));
+  assert.equal(quick.rounds, 1, "a quick scope keeps its single round");
 
   const wide = scope({ questions: 6, breadth: "exhaustive" });
   const windowBound = envelope(size({ plan: "PRO", scope: wide, remaining: { ...PLENTY, windowMicroUsd: eur(2.5) } }));

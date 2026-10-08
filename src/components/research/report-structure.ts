@@ -83,7 +83,7 @@ export function citationSources(
   }));
 }
 
-export type ReportSectionKind = "bottom-line" | "findings" | "question" | "conflicts" | "gaps" | "method" | "other";
+export type ReportSectionKind = "bottom-line" | "matrix" | "findings" | "question" | "gotchas" | "conflicts" | "gaps" | "method" | "other";
 
 export interface ReportSection {
   /** Stable within the report: the marker (`question:q2`), else `section-{n}`. */
@@ -117,7 +117,9 @@ function kindOf(marker: string): ReportSectionKind {
   const head = marker.split(":")[0].toLowerCase();
   switch (head) {
     case "bottom-line":
+    case "matrix":
     case "findings":
+    case "gotchas":
     case "question":
     case "conflicts":
     case "gaps":

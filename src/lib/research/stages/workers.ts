@@ -9,6 +9,7 @@ import {
   type WorkerResult,
   type WorkerStopReason,
   type WorkerTools,
+  type WorkerSearchHit,
   chunkOrdinal,
   chunkText,
   compileFindPattern,
@@ -52,8 +53,35 @@ import {
 import { canonicalUrl } from "@/lib/search/url-safety";
 import { hostOfUrl, scoreSource, sourceTypeOf } from "@/lib/research/claim-analysis";
 import { runAll } from "@/lib/research/agents/scheduler";
+import { duplicateOf, subjectOf } from "@/lib/research/query-dedupe";
+import { rankByPolicy, tierLabel } from "@/lib/research/source-policy";
+import { extractLeads, type ResearchLead } from "@/lib/research/leads";
+import { auditGaps, renderGapAudit } from "@/lib/research/gap-audit";
+import type { ResearchObjective } from "@/lib/research/domain";
 import { splitPassages } from "./writer-text";
 import type { EngineContext } from "./context";
+
+/**
+ * Rounds a run makes before it may write, when its envelope allows them
+ * (protocol RULE 0.3: "do not stop at round 1"). A first round that the lead
+ * judges sufficient still sends a second one after the leads its findings
+ * opened and the figures the gap audit found missing — and only when there
+ * are some: a second round with nothing to chase is not research, it is spend.
+ */
+export const MIN_RESEARCH_ROUNDS = 2;
+
+/** The vector's contract, as a worker brief reads it (protocol Stage 1 → Stage 3). */
+export function vectorBrief(objective: Pick<ResearchObjective, "vector">): string {
+  const vector = objective.vector;
+  if (!vector) return "";
+  return [
+    vector.metrics.length ? `Exact figures to extract (from the page, with their dates): ${vector.metrics.join("; ")}.` : "",
+    vector.sources.length ? `Primary records to target first: ${vector.sources.join("; ")}.` : "",
+    vector.verify.length ? `Claims to verify or refute against a primary record: ${vector.verify.join("; ")}.` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
 
 export function createWorkerStage(ctx: EngineContext) {
   const { deps, store, heartbeatMs, beat, append, fetchPage, markSyndicatedCopies, affordable, affordableCount, writerReserve, applySteering, bill, windowSpent } = ctx;
@@ -71,8 +99,9 @@ export function createWorkerStage(ctx: EngineContext) {
         objective: objective.question,
         whatToFind: [
           `Establish, with quotes from authoritative pages, what is known about: ${objective.question}.`,
-          ...(requirements.length ? [`Evidence needed: ${requirements.slice(0, 3).join("; ")}.`] : []),
-          "Prefer official documentation, primary sources, regulators and peer-reviewed or reputable trade reporting; note the date of every figure.",
+          ...(vectorBrief(objective) ? [vectorBrief(objective)] : []),
+          ...(requirements.length && !objective.vector ? [`Evidence needed: ${requirements.slice(0, 3).join("; ")}.`] : []),
+          "Prefer official documentation, pricing pages, changelogs, filings, repositories and benchmarks over articles about them; never cite an aggregator or affiliate roundup when the record exists; note the date of every figure.",
         ].join(" "),
         boundaries: "Other workers cover the other sub-questions; stay on this one.",
       });
@@ -179,6 +208,10 @@ export function createWorkerStage(ctx: EngineContext) {
       queries: string[];
       /** Canonical URLs an earlier pass found dead for good. */
       unreadable: ReadonlySet<string>;
+      /** Every search the run made before this round: a near-duplicate is refused (protocol Stage 3). */
+      issued: readonly string[];
+      /** This round's searches and their results, so a teammate's near-duplicate is served from cache. */
+      results: Map<string, WorkerSearchHit[]>;
     },
     perWorker: { maxToolCalls: number; deadline: number },
     signal?: AbortSignal
@@ -229,6 +262,30 @@ export function createWorkerStage(ctx: EngineContext) {
     return {
       async search(query) {
         const startedAt = Date.now();
+        // A paraphrase of a search the team already ran returns the same page
+        // of results for a second fee. Refused before anything is billed, and
+        // counted as a call so a worker that insists still runs out of calls.
+        // A teammate ran it THIS round: same results, served from the round's
+        // cache — no second fee, and the worker still sees what is there.
+        const cachedAs = duplicateOf(query, [...shared.results.keys()]);
+        if (cachedAs) {
+          await tick("search", query, startedAt, true);
+          return {
+            result: { hits: shared.results.get(cachedAs) ?? [], note: `A teammate already ran "${cachedAs}" this round; these are its results (no new search was made).` },
+            stop: await stopAfter(),
+          };
+        }
+        const duplicate = duplicateOf(query, [...shared.issued, ...shared.queries]);
+        if (duplicate) {
+          await tick("search", query, startedAt, false);
+          return {
+            result: {
+              hits: [],
+              note: `Not run: a near-duplicate of the team's earlier search "${duplicate}". Search for a specific primary record instead (a docs page, pricing page, changelog, filing or repository), or use the field's own vocabulary.`,
+            },
+            stop: await stopAfter(),
+          };
+        }
         if (!(await affordable(run, SEARCH_ESTIMATE_MICRO_USD))) {
           await tick("search", query, startedAt, false);
           return { result: { hits: [], note: "The run's budget cannot pay for another search." }, stop: "budget" };
@@ -256,7 +313,7 @@ export function createWorkerStage(ctx: EngineContext) {
           const knownChars = known.get(canonicalUrl(hit.url));
           if (knownChars === undefined) {
             const body = hit.rawContent?.trim() ? hit.rawContent.slice(0, SNAPSHOT_CHARS) : null;
-            const score = scoreSource({ url: hit.url, text: body ?? hit.snippet, publishedAt: hit.publishedAt });
+            const score = scoreSource({ url: hit.url, title: hit.title, text: body ?? hit.snippet, publishedAt: hit.publishedAt });
             const stored = await store.upsertSource({
               runId: run.id,
               userId: run.userId,
@@ -275,7 +332,11 @@ export function createWorkerStage(ctx: EngineContext) {
           hits.push({ url: hit.url, title: hit.title, snippet: hit.snippet.slice(0, 300), read: (knownChars ?? 0) >= 2_000 });
         }
         await tick("search", query, startedAt, true);
-        return { result: { hits }, stop: await stopAfter() };
+        // Primary records first and every hit labelled, so the worker opens
+        // the vendor's own page rather than the roundup that outranked it.
+        const ranked = rankByPolicy(hits).map(({ assessment, ...hit }) => ({ ...hit, quality: tierLabel(assessment.tier) }));
+        shared.results.set(query, ranked);
+        return { result: { hits: ranked }, stop: await stopAfter() };
       },
 
       async openPage(url) {
@@ -310,7 +371,7 @@ export function createWorkerStage(ctx: EngineContext) {
         await bill(run, page.costMicroUsd, "fetch");
         const text = page.text.slice(0, SNAPSHOT_CHARS);
         const publishedAt = page.publishedAt ?? existing?.publishedAt ?? null;
-        const score = scoreSource({ url, text, publishedAt });
+        const score = scoreSource({ url, title: page.title || existing?.title, text, publishedAt });
         const stored = await store.upsertSource({
           runId: run.id,
           userId: run.userId,
@@ -529,6 +590,8 @@ export function createWorkerStage(ctx: EngineContext) {
         resultsPerQuery: budget.resultsPerQuery,
         queries: [] as string[],
         unreadable: new Set((plan.unreadable ?? []).map((url) => canonicalUrl(url))),
+        issued: [...(plan.issuedQueries ?? []), ...(plan.workerQueries ?? [])],
+        results: new Map<string, WorkerSearchHit[]>(),
       };
       // URLs with text, for the brief; by URL and length only, since the
       // snapshots themselves are not needed to tell a worker what to skip.
@@ -694,6 +757,42 @@ export function createWorkerStage(ctx: EngineContext) {
       // the call, and deterministically when it cannot, rather than skipping
       // the review or auditing on credit.
       const latestPlan = parsePlan(((await store.loadRun(current.id, current.userId)) ?? current).plan);
+
+      /*
+       * Protocol Stage 3 and 4, deterministic and free: the leads this round's
+       * findings opened (deprecations, new tiers, rate limits, incidents…) as
+       * micro-queries, and the gap audit (figures still missing, figures that
+       * disagree, figures resting on old pages). Both go to the lead, and both
+       * shape the next round's briefs below whatever the lead decides.
+       */
+      const issuedSoFar = [...shared.issued, ...shared.queries];
+      const leads: ResearchLead[] = extractLeads({
+        findings: findings.map((finding) => ({
+          objectiveId: finding.objectiveId,
+          url: finding.url,
+          claim: finding.claim,
+          quote: finding.quote,
+          round: finding.round,
+        })),
+        round,
+        issued: issuedSoFar,
+        goal: current.goal,
+        suggested: reports.flatMap((report) => report.followUps.map((query) => ({ objectiveId: report.objectiveId, query }))),
+      });
+      const audit = auditGaps({
+        objectives: latestPlan.objectives,
+        findings,
+        sources: (await store.listSources(current.id, current.userId)).map((source) => ({
+          id: source.id,
+          url: source.url,
+          publishedAt: source.publishedAt,
+        })),
+        now: deps.now(),
+        subject: subjectOf(latestPlan.title || current.goal),
+        issued: [...issuedSoFar, ...leads.map((lead) => lead.query)],
+      });
+      const questionOf = (id: string) => latestPlan.objectives.find((objective) => objective.id === id)?.question ?? id;
+      const auditLines = renderGapAudit(audit.entries, questionOf);
       const reviewInput: ReviewRoundInput = {
         userId: current.userId,
         goal: current.goal,
@@ -706,6 +805,8 @@ export function createWorkerStage(ctx: EngineContext) {
         roundsLeft: totalRounds - round,
         pagesLeft: Math.max(0, pageCeiling - shared.pagesRead),
         previous: latestPlan.rounds?.[latestPlan.rounds.length - 1]?.review,
+        ...(auditLines.length ? { audit: auditLines } : {}),
+        ...(leads.length ? { leads: leads.map((lead) => `[${lead.objectiveId}] ${lead.query} (${lead.signal})`) } : {}),
         ...(latestPlan.today ? { today: latestPlan.today } : {}),
         ...(latestPlan.envelope?.leadModel ? { leadModelId: latestPlan.envelope.leadModel } : {}),
         signal,
@@ -760,6 +861,73 @@ export function createWorkerStage(ctx: EngineContext) {
           openQuestions.push(question);
         }
       }
+      /*
+       * The next round's briefs: the lead's gaps, each carrying the leads and
+       * audit gaps for its vector, plus one lead-chasing brief for every vector
+       * whose findings opened a lead the lead did not brief. And RULE 0.3: a
+       * first round the lead called sufficient still gets a second when the
+       * envelope has one and there is something concrete to chase.
+       */
+      const pagesLeft = Math.max(0, pageCeiling - shared.pagesRead);
+      const leadsFor = (objectiveId: string) => leads.filter((lead) => lead.objectiveId === objectiveId).map((lead) => lead.query);
+      const auditFor = (objectiveId: string) => {
+        const entry = audit.entries.find((item) => item.objectiveId === objectiveId);
+        if (!entry) return "";
+        return [
+          entry.missingFigures.length ? `Figures still missing: ${entry.missingFigures.join("; ")}.` : "",
+          entry.conflicts.length ? `Sources disagree — reconcile against the official changelog or documentation: ${entry.conflicts.map((c) => c.description).join(" | ")}.` : "",
+          entry.stale.length ? `These figures rest on old or undated pages; confirm the current value and its effective date: ${entry.stale.join(" | ")}.` : "",
+          entry.unverified.length ? `Still unverified: ${entry.unverified.join("; ")}.` : "",
+        ]
+          .filter(Boolean)
+          .join(" ");
+      };
+      const withLeads = (objectiveId: string, text: string) => {
+        const own = leadsFor(objectiveId);
+        return [text, own.length ? `Micro-queries opened by the last round's findings — run these first: ${own.join("; ")}.` : "", auditFor(objectiveId)]
+          .filter(Boolean)
+          .join(" ")
+          .slice(0, 1_200);
+      };
+      const leadsContinue = review.decision === "continue" && review.gaps.length > 0;
+      const auditGapObjectives = audit.entries
+        .filter((entry) => entry.missingFigures.length || entry.conflicts.length || entry.stale.length)
+        .map((entry) => entry.objectiveId);
+      const forcedRound =
+        !leadsContinue &&
+        round < Math.min(MIN_RESEARCH_ROUNDS, totalRounds) &&
+        pagesLeft > 0 &&
+        !latestPlan.finishRequestedAt &&
+        (leads.length > 0 || auditGapObjectives.length > 0);
+      const nextGaps: ReviewRoundOutput["gaps"] = leadsContinue
+        ? review.gaps.map((gap) => ({ ...gap, whatToFind: withLeads(gap.objectiveId, gap.whatToFind) }))
+        : [];
+      if (leadsContinue || forcedRound) {
+        const briefed = new Set(nextGaps.map((gap) => gap.objectiveId));
+        const chase = [...new Set([...leads.map((lead) => lead.objectiveId), ...(forcedRound ? auditGapObjectives : [])])];
+        for (const objectiveId of chase) {
+          if (briefed.has(objectiveId) || !latestPlan.objectives.some((objective) => objective.id === objectiveId)) continue;
+          briefed.add(objectiveId);
+          const own = leadsFor(objectiveId);
+          nextGaps.push({
+            objectiveId,
+            reason: own.length
+              ? `Follow the leads the last round uncovered: ${own.join("; ")}.`
+              : `Close the audit's gaps: ${auditFor(objectiveId) || "missing figures"}`.slice(0, 400),
+            whatToFind: withLeads(
+              objectiveId,
+              "Chase what the last round uncovered: open the primary pages these searches surface and record exact figures, versions and effective dates."
+            ),
+            boundaries: "Do not re-establish what the last round already recorded; only chase these leads and the figures still missing.",
+          });
+        }
+      }
+      const continuing = nextGaps.length > 0 && (leadsContinue || forcedRound);
+      const recordedDecision: ReviewRoundOutput["decision"] = continuing ? "continue" : "synthesize";
+      const recordedReason = forcedRound && continuing
+        ? `${review.reason} A second round follows the ${leads.length} lead${leads.length === 1 ? "" : "s"} and ${auditGapObjectives.length} audit gap${auditGapObjectives.length === 1 ? "" : "s"} the first round surfaced.`.trim()
+        : review.reason;
+
       const recorded: ResearchRound = {
         round,
         delegations,
@@ -772,19 +940,34 @@ export function createWorkerStage(ctx: EngineContext) {
         finishedAt: deps.now().toISOString(),
         review: {
           coverage: review.coverage,
-          gaps: review.gaps.map((gap) => ({ objectiveId: gap.objectiveId, reason: gap.reason })),
+          // What the NEXT round was briefed on — leads and forced rounds
+          // included — so a resumed run rebuilds the same briefs.
+          gaps: (continuing ? nextGaps : review.gaps).map((gap) => ({ objectiveId: gap.objectiveId, reason: gap.reason })),
           contradictions: review.contradictions.length,
-          decision: review.decision,
-          reason: review.reason,
+          decision: recordedDecision,
+          reason: recordedReason,
         },
         ...(openQuestions.length ? { openQuestions: openQuestions.slice(0, MAX_ROUND_OPEN_QUESTIONS) } : {}),
+        ...(leads.length ? { leads: leads.map((lead) => lead.query).slice(0, MAX_ROUND_OPEN_QUESTIONS) } : {}),
       };
       const rounds = [...(latestPlan.rounds ?? []).filter((item) => item.round !== round), recorded];
       const workerQueries = [...(latestPlan.workerQueries ?? []), ...shared.queries].slice(-MAX_WORKER_QUERIES);
       const saved = await store.savePlan({
         runId: current.id,
         userId: current.userId,
-        plan: { ...latestPlan, objectives, conflicts, rounds, ...(workerQueries.length ? { workerQueries } : {}) },
+        plan: {
+          ...latestPlan,
+          objectives,
+          conflicts,
+          rounds,
+          ...(workerQueries.length ? { workerQueries } : {}),
+          gapAudit: {
+            at: deps.now().toISOString(),
+            pass: (latestPlan.gapAudit?.pass ?? 0) + 1,
+            entries: audit.entries,
+            queries: audit.queries,
+          },
+        },
       });
       current = saved ?? current;
 
@@ -793,13 +976,15 @@ export function createWorkerStage(ctx: EngineContext) {
           kind: "round_reviewed",
           payload: {
             round,
-            decision: review.decision,
-            reason: review.reason,
+            decision: recordedDecision,
+            reason: recordedReason,
             coverage: review.coverage,
-            gaps: review.gaps.map((gap) => ({ objectiveId: gap.objectiveId, reason: gap.reason })),
+            gaps: (continuing ? nextGaps : review.gaps).map((gap) => ({ objectiveId: gap.objectiveId, reason: gap.reason })),
             contradictions: review.contradictions.length,
             claims: roundFindings.length,
             newClaims,
+            ...(leads.length ? { leads: leads.map((lead) => ({ objectiveId: lead.objectiveId, query: lead.query, signal: lead.signal })) } : {}),
+            ...(audit.hasGaps ? { audit: auditLines.slice(0, 8) } : {}),
           },
         },
         {
@@ -819,11 +1004,11 @@ export function createWorkerStage(ctx: EngineContext) {
         },
       ]);
 
-      if (review.decision !== "continue" || review.gaps.length === 0) break;
+      if (!continuing) break;
       // Saturation is the lead's call, but the arithmetic backstops it: a
       // round that added almost nothing new is not worth paying for again.
       if (round > 1 && findings.length > 0 && newClaims < findings.length * SATURATION_NEW_CLAIM_SHARE) break;
-      delegations = review.gaps.map((gap, i) => {
+      delegations = nextGaps.map((gap, i) => {
         const objective = objectives.find((item) => item.id === gap.objectiveId);
         return {
           workerId: `w${round + 1}-${i + 1}`,
