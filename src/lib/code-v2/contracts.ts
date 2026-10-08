@@ -273,6 +273,10 @@ export const COMPUTER_ACTION_VALUES = [
   "wait",
   "open_app",
   "zoom",
+  // Accessibility-tree targeting and menus (SPEC §3.12, lane "computer").
+  "ax_find",
+  "ax_press",
+  "menu",
 ] as const;
 export type ComputerActionKind = (typeof COMPUTER_ACTION_VALUES)[number];
 
@@ -472,6 +476,17 @@ export interface ComputerActionItem extends TurnItemBase {
   target?: string;
   screenshotRef?: string;
   status: ItemStatus;
+  /** The app the action ran in, by its display name. */
+  app?: string;
+  /** The one-sentence caption the thread shows ("Clicked the “Save” button in TextEdit."). */
+  summary?: string;
+  /** Where it landed, as a fraction (0…1 each way) of the screenshot, for the target ring. */
+  point?: { x: number; y: number };
+  /** Pixel size of the screenshot `screenshotRef` names. */
+  frameSize?: { width: number; height: number };
+  /** Why it failed or was declined, in a sentence. */
+  error?: string;
+  durationMs?: number;
 }
 
 export type TurnItem =
@@ -494,6 +509,112 @@ export type TurnItem =
   | HandoffItem
   | SubagentItem
   | ComputerActionItem;
+
+// ── Computer use (SPEC §3.12) ───────────────────────────────────────────────
+//
+// One provider-agnostic function tool, `computer_use`, offered to every model
+// that is not on Anthropic's native computer toolset, and served by the
+// env-server's Alevr MCP server to subscription agents (Claude, Codex, ACP).
+// Its `action` enum is COMPUTER_ACTION_VALUES, so every call maps 1:1 onto a
+// `computer_action` turn item. The Mac app executes; the env server reaches it
+// over a local socket with the bridge messages below, and both sides honour
+// one desktop lock file so two sessions never drive the same pointer.
+
+export const ALEVR_COMPUTER_TOOL_NAME = "computer_use";
+
+export const COMPUTER_COORDINATE_SPACE_VALUES = ["pixels", "normalized_1000"] as const;
+/**
+ * How `x`/`y` are written: pixels of the latest screenshot (its size is in
+ * the result header), or 0…999 on each axis whatever the size.
+ */
+export type ComputerCoordinateSpace = (typeof COMPUTER_COORDINATE_SPACE_VALUES)[number];
+
+/** Arguments of one `computer_use` call, as the model writes them (snake_case on the wire). */
+export interface ComputerToolArgs {
+  action: ComputerActionKind;
+  /** Bundle id or app name; defaults to the app last used. */
+  app?: string;
+  x?: number;
+  y?: number;
+  /** End point of a drag. */
+  to_x?: number;
+  to_y?: number;
+  /** Element id from ax_find ("e12"); replaces x/y for click actions and ax_press. */
+  element?: string;
+  /** ax_find / ax_press: text to match in titles, labels and values. */
+  query?: string;
+  /** type: the text. key: a key or chord such as "return" or "cmd+shift+z". */
+  text?: string;
+  direction?: "up" | "down" | "left" | "right";
+  /** scroll: wheel notches (1…30). */
+  amount?: number;
+  /** wait: seconds (0…30). */
+  seconds?: number;
+  /** zoom: [x0, y0, x1, y1] in the screenshot's coordinate space. */
+  region?: number[];
+  /** menu: menu bar titles, e.g. ["File", "Export…"]. */
+  path?: string[];
+  /** Overrides the route's default coordinate space for this call. */
+  coordinate_space?: ComputerCoordinateSpace;
+}
+
+/** One call from the env server to the Mac app, a JSON line on the bridge socket. */
+export interface ComputerBridgeRequest {
+  id: string;
+  type: "computer.call" | "computer.status" | "computer.release";
+  /** The shared secret from the bridge token file. */
+  token: string;
+  /** Alevr session (or vendor thread) the call belongs to: the lock holder id. */
+  sessionId: string;
+  /** Shown in the lock refusal and the overlay ("Fix the export sheet"). */
+  title?: string;
+  /** The session's runtime mode; the Mac applies the same computer policy as its own sessions. */
+  runtimeMode?: RuntimeMode;
+  callId?: string;
+  args?: ComputerToolArgs;
+}
+
+export interface ComputerBridgeImage {
+  mediaType: string;
+  /** Base64. */
+  data: string;
+}
+
+/** The Mac app's answer, one JSON line per request. */
+export interface ComputerBridgeResponse {
+  id: string;
+  ok: boolean;
+  /** The text the model reads (summary, frame header, notes) or the refusal sentence. */
+  text: string;
+  image?: ComputerBridgeImage;
+  /** The thread item for this call (computer.call only). */
+  item?: ComputerActionItem;
+  /** computer.status: which macOS grants are missing ("screen_recording", "accessibility"). */
+  missingPermissions?: string[];
+  /** computer.status: who holds the desktop now. */
+  holder?: DesktopLockRecord;
+  /** The model must stop: the reader pressed Esc / Stop, or a grant is missing. */
+  endsTurn?: boolean;
+}
+
+/**
+ * The cross-process desktop lock, a JSON file at
+ * `~/Library/Application Support/Alevr/computer-use/desktop.lock`. A record is
+ * live while its process runs and its heartbeat is newer than
+ * DESKTOP_LOCK_STALE_MS; anything else may be taken over.
+ */
+export interface DesktopLockRecord {
+  holderId: string;
+  /** Who is driving: a Mac session, a Work task, or an agent through the env server. */
+  kind: "code_session" | "work_task" | "env_server";
+  title: string;
+  pid: number;
+  app?: string;
+  acquiredAt: string;
+  heartbeatAt: string;
+}
+
+export const DESKTOP_LOCK_STALE_MS = 15_000;
 
 // ── Env-server wire protocol (SPEC §3.1) ────────────────────────────────────
 //

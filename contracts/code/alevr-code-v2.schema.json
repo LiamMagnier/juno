@@ -138,7 +138,10 @@
         "key",
         "wait",
         "open_app",
-        "zoom"
+        "zoom",
+        "ax_find",
+        "ax_press",
+        "menu"
       ]
     },
     "SubagentStatus": {
@@ -1531,6 +1534,55 @@
         },
         "screenshotRef": {
           "type": "string"
+        },
+        "app": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "point": {
+          "type": "object",
+          "properties": {
+            "x": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "y": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          },
+          "required": [
+            "x",
+            "y"
+          ]
+        },
+        "frameSize": {
+          "type": "object",
+          "properties": {
+            "width": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "height": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "required": [
+            "width",
+            "height"
+          ]
+        },
+        "error": {
+          "type": "string"
+        },
+        "durationMs": {
+          "type": "number",
+          "minimum": 0
         }
       },
       "required": [
@@ -1601,6 +1653,227 @@
         {
           "$ref": "#/definitions/ComputerActionItem"
         }
+      ]
+    },
+    "ComputerCoordinateSpace": {
+      "type": "string",
+      "enum": [
+        "pixels",
+        "normalized_1000"
+      ]
+    },
+    "ComputerToolArgs": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "$ref": "#/definitions/ComputerActionKind"
+        },
+        "app": {
+          "type": "string"
+        },
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "to_x": {
+          "type": "number"
+        },
+        "to_y": {
+          "type": "number"
+        },
+        "element": {
+          "type": "string",
+          "pattern": "^e[0-9]{1,4}$"
+        },
+        "query": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "direction": {
+          "type": "string",
+          "enum": [
+            "up",
+            "down",
+            "left",
+            "right"
+          ]
+        },
+        "amount": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 30
+        },
+        "seconds": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 30
+        },
+        "region": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "path": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1,
+          "maxItems": 6
+        },
+        "coordinate_space": {
+          "$ref": "#/definitions/ComputerCoordinateSpace"
+        }
+      },
+      "required": [
+        "action"
+      ]
+    },
+    "DesktopLockRecord": {
+      "type": "object",
+      "properties": {
+        "holderId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "code_session",
+            "work_task",
+            "env_server"
+          ]
+        },
+        "title": {
+          "type": "string"
+        },
+        "pid": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "acquiredAt": {
+          "type": "string",
+          "minLength": 10
+        },
+        "heartbeatAt": {
+          "type": "string",
+          "minLength": 10
+        },
+        "app": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "holderId",
+        "kind",
+        "title",
+        "pid",
+        "acquiredAt",
+        "heartbeatAt"
+      ]
+    },
+    "ComputerBridgeRequest": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "computer.call",
+            "computer.status",
+            "computer.release"
+          ]
+        },
+        "token": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sessionId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string"
+        },
+        "runtimeMode": {
+          "$ref": "#/definitions/RuntimeMode"
+        },
+        "callId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "args": {
+          "$ref": "#/definitions/ComputerToolArgs"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "token",
+        "sessionId"
+      ]
+    },
+    "ComputerBridgeResponse": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "text": {
+          "type": "string"
+        },
+        "image": {
+          "type": "object",
+          "properties": {
+            "mediaType": {
+              "type": "string",
+              "minLength": 1
+            },
+            "data": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "mediaType",
+            "data"
+          ]
+        },
+        "item": {
+          "$ref": "#/definitions/ComputerActionItem"
+        },
+        "missingPermissions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "holder": {
+          "$ref": "#/definitions/DesktopLockRecord"
+        },
+        "endsTurn": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "ok",
+        "text"
       ]
     },
     "SessionUsage": {

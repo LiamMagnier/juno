@@ -219,7 +219,16 @@ function buildSchema() {
     ComputerActionItem: itemSchema(
       "computer_action",
       { callId: nonEmpty, action: ref("ComputerActionKind"), status },
-      { target: str, screenshotRef: str },
+      {
+        target: str,
+        screenshotRef: str,
+        app: str,
+        summary: str,
+        point: obj({ x: { type: "number", minimum: 0, maximum: 1 }, y: { type: "number", minimum: 0, maximum: 1 } }),
+        frameSize: obj({ width: { type: "integer", minimum: 1 }, height: { type: "integer", minimum: 1 } }),
+        error: str,
+        durationMs: num,
+      },
     ),
   };
 
@@ -230,6 +239,54 @@ function buildSchema() {
     if (!definitions[name]) throw new Error(`schema builder has no definition for ${name}`);
   }
   definitions.TurnItem = { oneOf: itemNames.map(ref) };
+
+  // Computer use (SPEC §3.12).
+  definitions.ComputerCoordinateSpace = en(C.COMPUTER_COORDINATE_SPACE_VALUES);
+  const coord = { type: "number" };
+  definitions.ComputerToolArgs = obj(
+    { action: ref("ComputerActionKind") },
+    {
+      app: str,
+      x: coord,
+      y: coord,
+      to_x: coord,
+      to_y: coord,
+      element: { type: "string", pattern: "^e[0-9]{1,4}$" },
+      query: str,
+      text: str,
+      direction: en(["up", "down", "left", "right"]),
+      amount: { type: "integer", minimum: 1, maximum: 30 },
+      seconds: { type: "number", minimum: 0, maximum: 30 },
+      region: { type: "array", items: coord, minItems: 4, maxItems: 4 },
+      path: { type: "array", items: nonEmpty, minItems: 1, maxItems: 6 },
+      coordinate_space: ref("ComputerCoordinateSpace"),
+    },
+  );
+  definitions.DesktopLockRecord = obj(
+    {
+      holderId: nonEmpty,
+      kind: en(["code_session", "work_task", "env_server"]),
+      title: str,
+      pid: { type: "integer", minimum: 1 },
+      acquiredAt: iso,
+      heartbeatAt: iso,
+    },
+    { app: str },
+  );
+  definitions.ComputerBridgeRequest = obj(
+    { id: nonEmpty, type: en(["computer.call", "computer.status", "computer.release"]), token: nonEmpty, sessionId: nonEmpty },
+    { title: str, runtimeMode: ref("RuntimeMode"), callId: nonEmpty, args: ref("ComputerToolArgs") },
+  );
+  definitions.ComputerBridgeResponse = obj(
+    { id: nonEmpty, ok: bool, text: str },
+    {
+      image: obj({ mediaType: nonEmpty, data: nonEmpty }),
+      item: ref("ComputerActionItem"),
+      missingPermissions: arr(str),
+      holder: ref("DesktopLockRecord"),
+      endsTurn: bool,
+    },
+  );
 
   definitions.SessionUsage = obj(
     { inputTokens: int, outputTokens: int },

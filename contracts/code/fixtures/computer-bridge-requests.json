@@ -1,0 +1,21 @@
+{
+  "$def": "ComputerBridgeRequest",
+  "cases": [
+    { "id": "r1", "type": "computer.status", "token": "tok_abc", "sessionId": "claude:thread-7" },
+    { "id": "r2", "type": "computer.call", "token": "tok_abc", "sessionId": "claude:thread-7", "title": "Check the export sheet",
+      "runtimeMode": "ask", "callId": "toolu_01", "args": { "action": "screenshot", "app": "com.apple.iWork.Pages" } },
+    { "id": "r3", "type": "computer.call", "token": "tok_abc", "sessionId": "codex:thr_2", "runtimeMode": "auto-edit", "callId": "call_9",
+      "args": { "action": "click", "x": 512, "y": 300 } },
+    { "id": "r4", "type": "computer.call", "token": "tok_abc", "sessionId": "codex:thr_2", "callId": "call_10",
+      "args": { "action": "drag", "x": 100, "y": 100, "to_x": 400, "to_y": 120, "coordinate_space": "normalized_1000" } },
+    { "id": "r5", "type": "computer.call", "token": "tok_abc", "sessionId": "acp:gemini-1", "callId": "c3",
+      "args": { "action": "ax_find", "query": "Export" } },
+    { "id": "r6", "type": "computer.call", "token": "tok_abc", "sessionId": "acp:gemini-1", "callId": "c4",
+      "args": { "action": "ax_press", "element": "e12" } },
+    { "id": "r7", "type": "computer.call", "token": "tok_abc", "sessionId": "acp:gemini-1", "callId": "c5",
+      "args": { "action": "menu", "path": ["File", "Export To", "PDF…"] } },
+    { "id": "r8", "type": "computer.call", "token": "tok_abc", "sessionId": "acp:gemini-1", "callId": "c6",
+      "args": { "action": "scroll", "x": 600, "y": 400, "direction": "down", "amount": 3 } },
+    { "id": "r9", "type": "computer.release", "token": "tok_abc", "sessionId": "acp:gemini-1" }
+  ]
+}
