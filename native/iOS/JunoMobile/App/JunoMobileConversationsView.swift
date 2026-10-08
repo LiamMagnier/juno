@@ -61,11 +61,16 @@ struct JunoMobileChatDetailScreen: View {
   var pendingPrompt: Binding<String?> = .constant(nil)
   /// One-shot request from the Dictate App Intent / widget shortcut.
   var startDictation: Binding<Bool> = .constant(false)
+  /// One-shot request from the drawer's Research row: arm deep research on
+  /// the fresh draft. Cleared once taken.
+  var startResearch: Binding<Bool> = .constant(false)
   /// The account's agents, to recognise an agent's own thread and put its
   /// face at the top of it. Nil where agents have not been built.
   var agentsModel: NativeAgentsModel?
   /// Opens an agent's page by id: the thread header's way back to it.
   var openAgent: ((String) -> Void)?
+  /// Opens Orbit (the agents) from the composer's "+" menu.
+  var openOrbit: (() -> Void)? = nil
 
   /// Fetches and caches the transcript's pictures for the life of the screen.
   @State private var imageLoader: NativeChatImageLoader?
@@ -135,7 +140,8 @@ struct JunoMobileChatDetailScreen: View {
           pendingPrompt: pendingPrompt,
           threadAgent: threadAgent,
           agentsModel: agentsModel,
-          openAgent: openAgent
+          openAgent: openAgent,
+          openOrbit: openOrbit
         )
       } else {
         JunoMobileDraftChat(
@@ -154,7 +160,8 @@ struct JunoMobileChatDetailScreen: View {
           tools: tools,
           sendSwell: sendSwell,
           pendingPrompt: pendingPrompt,
-          startDictation: startDictation
+          startDictation: startDictation,
+          openOrbit: openOrbit
         )
       }
     }
@@ -167,6 +174,13 @@ struct JunoMobileChatDetailScreen: View {
       // Leaving a chat stops whatever it was reading. A voice carrying on
       // over a different conversation is the one thing this must not do.
       readAloud?.stop()
+    }
+    .onChange(of: startResearch.wrappedValue, initial: true) { _, requested in
+      guard requested else { return }
+      startResearch.wrappedValue = false
+      // A beat later: leaving a conversation for the draft resets the tools
+      // in the same update, and that reset must not undo this.
+      Task { tools.deepResearch = true }
     }
     .onChange(of: model.latestCompletedAgentConfigMessageID, initial: false) { oldID, newID in
       guard let newID, newID != oldID, let agentsModel else { return }
@@ -218,6 +232,7 @@ private struct JunoMobileDraftChat: View {
   /// A Dictate shortcut always begins from a blank draft, where the resulting
   /// transcript is unambiguously the message being composed.
   var startDictation: Binding<Bool> = .constant(false)
+  var openOrbit: (() -> Void)? = nil
 
   @State private var prompt = ""
   @State private var selectedModelID = ""
@@ -276,8 +291,7 @@ private struct JunoMobileDraftChat: View {
       VStack(spacing: 0) {
         Spacer(minLength: JunoSpace.region)
         VStack(spacing: JunoSpace.section) {
-          JunoMobileGreeting(name: profileName, alignment: .center)
-            .padding(.bottom, JunoSpace.snug)
+          JunoMobileHomeLine()
           composer
         }
         .frame(maxWidth: JunoMobileMeasure.home)
@@ -293,11 +307,23 @@ private struct JunoMobileDraftChat: View {
       // hero) and the thumb, and nothing else. No starting-point cards: the
       // `+`, the voice action and the model are already one tap away in the
       // composer, and a row of cards under it was a second, weaker menu.
-      VStack(alignment: .leading, spacing: JunoSpace.region) {
+      //
+      // ChatGPT's home is an empty page, and so is this one: no logo, no
+      // greeting, no cards. The one thing above the composer is a quiet way
+      // back into the last conversation, which is the likeliest next move.
+      VStack(alignment: .leading, spacing: 0) {
         Spacer(minLength: 0)
-        JunoMobileGreeting(name: profileName)
+        if let resume = resumeConversation {
+          JunoMobileResumeRow(title: resume.title) {
+            model.isDraftingNewConversation = false
+            model.selectedConversationID = resume.id
+          }
+          .padding(.horizontal, JunoSpace.regular)
+          .transition(.opacity)
+        }
       }
-      .padding(.bottom, JunoSpace.regular)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .padding(.bottom, JunoSpace.tight)
     } else {
       ScrollView {
         // The transcript's own metrics, so a spoken turn is the same
@@ -319,6 +345,14 @@ private struct JunoMobileDraftChat: View {
     voiceSession?.liveMessages() ?? []
   }
 
+  /// The conversation the home offers to pick back up: the most recent one
+  /// with a real title.
+  private var resumeConversation: NativeConversation? {
+    model.conversations
+      .filter { $0.archivedAt == nil && !$0.isPending && !$0.title.isEmpty }
+      .max { $0.lastMessageAt < $1.lastMessageAt }
+  }
+
   var body: some View {
     column
       .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -335,10 +369,9 @@ private struct JunoMobileDraftChat: View {
       .navigationTitle("navigation.chat")
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
-        ToolbarItem(placement: .principal) { Color.clear.frame(width: 1, height: 1).accessibilityHidden(true) }
-      }
-      .toolbar {
-        if let startIncognito {
+        // The phone's bar carries the private-chat toggle itself (see the
+        // shell); the iPad's detail column keeps it here.
+        if let startIncognito, sizeClass == .regular {
           ToolbarItem(placement: .topBarTrailing) {
             Button(action: startIncognito) {
               // The toggle, off. Incognito's own toolbar shows the same label
@@ -405,7 +438,8 @@ private struct JunoMobileDraftChat: View {
       // The greeting holds the bloom whenever it is on screen, so
       // the composer must not draw a second one.
       greetingVisible: voiceMessages.isEmpty,
-      startDictation: startDictation
+      startDictation: startDictation,
+      openOrbit: openOrbit
     )
   }
 
@@ -467,6 +501,7 @@ private struct JunoMobileConversationDetail: View {
   /// profile, its computer and its menu in place.
   var agentsModel: NativeAgentsModel? = nil
   var openAgent: ((String) -> Void)? = nil
+  var openOrbit: (() -> Void)? = nil
   /// The artifact the reader tapped in the transcript, presented over it.
   @State private var openArtifact: NativeArtifact?
   /// A message's text on its way to the system share sheet.
@@ -826,9 +861,9 @@ private struct JunoMobileConversationDetail: View {
       // `containerRelativeFrame` gives it the scroll view's own height so
       // it centres in the visible area — a fixed `minHeight` inside a
       // bottom-anchored scroll view pins it to the composer instead.
-      JunoMobileGreeting(name: profileName)
-      .frame(maxWidth: .infinity)
-      .containerRelativeFrame(.vertical)
+      Color.clear
+        .frame(maxWidth: .infinity)
+        .containerRelativeFrame(.vertical)
     } else {
       // The web's own transcript metrics: `max-w-3xl space-y-6 px-4 py-6`.
       // The width clamp is not decoration — it is what keeps a line of
@@ -984,7 +1019,8 @@ private struct JunoMobileConversationDetail: View {
     ToolbarItemGroup(placement: .topBarTrailing) {
       if !messages.isEmpty, let newChat {
         Button(action: newChat) {
-          JunoIconView(.new, size: 16)
+          Image(systemName: "square.and.pencil")
+            .font(.system(size: 17, weight: .regular))
             .foregroundStyle(Color.primary)
             .frame(width: 32, height: 32)
             .contentShape(Rectangle())
@@ -1029,7 +1065,8 @@ private struct JunoMobileConversationDetail: View {
           JunoIconLabel(verbatim: "Delete", icon: .trash)
         }
       } label: {
-        JunoIconView(.ellipsis, size: 16)
+        Image(systemName: "ellipsis")
+          .font(.system(size: 17, weight: .regular))
           .foregroundStyle(Color.primary)
           .frame(width: 44, height: 44)
           .contentShape(Rectangle())
@@ -1298,7 +1335,8 @@ private struct JunoMobileConversationDetail: View {
           openVoiceMode: openVoiceMode,
           composerFocused: $composerFocused,
           sendSwell: sendSwell,
-          greetingVisible: greetingVisible
+          greetingVisible: greetingVisible,
+          openOrbit: openOrbit
         )
       }
       // After the inset, never before it — see the note in the draft screen.
@@ -1688,7 +1726,7 @@ private struct JunoMobileMessageRow: View {
       // A real cap, not a fixed width: the bubble hugs short messages
       // and wraps long ones at 85% of the transcript, as the web's
       // `max-w-[85%]` on a shrink-to-fit flex item does.
-      .frame(maxWidth: rowWidth > 0 ? rowWidth * 0.85 : nil, alignment: .trailing)
+      .frame(maxWidth: rowWidth > 0 ? rowWidth * 0.8 : nil, alignment: .trailing)
     }
     .onGeometryChange(for: CGFloat.self) {
       $0.size.width
@@ -1782,22 +1820,13 @@ private struct JunoMobileMessageRow: View {
     // `voice` withholds Edit for the same reason it withholds the action
     // row: a spoken line exists only in the call controller, and there is no
     // stored message for a fork to branch away from.
-    if !voice, editMessage != nil || branchPosition != nil {
+    if !voice, branchPosition != nil {
       HStack(spacing: 2) {
         // Tucked up under the bubble: it belongs to the words above it, and
         // at the full 44pt row height it floated halfway to the next turn.
         branchNavigator
-        if editMessage != nil, !editing {
-          actionButton(
-            icon: .pencil,
-            label: "message.edit",
-            identifier: "juno.mobile.message-edit"
-          ) {
-            draft = plainText
-            editing = true
-          }
-          .disabled(isGenerating)
-        }
+        // Edit lives in the bubble's long-press menu, as ChatGPT keeps it:
+        // a pencil under every question was chrome on every turn.
       }
       .padding(.top, -JunoSpace.snug)
       .padding(.bottom, -JunoSpace.snug)
@@ -1904,12 +1933,10 @@ private struct JunoMobileMessageRow: View {
 
   /// `rounded-2xl rounded-br-md`: one clipped corner on the trailing-bottom
   /// edge. Uniform corners make a card; the notch is what makes it a remark.
-  private static let bubbleShape = UnevenRoundedRectangle(
-    topLeadingRadius: JunoRadius.message,
-    bottomLeadingRadius: JunoRadius.message,
-    bottomTrailingRadius: 6,
-    topTrailingRadius: JunoRadius.message,
-    style: .continuous
+  /// One radius all round, 18pt — ChatGPT's bubble. The cut "tail" corner
+  /// pointed at a speaker the layout already places.
+  private static let bubbleShape = RoundedRectangle(
+    cornerRadius: JunoRadius.message, style: .continuous
   )
 
   /// A research turn still working: the Deep Field view stands where the
@@ -2038,8 +2065,6 @@ private struct JunoMobileMessageRow: View {
           .padding(.top, JunoSpace.hairline)
       }
 
-      footer
-
       if let error = message.errorDescription {
         HStack(spacing: JunoSpace.tight) {
           JunoIconView(.error, size: 14)
@@ -2049,7 +2074,14 @@ private struct JunoMobileMessageRow: View {
         .foregroundStyle(Color.junoCaution)
       }
 
-      if !message.isPending && !voice { actionRow }
+      // Fades in a beat after the answer settles — the row arriving is how
+      // the reader learns the reply is finished.
+      if !message.isPending && !voice {
+        actionRow
+          .transition(.opacity.animation(
+            JunoMotion.reduced(JunoMotion.base, when: reduceMotion, tier: .tint)?.delay(0.18)
+          ))
+      }
 
       // Under the answer, where the web puts it. An answer has siblings
       // when the question above it was re-asked, so this is the same
@@ -2148,93 +2180,132 @@ private struct JunoMobileMessageRow: View {
   /// hover. That is the one place this deliberately departs from the web,
   /// where the row fades in under the pointer; `coarse:opacity-100` in the
   /// web's own class list is that same concession for touch.
+  /// ChatGPT's row under a finished answer: copy, thumbs up, thumbs down,
+  /// read aloud, share, try again — bare SF Symbols in secondary ink with
+  /// 44pt targets — and an overflow for the rest (which model answered,
+  /// continue, branch).
   @ViewBuilder
   private var actionRow: some View {
     if hasAnyAction {
-      HStack(spacing: 2) {
+      HStack(spacing: 0) {
         if !plainText.isEmpty {
           Button {
             copy()
           } label: {
             Image(systemName: copied ? "checkmark" : "doc.on.doc")
-              .junoFont(size: 15, relativeTo: .body, weight: .medium)
-              .foregroundStyle(copied ? Color.junoSuccess : Color.junoMutedForeground)
-              // The web's `check-morph`: the glyph *becomes* the check.
+              .font(.system(size: 15, weight: .regular))
+              .foregroundStyle(Color.junoSecondaryInk)
               .contentTransition(.symbolEffect(.replace))
-              .frame(minWidth: 34, minHeight: 34)
+              .frame(width: 40, height: 44)
               .contentShape(Rectangle())
           }
-          .buttonStyle(.plain)
+          .buttonStyle(.junoQuietPress)
           .accessibilityLabel(copied ? "message.copied" : "message.copy")
           .accessibilityIdentifier("juno.mobile.message-copy")
-          .frame(minWidth: 44, minHeight: 44)
+        }
+
+        if let setFeedback {
+          symbolButton(
+            message.feedback == .up ? "hand.thumbsup.fill" : "hand.thumbsup",
+            label: "message.good",
+            identifier: "juno.mobile.message-thumbs-up"
+          ) { setFeedback(message.id, message.feedback == .up ? nil : .up) }
+
+          symbolButton(
+            message.feedback == .down ? "hand.thumbsdown.fill" : "hand.thumbsdown",
+            label: "message.bad",
+            identifier: "juno.mobile.message-thumbs-down"
+          ) { setFeedback(message.id, message.feedback == .down ? nil : .down) }
         }
 
         if let readAloud, !plainText.isEmpty {
-          actionButton(
-            icon: readAloud.isSpeaking(message.id) ? .stop : .volume,
-            label: readAloud.isSpeaking(message.id)
-              ? "message.stop-reading" : "message.read-aloud",
-            identifier: "juno.mobile.message-read-aloud",
-            active: readAloud.isSpeaking(message.id)
-              || readAloud.isPreparing(message.id)
+          let speaking = readAloud.isSpeaking(message.id)
+          symbolButton(
+            speaking ? "stop.circle" : "speaker.wave.2",
+            label: speaking ? "message.stop-reading" : "message.read-aloud",
+            identifier: "juno.mobile.message-read-aloud"
           ) {
-            readAloud.toggle(
-              messageID: message.id, text: spokenText, voiceID: voiceID
-            )
+            readAloud.toggle(messageID: message.id, text: spokenText, voiceID: voiceID)
+          }
+        }
+
+        if let share, !plainText.isEmpty {
+          symbolButton("square.and.arrow.up", label: "Share", identifier: "juno.mobile.message-share") {
+            share(plainText)
           }
         }
 
         if let regenerate {
-          actionButton(
-            icon: .refresh,
+          symbolButton(
+            "arrow.clockwise",
             label: "message.regenerate",
             identifier: "juno.mobile.message-regenerate",
             action: regenerate
           )
         }
 
-        if let continueResponse,
-          message.finishReason == .length
-            || message.finishReason == .networkError
-        {
-          actionButton(
-            icon: .arrowDown,
-            label: "message.continue",
-            identifier: "juno.mobile.message-continue",
-            action: continueResponse
-          )
-        }
-
-        if let branch {
-          actionButton(
-            icon: .branch,
-            label: "message.branch",
-            identifier: "juno.mobile.message-branch"
-          ) { branch(message.id) }
-        }
-
-        if let setFeedback {
-          actionButton(
-            icon: .thumbsUp,
-            label: "message.good",
-            identifier: "juno.mobile.message-thumbs-up",
-            active: message.feedback == .up
-          ) { setFeedback(message.id, message.feedback == .up ? nil : .up) }
-
-          actionButton(
-            icon: .thumbsDown,
-            label: "message.bad",
-            identifier: "juno.mobile.message-thumbs-down",
-            active: message.feedback == .down
-          ) { setFeedback(message.id, message.feedback == .down ? nil : .down) }
-        }
+        overflowMenu
 
         Spacer(minLength: 0)
       }
-      .padding(.top, JunoSpace.hairline)
+      .padding(.leading, -10)
       .accessibilityElement(children: .contain)
     }
+  }
+
+  /// What does not earn a place in the row: who answered, and the rarer verbs.
+  @ViewBuilder
+  private var overflowMenu: some View {
+    let canContinue = continueResponse != nil
+      && (message.finishReason == .length || message.finishReason == .networkError)
+    if footerLine != nil || canContinue || branch != nil {
+      Menu {
+        if let footerLine {
+          Section(footerAccessibilityLabel ?? footerLine) {}
+        }
+        if canContinue, let continueResponse {
+          Button(action: continueResponse) {
+            Label("message.continue", systemImage: "arrow.down")
+          }
+        }
+        if let branch {
+          Button { branch(message.id) } label: {
+            Label("message.branch", systemImage: "arrow.triangle.branch")
+          }
+        }
+        Button { showingSelectText = true } label: {
+          Label("Select text", systemImage: "selection.pin.in.out")
+        }
+      } label: {
+        Image(systemName: "ellipsis")
+          .font(.system(size: 15, weight: .regular))
+          .foregroundStyle(Color.junoSecondaryInk)
+          .frame(width: 40, height: 44)
+          .contentShape(Rectangle())
+      }
+      .tint(Color.primary)
+      .accessibilityLabel("More actions")
+      .accessibilityIdentifier("juno.mobile.message-more")
+    }
+  }
+
+  private func symbolButton(
+    _ symbol: String,
+    label: LocalizedStringKey,
+    identifier: String,
+    action: @escaping () -> Void
+  ) -> some View {
+    Button(action: action) {
+      Image(systemName: symbol)
+        .font(.system(size: 15, weight: .regular))
+        .foregroundStyle(Color.junoSecondaryInk)
+        .contentTransition(.symbolEffect(.replace))
+        .frame(width: 40, height: 44)
+        .contentShape(Rectangle())
+    }
+    .buttonStyle(.junoQuietPress)
+    .accessibilityLabel(label)
+    .accessibilityIdentifier(identifier)
   }
 
   private var hasAnyAction: Bool {
@@ -2434,5 +2505,48 @@ enum JunoMobileCost {
     if value < 0.01 { return String(format: "$%.4f", value) }
     if value < 1 { return String(format: "$%.3f", value) }
     return String(format: "$%.2f", value)
+  }
+}
+
+
+// MARK: - Home pieces
+
+/// The one line above the composer on an empty home: the last conversation,
+/// in secondary ink, to pick straight back up. ChatGPT's "continue" row.
+struct JunoMobileResumeRow: View {
+  let title: String
+  let action: () -> Void
+
+  var body: some View {
+    Button(action: action) {
+      HStack(spacing: 10) {
+        Image(systemName: "arrow.uturn.backward")
+          .font(.system(size: 14, weight: .regular))
+          .foregroundStyle(Color.junoSecondaryInk)
+          .frame(width: 20)
+        Text(title)
+          .junoFont(size: 15, relativeTo: .subheadline)
+          .foregroundStyle(Color.junoSecondaryInk)
+          .lineLimit(1)
+      }
+      .padding(.horizontal, JunoSpace.tight)
+      .frame(minHeight: 40)
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(.junoQuietPress)
+    .accessibilityLabel("Continue \(title)")
+    .accessibilityIdentifier("juno.mobile.home-resume")
+  }
+}
+
+/// The iPad's centred home line: one sentence in the display face, regular,
+/// no name and no mark. The phone's home has none at all.
+struct JunoMobileHomeLine: View {
+  var body: some View {
+    Text("What can I help with?")
+      .font(JunoMobileType.display(30, relativeTo: .title))
+      .foregroundStyle(Color.junoForeground)
+      .multilineTextAlignment(.center)
+      .accessibilityAddTraits(.isHeader)
   }
 }

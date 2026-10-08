@@ -78,64 +78,38 @@ struct JunoMobileComposerActions: View {
     /// Seeds the draft with an artifact request, as the web's `startCanvas` does.
     var startCanvas: (() -> Void)?
     let openPlugins: () -> Void
+    /// Opens Orbit — the agents. Nil hides the row.
+    var openOrbit: (() -> Void)? = nil
+    /// The selected model's name, for the menu's Model row.
+    var modelName: String = ""
+    /// Opens the model picker. Nil hides the row (the voice menu has none).
+    var chooseModel: (() -> Void)? = nil
+    /// The selected model's thinking ladder, for the Flash and Pro switches.
+    var thinkingScale: NativeThinkingScale? = nil
+
+    @State private var presented = false
+    @State private var pickHaptic = JunoMobileHapticTrigger()
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        Menu {
-            Section("attachments.add") {
-                Button {
-                    open(.camera)
-                } label: {
-                    JunoIconLabel("attachments.camera", icon: .photos)
-                }
-                .disabled(!canAttach)
-
-                Button {
-                    open(.photos)
-                } label: {
-                    JunoIconLabel("attachments.photos", icon: .photos)
-                }
-                .disabled(!canAttach)
-
-                Button {
-                    open(.files)
-                } label: {
-                    JunoIconLabel("attachments.files", icon: .files)
-                }
-                .disabled(!canAttach)
-
-                if let openLibrary {
-                    Button(action: openLibrary) {
-                        JunoIconLabel("attachments.library", icon: .library)
-                    }
-                    .disabled(!canAttach)
-                }
-            }
-
-            Section {
-                if let startCanvas {
-                    Button(action: startCanvas) {
-                        JunoIconLabel("composer.create-canvas", icon: .canvas)
-                    }
-                }
-                if canPickProject {
-                    projectMenu
-                }
-                toolsMenu
-            }
+        // The ChatGPT "+": a Liquid Glass popover that grows up out of the
+        // button — the system popover, which on OS 26 *is* glass and morphs
+        // out of its source, kept compact on the phone rather than adapting
+        // into a sheet. Attach first (Camera, Photos, Files — the rows the
+        // thumb wants most), then the tools a turn can use, then what the turn
+        // runs on. Camera and Photos close it and open the composer's inline
+        // surfaces in its place, over the keyboard, rather than pushing a sheet.
+        Button {
+            presented = true
         } label: {
             plus
         }
-        // Top-to-bottom in source order — see the note on the type.
-        .menuOrder(.fixed)
-        // A `Menu` tints its whole label with the accent, which turned the "+"
-        // coral the moment it stopped being a plain Button — and the composer's
-        // other controls are ink. The foreground style inside the label cannot
-        // override that on its own; the tint has to be set on the menu.
-        .tint(Color.primary)
-        // Opening the menu must not steal the composer's focus; `.automatic`
-        // would let a chosen row dismiss the menu *and* the keyboard together,
-        // which is the jump this feature exists to remove.
-        .menuActionDismissBehavior(.automatic)
+        .buttonStyle(.junoQuietPress)
+        .popover(isPresented: $presented, attachmentAnchor: .rect(.bounds), arrowEdge: .bottom) {
+            panel
+                .presentationCompactAdaptation(.popover)
+        }
+        .junoHaptic(JunoMobileHaptic.selection, trigger: pickHaptic)
         .accessibilityLabel(
             tools.isArmed ? Text("attachments.add.armed") : Text("attachments.add")
         )
@@ -144,18 +118,193 @@ struct JunoMobileComposerActions: View {
         .contentShape(.rect)
     }
 
-    /// **Tools**, as a nested menu beside Project rather than as a run of rows.
-    ///
-    /// Same reasoning as the project list: the menu's length stops being a
-    /// function of how many switches Juno has. Flat, Tools was five rows plus a
-    /// nested Connectors — enough that on an iPhone the whole menu scrolled and
-    /// Camera, the most-used row in it, was the one that fell off the end. As a
-    /// submenu the top level stays four sources and three destinations, and the
-    /// switches are one tap deeper for the people who actually change them.
-    ///
-    /// The label carries the count of what is **on**, which is the only thing
-    /// visible at the top level saying that e.g. research is armed — the same
-    /// job the web's collapsed `Tools` row does with its trailing number.
+    /// The popover's rows. Plain rows — glyph, label, a check when a tool is
+    /// on — at ChatGPT's size, with the rarer choices one level down in a
+    /// native menu so the first screen stays short.
+    private var panel: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            row("attachments.camera", symbol: "camera", enabled: canAttach) { open(.camera) }
+            row("attachments.photos", symbol: "photo.on.rectangle", enabled: canAttach) { open(.photos) }
+            row("attachments.files", symbol: "paperclip", enabled: canAttach) { open(.files) }
+            if let openLibrary {
+                row("attachments.library", symbol: "books.vertical", enabled: canAttach, action: openLibrary)
+            }
+
+            divider
+
+            row("composer.deep-research", symbol: "binoculars", checked: tools.deepResearch) {
+                tools.deepResearch.toggle()
+            }
+            if modelSupportsWebSearch {
+                row("composer.web-search", symbol: "globe", checked: tools.webSearch) {
+                    tools.webSearch.toggle()
+                }
+            }
+            if connectors.isEmpty {
+                row("Apps", symbol: "puzzlepiece.extension", enabled: canOpenPlugins, action: openPlugins)
+            } else {
+                menuRow(connectorLabel, symbol: "puzzlepiece.extension") { connectorRows }
+            }
+            if let openOrbit {
+                row("Orbit", symbol: "circle.hexagongrid", action: openOrbit)
+            }
+
+            divider
+
+            if let chooseModel {
+                row("Model", symbol: "cpu", detail: JunoMobileModelControl.shortName(modelName), action: chooseModel)
+                    .accessibilityIdentifier("juno.mobile.composer-model")
+            }
+            menuRow(String(localized: "More"), symbol: "ellipsis.circle") { moreRows }
+                .accessibilityIdentifier("juno.mobile.composer-tools")
+        }
+        .padding(.vertical, 8)
+        .frame(width: 272)
+    }
+
+    private var divider: some View {
+        Rectangle()
+            .fill(Color.junoHairline)
+            .frame(height: 1)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 6)
+            .accessibilityHidden(true)
+    }
+
+    private func row(
+        _ title: LocalizedStringKey,
+        symbol: String,
+        detail: String? = nil,
+        checked: Bool? = nil,
+        enabled: Bool = true,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button {
+            pickHaptic.fire()
+            // A toggle stays open so a second tool can be armed; anything
+            // that goes somewhere closes the popover first.
+            if checked == nil { presented = false }
+            action()
+        } label: {
+            HStack(spacing: 14) {
+                Image(systemName: symbol)
+                    .font(.system(size: 17, weight: .regular))
+                    .frame(width: 24)
+                Text(title)
+                    .junoFont(size: 17, relativeTo: .body)
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                if let detail, !detail.isEmpty {
+                    Text(verbatim: detail)
+                        .junoFont(size: 15, relativeTo: .subheadline)
+                        .foregroundStyle(Color.junoSecondaryInk)
+                        .lineLimit(1)
+                }
+                if checked == true {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Color.junoAccent)
+                        .transition(.scale.combined(with: .opacity))
+                }
+            }
+            .foregroundStyle(Color.junoForeground)
+            .padding(.horizontal, 20)
+            .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+            .contentShape(Rectangle())
+            .animation(JunoMotion.reduced(JunoMotion.chatControl, when: reduceMotion, tier: .tint), value: checked)
+        }
+        .buttonStyle(.junoQuietPress)
+        .disabled(!enabled)
+        .opacity(enabled ? 1 : 0.4)
+        .accessibilityAddTraits(checked == true ? .isSelected : [])
+    }
+
+    private func menuRow<Content: View>(
+        _ title: String,
+        symbol: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        Menu {
+            content()
+        } label: {
+            HStack(spacing: 14) {
+                Image(systemName: symbol)
+                    .font(.system(size: 17, weight: .regular))
+                    .frame(width: 24)
+                Text(verbatim: title)
+                    .junoFont(size: 17, relativeTo: .body)
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.junoSecondaryInk)
+            }
+            .foregroundStyle(Color.junoForeground)
+            .padding(.horizontal, 20)
+            .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .menuOrder(.fixed)
+        .tint(Color.primary)
+    }
+
+    @ViewBuilder
+    private var connectorRows: some View {
+        ForEach(connectors) { connector in
+            let on = tools.isConnectorEnabled(connector.id)
+            Toggle(
+                isOn: Binding(get: { on }, set: { _ in tools.toggleConnector(connector.id) })
+            ) {
+                Text(connector.label)
+            }
+            .disabled(!on && !tools.canAddConnector)
+        }
+        Divider()
+        Button {
+            presented = false
+            openPlugins()
+        } label: {
+            Label("composer.manage-connections", systemImage: "puzzlepiece.extension")
+        }
+        .disabled(!canOpenPlugins)
+    }
+
+    /// Flash and Pro (where the model has them), the project, and the standing
+    /// preferences — on by default and rarely touched.
+    @ViewBuilder
+    private var moreRows: some View {
+        if thinkingScale?.fastModeRateMultiplier != nil {
+            Toggle(isOn: $tools.fastMode) { Label("Flash", systemImage: "bolt") }
+        }
+        if thinkingScale?.supportsProMode == true {
+            Toggle(isOn: $tools.proMode) { Label("Pro", systemImage: "sparkle") }
+        }
+        if canPickProject {
+            projectMenu
+        }
+        if let startCanvas {
+            Button {
+                presented = false
+                startCanvas()
+            } label: {
+                Label("composer.create-canvas", systemImage: "square.on.square")
+            }
+        }
+        Toggle(isOn: $tools.canvas) {
+            Label("composer.canvas", systemImage: "rectangle.on.rectangle")
+        }
+        if !modelSupportsWebSearch {
+            Label("composer.web-search.unsupported", systemImage: "globe")
+        }
+        if let setMemoryEnabled {
+            Toggle(
+                isOn: Binding(get: { memoryEnabled }, set: { setMemoryEnabled($0) })
+            ) {
+                JunoIconLabel("composer.memory", icon: .memory)
+            }
+        }
+    }
+
     private var toolsMenu: some View {
         Menu {
             toolsRows
@@ -314,32 +463,16 @@ struct JunoMobileComposerActions: View {
     /// `contentShape` is load-bearing. Without it SwiftUI hit-tests the *drawn*
     /// content, so the touch target collapses to the plus glyph — 13.3pt on a
     /// control that looks 32pt.
+    /// A bare "+", as ChatGPT draws it: the card's glass is the only glass.
     private var plus: some View {
-        JunoIconView(.plus, size: 16)
-            .foregroundStyle(.primary)
-            .frame(width: 34, height: 34)
-            .modifier(JunoComposerGlassCircle())
-            .modifier(JunoMobileOptionalGlassID(id: "composer.plus", namespace: glassNamespace))
-            .overlay(alignment: .topTrailing) {
-                if tools.isArmed {
-                    Circle()
-                        .fill(Color.junoAccent)
-                        // The ring is what keeps the dot legible where it sits on
-                        // the glass rim rather than on a flat fill.
-                        .stroke(Color.junoSurface, lineWidth: 1.5)
-                        .frame(width: 8, height: 8)
-                        .offset(x: 1, y: -1)
-                        .transition(.scale.combined(with: .opacity))
-                }
-            }
+        Image(systemName: "plus")
+            .font(.system(size: 21, weight: .regular))
+            .foregroundStyle(Color.primary)
             .frame(width: 44, height: 44)
+            .modifier(JunoMobileOptionalGlassID(id: "composer.plus", namespace: nil))
             .contentShape(Rectangle())
-            .animation(JunoMotion.fast, value: tools.isArmed)
     }
 
-    /// The conversation's project. A nested `Menu` rather than a run of rows:
-    /// listing every project inline made the menu's length a function of how many
-    /// projects the account has.
     private var projectMenu: some View {
         Menu {
             // Buttons rather than a `Picker`: a picker in a menu infers its tag
@@ -388,6 +521,11 @@ struct JunoMobileComposerActions: View {
     /// scripted tap sequence. No effect — and no code — outside DEBUG.
     private func applyPreviewFlags() async {
         #if DEBUG
+        if JunoComposerPreviewFlags.opensPlus {
+            try? await Task.sleep(for: .milliseconds(600))
+            presented = true
+            return
+        }
         guard let raw = JunoComposerPreviewFlags.opensPicker,
             let surface = JunoAttachmentSurface(rawValue: raw)
         else { return }

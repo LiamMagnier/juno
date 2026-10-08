@@ -127,6 +127,8 @@ struct JunoMobileIncognitoChat: View {
     @State private var fastMode = false
     @State private var proMode = false
     @State private var showingCloseWarning = false
+    @State private var showingModelPicker = false
+    @State private var thinkingOpen = false
     @State private var scrollPosition = ScrollPosition(edge: .bottom)
     @FocusState private var composerFocused: Bool
 
@@ -138,10 +140,16 @@ struct JunoMobileIncognitoChat: View {
 
     var body: some View {
         transcript
-            .background(inkGround.ignoresSafeArea())
+            // The ordinary ground. ChatGPT's temporary chat is the same white
+            // page with one sentence saying what is different; the old ink
+            // repaint turned a privacy setting into a second app.
+            .background(Color.junoCanvas.ignoresSafeArea())
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                // The phone's bar owns the toggle (see the shell); the iPad's
+                // detail column keeps it here.
+                if sizeClass == .regular {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         // Only warn when there is something to lose.
@@ -157,14 +165,13 @@ struct JunoMobileIncognitoChat: View {
                     .accessibilityLabel("End incognito chat")
                     .accessibilityIdentifier("juno.mobile.incognito")
                 }
+                }
             }
             .safeAreaInset(edge: .bottom) { composer }
             // The ink treatment: this face is always drawn dark, whatever the
             // app is set to. A private chat should look like somewhere else
             // at a glance, and a darker page is the plainest honest way to say
             // it; no banner, no stripes, nothing that moves.
-            .environment(\.colorScheme, .dark)
-            .toolbarColorScheme(.dark, for: .navigationBar)
             .confirmationDialog(
                 "End this incognito chat?",
                 isPresented: $showingCloseWarning,
@@ -239,140 +246,91 @@ struct JunoMobileIncognitoChat: View {
 
     /// The web's incognito greeting, verbatim — the sentence is the promise, and
     /// rewording a privacy claim per platform is how the two stop matching.
+    /// ChatGPT's temporary-chat page: one title, one line under it, centred
+    /// on an otherwise empty page.
     private var greeting: some View {
-        VStack(spacing: JunoSpace.regular) {
-            JunoGhostMark(active: false, size: 48)
+        VStack(spacing: 6) {
+            Text("Private chat")
+                .junoFont(size: 17, relativeTo: .headline, weight: .semibold)
                 .foregroundStyle(Color.junoForeground)
-                .junoMobileRise(delay: 0.04, distance: 8)
-            VStack(spacing: JunoSpace.snug) {
-                Text("You're incognito")
-                    .font(JunoMobileType.display(sizeClass == .regular ? 44 : 36))
-                    .tracking(-0.8)
-                    .foregroundStyle(Color.junoForeground)
-                    .multilineTextAlignment(.center)
-                Text("Chats aren't saved, added to memory, or used to train models.")
-                    .junoFont(size: 16, relativeTo: .subheadline)
-                    .lineSpacing(3)
-                    .foregroundStyle(Color.junoSecondaryInk)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: 360)
-            }
-            .junoMobileRise(delay: 0.12, distance: 10)
+            Text("This chat won’t appear in your history or be used for memory.")
+                .junoFont(size: 14, relativeTo: .subheadline)
+                .foregroundStyle(Color.junoSecondaryInk)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 300)
         }
         .padding(.horizontal, JunoSpace.section)
         .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("juno.mobile.incognito-intro")
     }
 
-    // MARK: - Composer
-
-    /// Deliberately NOT `JunoMobileComposer`. That composer owns attachments,
-    /// projects and the plugin menu, and the server's private branch refuses
-    /// attachments with a 400 and ignores connectors entirely — so offering them
-    /// would be offering controls that cannot work. This is the same shell with
-    /// only the controls incognito actually supports.
     private var composer: some View {
         GlassEffectContainer(spacing: JunoSpace.snug) { composerCapsule }
-            .padding(.horizontal, JunoSpace.cozy)
-            .padding(.top, JunoSpace.snug)
-            .safeAreaInset(edge: .bottom, spacing: JunoSpace.tight) { notSavedNote }
+            .padding(.horizontal, JunoSpace.regular)
+            .padding(.vertical, JunoSpace.tight)
             .frame(maxWidth: JunoMobileMeasure.reading)
             .frame(maxWidth: .infinity)
+            .sheet(isPresented: $showingModelPicker) {
+                JunoMobileModelSelectorView(
+                    models: selectableModels,
+                    selectedModelID: selectedModelID,
+                    layout: .compact,
+                    onSelect: { option in
+                        selectedModelID = option.id
+                        showingModelPicker = false
+                    }
+                )
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+            }
     }
 
+    /// The same card as the saved chat's composer — same radius, same row —
+    /// with the field saying it is private. Send is grey until there is text,
+    /// as ChatGPT's temporary composer is.
     private var composerCapsule: some View {
-        VStack(spacing: JunoSpace.snug) {
-            TextField("Message Juno privately", text: $prompt, axis: .vertical)
-                .lineLimit(1...6)
-                .textFieldStyle(.plain)
-                .focused($composerFocused)
-                .padding(.horizontal, JunoSpace.snug)
-                .padding(.top, JunoSpace.hairline)
-                .accessibilityIdentifier("juno.mobile.incognito-composer")
-
-            HStack(spacing: JunoSpace.tight) {
-                JunoMobileModelControl(
-                    models: selectableModels,
-                    selectedModelID: $selectedModelID,
-                    fallbackName: junoDisplayModelName(initialModelID)
+        VStack(alignment: .leading, spacing: 0) {
+            if thinkingOpen, let scale = thinkingScale {
+                JunoMobileThinkingDialSlider(
+                    scale: scale,
+                    effort: $reasoningEffort,
+                    close: { withAnimation(JunoMotion.reduced(JunoMotion.chatControl, when: reduceMotion)) { thinkingOpen = false } }
                 )
-                .layoutPriority(1)
+                .padding(JunoSpace.tight)
+            } else {
+                TextField("Private chat", text: $prompt, axis: .vertical)
+                    .junoFont(size: 17, relativeTo: .body)
+                    .lineLimit(1...6)
+                    .textFieldStyle(.plain)
+                    .focused($composerFocused)
+                    .padding(.horizontal, JunoSpace.regular)
+                    .padding(.top, 14)
+                    .padding(.bottom, JunoSpace.tight)
+                    .accessibilityIdentifier("juno.mobile.incognito-composer")
 
-                if let scale = thinkingScale {
-                    JunoMobileThinkingControl(
-                        scale: scale,
-                        effort: $reasoningEffort,
-                        fastMode: $fastMode,
-                        proMode: $proMode
+                HStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    JunoMobileThinkingDialButton(
+                        scale: thinkingScale,
+                        effort: reasoningEffort,
+                        open: {
+                            composerFocused = false
+                            withAnimation(JunoMotion.reduced(JunoMotion.chatControl, when: reduceMotion)) { thinkingOpen = true }
+                        },
+                        chooseModel: { showingModelPicker = true }
                     )
-                        .layoutPriority(2)
-                }
-
-                Spacer(minLength: 2)
-
-                if model.isStreaming {
-                    Button { model.stopGeneration() } label: {
-                        JunoIconView(.stop, size: 14)
-                            .foregroundStyle(Color.junoOnAccent)
-                            .frame(width: 34, height: 34)
-                            .modifier(JunoComposerSendBackground(active: true))
-                            .frame(width: 44, height: 44)
-                            .contentShape(Rectangle())
+                    JunoMobileComposerPrimaryButton(
+                        face: model.isStreaming ? .stop : .send(enabled: !sendDisabled)
+                    ) {
+                        if model.isStreaming { model.stopGeneration() } else { send() }
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Stop generation")
-                } else {
-                    Button(action: send) {
-                        JunoIconView(.send, size: 15)
-                            // Follows the ground: `junoOnAccent` on the coral,
-                            // the quiet ink on the untinted glass the inactive
-                            // state now wears.
-                            .foregroundStyle(
-                                sendDisabled ? Color.junoMutedForeground : Color.junoOnAccent
-                            )
-                            .frame(width: 34, height: 34)
-                            .modifier(JunoComposerSendBackground(active: !sendDisabled))
-                            .scaleEffect(sendDisabled ? 0.92 : 1)
-                            .frame(width: 44, height: 44)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(sendDisabled)
-                    .accessibilityLabel("Send message")
-                    .accessibilityIdentifier("juno.mobile.incognito-send")
+                    .accessibilityIdentifier(model.isStreaming ? "juno.mobile.chat-stop" : "juno.mobile.incognito-send")
                 }
+                .padding(.horizontal, JunoSpace.tight)
+                .padding(.bottom, JunoSpace.tight)
             }
         }
-        .padding(JunoSpace.snug)
-        // The glass is the capsule's own effect, inside the container, as the
-        // chat composer's is. A glass *background* view in a container is
-        // merged with its siblings and drew the field and chips blurred.
-        .junoGlass(in: RoundedRectangle(cornerRadius: 26, style: .continuous))
-        // Dashed, as the web marks its private composer, but in the ink's own
-        // light rather than the accent: on the dark page the shape is enough,
-        // and a coral outline read as an error state.
-        .overlay(
-            RoundedRectangle(cornerRadius: 26, style: .continuous)
-                .strokeBorder(
-                    Color.junoForeground.opacity(0.26),
-                    style: StrokeStyle(lineWidth: 1, dash: [5, 4])
-                )
-        )
-    }
-
-    /// The standing promise, under the composer for as long as the chat
-    /// lasts: the greeting says it once and scrolls away with the first turn.
-    private var notSavedNote: some View {
-        HStack(spacing: 5) {
-            Image(systemName: "eye.slash")
-                .imageScale(.small)
-            Text("Not saved to your history")
-        }
-        .font(.footnote)
-        .foregroundStyle(Color.junoSecondaryInk)
-        .frame(maxWidth: .infinity)
-        .padding(.bottom, JunoSpace.snug)
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("juno.mobile.incognito-note")
+        .junoGlass(in: RoundedRectangle(cornerRadius: 24, style: .continuous))
     }
 
     private var sendDisabled: Bool {
