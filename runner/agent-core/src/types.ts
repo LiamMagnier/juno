@@ -119,8 +119,10 @@ export type AgentEvent =
    */
   | {
       type: 'context_compacted';
-      reason: 'threshold' | 'overflow';
+      reason: 'threshold' | 'overflow' | 'manual';
       summary: 'model' | 'structural';
+      /** Which layer brought the context down, in layered mode. */
+      strategy?: 'prune' | 'offload' | 'summarize';
       failure?: string;
       removedMessages: number;
       tokensBefore: number;
