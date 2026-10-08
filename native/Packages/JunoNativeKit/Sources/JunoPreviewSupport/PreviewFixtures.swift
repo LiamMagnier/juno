@@ -113,7 +113,7 @@ public enum PreviewFixtures {
     private static func memorySummary(_ accountID: StorageAccountID) -> StoredRecord {
         // The store persists the summary under its own namespace/key.
         record(accountID, "native_memory_summary", "summary", 1, """
-        {"content":"Works on the Juno native apps. Prefers concise, structured answers. Based in Europe/Paris.","updatedAt":"\(iso(-3600))","entryCount":3}
+        {"content":"Leads product on Field Notes, a notes app shipping 2.0 in November. Prefers concise, structured answers. Based in Lisbon.","updatedAt":"\(iso(-3600))","entryCount":3}
         """)
     }
 
@@ -280,7 +280,7 @@ public enum PreviewFixtures {
         {"id":"mem-1","content":"Prefers concise, structured answers.","source":"AUTO","kind":"FACT","sourceRef":"conv-1","createdAt":"\(iso(-500000))","updatedAt":"\(iso(-500000))"}
         """))
         out.append(record(a, "memory", "mem-2", 2, """
-        {"id":"mem-2","content":"Building the Juno native macOS and iOS apps.","source":"MANUAL","kind":"FACT","sourceRef":"manual","createdAt":"\(iso(-400000))","updatedAt":"\(iso(-400000))"}
+        {"id":"mem-2","content":"Leads product for Field Notes 2.0.","source":"MANUAL","kind":"FACT","sourceRef":"manual","createdAt":"\(iso(-400000))","updatedAt":"\(iso(-400000))"}
         """))
         out.append(record(a, "memory", "mem-3", 2, """
         {"id":"mem-3","content":"Never mention the discontinued beta program.","source":"MANUAL","kind":"SUPPRESSION","sourceRef":"manual","createdAt":"\(iso(-300000))","updatedAt":"\(iso(-300000))"}
