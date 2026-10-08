@@ -29,10 +29,13 @@ struct DesktopNeedsYouHeader: View {
             HStack(spacing: 0) {
                 Text(JunoShellChatSidebar.Heading.needsYou.label)
                     .lineLimit(1)
-                Text(" · \(count)")
+                Spacer(minLength: JunoSpace.snug)
+                // "2 waiting" in words at the header's end, in the attention
+                // ink — plain text, never a count in a capsule.
+                Text("\(count) waiting")
                     .monospacedDigit()
+                    .foregroundStyle(Color.junoAccentInk)
                     .fixedSize()
-                Spacer(minLength: 0)
             }
             .textCase(nil)
             .foregroundStyle(isFiltering || isHovering ? Color.junoForeground : Color.junoSecondaryInk)

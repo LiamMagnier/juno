@@ -31,6 +31,9 @@ struct DesktopAccountFooter: View {
     /// What the gear opens, when it is not the app's Settings: Code points it
     /// at Code's settings window. Nil is Chat's gear.
     var settingsAction: DesktopFooterSettingsAction? = nil
+    /// Archived Chats, from the account menu (the contract's archive). Nil
+    /// leaves the item out.
+    var openArchivedChats: (() -> Void)? = nil
 
     /// The account's plan meters, or nil until the first read lands. Nil draws
     /// no plan word at all rather than a guessed one.
@@ -84,86 +87,84 @@ struct DesktopAccountFooter: View {
 
     // MARK: Account
 
+    /// The account as a native menu row (round 2): the avatar, the name over
+    /// the plan in secondary ink, and the system's up-down chevron — the row
+    /// Notes, Mail and ChatGPT for Mac end their sidebars on. Its menu is
+    /// AppKit's own: the account's facts as a header, then Settings, the plan,
+    /// the archive, shortcuts and Sign Out.
     private var accountButton: some View {
         let word = plan.map(DesktopFooterPlanWord.init(plan:))
-        return Button {
-            isAccountOpen.toggle()
+        let usage = DesktopAccountUsage(plan: plan)
+        return Menu {
+            Section {
+                Text(session.profile.email)
+                if plan != nil {
+                    Text("\(usage.caption) \(usage.readout)")
+                }
+            } header: {
+                Text(name)
+            }
+            Section {
+                Button("Settings…") { DesktopSettingsRouter.open(.general, using: openSettings) }
+                    .keyboardShortcut(",", modifiers: .command)
+                if DesktopAccountPopoverRows.canUpgrade(planID: plan?.planID) {
+                    Button("Upgrade Plan…") { DesktopUpgradePresenter.shared.present(in: .chat) }
+                }
+                if let openArchivedChats {
+                    Button(JunoShellChatSidebar.More.archivedTitle + "…", action: openArchivedChats)
+                }
+                if plan?.planID.uppercased() == "OWNER" {
+                    Button("Admin Panel") {
+                        if let url = URL(string: "\(JunoBackend.productionURLString)/admin") { openURL(url) }
+                    }
+                }
+                Button("Keyboard Shortcuts") { openWindow(id: JunoDesktopWindow.shortcutsID) }
+            }
+            Section {
+                Button("Sign Out", role: .destructive) {
+                    Task { await configuration.authModel.signOut() }
+                }
+                .accessibilityIdentifier("juno.desktop.account-menu.sign-out")
+            }
         } label: {
             HStack(spacing: JunoSpace.snug) {
                 JunoAvatar(
                     imageData: configuration.avatarModel?.imageData,
                     imageURL: session.profile.imageURL,
                     name: name,
-                    size: 20
+                    size: 28
                 )
-                HStack(spacing: 0) {
+                VStack(alignment: .leading, spacing: 0) {
                     Text(name)
                         .junoFont(size: 13, relativeTo: .callout, weight: .medium)
                         .junoInk()
                         .lineLimit(1)
                         .truncationMode(.tail)
                     if let word {
-                        Text(" · \(word.text)")
-                            .junoFont(size: 13, relativeTo: .callout)
+                        Text(word.text)
+                            .junoFont(size: 11, relativeTo: .caption)
                             .foregroundStyle(word.tone.color)
                             .lineLimit(1)
-                            .fixedSize()
                     }
                 }
-                JunoIconView(.chevronUp, size: 10)
-                    .foregroundStyle(Color.junoTertiaryInk)
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.up.chevron.down")
+                    .imageScale(.small)
+                    .foregroundStyle(Color.junoSecondaryInk)
             }
             .padding(.horizontal, JunoSpace.tight)
-            .frame(height: 36)
+            .frame(height: 44)
             .background(
                 RoundedRectangle(cornerRadius: JunoRadius.control, style: .continuous)
-                    .fill(accountFill)
+                    .fill(isHoveringAccount ? Color.junoGlassHover : Color.clear)
             )
             .contentShape(RoundedRectangle(cornerRadius: JunoRadius.control, style: .continuous))
         }
+        .menuStyle(.button)
         .buttonStyle(.plain)
+        .menuIndicator(.hidden)
         .onHover { isHoveringAccount = $0 }
         .animation(JunoMotion.fast, value: isHoveringAccount)
-        // Dismissed with its anchor: a popover whose anchor leaves the
-        // hierarchy while presented has crashed this app before.
-        .onDisappear { isAccountOpen = false }
-        .popover(isPresented: $isAccountOpen, arrowEdge: .top) {
-            DesktopAccountPopover(
-                name: name,
-                email: session.profile.email,
-                avatarData: configuration.avatarModel?.imageData,
-                imageURL: session.profile.imageURL,
-                planName: plan?.planName,
-                usage: DesktopAccountUsage(plan: plan),
-                isOwner: plan?.planID.uppercased() == "OWNER",
-                openSettings: {
-                    isAccountOpen = false
-                    DesktopSettingsRouter.open(.general, using: openSettings)
-                },
-                // Stage C's Upgrade sheet (seam 4), for plans that can still
-                // go up; the row is absent otherwise, never a dead end.
-                openUpgrade: DesktopAccountPopoverRows.canUpgrade(planID: plan?.planID)
-                    ? {
-                        isAccountOpen = false
-                        DesktopUpgradePresenter.shared.present(in: .chat)
-                    }
-                    : nil,
-                openAdmin: {
-                    isAccountOpen = false
-                    if let url = URL(string: "\(JunoBackend.productionURLString)/admin") {
-                        openURL(url)
-                    }
-                },
-                openShortcuts: {
-                    isAccountOpen = false
-                    openWindow(id: JunoDesktopWindow.shortcutsID)
-                },
-                signOut: {
-                    isAccountOpen = false
-                    Task { await configuration.authModel.signOut() }
-                }
-            )
-        }
         .help("Account")
         .accessibilityLabel(DesktopFooterPlanWord.accessibilityLabel(name: name, plan: plan))
         // The launch UI suite finds the window by this control; the identifier
@@ -392,7 +393,7 @@ private struct DesktopFooterUpdateRow: View {
                 .contentShape(.rect)
             }
             .buttonStyle(.plain)
-            .help("See what's new in Juno \(version)")
+            .help("See what's new in Alevr \(version)")
             .accessibilityIdentifier("juno.desktop.update-details")
             Spacer(minLength: 0)
             // Link-style accent text, stated here rather than left to the
@@ -407,8 +408,8 @@ private struct DesktopFooterUpdateRow: View {
                     .contentShape(.rect)
             }
             .buttonStyle(.plain)
-            .help("Juno \(version) is downloaded and verified. This quits Juno and opens it again on the new version.")
-            .accessibilityLabel("Restart to update Juno to \(version)")
+            .help("Alevr \(version) is downloaded and verified. This quits Alevr and opens it again on the new version.")
+            .accessibilityLabel("Restart to update Alevr to \(version)")
             .accessibilityIdentifier("juno.desktop.update-ready")
         }
         .padding(.horizontal, JunoSpace.tight)

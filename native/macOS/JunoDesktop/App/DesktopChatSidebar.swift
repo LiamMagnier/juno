@@ -85,6 +85,10 @@ struct DesktopChatSidebar: View {
     /// Snapshots draw the fold pressed; the app never sets it.
     var startsFilteringNeedsYou = false
     @State private var projectPendingDeletion: NativeProject?
+    /// The column's own search field (`.searchable`, sidebar placement): it
+    /// filters the chats by title in place, as Mail's and Notes' do, and
+    /// Return hands the words to the ⌘K panel for a search of every message.
+    @State private var query = ""
     @State private var renamingProjectID: String?
     @State private var hoveringProjectsHeader = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -147,6 +151,9 @@ struct DesktopChatSidebar: View {
         all: [NativeConversation]
     ) -> some View {
         List(selection: $selection) {
+            if isSearching {
+                searchResults(in: all)
+            } else {
             Section { navigationBlock }
 
             if !needsYou.isEmpty {
@@ -190,13 +197,23 @@ struct DesktopChatSidebar: View {
                 }
 
                 if !recent.isEmpty {
-                    Section(isExpanded: $recentOpen) {
-                        ForEach(recent.prefix(recentLimit)) { conversation in
-                            conversationRow(conversation)
-                                .onAppear { loadMoreIfLast(conversation, in: recent) }
+                    // Recent, folded by day as ChatGPT and Notes fold it:
+                    // Today, Yesterday, Previous 7 Days, Previous 30 Days,
+                    // then month by month. Paged before it is folded, so a
+                    // long history still lays out one page at a time.
+                    let groups = DesktopChatSidebarContent.recentGroups(
+                        from: Array(recent.prefix(recentLimit)),
+                        now: Date()
+                    )
+                    ForEach(groups) { group in
+                        Section {
+                            ForEach(group.chats) { conversation in
+                                conversationRow(conversation)
+                                    .onAppear { loadMoreIfLast(conversation, in: recent) }
+                            }
+                        } header: {
+                            DesktopSidebarHeading(group.title)
                         }
-                    } header: {
-                        DesktopSidebarHeading(JunoShellChatSidebar.Heading.recent.label)
                     }
                 } else if isBootstrapping {
                     DesktopSidebarLoadingRows()
@@ -204,8 +221,14 @@ struct DesktopChatSidebar: View {
                     emptyRecent
                 }
             }
+            }
         }
         .listStyle(.sidebar)
+        // The column's search field, at the top of the sidebar where Mail,
+        // Notes and ChatGPT for Mac put it. It filters titles as you type;
+        // Return searches every message in the ⌘K panel.
+        .searchable(text: $query, placement: .sidebar, prompt: Text("Search"))
+        .onSubmit(of: .search) { openSearch() }
         // The selection is still the platform's — only its colour is Juno's.
         .junoSidebarSelectionTint()
         // `safeAreaBar`, not `safeAreaInset`: the bar variant is what the
@@ -213,7 +236,7 @@ struct DesktopChatSidebar: View {
         // effect is what lets the footer sit on a translucent column without an
         // opaque bar painted behind it.
         .safeAreaBar(edge: .bottom, spacing: 0) {
-            DesktopAccountFooter(configuration: configuration, session: session)
+            DesktopAccountFooter(configuration: configuration, session: session, openArchivedChats: openArchivedChats)
         }
         .junoSidebarScrollEdge()
         .onChange(of: needsYou.count) { previous, count in
@@ -224,7 +247,20 @@ struct DesktopChatSidebar: View {
                 AccessibilityNotification.Announcement(sentence).post()
             }
         }
-        .onAppear { if startsFilteringNeedsYou { filterToNeedsYou = true } }
+        .onAppear {
+            if startsFilteringNeedsYou { filterToNeedsYou = true }
+            #if DEBUG
+            // `--juno-preview-sidebar-search <words>`: the column with its
+            // search field in use, for the capture harness.
+            let arguments = CommandLine.arguments
+            if arguments.contains("--juno-ui-preview"),
+               let index = arguments.firstIndex(of: "--juno-preview-sidebar-search"),
+               index + 1 < arguments.count
+            {
+                query = arguments[index + 1]
+            }
+            #endif
+        }
         // Opener and actions on one line: the targets gate reads a dialog's
         // buttons as system-drawn only when its brace opens on that line.
         .confirmationDialog("Delete this project?", isPresented: isConfirmingProjectDeletion, titleVisibility: .visible) {
@@ -235,6 +271,45 @@ struct DesktopChatSidebar: View {
             Text("Its chats are kept (just unlinked), but the project’s instructions and files are removed. This can’t be undone.")
         }
         .accessibilityIdentifier("juno.desktop.sidebar")
+    }
+
+    // MARK: Search
+
+    private var isSearching: Bool {
+        !query.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    /// The chats whose titles hold the words, newest first, and a row that
+    /// takes the same words to the ⌘K panel to search inside messages.
+    @ViewBuilder
+    private func searchResults(in all: [NativeConversation]) -> some View {
+        let matches = DesktopChatSidebarContent.matching(query, in: all)
+        Section {
+            if matches.isEmpty {
+                Text("No chats match “\(query.trimmingCharacters(in: .whitespaces))”")
+                    .junoSecondaryInk()
+                    .padding(.leading, JunoSidebarMetrics.titleLeading)
+                    .selectionDisabled()
+            } else {
+                ForEach(matches) { conversationRow($0) }
+            }
+            Button(action: openSearch) {
+                Label {
+                    Text("Search messages…")
+                } icon: {
+                    JunoSymbol(JunoShellChatSidebar.Action.search.icon)
+                        .foregroundStyle(Color.junoSidebarInk)
+                }
+                .foregroundStyle(Color.junoSidebarInk)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .help(JunoShortcutRegistry.help("Search messages", .search))
+            .accessibilityIdentifier("juno.desktop.sidebar.search")
+        } header: {
+            DesktopSidebarHeading("Chats")
+        }
     }
 
     // MARK: Navigation block
@@ -250,7 +325,7 @@ struct DesktopChatSidebar: View {
             Label {
                 Text(JunoShellChatSidebar.Action.new.label)
             } icon: {
-                JunoSymbol(JunoShellChatSidebar.Action.new.icon)
+                Image(systemName: "square.and.pencil")
                     .foregroundStyle(Color.junoSidebarInk)
             }
             .foregroundStyle(Color.junoSidebarInk)
@@ -261,14 +336,44 @@ struct DesktopChatSidebar: View {
         .help(JunoShortcutRegistry.help(JunoShellChatSidebar.Action.new.label, .newChat))
         .accessibilityIdentifier("juno.desktop.sidebar.new-chat")
 
-        // Search is a row, as on the web (§2.2, `app-sidebar.tsx`): shaped
-        // like New chat, with no fill and no keycap. The chord lives in the
-        // tooltip and the menu bar, where a reader looking for it looks.
-        Button(action: openSearch) {
+        // Search is the column's own field now (`.searchable` on the list,
+        // sidebar placement) rather than a row: the contract's Search action,
+        // drawn the way a Mac source list draws search.
+
+        // The inbox, only while it has something in it (or is open): a row
+        // that is always there for an empty inbox is a row nobody needs.
+        if let notificationsModel,
+           notificationsModel.unreadDetail != nil || (showingNotifications?.wrappedValue ?? notificationsOpenHere)
+        {
+            DesktopNotificationsRow(
+                model: notificationsModel,
+                isOpen: showingNotifications ?? $notificationsOpenHere
+            )
+        }
+
+        // The short list of places (round 2), in the order a reader reaches
+        // for them: Library (with Made by Alevr inside it), Projects, Code,
+        // Orbit, Routines, Apps. One SF Symbol each, in the column's ink.
+        ForEach(DesktopDestination.nativeSidebarRows, id: \.self) { row in
+            switch row {
+            case .destination(let item):
+                destinationRow(item)
+            case .code:
+                codeRow
+            }
+        }
+    }
+
+    /// Code is a product, not a page: the row switches the window to it, as
+    /// ⌘2 and the toolbar's Chat | Code do.
+    private var codeRow: some View {
+        Button {
+            product = .code
+        } label: {
             Label {
-                Text(JunoShellChatSidebar.Action.search.label)
+                Text("Code")
             } icon: {
-                JunoSymbol(JunoShellChatSidebar.Action.search.icon)
+                Image(systemName: "chevron.left.forwardslash.chevron.right")
                     .foregroundStyle(Color.junoSidebarInk)
             }
             .foregroundStyle(Color.junoSidebarInk)
@@ -276,22 +381,8 @@ struct DesktopChatSidebar: View {
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .help(JunoShortcutRegistry.help(JunoShellChatSidebar.Action.search.label, .search))
-        .accessibilityIdentifier("juno.desktop.sidebar.search")
-
-        // The inbox, right after New chat (Phase 5 C1, register #62).
-        if let notificationsModel {
-            DesktopNotificationsRow(
-                model: notificationsModel,
-                isOpen: showingNotifications ?? $notificationsOpenHere
-            )
-        }
-
-        ForEach(DesktopDestination.sidebarCases) { item in
-            destinationRow(item)
-        }
-
-        moreRow
+        .help(JunoShortcutRegistry.help("Code", .productCode))
+        .accessibilityIdentifier("juno.desktop.sidebar.code")
     }
 
     private func destinationRow(_ item: DesktopDestination) -> some View {
@@ -304,9 +395,9 @@ struct DesktopChatSidebar: View {
         let ink = selected ? Color.junoForeground : Color.junoSidebarInk
 
         return Label {
-            Text(item.label)
+            Text(item.sidebarLabel)
         } icon: {
-            JunoSymbol(item.junoIcon)
+            Image(systemName: item.sidebarSymbol)
                 .foregroundStyle(ink)
         }
         .foregroundStyle(ink)
@@ -535,6 +626,9 @@ struct DesktopChatSidebar: View {
                 .id(DesktopChatSidebarContent.scrollID(for: conversation.id))
                 .junoSidebarRowSelection(selected)
                 .tag(DesktopSidebarItem.conversation(conversation.id))
+                // Dragged onto a project to file it there, as a note is
+                // dragged onto a folder in Notes.
+                .draggable(DesktopChatSidebarContent.dragToken(for: conversation.id))
         } else {
             row
                 .junoSidebarRowSelection(selected)
@@ -576,6 +670,17 @@ struct DesktopChatSidebar: View {
     /// A pinned project: a disclosure row whose children are its three newest
     /// chats, then "View all n" / "Show less" in place.
     private func projectRow(_ project: NativeProject, chats projectChats: [NativeConversation]) -> some View {
+        projectRowBody(project, chats: projectChats)
+            // A chat dropped on the folder is moved into the project.
+            .dropDestination(for: String.self) { tokens, _ in
+                let ids = tokens.compactMap(DesktopChatSidebarContent.conversationID(fromDragToken:))
+                let moved = model.conversations.filter { ids.contains($0.id) }
+                moved.forEach { actions.move($0, project.id) }
+                return !moved.isEmpty
+            }
+    }
+
+    private func projectRowBody(_ project: NativeProject, chats projectChats: [NativeConversation]) -> some View {
         DesktopPinnedProjectRow(
             project: project,
             chats: projectChats,
@@ -652,6 +757,57 @@ enum DesktopChatSidebarContent {
         chats.filter { !$0.pinned && !needsYou.contains($0.id) }
     }
 
+    /// One day-fold of Recent: its heading and its chats, newest first.
+    struct RecentGroup: Identifiable, Equatable {
+        let title: String
+        let chats: [NativeConversation]
+        var id: String { title }
+    }
+
+    /// Recent folded by day, the way ChatGPT, Notes and Mail fold a history:
+    /// Today, Yesterday, Previous 7 Days, Previous 30 Days, then one fold per
+    /// month ("September", or "September 2025" outside this year). Empty folds
+    /// are left out; the order inside each fold is the list's own.
+    static func recentGroups(
+        from chats: [NativeConversation],
+        now: Date,
+        calendar: Calendar = .current
+    ) -> [RecentGroup] {
+        var order: [String] = []
+        var buckets: [String: [NativeConversation]] = [:]
+        let startOfToday = calendar.startOfDay(for: now)
+        for chat in chats {
+            let title = foldTitle(for: chat.lastMessageAt, startOfToday: startOfToday, now: now, calendar: calendar)
+            if buckets[title] == nil { order.append(title) }
+            buckets[title, default: []].append(chat)
+        }
+        return order.map { RecentGroup(title: $0, chats: buckets[$0] ?? []) }
+    }
+
+    static func foldTitle(for date: Date, startOfToday: Date, now: Date, calendar: Calendar = .current) -> String {
+        let day = calendar.startOfDay(for: date)
+        let days = calendar.dateComponents([.day], from: day, to: startOfToday).day ?? 0
+        switch days {
+        case ..<1: return "Today"
+        case 1: return "Yesterday"
+        case 2...7: return "Previous 7 Days"
+        case 8...30: return "Previous 30 Days"
+        default:
+            let sameYear = calendar.component(.year, from: date) == calendar.component(.year, from: now)
+            return date.formatted(sameYear ? .dateTime.month(.wide) : .dateTime.month(.wide).year())
+        }
+    }
+
+    /// The chats whose titles hold every word of `query`, ignoring case and
+    /// diacritics, in the list's order.
+    static func matching(_ query: String, in chats: [NativeConversation]) -> [NativeConversation] {
+        let words = query.split(whereSeparator: \.isWhitespace).map(String.init)
+        guard !words.isEmpty else { return [] }
+        return chats.filter { chat in
+            words.allSatisfy { chat.title.range(of: $0, options: [.caseInsensitive, .diacriticInsensitive]) != nil }
+        }
+    }
+
     /// The starred subset, in the store's order.
     static func pinnedProjects(from projects: [NativeProject]) -> [NativeProject] {
         projects.filter(\.starred)
@@ -682,6 +838,16 @@ enum DesktopChatSidebarContent {
         [signal.map { ChatWorkVocabulary.label($0.status) }, pinned ? "Pinned" : nil]
             .compactMap { $0 }
             .joined(separator: ", ")
+    }
+
+    /// What a dragged chat row carries: its id behind a prefix, so a project
+    /// row takes chats and nothing else that happens to be text.
+    static func dragToken(for conversationID: String) -> String {
+        "alevr-chat:" + conversationID
+    }
+
+    static func conversationID(fromDragToken token: String) -> String? {
+        token.hasPrefix("alevr-chat:") ? String(token.dropFirst("alevr-chat:".count)) : nil
     }
 
     /// The scroll identity of a chat's own row. Namespaced, because a pinned
@@ -859,7 +1025,7 @@ private struct DesktopConversationRow: View {
             ProgressView()
                 .controlSize(.mini)
                 .accessibilityLabel("Sending")
-        } else if (isHovering || isSelected), !isRenaming {
+        } else if isHovering, !isRenaming {
             Menu {
                 DesktopConversationMenu(conversation: conversation, projects: projects, actions: actions)
             } label: {
@@ -1242,6 +1408,53 @@ enum DesktopDestination: String, CaseIterable, Identifiable {
     /// contract, today Assistants, Skills, Automations. Connections, Memory
     /// and Permissions left More for Settings and ⌘K, as they did on the web.
     static let moreCases: [Self] = JunoShellChatSidebar.More.items.compactMap { Self($0.destination) }
+
+    /// One row of the Mac's native navigation block.
+    enum SidebarRow: Hashable {
+        case destination(DesktopDestination)
+        /// The Code product, switched to rather than navigated.
+        case code
+    }
+
+    /// The Mac's short list of places (round 2): the contract's destinations
+    /// (Projects, Library, Customize as Apps) rendered natively, with Code,
+    /// Orbit and Routines re-homed from the web's product switch and More so
+    /// every place is one click from the column. Made by Alevr folds into
+    /// Library; Archived lives in the account menu, as the contract's V3
+    /// shell has it.
+    static let nativeSidebarRows: [SidebarRow] = [
+        .destination(.library),
+        .destination(.projects),
+        .code,
+        .destination(.agents),
+        .destination(.automations),
+        .destination(.connections),
+    ]
+
+    /// The row's name in the Mac's column. Customize is "Apps" here: the page
+    /// it opens is the account's apps, skills and connections.
+    var sidebarLabel: String {
+        switch self {
+        case .connections: "Apps"
+        default: label
+        }
+    }
+
+    /// One SF Symbol per place, the same weight and ink down the column.
+    var sidebarSymbol: String {
+        switch self {
+        case .library, .artifacts: "books.vertical"
+        case .projects: "folder"
+        case .agents: "person.2"
+        case .automations: "clock"
+        case .connections: "square.grid.2x2"
+        case .assistants: "person.crop.circle"
+        case .skills: "wand.and.stars"
+        case .memory: "brain"
+        case .permissions: "hand.raised"
+        case .chat, .search, .design: "bubble.left"
+        }
+    }
 
     /// The web's name for a destination it has (the shell contract), and the
     /// Mac's own for the values it does not.
