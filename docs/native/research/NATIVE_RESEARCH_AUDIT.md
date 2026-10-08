@@ -75,7 +75,8 @@ plan/clarify cards, panel and recap matter for web-started runs.
   `clarifications[].options` is ignored) — works today, fragile.
 - Relaunch mid-run: the in-chat run is tied to the chat request; the server
   cancels it when the request aborts (`chat_stopped`). The app's stream-resume path
-  covers reconnects, not a killed app. Server-side; not changed here.
+  covers reconnects, not a killed app. Fixed on polish/research-background — see
+  "Background runs" below.
 
 ## What "excellent" means here (targets)
 - Live: a calm working view in the transcript — phase sentence in plain text,
@@ -127,3 +128,59 @@ Not verified: a live provider-backed run against production; favicons over the
 network (snapshots draw letters); popover anchoring of citations on touch (the
 citation card is a sheet with detents on iPhone); relaunch mid in-chat run (server
 cancels the run when the chat request aborts — server-side, unchanged).
+
+## Background runs (2026-10-08, branch polish/research-background)
+
+Before: an app's research turn (`deepResearch: true`) ran `runDeepResearch` inside
+the chat request — gather to `synthesizing` with a per-turn lease, then the chat
+model wrote the report into the answer. The run lived on one request on one
+process: a server restart stranded it, the apps' Stop/abort path cancelled it
+(`chat_stopped`), nothing told the apps to follow it, and no "ready"
+notification was ever sent for it (the engine's `announceFinish` only runs on
+the engine's own completion).
+
+After (SPEC §9.6.1, for a client that declares `research_background` — both
+apps already do; the web declares nothing and is unchanged):
+
+1. `resolveResearchStage` → `startBackgroundResearch` (`src/lib/deep-research.ts`):
+   the research surface's start checks (live runs, starts today, usage windows),
+   then `engine.start({ confirmation: "auto", delivery: "background", … })` with
+   the full engine, and `driveResearchInBackground` (lease owner
+   `research-web:<runId>`; the PM2 research worker adopts it if the process dies).
+   A "yes"/"no" reply to a plan waiting in the conversation confirms/cancels it.
+2. The turn sends `{ type: "handoff", to: "research", runId, userMessageId }` as
+   its terminal frame (logged, so a resumed stream ends on it), writes no assistant
+   row, marks a first-submission receipt `research_handoff`, releases its spend hold.
+3. The engine plans (auto-confirm recorded as `plan_confirmed { by: "handoff" }`,
+   which every shipped app draws as a run row, never as the in-chat answer),
+   investigates, writes, audits, and `finalizeResearchRun` writes the completion
+   message (`research-report-<runId>` artifact, the format both readers parse),
+   then `announceFinish` → `notifyUser`: inbox row, APNs, Web Push (path
+   `/research/<id>`, data `conversationId` + `runId`).
+4. Only Stop (`POST /api/research/{id}/control {action:"cancel"}`) cancels it.
+
+Apps: the existing hand-off adoption and `followResearch` draw the live run and,
+on relaunch, rediscover it from `GET /api/research?conversationId=`. New: a
+completion watcher (`NativeResearchCompletionWatch` + `checkResearchCompletions`,
+reading `GET /api/research?live=1`, runs seen working persisted per account) that
+raises a local notification (identifier = the push's collapse id
+`research-<runId>`, so local and remote never stack) — on the Mac while running
+(toast in front, banner behind), on the phone in front and from a
+`BGAppRefreshTask` (`com.liammagnier.JunoMobile.research-refresh`). A tap
+(`JunoNotificationRoute.research`, `/research/<id>`) opens the report: the Mac's
+report window plus the chat behind it; on the phone the chat with the reader
+sheet over it. The Mac inbox's research rows route the same way.
+
+Remote push in production needs: `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_PRIVATE_KEY`
+(or `APNS_P8`, the .p8 body) on the server (`src/lib/apns.ts`; without them every
+APNs send is skipped), optionally `APNS_BUNDLE_ID`; and app builds signed with the
+`aps-environment` entitlement and a provisioning profile that has Push (not ad-hoc
+or a personal team), so the apps receive a device token to register (the
+environment and bundle id ride the registration). Web Push works with
+`VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY` pinned (otherwise generated and stored) and
+`VAPID_SUBJECT` (`src/lib/notify/web-push.ts`). Without any of it the local
+notifications above still fire while the app runs or iOS grants a refresh.
+
+Not changed: a regenerate of a research answer keeps the in-chat path (the
+answer being replaced must be superseded by an answer); clients that declare
+nothing (web chat, older builds) keep `runDeepResearch`.
