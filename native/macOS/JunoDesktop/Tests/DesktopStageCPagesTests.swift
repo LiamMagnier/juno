@@ -9,16 +9,17 @@ import Testing
 struct DesktopStageCPagesTests {
     // MARK: - More and the sidebar
 
-    /// The web's More (`app-sidebar.tsx`): Assistants, Skills, Automations.
+    /// The shell contract (`juno-shell-v1.json`): the sidebar is Projects, Library
+    /// and Customize (Connections); More holds only Archived, so it has no pages.
     @Test
     func moreIsTheWebsOrder() {
-        #expect(DesktopDestination.moreCases == [.assistants, .skills, .automations])
-        #expect(DesktopDestination.sidebarCases == [.library, .projects, .artifacts, .agents])
+        #expect(DesktopDestination.moreCases == [])
+        #expect(DesktopDestination.sidebarCases == [.projects, .library, .connections])
     }
 
-    /// Connections, Memory and Permissions left More but stay destinations,
-    /// reachable through the router; a stored value still opens them.
-    @Test(arguments: [DesktopDestination.connections, .memory, .permissions, .automations, .skills, .assistants])
+    /// Pages outside the sidebar column stay destinations, reachable through
+    /// the router; a stored value still opens them.
+    @Test(arguments: [DesktopDestination.memory, .permissions, .automations, .skills, .assistants])
     func pagesOutsideTheColumnRoundTripThroughStoredState(_ destination: DesktopDestination) {
         #expect(!DesktopDestination.sidebarCases.contains(destination))
         #expect(DesktopNavigationState.destination(fromStored: destination.rawValue) == destination)

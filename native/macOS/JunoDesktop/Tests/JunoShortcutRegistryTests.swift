@@ -317,8 +317,8 @@ struct JunoShortcutRegistryTests {
         #expect(titles(.edit) == [["Find in Conversation…", "Find Next", "Find Previous"]])
         #expect(titles(.view) == [
             ["Chat", "Code"], ["Command Menu…", "Search…"], ["Switch to Dark Mode"],
-            // The Chat window's pages (integration): the sidebar's four, then More's three.
-            ["Library", "Projects", "Made by Alevr", "Orbit"], ["Assistants", "Skills", "Routines"],
+            // The Chat window's pages, in one group now that More holds no pages.
+            ["Library", "Projects", "Made by Alevr", "Orbit", "Assistants", "Skills", "Routines"],
         ])
         #expect(titles(.chat) == [
             ["Attach Files…", "Attach Screenshot…"],

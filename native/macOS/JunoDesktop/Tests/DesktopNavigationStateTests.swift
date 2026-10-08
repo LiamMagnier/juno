@@ -257,7 +257,7 @@ struct DesktopNavigationStateTests {
     /// Library, Projects, Artifacts, Agents — the web's rows, with no Design.
     @Test
     func theSidebarHasNoDesignRow() {
-        #expect(DesktopDestination.sidebarCases == [.library, .projects, .artifacts, .agents])
+        #expect(DesktopDestination.sidebarCases == [.projects, .library, .connections])
         #expect(!DesktopDestination.sidebarCases.contains(.design))
     }
 
