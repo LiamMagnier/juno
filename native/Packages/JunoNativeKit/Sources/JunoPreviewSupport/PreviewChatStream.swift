@@ -62,7 +62,7 @@ enum PreviewChatStream {
                 frame(["type": "meta", "conversationId": conversationID, "title": ""])
                 for sentence in PreviewShowcaseFixtures.streamedReasoning.split(separator: ".") {
                     try? await Task.sleep(for: .milliseconds(900))
-                    frame(["type": "reasoning", "text": String(sentence) + "."])
+                    frame(["type": "reasoning", "text": String(sentence) + ".", "part": 0, "round": 0])
                 }
                 try? await Task.sleep(for: .milliseconds(1_200))
                 let words = PreviewShowcaseFixtures.streamedAnswer.split(separator: " ", omittingEmptySubsequences: false)
@@ -70,7 +70,7 @@ enum PreviewChatStream {
                 while index < words.count, !Task.isCancelled {
                     let chunk = words[index..<min(index + 3, words.count)].joined(separator: " ")
                     index += 3
-                    frame(["type": "delta", "text": chunk + (index < words.count ? " " : "")])
+                    frame(["type": "delta", "text": chunk + (index < words.count ? " " : ""), "round": 0, "phase": "answer"])
                     try? await Task.sleep(for: .milliseconds(140))
                 }
                 // Held open: the reply is still "arriving" for as long as the
