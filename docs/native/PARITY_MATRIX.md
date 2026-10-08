@@ -22,7 +22,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 
 ## Summary
 
-317 routes: 183 native, 66 planned, 55 web only, 13 internal. 49 pages: on the Mac 33 native, 4 partial, 3 planned, 9 web only; on iOS 17 native, 8 partial, 15 planned, 9 web only.
+317 routes: 183 native, 66 planned, 55 web only, 13 internal. 49 pages: on the Mac 33 native, 4 partial, 3 planned, 9 web only; on iOS 21 native, 10 partial, 9 planned, 9 web only.
 
 | Feature | Pages (Mac) | Pages (iOS) | Routes native | Planned | Web only | Internal |
 |---|---|---|---|---|---|---|
@@ -36,10 +36,10 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 | [Artifacts and Design](#artifacts) | 4/4 | 3/4 (+1 partial) | 6 | 12 | 4 | 0 |
 | [Memory](#memory) | 1/1 | 1/1 | 12 | 2 | 0 | 0 |
 | [Connections](#connections) | 2/2 | 2/2 | 15 | 2 | 4 | 2 |
-| [Skills](#skills) | 4/4 | 0/4 | 10 | 3 | 0 | 0 |
+| [Skills](#skills) | 4/4 | 2/4 (+1 partial) | 10 | 3 | 0 | 0 |
 | [Assistants](#assistants) | 1/1 | 0/1 | 2 | 1 | 0 | 0 |
 | [Tasks in chat](#tasks) | 2/2 | 0/2 (+2 partial) | 13 | 1 | 2 | 0 |
-| [Automations](#automations) | 3/3 | 0/3 | 5 | 0 | 0 | 0 |
+| [Automations](#automations) | 3/3 | 2/3 (+1 partial) | 5 | 0 | 0 | 0 |
 | [Permissions and this Mac as a host](#permissions) | 2/2 | 0/2 | 6 | 0 | 0 | 0 |
 | [Agents](#agents) | 4/4 | 4/4 | 18 | 8 | 1 | 0 |
 | [Research](#research) | 2/2 | 2/2 | 7 | 0 | 0 | 0 |
@@ -313,15 +313,15 @@ Design is a type of artifact (register #73).
 
 | Page | Mac | iOS | Native screen | Note |
 |---|---|---|---|---|
-| `/skills` | Native | Planned | DesktopSkillsScreen | No Skills pages on the phone yet. |
-| `/skills/[id]` | Native | Planned | DesktopSkillPage | As /skills. |
-| `/skills/new` | Native | Planned | DesktopSkillPage (new) | As /skills. |
-| `/skills/import` | Native | Planned | DesktopSkillSheets (Import from GitHub) | A sheet on the Mac; no Skills pages on the phone yet. |
+| `/skills` | Native | Native | DesktopSkillsScreen · JunoMobileSkillsView | On the phone: Customize › Skills, a list with on/off, search and Import from GitHub. |
+| `/skills/[id]` | Native | Partial | DesktopSkillPage · JunoMobileSkillDetailView | The phone reads a skill, switches it on or off and deletes it; editing instructions, versions, usage and consent stay on the Mac and the web. |
+| `/skills/new` | Native | Planned | DesktopSkillPage (new) | Writing a new skill is Mac and web only; the phone imports skills from GitHub. |
+| `/skills/import` | Native | Native | DesktopSkillSheets (Import from GitHub) · JunoMobileSkillImportView | A sheet on both apps. |
 
 | Route | Methods | Status | Called from | Note |
 |---|---|---|---|---|
 | `/api/skills` | GET | Native | JunoWorkKit |  |
-| `/api/skills/import/file` | POST | Native | JunoWorkKit | Mac only: previews an uploaded SKILL.md (the web parses it in the browser); no Skills pages on the phone yet. |
+| `/api/skills/import/file` | POST | Native | JunoWorkKit | Mac only: previews an uploaded SKILL.md (the web parses it in the browser); the phone imports from GitHub only. |
 | `/api/skills/import/github` | POST | Native | JunoWorkKit |  |
 | `/api/skills/import/package` | POST | Planned |  | Importing an uploaded SKILL.md or .zip/.skill package, pasted text or a public link, through the SSRF-safe fetcher. The Mac previews a SKILL.md through /api/skills/import/file; packages and links are web-only until the native lane adds them. |
 | `/api/skills/sources/[id]` | PATCH, DELETE | Native | JunoWorkKit |  |
@@ -384,9 +384,9 @@ The web retired its task pages: a task lives in its chat (Phase 5). `/api/tasks`
 
 | Page | Mac | iOS | Native screen | Note |
 |---|---|---|---|---|
-| `/automations` | Native | Planned | DesktopAutomationsScreen | No Automations on the phone yet. |
-| `/automations/new` | Native | Planned | DesktopAutomationEditor | As /automations. |
-| `/automations/[id]` | Native | Planned | DesktopAutomationPage | As /automations. |
+| `/automations` | Native | Native | DesktopAutomationsScreen · JunoMobileRoutinesView | On the phone: Customize › Routines, with Run Now, Pause/Resume and Delete. |
+| `/automations/new` | Native | Partial | DesktopAutomationEditor · JunoMobileRoutineEditor | The phone's editor sets a name, a prompt and one clock (hourly, daily, weekdays, weekly or monthly); event triggers, targets, budgets and policies stay on the Mac and the web. |
+| `/automations/[id]` | Native | Native | DesktopAutomationPage · JunoMobileRoutineDetailView | Schedule in words, next and last run, recent runs, Run Now, Pause/Resume, Edit and Delete. |
 
 | Route | Methods | Status | Called from | Note |
 |---|---|---|---|---|
