@@ -49,7 +49,7 @@ public struct NativeUsernameFieldRows: View {
                 .frame(maxWidth: .infinity, minHeight: 18, alignment: .leading)
                 .accessibilityAddTraits(.updatesFrequently)
             if let error = model.saveError {
-                Label(error, systemImage: "exclamationmark.triangle")
+                Label(error, image: JunoIcon.warning.assetName)
                     .font(.footnote)
                     .foregroundStyle(Color.junoDestructiveInk)
             }

@@ -21,6 +21,7 @@ properties excluded):
 |---|---|
 | Base of this branch (`49a26fda`) | 14 |
 | Round 2, before the owner's icon rule (the first native sidebar added 6) | 20 |
+| After merging `polish/native-parity` (it brought 15 more) | 21 |
 | Now | 6, all in files another lane owns or on the iPhone branch only |
 
 ## Migrated (each use and its web equivalent)
@@ -40,6 +41,7 @@ properties excluded):
 | Code settings problem line | `exclamationmark.triangle` | `JunoIcon.warning` |
 | Pull requests empty state | `arrow.trianglehead.pull` | `JunoIcon.pulls` |
 | Research question rows (Mac) | `checkmark.circle`, `circle.lefthalf.filled`, `exclamationmark.circle`, `circle.dotted`, `checkmark`, `circle` | `.circleCheck`, `.circleDot`, `.error`, `.circleDashed`, `.check`, `.circle` |
+| Parity merge (profile, username, semantic artifacts, billing extras, project folders): 15 uses | `exclamationmark.triangle`, `lightbulb`, `info.circle`, `photo`, `pencil.line`, `text.bubble`, `person.crop.circle`, `folder.badge.plus`, `folder`, `chevron.right`, `tray`, `checkmark` | `.warning`, `.info`, `.info`, `.image`, `.pencil`, `.message`, `.userCircle`, `.folderPlus`, `.projects`, `.chevronRight`, `.box`, `.check` |
 | Scroll to latest, everything else already on `JunoIconView` | — | unchanged |
 
 ## Remaining (6), and why
