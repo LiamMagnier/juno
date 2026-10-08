@@ -18,6 +18,7 @@ export const CLIENT_FEATURES = [
   "research_background", // research runs on the background engine; gets the `handoff` frame (SPEC §9.6)
   "suggest_research",    // the suggest_research tool may be attached (SPEC §3.8.9)
   "citations",           // resolves [n] against message.sources[cited]; Juno search numbers results (SPEC §3.8.1)
+  "live_ui",             // renders ```live-ui interactive views; the prompt may teach them (docs/design/LIVE_UI.md)
 ] as const;
 export type ClientFeature = (typeof CLIENT_FEATURES)[number];
 

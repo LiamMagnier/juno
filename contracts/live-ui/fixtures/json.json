@@ -1,0 +1,272 @@
+{
+  "$comment": "Tolerant JSON reader contract (src/lib/live-ui/json.ts, JunoLiveUIJSON.swift). `open` lists JSON paths of containers that have not closed; `hasValue: false` means nothing usable arrived yet; `error: true` means the input is not JSON.",
+  "cases": [
+    {
+      "source": "",
+      "value": null,
+      "hasValue": false,
+      "open": [],
+      "complete": false
+    },
+    {
+      "source": "{",
+      "value": {},
+      "hasValue": true,
+      "open": [
+        "$"
+      ],
+      "complete": false
+    },
+    {
+      "source": "{\"ti",
+      "value": {},
+      "hasValue": true,
+      "open": [
+        "$"
+      ],
+      "complete": false
+    },
+    {
+      "source": "{\"title\":\"Spl",
+      "value": {},
+      "hasValue": true,
+      "open": [
+        "$"
+      ],
+      "complete": false
+    },
+    {
+      "source": "{\"title\":\"Split\"",
+      "value": {
+        "title": "Split"
+      },
+      "hasValue": true,
+      "open": [
+        "$"
+      ],
+      "complete": false
+    },
+    {
+      "source": "{\"title\":\"Split\",",
+      "value": {
+        "title": "Split"
+      },
+      "hasValue": true,
+      "open": [
+        "$"
+      ],
+      "complete": false
+    },
+    {
+      "source": "{\"n\":12",
+      "value": {},
+      "hasValue": true,
+      "open": [
+        "$"
+      ],
+      "complete": false
+    },
+    {
+      "source": "{\"n\":12,",
+      "value": {
+        "n": 12
+      },
+      "hasValue": true,
+      "open": [
+        "$"
+      ],
+      "complete": false
+    },
+    {
+      "source": "{\"b\":tr",
+      "value": {},
+      "hasValue": true,
+      "open": [
+        "$"
+      ],
+      "complete": false
+    },
+    {
+      "source": "{\"b\":true",
+      "value": {
+        "b": true
+      },
+      "hasValue": true,
+      "open": [
+        "$"
+      ],
+      "complete": false
+    },
+    {
+      "source": "{\"a\":[1,2",
+      "value": {
+        "a": [
+          1
+        ]
+      },
+      "hasValue": true,
+      "open": [
+        "$",
+        "$.a"
+      ],
+      "complete": false
+    },
+    {
+      "source": "{\"a\":[1,2,",
+      "value": {
+        "a": [
+          1,
+          2
+        ]
+      },
+      "hasValue": true,
+      "open": [
+        "$",
+        "$.a"
+      ],
+      "complete": false
+    },
+    {
+      "source": "{\"a\":[{\"x\":1},{\"y\":",
+      "value": {
+        "a": [
+          {
+            "x": 1
+          },
+          {}
+        ]
+      },
+      "hasValue": true,
+      "open": [
+        "$",
+        "$.a",
+        "$.a[1]"
+      ],
+      "complete": false
+    },
+    {
+      "source": "{\"a\":\"x\\",
+      "value": {},
+      "hasValue": true,
+      "open": [
+        "$"
+      ],
+      "complete": false
+    },
+    {
+      "source": "{\"a\":\"\\u00e9\",\"b\":\"\\u00",
+      "value": {
+        "a": "é"
+      },
+      "hasValue": true,
+      "open": [
+        "$"
+      ],
+      "complete": false
+    },
+    {
+      "source": "{\"a\":1,}",
+      "value": {
+        "a": 1
+      },
+      "hasValue": true,
+      "open": [],
+      "complete": true
+    },
+    {
+      "source": "{\"a\":[1,2,],}",
+      "value": {
+        "a": [
+          1,
+          2
+        ]
+      },
+      "hasValue": true,
+      "open": [],
+      "complete": true
+    },
+    {
+      "source": "{\"a\":\"line\nbreak\"}",
+      "value": {
+        "a": "line\nbreak"
+      },
+      "hasValue": true,
+      "open": [],
+      "complete": true
+    },
+    {
+      "source": "{\"a\":1} ",
+      "value": {
+        "a": 1
+      },
+      "hasValue": true,
+      "open": [],
+      "complete": true
+    },
+    {
+      "source": "{\"a\":1} x",
+      "error": true
+    },
+    {
+      "source": "{\"a\":01}",
+      "error": true
+    },
+    {
+      "source": "{a:1}",
+      "error": true
+    },
+    {
+      "source": "[1,2]",
+      "value": [
+        1,
+        2
+      ],
+      "hasValue": true,
+      "open": [],
+      "complete": true
+    },
+    {
+      "source": "\"str\"",
+      "value": "str",
+      "hasValue": true,
+      "open": [],
+      "complete": true
+    },
+    {
+      "source": "{\"__proto__\":{\"x\":1},\"y\":2}",
+      "value": {
+        "y": 2
+      },
+      "hasValue": true,
+      "open": [],
+      "complete": true
+    },
+    {
+      "source": "{\"a\":{\"b\":{\"c\":[true,false,null]}}}",
+      "value": {
+        "a": {
+          "b": {
+            "c": [
+              true,
+              false,
+              null
+            ]
+          }
+        }
+      },
+      "hasValue": true,
+      "open": [],
+      "complete": true
+    },
+    {
+      "source": "{\"a\":-1.5e2,\"b\":0}",
+      "value": {
+        "a": -150,
+        "b": 0
+      },
+      "hasValue": true,
+      "open": [],
+      "complete": true
+    }
+  ]
+}

@@ -31,6 +31,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { Kbd } from "@/components/ui/kbd";
 import { useModifierKeyLabel } from "@/components/ui/platform";
 import { StreamingMarkdown } from "@/components/chat/stream-text";
+import { LiveUIHostProvider } from "@/components/chat/live-ui/host";
 import { AutoReceipt } from "@/components/chat/auto-receipt";
 import { receiptLine, type RoutingReceipt } from "@/lib/router/receipt";
 import { ArtifactInlineCard } from "@/components/chat/artifact-inline-card";
@@ -1339,6 +1340,7 @@ export const MessageItem = React.memo(function MessageItem({
             })()}
             {/* The streamed prose is paced and inked in by StreamingMarkdown
                 (stream-text.tsx); a settled reply renders as plain Markdown. */}
+            <LiveUIHostProvider value={{ messageId: message.id }}>
             <div className="space-y-1">
             {parts.map((part, i) =>
               part.type === "text" ? (
@@ -1388,6 +1390,7 @@ export const MessageItem = React.memo(function MessageItem({
               )
             )}
             </div>
+            </LiveUIHostProvider>
             {/* No trailing dot. A coral ball parked under the text was the
                 loudest thing on the page while a reply arrived, and it is
                 redundant now: the tail fade already says "still writing", and

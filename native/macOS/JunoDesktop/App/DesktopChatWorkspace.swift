@@ -2265,6 +2265,12 @@ struct DesktopConversationView: View {
                     openTask: { sessionID in openTaskPanel(sessionID) }
                 )
                 .environment(\.junoTranscriptMediaActions, mediaActions)
+                // A Live UI view's prompt button sends the way a follow-up
+                // chip does (docs/design/LIVE_UI.md).
+                .environment(
+                    \.junoLiveUIHost,
+                    JunoLiveUIHost(onPrompt: { text in composerRequest = ChatComposerRequest(kind: .send(text)) })
+                )
                 // In an agent's thread its replies speak as the agent.
                 .environment(
                     \.desktopAgentThread,

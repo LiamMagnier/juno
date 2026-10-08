@@ -2047,7 +2047,7 @@ private struct GenerationRequestWire: Encodable {
 /// §2.2): the typed timeline, resume frames, background research with its
 /// hand-off, the "Research this" suggestion, and numbered citations.
 public enum NativeChatClientFeatures {
-    public static let declared = ["timeline", "resume", "research_background", "suggest_research", "citations"]
+    public static let declared = ["timeline", "resume", "research_background", "suggest_research", "citations", "live_ui"]
 
     /// The IANA zone, e.g. "Europe/Paris".
     public static var timeZone: String? {

@@ -140,7 +140,12 @@ private struct JunoMarkdownBlockView: View {
             // then redraw it four times. While the fence is open the block is
             // what it demonstrably is — source — and it becomes a diagram or a
             // chart in one step when the author has finished writing it.
-            if JunoVisualMarkup.isVisualFence(info: language) {
+            if JunoLiveUIMarkup.isLiveFence(info: language) {
+                // Live UI (docs/design/LIVE_UI.md): drawn progressively from
+                // whatever of its JSON has arrived, so — unlike the handlers
+                // below — it does not wait for the fence to close.
+                JunoLiveUIView(source: source, streaming: !isClosed)
+            } else if JunoVisualMarkup.isVisualFence(info: language) {
                 // Drawn from its JSON, or — while the fence is still open —
                 // "Drawing inline visual...", never the half-written JSON.
                 JunoVisualBlockView(source: source, streaming: !isClosed)
@@ -239,7 +244,9 @@ private struct JunoReadingBlockView: View {
                 .accessibilityAddTraits(.isHeader)
 
         case .code(let language, let source, let isClosed):
-            if JunoVisualMarkup.isVisualFence(info: language) {
+            if JunoLiveUIMarkup.isLiveFence(info: language) {
+                JunoLiveUIView(source: source, streaming: !isClosed)
+            } else if JunoVisualMarkup.isVisualFence(info: language) {
                 JunoVisualBlockView(source: source, streaming: !isClosed)
             } else if isClosed, JunoMermaidMarkup.isMermaidFence(info: language) {
                 MermaidDiagramView(source: source)

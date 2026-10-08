@@ -35,7 +35,7 @@ test("clientFeatures: known names kept, unknown dropped, duplicates collapsed", 
 });
 
 test("clientFeatures: at most 16 are kept, however long the list", () => {
-  const many = Array.from({ length: 5_000 }, (_, i) => (i % 2 ? CLIENT_FEATURES[i % CLIENT_FEATURES.length] : `future_${i}`));
+  const many = Array.from({ length: 5_000 }, (_, i) => (i % 2 ? CLIENT_FEATURES[(i >> 1) % CLIENT_FEATURES.length] : `future_${i}`));
   const kept = lenientClientFeatures(many)!;
   assert.ok(kept.length <= MAX_CLIENT_FEATURES);
   assert.deepEqual([...kept].sort(), [...CLIENT_FEATURES].sort());

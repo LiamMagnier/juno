@@ -25,6 +25,24 @@ const InlineVisualBlock = nextDynamic(
   () => import("@/components/chat/inline-visual-block").then((m) => m.InlineVisualBlock),
   { ssr: false },
 );
+/*
+ * Live UI (docs/design/LIVE_UI.md): an interactive view from a ```live-ui
+ * fence. Split out for the same reason as the two above — most conversations
+ * never draw one — with a skeleton of the view's own shape while it loads, so
+ * the transcript does not jump when it arrives.
+ */
+const LiveUIBlock = nextDynamic(
+  () => import("@/components/chat/live-ui/live-ui-block").then((m) => m.LiveUIBlock),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="my-6 flex flex-col gap-3 border-y border-border/60 py-5" aria-hidden>
+        <div className="skeleton h-4 w-40 rounded-control" />
+        <div className="skeleton h-9 w-full rounded-control" />
+      </div>
+    ),
+  },
+);
 const MermaidBlock = nextDynamic(
   () => import("@/components/chat/learning/mermaid-block").then((m) => m.MermaidBlock),
   { ssr: false },
@@ -36,6 +54,7 @@ import { cn } from "@/lib/utils";
 import { allowedImageKeys, imageDecision } from "@/lib/web/image-policy";
 import type { ClientSource } from "@/types/chat";
 import { fenceMatchesWrittenFile } from "@/lib/chat/tool-receipt";
+import { isLiveUIFence } from "@/lib/live-ui/fence";
 
 export const MARKDOWN_COPY = {
   /** Followed by the image's host: "Image from example.com". */
@@ -323,6 +342,10 @@ function CodeBlock({ children, node }: { children: React.ReactNode; node?: { chi
 
   if (isVisualLang(lang)) {
     return <InlineVisualBlock source={raw} streaming={streaming} />;
+  }
+
+  if (isLiveUIFence(lang)) {
+    return <LiveUIBlock source={raw} streaming={streaming} />;
   }
 
   const isMermaid = lang.toLowerCase() === "mermaid";

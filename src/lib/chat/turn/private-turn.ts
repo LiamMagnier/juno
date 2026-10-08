@@ -8,6 +8,7 @@ import { PLANS } from "@/lib/plans";
 import { isAutoModelId } from "@/lib/auto-model";
 import { PROVIDERS } from "@/lib/providers";
 import { buildSystemPromptSections, buildDynamicContext } from "@/lib/anthropic";
+import { legacyChatClientForOrigin } from "@/lib/chat-origin";
 import { finishReasonTitle } from "@/lib/finish-reason";
 import { registerGeneration, wasGenerationAbortedForShutdown, wasGenerationStopped } from "@/lib/generation-cancel";
 import { streamChat, providerErrorMessage } from "@/lib/llm";
@@ -140,6 +141,7 @@ export async function runPrivateTurn({
     // that reads those markers has to be present whenever one did. Markers
     // with no rule look like a boundary and are not one.
     untrustedContent: useWebSearch || !!privateSkillBlock?.untrusted,
+    liveUi: legacyChatClientForOrigin(input) === "web" || (input.clientFeatures?.includes("live_ui") ?? false),
   });
   const baseSystem = baseSystemSections.variable
     ? `${baseSystemSections.stable}\n\n${baseSystemSections.variable}`

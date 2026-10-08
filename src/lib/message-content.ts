@@ -420,6 +420,7 @@ export function cleanForSpeech(text: string): string {
       " (interactive visual explanation shown on screen) "
     )
     .replace(/```(?:juno-visual|juno-ui|juno-block|visual|visual-block)[\s\S]*?```/gi, " (visual explanation shown on screen) ")
+    .replace(/```(?:live-ui|live|juno-live)[ \t]*\n[\s\S]*?(?:```|$)/gi, " (interactive view shown on screen) ")
     .replace(/```[\s\S]*?```/g, " (code shown on screen) ")
     .replace(/`([^`]+)`/g, "$1")
     .replace(/[*_#>~|]/g, "")

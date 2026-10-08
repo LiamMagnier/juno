@@ -3647,7 +3647,7 @@ components:
           properties:
             clientFeatures:
               type: array
-              items: { type: string, enum: [timeline, resume, research_background, suggest_research, citations] }
+              items: { type: string, enum: [timeline, resume, research_background, suggest_research, citations, live_ui] }
     AccountChange:
       type: object
       additionalProperties: false
@@ -3781,8 +3781,9 @@ components:
             records and round/phase keys; `resume` into resume frames;
             `research_background` into background research and the handoff
             frame; `suggest_research` into the "Research this" tool;
-            `citations` into numbered [n] citations.
-          items: { type: string, enum: [timeline, resume, research_background, suggest_research, citations] }
+            `citations` into numbered [n] citations; `live_ui` into
+            interactive ```live-ui views (docs/design/LIVE_UI.md).
+          items: { type: string, enum: [timeline, resume, research_background, suggest_research, citations, live_ui] }
         timeZone: { type: string, maxLength: 64, description: IANA time zone. }
         locale: { type: string, maxLength: 35, description: BCP-47 UI locale. }
     ChatSource:

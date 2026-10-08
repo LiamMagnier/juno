@@ -960,6 +960,9 @@ private struct JunoMobileConversationDetail: View {
         JunoMotion.reduced(JunoMotion.emphasized, when: reduceMotion),
         value: messages.count
       )
+      // A Live UI view's prompt button puts its prompt in the composer, as a
+      // follow-up chip does (docs/design/LIVE_UI.md).
+      .environment(\.junoLiveUIHost, JunoLiveUIHost(onPrompt: { prompt = $0 }))
       .padding(.horizontal, JunoSpace.regular)
       .padding(.vertical, JunoSpace.section)
       .frame(maxWidth: 768)
@@ -2008,6 +2011,7 @@ private struct JunoMobileMessageRow: View {
               JunoLessonText(text, streaming: message.isPending)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .environment(\.junoLiveUIHost.messageID, message.id)
             case .artifact(let artifact) where NativeResearchReport.isReport(artifact):
               researchReportCard(artifact)
                 .junoStreamBlockReveal()

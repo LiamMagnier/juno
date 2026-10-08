@@ -1,0 +1,519 @@
+{
+  "$comment": "Spec normalisation contract (src/lib/live-ui/spec.ts, JunoLiveUISpec.swift): streaming prefixes, aliases, repairs and limits. `ui` is a summary tree; see summarize() in tests/live-ui-fixtures.test.ts and LiveUIFixtureTests.swift.",
+  "cases": [
+    {
+      "name": "complete",
+      "source": "{\"title\":\"Split\",\"currency\":\"eur\",\"data\":{\"items\":[{\"name\":\"A\",\"price\":10},{\"name\":\"B\",\"price\":5}]},\"let\":{\"total\":\"sum(items.price)\",\"each\":\"total / people\"},\"ui\":[{\"type\":\"row\",\"children\":[{\"type\":\"slider\",\"id\":\"tip\",\"label\":\"Tip\",\"min\":0,\"max\":0.3,\"step\":0.01,\"value\":0.12,\"format\":\"percent\"},{\"type\":\"stepper\",\"id\":\"people\",\"label\":\"People\",\"min\":1,\"max\":10,\"value\":2}]},{\"type\":\"metric\",\"label\":\"Each\",\"value\":\"each\",\"format\":\"currency\",\"emphasis\":true},{\"type\":\"button\",\"label\":\"Ask\",\"prompt\":\"Split {{fmt(total,'currency')}} unevenly\"}]}",
+      "expect": {
+        "title": "Split",
+        "currency": "EUR",
+        "streaming": false,
+        "lets": [
+          "total",
+          "each"
+        ],
+        "data": [
+          "items"
+        ],
+        "ui": [
+          {
+            "key": "0",
+            "type": "row",
+            "pending": false,
+            "children": [
+              {
+                "key": "0.0",
+                "type": "slider",
+                "id": "tip",
+                "value": 0.12,
+                "min": 0,
+                "max": 0.3,
+                "step": 0.01
+              },
+              {
+                "key": "0.1",
+                "type": "stepper",
+                "id": "people",
+                "value": 2,
+                "min": 1,
+                "max": 10,
+                "step": 1
+              }
+            ]
+          },
+          {
+            "key": "1",
+            "type": "metric",
+            "expr": "each"
+          },
+          {
+            "key": "2",
+            "type": "button"
+          }
+        ]
+      }
+    },
+    {
+      "name": "prefix 40",
+      "source": "{\"title\":\"Split\",\"currency\":\"eur\",\"data\"",
+      "expect": {
+        "title": "Split",
+        "currency": "EUR",
+        "streaming": true,
+        "lets": [],
+        "data": [],
+        "ui": []
+      }
+    },
+    {
+      "name": "prefix 120",
+      "source": "{\"title\":\"Split\",\"currency\":\"eur\",\"data\":{\"items\":[{\"name\":\"A\",\"price\":10},{\"name\":\"B\",\"price\":5}]},\"let\":{\"total\":\"sum(",
+      "expect": {
+        "title": "Split",
+        "currency": "EUR",
+        "streaming": true,
+        "lets": [],
+        "data": [
+          "items"
+        ],
+        "ui": []
+      }
+    },
+    {
+      "name": "prefix 200",
+      "source": "{\"title\":\"Split\",\"currency\":\"eur\",\"data\":{\"items\":[{\"name\":\"A\",\"price\":10},{\"name\":\"B\",\"price\":5}]},\"let\":{\"total\":\"sum(items.price)\",\"each\":\"total / people\"},\"ui\":[{\"type\":\"row\",\"children\":[{\"type\":\"",
+      "expect": {
+        "title": "Split",
+        "currency": "EUR",
+        "streaming": true,
+        "lets": [
+          "total",
+          "each"
+        ],
+        "data": [
+          "items"
+        ],
+        "ui": [
+          {
+            "key": "0",
+            "type": "row",
+            "pending": true,
+            "children": [
+              {
+                "key": "0.0",
+                "type": "pending"
+              }
+            ]
+          },
+          {
+            "key": "1",
+            "type": "pending"
+          }
+        ]
+      }
+    },
+    {
+      "name": "prefix 260",
+      "source": "{\"title\":\"Split\",\"currency\":\"eur\",\"data\":{\"items\":[{\"name\":\"A\",\"price\":10},{\"name\":\"B\",\"price\":5}]},\"let\":{\"total\":\"sum(items.price)\",\"each\":\"total / people\"},\"ui\":[{\"type\":\"row\",\"children\":[{\"type\":\"slider\",\"id\":\"tip\",\"label\":\"Tip\",\"min\":0,\"max\":0.3,\"step\":0.",
+      "expect": {
+        "title": "Split",
+        "currency": "EUR",
+        "streaming": true,
+        "lets": [
+          "total",
+          "each"
+        ],
+        "data": [
+          "items"
+        ],
+        "ui": [
+          {
+            "key": "0",
+            "type": "row",
+            "pending": true,
+            "children": [
+              {
+                "key": "0.0",
+                "type": "pending"
+              }
+            ]
+          },
+          {
+            "key": "1",
+            "type": "pending"
+          }
+        ]
+      }
+    },
+    {
+      "name": "prefix 330",
+      "source": "{\"title\":\"Split\",\"currency\":\"eur\",\"data\":{\"items\":[{\"name\":\"A\",\"price\":10},{\"name\":\"B\",\"price\":5}]},\"let\":{\"total\":\"sum(items.price)\",\"each\":\"total / people\"},\"ui\":[{\"type\":\"row\",\"children\":[{\"type\":\"slider\",\"id\":\"tip\",\"label\":\"Tip\",\"min\":0,\"max\":0.3,\"step\":0.01,\"value\":0.12,\"format\":\"percent\"},{\"type\":\"stepper\",\"id\":\"people\",\"l",
+      "expect": {
+        "title": "Split",
+        "currency": "EUR",
+        "streaming": true,
+        "lets": [
+          "total",
+          "each"
+        ],
+        "data": [
+          "items"
+        ],
+        "ui": [
+          {
+            "key": "0",
+            "type": "row",
+            "pending": true,
+            "children": [
+              {
+                "key": "0.0",
+                "type": "slider",
+                "id": "tip",
+                "value": 0.12,
+                "min": 0,
+                "max": 0.3,
+                "step": 0.01
+              },
+              {
+                "key": "0.1",
+                "type": "pending"
+              }
+            ]
+          },
+          {
+            "key": "1",
+            "type": "pending"
+          }
+        ]
+      }
+    },
+    {
+      "name": "prefix 400",
+      "source": "{\"title\":\"Split\",\"currency\":\"eur\",\"data\":{\"items\":[{\"name\":\"A\",\"price\":10},{\"name\":\"B\",\"price\":5}]},\"let\":{\"total\":\"sum(items.price)\",\"each\":\"total / people\"},\"ui\":[{\"type\":\"row\",\"children\":[{\"type\":\"slider\",\"id\":\"tip\",\"label\":\"Tip\",\"min\":0,\"max\":0.3,\"step\":0.01,\"value\":0.12,\"format\":\"percent\"},{\"type\":\"stepper\",\"id\":\"people\",\"label\":\"People\",\"min\":1,\"max\":10,\"value\":2}]},{\"type\":\"metric\",\"label\":",
+      "expect": {
+        "title": "Split",
+        "currency": "EUR",
+        "streaming": true,
+        "lets": [
+          "total",
+          "each"
+        ],
+        "data": [
+          "items"
+        ],
+        "ui": [
+          {
+            "key": "0",
+            "type": "row",
+            "pending": false,
+            "children": [
+              {
+                "key": "0.0",
+                "type": "slider",
+                "id": "tip",
+                "value": 0.12,
+                "min": 0,
+                "max": 0.3,
+                "step": 0.01
+              },
+              {
+                "key": "0.1",
+                "type": "stepper",
+                "id": "people",
+                "value": 2,
+                "min": 1,
+                "max": 10,
+                "step": 1
+              }
+            ]
+          },
+          {
+            "key": "1",
+            "type": "pending"
+          }
+        ]
+      }
+    },
+    {
+      "name": "prefix 470",
+      "source": "{\"title\":\"Split\",\"currency\":\"eur\",\"data\":{\"items\":[{\"name\":\"A\",\"price\":10},{\"name\":\"B\",\"price\":5}]},\"let\":{\"total\":\"sum(items.price)\",\"each\":\"total / people\"},\"ui\":[{\"type\":\"row\",\"children\":[{\"type\":\"slider\",\"id\":\"tip\",\"label\":\"Tip\",\"min\":0,\"max\":0.3,\"step\":0.01,\"value\":0.12,\"format\":\"percent\"},{\"type\":\"stepper\",\"id\":\"people\",\"label\":\"People\",\"min\":1,\"max\":10,\"value\":2}]},{\"type\":\"metric\",\"label\":\"Each\",\"value\":\"each\",\"format\":\"currency\",\"emphasis\":true},{\"type\":\"bu",
+      "expect": {
+        "title": "Split",
+        "currency": "EUR",
+        "streaming": true,
+        "lets": [
+          "total",
+          "each"
+        ],
+        "data": [
+          "items"
+        ],
+        "ui": [
+          {
+            "key": "0",
+            "type": "row",
+            "pending": false,
+            "children": [
+              {
+                "key": "0.0",
+                "type": "slider",
+                "id": "tip",
+                "value": 0.12,
+                "min": 0,
+                "max": 0.3,
+                "step": 0.01
+              },
+              {
+                "key": "0.1",
+                "type": "stepper",
+                "id": "people",
+                "value": 2,
+                "min": 1,
+                "max": 10,
+                "step": 1
+              }
+            ]
+          },
+          {
+            "key": "1",
+            "type": "metric",
+            "expr": "each"
+          },
+          {
+            "key": "2",
+            "type": "pending"
+          }
+        ]
+      }
+    },
+    {
+      "name": "prefix 520",
+      "source": "{\"title\":\"Split\",\"currency\":\"eur\",\"data\":{\"items\":[{\"name\":\"A\",\"price\":10},{\"name\":\"B\",\"price\":5}]},\"let\":{\"total\":\"sum(items.price)\",\"each\":\"total / people\"},\"ui\":[{\"type\":\"row\",\"children\":[{\"type\":\"slider\",\"id\":\"tip\",\"label\":\"Tip\",\"min\":0,\"max\":0.3,\"step\":0.01,\"value\":0.12,\"format\":\"percent\"},{\"type\":\"stepper\",\"id\":\"people\",\"label\":\"People\",\"min\":1,\"max\":10,\"value\":2}]},{\"type\":\"metric\",\"label\":\"Each\",\"value\":\"each\",\"format\":\"currency\",\"emphasis\":true},{\"type\":\"button\",\"label\":\"Ask\",\"prompt\":\"Split {{fmt(total,'c",
+      "expect": {
+        "title": "Split",
+        "currency": "EUR",
+        "streaming": true,
+        "lets": [
+          "total",
+          "each"
+        ],
+        "data": [
+          "items"
+        ],
+        "ui": [
+          {
+            "key": "0",
+            "type": "row",
+            "pending": false,
+            "children": [
+              {
+                "key": "0.0",
+                "type": "slider",
+                "id": "tip",
+                "value": 0.12,
+                "min": 0,
+                "max": 0.3,
+                "step": 0.01
+              },
+              {
+                "key": "0.1",
+                "type": "stepper",
+                "id": "people",
+                "value": 2,
+                "min": 1,
+                "max": 10,
+                "step": 1
+              }
+            ]
+          },
+          {
+            "key": "1",
+            "type": "metric",
+            "expr": "each"
+          },
+          {
+            "key": "2",
+            "type": "pending"
+          }
+        ]
+      }
+    },
+    {
+      "name": "aliases and repairs",
+      "source": "{\"ui\":[{\"type\":\"stat\",\"label\":\"Total\",\"value\":12},{\"type\":\"slider\",\"id\":\"s\",\"label\":\"S\",\"min\":10,\"max\":0},{\"type\":\"slider\",\"id\":\"t\",\"label\":\"T\",\"min\":0,\"max\":10,\"step\":3,\"value\":8},{\"type\":\"slider\",\"id\":\"t\",\"label\":\"dup\",\"min\":0,\"max\":1},{\"type\":\"number\",\"id\":\"pi\",\"label\":\"reserved\"},{\"type\":\"stepper\",\"id\":\"n\",\"value\":99,\"min\":1,\"max\":5},{\"type\":\"select\",\"id\":\"plan\",\"options\":[\"Lite\",\"Plus\",\"Ultra\"],\"value\":\"Plus\"},{\"type\":\"dropdown\",\"id\":\"city\",\"options\":[{\"label\":\"Lisbon\",\"value\":\"lis\"},{\"label\":\"A very long city name\",\"value\":\"x\"}]},{\"type\":\"select\",\"id\":\"empty\",\"options\":[]},{\"type\":\"switch\",\"id\":\"on\",\"label\":\"On\",\"value\":true},{\"type\":\"heading\",\"text\":\"Plan\"},{\"type\":\"note\",\"text\":\"Prices include VAT.\"},{\"type\":\"wat\",\"text\":\"unknown\"},{\"type\":\"section\",\"title\":\"Empty\",\"children\":[]},{\"type\":\"chart\",\"kind\":\"column\",\"rows\":\"items\",\"xKey\":\"name\",\"series\":[{\"label\":\"Price\",\"y\":\"price\"}]},{\"type\":\"chart\",\"x\":{\"from\":0,\"to\":\"years\",\"step\":1,\"var\":\"year\"},\"series\":[{\"y\":\"fv(r, year, 100)\"},{\"y\":\"1\"},{\"y\":\"2\"},{\"y\":\"3\"},{\"y\":\"4\"}]},{\"type\":\"explorer\",\"parts\":[{\"id\":\"frame\",\"label\":\"Frame\",\"detail\":\"Holds it\",\"at\":[50,40]},{\"id\":\"fork\",\"label\":\"Fork\",\"detail\":\"Steers\",\"at\":[120,-5]}],\"links\":[[\"frame\",\"fork\"],[\"frame\",\"nope\"]]},{\"type\":\"explorer\",\"parts\":[{\"label\":\"Wheel\",\"detail\":\"Rolls\",\"at\":[10,10]},{\"label\":\"Brake\",\"summary\":\"Stops\"}]},{\"type\":\"button\",\"label\":\"No action\"},{\"type\":\"grid\",\"columns\":9,\"children\":[{\"type\":\"metric\",\"label\":\"A\",\"value\":\"1\"}]}]}",
+      "expect": {
+        "title": null,
+        "currency": "USD",
+        "streaming": false,
+        "lets": [],
+        "data": [],
+        "ui": [
+          {
+            "key": "0",
+            "type": "metric",
+            "expr": "12"
+          },
+          {
+            "key": "2",
+            "type": "slider",
+            "id": "t",
+            "value": 9,
+            "min": 0,
+            "max": 10,
+            "step": 3
+          },
+          {
+            "key": "5",
+            "type": "stepper",
+            "id": "n",
+            "value": 5,
+            "min": 1,
+            "max": 5,
+            "step": 1
+          },
+          {
+            "key": "6",
+            "type": "select",
+            "id": "plan",
+            "value": "Plus",
+            "style": "segmented",
+            "options": [
+              "Lite",
+              "Plus",
+              "Ultra"
+            ]
+          },
+          {
+            "key": "7",
+            "type": "select",
+            "id": "city",
+            "value": "lis",
+            "style": "menu",
+            "options": [
+              "lis",
+              "x"
+            ]
+          },
+          {
+            "key": "9",
+            "type": "toggle",
+            "id": "on",
+            "value": true
+          },
+          {
+            "key": "10",
+            "type": "text",
+            "tone": "heading"
+          },
+          {
+            "key": "11",
+            "type": "text",
+            "tone": "muted"
+          },
+          {
+            "key": "14",
+            "type": "chart",
+            "kind": "bar",
+            "series": 1,
+            "range": false
+          },
+          {
+            "key": "15",
+            "type": "chart",
+            "kind": "line",
+            "series": 4,
+            "range": true
+          },
+          {
+            "key": "16",
+            "type": "explorer",
+            "parts": [
+              "frame",
+              "fork"
+            ],
+            "placed": true,
+            "links": 1
+          },
+          {
+            "key": "17",
+            "type": "explorer",
+            "parts": [
+              "Wheel",
+              "Brake"
+            ],
+            "placed": false,
+            "links": 0
+          },
+          {
+            "key": "19",
+            "type": "grid",
+            "pending": false,
+            "children": [
+              {
+                "key": "19.0",
+                "type": "metric",
+                "expr": "1"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "nesting limit",
+      "source": "{\"ui\":[{\"type\":\"section\",\"children\":[{\"type\":\"row\",\"children\":[{\"type\":\"grid\",\"children\":[{\"type\":\"section\",\"children\":[{\"type\":\"row\",\"children\":[{\"type\":\"text\",\"text\":\"deep\"}]},{\"type\":\"text\",\"text\":\"level4\"}]}]}]}]}]}",
+      "expect": {
+        "title": null,
+        "currency": "USD",
+        "streaming": false,
+        "lets": [],
+        "data": [],
+        "ui": [
+          {
+            "key": "0",
+            "type": "section",
+            "pending": false,
+            "children": [
+              {
+                "key": "0.0",
+                "type": "row",
+                "pending": false,
+                "children": [
+                  {
+                    "key": "0.0.0",
+                    "type": "grid",
+                    "pending": false,
+                    "children": [
+                      {
+                        "key": "0.0.0.0",
+                        "type": "section",
+                        "pending": false,
+                        "children": [
+                          {
+                            "key": "0.0.0.0.1",
+                            "type": "text",
+                            "tone": "body"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "not an object",
+      "source": "[1,2]",
+      "error": true
+    },
+    {
+      "name": "broken",
+      "source": "{\"ui\":[}",
+      "error": true
+    }
+  ]
+}

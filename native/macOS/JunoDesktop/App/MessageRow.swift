@@ -749,6 +749,7 @@ struct DesktopMessageRow: View {
                 case .text(let text):
                     JunoLessonText(text, streaming: shown.isPending)
                         .environment(\.junoFindHighlight, findHighlight?.shifted(by: bases.indices.contains(index) ? bases[index] : 0))
+                        .environment(\.junoLiveUIHost.messageID, shown.id)
                 case .artifact(let artifact) where NativeResearchReport.isReport(artifact):
                     researchReportCard(artifact)
                         .junoStreamBlockReveal()
