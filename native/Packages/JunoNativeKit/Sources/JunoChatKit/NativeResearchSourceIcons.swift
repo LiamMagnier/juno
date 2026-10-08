@@ -37,7 +37,8 @@ public final class NativeSourceFavicons {
     }
 
     public func load(_ url: URL) {
-        guard let host = url.host(), let scheme = url.scheme?.lowercased(),
+        guard NativePrivateSourceKind.of(url) == nil,
+            let host = url.host(), let scheme = url.scheme?.lowercased(),
             scheme == "https" || scheme == "http", requested.insert(host).inserted,
             let icon = URL(string: "\(scheme)://\(host)/favicon.ico")
         else { return }
@@ -90,7 +91,9 @@ public struct NativeSourceIcon: View {
         let image = favicons?.image(for: url)
         ZStack {
             Group {
-                if let letter {
+                if let own = NativePrivateSourceKind.of(url) {
+                    JunoIconView(own.icon, size: max(8, size * 0.6))
+                } else if let letter {
                     Text(letter)
                         .junoFont(size: max(8, size * 0.52), relativeTo: .caption2, weight: .medium)
                 } else {
