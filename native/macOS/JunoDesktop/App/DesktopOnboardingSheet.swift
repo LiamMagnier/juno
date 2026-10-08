@@ -93,6 +93,12 @@ struct DesktopOnboardingSheet: View {
         }
         .padding(JunoSpace.region)
         .frame(width: 480, height: 440)
+        // The web's onboarding ground: the faint paper dot grid.
+        .background {
+            JunoDotGrid(spacing: 26)
+                .opacity(0.4)
+                .accessibilityHidden(true)
+        }
         .presentationSizing(.form)
         .onAppear {
             guard !didLoad else { return }

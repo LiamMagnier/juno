@@ -87,18 +87,18 @@ struct DesktopProductSwitch: View {
     }
 
     var body: some View {
-        Picker("Product", selection: selection) {
-            ForEach(DesktopProductMode.switchable) { mode in
-                // Words only, as ChatGPT's "Chat | Work": the lit segment
-                // already says which one you are in.
-                Text(mode.label)
-                .help(mode.help)
-                .tag(Optional(mode))
-                .accessibilityIdentifier("juno.product-brand.\(mode.rawValue)")
-            }
+        // The web's product switch (round 2, brand motifs): Chat and Code in
+        // the serif at the two ends of a dot orbit, the presence trail running
+        // to the one you are in. Code below Pro is shown locked and asks for
+        // the plan, as the web's does.
+        JunoProductOrbit(
+            active: product == .code ? .code : .chat,
+            locked: DesktopPlanGate.shared.allows(.code) ? [] : [.code]
+        ) { chosen in
+            let next: DesktopProductMode = chosen == .code ? .code : .chat
+            if next == .code, !DesktopPlanGate.shared.require(.code) { return }
+            selection.wrappedValue = next
         }
-        .labelsHidden()
-        .junoProductPickerStyle()
         .fixedSize()
         // The identifier the launch UI suite already finds the switch by. It
         // is an automation handle, never shown or spoken.

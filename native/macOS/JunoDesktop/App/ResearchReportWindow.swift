@@ -116,6 +116,7 @@ struct ResearchReportWindow: View {
                 Button("Print\u{2026}") { printReport(report) }
             } label: {
                 DesktopPanelIconFace(icon: .download)
+                    .contentShape(.rect)
             }
             .menuStyle(.button)
             .buttonStyle(.plain)
@@ -519,6 +520,7 @@ struct DesktopPanelIconButton: View {
     var body: some View {
         Button(action: action) {
             DesktopPanelIconFace(icon: icon)
+                .contentShape(.rect)
         }
         .buttonStyle(.plain)
         .help(help)

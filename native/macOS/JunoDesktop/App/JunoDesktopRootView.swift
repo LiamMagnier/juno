@@ -852,8 +852,10 @@ struct JunoDesktopSignInPlate: View {
                     startRadius: 0,
                     endRadius: 620
                 )
-                JunoDotField()
+                // The web's access panel: the dot construction, ticks on.
+                JunoDotConstruction(ticks: true)
                     .opacity(0.9)
+                    .accessibilityHidden(true)
             }
             // A foot of ink under the words, so they read on any plate.
             LinearGradient(
