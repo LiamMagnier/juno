@@ -21,8 +21,14 @@ import JunoCodeRuntime
 ///   on Responses, and `high` on Chat Completions — which has no `original`
 ///   — with images the harness already fitted inside the box `high` resizes
 ///   to, so the model's coordinates stay in Juno's frame.
-/// - **Every other route**: no screen tools. Their coordinate conventions are
-///   unverified, and a wrong convention clicks in the wrong place.
+/// - **Every other route** (Gemini, Grok, DeepSeek, Qwen, Mistral…): the
+///   portable `computer_use` tool and its companions (Code v2 SPEC §3.12). The
+///   17-action `computer` and `computer_batch` are dropped — their `[x, y]`
+///   tuples assume a convention those labs never verified — while
+///   `computer_use` takes flat x/y in the convention the frame header states
+///   (pixels, or 0-999 for Gemini and Qwen), and `ax_press` needs no
+///   coordinates at all. Screenshots ride on a user message at `high`, inside
+///   the portable box no lab resizes.
 enum ComputerToolWire {
     static let toolsetType = "computer_toolset_20260801"
     static let toolsetName = "computer"
@@ -111,13 +117,16 @@ enum ComputerToolWire {
     static func openAI(_ body: JSONValue, providerID: String, wire: CodeModelWireProtocol) -> JSONValue {
         guard case var .object(object) = body else { return body }
         if providerID.lowercased() != "openai" {
-            // No verified coordinate convention: no screen tools at all.
+            // No verified tuple convention: only the portable tool family.
             if case let .array(tools)? = object["tools"] {
                 let kept = tools.filter { tool in
                     let name = tool["function"]?["name"]?.stringValue ?? tool["name"]?.stringValue ?? ""
-                    return !isComputerUseTool(name)
+                    return !isTupleComputerTool(name)
                 }
                 object["tools"] = kept.isEmpty ? nil : .array(kept)
+            }
+            if wire == .openAIChat, case let .array(messages)? = object["messages"] {
+                object["messages"] = .array(messages.map(chatDetail))
             }
             return .object(object)
         }
@@ -130,6 +139,11 @@ enum ComputerToolWire {
     /// which needs no coordinates).
     static func isComputerUseTool(_ name: String) -> Bool {
         name == ComputerUseToolName.computer || name.hasPrefix("computer_") || name == "inspect_active_editor"
+    }
+
+    /// The tools that speak `[x, y]` tuples in the toolset's convention.
+    static func isTupleComputerTool(_ name: String) -> Bool {
+        name == ComputerUseToolName.computer || name == ComputerUseToolName.batch
     }
 
     /// `detail: original` → `high` inside a Chat Completions message.

@@ -55,10 +55,12 @@ final class FakeScreen: ScreenControlling, @unchecked Sendable {
     }
     func prepare(sessionID: String, action: ScreenAction) async throws -> PreparedScreenAction {
         if let error = lock.withLock({ failOn[action.kind] }) { throw error }
+        lock.withLock { preparedActions.append(action) }
         return PreparedScreenAction(
             sessionID: sessionID,
             action: action,
             target: ScreenTargetSummary(bundleID: "com.apple.TextEdit", appName: "TextEdit", element: "“Send” button"),
+            framePoint: action.coordinate,
             floor: lock.withLock { floor },
             frameHash: lock.withLock { frameHash },
             summary: "Click the “Send” button in TextEdit",
@@ -80,8 +82,15 @@ final class FakeScreen: ScreenControlling, @unchecked Sendable {
         lock.withLock { settledCalls += 1 }
         return ScreenActionResult(summary: "Screen after the batch.", frameHeader: "frame 1372×887", frame: Self.frame)
     }
+    /// What `accessibility` answers; the plain header by default.
+    var axListing = "Accessibility tree of TextEdit."
+    private(set) var axQueries: [String?] = []
+    private(set) var preparedActions: [ScreenAction] = []
     func accessibility(sessionID: String, app: String?, query: String?, filter: AXSnapshot.Filter, depth: Int) async throws -> String {
-        "Accessibility tree of TextEdit."
+        lock.withLock {
+            axQueries.append(query)
+            return axListing
+        }
     }
     func prepareMenu(sessionID: String, app: String?, path: [String]) async throws -> PreparedScreenAction {
         PreparedScreenAction(
@@ -506,7 +515,8 @@ final class ComputerUseToolsTests: XCTestCase {
                 computer: FakeScreen(),
                 editorReader: nil,
                 imageBudget: ComputerUseRoutes.imageBudget(forModelID: modelID),
-                computerUseEnabled: enabled
+                computerUseEnabled: enabled,
+                wire: ComputerUseRoutes.wire(forModelID: modelID)
             )
         )
     }
@@ -516,18 +526,29 @@ final class ComputerUseToolsTests: XCTestCase {
         XCTAssertEqual(names, ["computer", "computer_batch", "computer_apps", "computer_ax", "computer_menu", "computer_display"])
     }
 
-    func testNoComputerToolsWithoutVisionOrWhenOff() async throws {
+    func testAModelThatCannotSeeGetsThePortableToolInWordsAndNothingWhenOff() async throws {
+        // Code v2 SPEC §3.12: computer use for every model. A blind model
+        // works the accessibility tree; its frames never reach it.
         let blind = await ScreenToolProvider().tools(for: try await providerContext(vision: false)).map(\.name)
-        XCTAssertTrue(blind.isEmpty)
+        XCTAssertEqual(blind, ["computer_use", "computer_apps"])
         let off = await ScreenToolProvider().tools(for: try await providerContext(enabled: false, active: false)).map(\.name)
         XCTAssertTrue(off.isEmpty)
     }
 
-    func testRoutesWithoutAVerifiedConventionGetNoComputerTools() async throws {
-        for model in ["google:gemini-3.8-flash", "qwen:qwen3.8-max", "flash", "deepseek:deepseek-v4"] {
+    func testEveryOtherLabGetsThePortableToolInItsOwnConvention() async throws {
+        for model in ["google:gemini-3.8-flash", "qwen:qwen3.8-max", "flash", "deepseek:deepseek-v4", "xai:grok-5"] {
             let names = await ScreenToolProvider().tools(for: try await providerContext(modelID: model)).map(\.name)
-            XCTAssertTrue(names.isEmpty, model)
+            XCTAssertEqual(names, ["computer_use", "computer_apps", "computer_display"], model)
+            XCTAssertEqual(ComputerUseRoutes.wire(forModelID: model), .portable, model)
         }
+        XCTAssertEqual(ComputerUseRoutes.imageBudget(forModelID: "google:gemini-3.8-flash"), .portableNormalized)
+        XCTAssertEqual(ComputerUseRoutes.imageBudget(forModelID: "flash"), .portableNormalized, "the alias resolves to Gemini")
+        XCTAssertEqual(ComputerUseRoutes.imageBudget(forModelID: "qwen:qwen3.8-max"), .portableNormalized)
+        XCTAssertEqual(ComputerUseRoutes.imageBudget(forModelID: "deepseek:deepseek-v4"), .portable)
+        XCTAssertEqual(ComputerUseRoutes.imageBudget(forModelID: "xai:grok-5"), .portable)
+        XCTAssertEqual(ComputerUseRoutes.wire(forModelID: "opus"), .anthropicToolset)
+        XCTAssertEqual(ComputerUseRoutes.wire(forModelID: "haiku"), .functionTool)
+        XCTAssertEqual(ComputerUseRoutes.wire(forModelID: "openai:gpt-5.5"), .functionTool)
         XCTAssertEqual(ComputerUseRoutes.imageBudget(forModelID: "haiku"), .anthropicStandard)
         XCTAssertEqual(ComputerUseRoutes.imageBudget(forModelID: "opus"), .anthropicHighResolution)
         // Aliases resolve through the shared Code v2 table: Sonnet 5.5 and the

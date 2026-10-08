@@ -45,6 +45,16 @@ public struct ScreenToolServices: Sendable {
     public var simulatorConsents: SimulatorConsentBook?
     /// The workspace revision now, for UI evidence.
     public var workspaceRevision: @Sendable () async -> Int
+    /// How computer use reaches this route's model (Code v2 SPEC §3.12). Nil:
+    /// read from the image budget the way it always was (a budget means the
+    /// function tool).
+    public var wire: ComputerUseWire?
+    /// Every screen step as a `computer_action` turn item, with its
+    /// screenshot stored, for the thread's timeline.
+    public var actionRecorder: ComputerActionRecorder?
+    /// The latest frame size per session, for the portable tool's coordinate
+    /// conversions.
+    public var frameMemory: PortableFrameMemory?
 
     public init(
         computer: (any ScreenControlling)? = nil,
@@ -54,7 +64,10 @@ public struct ScreenToolServices: Sendable {
         computerUseEnabled: Bool = false,
         turnTracker: ScreenTurnTracker? = nil,
         simulatorConsents: SimulatorConsentBook? = nil,
-        workspaceRevision: @escaping @Sendable () async -> Int = { 0 }
+        workspaceRevision: @escaping @Sendable () async -> Int = { 0 },
+        wire: ComputerUseWire? = nil,
+        actionRecorder: ComputerActionRecorder? = nil,
+        frameMemory: PortableFrameMemory? = nil
     ) {
         self.computer = computer
         self.simulator = simulator
@@ -64,13 +77,30 @@ public struct ScreenToolServices: Sendable {
         self.turnTracker = turnTracker
         self.simulatorConsents = simulatorConsents
         self.workspaceRevision = workspaceRevision
+        self.wire = wire
+        self.actionRecorder = actionRecorder
+        self.frameMemory = frameMemory
     }
 }
 
+/// How computer use goes to a route's model (Code v2 SPEC §3.12).
+public enum ComputerUseWire: String, Hashable, Sendable {
+    /// Anthropic's `computer_toolset_20260801` (Opus 5.5, Sonnet 5.5, Opus 5).
+    case anthropicToolset
+    /// The 17-action `computer` function tool: other Claude models, OpenAI.
+    case functionTool
+    /// `computer_use`: every other model, and any model that cannot see.
+    case portable
+}
+
 /// Which image budget and coordinate convention a model's route has, read
-/// from the model id (CODE_AGENT_SPEC §3.5). Nil means computer use is not
-/// offered on that route: Gemini, Qwen and the other labs' conventions are
-/// unverified, and a wrong one clicks in the wrong place.
+/// from the model id (CODE_AGENT_SPEC §3.5).
+///
+/// Anthropic and OpenAI keep their verified budgets and the tuple tools.
+/// Every other lab gets the portable budget and the `computer_use` tool
+/// (Code v2 SPEC §3.12): flat x/y in the convention every frame header states
+/// — 0-999 for Gemini and Qwen, whose vision models answer that way, pixels
+/// for the rest — and accessibility targeting that needs no coordinates.
 public enum ComputerUseRoutes {
     /// The Anthropic models that take `computer_toolset_20260801`. Opus 5.5
     /// and Sonnet 5.5 take nothing else on the Claude API.
@@ -102,7 +132,23 @@ public enum ComputerUseRoutes {
             let responses = model.contains("-codex") || model.hasSuffix("-pro")
             return responses ? .openAIOriginal : .openAIHighDetail
         default:
-            return nil
+            return answersInThousandths(provider: provider, model: model) ? .portableNormalized : .portable
+        }
+    }
+
+    /// Gemini and Qwen-VL point in 0-999 on each axis.
+    static func answersInThousandths(provider: String, model: String) -> Bool {
+        ["google", "gemini", "qwen", "alibaba", "dashscope"].contains(provider)
+            || model.contains("gemini") || model.contains("qwen")
+    }
+
+    /// Which computer tool a route's model gets.
+    public static func wire(forModelID modelID: String) -> ComputerUseWire {
+        let (provider, model) = parse(modelID)
+        switch provider {
+        case "anthropic": return toolsetModels.contains(model) ? .anthropicToolset : .functionTool
+        case "openai": return .functionTool
+        default: return .portable
         }
     }
 
@@ -184,35 +230,66 @@ struct ScreenActionRunner: Sendable {
     let computer: any ScreenControlling
     let permissions: PermissionCoordinator
     let budget: ImageBudget
+    /// Records each step as a `computer_action` item (Code v2 SPEC §3.12).
+    var recorder: ComputerActionRecorder? = nil
 
     /// Runs one action with its own approval. Throws `ScreenControlError`
     /// or `ScreenToolDenial`.
+    ///
+    /// - Parameters:
+    ///   - stepID: the item's call id; a batch passes `<call>#<n>`.
+    ///   - itemAction: what the thread calls it, when not the toolset kind
+    ///     (`ax_press` runs as a click on an element).
     func run(
         _ action: ScreenAction,
         toolName: String,
         input: JSONValue,
         context: ToolContext,
-        attachFrame: Bool
+        attachFrame: Bool,
+        stepID: String? = nil,
+        itemAction: CodeV2.ComputerActionKind? = nil
     ) async throws -> ScreenActionResult {
-        await computer.setImageBudget(sessionID: context.sessionID.value, budget: budget)
-        try await ScreenTakeoverWait.untilResumed(computer, sessionID: context.sessionID.value)
-        let prepared = try await computer.prepare(sessionID: context.sessionID.value, action: action)
-        if prepared.isInput {
-            do {
-                try await approve(prepared, toolName: toolName, input: input, sessionID: context.sessionID.value)
-            } catch {
-                // Never performed: its bound frame goes now, not at the end
-                // of the session.
-                await computer.discard(sessionID: context.sessionID.value, preparedID: prepared.id)
-                throw error
+        let sessionID = context.sessionID.value
+        let callID = stepID ?? context.toolCallID
+        let kind = itemAction ?? ComputerActionRecorder.itemKind(for: action.kind)
+        let started = await recorder?.began(sessionID: sessionID, callID: callID, action: kind, app: action.app)
+        var prepared: PreparedScreenAction?
+        do {
+            await computer.setImageBudget(sessionID: sessionID, budget: budget)
+            try await ScreenTakeoverWait.untilResumed(computer, sessionID: sessionID)
+            let ready = try await computer.prepare(sessionID: sessionID, action: action)
+            prepared = ready
+            if ready.isInput {
+                do {
+                    try await approve(ready, toolName: toolName, input: input, sessionID: sessionID)
+                } catch {
+                    // Never performed: its bound frame goes now, not at the end
+                    // of the session.
+                    await computer.discard(sessionID: sessionID, preparedID: ready.id)
+                    throw error
+                }
             }
+            // Only an attached after-frame is captured: capturing one for the
+            // timeline alone would move the frame a batch's later coordinates
+            // were chosen from. Steps without one borrow the last screenshot.
+            let result = try await computer.perform(
+                sessionID: sessionID,
+                prepared: ready,
+                toolCallID: context.toolCallID,
+                attachFrame: attachFrame
+            )
+            await recorder?.finished(
+                sessionID: sessionID, callID: callID, action: kind, started: started,
+                prepared: ready, result: result, failure: nil
+            )
+            return result
+        } catch {
+            await recorder?.finished(
+                sessionID: sessionID, callID: callID, action: kind, started: started,
+                prepared: prepared, result: nil, failure: error
+            )
+            throw error
         }
-        return try await computer.perform(
-            sessionID: context.sessionID.value,
-            prepared: prepared,
-            toolCallID: context.toolCallID,
-            attachFrame: attachFrame
-        )
     }
 
     /// One approval, with the whole card, bound to the frame.
@@ -406,9 +483,10 @@ public struct ComputerTool: CodeTool {
         computer: any ScreenControlling,
         permissions: PermissionCoordinator,
         budget: ImageBudget,
-        tracker: ScreenTurnTracker? = nil
+        tracker: ScreenTurnTracker? = nil,
+        recorder: ComputerActionRecorder? = nil
     ) {
-        self.runner = ScreenActionRunner(computer: computer, permissions: permissions, budget: budget)
+        self.runner = ScreenActionRunner(computer: computer, permissions: permissions, budget: budget, recorder: recorder)
         self.tracker = tracker
     }
 
@@ -453,9 +531,10 @@ public struct ComputerBatchTool: CodeTool {
         computer: any ScreenControlling,
         permissions: PermissionCoordinator,
         budget: ImageBudget,
-        tracker: ScreenTurnTracker? = nil
+        tracker: ScreenTurnTracker? = nil,
+        recorder: ComputerActionRecorder? = nil
     ) {
-        self.runner = ScreenActionRunner(computer: computer, permissions: permissions, budget: budget)
+        self.runner = ScreenActionRunner(computer: computer, permissions: permissions, budget: budget, recorder: recorder)
         self.tracker = tracker
     }
 
@@ -510,7 +589,10 @@ public struct ComputerBatchTool: CodeTool {
             do {
                 let action = try ScreenActionInput.action(from: item)
                 let last = index == items.count - 1
-                let result = try await runner.run(action, toolName: name, input: item, context: context, attachFrame: last)
+                let result = try await runner.run(
+                    action, toolName: name, input: item, context: context, attachFrame: last,
+                    stepID: "\(context.toolCallID)#\(index + 1)"
+                )
                 lines.append("\(index + 1). \(result.summary)")
                 if last {
                     if let header = result.frameHeader { lines.append(header) }
@@ -549,6 +631,8 @@ public struct ComputerAppsTool: CodeTool {
     let computer: any ScreenControlling
     let permissions: PermissionCoordinator
     let budget: ImageBudget
+    /// Off for a model that cannot see: `open` answers in words only.
+    public var sendsImages = true
 
     public init(computer: any ScreenControlling, permissions: PermissionCoordinator, budget: ImageBudget) {
         self.computer = computer
@@ -601,7 +685,7 @@ public struct ComputerAppsTool: CodeTool {
                 await computer.setImageBudget(sessionID: sessionID, budget: budget)
                 try await ScreenTakeoverWait.untilResumed(computer, sessionID: sessionID)
                 let result = try await computer.open(sessionID: sessionID, app: app)
-                return ToolResult(content: result.text, images: ScreenActionRunner.images(result))
+                return ToolResult(content: result.text, images: sendsImages ? ScreenActionRunner.images(result) : [])
             case "release":
                 let released = await computer.release(sessionID: sessionID, apps: apps)
                 return ToolResult(content: released.isEmpty ? "None of those apps was granted." : "Gave back \(released.joined(separator: ", ")).")

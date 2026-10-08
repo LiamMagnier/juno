@@ -36,8 +36,34 @@ public final class ScreenControlModel {
     @ObservationIgnored public let turnTracker = ScreenTurnTracker()
     /// Simulator device consent, once per device per session.
     @ObservationIgnored public let simulatorConsents = SimulatorConsentBook()
+    /// This session's screen steps as `computer_action` items, newest last,
+    /// for the thread's screenshot timeline (Code v2 SPEC §3.12).
+    public private(set) var computerActions: [CodeV2.ComputerAction] = []
+    /// The latest frame size, for the portable tool's coordinate conversions.
+    @ObservationIgnored public let frameMemory = PortableFrameMemory()
+    /// Records every screen step with its screenshot stored on this Mac.
+    @ObservationIgnored public let actionRecorder: ComputerActionRecorder
+    @ObservationIgnored private let actionSink: ComputerActionSink
 
-    public init() {}
+    public init(screenshots: ComputerScreenshotStore = .shared) {
+        let sink = ComputerActionSink()
+        actionSink = sink
+        actionRecorder = ComputerActionRecorder(
+            store: { session, call, frame in await screenshots.store(sessionID: session, callID: call, frame: frame) },
+            publish: { _, item in sink.forward(item) }
+        )
+        sink.model = self
+    }
+
+    /// An item's newer version replaces the older one in place.
+    func apply(_ action: CodeV2.ComputerAction) {
+        if let index = computerActions.firstIndex(where: { $0.id == action.id }) {
+            computerActions[index] = action
+        } else {
+            computerActions.append(action)
+            if computerActions.count > 300 { computerActions.removeFirst(computerActions.count - 300) }
+        }
+    }
 
     /// Whether this session holds the screen now.
     public var isThisSessionActive: Bool {
@@ -178,7 +204,10 @@ public final class ScreenControlModel {
             computerUseEnabled: computerUseEnabled,
             turnTracker: turnTracker,
             simulatorConsents: simulatorConsents,
-            workspaceRevision: workspaceRevision
+            workspaceRevision: workspaceRevision,
+            wire: ComputerUseRoutes.wire(forModelID: modelID),
+            actionRecorder: actionRecorder,
+            frameMemory: frameMemory
         )
     }
 
@@ -302,5 +331,16 @@ public final class ScreenStepThumbnails {
             byCall[call] = nil
             sessionOfCall[call] = nil
         }
+    }
+}
+
+/// Hands recorded items to the model on the main actor.
+final class ComputerActionSink: @unchecked Sendable {
+    weak var model: ScreenControlModel?
+
+    func forward(_ item: CodeV2.TurnItem) {
+        guard case let .computerAction(action) = item else { return }
+        let target = model
+        Task { @MainActor in target?.apply(action) }
     }
 }

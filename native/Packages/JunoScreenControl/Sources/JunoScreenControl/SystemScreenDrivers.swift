@@ -16,7 +16,8 @@ extension ScreenControlService {
         dependencies: .system,
         // One pointer across processes too: the env server's connected
         // agents and any second copy of the app (Code v2 SPEC §3.12).
-        lock: ScreenControlLock(file: DesktopLockFile())
+        lock: ScreenControlLock(file: DesktopLockFile()),
+        feed: .shared
     )
 }
 
