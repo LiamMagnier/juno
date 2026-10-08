@@ -1,5 +1,4 @@
 import Foundation
-import JunoCodeCore
 
 /// The Orchestrate popover's model (DESIGN §5.11; SPEC §3.4, §4).
 ///

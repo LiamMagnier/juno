@@ -1,5 +1,4 @@
 import Foundation
-import JunoCodeCore
 
 /// Every place a model can run, in the order the picker's rail and the
 /// Connections page list them (DESIGN §5.8, §5.13; SPEC §2).
