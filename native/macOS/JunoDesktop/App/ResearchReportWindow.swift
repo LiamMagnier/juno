@@ -38,7 +38,7 @@ struct ResearchReportWindow: View {
     private var report: NativeResearchReport? {
         #if DEBUG
         // The capture harness's report (`--juno-preview-research-report`).
-        if runID == Self.previewRunID, JunoPreviewEnvironment.isActive { return PreviewResearch.report }
+        if runID == Self.previewRunID, JunoPreviewEnvironment.isActive { return Self.previewReport }
         #endif
         if let messageID {
             guard let model = configuration?.conversationModel else { return nil }
@@ -57,7 +57,11 @@ struct ResearchReportWindow: View {
         let report = report
         Group {
             if let report {
+                #if DEBUG
+                ResearchReportReader(report: report, audit: audit, initialSection: Self.previewSection)
+                #else
                 ResearchReportReader(report: report, audit: audit)
+                #endif
             } else if failed || (loadedRun != nil && report == nil) {
                 JunoEmptyState(
                     title: "Couldn\u{2019}t open this report",
@@ -147,6 +151,23 @@ struct ResearchReportWindow: View {
 
     #if DEBUG
     static let previewRunID = "preview-report"
+
+    /// The harness's report, with the reader's own sources beside the web's:
+    /// a file from the chat, a library document and a calendar event, on the
+    /// reserved `private.invalid` host the report lists as private.
+    static var previewReport: NativeResearchReport {
+        var message = PreviewResearch.reportMessage()
+        message.sources += [
+            NativeChatSource(title: "Leeds house survey.pdf", url: URL(string: "https://private.invalid/file/survey")!, snippet: "", cited: true, origin: "research"),
+            NativeChatSource(title: "Energy bills 2025.xlsx", url: URL(string: "https://private.invalid/library/bills")!, snippet: "", cited: true, origin: "research"),
+            NativeChatSource(title: "Installer visit, 14 October", url: URL(string: "https://private.invalid/calendar/visit")!, snippet: "", cited: true, origin: "research"),
+        ]
+        return NativeResearchReport(message: message, question: PreviewResearch.question) ?? PreviewResearch.report
+    }
+
+    private static var previewSection: String? {
+        CommandLine.arguments.contains("--juno-preview-report-sources") ? NativeResearchReportArticle.sourcesID : nil
+    }
     #endif
 
     private func load() async {
@@ -251,8 +272,11 @@ struct ResearchReportReader: View {
     init(report: NativeResearchReport, audit: NativeResearchAudit? = nil, initialSection: String? = nil) {
         self.report = report
         self.audit = audit
+        self.initialSection = initialSection
         _reading = State(initialValue: initialSection)
     }
+
+    private let initialSection: String?
 
     /// The article's measure: the reading column, a touch narrower than the
     /// transcript so a line of Newsreader-led prose stays comfortable.
@@ -279,6 +303,15 @@ struct ResearchReportReader: View {
             }
             .scrollPosition(id: $reading, anchor: .top)
             .scrollEdgeEffectStyle(.soft, for: .top)
+        }
+        // A position asked for before the article had laid out is not
+        // honoured; ask again once it has.
+        .task {
+            guard let initialSection else { return }
+            try? await Task.sleep(for: .milliseconds(800))
+            reading = nil
+            await Task.yield()
+            reading = initialSection
         }
     }
 

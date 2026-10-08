@@ -465,6 +465,23 @@ struct DesktopChatWorkspace: View {
         if arguments.contains("--juno-preview-private") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { beginPrivateDraft() }
         }
+        if let index = arguments.firstIndex(of: "--juno-preview-conversation"), index + 1 < arguments.count {
+            let id = arguments[index + 1]
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { openConversation(id) }
+        }
+        if arguments.contains("--juno-preview-research-toast") {
+            // A background research finishing while another chat is open:
+            // the toast DesktopResearchCompletions posts, with its Open.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+                let completion = NativeResearchCompletion(
+                    runID: "rr_heat_live",
+                    conversationID: "conv-research",
+                    title: "Heat pumps in a 1930s solid-wall semi",
+                    kind: .ready
+                )
+                toasts.post(.success(completion.headline, detail: completion.title, action: .init("Open") {}))
+            }
+        }
         if let index = arguments.firstIndex(of: "--juno-preview-send"), index + 1 < arguments.count {
             let words = arguments[index + 1]
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) {

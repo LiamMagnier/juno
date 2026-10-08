@@ -91,5 +91,39 @@ enum PreviewShowcaseConversation {
             """),
         ]
     }
+
+    // MARK: Live UI
+
+    /// The bill splitter from `contracts/live-ui/samples.json` ("bill"): an
+    /// answer carrying a ```live-ui block — sliders, a stepper, metrics and a
+    /// table that recompute in place.
+    static let liveQuestion = "Here's the receipt from Trattoria Moro, there were 4 of us. How much does everyone owe with a 10% tip?"
+    static let liveAnswer = "With a 10% tip the bill comes to **€148.99**, so each of the four of you owes **€37.25**.\n\n```live-ui\n{\"title\":\"Trattoria Moro, split evenly\",\"currency\":\"EUR\",\n \"data\":{\"items\":[{\"item\":\"Burrata\",\"price\":14},{\"item\":\"Cacio e pepe\",\"price\":16.5},{\"item\":\"Pizza diavola\",\"price\":15},{\"item\":\"Branzino\",\"price\":27},{\"item\":\"Tiramisu (2)\",\"price\":18},{\"item\":\"Etna Rosso, bottle\",\"price\":38},{\"item\":\"Sparkling water\",\"price\":6.95}]},\n \"let\":{\"subtotal\":\"sum(items.price)\",\"service\":\"subtotal * tip\",\"total\":\"subtotal + service\",\"each\":\"total / people\",\"roundUp\":\"ceil(each)\"},\n \"ui\":[\n  {\"type\":\"row\",\"children\":[\n   {\"type\":\"slider\",\"id\":\"tip\",\"label\":\"Tip\",\"min\":0,\"max\":0.25,\"step\":0.01,\"value\":0.1,\"format\":\"percent\"},\n   {\"type\":\"stepper\",\"id\":\"people\",\"label\":\"People\",\"min\":1,\"max\":12,\"value\":4}]},\n  {\"type\":\"row\",\"children\":[\n   {\"type\":\"metric\",\"label\":\"Each person pays\",\"value\":\"each\",\"format\":\"currency\",\"emphasis\":true,\"hint\":\"Round up to {{fmt(roundUp,'currency',0)}} and the table leaves {{fmt(roundUp * people - total,'currency')}} extra\"},\n   {\"type\":\"metric\",\"label\":\"Total with tip\",\"value\":\"total\",\"format\":\"currency\",\"hint\":\"{{fmt(service,'currency')}} of it is tip\"}]},\n  {\"type\":\"table\",\"rows\":\"items\",\"columns\":[{\"label\":\"Item\",\"value\":\"item\"},{\"label\":\"Price\",\"value\":\"price\",\"format\":\"currency\"},{\"label\":\"Each, with tip\",\"value\":\"price * (1 + tip) / people\",\"format\":\"currency\"}]},\n  {\"type\":\"row\",\"children\":[\n   {\"type\":\"button\",\"label\":\"Split by who ordered what\",\"prompt\":\"Split the Trattoria Moro receipt by who ordered what instead of evenly, keeping a {{fmt(tip,'percent',0)}} tip.\"},\n   {\"type\":\"button\",\"label\":\"Copy each share\",\"copy\":\"fmt(each,'currency')\"}]}]}\n```\n\nItaly doesn't expect a tip on top of the *coperto*, so 5% or rounding up is also perfectly normal there."
+
+    // MARK: Research
+
+    static let researchQuestion = "Does a heat pump make sense for a 1930s semi with solid walls, and what would it cost?"
+
+    /// The extra chats the showcase week holds: a live-UI answer and a deep
+    /// research that is still working.
+    static func extraRecords(_ a: StorageAccountID) -> [StoredRecord] {
+        [
+            record(a, "conversation", "conv-live", """
+            {"id":"conv-live","title":"Splitting the Trattoria Moro bill","model":"anthropic:claude-sonnet-4-6","kind":"chat","pinned":false,"archivedAt":null,"createdAt":"\(iso(-7_200))","updatedAt":"\(iso(-7_000))","lastMessageAt":"\(iso(-7_000))"}
+            """),
+            record(a, "message", "lv-1", """
+            {"id":"lv-1","conversationId":"conv-live","role":"user","content":\(escaped(liveQuestion)),"createdAt":"\(iso(-7_100))"}
+            """),
+            record(a, "message", "lv-2", """
+            {"id":"lv-2","conversationId":"conv-live","role":"assistant","content":\(escaped(liveAnswer)),"model":"anthropic:claude-sonnet-4-6","createdAt":"\(iso(-7_000))"}
+            """),
+            record(a, "conversation", "conv-research", """
+            {"id":"conv-research","title":"Heat pump for the Leeds house","model":"anthropic:claude-opus-4-6","kind":"chat","pinned":false,"archivedAt":null,"createdAt":"\(iso(-600))","updatedAt":"\(iso(-250))","lastMessageAt":"\(iso(-250))"}
+            """),
+            record(a, "message", "rs-1", """
+            {"id":"rs-1","conversationId":"conv-research","role":"user","content":\(escaped(researchQuestion)),"createdAt":"\(iso(-260))"}
+            """),
+        ]
+    }
 }
 #endif

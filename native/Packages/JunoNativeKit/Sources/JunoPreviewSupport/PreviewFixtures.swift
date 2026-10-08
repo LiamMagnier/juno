@@ -161,6 +161,7 @@ public enum PreviewFixtures {
             """))
         }
         out += PreviewShowcaseConversation.messages(a)
+        out += PreviewShowcaseConversation.extraRecords(a)
         out.append(record(a, "project", "proj-1", 8, """
         {"id":"proj-1","name":"Field Notes","nameSource":"user","instructions":"The notes app we are launching. Keep the voice warm and plain.","starred":true,"createdAt":"\(iso(-200000))","updatedAt":"\(iso(-1500))"}
         """))
