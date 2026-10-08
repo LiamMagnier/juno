@@ -99,6 +99,13 @@ public actor PreviewSender: NativeChatRequestSending {
                 body: Data(#"{"error":"Image not found."}"#.utf8)
             )
         }
+        if let research = PreviewResearchRunFixtures.body(for: request) {
+            return HTTPResponse(
+                statusCode: 200,
+                headers: try HTTPHeaders(["content-type": "application/json"]),
+                body: research
+            )
+        }
         if let appended = PreviewChatStream.appendResponse(for: request) {
             return HTTPResponse(
                 statusCode: 200,

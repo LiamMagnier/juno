@@ -130,6 +130,21 @@ enum PreviewShowcaseFixtures {
             message("\(chat.id)-a", chat.id, "assistant", chat.reply, offset, model: "anthropic:claude-opus-4-8")
         }
 
+        // Two Deep Research chats, whose runs the harness serves in the wire
+        // shape (PreviewResearchRunFixtures): one working, one finished.
+        let research: [(String, String, String, TimeInterval)] = [
+            (PreviewResearchRunFixtures.liveConversation, "Heat pump for the Lisbon flat?", PreviewResearchRunFixtures.liveQuestion, -300),
+            (PreviewResearchRunFixtures.doneConversation, "Note-taking app pricing, 2026", PreviewResearchRunFixtures.doneQuestion, -26 * 3_600),
+        ]
+        for chat in research {
+            out.append(("conversation", chat.0, 3, json([
+                "id": chat.0, "title": chat.1, "model": "anthropic:claude-opus-4-8",
+                "kind": "chat", "pinned": false, "archivedAt": NSNull(),
+                "createdAt": iso(chat.3 - 30), "updatedAt": iso(chat.3), "lastMessageAt": iso(chat.3),
+            ])))
+            message("\(chat.0)-q", chat.0, "user", chat.2, chat.3 - 30)
+        }
+
         // Library files: what Maya has attached across her chats and project.
         let files: [(String, String, String, String, Int, String?, TimeInterval)] = [
             ("sc-file-1", "FILE", "Field Notes 2.0 launch brief.pdf", "application/pdf", 412_000, "proj-1", -7_200),

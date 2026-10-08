@@ -52,6 +52,15 @@ struct JunoMobileResearchReportView: View {
             if let messageID = report.messageID, let loadAudit { audit = await loadAudit(messageID) }
         }
         .task(id: report.id) { files = await Self.files(for: report) }
+        #if DEBUG
+          // `--juno-preview-report-section sources` opens the reader at its
+          // sources list, where the reader's own files, mail and calendar sit.
+          .task {
+            guard CommandLine.arguments.contains("--juno-preview-report-section") else { return }
+            try? await Task.sleep(for: .milliseconds(900))
+            jump(to: NativeResearchReportArticle.sourcesID)
+          }
+        #endif
         .accessibilityIdentifier("juno.mobile.research-report")
     }
 

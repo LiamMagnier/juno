@@ -492,7 +492,9 @@ public struct NativeResearchLiveView: View {
                     controlButton("Pause", icon: .pause, action: pause)
                 }
                 if showsFinish, let finish = actions.finish {
-                    controlButton("Write with what you have", icon: nil, action: finish)
+                    // The phone's row has room for four short verbs, not a
+                    // sentence that wraps inside its capsule.
+                    controlButton(compact ? "Write now" : "Write with what you have", icon: nil, action: finish)
                         .disabled(run.finishRequested)
                 }
                 Spacer(minLength: 0)
@@ -513,6 +515,7 @@ public struct NativeResearchLiveView: View {
             HStack(spacing: JunoSpace.tight) {
                 if let icon { JunoIconView(icon, size: 12) }
                 Text(title)
+                    .lineLimit(1)
             }
             .junoFont(size: 13, relativeTo: .callout, weight: .medium)
             .frame(minHeight: compact ? 32 : 24)
