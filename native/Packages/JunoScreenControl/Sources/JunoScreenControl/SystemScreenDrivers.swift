@@ -12,7 +12,12 @@ import ScreenCaptureKit
 extension ScreenControlService {
     /// The app's one service. Juno Code and Juno Work both use this instance,
     /// which is what makes the lock and the stop app-wide.
-    public static let shared = ScreenControlService(dependencies: .system)
+    public static let shared = ScreenControlService(
+        dependencies: .system,
+        // One pointer across processes too: the env server's connected
+        // agents and any second copy of the app (Code v2 SPEC §3.12).
+        lock: ScreenControlLock(file: DesktopLockFile())
+    )
 }
 
 extension ScreenControlService.Dependencies {
