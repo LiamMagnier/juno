@@ -89,10 +89,11 @@ export function normalizeReset(value: number | string | null | undefined, now = 
  */
 export function parseResetFromText(text: string, now = new Date()): string | undefined {
   if (!text) return undefined;
-  const rel = text.match(/(?:in|after)\s+((?:\d+\s*(?:d|days?|h|hrs?|hours?|m|mins?|minutes?|s|secs?|seconds?)\s*(?:and\s*)?,?\s*)+)/i);
+  const UNIT = "(?:days?|d|hours?|hrs?|h|minutes?|mins?|m|seconds?|secs?|s)\\b";
+  const rel = text.match(new RegExp(`(?:in|after)\\s+((?:\\d+\\s*${UNIT}\\s*(?:and\\s*)?,?\\s*)+)`, "i"));
   if (rel && /(?:try again|resets?|available|retry)/i.test(text)) {
     let ms = 0;
-    for (const [, n, unit] of rel[1].matchAll(/(\d+)\s*(d|days?|h|hrs?|hours?|m|mins?|minutes?|s|secs?|seconds?)/gi)) {
+    for (const [, n, unit] of rel[1].matchAll(/(\d+)\s*(days?|d|hours?|hrs?|h|minutes?|mins?|m|seconds?|secs?|s)\b/gi)) {
       const u = unit.toLowerCase();
       const k = u.startsWith("d") ? 86400_000 : u.startsWith("h") ? 3600_000 : u.startsWith("m") ? 60_000 : 1000;
       ms += Number(n) * k;

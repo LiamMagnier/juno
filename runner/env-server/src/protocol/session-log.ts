@@ -96,7 +96,12 @@ export class SessionLog {
 
   /** Loads a session from disk, or returns null when it does not exist. */
   static load(root: string, id: string, coalesceMs = DELTA_COALESCE_MS): SessionLog | null {
-    const dir = path.join(root, safeSegment(id));
+    let dir: string;
+    try {
+      dir = path.join(root, safeSegment(id));
+    } catch {
+      return null;
+    }
     let meta: SessionMeta;
     try {
       meta = JSON.parse(fs.readFileSync(path.join(dir, "meta.json"), "utf8")) as SessionMeta;
