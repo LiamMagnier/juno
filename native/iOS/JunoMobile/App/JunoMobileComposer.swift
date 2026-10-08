@@ -424,11 +424,16 @@ struct JunoMobileComposer: View {
                   .padding(JunoSpace.snug)
                   .transition(.opacity)
               } else {
+                // The placeholder in secondary ink, not the system's paler
+                // placeholder grey: ChatGPT's "Ask ChatGPT" reads at a glance.
                 TextField(
-                  voiceActive ? "Type while you talk…" : placeholder,
                   text: $prompt,
+                  prompt: Text(voiceActive ? "Type while you talk…" : placeholder)
+                    .foregroundStyle(Color.secondary),
                   axis: .vertical
-                )
+                ) {
+                  Text(voiceActive ? "Type while you talk…" : placeholder)
+                }
                 .junoFont(size: 17, relativeTo: .body)
                 .lineLimit(1...6)
                 .textFieldStyle(.plain)

@@ -27,7 +27,8 @@ struct JunoMobileThinkingDialButton: View {
       // nothing to dial; the honest thing the gauge can offer is the model.
       if scale?.isAdjustable == true { open() } else { chooseModel() }
     } label: {
-      JunoDialGlyph(fraction: Self.fraction(scale: scale, effort: effort))
+      // 19pt at a 1.6pt stroke: the weight of the SF Symbols beside it.
+      JunoDialGlyph(fraction: Self.fraction(scale: scale, effort: effort), size: 19, lineWidth: 1.6)
         .foregroundStyle(Color.primary)
         .frame(width: 40, height: 44)
         .contentShape(Rectangle())
