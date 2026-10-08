@@ -7,15 +7,11 @@ import SwiftUI
 /// run — today's web background runs, which write no chat message (the web's
 /// `ResearchRecap`, Phase 5 B6).
 ///
-/// An opaque card at radius 16 under a hairline, placed in the transcript at
-/// the run's creation: how it ended, with the time and money it took; the
-/// report's title; what it read and how much of the plan it answered; the
-/// citation check; and the door into the report. "Inspect methodology &
-/// sources" opens the Research panel on Sources; ✕ hides the receipt for
-/// this run, remembered on this Mac.
-///
-/// **Signature detail:** the audit line — the one place a report says
-/// whether its claims hold — set apart under a shield in the check's tone.
+/// With a report it is the report's card — the same door an in-chat report
+/// has — under the run's verdict and what it took, then one quiet line: the
+/// citation check in words, "Inspect sources" (the Research panel on Sources)
+/// and "Hide" (remembered on this Mac). With none, how it ended, its title
+/// and what it found before it stopped.
 struct ResearchRecapCard: View {
     let run: NativeResearchRun
     /// Opens the report window; nil when the run wrote no report.
@@ -23,159 +19,109 @@ struct ResearchRecapCard: View {
     let inspect: () -> Void
     let dismiss: () -> Void
 
+    private var verdictIsWarning: Bool {
+        run.state != "completed" && run.state != "cancelled"
+    }
+
+    private var verdict: String {
+        var line = ResearchRecapWords.verdict(run.state)
+        if let figures = ResearchRecapWords.figures(run) { line += " \u{00B7} " + figures }
+        return line
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            header
-            Text(run.displayTitle)
-                .font(JunoSerif.font(size: 26, relativeTo: .title2))
-                .foregroundStyle(Color.junoForeground)
-                .lineLimit(3)
-                .fixedSize(horizontal: false, vertical: true)
-                .accessibilityAddTraits(.isHeader)
-                .padding(.top, JunoSpace.cozy)
-            if let answered = run.objectivesAnswered {
-                Text("\(answered.covered)/\(answered.total) questions answered")
-                    .junoFont(size: 13, relativeTo: .callout)
-                    .monospacedDigit()
-                    .foregroundStyle(Color.junoSecondaryInk)
-                    .padding(.top, JunoSpace.tight)
+        VStack(alignment: .leading, spacing: JunoSpace.snug) {
+            if let report = NativeResearchReport(run: run) {
+                NativeResearchReportCard(
+                    content: .report(report),
+                    verdict: verdict,
+                    verdictIsWarning: verdictIsWarning,
+                    open: openReport
+                )
+            } else {
+                stopped
             }
-            ResearchEvidenceLedger(run: run)
-                .padding(.top, JunoSpace.regular)
-            if let audit = run.audit {
-                auditLine(audit)
-                    .padding(.top, JunoSpace.cozy)
-            } else if run.reportBody != nil {
-                Text("Citation check unavailable for this report.")
-                    .junoFont(size: 12, relativeTo: .footnote)
-                    .foregroundStyle(Color.junoSecondaryInk)
-                    .padding(.top, JunoSpace.cozy)
-            }
-            if let error = run.error {
-                Text(error)
-                    .junoFont(size: 13, relativeTo: .callout)
-                    .foregroundStyle(Color.junoDestructiveInk)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .textSelection(.enabled)
-                    .padding(.top, JunoSpace.cozy)
-            }
-            actions
-                .padding(.top, JunoSpace.comfy)
+            footer
         }
-        .padding(JunoSpace.regular)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.junoCard, in: RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
-                .strokeBorder(Color.junoBorder, lineWidth: 1)
-        )
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Research report")
         .accessibilityIdentifier("juno.chat.research-recap")
     }
 
-    // MARK: Header
-
-    private var header: some View {
-        HStack(spacing: JunoSpace.snug) {
+    /// A run that ended before it wrote anything.
+    private var stopped: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.cozy) {
             HStack(spacing: JunoSpace.tight) {
-                if let glyph = ResearchRecapWords.verdictGlyph(run.state) {
-                    JunoIconView(glyph.icon, size: 12)
+                if let glyph = ResearchRecapWords.verdictGlyph(run.state), verdictIsWarning {
+                    JunoIconView(glyph.icon, size: 11)
                         .foregroundStyle(glyph.tint)
                         .accessibilityHidden(true)
                 }
-                Text(ResearchRecapWords.verdict(run.state))
-                    .junoFont(size: 12, relativeTo: .footnote, weight: .medium)
-                    .foregroundStyle(Color.junoSecondaryInk)
+                Text(verdict)
+                    .foregroundStyle(verdictIsWarning ? Color.junoWarningInk : Color.junoSecondaryInk)
             }
-            .accessibilityElement(children: .combine)
+            .junoFont(size: 12, relativeTo: .caption, design: .monospaced)
+            Text(run.displayTitle)
+                .font(JunoSerif.font(size: 22, relativeTo: .title2))
+                .foregroundStyle(Color.junoForeground)
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityAddTraits(.isHeader)
+            ResearchEvidenceLedger(run: run)
+            Text(run.error ?? "This run stopped before it wrote a report.")
+                .junoFont(size: 13, relativeTo: .callout)
+                .foregroundStyle(run.error == nil ? Color.junoSecondaryInk : Color.junoWarningInk)
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
+        }
+        .padding(JunoSpace.roomy)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.junoCard, in: RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
+                .strokeBorder(Color.junoHairline, lineWidth: 1)
+        )
+    }
+
+    private var footer: some View {
+        HStack(alignment: .firstTextBaseline, spacing: JunoSpace.regular) {
+            if let audit = run.audit {
+                HStack(alignment: .firstTextBaseline, spacing: JunoSpace.tight) {
+                    JunoIconView(audit.isClean ? .shield : .warning, size: 11)
+                        .foregroundStyle(audit.isClean ? Color.junoSecondaryInk : Color.junoWarningInk)
+                        .accessibilityHidden(true)
+                    Text(audit.headline)
+                        .foregroundStyle(Color.junoSecondaryInk)
+                        .monospacedDigit()
+                        .lineLimit(1)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("juno.chat.research-recap.audit")
+            }
             Spacer(minLength: JunoSpace.snug)
-            if let figures = ResearchRecapWords.figures(run) {
-                // Time and money are figures, so mono.
-                Text(figures)
-                    .junoFont(size: 11, relativeTo: .caption, design: .monospaced)
-                    .foregroundStyle(Color.junoSecondaryInk)
-                    .fixedSize()
-            }
-            Button(action: dismiss) {
-                JunoIconView(.close, size: 12)
-                    .foregroundStyle(Color.junoSecondaryInk)
-                    .frame(width: 28, height: 28)
+            Button(action: inspect) {
+                Text("Inspect sources")
+                    .frame(minHeight: 28)
                     .contentShape(.rect)
             }
             .buttonStyle(.plain)
-            .help("Hide this research receipt")
-            .accessibilityLabel("Hide this research receipt")
+            .foregroundStyle(Color.junoSecondaryInk)
+            .fixedSize()
+            .accessibilityIdentifier("juno.chat.research-recap.inspect")
+            Button(action: dismiss) {
+                Text("Hide")
+                    .frame(minHeight: 28)
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(Color.junoSecondaryInk)
+            .fixedSize()
+            .help("Hide this research receipt on this Mac")
             .accessibilityIdentifier("juno.chat.research-recap.dismiss")
         }
-        .frame(minHeight: 28)
-    }
-
-    // MARK: The citation check
-
-    private func auditLine(_ audit: NativeResearchRun.AuditSummary) -> some View {
-        VStack(alignment: .leading, spacing: JunoSpace.tight) {
-            HStack(alignment: .center, spacing: JunoSpace.snug) {
-                JunoIconView(audit.isClean ? .shieldCheck : .warning, size: 12)
-                    .foregroundStyle(audit.isClean ? Color.junoSuccessInk : Color.junoWarningInk)
-                    .accessibilityHidden(true)
-                Text(audit.headline)
-                    .junoFont(size: 12, relativeTo: .footnote, weight: .medium)
-                    .monospacedDigit()
-                    .foregroundStyle(Color.junoForeground)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Text("Checked against cited passages; completeness is not verified.")
-                .junoFont(size: 11, relativeTo: .caption)
-                .foregroundStyle(Color.junoSecondaryInk)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("juno.chat.research-recap.audit")
-    }
-
-    // MARK: Actions
-
-    private var actions: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: JunoSpace.cozy) { actionRow }
-            VStack(alignment: .leading, spacing: JunoSpace.snug) { actionRow }
-        }
-    }
-
-    @ViewBuilder
-    private var actionRow: some View {
-        if let openReport {
-            Button(action: openReport) {
-                HStack(spacing: JunoSpace.tight) {
-                    Text("Read the full report")
-                    JunoIconView(.arrowRight, size: 12)
-                }
-                .frame(minHeight: 20)
-                .contentShape(.rect)
-            }
-            .buttonStyle(.bordered)
-            .tint(nil)
-            .controlSize(.small)
-            .frame(minHeight: 28)
-            .fixedSize()
-            .accessibilityIdentifier("juno.chat.research-recap.open")
-        } else {
-            Text("This run stopped before it wrote a report.")
-                .junoFont(size: 12, relativeTo: .footnote)
-                .foregroundStyle(Color.junoSecondaryInk)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        Button(action: inspect) {
-            Text("Inspect methodology & sources")
-                .junoFont(size: 12, relativeTo: .footnote, weight: .medium)
-                .foregroundStyle(Color.junoSecondaryInk)
-                .frame(minHeight: 28)
-                .contentShape(.rect)
-        }
-        .buttonStyle(.plain)
-        .fixedSize()
-        .accessibilityIdentifier("juno.chat.research-recap.inspect")
+        .junoFont(size: 12, relativeTo: .caption)
+        .padding(.horizontal, JunoSpace.tight)
     }
 }
 

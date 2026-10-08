@@ -81,6 +81,7 @@ struct JunoMobileResearchProgress: View {
                     .foregroundStyle(Color.junoForeground)
                     .buttonStyle(.plain)
                     .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(.rect)
                     .accessibilityLabel("Stop research")
             } else if enabled {
                 Button("Turn off", action: onDisable)
@@ -88,6 +89,7 @@ struct JunoMobileResearchProgress: View {
                     .foregroundStyle(Color.junoSecondaryInk)
                     .buttonStyle(.plain)
                     .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(.rect)
             }
         }
     }

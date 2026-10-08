@@ -66,7 +66,7 @@ struct ResearchStageBTests {
 
         More.
         """
-        let document = try #require(ResearchReportDocument(run: run(report: body)))
+        let document = try #require(NativeResearchReport(run: run(report: body)))
         #expect(document.sections.map(\.title) == ["", "Bottom line", "Detail"])
         #expect(document.headings.map(\.level) == [2, 3])
         #expect(document.sections[1].markdown.contains("# not a heading"))
@@ -77,11 +77,12 @@ struct ResearchStageBTests {
     func theSubtitleFileNameAndExportFollowTheWeb() throws {
         let words = Array(repeating: "word", count: 441).joined(separator: " ")
         let report = #"<juno:artifact type="MARKDOWN" title="Heat pumps: a 1930s semi, costed">"# + words + "</juno:artifact>"
-        let document = try #require(ResearchReportDocument(run: run(report: report)))
+        let document = try #require(NativeResearchReport(run: run(report: report)))
         #expect(document.title == "Heat pumps: a 1930s semi, costed")
-        #expect(document.subtitle == "Research report · 441 words · ~3 min read · 2 sources read")
+        #expect(ResearchReportWindow.subtitle(document) == "Research report · 441 words · 3 min read · 2 sources")
         #expect(document.fileName(on: t0) == "heat-pumps-a-1930s-semi-costed.md")
         let markdown = document.markdown(accessed: t0)
+        #expect(markdown.hasPrefix("# Heat pumps: a 1930s semi, costed\n\n"))
         #expect(markdown.contains("\n\n## Sources\n\n[1] Source 1 — https://example.org/0 (accessed 2026-09-21)"))
         #expect(!markdown.contains("Source 3"), "only the sources read are numbered")
     }
@@ -90,18 +91,18 @@ struct ResearchStageBTests {
     func aTitleWithNothingUsableFallsBackToTheDate() throws {
         var untitled = run(report: "Body")
         untitled.goal = "¿?"
-        let document = try #require(ResearchReportDocument(run: untitled))
+        let document = try #require(NativeResearchReport(run: untitled))
         #expect(document.fileName(on: t0) == "research-2026-09-21.md")
-        #expect(ResearchReportDocument(run: run(report: nil)) == nil)
+        #expect(NativeResearchReport(run: run(report: nil)) == nil)
     }
 
     @Test
     func openAtPassageAddsATextFragmentOfTheFirstEightWords() throws {
-        let url = try #require(ResearchCitationPopover.passageURL(
+        let url = try #require(NativeResearchCitationCard.passageURL(
             URL(string: "https://example.org/guide#top")!,
             passage: "Rated output holds down to -15°C in most models, per the 2024 tests."
         ))
         #expect(url.absoluteString == "https://example.org/guide#:~:text=Rated%20output%20holds%20down%20to%20%2D15%C2%B0C%20in%20most")
-        #expect(ResearchCitationPopover.passageURL(URL(string: "https://example.org")!, passage: "  ") == nil)
+        #expect(NativeResearchCitationCard.passageURL(URL(string: "https://example.org")!, passage: "  ") == nil)
     }
 }

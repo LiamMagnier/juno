@@ -307,7 +307,9 @@ struct JunoMobileComposer: View {
       // the first token of the report. Without the live step above the
       // composer that whole stretch is an empty bubble and a spinner,
       // which reads as a hung app rather than as work in progress.
-      if tools.deepResearch || !model.researchActivity.isEmpty {
+      // Once the run has rows, the transcript carries it (the Deep Field
+      // view in the answer's place); this stays only as the armed state.
+      if tools.deepResearch && model.researchActivity.isEmpty {
         JunoMobileResearchProgress(
           enabled: tools.deepResearch,
           depth: researchDepth,

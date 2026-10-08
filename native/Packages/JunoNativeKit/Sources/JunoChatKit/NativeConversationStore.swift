@@ -1291,11 +1291,27 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
     public func refreshResearchRun(id: String, conversationID: String) async {
         guard let chatClient, let accountID else { return }
         let previous = researchRun(id: id)
-        guard let fresh = try? await chatClient.researchRun(
-            id: id, after: previous?.lastSeq ?? 0, previous: previous, for: accountID
-        ), self.accountID == accountID else { return }
-        upsertResearchRun(fresh, conversationID: conversationID)
+        do {
+            let fresh = try await chatClient.researchRun(
+                id: id, after: previous?.lastSeq ?? 0, previous: previous, for: accountID
+            )
+            guard self.accountID == accountID else { return }
+            researchUnreachableRunIDs.remove(id)
+            upsertResearchRun(fresh, conversationID: conversationID)
+        } catch is CancellationError {
+            return
+        } catch {
+            // Connection loss is not a failed run: the last saved state stays
+            // on screen, said to be the last saved state (the web's
+            // "Connection lost. Showing the last saved research").
+            guard self.accountID == accountID, !Task.isCancelled else { return }
+            researchUnreachableRunIDs.insert(id)
+        }
     }
+
+    /// Runs whose last read failed — the network, not the run. Cleared by the
+    /// next read that succeeds.
+    public private(set) var researchUnreachableRunIDs = Set<String>()
 
     /// A run read whole, for a surface that opens without the conversation —
     /// the report window. It is not filed or followed.

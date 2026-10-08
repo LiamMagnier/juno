@@ -5,92 +5,84 @@ import SwiftUI
 
 // MARK: - The transcript row
 
-/// An evidence-first research cover in the transcript. The report and live work
-/// occupy the same place; details open in the existing controllable research panel.
+/// A research run in the transcript: while it works, the Deep Field working
+/// view (`NativeResearchLiveView`) — the phase in words, the clock, the
+/// question, the field of real sources beside the questions, the figures, the
+/// newest pages, and the controls the server takes. Once it has finished and
+/// stays as a row (a run seen working whose report is its completion message),
+/// one settled line with the way into the report.
 struct DesktopResearchRow: View {
     let run: NativeResearchRun
     var ownsLoop = true
+    /// The answer's numbered sources and the text being written (in-chat), so
+    /// sources move inward as the report cites them.
+    var citations: [NativeChatSource]? = nil
+    var citingText: String? = nil
+    var actions = NativeResearchLiveActions()
+    var busy = false
+    var error: String? = nil
+    var unreachable = false
     let open: () -> Void
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.junoSnapshotRunElapsed) private var snapshotElapsed
-    @State private var showsQuestions = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: JunoSpace.regular) {
-            HStack(spacing: JunoSpace.snug) {
-                Text("DEEP RESEARCH")
-                    .junoFont(size: 10, relativeTo: .caption, weight: .medium)
-                    .tracking(1.2)
-                    .foregroundStyle(Color.junoSecondaryInk)
-                Spacer()
-                if run.phase.isWorking {
-                    TimelineView(.periodic(from: .now, by: 1)) { context in clock(at: context.date) }
-                }
+        Group {
+            if run.phase.isTerminal {
+                settled
+            } else {
+                NativeResearchLiveView(
+                    run: run,
+                    citations: citations,
+                    citingText: citingText,
+                    actions: withDetails,
+                    busy: busy,
+                    error: error,
+                    unreachable: unreachable,
+                    frozenElapsed: snapshotElapsed
+                )
             }
-            Text(run.displayTitle.isEmpty ? "Research in progress" : run.displayTitle)
-                .font(JunoSerif.font(size: 24, relativeTo: .title2))
-                .foregroundStyle(Color.junoForeground)
-                .fixedSize(horizontal: false, vertical: true)
-                .accessibilityAddTraits(.isHeader)
-            HStack(alignment: .top, spacing: JunoSpace.snug) {
-                JunoResearchPresence(active: ownsLoop && run.phase.isWorking,
-                                     eventKey: "\(run.phase.rawValue):\(run.lastSeq)")
-                Text(run.phaseLine.text)
-                    .junoFont(size: 13, relativeTo: .callout)
-                    .foregroundStyle(run.phase == .failed ? Color.junoWarningInk : Color.junoSecondaryInk)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            ResearchEvidenceLedger(run: run)
-            if !run.questions.isEmpty {
-                DisclosureGroup(isExpanded: $showsQuestions) {
-                    VStack(alignment: .leading, spacing: JunoSpace.cozy) {
-                        ForEach(run.questions) { question in
-                            VStack(alignment: .leading, spacing: JunoSpace.tight) {
-                                Text(question.question).foregroundStyle(Color.junoForeground)
-                                Text(NativeResearchRun.questionStatus(question.status))
-                                    .foregroundStyle(question.status == "thin" ? Color.junoWarningInk : Color.junoSecondaryInk)
-                            }
-                            .junoFont(size: 12, relativeTo: .footnote)
-                        }
-                    }
-                    .padding(.top, JunoSpace.snug)
-                } label: {
-                    Text("Questions · \(run.questions.count)")
-                        .junoFont(size: 12, relativeTo: .footnote, weight: .medium)
-                        .foregroundStyle(Color.junoSecondaryInk)
-                }
-            }
-            Button(action: open) {
-                HStack(spacing: JunoSpace.tight) {
-                    Text(run.phase == .done ? "Read report" : "View research & controls")
-                    JunoIconView(.arrowRight, size: 12)
-                }
-                .junoFont(size: 13, relativeTo: .callout, weight: .medium)
-                .frame(minHeight: 32)
-                .contentShape(.rect)
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(Color.junoForeground)
-            .accessibilityHint("Opens the research panel or finished report")
         }
-        .padding(JunoSpace.roomy)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.junoCard, in: RoundedRectangle(cornerRadius: JunoRadius.card))
-        .overlay(RoundedRectangle(cornerRadius: JunoRadius.card).strokeBorder(Color.junoHairline, lineWidth: 1))
-        .animation(JunoMotion.reduced(JunoMotion.base, when: reduceMotion), value: showsQuestions)
-        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("juno.chat.research-cover")
     }
 
-    @ViewBuilder
-    private func clock(at now: Date) -> some View {
-        if let time = snapshotElapsed ?? run.workingTime(at: now), time >= NativeRunPacing.timerAfter {
-            Text(NativeToolPresentation.clock(seconds: Int(time)))
-                .junoFont(size: 11, relativeTo: .caption, design: .monospaced)
-                .foregroundStyle(Color.junoSecondaryInk)
-                .accessibilityLabel("Working time \(NativeToolPresentation.clock(seconds: Int(time)))")
+    private var withDetails: NativeResearchLiveActions {
+        var actions = actions
+        if actions.details == nil { actions.details = open }
+        return actions
+    }
+
+    /// A finished run that stays as a row: how it ended, in words, and the
+    /// door into what it wrote.
+    private var settled: some View {
+        Button(action: open) {
+            HStack(spacing: JunoSpace.snug) {
+                if run.phase == .failed {
+                    JunoIconView(.warning, size: 12)
+                        .foregroundStyle(Color.junoWarningInk)
+                        .accessibilityHidden(true)
+                }
+                Text(run.phase == .done ? "Research finished" : run.phaseLine.text)
+                    .foregroundStyle(run.phase == .failed ? Color.junoWarningInk : Color.junoSecondaryInk)
+                Text(run.displayTitle)
+                    .foregroundStyle(Color.junoForeground)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Spacer(minLength: JunoSpace.snug)
+                if run.phase == .done {
+                    Text("Read report")
+                        .foregroundStyle(Color.junoAccentInk)
+                        .fixedSize()
+                    JunoIconView(.arrowRight, size: 11)
+                        .foregroundStyle(Color.junoAccentInk)
+                }
+            }
+            .junoFont(size: 13, relativeTo: .callout)
+            .frame(minHeight: DesktopRunLine.height)
+            .contentShape(.rect)
         }
+        .buttonStyle(DesktopRunLineButtonStyle())
+        .accessibilityHint("Opens the research")
     }
 }
 
@@ -451,7 +443,13 @@ struct DesktopResearchPanel: View {
     var inChat = false
     var busy = false
     var error: String? = nil
+    /// The last read failed: what is shown is the last saved state.
+    var unreachable = false
     var control: ((NativeResearchControl) -> Void)? = nil
+    /// Queues guidance for the next round; the server's refusal, if any.
+    var steer: ((String) async -> String?)? = nil
+    /// Reads the run again after the connection dropped.
+    var retry: (() -> Void)? = nil
     /// Whether this server takes "Finish now": a server that derives the
     /// phase does; today's answers 400, so it is hidden there.
     var canFinish = true
@@ -467,6 +465,7 @@ struct DesktopResearchPanel: View {
     @State private var chosen: Tab?
     @State private var confirmingCancel = false
     @Environment(\.junoSnapshotActivityTab) private var snapshotTab
+    @Environment(\.junoSnapshotRunElapsed) private var snapshotElapsed
 
     private var tabs: [Tab] {
         var tabs: [Tab] = []
@@ -501,27 +500,31 @@ struct DesktopResearchPanel: View {
             content: {
                 ScrollView {
                     VStack(alignment: .leading, spacing: JunoSpace.roomy) {
-                        Text(run.displayTitle.isEmpty ? "Deep research" : run.displayTitle)
-                            .font(JunoSerif.font(size: 26, relativeTo: .title2))
-                            .foregroundStyle(Color.junoForeground)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .accessibilityAddTraits(.isHeader)
-                        HStack(alignment: .top, spacing: JunoSpace.snug) {
-                            JunoResearchPresence(active: run.phase.isWorking,
-                                                 eventKey: "\(run.phase.rawValue):\(run.lastSeq)")
-                            Text(run.phaseLine.text)
-                                .junoFont(size: 13, relativeTo: .callout)
-                                .foregroundStyle(Color.junoSecondaryInk)
+                        if shown == .progress {
+                            NativeResearchLiveView(
+                                run: run,
+                                actions: liveActions,
+                                busy: busy,
+                                error: error,
+                                unreachable: unreachable,
+                                compact: true,
+                                frozenElapsed: snapshotElapsed
+                            )
+                            activity
+                        } else {
+                            Text(run.displayTitle.isEmpty ? "Deep research" : run.displayTitle)
+                                .font(JunoSerif.font(size: 24, relativeTo: .title2))
+                                .foregroundStyle(Color.junoForeground)
                                 .fixedSize(horizontal: false, vertical: true)
-                        }
-                        ResearchEvidenceLedger(run: run)
-                        controls
-                        switch shown {
-                        case .progress: progress
-                        case .report: report
-                        case .sources: sources
-                        case .plan: plan
-                        case .details: details
+                                .accessibilityAddTraits(.isHeader)
+                            ResearchEvidenceLedger(run: run)
+                            switch shown {
+                            case .progress: EmptyView()
+                            case .report: report
+                            case .sources: sources
+                            case .plan: plan
+                            case .details: details
+                            }
                         }
                     }
                     .padding(JunoSpace.regular)
@@ -538,6 +541,20 @@ struct DesktopResearchPanel: View {
         .accessibilityIdentifier("juno.desktop.chat.research-panel")
     }
 
+    /// The controls the live view draws: pause or resume, "Write with what
+    /// you have" where the server takes it, guidance, and Stop (confirmed).
+    private var liveActions: NativeResearchLiveActions {
+        guard !inChat, let control else { return NativeResearchLiveActions(retry: retry) }
+        return NativeResearchLiveActions(
+            stop: { confirmingCancel = true },
+            pause: { control(.pause) },
+            resume: { control(.resume) },
+            finish: canFinish ? { control(.finish) } : nil,
+            guide: steer,
+            retry: retry
+        )
+    }
+
     /// The static phase word and the working time; never a loop (SPEC §9.11.4).
     private func status(at now: Date) -> String {
         if run.finishRequested, run.phase.isWorking, run.phase != .writing, run.phase != .checking {
@@ -547,91 +564,18 @@ struct DesktopResearchPanel: View {
         return "\(run.phaseWord) · \(NativeToolPresentation.clock(seconds: Int(working)))"
     }
 
-    @ViewBuilder
-    private var controls: some View {
-        if !inChat, let control, !run.phase.isTerminal {
-            HStack(spacing: JunoSpace.tight) {
-                if run.phase == .paused {
-                    Button("Resume") { control(.resume) }
-                        .buttonStyle(MessageGhostButtonStyle(fontSize: 12, horizontalPadding: 8))
-                        .contentShape(.rect)
-                } else if run.phase.isWorking {
-                    Button("Pause") { control(.pause) }
-                        .buttonStyle(MessageGhostButtonStyle(fontSize: 12, horizontalPadding: 8))
-                        .contentShape(.rect)
-                }
-                if canFinish, run.phase != .writing, run.phase != .checking, run.phase != .awaitingStart,
-                    run.phase != .awaitingClarification
-                {
-                    Button("Finish now") { control(.finish) }
-                        .buttonStyle(MessageGhostButtonStyle(fontSize: 12, horizontalPadding: 8))
-                        .contentShape(.rect)
-                        .disabled(run.finishRequested)
-                }
-                Button("Stop") { confirmingCancel = true }
-                    .buttonStyle(MessageGhostButtonStyle(fontSize: 12, horizontalPadding: 8))
-                    .contentShape(.rect)
-                    .help("Stop research; keep the sources found so far")
-            }
-            .fixedSize(horizontal: true, vertical: false)
-            .disabled(busy)
-        }
-    }
-
     // MARK: Progress
 
-    private var progress: some View {
-        VStack(alignment: .leading, spacing: JunoSpace.section) {
-            if let error {
-                Text(error)
-                    .junoFont(size: 12, relativeTo: .footnote)
-                    .foregroundStyle(Color.junoWarningInk)
-            }
-            ForEach(run.steps.filter(\.isWarning).suffix(3)) { step in
-                Text(step.line.text)
-                    .junoFont(size: 12, relativeTo: .footnote)
-                    .foregroundStyle(Color.junoWarningInk)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            if !run.questions.isEmpty {
-                section("Questions") {
-                    ForEach(run.questions) { question in
-                        HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
-                            Text(question.question)
-                                .junoFont(size: 14, relativeTo: .body)
-                                .foregroundStyle(Color.junoForeground)
-                                .fixedSize(horizontal: false, vertical: true)
-                            Spacer(minLength: JunoSpace.snug)
-                            Text(NativeResearchRun.questionStatus(question.status))
-                                .junoFont(size: 12, relativeTo: .footnote)
-                                .foregroundStyle(question.status == "thin" ? Color.junoWarningInk : Color.junoSecondaryInk)
-                                .fixedSize()
-                        }
-                    }
-                }
-            }
-            if !run.steering.isEmpty {
-                section("Your guidance") {
-                    ForEach(Array(run.steering.enumerated()), id: \.offset) { _, entry in
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(NativeRunPhrase([.quote(entry.text)]).text)
-                                .junoFont(size: 13, relativeTo: .callout)
-                                .foregroundStyle(Color.junoForeground)
-                            Text(entry.appliedAtRound.map { NativeRunPhrase([.phrase("Applied in round"), .number(Double($0), approx: false)]).text }
-                                ?? "Applies at the next round")
-                                .junoFont(size: 12, relativeTo: .footnote)
-                                .foregroundStyle(Color.junoSecondaryInk)
-                        }
-                    }
-                }
-            }
-            DisclosureGroup(run.phase.isTerminal ? "Research activity" : "Live activity") {
+    /// Everything it did, newest first, one disclosure down.
+    private var activity: some View {
+        DisclosureGroup(run.phase.isTerminal ? "Research activity" : "Live activity") {
+            VStack(alignment: .leading, spacing: JunoSpace.tight) {
                 if run.steps.isEmpty {
                     Text(run.phaseLine.text)
                         .junoFont(size: 13, relativeTo: .callout)
                         .foregroundStyle(Color.junoSecondaryInk)
                 } else {
-                    ForEach(run.steps.suffix(40)) { step in
+                    ForEach(run.steps.prefix(40)) { step in
                         HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
                             if step.isWarning {
                                 JunoIconView(.warning, size: 12)
@@ -640,66 +584,39 @@ struct DesktopResearchPanel: View {
                             Text(step.line.text)
                                 .junoFont(size: 13, relativeTo: .callout)
                                 .lineLimit(2)
+                            Spacer(minLength: JunoSpace.snug)
+                            if let at = step.at {
+                                Text(at.formatted(date: .omitted, time: .shortened))
+                                    .junoFont(size: 11, relativeTo: .caption, design: .monospaced)
+                                    .foregroundStyle(Color.junoSecondaryInk)
+                            }
                         }
                         .foregroundStyle(step.isWarning ? Color.junoWarningInk : Color.junoForeground.opacity(0.85))
                     }
                 }
             }
-            if !run.findings.isEmpty {
-                section("Found so far") {
-                    ForEach(run.findings) { finding in
-                        VStack(alignment: .leading, spacing: JunoSpace.tight) {
-                            Text(finding.claim)
-                                .junoFont(size: 13, relativeTo: .callout)
-                                .foregroundStyle(Color.junoForeground)
-                                .fixedSize(horizontal: false, vertical: true)
-                            HStack(alignment: .top, spacing: JunoSpace.snug) {
-                                Rectangle().fill(Color.junoBorder).frame(width: 2)
-                                Text(finding.quote)
-                                    .junoFont(size: 12, relativeTo: .footnote)
-                                    .foregroundStyle(Color.junoSecondaryInk)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                            .fixedSize(horizontal: false, vertical: true)
-                            if let url = finding.url {
-                                SourceRow(source: NativeChatSource(title: finding.title.isEmpty ? SourceHost.name(url) : finding.title, url: url, snippet: ""), number: 1)
-                            }
-                        }
-                    }
-                }
-            }
+            .padding(.top, JunoSpace.snug)
         }
+        .junoFont(size: 13, relativeTo: .callout, weight: .medium)
+        .foregroundStyle(Color.junoSecondaryInk)
     }
 
     // MARK: Report
 
+    /// The report's door — its card opens the reading window — then the
+    /// report itself at the panel's width.
     @ViewBuilder
     private var report: some View {
-        if let text = run.reportBody {
-            VStack(alignment: .leading, spacing: JunoSpace.cozy) {
-            Text("Shape the research")
-                .font(JunoSerif.font(size: 24, relativeTo: .title2))
-                .foregroundStyle(Color.junoForeground)
-                .accessibilityAddTraits(.isHeader)
-                if let openInWindow {
-                    Button(action: openInWindow) {
-                        HStack(spacing: JunoSpace.tight) {
-                            JunoIconView(.appWindow, size: 13)
-                            Text("Open in Window")
-                        }
-                        .frame(minHeight: 20)
-                        .contentShape(.rect)
-                    }
-                    .buttonStyle(.bordered)
-                    .tint(nil)
-                    .controlSize(.small)
-                    .frame(minHeight: 28)
+        if let report = NativeResearchReport(run: run) {
+            VStack(alignment: .leading, spacing: JunoSpace.roomy) {
+                NativeResearchReportCard(content: .report(report), open: openInWindow)
                     .accessibilityIdentifier("juno.desktop.chat.research-panel.open-window")
+                ForEach(report.sections) { section in
+                    NativeResearchReportSectionView(section: section, compact: true)
                 }
-                JunoMarkdownText(text)
-                    .environment(\.junoProseStyle, .reading)
-                    .foregroundStyle(Color.junoForeground)
             }
+            .environment(\.junoProseStyle, .reading)
+            .environment(\.junoCitationCount, report.citationCount)
         }
     }
 

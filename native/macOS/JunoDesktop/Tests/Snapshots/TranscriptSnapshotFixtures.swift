@@ -615,9 +615,11 @@ enum TranscriptSnapshotFixtures {
         generating: Bool = false,
         retries: Bool = false,
         approvals: MessageRowApprovals = MessageRowApprovals(),
-        editRequest: UUID? = nil
+        editRequest: UUID? = nil,
+        researchQuestion: String? = nil
     ) -> some View {
         var actions = MessageRowActions()
+        actions.researchQuestion = researchQuestion
         actions.copy = { _ in }
         actions.setFeedback = { _ in }
         actions.readAloud = { _ in }
@@ -635,6 +637,7 @@ enum TranscriptSnapshotFixtures {
         if message.role == .assistant {
             actions.openActivity = { _ in }
             actions.openResearch = { _ in }
+            actions.openReport = { _ in }
             if newest { actions.researchThis = { _ in } }
         }
         if unsent { actions.retrySend = {} }

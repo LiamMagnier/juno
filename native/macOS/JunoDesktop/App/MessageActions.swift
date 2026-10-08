@@ -70,6 +70,12 @@ struct MessageRowActions {
     /// and on turns with no row on the server.
     var editMessage: ((String) -> Void)? = nil
     var openArtifact: (NativeMessageContent.ArtifactReference, NativeChatMessage) -> Void = { _, _ in }
+    /// Opens a research report in its own window, by id — `message:<id>` for
+    /// the report a research answer carries.
+    var openReport: ((String) -> Void)? = nil
+    /// The question this reply answers, in the reader's words: a research
+    /// turn's title.
+    var researchQuestion: String? = nil
 }
 
 // MARK: - The menu model
