@@ -1272,25 +1272,61 @@ private struct JunoMobileConversationDetail: View {
   /// scroll position and remounting the composer every time an artifact was
   /// opened or closed. Keeping the stack means only the pane comes and goes.
   var body: some View {
-    HStack(spacing: 0) {
-      thread
-      if let artifact = dockedArtifact {
-        Rectangle()
-          .fill(Color.junoHairline)
-          .frame(width: 1)
-          .accessibilityHidden(true)
-        JunoMobileArtifactDetail(
-          model: artifactModel!,
-          artifact: artifact,
-          // Already in the conversation this came from; the only
-          // sensible "go there" is to close.
-          openConversation: { _ in closeArtifact() },
-          close: closeArtifact
-        )
-        .frame(width: 420)
-        .transition(.move(edge: .trailing).combined(with: .opacity))
+    // On a regular-width screen what the reader opens from the thread — an
+    // artifact, a research report — stands in the system's trailing
+    // inspector beside it, the website's right-side panel: resizable, the
+    // thread keeping its place. On the phone the same content is a sheet.
+    thread
+      .inspector(isPresented: inspectorShown) {
+        inspectorContent
+          .inspectorColumnWidth(min: 360, ideal: 460, max: 640)
       }
+  }
+
+  @ViewBuilder
+  private var inspectorContent: some View {
+    if let artifact = dockedArtifact {
+      JunoMobileArtifactDetail(
+        model: artifactModel!,
+        artifact: artifact,
+        // Already in the conversation this came from; the only
+        // sensible "go there" is to close.
+        openConversation: { _ in closeArtifact() },
+        close: closeArtifact
+      )
+    } else if let route = dockedReport {
+      JunoMobileResearchReportView(
+        report: route.report,
+        loadAudit: { messageID in await model.researchAudit(messageID: messageID) },
+        close: { reportRoute = nil }
+      )
+      .environment(\.nativeSourceFavicons, sourceFavicons)
+      .tint(Color.junoAccent)
     }
+  }
+
+  private var inspectorShown: Binding<Bool> {
+    Binding(
+      get: { dockedArtifact != nil || dockedReport != nil },
+      set: { shown in
+        guard !shown else { return }
+        openArtifact = nil
+        reportRoute = nil
+      }
+    )
+  }
+
+  /// The report, when this screen is wide enough to read it beside the thread.
+  private var dockedReport: JunoMobileReportRoute? {
+    sizeClass == .regular ? reportRoute : nil
+  }
+
+  /// The report as a sheet — the phone's presentation.
+  private var sheetedReport: Binding<JunoMobileReportRoute?> {
+    Binding(
+      get: { sizeClass == .regular ? nil : reportRoute },
+      set: { reportRoute = $0 }
+    )
   }
 
   /// The artifact the reader opened, when this screen is wide enough to dock it.
@@ -1439,8 +1475,31 @@ private struct JunoMobileConversationDetail: View {
       .onChange(of: streamingMessageID) { previous, current in
         trackRun(from: previous, to: current)
       }
+      #if DEBUG
+        // `--juno-preview-open-artifact` opens the thread's first artifact,
+        // as a tap on its card would.
+        .task {
+          guard CommandLine.arguments.contains("--juno-preview-open-artifact") else { return }
+          for _ in 0..<40 {
+            try? await Task.sleep(for: .milliseconds(150))
+            if messages.contains(where: { $0.content.contains("<juno:artifact") }),
+              artifactModel?.artifacts.isEmpty == false
+            { break }
+          }
+          let references = messages.flatMap { message in
+            NativeMessageContent.parts(of: message.content).compactMap { part -> NativeMessageContent.ArtifactReference? in
+              if case .artifact(let reference) = part { return reference }
+              return nil
+            }
+          }
+          // A stored artifact first (it docks); the tag's own body otherwise.
+          if let reference = references.first(where: { storedArtifact(for: $0) != nil }) ?? references.first {
+            openArtifact(reference)
+          }
+        }
+      #endif
       // The research report, read in a sheet of its own.
-      .sheet(item: $reportRoute) { route in
+      .sheet(item: sheetedReport) { route in
         JunoMobileResearchReportView(
           report: route.report,
           loadAudit: { messageID in await model.researchAudit(messageID: messageID) },
