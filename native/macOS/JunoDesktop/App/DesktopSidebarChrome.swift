@@ -105,8 +105,9 @@ struct DesktopSidebarNavRow<Trailing: View>: View {
     var body: some View {
         Group {
             if let action {
-                Button(action: action) { face }
+                Button(action: action) { face.contentShape(.rect) }
                     .buttonStyle(.plain)
+                    .contentShape(.rect)
             } else {
                 face
             }
@@ -214,7 +215,7 @@ extension DesktopSidebarHeadingRow where Trailing == EmptyView {
 }
 
 /// A heading's one action at its end (New agent, New project): a 12pt web
-/// glyph in a 24pt target, muted, lifting under the pointer.
+/// glyph in a 28pt target, muted, lifting under the pointer.
 struct DesktopSidebarHeadingAction: View {
     let icon: JunoIcon
     let help: String
@@ -226,7 +227,7 @@ struct DesktopSidebarHeadingAction: View {
         Button(action: action) {
             JunoIconView(icon, size: 12)
                 .foregroundStyle(hovered ? Color.junoForeground : Color.junoSecondaryInk)
-                .frame(width: 24, height: 24)
+                .frame(width: 28, height: 28)
                 .contentShape(.rect)
         }
         .buttonStyle(.plain)

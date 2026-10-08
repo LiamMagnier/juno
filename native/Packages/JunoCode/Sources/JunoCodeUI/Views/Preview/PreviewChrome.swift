@@ -215,7 +215,7 @@ struct PreviewPaneView: View {
                     lease.page?.setViewport(.preset(preset, colorScheme: lease.page?.viewport.colorScheme ?? .system))
                 } label: {
                     if lease.page?.viewport.preset == preset {
-                        Label(preset.title, systemImage: "checkmark")
+                        Label(preset.title, image: JunoIcon.check.assetName)
                     } else {
                         Text(preset.title)
                     }
@@ -251,7 +251,7 @@ struct PreviewPaneView: View {
                     page.setViewport(viewport)
                 } label: {
                     if lease.page?.viewport.colorScheme == scheme {
-                        Label(scheme.title, systemImage: "checkmark")
+                        Label(scheme.title, image: JunoIcon.check.assetName)
                     } else {
                         Text(scheme.title)
                     }

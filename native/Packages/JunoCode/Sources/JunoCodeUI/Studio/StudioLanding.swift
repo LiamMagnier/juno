@@ -283,7 +283,7 @@ public struct StudioLanding: View {
                     selectProject(record.id)
                 } label: {
                     if record.id == project?.id {
-                        Label(record.descriptor.displayName, systemImage: "checkmark")
+                        Label(record.descriptor.displayName, image: JunoIcon.check.assetName)
                     } else {
                         Text(record.descriptor.displayName)
                     }

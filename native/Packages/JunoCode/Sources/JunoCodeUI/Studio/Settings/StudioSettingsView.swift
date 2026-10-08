@@ -161,7 +161,7 @@ public struct StudioSettingsView: View {
             if !settings.problems.isEmpty {
                 Section {
                     ForEach(settings.problems, id: \.self) { problem in
-                        Label(problem, systemImage: "exclamationmark.triangle")
+                        Label(problem, image: JunoIcon.warning.assetName)
                             .foregroundStyle(Studio.Ink.danger)
                     }
                 }
