@@ -169,6 +169,9 @@ public actor PreviewSender: NativeChatRequestSending {
         if let body = PreviewAccountPageFixtures.body(path: path, method: request.method, empty: empty) {
             return body
         }
+        if let body = PreviewProjectFolderFixtures.body(path: path, method: request.method) {
+            return body
+        }
         if path == "/api/voice/relay-token" {
             // A deliberately closed local port: enough to exercise the real
             // Voice authorization and typed relay-recovery UI, with no network

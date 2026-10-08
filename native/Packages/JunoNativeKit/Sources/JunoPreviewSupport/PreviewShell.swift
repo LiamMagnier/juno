@@ -36,6 +36,14 @@ public enum JunoPreviewEnvironment {
         value(for: "--juno-preview-tab", env: "JUNO_PREVIEW_TAB")
     }
 
+    /// Opens one project's page on the Projects stack, from
+    /// `--juno-preview-project <id>` or `JUNO_PREVIEW_PROJECT` (with
+    /// `--juno-preview-tab projects`). `proj-1-obs` is a folder two levels
+    /// into ``PreviewProjectFolderFixtures``'s tree.
+    public static var initialProject: String? {
+        value(for: "--juno-preview-project", env: "JUNO_PREVIEW_PROJECT")
+    }
+
     /// Opens one Juno Code session's log, from `--juno-preview-code-session <id>`
     /// or `JUNO_PREVIEW_CODE_SESSION`.
     ///

@@ -185,23 +185,23 @@
       "title": "Projects",
       "pages": {
         "/projects": {
-          "mac": "partial",
-          "ios": "partial",
-          "screen": "DesktopProjectsScreen",
-          "note": "Folders (Project.parentId) are planned: the apps list every project flat and do not yet nest folders under their project, move one with Move to… or drag and drop, or ask whether a deleted folder's subfolders go up a level or go with it."
+          "mac": "native",
+          "ios": "native",
+          "screen": "DesktopProjectsScreen, JunoMobileProjectsView",
+          "note": "Folders (Project.parentId): the index lists top-level projects only (a search still finds folders), and a project's menu has New folder inside, Move to… and a Delete that asks whether its subfolders go up a level or go with it (DesktopProjectFolders, JunoMobileProjectFolders). Moving is Move to… in the apps; the web's drag and drop has no native counterpart."
         },
         "/projects/[id]": {
-          "mac": "partial",
-          "ios": "partial",
-          "screen": "DesktopProjectPage",
-          "note": "Folders are planned: no breadcrumbs, Folders section or New folder yet, and the app does not show the instructions and files a folder inherits from the projects above it (the server already prepends them to its chats)."
+          "mac": "native",
+          "ios": "native",
+          "screen": "DesktopProjectPage, JunoMobileProjectDetail",
+          "note": "Breadcrumbs over a folder (each ancestor opens its page), a Folders section (a tab on iPhone) with New folder, the instructions and files inherited from the projects above shown read-only (From <Parent>), Move to… and the lift/cascade Delete."
         }
       },
       "routes": {
         "/api/projects": "native",
         "/api/projects/[id]": {
-          "status": "web-only",
-          "note": "The apps change projects through sync (/api/v1/mutations); only a blank-name create goes to POST /api/projects (register #89). Moving a project into a folder (PATCH parentId), the folder fields on GET (breadcrumbs, children, inherited) and DELETE ?children=lift|cascade are web-only until native folders land; a sync project.delete lifts a folder's subfolders up a level, as the web does by default."
+          "status": "native",
+          "note": "NativeProjectFoldersClient (JunoChatKit/NativeProjectFolders.swift): GET reads the folder fields (breadcrumbs, children, inherited), PATCH sends parentId for Move to…, DELETE sends ?children=lift|cascade for a project that holds folders. Other edits still go through sync (/api/v1/mutations); New folder is POST /api/projects with parentId, and the project sync entity carries parentId."
         },
         "/api/projects/[id]/members": {
           "status": "planned",
