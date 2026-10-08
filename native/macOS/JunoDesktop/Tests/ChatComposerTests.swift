@@ -79,7 +79,8 @@ struct ChatComposerTests {
     /// The web's ladder, in its order (`composer.tsx`).
     @Test
     func thePlaceholderLadderFollowsTheWeb() {
-        #expect(ChatComposerPlaceholder.text() == "Message Juno…")
+        // The default line is the native redesign's, as on the iPhone (Oct 2026).
+        #expect(ChatComposerPlaceholder.text() == "Ask Alevr")
         #expect(ChatComposerPlaceholder.text(modality: "image") == "Describe an image to generate…")
         #expect(ChatComposerPlaceholder.text(modality: "video") == "Describe a video to generate…")
         #expect(ChatComposerPlaceholder.text(modality: "audio") == "Describe a song or a sound to generate…")

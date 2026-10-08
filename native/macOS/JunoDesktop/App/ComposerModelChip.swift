@@ -74,6 +74,11 @@ struct ComposerModelChip: View {
             || selectedModel.providerID == JunoModelSelectorCatalog.junoProviderID
     }
 
+    private var dialFraction: Double {
+        guard let scale, scale.isAdjustable else { return 0.5 }
+        return JunoDialGlyph.fraction(index: scale.index(of: effort), count: scale.stops.count)
+    }
+
     private var name: String {
         if isUnavailable { return "Models unavailable" }
         return selectedModel?.displayName ?? "Auto"
@@ -83,27 +88,21 @@ struct ComposerModelChip: View {
         Button {
             stage = .settings
         } label: {
-            HStack(spacing: 6) {
-                mark(size: 16)
-                Text(name)
-                    .junoType(JunoType.ui.weight(.medium))
-                    .foregroundStyle(Color.junoSecondaryInk)
-                    .lineLimit(1)
-                    .frame(maxWidth: 160, alignment: .leading)
-                JunoIconView(.chevronDown, size: 10, weight: .bold)
-                    .foregroundStyle(Color.junoSecondaryInk)
-                    .opacity(0.7)
-                    .rotationEffect(.degrees(stage == nil ? 0 : 180))
-                    .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: stage == nil)
-            }
-            .redacted(reason: isLoading ? .placeholder : [])
-            .padding(.horizontal, JunoSpace.snug)
+            // The thinking dial (native redesign, Oct 2026): ChatGPT's gauge
+            // in place of the "Auto ⌄" chip. The needle sits at the current
+            // depth; the popover it opens is unchanged — the model, then how
+            // much it thinks — so nothing the chip offered is lost, only the
+            // name it wore in the row. The name is in the tooltip and spoken.
+            JunoDialGlyph(fraction: dialFraction, size: 17, lineWidth: 1.6)
+                .foregroundStyle(isUnavailable ? Color.junoSecondaryInk : Color.junoForeground)
+                .frame(width: JunoComposerMetrics.controlHeight)
+                .redacted(reason: isLoading ? .placeholder : [])
             .frame(height: JunoComposerMetrics.controlHeight)
             .contentShape(.rect)
         }
         .buttonStyle(ComposerControlStyle())
         .fixedSize()
-        .help(isUnavailable ? (catalogError ?? "Models unavailable") : "Choose a model and how much it thinks")
+        .help(isUnavailable ? (catalogError ?? "Models unavailable") : "\(name) — choose a model and how much it thinks")
         .accessibilityLabel("Model")
         .accessibilityValue(isLoading ? "Loading" : name)
         .accessibilityIdentifier("juno.desktop.chat-model")
