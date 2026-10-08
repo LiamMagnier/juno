@@ -250,6 +250,10 @@ public final class PreviewWorld {
         if CommandLine.arguments.contains("--juno-preview-chat-draft") {
             conversationModel.isDraftingNewConversation = true
             conversationModel.selectedConversationID = nil
+        } else if let id = JunoPreviewEnvironment.initialConversation,
+            conversationModel.conversations.contains(where: { $0.id == id })
+        {
+            conversationModel.selectedConversationID = id
         } else if conversationModel.selectedConversationID == nil {
             conversationModel.selectedConversationID =
                 conversationModel.conversations.first(where: { !$0.isArchived })?.id

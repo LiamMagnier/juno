@@ -8,13 +8,13 @@ import JunoSync
 public enum PreviewFixtures {
     private static let base = Date(timeIntervalSince1970: 1_753_000_000)
 
-    private static func iso(_ offset: TimeInterval) -> String {
+    static func iso(_ offset: TimeInterval) -> String {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return formatter.string(from: base.addingTimeInterval(offset))
     }
 
-    private static func record(
+    static func record(
         _ accountID: StorageAccountID,
         _ namespace: String,
         _ id: String,
@@ -269,6 +269,9 @@ public enum PreviewFixtures {
         out.append(record(a, "artifact_version", "artv-design", 1, """
         {"id":"artv-design","artifactId":"art-design","version":1,"content":"\(designDocumentLiteral)","createdAt":"\(iso(-90000))"}
         """))
+
+        // A spreadsheet, a document and a deck, made in one conversation.
+        out.append(contentsOf: PreviewArtifactFixtures.records(a))
 
         // Memory entries.
         out.append(record(a, "memory", "mem-1", 2, """
