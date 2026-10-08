@@ -40,6 +40,7 @@ import {
   type ResearchTerminalState,
 } from "@/lib/research/domain";
 import {
+  assistResearchAudit,
   draftResearchPlanWithModel,
   expandResearchQueries,
   fetchResearchPage,
@@ -923,6 +924,7 @@ export function researchEngine(): ResearchEngine {
     expandQueries: expandResearchQueries,
     runWorker: runResearchWorker,
     reviewRound: reviewResearchRound,
+    auditAssist: assistResearchAudit,
     modelRates: researchModelRates(),
     synthesize: writeResearchReport,
     validateReport: async ({ userId, runId, goal, plan, report, sources }) => {
@@ -995,6 +997,7 @@ export function gatheringOnlyEngine(): ResearchEngine {
     expandQueries: expandResearchQueries,
     runWorker: runResearchWorker,
     reviewRound: reviewResearchRound,
+    auditAssist: assistResearchAudit,
     modelRates: researchModelRates(),
     hash: hashSnapshot,
     now: () => new Date(),

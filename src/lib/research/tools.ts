@@ -26,7 +26,13 @@ import {
   type ResearchEffort,
 } from "@/lib/research/domain";
 import { extractJsonObject, parseStructuredPlan, plannerSystemPrompt } from "@/lib/research/plan-format";
-import { researchLeadModel } from "@/lib/research/agents/worker";
+import { researchLeadModel, researchWorkerModel } from "@/lib/research/agents/worker";
+import {
+  AUDIT_ASSIST_OUTPUT_TOKENS,
+  AUDIT_ASSIST_SYSTEM,
+  auditAssistPrompt,
+  parseAuditAssist,
+} from "@/lib/research/audit-assist";
 import {
   draftResearchPlan,
   languageName,
@@ -883,6 +889,28 @@ export const expandResearchQueries: NonNullable<ResearchDeps["expandQueries"]> =
     queries: parsePlanLines(expanded.text, Math.min(limit, EXPANDED_QUERIES)),
     costMicroUsd: expanded.costMicroUsd,
   };
+};
+
+/**
+ * AUDIT ASSIST — one call per round on the workers' (cheapest) model: missing
+ * figures the word-matching audit could not see, and leads in phrasings and
+ * languages the patterns miss (`audit-assist.ts`). Never throws; an empty
+ * answer on any failure, and the deterministic audit stands as it was.
+ */
+export const assistResearchAudit: NonNullable<ResearchDeps["auditAssist"]> = async (input) => {
+  const model = researchWorkerModel() ?? utilityModelCandidates()[0] ?? null;
+  if (!model) return { confirmed: [], leads: [], costMicroUsd: 0 };
+  const done = await utilityCompletion({
+    userId: input.userId,
+    model,
+    system: AUDIT_ASSIST_SYSTEM,
+    prompt: auditAssistPrompt(input, wrapUntrusted),
+    maxTokens: AUDIT_ASSIST_OUTPUT_TOKENS,
+    timeoutMs: PLAN_TIMEOUT_MS,
+    signal: input.signal,
+    label: "audit-assist",
+  });
+  return { ...parseAuditAssist(done.text, input), costMicroUsd: done.costMicroUsd };
 };
 
 /** The writer's timebox when the engine names none: six minutes (R8). */

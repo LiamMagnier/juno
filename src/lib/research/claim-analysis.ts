@@ -101,15 +101,26 @@ const STOPWORDS = new Set(
     .split(" ")
 );
 
+/** Runs of Chinese, Japanese and Korean script, which have no spaces between words. */
+const CJK_RUN = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}ー\u3099\u309A]{2,}/gu;
+
 /** Content words of a sentence: what is left once the grammar is thrown away. */
 export function contentTokens(s: string): Set<string> {
   const out = new Set<string>();
-  for (const raw of normalizeText(s).split(/[^a-z0-9%$€£.]+/)) {
+  const normal = normalizeText(s);
+  for (const raw of normal.split(/[^a-z0-9%$€£.]+/)) {
     const w = raw.replace(/^[.]+|[.]+$/g, "");
     if (w.length < 3 && !/^\d+$/.test(w)) continue;
     if (STOPWORDS.has(w)) continue;
     // Crude singularisation: "vaccines" and "vaccine" are the same evidence.
     out.add(w.length > 4 && w.endsWith("s") && !w.endsWith("ss") ? w.slice(0, -1) : w);
+  }
+  // CJK text has no word spaces: its character bigrams stand in for words,
+  // so overlap and near-duplicate checks see something rather than nothing.
+  // NFKD leaves these scripts intact (bar width forms), so the normalised text is used.
+  for (const run of normal.match(CJK_RUN) ?? []) {
+    const chars = [...run];
+    for (let i = 0; i + 1 < chars.length && out.size < 400; i += 1) out.add(chars[i]! + chars[i + 1]!);
   }
   return out;
 }
