@@ -43,6 +43,8 @@ struct DesktopProjectPage: View {
     @State private var editingInstructions = false
     @State private var choosingCover = false
     @State private var choosingSources = false
+    @State private var deleting: NativeProject?
+    @State private var moving = false
 
     private var project: NativeProject? { model.projects.first { $0.id == projectID } }
 
@@ -112,6 +114,11 @@ struct DesktopProjectPage: View {
                 headerMore(project, summary)
             }
         } controls: {
+            let crumbs = model.breadcrumbs(for: project.id)
+            if !crumbs.isEmpty {
+                DesktopProjectBreadcrumbs(crumbs: crumbs, current: project.name)
+                    .padding(.bottom, JunoSpace.tight)
+            }
             JunoSegmented(
                 options: tabs.map { tab in
                     JunoSegmented<DesktopProjectTab>.Option(tab, tab.label, count: count(for: tab, summary))
@@ -131,6 +138,11 @@ struct DesktopProjectPage: View {
         }
         .junoRenameSheet($renaming)
         .junoConfirmation($confirmation)
+        .desktopProjectDelete($deleting, model: model) { dismiss() }
+        .sheet(isPresented: $moving) {
+            DesktopMoveProjectSheet(projectID: project.id, model: model)
+        }
+        .task(id: project.id) { await model.loadFolderDetail(id: project.id) }
         .sheet(isPresented: $editingInstructions) {
             DesktopProjectInstructionsSheet(project: project) { instructions in
                 await model.updateProject(id: project.id, instructions: instructions)
@@ -179,10 +191,9 @@ struct DesktopProjectPage: View {
             if summary.cover != nil {
                 Button("Remove Image") { removeCover(summary) }
             }
+            Button("Move To…") { moving = true }
             Divider()
-            Button("Delete Project…", role: .destructive) {
-                confirmation = DesktopProjectActions.delete(project, model: model, toast: toast) { dismiss() }
-            }
+            Button("Delete Project…", role: .destructive) { deleting = project }
         } label: {
             JunoIconView(.ellipsis, size: 16)
                 .foregroundStyle(Color.junoForeground)
@@ -216,6 +227,11 @@ struct DesktopProjectPage: View {
                         conversationModel: conversationModel,
                         open: openConversation
                     )
+                    DesktopProjectFoldersSection(projectID: projectID, model: model)
+                    let inherited = model.inherited(for: projectID)
+                    if !inherited.isEmpty {
+                        DesktopProjectInheritedSection(inherited: inherited)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 DesktopProjectRail(
