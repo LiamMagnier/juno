@@ -251,7 +251,7 @@ struct JunoMobileRootView: View {
             showingHistory = true
           }
           if CommandLine.arguments.contains("--juno-preview-settings")
-            || JunoPreviewEnvironment.initialRoute != nil
+            || ["profile", "username"].contains(JunoPreviewEnvironment.initialRoute ?? "")
           {
             showingSettings = true
           }

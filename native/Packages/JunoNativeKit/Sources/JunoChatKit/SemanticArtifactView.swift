@@ -338,7 +338,8 @@ struct SemanticDocumentView: View {
             VStack(alignment: .leading, spacing: JunoSpace.hairline) {
                 ForEach(suggestions) { revision in
                     Label {
-                        Text(suggestionLine(revision))
+                        // The suggested text is markdown, as the block's own text is.
+                        Text((try? AttributedString(markdown: suggestionLine(revision))) ?? AttributedString(suggestionLine(revision)))
                     } icon: {
                         Image(systemName: "pencil.line")
                     }

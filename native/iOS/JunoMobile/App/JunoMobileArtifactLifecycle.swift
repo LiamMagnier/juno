@@ -227,7 +227,15 @@ struct JunoMobileRecentlyDeletedArtifacts: View {
             }
         }
         .task {
-            let trash = model.recentlyDeleted()
+            // Opened straight after launch, the account may still be starting:
+            // wait a moment for it rather than declaring the list unavailable.
+            var trash = model.recentlyDeleted()
+            var waited = 0
+            while trash == nil, waited < 50, !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(100))
+                waited += 1
+                trash = model.recentlyDeleted()
+            }
             self.trash = trash
             await trash?.load()
         }

@@ -217,7 +217,12 @@ struct JunoMobileSettingsView: View {
     }
     .task {
       #if DEBUG
-        if let raw = JunoPreviewEnvironment.initialSettingsRoute ?? JunoPreviewEnvironment.initialRoute,
+        // `--juno-preview-route` names Settings pages (profile, username) and
+        // the feature sheets (notifications, skills…); only the former here.
+        let settingsRoute = JunoPreviewEnvironment.initialRoute.flatMap {
+          ["profile", "username"].contains($0) ? $0 : nil
+        }
+        if let raw = JunoPreviewEnvironment.initialSettingsRoute ?? settingsRoute,
           let route = JunoMobileSettingsRoute(previewName: raw)
         {
           try? await Task.sleep(nanoseconds: 350_000_000)
