@@ -456,7 +456,7 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
 
   /*
    * What may leave as a web query (private-sources.ts). Every web search the
-   * engine makes — the sweep's and every worker's — goes through `webSearch`,
+   * engine makes — the sweep's and every worker's — goes through `guardedWebSearch`,
    * which strips anything the run's private sources contain before the query
    * reaches a search vendor, and withholds a query with nothing public left.
    * The fingerprint is cached per run and rebuilt whenever the count of
@@ -493,7 +493,7 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
    * this run, or nothing public was left of the query. `sent` is what
    * actually went out, which is what the run records and shows.
    */
-  const webSearch = async (
+  const guardedWebSearch = async (
     run: ResearchRunRow,
     query: string,
     count: number | undefined,
@@ -514,7 +514,7 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
     deps,
     store,
     heartbeatMs,
-    webSearch,
+    guardedWebSearch,
     privateFingerprint,
     forgetFingerprint,
     windowSpent,

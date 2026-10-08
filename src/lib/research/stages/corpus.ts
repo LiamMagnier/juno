@@ -53,7 +53,7 @@ export const MAX_PRIVATE_HITS = 24;
 export const AGGREGATOR_BACKFILL_BELOW = 3;
 
 export function createCorpusStage(ctx: EngineContext, stages: Pick<ReturnType<typeof createWorkerStage>, "doWorkerRounds">) {
-  const { deps, store, append, fetchPage, markSyndicatedCopies, advance, affordable, affordableCount, stopForBudget, bill, webSearch, forgetFingerprint } = ctx;
+  const { deps, store, append, fetchPage, markSyndicatedCopies, advance, affordable, affordableCount, stopForBudget, bill, guardedWebSearch, forgetFingerprint } = ctx;
   const { doWorkerRounds } = stages;
   const doSearching = async (
     run: ResearchRunRow,
@@ -143,7 +143,7 @@ export function createCorpusStage(ctx: EngineContext, stages: Pick<ReturnType<ty
           query,
           // Through the context's guard: the web may be off for this run, and
           // nothing from the person's own sources may reach a search vendor.
-          searched: await webSearch(current, query, resultsPerQuery, signal),
+          searched: await guardedWebSearch(current, query, resultsPerQuery, signal),
         }))
       );
 

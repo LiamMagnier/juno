@@ -97,7 +97,7 @@ export function vectorBrief(objective: Pick<ResearchObjective, "vector">): strin
 }
 
 export function createWorkerStage(ctx: EngineContext) {
-  const { deps, store, heartbeatMs, beat, append, fetchPage, markSyndicatedCopies, affordable, affordableCount, writerReserve, applySteering, bill, windowSpent, webSearch } = ctx;
+  const { deps, store, heartbeatMs, beat, append, fetchPage, markSyndicatedCopies, affordable, affordableCount, writerReserve, applySteering, bill, windowSpent, guardedWebSearch } = ctx;
   const initialDelegations = (plan: ResearchPlan, workers: number): ResearchDelegation[] => {
     const objectives = plan.objectives.length ? plan.objectives : buildResearchObjectives("", plan.queries);
     const ranked = [...objectives].sort((a, b) => b.importance - a.importance);
@@ -305,7 +305,7 @@ export function createWorkerStage(ctx: EngineContext) {
         }
         // Through the context's guard: the web may be off for this run, and a
         // query that quotes the person's own files or mail never leaves.
-        const searched = await webSearch(run, query, shared.resultsPerQuery, signal);
+        const searched = await guardedWebSearch(run, query, shared.resultsPerQuery, signal);
         if (!searched.ok) {
           await tick("search", query, startedAt, false);
           return {
