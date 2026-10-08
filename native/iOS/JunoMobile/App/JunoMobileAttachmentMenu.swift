@@ -87,8 +87,20 @@ struct JunoMobileComposerActions: View {
     /// The selected model's thinking ladder, for the Flash and Pro switches.
     var thinkingScale: NativeThinkingScale? = nil
 
-    @State private var presented = false
+    /// Whether the panel is open. Owned by the composer, which draws the
+    /// panel itself — above its card, in the same glass container — so the
+    /// glass can grow out of the composer rather than arrive as a popover.
+    var isPresented: Binding<Bool> = .constant(false)
+    /// True for the instance the composer renders as the panel; false for the
+    /// `+` button in the control row.
+    var rendersPanel = false
     @State private var pickHaptic = JunoMobileHapticTrigger()
+    @State private var openHaptic = JunoMobileHapticTrigger()
+
+    private var presented: Bool {
+        get { isPresented.wrappedValue }
+        nonmutating set { isPresented.wrappedValue = newValue }
+    }
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -99,23 +111,28 @@ struct JunoMobileComposerActions: View {
         // thumb wants most), then the tools a turn can use, then what the turn
         // runs on. Camera and Photos close it and open the composer's inline
         // surfaces in its place, over the keyboard, rather than pushing a sheet.
-        Button {
-            presented = true
-        } label: {
-            plus
-        }
-        .buttonStyle(.junoQuietPress)
-        .popover(isPresented: $presented, attachmentAnchor: .rect(.bounds), arrowEdge: .bottom) {
+        if rendersPanel {
             panel
-                .presentationCompactAdaptation(.popover)
+                .junoHaptic(JunoMobileHaptic.selection, trigger: pickHaptic)
+        } else {
+            Button {
+                openHaptic.fire()
+                withAnimation(JunoMotion.reduced(JunoMotion.chatControl, when: reduceMotion)) {
+                    presented.toggle()
+                }
+            } label: {
+                plus
+            }
+            .buttonStyle(.junoQuietPress)
+            .junoHaptic(JunoMobileHaptic.selection, trigger: openHaptic)
+            .accessibilityLabel(
+                tools.isArmed ? Text("attachments.add.armed") : Text("attachments.add")
+            )
+            .accessibilityValue(presented ? Text("Open") : Text(""))
+            .accessibilityIdentifier("juno.mobile.chat-plus")
+            .task { await applyPreviewFlags() }
+            .contentShape(.rect)
         }
-        .junoHaptic(JunoMobileHaptic.selection, trigger: pickHaptic)
-        .accessibilityLabel(
-            tools.isArmed ? Text("attachments.add.armed") : Text("attachments.add")
-        )
-        .accessibilityIdentifier("juno.mobile.chat-plus")
-        .task { await applyPreviewFlags() }
-        .contentShape(.rect)
     }
 
     /// The popover's rows. Plain rows — glyph, label, a check when a tool is
@@ -130,7 +147,7 @@ struct JunoMobileComposerActions: View {
                 row("attachments.library", icon: .library, enabled: canAttach, action: openLibrary)
             }
 
-            divider
+            groupGap
 
             row("composer.deep-research", icon: .research, checked: tools.deepResearch) {
                 tools.deepResearch.toggle()
@@ -149,7 +166,7 @@ struct JunoMobileComposerActions: View {
                 row("Orbit", icon: .agents, action: openOrbit)
             }
 
-            divider
+            groupGap
 
             if let chooseModel {
                 row("Model", icon: .models, detail: JunoMobileModelControl.shortName(modelName), action: chooseModel)
@@ -158,17 +175,19 @@ struct JunoMobileComposerActions: View {
             menuRow(String(localized: "More"), icon: .ellipsis) { moreRows }
                 .accessibilityIdentifier("juno.mobile.composer-tools")
         }
-        .padding(.vertical, 8)
-        .frame(width: 272)
+        .padding(.vertical, 10)
+        .frame(width: 264)
+        // Real Liquid Glass, the system's own material: no fill under it and
+        // no shadow of ours — what is behind shows through, as in ChatGPT.
+        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 30, style: .continuous))
+        .accessibilityElement(children: .contain)
+        .accessibilityAddTraits(.isModal)
+        .accessibilityIdentifier("juno.mobile.plus-panel")
     }
 
-    private var divider: some View {
-        Rectangle()
-            .fill(Color.junoHairline)
-            .frame(height: 1)
-            .padding(.horizontal, 20)
-            .padding(.vertical, 6)
-            .accessibilityHidden(true)
+    /// Groups are separated by air, not rules.
+    private var groupGap: some View {
+        Color.clear.frame(height: 8).accessibilityHidden(true)
     }
 
     private func row(
@@ -183,15 +202,18 @@ struct JunoMobileComposerActions: View {
             pickHaptic.fire()
             // A toggle stays open so a second tool can be armed; anything
             // that goes somewhere closes the popover first.
-            if checked == nil { presented = false }
+            if checked == nil {
+                withAnimation(JunoMotion.reduced(JunoMotion.chatControl, when: reduceMotion)) {
+                    presented = false
+                }
+            }
             action()
         } label: {
             HStack(spacing: 14) {
                 // Each glyph on a small round ground, as ChatGPT's "+" rows
                 // are drawn — the glass popover's one texture.
-                JunoIconView(icon, size: 17)
-                    .frame(width: 32, height: 32)
-                    .background(Circle().fill(Color.junoMuted))
+                JunoIconView(icon, size: 20)
+                    .frame(width: 24)
                 Text(title)
                     .junoFont(size: 17, relativeTo: .body)
                     .lineLimit(1)
@@ -209,8 +231,8 @@ struct JunoMobileComposerActions: View {
                 }
             }
             .foregroundStyle(Color.junoForeground)
-            .padding(.horizontal, 20)
-            .frame(maxWidth: .infinity, minHeight: 50, alignment: .leading)
+            .padding(.horizontal, 18)
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
             .contentShape(Rectangle())
             .animation(JunoMotion.reduced(JunoMotion.chatControl, when: reduceMotion, tier: .tint), value: checked)
         }
@@ -231,9 +253,8 @@ struct JunoMobileComposerActions: View {
             HStack(spacing: 14) {
                 // Each glyph on a small round ground, as ChatGPT's "+" rows
                 // are drawn — the glass popover's one texture.
-                JunoIconView(icon, size: 17)
-                    .frame(width: 32, height: 32)
-                    .background(Circle().fill(Color.junoMuted))
+                JunoIconView(icon, size: 20)
+                    .frame(width: 24)
                 Text(verbatim: title)
                     .junoFont(size: 17, relativeTo: .body)
                     .lineLimit(1)
@@ -242,8 +263,8 @@ struct JunoMobileComposerActions: View {
                     .foregroundStyle(Color.junoSecondaryInk)
             }
             .foregroundStyle(Color.junoForeground)
-            .padding(.horizontal, 20)
-            .frame(maxWidth: .infinity, minHeight: 50, alignment: .leading)
+            .padding(.horizontal, 18)
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
             .contentShape(Rectangle())
         }
         .menuOrder(.fixed)

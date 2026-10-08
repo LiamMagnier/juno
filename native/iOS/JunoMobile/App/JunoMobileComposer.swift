@@ -77,6 +77,8 @@ struct JunoMobileComposer: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   /// The thinking dial, open in place of the control row.
   @State private var thinkingOpen = false
+  /// The "+" panel, drawn above the card in the composer's glass container.
+  @State private var plusOpen = false
   /// The model picker, from the top of "+" or a long press on the dial.
   @State private var showingModelPicker = false
   /// Send, stop and voice answer in the hand. See `JunoMobileHaptic`.
@@ -466,6 +468,38 @@ struct JunoMobileComposer: View {
             in: RoundedRectangle(cornerRadius: 24, style: .continuous)
           )
           .animation(JunoMotion.reduced(JunoMotion.chatControl, when: reduceMotion), value: thinkingOpen)
+          // The "+" panel grows up out of the composer's leading corner, its
+          // foot 8pt above the card: it never covers the field, and it shares
+          // the card's glass container so the two read as one material.
+          .overlay(alignment: .top) {
+            // A zero-height shelf on the card's top edge; the panel stands on
+            // it, so its foot is always 8pt above the field.
+            Color.clear
+              .frame(maxWidth: .infinity)
+              .frame(height: 0)
+              .overlay(alignment: .bottomLeading) {
+                if plusOpen, voiceSession == nil {
+                  plusPanel
+                    .padding(.bottom, 8)
+                    .fixedSize()
+                    .transition(
+                  reduceMotion
+                    ? .opacity
+                        : .scale(scale: 0.2, anchor: .bottomLeading).combined(with: .opacity)
+                    )
+                }
+              }
+          }
+          // Anywhere else on the screen closes it.
+          .background {
+            if plusOpen {
+              Color.clear
+                .frame(width: 4_000, height: 4_000)
+                .contentShape(.rect)
+                .onTapGesture { closePlus() }
+                .accessibilityHidden(true)
+            }
+          }
         }
         .transition(.opacity)
       }
@@ -529,11 +563,17 @@ struct JunoMobileComposer: View {
       .presentationDragIndicator(.visible)
     }
     .onChange(of: composerFocused.wrappedValue) { _, focused in
-      if focused { closeThinking() }
+      if focused { closeThinking(); closePlus() }
     }
   }
 
   // MARK: Thinking dial
+
+  private func closePlus() {
+    withAnimation(JunoMotion.reduced(JunoMotion.chatControl, when: reduceMotion)) {
+      plusOpen = false
+    }
+  }
 
   private func openThinking() {
     composerFocused.wrappedValue = false
@@ -843,7 +883,13 @@ struct JunoMobileComposer: View {
   }
 
   /// The `+`, in an ordinary chat.
-  private var addMenu: some View {
+  private var addMenu: some View { composerActions(rendersPanel: false) }
+
+  /// The "+" panel itself: the same menu, drawn as the glass surface above
+  /// the card.
+  private var plusPanel: some View { composerActions(rendersPanel: true) }
+
+  private func composerActions(rendersPanel: Bool) -> some View {
     JunoMobileComposerActions(
       projects: projects,
       selectedProjectID: conversation?.projectId,
@@ -878,7 +924,9 @@ struct JunoMobileComposer: View {
       openOrbit: openOrbit,
       modelName: selectedModel?.displayName ?? junoDisplayModelName(conversation?.model ?? ""),
       chooseModel: chooseModel,
-      thinkingScale: thinkingScale
+      thinkingScale: thinkingScale,
+      isPresented: $plusOpen,
+      rendersPanel: rendersPanel
     )
   }
 

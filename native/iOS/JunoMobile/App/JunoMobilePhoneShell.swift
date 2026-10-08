@@ -47,6 +47,11 @@ struct JunoMobilePushDrawer<Sidebar: View, Content: View>: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.colorScheme) private var colorScheme
 
+  /// The device display's corner radius, near enough: the pushed card rounds
+  /// the way the screen does (55pt on the current Pro iPhones). A constant
+  /// rather than the private `_displayCornerRadius` key.
+  static var displayCornerRadius: CGFloat { 55 }
+
   /// How far the conversation travels: most of the screen, so its edge stays
   /// in view as the "way back", and never wider than a comfortable column.
   private func width(in size: CGSize) -> CGFloat {
@@ -81,16 +86,20 @@ struct JunoMobilePushDrawer<Sidebar: View, Content: View>: View {
           .overlay {
             // The dim and the tap-to-close catcher, one layer.
             Color.black
-              .opacity((colorScheme == .dark ? 0.32 : 0.05) * progress)
+              .opacity((colorScheme == .dark ? 0.30 : 0.04) * progress)
               .allowsHitTesting(isOpen)
               .contentShape(.rect)
               .onTapGesture { setOpen(false) }
               .accessibilityHidden(true)
           }
-          .clipShape(.rect(cornerRadius: 34 * progress, style: .continuous))
+          // ChatGPT's card: the screen's own corner radius, a soft shadow
+          // thrown back toward the drawer, and a hair of scale — all three
+          // following the drag, from nothing when closed to full when open.
+          .clipShape(.rect(cornerRadius: Self.displayCornerRadius * progress, style: .continuous))
+          .scaleEffect(reduceMotion ? 1 : 1 - 0.015 * progress, anchor: .leading)
           .shadow(
-            color: .black.opacity((colorScheme == .dark ? 0 : 0.10) * progress),
-            radius: 18, x: -2, y: 0
+            color: .black.opacity((colorScheme == .dark ? 0.55 : 0.13) * progress),
+            radius: 26, x: -6, y: 0
           )
           .offset(x: offset)
           .allowsHitTesting(!dragging)
