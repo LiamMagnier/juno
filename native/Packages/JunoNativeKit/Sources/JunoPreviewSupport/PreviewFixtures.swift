@@ -140,13 +140,19 @@ public enum PreviewFixtures {
     /// only, with the same ids as the normal set so `conv-1` opens the same way.
     private static func showcaseRecords(_ a: StorageAccountID) -> [StoredRecord] {
         var out: [StoredRecord] = [settings(a), memorySummary(a)]
+        // Timed against the clock (``PreviewShowcaseConversation``), so the
+        // column's date sections read as a real week.
+        let iso = PreviewShowcaseConversation.iso
         let chats: [(String, String, Bool, String?, TimeInterval)] = [
-            ("conv-1", "Launch plan for Field Notes 2.0", true, nil, -300),
-            ("conv-proj", "Beta feedback, week 3", false, "proj-1", -1_500),
-            ("conv-2", "Pricing page copy", false, nil, -5_400),
-            ("conv-4", "Onboarding email sequence", false, nil, -20_000),
-            ("conv-5", "Q4 hiring plan", false, nil, -86_000),
-            ("conv-6", "Lisbon offsite agenda", false, nil, -170_000),
+            ("conv-1", "Launch plan for Field Notes 2.0", true, nil, -400),
+            ("conv-7", "Investor update, October", false, nil, -3 * 3_600),
+            ("conv-proj", "Beta feedback, week 3", false, "proj-1", -5 * 3_600),
+            ("conv-2", "Pricing page copy", false, nil, -26 * 3_600),
+            ("conv-8", "Podcast questions for Ana", false, nil, -2 * 86_400),
+            ("conv-4", "Onboarding email sequence", false, nil, -3 * 86_400),
+            ("conv-5", "Q4 hiring plan", false, nil, -9 * 86_400),
+            ("conv-9", "Translate the FAQ into French", false, nil, -12 * 86_400),
+            ("conv-6", "Lisbon offsite agenda", false, nil, -20 * 86_400),
         ]
         for (index, chat) in chats.enumerated() {
             let project = chat.3.map { #","projectId":"\#($0)""# } ?? ""
@@ -154,8 +160,15 @@ public enum PreviewFixtures {
             {"id":"\(chat.0)","title":"\(chat.1)","model":"anthropic:claude-sonnet-4-6","kind":"chat","pinned":\(chat.2),"archivedAt":null\(project),"createdAt":"\(iso(chat.4 - 3600))","updatedAt":"\(iso(chat.4))","lastMessageAt":"\(iso(chat.4))"}
             """))
         }
+        out += PreviewShowcaseConversation.messages(a)
         out.append(record(a, "project", "proj-1", 8, """
         {"id":"proj-1","name":"Field Notes","nameSource":"user","instructions":"The notes app we are launching. Keep the voice warm and plain.","starred":true,"createdAt":"\(iso(-200000))","updatedAt":"\(iso(-1500))"}
+        """))
+        out.append(record(a, "project", "proj-2", 4, """
+        {"id":"proj-2","name":"Fundraising","nameSource":"user","instructions":"Seed extension. Numbers first, no hype.","starred":false,"createdAt":"\(iso(-900000))","updatedAt":"\(iso(-3 * 3_600))"}
+        """))
+        out.append(record(a, "project", "proj-3", 4, """
+        {"id":"proj-3","name":"Hiring","nameSource":"user","instructions":"Two engineers and a designer before January.","starred":false,"createdAt":"\(iso(-1_200_000))","updatedAt":"\(iso(-9 * 86_400))"}
         """))
         return out
     }
