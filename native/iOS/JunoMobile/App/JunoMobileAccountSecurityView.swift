@@ -93,6 +93,7 @@ struct JunoMobileAccountSecurityView: View {
         Section { Text(notice).foregroundStyle(Color.junoSecondaryInk) }
       }
     }
+    .junoGroupedPage()
     .navigationTitle("Sign-in & Security")
     .navigationBarTitleDisplayMode(.inline)
     .task { await load() }

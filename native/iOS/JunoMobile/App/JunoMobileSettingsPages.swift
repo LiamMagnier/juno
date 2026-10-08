@@ -74,7 +74,7 @@ struct JunoMobileVoiceSettingsView: View {
       Section {
         if voices.isEmpty {
           Text(NativeVoiceCatalog.unavailableDescription(for: ttsProvider))
-            .junoCaption()
+            .foregroundStyle(.secondary)
         }
         ForEach(voices) { voice in
           Button {
@@ -87,26 +87,26 @@ struct JunoMobileVoiceSettingsView: View {
                   .junoRowLabel()
                   .foregroundStyle(.primary)
                 Text(voice.description)
-                  .junoCaption()
+                  .font(.subheadline)
+                  .foregroundStyle(.secondary)
               }
               Spacer(minLength: JunoSpace.tight)
               Button {
                 preview(voice)
               } label: {
-                JunoIconView(
-                  readAloud?.isSpeaking("voice-\(voice.id)") == true ? .stop : .volume, size: 15
-                )
-                .foregroundStyle(Color.junoAccent)
-                .frame(width: 44, height: 44)
+                Image(systemName: readAloud?.isSpeaking("voice-\(voice.id)") == true ? "stop.circle" : "speaker.wave.2")
+                  .font(.body)
+                  .foregroundStyle(.secondary)
+                  .frame(width: 44, height: 44)
                 .contentShape(Circle())
               }
               .buttonStyle(.plain)
               .accessibilityLabel("Preview \(voice.label)")
-              if voice.id == voiceID {
-                JunoIconView(.check, size: 15)
-                  .foregroundStyle(Color.junoAccent)
-                  .accessibilityHidden(true)
-              }
+              Image(systemName: "checkmark")
+                .font(.body.weight(.semibold))
+                .foregroundStyle(Color.accentColor)
+                .opacity(voice.id == voiceID ? 1 : 0)
+                .accessibilityHidden(true)
             }
             .contentShape(Rectangle())
           }
@@ -138,7 +138,7 @@ struct JunoMobileVoiceSettingsView: View {
               Text("voice.thinking")
               Spacer(minLength: JunoSpace.tight)
               Text(verbatim: effort.displayName)
-                .foregroundStyle(Color.junoAccentInk)
+                .foregroundStyle(.secondary)
             }
             JunoThinkingTrack(
               ladder: JunoThinkingLadder(
@@ -154,7 +154,8 @@ struct JunoMobileVoiceSettingsView: View {
               verbatim: "\(chosen.modelName(at: effort)) answers. \(delegate) takes the harder questions at "
                 + "\(chosen.delegateEffort(at: effort).displayName.lowercased()) and can search the web."
             )
-            .junoCaption()
+            .font(.footnote)
+            .foregroundStyle(.secondary)
           }
           .accessibilityIdentifier("juno.mobile.voice-effort-setting")
         }
@@ -162,36 +163,36 @@ struct JunoMobileVoiceSettingsView: View {
           VStack(alignment: .leading, spacing: 2) {
             Text("Background conversations")
             Text("Keep talking when you leave the app or lock the screen.")
-              .junoCaption()
+              .font(.subheadline)
+              .foregroundStyle(.secondary)
           }
         }
-        .tint(Color.junoAccent)
         .accessibilityIdentifier("juno.mobile.voice-background")
         Toggle(isOn: $pushToTalk) {
           VStack(alignment: .leading, spacing: 2) {
             Text("Push to talk")
             Text("Hold the orb to speak, release to send. Off, Alevr listens continuously.")
-              .junoCaption()
+              .font(.subheadline)
+              .foregroundStyle(.secondary)
           }
         }
-        .tint(Color.junoAccent)
         .accessibilityIdentifier("juno.mobile.voice-push-to-talk")
         Toggle(isOn: $speakerDefault) {
           VStack(alignment: .leading, spacing: 2) {
             Text("Start on speaker")
             Text("Off, a call starts in the earpiece like a phone call.")
-              .junoCaption()
+              .font(.subheadline)
+              .foregroundStyle(.secondary)
           }
         }
-        .tint(Color.junoAccent)
         Toggle(isOn: $voiceSounds) {
           VStack(alignment: .leading, spacing: 2) {
             Text("Voice sounds")
             Text("A soft chime when a call can hear you, and another when it ends. Silent when your iPhone is.")
-              .junoCaption()
+              .font(.subheadline)
+              .foregroundStyle(.secondary)
           }
         }
-        .tint(Color.junoAccent)
         .accessibilityIdentifier("juno.mobile.voice-sounds")
       } header: {
         Text("Conversations")
@@ -199,8 +200,7 @@ struct JunoMobileVoiceSettingsView: View {
         Text("These are settings for this iPhone.")
       }
     }
-    .scrollContentBackground(.hidden)
-    .junoScreenCanvas()
+    .junoGroupedPage()
     .navigationTitle("Voice")
     .navigationBarTitleDisplayMode(.inline)
     .junoHaptic(JunoMobileHaptic.selection, trigger: selectionHaptic)
@@ -245,7 +245,8 @@ struct JunoMobileNotificationSettingsView: View {
           VStack(alignment: .leading, spacing: 2) {
             Text("Notifications on this iPhone")
             Text(statusLine)
-              .junoCaption()
+              .font(.subheadline)
+              .foregroundStyle(.secondary)
           }
           Spacer(minLength: JunoSpace.tight)
           switch authorization {
@@ -253,9 +254,8 @@ struct JunoMobileNotificationSettingsView: View {
           // asked, so it offers the real question too.
           case .notDetermined?, .provisional?:
             Button("Allow") { Task { await requestPermission() } }
-              .buttonStyle(.borderedProminent)
-              .tint(Color.junoAccent)
-              .accessibilityIdentifier("juno.mobile.notifications-allow")
+              .buttonStyle(.bordered)
+                    .accessibilityIdentifier("juno.mobile.notifications-allow")
           case .denied?:
             Button("Open Settings") {
               guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
@@ -263,15 +263,15 @@ struct JunoMobileNotificationSettingsView: View {
             }
             .buttonStyle(.bordered)
           case .authorized?, .ephemeral?:
-            JunoIconView(.check, size: 15)
-              .foregroundStyle(Color.junoSuccess)
+            Text("On")
+              .foregroundStyle(.secondary)
           default:
             ProgressView().controlSize(.small)
           }
         }
         .frame(minHeight: 44)
       } footer: {
-        Text("Juno only notifies you about things you asked it to do.")
+        Text("Alevr only notifies you about things you asked it to do.")
       }
 
       Section {
@@ -279,47 +279,47 @@ struct JunoMobileNotificationSettingsView: View {
           VStack(alignment: .leading, spacing: 2) {
             Text("When something needs you")
             Text("An approval or a question a task is waiting on.")
-              .junoCaption()
+              .font(.subheadline)
+              .foregroundStyle(.secondary)
           }
         }
-        .tint(Color.junoAccent)
         .disabled(!isAuthorized)
         .accessibilityIdentifier("juno.mobile.notifications-needs-you")
         Toggle(isOn: $pushes.preferences.updates) {
           VStack(alignment: .leading, spacing: 2) {
             Text("Updates")
             Text("A task finished, an agent has ideas, or one agent handed work to another.")
-              .junoCaption()
+              .font(.subheadline)
+              .foregroundStyle(.secondary)
           }
         }
-        .tint(Color.junoAccent)
         .disabled(!isAuthorized)
         .accessibilityIdentifier("juno.mobile.notifications-updates")
       } header: {
         Text("Agents and Work")
       } footer: {
-        Text(pushes.lastError ?? "Sent to this iPhone even when Juno is closed. These switches are for this iPhone only.")
+        Text(pushes.lastError ?? "Sent to this iPhone even when Alevr is closed. These switches are for this iPhone only.")
       }
 
-      Section("Juno Code") {
+      Section("Code") {
         Toggle(isOn: $notifyApprovals) {
           VStack(alignment: .leading, spacing: 2) {
             Text("Approvals")
             Text("When a session on your Mac is waiting for a yes.")
-              .junoCaption()
+              .font(.subheadline)
+              .foregroundStyle(.secondary)
           }
         }
-        .tint(Color.junoAccent)
         .disabled(!isAuthorized)
         .accessibilityIdentifier("juno.mobile.notifications-approvals")
         Toggle(isOn: $notifyCompletions) {
           VStack(alignment: .leading, spacing: 2) {
             Text("Completions")
             Text("When a session you started from here finishes.")
-              .junoCaption()
+              .font(.subheadline)
+              .foregroundStyle(.secondary)
           }
         }
-        .tint(Color.junoAccent)
         .disabled(!isAuthorized)
       }
 
@@ -329,21 +329,21 @@ struct JunoMobileNotificationSettingsView: View {
             VStack(alignment: .leading, spacing: 2) {
               Text("Budget alerts")
               Text("Email me at 80% of my monthly budget.")
-                .junoCaption()
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
             }
           }
-          .tint(Color.junoAccent)
-          .disabled(disabled)
+            .disabled(disabled)
           .accessibilityIdentifier("juno.mobile.settings-budget-alerts")
           Toggle(isOn: binding(settings, \.emailWeeklyDigest) { NativeSettingsPatch(emailWeeklyDigest: $0) }) {
             VStack(alignment: .leading, spacing: 2) {
               Text("Weekly digest")
               Text("Usage recap every Monday.")
-                .junoCaption()
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
             }
           }
-          .tint(Color.junoAccent)
-          .disabled(disabled)
+            .disabled(disabled)
           .accessibilityIdentifier("juno.mobile.settings-weekly-digest")
         } header: {
           Text("Email")
@@ -352,8 +352,7 @@ struct JunoMobileNotificationSettingsView: View {
         }
       }
     }
-    .scrollContentBackground(.hidden)
-    .junoScreenCanvas()
+    .junoGroupedPage()
     .navigationTitle("Notifications")
     .navigationBarTitleDisplayMode(.inline)
     .task { await refreshAuthorization() }
@@ -433,32 +432,32 @@ struct JunoMobileCodeSettingsView: View {
             Text("Paired computers")
             Spacer()
             Text("\(remoteModel?.hosts.count ?? 0)")
-              .junoCaption()
+              .font(.subheadline)
+              .foregroundStyle(.secondary)
           }
         }
         .accessibilityIdentifier("juno.mobile.code-devices")
       } header: {
         Text("Remote")
       } footer: {
-        Text("Juno Code on your Mac registers itself with your account when you turn on Remote there. Nothing runs on a computer that has not opted in.")
+        Text("Alevr Code on your Mac registers itself with your account when you turn on Remote there. Nothing runs on a computer that has not opted in.")
       }
 
       Section {
         Toggle(isOn: $notifyApprovals) {
           VStack(alignment: .leading, spacing: 2) {
             Text("Notify me for approvals")
-            Text("A local notification when a session is waiting on you while Juno is in the background.")
-              .junoCaption()
+            Text("A local notification when a session is waiting on you while Alevr is in the background.")
+              .font(.subheadline)
+              .foregroundStyle(.secondary)
           }
         }
-        .tint(Color.junoAccent)
       } header: {
         Text("Notifications")
       }
     }
-    .scrollContentBackground(.hidden)
-    .junoScreenCanvas()
-    .navigationTitle("Juno Code")
+    .junoGroupedPage()
+    .navigationTitle("Code")
     .navigationBarTitleDisplayMode(.inline)
     .accessibilityIdentifier("juno.mobile.settings-code")
   }

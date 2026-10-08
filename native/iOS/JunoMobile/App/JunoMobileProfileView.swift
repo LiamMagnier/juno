@@ -85,6 +85,7 @@ struct JunoMobileUsernameView: View {
           .foregroundStyle(.secondary)
       }
     }
+    .junoGroupedPage()
     .navigationTitle("Username")
     .navigationBarTitleDisplayMode(.inline)
     .scrollDismissesKeyboard(.interactively)
