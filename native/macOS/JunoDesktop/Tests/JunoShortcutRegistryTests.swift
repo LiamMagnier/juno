@@ -154,7 +154,7 @@ struct JunoShortcutRegistryTests {
         guard let first = words.first?.first, first.isUppercase else { return false }
         for word in words.dropFirst() {
             guard let initial = word.first, initial.isLetter else { continue }
-            if initial.isUppercase, word != "Juno" { return false }
+            if initial.isUppercase, word != "Juno", word != "Alevr" { return false }
         }
         return true
     }
