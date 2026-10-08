@@ -1,6 +1,6 @@
 #include "Next.xcconfig"
 
-JUNO_DISPLAY_NAME = Juno Next
+JUNO_DISPLAY_NAME = Alevr Next
 PRODUCT_BUNDLE_IDENTIFIER = com.liammagnier.JunoDesktop.next
 MACOSX_DEPLOYMENT_TARGET = 26.0
 SDKROOT = macosx

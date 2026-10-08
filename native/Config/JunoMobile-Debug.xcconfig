@@ -1,6 +1,6 @@
 #include "Debug.xcconfig"
 
-JUNO_DISPLAY_NAME = Juno
+JUNO_DISPLAY_NAME = Alevr
 PRODUCT_BUNDLE_IDENTIFIER = com.liammagnier.JunoMobile.debug
 JUNO_MOBILE_BUNDLE_IDENTIFIER = com.liammagnier.JunoMobile.debug
 IPHONEOS_DEPLOYMENT_TARGET = 26.0

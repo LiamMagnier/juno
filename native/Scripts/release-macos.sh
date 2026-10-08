@@ -358,14 +358,19 @@ else
   mkdir -p "$BUILD_DIR/export"
   # `ditto`, not `cp -R`: relocating a signed bundle has to preserve the extended
   # attributes a signature can live in, which `cp -R` drops by default.
-  ditto "$BUILD_DIR/archive.xcarchive/Products/Applications/Juno.app" "$BUILD_DIR/export/Juno.app"
+  # The product is named by JUNO_DISPLAY_NAME (Alevr since 2026-10-08), so take
+  # whichever bundle the archive holds rather than a hard-coded name.
+  ARCHIVED_APP="$(find "$BUILD_DIR/archive.xcarchive/Products/Applications" -maxdepth 1 -type d -name '*.app' -print -quit)"
+  [ -n "$ARCHIVED_APP" ] || die "The archive contains no application bundle."
+  APP_NAME="$(basename "$ARCHIVED_APP")"
+  ditto "$ARCHIVED_APP" "$BUILD_DIR/export/$APP_NAME"
   if [ "$IDENTITY" = "-" ]; then
     # Nothing to preserve and nothing to time-stamp: an ad-hoc signature is the
     # only thing available. --publish-dev can distribute it as an internal
     # build, but its updater refuses automatic replacement without a Team ID.
     codesign --force --options runtime --sign - \
       --entitlements native/macOS/JunoDesktop/Resources/JunoDesktop.entitlements \
-      "$BUILD_DIR/export/Juno.app"
+      "$BUILD_DIR/export/$APP_NAME"
   fi
 fi
 
@@ -570,8 +575,8 @@ if [ "$NOTARIZE" = 1 ]; then
 fi
 
 step "Release symbols and checksums"
-DSYM_SOURCE="$BUILD_DIR/archive.xcarchive/dSYMs/Juno.app.dSYM"
-[ -d "$DSYM_SOURCE" ] || die "The archive contains no Juno.app.dSYM. Refusing to publish without symbols."
+DSYM_SOURCE="$(find "$BUILD_DIR/archive.xcarchive/dSYMs" -maxdepth 1 -type d -name '*.app.dSYM' -print -quit)"
+[ -n "$DSYM_SOURCE" ] && [ -d "$DSYM_SOURCE" ] || die "The archive contains no app dSYM. Refusing to publish without symbols."
 DSYM="$BUILD_DIR/Juno-$VERSION.dSYM.zip"
 rm -f "$DSYM"
 ditto -c -k --sequesterRsrc --keepParent "$DSYM_SOURCE" "$DSYM"
