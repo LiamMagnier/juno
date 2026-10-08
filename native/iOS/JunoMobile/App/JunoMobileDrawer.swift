@@ -647,6 +647,7 @@ struct JunoMobileSidebarDrawer: View {
       JunoLogo(height: 26)
         .accessibilityAddTraits(.isHeader)
       Spacer(minLength: 0)
+      JunoMobileInboxBell()
     }
     .padding(.horizontal, 16)
     .padding(.top, 6)

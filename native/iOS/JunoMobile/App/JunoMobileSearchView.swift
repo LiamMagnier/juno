@@ -30,6 +30,14 @@ struct JunoMobileSearchView: View {
     var projects: [NativeProject] = []
     var openConversation: ((String) -> Void)?
     var openProject: ((String) -> Void)?
+    /// Where a server hit (memory, knowledge, tasks) opens. Nil leaves the
+    /// server's half out entirely.
+    var openServerHit: ((NativeSearchHitDestination) -> Void)?
+
+    @Environment(\.junoFeatureHub) private var hub
+    /// The server half: memory, knowledge and tasks from `/api/search`, which
+    /// this device cannot search itself. Built once the account is known.
+    @State private var server: NativeServerSearchModel?
 
     @FocusState private var fieldFocused: Bool
     /// What is in the field, owned by the field.
@@ -68,8 +76,21 @@ struct JunoMobileSearchView: View {
         .onAppear {
             draft = model.query
             fieldFocused = true
+            if server == nil, openServerHit != nil, let client = hub?.searchClient, let accountID = hub?.accountID {
+                let made = NativeServerSearchModel(client: client, accountID: accountID)
+                made.setQuery(draft)
+                server = made
+            }
         }
-        .onChange(of: draft) { _, text in model.setQuery(text) }
+        .onChange(of: draft) { _, text in
+            model.setQuery(text)
+            server?.setQuery(text)
+        }
+        .toolbar {
+            if server != nil {
+                ToolbarItem(placement: .topBarTrailing) { typeFilterMenu }
+            }
+        }
         // The store wins when something other than typing moves the query — a
         // re-run after a sync, or the model being stopped and restarted.
         .onChange(of: model.query) { _, query in
@@ -140,33 +161,85 @@ struct JunoMobileSearchView: View {
     /// wanted to go anyway.
     @ViewBuilder
     private var content: some View {
-        switch model.phase {
-        case .idle:
+        if draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, model.phase == .idle {
             recents
-        case .searching where model.results.isEmpty:
+        } else if localGroups.isEmpty, serverGroups.isEmpty, isStillSearching {
             JunoMobileQuietLoading()
-        case .failed:
+        } else if localGroups.isEmpty, serverGroups.isEmpty, model.phase == .failed, server?.state != .skipped {
             ContentUnavailableView {
                 JunoIconLabel("Search unavailable", icon: .error, size: 28)
             } description: {
                 Text(model.lastErrorDescription ?? "Try again.")
             } actions: {
-                Button("Retry") { model.setQuery(model.query, debounced: false) }
-                    .buttonStyle(.borderedProminent)
+                Button("Retry") {
+                    model.setQuery(model.query, debounced: false)
+                    server?.retry()
+                }
+                .buttonStyle(.borderedProminent)
                 .contentShape(.rect)
             }
-        case .ready where visibleGroups.isEmpty:
+        } else if localGroups.isEmpty, serverGroups.isEmpty, model.phase != .idle {
             // Names the corpus, because "no results" and "not synced yet" are
             // indistinguishable to the reader and only one of them is their
             // problem to solve.
             ContentUnavailableView {
                 JunoIconLabel(verbatim: "No results", icon: .search, size: 28)
             } description: {
-                Text("Nothing synced to this device matches “\(model.query)”.")
+                Text(server == nil
+                    ? "Nothing synced to this device matches “\(model.query)”."
+                    : "Nothing synced to this device, in your memory, knowledge or tasks matches “\(model.query)”.")
             }
-        default:
+        } else {
             results
         }
+    }
+
+    /// Whether either half is still looking, with nothing on screen yet.
+    private var isStillSearching: Bool {
+        if model.phase == .searching { return true }
+        return server?.isSearching == true
+    }
+
+    /// The local groups the type filter keeps.
+    private var localGroups: [(kind: NativeSearchResultKind, results: [NativeSearchResult])] {
+        let filter = server?.typeFilter
+        guard NativeServerSearchModel.searchesLocally(filter) else { return [] }
+        guard let kind = NativeServerSearchModel.localKind(for: filter) else { return visibleGroups }
+        return visibleGroups.filter { $0.kind == kind }
+    }
+
+    /// The server's groups, each hit kept only where this app can open it.
+    private var serverGroups: [NativeSearchGroup] {
+        guard let server else { return [] }
+        return server.groups.compactMap { group in
+            let hits = group.hits.filter { NativeSearchHitDestination(hit: $0) != nil }
+            return hits.isEmpty ? nil : NativeSearchGroup(type: group.type, label: group.label, hits: hits)
+        }
+    }
+
+    // MARK: - Type filter
+
+    /// The web's type filter, as a native menu: everything, or one kind.
+    private var typeFilterMenu: some View {
+        Menu {
+            Picker("Show", selection: Binding(
+                get: { server?.typeFilter },
+                set: { server?.setTypeFilter($0) }
+            )) {
+                Text("Everything").tag(NativeUnifiedSearchType?.none)
+                ForEach(NativeServerSearchModel.filterChoices, id: \.self) { type in
+                    Text(type.label).tag(NativeUnifiedSearchType?.some(type))
+                }
+            }
+        } label: {
+            Label(
+                server?.typeFilter?.label ?? "Filter",
+                systemImage: server?.typeFilter == nil
+                    ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill"
+            )
+        }
+        .accessibilityIdentifier("juno.mobile.search-filter")
+      .contentShape(.rect)
     }
 
     /// Memory is excluded on purpose. A saved fact is not a place you can go — the
@@ -180,7 +253,7 @@ struct JunoMobileSearchView: View {
     private var results: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: JunoSpace.section) {
-                ForEach(visibleGroups, id: \.kind) { group in
+                ForEach(localGroups, id: \.kind) { group in
                     VStack(alignment: .leading, spacing: JunoSpace.snug) {
                         JunoGroupLabel(text: sectionTitle(group.kind))
                         JunoCard(padding: 0) {
@@ -200,9 +273,107 @@ struct JunoMobileSearchView: View {
             .padding(.bottom, JunoSpace.roomy)
             .frame(maxWidth: 768)
             .frame(maxWidth: .infinity)
+
+            serverSection
+                .padding(.horizontal, JunoSpace.regular)
+                .padding(.bottom, JunoSpace.roomy)
+                .frame(maxWidth: 768)
+                .frame(maxWidth: .infinity)
         }
         .scrollDismissesKeyboard(.interactively)
         .accessibilityIdentifier("juno.mobile.search-results")
+    }
+
+    /// Memory, knowledge and tasks, from the server, under what the device
+    /// found itself — with a quiet line while it is still looking and one
+    /// sentence when part of it could not be searched.
+    @ViewBuilder
+    private var serverSection: some View {
+        if let server {
+            VStack(alignment: .leading, spacing: JunoSpace.section) {
+                ForEach(serverGroups, id: \.type) { group in
+                    VStack(alignment: .leading, spacing: JunoSpace.snug) {
+                        JunoGroupLabel(text: group.label)
+                        JunoCard(padding: 0) {
+                            VStack(spacing: 0) {
+                                ForEach(Array(group.hits.enumerated()), id: \.element.id) { index, hit in
+                                    if index > 0 { Divider().padding(.leading, JunoSpace.region + JunoSpace.regular) }
+                                    serverRow(hit)
+                                }
+                            }
+                        }
+                    }
+                }
+                if server.isSearching, !localGroups.isEmpty {
+                    Text("Searching memory, knowledge and tasks…")
+                        .font(.footnote)
+                        .foregroundStyle(Color.junoMutedForeground)
+                }
+                if let notice = server.notice {
+                    Text(notice)
+                        .font(.footnote)
+                        .foregroundStyle(Color.junoMutedForeground)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+
+    private func serverRow(_ hit: NativeSearchHit) -> some View {
+        Button {
+            if let destination = NativeSearchHitDestination(hit: hit) { openServerHit?(destination) }
+        } label: {
+            HStack(alignment: .top, spacing: JunoSpace.cozy) {
+                JunoIconView(serverIcon(hit.type), size: 14)
+                    .foregroundStyle(Color.junoMutedForeground)
+                    .frame(width: 20, height: 20)
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(hit.title)
+                        .junoFont(size: 15, relativeTo: .subheadline, weight: .medium)
+                        .foregroundStyle(Color.primary)
+                        .lineLimit(2)
+                    if let snippet = hit.snippet, !snippet.text.isEmpty {
+                        Text(snippet.text)
+                            .junoFont(size: 13, relativeTo: .footnote)
+                            .foregroundStyle(Color.junoMutedForeground)
+                            .lineLimit(2)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                if let locator = hit.locator, !locator.isEmpty {
+                    Text(locator)
+                        .junoFont(size: 12, relativeTo: .caption)
+                        .foregroundStyle(Color.junoMutedForeground)
+                        .lineLimit(1)
+                } else if let updated = hit.updatedAt {
+                    Text(updated, style: .relative)
+                        .junoFont(size: 12, relativeTo: .caption)
+                        .monospacedDigit()
+                        .foregroundStyle(Color.junoMutedForeground)
+                        .lineLimit(1)
+                }
+            }
+            .padding(.horizontal, JunoSpace.regular)
+            .padding(.vertical, JunoSpace.cozy)
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(JunoSidebarPressStyle())
+        .accessibilityHint("Opens \(hit.type.label.lowercased())")
+    }
+
+    private func serverIcon(_ type: NativeUnifiedSearchType) -> JunoIcon {
+        switch type {
+        case .memory: .memory
+        case .knowledge, .file: .file
+        case .work: .tasks
+        case .conversation, .message: .conversation
+        case .project: .projects
+        case .artifact: .artifacts
+        }
     }
 
     private func row(_ result: NativeSearchResult) -> some View {

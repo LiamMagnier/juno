@@ -532,6 +532,19 @@ struct JunoMobileSettingsView: View {
         }
       }
 
+      if let session {
+        Section("Sign-in and security") {
+          NavigationLink {
+            JunoMobileAccountSecurityView(email: session.profile.email) {
+              await authModel?.signOut()
+            }
+          } label: {
+            Label("Sign-in & Security", systemImage: "lock.shield")
+          }
+          .accessibilityIdentifier("juno.mobile.settings-security")
+        }
+      }
+
       if canManageAccountData {
         Section("Your data") {
           JunoMobileSettingsAction(
