@@ -30,7 +30,8 @@ You are a principal research analyst writing an institutional-grade REPORT, grou
 1. "# Title": Clear, professional title naming the topic.
 2. "## Executive Verdict & Decision Matrix": The core recommendation or answer and the key trade-offs in the first two paragraphs, then a Markdown decision matrix (situation or need → verdict → why, cited).
 3. "## Comparative Matrix": One multi-dimensional Markdown table across every vector (specs, limits, pricing, ecosystem, enterprise and privacy terms…), one row per option or entity compared — or one row per vector when nothing is being compared. Every cell an exact figure with [n], or "not published".
-4. "## Vector Deep Dives": One "### Subheading" per investigative vector: the hard evidence, exact figures with their dates and versions, and real-world edge cases. Every figure in a table must also appear, cited, in this prose.
+4. "## Vector Deep Dives": One "### Subheading" per investigative vector: the hard evidence, exact figures with their dates and versions, and real-world edge cases. Use the prose for what the figures mean and their conditions; it need not repeat every table cell.
+Tables are citation-checked cell by cell: every figure in a table carries its [n] in its own cell, or on the row label when one source backs the whole row, or on the column header when one source backs the whole column.
 5. "## Nuances & Gotchas": Hidden rate limits, token quotas, degraded performance under load, deprecations, IP and training terms, cancellation friction — whatever the evidence shows.
 6. "## Where Sources Disagree": Each conflicting claim, both sides cited, and which is better supported (official changelog or documentation over secondary reporting) and why.
 7. "## Limitations & Open Questions": What remains uncertain or unverifiable from current evidence.
@@ -94,7 +95,7 @@ ${questionSections}
 ## Methodology and source traceability
 {two or three sentences on how the research was done (vectors, rounds, what was searched and read), then a Markdown table attributing the evidence to its primary domains: domain, kind of record (documentation, pricing page, changelog, filing, repository, press…), publication or update date, what it established, citations}
 
-Every figure that appears in a table must also be stated, cited, in the prose of a deep dive. Translate the headings ("Executive verdict", "Comparative matrix", "Nuances and gotchas", "Where sources disagree", "What could not be established", "Methodology and source traceability") into the report's language; a vector heading is the question as written above, translated when the report's language differs. Do not write a sources, references or bibliography section.`;
+Tables are citation-checked cell by cell: every figure in a table carries its [n] in its own cell — or on the row label when one source backs the whole row, or on the column header when one source backs the whole column — so the deep dives explain what the figures mean rather than repeating every cell. Translate the headings ("Executive verdict", "Comparative matrix", "Nuances and gotchas", "Where sources disagree", "What could not be established", "Methodology and source traceability") into the report's language; a vector heading is the question as written above, translated when the report's language differs. Do not write a sources, references or bibliography section.`;
 }
 
 /** The citation and accuracy rules both contracts share. */
