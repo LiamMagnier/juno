@@ -34,6 +34,14 @@ struct JunoMobileResearchReportView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
+                // Deep Field's orbits, settled, above the title: the finished
+                // run's mark, as the web's report keeps its field.
+                JunoDeepFieldDots(targets: [], animate: false)
+                    .frame(height: 112)
+                    .frame(maxWidth: 680)
+                    .opacity(0.9)
+                    .padding(.top, JunoSpace.tight)
+                    .accessibilityHidden(true)
                 NativeResearchReportArticle(report: report, audit: audit, compact: true, tracksScroll: true)
                     .padding(.horizontal, JunoSpace.roomy)
                     .padding(.top, JunoSpace.regular)

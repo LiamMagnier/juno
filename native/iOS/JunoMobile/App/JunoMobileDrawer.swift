@@ -591,11 +591,23 @@ struct JunoMobileSidebarDrawer: View {
           .tint(Color.primary)
           .transition(.opacity)
       } else {
-        Text(verbatim: "Alevr")
-          .font(.title3.weight(.semibold))
-          .foregroundStyle(Color.junoForeground)
-          .accessibilityAddTraits(.isHeader)
-          .transition(.opacity)
+        VStack(alignment: .leading, spacing: 2) {
+          Text(verbatim: "Alevr")
+            .font(.title3.weight(.semibold))
+            .foregroundStyle(Color.junoForeground)
+            .accessibilityAddTraits(.isHeader)
+          // The web sidebar's product orbit under the name: Chat and Code at
+          // the two ends, the trail on the one in use.
+          JunoProductOrbit(
+            active: selection == .code ? .code : .chat,
+            locked: JunoMobilePlanStore.shared.allows(.code) ? [] : [.code]
+          ) { product in
+            selectionHaptic.fire()
+            if product == .code { openDestination(.code) } else { newChat() }
+          }
+          .offset(x: -6)
+        }
+        .transition(.opacity)
         Spacer(minLength: 0)
         Button {
           selectionHaptic.fire()

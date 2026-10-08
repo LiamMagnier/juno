@@ -45,7 +45,12 @@ struct JunoMobileQuietLoading: View {
         Group {
             switch shape {
             case .blank:
-                Color.junoCanvas
+                // The website's empty mark while the first page arrives: it
+                // draws on once, then holds still.
+                ZStack {
+                    Color.junoCanvas
+                    JunoEmptyMark(size: .page)
+                }
             case .rows(let count):
                 VStack(alignment: .leading, spacing: 0) {
                     JunoSkeletonRows(count: count)

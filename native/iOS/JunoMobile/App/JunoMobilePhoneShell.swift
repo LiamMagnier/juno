@@ -194,33 +194,32 @@ struct JunoMobileTemporaryChatGlyph: View {
 
 // MARK: - Chat | Code
 
-/// The two products, as the bar's centre: a system segmented control, which
-/// the OS 26 toolbar draws as one Liquid Glass capsule with a lit segment — no
-/// hand-built knob, no custom blur.
+/// The two products, as the bar's centre: the website's product orbit —
+/// Chat and Code in the serif at the two ends of a dot orbit, the presence
+/// trail running to the one in use (`components/app/product-switch.tsx`,
+/// ported in `JunoProductOrbit`), in one interactive Liquid Glass capsule.
 struct JunoMobileProductSwitch: View {
   @Binding var selection: JunoMobileSection
   @State private var haptic = JunoMobileHapticTrigger()
 
   var body: some View {
-    Picker("Product", selection: productBinding) {
-      Text("Chat").tag(JunoMobileSection.chat)
-      Text("Code").tag(JunoMobileSection.code)
+    JunoProductOrbit(
+      active: selection == .code ? .code : .chat,
+      locked: JunoMobilePlanStore.shared.allows(.code) ? [] : [.code]
+    ) { product in
+      let target: JunoMobileSection = product == .code ? .code : .chat
+      guard target != selection else { return }
+      haptic.fire()
+      selection = target
     }
-    .pickerStyle(.segmented)
+    .padding(.horizontal, 12)
+    .frame(minHeight: 44)
+    .contentShape(Capsule())
+    // The bar's glass capsule, as the system draws for its own controls.
+    .glassEffect(.regular.interactive(), in: Capsule())
     .fixedSize()
     .junoHaptic(JunoMobileHaptic.selection, trigger: haptic)
     .accessibilityIdentifier("juno.mobile.product-switch")
-  }
-
-  private var productBinding: Binding<JunoMobileSection> {
-    Binding(
-      get: { selection == .code ? .code : .chat },
-      set: { newValue in
-        guard newValue != selection else { return }
-        haptic.fire()
-        selection = newValue
-      }
-    )
   }
 }
 

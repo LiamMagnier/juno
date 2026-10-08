@@ -33,7 +33,16 @@ struct JunoMobileSignInView: View {
         .transition(.opacity)
       }
     }
-    .junoScreenCanvas()
+    // The website's paper: the faint dot grid behind the front door, as the
+    // web's onboarding and access panel set it.
+    .background {
+      ZStack {
+        Color.junoCanvas
+        JunoDotGrid(spacing: 26)
+          .opacity(0.45)
+      }
+      .ignoresSafeArea()
+    }
     .tint(Color.junoAccent)
   }
 
