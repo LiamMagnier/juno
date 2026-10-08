@@ -14,6 +14,12 @@ public struct NativeProject: Identifiable, Equatable, Sendable {
     public var updatedAt: Date
     public let revision: UInt64
     public var isPending: Bool
+    /// The project this one sits in as a folder; nil at the top level.
+    public var parentID: String?
+    /// Whether ``parentID`` came from the synced record. A record cached
+    /// before the sync projection carried `parentId` says nothing either way;
+    /// the model fills those in from `GET /api/projects`.
+    public var parentIsSynced: Bool
 
     public init(
         id: String,
@@ -23,7 +29,9 @@ public struct NativeProject: Identifiable, Equatable, Sendable {
         createdAt: Date,
         updatedAt: Date,
         revision: UInt64,
-        isPending: Bool = false
+        isPending: Bool = false,
+        parentID: String? = nil,
+        parentIsSynced: Bool = true
     ) {
         self.id = id
         self.name = name
@@ -33,6 +41,8 @@ public struct NativeProject: Identifiable, Equatable, Sendable {
         self.updatedAt = updatedAt
         self.revision = revision
         self.isPending = isPending
+        self.parentID = parentID
+        self.parentIsSynced = parentIsSynced
     }
 }
 
@@ -282,7 +292,9 @@ public actor NativeProjectStore<Repository: AccountScopedRepository> {
             starred: wire.starred,
             createdAt: createdAt,
             updatedAt: updatedAt,
-            revision: record.revision
+            revision: record.revision,
+            parentID: wire.parentId.flatMap { $0 },
+            parentIsSynced: wire.parentId != nil
         )
     }
 
@@ -441,6 +453,13 @@ public final class NativeProjectModel<Repository: AccountScopedRepository> {
     private let drainer: NativeMutationDrainer<Repository>
     private let syncModel: NativeSyncModel<Repository>
     private let apiClient: NativeProjectAPIClient
+    private let foldersClient: NativeProjectFoldersClient
+    /// Parents from `GET /api/projects`, for records cached before the sync
+    /// projection carried `parentId`. A synced `parentId` always wins.
+    private var parentIndex: [String: String?] = [:]
+    private var hasRequestedParentIndex = false
+    /// The server's folder view of each project page opened this session.
+    public private(set) var folderDetails: [String: NativeProjectFolderDetail] = [:]
     private var accountID: AccountID?
     private var lastSynchronizationGeneration = -1
     private var isReconciling = false
@@ -466,6 +485,7 @@ public final class NativeProjectModel<Repository: AccountScopedRepository> {
         self.drainer = drainer
         self.syncModel = syncModel
         apiClient = NativeProjectAPIClient(sender: sender)
+        foldersClient = NativeProjectFoldersClient(sender: sender)
     }
 
     public func start(for accountID: AccountID) async {
@@ -478,6 +498,7 @@ public final class NativeProjectModel<Repository: AccountScopedRepository> {
         phase = .loading
         await reload()
         await reconcilePendingMutations()
+        await refreshParentIndexIfNeeded()
     }
 
     public func stop() {
@@ -494,6 +515,9 @@ public final class NativeProjectModel<Repository: AccountScopedRepository> {
         selectedProjectID = nil
         lastSynchronizationGeneration = -1
         pendingLibraryRemovals = [:]
+        parentIndex = [:]
+        hasRequestedParentIndex = false
+        folderDetails = [:]
         phase = .idle
     }
 
@@ -510,7 +534,7 @@ public final class NativeProjectModel<Repository: AccountScopedRepository> {
                 accountID: StorageAccountID(accountID.rawValue)
             )
             guard self.accountID == accountID else { return }
-            projects = snapshot.projects
+            projects = snapshot.projects.map(applyingParentIndex)
             files = snapshot.files
             // An entry lasts only while the cache still holds the revision it
             // was taken against.
@@ -694,6 +718,221 @@ public final class NativeProjectModel<Repository: AccountScopedRepository> {
         }
     }
 
+    // MARK: - Folders
+
+    /// The projects as a tree (a project inside another is a folder).
+    public var tree: NativeProjectTree { NativeProjectTree(projects: projects) }
+
+    /// What the Projects index lists: top-level projects only. Folders are
+    /// reached from the project they sit in.
+    public var topLevelProjects: [NativeProject] {
+        let tree = tree
+        return projects.filter { tree.isTopLevel($0.id) }
+    }
+
+    /// The folders directly inside `id`, by name.
+    public func children(of id: String) -> [NativeProject] {
+        let ids = Set(tree.childIDs(of: id))
+        return projects.filter { ids.contains($0.id) }
+            .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
+    /// `id`'s ancestors, root first — the server's when the page has loaded
+    /// it, otherwise drawn from the local tree.
+    public func breadcrumbs(for id: String) -> [NativeProjectCrumb] {
+        let tree = tree
+        let local = tree.ancestorIDs(of: id).reversed().compactMap { ancestor in
+            projects.first { $0.id == ancestor }.map { NativeProjectCrumb(id: $0.id, name: $0.name) }
+        }
+        if let detail = folderDetails[id],
+            detail.parentID == projects.first(where: { $0.id == id })?.parentID
+        { return detail.breadcrumbs }
+        return local
+    }
+
+    /// The ancestors whose instructions or files a chat here also receives,
+    /// root first.
+    public func inherited(for id: String) -> [NativeProjectInheritance] {
+        if let detail = folderDetails[id],
+            detail.parentID == projects.first(where: { $0.id == id })?.parentID
+        { return detail.inherited }
+        return tree.ancestorIDs(of: id).reversed().compactMap { ancestor in
+            guard let project = projects.first(where: { $0.id == ancestor }) else { return nil }
+            let fileCount = filesByProject[ancestor]?.count ?? 0
+            guard !project.instructions.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                || fileCount > 0
+            else { return nil }
+            return NativeProjectInheritance(
+                id: project.id,
+                name: project.name,
+                instructions: project.instructions,
+                fileCount: fileCount
+            )
+        }
+    }
+
+    /// Every place `id` could move to: the top level, then each project in
+    /// tree order, with the reason a refused one is refused.
+    public func moveDestinations(for id: String) -> [NativeProjectMoveDestination] {
+        let tree = tree
+        let current = projects.first { $0.id == id }?.parentID
+        var out = [NativeProjectMoveDestination(
+            projectID: nil, name: "Top level", depth: 0, refusal: nil, isCurrent: current == nil
+        )]
+        func visit(_ ids: [String], depth: Int) {
+            let ordered = projects.filter { ids.contains($0.id) }
+                .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+            for project in ordered {
+                out.append(NativeProjectMoveDestination(
+                    projectID: project.id,
+                    name: project.name,
+                    depth: depth,
+                    refusal: tree.validateMove(id, to: project.id),
+                    isCurrent: current == project.id
+                ))
+                visit(tree.childIDs(of: project.id), depth: depth + 1)
+            }
+        }
+        visit(projects.filter { tree.isTopLevel($0.id) }.map(\.id), depth: 1)
+        return out
+    }
+
+    /// Why a new folder cannot go inside `id`, or nil.
+    public func newFolderRefusal(in id: String) -> NativeProjectMoveRefusal? {
+        tree.validateNewChild(under: id)
+    }
+
+    /// Loads the server's folder view of one project (breadcrumbs, children,
+    /// inherited context). Offline, the local tree answers instead.
+    public func loadFolderDetail(id: String) async {
+        guard let accountID else { return }
+        do {
+            let detail = try await foldersClient.detail(id: id, for: accountID)
+            guard self.accountID == accountID else { return }
+            folderDetails[id] = detail
+        } catch {
+            // The local tree is drawn instead; nothing to report.
+        }
+    }
+
+    /// A new project inside `parentID`: `POST /api/projects`.
+    @discardableResult
+    public func createFolder(name: String, in parentID: String?) async -> String? {
+        guard let accountID else { return nil }
+        if let parentID, let refusal = tree.validateNewChild(under: parentID) {
+            lastErrorDescription = refusal.message
+            return nil
+        }
+        isMutating = true
+        defer { isMutating = false }
+        do {
+            let id = try await foldersClient.createFolder(name: name, parentID: parentID, for: accountID)
+            parentIndex[id] = .some(parentID)
+            lastErrorDescription = nil
+            await afterTreeChange(touching: [parentID].compactMap { $0 })
+            return id
+        } catch {
+            recordFolderError(error, accountID: accountID)
+            return nil
+        }
+    }
+
+    /// Moves `id` into `parentID` (nil = the top level): `PATCH parentId`.
+    @discardableResult
+    public func moveProject(id: String, to parentID: String?) async -> Bool {
+        guard let accountID, canUseServerProject(id) else { return false }
+        if let refusal = tree.validateMove(id, to: parentID) {
+            lastErrorDescription = refusal.message
+            return false
+        }
+        let previous = projects.first { $0.id == id }?.parentID
+        isMutating = true
+        defer { isMutating = false }
+        do {
+            try await foldersClient.move(id: id, to: parentID, for: accountID)
+            parentIndex[id] = .some(parentID)
+            lastErrorDescription = nil
+            await afterTreeChange(touching: [id, previous, parentID].compactMap { $0 })
+            return true
+        } catch {
+            recordFolderError(error, accountID: accountID)
+            return false
+        }
+    }
+
+    /// Deletes a project that holds folders, asking the server to lift its
+    /// subfolders to its own parent or to delete them with it.
+    @discardableResult
+    public func deleteProject(
+        id: String,
+        children mode: NativeProjectChildrenMode
+    ) async -> NativeProjectDeleteResult? {
+        guard let accountID, canUseServerProject(id) else { return nil }
+        let parent = projects.first { $0.id == id }?.parentID
+        let lifted = tree.childIDs(of: id)
+        isMutating = true
+        defer { isMutating = false }
+        do {
+            let result = try await foldersClient.delete(id: id, children: mode, for: accountID)
+            if mode == .lift { for child in lifted { parentIndex[child] = .some(parent) } }
+            folderDetails[id] = nil
+            if selectedProjectID == id { selectedProjectID = nil }
+            lastErrorDescription = nil
+            await afterTreeChange(touching: [parent].compactMap { $0 })
+            return result
+        } catch {
+            recordFolderError(error, accountID: accountID)
+            return nil
+        }
+    }
+
+    private func applyingParentIndex(_ project: NativeProject) -> NativeProject {
+        guard !project.parentIsSynced, let indexed = parentIndex[project.id] else { return project }
+        var project = project
+        project.parentID = indexed
+        return project
+    }
+
+    /// Fills in the folder of every project the cache holds without one, once
+    /// per account session.
+    private func refreshParentIndexIfNeeded() async {
+        guard let accountID, !hasRequestedParentIndex,
+            projects.contains(where: { !$0.parentIsSynced && !$0.isPending })
+        else { return }
+        hasRequestedParentIndex = true
+        await refreshParentIndex(accountID: accountID)
+    }
+
+    private func refreshParentIndex(accountID: AccountID) async {
+        guard let index = try? await foldersClient.parentIndex(for: accountID),
+            self.accountID == accountID
+        else { return }
+        parentIndex = index
+        projects = projects.map(applyingParentIndex)
+    }
+
+    private func afterTreeChange(touching ids: [String]) async {
+        await syncModel.refresh()
+        await reload()
+        if let accountID, projects.contains(where: { !$0.parentIsSynced }) {
+            await refreshParentIndex(accountID: accountID)
+        }
+        // Folder views that may now be out of date are dropped, so the local
+        // tree draws them until the page loads them again.
+        for id in ids { folderDetails[id] = nil }
+        for id in folderDetails.keys where ids.contains(where: { tree.ancestorIDs(of: id).contains($0) }) {
+            folderDetails[id] = nil
+        }
+    }
+
+    private func recordFolderError(_ error: any Error, accountID: AccountID) {
+        guard self.accountID == accountID else { return }
+        lastErrorDescription = NativeFailureMessage.presentable(error)
+        if NativeSyncModel<Repository>.isConnectivityFailure(error) || syncModel.phase == .offline {
+            phase = .offline
+        }
+    }
+
     private func canUseServerProject(_ id: String) -> Bool {
         guard let project = projects.first(where: { $0.id == id }) else {
             lastErrorDescription = NativeProjectStoreError
@@ -840,6 +1079,28 @@ private struct ProjectWire: Decodable {
     let starred: Bool
     let createdAt: String
     let updatedAt: String
+    /// Absent (`nil`) for a record synced before the server sent the field;
+    /// `.some(nil)` for an explicit top level.
+    let parentId: String??
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, instructions, starred, createdAt, updatedAt, parentId
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        instructions = try container.decode(String.self, forKey: .instructions)
+        starred = try container.decode(Bool.self, forKey: .starred)
+        createdAt = try container.decode(String.self, forKey: .createdAt)
+        updatedAt = try container.decode(String.self, forKey: .updatedAt)
+        if container.contains(.parentId) {
+            parentId = .some(try container.decodeIfPresent(String.self, forKey: .parentId))
+        } else {
+            parentId = nil
+        }
+    }
 }
 
 private struct AttachmentWire: Decodable {
