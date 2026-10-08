@@ -186,7 +186,7 @@ enum DesktopArtifactViewMode: String, CaseIterable, Identifiable, Hashable {
     /// renderer.
     static func available(for kind: NativeArtifactKind) -> [DesktopArtifactViewMode] {
         var modes: [DesktopArtifactViewMode] = []
-        if kind.supportsRenderedPreview { modes.append(.preview) }
+        if kind.supportsRenderedPreview || kind.isSemantic { modes.append(.preview) }
         modes.append(.source)
         if kind.supportsLiveCanvas { modes.append(.canvas) }
         return modes
@@ -284,6 +284,9 @@ enum DesktopArtifactKindLabel {
         case .mermaid: .branch
         case .markdown: .file
         case .design: .design
+        case .spreadsheet: .grid
+        case .document: .file
+        case .presentation: .squareStack
         case .code, nil: .fileCode
         }
     }
@@ -311,6 +314,7 @@ enum DesktopArtifactKindLabel {
         case .svg: "svg"
         case .mermaid: "mmd"
         case .design: "juno.design.json"
+        case .spreadsheet, .document, .presentation: "json"
         case .code: codeExtension(language)
         }
     }
@@ -673,7 +677,10 @@ struct DesktopArtifactCanvas: View {
     private var hasDraftChanges: Bool { draft != nil && draft != baseContent }
     private var canEdit: Bool { artifact.stored != nil && save != nil }
     private var isMarkdown: Bool { artifact.kind == .markdown }
-    private var hasPreview: Bool { runtimeInfo.runsOnThisMac && !artifact.kind.isDesignDocument }
+    private var hasPreview: Bool {
+        if artifact.kind.isSemantic { return true }
+        return runtimeInfo.runsOnThisMac && !artifact.kind.isDesignDocument
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -1010,6 +1017,11 @@ struct DesktopArtifactCanvas: View {
             }
         } else {
             switch resolvedView {
+            case .preview where artifact.kind.isSemantic:
+                // A spreadsheet, document or deck, drawn from its model. Read
+                // only here: the chat edits it through operations.
+                SemanticArtifactView(kind: artifact.kind, content: resolvedContent)
+                    .background(Color.junoCanvas)
             case .preview where isMarkdown:
                 // `JunoMarkdownText` is the transcript's renderer; the shared
                 // preview's markdown branch flattens headings and fences.

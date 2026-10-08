@@ -25,6 +25,7 @@ struct ArtifactPage: View {
 
     @Environment(\.junoToast) private var toast
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.desktopPush) private var push
 
     @State private var version: Int?
     @State private var comparing = false
@@ -32,6 +33,7 @@ struct ArtifactPage: View {
     @State private var draft: String?
     @State private var reloadToken = UUID()
     @State private var confirmation: JunoConfirmation?
+    @State private var showingHistory = false
 
     private var artifact: NativeArtifact? { model.artifacts.first { $0.id == artifactID } }
 
@@ -54,6 +56,9 @@ struct ArtifactPage: View {
         }
         .navigationTitle(artifact?.title ?? "Artifact")
         .junoConfirmation($confirmation)
+        .sheet(isPresented: $showingHistory) {
+            if let artifact { historySheet(artifact) }
+        }
         .fileExporter(
             isPresented: Binding(get: { download != nil }, set: { if !$0 { download = nil } }),
             document: download?.document,
@@ -92,9 +97,31 @@ struct ArtifactPage: View {
         }
     }
 
+    /// Version History…, shared by the read-only window and the design editor.
+    private func historySheet(_ artifact: NativeArtifact) -> some View {
+        ArtifactHistorySheet(
+            artifact: artifact,
+            model: model,
+            show: { version = $0 == artifact.currentVersion ? nil : $0 },
+            duplicated: { push(.artifact($0, version: nil)) },
+            done: { showingHistory = false }
+        )
+    }
+
     @ViewBuilder
     private func more(_ artifact: NativeArtifact, shown: Int) -> some View {
-        Button("Download Source…") { downloadSource(artifact, version: shown) }
+        Button("Version History…") { showingHistory = true }
+            .contentShape(.rect)
+        if shown < artifact.currentVersion {
+            Button("Restore Version \(shown)…") { confirmRestore(artifact, version: shown) }
+                .contentShape(.rect)
+        }
+        Button("Make a Copy") { makeCopy(artifact, version: shown) }
+            .contentShape(.rect)
+        Divider()
+        Button("Download This Version…") { serverDownload(artifact, version: shown, format: .file) }
+            .contentShape(.rect)
+        Button("Download with History…") { serverDownload(artifact, version: shown, format: .zipWithHistory) }
             .contentShape(.rect)
         Button("Copy Source") { copySource(artifact, version: shown) }
             .contentShape(.rect)
@@ -104,6 +131,41 @@ struct ArtifactPage: View {
             Button("Compare Versions…") { comparing = true }
                 .contentShape(.rect)
         }
+        Divider()
+        Button("Move to Recently Deleted…", role: .destructive) {
+            confirmation = DesktopArtifactActions.delete(artifact, model: model, toast: toast) { dismiss() }
+        }
+        .contentShape(.rect)
+    }
+
+    private func confirmRestore(_ artifact: NativeArtifact, version: Int) {
+        confirmation = JunoConfirmation(
+            title: "Restore version \(version)?",
+            message: "This makes a new version from the one you are viewing. The later versions stay in history.",
+            confirmTitle: "Restore Version \(version)",
+            role: nil
+        ) {
+            Task {
+                if await model.restoreVersion(id: artifact.id, version: version) {
+                    self.version = nil
+                    toast(.success("Restored version \(version) as a new version."))
+                } else {
+                    toast(.error(model.lastErrorDescription ?? "Couldn’t restore that version."))
+                }
+            }
+        }
+    }
+
+    private func makeCopy(_ artifact: NativeArtifact, version: Int?) {
+        DesktopArtifactLifecycle.duplicate(artifact, version: version, model: model, toast: toast) { id in
+            push(.artifact(id, version: nil))
+        }
+    }
+
+    private func serverDownload(_ artifact: NativeArtifact, version: Int, format: NativeArtifactDownloadFormat) {
+        DesktopArtifactLifecycle.download(
+            artifact, version: version, format: format, model: model, toast: toast
+        ) { download = $0 }
     }
 
     // MARK: - Design editor
@@ -148,9 +210,14 @@ struct ArtifactPage: View {
                     .help("Save your edit as a new version (⌘S)")
                 Menu {
                     Button("Open in Conversation") { DesktopPageRouter.shared.openArtifactInConversation(artifact) }
+                    Button("Version History…") { showingHistory = true }
+                    Button("Make a Copy") { makeCopy(artifact, version: nil) }
                     Button("Download Source…") { downloadSource(artifact, version: artifact.currentVersion) }
+                    Button("Download with History…") {
+                        serverDownload(artifact, version: artifact.currentVersion, format: .zipWithHistory)
+                    }
                     Divider()
-                    Button("Delete Design…", role: .destructive) {
+                    Button("Move to Recently Deleted…", role: .destructive) {
                         confirmation = DesktopArtifactActions.delete(artifact, model: model, toast: toast) { dismiss() }
                     }
                 } label: {
@@ -352,7 +419,10 @@ struct ArtifactPageBody: View {
             if artifact.kind.isDesignDocument {
                 ArtifactOlderDesign(artifactID: artifact.id, version: version, isCurrent: version == artifact.currentVersion)
             } else if let content {
-                if artifact.kind == .markdown {
+                if artifact.kind.isSemantic {
+                    SemanticArtifactView(kind: artifact.kind, content: content)
+                        .id("\(artifact.id)#\(version)")
+                } else if artifact.kind == .markdown {
                     ScrollView {
                         JunoMarkdownText(content)
                             .environment(\.junoProseStyle, .reading)
