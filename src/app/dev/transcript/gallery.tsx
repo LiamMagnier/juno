@@ -18,7 +18,7 @@ import type { AppBootstrap } from "@/types/app";
 import type { ClientActivityEvent, ClientArtifact } from "@/types/chat";
 
 /* Only what the rendered components read is filled in (see /dev/premium). */
-const BOOTSTRAP = {
+export const BOOTSTRAP = {
   user: { id: "dev", name: "Dev", email: null, image: null },
   settings: {
     theme: "system",
@@ -60,7 +60,7 @@ const BOOTSTRAP = {
 const AT = new Date(Date.now() - 60_000).toISOString();
 const at = (s: number) => new Date(Date.now() - 60_000 + s * 1000).toISOString();
 
-function msg(partial: Partial<ChatMessage> & Pick<ChatMessage, "id" | "role" | "content">): ChatMessage {
+export function msg(partial: Partial<ChatMessage> & Pick<ChatMessage, "id" | "role" | "content">): ChatMessage {
   return { createdAt: AT, attachments: [], conversationId: "dev-conversation", ...partial };
 }
 
@@ -564,7 +564,7 @@ export function TranscriptGallery({ only }: { only?: string }) {
           )}
 
           {show("streaming") && (
-            <Section id="streaming" title="Streaming" note="The real MessageList: the live row, text arriving under the tail fade, the follow, and Jump to latest.">
+            <Section id="streaming" title="Streaming" note="The real MessageList: the live row, paced text inking in, the eased follow, and Jump to latest. The full bench is /dev/streaming.">
               <StreamingDemo />
             </Section>
           )}

@@ -622,6 +622,16 @@ const config: Config = {
           "55%": { opacity: "1", transform: "scale(1.06) translateY(0)" },
           "100%": { opacity: "1", transform: "scale(1) translateY(0)" },
         },
+        // A new turn in the transcript (owner, 2026-10-08: new content fades in as it is
+        // revealed): the rise-in's settle, a touch longer, out of a slight blur.
+        "turn-in": {
+          from: {
+            opacity: "0",
+            transform: "translateY(calc(8px * var(--motion-shift, 1)))",
+            filter: "blur(4px)",
+          },
+          to: { opacity: "1", transform: "translateY(0)", filter: "blur(0)" },
+        },
         "rise-in": {
           from: {
             opacity: "0",
@@ -861,6 +871,7 @@ const config: Config = {
         // 6px of travel is a --dur-base move on the default decelerate; the
         // old slow/out-strong pairing was sized for the 8px it no longer has.
         "rise-in": "rise-in var(--dur-base) var(--ease-out-soft)",
+        "turn-in": "turn-in 420ms var(--ease-out-soft) both",
         "studio-swap": "studio-swap var(--dur-emphasis) var(--ease-spring) both",
         "agent-arrive": "agent-arrive 640ms var(--ease-spring) both",
         // Drawers (sheet.tsx). Enter on the drawer curve at --dur-base — a

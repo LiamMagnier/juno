@@ -30,7 +30,7 @@ import { useComposerAutosize } from "@/components/ui/composer-shell";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Kbd } from "@/components/ui/kbd";
 import { useModifierKeyLabel } from "@/components/ui/platform";
-import { Markdown } from "@/components/chat/markdown";
+import { StreamingMarkdown } from "@/components/chat/stream-text";
 import { AutoReceipt } from "@/components/chat/auto-receipt";
 import { receiptLine, type RoutingReceipt } from "@/lib/router/receipt";
 import { ArtifactInlineCard } from "@/components/chat/artifact-inline-card";
@@ -976,7 +976,7 @@ export const MessageItem = React.memo(function MessageItem({
 
   if (isUser) {
     return (
-      <div className={cn("group flex flex-col items-end", animateIn && "motion-safe:animate-rise-in")}>
+      <div className={cn("group flex flex-col items-end", animateIn && "motion-safe:animate-turn-in")}>
         {/* Turn marker. On screen the alignment and bubble say who is speaking;
             in a screen reader nothing did, and a transcript with no headings is
             a wall of text with no way to move through it. */}
@@ -1163,7 +1163,11 @@ export const MessageItem = React.memo(function MessageItem({
       // transcript — a different answer's source, confidently scrolled to.
       data-juno-message={message.id}
       // …and the target must not land under the transcript's sticky header band.
-      className={cn("group flex scroll-mt-24 flex-col gap-2", animateIn && "motion-safe:animate-rise-in")}
+      className={cn("group flex scroll-mt-24 flex-col gap-2", animateIn && "motion-safe:animate-turn-in")}
+      // While the reply streams, each part of it (the run strip, an approval, a
+      // tool card, the prose, an artifact, the sources) fades up as it mounts:
+      // globals.css, "Turn parts".
+      data-turn-streaming={message.streaming ? "" : undefined}
     >
       {/* Turn marker — see the note on the user branch. */}
       <h2 className="sr-only">{agentThread ? `${agentThread.name} replied` : `${PRODUCT_NAME} replied`}</h2>
@@ -1185,7 +1189,7 @@ export const MessageItem = React.memo(function MessageItem({
         The bibliography, the audit and the toolbar are content a reader
         navigates to, not announcements.
       */}
-      <div className="min-w-0 flex-1">
+      <div className="turn-body min-w-0 flex-1">
         {/* The run strip.
             Chat: full ActivityTimeline (research + tools + reasoning dock).
             Code: CodeActivity already draws commands/writes as cards beside the
@@ -1333,19 +1337,12 @@ export const MessageItem = React.memo(function MessageItem({
                 </>
               );
             })()}
-            {/* The tail fade wraps the prose ONLY. On the whole answer body it
-                landed on the trailing dot's own line instead of the line being
-                written, and it would have dimmed the bottom edge of a message
-                that ends in an image.
-                The length gate matters: the gradient is one line tall, so on an
-                answer only one line long it covers the whole thing and the
-                reply sits dimmed for its whole life. ~140 characters is past
-                the first wrap at every column width, which is the point where
-                the fade has a line of its own to sit on. */}
-            <div className={cn("space-y-1", message.streaming && message.content.length > 140 && "stream-tail")}>
+            {/* The streamed prose is paced and inked in by StreamingMarkdown
+                (stream-text.tsx); a settled reply renders as plain Markdown. */}
+            <div className="space-y-1">
             {parts.map((part, i) =>
               part.type === "text" ? (
-                <Markdown key={i} content={part.text} streaming={message.streaming} sources={sources} writtenFiles={writtenFiles} />
+                <StreamingMarkdown key={i} content={part.text} streaming={message.streaming} sources={sources} writtenFiles={writtenFiles} />
               ) : part.type === "artifact" ? (
                 (() => {
                   const artifact = resolveArtifactTag(artifactsByIdentifier, part.identifier, message);

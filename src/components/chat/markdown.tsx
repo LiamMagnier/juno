@@ -167,10 +167,37 @@ function splitIntoBlocks(markdown: string): SourceBlock[] {
  * Cheaply close dangling markdown in the still-growing final block so streaming
  * text doesn't flash raw fences, backticks, or `**` markers.
  */
+/**
+ * A trailing line that is still only the START of some markdown construct
+ * renders as the wrong thing for a frame or two: a lone `-` under a line of
+ * text is a setext underline (the paragraph flashes into a heading), a lone
+ * `#` an empty heading, `1.` an empty list, a pipe the raw first cell of a
+ * table. Held back until the line says what it is.
+ */
+const HALF_FORMED_LINE = /^[ \t]*(?:[-=*_+]{1,2}|#{1,6}|\d{1,3}[.)]?|`{1,2}|~{1,2}|>|\|)[ \t]*$/;
+
+/**
+ * A table whose delimiter row has not arrived yet is a paragraph of pipes.
+ * Hide its header line(s) until `| --- |` lands; from then on it renders as
+ * a table and grows a row at a time.
+ */
+function holdUnfinishedTable(block: string): string {
+  const lines = block.split("\n");
+  let start = lines.length;
+  while (start > 0 && /^[ \t]*\|/.test(lines[start - 1])) start--;
+  if (start === lines.length) return block;
+  const table = lines.slice(start);
+  if (table.length >= 2 && /^[ \t]*\|?[ \t]*:?-{3,}/.test(table[1])) return block;
+  return lines.slice(0, start).join("\n");
+}
+
 function closeDangling(block: string): string {
   let fence: Fence | null = null;
   for (const line of block.split("\n")) fence = trackFence(fence, line);
   if (fence) return `${block}\n${fence.char.repeat(fence.length)}`;
+  const lines = block.split("\n");
+  if (lines.length > 0 && HALF_FORMED_LINE.test(lines[lines.length - 1])) block = lines.slice(0, -1).join("\n");
+  block = holdUnfinishedTable(block);
   let closed = hideDanglingLink(block);
   if ((closed.match(/(?<!\\)`/g) ?? []).length % 2 === 1) closed += "`";
   // Count `**` outside code spans so `a ** b` in inline code doesn't miscount.
@@ -461,13 +488,12 @@ const REMARK_PLUGINS = [remarkGfm, remarkMath, remarkFenceFilename] satisfies Op
  */
 
 /*
- * There is deliberately NO per-word entrance here any more. A previous version
- * wrapped every word of the still-growing block in a span with a blur/fade
- * keyframe. It was compositor-heavy on long answers (a `filter: blur` layer per
- * word) and it was the third "still arriving" signal on one paragraph, beside
- * the `.stream-tail` mask in message-item.tsx and the shell's progress line.
- * One signal per surface: the tail mask is the transcript's, and it is one
- * mask on one element rather than an animation per token.
+ * There is deliberately NO per-word element here. A previous version wrapped
+ * every word of the still-growing block in a span with a blur/fade keyframe:
+ * compositor-heavy on long answers (a `filter` layer per word), and it
+ * restarted whenever react-markdown rebuilt the block. The arriving words are
+ * inked in by StreamingMarkdown (stream-text.tsx) with highlight ranges over
+ * the text nodes this renders, which touches none of them.
  */
 
 /** hast doesn't ship types here either — same structural shape as MdNode. */

@@ -2784,10 +2784,9 @@
 
   /* ---- Streaming Text -----------------------------------------------------
    * No caret. AIcss's block caret used to ride `p:last-child::after` while a
-   * reply streamed, on top of the `.stream-tail` mask (below, "Streaming text
-   * emerges") that already dims the line being written. Two signals on one
-   * paragraph; the mask is the one that stays because it says the same thing
-   * without adding a second object to the text run. `data-streaming` is still
+   * reply streamed. The arriving words now ink in on their own (below,
+   * "Streamed writing"), which says the same thing without adding a second
+   * object to the text run. `data-streaming` is still
    * stamped by markdown.tsx for anything that needs to know.
    * ------------------------------------------------------------------------- */
 
@@ -3408,23 +3407,39 @@
     .scroll-fade-edge { transition: none; }
   }
 
-  /* Streaming text emerges instead of snapping in.
-     A short gradient sits over the tail of a still-arriving reply, so the line
-     being written is faint and firms up as later tokens push it clear. This is
-     one mask on one element rather than an animation per token — react-markdown
-     rebuilds the trailing block on every chunk, so anything keyed to the text
-     nodes themselves would restart 30 times a second and strobe.
-     The fade is one line tall and bottoms out at 30% rather than 0. Fading to
-     nothing made the newest line legible only at its top edge — a gradient
-     running through letterforms, which reads as broken text rather than as
-     text arriving. 30% is soft enough to say "not settled yet" and solid
-     enough to read, so finishing the reply barely changes it. */
-  .stream-tail {
-    -webkit-mask-image: linear-gradient(to bottom, black calc(100% - 1.35em), rgb(0 0 0 / 0.3) 100%);
-    mask-image: linear-gradient(to bottom, black calc(100% - 1.35em), rgb(0 0 0 / 0.3) 100%);
+  /* Streamed writing (components/chat/stream-text.tsx).
+     The newest characters ink in over ~280 ms in five age bands, drawn with
+     the CSS Custom Highlight API over the text React already rendered: no
+     element per word, nothing that restarts when the last block re-parses,
+     and text older than the fade carries no styling at all. Each band lowers
+     the ink and adds a soft halo of the same ink, which reads as the glyph
+     coming into focus (a highlight cannot take `filter`). The bands are only
+     ever populated when motion is allowed (stream-text.tsx checks). */
+  ::highlight(stream-f0) { color: hsl(var(--foreground) / 0.1); text-shadow: 0 0 5px hsl(var(--foreground) / 0.32); }
+  ::highlight(stream-f1) { color: hsl(var(--foreground) / 0.32); text-shadow: 0 0 4px hsl(var(--foreground) / 0.26); }
+  ::highlight(stream-f2) { color: hsl(var(--foreground) / 0.56); text-shadow: 0 0 2.5px hsl(var(--foreground) / 0.18); }
+  ::highlight(stream-f3) { color: hsl(var(--foreground) / 0.76); text-shadow: 0 0 1.5px hsl(var(--foreground) / 0.1); }
+  ::highlight(stream-f4) { color: hsl(var(--foreground) / 0.9); }
+
+  /* A block that arrives mid-stream (code, a table, a list, a heading, a
+     quote, an image) settles in with a short fade and a 4 px rise instead of
+     popping. Paragraphs are left to the text fade above. Runs once per mount:
+     react-markdown keeps a growing block's element, so this never restarts. */
+  @media (prefers-reduced-motion: no-preference) {
+    .prose-juno[data-streaming] > :not(p) {
+      animation: stream-block-in 320ms var(--ease-out-soft) both;
+    }
   }
-  @media (prefers-reduced-motion: reduce) {
-    .stream-tail { -webkit-mask-image: none; mask-image: none; }
+  /* Turn parts: inside a reply that is streaming, each part of the answer
+     column fades up once as it mounts (message-item.tsx, data-turn-streaming). */
+  @media (prefers-reduced-motion: no-preference) {
+    [data-turn-streaming] .turn-body > * {
+      animation: stream-block-in 360ms var(--ease-out-soft) both;
+    }
+  }
+  @keyframes stream-block-in {
+    from { opacity: 0; transform: translateY(4px); filter: blur(2px); }
+    to { opacity: 1; transform: none; filter: none; }
   }
 
   /* ---- Work ----------------------------------------------------------------

@@ -6,7 +6,7 @@ import { ArrowRight } from "@/components/ui/icons";
 import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Markdown } from "@/components/chat/markdown";
+import { StreamingMarkdown } from "@/components/chat/stream-text";
 import { ThinkingDots } from "@/components/signature/thinking-dots";
 import { CompareModelPicker } from "@/components/compare/compare-model-picker";
 import { ProjectCover } from "@/components/projects/project-cover";
@@ -191,7 +191,7 @@ export function ComparePane({
           </div>
         ) : (
           <div className="px-4 py-4">
-            <Markdown content={run.content} streaming={streaming} className="text-body" />
+            <StreamingMarkdown content={run.content} streaming={streaming} className="text-body" />
             {(finishNote || (run.status === "error" && run.content)) && (
               <div
                 // bg-secondary, not bg-muted/45: 45% of a 9.5% token over the pane's
