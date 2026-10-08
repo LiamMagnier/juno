@@ -89,12 +89,12 @@ public enum CodeRunState: String, CaseIterable, Sendable {
     public var meaning: String {
         switch self {
         case .ready: "Created and waiting for your first instruction."
-        case .planning: "Juno is synthesizing an implementation plan."
+        case .planning: "Alevr is synthesizing an implementation plan."
         case .queued: "Accepted, waiting for a machine to pick it up."
-        case .running: "Juno is working on it now."
+        case .running: "Alevr is working on it now."
         case .waitingForProvider: "Waiting for model inference response or failover."
         case .degraded: "Running with fallback model or clamped capabilities."
-        case .needsApproval: "Juno stopped to ask you something."
+        case .needsApproval: "Alevr stopped to ask you something."
         case .stopping: "Stopping — finishing the step it is on."
         case .finished: "Finished on its own terms."
         case .failed: "Stopped because something went wrong."

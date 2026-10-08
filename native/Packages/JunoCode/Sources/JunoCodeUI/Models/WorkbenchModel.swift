@@ -87,7 +87,7 @@ public struct UnconfiguredModelClient: AgentModelClient {
             // answer however long the run waits, so it fails at once.
             continuation.finish(
                 throwing: AgentModelClientError.unavailable(
-                    message: "No model transport is configured. Sign in to Juno to run the agent."
+                    message: "No model transport is configured. Sign in to Alevr to run the agent."
                 )
             )
         }

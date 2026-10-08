@@ -142,16 +142,16 @@ enum ChatWorkVocabulary {
             "This task has been written but never started, so nothing is running and nothing is queued."
         case .queued: "Waiting to be picked up. Nothing is running yet."
         case .preparing: "Fetching inputs, resolving permissions and starting up."
-        case .running: "Juno is working on this now."
-        case .waitingInput: "Juno has asked you something and cannot continue until you answer."
-        case .waitingApproval: "Juno is waiting for you to allow or refuse an action."
+        case .running: "Alevr is working on this now."
+        case .waitingInput: "Alevr has asked you something and cannot continue until you answer."
+        case .waitingApproval: "Alevr is waiting for you to allow or refuse an action."
         case .paused: "You stopped this. It can be resumed."
         case .completed: "This finished."
         case .failed: "This stopped before it finished."
         case .cancelled:
             "This was stopped rather than finished, and it will not be picked up where it left off."
         case .interrupted:
-            "The executor stopped reporting and its lease expired. Juno does not restart an interrupted run on its own, because it may already have changed something."
+            "The executor stopped reporting and its lease expired. Alevr does not restart an interrupted run on its own, because it may already have changed something."
         case .hostOffline:
             "This had to run on a Mac and none was reachable, so it did not start. Wake the Mac and run it again."
         case .budgetExceeded:
@@ -164,7 +164,7 @@ enum ChatWorkVocabulary {
     /// with "Juno " is re-voiced with the agent's name.
     static func sentence(_ status: JunoWorkStatus, actor: String?) -> String {
         let sentence = sentence(status)
-        guard let actor, !actor.isEmpty, sentence.hasPrefix("Juno ") else { return sentence }
+        guard let actor, !actor.isEmpty, sentence.hasPrefix("Alevr ") else { return sentence }
         return actor + sentence.dropFirst("Juno".count)
     }
 
@@ -516,9 +516,9 @@ enum ChatWorkOutcome {
             }
         }
         if performed.actions.count == 1 {
-            lines.append(Line("One action changed something outside Juno. It is listed in Details."))
+            lines.append(Line("One action changed something outside Alevr. It is listed in Details."))
         } else if performed.actions.count > 1 {
-            lines.append(Line("\(performed.actions.count) actions changed something outside Juno. They are listed in Details."))
+            lines.append(Line("\(performed.actions.count) actions changed something outside Alevr. They are listed in Details."))
         } else if performed.unclassified > 0 {
             let noun = performed.unclassified == 1 ? "action" : "actions"
             lines.append(Line(
@@ -1159,7 +1159,7 @@ struct ChatWorkQuestionCard: View {
             Text(asked)
                 .junoFont(size: 11, relativeTo: .caption, weight: .medium)
                 .foregroundStyle(Color.junoWarningInk)
-            Text(question.text.isEmpty ? "Juno has a question for you." : question.text)
+            Text(question.text.isEmpty ? "Alevr has a question for you." : question.text)
                 .junoFont(size: 15, relativeTo: .body)
                 .foregroundStyle(Color.junoForeground)
                 .fixedSize(horizontal: false, vertical: true)
@@ -1231,8 +1231,8 @@ struct ChatWorkQuestionCard: View {
         }
         return HStack(alignment: .bottom, spacing: JunoSpace.snug) {
             TextField(
-                "Answer Juno’s question…", text: text,
-                prompt: Text("Answer Juno’s question…").foregroundStyle(Color.junoSecondaryInk),
+                "Answer Alevr’s question…", text: text,
+                prompt: Text("Answer Alevr’s question…").foregroundStyle(Color.junoSecondaryInk),
                 axis: .vertical
             )
             .textFieldStyle(.plain)

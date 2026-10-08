@@ -419,7 +419,7 @@ enum DesktopCodeDraftReadiness {
             return nil
         case .device:
             if hasAttachments { return "Pictures and file context run on this Mac only." }
-            if !hasDevice { return "No connected computer is online. Sign in to Juno on another Mac to run there." }
+            if !hasDevice { return "No connected computer is online. Sign in to Alevr on another Mac to run there." }
             return nil
         }
     }
@@ -639,7 +639,7 @@ struct DesktopCodeSidebar: View {
         }
         .junoSidebarScrollEdge()
         .confirmationDialog(
-            "Remove “\(projectPendingRemoval?.descriptor.displayName ?? "")” from Juno?",
+            "Remove “\(projectPendingRemoval?.descriptor.displayName ?? "")” from Alevr?",
             isPresented: Binding(
                 get: { projectPendingRemoval != nil },
                 set: { if !$0 { projectPendingRemoval = nil } }
@@ -653,7 +653,7 @@ struct DesktopCodeSidebar: View {
                 Task { await workbench.removeWorkspace(id: record.id) }
             }
         } message: { _ in
-            Text("The folder and its files stay on disk. Juno stops its running sessions and forgets its access; the sessions stay in your history.")
+            Text("The folder and its files stay on disk. Alevr stops its running sessions and forgets its access; the sessions stay in your history.")
         }
         .accessibilityIdentifier("juno.code.sidebar")
         // Titles, projects and pull request links match as you type; this
@@ -824,7 +824,7 @@ struct DesktopCodeSidebar: View {
                     ])
                 }
                 Divider()
-                Button("Remove from Juno…", role: .destructive) { projectPendingRemoval = record }
+                Button("Remove from Alevr…", role: .destructive) { projectPendingRemoval = record }
             }
         }
     }

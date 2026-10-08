@@ -76,7 +76,7 @@ struct DesktopNewAutomationPage: View {
             JunoPageHeader(
                 "New automation",
                 caption: "Automations",
-                lede: "Say what should happen, when it should start, and what Juno may do about it while you are not there."
+                lede: "Say what should happen, when it should start, and what Alevr may do about it while you are not there."
             )
         } content: {
             DesktopAutomationEditor(
@@ -330,7 +330,7 @@ struct DesktopAutomationPage: View {
 
     static func saveFailure(offline: Bool) -> String {
         offline
-            ? "Couldn’t reach Juno to save this. Nothing was changed."
+            ? "Couldn’t reach Alevr to save this. Nothing was changed."
             : "Couldn’t save this schedule. Nothing was changed."
     }
 
@@ -480,7 +480,7 @@ struct DesktopAutomationFireCard: View {
     }
 
     private var tokenSentence: String {
-        guard hasToken else { return "No token yet, so nothing outside Juno can start this." }
+        guard hasToken else { return "No token yet, so nothing outside Alevr can start this." }
         if let issuedAt {
             return "A token was issued on \(issuedAt.formatted(date: .numeric, time: .omitted)). Issuing another stops it working."
         }

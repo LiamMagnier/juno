@@ -196,9 +196,9 @@ extension StudioVerifyRecipeCard {
     static func subtitle(for proposal: VerificationModel.Proposal) -> String {
         switch proposal.kind {
         case .discovered:
-            "Juno found them in this project and runs them to check its work. They are saved to .juno/verify.json, which you can review and commit."
+            "Alevr found them in this project and runs them to check its work. They are saved to .juno/verify.json, which you can review and commit."
         case .changed:
-            "Juno does not run the new commands until you accept them."
+            "Alevr does not run the new commands until you accept them."
         }
     }
 
@@ -219,7 +219,7 @@ extension StudioVerifyRecipeCard {
         var parts: [String] = []
         if let cwd = check.normalizedCwd { parts.append("In \(cwd)") }
         if CommandClassifier().checkKind(of: check.commandLine) == nil {
-            parts.append("Not a build or test command Juno recognises, so the box below adds no rule for it; read it before you accept")
+            parts.append("Not a build or test command Alevr recognises, so the box below adds no rule for it; read it before you accept")
         }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }

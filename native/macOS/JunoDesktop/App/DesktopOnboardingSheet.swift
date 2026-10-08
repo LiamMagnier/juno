@@ -24,7 +24,7 @@ struct DesktopOnboardingSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: JunoSpace.section) {
             VStack(alignment: .leading, spacing: JunoSpace.tight) {
-                Text("Welcome to Juno")
+                Text("Welcome to Alevr")
                     .junoType(.title)
                     .foregroundStyle(Color.junoForeground)
                     .accessibilityAddTraits(.isHeader)
@@ -35,8 +35,8 @@ struct DesktopOnboardingSheet: View {
             }
 
             VStack(alignment: .leading, spacing: JunoSpace.snug) {
-                label("What should Juno call you?")
-                TextField("What should Juno call you?", text: $name, prompt: Text("Your first name"))
+                label("What should Alevr call you?")
+                TextField("What should Alevr call you?", text: $name, prompt: Text("Your first name"))
                     .labelsHidden()
                     .textFieldStyle(.roundedBorder)
                     .onSubmit(start)

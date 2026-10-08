@@ -220,7 +220,7 @@ final class WorkspaceAgentHooksTests: XCTestCase {
             hook(.notification, "cat /etc/hosts", trust: .readerConfiguration),
         ]
         _ = await adapter(mine, shell: shell, permissions: permissions)
-            .notify(sessionID: sessionID, kind: .permissionPrompt, message: "Juno needs you")
+            .notify(sessionID: sessionID, kind: .permissionPrompt, message: "Alevr needs you")
         XCTAssertEqual(asked, 0)
         XCTAssertEqual(Set(shell.calls.map(\.command)), ["echo notified", "cat /etc/hosts"])
     }

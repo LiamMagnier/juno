@@ -122,8 +122,8 @@ struct DesktopMemoryList: View {
             JunoEmptyState(
                 title: project == nil ? "No memories yet" : "Nothing remembered in this project yet",
                 message: project == nil
-                    ? "Juno fills this in as you chat. You can also add something yourself."
-                    : "Juno keeps what it learns in this project’s chats here, apart from everything else.",
+                    ? "Alevr fills this in as you chat. You can also add something yourself."
+                    : "Alevr keeps what it learns in this project’s chats here, apart from everything else.",
                 icon: .layers,
                 size: .panel
             )
@@ -244,7 +244,7 @@ struct DesktopMemoryList: View {
             .buttonStyle(.plain)
             .accessibilityValue(showsRetired ? "Expanded" : "Collapsed")
             if showsRetired || searching {
-                Text("Replaced by something newer, contradicted, expired, or forgotten at your request. Juno doesn’t use these.")
+                Text("Replaced by something newer, contradicted, expired, or forgotten at your request. Alevr doesn’t use these.")
                     .junoType(.caption)
                     .foregroundStyle(Color.junoSecondaryInk)
                     .fixedSize(horizontal: false, vertical: true)
@@ -349,7 +349,7 @@ struct DesktopMemoryRow: View {
                 .help(fact.isRetired ? (fact.reason ?? NativeMemoryVocabulary.statusDescription(fact.status) ?? "") : "")
             if let sensitive = fact.sensitive {
                 DesktopRowToken(text: NativeMemoryVocabulary.sensitiveLabel(sensitive), icon: .permission, isWarning: true)
-                    .help("A sensitive subject. Juno only learns these on its own when you allow the topic in Settings.")
+                    .help("A sensitive subject. Alevr only learns these on its own when you allow the topic in Settings.")
             }
             if showProject, fact.projectID != nil {
                 DesktopRowToken(text: fact.projectName ?? "One project", icon: .folderLock)
@@ -449,7 +449,7 @@ struct DesktopMemoryRow: View {
                 } label: {
                     Label {
                         Text("Forget")
-                        Text("Juno won’t learn this again")
+                        Text("Alevr won’t learn this again")
                     } icon: { Image(JunoIcon.eyeOff.assetName) }
                 }
             }
@@ -458,7 +458,7 @@ struct DesktopMemoryRow: View {
             } label: {
                 Label {
                     Text("Delete")
-                    Text("Juno may learn it again from its chat")
+                    Text("Alevr may learn it again from its chat")
                 } icon: { Image(JunoIcon.delete.assetName) }
             }
         }
@@ -495,7 +495,7 @@ struct DesktopMemoryAddForm: View {
         VStack(alignment: .leading, spacing: JunoSpace.snug) {
             TextField(
                 project == nil
-                    ? "Something Juno should know, like “I prefer metric units”"
+                    ? "Something Alevr should know, like “I prefer metric units”"
                     : "Something true of this project, like “We cite in APA”",
                 text: $draft,
                 axis: .vertical

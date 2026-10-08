@@ -141,7 +141,7 @@ public extension SessionController {
             reviewQueue.message = nil
             return true
         } catch {
-            reviewQueue.message = "The comments did not reach Juno: \(error.localizedDescription) They are still queued."
+            reviewQueue.message = "The comments did not reach Alevr: \(error.localizedDescription) They are still queued."
             return false
         }
     }
@@ -356,7 +356,7 @@ public extension SessionController {
             if more > 0 { sentence += more == 1 ? " and 1 more command" : " and \(more) more commands" }
             sentence += ". Files those commands changed are not restored."
         } else {
-            sentence = "These turns changed files outside Juno's edit tools. Those files are not restored."
+            sentence = "These turns changed files outside Alevr's edit tools. Those files are not restored."
         }
         return sentence
     }

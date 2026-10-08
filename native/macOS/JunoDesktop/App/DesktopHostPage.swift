@@ -51,7 +51,7 @@ struct DesktopHostPage: View {
     private var page: some View {
         if model.missingIDs.contains(hostID) {
             frame("Mac not found") {
-                DesktopWorkNote(.error, "This Mac is no longer registered with Juno Work. Signing out of Juno on a Mac, or removing the app, takes it off this list.")
+                DesktopWorkNote(.error, "This Mac is no longer registered with Alevr Work. Signing out of Alevr on a Mac, or removing the app, takes it off this list.")
             }
         } else if let detail = model.details[hostID] {
             loaded(detail)
@@ -140,7 +140,7 @@ struct DesktopHostPage: View {
 
     private func meta(_ host: WorkHostSummary) -> String {
         var parts = [DesktopHostCopy.platform(host.platform)]
-        if !host.appVersion.isEmpty { parts.append("Juno \(host.appVersion)") }
+        if !host.appVersion.isEmpty { parts.append("Alevr \(host.appVersion)") }
         parts.append("last seen \(NativeWorkScheduleCopy.timeAgo(host.lastSeenAt))")
         return parts.joined(separator: " · ")
     }
@@ -176,7 +176,7 @@ struct DesktopHostPage: View {
                 DesktopWorkNote(.warning, "\(reason) Work will not be sent here until it checks in again. Nothing below has been lost — these settings are what this Mac comes back to.")
             }
             if model.failedDetailIDs.contains(hostID) {
-                DesktopWorkNote(.warning, "This is what Juno last knew about this Mac. The most recent check failed, so it may have woken, gone away or been changed from another device since.") {
+                DesktopWorkNote(.warning, "This is what Alevr last knew about this Mac. The most recent check failed, so it may have woken, gone away or been changed from another device since.") {
                     Button {
                         Task { await model.loadHost(id: hostID) }
                     } label: {
@@ -316,7 +316,7 @@ struct DesktopHostSettings: View {
                 : isThisMac
                     // Mac-only copy (register #176): the reader is on the Mac.
                     ? "This Mac has not offered this. Switch it on under On this Mac, above."
-                    : "This Mac has not offered this. Switch it on in Juno on the Mac itself and it becomes available here."
+                    : "This Mac has not offered this. Switch it on in Alevr on the Mac itself and it becomes available here."
         return Toggle(isOn: Binding(get: { checked }, set: { patch(.toggle(spec.key, $0)) })) {
             VStack(alignment: .leading, spacing: JunoSpace.micro) {
                 Text(spec.label)
@@ -368,19 +368,19 @@ struct DesktopHostSettings: View {
                             patch(NativeWorkHostPatch(approvalPolicy: value))
                         }
                     ),
-                    accessibilityLabel: "How often Juno asks before acting on this Mac"
+                    accessibilityLabel: "How often Alevr asks before acting on this Mac"
                 )
                 .fixedSize()
                 Text(host.approvalPolicy.approvalModeSummary)
                     .junoType(.caption)
                     .foregroundStyle(Color.junoSecondaryInk)
                     .fixedSize(horizontal: false, vertical: true)
-                Text("Anything Juno cannot take back — a permanent delete, a message sent, a purchase, a change to a security setting — is asked about under every one of these. There is no setting that turns that off.")
+                Text("Anything Alevr cannot take back — a permanent delete, a message sent, a purchase, a change to a security setting — is asked about under every one of these. There is no setting that turns that off.")
                     .junoType(.caption)
                     .foregroundStyle(Color.junoSecondaryInk)
                     .fixedSize(horizontal: false, vertical: true)
                 if let advertised = host.advertisedPolicy, advertised < .permissive {
-                    Text("This Mac asked for “\(advertised.approvalModeLabel)”, so that is as relaxed as it goes from here. Loosen it in Juno on the Mac itself.")
+                    Text("This Mac asked for “\(advertised.approvalModeLabel)”, so that is as relaxed as it goes from here. Loosen it in Alevr on the Mac itself.")
                         .junoType(.caption)
                         .foregroundStyle(Color.junoSecondaryInk)
                         .fixedSize(horizontal: false, vertical: true)
@@ -419,7 +419,7 @@ struct DesktopHostSettings: View {
                         )
                     }
                 )
-                Text("What this Mac told Juno it can do. A struck-through one is offered by the Mac and switched off above. This list is the Mac’s to report and cannot be edited from a browser.")
+                Text("What this Mac told Alevr it can do. A struck-through one is offered by the Mac and switched off above. This list is the Mac’s to report and cannot be edited from a browser.")
                     .junoType(.caption)
                     .foregroundStyle(Color.junoSecondaryInk)
                     .fixedSize(horizontal: false, vertical: true)
@@ -437,7 +437,7 @@ struct DesktopHostSettings: View {
                 if grants.isEmpty {
                     JunoEmptyState(
                         title: "No folders shared",
-                        message: "Nothing has been shared with this Mac, so file work on it has nowhere to happen. A folder is chosen in Juno on the Mac, where the file picker is.",
+                        message: "Nothing has been shared with this Mac, so file work on it has nowhere to happen. A folder is chosen in Alevr on the Mac, where the file picker is.",
                         icon: .folderOpen,
                         size: .panel
                     )
@@ -447,7 +447,7 @@ struct DesktopHostSettings: View {
                             grantRow(grant)
                         }
                     }
-                    Text("Named, never located. Juno does not send the path of a folder on your Mac to a browser — a path is a path in a screenshot, in a support ticket, and in the next thing that asks an agent to read what sits next to it.")
+                    Text("Named, never located. Alevr does not send the path of a folder on your Mac to a browser — a path is a path in a screenshot, in a support ticket, and in the next thing that asks an agent to read what sits next to it.")
                         .junoType(.caption)
                         .foregroundStyle(Color.junoSecondaryInk)
                         .fixedSize(horizontal: false, vertical: true)
@@ -505,7 +505,7 @@ struct DesktopHostSettings: View {
             nameList(.connections, "Apps it may drive", host.allowedApps, empty: "No app is singled out, so screen control is bounded only by the switch above.")
             nameList(.circleSlash, "Apps it may never touch", host.blockedApps, empty: "Nothing is blocked by name.")
             nameList(.link, "Sites the browser may visit", host.allowedDomains, empty: "No site list, so the browser switch above is the whole answer.")
-            Text("These three are set in Juno on the Mac and are shown here as they stand. The browser cannot change them.")
+            Text("These three are set in Alevr on the Mac and are shown here as they stand. The browser cannot change them.")
                 .junoType(.caption)
                 .foregroundStyle(Color.junoSecondaryInk)
                 .fixedSize(horizontal: false, vertical: true)

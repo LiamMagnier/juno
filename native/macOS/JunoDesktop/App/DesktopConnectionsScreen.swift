@@ -83,7 +83,7 @@ struct DesktopConnectionsScreen: View {
                 Button("Cancel", role: .cancel) { disconnectTarget = nil }
                     .contentShape(.rect)
             } message: { target in
-                Text("Juno will lose access to your \(target.label) account. You can reconnect anytime.")
+                Text("Alevr will lose access to your \(target.label) account. You can reconnect anytime.")
             }
             // The authorisation round trip happens in the browser and ends on
             // Juno's own web page, so nothing reports back into this process. The
@@ -137,7 +137,7 @@ struct DesktopConnectionsScreen: View {
             // badge for that reason).
             JunoPageHeader(
                 "Connections",
-                lede: "Link an app so Juno can work with your repositories, designs, docs, and workspace tools."
+                lede: "Link an app so Alevr can work with your repositories, designs, docs, and workspace tools."
             ) {
                 Button {
                     editingMCP = nil
@@ -356,7 +356,7 @@ struct DesktopConnectionsScreen: View {
                     // hundreds more behind the cursor, so a number here would be a
                     // lie about how many apps exist.
                     section(
-                        "Available", "Connect an app to let Juno work inside it.", availableConnectors,
+                        "Available", "Connect an app to let Alevr work inside it.", availableConnectors,
                         endsWithAddTile: showsAddTile
                     )
                 }
@@ -470,7 +470,7 @@ struct DesktopConnectionsScreen: View {
                     beginCustomSignIn(connector.id)
                 }
                 .disabled(state == .connecting)
-                .help("Juno opens this server’s sign-in page in your browser. You approve Juno there, then choose its tools here.")
+                .help("Alevr opens this server’s sign-in page in your browser. You approve Alevr there, then choose its tools here.")
                 .accessibilityLabel("Sign in to \(connector.label)")
                 .accessibilityIdentifier("connections.sign-in.\(connector.id)")
             }
@@ -483,7 +483,7 @@ struct DesktopConnectionsScreen: View {
         case .connected:
             wideButton("Disconnect", role: .destructive) { disconnectTarget = connector }
                 .disabled(model.isMutating)
-                .help("Revoke Juno's access to \(connector.label)")
+                .help("Revoke Alevr's access to \(connector.label)")
                 .accessibilityLabel("Disconnect \(connector.label)")
                 .accessibilityIdentifier("connections.disconnect.\(connector.id)")
 
@@ -514,7 +514,7 @@ struct DesktopConnectionsScreen: View {
         case .unavailable:
             // Deliberately no control. A button that is guaranteed to fail is
             // worse than a sentence saying why there isn't one.
-            Text("The Juno server this app talks to has no OAuth app for \(connector.label) yet.")
+            Text("The Alevr server this app talks to has no OAuth app for \(connector.label) yet.")
                 .junoCaption()
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -695,7 +695,7 @@ struct DesktopConnectionsScreen: View {
                             singular: "connection"
                         ).humanized(
                             error,
-                            fallback: "Juno couldn't refresh your connections."
+                            fallback: "Alevr couldn't refresh your connections."
                         ),
                         icon: .triangleAlert,
                         tint: Color.junoDanger,
@@ -711,7 +711,7 @@ struct DesktopConnectionsScreen: View {
                     // and cannot edit its environment, so this states the fact and
                     // stops rather than handing out an instruction they cannot act on.
                     DesktopConnectionsNotice(
-                        message: "The managed app directory is off on this server, so only the apps built into Juno are listed.",
+                        message: "The managed app directory is off on this server, so only the apps built into Alevr are listed.",
                         icon: .about,
                         tint: Color.junoCaution
                     )
@@ -822,7 +822,7 @@ struct DesktopConnectionsScreen: View {
         case .connecting:
             return "Finishing connection…"
         case .unavailable:
-            return "Not set up on this Juno server"
+            return "Not set up on this Alevr server"
         case .setup:
             return "Needs its own app credentials in Composio"
         case .available:
@@ -834,13 +834,13 @@ struct DesktopConnectionsScreen: View {
     private func authorizationText(_ connector: NativeConnector) -> String {
         switch connector.source {
         case .native where connector.kind == "credentials":
-            return "\(connector.label) signs in with an app-specific password. Juno opens your Connections page in your browser to collect it — passwords are never typed into this app."
+            return "\(connector.label) signs in with an app-specific password. Alevr opens your Connections page in your browser to collect it — passwords are never typed into this app."
         case .native:
-            return "Juno opens \(connector.label)'s authorisation page in your browser. You approve the permissions there, and Juno keeps only the resulting token, encrypted."
+            return "Alevr opens \(connector.label)'s authorisation page in your browser. You approve the permissions there, and Alevr keeps only the resulting token, encrypted."
         case .composio:
-            return "Juno opens \(connector.label)'s authorisation page in your browser through Composio, the managed connector service. You approve the permissions there."
+            return "Alevr opens \(connector.label)'s authorisation page in your browser through Composio, the managed connector service. You approve the permissions there."
         case .custom:
-            return "Juno opens this server’s sign-in page in your browser. You approve Juno there."
+            return "Alevr opens this server’s sign-in page in your browser. You approve Alevr there."
         }
     }
 
@@ -1148,7 +1148,7 @@ struct DesktopMCPServerSheet: View {
         VStack(alignment: .leading, spacing: JunoSpace.roomy) {
             VStack(alignment: .leading, spacing: JunoSpace.tight) {
                 Text(editing == nil ? "Add MCP server" : "Manage MCP server").junoType(.heading)
-                Text("Connect tools from your own remote server. Juno stores your credential encrypted.")
+                Text("Connect tools from your own remote server. Alevr stores your credential encrypted.")
                     .junoType(.ui).foregroundStyle(Color.junoSecondaryInk)
             }
             Form {
@@ -1161,7 +1161,7 @@ struct DesktopMCPServerSheet: View {
             }
             .textFieldStyle(.roundedBorder)
             .disabled(busy)
-            Text("Use a public HTTPS endpoint reachable by Juno. For a local server, use the project’s MCP settings in Juno Code.")
+            Text("Use a public HTTPS endpoint reachable by Alevr. For a local server, use the project’s MCP settings in Alevr Code.")
                 .junoType(.caption).foregroundStyle(Color.junoSecondaryInk)
             HStack(spacing: JunoSpace.snug) {
                 Button(testing ? "Testing…" : "Test connection") { test() }

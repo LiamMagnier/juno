@@ -142,7 +142,7 @@ final class DesktopDesignEditorHost: NSObject {
         do {
             webView.evaluateJavaScript(try command.javaScript())
         } catch {
-            status = .failed("Juno could not send the document to the editor: \(error.localizedDescription)")
+            status = .failed("Alevr could not send the document to the editor: \(error.localizedDescription)")
         }
     }
 

@@ -128,7 +128,7 @@ final class DesktopWorkGrantStore {
         panel.allowsMultipleSelection = false
         panel.prompt = "Share Folder"
         panel.message = message
-            ?? "Choose a folder Juno Work may use on this Mac. It can reach nothing outside it."
+            ?? "Choose a folder Alevr Work may use on this Mac. It can reach nothing outside it."
         guard panel.runModal() == .OK, let url = panel.url else { return nil }
         return adopt(url, mode: mode)
     }
@@ -337,7 +337,7 @@ struct DesktopWorkGrantRequests: WorkGrantRequesting {
         await MainActor.run {
             store.addFolder(
                 mode: .read,
-                message: "A Juno Work task has asked for a folder on this Mac. "
+                message: "An Alevr Work task has asked for a folder on this Mac. "
                     + "Choose one to share it for reading, or close this to refuse."
             )
         }

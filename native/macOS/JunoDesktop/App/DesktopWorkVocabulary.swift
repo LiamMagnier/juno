@@ -227,21 +227,21 @@ struct DesktopWorkStatusStyle {
         case .running:
             DesktopWorkStatusStyle(
                 label: "Running",
-                sentence: "Juno is working on this now.",
+                sentence: "Alevr is working on this now.",
                 symbol: "bolt.horizontal",
                 tint: Color.junoAccent
             )
         case .waitingInput:
             DesktopWorkStatusStyle(
                 label: "Needs an answer",
-                sentence: "Juno has asked you something and cannot continue until you answer.",
+                sentence: "Alevr has asked you something and cannot continue until you answer.",
                 symbol: "questionmark.bubble",
                 tint: Color.junoCaution
             )
         case .waitingApproval:
             DesktopWorkStatusStyle(
                 label: "Needs approval",
-                sentence: "Juno is waiting for you to allow or refuse an action.",
+                sentence: "Alevr is waiting for you to allow or refuse an action.",
                 symbol: "shield.lefthalf.filled",
                 tint: Color.junoCaution
             )
@@ -276,7 +276,7 @@ struct DesktopWorkStatusStyle {
         case .interrupted:
             DesktopWorkStatusStyle(
                 label: "Interrupted",
-                sentence: "The executor stopped reporting and its lease expired. Juno does not restart an interrupted run on its own, because it may already have changed something.",
+                sentence: "The executor stopped reporting and its lease expired. Alevr does not restart an interrupted run on its own, because it may already have changed something.",
                 symbol: "exclamationmark.triangle",
                 tint: Color.junoCaution
             )

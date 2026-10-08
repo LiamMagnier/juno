@@ -108,7 +108,7 @@ struct DesktopMenuBarExtraContent: View {
             } label: {
                 // Juno's own mark: this brings Juno's window forward, it does
                 // not leave the app (which is what the external arrow says).
-                JunoIconLabel("Open Juno", icon: .home)
+                JunoIconLabel("Open Alevr", icon: .home)
             }
         }
     }

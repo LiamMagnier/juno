@@ -32,7 +32,7 @@ public enum CodeEnvironmentChoice: String, CaseIterable, Identifiable, Sendable,
         switch self {
         case .local: "Works directly in the checkout on this Mac."
         case .worktree: "Works in an isolated Git worktree beside the checkout."
-        case .cloud: "Runs on Juno's cloud runner and opens a pull request."
+        case .cloud: "Runs on Alevr's cloud runner and opens a pull request."
         case .device: "Runs on another computer signed in to your account."
         }
     }

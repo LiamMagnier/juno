@@ -280,7 +280,7 @@ enum ResearchStageBFixtures {
                 suggestions: ["England", "Scotland", "Wales"], skippable: false
             ),
             .init(id: "c2", question: "How is it heated today?", suggestions: ["Gas boiler", "Oil", "Electric storage"]),
-            .init(id: "c3", question: "Anything you have already ruled out?", why: "Juno will leave these out of the comparison."),
+            .init(id: "c3", question: "Anything you have already ruled out?", why: "Alevr will leave these out of the comparison."),
         ]
         return run
     }()

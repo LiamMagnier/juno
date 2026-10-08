@@ -102,7 +102,7 @@ final class DesktopSkillPageModel {
         let patch = NativeSkillRules.usagePatch(
             automatic: automatic, skill: detail.skill, isInstalled: detail.version?.provenance != nil
         )
-        return await self.patch(patch, failure: "Couldn’t change how Juno uses this skill. It is as it was.")
+        return await self.patch(patch, failure: "Couldn’t change how Alevr uses this skill. It is as it was.")
     }
 
     func move(to projectID: String?) async -> String? {
@@ -454,7 +454,7 @@ struct DesktopSkillPage: View {
             if status == "blocked" {
                 DesktopNoteBand(icon: .circleSlash, tone: Color.junoDestructiveInk) {
                     VStack(alignment: .leading, spacing: JunoSpace.hairline) {
-                        Text("Blocked by Juno’s safety check").fontWeight(.medium)
+                        Text("Blocked by Alevr’s safety check").fontWeight(.medium)
                         Text("This version can’t run or be switched on.")
                             .foregroundStyle(Color.junoSecondaryInk)
                         findingList(findings)
@@ -463,7 +463,7 @@ struct DesktopSkillPage: View {
             } else if status == "warning" {
                 DesktopNoteBand(icon: .warning, tone: Color.junoWarningInk) {
                     VStack(alignment: .leading, spacing: JunoSpace.hairline) {
-                        Text("Juno’s safety check flagged something").fontWeight(.medium)
+                        Text("Alevr’s safety check flagged something").fontWeight(.medium)
                         Text("It can still run. Read the instructions before you rely on it.")
                             .foregroundStyle(Color.junoSecondaryInk)
                         findingList(findings)
@@ -471,7 +471,7 @@ struct DesktopSkillPage: View {
                 }
             } else if status == "pending" {
                 DesktopNoteBand(icon: .info) {
-                    Text("Juno hasn’t checked this version yet. It’s checked before a task uses it.")
+                    Text("Alevr hasn’t checked this version yet. It’s checked before a task uses it.")
                         .foregroundStyle(Color.junoSecondaryInk)
                 }
             }
@@ -521,8 +521,8 @@ struct DesktopSkillPage: View {
                 DesktopSkillUsageOption(
                     title: "Automatically when relevant",
                     detail: Text(NativeSkillRules.trustPermitsAutoSelection(skill.trust)
-                        ? "Juno picks it when your request matches its description."
-                        : "Juno picks it when your request matches its description. Choosing this trusts its instructions."),
+                        ? "Alevr picks it when your request matches its description."
+                        : "Alevr picks it when your request matches its description. Choosing this trusts its instructions."),
                     isSelected: automatic,
                     disabled: disabled
                 ) {
@@ -533,7 +533,7 @@ struct DesktopSkillPage: View {
             .accessibilityLabel("Usage")
             if skill.projectID != nil {
                 HStack(spacing: JunoSpace.tight) {
-                    Text("Filed in \(Text(detail.projectName ?? "a project").fontWeight(.medium).foregroundStyle(Color.junoForeground)), so Juno only picks it for that project’s tasks.")
+                    Text("Filed in \(Text(detail.projectName ?? "a project").fontWeight(.medium).foregroundStyle(Color.junoForeground)), so Alevr only picks it for that project’s tasks.")
                         .junoType(.caption)
                         .foregroundStyle(Color.junoSecondaryInk)
                     Button("Change") { moving = true }
@@ -857,7 +857,7 @@ struct DesktopSkillEditor: View {
         VStack(alignment: .leading, spacing: JunoSpace.section) {
             HStack(alignment: .top, spacing: JunoSpace.roomy) {
                 DesktopSkillField(label: "Name", text: $name, help: Text("Still typed as \(desktopSlugText(slug))"))
-                DesktopSkillField(label: "Description", text: $description, help: Text("One line. Juno matches requests against it."))
+                DesktopSkillField(label: "Description", text: $description, help: Text("One line. Alevr matches requests against it."))
             }
             VStack(alignment: .leading, spacing: JunoSpace.tight) {
                 Text("Instructions")
@@ -876,7 +876,7 @@ struct DesktopSkillEditor: View {
                 VStack(alignment: .leading, spacing: JunoSpace.tight) {
                     Text("Files")
                         .junoType(JunoType.ui.weight(.medium))
-                    Text("Templates and references the skill works from. Juno reads them, never runs them.")
+                    Text("Templates and references the skill works from. Alevr reads them, never runs them.")
                         .junoType(.caption)
                         .foregroundStyle(Color.junoSecondaryInk)
                     DesktopListCard {
@@ -1025,9 +1025,9 @@ struct DesktopNewSkillPage: View {
 
     var body: some View {
         JunoPage(measure: .reading) {
-            JunoPageHeader("New skill", caption: "Skills", lede: "Instructions Juno follows when you call it by name.") {
+            JunoPageHeader("New skill", caption: "Skills", lede: "Instructions Alevr follows when you call it by name.") {
                 Button { startDraft(DesktopSkillCopy.createPrompt) } label: {
-                    Label("Create with Juno", icon: .conversation, size: 13)
+                    Label("Create with Alevr", icon: .conversation, size: 13)
                 }
                 .buttonStyle(.bordered)
                 .tint(nil)
@@ -1043,7 +1043,7 @@ struct DesktopNewSkillPage: View {
                     Text(imported == nil ? "Bring a skill from your computer, or write one below." : "File loaded. Review the instructions before saving. Attach referenced files separately.")
                         .junoType(.caption).foregroundStyle(Color.junoSecondaryInk)
                     if let imported, !imported.ignoredSettings.isEmpty {
-                        Text("Settings that don’t apply in Juno: \(imported.ignoredSettings.joined(separator: ", ")).")
+                        Text("Settings that don’t apply in Alevr: \(imported.ignoredSettings.joined(separator: ", ")).")
                             .junoType(.caption).foregroundStyle(Color.junoSecondaryInk)
                     }
                     if let fileError {
@@ -1061,7 +1061,7 @@ struct DesktopNewSkillPage: View {
                     label: "Description",
                     text: $description,
                     placeholder: "Sorts incoming invoices into the right folder and renames them.",
-                    help: Text("One line. Juno reads it to decide when the skill fits.")
+                    help: Text("One line. Alevr reads it to decide when the skill fits.")
                 )
                 VStack(alignment: .leading, spacing: JunoSpace.tight) {
                     Text("Instructions")

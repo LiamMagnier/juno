@@ -198,7 +198,7 @@ struct DesktopNotificationsPopover: View {
             if items.isEmpty {
                 JunoEmptyState(
                     title: "Nothing new",
-                    message: "Juno tells you here when a task finishes, needs you, or an agent has something to share.",
+                    message: "Alevr tells you here when a task finishes, needs you, or an agent has something to share.",
                     icon: .notifications,
                     size: .panel,
                     tone: .empty

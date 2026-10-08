@@ -11,19 +11,19 @@ import JunoCodeUI
 // headless `juno-code exec` is deferred.
 
 struct StartJunoCodeTaskIntent: AppIntent {
-    static let title: LocalizedStringResource = "Start a Juno Code task"
+    static let title: LocalizedStringResource = "Start an Alevr Code task"
     static let description = IntentDescription(
-        "Opens a Juno Code session in a project and gives it a task. Juno asks you in the app before anything that needs your approval."
+        "Opens an Alevr Code session in a project and gives it a task. Alevr asks you in the app before anything that needs your approval."
     )
     static let openAppWhenRun = true
 
-    @Parameter(title: "Task", description: "What Juno should do.")
+    @Parameter(title: "Task", description: "What Alevr should do.")
     var prompt: String
 
-    @Parameter(title: "Project", description: "The project's name in Juno Code. Optional with only one project.")
+    @Parameter(title: "Project", description: "The project's name in Alevr Code. Optional with only one project.")
     var project: String?
 
-    @Parameter(title: "Goal", description: "Optional: a goal Juno keeps working toward until it is met.")
+    @Parameter(title: "Goal", description: "Optional: a goal Alevr keeps working toward until it is met.")
     var goal: String?
 
     @Parameter(title: "Mode", default: .askBeforeEdits)
@@ -39,7 +39,7 @@ struct StartJunoCodeTaskIntent: AppIntent {
     @MainActor
     func perform() async throws -> some IntentResult & ProvidesDialog {
         guard let workbench = await DesktopWorkbenchRegistry.shared.awaitWorkbench() else {
-            throw CodeTaskIntentError.cannotStart("Sign in to Juno and open Juno Code first.")
+            throw CodeTaskIntentError.cannotStart("Sign in to Alevr and open Alevr Code first.")
         }
         let request = CodeTaskIntentRequest(
             projectName: project,
@@ -49,7 +49,7 @@ struct StartJunoCodeTaskIntent: AppIntent {
         )
         let sessionID = try await workbench.startIntentTask(request)
         DesktopWorkbenchRegistry.shared.request(.openSession(sessionID))
-        return .result(dialog: "Started in Juno Code. Juno will ask you in the app before anything that needs approval.")
+        return .result(dialog: "Started in Alevr Code. Alevr will ask you in the app before anything that needs approval.")
     }
 }
 
@@ -81,7 +81,7 @@ struct JunoCodeShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
         AppShortcut(
             intent: StartJunoCodeTaskIntent(),
-            phrases: ["Start a task in \(.applicationName)", "Start a Juno Code task in \(.applicationName)"],
+            phrases: ["Start a task in \(.applicationName)", "Start an Alevr Code task in \(.applicationName)"],
             shortTitle: "Start a Code task",
             systemImageName: "chevron.left.forwardslash.chevron.right"
         )

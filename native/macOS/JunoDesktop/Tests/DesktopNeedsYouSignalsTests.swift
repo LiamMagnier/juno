@@ -160,7 +160,7 @@ struct DesktopNeedsYouSignalsTests {
         let signal = runs.openSignal(for: "c1")
         #expect(
             DesktopChatSidebarContent.rowHelp(title: "Vendor shortlist", signal: signal)
-                == "Vendor shortlist: Juno is waiting for you to allow or refuse an action."
+                == "Vendor shortlist: Alevr is waiting for you to allow or refuse an action."
         )
         #expect(DesktopChatSidebarContent.rowHelp(title: "Vendor shortlist", signal: nil) == "Vendor shortlist")
         #expect(DesktopChatSidebarContent.rowValue(pinned: true, signal: signal) == "Needs approval, Pinned")

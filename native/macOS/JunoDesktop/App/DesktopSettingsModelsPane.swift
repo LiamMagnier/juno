@@ -75,7 +75,7 @@ struct DesktopSettingsModelsPane: View {
         return DesktopSettingRow(
             title: "Default model",
             description: auto
-                ? "Juno picks the model and thinking depth each message needs."
+                ? "Alevr picks the model and thinking depth each message needs."
                 : "New chats start on this model. You can switch in any message.",
             status: context.saves.status("defaultModel")
         ) {

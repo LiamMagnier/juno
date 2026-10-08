@@ -105,7 +105,7 @@ final class InterruptedRunTests: XCTestCase {
 
         let request = try XCTUnwrap(model.requests.first, "Resume must reach the model")
         guard case let .user(note)? = request.messages.last else {
-            return XCTFail("the last message must be Juno's note, got \(String(describing: request.messages.last))")
+            return XCTFail("the last message must be Alevr's note, got \(String(describing: request.messages.last))")
         }
         XCTAssertTrue(RuntimeNote.isRuntimeNote(note), "fenced as runtime text, never as the reader")
         XCTAssertTrue(note.hasPrefix("<juno_runtime reason=\"after_quit\""), note)

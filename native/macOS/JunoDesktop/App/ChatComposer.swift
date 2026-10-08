@@ -155,7 +155,7 @@ enum ChatComposerPlaceholder {
         /// its curly apostrophe included.
         var placeholder: String {
             switch self {
-            case .question: "Answer Juno\u{2019}s question…"
+            case .question: "Answer Alevr\u{2019}s question…"
             case .task: "Add an instruction to the running task…"
             case .research: "Add a constraint, or paste a source to include…"
             }
@@ -2449,7 +2449,7 @@ struct ChatComposer: View {
     /// in the same transaction shape, and the words are still in the field.
     private func handBack() {
         firstTurnError = model.chatErrorDescription ?? model.lastErrorDescription
-            ?? "Juno couldn't start this chat. Your message is still here — try again."
+            ?? "Alevr couldn't start this chat. Your message is still here — try again."
         withAnimation(JunoMotion.handoff(reduceMotion: reduceMotion)) {
             onFirstTurn?(.refused)
         }
@@ -2698,8 +2698,8 @@ struct ComposerPendingSteers: View {
 
     private var header: String {
         steers.count == 1
-            ? "Queued \u{2014} Juno reads this before its next step"
-            : "Queued \u{2014} Juno reads these \(steers.count) before its next step, in order"
+            ? "Queued \u{2014} Alevr reads this before its next step"
+            : "Queued \u{2014} Alevr reads these \(steers.count) before its next step, in order"
     }
 
     var body: some View {

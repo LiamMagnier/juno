@@ -26,7 +26,7 @@ struct StudioContinuedRow: View {
         case .retry:
             text = "Tried again"
         case .afterQuit:
-            text = "Resumed after Juno quit"
+            text = "Resumed after Alevr quit"
         case .keepGoing:
             text = "Kept going"
         case .wrapUp:
@@ -147,7 +147,7 @@ enum StudioRunEnd {
         case .stalled: return "Stopped: no progress in the last two tries"
         case .waitingOnBackground: return "Waiting for background work to finish"
         case .stopped: return "Stopped"
-        case .interrupted: return "Juno quit while this was running"
+        case .interrupted: return "Alevr quit while this was running"
         case .error: return nil
         }
     }

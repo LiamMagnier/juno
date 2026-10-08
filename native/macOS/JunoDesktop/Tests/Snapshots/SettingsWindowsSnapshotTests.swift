@@ -105,7 +105,7 @@ struct SettingsWindowsSnapshotTests {
         case "update-failed":
             return update(.failed("The update download didn’t match its published checksum."))
         case "update-unsupported":
-            return update(.unsupported("Juno can't update itself where it is installed. Download the new version instead."))
+            return update(.unsupported("Alevr can't update itself where it is installed. Download the new version instead."))
         default:
             return try await settings(name)
         }

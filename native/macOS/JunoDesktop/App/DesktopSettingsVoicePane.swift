@@ -12,7 +12,7 @@ struct DesktopSettingsVoicePane: View {
     let context: DesktopSettingsContext
 
     /// The web's `VOICE_PREVIEW_TEXT`.
-    static let previewText = "Hi, I'm Juno. This is how I sound when I read an answer aloud."
+    static let previewText = "Hi, I'm Alevr. This is how I sound when I read an answer aloud."
 
     /// `src/lib/voices.ts`, verbatim.
     static let voices: [(id: String, label: String, description: String)] = [
@@ -86,7 +86,7 @@ struct DesktopSettingsVoicePane: View {
         let playing = preview.playingID == active
         return DesktopSettingRow(
             title: "Voice",
-            description: voice?.description ?? "A voice Juno for Mac does not list. Choosing one replaces it.",
+            description: voice?.description ?? "A voice Alevr for Mac does not list. Choosing one replaces it.",
             status: context.saves.status("voiceId")
         ) {
             HStack(spacing: JunoSpace.snug) {

@@ -219,7 +219,7 @@ public struct CodeRemoteTaskDetailView: View {
                     )
                     .font(.caption)
                     .junoSecondaryInk()
-                    TextField("Ask Juno to continue…", text: $followUpDraft, axis: .vertical)
+                    TextField("Ask Alevr to continue…", text: $followUpDraft, axis: .vertical)
                         .lineLimit(2...5)
                         .textFieldStyle(.roundedBorder)
                         .onSubmit { sendFollowUp() }

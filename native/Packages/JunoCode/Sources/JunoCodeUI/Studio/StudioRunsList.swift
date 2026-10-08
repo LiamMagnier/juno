@@ -147,7 +147,7 @@ public struct StudioRunRow: View {
         case .decline: "Decline, and the run carries on without it"
         case .reply: "Answer the question"
         case .keepGoing: "Another block of steps, then carry on from where it stopped"
-        case .resume: "Carry on from where it stopped when Juno quit"
+        case .resume: "Carry on from where it stopped when Alevr quit"
         case .retry: "Try the last turn again"
         }
     }

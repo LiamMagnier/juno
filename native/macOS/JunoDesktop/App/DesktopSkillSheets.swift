@@ -230,7 +230,7 @@ struct DesktopSkillImportSheet: View {
     private func moreSentence(_ preview: NativeSkillImportPreview) -> String {
         let read = preview.skills.count + preview.problems.count
         let of = preview.total.map { " of \($0)" } ?? ""
-        return "Juno read the first \(read)\(of) skills in this repository. To reach the rest, paste a link to a folder inside it."
+        return "Alevr read the first \(read)\(of) skills in this repository. To reach the rest, paste a link to a folder inside it."
     }
 
     private func candidate(_ skill: NativeSkillImportCandidate, problem: NativeSkillRules.RenameProblem?) -> some View {
@@ -262,7 +262,7 @@ struct DesktopSkillImportSheet: View {
                         .lineLimit(2)
                 }
                 if skill.securityStatus == "blocked" {
-                    Label("Juno’s safety check blocked this skill. It would install switched off.", icon: .warning, size: 12)
+                    Label("Alevr’s safety check blocked this skill. It would install switched off.", icon: .warning, size: 12)
                         .junoType(.caption)
                         .foregroundStyle(Color.junoWarningInk)
                 }
@@ -270,7 +270,7 @@ struct DesktopSkillImportSheet: View {
                     renameField(skill, problem: problem)
                 }
                 if !skill.droppedTools.isEmpty, !skill.installed {
-                    Text("Leaves out tool rules Juno can’t apply: \(Text(skill.droppedTools.prefix(2).joined(separator: ", ")).font(JunoType.micro.font()))\(skill.droppedTools.count > 2 ? ", …" : "")")
+                    Text("Leaves out tool rules Alevr can’t apply: \(Text(skill.droppedTools.prefix(2).joined(separator: ", ")).font(JunoType.micro.font()))\(skill.droppedTools.count > 2 ? ", …" : "")")
                         .junoType(.caption)
                         .foregroundStyle(Color.junoSecondaryInk)
                 }
@@ -534,7 +534,7 @@ struct DesktopSkillUpdateSheet: View {
                     }
                     group("New in this repository", check.added) { _ in AnyView(Text("Not installed yet")) }
                     if check.more {
-                        Text("This repository has more skills than Juno reads at once, so some new ones may not be listed.")
+                        Text("This repository has more skills than Alevr reads at once, so some new ones may not be listed.")
                             .junoType(.caption)
                             .foregroundStyle(Color.junoSecondaryInk)
                             .padding(.horizontal, JunoSpace.roomy)
@@ -692,7 +692,7 @@ struct DesktopSkillMoveSheet: View {
                 Text("Move to a project")
                     .junoType(.heading)
                     .accessibilityAddTraits(.isHeader)
-                Text("Juno picks a filed skill only for that project’s tasks. Typing \(desktopSlugText(slug)) works anywhere.")
+                Text("Alevr picks a filed skill only for that project’s tasks. Typing \(desktopSlugText(slug)) works anywhere.")
                     .junoType(.ui)
                     .foregroundStyle(Color.junoSecondaryInk)
                     .fixedSize(horizontal: false, vertical: true)

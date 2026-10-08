@@ -118,7 +118,7 @@ enum DesktopOfflineState: Equatable {
     /// The one sentence each state says, here once so the caption and the
     /// footer's sync mark can never word it two ways (§1.5).
     static let offlineSentence = "Offline · messages send when you're back"
-    static let unreachableSentence = "Juno is unreachable · showing your local copy"
+    static let unreachableSentence = "Alevr is unreachable · showing your local copy"
 
     var sentence: String {
         switch self {

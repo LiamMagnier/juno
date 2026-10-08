@@ -1003,7 +1003,7 @@ struct DesktopArtifactCanvas: View {
                 // this Mac yet — or never will, in a private chat.
                 JunoEmptyState(
                     title: "This design isn’t saved yet",
-                    message: "It opens here once Juno has stored it — usually a moment after the reply finishes.",
+                    message: "It opens here once Alevr has stored it — usually a moment after the reply finishes.",
                     icon: .design
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)

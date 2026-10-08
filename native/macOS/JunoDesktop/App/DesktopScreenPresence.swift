@@ -117,8 +117,8 @@ final class DesktopScreenPresence {
 
     private func notify(active: Bool, app: String?) {
         let title = active
-            ? (app.map { "Juno is using \($0). Press Esc to stop." } ?? "Juno can use the apps you grant. Press Esc to stop.")
-            : "Juno stopped using apps."
+            ? (app.map { "Alevr is using \($0). Press Esc to stop." } ?? "Alevr can use the apps you grant. Press Esc to stop.")
+            : "Alevr stopped using apps."
         Task {
             let center = UNUserNotificationCenter.current()
             let status = await center.notificationSettings().authorizationStatus
@@ -172,7 +172,7 @@ struct DesktopScreenPresenceMenuSection: View {
     var body: some View {
         if center.isActive {
             Section {
-                Button("Stop Juno using apps") { center.stop() }
+                Button("Stop Alevr using apps") { center.stop() }
                     .help(center.caption ?? "Stop screen control everywhere")
                     .accessibilityIdentifier("juno.menubar.stop-screen-control")
             }

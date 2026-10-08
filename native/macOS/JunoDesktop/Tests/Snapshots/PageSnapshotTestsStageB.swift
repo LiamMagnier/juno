@@ -395,7 +395,7 @@ enum StageBPageFixtures {
     static let refusedEdit = NativeMemoryEdit(
         id: "edit-refused",
         instruction: "Remember my card number",
-        note: "Juno doesn’t keep payment details in memory.",
+        note: "Alevr doesn’t keep payment details in memory.",
         operations: [],
         status: .rejected,
         createdAt: Date().addingTimeInterval(-6 * 86_400)
