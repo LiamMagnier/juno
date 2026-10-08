@@ -15,7 +15,7 @@ struct JunoMobileMessageImages: View {
   let loader: NativeChatImageLoader
   /// Trailing for the reader's own message, leading for Juno's.
   var alignment: HorizontalAlignment = .leading
-  var maxWidth: CGFloat = 288
+  var maxWidth: CGFloat = 300
 
   @State private var viewing: NativeChatAttachment?
   @Namespace private var zoom
@@ -57,12 +57,10 @@ struct JunoMobileMessageImages: View {
     } label: {
       JunoMobileAttachmentImage(attachment: image, loader: loader)
         .frame(width: width, height: height)
-        .clipShape(RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous))
-        .overlay(
-          RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
-            .strokeBorder(Color.junoHairline, lineWidth: 1)
-        )
-        .contentShape(RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous))
+        // The picture is the surface: 18pt corners, no frame, no hairline —
+        // the way Photos and Messages set an image in a thread.
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
     .buttonStyle(.junoPress)
     .modifier(JunoMobileZoomTransitionAnchor(id: image.id, namespace: zoom))
@@ -228,19 +226,18 @@ struct JunoMobileImageViewer: View {
         Button {
           dismiss()
         } label: {
-          JunoIconView(.close, size: 16)
-            .foregroundStyle(.white)
-            .frame(width: 44, height: 44)
-            .background(.black.opacity(0.35), in: Circle())
-            .contentShape(Circle())
+          Image(systemName: "xmark")
+            .font(.body.weight(.medium))
+            .frame(width: 30, height: 30)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.glass)
+        .buttonBorderShape(.circle)
         .accessibilityLabel("Close")
         .accessibilityIdentifier("juno.mobile.image-viewer-close")
         Spacer()
         if let currentAttachment {
           Text(currentAttachment.fileName)
-            .junoFont(size: 13, relativeTo: .footnote, weight: .medium)
+            .font(.footnote.weight(.semibold))
             .foregroundStyle(.white.opacity(0.85))
             .lineLimit(1)
         }
@@ -250,13 +247,12 @@ struct JunoMobileImageViewer: View {
             item: Image(uiImage: image),
             preview: SharePreview(currentAttachment?.fileName ?? "Image", image: Image(uiImage: image))
           ) {
-            JunoIconView(.share, size: 16)
-              .foregroundStyle(.white)
-              .frame(width: 44, height: 44)
-              .background(.black.opacity(0.35), in: Circle())
-              .contentShape(Circle())
+            Image(systemName: "square.and.arrow.up")
+              .font(.body.weight(.medium))
+              .frame(width: 30, height: 30)
           }
-          .buttonStyle(.plain)
+          .buttonStyle(.glass)
+          .buttonBorderShape(.circle)
           .accessibilityLabel("Share image")
           .accessibilityIdentifier("juno.mobile.image-viewer-share")
         } else {
@@ -286,11 +282,11 @@ struct JunoMobileImageViewer: View {
           }
           .disabled(saved)
         }
-        .junoFont(size: 14, relativeTo: .subheadline, weight: .medium)
+        .font(.subheadline.weight(.semibold))
         .foregroundStyle(.white)
         .padding(.horizontal, JunoSpace.regular)
         .frame(minHeight: 44)
-        .background(.black.opacity(0.35), in: Capsule())
+        .glassEffect(.regular.interactive(), in: Capsule())
         .padding(.bottom, JunoSpace.regular)
       }
     }

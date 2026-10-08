@@ -314,7 +314,10 @@ private struct JunoMobileDraftChat: View {
       VStack(alignment: .leading, spacing: 0) {
         Spacer(minLength: 0)
         if let resume = resumeConversation {
-          JunoMobileResumeRow(title: resume.title) {
+          JunoMobileResumeRow(
+            title: resume.title,
+            symbol: resume.projectId != nil ? "folder" : (resume.kind == "code" ? "chevron.left.forwardslash.chevron.right" : "bubble.left")
+          ) {
             model.isDraftingNewConversation = false
             model.selectedConversationID = resume.id
           }
@@ -891,7 +894,14 @@ private struct JunoMobileConversationDetail: View {
       // The width clamp is not decoration — it is what keeps a line of
       // running text at a readable measure on an iPad, where a full-bleed
       // answer runs to ~90 characters.
-      LazyVStack(spacing: JunoSpace.section) {
+      // A plain `VStack`, not a lazy one. Measured on the iOS 26/27
+      // simulator: with `LazyVStack` under a bottom-anchored
+      // `ScrollPosition`, sending a turn in a long conversation left the
+      // whole visible transcript blank for the length of the reply — the
+      // stack kept a stale layout (content height frozen while the answer
+      // grew) and drew no rows in the viewport. An eager stack lays every
+      // row out and follows the stream correctly.
+      VStack(spacing: JunoSpace.section) {
         ForEach(messages) { message in
           JunoMobileMessageRow(
             message: message,
@@ -1033,83 +1043,75 @@ private struct JunoMobileConversationDetail: View {
   /// was on its own enough to time the type checker out.
   @ToolbarContentBuilder
   private var conversationToolbar: some ToolbarContent {
+    // The title is the menu: the conversation's own verbs live under its name,
+    // the way Notes and Photos put a document's actions under its title, so
+    // the bar keeps exactly three things — sidebar, title, new chat.
     ToolbarItem(placement: .principal) {
-      JunoMobileConversationTitle(
-        title: conversation.title,
-        justRenamed: model.recentlyRenamedConversationID == conversation.id,
-        onAnimationShown: { model.acknowledgeTitleAnimation(for: conversation.id) }
-      )
-    }
-    ToolbarItemGroup(placement: .topBarTrailing) {
-      if !messages.isEmpty, let newChat {
-        Button(action: newChat) {
-          Image(systemName: "square.and.pencil")
-            .junoFont(size: 17, relativeTo: .body, weight: .regular)
-            .foregroundStyle(Color.primary)
-            .frame(width: 32, height: 32)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .frame(minWidth: 44, minHeight: 44)
-        .accessibilityLabel("New chat")
-        .accessibilityIdentifier("juno.mobile.chat-new")
-      }
       Menu {
-        if shareClient != nil {
-          Button {
-            Task { await createShare() }
-          } label: {
-            JunoIconLabel(verbatim: "Share…", icon: .share)
-          }
-          .disabled(sharing)
-        }
-        Button {
-          find.open()
-        } label: {
-          JunoIconLabel(verbatim: "Find in Conversation", icon: .search)
-        }
-        .disabled(messages.isEmpty)
-        .accessibilityIdentifier("juno.mobile.conversation-find")
-        Button {
-          editValue = conversation.title
-          showingRename = true
-        } label: {
-          JunoIconLabel(verbatim: "Rename", icon: .pencil)
-        }
-        Button {
-          Task {
-            await model.setPinned(id: conversation.id, pinned: !conversation.pinned)
-          }
-        } label: {
-          JunoIconLabel(
-            verbatim: conversation.pinned ? "Unpin" : "Pin",
-            icon: .pin
-          )
-        }
-        Divider()
-        // Delete, not archive. Archiving moved a conversation into a
-        // folder this app has no screen for, which from the phone is
-        // indistinguishable from losing it.
-        Button(role: .destructive) {
-          showingDelete = true
-        } label: {
-          JunoIconLabel(verbatim: "Delete", icon: .trash)
-        }
+        conversationMenuItems
       } label: {
-        Image(systemName: "ellipsis")
-          .junoFont(size: 17, relativeTo: .body, weight: .regular)
-          .foregroundStyle(Color.primary)
-          .frame(width: 44, height: 44)
-          .contentShape(Rectangle())
+        JunoMobileConversationTitle(
+          title: conversation.title,
+          justRenamed: model.recentlyRenamedConversationID == conversation.id,
+          onAnimationShown: { model.acknowledgeTitleAnimation(for: conversation.id) }
+        )
       }
-      // On the Menu, not on the Label. A `Menu` tints its whole label with
-      // the accent, and a `foregroundStyle` inside cannot override that —
-      // the same trap `JunoMobileComposerActions` already documents for the
-      // composer's "+". With the accent applied this came out coral.
+      .menuIndicator(.hidden)
       .tint(Color.primary)
       .disabled(model.isMutating || conversation.isPending)
       .accessibilityLabel("Conversation actions")
       .accessibilityIdentifier("juno.mobile.conversation-menu")
+    }
+    if let newChat {
+      ToolbarItem(placement: .topBarTrailing) {
+        Button(action: newChat) {
+          Image(systemName: "square.and.pencil")
+        }
+        .tint(Color.primary)
+        .disabled(messages.isEmpty)
+        .accessibilityLabel("New chat")
+        .accessibilityIdentifier("juno.mobile.chat-new")
+      }
+    }
+  }
+
+  @ViewBuilder
+  private var conversationMenuItems: some View {
+    if shareClient != nil {
+      Button {
+        Task { await createShare() }
+      } label: {
+        Label("Share", systemImage: "square.and.arrow.up")
+      }
+      .disabled(sharing)
+    }
+    Button {
+      find.open()
+    } label: {
+      Label("Find in Conversation", systemImage: "magnifyingglass")
+    }
+    .accessibilityIdentifier("juno.mobile.conversation-find")
+    Button {
+      editValue = conversation.title
+      showingRename = true
+    } label: {
+      Label("Rename", systemImage: "pencil")
+    }
+    Button {
+      Task {
+        await model.setPinned(id: conversation.id, pinned: !conversation.pinned)
+      }
+    } label: {
+      Label(conversation.pinned ? "Unpin" : "Pin", systemImage: conversation.pinned ? "pin.slash" : "pin")
+    }
+    Divider()
+    // Delete, not archive. Archiving moved a conversation into a folder this
+    // app has no screen for, which from the phone is indistinguishable from
+    // losing it.
+    Button(role: .destructive) {
+      showingDelete = true
+    } label: {
+      Label("Delete", systemImage: "trash")
     }
   }
 
@@ -1328,7 +1330,7 @@ private struct JunoMobileConversationDetail: View {
       // it is doing, and the way to its page (docs/design/AGENTS.md §5.3).
       // Always applied, empty for an ordinary chat, so a roster that loads
       // after the thread opened does not remount the transcript under it.
-      .safeAreaBar(edge: .top, spacing: 0) { agentHeader }
+      .safeAreaInset(edge: .top, spacing: 0) { agentHeader }
       .alert("Rename conversation", isPresented: $showingRename) {
         TextField("Title", text: $editValue)
         Button("Cancel", role: .cancel) {}
@@ -1540,11 +1542,18 @@ private struct JunoMobileConversationTitle: View {
   @State private var highlighted = false
 
   var body: some View {
-    Text(title)
-      .junoFont(size: 16, relativeTo: .headline, weight: .semibold)
-      .lineLimit(1)
-      .truncationMode(.tail)
+    HStack(spacing: 4) {
+      Text(title)
+        .font(.headline)
+        .lineLimit(1)
+        .truncationMode(.tail)
+      Image(systemName: "chevron.down")
+        .font(.caption2.weight(.semibold))
+        .foregroundStyle(.secondary)
+        .accessibilityHidden(true)
+    }
       .foregroundStyle(highlighted ? Color.junoAccent : Color.primary)
+      .frame(maxWidth: 220)
       .id(title)
       .transition(.blurReplace)
       .animation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion), value: title)
@@ -2239,11 +2248,11 @@ private struct JunoMobileMessageRow: View {
           Button {
             copy()
           } label: {
-            Image(systemName: copied ? "checkmark" : "doc.on.doc")
-              .junoFont(size: 15, relativeTo: .body, weight: .regular)
+            Image(systemName: copied ? "checkmark" : "square.on.square")
+              .junoFont(size: 16, relativeTo: .body, weight: .regular)
               .foregroundStyle(Color.junoSecondaryInk)
               .contentTransition(.symbolEffect(.replace))
-              .frame(width: 40, height: 44)
+              .frame(width: 38, height: 44)
               .contentShape(Rectangle())
           }
           .buttonStyle(.junoQuietPress)
@@ -2325,9 +2334,9 @@ private struct JunoMobileMessageRow: View {
         }
       } label: {
         Image(systemName: "ellipsis")
-          .junoFont(size: 15, relativeTo: .body, weight: .regular)
+          .junoFont(size: 16, relativeTo: .body, weight: .regular)
           .foregroundStyle(Color.junoSecondaryInk)
-          .frame(width: 40, height: 44)
+          .frame(width: 38, height: 44)
           .contentShape(Rectangle())
       }
       .tint(Color.primary)
@@ -2344,10 +2353,10 @@ private struct JunoMobileMessageRow: View {
   ) -> some View {
     Button(action: action) {
       Image(systemName: symbol)
-        .junoFont(size: 15, relativeTo: .body, weight: .regular)
+        .junoFont(size: 16, relativeTo: .body, weight: .regular)
         .foregroundStyle(Color.junoSecondaryInk)
         .contentTransition(.symbolEffect(.replace))
-        .frame(width: 40, height: 44)
+        .frame(width: 38, height: 44)
         .contentShape(Rectangle())
     }
     .buttonStyle(.junoQuietPress)
@@ -2570,17 +2579,21 @@ enum JunoMobileCost {
 /// in secondary ink, to pick straight back up. ChatGPT's "continue" row.
 struct JunoMobileResumeRow: View {
   let title: String
+  /// The thread's own kind — a chat, a project's chat, a Code session —
+  /// the way ChatGPT marks its continue row with the thread's icon.
+  var symbol: String = "bubble.left"
   let action: () -> Void
 
   var body: some View {
     Button(action: action) {
-      HStack(spacing: 10) {
-        Image(systemName: "arrow.uturn.backward")
-          .junoFont(size: 14, relativeTo: .body, weight: .regular)
-          .foregroundStyle(Color.junoSecondaryInk)
+      HStack(spacing: 8) {
+        Image(systemName: symbol)
+          .font(.subheadline)
+          .foregroundStyle(.secondary)
+          .frame(width: 20)
         Text(title)
-          .junoFont(size: 16, relativeTo: .subheadline)
-          .foregroundStyle(Color.junoForeground.opacity(0.82))
+          .font(.subheadline)
+          .foregroundStyle(.secondary)
           .lineLimit(1)
       }
       .padding(.horizontal, JunoSpace.tight)
