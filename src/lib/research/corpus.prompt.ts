@@ -14,19 +14,28 @@
 
 import { truncate } from "@/lib/utils";
 
-/** The header and structure of the in-chat report (native path, frozen shape). */
+/**
+ * The header and structure of the in-chat report (native path).
+ *
+ * The section ORDER is the research protocol's Stage 5 (institutional report
+ * compilation); the native readers split on headings generically, so new
+ * heading names are safe for them.
+ */
 export function chatReportContract(goal: string): string {
   return `# Autonomous Research Mode
 The user requested an exhaustive, authoritative research investigation on: "${truncate(goal, 300)}".
-You are writing a comprehensive, publication-grade research REPORT, grounded strictly in the numbered source material below.
+You are a principal research analyst writing an institutional-grade REPORT, grounded strictly in the numbered source material below. Zero fluff: exact figures, dates and limits, every one cited.
 
 # Report Structure:
 1. "# Title": Clear, professional title naming the topic.
-2. "## Executive Summary": High-level synthesis highlighting key findings, core thesis, and high-impact takeaways.
-3. "## Key Findings & Core Analysis": Detailed thematic sections (using "### Subheadings") breaking down the subject with quantitative data, benchmark comparisons, timelines, and technical details. Use Markdown comparison tables where appropriate.
-4. "## Nuances, Contradictions & Trade-Offs": Explicitly analyze conflicting claims or divergent evidence between sources.
-5. "## Limitations & Open Questions": What remains uncertain or unverifiable from current evidence.
-6. "## Sources": Numbered list matching cited references as "[n] Title — URL".`;
+2. "## Executive Verdict & Decision Matrix": The core recommendation or answer and the key trade-offs in the first two paragraphs, then a Markdown decision matrix (situation or need → verdict → why, cited).
+3. "## Comparative Matrix": One multi-dimensional Markdown table across every vector (specs, limits, pricing, ecosystem, enterprise and privacy terms…), one row per option or entity compared — or one row per vector when nothing is being compared. Every cell an exact figure with [n], or "not published".
+4. "## Vector Deep Dives": One "### Subheading" per investigative vector: the hard evidence, exact figures with their dates and versions, and real-world edge cases. Every figure in a table must also appear, cited, in this prose.
+5. "## Nuances & Gotchas": Hidden rate limits, token quotas, degraded performance under load, deprecations, IP and training terms, cancellation friction — whatever the evidence shows.
+6. "## Where Sources Disagree": Each conflicting claim, both sides cited, and which is better supported (official changelog or documentation over secondary reporting) and why.
+7. "## Limitations & Open Questions": What remains uncertain or unverifiable from current evidence.
+8. "## Methodology & Source Traceability": How the research was done in two or three sentences, then a table attributing the evidence to its primary domains: domain, kind of record, publication or update date, what it established, citations.
+9. "## Sources": Numbered list matching cited references as "[n] Title — URL".`;
 }
 
 /**
@@ -35,6 +44,10 @@ You are writing a comprehensive, publication-grade research REPORT, grounded str
  * report's language; the markers stay as written, and are what everything
  * downstream reads (I-14). No sources section: the reader renders sources
  * from rows, cited then read.
+ *
+ * The order is the research protocol's Stage 5: executive verdict and
+ * decision matrix, comparative matrix, vector deep dives, nuances and
+ * gotchas, then methodology with source traceability.
  */
 export function reportWriterContract(input: {
   goal: string;
@@ -45,40 +58,43 @@ export function reportWriterContract(input: {
   const questionSections = input.questions
     .map(
       (question) =>
-        `<!-- juno:section=question:${question.id} -->\n## ${question.question.replace(/\s+/g, " ").trim()}\n{what the evidence establishes about this question, cited}`
+        `<!-- juno:section=question:${question.id} -->\n## ${question.question.replace(/\s+/g, " ").trim()}\n{the deep dive for this vector: the hard evidence, exact figures with their dates and versions, real-world edge cases, cited}`
     )
     .join("\n\n");
   return `# Research report
 ${input.dateLine ? `${input.dateLine}\n` : ""}The user asked for a research investigation on: "${truncate(input.goal, 600)}".
-You are the lead researcher. Write the final report for the person who asked, grounded strictly in the numbered source material below, and a short summary that opens the reply.${input.languageLine ? `\n${input.languageLine} Write the summary, the title and every heading and sentence of the report in that language. Keep every <!-- juno:… --> marker exactly as written below, in English.` : ""}
+You are the principal analyst. Write the final report for the person who asked — institutional grade, zero fluff — grounded strictly in the numbered source material below, and a short summary that opens the reply.${input.languageLine ? `\n${input.languageLine} Write the summary, the title and every heading and sentence of the report in that language. Keep every <!-- juno:… --> marker exactly as written below, in English.` : ""}
 
 # Reply format
 Reply with exactly this shape, and nothing before or after it. The markers are HTML comments: copy each one on its own line, unchanged, directly above what it names.
 
 <!-- juno:summary -->
-{120 to 250 words: the answer first, then the two or three findings that carry it, cited with [n]}
+{120 to 250 words: the verdict first, then the two or three figures that carry it, cited with [n]}
 <!-- juno:report title="{the report's title, at most 80 characters}" -->
 # {the same title}
 <!-- juno:section=bottom-line -->
-## Bottom line
-{the answer in a few sentences, cited}
-<!-- juno:section=findings -->
-## Key findings
-{the findings that matter most, each cited; tables where they compare}
+## Executive verdict
+{the core recommendation or answer and the key trade-offs, in the first two paragraphs, cited; then a decision matrix as a Markdown table — the situation or need, the verdict for it, and why, cited}
+<!-- juno:section=matrix -->
+## Comparative matrix
+{one multi-dimensional Markdown table across every vector — specs, limits, pricing, ecosystem, enterprise and privacy terms, whatever the vectors measured — one row per option or entity being compared, or one row per vector when the question compares nothing; every cell an exact figure with its [n], or "not published"}
 
 ${questionSections}
 
+<!-- juno:section=gotchas -->
+## Nuances and gotchas
+{hidden rate limits, quotas, degraded performance under load, deprecations and effective dates, IP and training terms, cancellation friction — whatever the evidence shows, each cited; omit nothing the evidence flags}
 <!-- juno:section=conflicts -->
 ## Where sources disagree
-{each disagreement, with both sides cited; say which is better supported and why}
+{each disagreement, with both sides cited; say which is better supported — an official changelog or documentation over secondary reporting — and why}
 <!-- juno:section=gaps -->
 ## What could not be established
-{what the sources could not settle; never fill a gap from memory}
+{what the sources could not settle, including figures the gap audit found missing; never fill a gap from memory}
 <!-- juno:section=method -->
-## Method
-{how the research was done: what was searched and read, in two or three sentences}
+## Methodology and source traceability
+{two or three sentences on how the research was done (vectors, rounds, what was searched and read), then a Markdown table attributing the evidence to its primary domains: domain, kind of record (documentation, pricing page, changelog, filing, repository, press…), publication or update date, what it established, citations}
 
-Translate the headings ("Bottom line", "Key findings", "Where sources disagree", "What could not be established", "Method") into the report's language; a question heading is the question as written above, translated when the report's language differs. Do not write a sources, references or bibliography section.`;
+Every figure that appears in a table must also be stated, cited, in the prose of a deep dive. Translate the headings ("Executive verdict", "Comparative matrix", "Nuances and gotchas", "Where sources disagree", "What could not be established", "Methodology and source traceability") into the report's language; a vector heading is the question as written above, translated when the report's language differs. Do not write a sources, references or bibliography section.`;
 }
 
 /** The citation and accuracy rules both contracts share. */
@@ -89,6 +105,8 @@ export const CITATION_RULES = `# Citation & Accuracy Rules:
 - Two sources repeating the same press release or mirror text are not independent corroboration.
 - Separate observed facts from inferences. Explain evidence strength without invented confidence percentages.
 - Distinguish publication dates from the dates events occurred. Prefer original studies and official records.
+- Source hierarchy: each source below is labelled with its kind, domain and date. Cite the primary record (documentation, pricing page, changelog, filing, repository, benchmark) for every figure it carries; never cite an aggregator, affiliate roundup or sponsored list for a figure a primary record states, and say so when only an aggregator carries one.
+- State every figure exactly as the source does — number, unit, tier, version — with the date it applies from when the source gives one.
 - Do not treat absent evidence as evidence of absence. Failed fetches and unavailable sources remain limitations.
 - Keep the report proportionate to the question. Do not pad it to appear exhaustive.`;
 
@@ -106,6 +124,8 @@ export const EVIDENCE_LEDGER_HEADER = (count: number) =>
 Each finding is a claim tied to a verbatim quote from the numbered source it cites. Build the report from these first; the source material below is the full text behind them.`;
 
 export const EVIDENCE_STATE_HEADER = "# Evidence State (the research team's own review)";
+export const GAP_AUDIT_INTRO =
+  "The pre-writing gap audit, per vector: figures still missing, figures sources state differently, and figures resting on old or undated pages. Name each in the report — missing ones under what could not be established, conflicting ones under where sources disagree, old ones with their date:";
 export const CONFLICTS_INTRO =
   "Contradictions and duplicate sources the team flagged. Address each one where the report discusses disagreement, citing both sides; a duplicate is one witness, not two:";
 export const SHORT_OBJECTIVES_INTRO =

@@ -245,8 +245,16 @@ interface Shape {
 
 const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n));
 
+/**
+ * Rounds a scope asks for. Two at least unless the planner called the request
+ * quick (research protocol RULE 0.3: discoveries in round N decide the
+ * searches of round N+1, so a one-round run cannot follow a single lead).
+ * `fit` still takes the second round away first when the ceiling cannot pay
+ * for it, and the engine only USES it when there is a lead or a gap to chase.
+ */
 function wantedRounds(scope: ResearchScope): number {
-  return 1 + (scope.breadth !== "focused" ? 1 : 0) + (scope.breadth === "exhaustive" ? 1 : 0);
+  if (scope.quick) return 1;
+  return 2 + (scope.breadth === "exhaustive" ? 1 : 0);
 }
 
 function demandedPages(scope: ResearchScope, questions: number): number {

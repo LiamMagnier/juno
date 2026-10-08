@@ -27,6 +27,8 @@
  * src/lib/research/claims.ts and re-exports this surface.
  */
 
+import { assessSource } from "@/lib/research/source-policy";
+
 // ---------------------------------------------------------------------------
 // Shared vocabulary (mirrors the schema comments on ResearchClaim / ClaimLink)
 // ---------------------------------------------------------------------------
@@ -1300,6 +1302,12 @@ export function sourceTypeOf(input: {
   if (!host) return "unknown";
   if (OFFICIAL_HOST.test(host)) return "official";
   if (USER_GENERATED_HOST.test(host)) return "user_generated";
+  // The vendor's own record (docs, pricing, changelog, repo, filing, paper)
+  // satisfies a "primary source" requirement; an aggregator never does,
+  // whatever primary-sounding words its text happens to use.
+  const policy = assessSource({ url: input.url, text: input.text }).tier;
+  if (policy === "primary") return "primary";
+  if (policy === "aggregator") return "general";
   if (
     PRIMARY_MARKERS.test(input.text) ||
     /\/(?:filings?|datasets?|data|transcripts?|press[-_ ]?releases?|statements?|methodology)\b/i.test(input.url)
@@ -1359,22 +1367,38 @@ export function directnessOf(text: string): number {
 export function scoreSource(input: {
   url: string;
   text: string;
+  /** The page or hit title, for the listicle test of the source policy. */
+  title?: string | null;
   publishedAt?: Date | null;
   eventDate?: Date | null;
   /** Set when detectSyndication found this to be a copy of another source. */
   duplicate?: boolean;
   now?: Date;
 }): SourceScore {
-  const authority = authorityOf(input.url);
+  /*
+   * The protocol's source policy (Stage 2, `source-policy.ts`) on top of the
+   * host table: a vendor's own docs, pricing page, changelog or repository is
+   * the primary record and is lifted to at least 0.85 authority; a review
+   * marketplace, affiliate page or listicle is held at 0.25 at most, whatever
+   * its host would otherwise score; and the composite carries the policy's
+   * weight so the read stage and the writer's corpus reach the record first.
+   */
+  const policy = assessSource({ url: input.url, title: input.title, text: input.text });
+  const hostAuthority = authorityOf(input.url);
+  const authority =
+    policy.tier === "primary"
+      ? Math.max(hostAuthority, 0.85)
+      : policy.tier === "aggregator"
+        ? Math.min(hostAuthority, 0.25)
+        : hostAuthority;
   const freshness = freshnessOf({ publishedAt: input.publishedAt, eventDate: input.eventDate, now: input.now });
   const directness = directnessOf(input.text);
   // A syndicated copy is not a second witness. Zero, not "a bit less": the
   // whole point of the independence axis is that counting a wire story twice is
   // the corroboration failure §8.3 names by name.
   const independence = input.duplicate ? 0 : 1;
-  const composite = independence === 0
-    ? 0
-    : 0.4 * authority + 0.2 * freshness + 0.25 * directness + 0.15 * independence;
+  const base = 0.4 * authority + 0.2 * freshness + 0.25 * directness + 0.15 * independence;
+  const composite = independence === 0 ? 0 : Math.max(0, Math.min(1, base * policy.weight));
   return { authority, freshness, directness, independence, composite };
 }
 

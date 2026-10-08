@@ -609,7 +609,11 @@ test("the seed sweep reads its share of the tier's pages and leaves the rest to 
   assert.ok(events.some((event) => event.kind === "worker_spawned"), "the team is dispatched after a sweep whose every fetch succeeded");
   assert.equal(fetchesBeforeWorkers, Math.ceil(pages * SEED_PAGE_SHARE), "the sweep stops at its share, not at the ceiling");
   const plan = parsePlan((await store.loadRun(run.id, run.userId))?.plan);
-  assert.equal(plan.seedPagesRead, fetchesBeforeWorkers, "and records what it fetched for the page ceiling");
+  // Every fetch in this run is a sweep fetch (the workers open nothing), and
+  // a follow-up pass now opens the NEW sources its searches found instead of
+  // re-reading the top of the ranking — so the ledger is every fetch made.
+  assert.equal(plan.seedPagesRead, fetches, "and records what it fetched for the page ceiling");
+  assert.ok(fetches <= pages, "the follow-up passes stay under the run's page ceiling");
   assert.equal(plan.rounds?.[0]?.pagesRead, 0, "a round's page count is what its workers opened, not a running total");
 });
 

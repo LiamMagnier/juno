@@ -7,6 +7,7 @@ import {
   CONFLICTS_INTRO,
   EVIDENCE_LEDGER_HEADER,
   EVIDENCE_STATE_HEADER,
+  GAP_AUDIT_INTRO,
   OPEN_QUESTIONS_INTRO,
   SHORT_OBJECTIVES_INTRO,
   SOURCE_MATERIAL_HEADER,
@@ -14,6 +15,9 @@ import {
   constraintsBlock,
   reportWriterContract,
 } from "@/lib/research/corpus.prompt";
+import { renderGapAudit } from "@/lib/research/gap-audit";
+import { assessSource, type SourceTier } from "@/lib/research/source-policy";
+import { hostOfUrl } from "@/lib/research/claim-analysis";
 
 /**
  * The synthesis contract and the numbered corpus.
@@ -45,7 +49,33 @@ export interface ResearchCorpusFinding {
 }
 
 /** A row as the corpus numbers it. `id` is what findings and conflicts are keyed by. */
-export type ResearchCorpusSourceRow = Pick<ResearchSourceRow, "url" | "title" | "snapshot"> & { id?: string };
+export type ResearchCorpusSourceRow = Pick<ResearchSourceRow, "url" | "title" | "snapshot"> & {
+  id?: string;
+  publishedAt?: Date | null;
+};
+
+const TIER_NAME: Record<SourceTier, string> = {
+  primary: "primary record",
+  official: "official",
+  reputable: "trade press",
+  general: "secondary",
+  community: "community report",
+  aggregator: "aggregator/affiliate — do not cite for figures a primary record states",
+};
+
+/**
+ * One line of OUR metadata above each source (protocol Stages 2 and 5): its
+ * kind under the source policy, its domain and its date. Outside the
+ * untrusted envelope because we computed it; it is what lets the writer
+ * prefer the record over the roundup and fill the traceability table.
+ */
+export function sourceMetaLine(source: Pick<ResearchCorpusSourceRow, "url" | "title" | "snapshot" | "publishedAt">): string {
+  const tier = assessSource({ url: source.url, title: source.title, text: source.snapshot }).tier;
+  const date = source.publishedAt instanceof Date && Number.isFinite(source.publishedAt.getTime())
+    ? `published ${source.publishedAt.toISOString().slice(0, 10)}`
+    : "undated";
+  return `(${TIER_NAME[tier]} · ${hostOfUrl(source.url) || "unknown domain"} · ${date})`;
+}
 
 /**
  * Findings, rendered as the evidence ledger ahead of the raw pages.
@@ -122,7 +152,9 @@ function renderEvidenceState(plan: ResearchPlan, indexOf: ReadonlyMap<string, nu
     }
   }
   const open = questions.slice(-MAX_OPEN_QUESTIONS_SHOWN);
-  if (conflicts.length === 0 && short.length === 0 && open.length === 0) return "";
+  const questionOf = (id: string) => plan.objectives.find((objective) => objective.id === id)?.question ?? id;
+  const audit = plan.gapAudit ? renderGapAudit(plan.gapAudit.entries, questionOf) : [];
+  if (conflicts.length === 0 && short.length === 0 && open.length === 0 && audit.length === 0) return "";
 
   const sections: string[] = [];
   if (conflicts.length > 0) {
@@ -145,6 +177,10 @@ function renderEvidenceState(plan: ResearchPlan, indexOf: ReadonlyMap<string, nu
         ...short.map((objective) => `- ${objective.question} (${objective.status.replace(/_/g, " ")})`),
       ].join("\n")
     );
+  }
+  if (audit.length > 0) {
+    // The audit quotes finding claims, which are model output about pages.
+    sections.push([GAP_AUDIT_INTRO, wrapUntrusted("gap audit", audit.join("\n"))].join("\n"));
   }
   if (open.length > 0) {
     sections.push(
@@ -188,6 +224,31 @@ export function corpusFindings(
   return out;
 }
 
+/**
+ * The plan's vectors with the figures each had to produce and the claims each
+ * had to verify (protocol Stage 1), so the deep dives and the comparative
+ * matrix are written against the same contract the workers were sent with.
+ * Planner output, not page content — but the planner read the user's goal and
+ * conversation, so it rides in the envelope all the same.
+ */
+function renderVectors(plan: ResearchPlan): string {
+  const lines = plan.objectives
+    .filter((objective) => objective.vector)
+    .map((objective) => {
+      const vector = objective.vector!;
+      return [
+        `- ${objective.question}`,
+        vector.metrics.length ? `  figures: ${vector.metrics.join("; ")}` : "",
+        vector.verify.length ? `  verify: ${vector.verify.join("; ")}` : "",
+      ]
+        .filter(Boolean)
+        .join("\n");
+    });
+  return lines.length
+    ? `\n# Investigative Vectors (the figures each vector had to establish; say plainly which the evidence does not give)\n${wrapUntrusted("research plan", lines.join("\n"))}\n`
+    : "";
+}
+
 export interface ResearchCorpusOptions {
   /**
    * `chat` (default): the native in-chat contract, where the user's own model
@@ -217,7 +278,7 @@ export function buildResearchCorpus(
       // capped at the former, so slicing at the latter was a no-op pretending
       // to be a limit.
       const body = (source.snapshot ?? "").slice(0, SNAPSHOT_CHARS);
-      return `[${i + 1}] ${title}\n${source.url}\n${wrapUntrusted(source.url, body)}`;
+      return `[${i + 1}] ${title}\n${source.url}\n${sourceMetaLine(source)}\n${wrapUntrusted(source.url, body)}`;
     })
     .join("\n\n");
   const header =
@@ -234,7 +295,7 @@ export function buildResearchCorpus(
 ${CITATION_RULES}
 ${constraintsBlock(plan.constraints)}
 ${UNTRUSTED_CONTENT_RULE}
-${renderFindings(findings)}${renderEvidenceState(plan, indexOf)}
+${renderVectors(plan)}${renderFindings(findings)}${renderEvidenceState(plan, indexOf)}
 ${SOURCE_MATERIAL_HEADER}
 ${corpus}`;
 }

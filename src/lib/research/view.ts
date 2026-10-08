@@ -105,6 +105,23 @@ const QUESTION_STATUS: Record<string, ResearchQuestionStatus> = {
 };
 
 /** The plan's questions with their status for the panel (§9.4). */
+/**
+ * The question's line under it on every surface: the planner's rationale and,
+ * for a protocol vector, the figures it must produce and what it verifies.
+ * Folded into the existing `rationale` string so the web card and the native
+ * live views show the vector without a wire change.
+ */
+export function rationaleWithVector(objective: ResearchPlan["objectives"][number]): string {
+  const vector = objective.vector;
+  const parts = [
+    objective.rationale ?? "",
+    vector?.metrics.length ? `Figures: ${vector.metrics.slice(0, 4).join("; ")}.` : "",
+    vector?.verify.length ? `Verify: ${vector.verify.slice(0, 2).join("; ")}.` : "",
+  ].filter(Boolean);
+  const text = parts.join(" ");
+  return text.length > 400 ? `${text.slice(0, 399).trimEnd()}…` : text;
+}
+
 export function questionViews(plan: ResearchPlan, state: string): ResearchQuestionView[] {
   const working = state === "investigating" || state === "reviewing";
   return plan.objectives.map((objective) => {
@@ -116,10 +133,11 @@ export function questionViews(plan: ResearchPlan, state: string): ResearchQuesti
         : working
           ? "searching"
           : "pending");
+    const rationale = rationaleWithVector(objective);
     return {
       id: objective.id,
       question: objective.question,
-      ...(objective.rationale ? { rationale: objective.rationale } : {}),
+      ...(rationale ? { rationale } : {}),
       status,
     };
   });

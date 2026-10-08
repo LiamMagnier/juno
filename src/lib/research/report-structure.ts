@@ -20,11 +20,16 @@
  */
 
 /** The fixed sections, in the order the writer is asked to write them. */
-export const REPORT_SECTION_ORDER = ["bottom-line", "findings", "question", "conflicts", "gaps", "method"] as const;
+/**
+ * `matrix` (comparative matrix) and `gotchas` (nuances and gotchas) are the
+ * research protocol's Stage 5 sections; `findings` stays readable for reports
+ * written before them.
+ */
+export const REPORT_SECTION_ORDER = ["bottom-line", "matrix", "findings", "question", "gotchas", "conflicts", "gaps", "method"] as const;
 export type ReportSectionKind = (typeof REPORT_SECTION_ORDER)[number];
 
 export interface ReportSection {
-  /** `bottom-line`, `findings`, `question:{id}`, `conflicts`, `gaps`, `method`, or null for an unmarked heading. */
+  /** `bottom-line`, `matrix`, `findings`, `question:{id}`, `gotchas`, `conflicts`, `gaps`, `method`, or null for an unmarked heading. */
   key: string | null;
   kind: ReportSectionKind | null;
   /** The question id, for a `question:{id}` section. */

@@ -217,7 +217,7 @@ export function createPlanningStage(ctx: EngineContext) {
       console.warn("[research] planner unavailable; planning the question as asked", { runId: run.id });
     }
 
-    const planned = plannedResearch(output);
+    const planned = plannedResearch(output, { goal: run.goal });
     const now = deps.now().toISOString();
     let next: ResearchPlan = {
       ...plan,

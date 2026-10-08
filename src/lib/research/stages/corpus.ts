@@ -38,8 +38,13 @@ import { canonicalUrl } from "@/lib/search/url-safety";
 import { classifiedSourceType, waves } from "./coverage";
 import { contentTokens, hostOfUrl, scoreSource, sourceTypeOf } from "@/lib/research/claim-analysis";
 import { splitPassages } from "./writer-text";
+import { duplicateOf } from "@/lib/research/query-dedupe";
+import { assessSource, isAggregator } from "@/lib/research/source-policy";
 import type { EngineContext } from "./context";
 import type { createWorkerStage } from "./workers";
+
+/** Below this many better unread candidates, a sweep pass back-fills with aggregators. */
+export const AGGREGATOR_BACKFILL_BELOW = 3;
 
 export function createCorpusStage(ctx: EngineContext, stages: Pick<ReturnType<typeof createWorkerStage>, "doWorkerRounds">) {
   const { deps, store, append, fetchPage, markSyndicatedCopies, advance, affordable, affordableCount, stopForBudget, bill } = ctx;
@@ -55,7 +60,25 @@ export function createCorpusStage(ctx: EngineContext, stages: Pick<ReturnType<ty
     const plannedIssued = new Set(plan.issuedQueries ?? []);
     // Legacy runs did not persist issuedQueries. Treat their first resumed
     // search as unissued so a schema rollout cannot silently skip gathering.
-    const pending = plan.issuedQueries === undefined ? queries : queries.filter((query) => !plannedIssued.has(query));
+    const unissued = plan.issuedQueries === undefined ? queries : queries.filter((query) => !plannedIssued.has(query));
+    /*
+     * Protocol Stage 3: a follow-up that is a near-paraphrase of a search the
+     * run already made (the sweep's or a worker's) is skipped rather than paid
+     * for again — it would return the same page of results. Exact repeats were
+     * already filtered above; this catches reorderings and padding.
+     */
+    const ran = [...plannedIssued, ...(plan.workerQueries ?? [])];
+    // Except the F5 widening: those ARE rewordings of searches that found
+    // nothing, and an empty corpus is the one case where that is the point.
+    const widening =
+      plannedIssued.size > 0 &&
+      !!plan.broadenedAt &&
+      (store.listSourceUrls ? await store.listSourceUrls(run.id, run.userId) : await store.listSources(run.id, run.userId)).length === 0;
+    const pending: string[] = [];
+    for (const query of unissued) {
+      if (plannedIssued.size > 0 && !widening && (duplicateOf(query, ran) || duplicateOf(query, pending))) continue;
+      pending.push(query);
+    }
     let current = run;
     const issued = new Set(plannedIssued);
     // The provider roster is a property of the deployment, not of the query, so
@@ -140,6 +163,7 @@ export function createCorpusStage(ctx: EngineContext, stages: Pick<ReturnType<ty
           const body = hit.rawContent?.trim() ? hit.rawContent.slice(0, SNAPSHOT_CHARS) : null;
           const score = scoreSource({
             url: hit.url,
+            title: hit.title,
             text: body ?? hit.snippet,
             publishedAt: hit.publishedAt,
           });
@@ -226,7 +250,7 @@ export function createCorpusStage(ctx: EngineContext, stages: Pick<ReturnType<ty
       }
       await bill(current, page.costMicroUsd, "fetch");
       const text = page.text.slice(0, SNAPSHOT_CHARS);
-      const score = scoreSource({ url, text, publishedAt: page.publishedAt ?? null });
+      const score = scoreSource({ url, title: page.title, text, publishedAt: page.publishedAt ?? null });
       const stored = await store.upsertSource({
         runId: run.id,
         userId: run.userId,
@@ -320,10 +344,15 @@ export function createCorpusStage(ctx: EngineContext, stages: Pick<ReturnType<ty
       }
       const anchorTokens = contentTokens(`${link.text} ${path}`);
       if (anchorTokens.size < 2) continue;
+      // The source policy (protocol Stage 2): a link out to a roundup is not
+      // worth a fetch, and a link to the record a page cites is the point.
+      const policy = assessSource({ url: link.href, title: link.text });
+      if (policy.tier === "aggregator") continue;
       let matched = 0;
       for (const token of anchorTokens) if (wanted.has(token)) matched += 1;
       let score = matched / anchorTokens.size;
       if (hostOfUrl(link.href) !== hostOfUrl(from)) score += 0.15;
+      if (policy.tier === "primary" || policy.tier === "official") score += 0.15;
       if (score < HOP_MIN_OVERLAP) continue;
       ranked.push({ href: link.href, text: link.text, from, score });
     }
@@ -360,7 +389,7 @@ export function createCorpusStage(ctx: EngineContext, stages: Pick<ReturnType<ty
         await bill(current, page.costMicroUsd, "fetch");
         const text = page.text.slice(0, SNAPSHOT_CHARS);
         if (!text) continue;
-        const score = scoreSource({ url: target.href, text, publishedAt: page.publishedAt ?? null });
+        const score = scoreSource({ url: target.href, title: page.title || target.text, text, publishedAt: page.publishedAt ?? null });
         const stored = await store.upsertSource({
           runId: run.id,
           userId: run.userId,
@@ -412,6 +441,7 @@ export function createCorpusStage(ctx: EngineContext, stages: Pick<ReturnType<ty
       .map((source) => {
         const score = scoreSource({
           url: source.url,
+          title: source.title,
           text: source.snapshot ?? "",
           publishedAt: source.publishedAt,
         });
@@ -459,11 +489,43 @@ export function createCorpusStage(ctx: EngineContext, stages: Pick<ReturnType<ty
     // reads the next ranked source instead of paying their timeouts again.
     const seedPages = Math.ceil(budget.pages * SEED_PAGE_SHARE);
     const unreadable = new Set((plan.unreadable ?? []).map((url) => canonicalUrl(url)));
-    const targets = sources
-      .filter(({ source }) => !unreadable.has(canonicalUrl(source.url)))
-      .slice(0, Math.min(MAX_READ_SOURCES, seedPages));
+    const live = sources.filter(({ source }) => !unreadable.has(canonicalUrl(source.url)));
+    /*
+     * Which sources this pass opens (protocol Stages 2 and 3).
+     *
+     * The pass used to take the top `seedPages` sources by score, read or
+     * not. On the first pass that is the same thing; on a FOLLOW-UP pass — the
+     * gap audit's targeted searches — the top of the ranking is the pages the
+     * run already read, so the new sources the follow-up searched for were
+     * never opened and the follow-up bought nothing but search fees. Fetch
+     * slots now go to sources that NEED a fetch (no body, or only a search
+     * preview), best first; and aggregators/affiliate roundups wait until no
+     * better unread candidate is left. The slots are also held under what is
+     * left of the run's page ceiling, which the follow-up passes used to
+     * ignore.
+     */
+    const pagesSoFar = (plan.seedPagesRead ?? 0) + (plan.rounds ?? []).reduce((n, item) => n + item.pagesRead, 0);
+    const fetchSlots = Math.max(0, Math.min(seedPages, MAX_READ_SOURCES, budget.pages - pagesSoFar));
+    // A page this sweep already fetched is read, however short it is: a short
+    // pricing page fetched on the first pass is not re-fetched on every pass.
+    const fetchedBefore = new Set((plan.sweepFetched ?? []).map((url) => canonicalUrl(url)));
+    const needsFetch = (source: ResearchSourceRow) =>
+      (source.snapshot ?? "").length < DEEPEN_BELOW_CHARS && !fetchedBefore.has(canonicalUrl(source.url));
+    const unread = live.filter(({ source }) => needsFetch(source));
+    const aggregator = ({ source }: (typeof live)[number]) => isAggregator({ url: source.url, title: source.title, text: source.snapshot });
+    const better = unread.filter((item) => !aggregator(item));
+    // Aggregators and affiliate roundups are not read at all while the run
+    // has better sources — read or waiting to be; they only back-fill a thin
+    // corpus (a niche topic with few records of its own).
+    const betterHeld = live.filter((item) => !aggregator(item) && (!!item.source.snapshot || needsFetch(item.source))).length;
+    const fetchFirst = (betterHeld >= AGGREGATOR_BACKFILL_BELOW ? better : [...better, ...unread.filter(aggregator)]).slice(0, fetchSlots);
+    const passagesOnly = live.filter(({ source }) => !needsFetch(source)).slice(0, Math.min(MAX_READ_SOURCES, seedPages));
+    const chosen = new Set([...fetchFirst, ...passagesOnly]);
+    const targets = live.filter((item) => chosen.has(item));
     /** URLs this pass found dead for good, appended to the plan below. */
     const dead: string[] = [];
+    /** URLs this pass fetched, so a later pass does not fetch them again. */
+    const fetchedUrls: string[] = [];
     for (const wave of waves(targets, READ_CONCURRENCY)) {
       const fresh = await store.loadRun(current.id, current.userId);
       if (!fresh || fresh.state !== "investigating") return { kind: "raced" };
@@ -495,8 +557,8 @@ export function createCorpusStage(ctx: EngineContext, stages: Pick<ReturnType<ty
         return {
           source,
           text,
-          required: text.length === 0,
-          deepen: text.length > 0 && text.length < DEEPEN_BELOW_CHARS,
+          required: text.length === 0 && !fetchedBefore.has(canonicalUrl(source.url)),
+          deepen: text.length > 0 && text.length < DEEPEN_BELOW_CHARS && !fetchedBefore.has(canonicalUrl(source.url)),
         };
       });
       const required = jobs.filter((job) => job.required);
@@ -571,6 +633,7 @@ export function createCorpusStage(ctx: EngineContext, stages: Pick<ReturnType<ty
             sourceType: sourceTypeOf({ url: job.source.url, text, authority: score.authority }),
           });
           fetched += 1;
+          fetchedUrls.push(job.source.url);
           for (const link of page.links ?? []) discovered.push({ from: job.source.url, link });
           await append(run.id, run.userId, [
             { kind: "source_read", payload: { url: job.source.url, title: page.title } },
@@ -595,6 +658,7 @@ export function createCorpusStage(ctx: EngineContext, stages: Pick<ReturnType<ty
             sourceType: sourceTypeOf({ url: job.source.url, text, authority: score.authority }),
           });
           fetched += 1;
+          fetchedUrls.push(job.source.url);
           for (const link of page.links ?? []) discovered.push({ from: job.source.url, link });
           await append(run.id, run.userId, [
             { kind: "source_read", payload: { url: job.source.url, title: page.title, deepened: true } },
@@ -631,6 +695,7 @@ export function createCorpusStage(ctx: EngineContext, stages: Pick<ReturnType<ty
       plan: {
         ...latestPlan,
         seedPagesRead: (latestPlan.seedPagesRead ?? 0) + fetched,
+        ...(fetchedUrls.length ? { sweepFetched: [...(latestPlan.sweepFetched ?? []), ...fetchedUrls].slice(-MAX_SOURCES) } : {}),
         ...(unreadableNow.length ? { unreadable: unreadableNow.slice(-MAX_UNREADABLE_SOURCES) } : {}),
       },
     });

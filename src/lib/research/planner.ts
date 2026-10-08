@@ -31,12 +31,18 @@ import {
   type ResearchClarification,
   type ResearchObjective,
   type ResearchPlanRevision,
+  type ResearchVector,
+  MAX_VECTOR_ITEMS,
+  MAX_VECTOR_ITEM_CHARS,
 } from "@/lib/research/domain";
+import { contentTokens } from "@/lib/research/claim-analysis";
+import { dedupeQueries, queryTokens, restatesGoal, subjectOf } from "@/lib/research/query-dedupe";
 import { extractJsonObject } from "@/lib/research/plan-format";
 import {
   CONVERSATION_CONTEXT_LABEL,
   PLANNER_RETRY_NOTE,
   RESEARCH_PLAN_SCHEMA,
+  plannerProtocolRetryNote,
   plannerRevisionNote,
   plannerSystemPrompt,
   researchDateLine,
@@ -53,6 +59,8 @@ export interface PlannerOutput {
     question: string;
     rationale: string;
     evidence: { minSources: number; primary: boolean; freshness?: string };
+    /** The vector's metrics, primary sources and claims to verify (protocol Stage 1). */
+    vector?: ResearchVector;
   }>;
   clarifications: Array<{ id: string; question: string; options?: string[] }>;
   sources: string[];
@@ -220,10 +228,17 @@ export function parsePlannerOutput(text: string): PlannerOutput | null {
         ? Math.max(1, Math.min(4, Math.round(evidence.minSources)))
         : 2;
     const freshness = oneLine(evidence.freshness, 160);
+    const vector: ResearchVector = {
+      metrics: lines(q.metrics, MAX_VECTOR_ITEMS, MAX_VECTOR_ITEM_CHARS, 3),
+      sources: lines(q.primarySources ?? q.sources, MAX_VECTOR_ITEMS, MAX_VECTOR_ITEM_CHARS, 3),
+      verify: lines(q.verify, MAX_VECTOR_ITEMS, MAX_VECTOR_ITEM_CHARS, 3),
+    };
+    const hasVector = vector.metrics.length + vector.sources.length + vector.verify.length > 0;
     questions.push({
       question,
       rationale: oneLine(q.rationale, MAX_RATIONALE_CHARS),
       evidence: { minSources, primary: evidence.primary === true, ...(freshness ? { freshness } : {}) },
+      ...(hasVector ? { vector } : {}),
     });
     if (questions.length >= MAX_RESEARCH_OBJECTIVES) break;
   }
@@ -261,6 +276,43 @@ export function parsePlannerOutput(text: string): PlannerOutput | null {
     scope: { breadth, freshness, primarySources: scopeRaw.primarySources === true, quick: scopeRaw.quick === true },
     language: oneLine(plan.language, 35),
   };
+}
+
+/**
+ * Where a parsed plan breaks the research protocol's Stage 1 (RULE 0.1: "do
+ * not generate 3–4 semantic paraphrases of the prompt and stop"). Empty when
+ * the plan is a real decomposition. Deterministic — token overlap with the
+ * request, query near-duplicates, the vector count and whether any vector
+ * names a concrete metric — so the one corrective retry it can trigger is
+ * paid only for a plan that is measurably shallow.
+ *
+ * A request too short to decompose (fewer than three content words) and a
+ * plan that calls itself `quick` are never judged: "what is the boiling point
+ * of ethanol" is one fact, not five vectors.
+ */
+export function planShallowness(output: PlannerOutput, goal: string): string[] {
+  if (output.scope.quick || queryTokens(goal).size < 3) return [];
+  const reasons: string[] = [];
+  if (output.questions.length < 4) {
+    reasons.push(`Only ${output.questions.length} vector${output.questions.length === 1 ? "" : "s"}; plan 4 to 6 orthogonal ones.`);
+  }
+  const restating = output.questions.filter((q) => restatesGoal(q.question, goal));
+  if (restating.length > 0 && restating.length * 2 >= output.questions.length) {
+    reasons.push(`Vectors that restate the request instead of decomposing it: ${restating.map((q) => `"${q.question}"`).join("; ")}.`);
+  }
+  if (output.questions.every((q) => !q.vector?.metrics.length)) {
+    reasons.push("No vector names a concrete metric (an exact figure, limit, date, version or term) to extract.");
+  }
+  if (output.queries.length > 0) {
+    const paraphrases = output.queries.filter((query) => restatesGoal(query, goal));
+    const distinct = dedupeQueries(output.queries);
+    if (paraphrases.length * 2 >= output.queries.length) {
+      reasons.push(`Queries that search the request itself: ${paraphrases.slice(0, 4).map((q) => `"${q}"`).join("; ")}.`);
+    } else if (distinct.length * 3 < output.queries.length * 2) {
+      reasons.push("Many queries are near-duplicates of each other and would return the same results.");
+    }
+  }
+  return reasons;
 }
 
 /** The model call the planner is given: one completion, billed by the caller. */
@@ -332,7 +384,29 @@ export async function draftResearchPlan(
   const first = await complete({ system, prompt: request, maxTokens: PLANNER_OUTPUT_TOKENS, responseSchema: RESEARCH_PLAN_SCHEMA, attempt: 1 });
   let costMicroUsd = first.costMicroUsd;
   const parsed = parsePlannerOutput(first.text);
-  if (parsed) return { ok: true, output: parsed, costMicroUsd, plannedBy: "model" };
+  if (parsed) {
+    /*
+     * A plan that parses but restates the request is the protocol's first
+     * anti-pattern. It gets the same single retry an unparseable reply gets —
+     * so the planner never makes more than two calls — told exactly which
+     * rules it broke. The retried plan is kept only if it is less shallow;
+     * otherwise the first one runs, and the deterministic query clean-up in
+     * `plannedResearch` still strips its paraphrased searches.
+     */
+    const shallow = planShallowness(parsed, input.goal);
+    if (shallow.length === 0 || input.signal?.aborted) return { ok: true, output: parsed, costMicroUsd, plannedBy: "model" };
+    const again = await complete({
+      system,
+      prompt: `${request}\n\n${plannerProtocolRetryNote(shallow)}`,
+      maxTokens: PLANNER_OUTPUT_TOKENS,
+      responseSchema: RESEARCH_PLAN_SCHEMA,
+      attempt: 2,
+    });
+    costMicroUsd += again.costMicroUsd;
+    const better = parsePlannerOutput(again.text);
+    const output = better && planShallowness(better, input.goal).length < shallow.length ? better : parsed;
+    return { ok: true, output, costMicroUsd, plannedBy: "model" };
+  }
   if (input.signal?.aborted) return { ok: false, reason: "planner_invalid", costMicroUsd };
 
   const second = await complete({
@@ -417,6 +491,58 @@ export function goalFloorPlan(goal: string): PlannerOutput {
   };
 }
 
+/**
+ * A mapping search built from a vector itself (protocol Stage 2): the subject,
+ * the primary record that holds the vector's figures, and its first metric —
+ * "Acme API rate-limit documentation requests per minute". Used when the
+ * planner wrote no usable query for a vector, in place of the old fallback
+ * that searched the vector's own question (a paraphrase by construction).
+ */
+export function vectorQuery(subject: string, objective: Pick<ResearchObjective, "question" | "vector">): string {
+  const vector = objective.vector;
+  const parts = [subject, vector?.sources[0] ?? "", vector?.metrics[0] ?? ""].map((part) => part.trim()).filter(Boolean);
+  const text = parts.length > 1 ? parts.join(" ") : objective.question.replace(/\?$/, "");
+  return text.split(/\s+/).slice(0, 14).join(" ").slice(0, MAX_QUERY_CHARS);
+}
+
+/**
+ * The plan's searches after the protocol's deterministic clean-up: queries
+ * that restate the request are dropped (RULE 0.1), near-duplicates collapse
+ * to one, and every vector the remaining list does not reach gets a query
+ * built from its own primary source and metric. A plan whose every query was
+ * a paraphrase therefore still searches — but for the records, not the prompt.
+ */
+function mappingQueries(output: PlannerOutput, objectives: ResearchObjective[], goal?: string): string[] {
+  const fromPlanner = goal ? output.queries.filter((query) => !restatesGoal(query, goal)) : [...output.queries];
+  const queries = dedupeQueries(fromPlanner);
+  const subject = subjectOf(output.title || goal || "");
+  for (const objective of objectives) {
+    if (queries.length >= MAX_PLAN_QUERIES) break;
+    let reached: boolean;
+    if (objective.vector) {
+      // A vector is reached when some query names its record or its figures:
+      // two shared words with its metrics and primary sources.
+      const own = contentTokens(`${objective.vector.metrics.join(" ")} ${objective.vector.sources.join(" ")}`);
+      reached = queries.some((query) => {
+        let shared = 0;
+        for (const token of contentTokens(query)) if (own.has(token)) shared += 1;
+        return shared >= 2;
+      });
+    } else {
+      // A plan without vectors (the lines planner, an older reply) keeps the
+      // rule it always had: the question's own opening words.
+      const own = objective.question.replace(/\?$/, "").toLowerCase().slice(0, 24);
+      reached = queries.some((query) => query.toLowerCase().includes(own));
+    }
+    if (reached) continue;
+    const extra = objective.vector ? vectorQuery(subject, objective) : objective.question.replace(/\?$/, "");
+    if (extra && dedupeQueries([extra], queries).length) queries.push(extra);
+  }
+  // A plan left with nothing (every query restated the goal and no vector
+  // could build one) keeps the planner's own list rather than search nothing.
+  return (queries.length ? queries : dedupeQueries(output.queries)).slice(0, MAX_PLAN_QUERIES);
+}
+
 /** What the planner's reply becomes on the stored plan. */
 export interface PlannedResearch {
   title: string;
@@ -448,7 +574,10 @@ function evidenceFor(id: string, question: PlannerOutput["questions"][number]): 
  * objective ids the coverage matrix, the worker briefs and the card's edits
  * all key on; a revision keeps the reader's ids for the questions it kept.
  */
-export function plannedResearch(output: PlannerOutput, opts: { keepIds?: Array<string | undefined> } = {}): PlannedResearch {
+export function plannedResearch(
+  output: PlannerOutput,
+  opts: { keepIds?: Array<string | undefined>; goal?: string } = {}
+): PlannedResearch {
   const used = new Set<string>();
   const objectives: ResearchObjective[] = output.questions.map((question, index) => {
     const kept = opts.keepIds?.[index];
@@ -463,20 +592,10 @@ export function plannedResearch(output: PlannerOutput, opts: { keepIds?: Array<s
       status: "open",
       evidenceRequirements: evidenceFor(id, question),
       childObjectiveIds: [],
+      ...(question.vector ? { vector: question.vector } : {}),
     };
   });
-  // Every question is searched: its own words when the planner wrote no query
-  // for it, which beats nothing and which the workers refine from there.
-  const queries = [...output.queries];
-  const seen = new Set(queries.map((query) => query.toLowerCase()));
-  for (const objective of objectives) {
-    if (queries.length >= MAX_PLAN_QUERIES) break;
-    const own = objective.question.replace(/\?$/, "");
-    if (!queries.some((query) => query.toLowerCase().includes(own.toLowerCase().slice(0, 24))) && !seen.has(own.toLowerCase())) {
-      queries.push(own);
-      seen.add(own.toLowerCase());
-    }
-  }
+  const queries = mappingQueries(output, objectives, opts.goal);
   return {
     title: output.title,
     approach: output.approach,
