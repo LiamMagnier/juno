@@ -88,3 +88,42 @@ plan/clarify cards, panel and recap matter for web-started runs.
   Markdown and PDF, Dynamic Type on iOS.
 - Recap: the finished answer carries a report card that invites opening it; the
   same reader reopens from history (any past research answer).
+
+## What changed (2026-10-08, branch polish/native-research)
+
+Shared (`JunoChatKit`):
+- `NativeResearchLiveView` — the working view on both platforms (wide on the Mac
+  transcript, compact in the Mac panel and on the phone). `NativeResearchField` +
+  `NativeResearchFieldModel` port the web's Deep Field map (stable hashed angles,
+  discovery order, labels that never leave the box; sources move inward as the
+  report cites them — in-chat, from the `[n]` marks in the text being written).
+- `NativeResearchReport` — one model for an in-chat `research-report` artifact
+  (citations = the answer's `sources`) and a run's report (citations = sources
+  read). Sections without their heading lines, a generic title replaced by the
+  report's own `#` or the reader's question, Markdown export with a numbered
+  Sources appendix, PDF blocks.
+- `NativeResearchReportArticle` (cover, Newsreader headings, reading-style body,
+  numbered sources, citation cards with the audited passage), `NativeResearchReportCard`
+  (the door in the chat; a "Writing “section” · N words" state while streaming),
+  `NativeResearchReportPDF` (A4, block-paginated, headings kept with their first block).
+- `NativeResearchRun.inChat` keeps page titles, researcher questions, approach,
+  review/checking/writing phases. Steering sends queued `guidance`. Poll failures
+  set `researchUnreachableRunIDs` (shown as "Connection lost…" + Retry).
+  Auto-confirmed (in-chat) runs are never drawn a second time as a run row.
+
+Mac: in-chat research shows the working view through the whole turn including
+writing; the report artifact is a report card that opens the report window
+(`message:<id>`); window has Contents (incl. Sources), Copy, Share, Export
+(Markdown, PDF), Print; recap = report card + audit/inspect/hide line; panel's
+Progress tab is the compact working view with guidance; wrong "Shape the research"
+heading gone.
+
+iPhone: working view in the answer's place (composer card now only the armed
+state); report card; full-height reader sheet with Contents menu and Share (text,
+Markdown file, PDF); background runs followed (`followResearch`) and drawn as
+gate / working view / report card.
+
+Not verified: a live provider-backed run against production; favicons over the
+network (snapshots draw letters); popover anchoring of citations on touch (the
+citation card is a sheet with detents on iPhone); relaunch mid in-chat run (server
+cancels the run when the chat request aborts — server-side, unchanged).
