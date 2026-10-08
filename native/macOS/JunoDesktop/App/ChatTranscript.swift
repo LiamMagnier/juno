@@ -325,6 +325,16 @@ struct DesktopTranscript: View {
         }
         .scrollPosition($position)
         .defaultScrollAnchor(.bottom, for: .initialOffset)
+        #if DEBUG
+        // `--juno-preview-scroll-top`: the capture harness reads a chat from
+        // its first turn, as a person scrolling back up would.
+        .task {
+            guard CommandLine.arguments.contains("--juno-preview-scroll-top") else { return }
+            try? await Task.sleep(for: .seconds(3))
+            follows = false
+            position.scrollTo(edge: .top)
+        }
+        #endif
         // Said in the window's toast host, then let go: the host keeps it for
         // its four seconds, and the next failure is a new post.
         .onChange(of: actionError) { _, message in
@@ -333,7 +343,10 @@ struct DesktopTranscript: View {
             actionError = nil
         }
         .contentMargins(.top, JunoSpace.section, for: .scrollContent)
-        .scrollEdgeEffectStyle(.soft, for: [.top, .bottom])
+        // Soft under the toolbar; hard under the composer, whose footnote
+        // has to read over whatever line of the answer scrolls beneath it.
+        .scrollEdgeEffectStyle(.soft, for: .top)
+        .scrollEdgeEffectStyle(.hard, for: .bottom)
         .onScrollGeometryChange(for: Bool.self) { geometry in
             Self.isAtBottom(geometry)
         } action: { _, isAtBottom in

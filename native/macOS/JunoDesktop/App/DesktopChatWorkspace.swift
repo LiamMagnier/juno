@@ -378,7 +378,7 @@ struct DesktopChatWorkspace: View {
         .alert("Screenshot unavailable", isPresented: screenshotFailurePresented) {
             Button("OK", role: .cancel) { screenshotFailure = nil }
         } message: {
-            Text(screenshotFailure ?? "Juno could not take a screenshot.")
+            Text(screenshotFailure ?? "Alevr could not take a screenshot.")
         }
         // Column visibility is restored by hand rather than through
         // `@SceneStorage` directly: `NavigationSplitViewVisibility` is not
@@ -411,6 +411,9 @@ struct DesktopChatWorkspace: View {
             }
             followPageRequest()
             followCanvasRequest()
+            #if DEBUG
+            followPreviewLaunchRequests()
+            #endif
         }
         .onChange(of: pageRouter.pending) { _, _ in followPageRequest() }
         .onChange(of: pageRouter.pendingCanvas) { _, _ in followCanvasRequest() }
@@ -450,6 +453,26 @@ struct DesktopChatWorkspace: View {
         }
         .onDisappear { erasePrivateChat() }
     }
+
+    #if DEBUG
+    /// The capture harness's requests that need this window's own state:
+    /// `--juno-preview-private` (a private draft) and
+    /// `--juno-preview-send <words>` (a turn sent from the composer, which with
+    /// `--juno-preview-hold-stream` stays mid-reply).
+    private func followPreviewLaunchRequests() {
+        let arguments = CommandLine.arguments
+        guard arguments.contains("--juno-ui-preview") else { return }
+        if arguments.contains("--juno-preview-private") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { beginPrivateDraft() }
+        }
+        if let index = arguments.firstIndex(of: "--juno-preview-send"), index + 1 < arguments.count {
+            let words = arguments[index + 1]
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                composerRequest = ChatComposerRequest(kind: .send(words))
+            }
+        }
+    }
+    #endif
 
     // MARK: Detail
 
@@ -1353,7 +1376,7 @@ struct DesktopNewProjectForm: View {
         Task {
             creationError = nil
             guard let id = await model.createProject(name: trimmedName) else {
-                creationError = model.lastErrorDescription ?? "Juno could not create this project."
+                creationError = model.lastErrorDescription ?? "Alevr could not create this project."
                 return
             }
             created(id)
@@ -1800,7 +1823,7 @@ struct DesktopConversationView: View {
             edit: edit
         )
         if !started {
-            mediaFailure = model.chatErrorDescription ?? "Juno couldn’t start the edit. Try again in a moment."
+            mediaFailure = model.chatErrorDescription ?? "Alevr couldn’t start the edit. Try again in a moment."
         }
     }
 
@@ -1984,7 +2007,7 @@ struct DesktopConversationView: View {
         guard privateChat == nil, let artifactModel = configuration.artifactModel else { return nil }
         return { id, content, baseVersion in
             let landed = await artifactModel.saveArtifact(id: id, content: content, baseVersion: baseVersion)
-            return landed ? nil : (artifactModel.lastErrorDescription ?? "Juno couldn’t save this artifact. Try again in a moment.")
+            return landed ? nil : (artifactModel.lastErrorDescription ?? "Alevr couldn’t save this artifact. Try again in a moment.")
         }
     }
 
@@ -2519,7 +2542,7 @@ struct DesktopConversationView: View {
     /// appears in it.
     private func startVoice(modelID: String) {
         guard let sender = configuration.requestSender else {
-            voiceUnavailable = "Juno is not signed in, so it cannot start a voice conversation."
+            voiceUnavailable = "Alevr is not signed in, so it cannot start a voice conversation."
             return
         }
         guard configuration.voiceTranscriptClient != nil else {
