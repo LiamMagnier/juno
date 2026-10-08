@@ -50,17 +50,11 @@ public extension JunoColorToken {
     /// pass, and is the one place the two apps' grounds differ. Light mode is
     /// the generated value on both: the old `warmWhite` sat one 8-bit step from
     /// it.
-    ///
-    /// **Native redesign (Oct 2026): the apps' ground is neutral.** The owner's
-    /// bar is the ChatGPT apps — pure white in light, near-black in dark, with
-    /// no paper tint — so the native canvas leaves the web's warm `--background`
-    /// here. The phone goes to black in dark (the OLED ground ChatGPT iOS uses);
-    /// the Mac to a #212121 charcoal, the ChatGPT for Mac ground.
-    static let canvasLight = JunoColorToken(unchecked: 1, 1, 1)
+    static let canvasLight = JunoGeneratedColors.background.light
     #if os(iOS)
-    static let canvasDark = JunoColorToken(unchecked: 0, 0, 0)
+    static let canvasDark = JunoColorToken(unchecked: 0.042, 0.0412, 0.038)
     #else
-    static let canvasDark = JunoColorToken(unchecked: 0.129, 0.129, 0.129)
+    static let canvasDark = JunoGeneratedColors.background.dark
     #endif
 
     /// `--card`: #FEFDFC / #252422. One step above the canvas: run cards, code,
@@ -75,10 +69,8 @@ public extension JunoColorToken {
 
     /// `--muted`. The same values as `--secondary` today; kept because the
     /// phone reads it by this name.
-    /// Neutral on native, with the canvas: the user's bubble and the quiet
-    /// fills are ChatGPT's #F4F4F4 / #2F2F2F greys, not the web's warm muted.
-    static let mutedLight = JunoColorToken(unchecked: 0.957, 0.957, 0.957)
-    static let mutedDark = JunoColorToken(unchecked: 0.184, 0.184, 0.184)
+    static let mutedLight = JunoGeneratedColors.muted.light
+    static let mutedDark = JunoGeneratedColors.muted.dark
 
     /// `--secondary`: #F2F0EB / #302E2C. The user bubble, wells, inline code,
     /// pressed chips, keycaps.
