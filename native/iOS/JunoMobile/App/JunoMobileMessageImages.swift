@@ -226,12 +226,13 @@ struct JunoMobileImageViewer: View {
         Button {
           dismiss()
         } label: {
-          Image(systemName: "xmark")
-            .font(.body.weight(.medium))
-            .frame(width: 30, height: 30)
+          JunoIconView(.close, size: 16)
+            .foregroundStyle(.white)
+            .frame(width: 44, height: 44)
+            .background(.black.opacity(0.35), in: Circle())
+            .contentShape(Circle())
         }
-        .buttonStyle(.glass)
-        .buttonBorderShape(.circle)
+        .buttonStyle(.plain)
         .accessibilityLabel("Close")
         .accessibilityIdentifier("juno.mobile.image-viewer-close")
         Spacer()
@@ -247,12 +248,13 @@ struct JunoMobileImageViewer: View {
             item: Image(uiImage: image),
             preview: SharePreview(currentAttachment?.fileName ?? "Image", image: Image(uiImage: image))
           ) {
-            Image(systemName: "square.and.arrow.up")
-              .font(.body.weight(.medium))
-              .frame(width: 30, height: 30)
+            JunoIconView(.share, size: 16)
+              .foregroundStyle(.white)
+              .frame(width: 44, height: 44)
+              .background(.black.opacity(0.35), in: Circle())
+              .contentShape(Circle())
           }
-          .buttonStyle(.glass)
-          .buttonBorderShape(.circle)
+          .buttonStyle(.plain)
           .accessibilityLabel("Share image")
           .accessibilityIdentifier("juno.mobile.image-viewer-share")
         } else {
@@ -286,7 +288,7 @@ struct JunoMobileImageViewer: View {
         .foregroundStyle(.white)
         .padding(.horizontal, JunoSpace.regular)
         .frame(minHeight: 44)
-        .glassEffect(.regular.interactive(), in: Capsule())
+        .background(.black.opacity(0.35), in: Capsule())
         .padding(.bottom, JunoSpace.regular)
       }
     }

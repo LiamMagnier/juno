@@ -571,6 +571,8 @@ struct JunoMobileSidebarDrawer: View {
             } label: {
               Image(systemName: "xmark.circle.fill")
                 .foregroundStyle(.tertiary)
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(.rect)
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Clear search")
@@ -584,6 +586,8 @@ struct JunoMobileSidebarDrawer: View {
 
         Button("Cancel") { setSearching(false) }
           .font(.body)
+          .frame(minHeight: 44)
+          .contentShape(.rect)
           .tint(Color.primary)
           .transition(.opacity)
       } else {

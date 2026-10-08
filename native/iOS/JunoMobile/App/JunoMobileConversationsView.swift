@@ -1087,6 +1087,7 @@ private struct JunoMobileConversationDetail: View {
       } label: {
         Label("Share", systemImage: "square.and.arrow.up")
       }
+      .contentShape(.rect)
       .disabled(sharing)
     }
     Button {
@@ -1094,6 +1095,7 @@ private struct JunoMobileConversationDetail: View {
     } label: {
       Label("Find in Conversation", systemImage: "magnifyingglass")
     }
+    .contentShape(.rect)
     .accessibilityIdentifier("juno.mobile.conversation-find")
     Button {
       editValue = conversation.title
@@ -1101,6 +1103,7 @@ private struct JunoMobileConversationDetail: View {
     } label: {
       Label("Rename", systemImage: "pencil")
     }
+    .contentShape(.rect)
     Button {
       Task {
         await model.setPinned(id: conversation.id, pinned: !conversation.pinned)
@@ -1108,6 +1111,7 @@ private struct JunoMobileConversationDetail: View {
     } label: {
       Label(conversation.pinned ? "Unpin" : "Pin", systemImage: conversation.pinned ? "pin.slash" : "pin")
     }
+    .contentShape(.rect)
     Divider()
     // Delete, not archive. Archiving moved a conversation into a folder this
     // app has no screen for, which from the phone is indistinguishable from
@@ -1117,6 +1121,7 @@ private struct JunoMobileConversationDetail: View {
     } label: {
       Label("Delete", systemImage: "trash")
     }
+    .contentShape(.rect)
   }
 
   /// Returns the reader to the newest turn.
