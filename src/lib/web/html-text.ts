@@ -38,6 +38,17 @@
  */
 
 import { isDisallowedHost } from "@/lib/search/url-safety";
+import {
+  assignedState,
+  linkedDataToText,
+  MAX_BLOB_CHARS,
+  MAX_BLOBS,
+  MAX_BLOBS_CHARS,
+  scriptBlobKind,
+  stateToText,
+  type ScriptBlob,
+} from "@/lib/web/embedded-data";
+import { cellText, renderTable, spanOf, tableAsParagraphs, type TableCell, type TableRow } from "@/lib/web/html-table";
 import { decodeHtmlEntities } from "@/lib/web/url-canon";
 
 /** One outbound link kept from a fetched page, for the bounded hop stage. */
@@ -59,6 +70,14 @@ export interface HtmlText {
    * the text length through `looksLikeShell`.
    */
   shellMarkup: boolean;
+  /**
+   * Text that came from the page's data rather than its markup: `json-ld`
+   * when JSON-LD added an article body, offers or an FAQ; `app-state` when the
+   * visible text was a client-rendered shell and the framework's hydration
+   * state held the page (`embedded-data.ts`). Absent when the markup alone was
+   * read.
+   */
+  recovered?: "json-ld" | "app-state";
 }
 
 /** Links kept per page. Beyond this the tail is site navigation, not citations. */
@@ -95,7 +114,16 @@ const REGION_TAGS = ["article", "main"] as const;
 const EMPHASIS: Readonly<Record<string, string>> = { strong: "**", b: "**", em: "*", i: "*", code: "`" };
 const HEADINGS: ReadonlySet<string> = new Set(["h1", "h2", "h3", "h4", "h5", "h6"]);
 /** Tags whose attributes are read after tokenizing. */
-const KEEP_ATTRS = new Set(["a", "meta", "div"]);
+const KEEP_ATTRS = new Set(["a", "meta", "div", "td", "th"]);
+/** Table structure the output pass lays out as a grid (`html-table.ts`). */
+const TABLE_PARTS = new Set(["tr", "td", "th", "thead", "tbody", "tfoot", "caption"]);
+/**
+ * Below this much visible text a page is read with its app state appended
+ * (when it ships one): a real page has said more than this in its markup.
+ */
+const APP_STATE_BELOW_CHARS = 600;
+/** Recovered text shorter than this is configuration, not a page. */
+const RECOVERED_MIN_CHARS = 200;
 
 function isNameStart(code: number): boolean {
   return (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
@@ -167,6 +195,8 @@ interface Tokenized {
   tokens: Token[];
   title?: string;
   noscriptMentionsJs: boolean;
+  /** JSON-LD and app-state blobs from `<script>` bodies, bounded (`embedded-data.ts`). */
+  blobs: ScriptBlob[];
 }
 
 /**
@@ -215,6 +245,8 @@ function* tokenize(html: string): Generator<void, Tokenized> {
   const misses = new Map<string, number>();
   let title: string | undefined;
   let noscriptMentionsJs = false;
+  const blobs: ScriptBlob[] = [];
+  let blobChars = 0;
   let nextYield = YIELD_EVERY_CHARS;
   let i = 0;
 
@@ -304,6 +336,21 @@ function* tokenize(html: string): Generator<void, Tokenized> {
           tokens.push({ t: CLOSE, name, start: close, end: after });
         } else if (name === "noscript" && !noscriptMentionsJs) {
           noscriptMentionsJs = /javascript/i.test(html.slice(end, close));
+        } else if (name === "script" && close - end <= MAX_BLOB_CHARS && blobs.length < MAX_BLOBS && blobChars + (close - end) <= MAX_BLOBS_CHARS) {
+          // The page's data: JSON-LD, a JSON island, or `window.__STATE__ = {…}`.
+          const attrs = parseAttributes(html.slice(j, selfClosing ? end - 2 : end - 1));
+          const kind = scriptBlobKind(attrs.get("type"), attrs.get("id"));
+          if (kind) {
+            const body = html.slice(end, close);
+            blobChars += body.length;
+            blobs.push({ kind, body, ...(attrs.get("id") ? { name: attrs.get("id") } : {}) });
+          } else if (!attrs.has("src") && /__/.test(html.slice(end, Math.min(close, end + 200)))) {
+            const assigned = assignedState(html.slice(end, close));
+            if (assigned) {
+              blobChars += assigned.json.length;
+              blobs.push({ kind: "state", body: assigned.json, name: assigned.name });
+            }
+          }
         }
         i = after;
         continue;
@@ -317,7 +364,7 @@ function* tokenize(html: string): Generator<void, Tokenized> {
     tokens.push(token);
   }
 
-  return { tokens, ...(title !== undefined ? { title } : {}), noscriptMentionsJs };
+  return { tokens, ...(title !== undefined ? { title } : {}), noscriptMentionsJs, blobs };
 }
 
 /**
@@ -395,7 +442,7 @@ function flatten(text: string): string {
 }
 
 function* extract(html: string, baseUrl: string | undefined): Generator<void, HtmlText> {
-  const { tokens, title, noscriptMentionsJs } = yield* tokenize(html);
+  const { tokens, title, noscriptMentionsJs, blobs } = yield* tokenize(html);
   yield;
 
   // Metadata and shell markup come from the WHOLE document: <title> and
@@ -487,6 +534,52 @@ function* extract(html: string, baseUrl: string | undefined): Generator<void, Ht
   let anchor: { href: string; text: string[]; closeAt: number; collect: boolean } | null = null;
   let lineContext = 0; // > 0 inside a heading: its text stays on one line
 
+  /*
+   * The outermost open table, laid out as a grid when it closes
+   * (`html-table.ts`). Cells collect their own text; a table nested inside a
+   * cell flows into that cell as text. `</td>`, `</tr>` and `</thead>` are
+   * optional in HTML, so a new cell or row closes the previous one.
+   */
+  let table: {
+    rows: TableRow[];
+    row: TableCell[] | null;
+    rowHead: boolean;
+    cell: { parts: string[]; header: boolean; colspan: number; rowspan: number } | null;
+    loose: string[];
+    head: boolean;
+    nested: number;
+  } | null = null;
+  let afterTerm = false; // the last <dl> item was a <dd>: a second value joins with ";"
+  const emit = (piece: string) => {
+    if (!table) out.push(piece);
+    else if (table.cell) table.cell.parts.push(piece);
+    else table.loose.push(piece);
+  };
+  const endCell = () => {
+    if (!table?.cell) return;
+    const { parts, header, colspan, rowspan } = table.cell;
+    (table.row ??= []).push({ text: cellText(parts.join("")), header, colspan, rowspan });
+    table.cell = null;
+  };
+  const endRow = () => {
+    if (!table) return;
+    endCell();
+    if (table.row?.length) table.rows.push({ cells: table.row, head: table.rowHead });
+    table.row = null;
+  };
+  const endTable = () => {
+    if (!table) return;
+    endRow();
+    const current = table;
+    table = null;
+    const caption = flatten(current.loose.join(" "));
+    const markdown = renderTable(current.rows);
+    out.push("\n\n");
+    if (caption) out.push(`${caption}\n\n`);
+    out.push(markdown ?? tableAsParagraphs(current.rows));
+    out.push("\n\n");
+  };
+
   for (let k = from + 1; k < to; k += 1) {
     if (k % YIELD_EVERY_TOKENS === 0) yield;
     if (!keep[k]) continue;
@@ -497,15 +590,65 @@ function* extract(html: string, baseUrl: string | undefined): Generator<void, Ht
       // A plain replace, not `\s*\n\s*`: that pattern is quadratic on a long
       // run of spaces, which is exactly what a hostile page would send.
       if (lineContext > 0) piece = piece.replace(/\r?\n/g, " ");
-      out.push(piece);
+      emit(piece);
       if (anchor?.collect && anchor.text.length < 64) anchor.text.push(piece);
       continue;
     }
 
     const name = token.name;
+    const inCell = !!table?.cell;
+    // Table structure first: the outermost table only.
+    if (name === "table") {
+      if (token.t === OPEN && !token.selfClosing) {
+        if (table) table.nested += 1;
+        else table = { rows: [], row: null, rowHead: false, cell: null, loose: [], head: false, nested: 0 };
+        emit(" ");
+      } else if (token.t === CLOSE && table) {
+        if (table.nested > 0) {
+          table.nested -= 1;
+          emit(" ");
+        } else endTable();
+      } else emit(" ");
+      continue;
+    }
+    if (table && TABLE_PARTS.has(name)) {
+      if (table.nested > 0) {
+        emit(" ");
+        continue;
+      }
+      if (token.t === OPEN) {
+        if (name === "thead") table.head = true;
+        else if (name === "tbody" || name === "tfoot") {
+          endRow();
+          table.head = false;
+        } else if (name === "tr") {
+          endRow();
+          table.row = [];
+          table.rowHead = table.head;
+        } else if (name === "td" || name === "th") {
+          endCell();
+          if (!table.row) {
+            table.row = [];
+            table.rowHead = table.head;
+          }
+          const attrs = token.attrs !== undefined ? parseAttributes(token.attrs) : undefined;
+          table.cell = { parts: [], header: name === "th", colspan: spanOf(attrs?.get("colspan")), rowspan: spanOf(attrs?.get("rowspan")) };
+        }
+        // <caption> text lands in `loose` and is written above the table.
+      } else {
+        if (name === "td" || name === "th") endCell();
+        else if (name === "tr") endRow();
+        else if (name === "thead") {
+          endRow();
+          table.head = false;
+        }
+      }
+      continue;
+    }
+
     if (token.t === OPEN) {
       if (removed.has(k)) {
-        out.push(" ");
+        emit(" ");
         continue;
       }
       if (name === "a") {
@@ -514,30 +657,43 @@ function* extract(html: string, baseUrl: string | undefined): Generator<void, Ht
         const close = paired !== undefined && keep[paired] === 1 && paired < to ? paired : undefined;
         const href = close !== undefined && token.attrs !== undefined ? parseAttributes(token.attrs).get("href") : undefined;
         if (close === undefined || href === undefined) {
-          out.push(" ");
+          emit(" ");
           continue;
         }
-        out.push("[");
+        // Inside a cell the link's words are the value; the href is still collected.
+        if (!inCell) emit("[");
         anchor = { href, text: [], closeAt: close, collect: !!baseUrl && links.length < MAX_PAGE_LINKS };
         continue;
       }
+      if (inCell) {
+        // A cell is one line: block structure inside it is a space.
+        if (EMPHASIS[name] && emphasis.has(k)) emit(EMPHASIS[name]);
+        else emit(" ");
+        continue;
+      }
       if (HEADINGS.has(name) && headings.has(k)) {
-        out.push(name <= "h3" ? "\n\n## " : "\n\n### ");
+        emit(name <= "h3" ? "\n\n## " : "\n\n### ");
         lineContext += 1;
-      } else if (name === "li") out.push("\n- ");
-      else if (name === "p") out.push("\n\n");
-      else if (name === "blockquote") out.push("\n> ");
-      else if (name === "br") out.push("\n");
-      else if (name === "hr") out.push("\n---\n");
-      else if (EMPHASIS[name] && emphasis.has(k)) out.push(EMPHASIS[name]);
-      else out.push(" ");
+      } else if (name === "li") emit("\n- ");
+      else if (name === "dt") {
+        emit("\n- ");
+        afterTerm = false;
+      } else if (name === "dd") {
+        emit(afterTerm ? "; " : ": ");
+        afterTerm = true;
+      } else if (name === "p") emit("\n\n");
+      else if (name === "blockquote") emit("\n> ");
+      else if (name === "br") emit("\n");
+      else if (name === "hr") emit("\n---\n");
+      else if (EMPHASIS[name] && emphasis.has(k)) emit(EMPHASIS[name]);
+      else emit(" ");
       continue;
     }
 
     // Closing tags.
     if (name === "a") {
       if (anchor && anchor.closeAt === k) {
-        out.push(`](${anchor.href})`);
+        if (!inCell) emit(`](${anchor.href})`);
         if (anchor.collect && baseUrl) {
           let resolved: string | null = null;
           try {
@@ -553,19 +709,30 @@ function* extract(html: string, baseUrl: string | undefined): Generator<void, Ht
           }
         }
         anchor = null;
-      } else out.push(" ");
+      } else emit(" ");
+      continue;
+    }
+    if (inCell) {
+      if (EMPHASIS[name] && closesEmphasis.has(k)) emit(EMPHASIS[name]);
+      else emit(" ");
+      if (HEADINGS.has(name) && closesHeading.has(k)) lineContext = Math.max(0, lineContext - 1);
       continue;
     }
     if (HEADINGS.has(name) && closesHeading.has(k)) {
-      out.push("\n\n");
+      emit("\n\n");
       lineContext = Math.max(0, lineContext - 1);
-    } else if (name === "li") {
+    } else if (name === "li" || name === "dd" || name === "dt") {
       // Nothing: the next item starts its own line.
-    } else if (name === "p") out.push("\n\n");
-    else if (name === "blockquote") out.push("\n");
-    else if (EMPHASIS[name] && closesEmphasis.has(k)) out.push(EMPHASIS[name]);
-    else out.push(" ");
+    } else if (name === "dl") {
+      emit("\n\n");
+      afterTerm = false;
+    } else if (name === "p") emit("\n\n");
+    else if (name === "blockquote") emit("\n");
+    else if (EMPHASIS[name] && closesEmphasis.has(k)) emit(EMPHASIS[name]);
+    else emit(" ");
   }
+  // A table the region never closed is still a table.
+  endTable();
   yield;
 
   // Normalise spacing exactly as the old extractor did: trim each line, keep a
@@ -579,7 +746,43 @@ function* extract(html: string, baseUrl: string | undefined): Generator<void, Ht
     if (line || (k > 0 && previousRaw)) kept.push(line);
     previousRaw = line;
   }
-  const text = kept.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  let text = kept.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  yield;
+
+  /*
+   * The page's data (embedded-data.ts). JSON-LD is read on every page: an
+   * article body the markup did not render, offers with prices, an FAQ —
+   * each appended only when the visible text does not already hold it — and
+   * its date and author fill the gaps the <meta> tags left. A framework's
+   * hydration state is read only when the markup was a shell, because on a
+   * server-rendered page it repeats the text and adds plumbing.
+   */
+  let recovered: HtmlText["recovered"];
+  if (blobs.length > 0) {
+    const ld = linkedDataToText(blobs);
+    publishedAt ??= ld.publishedAt;
+    author ??= ld.author;
+    const extra: string[] = [];
+    if (ld.articleBody && !text.includes(ld.articleBody.slice(0, 80))) extra.push(ld.articleBody);
+    const ldLines = ld.text
+      .split("\n")
+      .filter((line) => !line.trim() || line.startsWith("|") || !text.includes(line.replace(/^[A-Z][\w ]{0,30}: /, "").slice(0, 120)));
+    if (ldLines.some((line) => line.trim() && !line.startsWith("Headline:"))) extra.push(ldLines.join("\n").trim());
+    const before = text.length;
+    if (text.length < APP_STATE_BELOW_CHARS) {
+      const state = stateToText(blobs);
+      if (state.length >= RECOVERED_MIN_CHARS) {
+        extra.push(state);
+        recovered = "app-state";
+      }
+    }
+    const added = extra.join("\n\n").trim();
+    if (added) {
+      text = [text, added].filter(Boolean).join("\n\n");
+      if (!recovered && text.length - before >= RECOVERED_MIN_CHARS / 2) recovered = "json-ld";
+      if (!recovered && before < RECOVERED_MIN_CHARS && text.length >= RECOVERED_MIN_CHARS) recovered = "json-ld";
+    }
+  }
 
   return {
     ...(title !== undefined ? { title } : {}),
@@ -588,6 +791,7 @@ function* extract(html: string, baseUrl: string | undefined): Generator<void, Ht
     ...(publishedAt !== undefined ? { publishedAt } : {}),
     links,
     shellMarkup: frameworkRoot || noscriptMentionsJs || JS_PLEA.test(html),
+    ...(recovered ? { recovered } : {}),
   };
 }
 

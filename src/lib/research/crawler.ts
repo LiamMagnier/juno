@@ -8,6 +8,7 @@
 
 import type { ExtractOptions, ExtractOutcome, ExtractResult } from "@/lib/search/search-engine";
 import { isDisallowedAddress, isDisallowedHost } from "@/lib/search/url-safety";
+import { htmlToCleanTextAsync } from "@/lib/web/html-text";
 import type { Browser, Route } from "@playwright/test";
 
 // The shell heuristic lives with the other page signals now, where the
@@ -39,6 +40,9 @@ export type CrawlResult =
   | { ok: false; failure: { reason: string; detail?: string; httpStatus?: number; retryAfterMs?: number } };
 
 const DEFAULT_TIMEOUT_MS = 20_000;
+/** Links kept from a rendered page; a rendered page carries its whole navigation. */
+const MAX_HEADLESS_LINKS = 60;
+const MAX_RENDERED_HTML_CHARS = 4 * 1024 * 1024;
 const DEFAULT_MAX_CHARS = 16_000;
 const DEFAULT_USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 JunoResearch/2.0";
@@ -234,42 +238,17 @@ export async function renderHeadlessPage(
 
       const title = await page.title();
 
-      // Extract rendered text content and discovered links directly from DOM
-      const { text, links } = await page.evaluate(() => {
-        // Remove script, style, noscript elements before extracting text
-        const toRemove = document.querySelectorAll("script, style, noscript, svg, nav, footer, header");
-        toRemove.forEach((el) => el.remove());
-
-        const mainEl = document.querySelector("article, main, [role='main']") || document.body;
-        const innerText = mainEl ? (mainEl as HTMLElement).innerText || mainEl.textContent || "" : "";
-
-        // Collect visible hyperlinks
-        const anchors = Array.from(document.querySelectorAll("a[href]"));
-        const links: Array<{ href: string; text: string }> = [];
-        const seen = new Set<string>();
-
-        for (const a of anchors) {
-          const href = (a as HTMLAnchorElement).href;
-          if ((href.startsWith("http://") || href.startsWith("https://")) && !seen.has(href)) {
-            seen.add(href);
-            links.push({
-              href,
-              text: (a.textContent || "").trim().slice(0, 100),
-            });
-            if (links.length >= 30) break;
-          }
-        }
-
-        return {
-          text: innerText,
-          links,
-        };
-      });
-
+      // The rendered DOM goes through the same extractor as the fast path, so
+      // a rendered page keeps its tables as Markdown, its headings and its
+      // JSON-LD; `innerText` flattened all of that to one line of words.
+      const rendered = await page.content();
+      const finalUrl = page.url();
       await context.close();
       await browser.close();
-
-      const cleanText = text.replace(/\s+/g, " ").trim();
+      // The same byte ceiling the fast path holds a page to.
+      const parsed = await htmlToCleanTextAsync(rendered.slice(0, MAX_RENDERED_HTML_CHARS), finalUrl || url, options.signal);
+      const links = parsed.links.slice(0, MAX_HEADLESS_LINKS);
+      const cleanText = parsed.text.trim();
 
       if (!cleanText || cleanText.length < 50) {
         return { ok: false, failure: { reason: "empty_document", detail: "Rendered page contained insufficient text" } };
@@ -278,11 +257,11 @@ export async function renderHeadlessPage(
       return {
         ok: true,
         page: {
-          title: title || url,
+          title: title || parsed.title || url,
           text: cleanText.slice(0, maxChars),
           links,
-          author: undefined,
-          publishedAt: undefined,
+          author: parsed.author,
+          publishedAt: parsed.publishedAt,
           isSpa: true,
           crawler: "headless_playwright",
         },
