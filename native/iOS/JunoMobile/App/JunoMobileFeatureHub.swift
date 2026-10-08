@@ -228,50 +228,26 @@ private struct JunoMobileFeatureHubModifier: ViewModifier {
   }
 #endif
 
-/// Skills and Routines, as two rows at the top of Customize: the places the
-/// web keeps beside Apps. Hidden when the shell has no transport.
+/// Skills and Routines, as two rows at the top of Apps: the places the web
+/// keeps beside them. Stock list rows — place inside a `List` section. Absent
+/// when the shell has no transport.
 struct JunoMobileCustomizeLinks: View {
   @Environment(\.junoFeatureHub) private var hub
 
   var body: some View {
     if hub?.sender != nil {
-      JunoCard(padding: 0) {
-        VStack(spacing: 0) {
-          link("Skills", systemImage: "wand.and.sparkles", id: "skills") { JunoMobileSkillsView() }
-          Divider().padding(.leading, JunoSpace.region + JunoSpace.regular)
-          link("Routines", systemImage: "clock.arrow.circlepath", id: "routines") { JunoMobileRoutinesView() }
-        }
+      NavigationLink {
+        JunoMobileSkillsView()
+      } label: {
+        JunoMobileSettingsLabel(title: "Skills", icon: .skills)
       }
-    }
-  }
-
-  private func link<Destination: View>(
-    _ title: String,
-    systemImage: String,
-    id: String,
-    @ViewBuilder destination: @escaping () -> Destination
-  ) -> some View {
-    NavigationLink {
-      destination()
-    } label: {
-      HStack(spacing: JunoSpace.cozy) {
-        Image(systemName: systemImage)
-          .foregroundStyle(Color.junoSecondaryInk)
-          .frame(minWidth: 24)
-          .accessibilityHidden(true)
-        Text(title)
-          .foregroundStyle(Color.primary)
-        Spacer(minLength: 0)
-        Image(systemName: "chevron.forward")
-          .font(.footnote)
-          .foregroundStyle(Color.junoTertiaryInk)
-          .accessibilityHidden(true)
+      .accessibilityIdentifier("juno.mobile.customize.skills")
+      NavigationLink {
+        JunoMobileRoutinesView()
+      } label: {
+        JunoMobileSettingsLabel(title: "Routines", icon: .automations)
       }
-      .padding(.horizontal, JunoSpace.regular)
-      .frame(minHeight: 48)
-      .contentShape(.rect)
+      .accessibilityIdentifier("juno.mobile.customize.routines")
     }
-    .buttonStyle(.plain)
-    .accessibilityIdentifier("juno.mobile.customize.\(id)")
   }
 }

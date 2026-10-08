@@ -34,7 +34,7 @@ struct JunoMobileArchivedView: View {
           Label {
             Text("No archived chats")
           } icon: {
-            Image(systemName: "archivebox")
+            JunoIconView(.archive, size: 44)
           }
         } description: {
           Text("Swipe a chat in the sidebar to archive it. It stays here until you restore or delete it.")
@@ -47,12 +47,12 @@ struct JunoMobileArchivedView: View {
             } label: {
               VStack(alignment: .leading, spacing: 2) {
                 Text(conversation.title)
-                  .junoRowLabel()
                   .foregroundStyle(.primary)
                   .lineLimit(2)
                 if let archivedAt = conversation.archivedAt {
                   Text("Archived \(archivedAt.formatted(.relative(presentation: .named)))")
-                    .junoCaption()
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
                 }
               }
               .frame(maxWidth: .infinity, alignment: .leading)
@@ -66,7 +66,7 @@ struct JunoMobileArchivedView: View {
               } label: {
                 Label("Restore", systemImage: "arrow.uturn.backward")
               }
-              .tint(Color.junoAccent)
+              .tint(.blue)
             }
             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
               Button(role: .destructive) {
@@ -80,19 +80,19 @@ struct JunoMobileArchivedView: View {
                 restoreHaptic.fire()
                 Task { await model.setArchived(id: conversation.id, archived: false) }
               } label: {
-                Label("Restore", systemImage: "arrow.uturn.backward")
+                Label("Restore", icon: .archiveRestore)
               }
               Button(role: .destructive) {
                 deleteTarget = conversation
               } label: {
-                Label { Text("Delete") } icon: { JunoIconView(.trash, size: 15) }
+                Label("Delete", icon: .trash)
               }
             }
             .disabled(conversation.isPending)
           }
         }
         .listStyle(.insetGrouped)
-        .scrollContentBackground(.hidden)
+        .junoGroupedPage()
         .searchable(text: $query, prompt: "Search archived chats")
         .overlay {
           if archived.isEmpty {
@@ -101,7 +101,6 @@ struct JunoMobileArchivedView: View {
         }
       }
     }
-    .junoScreenCanvas()
     .navigationTitle("Archived chats")
     .navigationBarTitleDisplayMode(.inline)
     .junoHaptic(JunoMobileHaptic.pin, trigger: restoreHaptic)

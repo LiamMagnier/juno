@@ -6,24 +6,13 @@ import JunoStorage
 import JunoSync
 import SwiftUI
 
-/// **Memory**, rebuilt on the website's own structure.
+/// **Memory**, as a stock inset-grouped list.
 ///
-/// It was an `.insetGrouped` `List` of eight sections — a Settings pane that
-/// happened to be about memory. The web is three stacked blocks in one column,
-/// and the order is the argument:
-///
-/// 1. **What Juno knows about you** — the consolidated profile, split into the
-///    sections the server writes (`## Work context`, `## Preferences`, …). This
-///    leads because it is the only thing most people came to read.
-/// 2. **The individual facts** — collapsed. They are the substrate the summary is
-///    built from, and a list of forty one-line facts is a worse answer to "what
-///    does it know?" than five paragraphs of prose.
-/// 3. **Privacy** — pause, and a two-step reset, kept together and last so the
-///    destructive control is nowhere near the reading.
-///
-/// The web edits memory by *asking in plain language* against `/api/memory/edit`.
-/// That route has no native client, so the individual facts stay directly
-/// editable here — the same capability, reached the way this client can.
+/// The order is the argument, as on the web: what Alevr knows about you (the
+/// consolidated profile, split into the sections the server writes), then the
+/// individual facts one level down — the substrate, not the answer — then the
+/// projects it keeps memory for, then privacy, with the destructive control
+/// last and alone.
 struct JunoMobileMemoryView: View {
     @Bindable var model: NativeMemorySettingsModel<SQLiteAccountRepository>
     /// The memory routes the synced store does not carry: suggested skills,
@@ -37,16 +26,7 @@ struct JunoMobileMemoryView: View {
     @State private var page: NativeMemoryPageModel?
     @State private var clearingProject: NativeMemoryScope?
     @State private var notice: NativeMemoryNotice?
-
-    @State private var newMemory = ""
-    @State private var editMemoryID: String?
-    @State private var editContent = ""
-    @State private var deleteMemoryID: String?
-    @State private var showingFacts = false
-    @State private var resetArmed = false
     @State private var showingEraseAll = false
-    /// Filters the facts list. Empty is the resting state — see ``matchingFacts``.
-    @State private var factQuery = ""
     /// The export file, rebuilt only when what goes in it changes.
     @State private var exportURL: URL?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -54,32 +34,43 @@ struct JunoMobileMemoryView: View {
     private var paused: Bool { !(model.settings?.memoryEnabled ?? true) }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: JunoSpace.section) {
-                header
-                if let notice {
-                    JunoMobileMemoryNoticeLine(notice: notice)
+        List {
+            if let notice {
+                Section {
+                    Label(
+                        verbatim: notice.title,
+                        icon: notice.tone == .error ? .triangleAlert : .check
+                    )
+                    .foregroundStyle(notice.tone == .error ? Color.red : Color.secondary)
                 }
-                summaryCard
-                if let page, !page.skillCandidates.isEmpty {
-                    JunoMobileSuggestedSkills(page: page) { show($0) }
-                }
-                factsSection
-                projectMemorySection
-                privacySection
             }
-            .padding(.horizontal, JunoSpace.regular)
-            .padding(.top, JunoSpace.hairline)
-            .padding(.bottom, JunoSpace.region)
-            .frame(maxWidth: 768)
-            .frame(maxWidth: .infinity)
+            summarySection
+            if let page, !page.skillCandidates.isEmpty {
+                JunoMobileSuggestedSkills(page: page) { show($0) }
+            }
+            factsSection
+            projectMemorySection
+            privacySection
         }
-        .junoScreenCanvas()
-        // Blank, deliberately. The page states its own name in the serif heading
-        // two lines below the bar, and an inline bar title repeated it verbatim
-        // on every screen of this app that has a heading.
-        .navigationTitle("")
+        .listStyle(.insetGrouped)
+        .junoGroupedPage()
+        .navigationTitle("Memory")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                if model.isRefreshingSummary {
+                    ProgressView()
+                } else {
+                    Button {
+                        Task { await model.refresh() }
+                    } label: {
+                        JunoIconView(.refresh, size: 18)
+                            .accessibilityLabel("Rebuild summary")
+                    }
+                    .accessibilityIdentifier("juno.mobile.memory-rebuild")
+                }
+            }
+        }
         .refreshable {
             await model.refresh()
             await page?.reload()
@@ -105,410 +96,88 @@ struct JunoMobileMemoryView: View {
         }
         .task(id: exportSignature) { rebuildExport() }
         .accessibilityIdentifier("juno.mobile.memory-list")
-        // A sheet with a real text editor, not an `alert` with a `TextField`.
-        // A memory is a sentence — "The user prefers short explanations with code
-        // examples." — and the alert gave it a single line that scrolled
-        // horizontally, with no way to see the whole thing being edited.
-        .sheet(isPresented: Binding(
-            get: { editMemoryID != nil },
-            set: { if !$0 { editMemoryID = nil } }
-        )) {
-            editSheet
-        }
-        .alert("Delete this memory?", isPresented: Binding(
-            get: { deleteMemoryID != nil },
-            set: { if !$0 { deleteMemoryID = nil } }
-        )) {
-            Button("Cancel", role: .cancel) { deleteMemoryID = nil }
-            .contentShape(.rect)
-            Button("Delete", role: .destructive) {
-                guard let id = deleteMemoryID else { return }
-                deleteMemoryID = nil
-                Task { await model.deleteMemory(id: id) }
-            }
-            .contentShape(.rect)
-        } message: {
-            Text("Juno will no longer use this fact in conversations.")
-        }
         .alert("Erase all memory?", isPresented: $showingEraseAll) {
             Button("Cancel", role: .cancel) {}
             Button("Erase everything", role: .destructive) {
                 Task { await model.eraseAllMemory() }
             }
+            .accessibilityIdentifier("juno.mobile.settings-memory-erase-confirm")
         } message: {
             Text("This permanently removes every saved fact and the consolidated summary. This cannot be undone.")
         }
     }
 
-    // MARK: - Header
-
-    /// The web's own heading, wording included: a small semibold eyebrow naming
-    /// the section, then **what the page is about** in the serif. "Memory" alone
-    /// names a feature; "What Juno remembers" states the question the reader
-    /// came to answer.
-    private var header: some View {
-        VStack(alignment: .leading, spacing: JunoSpace.tight) {
-            Text("Memory")
-                .junoFont(size: 12, relativeTo: .caption, weight: .semibold)
-                .foregroundStyle(Color.junoMutedForeground)
-                .accessibilityHidden(true)
-            Text("What Juno remembers")
-                .junoPageHeading(compact: true)
-                .accessibilityAddTraits(.isHeader)
-            Text("Distilled from your chats and used as context whenever you talk to Juno. Always yours to edit.")
-                .junoFont(size: 15, relativeTo: .subheadline)
-                .lineSpacing(3)
-                .foregroundStyle(Color.junoMutedForeground)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.top, JunoSpace.tight)
-    }
-
-    /// Editing one fact, full width and multi-line.
-    private var editSheet: some View {
-        NavigationStack {
-            VStack(alignment: .leading, spacing: JunoSpace.cozy) {
-                TextEditor(text: $editContent)
-                    .junoFont(size: 16, relativeTo: .callout)
-                    .lineSpacing(2)
-                    .scrollContentBackground(.hidden)
-                    .padding(JunoSpace.cozy)
-                    .background(
-                        RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
-                            .fill(Color.junoSurface)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
-                            .strokeBorder(Color.junoHairline, lineWidth: 1)
-                    )
-                    .frame(minHeight: 130)
-                    .accessibilityLabel("Memory")
-                    .accessibilityIdentifier("juno.mobile.memory-edit-field")
-                Text("Write it as a short, durable statement — Juno quotes these back as facts.")
-                    .junoFont(size: 12, relativeTo: .caption)
-                    .foregroundStyle(Color.junoMutedForeground)
-                Spacer(minLength: 0)
-            }
-            .padding(JunoSpace.regular)
-            .junoScreenCanvas()
-            .navigationTitle("Edit memory")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("action.cancel") { editMemoryID = nil }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
-                        guard let id = editMemoryID else { return }
-                        editMemoryID = nil
-                        Task { await model.updateMemory(id: id, content: editContent) }
-                    }
-                    .disabled(
-                        editContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                    )
-                }
-            }
-        }
-        .presentationDetents([.medium])
-        .tint(Color.junoAccent)
-    }
-
     // MARK: - Summary
 
-    /// The consolidated profile. Rendered as the server's own sections rather than
-    /// as one wall of Markdown: it writes `## Work context`, `## Preferences` and
-    /// so on, and honouring those headings is the difference between a profile and
-    /// a paragraph.
-    private var summaryCard: some View {
-        JunoMobileWorkspaceSection(
-            title: "What Juno knows about you",
-            actionTitle: model.isRefreshingSummary ? nil : "Rebuild",
-            actionIcon: .refresh,
-            action: model.isRefreshingSummary ? nil : { Task { await model.refresh() } },
-            footnote: summaryFootnote
-        ) {
-            JunoCard {
-                if model.isRefreshingSummary, model.summary == nil {
-                    working("Consolidating what Juno has learned…")
-                } else if let summary = model.summary, !summary.content.isEmpty {
-                    VStack(alignment: .leading, spacing: JunoSpace.regular) {
-                        ForEach(JunoMemorySummarySection.parse(summary.content)) { section in
-                            VStack(alignment: .leading, spacing: JunoSpace.tight) {
-                                if let title = section.title {
-                                    Text(title)
-                                        .font(JunoType.body.weight(.medium).font())
-                                        .foregroundStyle(Color.junoMutedForeground)
-                                }
-                                JunoMarkdownText(section.body)
-                                    .textSelection(.enabled)
-                            }
-                        }
-                    }
-                } else {
-                    JunoMobileEmptyLine(
-                        text: paused
-                            ? "Memory is paused, so nothing new is being learned."
-                            : "Nothing yet — Juno builds this from what it learns in chats."
-                    )
+    /// The consolidated profile, as the server's own sections.
+    private var summarySection: some View {
+        Section {
+            if model.isRefreshingSummary, model.summary == nil {
+                HStack(spacing: 10) {
+                    ProgressView()
+                    Text("Consolidating what Alevr has learned…")
+                        .foregroundStyle(.secondary)
                 }
+            } else if let summary = model.summary, !summary.content.isEmpty {
+                ForEach(JunoMemorySummarySection.parse(summary.content)) { section in
+                    VStack(alignment: .leading, spacing: 4) {
+                        if let title = section.title {
+                            Text(title)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                        }
+                        JunoMarkdownText(section.body)
+                            .textSelection(.enabled)
+                    }
+                    .padding(.vertical, 4)
+                }
+            } else {
+                Text(
+                    paused
+                        ? "Memory is paused, so nothing new is being learned."
+                        : "Nothing yet — Alevr builds this from what it learns in chats."
+                )
+                .foregroundStyle(.secondary)
             }
+        } header: {
+            Text("What Alevr knows about you")
+        } footer: {
+            if let summaryFootnote { Text(summaryFootnote) }
         }
     }
 
     /// Always says where the profile comes from — before there is one, that is the
-    /// only thing on the card that explains why it is empty.
+    /// only thing that explains why it is empty.
     private var summaryFootnote: String? {
         guard let summary = model.summary, !summary.content.isEmpty else {
-            return paused
-                ? "Nothing new is being learned while memory is paused."
-                : "Juno writes this from your chats. It appears once there is enough to say."
+            return paused ? nil : "Alevr writes this from your chats once there is enough to say."
         }
         let count = summary.entryCount
         let facts = "\(count) fact\(count == 1 ? "" : "s")"
         let when = summary.updatedAt.formatted(.relative(presentation: .named))
-        return "Built from \(facts) · updated \(when)"
-    }
-
-    private func working(_ text: String) -> some View {
-        HStack(spacing: JunoSpace.snug) {
-            ProgressView().controlSize(.small)
-            Text(text)
-                .junoFont(size: 14, relativeTo: .subheadline)
-                .foregroundStyle(Color.junoMutedForeground)
-        }
+        return "Built from \(facts), updated \(when)."
     }
 
     // MARK: - Facts
 
-    /// Collapsed by default, and labelled with its own count so the reader knows
-    /// what opening it costs. This is the substrate, not the answer.
     private var factsSection: some View {
-        JunoMobileWorkspaceSection(
-            title: "Individual facts",
-            footnote: showingFacts
-                ? "Each of these is a line Juno can quote. The summary above is built from them."
-                : nil
-        ) {
-            JunoCard(padding: 0) {
-                VStack(spacing: 0) {
-                    // The disclosure lives *inside* the card so the section has
-                    // presence when it is shut. As a bare label with a chevron on
-                    // the canvas it read as a stray line of text rather than as
-                    // something with content behind it.
-                    Button {
-                        withAnimation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion)) {
-                            showingFacts.toggle()
-                        }
-                    } label: {
-                        HStack(spacing: JunoSpace.snug) {
-                            Text(factsSummaryLine)
-                                .junoFont(size: 15, relativeTo: .subheadline)
-                                .foregroundStyle(Color.primary.opacity(0.82))
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                            JunoIconView(.chevronDown, size: 11)
-                                .foregroundStyle(Color.junoMutedForeground)
-                                .rotationEffect(.degrees(showingFacts ? 180 : 0))
-                        }
-                        .padding(.horizontal, JunoSpace.regular)
-                        .padding(.vertical, JunoSpace.cozy)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(factsSummaryLine)
-                    .accessibilityIdentifier("juno.mobile.memory-facts-toggle")
-
-                    if showingFacts {
-                        Divider().padding(.leading, JunoSpace.regular)
-                        addRow
-                        if model.memories.isEmpty {
-                            Divider().padding(.leading, JunoSpace.regular)
-                            JunoMobileEmptyLine(
-                                text: "Nothing saved yet. What Juno learns in chats appears here."
-                            )
-                            .padding(.horizontal, JunoSpace.regular)
-                            .padding(.vertical, JunoSpace.regular)
-                        } else {
-                            // The filter earns its place only once scrolling is
-                            // the alternative. Below the threshold the whole list
-                            // is on screen and a search field is a control that
-                            // does nothing but take a row.
-                            if model.memories.count >= Self.searchThreshold {
-                                Divider().padding(.leading, JunoSpace.regular)
-                                searchRow
-                            }
-                            if matchingFacts.isEmpty {
-                                Divider().padding(.leading, JunoSpace.regular)
-                                JunoMobileEmptyLine(
-                                    text: "No memory matches “\(factQuery.trimmingCharacters(in: .whitespaces))”."
-                                )
-                                .padding(.horizontal, JunoSpace.regular)
-                                .padding(.vertical, JunoSpace.regular)
-                            } else {
-                                // Grouped by where they came from, because "you
-                                // told Juno this" and "Juno worked this out" are
-                                // different claims and only one of them is worth
-                                // auditing.
-                                factGroup(
-                                    "Added by you",
-                                    matchingFacts.filter { $0.source == .manual }
-                                )
-                                factGroup(
-                                    "Learned from chats",
-                                    matchingFacts.filter { $0.source != .manual }
-                                )
-                            }
-                        }
-                    }
+        Section {
+            NavigationLink {
+                JunoMobileMemoryFactsView(
+                    model: model,
+                    serverFact: { id in page?.facts.first { $0.id == id } },
+                    openConversation: openConversation
+                )
+            } label: {
+                LabeledContent("Individual facts") {
+                    Text("\(model.memories.count)")
                 }
             }
+            .accessibilityIdentifier("juno.mobile.memory-facts-toggle")
+        } footer: {
+            Text("Each fact is a line Alevr can quote. The summary above is built from them.")
         }
         .accessibilityIdentifier("juno.mobile.memory-facts")
-    }
-
-    /// How many facts it takes before a filter is worth more than the row it
-    /// occupies. Twelve is roughly two screens on a phone.
-    private static let searchThreshold = 12
-
-    private var matchingFacts: [NativeMemoryEntry] {
-        let needle = factQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !needle.isEmpty else { return model.memories }
-        return model.memories.filter {
-            $0.content.range(of: needle, options: [.caseInsensitive, .diacriticInsensitive]) != nil
-        }
-    }
-
-    private var searchRow: some View {
-        HStack(spacing: JunoSpace.cozy) {
-            JunoIconView(.search, size: 13)
-                .foregroundStyle(Color.junoMutedForeground)
-                .frame(width: 18)
-            TextField("Filter memories", text: $factQuery)
-                .junoFont(size: 15, relativeTo: .subheadline)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .accessibilityIdentifier("juno.mobile.memory-search")
-            if !factQuery.isEmpty {
-                Button {
-                    factQuery = ""
-                } label: {
-                    JunoIconView(.close, size: 14)
-                        .foregroundStyle(Color.junoMutedForeground)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Clear filter")
-                .contentShape(.rect)
-            }
-        }
-        .padding(.horizontal, JunoSpace.regular)
-        .padding(.vertical, JunoSpace.cozy)
-    }
-
-    /// States the count in words rather than as a bare number beside a label —
-    /// the row has to say what opening it will show. Once a filter is on, it
-    /// states what is being *shown* instead, so the number under the reader's
-    /// eyes and the number in the header never disagree.
-    private var factsSummaryLine: String {
-        let total = model.memories.count
-        guard total > 0 else { return "No individual facts yet" }
-        let shown = matchingFacts.count
-        if showingFacts, shown != total {
-            return "\(shown) of \(total) facts"
-        }
-        return "\(total) individual fact\(total == 1 ? "" : "s")"
-    }
-
-    @ViewBuilder
-    private func factGroup(_ title: String, _ entries: [NativeMemoryEntry]) -> some View {
-        if !entries.isEmpty {
-            Divider().padding(.leading, JunoSpace.regular)
-            Text(title)
-                .junoFont(size: 12, relativeTo: .caption, weight: .semibold)
-                .kerning(0.4)
-                .foregroundStyle(Color.junoMutedForeground)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, JunoSpace.regular)
-                .padding(.top, JunoSpace.cozy)
-                .padding(.bottom, JunoSpace.hairline)
-            ForEach(entries) { memory in
-                factRow(memory)
-            }
-        }
-    }
-
-    private var addRow: some View {
-        HStack(spacing: JunoSpace.cozy) {
-            JunoIconView(.plus, size: 13)
-                .foregroundStyle(Color.junoMutedForeground)
-                .frame(width: 18)
-            TextField("Something Juno should remember", text: $newMemory)
-                .junoFont(size: 15, relativeTo: .subheadline)
-                .onSubmit(addMemory)
-                .accessibilityIdentifier("juno.mobile.settings-memory-input")
-            if !newMemory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Button("Add", action: addMemory)
-                    .junoFont(size: 14, relativeTo: .subheadline, weight: .semibold)
-                    .buttonStyle(.plain)
-                    .foregroundStyle(Color.junoAccent)
-                    .disabled(model.isMutating)
-                    .accessibilityIdentifier("juno.mobile.settings-memory-add")
-                .contentShape(.rect)
-            }
-        }
-        .padding(.horizontal, JunoSpace.regular)
-        .padding(.vertical, JunoSpace.cozy)
-    }
-
-    private func factRow(_ memory: NativeMemoryEntry) -> some View {
-        HStack(alignment: .top, spacing: JunoSpace.cozy) {
-            // A suppression is not a fact — it is an instruction to *stop* using
-            // one, and it reads as a contradiction unless it is marked.
-            JunoIconView(memory.kind == .suppression ? .permission : .memory, size: 12)
-                .foregroundStyle(Color.junoMutedForeground)
-                .frame(width: 18, height: 20)
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(memory.content)
-                    .junoFont(size: 15, relativeTo: .subheadline)
-                    .lineSpacing(2)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                HStack(spacing: JunoSpace.tight) {
-                    Text(memory.source == .manual ? "Added by you" : "Learned from chats")
-                    Text("·")
-                    Text(memory.createdAt, style: .date)
-                    if memory.isPending {
-                        Text("· waiting to sync")
-                    }
-                }
-                .junoFont(size: 12, relativeTo: .caption)
-                .foregroundStyle(Color.junoMutedForeground)
-                if let provenance = serverFact(memory.id).flatMap({ NativeMemoryProvenance.line(for: $0) }) {
-                    Text(provenance)
-                        .junoFont(size: 12, relativeTo: .caption)
-                        .foregroundStyle(Color.junoMutedForeground)
-                }
-            }
-
-            Menu {
-                Button("Edit") {
-                    editContent = memory.content
-                    editMemoryID = memory.id
-                }
-                if let chatID = serverFact(memory.id)?.sourceChatID, let openConversation {
-                    Button("Open the chat it came from") { openConversation(chatID) }
-                }
-                Button("Delete", role: .destructive) { deleteMemoryID = memory.id }
-            } label: {
-                JunoIconView(.ellipsis, size: 13)
-                    .foregroundStyle(Color.junoMutedForeground)
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
-            }
-            .disabled(model.isMutating || model.isErasing)
-            .accessibilityLabel("Actions for this memory")
-        }
-        .padding(.horizontal, JunoSpace.regular)
-        .padding(.vertical, JunoSpace.cozy)
-        .accessibilityElement(children: .combine)
     }
 
     // MARK: - Server-side parts
@@ -519,10 +188,6 @@ struct JunoMobileMemoryView: View {
         page.start(for: accountID)
         self.page = page
         await page.loadIfNeeded()
-    }
-
-    private func serverFact(_ id: String) -> NativeMemoryFact? {
-        page?.facts.first { $0.id == id }
     }
 
     private func show(_ next: NativeMemoryNotice?) {
@@ -536,8 +201,7 @@ struct JunoMobileMemoryView: View {
         }
     }
 
-    /// The projects Alevr keeps memory for, each with its own clear. A plain
-    /// list of rows: the project's name, its count as text, and the action.
+    /// The projects Alevr keeps memory for, each with its own clear.
     @ViewBuilder
     private var projectMemorySection: some View {
         let projects = page.map {
@@ -545,41 +209,29 @@ struct JunoMobileMemoryView: View {
                 .filter { $0.id != nil }
         } ?? []
         if !projects.isEmpty {
-            JunoMobileWorkspaceSection(
-                title: "Project memory",
-                footnote: "Only chats in a project use its memory, and they use nothing else Alevr remembers."
-            ) {
-                JunoCard(padding: 0) {
-                    VStack(spacing: 0) {
-                        ForEach(Array(projects.enumerated()), id: \.element.id) { index, project in
-                            if index > 0 { Divider().padding(.leading, JunoSpace.regular) }
-                            HStack(spacing: JunoSpace.cozy) {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(project.label)
-                                        .junoFont(size: 15, relativeTo: .subheadline)
-                                    Text(project.count == 1 ? "1 memory" : "\(project.count) memories")
-                                        .junoFont(size: 12, relativeTo: .caption)
-                                        .foregroundStyle(Color.junoMutedForeground)
-                                }
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                if page?.clearingProjectID == project.id {
-                                    ProgressView().controlSize(.small)
-                                } else {
-                                    Button("Clear…") { clearingProject = project }
-                                        .junoFont(size: 14, relativeTo: .subheadline, weight: .medium)
-                                        .buttonStyle(.plain)
-                                        .foregroundStyle(Color.junoDanger)
-                                        .disabled(page?.clearingProjectID != nil)
-                                        .accessibilityLabel("Clear \(project.label) memory")
-                                        .frame(minWidth: 44, minHeight: 44)
-                                        .contentShape(.rect)
-                                }
-                            }
-                            .padding(.horizontal, JunoSpace.regular)
-                            .padding(.vertical, JunoSpace.tight)
+            Section {
+                ForEach(projects, id: \.id) { project in
+                    HStack {
+                        LabeledContent(project.label) {
+                            Text(project.count == 1 ? "1 memory" : "\(project.count) memories")
+                        }
+                        if page?.clearingProjectID == project.id {
+                            ProgressView().padding(.leading, 8)
+                        } else {
+                            Button("Clear", role: .destructive) { clearingProject = project }
+                                .buttonStyle(.borderless)
+                                .disabled(page?.clearingProjectID != nil)
+                                .accessibilityLabel("Clear \(project.label) memory")
+                                .padding(.leading, 8)
+                                .frame(minWidth: 44, minHeight: 44)
+                                .contentShape(.rect)
                         }
                     }
                 }
+            } header: {
+                Text("Project memory")
+            } footer: {
+                Text("Only chats in a project use its memory, and they use nothing else Alevr remembers.")
             }
             .accessibilityIdentifier("juno.mobile.memory-projects")
         }
@@ -588,91 +240,49 @@ struct JunoMobileMemoryView: View {
     // MARK: - Privacy
 
     private var privacySection: some View {
-        JunoMobileWorkspaceSection(
-            title: "Privacy",
-            footnote: "Memory is never used to train models. Resetting removes every saved fact and the summary, and old chats are not re-learned."
-        ) {
-            JunoCard(padding: 0) {
-                VStack(spacing: 0) {
-                    Toggle(isOn: Binding(
-                        get: { paused },
-                        set: { newValue in
-                            Task {
-                                await model.updateSettings(
-                                    NativeSettingsPatch(memoryEnabled: !newValue)
-                                )
-                            }
-                        }
-                    )) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Pause memory")
-                                .junoFont(size: 15, relativeTo: .subheadline, weight: .medium)
-                            Text("Keeps what Juno already knows; stops it learning more.")
-                                .junoFont(size: 12, relativeTo: .caption)
-                                .foregroundStyle(Color.junoMutedForeground)
+        Section {
+            Toggle(
+                "Pause memory",
+                isOn: Binding(
+                    get: { paused },
+                    set: { newValue in
+                        Task {
+                            await model.updateSettings(
+                                NativeSettingsPatch(memoryEnabled: !newValue)
+                            )
                         }
                     }
-                    .disabled(model.isMutating || model.settings == nil)
-                    .padding(.horizontal, JunoSpace.regular)
-                    .padding(.vertical, JunoSpace.cozy)
-                    .accessibilityIdentifier("juno.mobile.memory-pause")
+                )
+            )
+            .disabled(model.isMutating || model.settings == nil)
+            .accessibilityIdentifier("juno.mobile.memory-pause")
 
-                    Divider().padding(.leading, JunoSpace.regular)
-
-                    exportRow
-
-                    Divider().padding(.leading, JunoSpace.regular)
-
-                    resetRow
-                }
-            }
-        }
-    }
-
-    /// Take it with you. The web's privacy strip offers this and the app did not,
-    /// which made "always yours" a claim with no button behind it.
-    ///
-    /// Suppressions are exported under their own key rather than mixed into the
-    /// facts, exactly as the web does: a suppression is a block-list entry — a
-    /// thing Juno has been told *never* to remember — and filing it as a memory
-    /// would invert its meaning in the exported file.
-    @ViewBuilder
-    private var exportRow: some View {
-        if let exportURL {
-            ShareLink(
-                item: exportURL,
-                preview: SharePreview("juno-memory.json")
-            ) {
-                HStack(spacing: JunoSpace.cozy) {
+            if let exportURL {
+                ShareLink(item: exportURL, preview: SharePreview("alevr-memory.json")) {
                     Text("Export memory")
-                        .junoFont(size: 15, relativeTo: .subheadline, weight: .medium)
-                        .foregroundStyle(.primary)
-                    Spacer(minLength: 6)
-                    JunoIconView(.share, size: 14)
-                        .foregroundStyle(Color.junoMutedForeground)
                 }
-                .padding(.horizontal, JunoSpace.regular)
-                .padding(.vertical, JunoSpace.cozy)
-                .contentShape(Rectangle())
+                .accessibilityIdentifier("juno.mobile.memory-export")
             }
-            // A `ShareLink` tints its whole label with the accent, exactly as a
-            // `Menu` does — which made Export the only coral row on a card whose
-            // other two are ink and red. The tint has to be set on the link; a
-            // foreground style inside the label cannot override it.
-            .tint(Color.primary)
-            .accessibilityIdentifier("juno.mobile.memory-export")
+
+            if model.isErasing {
+                HStack(spacing: 10) {
+                    ProgressView()
+                    Text("Erasing memory…").foregroundStyle(.secondary)
+                }
+            } else {
+                Button("Reset memory…", role: .destructive) { showingEraseAll = true }
+                    .disabled(model.isMutating)
+                    .accessibilityIdentifier("juno.mobile.settings-memory-erase")
+            }
+        } header: {
+            Text("Privacy")
+        } footer: {
+            Text("Pausing keeps what Alevr already knows and stops it learning more. Memory is never used to train models. Resetting removes every saved fact and the summary.")
         }
     }
 
-    /// Rebuilds the export file. Called from `.task(id:)` on what the file is
-    /// made of, **not** computed inline in the row.
-    ///
-    /// As a computed property this ran a JSON serialize and a disk write on every
-    /// body evaluation of this screen — once per keystroke in the filter field,
-    /// once per disclosure toggle. The file only changes when the memories or the
-    /// summary do, so that is what it is keyed on.
     /// What the exported file is made of. Cheap to compute and stable across the
-    /// re-renders that a filter keystroke causes.
+    /// re-renders a keystroke causes, so the file is only rebuilt when it changes.
     private var exportSignature: String {
         "\(model.memories.count)|\(model.summary?.updatedAt.timeIntervalSince1970 ?? 0)"
     }
@@ -682,10 +292,7 @@ struct JunoMobileMemoryView: View {
     }
 
     /// The export as a file on disk, or nil when there is nothing to export.
-    ///
-    /// Written to a temporary file rather than shared as a `String`: sharing a
-    /// string hands other apps a wall of JSON as *text*, where a `.json` file
-    /// arrives in Files and Mail as the document it is.
+    /// Suppressions are exported under their own key, exactly as the web does.
     private func makeExport() -> URL? {
         guard !model.memories.isEmpty || model.summary != nil else { return nil }
         let facts = model.memories.filter { $0.kind != .suppression }
@@ -706,64 +313,181 @@ struct JunoMobileMemoryView: View {
             withJSONObject: document, options: [.prettyPrinted, .sortedKeys]
         ) else { return nil }
         let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("juno-memory.json")
+            .appendingPathComponent("alevr-memory.json")
         guard (try? data.write(to: url, options: .atomic)) != nil else { return nil }
         return url
     }
+}
 
-    /// Two steps, and the first one expires. A single destructive button that
-    /// erases everything on one tap is a mis-tap away from unrecoverable; a
-    /// confirmation that stays armed forever is the same button with extra work.
-    private var resetRow: some View {
-        HStack(spacing: JunoSpace.cozy) {
-            if model.isErasing {
-                working("Erasing memory…")
-            } else if resetArmed {
-                Text("Erase everything Juno remembers?")
-                    .junoFont(size: 14, relativeTo: .subheadline)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                Button("Cancel") {
-                    withAnimation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion)) {
-                        resetArmed = false
+// MARK: - Individual facts
+
+/// Every saved fact, grouped by where it came from — "you told Alevr this"
+/// and "Alevr worked this out" are different claims, and only one is worth
+/// auditing. Tap to edit, swipe to delete, long-press for the chat it came from.
+private struct JunoMobileMemoryFactsView: View {
+    @Bindable var model: NativeMemorySettingsModel<SQLiteAccountRepository>
+    let serverFact: (String) -> NativeMemoryFact?
+    var openConversation: ((String) -> Void)?
+
+    @State private var newMemory = ""
+    @State private var editMemoryID: String?
+    @State private var editContent = ""
+    @State private var deleteMemoryID: String?
+    @State private var query = ""
+
+    /// How many facts it takes before a filter is worth its place.
+    private static let searchThreshold = 12
+
+    private var matching: [NativeMemoryEntry] {
+        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !needle.isEmpty else { return model.memories }
+        return model.memories.filter {
+            $0.content.range(of: needle, options: [.caseInsensitive, .diacriticInsensitive]) != nil
+        }
+    }
+
+    var body: some View {
+        List {
+            Section {
+                HStack {
+                    TextField("Add something Alevr should remember", text: $newMemory, axis: .vertical)
+                        .onSubmit(addMemory)
+                        .accessibilityIdentifier("juno.mobile.settings-memory-input")
+                    if !newMemory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        Button("Add", action: addMemory)
+                            .buttonStyle(.borderless)
+                            .fontWeight(.semibold)
+                            .disabled(model.isMutating)
+                            .accessibilityIdentifier("juno.mobile.settings-memory-add")
+                            .contentShape(.rect)
                     }
                 }
-                .junoFont(size: 14, relativeTo: .subheadline, weight: .medium)
-                .buttonStyle(.plain)
-                .foregroundStyle(Color.junoMutedForeground)
-                .contentShape(.rect)
-                Button("Erase") { showingEraseAll = true }
-                    .junoFont(size: 14, relativeTo: .subheadline, weight: .semibold)
-                    .buttonStyle(.plain)
-                    .foregroundStyle(Color.junoDanger)
-                    .accessibilityIdentifier("juno.mobile.settings-memory-erase-confirm")
-                .contentShape(.rect)
+            }
+
+            if model.memories.isEmpty {
+                Section {
+                    Text("Nothing saved yet. What Alevr learns in chats appears here.")
+                        .foregroundStyle(.secondary)
+                }
+            } else if matching.isEmpty {
+                ContentUnavailableView.search(text: query)
             } else {
-                Button {
-                    withAnimation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion)) {
-                        resetArmed = true
-                    }
-                    // Disarms itself, so a tap made and thought better of does not
-                    // leave a live destructive control on the screen.
-                    Task {
-                        try? await Task.sleep(for: .seconds(4))
-                        withAnimation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion)) {
-                            resetArmed = false
-                        }
-                    }
-                } label: {
-                    Text("Reset memory…")
-                        .junoFont(size: 15, relativeTo: .subheadline, weight: .medium)
-                        .foregroundStyle(Color.junoDanger)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .disabled(model.isErasing || model.isMutating)
-                .accessibilityIdentifier("juno.mobile.settings-memory-erase")
+                group("Added by you", matching.filter { $0.source == .manual })
+                group("Learned from chats", matching.filter { $0.source != .manual })
             }
         }
-        .padding(.horizontal, JunoSpace.regular)
-        .padding(.vertical, JunoSpace.cozy)
+        .listStyle(.insetGrouped)
+        .junoGroupedPage()
+        .navigationTitle("Individual facts")
+        .navigationBarTitleDisplayMode(.inline)
+        .modifier(JunoMobileMemorySearch(enabled: model.memories.count >= Self.searchThreshold, query: $query))
+        .sheet(isPresented: Binding(get: { editMemoryID != nil }, set: { if !$0 { editMemoryID = nil } })) {
+            editSheet
+        }
+        .alert("Delete this memory?", isPresented: Binding(
+            get: { deleteMemoryID != nil },
+            set: { if !$0 { deleteMemoryID = nil } }
+        )) {
+            Button("Cancel", role: .cancel) { deleteMemoryID = nil }
+                .contentShape(.rect)
+            Button("Delete", role: .destructive) {
+                guard let id = deleteMemoryID else { return }
+                deleteMemoryID = nil
+                Task { await model.deleteMemory(id: id) }
+            }
+            .contentShape(.rect)
+        } message: {
+            Text("Alevr will no longer use this fact in conversations.")
+        }
+    }
+
+    @ViewBuilder
+    private func group(_ title: LocalizedStringKey, _ entries: [NativeMemoryEntry]) -> some View {
+        if !entries.isEmpty {
+            Section(title) {
+                ForEach(entries) { memory in
+                    row(memory)
+                }
+            }
+        }
+    }
+
+    private func row(_ memory: NativeMemoryEntry) -> some View {
+        Button {
+            editContent = memory.content
+            editMemoryID = memory.id
+        } label: {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(memory.content)
+                    .foregroundStyle(Color.primary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Group {
+                    if memory.kind == .suppression {
+                        Text("Never remember")
+                    } else if memory.isPending {
+                        Text("\(memory.createdAt, style: .date), waiting to sync")
+                    } else {
+                        Text(memory.createdAt, style: .date)
+                    }
+                }
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                if let provenance = serverFact(memory.id).flatMap({ NativeMemoryProvenance.line(for: $0) }) {
+                    Text(provenance)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.vertical, 2)
+            .contentShape(.rect)
+        }
+        .disabled(model.isMutating || model.isErasing)
+        .swipeActions(edge: .trailing) {
+            Button("Delete", role: .destructive) { deleteMemoryID = memory.id }
+        }
+        .contextMenu {
+            Button {
+                editContent = memory.content
+                editMemoryID = memory.id
+            } label: {
+                Label("Edit", icon: .pencil)
+            }
+            if let chatID = serverFact(memory.id)?.sourceChatID, let openConversation {
+                Button { openConversation(chatID) } label: { Label("Open the chat it came from", icon: .message) }
+            }
+            Button(role: .destructive) { deleteMemoryID = memory.id } label: { Label("Delete", icon: .trash) }
+        }
+    }
+
+    /// Editing one fact, full width and multi-line.
+    private var editSheet: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("Memory", text: $editContent, axis: .vertical)
+                        .lineLimit(3...10)
+                        .accessibilityIdentifier("juno.mobile.memory-edit-field")
+                } footer: {
+                    Text("Write it as a short, durable statement — Alevr quotes these back as facts.")
+                }
+            }
+            .navigationTitle("Edit memory")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("action.cancel") { editMemoryID = nil }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        guard let id = editMemoryID else { return }
+                        editMemoryID = nil
+                        Task { await model.updateMemory(id: id, content: editContent) }
+                    }
+                    .disabled(editContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+        }
+        .presentationDetents([.medium])
     }
 
     private func addMemory() {
@@ -771,6 +495,20 @@ struct JunoMobileMemoryView: View {
         guard !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         newMemory = ""
         Task { await model.createMemory(content: content) }
+    }
+}
+
+/// `.searchable` only once scrolling is the alternative.
+private struct JunoMobileMemorySearch: ViewModifier {
+    let enabled: Bool
+    @Binding var query: String
+
+    func body(content: Content) -> some View {
+        if enabled {
+            content.searchable(text: $query, prompt: "Search memories")
+        } else {
+            content
+        }
     }
 }
 
@@ -842,97 +580,68 @@ private struct JunoMobileSuggestedSkills: View {
     let post: (NativeMemoryNotice?) -> Void
 
     var body: some View {
-        JunoMobileWorkspaceSection(
-            title: "Suggested skills",
-            footnote: "From your own runs. A skill is how Alevr does something; memory stays what it knows."
-        ) {
-            JunoCard(padding: 0) {
-                VStack(spacing: 0) {
-                    ForEach(Array(page.skillCandidates.enumerated()), id: \.element.id) { index, candidate in
-                        if index > 0 { Divider().padding(.leading, JunoSpace.regular) }
-                        row(candidate)
-                    }
-                }
+        Section {
+            ForEach(page.skillCandidates) { candidate in
+                row(candidate)
             }
+        } header: {
+            Text("Suggested skills")
+        } footer: {
+            Text("From your own runs. A skill is how Alevr does something; memory stays what it knows.")
         }
         .accessibilityIdentifier("juno.mobile.memory-skill-candidates")
     }
 
     private func row(_ candidate: NativeSkillCandidate) -> some View {
-        VStack(alignment: .leading, spacing: JunoSpace.tight) {
+        VStack(alignment: .leading, spacing: 4) {
             Text(candidate.title)
-                .junoFont(size: 15, relativeTo: .subheadline, weight: .semibold)
+                .font(.body.weight(.semibold))
             Text(candidate.detailLine())
-                .junoFont(size: 12, relativeTo: .caption)
-                .foregroundStyle(Color.junoMutedForeground)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
             ForEach(Array(candidate.examples.prefix(2).enumerated()), id: \.offset) { _, example in
                 Text("“\(example)”")
-                    .junoFont(size: 14, relativeTo: .subheadline)
-                    .foregroundStyle(Color.junoMutedForeground)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
                     .lineLimit(2)
             }
             actions(candidate)
-                .padding(.top, JunoSpace.hairline)
+                .padding(.top, 4)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, JunoSpace.regular)
-        .padding(.vertical, JunoSpace.cozy)
+        .padding(.vertical, 4)
     }
 
     @ViewBuilder
     private func actions(_ candidate: NativeSkillCandidate) -> some View {
         let busy = page.busyCandidateIDs.contains(candidate.id)
         if page.madeSkills[candidate.id] != nil {
-            Label {
-                Text("Added to your skills")
-            } icon: {
-                JunoIconView(.check, size: 12)
-            }
-            .junoFont(size: 14, relativeTo: .subheadline)
-            .foregroundStyle(Color.junoMutedForeground)
+            Label("Added to your skills", icon: .check)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
         } else {
-            HStack(spacing: JunoSpace.regular) {
+            HStack(spacing: 16) {
                 Button {
                     Task { post(await page.decide(candidate, .accept)) }
                 } label: {
                     if busy {
-                        ProgressView().controlSize(.small)
+                        ProgressView()
                     } else {
                         Text("Add as skill")
-                            .junoFont(size: 14, relativeTo: .subheadline, weight: .semibold)
                     }
                 }
-                .buttonStyle(.glass)
+                .buttonStyle(.bordered)
                 .disabled(busy)
                 .accessibilityIdentifier("juno.mobile.memory-skill-accept")
                 .contentShape(.rect)
                 Button("Dismiss") {
                     Task { post(await page.decide(candidate, .dismiss)) }
                 }
-                .junoFont(size: 14, relativeTo: .subheadline, weight: .medium)
-                .buttonStyle(.plain)
-                .foregroundStyle(Color.junoMutedForeground)
+                .buttonStyle(.borderless)
+                .foregroundStyle(.secondary)
                 .disabled(busy)
                 .frame(minHeight: 44)
                 .contentShape(.rect)
             }
         }
-    }
-}
-
-/// A quiet line saying what just happened: an icon and plain text, no container.
-private struct JunoMobileMemoryNoticeLine: View {
-    let notice: NativeMemoryNotice
-
-    var body: some View {
-        Label {
-            Text(notice.title)
-        } icon: {
-            JunoIconView(notice.tone == .error ? .triangleAlert : .check, size: 13)
-        }
-        .junoFont(size: 14, relativeTo: .subheadline)
-        .foregroundStyle(notice.tone == .error ? Color.junoDanger : Color.junoMutedForeground)
-        .transition(.opacity)
-        .accessibilityAddTraits(.updatesFrequently)
     }
 }

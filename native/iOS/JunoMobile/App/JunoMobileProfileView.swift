@@ -35,9 +35,11 @@ struct JunoMobileProfileView: View {
           }
         }
       } else {
-        ContentUnavailableView(
-          "Profile unavailable", systemImage: "person.crop.circle",
-          description: Text("Sign in again to see your activity."))
+        ContentUnavailableView {
+          Label("Profile unavailable", icon: .userCircle, size: 44)
+        } description: {
+          Text("Sign in again to see your activity.")
+        }
       }
     }
     .onAppear {
@@ -76,7 +78,7 @@ struct JunoMobileUsernameView: View {
         }
         if let saved {
           Section {
-            Label("Your username is now @\(saved).", systemImage: "checkmark")
+            Label(verbatim: "Your username is now @\(saved).", icon: .check)
               .foregroundStyle(.secondary)
           }
         }
@@ -85,6 +87,7 @@ struct JunoMobileUsernameView: View {
           .foregroundStyle(.secondary)
       }
     }
+    .junoGroupedPage()
     .navigationTitle("Username")
     .navigationBarTitleDisplayMode(.inline)
     .scrollDismissesKeyboard(.interactively)

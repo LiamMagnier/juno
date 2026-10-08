@@ -21,7 +21,9 @@ struct JunoMobileSkillsView: View {
       if let model {
         content(model)
       } else {
-        ContentUnavailableView("Skills are unavailable", systemImage: "wand.and.sparkles")
+        ContentUnavailableView {
+          Label("Skills are unavailable", icon: .skills, size: 44)
+        }
       }
     }
     .navigationTitle("Skills")
@@ -30,7 +32,8 @@ struct JunoMobileSkillsView: View {
         Button {
           importing = true
         } label: {
-          Label("Import from GitHub", systemImage: "square.and.arrow.down")
+          JunoIconView(.download, size: 18)
+            .accessibilityLabel("Import from GitHub")
         }
         .disabled(model?.currentAccountID == nil)
         .accessibilityIdentifier("juno.mobile.skills.import")
@@ -67,7 +70,7 @@ struct JunoMobileSkillsView: View {
         if library.isEmpty {
           Section {
             ContentUnavailableView {
-              Label("No skills yet", systemImage: "wand.and.sparkles")
+              Label("No skills yet", icon: .skills, size: 44)
             } description: {
               Text("Import a skill from GitHub, or write one on alevr.com. Call it in chat by typing / and its name.")
             } actions: {
@@ -112,7 +115,7 @@ struct JunoMobileSkillsView: View {
       .refreshable { await model.refresh() }
     } else if let failure = model.failure {
       ContentUnavailableView {
-        Label("Couldn’t load your skills", systemImage: "wifi.exclamationmark")
+        Label("Couldn’t load your skills", icon: .wifiOff, size: 44)
       } description: {
         Text(failure)
       } actions: {
@@ -133,10 +136,10 @@ struct JunoMobileSkillsView: View {
           Text(skill.name)
             .foregroundStyle(skill.enabled ? Color.primary : Color.junoSecondaryInk)
           Text(verbatim: "/\(skill.slug)")
-            .font(.footnote.monospaced())
+            .font(.footnote)
             .foregroundStyle(Color.junoSecondaryInk)
           if let attention = skill.attention {
-            Label(attention.sentence, systemImage: attention == .blocked ? "xmark.octagon" : "exclamationmark.circle")
+            Label(verbatim: attention.sentence, icon: attention == .blocked ? .octagonX : .error, size: 13)
               .font(.footnote)
               .foregroundStyle(attention == .blocked ? Color.junoDestructiveInk : Color.junoWarningInk)
           } else if !skill.description.isEmpty {
@@ -159,10 +162,12 @@ struct JunoMobileSkillsView: View {
       .disabled(skill.isBlocked)
     }
     .contextMenu {
-      Button(skill.enabled ? "Turn Off" : "Turn On", systemImage: skill.enabled ? "pause.circle" : "play.circle") {
+      Button {
         Task {
           if let sentence = await model.setSkillEnabled(skill, !skill.enabled) { errorMessage = sentence }
         }
+      } label: {
+        Label(skill.enabled ? "Turn Off" : "Turn On", icon: skill.enabled ? .circlePause : .circlePlay)
       }
       .disabled(skill.isBlocked)
     }
@@ -203,7 +208,7 @@ struct JunoMobileSkillDetailView: View {
         form(skill)
       } else if let failure {
         ContentUnavailableView {
-          Label("Couldn’t load this skill", systemImage: "wifi.exclamationmark")
+          Label("Couldn’t load this skill", icon: .wifiOff, size: 44)
         } description: {
           Text(failure)
         } actions: {
@@ -257,7 +262,7 @@ struct JunoMobileSkillDetailView: View {
 
       if let attention = skill.attention {
         Section {
-          Label(attention.sentence, systemImage: attention == .blocked ? "xmark.octagon" : "exclamationmark.circle")
+          Label(verbatim: attention.sentence, icon: attention == .blocked ? .octagonX : .error)
             .foregroundStyle(attention == .blocked ? Color.junoDestructiveInk : Color.junoWarningInk)
         } footer: {
           Text(attention == .blocked

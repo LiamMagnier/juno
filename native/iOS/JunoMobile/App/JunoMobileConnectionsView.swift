@@ -7,7 +7,7 @@ import SwiftUI
     import JunoPreviewSupport
 #endif
 
-/// **Connections** — every app Juno can act through, in one searchable list.
+/// **Connections** — every app Alevr can act through, in one searchable list.
 ///
 /// The two backends are deliberately not separated. Juno's own integrations and
 /// Composio's managed catalog have different plumbing, but from the reader's
@@ -35,22 +35,18 @@ struct JunoMobileConnectionsView: View {
                 JunoMobileQuietLoading()
             case .failed:
                 ContentUnavailableView {
-                    JunoIconLabel("connections.unavailable", icon: .error, size: 28)
+                    Label("connections.unavailable", icon: .triangleAlert, size: 44)
                 } description: {
                     Text(model.lastErrorDescription ?? String(localized: "connections.retry"))
                 } actions: {
                     Button("Retry") { Task { await model.refresh() } }
-                        .buttonStyle(.borderedProminent)
-                    .contentShape(.rect)
+                        .buttonStyle(.bordered)
+                        .contentShape(.rect)
                 }
             case .ready:
                 list
             }
         }
-        .background(Color.junoCanvas)
-        // The serif heading in the scroll view is this screen's title, exactly
-        // as on the web. A second copy in the navigation bar was the same word
-        // twice, 40pt apart.
         // The page names itself in the navigation bar, as a large title in the
         // display face, so the search field sits under the title rather than
         // above it and the name collapses into the bar on scroll.
@@ -113,218 +109,164 @@ struct JunoMobileConnectionsView: View {
     // MARK: List
 
     private var list: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: JunoSpace.cozy, pinnedViews: []) {
-                header
+        List {
+            Section {
                 JunoMobileCustomizeLinks()
-                filters
-                if let error = model.lastErrorDescription {
-                    JunoInlineError(message: error) { Task { await model.refresh() } }
-                }
+            } header: {
+                Text("connections.subtitle")
+                    .textCase(nil)
+            }
 
-                let connectors = model.visibleConnectors
-                if connectors.isEmpty {
-                    empty
-                } else {
-                    let connected = connectors.filter(\.connected)
-                    let available = connectors.filter { !$0.connected }
-                    if !connected.isEmpty {
-                        JunoGroupLabel(text: String(localized: "connections.group.connected"))
+            Section {
+                Picker("connections.filter", selection: $model.showsConnectedOnly) {
+                    Text("connections.filter.all").tag(false)
+                    Text("connections.filter.connected").tag(true)
+                }
+                .pickerStyle(.segmented)
+                .listRowInsets(EdgeInsets(top: 10, leading: 12, bottom: 10, trailing: 12))
+                if !model.categories.isEmpty {
+                    Picker("Category", selection: $model.selectedCategory) {
+                        Text("connections.category.all").tag(String?.none)
+                        ForEach(model.categories) { category in
+                            Text(category.label).tag(Optional(category.id))
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .accessibilityIdentifier("juno.mobile.connections-category")
+                }
+            }
+
+            if let error = model.lastErrorDescription {
+                Section {
+                    Label(verbatim: error, icon: .triangleAlert)
+                        .foregroundStyle(.secondary)
+                    Button("Retry") { Task { await model.refresh() } }
+                }
+            }
+
+            let connectors = model.visibleConnectors
+            if connectors.isEmpty {
+                Section {
+                    Text("connections.empty")
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                let connected = connectors.filter(\.connected)
+                let available = connectors.filter { !$0.connected }
+                if !connected.isEmpty {
+                    Section("connections.group.connected") {
                         ForEach(connected) { row($0) }
                     }
-                    if !available.isEmpty {
-                        JunoGroupLabel(
-                            text: connected.isEmpty
-                                ? String(localized: "connections.group.all")
-                                : String(localized: "connections.group.available")
-                        )
+                }
+                if !available.isEmpty {
+                    Section(connected.isEmpty ? "connections.group.all" : "connections.group.available") {
                         ForEach(available) { row($0) }
                     }
                 }
+            }
 
-                if let catalogError = model.catalogErrorDescription {
-                    JunoInlineError(message: catalogError)
-                }
-                if model.catalogCursor != nil {
-                    Button {
-                        model.loadMoreCatalog()
-                    } label: {
-                        HStack {
-                            Spacer()
-                            if model.isLoadingCatalog {
-                                ProgressView().controlSize(.small)
-                            } else {
+            if model.catalogErrorDescription != nil || model.catalogCursor != nil {
+                Section {
+                    if let catalogError = model.catalogErrorDescription {
+                        Text(catalogError).foregroundStyle(.secondary)
+                    }
+                    if model.catalogCursor != nil {
+                        Button {
+                            model.loadMoreCatalog()
+                        } label: {
+                            HStack {
                                 Text("connections.load-more")
-                                    .junoFont(size: 15, relativeTo: .subheadline, weight: .semibold)
+                                Spacer()
+                                if model.isLoadingCatalog { ProgressView() }
                             }
-                            Spacer()
-                        }
-                        .frame(height: 44)
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(Color.junoAccent)
-                    .contentShape(.rect)
-                }
-            }
-            .padding(.horizontal, JunoSpace.regular)
-            .padding(.bottom, JunoSpace.section)
-            .animation(
-                JunoMotion.reduced(JunoMotion.standard, when: reduceMotion),
-                value: model.visibleConnectors.map(\.id)
-            )
-        }
-    }
-
-    private var header: some View {
-        JunoPageSubtitle("connections.subtitle")
-            .padding(.top, JunoSpace.tight)
-            .padding(.bottom, JunoSpace.hairline)
-    }
-
-    /// The Connected filter, then the category chips. Both are filters over one
-    /// list rather than separate screens — the web page's shape.
-    private var filters: some View {
-        VStack(alignment: .leading, spacing: JunoSpace.cozy) {
-            // Juno's own switch rather than `.pickerStyle(.segmented)`, whose
-            // selected segment takes the app tint and painted this filter coral.
-            // The website's tabs are neutral — the accent belongs to actions.
-            JunoMobileSegmented(
-                options: [
-                    JunoMobileSegmented<Bool>.Option(
-                        false, String(localized: "connections.filter.all")
-                    ),
-                    JunoMobileSegmented<Bool>.Option(
-                        true, String(localized: "connections.filter.connected")
-                    ),
-                ],
-                selection: $model.showsConnectedOnly,
-                accessibilityLabel: String(localized: "connections.filter")
-            )
-
-            // A menu, never a row of capsules: the category is a filter
-            // over one list, and reads as plain text with a chevron.
-            if !model.categories.isEmpty {
-                Menu {
-                    Picker("connections.filter", selection: $model.selectedCategory) {
-                        Text("connections.category.all").tag(String?.none)
-                        ForEach(model.categories) { category in
-                            Text(category.count.map { "\(category.label) · \($0)" } ?? category.label)
-                                .tag(Optional(category.id))
+                            .contentShape(.rect)
                         }
                     }
-                } label: {
-                    HStack(spacing: JunoSpace.tight) {
-                        Text(selectedCategoryLabel)
-                            .junoFont(size: 15, relativeTo: .subheadline, weight: .medium)
-                        JunoIconView(.chevronDown, size: 11)
-                    }
-                    .foregroundStyle(Color.junoForeground)
-                    .frame(minHeight: 44)
-                    .contentShape(.rect)
                 }
-                .accessibilityIdentifier("juno.mobile.connections-category")
             }
         }
-        .padding(.bottom, JunoSpace.hairline)
-    }
-
-    private var selectedCategoryLabel: String {
-        guard let id = model.selectedCategory,
-            let category = model.categories.first(where: { $0.id == id })
-        else { return String(localized: "connections.category.all") }
-        return category.label
-    }
-
-    private var empty: some View {
-        VStack(spacing: JunoSpace.snug) {
-            JunoIconView(.connections, size: 28)
-                .junoMetaInk()
-            Text("connections.empty")
-                .font(.callout)
-                .junoSecondaryInk()
-                .multilineTextAlignment(.center)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, JunoSpace.region)
+        .listStyle(.insetGrouped)
+        .junoGroupedPage()
+        .animation(
+            JunoMotion.reduced(JunoMotion.standard, when: reduceMotion),
+            value: model.visibleConnectors.map(\.id)
+        )
     }
 
     // MARK: Row
 
-    private func row(_ connector: NativeConnector) -> some View {
-        JunoCard(padding: JunoSpace.regular) {
-            HStack(alignment: .center, spacing: JunoSpace.cozy) {
-                JunoMobileConnectorTile(connector: connector)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(connector.label)
-                        .junoFont(size: 16, relativeTo: .headline, weight: .semibold)
-                        .lineLimit(1)
-                    if connector.connected, let account = connector.accountLabel, !account.isEmpty {
-                        Text(account)
-                            .font(.caption)
-                            .junoSecondaryInk()
-                            .lineLimit(1)
-                    } else if let blocked = connector.blockedReason {
-                        Text(blocked)
-                            .font(.caption)
-                            .junoSecondaryInk()
-                            .lineLimit(2)
-                    } else if !connector.detail.isEmpty {
-                        Text(connector.detail)
-                            .font(.caption)
-                            .junoSecondaryInk()
-                            .lineLimit(2)
-                    }
-                }
-                Spacer(minLength: 6)
-                action(for: connector)
-            }
-        }
-        .accessibilityElement(children: .contain)
-    }
-
+    /// One app as a stock row: its mark, its name, a quiet second line, and
+    /// either a chevron into its details (connected) or Connect.
     @ViewBuilder
-    private func action(for connector: NativeConnector) -> some View {
+    private func row(_ connector: NativeConnector) -> some View {
         if connector.connected {
             Button {
                 appDetail = model.makeAppDetailModel(for: connector)
             } label: {
-                // A status, not a call to action: plain secondary text, no
-                // container. Tapping it still offers to disconnect.
-                Text("connections.connected")
-                    .junoFont(size: 14, relativeTo: .footnote, weight: .medium)
-                    .foregroundStyle(Color.junoSecondaryInk)
-                    .frame(minHeight: 32)
+                HStack(spacing: 12) {
+                    rowLabel(connector)
+                    JunoIconView(.chevronRight, size: 13)
+                        .foregroundStyle(.tertiary)
+                        .accessibilityHidden(true)
+                }
+                .contentShape(.rect)
             }
             .buttonStyle(.plain)
             .disabled(model.isMutating)
             .accessibilityLabel("\(connector.label) details")
             .accessibilityIdentifier("juno.mobile.connections-details.\(connector.id)")
-            .frame(minWidth: 44, minHeight: 44)
-            .contentShape(.rect)
-        } else if connector.canConnect {
-            Button {
-                connectURL = connectURL(for: connector)
-            } label: {
-                Text("connections.connect")
-                    .junoFont(size: 14, relativeTo: .footnote, weight: .semibold)
-                    .foregroundStyle(Color.junoForeground)
-            }
-            // Native glass rather than the accent: a list of apps would
-            // otherwise be a column of competing coral buttons, one per row.
-            .buttonStyle(.glass)
-            .controlSize(.regular)
-            .frame(minHeight: 44)
-            .accessibilityLabel(
-                Text(String(format: String(localized: "connections.connect.label"), connector.label))
-            )
-            .contentShape(.rect)
         } else {
-            // No button at all where Connect cannot work. A disabled control with
-            // a tooltip is a desktop idiom; on a phone the reason belongs in the
-            // row's own subtitle, which `blockedReason` already supplies.
-            JunoIconView(.lock, size: 14)
-                .junoMetaInk()
-                .accessibilityHidden(true)
+            HStack(spacing: 12) {
+                rowLabel(connector)
+                if connector.canConnect {
+                    Button("connections.connect") {
+                        connectURL = connectURL(for: connector)
+                    }
+                    .buttonStyle(.bordered)
+                    .buttonBorderShape(.capsule)
+                    .controlSize(.small)
+                    .accessibilityLabel(
+                        Text(String(format: String(localized: "connections.connect.label"), connector.label))
+                    )
+                    .frame(minHeight: 44)
+                    .contentShape(.rect)
+                } else {
+                    // No button where Connect cannot work; the reason is the
+                    // row's own subtitle.
+                    JunoIconView(.lock, size: 16)
+                        .foregroundStyle(.tertiary)
+                        .accessibilityHidden(true)
+                }
+            }
+            .accessibilityElement(children: .contain)
+        }
+    }
+
+    private func rowLabel(_ connector: NativeConnector) -> some View {
+        HStack(spacing: 12) {
+            JunoMobileConnectorTile(connector: connector)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(connector.label)
+                    .foregroundStyle(Color.primary)
+                    .lineLimit(1)
+                if connector.connected, let account = connector.accountLabel, !account.isEmpty {
+                    Text(account)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                } else if let blocked = connector.blockedReason {
+                    Text(blocked)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                } else if !connector.detail.isEmpty {
+                    Text(connector.detail)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -377,19 +319,13 @@ private struct JunoMobileConnectorTile: View {
     let connector: NativeConnector
 
     var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 11, style: .continuous)
-                .fill(Color.junoCanvas)
-            RoundedRectangle(cornerRadius: 11, style: .continuous)
-                .strokeBorder(Color.junoHairline, lineWidth: 1)
-            JunoConnectorMark(
-                connectorID: connector.id,
-                connectorName: connector.label,
-                logoURL: connector.logoURL,
-                size: 22
-            )
-        }
-        .frame(width: 40, height: 40)
+        JunoConnectorMark(
+            connectorID: connector.id,
+            connectorName: connector.label,
+            logoURL: connector.logoURL,
+            size: 24
+        )
+        .frame(width: 32, height: 32)
         .accessibilityHidden(true)
     }
 }
@@ -431,12 +367,8 @@ struct JunoMobileAppDetailView: View {
                     VStack(alignment: .leading, spacing: JunoSpace.tight) {
                         Text("Anything that changes something in \(connector.label) asks you first, unless you chose to allow it here.")
                         if let error = detail.grantError {
-                            Label {
-                                Text(error)
-                            } icon: {
-                                JunoIconView(.triangleAlert, size: 12)
-                            }
-                            .foregroundStyle(Color.junoDanger)
+                            Label(verbatim: error, icon: .triangleAlert)
+                                .foregroundStyle(.red)
                         }
                     }
                 }

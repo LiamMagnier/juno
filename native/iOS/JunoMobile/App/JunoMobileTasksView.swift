@@ -4,7 +4,7 @@ import JunoStorage
 import SwiftUI
 
 /// **Tasks** — the account's scheduled prompts: a cadence, a model, and a
-/// question Juno answers on its own and files into a chat.
+/// question Alevr answers on its own and files into a chat.
 ///
 /// Everything the web dashboard can do is here: create, edit, pause, delete, and
 /// open the conversation a run wrote into. The screen states the plan ceiling
@@ -27,19 +27,18 @@ struct JunoMobileTasksView: View {
                 JunoMobileQuietLoading()
             case .failed:
                 ContentUnavailableView {
-                    JunoIconLabel("tasks.unavailable", icon: .error, size: 28)
+                    Label("tasks.unavailable", icon: .triangleAlert, size: 44)
                 } description: {
                     Text(model.lastErrorDescription ?? String(localized: "tasks.retry"))
                 } actions: {
                     Button("Retry") { Task { await model.refresh() } }
-                        .buttonStyle(.borderedProminent)
-                    .contentShape(.rect)
+                        .buttonStyle(.bordered)
+                        .contentShape(.rect)
                 }
             case .ready:
                 content
             }
         }
-        .background(Color.junoCanvas)
         // The page names itself in the navigation bar, as a large title in the
         // display face, so the search field sits under the title rather than
         // above it and the name collapses into the bar on scroll.
@@ -53,7 +52,7 @@ struct JunoMobileTasksView: View {
                         draft: NativeScheduledTaskDraft(model: defaultModelID), taskID: nil
                     )
                 } label: {
-                    JunoIconView(.plus, size: 17)
+                    JunoIconView(.plus, size: 18)
                 }
                 // `isCreatable` is the server's own word for it. The reading it
                 // replaced — no limit and no tasks — was false for every
@@ -77,12 +76,6 @@ struct JunoMobileTasksView: View {
                     await model.create(saved)
                 }
             }
-            // A `Form` sheet: full height, and `scrollContentBackground(.hidden)`
-            // so the grouped background the `Form` supplies for itself stops
-            // covering the warm canvas. This is the one thing the system does not
-            // draw for a sheet — the platter, its radius, its material and its
-            // motion are all already handled and must not be overridden.
-            .junoSheetSurface(.form)
         }
         .confirmationDialog(
             deleteTarget.map { String(format: String(localized: "tasks.delete.confirm"), $0.name) } ?? "",
@@ -112,22 +105,38 @@ struct JunoMobileTasksView: View {
 
     @ViewBuilder
     private var content: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: JunoSpace.cozy) {
-                JunoPageSubtitle("tasks.subtitle")
-                    .padding(.top, JunoSpace.tight)
-
-                if let error = model.lastErrorDescription {
-                    JunoInlineError(message: error) { Task { await model.refresh() } }
+        if model.isRetiredAndEmpty {
+            ContentUnavailableView {
+                Label("tasks.moved.title", icon: .tasks, size: 44)
+            } description: {
+                Text("tasks.moved.detail")
+            }
+        } else if model.tasks.isEmpty {
+            ContentUnavailableView {
+                Label("tasks.empty.title", icon: .tasks, size: 44)
+            } description: {
+                Text("tasks.empty.detail")
+            } actions: {
+                Button("tasks.new") {
+                    editing = JunoTaskEditorRequest(
+                        draft: NativeScheduledTaskDraft(model: defaultModelID), taskID: nil
+                    )
                 }
-
-                if model.isRetiredAndEmpty {
-                    moved
-                } else if model.tasks.isEmpty {
-                    empty
-                } else {
+                .disabled(models.isEmpty || !model.isCreatable)
+                .contentShape(.rect)
+            }
+        } else {
+            List {
+                if let error = model.lastErrorDescription {
+                    Section {
+                        Label(verbatim: error, icon: .triangleAlert)
+                            .foregroundStyle(.secondary)
+                        Button("Retry") { Task { await model.refresh() } }
+                    }
+                }
+                Section {
                     ForEach(model.tasks) { task in
-                        JunoMobileTaskCard(
+                        JunoMobileTaskRow(
                             task: task,
                             busy: model.isMutating,
                             editable: model.canEdit(task),
@@ -143,189 +152,104 @@ struct JunoMobileTasksView: View {
                             onOpenResults: { task.conversationID.map(openConversation) }
                         )
                     }
+                } header: {
+                    Text("tasks.subtitle")
+                        .textCase(nil)
+                } footer: {
                     if model.isAtLimit {
                         Text(String(format: String(localized: "tasks.limit"), model.limit))
-                            .font(.caption)
-                            .junoSecondaryInk()
-                            .frame(maxWidth: .infinity, alignment: .center)
-                            .padding(.top, JunoSpace.hairline)
                     }
                 }
             }
-            .padding(.horizontal, JunoSpace.regular)
-            .padding(.bottom, JunoSpace.section)
-        }
-    }
-
-    private var empty: some View {
-        JunoCard {
-            VStack(alignment: .leading, spacing: JunoSpace.cozy) {
-                Text("tasks.empty.title")
-                    .junoEmptyTitle()
-                Text("tasks.empty.detail")
-                    .font(.callout)
-                    .junoSecondaryInk()
-                Button {
-                    editing = JunoTaskEditorRequest(
-                        draft: NativeScheduledTaskDraft(model: defaultModelID), taskID: nil
-                    )
-                } label: {
-                    Text("tasks.new").fontWeight(.semibold)
-                }
-                .junoProminentAction()
-                .controlSize(.large)
-                .disabled(models.isEmpty || !model.isCreatable)
-                .padding(.top, JunoSpace.hairline)
-                .contentShape(.rect)
-            }
-        }
-    }
-
-    /// Shown instead of the empty state once the surface is retired. Not the
-    /// old "part of Pro" card: the plan ceiling went with the surface, so
-    /// naming Pro would send somebody to a purchase that changes nothing.
-    private var moved: some View {
-        JunoCard {
-            VStack(alignment: .leading, spacing: JunoSpace.snug) {
-                JunoIconLabel("tasks.moved.title", icon: .tasks, size: 18)
-                    .junoFont(size: 17, relativeTo: .headline, weight: .semibold)
-                Text("tasks.moved.detail")
-                    .font(.callout)
-                    .junoSecondaryInk()
-            }
+            .listStyle(.insetGrouped)
+            .junoGroupedPage()
         }
     }
 }
 
-/// One scheduled task. The cadence leads because it is what distinguishes two
-/// tasks at a glance; the switch is the only control on the card itself, since
-/// pausing is the change most often wanted and the one most easily undone.
-private struct JunoMobileTaskCard: View {
+/// One scheduled task as a stock list row: name, cadence and model beneath,
+/// where it stands on a third line, and the switch — pausing is the change
+/// most often wanted and the one most easily undone. Tap to edit; swipe or
+/// long-press for the rest.
+private struct JunoMobileTaskRow: View {
     let task: NativeScheduledTask
     let busy: Bool
-    /// False once the task has become an Automation. Every write on
-    /// `/api/tasks/<id>` answers 409 from then on, so the switch would spring
-    /// back under the thumb and Edit and Delete would fail — and the same sweep
-    /// that adopted the task switched this row off, so without this the card
-    /// reads "paused" with no control that can unpause it.
+    /// False once the task has become an Automation: every write on
+    /// `/api/tasks/<id>` answers 409 from then on.
     let editable: Bool
     /// `@MainActor @Sendable` because it is called from inside a `Binding`'s
-    /// setter, whose accessors are `@Sendable` in the iOS 26 SDK. The toggle is
-    /// driven on the main actor, so the annotation states what already happens.
+    /// setter, whose accessors are `@Sendable` in the iOS 26 SDK.
     let onToggle: @MainActor @Sendable (Bool) -> Void
     let onEdit: () -> Void
     let onDelete: () -> Void
     let onOpenResults: () -> Void
 
     var body: some View {
-        JunoCard {
-            VStack(alignment: .leading, spacing: JunoSpace.cozy) {
-                HStack(alignment: .top, spacing: JunoSpace.cozy) {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(task.scheduleDescription)
-                            .junoFont(size: 12, relativeTo: .caption, weight: .medium)
-                            .monospacedDigit()
-                            .junoMetaInk()
-                        Text(task.name)
-                            .font(JunoSerif.cardTitle)
-                            .lineLimit(1)
-                        HStack(spacing: JunoSpace.tight) {
-                            Text(task.modelName)
-                                .font(.caption)
-                                .junoSecondaryInk()
-                                .lineLimit(1)
-                            if task.webSearch {
-                                JunoIconView(.web, size: 12)
-                                    .junoMetaInk()
-                            }
-                        }
-                    }
-                    Spacer(minLength: 4)
-                    // Called, not passed — the second of the two sites, and see
-                    // the note on the same `Binding` in JunoMobileAttachmentMenu:
-                    // passing the isolated closure itself is what emits the
-                    // thunk the CI toolchain crashes on.
-                    Toggle("", isOn: Binding(get: { task.enabled }, set: { onToggle($0) }))
-                        .labelsHidden()
-                        .tint(Color.junoAccent)
-                        .disabled(busy || !editable)
-                        .accessibilityLabel(
-                            Text(
-                                String(
-                                    format: String(
-                                        localized: task.enabled ? "tasks.pause" : "tasks.resume"
-                                    ),
-                                    task.name
-                                )
-                            )
-                        )
-                    Menu {
-                        // Reading the results is not a write, so it survives;
-                        // the two that are writes do not.
-                        Button { onEdit() } label: { JunoIconLabel("Edit", icon: .pencil) }
-                            .disabled(!editable)
-                        if task.conversationID != nil {
-                            Button { onOpenResults() } label: {
-                                JunoIconLabel("tasks.results", icon: .external)
-                            }
-                        }
-                        Divider()
-                        Button(role: .destructive) { onDelete() } label: {
-                            JunoIconLabel("Delete", icon: .trash)
-                        }
-                        .disabled(!editable)
-                    } label: {
-                        JunoIconView(.ellipsis, size: 15)
-                            .junoSecondaryInk()
-                            .frame(width: 44, height: 44)
-                            .contentShape(Rectangle())
-                    }
-                    .accessibilityLabel("tasks.options")
-                }
-
-                Divider().overlay(Color.junoHairline)
-
-                HStack(spacing: JunoSpace.snug) {
+        HStack(spacing: 12) {
+            Button(action: onEdit) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(task.name)
+                        .foregroundStyle(task.enabled ? Color.primary : Color.secondary)
+                        .lineLimit(1)
+                    Text(verbatim: "\(task.scheduleDescription) · \(task.modelName)")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
                     statusLine
-                    Spacer(minLength: 6)
-                    if task.conversationID != nil {
-                        Button(action: onOpenResults) {
-                            HStack(spacing: 3) {
-                                Text("tasks.results")
-                                JunoIconView(.external, size: 12)
-                            }
-                            .font(.caption.weight(.medium))
-                        }
-                        .buttonStyle(.plain)
-                        .junoSecondaryInk()
-                        .contentShape(.rect)
-                    }
+                        .font(.footnote)
+                        .lineLimit(2)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(.rect)
             }
+            .buttonStyle(.plain)
+            .disabled(!editable)
+            // Called, not passed: passing the isolated closure itself is what
+            // emits the thunk the CI toolchain crashes on.
+            Toggle("", isOn: Binding(get: { task.enabled }, set: { onToggle($0) }))
+                .labelsHidden()
+                .disabled(busy || !editable)
+                .accessibilityLabel(
+                    Text(
+                        String(
+                            format: String(
+                                localized: task.enabled ? "tasks.pause" : "tasks.resume"
+                            ),
+                            task.name
+                        )
+                    )
+                )
         }
-        .opacity(task.enabled ? 1 : 0.7)
+        .padding(.vertical, 2)
+        .swipeActions(edge: .trailing) {
+            Button("Delete", role: .destructive) { onDelete() }
+                .disabled(!editable)
+        }
+        .contextMenu {
+            Button { onEdit() } label: { Label("Edit", icon: .pencil) }
+                .disabled(!editable)
+            if task.conversationID != nil {
+                Button { onOpenResults() } label: { Label("tasks.results", icon: .message) }
+            }
+            Divider()
+            Button(role: .destructive) { onDelete() } label: { Label("Delete", icon: .trash) }
+                .disabled(!editable)
+        }
     }
 
-    /// One line summing up where the task stands — the last run, or the first one
-    /// ahead. A failed run says *why* rather than showing a red dot.
+    /// Where the task stands — the last run, or the first one ahead. A failed
+    /// run says *why* rather than showing a red dot.
     @ViewBuilder
     private var statusLine: some View {
         if let run = task.latestRun, run.isRunning {
-            JunoIconLabel("tasks.status.running", icon: .refresh, size: 13)
-                .font(.caption)
-                .foregroundStyle(Color.junoAccent)
+            Text("tasks.status.running").foregroundStyle(.secondary)
         } else if !editable {
-            // Before the paused line, and that ordering is the point: an
-            // adopted task is always switched off here, and calling that
-            // "Paused" would describe a schedule that is in fact running.
-            Text("tasks.status.moved").font(.caption).junoSecondaryInk()
+            Text("tasks.status.moved").foregroundStyle(.secondary)
         } else if !task.enabled {
-            Text("tasks.status.paused").font(.caption).junoSecondaryInk()
+            Text("tasks.status.paused").foregroundStyle(.secondary)
         } else if let run = task.latestRun, run.didFail {
             Text(run.errorDescription ?? String(localized: "tasks.status.failed"))
-                .font(.caption)
                 .foregroundStyle(Color.junoCaution)
-                .lineLimit(2)
         } else if let run = task.latestRun {
             Text(
                 String(
@@ -333,8 +257,7 @@ private struct JunoMobileTaskCard: View {
                     (run.finishedAt ?? run.startedAt).formatted(.relative(presentation: .named))
                 )
             )
-            .font(.caption)
-            .junoSecondaryInk()
+            .foregroundStyle(.secondary)
         } else {
             Text(
                 String(
@@ -342,8 +265,7 @@ private struct JunoMobileTaskCard: View {
                     task.nextRunAt.formatted(date: .abbreviated, time: .shortened)
                 )
             )
-            .font(.caption)
-            .junoSecondaryInk()
+            .foregroundStyle(.secondary)
         }
     }
 }
@@ -413,7 +335,6 @@ private struct JunoMobileTaskEditor: View {
                         "tasks.field.time", selection: $time, displayedComponents: .hourAndMinute
                     )
                     LabeledContent("tasks.field.timezone", value: draft.timezone)
-                        .junoSecondaryInk()
                 }
 
                 Section("tasks.section.how") {
@@ -423,7 +344,6 @@ private struct JunoMobileTaskEditor: View {
                         }
                     }
                     Toggle("tasks.field.web", isOn: $draft.webSearch)
-                        .tint(Color.junoAccent)
                 }
             }
             .navigationTitle(isEditing ? "tasks.edit" : "tasks.new")

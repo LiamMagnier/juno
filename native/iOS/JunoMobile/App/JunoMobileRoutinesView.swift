@@ -21,7 +21,9 @@ struct JunoMobileRoutinesView: View {
       if let model {
         content(model)
       } else {
-        ContentUnavailableView("Routines are unavailable", systemImage: "clock.arrow.circlepath")
+        ContentUnavailableView {
+          Label("Routines are unavailable", icon: .automations, size: 44)
+        }
       }
     }
     .navigationTitle("Routines")
@@ -30,7 +32,8 @@ struct JunoMobileRoutinesView: View {
         Button {
           creating = true
         } label: {
-          Label("New Routine", systemImage: "plus")
+          JunoIconView(.plus, size: 18)
+            .accessibilityLabel("New Routine")
         }
         .disabled(model == nil)
         .accessibilityIdentifier("juno.mobile.routines.new")
@@ -67,7 +70,7 @@ struct JunoMobileRoutinesView: View {
       ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
     } else if model.schedules.isEmpty, model.phase == .failed || model.phase == .offline {
       ContentUnavailableView {
-        Label("Couldn’t load your routines", systemImage: "wifi.exclamationmark")
+        Label("Couldn’t load your routines", icon: .wifiOff, size: 44)
       } description: {
         Text("Existing routines keep running on the server; this list is empty because the read failed.")
       } actions: {
@@ -76,7 +79,7 @@ struct JunoMobileRoutinesView: View {
       }
     } else if model.schedules.isEmpty {
       ContentUnavailableView {
-        Label("No routines yet", systemImage: "clock.arrow.circlepath")
+        Label("No routines yet", icon: .automations, size: 44)
       } description: {
         Text("Run a task every weekday at eight, every Monday, or once a month. Alevr works while you are elsewhere and stops for approvals when it needs you.")
       } actions: {
@@ -118,16 +121,18 @@ struct JunoMobileRoutinesView: View {
 
   @ViewBuilder
   private func actions(_ schedule: NativeWorkSchedule, model: NativeWorkAutomationModel) -> some View {
-    Button("Run Now", systemImage: "play") { runNow(schedule, model: model) }
+    Button { runNow(schedule, model: model) } label: { Label("Run Now", icon: .play) }
       .disabled(busyIDs.contains(schedule.id))
       .contentShape(.rect)
-    Button(schedule.enabled ? "Pause" : "Resume", systemImage: schedule.enabled ? "pause" : "arrow.clockwise") {
+    Button {
       toggle(schedule, model: model)
+    } label: {
+      Label(schedule.enabled ? "Pause" : "Resume", icon: schedule.enabled ? .pause : .play)
     }
     .disabled(busyIDs.contains(schedule.id))
       .contentShape(.rect)
     Divider()
-    Button("Delete…", systemImage: "trash", role: .destructive) { deleting = schedule }
+    Button(role: .destructive) { deleting = schedule } label: { Label("Delete…", icon: .trash) }
       .contentShape(.rect)
   }
 
@@ -224,11 +229,11 @@ struct JunoMobileRoutineDetailView: View {
       if let schedule {
         form(schedule)
       } else if model.missingIDs.contains(scheduleID) {
-        ContentUnavailableView(
-          "Routine not found",
-          systemImage: "questionmark.circle",
-          description: Text("It may have been deleted on another device.")
-        )
+        ContentUnavailableView {
+          Label("Routine not found", icon: .circleHelp, size: 44)
+        } description: {
+          Text("It may have been deleted on another device.")
+        }
       } else {
         ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
       }
@@ -292,14 +297,14 @@ struct JunoMobileRoutineDetailView: View {
         Button {
           runNow()
         } label: {
-          Label("Run Now", systemImage: "play")
+          Label("Run Now", icon: .play)
         }
         .disabled(busy)
         .accessibilityIdentifier("juno.mobile.routine.run-now")
         Button {
           toggle(schedule)
         } label: {
-          Label(schedule.enabled ? "Pause" : "Resume", systemImage: schedule.enabled ? "pause" : "arrow.clockwise")
+          Label(schedule.enabled ? "Pause" : "Resume", icon: schedule.enabled ? .pause : .play)
         }
         .disabled(busy)
       } footer: {
