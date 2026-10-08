@@ -50,7 +50,9 @@ export function useTranscriptWindow(messages: readonly ChatMessage[]) {
   const syncViewport = React.useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
-    const following = el.scrollHeight - el.scrollTop - el.clientHeight < BOTTOM_SLOP;
+    // While the transcript glides after a reply, the gap to the bottom is briefly larger than the
+    // slop; it is still following, so "Jump to latest" must not flash in and out.
+    const following = followsRef.current || el.scrollHeight - el.scrollTop - el.clientHeight < BOTTOM_SLOP;
     setAtBottom(following);
     if (!pendingAnchor.current) {
       readerAnchorRef.current = null;
@@ -75,6 +77,57 @@ export function useTranscriptWindow(messages: readonly ChatMessage[]) {
     if (Math.abs(el.scrollTop - top) >= 0.5) el.scrollTop = top;
     writtenTopRef.current = el.scrollTop;
   }, []);
+
+  /*
+   * Following the reply. It used to be an instant write to the bottom on every
+   * resize, which is a jump of one line height each time a line wraps: the
+   * page ticked upward in steps. Now the scroll position eases toward the
+   * bottom on each frame (an exponential approach, ~80 ms time constant), so
+   * a reply that grows steadily scrolls steadily. The target is re-read every
+   * frame, so it never lags a growing reply by more than a few pixels.
+   *
+   * Instant still where a glide would be wrong: the first paint of a thread,
+   * "Jump to latest" across unmeasured rows, reduced motion, and anything more
+   * than a screen away (most of that distance is cut, the last part glides).
+   */
+  const glideRef = React.useRef(0);
+  const mountedRef = React.useRef(false);
+  const follow = React.useCallback((instant = false) => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const reduce = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    if (instant || reduce) {
+      if (glideRef.current) cancelAnimationFrame(glideRef.current);
+      glideRef.current = 0;
+      writeTop(el.scrollHeight - el.clientHeight);
+      return;
+    }
+    if (glideRef.current) return;
+    let last = performance.now();
+    const step = (now: number) => {
+      glideRef.current = 0;
+      const node = scrollRef.current;
+      if (!node || !followsRef.current) return;
+      const target = node.scrollHeight - node.clientHeight;
+      let gap = target - node.scrollTop;
+      if (gap > node.clientHeight * 1.25) {
+        writeTop(target - node.clientHeight * 0.5);
+        gap = target - node.scrollTop;
+      }
+      if (gap <= 0.75) {
+        writeTop(target);
+        return;
+      }
+      const dt = Math.min(64, Math.max(1, now - last));
+      last = now;
+      const k = 1 - Math.exp(-dt / 80);
+      writeTop(node.scrollTop + Math.max(Math.min(gap, 0.75), gap * k));
+      glideRef.current = requestAnimationFrame(step);
+    };
+    glideRef.current = requestAnimationFrame(step);
+  }, [writeTop]);
+  React.useEffect(() => () => cancelAnimationFrame(glideRef.current), []);
+  const lastSeenTopRef = React.useRef(0);
   const onScroll = React.useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -82,10 +135,16 @@ export function useTranscriptWindow(messages: readonly ChatMessage[]) {
     // position we wrote still belongs to the follow even if height grew in
     // between; only a different position signals the reader's gesture.
     if (writtenTopRef.current === null || Math.abs(el.scrollTop - writtenTopRef.current) > 1) {
-      followsRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < BOTTOM_SLOP;
+      const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
+      // Any upward move by the reader leaves the follow, even inside the slop: a slow trackpad
+      // drag must not be pulled back down by the glide. A clamp (content shrank under a view
+      // pinned to the bottom) also moves up, but lands exactly on the bottom.
+      const movedUp = el.scrollTop < lastSeenTopRef.current - 1 && gap > 1;
+      followsRef.current = !movedUp && gap < BOTTOM_SLOP;
       writtenTopRef.current = null;
       targetRef.current = null;
     }
+    lastSeenTopRef.current = el.scrollTop;
     syncViewport();
   }, [syncViewport]);
 
@@ -125,7 +184,7 @@ export function useTranscriptWindow(messages: readonly ChatMessage[]) {
         if (!followsRef.current && !targetRef.current && !pendingAnchor.current) pendingAnchor.current = anchor;
         bump();
       } else {
-        if (followsRef.current) writeTop(el.scrollHeight - el.clientHeight);
+        if (followsRef.current) follow();
         syncViewport();
       }
     });
@@ -134,7 +193,7 @@ export function useTranscriptWindow(messages: readonly ChatMessage[]) {
     if (contentRef.current) observer.observe(contentRef.current);
     for (const element of observedRows.current.keys()) observer.observe(element);
     return () => { observer.disconnect(); observerRef.current = null; };
-  }, [syncViewport, writeTop]);
+  }, [syncViewport, writeTop, follow]);
 
   const last = messages[messages.length - 1];
   React.useLayoutEffect(() => {
@@ -149,13 +208,14 @@ export function useTranscriptWindow(messages: readonly ChatMessage[]) {
         pendingAnchor.current = null;
       }
     } else if (followsRef.current) {
-      writeTop(el.scrollHeight - el.clientHeight);
+      follow(!mountedRef.current);
     } else if (pendingAnchor.current) {
       writeTop(anchoredTranscriptTop(layout, pendingAnchor.current, el.scrollTop) + 24);
       pendingAnchor.current = null;
     }
+    mountedRef.current = true;
     syncViewport();
-  }, [layout, last?.content, messages.length, showAll, viewport.height, syncViewport, writeTop]);
+  }, [layout, last?.content, messages.length, showAll, viewport.height, syncViewport, writeTop, follow]);
 
   /** Mounts a message and centres it; find, search links and the rail all come here. */
   const focusMessage = React.useCallback((messageId: string) => {
@@ -207,9 +267,9 @@ export function useTranscriptWindow(messages: readonly ChatMessage[]) {
     targetRef.current = null;
     // Large virtual distances use an instant jump. Smooth scrolling traverses
     // hundreds of unmeasured rows and repeatedly invalidates the destination.
-    writeTop(el.scrollHeight - el.clientHeight);
+    follow(true);
     syncViewport();
-  }, [syncViewport, writeTop]);
+  }, [syncViewport, follow]);
 
   const onKeyDown = React.useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
     if (event.target !== event.currentTarget || (event.key !== "Home" && event.key !== "End")) return;
