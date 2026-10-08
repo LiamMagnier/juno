@@ -88,6 +88,7 @@ function buildSchema() {
     ServerEventType: en(C.SERVER_EVENT_TYPE_VALUES),
     TurnOutcome: en(C.TURN_OUTCOME_VALUES),
     WireErrorCode: en(C.WIRE_ERROR_CODE_VALUES),
+    ByokProvider: en(C.BYOK_PROVIDER_VALUES),
 
     UsageWindow: obj({ id: nonEmpty, label: nonEmpty }, { usedPct: { type: "number", minimum: 0, maximum: 100 }, resetsAt: iso }),
     ProviderAccount: obj({}, { email: str, plan: str, tokenSource: str }),
@@ -109,7 +110,7 @@ function buildSchema() {
     }),
     ContextTier: obj(
       { tokens: { type: "integer", minimum: 1 }, label: nonEmpty, inputPerMTok: num, outputPerMTok: num },
-      { cachedInputPerMTok: num, note: str },
+      { cachedInputPerMTok: num, note: str, unverified: bool },
     ),
     ProviderModel: obj(
       { id: nonEmpty, label: nonEmpty },
