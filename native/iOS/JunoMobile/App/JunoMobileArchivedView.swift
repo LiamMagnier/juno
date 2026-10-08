@@ -64,7 +64,7 @@ struct JunoMobileArchivedView: View {
                 restoreHaptic.fire()
                 Task { await model.setArchived(id: conversation.id, archived: false) }
               } label: {
-                Label("Restore", systemImage: "arrow.uturn.backward")
+                Label("Restore", image: JunoIcon.archiveRestore.assetName(.regular))
               }
               .tint(.blue)
             }
@@ -72,7 +72,7 @@ struct JunoMobileArchivedView: View {
               Button(role: .destructive) {
                 deleteTarget = conversation
               } label: {
-                Label("Delete", systemImage: "trash")
+                Label("Delete", image: JunoIcon.trash.assetName(.regular))
               }
             }
             .contextMenu {

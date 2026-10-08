@@ -3,7 +3,7 @@ import path from "node:path";
 import process from "node:process";
 
 /*
- * All six native design gates, in one run, reporting all six outcomes.
+ * All seven native design gates, in one run, reporting all seven outcomes.
  *
  * Deliberately NOT `a && b && c && d` in package.json. Chaining stops at the
  * first failure, so a PR that regresses type AND targets is told about type,
@@ -14,7 +14,7 @@ import process from "node:process";
  * `--list` prints every violation each of them can see.
  */
 
-const GATES = ["type", "motion", "glass", "targets", "prominent", "menus"];
+const GATES = ["type", "motion", "glass", "targets", "prominent", "menus", "sficons"];
 
 const results = [];
 for (const rule of GATES) {

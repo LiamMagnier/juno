@@ -497,7 +497,7 @@ struct JunoMobileVoiceCallControls: View {
                     )
                 }
                 Toggle(isOn: $pushToTalk) {
-                    Label("Push to talk", systemImage: "hand.tap")
+                    Label("Push to talk", image: JunoIcon.hand.assetName(.regular))
                 }
             }
             Section {
