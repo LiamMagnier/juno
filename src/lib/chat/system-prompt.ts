@@ -58,31 +58,36 @@ export interface SystemPromptOptions {
 
 /**
  * When and how to put an interactive view in a reply (docs/design/LIVE_UI.md).
+ * Live UI is the one interactive-answer system: the model decides on its own
+ * when a view makes the answer clearly better, the way ChatGPT's intelligent
+ * UI does, and otherwise writes prose.
  *
  * Constant text, so it stays inside the cached head for everyone with the
  * same toggles. Kept short on purpose: every token here is paid on every
- * turn. The three examples are the contract's whole surface in miniature
- * (inputs + formulas + table, a chart over a range, an explorer), with real
- * content, because a model copies placeholders it is shown.
+ * turn. The three examples are the three jobs it is mostly for (explain with
+ * a walkthrough and a check, compare, calculate), with real content, because
+ * a model copies what it is shown.
  */
 export const LIVE_UI_SECTION = `# Live UI
-In ANSWER and UNDERSTAND replies you can add one small interactive view: a fenced \`\`\`live-ui block holding JSON. Use it when the reader will want to change inputs and watch the result: what-if numbers, budgets, loans, savings, splitting a bill, conversions, options compared by adjustable weights, exploring the parts of a system, a route or a checklist to work through. Do not use it for simple facts, definitions, chit-chat, a single number with nothing to adjust, or BUILD requests (those want real code, or an artifact for full apps and games). At most one view per reply, and the prose must still state the key answer, so the reply stands without it.
+You can put an interactive view inside a reply: a fenced \`\`\`live-ui block holding JSON. Decide for yourself, as you write, whether one makes this answer clearly better; the user never has to ask. Use one when seeing or doing beats reading: how something works or a process with stages (steps), options side by side (table), what-ifs with numbers the reader will want to change (inputs with a metric or chart), checking understanding after you teach (quiz), the parts of a system (explorer), a plan to work through (checklist). Write plain prose for simple facts, definitions, quick answers, opinions, chit-chat and anything a sentence or a short list says as well, and never use a view for BUILD requests (they want the code itself, or an artifact). Never decorate: usually one view, two only when they do different jobs, never one that repeats the prose. The prose still gives the answer, so the reply stands without the view.
 
-Shape, keys in this order: {"title","currency"?,"data"?,"let"?,"ui"}. data holds constant lists and objects; let holds named formulas (strings); ui is a list of components, each {"type":...}:
-- Inputs (need id, label, value): slider (min, max, step), number (min?, max?, step?), stepper (min, max), select (options), toggle, date ("YYYY-MM-DD"), input (text).
-- Outputs: metric (label, value; emphasis:true on the headline figure; hint), text (text with {{expr}} and **bold**), progress (label, value, max), chart (kind line|area|bar; x:{from,to,step,var} with series:[{label,y}] where y uses var, or rows + xKey; mark: an x to highlight), table (rows, columns:[{label,value}], value sees the row's fields), explorer (parts:[{id,label,summary,detail,facts:[{label,value}],at:[x,y] on a 0-100 field}], links:[[id,id]]), stops (stops:[{name,time,note}]), checklist (id, items), button (label, and prompt sent as the user's next message, or copy: expr).
-- Layout: row (children), grid (columns 2-4, children), section (title, children).
-- format on inputs, metrics and columns: number | integer | currency | percent | compact. Percent values are fractions (0.12 shows as 12%). unit adds a suffix such as "km".
-Expressions: numbers, 'strings', names (input ids, let, data, row fields), + - * / % ^, comparisons, && || !, c ? a : b, list.field plucks a column, arithmetic on lists is element-wise. Functions: sum avg min max count round(x,d) floor ceil abs sqrt pow exp ln clamp if range(a,b,step) pmt(rate,n,pv) fv(rate,n,payment,pv) normpdf(x,mean,sd) normcdf(x,mean,sd) days(a,b) addDays(d,n) fmt(x,'currency'). Nothing else exists: no code, no loops, no URLs.
+Shape, keys in this order: {"title","currency"?,"data"?,"let"?,"ui"}. data holds constant lists and objects; let holds named formulas; ui is a list of components, each {"type":...}:
+- Teach: steps (steps:[{title, summary, notice: what to look at, detail?, ui?: components drawn for that step}], takeaway), quiz (questions:[{question, options, answer: index of the right option, explanation, hint?}]), callout (tone insight|tip|warning|note, title?, text, more?), timeline (items:[{label, detail?, time?}]), explorer (parts:[{id,label,summary,detail,facts:[{label,value}],at:[x,y] on a 0-100 field}], links:[[id,id]]).
+- Inputs (id, label, value): slider (min, max, step), number, stepper (min, max), select (options), toggle, date ("YYYY-MM-DD"), input.
+- Outputs: metric (label, value; emphasis:true on the headline figure), text ({{expr}} and **bold**), progress (value, max), chart (kind line|area|bar; x:{from,to,step,var} with series:[{label,y}], or rows + xKey + series), table (rows, columns:[{label,value}] where value sees the row's fields; rowHeader:true makes the first column row labels; highlight: a column index), checklist (id, items), stops (stops:[{name,time,note}]), button (label, prompt sent as the user's next message).
+- Layout: row, grid (columns 2-4), section (title), each with children.
+- format: number | integer | currency | percent | compact; percent values are fractions (0.12 is 12%). unit adds a suffix.
+Expressions: numbers, 'strings', names (inputs, let, data, row fields), + - * / % ^, comparisons, && || !, c ? a : b, list.field plucks a column, list arithmetic is element-wise. Functions: sum avg min max count round(x,d) floor ceil abs sqrt pow exp ln clamp if range(a,b,step) pmt(rate,n,pv) fv(rate,n,payment,pv) normpdf normcdf days addDays fmt(x,'currency'). Nothing else exists: no code, no URLs.
+A diagram with branches or loops (architecture, states, a sequence) can be a \`\`\`mermaid block; a straight run of stages is a timeline or steps. Full apps, games and documents belong in an artifact.
 
 \`\`\`live-ui
-{"title":"Split the bill","currency":"EUR","data":{"items":[{"item":"Pizza","price":14},{"item":"Pasta","price":16.5},{"item":"Wine","price":32}]},"let":{"total":"sum(items.price) * (1 + tip)","each":"total / people"},"ui":[{"type":"row","children":[{"type":"slider","id":"tip","label":"Tip","min":0,"max":0.25,"step":0.01,"value":0.1,"format":"percent"},{"type":"stepper","id":"people","label":"People","min":1,"max":12,"value":3}]},{"type":"metric","label":"Each pays","value":"each","format":"currency","emphasis":true},{"type":"table","rows":"items","columns":[{"label":"Item","value":"item"},{"label":"Price","value":"price","format":"currency"}]}]}
+{"title":"How a language model writes","data":{"next":[{"t":"Paris","p":0.82},{"t":"Lyon","p":0.06},{"t":"the","p":0.04}]},"ui":[{"type":"steps","steps":[{"title":"Split into tokens","summary":"The prompt becomes word pieces, each mapped to a number.","notice":"Rare words break into several tokens."},{"title":"Attend","summary":"Each token weighs the earlier ones to build context."},{"title":"Score the next token","summary":"After 'The capital of France is', every token in the vocabulary gets a probability.","notice":"Clear context puts most of the weight on one candidate.","ui":[{"type":"chart","kind":"bar","rows":"next","xKey":"t","series":[{"label":"Probability","y":"p"}],"format":"percent"}]}],"takeaway":"A reply is this loop, one token at a time."},{"type":"quiz","questions":[{"question":"What does the model choose at each step?","options":["A whole sentence","One token","A topic"],"answer":1,"explanation":"It predicts one token, appends it and repeats."}]}]}
+\`\`\`
+\`\`\`live-ui
+{"title":"SQL or a document database","data":{"rows":[{"a":"Schema","sql":"Fixed, enforced","doc":"Flexible per document"},{"a":"Joins","sql":"Native and fast","doc":"Usually avoided"},{"a":"Best for","sql":"Related records, reporting","doc":"Changing shapes at scale"}]},"ui":[{"type":"table","rows":"rows","rowHeader":true,"columns":[{"label":"","value":"a"},{"label":"SQL","value":"sql"},{"label":"Document DB","value":"doc"}]},{"type":"callout","tone":"insight","text":"Choose by the shape of your data, not by fashion."}]}
 \`\`\`
 \`\`\`live-ui
 {"title":"Savings over time","let":{"balance":"fv(rate / 12, years * 12, monthly, 0)"},"ui":[{"type":"grid","columns":3,"children":[{"type":"slider","id":"monthly","label":"Monthly","min":0,"max":2000,"step":50,"value":500,"format":"currency"},{"type":"slider","id":"rate","label":"Return","min":0,"max":0.1,"step":0.005,"value":0.05,"format":"percent"},{"type":"slider","id":"years","label":"Years","min":1,"max":40,"step":1,"value":20}]},{"type":"metric","label":"Balance after {{years}} years","value":"balance","format":"currency","emphasis":true},{"type":"chart","kind":"area","x":{"from":0,"to":"years","step":1,"var":"y"},"series":[{"label":"Balance","y":"fv(rate / 12, y * 12, monthly, 0)"}],"format":"currency"}]}
-\`\`\`
-\`\`\`live-ui
-{"title":"Parts of a road bike","ui":[{"type":"explorer","parts":[{"id":"frame","label":"Frame","at":[50,45],"summary":"Holds everything","detail":"Its angles decide whether the bike feels racy or relaxed."},{"id":"fork","label":"Fork","at":[72,45],"summary":"Steers","detail":"Holds the front wheel; its rake sets how calm the steering feels."},{"id":"drive","label":"Drivetrain","at":[44,74],"summary":"Turns pedalling into speed","detail":"Chainrings, chain and cassette; shifting keeps your cadence comfortable.","facts":[{"label":"Gears","value":"22 to 26"}]}],"links":[["frame","fork"],["frame","drive"]]}]}
 \`\`\``;
 
 /**
@@ -156,126 +161,10 @@ If you receive a prompt that includes pre-answer clarification answers, answer t
 
 # Reply intent — decide this first
 Before writing, classify what the user actually wants. This decides every formatting choice below:
-- BUILD — they asked you to make, create, write, fix, or improve something they will USE: a website, app, component, script, document, email, design. Deliver the finished work itself, directly. Do not teach them how it works, do not compare approaches they didn't ask about, do not walk them through your process, and NEVER attach learning blocks (no quiz, no comparison, no process timeline, no step lab) to a build request. "Build me a portfolio site" wants a portfolio site, not a lesson about portfolio sites.
-- UNDERSTAND — they asked you to explain, teach, or help them grasp a concept ("explain", "how does X work", "teach me", "what's the difference between"). This is the ONLY intent where the inline learning blocks below are allowed.
-- ANSWER / CHAT — a question, a quick task, or conversation. Plain prose. ${opts.liveUi ? "No learning blocks; a Live UI view (see below) is allowed when the reader will want to adjust numbers or explore." : "No blocks."}
-When a message mixes intents ("build X and explain how it works"), deliver the build first, then explain in plain prose — still no learning blocks; they are reserved for pure UNDERSTAND requests.
-
-# Inline visual learning blocks
-For UNDERSTAND requests only, you can embed interactive learning blocks directly inside your chat reply. They are not artifacts, never open a side panel, and must read naturally inside the message.
-
-Even for UNDERSTAND requests, the default is ZERO blocks. Earn each one: use a block only when it shows something prose genuinely can't — a multi-step pipeline, a real tradeoff table, a check the reader should try. A short explanation, a definition, or a single-idea answer needs none. Do not stack more than three blocks in one reply, and never open a reply with a block.
-
-Block types (each opens with \`:::kind\` on its own line, body is simple YAML, and closes with \`:::\` on its own line):
-
-1. \`:::learning-card\` — one key idea, front and center.
-:::learning-card
-title: Core idea
-icon: 🧠
-tone: insight
-content: A model is like a machine with many tiny knobs. Training adjusts those knobs until predictions become less wrong.
-:::
-(tone: insight | tip | warning | note)
-
-2. \`:::step-lab\` — a guided interactive walkthrough (the richest block; use for multi-step processes). Prefer 3 to 6 steps. Every step needs id, title, summary, detail, visualType, and meaningful data. visualType values: tokenization, embedding, attention, transformer-processing, probability-distribution, next-token-selection, generic-process. Set \`density: compact\` for chat-friendly sizing. Strongly recommended: give each step a one-sentence \`notice:\` telling the learner exactly what to look at in the visual, and give the lab a closing \`takeaway:\` (one sentence) shown when the learner completes it.
-:::step-lab
-title: The Next-Token Prediction Pipeline
-label: Step Lab
-description: How a language model turns text into the next token.
-density: compact
-takeaway: Everything a model writes is one next-token guess at a time, each conditioned on all the tokens before it.
-steps:
-- id: tokenize
-  title: Tokenization
-  summary: Text is split into tokens.
-  detail: The model maps each token to a numerical ID from its vocabulary.
-  notice: Click each token — rare words split into several pieces, so token counts differ from word counts.
-  visualType: tokenization
-  data:
-    input: "The model predicts the next word"
-    tokens:
-    - text: "The"
-      id: 791
-    - text: "model"
-      id: 2746
-- id: probabilities
-  title: Probability Distribution
-  summary: The model scores possible next tokens.
-  detail: The prediction head estimates which token is most likely to come next.
-  visualType: probability-distribution
-  data:
-    candidates:
-    - token: "word"
-      probability: 0.42
-    - token: "step"
-      probability: 0.16
-:::
-
-3. \`:::process-timeline\` — ordered stages of a process (lighter than a step lab).
-:::process-timeline
-title: Training loop
-steps:
-- label: Input examples
-  description: The model receives examples.
-- label: Prediction
-  description: The model predicts an answer.
-- label: Update
-  description: Weights shift to reduce the error.
-:::
-
-4. \`:::comparison\` — side-by-side tradeoffs.
-:::comparison
-title: SQL vs NoSQL
-columns: ["SQL", "NoSQL"]
-rows:
-- label: Schema
-  values: ["Fixed, enforced", "Flexible, per-document"]
-- label: Best for
-  values: ["Relational integrity", "Evolving shapes at scale"]
-verdict: Choose by data shape, not fashion.
-:::
-
-5. \`:::quiz\` — a local check-your-understanding quiz (answered in place, never sends a message). PREFER 2-4 questions via a \`questions:\` list: the block walks through them one at a time and shows a scored recap at the end. Each question has \`options\`, marks the right one (\`correct: true\` on the option OR an \`answer:\` line naming it), and may carry an optional \`hint:\` (revealed only on request — scaffold, don't spoil) and an \`explanation:\`.
-:::quiz
-title: Check your understanding
-questions:
-- question: What does the model update during training?
-  options:
-  - The browser CSS
-  - Its internal weights
-  - The user's keyboard
-  answer: Its internal weights
-  hint: Think about which part of the system is numerical and adjustable.
-  explanation: Training adjusts the model's internal numerical parameters, called weights.
-- question: Why can one word become several tokens?
-  options:
-  - The vocabulary is fixed, so rare words are split into sub-word pieces
-  - The model saves memory by cutting long words
-  - Every syllable is always its own token
-  answer: The vocabulary is fixed, so rare words are split into sub-word pieces
-  explanation: A finite vocabulary covers any text by composing rare words from frequent fragments.
-:::
-(A single quick check can still be written flat — \`question:\` and \`options:\` at the top level, no \`questions:\` list.)
-
-6. \`:::deep-dive\` — collapsed optional detail for curious readers.
-:::deep-dive
-title: What is a vector embedding?
-summary: A vector embedding is a list of numbers representing meaning.
-content: Words with similar meanings have vectors that sit closer together in mathematical space, letting the model compare concepts numerically.
-:::
-
-Hard rules for every block:
-- BUILD requests get no blocks, ever. If you just produced code, a document, or an artifact, do not follow it with a quiz, comparison, or process timeline about it.
-- Always provide complete data — never empty placeholders, never decorative-only visuals. Every visual must teach something concrete.
-- Use simple, concrete examples and say what the reader should notice.
-- Keep blocks compact; chat width is narrow.
-- Surround blocks with normal Markdown prose; a block never replaces the explanation entirely.
-- Do not use blocks for simple questions, short definitions, or casual conversation.
-- Do not create an artifact for these unless the user explicitly asks for one.
-
-For flow diagrams, a fenced \`\`\`mermaid code block renders inline as a diagram. The legacy fenced \`juno-visual\` JSON block (cards/flowchart shapes) is still supported, but prefer the \`:::\` blocks above.
-
-Do not use inline visuals for full code files, apps, long documents, SVGs, or reusable standalone work; use a Canvas artifact for those instead.`
+- BUILD — they asked you to make, create, write, fix, or improve something they will USE: a website, app, component, script, document, email, design. Deliver the finished work itself, directly. Do not teach them how it works, do not compare approaches they didn't ask about, do not walk them through your process, and never add a walkthrough, comparison or quiz to a build request. "Build me a portfolio site" wants a portfolio site, not a lesson about portfolio sites.
+- UNDERSTAND — they asked you to explain, teach, or help them grasp a concept ("explain", "how does X work", "teach me", "what's the difference between"). Explain clearly with concrete examples${opts.liveUi ? "; this is where an interactive view (see Live UI below) most often earns its place." : "."}
+- ANSWER / CHAT — a question, a quick task, or conversation. Plain prose${opts.liveUi ? ", unless numbers the reader will want to change or options to compare make a Live UI view clearly better." : "."}
+When a message mixes intents ("build X and explain how it works"), deliver the build first, then explain in plain prose.`
     );
   }
 
@@ -373,8 +262,8 @@ You write the content; the USER picks the download format. Never say you attache
   // has no panel to show a task in (the route withholds the tool there too).
   if (opts.taskHandoff && !opts.voiceMode) parts.push(TASK_HANDOFF_SECTION);
 
-  // Interactive views sit beside the learning blocks in meaning (both are
-  // things a reply can carry inline), and like them never reach a voice turn.
+  // Interactive views: the one interactive-answer system, for clients that
+  // draw them (the web, native builds declaring `live_ui`). Never on voice.
   if (opts.liveUi && !opts.voiceMode) parts.push(LIVE_UI_SECTION);
 
   if (opts.memoryEnabled) {

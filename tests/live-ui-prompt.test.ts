@@ -21,10 +21,34 @@ test("the section is present only when the client renders Live UI, and never on 
   assert.ok(!buildSystemPromptSections({ ...base, liveUi: true, voiceMode: true }).stable.includes("# Live UI"));
 });
 
-test("without Live UI the prompt is byte-identical to before (shipped native builds keep their cache)", () => {
+test("without Live UI (shipped native builds that cannot draw it) the reply is plain prose: no views, no old blocks", () => {
   const off = buildSystemPromptSections({ ...base }).stable;
-  assert.ok(off.includes("Plain prose. No blocks."));
+  assert.ok(off.includes("- ANSWER / CHAT — a question, a quick task, or conversation. Plain prose."));
   assert.ok(!off.includes("live-ui"));
+  assert.ok(!off.includes("Live UI"));
+});
+
+test("the retired learning blocks are taught nowhere: no :::kind, no juno-visual, in any variant", () => {
+  const variants = [
+    buildSystemPromptSections({ ...base, liveUi: true }).stable,
+    buildSystemPromptSections({ ...base, liveUi: false }).stable,
+    buildSystemPromptSections({ ...base, liveUi: true, semanticArtifacts: false, taskHandoff: true, untrustedContent: true }).stable,
+    buildSystemPromptSections({ ...base, voiceMode: true }).stable,
+  ];
+  for (const text of variants) {
+    assert.ok(!/:::(step-lab|learning-card|process-timeline|comparison|quiz|deep-dive)/.test(text));
+    assert.ok(!/juno-visual|learning block|step lab|Step Lab/i.test(text));
+  }
+});
+
+test("the model decides on its own, with judgement, and the examples cover explain, compare and calculate", () => {
+  assert.match(LIVE_UI_SECTION, /Decide for yourself/);
+  assert.match(LIVE_UI_SECTION, /the user never has to ask/);
+  assert.match(LIVE_UI_SECTION, /Never decorate/);
+  assert.match(LIVE_UI_SECTION, /never use a view for BUILD requests/);
+  const types = [...LIVE_UI_SECTION.matchAll(/"type":"([a-z]+)"/g)].map((m) => m[1]);
+  for (const t of ["steps", "quiz", "table", "callout", "slider", "metric", "chart"]) assert.ok(types.includes(t), t);
+  assert.ok(LIVE_UI_SECTION.includes('"rowHeader":true'));
 });
 
 test("the head stays identical across users with Live UI on", () => {
@@ -34,13 +58,16 @@ test("the head stays identical across users with Live UI on", () => {
 });
 
 test("the section stays compact (it is paid on every turn)", () => {
-  assert.ok(LIVE_UI_SECTION.length < 5200, `Live UI section is ${LIVE_UI_SECTION.length} chars`);
+  // It replaced the ~6,000-character learning-blocks section, so the head
+  // with Live UI on is shorter than it was before.
+  assert.ok(LIVE_UI_SECTION.length < 5600, `Live UI section is ${LIVE_UI_SECTION.length} chars`);
 });
 
 function walk(list: readonly LiveComponent[], out: LiveComponent[] = []): LiveComponent[] {
   for (const c of list) {
     out.push(c);
     if ("children" in c) walk(c.children, out);
+    if (c.type === "steps") for (const s of c.steps) walk(s.ui, out);
   }
   return out;
 }
@@ -59,6 +86,10 @@ function assertValidViews(text: string, expected: number) {
     for (const name of Object.keys(spec!.lets)) assert.notEqual(scope.evaluate(name).value, null, `let ${name}`);
     for (const c of all) {
       if (c.type === "metric") assert.notEqual(scope.evaluate(c.value).value, null, c.value);
+      if (c.type === "table" || (c.type === "chart" && c.rows)) {
+        const rows = scope.evaluate(c.type === "table" ? c.rows : c.rows!).value;
+        assert.ok(Array.isArray(rows) && rows.length > 0, "rows");
+      }
       if (c.type === "chart" && c.x) {
         for (const s of c.series) assert.notEqual(scope.evaluate(s.y, { [c.x.variable]: 1 }).value, null, s.y);
       }
