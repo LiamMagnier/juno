@@ -133,7 +133,7 @@ struct JunoMobileSkillsView: View {
           Text(skill.name)
             .foregroundStyle(skill.enabled ? Color.primary : Color.junoSecondaryInk)
           Text(verbatim: "/\(skill.slug)")
-            .font(.footnote.monospaced())
+            .font(.footnote)
             .foregroundStyle(Color.junoSecondaryInk)
           if let attention = skill.attention {
             Label(attention.sentence, systemImage: attention == .blocked ? "xmark.octagon" : "exclamationmark.circle")

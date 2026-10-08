@@ -71,14 +71,18 @@ struct JunoMobileNotificationsView: View {
     .navigationTitle("Notifications")
     .navigationBarTitleDisplayMode(.inline)
     .toolbar {
-      ToolbarItem(placement: .topBarLeading) {
-        Button("Done") { finish() }
-      }
       if let model, (model.count?.unreadCount ?? 0) > 0 || (model.items ?? []).contains(where: \.isUnread) {
-        ToolbarItem(placement: .topBarTrailing) {
-          Button("Mark All as Read") { model.markAllRead() }
-            .accessibilityIdentifier("juno.mobile.notifications.mark-all")
+        ToolbarItem(placement: .topBarLeading) {
+          Menu {
+            Button("Mark All as Read", systemImage: "checkmark.circle") { model.markAllRead() }
+              .accessibilityIdentifier("juno.mobile.notifications.mark-all")
+          } label: {
+            Label("More", systemImage: "ellipsis")
+          }
         }
+      }
+      ToolbarItem(placement: .confirmationAction) {
+        Button("Done") { finish() }
       }
     }
     .onAppear { model?.load() }
