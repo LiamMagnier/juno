@@ -1,0 +1,42 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [4 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
+endobj
+4 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 5 0 R >>
+endobj
+5 0 obj
+<< /Length 881 >>
+stream
+BT /F1 14 Tf 1 0 0 1 150 750 Tm (Retrieval at Scale: Results) Tj ET
+BT /F1 10 Tf 1 0 0 1 54 700 Tm (Transformer models trained on the corpus reach) Tj ET
+BT /F1 10 Tf 1 0 0 1 318 700 Tm (Inference cost scales linearly with context) Tj ET
+BT /F1 10 Tf 1 0 0 1 54 687 Tm (71.3 percent exact match on the held-out) Tj ET
+BT /F1 10 Tf 1 0 0 1 318 687 Tm (length up to 128,000 tokens. Beyond that) Tj ET
+BT /F1 10 Tf 1 0 0 1 54 674 Tm (split. The gain over the recurrent baseline is) Tj ET
+BT /F1 10 Tf 1 0 0 1 318 674 Tm (length the retrieval variant is cheaper by a) Tj ET
+BT /F1 10 Tf 1 0 0 1 54 661 Tm (largest on questions that need two or more) Tj ET
+BT /F1 10 Tf 1 0 0 1 318 661 Tm (factor of 3.2 while losing only 0.4 points of) Tj ET
+BT /F1 10 Tf 1 0 0 1 54 648 Tm (hops of reasoning across documents.) Tj ET
+BT /F1 10 Tf 1 0 0 1 318 648 Tm (accuracy on the same split.) Tj ET
+endstream
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000212 00000 n 
+0000000338 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+1269
+%%EOF
