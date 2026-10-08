@@ -33,6 +33,8 @@ public enum JunoComposerPreviewFlags {
     public static var opensModelSelector: Bool { isSet("--juno-preview-model-selector") }
     /// Opens the thinking popover as soon as the chat appears.
     public static var opensThinking: Bool { isSet("--juno-preview-thinking") }
+    /// Opens the composer's "+" popover.
+    public static var opensPlus: Bool { isSet("--juno-preview-plus") }
     /// Focuses the composer, which brings the keyboard up.
     public static var focusesComposer: Bool { isSet("--juno-preview-keyboard") }
     /// Opens one attachment surface straight from launch: `photos`, `camera` or

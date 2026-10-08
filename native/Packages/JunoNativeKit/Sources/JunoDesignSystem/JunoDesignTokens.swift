@@ -303,6 +303,26 @@ public enum JunoMotion {
     /// Not scaled by ``platformFactor``: a reward is the same size everywhere.
     public static let reward = Animation.spring(duration: Duration.slow, bounce: 0.18)
 
+    // ── The chat shell's spring vocabulary (native redesign, Oct 2026) ──────
+    //
+    // Three springs and one settle, named here so the phone and the Mac speak
+    // the same physics and the motion gate can hold every call site to them.
+
+    /// Layout: a composer docking, a message rising, the drawer's rows. A
+    /// critically damped spring — moves with weight, never overshoots.
+    public static let chatLayout = Animation.smooth(duration: 0.35)
+    /// Controls: a dial opening, a toggle turning over, a menu row landing.
+    public static let chatControl = Animation.snappy(duration: 0.25)
+    /// The composer's primary action changing face — voice → send → stop. The
+    /// one place a little bounce is allowed, because it is the one control the
+    /// thumb returns to on every turn.
+    public static let sendMorph = Animation.bouncy(duration: 0.4, extraBounce: 0.05)
+    /// The push drawer settling open or closed after a drag. Uses the
+    /// interactive spring so a fling's velocity carries into the settle.
+    public static let drawerSettle = Animation.interactiveSpring(
+        response: 0.38, dampingFraction: 0.88, blendDuration: 0.12
+    )
+
     /// Same names, different values: the Mac runs the springs at three
     /// quarters of the phone's, with identical bounce.
     ///
