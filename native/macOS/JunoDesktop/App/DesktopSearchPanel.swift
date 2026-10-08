@@ -461,7 +461,7 @@ struct DesktopSearchPanel: View {
                 return AnyView(
                     DesktopSearchPanelEmpty(
                         icon: .search,
-                        title: "Search everything in Juno",
+                        title: "Search everything in Alevr",
                         hint: "Chats and their messages, projects, files, artifacts, memories and tasks."
                     )
                 )

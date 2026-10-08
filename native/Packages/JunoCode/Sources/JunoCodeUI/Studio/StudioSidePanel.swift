@@ -175,7 +175,7 @@ struct StudioChangesView: View {
                 }
             }
         } message: {
-            Text("Each file goes back to how it was before Juno changed it. Files you edited since are left alone.")
+            Text("Each file goes back to how it was before Alevr changed it. Files you edited since are left alone.")
         }
     }
 
@@ -185,7 +185,7 @@ struct StudioChangesView: View {
             Text("No changes yet")
                 .font(Studio.Font.labelEmphasis)
                 .foregroundStyle(Studio.Ink.secondary)
-            Text("Files Juno edits in this session appear here to review.")
+            Text("Files Alevr edits in this session appear here to review.")
                 .font(Studio.Font.meta)
                 .foregroundStyle(Studio.Ink.tertiary)
                 .multilineTextAlignment(.center)

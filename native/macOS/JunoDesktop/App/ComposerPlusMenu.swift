@@ -449,8 +449,8 @@ struct ChatComposerMark: Identifiable, Equatable {
                 label: "My documents",
                 detail: nil,
                 help: documentCount == 1
-                    ? "Juno will search 1 document on this Mac and quote what it finds in your message."
-                    : "Juno will search \(documentCount) documents on this Mac and quote what it finds in your message.",
+                    ? "Alevr will search 1 document on this Mac and quote what it finds in your message."
+                    : "Alevr will search \(documentCount) documents on this Mac and quote what it finds in your message.",
                 removeLabel: "Don't search my documents"
             ))
         }

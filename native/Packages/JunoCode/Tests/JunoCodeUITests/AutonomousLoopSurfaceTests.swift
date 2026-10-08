@@ -95,7 +95,7 @@ final class AutonomousLoopSurfaceTests: XCTestCase {
             StudioContinuedRow.caption(for: RunContinuedEvent(reason: .gate(.unverified), detail: "`swift test` had not run since the last edit", origin: .gate)),
             "Kept going: `swift test` had not run since the last edit"
         )
-        XCTAssertEqual(StudioContinuedRow.caption(for: RunContinuedEvent(reason: .afterQuit, detail: "x", origin: .user)), "Resumed after Juno quit")
+        XCTAssertEqual(StudioContinuedRow.caption(for: RunContinuedEvent(reason: .afterQuit, detail: "x", origin: .user)), "Resumed after Alevr quit")
         XCTAssertEqual(
             StudioGoalVerdictRow.caption(for: GoalVerdictEvent(goalID: "g", verdict: .notMet, reason: "c2 has no Preview evidence", revision: 1)),
             "Checked the goal: not yet — c2 has no Preview evidence"

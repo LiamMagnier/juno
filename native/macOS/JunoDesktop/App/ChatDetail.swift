@@ -66,6 +66,9 @@ struct ChatDetail<Content: View>: View {
             // The window's one toast host: 12pt above the composer where one
             // is docked, 24pt above the bottom otherwise — never in a sheet.
             .junoToastHost(toasts)
+            // The web's content panel: a rounded card of the canvas beside
+            // the sidebar, on the window's sidebar ground.
+            .desktopContentPanel()
             .junoAccentTint()
             .navigationTitle(title)
             .navigationSubtitle(subtitle)
@@ -118,7 +121,7 @@ enum DesktopOfflineState: Equatable {
     /// The one sentence each state says, here once so the caption and the
     /// footer's sync mark can never word it two ways (§1.5).
     static let offlineSentence = "Offline · messages send when you're back"
-    static let unreachableSentence = "Juno is unreachable · showing your local copy"
+    static let unreachableSentence = "Alevr is unreachable · showing your local copy"
 
     var sentence: String {
         switch self {

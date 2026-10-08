@@ -104,6 +104,8 @@ const PHOSPHOR = {
   Plug: "Plug",
   GitPullRequest: "GitPullRequest",
   Plus: "Plus",
+  // The sidebar's New chat: the web's `new-chat` drawing (MessageSquarePlus).
+  NewChat: "MessageSquarePlus",
   MagnifyingGlass: "Search",
   GearSix: "Settings",
   Robot: "Bot",

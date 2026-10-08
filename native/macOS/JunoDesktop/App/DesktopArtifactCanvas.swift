@@ -186,7 +186,7 @@ enum DesktopArtifactViewMode: String, CaseIterable, Identifiable, Hashable {
     /// renderer.
     static func available(for kind: NativeArtifactKind) -> [DesktopArtifactViewMode] {
         var modes: [DesktopArtifactViewMode] = []
-        if kind.supportsRenderedPreview { modes.append(.preview) }
+        if kind.supportsRenderedPreview || kind.isSemantic { modes.append(.preview) }
         modes.append(.source)
         if kind.supportsLiveCanvas { modes.append(.canvas) }
         return modes
@@ -284,6 +284,9 @@ enum DesktopArtifactKindLabel {
         case .mermaid: .branch
         case .markdown: .file
         case .design: .design
+        case .spreadsheet: .grid
+        case .document: .file
+        case .presentation: .squareStack
         case .code, nil: .fileCode
         }
     }
@@ -311,6 +314,7 @@ enum DesktopArtifactKindLabel {
         case .svg: "svg"
         case .mermaid: "mmd"
         case .design: "juno.design.json"
+        case .spreadsheet, .document, .presentation: "json"
         case .code: codeExtension(language)
         }
     }
@@ -363,6 +367,11 @@ enum DesktopDockPanel: TrailingDockPanel {
     case research(runID: String)
     /// A task of this chat, by session id — the Task panel (register #59).
     case task(sessionID: String)
+    /// A finished research's report, read beside the conversation (the
+    /// web's research panel) rather than in a window of its own.
+    case report(runID: String)
+    /// A file, previewed by Quick Look inside the panel.
+    case file(url: URL)
 
     var id: String {
         switch self {
@@ -370,6 +379,8 @@ enum DesktopDockPanel: TrailingDockPanel {
         case .activity(let messageID, _): "activity:\(messageID)"
         case .research(let runID): "research:\(runID)"
         case .task(let sessionID): "task:\(sessionID)"
+        case .report(let runID): "report:\(runID)"
+        case .file(let url): "file:\(url.absoluteString)"
         }
     }
 
@@ -380,13 +391,15 @@ enum DesktopDockPanel: TrailingDockPanel {
         case .canvas: "dock.canvas.width"
         case .activity, .research: "dock.activity.width"
         case .task: "dock.task.width"
+        case .report: "dock.report.width"
+        case .file: "dock.file.width"
         }
     }
 
     var artifact: DesktopChatArtifact? {
         switch self {
         case .canvas(let artifact): artifact
-        case .activity, .research, .task: nil
+        case .activity, .research, .task, .report, .file: nil
         }
     }
 }
@@ -673,7 +686,10 @@ struct DesktopArtifactCanvas: View {
     private var hasDraftChanges: Bool { draft != nil && draft != baseContent }
     private var canEdit: Bool { artifact.stored != nil && save != nil }
     private var isMarkdown: Bool { artifact.kind == .markdown }
-    private var hasPreview: Bool { runtimeInfo.runsOnThisMac && !artifact.kind.isDesignDocument }
+    private var hasPreview: Bool {
+        if artifact.kind.isSemantic { return true }
+        return runtimeInfo.runsOnThisMac && !artifact.kind.isDesignDocument
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -1003,13 +1019,18 @@ struct DesktopArtifactCanvas: View {
                 // this Mac yet — or never will, in a private chat.
                 JunoEmptyState(
                     title: "This design isn’t saved yet",
-                    message: "It opens here once Juno has stored it — usually a moment after the reply finishes.",
+                    message: "It opens here once Alevr has stored it — usually a moment after the reply finishes.",
                     icon: .design
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         } else {
             switch resolvedView {
+            case .preview where artifact.kind.isSemantic:
+                // A spreadsheet, document or deck, drawn from its model. Read
+                // only here: the chat edits it through operations.
+                SemanticArtifactView(kind: artifact.kind, content: resolvedContent)
+                    .background(Color.junoCanvas)
             case .preview where isMarkdown:
                 // `JunoMarkdownText` is the transcript's renderer; the shared
                 // preview's markdown branch flattens headings and fences.

@@ -615,6 +615,8 @@ private struct JunoMobileConversationDetail: View {
   /// a view that happens to sit near it, which is both what the feature means
   /// and the API that works with a bottom-anchored scroll view.
   @State private var scrollPosition = ScrollPosition(edge: .bottom)
+  /// Find in this conversation, from the "…" menu (JunoMobileFind.swift).
+  @State private var find = JunoFindModel()
 
   private var messages: [NativeChatMessage] {
     model.messages(for: conversation.id)
@@ -952,6 +954,8 @@ private struct JunoMobileConversationDetail: View {
           // already there on the first layout, so a loaded history
           // arrives settled rather than cascading up the screen.
           .transition(.opacity.combined(with: .offset(y: JunoSpace.snug)))
+          .environment(\.junoFindHighlight, find.highlight(for: message.id))
+          .id(message.id)
 
           // The conversation's research runs that are not answers in it
           // (started on the web, or handed off), under the turn they
@@ -1059,6 +1063,13 @@ private struct JunoMobileConversationDetail: View {
           }
           .disabled(sharing)
         }
+        Button {
+          find.open()
+        } label: {
+          JunoIconLabel(verbatim: "Find in Conversation", icon: .search)
+        }
+        .disabled(messages.isEmpty)
+        .accessibilityIdentifier("juno.mobile.conversation-find")
         Button {
           editValue = conversation.title
           showingRename = true
@@ -1309,6 +1320,10 @@ private struct JunoMobileConversationDetail: View {
       }
       .navigationBarTitleDisplayMode(.inline)
       .toolbar { conversationToolbar }
+      .junoTranscriptFind(
+        find, messages: messages, signature: streamSignature,
+        follows: $follows, scrollPosition: $scrollPosition
+      )
       // An agent's thread gains one row above the transcript: its face, what
       // it is doing, and the way to its page (docs/design/AGENTS.md §5.3).
       // Always applied, empty for an ordinary chat, so a roster that loads
@@ -1659,6 +1674,8 @@ private struct JunoMobileMessageRow: View {
 
   @State private var copied = false
   @State private var showingSelectText = false
+  /// Find in conversation's share of this row (JunoMobileFind.swift).
+  @Environment(\.junoFindHighlight) private var findHighlight
   /// Whether this prompt is open for rewriting, and the words being written.
   ///
   /// Local to the row on purpose: an edit in progress is not conversation
@@ -1868,7 +1885,7 @@ private struct JunoMobileMessageRow: View {
   /// The text itself is untouched: Copy, VoiceOver and every resend read the
   /// whole message whatever the bubble is showing.
   private var bubbleBody: some View {
-    Text(plainText)
+    Text(JunoFindText.highlighted(plainText, with: findHighlight))
       // **Relative to `.body`, which is the whole point.** This was a flat
       // `.junoFont(size: 15, relativeTo: .subheadline)`, so the reader's own words were the one
       // thing in the transcript Dynamic Type could not move: the answer
@@ -2054,13 +2071,18 @@ private struct JunoMobileMessageRow: View {
       // as a block of text.
       JunoPacedStream(displayContent, live: message.isPending) { paced in
         VStack(alignment: .leading, spacing: JunoSpace.hairline) {
-          ForEach(Array(NativeMessageContent.parts(of: paced).enumerated()), id: \.offset) { _, part in
+          let findBases = findHighlight.map { JunoMobileTranscriptFind.bases(of: $0.query, in: paced).bases } ?? []
+          ForEach(Array(NativeMessageContent.parts(of: paced).enumerated()), id: \.offset) { index, part in
             switch part {
             case .text(let text):
               // While tokens arrive the newest words fade in where the
               // writing is (JunoStreamReveal) — the answer body's live
               // signal once the thought-process row above has settled.
               JunoLessonText(text, streaming: message.isPending)
+                .environment(
+                  \.junoFindHighlight,
+                  findHighlight?.shifted(by: findBases.indices.contains(index) ? findBases[index] : 0)
+                )
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .environment(\.junoLiveUIHost.messageID, message.id)
@@ -2448,13 +2470,21 @@ private struct JunoMobileArtifactInlineCard: View {
     case "REACT", "HTML": .code
     case "SVG": .artifacts
     case "MERMAID": .branch
-    case "MARKDOWN": .file
+    case "MARKDOWN", "DOCUMENT": .file
+    case "SPREADSHEET": .grid
+    case "PRESENTATION": .squareStack
     default: .code
     }
   }
 
   private var subtitle: String {
     if artifact.streaming { return "Writing…" }
+    // A spreadsheet, document or deck says what is in it: "Deck · 8 slides".
+    if let kind = NativeArtifactKind(rawValue: artifact.kind), kind.isSemantic {
+      let label = NativeArtifactRuntimeInfo.resolve(kind: kind, language: nil).label
+      let summary = SemanticArtifact.summary(kind: kind, content: artifact.content)
+      return [label, summary].compactMap { $0 }.joined(separator: " · ")
+    }
     return artifact.language?.uppercased() ?? artifact.kind.capitalized
   }
 

@@ -60,7 +60,7 @@ struct DesktopAutomationsScreen: View {
             id: "automations.refresh",
             model.schedules.isEmpty ? nil : model.lastErrorDescription
         ) { _ in
-            .warning("Couldn’t refresh your automations. These are the last ones Juno read.")
+            .warning("Couldn’t refresh your automations. These are the last ones Alevr read.")
         }
         .task { await model.refresh() }
         .accessibilityIdentifier("juno.desktop.automations")
@@ -94,7 +94,7 @@ struct DesktopAutomationsScreen: View {
         } else if model.schedules.isEmpty {
             JunoEmptyState(
                 title: "No automations yet",
-                message: "Run a task every weekday at eight, when an invoice arrives, before a meeting, when a topic starts moving, or when a granted folder changes. Juno can work while you are elsewhere and stops for approvals when the policy requires it.",
+                message: "Run a task every weekday at eight, when an invoice arrives, before a meeting, when a topic starts moving, or when a granted folder changes. Alevr can work while you are elsewhere and stops for approvals when the policy requires it.",
                 icon: .automations
             ) {
                 // The page's one prominent action, while the header's copy of

@@ -47,7 +47,7 @@ struct StudioHooksSettings: View {
                 Toggle(isOn: Binding(get: { policy.allowUntrustedHooks }, set: { setAllowed($0) })) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Run this project's hooks")
-                        Text("They come from the repository: commands, endpoints on this Mac, and questions for a model. Juno runs commands in the sandbox, and asks before each run wherever it would ask before a command. A hook can block or ask; it can never approve for you.")
+                        Text("They come from the repository: commands, endpoints on this Mac, and questions for a model. Alevr runs commands in the sandbox, and asks before each run wherever it would ask before a command. A hook can block or ask; it can never approve for you.")
                             .font(Studio.Font.meta)
                             .foregroundStyle(Studio.Ink.tertiary)
                     }
@@ -108,14 +108,14 @@ struct StudioHooksSettings: View {
         case .postToolUseFailure: "After a tool fails"
         case .postToolBatch: "After a batch of tools"
         case .userPromptSubmit: "When you send a message"
-        case .stop: "When Juno finishes"
+        case .stop: "When Alevr finishes"
         case .stopFailure: "When a run ends on an error"
         case .subagentStart: "When a sub-agent starts"
         case .subagentStop: "When a sub-agent finishes"
         case .sessionStart: "When a session starts"
         case .sessionEnd: "When a session ends"
-        case .notification: "When Juno needs you"
-        case .permissionRequest: "When Juno asks for permission"
+        case .notification: "When Alevr needs you"
+        case .permissionRequest: "When Alevr asks for permission"
         case .permissionDenied: "When a request is declined"
         case .taskCreated: "When a todo is added"
         case .taskCompleted: "When a todo is marked done"
@@ -123,7 +123,7 @@ struct StudioHooksSettings: View {
         case .postCompact: "After the conversation is compacted"
         case .instructionsLoaded: "When instruction files load"
         case .configChange: "When settings change"
-        case .fileChanged: "When Juno changes a file"
+        case .fileChanged: "When Alevr changes a file"
         case .worktreeCreate: "When a worktree is created"
         case .worktreeRemove: "When a worktree is removed"
         case .preModelSwitch: "Before the model changes"

@@ -36,7 +36,7 @@ final class ComposerDictationSession {
         guard await speech.requestPermission() else {
             wasDenied = true
             phase = .failed(
-                "Juno needs the microphone and speech recognition to dictate. Allow them in Privacy & Security, then try again."
+                "Alevr needs the microphone and speech recognition to dictate. Allow them in Privacy & Security, then try again."
             )
             return
         }

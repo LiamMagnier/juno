@@ -27,7 +27,7 @@ struct DesktopPermissionsScreen: View {
         JunoPage(measure: .wide) {
             JunoPageHeader(
                 "Permissions",
-                lede: "What Juno may do on your behalf, what it always stops to ask about first, and which of your Macs it can reach."
+                lede: "What Alevr may do on your behalf, what it always stops to ask about first, and which of your Macs it can reach."
             )
         } content: {
             VStack(alignment: .leading, spacing: JunoSpace.region) {
@@ -103,7 +103,7 @@ struct DesktopPermissionsScreen: View {
         case .failed:
             JunoEmptyState(
                 title: "Couldn’t load your Macs",
-                message: "This section is empty because the request failed, not because you have none — anything already signed in is still reachable by Juno, with whatever permissions it had.",
+                message: "This section is empty because the request failed, not because you have none — anything already signed in is still reachable by Alevr, with whatever permissions it had.",
                 icon: .error,
                 actionLabel: "Try again",
                 action: { Task { await model.refresh() } },
@@ -114,7 +114,7 @@ struct DesktopPermissionsScreen: View {
             if model.hosts.isEmpty {
                 JunoEmptyState(
                     title: "No Macs yet",
-                    message: "A Mac appears here on its own once you install Juno on it, sign in and switch Work on from the app. Until one does, every task runs in the cloud — which means a task that needs a folder on your disk, an app or your signed-in browser cannot run at all.",
+                    message: "A Mac appears here on its own once you install Alevr on it, sign in and switch Work on from the app. Until one does, every task runs in the cloud — which means a task that needs a folder on your disk, an app or your signed-in browser cannot run at all.",
                     icon: .device,
                     size: .panel
                 )
@@ -123,7 +123,7 @@ struct DesktopPermissionsScreen: View {
                     if model.lastRefreshFailed {
                         DesktopWorkNote(
                             .warning,
-                            "These are the last answers Juno got. The most recent check failed, so a Mac may have woken or gone away since."
+                            "These are the last answers Alevr got. The most recent check failed, so a Mac may have woken or gone away since."
                         )
                     }
                     DesktopWorkRowList(items: model.ordered(thisMac: thisMac)) { host, _ in
@@ -171,7 +171,7 @@ struct DesktopWorkHostRow: View {
 
     private var meta: String {
         var parts = [DesktopHostCopy.platform(host.platform)]
-        if !host.appVersion.isEmpty { parts.append("Juno \(host.appVersion)") }
+        if !host.appVersion.isEmpty { parts.append("Alevr \(host.appVersion)") }
         parts.append("last seen \(NativeWorkScheduleCopy.timeAgo(host.lastSeenAt))")
         return parts.joined(separator: " · ")
     }
@@ -273,7 +273,7 @@ struct DesktopPermissionsAlwaysAsks: View {
     var body: some View {
         VStack(alignment: .leading, spacing: JunoSpace.regular) {
             DesktopWorkSectionHeading(
-                "Juno always asks first",
+                "Alevr always asks first",
                 lede: "These stop and wait for you every time, under every setting on this page and every setting on a task. There is nothing anywhere that turns them off."
             )
             LazyVGrid(
@@ -318,7 +318,7 @@ struct DesktopPermissionsModes: View {
         VStack(alignment: .leading, spacing: JunoSpace.regular) {
             DesktopWorkSectionHeading(
                 "How much it asks otherwise",
-                lede: "Below that floor, how often Juno stops is set per task — on the composer before you start it, and from the task itself while it runs. A Mac can also hold a stricter ceiling than a task asks for, and the stricter of the two always wins."
+                lede: "Below that floor, how often Alevr stops is set per task — on the composer before you start it, and from the task itself while it runs. A Mac can also hold a stricter ceiling than a task asks for, and the stricter of the two always wins."
             )
             HStack(alignment: .top, spacing: JunoSpace.cozy) {
                 ForEach(JunoWorkPermissionPolicy.allCases, id: \.self) { policy in

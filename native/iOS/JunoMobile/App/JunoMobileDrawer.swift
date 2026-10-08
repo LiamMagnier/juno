@@ -561,6 +561,7 @@ struct JunoMobileSidebarDrawer: View {
       .glassEffect(.regular.interactive(), in: Circle())
       .accessibilityLabel("navigation.search")
       .accessibilityIdentifier("juno.mobile.sidebar-search")
+      JunoMobileInboxBell()
     }
     .padding(.leading, 20)
     .padding(.trailing, 14)

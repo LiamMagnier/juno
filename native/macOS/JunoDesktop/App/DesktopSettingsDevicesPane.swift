@@ -18,7 +18,7 @@ struct DesktopSettingsDevicesPane: View {
             if let host = context.services.workHostModel {
                 Section {
                     DesktopSettingToggleRow(
-                        title: "Allow Juno Work on this Mac",
+                        title: "Allow Alevr Work on this Mac",
                         description: "Lets tasks you start from your phone, the web or this window run here. Off, this Mac runs nothing sent to it.",
                         status: context.saves.status("workHost"),
                         isOn: Binding(
@@ -32,7 +32,7 @@ struct DesktopSettingsDevicesPane: View {
                     )
                     DesktopSettingRow(
                         title: "What this Mac may do",
-                        description: "Files, your browser, screen control, when Juno asks first, and the folders and apps a task may use."
+                        description: "Files, your browser, screen control, when Alevr asks first, and the folders and apps a task may use."
                     ) {
                         DesktopOutlineButton(title: "Choose…") { choosingPermissions = true }
                             .accessibilityIdentifier("juno.desktop.settings.work-host-choose")
@@ -78,12 +78,12 @@ struct DesktopSettingsDevicesPane: View {
                 // a box (§10.2.8).
                 DesktopSettingRow(
                     title: "No Macs yet",
-                    description: "Turn on Juno Work for this Mac and it appears here on its own."
+                    description: "Turn on Alevr Work for this Mac and it appears here on its own."
                 )
             } else {
                 if context.hostsAreStale {
                     DesktopSettingsNote(
-                        text: "These are the last answers Juno got. The latest check failed, so a Mac may have woken or gone away since.",
+                        text: "These are the last answers Alevr got. The latest check failed, so a Mac may have woken or gone away since.",
                         tone: .warning
                     )
                 }
@@ -109,7 +109,7 @@ struct DesktopSettingsDevicesPane: View {
                 .foregroundStyle(Color.junoSecondaryInk)
             if let openPermissions = links.openPermissions {
                 Button(action: openPermissions) {
-                    Text("See what Juno always asks first")
+                    Text("See what Alevr always asks first")
                         .junoType(.ui)
                         .foregroundStyle(Color.junoAccentInk)
                         .frame(minHeight: 28)

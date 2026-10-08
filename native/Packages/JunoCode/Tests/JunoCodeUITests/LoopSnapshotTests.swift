@@ -147,7 +147,7 @@ final class LoopSnapshotTests: XCTestCase {
             .stalled: "Stopped: no progress in the last two tries",
             .waitingOnBackground: "Waiting for `xcodebuild test` to finish",
             .stopped: "Stopped",
-            .interrupted: "Juno quit while this was running",
+            .interrupted: "Alevr quit while this was running",
             .error: "The model is unavailable.",
         ]
         let dividers = VStack(alignment: .leading, spacing: JunoSpace.cozy) {

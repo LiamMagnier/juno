@@ -199,15 +199,15 @@ struct DesktopQuickEntryView: View {
     /// Chat's placeholder is the composer's own; Code's names what Code does
     /// with a sentence.
     private var placeholder: String {
-        product == .code ? "Describe a task for Juno Code…" : ChatComposerPlaceholder.text()
+        product == .code ? "Describe a task for Alevr Code…" : ChatComposerPlaceholder.text()
     }
 
     private var startLabel: String {
-        product == .code ? "Start a task in Juno Code" : "Start a new chat"
+        product == .code ? "Start a task in Alevr Code" : "Start a new chat"
     }
 
     private var hint: String {
-        product == .code ? "↩ starts a task in Juno Code" : "↩ starts a new chat"
+        product == .code ? "↩ starts a task in Alevr Code" : "↩ starts a new chat"
     }
 
     var body: some View {
@@ -232,7 +232,7 @@ struct DesktopQuickEntryView: View {
             isAccessibilityTrusted = readTrust()
         }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Ask Juno")
+        .accessibilityLabel("Ask Alevr")
         .accessibilityIdentifier("juno.desktop.quick-entry")
     }
 

@@ -43,7 +43,7 @@ struct ChatWorkPlacementTests {
         #expect(ChatWorkVocabulary.sentence(.waitingInput, actor: "Ada")
             == "Ada has asked you something and cannot continue until you answer.")
         #expect(ChatWorkVocabulary.sentence(.completed, actor: "Ada") == "This finished.")
-        #expect(ChatWorkVocabulary.sentence(.running, actor: nil) == "Juno is working on this now.")
+        #expect(ChatWorkVocabulary.sentence(.running, actor: nil) == "Alevr is working on this now.")
     }
 
     /// The web's number formats, which the meter and the queue use.

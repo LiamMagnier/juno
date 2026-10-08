@@ -38,11 +38,15 @@ public struct StudioRunRow: View {
                 .foregroundStyle(Studio.Ink.primary)
                 .lineLimit(1)
                 .truncationMode(.tail)
-            Text(Self.markdown(entry.sentence))
-                .font(Studio.Font.meta)
-                .foregroundStyle(Studio.Ink.secondary)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
+            // The section heading already says "Working" or "Done"; a row
+            // that only repeats its section's word says nothing more.
+            if entry.sentence != entry.group.title {
+                Text(Self.markdown(entry.sentence))
+                    .font(Studio.Font.meta)
+                    .foregroundStyle(Studio.Ink.secondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             if !entry.actions.isEmpty {
                 actions
                     .padding(.top, JunoSpace.hairline)
@@ -147,7 +151,7 @@ public struct StudioRunRow: View {
         case .decline: "Decline, and the run carries on without it"
         case .reply: "Answer the question"
         case .keepGoing: "Another block of steps, then carry on from where it stopped"
-        case .resume: "Carry on from where it stopped when Juno quit"
+        case .resume: "Carry on from where it stopped when Alevr quit"
         case .retry: "Try the last turn again"
         }
     }

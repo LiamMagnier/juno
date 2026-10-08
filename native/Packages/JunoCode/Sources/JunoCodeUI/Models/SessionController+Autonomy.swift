@@ -285,9 +285,9 @@ extension SessionController {
             if let budget = settings.runBudget.sentence {
                 parts.append("a budget of \(budget) per run without a goal")
             }
-            body = "Juno keeps the run going until the work is done and checked: " + parts.joined(separator: ", ") + "."
+            body = "Alevr keeps the run going until the work is done and checked: " + parts.joined(separator: ", ") + "."
         } else {
-            body = "Juno reports when you finish but does not send you back to work."
+            body = "Alevr reports when you finish but does not send you back to work."
         }
         return SessionStateSection(name: "autonomy", body: body)
     }

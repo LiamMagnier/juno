@@ -549,10 +549,32 @@ public struct NativeResearchQuestionRow: View {
 
     private var active: Bool { question.status == "searching" }
 
+    /// The Mac draws the web's glyphs (owner rule, round 2); the iPhone keeps
+    /// its symbols until its own lane moves them.
+    @ViewBuilder
+    private var glyph: some View {
+        #if os(macOS)
+        JunoIconView(webIcon, size: 12)
+        #else
+        Image(systemName: symbol)
+            .junoFont(size: 12, relativeTo: .footnote)
+        #endif
+    }
+
+    private var webIcon: JunoIcon {
+        switch question.status {
+        case "covered": .circleCheck
+        case "partial": .circleDot
+        case "thin": .error
+        case "searching": .circleDashed
+        case "investigated": .check
+        default: .circle
+        }
+    }
+
     public var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
-            Image(systemName: symbol)
-                .junoFont(size: 12, relativeTo: .footnote)
+            glyph
                 .foregroundStyle(question.status == "thin" ? Color.junoWarningInk
                     : active || question.status == "covered" ? Color.junoForeground : Color.junoSecondaryInk)
                 .frame(width: 16)

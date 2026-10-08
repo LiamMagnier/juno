@@ -63,7 +63,7 @@ struct StudioInterruptedRow: View {
         StudioShipCard {
             VStack(alignment: .leading, spacing: JunoSpace.tight) {
                 HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
-                    Text("Juno quit while this was running.")
+                    Text("Alevr quit while this was running.")
                         .font(Studio.Font.labelEmphasis)
                         .foregroundStyle(Studio.Ink.primary)
                     Spacer(minLength: JunoSpace.snug)
@@ -72,7 +72,7 @@ struct StudioInterruptedRow: View {
                         problem = nil
                         Task {
                             if !(await resume()) {
-                                problem = "Juno could not resume: the session is busy."
+                                problem = "Alevr could not resume: the session is busy."
                             }
                             isResuming = false
                         }
@@ -155,7 +155,7 @@ public struct StudioCIBar: View {
 
     private var autoFixLine: String {
         if pullRequest.autoFixStopped {
-            return "Auto-fix tried \(CIAutoFixPolicy.maximumAttempts) times. Fix it by hand, or ask Juno."
+            return "Auto-fix tried \(CIAutoFixPolicy.maximumAttempts) times. Fix it by hand, or ask Alevr."
         }
         let left = pullRequest.attemptsLeft
         return "Auto-fix is on: \(left == 1 ? "1 attempt" : "\(left) attempts") left. Every push asks you first."

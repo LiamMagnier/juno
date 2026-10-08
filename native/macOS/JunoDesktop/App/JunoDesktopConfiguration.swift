@@ -120,6 +120,10 @@ struct JunoDesktopConfiguration {
     /// server, with delete and Undo. The composer's picker keeps
     /// ``libraryModel``.
     var libraryPageModel: NativeLibraryPageModel? = nil
+    /// What Alevr made, for the Library's other half (`/api/library/made`).
+    var libraryMadeModel: NativeLibraryMadeModel? = nil
+    /// Saves a task deliverable listed among what Alevr made.
+    var deliverableClient: NativeWorkClient? = nil
     /// This Mac's local document index: files read into chunks by
     /// ``DocumentIngestionPipeline`` and ranked by `JunoSearch`.
     ///
@@ -417,6 +421,8 @@ struct JunoDesktopConfiguration {
                     client: NativeLibraryClient(sender: runtime),
                     uploader: NativeAttachmentAPIClient(sender: runtime)
                 ),
+                libraryMadeModel: NativeLibraryMadeModel(client: NativeLibraryMadeClient(sender: runtime)),
+                deliverableClient: NativeWorkClient(sender: runtime, streamer: runtime),
                 // No transport at all: extraction, chunking and ranking are
                 // entirely local, and nothing a person indexes here is uploaded.
                 documentIndexModel: NativeDocumentIndexModel(),
@@ -644,9 +650,9 @@ private enum JunoDesktopConfigurationError: Error, LocalizedError {
     var errorDescription: String? {
         switch self {
         case .invalidBackendURL:
-            "The production Juno address is invalid."
+            "The production Alevr address is invalid."
         case .applicationSupportUnavailable:
-            "Juno cannot access Application Support on this Mac."
+            "Alevr cannot access Application Support on this Mac."
         }
     }
 }

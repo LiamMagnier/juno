@@ -22,31 +22,31 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 
 ## Summary
 
-317 routes: 183 native, 66 planned, 55 web only, 13 internal. 49 pages: on the Mac 33 native, 4 partial, 3 planned, 9 web only; on iOS 17 native, 8 partial, 15 planned, 9 web only.
+317 routes: 202 native, 51 planned, 51 web only, 13 internal. 49 pages: on the Mac 36 native, 2 partial, 2 planned, 9 web only; on iOS 24 native, 8 partial, 8 planned, 9 web only.
 
 | Feature | Pages (Mac) | Pages (iOS) | Routes native | Planned | Web only | Internal |
 |---|---|---|---|---|---|---|
-| [Sign-in and account security](#auth) | – | – | 15 | 4 | 6 | 0 |
+| [Sign-in and account security](#auth) | – | – | 16 | 3 | 6 | 0 |
 | [Sync and bootstrap](#sync) | – | – | 6 | 0 | 2 | 0 |
-| [Chat and streaming](#chat) | 2/2 | 2/2 | 10 | 4 | 1 | 0 |
+| [Chat and streaming](#chat) | 2/2 | 2/2 | 12 | 2 | 1 | 0 |
 | [Conversations, messages and sharing](#conversations) | – | – | 9 | 2 | 3 | 0 |
 | [Search and recents](#search) | – | – | 2 | 0 | 0 | 0 |
-| [Projects](#projects) | 0/2 (+2 partial) | 0/2 (+2 partial) | 1 | 1 | 1 | 0 |
-| [Library, files and knowledge](#library) | 1/2 | 1/2 | 12 | 5 | 2 | 0 |
-| [Artifacts and Design](#artifacts) | 4/4 | 3/4 (+1 partial) | 6 | 12 | 4 | 0 |
-| [Memory](#memory) | 1/1 | 1/1 | 12 | 2 | 0 | 0 |
-| [Connections](#connections) | 2/2 | 2/2 | 15 | 2 | 4 | 2 |
-| [Skills](#skills) | 4/4 | 0/4 | 10 | 3 | 0 | 0 |
+| [Projects](#projects) | 2/2 | 2/2 | 2 | 1 | 0 | 0 |
+| [Library, files and knowledge](#library) | 1/2 | 1/2 | 13 | 4 | 2 | 0 |
+| [Artifacts and Design](#artifacts) | 4/4 | 3/4 (+1 partial) | 12 | 7 | 3 | 0 |
+| [Memory](#memory) | 1/1 | 1/1 | 14 | 0 | 0 | 0 |
+| [Connections](#connections) | 2/2 | 2/2 | 16 | 1 | 4 | 2 |
+| [Skills](#skills) | 4/4 | 2/4 (+1 partial) | 10 | 3 | 0 | 0 |
 | [Assistants](#assistants) | 1/1 | 0/1 | 2 | 1 | 0 | 0 |
 | [Tasks in chat](#tasks) | 2/2 | 0/2 (+2 partial) | 13 | 1 | 2 | 0 |
-| [Automations](#automations) | 3/3 | 0/3 | 5 | 0 | 0 | 0 |
+| [Automations](#automations) | 3/3 | 2/3 (+1 partial) | 5 | 0 | 0 | 0 |
 | [Permissions and this Mac as a host](#permissions) | 2/2 | 0/2 | 6 | 0 | 0 | 0 |
 | [Agents](#agents) | 4/4 | 4/4 | 18 | 8 | 1 | 0 |
 | [Research](#research) | 2/2 | 2/2 | 7 | 0 | 0 | 0 |
 | [Voice](#voice) | – | – | 4 | 0 | 3 | 0 |
 | [Juno Code](#code) | 2/4 (+2 partial) | 0/4 (+3 partial) | 15 | 13 | 3 | 0 |
-| [Settings, notifications and announcements](#settings) | 2/3 | 2/3 | 11 | 6 | 2 | 0 |
-| [Plans and billing](#billing) | 1/2 | 0/2 | 3 | 2 | 2 | 1 |
+| [Settings, notifications and announcements](#settings) | 3/3 | 3/3 | 12 | 5 | 2 | 0 |
+| [Plans and billing](#billing) | 1/2 | 0/2 | 7 | 0 | 0 | 1 |
 | [Roadmap and Compare](#community) | 0/3 | 0/3 | 0 | 0 | 4 | 0 |
 | [Owner tools](#admin) | 0/6 | 0/6 | 0 | 0 | 15 | 0 |
 | [Platform endpoints](#platform) | – | – | 1 | 0 | 0 | 10 |
@@ -69,7 +69,7 @@ Browser sign-in hands the apps a PKCE code; everything after that is `/api/v1/au
 | `/api/account/mfa/start` | POST | Native | JunoChatKit |  |
 | `/api/account/password` | POST | Native | JunoChatKit |  |
 | `/api/account/sessions/revoke` | POST | Native | JunoChatKit |  |
-| `/api/account/username` | GET, PATCH | Planned |  | Choosing the @username (Settings › Account › Username on the web). The apps do not show or edit it yet, and have no profile screen to show it on (/profile is planned). |
+| `/api/account/username` | GET, PATCH | Native | JunoChatKit | Settings › Account › Username on both apps (DesktopUsernameRow on the Mac, JunoMobileUsernameView on the iPhone), with the web's debounced ?check= and its words; NativeUsernameClient/NativeUsernameModel in JunoChatKit/NativeUsername.swift. |
 | `/api/account/verification` | GET, POST | Planned |  | The web's check-your-inbox banner for an unverified email; the apps do not show it yet. |
 | `/api/auth/[...nextauth]` | GET, POST | Web only |  | The web's session (Auth.js). The apps sign in through the browser and hold /api/v1/auth tokens. |
 | `/api/auth/forgot-password` | POST | Native | JunoChatKit |  |
@@ -117,8 +117,8 @@ POST /api/chat's body and frames are classified field by field in the chat wire 
 |---|---|---|---|---|
 | `/api/approvals` | GET | Native | JunoChatKit |  |
 | `/api/approvals/[id]` | POST | Native | JunoChatKit |  |
-| `/api/approvals/grants` | GET | Planned |  | The standing "always allow" grants listed under Customize › Apps on the web, so a person can see what Juno may do without asking. The apps answer approvals but do not list standing grants yet. |
-| `/api/approvals/grants/[id]` | DELETE | Planned |  | Revoking one standing grant from that list (DELETE). As /api/approvals/grants. |
+| `/api/approvals/grants` | GET | Native | JunoChatKit |  |
+| `/api/approvals/grants/[id]` | DELETE | Native | JunoChatKit |  |
 | `/api/chat` | POST | Native | JunoChatKit |  |
 | `/api/chat/cancel` | POST | Native | JunoChatKit |  |
 | `/api/chat/clarify` | POST | Planned |  | Whether to ask a clarifying question before a turn runs; the Mac's composer has no pre-flight questions yet (request.preflightClarification in the chat wire). |
@@ -169,13 +169,13 @@ The Mac's ⌘K panel searches chats, messages, projects, files and artifacts on 
 
 | Page | Mac | iOS | Native screen | Note |
 |---|---|---|---|---|
-| `/projects` | Partial | Partial | DesktopProjectsScreen | Folders (Project.parentId) are planned: the apps list every project flat and do not yet nest folders under their project, move one with Move to… or drag and drop, or ask whether a deleted folder's subfolders go up a level or go with it. |
-| `/projects/[id]` | Partial | Partial | DesktopProjectPage | Folders are planned: no breadcrumbs, Folders section or New folder yet, and the app does not show the instructions and files a folder inherits from the projects above it (the server already prepends them to its chats). |
+| `/projects` | Native | Native | DesktopProjectsScreen, JunoMobileProjectsView | Folders (Project.parentId): the index lists top-level projects only (a search still finds folders), and a project's menu has New folder inside, Move to… and a Delete that asks whether its subfolders go up a level or go with it (DesktopProjectFolders, JunoMobileProjectFolders). Moving is Move to… in the apps; the web's drag and drop has no native counterpart. |
+| `/projects/[id]` | Native | Native | DesktopProjectPage, JunoMobileProjectDetail | Breadcrumbs over a folder (each ancestor opens its page), a Folders section (a tab on iPhone) with New folder, the instructions and files inherited from the projects above shown read-only (From <Parent>), Move to… and the lift/cascade Delete. |
 
 | Route | Methods | Status | Called from | Note |
 |---|---|---|---|---|
-| `/api/projects` | GET, POST | Native | JunoDesktop |  |
-| `/api/projects/[id]` | GET, PATCH, DELETE | Web only |  | The apps change projects through sync (/api/v1/mutations); only a blank-name create goes to POST /api/projects (register #89). Moving a project into a folder (PATCH parentId), the folder fields on GET (breadcrumbs, children, inherited) and DELETE ?children=lift\|cascade are web-only until native folders land; a sync project.delete lifts a folder's subfolders up a level, as the web does by default. |
+| `/api/projects` | GET, POST | Native | JunoChatKit, JunoDesktop |  |
+| `/api/projects/[id]` | GET, PATCH, DELETE | Native | JunoChatKit | NativeProjectFoldersClient (JunoChatKit/NativeProjectFolders.swift): GET reads the folder fields (breadcrumbs, children, inherited), PATCH sends parentId for Move to…, DELETE sends ?children=lift\|cascade for a project that holds folders. Other edits still go through sync (/api/v1/mutations); New folder is POST /api/projects with parentId, and the project sync entity carries parentId. |
 | `/api/projects/[id]/members` | GET, POST | Planned |  | Project members (sharing a project); not in the apps yet. |
 
 <a id="library"></a>
@@ -202,7 +202,7 @@ The Mac's ⌘K panel searches chats, messages, projects, files and artifacts on 
 | `/api/knowledge/documents/[id]` | GET | Planned |  | As /api/knowledge/documents. |
 | `/api/library` | GET | Native | JunoChatKit |  |
 | `/api/library/[id]` | DELETE | Native | JunoChatKit |  |
-| `/api/library/made` | GET | Planned |  | Everything Juno made in one paged list: chat artifacts and task deliverables (docx, xlsx, pptx…), each with a kind and a type. The apps list artifacts from sync and deliverables from /api/work/artifacts. |
+| `/api/library/made` | GET | Native | JunoChatKit |  |
 | `/api/library/attach` | POST | Native | JunoChatKit |  |
 | `/api/prompts` | GET, POST | Planned |  | The saved-prompt library (insert, use counts); the apps read saved prompts through sync but have no library dialog. |
 | `/api/prompts/[id]` | POST, PATCH, DELETE | Planned |  | As /api/prompts. |
@@ -224,11 +224,11 @@ Design is a type of artifact (register #73).
 
 | Route | Methods | Status | Called from | Note |
 |---|---|---|---|---|
-| `/api/artifacts` | GET | Web only |  | The apps list artifacts from sync; the web's grid asks for previews here. |
+| `/api/artifacts` | GET | Native | JunoChatKit | The apps list live artifacts from sync; they call this route for Recently deleted (?deleted=1) on the Mac Artifacts page and the iPhone Artifacts list. |
 | `/api/artifacts/[id]` | GET, POST, PATCH, DELETE | Native | JunoChatKit |  |
-| `/api/artifacts/[id]/download` | GET | Planned |  | Download one version as a file, or a design (or any artifact, format=zip) as a ZIP bundle with a README and optional history. The apps still share a design's source through the system share sheet. |
+| `/api/artifacts/[id]/download` | GET | Native | JunoChatKit | Download this version, or a ZIP with history (format=zip&history=1), from the Mac's artifact page and list (save panel) and the iPhone's artifact menu (file exporter). |
 | `/api/artifacts/[id]/draft` | POST | Web only |  | Seals or discards the web design editor's working copy (ArtifactDraft). The Mac and iPhone hosted editors keep their own draft and save a whole document through /api/artifacts/[id] with a base version. |
-| `/api/artifacts/[id]/duplicate` | POST | Planned |  | Duplicate an artifact into a new one in the same project, with derivedFrom provenance. No Duplicate command in the apps yet. |
+| `/api/artifacts/[id]/duplicate` | POST | Native | JunoChatKit | Make a Copy (of the version shown, or any version from history) on the Mac's artifact page, list and history sheet, and the iPhone's artifact menu and history. |
 | `/api/artifacts/[id]/export` | GET | Native | JunoChatKit |  |
 | `/api/artifacts/[id]/poster` | GET | Native | JunoChatKit |  |
 | `/api/artifacts/[id]/proposals/[proposalId]` | GET | Planned |  | Compare a held re-emit (the re-emit guard's suggestion) with the current version. The apps show neither the suggestion bar nor Compare yet; a held tag draws no card there. |
@@ -237,15 +237,15 @@ Design is a type of artifact (register #73).
 | `/api/artifacts/[id]/proposals/[proposalId]/poster` | GET | Planned |  | The picture of a suggested design, for Compare. |
 | `/api/artifacts/[id]/publication` | GET, POST, DELETE | Native | JunoChatKit | The apps read an existing publication (GET) to share its live link; opening an artifact never publishes it. Publish, Update, Roll back and Unpublish stay on the web until the native lane adds the panel. |
 | `/api/artifacts/[id]/publication/reset` | POST | Planned |  | Reset a published link: the old token answers link gone, a new token serves. |
-| `/api/artifacts/[id]/restore` | POST | Planned |  | Restore from Recently deleted. A delete from the apps now moves the artifact to Recently deleted (the sync feed tombstones it); the apps have no Recently deleted view yet. |
-| `/api/artifacts/[id]/versions` | GET | Planned |  | Paginated version history (newest first, bodies on request). The apps read versions from sync and the windowed /api/artifacts/[id]. |
-| `/api/artifacts/[id]/versions/[version]` | GET | Planned |  | One version's body, for paged history. |
+| `/api/artifacts/[id]/restore` | POST | Native | JunoChatKit | Restore from Recently deleted: the Mac's Recently Deleted sheet on Artifacts and the iPhone's Recently Deleted list. A delete from the apps moves the artifact there (the sync feed tombstones it); a restore brings it back through sync. |
+| `/api/artifacts/[id]/versions` | GET | Native | JunoChatKit | Paginated version history (newest first): the Mac's Version History sheet and the iPhone's Version history, fifty at a time. |
+| `/api/artifacts/[id]/versions/[version]` | GET | Native | JunoChatKit | One version's body: restoring a version older than the synced window fetches it here first. |
 | `/api/design` | POST | Native | JunoDesktop |  |
 | `/api/design/[artifactId]` | GET | Web only |  | The Mac reads a design's document from its artifact and hands it to the hosted editor. |
 | `/api/design/[artifactId]/edit` | POST | Planned |  | Ask Juno to change the selected layers of a design; the Mac's hosted editor has no Ask Juno yet. |
 | `/api/design/[artifactId]/export` | GET | Native | JunoChatKit |  |
 | `/api/design/[artifactId]/transactions` | GET, POST | Planned |  | The web's editor commits each edit here as it goes; the Mac's host saves edits its own way and does not call it. |
-| `/api/artifacts/[id]/ops` | POST | Web only |  | Targeted edits to a semantic spreadsheet, document or deck. Native clients are given the Markdown artifact contract instead, so no semantic artifact reaches them to edit. |
+| `/api/artifacts/[id]/ops` | POST | Web only |  | Targeted edits to a semantic spreadsheet, document or deck. The apps now draw semantic artifacts read-only (SemanticArtifactView in JunoChatKit) and read a streaming <juno:artifact-ops> block as an Editing card; editing them stays on the web and in the chat. |
 
 <a id="memory"></a>
 
@@ -269,8 +269,8 @@ Design is a type of artifact (register #73).
 | `/api/memory/import/preview` | POST | Native | JunoChatKit |  |
 | `/api/memory/recap` | GET | Native | JunoChatKit |  |
 | `/api/projects/[id]/memory` | GET, POST | Native | JunoChatKit |  |
-| `/api/memory/skill-candidates` | GET | Planned |  | Methods Alevr noticed the person repeat, offered as draft skills on the web's Memory page. The apps do not list them yet. |
-| `/api/memory/skill-candidates/[id]` | POST | Planned |  | Accepting or dismissing a proposed skill; web first, like the list. |
+| `/api/memory/skill-candidates` | GET | Native | JunoChatKit |  |
+| `/api/memory/skill-candidates/[id]` | POST | Native | JunoChatKit |  |
 
 <a id="connections"></a>
 
@@ -285,7 +285,7 @@ Design is a type of artifact (register #73).
 |---|---|---|---|---|
 | `/api/connectors` | GET | Native | JunoChatKit |  |
 | `/api/connectors/[id]` | DELETE | Native | JunoChatKit |  |
-| `/api/connectors/usage` | GET | Planned |  | When each app was last used (tool, chat), for the app's details under Customize › Apps on the web. The apps do not show a last-used line yet. |
+| `/api/connectors/usage` | GET | Native | JunoChatKit |  |
 | `/api/connectors/[id]/callback` | GET | Web only |  | The provider redirects the browser here; the apps start the flow at /api/connectors/{id}/connect in the browser. |
 | `/api/connectors/[id]/connect` | GET | Native | JunoDesktop, JunoMobile |  |
 | `/api/connectors/[id]/credentials` | POST | Planned |  | Key and token connectors (Apple Music and others) are connected on the web; the apps have no credential form yet. |
@@ -313,15 +313,15 @@ Design is a type of artifact (register #73).
 
 | Page | Mac | iOS | Native screen | Note |
 |---|---|---|---|---|
-| `/skills` | Native | Planned | DesktopSkillsScreen | No Skills pages on the phone yet. |
-| `/skills/[id]` | Native | Planned | DesktopSkillPage | As /skills. |
-| `/skills/new` | Native | Planned | DesktopSkillPage (new) | As /skills. |
-| `/skills/import` | Native | Planned | DesktopSkillSheets (Import from GitHub) | A sheet on the Mac; no Skills pages on the phone yet. |
+| `/skills` | Native | Native | DesktopSkillsScreen · JunoMobileSkillsView | On the phone: Customize › Skills, a list with on/off, search and Import from GitHub. |
+| `/skills/[id]` | Native | Partial | DesktopSkillPage · JunoMobileSkillDetailView | The phone reads a skill, switches it on or off and deletes it; editing instructions, versions, usage and consent stay on the Mac and the web. |
+| `/skills/new` | Native | Planned | DesktopSkillPage (new) | Writing a new skill is Mac and web only; the phone imports skills from GitHub. |
+| `/skills/import` | Native | Native | DesktopSkillSheets (Import from GitHub) · JunoMobileSkillImportView | A sheet on both apps. |
 
 | Route | Methods | Status | Called from | Note |
 |---|---|---|---|---|
 | `/api/skills` | GET | Native | JunoWorkKit |  |
-| `/api/skills/import/file` | POST | Native | JunoWorkKit | Mac only: previews an uploaded SKILL.md (the web parses it in the browser); no Skills pages on the phone yet. |
+| `/api/skills/import/file` | POST | Native | JunoWorkKit | Mac only: previews an uploaded SKILL.md (the web parses it in the browser); the phone imports from GitHub only. |
 | `/api/skills/import/github` | POST | Native | JunoWorkKit |  |
 | `/api/skills/import/package` | POST | Planned |  | Importing an uploaded SKILL.md or .zip/.skill package, pasted text or a public link, through the SSRF-safe fetcher. The Mac previews a SKILL.md through /api/skills/import/file; packages and links are web-only until the native lane adds them. |
 | `/api/skills/sources/[id]` | PATCH, DELETE | Native | JunoWorkKit |  |
@@ -384,9 +384,9 @@ The web retired its task pages: a task lives in its chat (Phase 5). `/api/tasks`
 
 | Page | Mac | iOS | Native screen | Note |
 |---|---|---|---|---|
-| `/automations` | Native | Planned | DesktopAutomationsScreen | No Automations on the phone yet. |
-| `/automations/new` | Native | Planned | DesktopAutomationEditor | As /automations. |
-| `/automations/[id]` | Native | Planned | DesktopAutomationPage | As /automations. |
+| `/automations` | Native | Native | DesktopAutomationsScreen · JunoMobileRoutinesView | On the phone: Customize › Routines, with Run Now, Pause/Resume and Delete. |
+| `/automations/new` | Native | Partial | DesktopAutomationEditor · JunoMobileRoutineEditor | The phone's editor sets a name, a prompt and one clock (hourly, daily, weekdays, weekly or monthly); event triggers, targets, budgets and policies stay on the Mac and the web. |
+| `/automations/[id]` | Native | Native | DesktopAutomationPage · JunoMobileRoutineDetailView | Schedule in words, next and last run, recent runs, Run Now, Pause/Resume, Edit and Delete. |
 
 | Route | Methods | Status | Called from | Note |
 |---|---|---|---|---|
@@ -545,7 +545,7 @@ Owned by the Code rework (`docs/native/code-rework/`), which audits Code's parit
 |---|---|---|---|---|
 | `/settings` | Native | Native | DesktopSettingsWindow |  |
 | `/customize/instructions` | Native | Native | Settings › Personalization (DesktopSettingsPersonalizationPane) | The web's Customize › Instructions tab renders the same personalization section as Settings. |
-| `/profile` | Planned | Planned |  | The profile page (2026-10-03): lifetime tokens, streaks, a year of daily activity and usage by model. The apps still show usage in Settings › Account. |
+| `/profile` | Native | Native | NativeProfileView (DesktopProfileScreen from the account menu's Profile row; JunoMobileProfileView under Settings › Account) |  |
 
 | Route | Methods | Status | Called from | Note |
 |---|---|---|---|---|
@@ -563,7 +563,7 @@ Owned by the Code rework (`docs/native/code-rework/`), which audits Code's parit
 | `/api/push/subscriptions` | GET, POST, PATCH, DELETE | Web only |  | Browser push; the apps register through /api/v1/devices/apns. |
 | `/api/settings` | GET, PATCH | Native | JunoChatKit |  |
 | `/api/v1/devices/apns` | POST, DELETE | Native | JunoSync |  |
-| `/api/profile/activity` | GET | Planned |  | The profile page's activity read (tokens per local day, by model, longest run). The apps have no profile screen yet. |
+| `/api/profile/activity` | GET | Native | JunoChatKit | The profile page's activity read, with the reader's zone as ?tz=; NativeProfileClient in JunoChatKit/NativeProfileActivity.swift, drawn by NativeProfileView on both apps. |
 | `/api/secrets` | GET, POST | Planned |  | The credential vault the agent computer fills sign-ins from, managed in the web's Settings. The apps do not manage it yet. |
 | `/api/secrets/[id]` | PATCH, DELETE | Planned |  | Editing or deleting one stored credential; web first, like the list. |
 | `/api/secrets/grants` | POST | Planned |  | Which sites and tasks may use a stored credential; web first. |
@@ -584,10 +584,10 @@ Owned by the Code rework (`docs/native/code-rework/`), which audits Code's parit
 | `/api/stripe/checkout` | POST | Native | JunoChatKit |  |
 | `/api/stripe/portal` | POST | Native | JunoChatKit |  |
 | `/api/v1/billing/app-store` | GET, POST | Native | JunoAPI, JunoMobile |  |
-| `/api/billing/credits` | GET | Planned |  | Top-up credit balance and expiry, shown in the web's Billing section. The apps buy plans through the App Store and do not sell top-ups yet. |
-| `/api/stripe/topup` | POST | Web only |  | Buying a top-up pack through Stripe Checkout; App Store rules keep this purchase on the web. |
-| `/api/stripe/cancel` | GET, POST | Web only |  | Cancelling a Stripe subscription with the legal confirmation; an App Store subscription is cancelled in the App Store. |
-| `/api/referrals` | GET | Planned |  | The referral code and its rewards in the web's Billing section; the apps do not show it yet. |
+| `/api/billing/credits` | GET | Native | JunoChatKit | Mac only: the Top-ups block of Settings › Plan & usage (DesktopBillingExtras). The iPhone buys through the App Store and does not show top-ups. |
+| `/api/stripe/topup` | POST | Native | JunoChatKit | Mac only: Add opens the Stripe Checkout page in the browser, like the Mac's plan checkout. App Store rules keep this purchase off the iPhone. |
+| `/api/stripe/cancel` | GET, POST | Native | JunoChatKit | Mac only: Cancel subscription with the recap and the web's consent text (DesktopCancelSubscriptionSheet), and Keep my subscription. An App Store subscription is cancelled in the App Store; the iPhone does not show it. |
+| `/api/referrals` | GET | Native | JunoChatKit | Mac only: Invite a friend in Settings › Plan & usage (link, Copy, rewards). The iPhone does not show it yet. |
 
 <a id="community"></a>
 

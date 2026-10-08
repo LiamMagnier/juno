@@ -161,7 +161,7 @@ public struct StudioSettingsView: View {
             if !settings.problems.isEmpty {
                 Section {
                     ForEach(settings.problems, id: \.self) { problem in
-                        Label(problem, systemImage: "exclamationmark.triangle")
+                        Label(problem, image: JunoIcon.warning.assetName)
                             .foregroundStyle(Studio.Ink.danger)
                     }
                 }
@@ -357,13 +357,13 @@ struct StudioGeneralSettings: View {
                 }
             }
         }
-        Section("While Juno works") {
+        Section("While Alevr works") {
             Picker("Messages you send", selection: $preferences.followUp) {
                 ForEach(StudioFollowUpBehavior.allCases) { Text($0.label).tag($0) }
             }
             Toggle("Keep this Mac awake", isOn: $preferences.keepAwakeWhileRunning)
-            Toggle("Resume interrupted runs when Juno opens", isOn: $preferences.resumeInterruptedOnLaunch)
-                .help("Off: a run Juno quit in the middle of waits for you to press Resume.")
+            Toggle("Resume interrupted runs when Alevr opens", isOn: $preferences.resumeInterruptedOnLaunch)
+                .help("Off: a run Alevr quit in the middle of waits for you to press Resume.")
         }
         Section("Composer") {
             Picker("Send with", selection: $preferences.commandReturnSends) {
@@ -590,8 +590,8 @@ struct StudioEnvironmentSettings: View {
             Text("Environment variables")
         } footer: {
             Text(scope == .user
-                ? "Every command Juno runs receives these. Commands can print them, so keep secrets out."
-                : "Every command Juno runs receives these once this file is approved, except PATH, GIT_ and other variables that decide which programs run. Commands can print them, so keep secrets out.")
+                ? "Every command Alevr runs receives these. Commands can print them, so keep secrets out."
+                : "Every command Alevr runs receives these once this file is approved, except PATH, GIT_ and other variables that decide which programs run. Commands can print them, so keep secrets out.")
         }
 
         Section {
@@ -659,7 +659,7 @@ struct StudioInstructionsSettings: View {
         } header: {
             Text("Your instructions, every project")
         } footer: {
-            Text("How you like to work: conventions, tools you prefer, things to avoid. Juno reads this before every session and ranks it above project files.")
+            Text("How you like to work: conventions, tools you prefer, things to avoid. Alevr reads this before every session and ranks it above project files.")
         }
 
         Section {
@@ -682,7 +682,7 @@ struct StudioInstructionsSettings: View {
             Text("Standing instructions in settings")
         } footer: {
             Text(standingScope == .project
-                ? "A shorter note kept with the other settings. A team's shared file reaches Juno as project context, like AGENTS.md: followed where it applies, never able to grant permissions."
+                ? "A shorter note kept with the other settings. A team's shared file reaches Alevr as project context, like AGENTS.md: followed where it applies, never able to grant permissions."
                 : "A shorter note kept with the other settings, for every project or just this one.")
         }
 
@@ -738,7 +738,7 @@ struct StudioAgentSettings: View {
         } header: {
             Text("Runs")
         } footer: {
-            Text("A step is one model turn and the tools it calls. Long refactors need a few hundred. At the limit Juno writes where it got to and offers Keep going.")
+            Text("A step is one model turn and the tools it calls. Long refactors need a few hundred. At the limit Alevr writes where it got to and offers Keep going.")
         }
 
         StudioAutonomySettings(scope: scope, settings: settings)
@@ -783,7 +783,7 @@ struct StudioGitSettings: View {
     var body: some View {
         Section {
             StudioScopedToggle(
-                title: "Credit Juno in commits",
+                title: "Credit Alevr in commits",
                 detail: "Adds a Co-authored-by trailer to commits the agent writes.",
                 scope: scope,
                 value: git?.coAuthorTrailer,
@@ -807,7 +807,7 @@ struct StudioGitSettings: View {
         } header: {
             Text("Commits and branches")
         } footer: {
-            Text("Worktrees Juno creates are named with this prefix, e.g. juno/fix-login-481920.")
+            Text("Worktrees Alevr creates are named with this prefix, e.g. juno/fix-login-481920.")
         }
         .onAppear { prefix = git?.branchPrefix ?? "" }
         .onChange(of: scope) { _, _ in prefix = git?.branchPrefix ?? "" }
@@ -856,8 +856,8 @@ struct StudioToolsSettings: View {
             ) { server in
                 Button("Allow") { setConsent(server, allowed: true) }
             } message: { server in
-                Text(server.url.map { "Juno will contact \($0.absoluteString) to list its tools." }
-                    ?? "Juno will run \(([server.command] + server.arguments).joined(separator: " ")). Every tool call still asks.")
+                Text(server.url.map { "Alevr will contact \($0.absoluteString) to list its tools." }
+                    ?? "Alevr will run \(([server.command] + server.arguments).joined(separator: " ")). Every tool call still asks.")
             }
     }
 
@@ -940,7 +940,7 @@ struct StudioToolsSettings: View {
                             case .trusted:
                                 EmptyView()
                             case .untrusted:
-                                Text("Not offered to Juno until you trust it.")
+                                Text("Not offered to Alevr until you trust it.")
                                     .font(Studio.Font.meta).foregroundStyle(Studio.Ink.tertiary)
                             case .changedSinceTrusted:
                                 Text("Changed since you trusted it. Review it, then trust it again.")
@@ -953,14 +953,14 @@ struct StudioToolsSettings: View {
                         setSkillTrusted(skill, trusted: trust != .trusted)
                     }
                     .help(trust == .trusted
-                        ? "Stop offering this skill to Juno"
-                        : "Offer this skill, as it reads now, to Juno in this project")
+                        ? "Stop offering this skill to Alevr"
+                        : "Offer this skill, as it reads now, to Alevr in this project")
                 }
             }
         } header: {
             Text("Skills")
         } footer: {
-            Text("A repository's skills are its own text. Juno offers one only after you trust it here, and an edited skill needs trusting again.")
+            Text("A repository's skills are its own text. Alevr offers one only after you trust it here, and an edited skill needs trusting again.")
         }
     }
 
@@ -1042,11 +1042,11 @@ struct StudioNotificationSettings: View {
     var body: some View {
         Section {
             Toggle("When a run finishes", isOn: $preferences.notifyWhenDone)
-            Toggle("When Juno needs your approval", isOn: $preferences.notifyWhenNeedsYou)
-            Toggle("Finished runs only while Juno is in the background", isOn: $preferences.notifyOnlyInBackground)
+            Toggle("When Alevr needs your approval", isOn: $preferences.notifyWhenNeedsYou)
+            Toggle("Finished runs only while Alevr is in the background", isOn: $preferences.notifyOnlyInBackground)
             Toggle("Play a sound", isOn: $preferences.notificationSound)
         } footer: {
-            Text("Nothing is said about the session you are looking at. Approvals and questions can be answered from the notification. macOS asks once for permission to show Juno's notifications.")
+            Text("Nothing is said about the session you are looking at. Approvals and questions can be answered from the notification. macOS asks once for permission to show Alevr's notifications.")
         }
     }
 }
@@ -1067,7 +1067,7 @@ struct StudioKeyboardSettings: View {
             ("Allow once", "↩"), ("Always allow", "⌘↩"), ("Decline", "esc"),
         ]),
         ("Review", [
-            ("Commit", "⌥⌘K"), ("Send comments to Juno", "⇧⌘↩"),
+            ("Commit", "⌥⌘K"), ("Send comments to Alevr", "⇧⌘↩"),
         ]),
     ]
 

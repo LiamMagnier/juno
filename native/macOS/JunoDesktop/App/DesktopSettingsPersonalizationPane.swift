@@ -20,7 +20,7 @@ struct DesktopSettingsPersonalizationPane: View {
 /// The web's `PERSONALITIES` (`src/lib/personalities.ts`), in order.
 enum DesktopPersonalities {
     static let all: [(id: String, label: String, description: String)] = [
-        ("default", "Default", "Juno's natural voice: warm, clear, and adapted to the question."),
+        ("default", "Default", "Alevr's natural voice: warm, clear, and adapted to the question."),
         ("concise", "Concise", "Answer first, no preamble. Expands only when the topic needs it."),
         ("encouraging", "Encouraging", "Supportive and motivating, without sugar-coating the truth."),
         ("socratic", "Socratic", "Leads with questions so you reach the answer yourself."),
@@ -65,7 +65,7 @@ private struct DesktopSettingsPersonalizationSections: View {
     var body: some View {
         Section {
             DesktopSettingRow(
-                title: "What Juno calls you",
+                title: "What Alevr calls you",
                 description: "Used in greetings, and shown in the sidebar.",
                 status: context.saves.status("name")
             ) {
@@ -76,14 +76,14 @@ private struct DesktopSettingsPersonalizationSections: View {
                     .frame(width: DesktopSettingsMetrics.menuWidth)
                     .focused($focus, equals: .name)
                     .onSubmit { saveName() }
-                    .accessibilityLabel("What Juno calls you")
+                    .accessibilityLabel("What Alevr calls you")
                     .accessibilityIdentifier("juno.desktop.settings.name")
             }
 
             VStack(alignment: .leading, spacing: JunoSpace.snug) {
                 DesktopSettingLabel(
                     title: "Custom instructions",
-                    description: "Juno keeps these in mind in every conversation.",
+                    description: "Alevr keeps these in mind in every conversation.",
                     status: context.saves.status("customInstructions")
                 )
                 ZStack(alignment: .topLeading) {
@@ -179,7 +179,7 @@ private struct DesktopSettingsPersonalizationSections: View {
             : DesktopResponseLanguages.all + [(settings.responseLanguage, settings.responseLanguage)]
         return DesktopSettingRow(
             title: "Response language",
-            description: "The language Juno replies in.",
+            description: "The language Alevr replies in.",
             status: context.saves.status("responseLanguage")
         ) {
             Picker("Response language", selection: Binding(

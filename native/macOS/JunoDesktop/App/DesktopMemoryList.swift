@@ -122,8 +122,8 @@ struct DesktopMemoryList: View {
             JunoEmptyState(
                 title: project == nil ? "No memories yet" : "Nothing remembered in this project yet",
                 message: project == nil
-                    ? "Juno fills this in as you chat. You can also add something yourself."
-                    : "Juno keeps what it learns in this project’s chats here, apart from everything else.",
+                    ? "Alevr fills this in as you chat. You can also add something yourself."
+                    : "Alevr keeps what it learns in this project’s chats here, apart from everything else.",
                 icon: .layers,
                 size: .panel
             )
@@ -244,7 +244,7 @@ struct DesktopMemoryList: View {
             .buttonStyle(.plain)
             .accessibilityValue(showsRetired ? "Expanded" : "Collapsed")
             if showsRetired || searching {
-                Text("Replaced by something newer, contradicted, expired, or forgotten at your request. Juno doesn’t use these.")
+                Text("Replaced by something newer, contradicted, expired, or forgotten at your request. Alevr doesn’t use these.")
                     .junoType(.caption)
                     .foregroundStyle(Color.junoSecondaryInk)
                     .fixedSize(horizontal: false, vertical: true)
@@ -341,21 +341,40 @@ struct DesktopMemoryRow: View {
         }
     }
 
+    /// One quiet line of plain text: no tokens, no capsules. A sensitive
+    /// subject is the one attention state, said in the warning ink with its
+    /// glyph and nothing around it.
     private var meta: some View {
-        HStack(spacing: JunoSpace.tight) {
+        HStack(alignment: .firstTextBaseline, spacing: JunoSpace.tight) {
+            if let sensitive = fact.sensitive {
+                Label {
+                    Text(NativeMemoryVocabulary.sensitiveLabel(sensitive))
+                } icon: {
+                    JunoIconView(.permission, size: 11)
+                }
+                .labelStyle(.titleAndIcon)
+                .junoType(.caption)
+                .foregroundStyle(Color.junoWarningInk)
+                .help("A sensitive subject. Alevr only learns these on its own when you allow the topic in Settings.")
+            }
             Text(metaLine)
                 .junoType(.caption)
                 .foregroundStyle(Color.junoSecondaryInk)
-                .help(fact.isRetired ? (fact.reason ?? NativeMemoryVocabulary.statusDescription(fact.status) ?? "") : "")
-            if let sensitive = fact.sensitive {
-                DesktopRowToken(text: NativeMemoryVocabulary.sensitiveLabel(sensitive), icon: .permission, isWarning: true)
-                    .help("A sensitive subject. Juno only learns these on its own when you allow the topic in Settings.")
-            }
-            if showProject, fact.projectID != nil {
-                DesktopRowToken(text: fact.projectName ?? "One project", icon: .folderLock)
-                    .help("Only chats in this project use this memory.")
+                .help(metaHelp)
+            if let chatID = fact.sourceChatID, let openChat {
+                Button("Open the chat it came from") { openChat(chatID) }
+                    .buttonStyle(DesktopUnderlineLinkStyle(ink: Color.junoSecondaryInk))
+                    .junoType(.caption)
+                    .help(fact.sourceMessageID == nil ? "Open the chat Alevr learned this in" : "Open the chat and the message Alevr learned this from")
+                    .accessibilityIdentifier("juno.desktop.memory.source-chat")
+                    .contentShape(.rect)
             }
         }
+    }
+
+    private var metaHelp: String {
+        if fact.isRetired { return fact.reason ?? NativeMemoryVocabulary.statusDescription(fact.status) ?? "" }
+        return NativeMemoryProvenance.of(fact).map(\.explanation).joined(separator: " ")
     }
 
     /// Status (for a retired row) · where it came from · when, and the
@@ -369,6 +388,10 @@ struct DesktopMemoryRow: View {
             parts.append(fact.sourceChatID == nil ? "From your chats" : "From a chat")
         }
         parts.append(NativeMemoryPresentation.relativeTime(fact.createdAt))
+        if let provenance = NativeMemoryProvenance.line(for: fact) { parts.append(provenance) }
+        if showProject, fact.projectID != nil {
+            parts.append("In \(fact.projectName ?? "one project")")
+        }
         if let expiresAt = fact.expiresAt, !fact.isRetired {
             parts.append("Until \(expiresAt.formatted(.dateTime.day().month(.abbreviated)))")
         }
@@ -440,7 +463,7 @@ struct DesktopMemoryRow: View {
             if let chatID = fact.sourceChatID, let openChat {
                 Button {
                     openChat(chatID)
-                } label: { Label("Open Source Chat", image: JunoIcon.message.assetName) }
+                } label: { Label("Open the Chat It Came From", image: JunoIcon.message.assetName) }
             }
             Divider()
             if fact.status != "suppressed" {
@@ -449,7 +472,7 @@ struct DesktopMemoryRow: View {
                 } label: {
                     Label {
                         Text("Forget")
-                        Text("Juno won’t learn this again")
+                        Text("Alevr won’t learn this again")
                     } icon: { Image(JunoIcon.eyeOff.assetName) }
                 }
             }
@@ -458,7 +481,7 @@ struct DesktopMemoryRow: View {
             } label: {
                 Label {
                     Text("Delete")
-                    Text("Juno may learn it again from its chat")
+                    Text("Alevr may learn it again from its chat")
                 } icon: { Image(JunoIcon.delete.assetName) }
             }
         }
@@ -495,7 +518,7 @@ struct DesktopMemoryAddForm: View {
         VStack(alignment: .leading, spacing: JunoSpace.snug) {
             TextField(
                 project == nil
-                    ? "Something Juno should know, like “I prefer metric units”"
+                    ? "Something Alevr should know, like “I prefer metric units”"
                     : "Something true of this project, like “We cite in APA”",
                 text: $draft,
                 axis: .vertical

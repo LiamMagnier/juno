@@ -133,7 +133,7 @@ public extension WorkbenchModel {
             return .success(try await context.worktrees.bringBackPlan(
                 worktree,
                 method: method,
-                message: "Juno: \(title)"
+                message: "Alevr: \(title)"
             ))
         } catch let error as WorktreeManagerError {
             return .failure(error)

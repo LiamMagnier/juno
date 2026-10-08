@@ -4,6 +4,7 @@ import JunoChatKit
 import JunoCore
 import JunoDesignSystem
 import JunoStorage
+import JunoWorkKit
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -42,6 +43,9 @@ struct DesktopLibraryScreen: View {
     /// Files picked out when the page opens (the snapshot harness's
     /// selection state).
     var initialSelection: Set<String> = []
+    /// What Alevr made (`/api/library/made`); nil leaves the page files-only.
+    var madeModel: NativeLibraryMadeModel? = nil
+    var deliverableClient: NativeWorkClient? = nil
 
     @Environment(\.junoToast) private var toast
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -66,6 +70,12 @@ struct DesktopLibraryScreen: View {
     @State private var quickLookURL: URL?
     @State private var download: DesktopLibraryDownload?
     @State private var dealt = false
+    @AppStorage("juno.desktop.library.show") private var storedShow = DesktopLibraryShow.files.rawValue
+    @State private var madeSearch = ""
+
+    private var show: DesktopLibraryShow {
+        madeModel == nil ? .files : (DesktopLibraryShow(rawValue: storedShow) ?? .files)
+    }
 
     private var presentation: Presentation {
         Presentation(rawValue: storedPresentation) ?? .list
@@ -92,15 +102,26 @@ struct DesktopLibraryScreen: View {
         } controls: {
             // Only once there is something to filter; a no-results state keeps
             // the row, because the reader needs the field to clear the search.
-            if !isLoading, !model.failed, !isEmptyLibrary {
+            if show == .made, !isDeletedView {
+                madeControls
+            } else if !isLoading, !model.failed, !isEmptyLibrary {
                 controls
             }
         } content: {
             VStack(alignment: .leading, spacing: 0) {
-                if !isDeletedView {
-                    documentIndexPanel
+                if show == .made, !isDeletedView, let madeModel {
+                    DesktopLibraryMadeList(
+                        model: madeModel,
+                        accountID: accountID,
+                        workClient: deliverableClient,
+                        openConversation: openConversation
+                    )
+                } else {
+                    if !isDeletedView {
+                        documentIndexPanel
+                    }
+                    content
                 }
-                content
             }
         }
         .overlay { dropVeil }
@@ -183,7 +204,12 @@ struct DesktopLibraryScreen: View {
                 .contentShape(.rect)
             }
         } else {
-            JunoPageHeader("Library", lede: "Everything you upload or share in chats.") {
+            JunoPageHeader(
+                "Library",
+                lede: madeModel == nil
+                    ? "Everything you upload or share in chats."
+                    : "What Alevr made and the files you gave it, newest first."
+            ) {
                 // Withheld while loading or failed, as Projects and
                 // Automations withhold theirs: nothing to count or add to yet.
                 if let storage = model.storage, !isLoading, !model.failed, !isEmptyLibrary {
@@ -258,8 +284,52 @@ struct DesktopLibraryScreen: View {
 
     // MARK: - Controls
 
+    /// Files, or what Alevr made: the first control on the row, in both views.
+    @ViewBuilder
+    private var showPicker: some View {
+        if madeModel != nil {
+            JunoSegmented(
+                options: [
+                    .init(DesktopLibraryShow.files, "Files"),
+                    .init(DesktopLibraryShow.made, "Made by Alevr"),
+                ],
+                selection: Binding(
+                    get: { show },
+                    set: { next in
+                        clearSelection()
+                        storedShow = next.rawValue
+                    }
+                ),
+                accessibilityLabel: "Show"
+            )
+        }
+    }
+
+    private var madeControls: some View {
+        JunoPageControls {
+            showPicker
+            JunoPageSearchField(
+                text: $madeSearch,
+                prompt: "Search what was made",
+                isSearching: madeModel?.isLoading == true && !madeSearch.isEmpty,
+                accessibilityIdentifier: "juno.desktop.library-made-search"
+            )
+        } trailing: {
+            EmptyView()
+        }
+        .task(id: madeSearch) {
+            guard let madeModel else { return }
+            if !madeSearch.isEmpty { try? await Task.sleep(for: .milliseconds(250)) }
+            guard !Task.isCancelled else { return }
+            var query = madeModel.query
+            query.q = madeSearch
+            await madeModel.setQuery(query)
+        }
+    }
+
     private var controls: some View {
         JunoPageControls {
+            showPicker
             JunoPageSearchField(
                 text: $model.searchText,
                 prompt: "Search files",
@@ -1038,7 +1108,7 @@ struct DesktopLibraryScreen: View {
         // memory and this screen adds no persistence, so quitting really does
         // empty it. A reader who expected these to survive a relaunch would
         // otherwise conclude the feature is broken.
-        .help("Indexed documents stay on this Mac, in memory only, and are cleared when you quit Juno or sign out.")
+        .help("Indexed documents stay on this Mac, in memory only, and are cleared when you quit Alevr or sign out.")
     }
 
     /// "2 documents · 143 passages", "Reading Contract.pdf…", or the OCR note.

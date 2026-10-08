@@ -154,7 +154,7 @@ struct JunoShortcutRegistryTests {
         guard let first = words.first?.first, first.isUppercase else { return false }
         for word in words.dropFirst() {
             guard let initial = word.first, initial.isLetter else { continue }
-            if initial.isUppercase, word != "Juno" { return false }
+            if initial.isUppercase, word != "Juno", word != "Alevr" { return false }
         }
         return true
     }
@@ -312,7 +312,7 @@ struct JunoShortcutRegistryTests {
             JunoShortcutRegistry.sections(in: menu).map { $0.compactMap(\.menuTitle) }
         }
         #expect(titles(.file) == [
-            ["New Chat", "New Incognito Chat"], ["New Chat"], ["Open Folder…"], ["Ask Juno…"],
+            ["New Chat", "New Incognito Chat"], ["New Chat"], ["Open Folder…"], ["Ask Alevr…"],
         ])
         #expect(titles(.edit) == [["Find in Conversation…", "Find Next", "Find Previous"]])
         #expect(titles(.view) == [
@@ -330,7 +330,7 @@ struct JunoShortcutRegistryTests {
             ["Changes", "Terminal", "Toggle Side Panel", "Toggle Preview", "Open File…"],
             ["Create Pull Request…"],
         ])
-        #expect(titles(.help) == [["Juno Help", "Keyboard Shortcuts", "Roadmap & Feature Requests"]])
+        #expect(titles(.help) == [["Alevr Help", "Keyboard Shortcuts", "Roadmap & Feature Requests"]])
         // The Session menu lost its ⌘K row: ⌘K is View › Command Menu….
         let commandK = registry.filter { $0.keys == ["⌘", "K"] }
         #expect(commandK.map(\.id) == [.commandMenu])
@@ -422,6 +422,6 @@ struct DesktopMenuBarTests {
             )
         }
         #expect(!all.contains { $0.title == "Command Palette…" })
-        #expect(!all.contains { $0.title == "Find in Juno…" })
+        #expect(!all.contains { $0.title == "Find in Alevr…" })
     }
 }

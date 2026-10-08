@@ -80,7 +80,7 @@ struct JunoDesktopVoiceAuthorization: JunoVoiceRelayAuthorizing {
             from: response.body
         ), !decoded.token.isEmpty else {
             throw JunoDesktopVoiceAuthorizationError(
-                message: "Juno returned an invalid voice credential."
+                message: "Alevr returned an invalid voice credential."
             )
         }
         return decoded.resolved
@@ -106,7 +106,7 @@ struct JunoDesktopVoiceAuthorization: JunoVoiceRelayAuthorizing {
         case 402, 403: "Voice is not available on this account or plan."
         case 429: "Voice is busy. Wait a moment and try again."
         case 503: "Realtime voice is not configured for this environment."
-        default: "Juno could not authorize the voice session."
+        default: "Alevr could not authorize the voice session."
         }
     }
 }
@@ -264,7 +264,7 @@ enum DesktopVoiceCallText {
         case .reconnecting: "Reconnecting"
         case .listening: "Listening"
         case .thinking: "Thinking"
-        case .speaking: wide ? "Juno is speaking" : "Speaking"
+        case .speaking: wide ? "Alevr is speaking" : "Speaking"
         case .interrupting: "Interrupting"
         case .muted: "Muted"
         case .ended: "Call ended"
@@ -282,7 +282,7 @@ enum DesktopVoiceCallText {
         case .reconnecting: "Reconnecting the call."
         case .listening: previous == nil || previous == .connecting ? "Connected. Listening." : "Listening."
         case .thinking: "Thinking about your answer."
-        case .speaking: "Juno is speaking. Talk any time to interrupt."
+        case .speaking: "Alevr is speaking. Talk any time to interrupt."
         case .interrupting: nil
         case .muted: "Your microphone is muted."
         case .ended: "The call has ended."
@@ -302,7 +302,7 @@ enum DesktopVoiceCallText {
             parts.append("thinking with \(delegate) at \(level.displayName.lowercased())")
         }
         switch controller.bargeIn {
-        case .automatic: parts.append("talk over Juno to interrupt")
+        case .automatic: parts.append("talk over Alevr to interrupt")
         case .manualOnly: parts.append("press Stop to interrupt")
         }
         if let cost = costLabel(controller) { parts.append("\(cost) so far") }
@@ -551,7 +551,7 @@ struct DesktopVoiceCallControls: View {
                 .accessibilityIdentifier("juno.desktop.voice-restart")
             } else {
                 if controller.phase == .live, controller.assistantSpeaking {
-                    DesktopVoiceCallButton(icon: .stop, weight: .fill, glyphSize: 12, label: "Stop Juno speaking") {
+                    DesktopVoiceCallButton(icon: .stop, weight: .fill, glyphSize: 12, label: "Stop Alevr speaking") {
                         controller.interrupt()
                     }
                     .transition(.opacity)

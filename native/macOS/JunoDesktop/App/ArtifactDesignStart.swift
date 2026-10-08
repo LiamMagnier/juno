@@ -73,9 +73,9 @@ enum DesktopDesignStartError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .unavailable:
-            "Juno is not signed in to a backend that can start a design."
+            "Alevr is not signed in to a backend that can start a design."
         case .malformedResponse:
-            "Juno started the design but could not read where it went."
+            "Alevr started the design but could not read where it went."
         case .server(_, let message):
             message
         }
@@ -153,9 +153,9 @@ struct DesktopDesignStartClient: Sendable {
         switch statusCode {
         case 401: "Sign in again to start a design."
         case 403: "The canvas is not included in this account's plan."
-        case 404: "This Juno server is too old to start a design."
-        case 429: "Juno is busy. Wait a moment and try again."
-        default: "Juno could not start a design."
+        case 404: "This Alevr server is too old to start a design."
+        case 429: "Alevr is busy. Wait a moment and try again."
+        default: "Alevr could not start a design."
         }
     }
 

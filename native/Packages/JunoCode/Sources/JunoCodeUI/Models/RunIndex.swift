@@ -208,7 +208,7 @@ public enum RunIndex {
         }
 
         if isInterrupted(session) {
-            return row(.interrupted, "Juno quit while this was running", reason: .interrupted, actions: [.resume])
+            return row(.interrupted, "Alevr quit while this was running", reason: .interrupted, actions: [.resume])
         }
         if let approval = facts.approval {
             // A screen card is allowed on the card itself, which shows the
@@ -332,7 +332,7 @@ public enum RunIndex {
         case .stopped:
             return "Stopped"
         case .interrupted:
-            return "Juno quit while this was running"
+            return "Alevr quit while this was running"
         case .error:
             return outcome.summary.isEmpty ? "Stopped with an error" : outcome.summary
         }
@@ -397,7 +397,7 @@ public enum QuitGuard {
             : "\(activeRuns) runs are working. Quit and stop them?"
         return .ask(
             message: message,
-            detail: "Juno can resume a stopped run when you open it again: it carries on from where it stopped."
+            detail: "Alevr can resume a stopped run when you open it again: it carries on from where it stopped."
         )
     }
 

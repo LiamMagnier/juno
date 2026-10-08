@@ -296,7 +296,7 @@ struct JunoConstructionScene {
         r.draw(in: &context, ink: ink, presence: presence, style: f.style)
         for (k, l) in out.labels.enumerated() {
             let label = Text("ℵ\(Self.subscripts[k])")
-                .font(.system(size: 10, design: .monospaced))
+                .font(.system(.caption2, design: .monospaced))
                 .foregroundStyle(sub.opacity(0.85 * l.a))
             context.draw(label, at: CGPoint(x: l.x + 6, y: l.y - 5 + (1 - l.a) * 4), anchor: .bottomLeading)
         }

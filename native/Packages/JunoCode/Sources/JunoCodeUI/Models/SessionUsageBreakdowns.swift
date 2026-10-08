@@ -102,7 +102,7 @@ public struct ContextBreakdown: Equatable, Sendable {
             suggestions.append("Tool results are \(Int(Double(results) / Double(total) * 100))% of the context. /compact keeps what matters from them.")
         }
         if let threshold = compactionThreshold, threshold > 0, total >= Int(Double(threshold) * 0.85) {
-            suggestions.append("Juno compacts at \(StudioFormat.tokens(threshold)) tokens; this session is close.")
+            suggestions.append("Alevr compacts at \(StudioFormat.tokens(threshold)) tokens; this session is close.")
         }
         self.suggestions = suggestions
     }

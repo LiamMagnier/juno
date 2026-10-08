@@ -325,6 +325,16 @@ struct DesktopTranscript: View {
         }
         .scrollPosition($position)
         .defaultScrollAnchor(.bottom, for: .initialOffset)
+        #if DEBUG
+        // `--juno-preview-scroll-top`: the capture harness reads a chat from
+        // its first turn, as a person scrolling back up would.
+        .task {
+            guard CommandLine.arguments.contains("--juno-preview-scroll-top") else { return }
+            try? await Task.sleep(for: .seconds(3))
+            follows = false
+            position.scrollTo(edge: .top)
+        }
+        #endif
         // Said in the window's toast host, then let go: the host keeps it for
         // its four seconds, and the next failure is a new post.
         .onChange(of: actionError) { _, message in

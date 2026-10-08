@@ -54,6 +54,7 @@ struct DesktopArtifactsScreen: View {
     @State private var download: DesktopArtifactFile?
     @State private var hovered: String?
     @State private var dealt = false
+    @State private var showingDeleted = false
 
     private var items: [NativeArtifact] {
         model.artifacts.sorted { $0.updatedAt > $1.updatedAt }
@@ -92,7 +93,7 @@ struct DesktopArtifactsScreen: View {
 
     var body: some View {
         JunoPage(measure: .wide, scrolling: .page) {
-            JunoPageHeader("Artifacts", lede: "Designs, sites, documents, diagrams and code made with Juno.") {
+            JunoPageHeader("Artifacts", lede: "Designs, documents, spreadsheets, decks, sites and code made with Alevr.") {
                 if !isLoading, !empty, !failed {
                     Text("\(items.count) \(items.count == 1 ? "artifact" : "artifacts")")
                         .junoType(.ui)
@@ -100,6 +101,10 @@ struct DesktopArtifactsScreen: View {
                         .foregroundStyle(Color.junoSecondaryInk)
                         .fixedSize()
                 }
+                Button("Recently Deleted") { showingDeleted = true }
+                    .buttonStyle(.borderless)
+                    .contentShape(.rect)
+                    .help("Artifacts deleted in the last 30 days")
                 if !firstRunEmpty {
                     newMenu(header: true)
                 }
@@ -118,6 +123,9 @@ struct DesktopArtifactsScreen: View {
         }
         .junoRenameSheet($renaming)
         .junoConfirmation($confirmation)
+        .sheet(isPresented: $showingDeleted) {
+            DesktopRecentlyDeletedArtifactsSheet(model: model) { showingDeleted = false }
+        }
         .fileExporter(
             isPresented: Binding(get: { download != nil }, set: { if !$0 { download = nil } }),
             document: download?.document,
@@ -171,7 +179,7 @@ struct DesktopArtifactsScreen: View {
                 Button {
                     newChat()
                 } label: {
-                    Label("Ask Juno in a New Chat", icon: .chats)
+                    Label("Ask Alevr in a New Chat", icon: .chats)
                 }
             }
         } label: {
@@ -247,14 +255,14 @@ struct DesktopArtifactsScreen: View {
         } else if designsEmpty {
             JunoEmptyState(
                 title: "No designs yet",
-                message: "Pick a size above to start one, or ask Juno in any chat to design a screen.",
+                message: "Pick a size above to start one, or ask Alevr in any chat to design a screen.",
                 icon: .design,
                 size: .panel
             )
         } else if empty {
             JunoEmptyState(
                 title: "Nothing here yet",
-                message: "Ask Juno to build a page, component, document or diagram, or start a design from a blank frame. Each one collects here.",
+                message: "Ask Alevr to build a page, component, document or diagram, or start a design from a blank frame. Each one collects here.",
                 icon: .artifacts
             ) {
                 if let newChat {
@@ -458,8 +466,24 @@ struct DesktopArtifactsScreen: View {
         Divider()
         Button("Rename…") { rename(artifact) }
             .contentShape(.rect)
-        Button("Download Source…") { downloadSource(artifact) }
-            .contentShape(.rect)
+        Button("Make a Copy") {
+            DesktopArtifactLifecycle.duplicate(artifact, version: nil, model: model, toast: toast) { id in
+                push(.artifact(id, version: nil))
+            }
+        }
+        .contentShape(.rect)
+        Button("Download…") {
+            DesktopArtifactLifecycle.download(
+                artifact, version: artifact.currentVersion, format: .file, model: model, toast: toast
+            ) { download = $0 }
+        }
+        .contentShape(.rect)
+        Button("Download with History…") {
+            DesktopArtifactLifecycle.download(
+                artifact, version: artifact.currentVersion, format: .zipWithHistory, model: model, toast: toast
+            ) { download = $0 }
+        }
+        .contentShape(.rect)
         if let shareArtifact {
             Button("Share…") { shareArtifact(artifact) }
                 .contentShape(.rect)
@@ -470,7 +494,7 @@ struct DesktopArtifactsScreen: View {
         Button("Copy Source") { copySource(artifact) }
             .contentShape(.rect)
         Divider()
-        Button("Delete…", role: .destructive) { confirmDelete(artifact) }
+        Button("Move to Recently Deleted…", role: .destructive) { confirmDelete(artifact) }
             .contentShape(.rect)
     }
 
@@ -488,17 +512,6 @@ struct DesktopArtifactsScreen: View {
 
     private func confirmDelete(_ artifact: NativeArtifact) {
         confirmation = DesktopArtifactActions.delete(artifact, model: model, toast: toast) {}
-    }
-
-    private func downloadSource(_ artifact: NativeArtifact) {
-        guard let content = artifact.currentContent else {
-            toast(.error("Couldn’t download the source."))
-            return
-        }
-        download = DesktopArtifactFile(
-            document: DesktopArtifactDocument(data: Data(content.utf8)),
-            name: DesktopArtifactKinds.downloadName(artifact)
-        )
     }
 
     private func copySource(_ artifact: NativeArtifact) {
@@ -573,9 +586,9 @@ enum DesktopArtifactActions {
         deleted: @escaping @MainActor () -> Void
     ) -> JunoConfirmation {
         JunoConfirmation(
-            title: "Delete “\(artifact.title.isEmpty ? "artifact" : artifact.title)”?",
-            message: "Every version is removed and any public share link stops working. The conversation it came from is untouched.",
-            confirmTitle: "Delete"
+            title: "Move “\(artifact.title.isEmpty ? "artifact" : artifact.title)” to Recently Deleted?",
+            message: "Its public links stop working until you restore it. You can bring it back from Recently Deleted for 30 days.",
+            confirmTitle: "Move to Recently Deleted"
         ) {
             Task {
                 await model.deleteArtifact(id: artifact.id)
@@ -583,7 +596,7 @@ enum DesktopArtifactActions {
                     toast(.error("Couldn’t delete the artifact."))
                 } else {
                     deleted()
-                    toast(.success("Artifact deleted."))
+                    toast(.success("Moved to Recently Deleted."))
                 }
             }
         }
@@ -834,7 +847,9 @@ enum DesktopArtifactsFilter {
     static let all = "ALL"
 
     /// `HOME_TYPE_ORDER`: Designs first, the one chip that always shows.
-    static let order: [NativeArtifactKind] = [.design, .html, .react, .code, .markdown, .svg, .mermaid]
+    static let order: [NativeArtifactKind] = [
+        .design, .document, .spreadsheet, .presentation, .html, .react, .code, .markdown, .svg, .mermaid,
+    ]
 
     /// `homeTypeChips`: Designs always; the others when they have items.
     static func chips(present: [NativeArtifactKind]) -> [NativeArtifactKind] {
@@ -883,6 +898,9 @@ enum DesktopArtifactKinds {
         case .svg: "Graphics"
         case .mermaid: "Diagrams"
         case .design: "Designs"
+        case .spreadsheet: "Spreadsheets"
+        case .document: "Docs"
+        case .presentation: "Decks"
         }
     }
 
@@ -895,6 +913,9 @@ enum DesktopArtifactKinds {
         case .markdown: .file
         case .mermaid: .branch
         case .design: .design
+        case .spreadsheet: .grid
+        case .document: .file
+        case .presentation: .squareStack
         }
     }
 
@@ -926,6 +947,7 @@ enum DesktopArtifactKinds {
     static let typeExtensions: [NativeArtifactKind: String] = [
         .html: "html", .react: "tsx", .svg: "svg", .markdown: "md", .mermaid: "mmd",
         .design: "juno.design.json", .code: "txt",
+        .spreadsheet: "json", .document: "json", .presentation: "json",
     ]
 
     static func fileExtension(forLanguage raw: String?) -> String? {

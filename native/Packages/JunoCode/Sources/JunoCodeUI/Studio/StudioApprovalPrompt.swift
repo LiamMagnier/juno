@@ -65,7 +65,7 @@ struct StudioApprovalPrompt: View {
                     Text(copy.question)
                         .font(Studio.Font.labelEmphasis)
                         .foregroundStyle(Studio.Ink.primary)
-                    Text("Juno is waiting for you before it continues.")
+                    Text("Alevr is waiting for you before it continues.")
                         .font(Studio.Font.meta)
                         .foregroundStyle(Studio.Ink.tertiary)
                 }
@@ -110,14 +110,14 @@ struct StudioApprovalPrompt: View {
 
             if request.risk == .destructive, !ComputerUseToolName.isScreenTool(request.toolName) {
                 Text(Self.isFileTool(request.toolName)
-                    ? "This changes what Juno itself may do in this project, so Juno always asks."
-                    : "This reaches outside the project, so Juno always asks.")
+                    ? "This changes what Alevr itself may do in this project, so Alevr always asks."
+                    : "This reaches outside the project, so Alevr always asks.")
                     .font(Studio.Font.meta)
                     .foregroundStyle(Studio.Ink.danger)
             }
 
             if showsRedirect {
-                TextField("Tell Juno what to do instead", text: $redirect, axis: .vertical)
+                TextField("Tell Alevr what to do instead", text: $redirect, axis: .vertical)
                     .textFieldStyle(.plain)
                     .font(Studio.Font.label)
                     .lineLimit(1...4)

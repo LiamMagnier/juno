@@ -231,13 +231,11 @@ public struct JunoPageHeader<Actions: View>: View {
                     actionRow
                 }
             }
-            .padding(.bottom, JunoSpace.roomy)
-            Rectangle()
-                .fill(Color.junoBorder)
-                .frame(height: 1)
-                .accessibilityHidden(true)
+            // No rule under the header (round 2): a Mac page's title is set
+            // apart by its size and the space after it, as Music's and the
+            // App Store's are — a full-width line under it read as a web page.
         }
-        .padding(.bottom, JunoSpace.section)
+        .padding(.bottom, JunoSpace.roomy)
     }
 
     private var titleBlock: some View {
@@ -484,15 +482,15 @@ public struct JunoPageSearchField: View {
             idealWidth: JunoPageMetrics.searchMinWidth,
             maxWidth: JunoPageMetrics.searchMaxWidth
         )
-        .background(
-            RoundedRectangle(cornerRadius: JunoPageMetrics.fieldRadius, style: .continuous)
-                .fill(Color.junoCanvas)
-        )
+        // The system search field's shape (round 2): a filled capsule with
+        // no edge at rest, the focus ring only while typing — what the
+        // sidebar's `.searchable` field and Finder's toolbar search draw.
+        .background(Capsule(style: .continuous).fill(Color.junoSecondary))
         .overlay(
-            RoundedRectangle(cornerRadius: JunoPageMetrics.fieldRadius, style: .continuous)
-                .strokeBorder(edge, lineWidth: 1)
+            Capsule(style: .continuous)
+                .strokeBorder(Color.junoRing, lineWidth: isFocused ? 2 : 0)
         )
-        .contentShape(.rect(cornerRadius: JunoPageMetrics.fieldRadius))
+        .contentShape(Capsule(style: .continuous))
         .onTapGesture { focusBinding.wrappedValue = true }
         .onHover { isHovering = $0 }
     }
@@ -537,43 +535,16 @@ public struct JunoPageMenu<Value: Hashable>: View {
     }
 
     public var body: some View {
-        Menu {
-            Picker(accessibilityLabel, selection: $selection) {
-                ForEach(options) { option in
-                    Text(option.menuTitle).tag(option.value)
-                }
+        // AppKit's own pull-down (round 2): the system draws the bezel, the
+        // chevrons and the menu, at the window's control metric.
+        Picker(accessibilityLabel, selection: $selection) {
+            ForEach(options) { option in
+                Text(option.menuTitle).tag(option.value)
             }
-            .pickerStyle(.inline)
-            .labelsHidden()
-        } label: {
-            HStack(spacing: JunoSpace.snug) {
-                Text(current)
-                    .junoType(.ui)
-                    .foregroundStyle(Color.junoForeground)
-                    .lineLimit(1)
-                    .fixedSize()
-                JunoIconView(.chevronsUpDown, size: JunoSegmentedMetrics.iconSize)
-                    .foregroundStyle(Color.junoMutedForeground)
-                    .accessibilityHidden(true)
-            }
-            .padding(.horizontal, JunoSpace.cozy)
-            .frame(height: JunoPageMetrics.controlHeight)
-            .background(
-                RoundedRectangle(cornerRadius: JunoPageMetrics.fieldRadius, style: .continuous)
-                    .fill(isHovering ? Color.junoHover : Color.junoCanvas)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: JunoPageMetrics.fieldRadius, style: .continuous)
-                    .strokeBorder(Color.junoInput, lineWidth: 1)
-            )
-            .contentShape(.rect(cornerRadius: JunoPageMetrics.fieldRadius))
         }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
-        .menuIndicator(.hidden)
+        .pickerStyle(.menu)
+        .labelsHidden()
         .fixedSize()
-        .contentShape(.rect(cornerRadius: JunoPageMetrics.fieldRadius))
-        .onHover { isHovering = $0 }
         .accessibilityLabel(accessibilityLabel)
         .accessibilityValue(current)
     }

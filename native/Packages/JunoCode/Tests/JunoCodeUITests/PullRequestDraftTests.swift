@@ -39,7 +39,7 @@ struct PullRequestDraftTests {
             testsPassed: nil,
             branch: nil
         )
-        #expect(draft.title == "Changes from Juno Code")
+        #expect(draft.title == "Changes from Alevr Code")
         #expect(draft.body.contains("No test run was recorded"))
         #expect(!draft.body.contains("## Changes"))
     }

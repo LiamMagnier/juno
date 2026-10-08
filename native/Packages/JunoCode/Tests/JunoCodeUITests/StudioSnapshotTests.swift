@@ -309,7 +309,7 @@ final class StudioSnapshotTests: XCTestCase {
         let guardHook = hook(.preToolUse, "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/guard-rm.sh", matcher: "Bash", file: .claudeProject)
         let format = hook(.postToolUse, "jq -r .tool_input.file_path | xargs swift-format -i", matcher: "Edit|Write", file: .claudeProject)
         let context = hook(.sessionStart, "git status --short", file: .junoProject)
-        let notify = hook(.notification, "~/bin/notify \"Juno needs you\"", file: .junoUser)
+        let notify = hook(.notification, "~/bin/notify \"Alevr needs you\"", file: .junoUser)
         let hooks = HookDiscoveryResult(hooks: [notify, guardHook, format, context])
         let policy = HookExecutionPolicy(allowedHookIDs: [guardHook.id, format.id], allowUntrustedHooks: true)
         for dark in [false, true] {

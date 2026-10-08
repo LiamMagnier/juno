@@ -26,15 +26,20 @@ struct JunoMobileProjectsView: View {
   @State private var renameTarget: NativeProject?
   @State private var renameValue = ""
   @State private var deleteTarget: NativeProject?
+  @State private var moveTarget: NativeProject?
+  @State private var previewProjectID: String?
+  @State private var openedPreviewProject = false
   @State private var query = ""
   @State private var pinHaptic = JunoMobileHapticTrigger()
   @State private var deleteHaptic = JunoMobileHapticTrigger()
   @Namespace private var zoom
   @Environment(\.horizontalSizeClass) private var sizeClass
 
+  /// Top-level projects; a folder is reached from the project it sits in.
+  /// A search looks through every project, folders included.
   private var filtered: [NativeProject] {
     let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !trimmed.isEmpty else { return model.projects }
+    guard !trimmed.isEmpty else { return model.topLevelProjects }
     return model.projects.filter {
       $0.name.localizedCaseInsensitiveContains(trimmed)
         || $0.instructions.localizedCaseInsensitiveContains(trimmed)
@@ -90,17 +95,16 @@ struct JunoMobileProjectsView: View {
       }
     }
     .navigationDestination(for: String.self) { projectID in
-      if let project = model.projects.first(where: { $0.id == projectID }) {
-        JunoMobileProjectDetail(
-          model: model,
-          workspaceModel: workspaceModel,
-          conversationModel: conversationModel,
-          project: project,
-          openConversation: openConversation
-        )
-        .onAppear { model.selectedProjectID = projectID }
-        .modifier(JunoMobileZoomTransitionSource(id: projectID, namespace: zoom))
-      }
+      projectPage(projectID)
+    }
+    .navigationDestination(item: $previewProjectID) { projectID in
+      projectPage(projectID)
+    }
+    .onAppear {
+      // The preview world's `--juno-preview-project <id>`, followed once.
+      guard !openedPreviewProject else { return }
+      openedPreviewProject = true
+      previewProjectID = JunoMobileProjectPreview.initialProject
     }
     .sheet(isPresented: $showingCreate) {
       JunoMobileProjectCreateSheet { name, instructions in
@@ -127,26 +131,25 @@ struct JunoMobileProjectsView: View {
       }
       .contentShape(.rect)
     }
-    .confirmationDialog(
-      deleteTarget.map { "Delete “\($0.name)”?" } ?? "",
-      isPresented: Binding(
-        get: { deleteTarget != nil },
-        set: { if !$0 { deleteTarget = nil } }
-      ),
-      titleVisibility: .visible
-    ) {
-      Button("Delete project", role: .destructive) {
-        if let target = deleteTarget {
-          deleteHaptic.fire()
-          Task { await model.deleteProject(id: target.id) }
-        }
-        deleteTarget = nil
-      }
-      .contentShape(.rect)
-      Button("Cancel", role: .cancel) { deleteTarget = nil }
-        .contentShape(.rect)
-    } message: {
-      Text("Conversations are kept and unlinked; project files are removed.")
+    .junoProjectDelete($deleteTarget, model: model) { deleteHaptic.fire() }
+    .sheet(item: $moveTarget) { project in
+      JunoMobileMoveProjectSheet(projectID: project.id, model: model)
+        .presentationDetents([.medium, .large])
+    }
+  }
+
+  @ViewBuilder
+  private func projectPage(_ projectID: String) -> some View {
+    if let project = model.projects.first(where: { $0.id == projectID }) {
+      JunoMobileProjectDetail(
+        model: model,
+        workspaceModel: workspaceModel,
+        conversationModel: conversationModel,
+        project: project,
+        openConversation: openConversation
+      )
+      .onAppear { model.selectedProjectID = projectID }
+      .modifier(JunoMobileZoomTransitionSource(id: projectID, namespace: zoom))
     }
   }
 
@@ -410,6 +413,11 @@ struct JunoMobileProjectsView: View {
       } icon: {
         JunoIconView(.pencil, size: 15)
       }
+    }.contentShape(.rect)
+    Button {
+      moveTarget = project
+    } label: {
+      Label("Move to…", systemImage: "folder")
     }.contentShape(.rect)
     Divider()
     Button(role: .destructive) {
@@ -752,6 +760,7 @@ struct JunoMobileArtifactsView: View {
   let openConversation: (String) -> Void
   @State private var searchText = ""
   @State private var kindFilter: NativeArtifactKind?
+  @State private var showingDeleted = false
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   private var filteredArtifacts: [NativeArtifact] {
@@ -816,6 +825,21 @@ struct JunoMobileArtifactsView: View {
         .id(artifact.id)
       }
     }
+    .toolbar {
+      ToolbarItem(placement: .topBarTrailing) {
+        Button {
+          showingDeleted = true
+        } label: {
+          Label("Recently Deleted", systemImage: "trash")
+        }
+        .accessibilityIdentifier("juno.mobile.artifacts-recently-deleted")
+        .contentShape(.rect)
+      }
+    }
+    .sheet(isPresented: $showingDeleted) {
+      JunoMobileRecentlyDeletedArtifacts(model: model) { showingDeleted = false }
+    }
+    .modifier(JunoMobileArtifactsPreviewHooks(model: model, showingDeleted: $showingDeleted))
   }
 
   @ViewBuilder
@@ -924,9 +948,11 @@ struct JunoMobileArtifactsView: View {
               .junoFont(size: 11, relativeTo: .caption2, weight: .semibold)
               .junoMetaInk()
             Spacer(minLength: 4)
-            JunoStatusPill(
-              text: "v\(artifact.currentVersion)", tint: Color.junoAccent
-            )
+            // Plain secondary text, not a pill (owner rule: no status pills).
+            Text("Version \(artifact.currentVersion)")
+              .font(.caption)
+              .monospacedDigit()
+              .junoSecondaryInk()
           }
           Text(artifact.title)
             .font(JunoSerif.cardTitle)
@@ -961,6 +987,9 @@ struct JunoMobileArtifactsView: View {
     case .svg: .artifacts
     case .mermaid: .branch
     case .design: .writing
+    case .spreadsheet: .grid
+    case .document: .file
+    case .presentation: .squareStack
     }
   }
 
@@ -973,6 +1002,9 @@ struct JunoMobileArtifactsView: View {
     case .svg: "Vector"
     case .mermaid: "Diagram"
     case .design: "Design"
+    case .spreadsheet: "Spreadsheet"
+    case .document: "Document"
+    case .presentation: "Deck"
     }
   }
 }
@@ -1058,13 +1090,15 @@ private struct JunoMobileProjectDetail: View {
   @State private var editName = ""
   @State private var showingInstructions = false
   @State private var instructionsDraft = ""
-  @State private var showingDelete = false
   @State private var showingImporter = false
   @State private var renameFileID: String?
   @State private var renameValue = ""
   @State private var previewURL: URL?
   @State private var localError: String?
   @State private var showingAssistant = false
+  @State private var deleteTarget: NativeProject?
+  @State private var showingMove = false
+  @Environment(\.dismiss) private var dismissPage
 
   private var assistantConfiguration: ProjectWorkspaceConfiguration? {
     workspaceModel?.workspaces[project.id]
@@ -1079,6 +1113,10 @@ private struct JunoMobileProjectDetail: View {
         HStack(spacing: JunoSpace.cozy) {
           JunoWorkspaceGlyph(icon: .projects, size: 48)
           VStack(alignment: .leading, spacing: 4) {
+            let crumbs = model.breadcrumbs(for: project.id)
+            if !crumbs.isEmpty {
+              JunoMobileProjectBreadcrumbs(crumbs: crumbs, current: project.name)
+            }
             Text(project.name)
               .junoPageHeading(compact: true)
               .frame(maxWidth: .infinity, alignment: .leading)
@@ -1182,11 +1220,12 @@ private struct JunoMobileProjectDetail: View {
   }
 
   private enum Tab: String, CaseIterable, Identifiable {
-    case chats, files, instructions
+    case chats, folders, files, instructions
     var id: String { rawValue }
     var title: String {
       switch self {
       case .chats: "Chats"
+      case .folders: "Folders"
       case .files: "Files"
       case .instructions: "Instructions"
       }
@@ -1246,6 +1285,7 @@ private struct JunoMobileProjectDetail: View {
       }
       switch tab {
       case .chats: chatsTab
+      case .folders: JunoMobileProjectFoldersList(model: model, project: project)
       case .files: filesTab
       case .instructions: instructionsTab
       }
@@ -1282,7 +1322,8 @@ private struct JunoMobileProjectDetail: View {
           if workspaceModel != nil {
             Button("Assistant…") { showingAssistant = true }
           }
-          Button("Delete", role: .destructive) { showingDelete = true }
+          Button("Move to…") { showingMove = true }
+          Button("Delete", role: .destructive) { deleteTarget = project }
         } label: {
           JunoIconView(.ellipsis, size: 17)
         }
@@ -1310,15 +1351,15 @@ private struct JunoMobileProjectDetail: View {
         )
       }
     }
-    .alert("Delete project?", isPresented: $showingDelete) {
-      Button("Cancel", role: .cancel) {}
-      Button("Delete", role: .destructive) {
-        deleteHaptic.fire()
-        Task { await model.deleteProject(id: project.id) }
-      }
-    } message: {
-      Text("Linked conversations are kept. Project files are removed.")
+    .junoProjectDelete($deleteTarget, model: model) {
+      deleteHaptic.fire()
+      dismissPage()
     }
+    .sheet(isPresented: $showingMove) {
+      JunoMobileMoveProjectSheet(projectID: project.id, model: model)
+        .presentationDetents([.medium, .large])
+    }
+    .task(id: project.id) { await model.loadFolderDetail(id: project.id) }
     .alert(
       "Rename file",
       isPresented: Binding(
@@ -1505,6 +1546,8 @@ private struct JunoMobileProjectDetail: View {
       } footer: {
         Text("Included in every conversation linked to this project.")
       }
+
+      JunoMobileInheritedSections(inherited: model.inherited(for: project.id))
 
       Section {
         if let assistantConfiguration {
@@ -1808,6 +1851,9 @@ struct JunoMobileArtifactDetail: View {
   @State private var designBaseVersion: Int?
   @State private var designDraft: String?
   @State private var designReloadToken = UUID()
+  @State private var showingHistory = false
+  @State private var download: JunoMobileArtifactDownloadFile?
+  @State private var notice: String?
 
   private var version: NativeArtifactVersion? {
     let target = selectedVersion == 0 ? artifact.currentVersion : selectedVersion
@@ -1887,6 +1933,9 @@ struct JunoMobileArtifactDetail: View {
     case .svg: "SVG"
     case .mermaid: "Diagram"
     case .design: "Design"
+    case .spreadsheet: "Spreadsheet"
+    case .document: "Document"
+    case .presentation: "Deck"
     }
   }
 
@@ -1898,6 +1947,9 @@ struct JunoMobileArtifactDetail: View {
     case .design: .writing
     case .markdown: .file
     case .code: .code
+    case .spreadsheet: .grid
+    case .document: .file
+    case .presentation: .squareStack
     }
   }
 
@@ -2150,6 +2202,12 @@ struct JunoMobileArtifactDetail: View {
         renameValue = artifact.title
         showingRename = true
       }
+      Button("Version history") { showingHistory = true }
+      Button("Make a copy") { makeCopy(version: version?.version) }
+      Section("Download") {
+        Button("This version") { downloadFile(.file) }
+        Button("With history (.zip)") { downloadFile(.zipWithHistory) }
+      }
       if !model.availableExportFormats.isEmpty {
         Section("Export") {
           ForEach(model.availableExportFormats, id: \.rawValue) { format in
@@ -2157,7 +2215,7 @@ struct JunoMobileArtifactDetail: View {
           }
         }
       }
-      Button("Delete", role: .destructive) { showingDelete = true }
+      Button("Move to Recently Deleted", role: .destructive) { showingDelete = true }
     } label: {
       JunoIconView(.ellipsis, size: 16)
     }
@@ -2182,7 +2240,7 @@ struct JunoMobileArtifactDetail: View {
     pageChrome(surface)
       .onAppear {
         selectedVersion = artifact.currentVersion
-        displayMode = artifact.kind.supportsRenderedPreview ? .preview : .source
+        displayMode = artifact.kind.supportsRenderedPreview || artifact.kind.isSemantic ? .preview : .source
         designDraft = nil
         Task { await model.openArtifact(id: artifact.id) }
       }
@@ -2212,9 +2270,33 @@ struct JunoMobileArtifactDetail: View {
           Task { await model.renameArtifact(id: artifact.id, title: renameValue) }
         }
       }
-      .alert("Delete artifact?", isPresented: $showingDelete) {
+      .sheet(isPresented: $showingHistory) {
+        JunoMobileArtifactHistory(
+          model: model,
+          artifact: artifact,
+          show: { selectedVersion = $0 },
+          copied: { notice = "Copy made. You’ll find it in Artifacts." },
+          done: { showingHistory = false }
+        )
+      }
+      .fileExporter(
+        isPresented: Binding(get: { download != nil }, set: { if !$0 { download = nil } }),
+        document: download?.document,
+        contentType: .data,
+        defaultFilename: download?.name
+      ) { result in
+        if case .failure(let error) = result { localError = error.localizedDescription }
+        download = nil
+      }
+      .alert(
+        notice ?? "",
+        isPresented: Binding(get: { notice != nil }, set: { if !$0 { notice = nil } })
+      ) {
+        Button("OK") { notice = nil }.contentShape(.rect)
+      }
+      .alert("Move to Recently Deleted?", isPresented: $showingDelete) {
         Button("Cancel", role: .cancel) {}
-        Button("Delete", role: .destructive) {
+        Button("Move", role: .destructive) {
           Task {
             await model.deleteArtifact(id: artifact.id)
             if model.lastErrorDescription == nil {
@@ -2225,8 +2307,8 @@ struct JunoMobileArtifactDetail: View {
       } message: {
         Text(
           isDesignDirty
-            ? "All versions and these unsaved design edits will be removed."
-            : "All versions of this artifact will be removed.")
+            ? "These unsaved design edits will be lost. You can restore the artifact from Recently Deleted for 30 days."
+            : "Its public links stop working until you restore it. You can restore it from Recently Deleted for 30 days.")
       }
       .alert(
         "Artifact unavailable",
@@ -2265,6 +2347,30 @@ struct JunoMobileArtifactDetail: View {
         }
         .junoSheetSurface(.page)
       }
+  }
+
+  private func makeCopy(version: Int?) {
+    Task {
+      if await model.duplicateArtifact(id: artifact.id, version: version) != nil {
+        notice = "Copy made. You’ll find it in Artifacts."
+      } else {
+        localError = model.lastErrorDescription ?? "Couldn’t make a copy."
+      }
+    }
+  }
+
+  private func downloadFile(_ format: NativeArtifactDownloadFormat) {
+    Task {
+      guard let file = await model.downloadArtifact(
+        id: artifact.id, version: version?.version ?? artifact.currentVersion, format: format
+      ) else {
+        localError = model.lastErrorDescription ?? "Couldn’t download the artifact."
+        return
+      }
+      download = JunoMobileArtifactDownloadFile(
+        document: JunoMobileArtifactDownloadDocument(data: file.data), name: file.fileName
+      )
+    }
   }
 
   private func export(_ format: NativeArtifactExportFormat) {

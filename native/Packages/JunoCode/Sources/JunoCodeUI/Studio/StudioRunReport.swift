@@ -104,7 +104,7 @@ struct StudioRunReportRow: View {
         case .stalled: return "Stopped: no progress in the last two tries"
         case .waitingOnBackground: return "Waiting for background work to finish"
         case .stopped: return "Stopped"
-        case .interrupted: return "Juno quit while this was running"
+        case .interrupted: return "Alevr quit while this was running"
         case .error: return "Stopped by an error"
         }
     }

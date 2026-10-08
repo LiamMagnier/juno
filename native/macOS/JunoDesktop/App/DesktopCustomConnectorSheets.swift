@@ -64,7 +64,7 @@ struct DesktopAddServerSheet: View {
         VStack(alignment: .leading, spacing: JunoSpace.roomy) {
             DesktopServerSheetTitle(
                 title: "Add an MCP server",
-                lede: "Paste the server’s address. Juno checks it before anything is saved."
+                lede: "Paste the server’s address. Alevr checks it before anything is saved."
             )
 
             VStack(alignment: .leading, spacing: JunoSpace.snug) {
@@ -113,7 +113,7 @@ struct DesktopAddServerSheet: View {
 
             HStack(alignment: .bottom, spacing: JunoSpace.regular) {
                 Text(
-                    "Servers sign in with OAuth, so Juno never sees your password. Only add servers you trust: their tools can read and act on whatever you connect them to."
+                    "Servers sign in with OAuth, so Alevr never sees your password. Only add servers you trust: their tools can read and act on whatever you connect them to."
                 )
                 .junoType(.caption)
                 .foregroundStyle(Color.junoSecondaryInk)
@@ -171,13 +171,13 @@ struct DesktopAddServerSheet: View {
 
             VStack(alignment: .leading, spacing: JunoSpace.close) {
                 DesktopServerFact(icon: .key, index: 0) {
-                    Text("You’ll sign in on \(Text(candidate.authHost).fontWeight(.medium).foregroundStyle(Color.junoForeground)) and approve Juno there.")
+                    Text("You’ll sign in on \(Text(candidate.authHost).fontWeight(.medium).foregroundStyle(Color.junoForeground)) and approve Alevr there.")
                 }
                 DesktopServerFact(icon: .sliders, index: 1) {
-                    Text("Then choose which of its tools Juno may use.")
+                    Text("Then choose which of its tools Alevr may use.")
                 }
                 DesktopServerFact(icon: .shieldCheck, index: 2) {
-                    Text("Juno asks before any tool that changes something, as it does for every app.")
+                    Text("Alevr asks before any tool that changes something, as it does for every app.")
                 }
             }
 
@@ -406,7 +406,7 @@ struct DesktopManageServerSheet: View {
             if !connector.connected {
                 VStack(alignment: .leading, spacing: JunoSpace.regular) {
                     DesktopNoteBand(icon: .info) {
-                        Text("Juno isn’t signed in to this server, so its tools aren’t available.")
+                        Text("Alevr isn’t signed in to this server, so its tools aren’t available.")
                     } action: {
                         Button {
                             signIn(connector.id)
@@ -516,10 +516,10 @@ struct DesktopManageServerSheet: View {
         } else {
             VStack(alignment: .leading, spacing: JunoSpace.section) {
                 toolGroup(
-                    "Reads", note: "Juno uses these as needed.", connector.reads, connector: connector, offset: 0
+                    "Reads", note: "Alevr uses these as needed.", connector.reads, connector: connector, offset: 0
                 )
                 toolGroup(
-                    "Changes things", note: "Juno asks you in the chat before each use.", connector.changes,
+                    "Changes things", note: "Alevr asks you in the chat before each use.", connector.changes,
                     connector: connector, offset: connector.reads.count
                 )
             }
@@ -595,7 +595,7 @@ struct DesktopManageServerSheet: View {
             .opacity(on ? 1 : 0.55)
             .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint), value: on)
             Toggle(
-                "Let Juno use \(tool.displayName)",
+                "Let Alevr use \(tool.displayName)",
                 isOn: Binding(get: { on }, set: { setTools([tool.name], enabled: $0) })
             )
             .labelsHidden()
@@ -656,7 +656,7 @@ struct DesktopManageServerSheet: View {
                             }
                         }
                         .disabled(editor.isSigningOut)
-                        .help("Juno forgets its sign-in. The server and your tool choices stay.")
+                        .help("Alevr forgets its sign-in. The server and your tool choices stay.")
                         .accessibilityIdentifier("connections.manage-server.sign-out")
                     }
                     Spacer(minLength: 0)

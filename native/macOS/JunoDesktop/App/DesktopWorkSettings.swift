@@ -95,7 +95,7 @@ struct DesktopWorkHostTile: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text(
-                "Juno Work stops here immediately and this Mac disappears from the list of "
+                "Alevr Work stops here immediately and this Mac disappears from the list of "
                     + "places a task can run. It comes back the next time you sign in on this Mac."
             )
         }
@@ -109,7 +109,7 @@ struct DesktopWorkHostTile: View {
             // column under an SF heading, not a card with a monospaced eyebrow
             // inside the sheet (§10.2.6, §10.2.8).
             VStack(alignment: .leading, spacing: JunoSpace.regular) {
-                Text("Juno Work")
+                Text("Alevr Work")
                     .junoType(JunoType.ui.weight(.medium))
                     .foregroundStyle(Color.junoForeground)
                     .accessibilityAddTraits(.isHeader)
@@ -165,7 +165,7 @@ struct DesktopWorkHostTile: View {
     /// they were asked.
     private var masterSwitch: some View {
         DesktopWorkSwitchRow(
-            title: "Allow Juno Work on this Mac",
+            title: "Allow Alevr Work on this Mac",
             detail: "Lets tasks you start from your phone, the web or this window run here, using only what you allow below. Off, this Mac runs nothing sent to it.",
             isOn: binding { host.allowWorkOnThisMac } set: { host.allowWorkOnThisMac = $0 }
         )
@@ -208,7 +208,7 @@ struct DesktopWorkHostTile: View {
         VStack(alignment: .leading, spacing: JunoSpace.cozy) {
             // On this Mac's page the tile is the local offer, which the
             // server's "What this Mac may do" below narrows.
-            Text(layout == .onThisMac ? "What this Mac offers" : "What Juno Work may use")
+            Text(layout == .onThisMac ? "What this Mac offers" : "What Alevr Work may use")
                 .junoCaption()
 
             DesktopWorkSwitchRow(
@@ -273,12 +273,12 @@ struct DesktopWorkHostTile: View {
 
     private var approvals: some View {
         VStack(alignment: .leading, spacing: JunoSpace.cozy) {
-            Text("When Juno should ask first")
+            Text("When Alevr should ask first")
                 .junoCaption()
             // A neutral radio row, as every other choice on the pages and in
             // sheets is: the accent never marks a selection (Phase 4 §2.10).
             DesktopAutomationPolicyGroup(
-                label: "When Juno should ask first",
+                label: "When Alevr should ask first",
                 options: WorkHostPolicy.ApprovalPolicy.allCases.map { policy in
                     NativeWorkScheduleCopy.PolicyOption(
                         value: policy.rawValue,
@@ -337,7 +337,7 @@ struct DesktopWorkHostTile: View {
     private var grantedFolders: some View {
         VStack(alignment: .leading, spacing: JunoSpace.snug) {
             HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
-                Text("Folders Juno Work may use")
+                Text("Folders Alevr Work may use")
                     .junoCaption()
                 Spacer(minLength: JunoSpace.snug)
                 if let actions = host.grantActions {
@@ -415,7 +415,7 @@ struct DesktopWorkHostTile: View {
                 .buttonStyle(.borderless)
                 .menuIndicator(.hidden)
                 .fixedSize()
-                .accessibilityLabel("Change what Juno may do in \(grant.displayName)")
+                .accessibilityLabel("Change what Alevr may do in \(grant.displayName)")
 
                 // Immediate, and deliberately without a confirmation. Taking
                 // access back is the safe direction — the folder can be shared
@@ -429,7 +429,7 @@ struct DesktopWorkHostTile: View {
                 }
                 .buttonStyle(.plain)
                 .junoSecondaryInk()
-                .help("Stop sharing \(grant.displayName) with Juno")
+                .help("Stop sharing \(grant.displayName) with Alevr")
                 .accessibilityLabel("Stop sharing \(grant.displayName)")
             }
         }
@@ -488,9 +488,9 @@ struct DesktopWorkHostTile: View {
     /// What a missing permission stops, in the card's words — the chat's task
     /// card says the same when a run on this Mac is missing one (Phase 5 B4).
     nonisolated static let accessibilitySentence =
-        "Driving a browser needs macOS Accessibility permission, which Juno does not have."
+        "Driving a browser needs macOS Accessibility permission, which Alevr does not have."
     nonisolated static let screenRecordingSentence =
-        "Screen control needs macOS Screen Recording permission, which Juno does not have."
+        "Screen control needs macOS Screen Recording permission, which Alevr does not have."
 
     // MARK: - Applications
 
@@ -505,8 +505,8 @@ struct DesktopWorkHostTile: View {
     private var applications: some View {
         VStack(alignment: .leading, spacing: JunoSpace.cozy) {
             DesktopWorkBundleList(
-                title: "Apps Juno Work may drive",
-                emptyMessage: "No apps allowed, so Juno Work cannot drive any of them — a browser included.",
+                title: "Apps Alevr Work may drive",
+                emptyMessage: "No apps allowed, so Alevr Work cannot drive any of them — a browser included.",
                 identifiers: host.allowedApps,
                 draft: $appToAllow,
                 addPrompt: "com.apple.Notes",
@@ -545,7 +545,7 @@ struct DesktopWorkHostTile: View {
             }
 
             DesktopWorkBundleList(
-                title: "Apps Juno Work may never drive",
+                title: "Apps Alevr Work may never drive",
                 emptyMessage: "Nothing has been refused by name. Password managers, banking apps and system settings are refused regardless.",
                 identifiers: host.blockedApps,
                 draft: $appToBlock,
@@ -624,7 +624,7 @@ struct DesktopWorkHostTile: View {
                 Button(role: .destructive) {
                     host.stopServingWork()
                 } label: {
-                    Text("Stop serving Juno Work now")
+                    Text("Stop serving Alevr Work now")
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 1)
                 }
@@ -649,7 +649,7 @@ struct DesktopWorkHostTile: View {
 
             if let advertised = host.lastAdvertisedAt {
                 Text(
-                    "Juno was last told what this Mac can do "
+                    "Alevr was last told what this Mac can do "
                         + advertised.formatted(.relative(presentation: .named))
                 )
                 .junoCaption()
@@ -772,7 +772,7 @@ struct DesktopWorkHostTile: View {
     private static func phaseLabel(_ phase: DesktopWorkHostModel.Phase) -> String {
         switch phase {
         case .off: "Not serving"
-        case .announcing: "Telling Juno what this Mac can do…"
+        case .announcing: "Telling Alevr what this Mac can do…"
         case .serving: "Serving"
         case .failed: "Last attempt failed"
         case .stopped(let reason): reason
@@ -991,7 +991,7 @@ struct DesktopWorkBlockerRow: View {
                 JunoIconView(.check, size: 15)
                     .foregroundStyle(Color.junoSuccess)
                     .frame(width: 16, height: 16)
-                Text("This Mac is serving Juno Work.")
+                Text("This Mac is serving Alevr Work.")
                     .junoCaption()
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -1023,7 +1023,7 @@ struct DesktopWorkStartPath: View {
                 VStack(alignment: .leading, spacing: JunoSpace.regular) {
                     step(
                         1,
-                        title: "Allow Juno Work on this Mac",
+                        title: "Allow Alevr Work on this Mac",
                         detail: DesktopWorkBlocker.switchedOff.actionDetail ?? "",
                         isDone: host.allowWorkOnThisMac,
                         blocker: .switchedOff
@@ -1058,10 +1058,10 @@ struct DesktopWorkStartPath: View {
             JunoIconView(.device, size: 24)
                 .foregroundStyle(Color.junoAccent)
                 .accessibilityHidden(true)
-            Text("Set up Juno Work on this Mac")
+            Text("Set up Alevr Work on this Mac")
                 .junoEmptyTitle()
             Text(
-                "Juno Work runs tasks in the cloud already. Two decisions let it run them "
+                "Alevr Work runs tasks in the cloud already. Two decisions let it run them "
                     + "here, where your files and your signed-in apps are."
             )
             .junoCaption()
@@ -1105,7 +1105,7 @@ struct DesktopWorkStartPath: View {
         return HStack(alignment: .top, spacing: JunoSpace.cozy) {
             marker(number: 3, isDone: isReady, isCurrent: blocker.isSettling)
             VStack(alignment: .leading, spacing: JunoSpace.hairline) {
-                Text(isReady ? "This Mac is serving Juno Work" : "This Mac starts serving")
+                Text(isReady ? "This Mac is serving Alevr Work" : "This Mac starts serving")
                     .junoRowLabel()
                     .foregroundStyle(isReady ? Color.junoForeground : Color.junoMutedForeground)
                 Text(

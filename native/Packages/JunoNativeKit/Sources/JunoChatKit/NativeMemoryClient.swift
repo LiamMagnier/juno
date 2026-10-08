@@ -95,7 +95,7 @@ public struct NativeMemoryFact: Identifiable, Equatable, Sendable {
         case "edit": return "From an edit you made"
         case "forget": return "From a fact you forgot"
         case "import": return "Imported from another assistant"
-        default: return source == "MANUAL" ? "You told Juno" : nil
+        default: return source == "MANUAL" ? "You told Alevr" : nil
         }
     }
 
@@ -431,6 +431,16 @@ public struct NativeMemoryClient: Sendable {
         _ = try await object(.delete, "/api/memory", for: accountID)
     }
 
+    /// One project's memory: its facts and its summary, and only this
+    /// person's (`DELETE /api/memory?projectId=` → `{ ok, projectId }`).
+    /// Account-wide facts and never-remember notes stay.
+    public func clearProject(_ projectID: String, for accountID: AccountID) async throws {
+        try Self.validate(projectID)
+        _ = try await object(
+            .delete, "/api/memory", query: [URLQueryItem(name: "projectId", value: projectID)], for: accountID
+        )
+    }
+
     // MARK: Changes in words
 
     public func draft(instruction: String, for accountID: AccountID) async throws -> NativeMemoryDraftAnswer {
@@ -593,7 +603,7 @@ public struct NativeMemoryClient: Sendable {
 
     // MARK: Transport
 
-    private func object(
+    func object(
         _ method: HTTPMethod,
         _ path: String,
         query: [URLQueryItem] = [],
@@ -608,7 +618,7 @@ public struct NativeMemoryClient: Sendable {
         return root
     }
 
-    private func transmit(
+    func transmit(
         _ method: HTTPMethod,
         _ path: String,
         query: [URLQueryItem] = [],

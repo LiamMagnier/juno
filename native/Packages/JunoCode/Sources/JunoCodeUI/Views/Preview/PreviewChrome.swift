@@ -215,7 +215,7 @@ struct PreviewPaneView: View {
                     lease.page?.setViewport(.preset(preset, colorScheme: lease.page?.viewport.colorScheme ?? .system))
                 } label: {
                     if lease.page?.viewport.preset == preset {
-                        Label(preset.title, systemImage: "checkmark")
+                        Label(preset.title, image: JunoIcon.check.assetName)
                     } else {
                         Text(preset.title)
                     }
@@ -251,7 +251,7 @@ struct PreviewPaneView: View {
                     page.setViewport(viewport)
                 } label: {
                     if lease.page?.viewport.colorScheme == scheme {
-                        Label(scheme.title, systemImage: "checkmark")
+                        Label(scheme.title, image: JunoIcon.check.assetName)
                     } else {
                         Text(scheme.title)
                     }
@@ -313,9 +313,9 @@ struct PreviewPaneView: View {
     private var banners: some View {
         if let page = lease.page, page.agentIsDriving || page.agentStopped {
             PreviewBannerRow(
-                text: page.agentStopped ? "You stopped Juno using the preview." : "Juno is using the preview.",
+                text: page.agentStopped ? "You stopped Alevr using the preview." : "Alevr is using the preview.",
                 actions: page.agentStopped
-                    ? [("Let Juno use it", { page.allowAgent() })]
+                    ? [("Let Alevr use it", { page.allowAgent() })]
                     : [("Stop", { page.stopAgent() })]
             )
         }
@@ -433,7 +433,7 @@ struct PreviewEmptyState: View {
                 ProgressView().controlSize(.small)
                 Text("Starting \(lease.selectedSnapshot?.displayCommand ?? "the server")")
                     .font(Studio.Font.labelEmphasis)
-                Text("The page opens when the server answers. Juno checks which process owns the address, so it never opens another app's page.")
+                Text("The page opens when the server answers. Alevr checks which process owns the address, so it never opens another app's page.")
                     .font(Studio.Font.meta)
                     .foregroundStyle(Studio.Ink.secondary)
                     .multilineTextAlignment(.center)
@@ -518,7 +518,7 @@ struct PreviewConfigApprovalCard: View {
         VStack(alignment: .leading, spacing: JunoSpace.regular) {
             Text("Start this preview server?")
                 .font(Studio.Font.title)
-            Text("\(configuration.name) is new or changed since you last allowed it. Juno runs it only as shown.")
+            Text("\(configuration.name) is new or changed since you last allowed it. Alevr runs it only as shown.")
                 .font(Studio.Font.meta)
                 .foregroundStyle(Studio.Ink.secondary)
             VStack(alignment: .leading, spacing: JunoSpace.snug) {
@@ -557,7 +557,7 @@ struct PreviewConfigApprovalCard: View {
         switch (configuration.port, configuration.autoPort) {
         case let (port?, true?): "\(port), or the next free port"
         case let (port?, _): "\(port), which must be free"
-        case (nil, true?): "A free port Juno picks"
+        case (nil, true?): "A free port Alevr picks"
         default: "Whatever the server prints"
         }
     }

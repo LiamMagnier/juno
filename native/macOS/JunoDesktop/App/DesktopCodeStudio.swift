@@ -419,7 +419,7 @@ enum DesktopCodeDraftReadiness {
             return nil
         case .device:
             if hasAttachments { return "Pictures and file context run on this Mac only." }
-            if !hasDevice { return "No connected computer is online. Sign in to Juno on another Mac to run there." }
+            if !hasDevice { return "No connected computer is online. Sign in to Alevr on another Mac to run there." }
             return nil
         }
     }
@@ -529,7 +529,17 @@ struct DesktopCodeSidebar: View {
                         .contextMenu { runMenu(entry.sessionID) }
                     }
                 } header: {
-                    DesktopSidebarHeading(section.heading)
+                    // The group's word alone, as Chat's folds are; the one
+                    // that waits on the reader says how many, in words.
+                    HStack(spacing: JunoSpace.snug) {
+                        DesktopSidebarHeading(section.group.title)
+                        Spacer(minLength: 0)
+                        if section.group == .needsYou {
+                            Text("\(section.entries.count) waiting")
+                                .foregroundStyle(Color.junoAccentInk)
+                                .monospacedDigit()
+                        }
+                    }
                 }
             }
 
@@ -602,7 +612,7 @@ struct DesktopCodeSidebar: View {
                     Button {
                         showsArchived.toggle()
                     } label: {
-                        DesktopSidebarHeading("Archived (\(archived.count))")
+                        DesktopSidebarHeading("Archived")
                             .contentShape(.rect)
                     }
                     .buttonStyle(.plain)
@@ -639,7 +649,7 @@ struct DesktopCodeSidebar: View {
         }
         .junoSidebarScrollEdge()
         .confirmationDialog(
-            "Remove “\(projectPendingRemoval?.descriptor.displayName ?? "")” from Juno?",
+            "Remove “\(projectPendingRemoval?.descriptor.displayName ?? "")” from Alevr?",
             isPresented: Binding(
                 get: { projectPendingRemoval != nil },
                 set: { if !$0 { projectPendingRemoval = nil } }
@@ -653,7 +663,7 @@ struct DesktopCodeSidebar: View {
                 Task { await workbench.removeWorkspace(id: record.id) }
             }
         } message: { _ in
-            Text("The folder and its files stay on disk. Juno stops its running sessions and forgets its access; the sessions stay in your history.")
+            Text("The folder and its files stay on disk. Alevr stops its running sessions and forgets its access; the sessions stay in your history.")
         }
         .accessibilityIdentifier("juno.code.sidebar")
         // Titles, projects and pull request links match as you type; this
@@ -736,7 +746,7 @@ struct DesktopCodeSidebar: View {
                 }
             }
         } label: {
-            navLabel(JunoShellCodeSidebar.More.label, icon: JunoShellCodeSidebar.More.icon, selected: false)
+            navLabel(JunoShellCodeSidebar.More.label, icon: JunoShellCodeSidebar.More.archivedIcon, selected: false)
         }
         .menuStyle(.button)
         .buttonStyle(.plain)
@@ -751,6 +761,7 @@ struct DesktopCodeSidebar: View {
     /// system accent otherwise.
     private func navLabel(_ title: String, icon: JunoIcon, selected: Bool) -> some View {
         let ink = selected ? Color.junoForeground : Color.junoSidebarInk
+        // The web's glyphs (the contract's), one weight down the column.
         return Label {
             Text(title)
         } icon: {
@@ -824,7 +835,7 @@ struct DesktopCodeSidebar: View {
                     ])
                 }
                 Divider()
-                Button("Remove from Juno…", role: .destructive) { projectPendingRemoval = record }
+                Button("Remove from Alevr…", role: .destructive) { projectPendingRemoval = record }
             }
         }
     }

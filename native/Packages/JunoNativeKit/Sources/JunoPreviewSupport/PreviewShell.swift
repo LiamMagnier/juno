@@ -36,6 +36,32 @@ public enum JunoPreviewEnvironment {
         value(for: "--juno-preview-tab", env: "JUNO_PREVIEW_TAB")
     }
 
+    /// Opens one project's page on the Projects stack, from
+    /// `--juno-preview-project <id>` or `JUNO_PREVIEW_PROJECT` (with
+    /// `--juno-preview-tab projects`). `proj-1-obs` is a folder two levels
+    /// into ``PreviewProjectFolderFixtures``'s tree.
+    public static var initialProject: String? {
+        value(for: "--juno-preview-project", env: "JUNO_PREVIEW_PROJECT")
+    }
+
+    /// Opens one stored artifact over the Artifacts list, from
+    /// `--juno-preview-artifact <id>` (e.g. `art-sheet`, `art-doc`, `art-deck`).
+    public static var initialArtifact: String? {
+        value(for: "--juno-preview-artifact", env: "JUNO_PREVIEW_ARTIFACT")
+    }
+
+    /// Opens Artifacts' Recently Deleted, from `--juno-preview-artifacts-deleted`.
+    public static var showsRecentlyDeletedArtifacts: Bool {
+        CommandLine.arguments.contains("--juno-preview-artifacts-deleted")
+    }
+
+    /// Opens one conversation, from `--juno-preview-conversation <id>` or
+    /// `JUNO_PREVIEW_CONVERSATION` — e.g. `conv-deliverables`, the chat that
+    /// made a spreadsheet, a document and a deck (``PreviewArtifactFixtures``).
+    public static var initialConversation: String? {
+        value(for: "--juno-preview-conversation", env: "JUNO_PREVIEW_CONVERSATION")
+    }
+
     /// Opens one Juno Code session's log, from `--juno-preview-code-session <id>`
     /// or `JUNO_PREVIEW_CODE_SESSION`.
     ///
@@ -76,6 +102,14 @@ public enum JunoPreviewEnvironment {
     /// `notifications`, `code`, `appearance`, …
     public static var initialSettingsRoute: String? {
         value(for: "--juno-preview-settings-route", env: "JUNO_PREVIEW_SETTINGS_ROUTE")
+    }
+
+    /// Opens one screen directly, from `--juno-preview-route <name>` or
+    /// `JUNO_PREVIEW_ROUTE`: `profile` (the profile page) and `username`
+    /// (Settings › Account › Username). On the iPhone they live under
+    /// Settings, so the sheet opens with the page pushed.
+    public static var initialRoute: String? {
+        value(for: "--juno-preview-route", env: "JUNO_PREVIEW_ROUTE")
     }
 
     /// Optional accent override from `--juno-preview-accent <name>` or
@@ -123,6 +157,12 @@ public enum JunoPreviewEnvironment {
             for: "--juno-preview-appearance", env: "JUNO_PREVIEW_APPEARANCE"
         ) else { return nil }
         return PreviewAppearance(rawValue: raw.lowercased())
+    }
+
+    /// Opens one app's details sheet on the Apps (Connections) screen:
+    /// `--juno-preview-app-detail github` or `JUNO_PREVIEW_APP_DETAIL`.
+    public static var initialAppDetail: String? {
+        value(for: "--juno-preview-app-detail", env: "JUNO_PREVIEW_APP_DETAIL")
     }
 
     private static func value(for flag: String, env: String) -> String? {

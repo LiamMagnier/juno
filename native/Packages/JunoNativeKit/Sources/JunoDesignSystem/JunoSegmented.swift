@@ -136,6 +136,46 @@ public struct JunoSegmented<Value: Hashable>: View {
     }
 
     public var body: some View {
+        #if os(macOS)
+        if options.allSatisfy({ ($0.badge ?? 0) == 0 }) {
+            nativeControl
+        } else {
+            drawnControl
+        }
+        #else
+        drawnControl
+        #endif
+    }
+
+    #if os(macOS)
+    /// The Mac's own segmented control (round 2): AppKit's, drawn and
+    /// animated by the system, at the system's metrics — what Finder, Mail
+    /// and Notes put in a page's filter row. Counts are the page's to say
+    /// beside it; a segment only names itself. The drawn track below stays
+    /// for the one case the system control cannot carry, a waiting badge.
+    private var nativeControl: some View {
+        Picker(accessibilityLabel, selection: Binding(get: { selection }, set: { select($0) })) {
+            ForEach(options) { option in
+                Group {
+                    if let icon = option.icon {
+                        Label { Text(option.title) } icon: { Image(icon.assetName) }
+                    } else {
+                        Text(option.title)
+                    }
+                }
+                .tag(option.value)
+                .accessibilityIdentifier(optionAccessibilityIdentifier?(option.value) ?? "")
+            }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .controlSize(size == .compact ? .small : .regular)
+        .fixedSize(horizontal: !fills, vertical: true)
+        .accessibilityLabel(accessibilityLabel)
+    }
+    #endif
+
+    private var drawnControl: some View {
         JunoEqualWidthRow(spacing: JunoSegmentedMetrics.inset, fills: fills).callAsFunction {
             ForEach(options) { option in
                 JunoSegmentButton(

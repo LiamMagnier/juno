@@ -931,7 +931,7 @@ struct DesktopAutomationTriggerFields: View {
                 }
             }
         default:
-            DesktopAutomationHint("This trigger was set up by a newer version of Juno. It is left untouched, and saving does not change it.")
+            DesktopAutomationHint("This trigger was set up by a newer version of Alevr. It is left untouched, and saving does not change it.")
         }
     }
 
@@ -941,7 +941,7 @@ struct DesktopAutomationTriggerFields: View {
         DesktopAutomationField(title: "Folder") {
             if let grants {
                 if grants.isEmpty {
-                    DesktopAutomationHint("That Mac has not given Juno access to any folder yet, so there is nothing for this trigger to watch. Grant one in the Juno app on that Mac.", warning: true)
+                    DesktopAutomationHint("That Mac has not given Alevr access to any folder yet, so there is nothing for this trigger to watch. Grant one in the Alevr app on that Mac.", warning: true)
                 } else {
                     JunoPageMenu(
                         options: [JunoPageMenuOption("", "Choose a folder…")]
@@ -954,7 +954,7 @@ struct DesktopAutomationTriggerFields: View {
                 DesktopAutomationHint("Pick the Mac this schedule runs on, above, and its granted folders appear here.")
             }
         } hint: {
-            "Folders are granted on the Mac itself, in the Juno app. This list is what that Mac has given Juno access to."
+            "Folders are granted on the Mac itself, in the Alevr app. This list is what that Mac has given Alevr access to."
         }
     }
 

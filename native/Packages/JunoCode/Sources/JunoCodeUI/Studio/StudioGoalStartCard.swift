@@ -127,7 +127,7 @@ struct StudioGoalStartCard: View {
 
     private var title: String {
         if isEditing { return "Edit the goal" }
-        return draft.origin == .proposedByModel ? "Juno suggests a goal" : "Start a goal"
+        return draft.origin == .proposedByModel ? "Alevr suggests a goal" : "Start a goal"
     }
 
     @ViewBuilder

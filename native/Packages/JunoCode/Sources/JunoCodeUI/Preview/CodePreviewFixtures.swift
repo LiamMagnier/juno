@@ -1046,7 +1046,7 @@ extension CodePreviewData {
         GitCommitInfo(
             hash: "677d781a4c6e9b2f5d8a0c3e7b1f4d69a2c5e8b0",
             shortHash: "677d781",
-            subject: "feat(code): integrate the Juno Code workbench into JunoDesktop",
+            subject: "feat(code): integrate the Alevr Code workbench into JunoDesktop",
             author: "Liam Magnier", date: minutes(2_600)
         ),
         GitCommitInfo(

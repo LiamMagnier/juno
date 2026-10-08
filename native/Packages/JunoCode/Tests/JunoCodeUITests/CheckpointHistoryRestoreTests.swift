@@ -71,7 +71,7 @@ final class CheckpointHistoryRestoreTests: XCTestCase {
         let path = try WorkspacePath("Sources/App.swift")
         let mutation = try await context.files.write(
             path,
-            content: "changed by Juno\n",
+            content: "changed by Alevr\n",
             expectedBase: FileFingerprint(of: "original\n"),
             sessionID: controller.sessionID
         )

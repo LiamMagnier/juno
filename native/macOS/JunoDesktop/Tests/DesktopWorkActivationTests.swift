@@ -56,16 +56,16 @@ struct DesktopWorkActivationTests {
     /// Every sentence a surface can print has to survive the trip through the
     /// case, because the phone prints the same words for the same state.
     @Test func everySentenceIsTheOneTheSurfacesPrint() {
-        #expect(DesktopWorkBlocker.switchedOff.sentence == "Juno Work is switched off on this Mac.")
-        #expect(DesktopWorkBlocker.signedOut.sentence == "Sign in to let Juno Work use this Mac.")
+        #expect(DesktopWorkBlocker.switchedOff.sentence == "Alevr Work is switched off on this Mac.")
+        #expect(DesktopWorkBlocker.signedOut.sentence == "Sign in to let Alevr Work use this Mac.")
         #expect(
             DesktopWorkBlocker.pairing.sentence
                 == "This Mac has not finished pairing with your account yet."
         )
-        #expect(DesktopWorkBlocker.starting.sentence == "Juno Work is starting on this Mac.")
+        #expect(DesktopWorkBlocker.starting.sentence == "Alevr Work is starting on this Mac.")
         #expect(
             DesktopWorkBlocker.nothingAllowed.sentence
-                == "Juno Work is on, but nothing has been allowed yet — grant a folder or turn on a capability."
+                == "Alevr Work is on, but nothing has been allowed yet — grant a folder or turn on a capability."
         )
     }
 
@@ -73,7 +73,7 @@ struct DesktopWorkActivationTests {
     /// control. A button under "Juno Work is starting on this Mac." would be a
     /// button that does nothing to a state that clears itself.
     @Test func onlyTheAnswerableStatesOfferAControl() {
-        #expect(DesktopWorkBlocker.switchedOff.actionTitle == "Turn On Juno Work")
+        #expect(DesktopWorkBlocker.switchedOff.actionTitle == "Turn On Alevr Work")
         #expect(DesktopWorkBlocker.nothingAllowed.actionTitle == "Share a Folder…")
         #expect(DesktopWorkBlocker.signedOut.actionTitle == nil)
         #expect(DesktopWorkBlocker.pairing.actionTitle == nil)

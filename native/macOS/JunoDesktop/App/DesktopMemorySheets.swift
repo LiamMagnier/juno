@@ -205,7 +205,7 @@ struct DesktopMemoryRecapView: View {
                 if let extras { tally(extras.conversations, "chats") }
             }
             if extras != nil, recap.isEmpty(themes: themes) {
-                Text("Juno didn’t learn, change or use anything in this stretch. Try a longer period.")
+                Text("Alevr didn’t learn, change or use anything in this stretch. Try a longer period.")
                     .junoType(.ui)
                     .foregroundStyle(Color.junoSecondaryInk)
                     .multilineTextAlignment(.center)
@@ -213,7 +213,7 @@ struct DesktopMemoryRecapView: View {
                     .padding(.vertical, JunoSpace.roomy)
             } else {
                 if !recap.learned.isEmpty {
-                    section("What Juno learned") {
+                    section("What Alevr learned") {
                         let shown = showsAllLearned ? recap.learned : Array(recap.learned.prefix(6))
                         ForEach(shown) { row in
                             line(row.content, meta: NativeMemoryVocabulary.topicLabel(row.category), when: row.createdAt)
@@ -245,14 +245,14 @@ struct DesktopMemoryRecapView: View {
                                 .accessibilityLabel("\(replacement.before.content), replaced by \(replacement.after.content)")
                         }
                         ForEach(recap.conflicting) { row in
-                            line(row.content, meta: row.reason ?? "It clashed with something you told Juno, so it isn’t used.", when: nil)
+                            line(row.content, meta: row.reason ?? "It clashed with something you told Alevr, so it isn’t used.", when: nil)
                         }
                     }
                 }
                 if recap.letGoCount > 0 {
-                    section("What Juno let go of") {
+                    section("What Alevr let go of") {
                         ForEach(recap.forgotten) { row in
-                            line(row.content, meta: "You asked Juno to forget this", when: row.createdAt)
+                            line(row.content, meta: "You asked Alevr to forget this", when: row.createdAt)
                         }
                         ForEach(recap.expired) { row in
                             line(row.content, meta: "Only true for a while", when: nil)
@@ -273,7 +273,7 @@ struct DesktopMemoryRecapView: View {
                     }
                 }
                 if !recap.leanedOn.isEmpty {
-                    section("What Juno leaned on") {
+                    section("What Alevr leaned on") {
                         ForEach(recap.leanedOn) { row in
                             line(row.content, meta: "Last used", when: row.lastUsedAt ?? row.createdAt)
                         }
@@ -427,7 +427,7 @@ struct DesktopMemoryImportSheet: View {
         switch step {
         case .copy:
             VStack(alignment: .leading, spacing: JunoSpace.regular) {
-                Text("Paste this into the assistant you’re coming from, in a new chat. It asks for everything it remembers, written one fact per line so Juno can read it back.")
+                Text("Paste this into the assistant you’re coming from, in a new chat. It asks for everything it remembers, written one fact per line so Alevr can read it back.")
                     .junoType(.ui)
                     .foregroundStyle(Color.junoSecondaryInk)
                     .fixedSize(horizontal: false, vertical: true)
@@ -456,7 +456,7 @@ struct DesktopMemoryImportSheet: View {
             }
         case .paste:
             VStack(alignment: .leading, spacing: JunoSpace.snug) {
-                Text("Paste the whole answer here, list and all. Juno picks out the facts. A Juno memory export (.json) works too.")
+                Text("Paste the whole answer here, list and all. Alevr picks out the facts. An Alevr memory export (.json) works too.")
                     .junoType(.ui)
                     .foregroundStyle(Color.junoSecondaryInk)
                     .fixedSize(horizontal: false, vertical: true)
@@ -487,7 +487,7 @@ struct DesktopMemoryImportSheet: View {
                     .toggleStyle(.checkbox)
                     .accessibilityLabel("Select every fact")
                     Spacer()
-                    Text("Sensitive facts start unticked. Tick them only if you want Juno to keep them.")
+                    Text("Sensitive facts start unticked. Tick them only if you want Alevr to keep them.")
                         .junoType(.caption)
                         .foregroundStyle(Color.junoSecondaryInk)
                         .multilineTextAlignment(.trailing)
@@ -540,7 +540,7 @@ struct DesktopMemoryImportSheet: View {
                     }
                     switch candidate.status {
                     case .known: DesktopRowToken(text: "Already remembered")
-                    case .forgotten: DesktopRowToken(text: "You asked Juno to forget this")
+                    case .forgotten: DesktopRowToken(text: "You asked Alevr to forget this")
                     case .secret: DesktopRowToken(text: "Looks like a password or key, so it’s never imported", isWarning: true)
                     case .new: EmptyView()
                     }

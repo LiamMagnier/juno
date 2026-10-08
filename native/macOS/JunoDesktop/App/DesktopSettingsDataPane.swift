@@ -84,7 +84,7 @@ struct DesktopSettingsDataPane: View {
                 }
                 Menu {
                     exportItem(.json, title: "JSON", detail: "Everything, in one readable file.")
-                    exportItem(.juno, title: "Juno Package", detail: "Everything, plus your Library files where they fit.")
+                    exportItem(.juno, title: "Alevr Package", detail: "Everything, plus your Library files where they fit.")
                     exportItem(.csv, title: "CSV", detail: "Your conversations, for a spreadsheet.")
                 } label: {
                     Text("Export")
@@ -143,7 +143,7 @@ struct DesktopSettingsDataPane: View {
         VStack(alignment: .leading, spacing: JunoSpace.snug) {
             DesktopSettingRow(
                 title: "Import chat history",
-                description: "From ChatGPT, Claude, Gemini or another Juno account. A .zip or .json export up to 100 MB, or drop it here."
+                description: "From ChatGPT, Claude, Gemini or another Alevr account. A .zip or .json export up to 100 MB, or drop it here."
             ) {
                 DesktopOutlineButton(title: "Choose File…") { showingImporter = true }
                     .disabled(importPhase.isBusy || context.services.importer == nil)
@@ -162,7 +162,7 @@ struct DesktopSettingsDataPane: View {
             }
             .buttonStyle(.plain)
             if showsExportHelp {
-                Text("In ChatGPT, open Settings, Data controls, Export data. In Claude, open Settings, Privacy, Export data. Both email you a .zip. Imported messages are encrypted at rest like everything else in Juno.")
+                Text("In ChatGPT, open Settings, Data controls, Export data. In Claude, open Settings, Privacy, Export data. Both email you a .zip. Imported messages are encrypted at rest like everything else in Alevr.")
                     .junoType(.ui)
                     .foregroundStyle(Color.junoSecondaryInk)
                     .fixedSize(horizontal: false, vertical: true)
@@ -205,7 +205,7 @@ struct DesktopSettingsDataPane: View {
                 return try? Data(contentsOf: url)
             }.value
             guard let data else {
-                importPhase = .failed("Juno couldn’t read that file.")
+                importPhase = .failed("Alevr couldn’t read that file.")
                 return
             }
             do {

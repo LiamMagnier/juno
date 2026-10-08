@@ -88,7 +88,7 @@ struct ChatComposerTests {
         #expect(ChatComposerPlaceholder.text(isPrivate: true, isClarifying: true) == "Or type your own answer…")
         #expect(ChatComposerPlaceholder.text(quote: .modify) == "Describe the change…")
         #expect(ChatComposerPlaceholder.text(quote: .ask) == "Ask about this selection…")
-        #expect(ChatComposerPlaceholder.text(steering: .question) == "Answer Juno\u{2019}s question…")
+        #expect(ChatComposerPlaceholder.text(steering: .question) == "Answer Alevr\u{2019}s question…")
         #expect(ChatComposerPlaceholder.text(steering: .task) == "Add an instruction to the running task…")
         #expect(ChatComposerPlaceholder.text(steering: .research) == "Add a constraint, or paste a source to include…")
         #expect(ChatComposerPlaceholder.text(inCall: true) == "Type while you talk…")
@@ -124,7 +124,7 @@ struct ChatComposerTests {
     @Test
     @MainActor
     func theCallSaysWhatItIsDoing() {
-        #expect(DesktopVoiceCallText.label(.speaking) == "Juno is speaking")
+        #expect(DesktopVoiceCallText.label(.speaking) == "Alevr is speaking")
         #expect(DesktopVoiceCallText.label(.speaking, wide: false) == "Speaking")
         #expect(DesktopVoiceCallText.label(.thinking) == "Thinking")
         #expect(DesktopVoiceCallText.label(.muted) == "Muted")
@@ -372,7 +372,7 @@ struct ChatComposerTests {
             answering: true, isGenerating: false, pending: [], steer: { _ in true }, stop: {}
         )
         #expect(answer.kind == .answer)
-        #expect(answer.placeholder == "Answer Juno\u{2019}s question…")
+        #expect(answer.placeholder == "Answer Alevr\u{2019}s question…")
         #expect(answer.sendLabel == "Answer the task\u{2019}s question")
         #expect(answer.stopLabel == "Stop the task")
         let instruction = ChatComposerSteering.task(

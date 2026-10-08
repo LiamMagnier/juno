@@ -8,11 +8,11 @@ final class JunoDesktopLaunchUITests: XCTestCase {
         openMainWindowIfNeeded(in: app)
 
         XCTAssertTrue(
-            app.buttons["Sign in to Juno"].waitForExistence(timeout: 12)
+            app.buttons["Sign in to Alevr"].waitForExistence(timeout: 12)
                 || app.descendants(matching: .any)
-                    .matching(NSPredicate(format: "label == %@", "Preparing Juno…"))
+                    .matching(NSPredicate(format: "label == %@", "Preparing Alevr…"))
                     .firstMatch.exists
-                || app.textFields["Message Juno"].exists
+                || app.textFields["Message Alevr"].exists
                 || app.buttons["Account and settings"].exists
                 || app.textFields["juno.code.launch-prompt"].exists
                 || app.textFields["juno.code.composer.field"].exists
@@ -33,7 +33,7 @@ final class JunoDesktopLaunchUITests: XCTestCase {
 
         XCTAssertTrue(app.buttons.matching(labelBeginsWith("New chat")).firstMatch
             .waitForExistence(timeout: 12))
-        XCTAssertTrue(app.textFields["Message Juno"].exists)
+        XCTAssertTrue(app.textFields["Message Alevr"].exists)
         XCTAssertTrue(
             app.descendants(matching: .any)["juno.product-brand.chat"]
                 .waitForExistence(timeout: 5)
@@ -95,7 +95,7 @@ final class JunoDesktopLaunchUITests: XCTestCase {
     func testCodeSidebarUsesTheNativeSourceListBelowTheToolbar() {
         let app = launchCode()
 
-        let productSwitch = app.descendants(matching: .any)["Juno product"]
+        let productSwitch = app.descendants(matching: .any)["Alevr product"]
         XCTAssertTrue(productSwitch.waitForExistence(timeout: 12))
         XCTAssertTrue(app.descendants(matching: .any)["juno.product-brand.code"].exists)
         // Top to bottom: the product switch in its strip, the search field,
@@ -118,7 +118,7 @@ final class JunoDesktopLaunchUITests: XCTestCase {
         let project = app.descendants(matching: .any)["juno.code.project.ws-preview-juno"]
         XCTAssertTrue(project.waitForExistence(timeout: 5))
         project.rightClick()
-        let remove = app.menuItems["Remove from Juno…"]
+        let remove = app.menuItems["Remove from Alevr…"]
         XCTAssertTrue(remove.waitForExistence(timeout: 3))
         remove.click()
 
@@ -185,7 +185,7 @@ final class JunoDesktopLaunchUITests: XCTestCase {
         XCTAssertTrue(app.buttons["All projects"].exists)
         XCTAssertTrue(app.menuButtons["Project detail actions"].exists)
 
-        let composer = app.textFields["Message Juno"]
+        let composer = app.textFields["Message Alevr"]
         XCTAssertTrue(composer.waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["juno.desktop.chat-model"].exists)
         XCTAssertTrue(app.buttons["New chat in project"].exists)
@@ -196,7 +196,7 @@ final class JunoDesktopLaunchUITests: XCTestCase {
         XCTAssertTrue(send.waitForExistence(timeout: 5))
         send.click()
         XCTAssertTrue(
-            app.textFields["Message Juno"].waitForExistence(timeout: 8),
+            app.textFields["Message Alevr"].waitForExistence(timeout: 8),
             "Sending from a project must open the real project-scoped transcript."
         )
     }
@@ -368,7 +368,7 @@ final class JunoDesktopLaunchUITests: XCTestCase {
         app.launch()
         openMainWindowIfNeeded(in: app)
 
-        let productSwitch = app.descendants(matching: .any)["Juno product"]
+        let productSwitch = app.descendants(matching: .any)["Alevr product"]
         XCTAssertTrue(productSwitch.waitForExistence(timeout: 12), "Chat has no product switch.")
         assertSwitchInToolbar(in: app, product: "chat")
         XCTAssertFalse(
@@ -410,7 +410,7 @@ final class JunoDesktopLaunchUITests: XCTestCase {
     /// right of the traffic lights rather than under them.
     private func assertSwitchInToolbar(in app: XCUIApplication, product: String) {
         let toolbar = app.toolbars.firstMatch
-        let productSwitch = app.descendants(matching: .any)["Juno product"]
+        let productSwitch = app.descendants(matching: .any)["Alevr product"]
         XCTAssertTrue(productSwitch.waitForExistence(timeout: 8), product)
         XCTAssertTrue(toolbar.exists, product)
         // The arriving workspace settles over `JunoMotion.standard`; measure
@@ -569,7 +569,7 @@ final class JunoDesktopLaunchUITests: XCTestCase {
             app.launch()
             openMainWindowIfNeeded(in: app)
             XCTAssertTrue(
-                app.descendants(matching: .any)["Juno product"].waitForExistence(timeout: 15),
+                app.descendants(matching: .any)["Alevr product"].waitForExistence(timeout: 15),
                 "\(capture.name): the product switch should be in the sidebar's toolbar"
             )
             // Let the preview world settle and the arrival animation finish.

@@ -123,9 +123,9 @@ struct DesktopAboutPanel: View {
     private var updateLine: some View {
         switch updatePhase {
         case .ready(let version):
-            linkButton("Juno \(version) is ready. Restart to update", ink: .junoAccentInk, action: openUpdates)
+            linkButton("Alevr \(version) is ready. Restart to update", ink: .junoAccentInk, action: openUpdates)
         case .downloading(let version, _):
-            linkButton("Downloading Juno \(version)", ink: .junoSecondaryInk, action: openUpdates)
+            linkButton("Downloading Alevr \(version)", ink: .junoSecondaryInk, action: openUpdates)
         case .checking:
             JunoShimmerText("Checking for updates", font: JunoType.label.font())
         case .current:

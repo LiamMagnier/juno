@@ -25,6 +25,7 @@ struct ScrollToLatestButton: View {
                     // which cannot draw glass.
                     Button(action: action) {
                         face
+                            .foregroundStyle(Color.junoForeground)
                             .background(Circle().fill(Color.junoPopover))
                             .overlay(Circle().strokeBorder(Color.junoBorder, lineWidth: 1))
                     }
@@ -32,7 +33,11 @@ struct ScrollToLatestButton: View {
                     .contentShape(Circle())
                     .modifier(ScrollToLatestLabels())
                 } else {
-                    Button(action: action) { face }
+                    // The glass picks its own ink against what scrolls under
+                        // it (it turns dark over a dark run of text), so the
+                        // arrow takes the system's primary style rather than
+                        // a fixed ink that vanished on the darkened glass.
+                    Button(action: action) { face.foregroundStyle(.primary) }
                         .buttonStyle(.glass)
                         .buttonBorderShape(.circle)
                         .contentShape(Circle())
@@ -45,7 +50,6 @@ struct ScrollToLatestButton: View {
 
     private var face: some View {
         JunoIconView(.arrowDown, size: 16)
-            .foregroundStyle(Color.junoForeground)
             .frame(width: 32, height: 32)
     }
 }
