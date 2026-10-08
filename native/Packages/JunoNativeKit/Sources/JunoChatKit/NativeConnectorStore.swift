@@ -413,8 +413,10 @@ public final class NativeConnectorModel {
         didSet { guard showsConnectedOnly != oldValue else { return }; reloadCatalogNow() }
     }
 
-    private let client: NativeConnectorClient
+    let client: NativeConnectorClient
     private var accountID: AccountID?
+    /// The account the screen was started for, for models it hands out.
+    var currentAccountID: AccountID? { accountID }
     private var searchTask: Task<Void, Never>?
     private var catalogTask: Task<Void, Never>?
 

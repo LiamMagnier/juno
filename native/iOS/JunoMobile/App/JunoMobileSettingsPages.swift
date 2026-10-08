@@ -26,35 +26,6 @@ enum JunoMobilePreferences {
   static let codeCompletionNotifications = "juno.mobile.code.notify-completions"
 }
 
-/// The read-aloud and voice-mode voices, as the web lists them.
-///
-/// A copy of `src/lib/voices.ts` rather than a request: the list is the API's
-/// own enumeration and changes with a release, not with an account, and the
-/// preview button is the real answer to what a voice sounds like.
-struct JunoMobileVoiceOption: Identifiable, Hashable {
-  let id: String
-  let label: String
-  let detail: String
-
-  static let all: [JunoMobileVoiceOption] = [
-    .init(id: "alloy", label: "Alloy", detail: "Neutral and crisp"),
-    .init(id: "echo", label: "Echo", detail: "Even and measured"),
-    .init(id: "fable", label: "Fable", detail: "Bright and expressive"),
-    .init(id: "onyx", label: "Onyx", detail: "Low and steady"),
-    .init(id: "nova", label: "Nova", detail: "Rounded and friendly"),
-    .init(id: "shimmer", label: "Shimmer", detail: "Light and airy"),
-    .init(id: "coral", label: "Coral", detail: "Warm and lively"),
-    .init(id: "verse", label: "Verse", detail: "Animated and varied"),
-    .init(id: "ballad", label: "Ballad", detail: "Soft and unhurried"),
-    .init(id: "ash", label: "Ash", detail: "Firm and direct"),
-    .init(id: "sage", label: "Sage", detail: "Calm and level"),
-    .init(id: "marin", label: "Marin", detail: "Relaxed and conversational"),
-    .init(id: "cedar", label: "Cedar", detail: "Smooth and easy-going"),
-  ]
-
-  static let defaultID = "alloy"
-}
-
 // MARK: - Voice
 
 /// Settings › Voice: the voice, and how a call behaves on this phone.
@@ -64,6 +35,9 @@ struct JunoMobileVoiceSettingsView: View {
   let update: @MainActor @Sendable (NativeSettingsPatch) -> Void
   var messageActions: NativeMessageActionsClient?
   var accountID: AccountID?
+  /// The live speech provider (`GET /api/settings`); the picker lists its
+  /// voices, as the web's `voicesFor(features.ttsProvider)` does.
+  var ttsProvider: NativeTTSProviderStatus = .unknown
 
   @AppStorage(JunoMobilePreferences.voiceBackground) private var background = true
   @AppStorage(JunoMobilePreferences.voicePushToTalk) private var pushToTalk = false
@@ -78,8 +52,14 @@ struct JunoMobileVoiceSettingsView: View {
   @State private var readAloud: JunoMobileReadAloud?
   @State private var selectionHaptic = JunoMobileHapticTrigger()
 
-  private var voiceID: String {
-    settings?.voiceID ?? JunoMobileVoiceOption.defaultID
+  private var voices: [NativeSettingsChoice] {
+    NativeVoiceCatalog.voices(for: ttsProvider)
+  }
+
+  /// What will be heard: the saved voice when this provider lists it, else
+  /// the provider's default (`sections/voice.tsx`).
+  private var voiceID: String? {
+    NativeVoiceCatalog.selectedVoice(saved: settings?.voiceID, for: ttsProvider)?.id
   }
 
   private var provider: Binding<JunoVoiceProvider> {
@@ -92,7 +72,11 @@ struct JunoMobileVoiceSettingsView: View {
   var body: some View {
     Form {
       Section {
-        ForEach(JunoMobileVoiceOption.all) { voice in
+        if voices.isEmpty {
+          Text(NativeVoiceCatalog.unavailableDescription(for: ttsProvider))
+            .junoCaption()
+        }
+        ForEach(voices) { voice in
           Button {
             selectionHaptic.fire()
             update(NativeSettingsPatch(voiceID: .some(voice.id)))
@@ -102,7 +86,7 @@ struct JunoMobileVoiceSettingsView: View {
                 Text(voice.label)
                   .junoRowLabel()
                   .foregroundStyle(.primary)
-                Text(voice.detail)
+                Text(voice.description)
                   .junoCaption()
               }
               Spacer(minLength: JunoSpace.tight)
@@ -134,7 +118,7 @@ struct JunoMobileVoiceSettingsView: View {
       } header: {
         Text("Voice")
       } footer: {
-        Text("Used when Juno reads a reply aloud and in voice conversations. Stored on your account, so the web and the Mac use it too.")
+        Text("Used when Alevr reads a reply aloud and in voice conversations. Stored on your account, so the web and the Mac use it too.")
       }
 
       Section {
@@ -186,7 +170,7 @@ struct JunoMobileVoiceSettingsView: View {
         Toggle(isOn: $pushToTalk) {
           VStack(alignment: .leading, spacing: 2) {
             Text("Push to talk")
-            Text("Hold the orb to speak, release to send. Off, Juno listens continuously.")
+            Text("Hold the orb to speak, release to send. Off, Alevr listens continuously.")
               .junoCaption()
           }
         }
@@ -224,13 +208,13 @@ struct JunoMobileVoiceSettingsView: View {
     .accessibilityIdentifier("juno.mobile.settings-voice")
   }
 
-  private func preview(_ voice: JunoMobileVoiceOption) {
+  private func preview(_ voice: NativeSettingsChoice) {
     if readAloud == nil {
       readAloud = JunoMobileReadAloud(client: messageActions, accountID: accountID)
     }
     readAloud?.toggle(
       messageID: "voice-\(voice.id)",
-      text: "Hi, I'm Juno. This is how \(voice.label) sounds.",
+      text: "Hi, I'm Alevr. This is how \(voice.label) sounds.",
       voiceID: voice.id
     )
   }

@@ -12,6 +12,7 @@ import { ACTION_PERMISSION_POLICIES } from "@/lib/action-approval";
 import { SENSITIVE_TOPICS } from "@/lib/memory-sensitive";
 import { AUTO_PREFERENCES } from "@/lib/router/decide";
 import { AUTO_DATA_BOUNDARIES } from "@/lib/router/data-policy";
+import { activeTtsProvider } from "@/lib/env";
 
 const schema = z.object({
   // The display name — what the sidebar and the greeting call you. Lives on
@@ -120,7 +121,10 @@ export async function GET() {
   });
   if (!settings) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  return NextResponse.json({ settings });
+  // The live speech provider, beside the settings rather than in them: macOS
+  // and iOS list that provider's voices (src/lib/voices.ts voicesFor), as the
+  // web does from `features.ttsProvider`. null when no server TTS is set up.
+  return NextResponse.json({ settings, ttsProvider: activeTtsProvider() });
 }
 
 export async function PATCH(req: Request) {

@@ -43,6 +43,11 @@ public actor PreviewSender: NativeChatRequestSending {
                 body: PreviewWorkFixtures.artifactDownloadBytes
             )
         }
+        // The semantic artifacts' detail, history, copy, download and
+        // Recently deleted (`PreviewArtifactFixtures`).
+        if let response = PreviewArtifactFixtures.response(for: request) {
+            return response
+        }
         // A design's picture, as the transcript's inline design card asks for
         // it: the server's SVG export of the stored document.
         if request.path == "/api/design/art-design/export" {
@@ -164,9 +169,23 @@ public actor PreviewSender: NativeChatRequestSending {
         ) {
             return body
         }
+        // Profile, @username and the Mac's billing extras.
+        if let body = PreviewProfileFixtures.body(for: request, empty: empty) {
+            return body
+        }
         // Memory, Skills and Assistants (Phase 4 Stage B): the pages' own
         // wire shapes, ahead of the generic memory answer below.
         if let body = PreviewAccountPageFixtures.body(path: path, method: request.method, empty: empty) {
+            return body
+        }
+        if let body = PreviewProjectFolderFixtures.body(path: path, method: request.method) {
+            return body
+        }
+        // The iPhone's parity screens: inbox, announcement, server search,
+        // sign-in security and Routines.
+        if let body = PreviewParityFixtures.body(
+            path: path, method: request.method, query: request.queryItems, empty: empty
+        ) {
             return body
         }
         if path == "/api/voice/relay-token" {
@@ -210,6 +229,9 @@ public actor PreviewSender: NativeChatRequestSending {
         if path.contains("/memory") {
             return Data(#"{"memories":[],"summary":null}"#.utf8)
         }
+        if path == "/api/library/made" {
+            return Self.libraryMadeBody(empty: empty)
+        }
         if path.hasPrefix("/api/library") {
             return Data(#"{"items":[],"attachments":[]}"#.utf8)
         }
@@ -227,6 +249,32 @@ public actor PreviewSender: NativeChatRequestSending {
             return Data(#"{"revoked":true,"deviceId":"preview"}"#.utf8)
         }
         return Data("{}".utf8)
+    }
+}
+
+extension PreviewSender {
+    /// What Alevr made (`GET /api/library/made`): artifacts and task
+    /// deliverables, one made by an Orbit member, newest first.
+    static func libraryMadeBody(empty: Bool) -> Data {
+        if empty { return Data(#"{"items":[],"nextCursor":null}"#.utf8) }
+        return Data(#"""
+        {"items":[
+          {"kind":"artifact","id":"art-launch","type":"HTML","title":"Field Notes 2.0 launch page","version":4,"projectId":null,
+           "createdAt":"2026-10-07T09:00:00Z","updatedAt":"2026-10-08T08:10:00Z","href":"/a/art-launch","conversationId":"conv-launch"},
+          {"kind":"deliverable","id":"art-exceptions","type":"SPREADSHEET","title":"Q3 pricing model","version":2,"projectId":null,
+           "createdAt":"2026-10-06T09:00:00Z","updatedAt":"2026-10-07T16:40:00Z","href":"/api/work/artifacts/art-exceptions/download",
+           "conversationId":null,"mimeType":"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet","validated":true,
+           "agent":{"id":"agent-mira","name":"Mira"}},
+          {"kind":"deliverable","id":"del-deck","type":"PRESENTATION","title":"Board update, October","version":1,"projectId":null,
+           "createdAt":"2026-10-05T09:00:00Z","updatedAt":"2026-10-05T11:00:00Z","href":"/api/work/artifacts/del-deck/download",
+           "conversationId":null,"mimeType":"application/vnd.openxmlformats-officedocument.presentationml.presentation","validated":true},
+          {"kind":"artifact","id":"art-flow","type":"MERMAID","title":"Onboarding flow","version":1,"projectId":null,
+           "createdAt":"2026-10-02T09:00:00Z","updatedAt":"2026-10-02T09:30:00Z","href":"/a/art-flow","conversationId":null},
+          {"kind":"deliverable","id":"del-brief","type":"DOCUMENT","title":"Competitive brief: note-taking apps","version":3,"projectId":null,
+           "createdAt":"2026-09-28T09:00:00Z","updatedAt":"2026-09-30T10:00:00Z","href":"/api/work/artifacts/del-brief/download",
+           "conversationId":null,"mimeType":"application/vnd.openxmlformats-officedocument.wordprocessingml.document","validated":true}
+        ],"nextCursor":null}
+        """#.utf8)
     }
 }
 

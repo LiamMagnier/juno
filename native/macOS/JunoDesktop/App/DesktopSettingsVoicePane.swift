@@ -12,24 +12,13 @@ struct DesktopSettingsVoicePane: View {
     let context: DesktopSettingsContext
 
     /// The web's `VOICE_PREVIEW_TEXT`.
-    static let previewText = "Hi, I'm Juno. This is how I sound when I read an answer aloud."
+    static let previewText = "Hi, I'm Alevr. This is how I sound when I read an answer aloud."
 
-    /// `src/lib/voices.ts`, verbatim.
-    static let voices: [(id: String, label: String, description: String)] = [
-        ("alloy", "Alloy", "Neutral and crisp"),
-        ("echo", "Echo", "Even and measured"),
-        ("fable", "Fable", "Bright and expressive"),
-        ("onyx", "Onyx", "Low and steady"),
-        ("nova", "Nova", "Rounded and friendly"),
-        ("shimmer", "Shimmer", "Light and airy"),
-        ("coral", "Coral", "Warm and lively"),
-        ("verse", "Verse", "Animated and varied"),
-        ("ballad", "Ballad", "Soft and unhurried"),
-        ("ash", "Ash", "Firm and direct"),
-        ("sage", "Sage", "Calm and level"),
-        ("marin", "Marin", "Relaxed and conversational"),
-        ("cedar", "Cedar", "Smooth and easy-going"),
-    ]
+    /// The live provider's voices (`voicesFor(features.ttsProvider)`), from
+    /// the catalogue in the Kit.
+    private var voices: [NativeSettingsChoice] {
+        NativeVoiceCatalog.voices(for: context.settingsModel.ttsProvider)
+    }
 
     @State private var preview = DesktopVoicePreview()
     /// The web's `voiceSounds` preference: a per-device switch, like there.
@@ -45,10 +34,18 @@ struct DesktopSettingsVoicePane: View {
     var body: some View {
         DesktopSettingsRecordForm(context: context) { settings in
             Section {
-                if planHasVoice {
-                    voiceRow(settings)
-                } else {
+                if !planHasVoice {
                     DesktopSettingRow(title: "Voice", description: JunoPlanFeature.voice.upgradePrompt)
+                } else if let voice = NativeVoiceCatalog.selectedVoice(
+                    saved: settings.voiceID,
+                    for: context.settingsModel.ttsProvider
+                ) {
+                    voiceRow(voice)
+                } else {
+                    DesktopSettingRow(
+                        title: "Voice",
+                        description: NativeVoiceCatalog.unavailableDescription(for: context.settingsModel.ttsProvider)
+                    )
                 }
             } header: {
                 DesktopSettingsGroupHeader(title: "Read aloud")
@@ -80,13 +77,14 @@ struct DesktopSettingsVoicePane: View {
         .onDisappear { preview.stop() }
     }
 
-    private func voiceRow(_ settings: NativeAccountSettings) -> some View {
-        let active = settings.voiceID ?? "alloy"
-        let voice = Self.voices.first { $0.id == active }
+    /// `voice` is what will be heard: the saved voice when the live provider
+    /// lists it, else that provider's default (`sections/voice.tsx`).
+    private func voiceRow(_ voice: NativeSettingsChoice) -> some View {
+        let active = voice.id
         let playing = preview.playingID == active
         return DesktopSettingRow(
             title: "Voice",
-            description: voice?.description ?? "A voice Juno for Mac does not list. Choosing one replaces it.",
+            description: voice.description,
             status: context.saves.status("voiceId")
         ) {
             HStack(spacing: JunoSpace.snug) {
@@ -118,8 +116,7 @@ struct DesktopSettingsVoicePane: View {
                         context.save("voiceId", NativeSettingsPatch(voiceID: .some(id)))
                     }
                 )) {
-                    if voice == nil { Text(active).tag(active) }
-                    ForEach(Self.voices, id: \.id) { option in
+                    ForEach(voices) { option in
                         Text(option.label).tag(option.id)
                     }
                 }

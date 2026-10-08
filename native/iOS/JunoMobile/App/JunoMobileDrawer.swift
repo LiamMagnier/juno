@@ -547,6 +547,7 @@ struct JunoMobileSidebarDrawer: View {
         .foregroundStyle(Color.junoForeground)
         .accessibilityAddTraits(.isHeader)
       Spacer(minLength: 0)
+      JunoMobileInboxBell()
       Button {
         selectionHaptic.fire()
         openDestination(.search)

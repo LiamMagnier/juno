@@ -55,7 +55,9 @@ public struct NativeBillingClient: Sendable {
         case year
     }
 
-    private let sender: any NativeAuthenticatedRequestSending
+    /// Internal so the top-up, cancellation and referral calls
+    /// (NativeBillingExtras.swift) share it.
+    let sender: any NativeAuthenticatedRequestSending
 
     public init(sender: any NativeAuthenticatedRequestSending) {
         self.sender = sender

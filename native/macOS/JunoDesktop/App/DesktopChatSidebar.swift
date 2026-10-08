@@ -1229,6 +1229,9 @@ enum DesktopDestination: String, CaseIterable, Identifiable {
     /// (Phase 4 C2). Not in More: reached through ``DesktopPageRouter`` —
     /// ⌘K and Settings › Devices.
     case permissions
+    /// The reader's profile: a year of tokens and the models they went to
+    /// (`/profile`). Reached from the account menu, not the column.
+    case profile
 
     var id: Self { self }
 
@@ -1252,6 +1255,7 @@ enum DesktopDestination: String, CaseIterable, Identifiable {
         case .design: "Design"
         case .memory: "Memory"
         case .permissions: "Permissions"
+        case .profile: "Profile"
         case .projects, .library, .artifacts, .agents, .connections, .assistants, .skills, .automations:
             shell?.label ?? rawValue
         }
@@ -1267,6 +1271,7 @@ enum DesktopDestination: String, CaseIterable, Identifiable {
         case .design: .design
         case .memory: .memory
         case .permissions: .permissions
+        case .profile: .user
         case .projects, .library, .artifacts, .agents, .connections, .assistants, .skills, .automations:
             shell?.icon ?? .home
         }

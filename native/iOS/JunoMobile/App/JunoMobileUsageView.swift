@@ -125,7 +125,6 @@ struct JunoMobileUsageView: View {
     @ViewBuilder
     private func content(_ breakdown: NativeUsageBreakdown) -> some View {
         JunoMobileUsageStats(breakdown: breakdown)
-        JunoMobileUsageActivity(breakdown: breakdown)
         JunoMobileUsageSurfaces(breakdown: breakdown)
         JunoMobileUsageTokenMix(totals: breakdown.totals)
         JunoMobileUsageModels(breakdown: breakdown, catalog: modelCatalog)
@@ -232,84 +231,7 @@ private struct JunoMobileUsageStats: View {
     }
 }
 
-// MARK: - Activity grid
-
-/// A run of days as a contribution grid, scrolling sideways.
-///
-/// The grid is laid out on the **UTC** day boundary, because that is the
-/// boundary the server buckets on. Re-bucketing into the reader's local zone
-/// here would shift every cell by up to a day and quietly disagree with the
-/// totals above it.
-private struct JunoMobileUsageActivity: View {
-    let breakdown: NativeUsageBreakdown
-
-    private static let cell: CGFloat = 12
-    private static let gap: CGFloat = 3
-
-    /// Days ascending, in columns of seven — one column per week, which is what
-    /// makes a row read as "every Tuesday".
-    private var columns: [[NativeUsageActivityCell]] {
-        stride(from: 0, to: breakdown.activityCells.count, by: 7).map { start in
-            Array(breakdown.activityCells[start..<min(start + 7, breakdown.activityCells.count)])
-        }
-    }
-
-    var body: some View {
-        JunoCard {
-            VStack(alignment: .leading, spacing: JunoSpace.cozy) {
-                Text("Activity")
-                    .junoFont(size: 16, relativeTo: .headline, weight: .semibold)
-
-                // Anchored to the trailing edge: the newest week is the one
-                // worth landing on, and a year-long grid opening on last January
-                // is a scroll the reader has to undo every time.
-                ScrollView(.horizontal) {
-                    HStack(alignment: .top, spacing: Self.gap) {
-                        ForEach(Array(columns.enumerated()), id: \.offset) { _, week in
-                            VStack(spacing: Self.gap) {
-                                ForEach(week) { day in
-                                    RoundedRectangle(cornerRadius: 3, style: .continuous)
-                                        .fill(day.fill)
-                                        .frame(width: Self.cell, height: Self.cell)
-                                        .accessibilityLabel(day.summary)
-                                }
-                            }
-                        }
-                    }
-                    .padding(.vertical, JunoSpace.hairline)
-                }
-                .defaultScrollAnchor(.trailing)
-                .scrollIndicators(.hidden)
-
-                legend
-            }
-        }
-    }
-
-    private var legend: some View {
-        HStack(spacing: JunoSpace.tight) {
-            if let busiest = breakdown.busiestDay, busiest.requests > 0 {
-                Text("Busiest \(NativeUsageFormat.day(busiest.dayMs)) · \(busiest.requests)")
-                    .junoFont(size: 12, relativeTo: .caption)
-                    .monospacedDigit()
-                    .junoSecondaryInk()
-            }
-            Spacer(minLength: 4)
-            Text("Less")
-                .junoFont(size: 12, relativeTo: .caption)
-                .junoSecondaryInk()
-            ForEach(0..<5, id: \.self) { level in
-                RoundedRectangle(cornerRadius: 2, style: .continuous)
-                    .fill(NativeUsageActivityCell.fill(forLevel: level))
-                    .frame(width: 9, height: 9)
-            }
-            Text("More")
-                .junoFont(size: 12, relativeTo: .caption)
-                .junoSecondaryInk()
-        }
-        .accessibilityHidden(true)
-    }
-}
+// The year's activity grid moved to the profile page (JunoMobileProfileView).
 
 // MARK: - Surfaces
 

@@ -141,7 +141,7 @@ final class NativeMessageContentTests: XCTestCase {
     }
 
     func testUnknownTypesFallBackToCode() {
-        let raw = "<juno:artifact type=\"spreadsheet\" title=\"T\">x</juno:artifact>"
+        let raw = "<juno:artifact type=\"hologram\" title=\"T\">x</juno:artifact>"
         guard case .artifact(let artifact)? = NativeMessageContent.parts(of: raw).first else {
             return XCTFail("expected an artifact")
         }

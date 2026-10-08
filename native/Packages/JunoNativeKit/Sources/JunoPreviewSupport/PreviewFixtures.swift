@@ -8,13 +8,13 @@ import JunoSync
 public enum PreviewFixtures {
     private static let base = Date(timeIntervalSince1970: 1_753_000_000)
 
-    private static func iso(_ offset: TimeInterval) -> String {
+    static func iso(_ offset: TimeInterval) -> String {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return formatter.string(from: base.addingTimeInterval(offset))
     }
 
-    private static func record(
+    static func record(
         _ accountID: StorageAccountID,
         _ namespace: String,
         _ id: String,
@@ -200,11 +200,17 @@ public enum PreviewFixtures {
 
         // Projects (one starred).
         out.append(record(a, "project", "proj-1", 8, """
-        {"id":"proj-1","name":"Astro research","nameSource":"user","instructions":"\(promptShapedInstructions)","starred":true,"createdAt":"\(iso(-200000))","updatedAt":"\(iso(-1200))"}
+        {"id":"proj-1","name":"Astro research","nameSource":"user","parentId":null,"instructions":"\(promptShapedInstructions)","starred":true,"createdAt":"\(iso(-200000))","updatedAt":"\(iso(-1200))"}
         """))
         out.append(record(a, "project", "proj-2", 4, """
-        {"id":"proj-2","name":"Native apps","nameSource":"user","instructions":"Ship the macOS and iOS clients with real backend transport.","starred":false,"createdAt":"\(iso(-400000))","updatedAt":"\(iso(-80000))"}
+        {"id":"proj-2","name":"Native apps","nameSource":"user","parentId":null,"instructions":"Ship the macOS and iOS clients with real backend transport.","starred":false,"createdAt":"\(iso(-400000))","updatedAt":"\(iso(-80000))"}
         """))
+        // Folders inside Astro research (project subfolders).
+        for folder in PreviewProjectFolderFixtures.folders {
+            out.append(record(a, "project", folder.id, 2, """
+            {"id":"\(folder.id)","name":"\(folder.name)","nameSource":"user","parentId":"\(folder.parentID)","instructions":"\(folder.instructions)","starred":false,"createdAt":"\(iso(-150000))","updatedAt":"\(iso(folder.updated))"}
+            """))
+        }
 
         // Files (project + conversation).
         out.append(record(a, "attachment", "file-1", 2, """
@@ -257,6 +263,9 @@ public enum PreviewFixtures {
         out.append(record(a, "artifact_version", "artv-design", 1, """
         {"id":"artv-design","artifactId":"art-design","version":1,"content":"\(designDocumentLiteral)","createdAt":"\(iso(-90000))"}
         """))
+
+        // A spreadsheet, a document and a deck, made in one conversation.
+        out.append(contentsOf: PreviewArtifactFixtures.records(a))
 
         // Memory entries.
         out.append(record(a, "memory", "mem-1", 2, """
