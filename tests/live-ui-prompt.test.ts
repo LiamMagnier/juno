@@ -4,6 +4,7 @@ import { LIVE_UI_SECTION, buildSystemPromptSections } from "@/lib/chat/system-pr
 import { lenientClientFeatures } from "@/lib/chat/request";
 import { parseLiveUI, liveDefaults, type LiveComponent } from "@/lib/live-ui/spec";
 import { LiveScope } from "@/lib/live-ui/expr";
+import samples from "../contracts/live-ui/samples.json";
 
 /*
  * The Live UI prompt contract (docs/design/LIVE_UI.md §7): when the section is
@@ -44,9 +45,9 @@ function walk(list: readonly LiveComponent[], out: LiveComponent[] = []): LiveCo
   return out;
 }
 
-test("every example in the prompt is a complete view whose formulas evaluate", () => {
-  const blocks = [...LIVE_UI_SECTION.matchAll(/```live-ui\n([\s\S]*?)\n```/g)].map((m) => m[1]);
-  assert.equal(blocks.length, 3);
+function assertValidViews(text: string, expected: number) {
+  const blocks = [...text.matchAll(/```live-ui\n([\s\S]*?)\n```/g)].map((m) => m[1]);
+  assert.equal(blocks.length, expected);
   for (const source of blocks) {
     const { spec, error } = parseLiveUI(source);
     assert.ok(spec, error);
@@ -63,6 +64,14 @@ test("every example in the prompt is a complete view whose formulas evaluate", (
       }
     }
   }
+}
+
+test("every example in the prompt is a complete view whose formulas evaluate", () => {
+  assertValidViews(LIVE_UI_SECTION, 3);
+});
+
+test("every gallery sample (shared with the native snapshots) is a valid view", () => {
+  for (const sample of samples.samples) assertValidViews(sample.reply, 1);
 });
 
 test("native builds opt in with the live_ui client feature", () => {

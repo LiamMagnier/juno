@@ -168,7 +168,7 @@ export function LiveChart({
       : n - 1;
   const shown = active ?? restIndex;
   // Numeric axes get round ticks (-4, -2, 0, 2, 4), not every k-th sample.
-  const xTicks = !band && data.numericX ? niceTicks(Math.min(x0, x1), Math.max(x0, x1), Math.max(2, Math.floor(plotW / 90))).filter((t) => t >= Math.min(x0, x1) - 1e-9 && t <= Math.max(x0, x1) + 1e-9) : null;
+  const xTicks = !band && data.numericX ? niceTicks(Math.min(x0, x1), Math.max(x0, x1), Math.max(3, Math.floor(plotW / 70))).filter((t) => t >= Math.min(x0, x1) - 1e-9 && t <= Math.max(x0, x1) + 1e-9) : null;
 
   const areaFor = (ys: (number | null)[]) =>
     `${pathFor(ys)}L${xAt(lastIndex(ys)).toFixed(1)},${yAt(Math.max(lo, 0)).toFixed(1)}L${xAt(firstIndex(ys)).toFixed(1)},${yAt(Math.max(lo, 0)).toFixed(1)}Z`;

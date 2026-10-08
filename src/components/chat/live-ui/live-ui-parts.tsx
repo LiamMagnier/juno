@@ -49,6 +49,13 @@ export function LiveExplorer({ explorer }: { explorer: Explorer }) {
   };
 
   const byId = new Map(explorer.parts.map((p) => [p.id, p]));
+  // Crop the field to the band the parts occupy (native does the same), so a
+  // schematic drawn in the top two-thirds leaves no empty band under it.
+  const ys = explorer.parts.map((p) => p.at?.[1] ?? 50);
+  const lo = Math.max(0, Math.min(...ys) - 10);
+  const hi = Math.min(100, Math.max(...ys) + 14);
+  const span = Math.max(0.2, (hi - lo) / 100);
+  const fy = (y: number) => ((y - lo) / (hi - lo)) * 100;
 
   return (
     <div className="flex min-w-0 flex-col gap-4">
@@ -59,7 +66,8 @@ export function LiveExplorer({ explorer }: { explorer: Explorer }) {
           aria-label={explorer.title ?? "Parts"}
           aria-orientation="horizontal"
           onKeyDown={onKey}
-          className="relative mx-auto aspect-[2/1] w-full max-w-xl"
+          className="relative mx-auto w-full max-w-xl"
+          style={{ aspectRatio: `${2 / span}` }}
         >
           <svg className="absolute inset-0 size-full overflow-visible" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden>
             {explorer.links.map(([a, b], i) => {
@@ -70,9 +78,9 @@ export function LiveExplorer({ explorer }: { explorer: Explorer }) {
                 <line
                   key={i}
                   x1={pa[0]}
-                  y1={pa[1]}
+                  y1={fy(pa[1])}
                   x2={pb[0]}
-                  y2={pb[1]}
+                  y2={fy(pb[1])}
                   stroke={lit ? "hsl(var(--foreground) / 0.55)" : "hsl(var(--foreground) / 0.18)"}
                   strokeWidth={lit ? 1.5 : 1}
                   vectorEffect="non-scaling-stroke"
@@ -97,7 +105,7 @@ export function LiveExplorer({ explorer }: { explorer: Explorer }) {
                 aria-controls={detailId}
                 tabIndex={on ? 0 : -1}
                 onClick={() => setSelected(p.id)}
-                style={{ left: `${x}%`, top: `${y}%` }}
+                style={{ left: `${x}%`, top: `${fy(y)}%` }}
                 className={cn(
                   "group absolute flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-1 rounded-control p-1",
                   !labelBelow && "flex-col-reverse",

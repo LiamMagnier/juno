@@ -123,6 +123,8 @@ public struct LivePlatformFormatter: LiveFormatting {
         guard value.isFinite else { return liveNullText }
         let f = NumberFormatter()
         f.locale = locale
+        // Half away from zero, as the web's Intl does: €4.125 shows as €4.13 on both.
+        f.roundingMode = .halfUp
         switch format {
         case .integer:
             f.numberStyle = .decimal
