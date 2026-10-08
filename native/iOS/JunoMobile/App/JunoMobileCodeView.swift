@@ -53,6 +53,8 @@ struct JunoMobileCodeView: View {
   /// Opens the account's settings, which is where everything else about the
   /// profile lives. Nil where the shell has no settings model.
   var openSettings: (() -> Void)?
+  /// Opens Work's sessions, which live under Code's menu on the phone.
+  var openWork: (() -> Void)? = nil
 
   @State private var prompt = ""
   @State private var showingPulls = false
@@ -64,9 +66,6 @@ struct JunoMobileCodeView: View {
   @State private var showingNewSession = false
   @AppStorage(JunoMobilePreferences.codeDefaultHost) private var defaultHostID = ""
   @Namespace private var zoom
-  /// The cheap half of the usage read: what plan this is and how much of each
-  /// window is spent.
-  @State private var plan: NativeUsagePlan?
   @FocusState private var composerFocused: Bool
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -103,51 +102,51 @@ struct JunoMobileCodeView: View {
     }
     .background(Color.junoCanvas)
     .navigationTitle("navigation.code")
-    .navigationBarTitleDisplayMode(.large)
+    // Inline: on the phone the bar's centre is Chat | Code, and a large
+    // title would only leave an empty band above the list.
+    .navigationBarTitleDisplayMode(.inline)
     .refreshable { await model.refresh() }
     // A destination rather than a tab: a reader checks on pull requests
     // between sessions, not while they have one open, so it belongs beside
     // the session list and not inside it.
+    // One menu for everything that is not the list itself — the way Mail and
+    // Files keep their secondary verbs behind a single toolbar button. The
+    // avatar chip that sat here was the web's user menu; on the phone the
+    // account is one tap away in the drawer's gear.
     .toolbar {
-      if pullsClient != nil {
-        ToolbarItem(placement: .topBarTrailing) {
-          Button {
-            showingPulls = true
-          } label: {
-            JunoIconView(.pulls, size: 17)
+      ToolbarItem(placement: .topBarTrailing) {
+        Menu {
+          if pullsClient != nil {
+            Button {
+              showingPulls = true
+            } label: {
+              Label("Pull requests", systemImage: "arrow.triangle.pull")
+            }
+            .accessibilityIdentifier("juno.mobile.code.pulls")
           }
-          .accessibilityLabel("Pull requests")
-          .accessibilityIdentifier("juno.mobile.code.pulls")
-        }
-      }
-      // The account, reachable from Code itself. Before this the only way
-      // to a profile or a usage figure from here was the drawer, then
-      // Settings, then a row — three taps and two contexts away from the
-      // screen that is spending the quota.
-      if let session {
-        ToolbarItem(placement: .topBarTrailing) {
-          Menu {
+          if let openWork {
+            Button(action: openWork) {
+              Label("Work sessions", systemImage: "checklist")
+            }
+          }
+          if session != nil {
             Button {
               showingUsage = true
             } label: {
-              JunoIconLabel("Your usage", icon: .usage)
+              Label("Your usage", systemImage: "chart.bar")
             }
-            if let openSettings {
-              Button(action: openSettings) {
-                JunoIconLabel("navigation.settings", icon: .settings)
-              }
-            }
-          } label: {
-            JunoAvatar(
-              imageData: avatarData,
-              imageURL: session.profile.imageURL,
-              name: session.profile.name ?? session.profile.email,
-              size: 26
-            )
           }
-          .accessibilityLabel("Account")
-          .accessibilityIdentifier("juno.mobile.code.account")
+          if let openSettings {
+            Button(action: openSettings) {
+              Label("navigation.settings", systemImage: "gearshape")
+            }
+          }
+        } label: {
+          Image(systemName: "ellipsis")
         }
+        .tint(Color.primary)
+        .accessibilityLabel("More")
+        .accessibilityIdentifier("juno.mobile.code.account")
       }
     }
     .navigationDestination(isPresented: $showingPulls) {
@@ -165,16 +164,6 @@ struct JunoMobileCodeView: View {
           modelCatalog: modelCatalog
         )
       }
-    }
-    // Read once per visit, and only the plan half is kept. The breakdown the
-    // same call returns is the expensive one, so the shortest range is asked
-    // for — the meters are what this screen shows, and the full ledger is one
-    // tap away on the page that is actually about it.
-    .task {
-      guard plan == nil, let requestSender, let accountID else { return }
-      plan = await NativeUsageClient(sender: requestSender)
-        .load(range: .month, for: accountID)
-        .plan
     }
     .navigationDestination(
       isPresented: Binding(
@@ -315,20 +304,18 @@ struct JunoMobileCodeView: View {
   }
 
   /// The cloud runner's home — the task list and the launch composer.
+  ///
+  /// A plain `List`: what needs you, what is running, what finished, each a
+  /// section of ordinary rows. The "Build queue" card with its stat tiles and
+  /// status pill is gone — the sections already say what is happening.
   private var cloudSessions: some View {
     VStack(spacing: 0) {
-      ScrollView {
-        LazyVStack(alignment: .leading, spacing: 12) {
-          JunoPageSubtitle(model.isTargetless ? "code.subtitle.none" : "code.subtitle")
-          .padding(.top, 6)
-
-          codeOverview
-
-          if let error = model.lastErrorDescription {
-            JunoInlineError(message: error) { Task { await model.refresh() } }
-          }
-
-          if model.tasks.isEmpty {
+      if model.tasks.isEmpty {
+        ScrollView {
+          VStack(alignment: .leading, spacing: 12) {
+            if let error = model.lastErrorDescription {
+              JunoInlineError(message: error) { Task { await model.refresh() } }
+            }
             JunoMobileCodeGreeting(
               targetless: model.isTargetless,
               onSelectIntent: { selected in
@@ -337,40 +324,51 @@ struct JunoMobileCodeView: View {
               }
             )
             .containerRelativeFrame(.vertical) { height, _ in height * 0.68 }
-          } else {
-            // Triage is the first job of Code. A run that is waiting on the
-            // reader must stay above ordinary activity, just like the website's
-            // Needs you bucket; grouping everything under "Active" hid that
-            // distinction in a list that otherwise looked like a generic feed.
-            if !attentionTasks.isEmpty {
-              codeTaskSection(
-                title: "Needs you", icon: .permission,
-                tint: Color.junoCaution, tasks: attentionTasks
-              )
-            }
-            if !inFlightTasks.isEmpty {
-              codeTaskSection(
-                title: "In progress", icon: .refresh,
-                tint: Color.junoMutedForeground, tasks: inFlightTasks
-              )
-            }
-            if !recentTasks.isEmpty {
-              codeTaskSection(
-                title: "Recently finished", icon: .check,
-                tint: Color.junoSuccess, tasks: recentTasks
-              )
-            }
           }
+          .padding(.horizontal, 16)
         }
-        .padding(.horizontal, 16)
-        .padding(.bottom, 24)
+      } else {
+        List {
+          if let error = model.lastErrorDescription {
+            JunoInlineError(message: error) { Task { await model.refresh() } }
+              .listRowSeparator(.hidden)
+          }
+          // Triage first: a run waiting on the reader stays above ordinary
+          // activity, as the website's Needs you bucket does.
+          codeTaskSection("Needs you", tasks: attentionTasks)
+          codeTaskSection("In progress", tasks: inFlightTasks)
+          codeTaskSection("Recently finished", tasks: recentTasks)
+        }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .accessibilityIdentifier("juno.mobile.code-overview")
       }
 
-      // A layout sibling, rather than a safe-area overlay. The compact drawer
-      // uses a device-contour plate that intentionally ignores the container's
-      // safe area; keeping the composer in the vertical layout guarantees the
-      // last Code card can never render underneath it on iOS 26/27.
+      // A layout sibling, rather than a safe-area overlay, so the last row
+      // can never render underneath it.
       composer
+    }
+  }
+
+  @ViewBuilder
+  private func codeTaskSection(_ title: LocalizedStringKey, tasks: [NativeCodeTask]) -> some View {
+    if !tasks.isEmpty {
+      Section {
+        ForEach(tasks) { task in
+          Button {
+            model.open(task)
+          } label: {
+            JunoMobileCodeTaskRow(task: task)
+          }
+          .buttonStyle(.plain)
+          .listRowBackground(Color.clear)
+        }
+      } header: {
+        Text(title)
+          .font(.subheadline.weight(.semibold))
+          .foregroundStyle(.secondary)
+          .textCase(nil)
+      }
     }
   }
 
@@ -390,217 +388,6 @@ struct JunoMobileCodeView: View {
 
   private var recentTasks: [NativeCodeTask] {
     model.tasks.filter { $0.status == .done || $0.status == .cancelled }
-  }
-
-  /// A compact command-center readout: the Code home should answer “what is
-  /// happening?” before asking somebody to read a list of sessions. These are
-  /// live model facts, not decorative badges, and the same status vocabulary is
-  /// used by the session rows and remote picker below.
-  private var codeOverview: some View {
-    JunoCard(padding: 14) {
-      VStack(alignment: .leading, spacing: 11) {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-          JunoIconView(.code, size: 16)
-            .foregroundStyle(Color.junoAccent)
-          Text("Build queue")
-            .junoFont(size: 14, relativeTo: .subheadline, weight: .semibold)
-          Spacer(minLength: 4)
-          JunoStatusPill(
-            text: model.isTargetless
-              ? "No project"
-              : (model.startBlockedReason == nil ? "Ready" : "Needs setup"),
-            tint: model.isTargetless || model.startBlockedReason == nil
-              ? Color.junoSuccess : Color.junoCaution,
-            filled: false
-          )
-        }
-        HStack(spacing: 0) {
-          codeMetric("Active", value: activeTasks.count, icon: .refresh)
-          Divider().frame(height: 28)
-          codeMetric("Finished", value: finishedTasks.count, icon: .check)
-          Divider().frame(height: 28)
-          codeMetric("Remote ready", value: readyDeviceCount, icon: .device)
-        }
-        Text(overviewDetail)
-          .junoFont(size: 12, relativeTo: .caption)
-          .junoSecondaryInk()
-          .lineLimit(2)
-      }
-    }
-    .accessibilityElement(children: .contain)
-    .accessibilityIdentifier("juno.mobile.code-overview")
-  }
-
-  private var finishedTasks: [NativeCodeTask] {
-    recentTasks.filter { $0.status == .done }
-  }
-
-  private var readyDeviceCount: Int {
-    model.devices.filter(\.canAcceptWork).count
-  }
-
-  private var overviewDetail: String {
-    if model.isTargetless {
-      return "Start a conversation without a repository, or choose Cloud or Remote below."
-    }
-    if let blocked = model.startBlockedReason {
-      return blocked
-    }
-    if model.target == .device {
-      return readyDeviceCount == 0
-        ? "Remote is selected. Connect a Juno Code host to run work locally."
-        : "Remote is ready. Work will run in the selected local workspace."
-    }
-    return "Cloud runs against the selected repository and returns a pull request."
-  }
-
-  private func codeMetric(_ title: String, value: Int, icon: JunoIcon) -> some View {
-    HStack(spacing: 6) {
-      JunoIconView(icon, size: 13)
-        .foregroundStyle(Color.junoMutedForeground)
-      VStack(alignment: .leading, spacing: 1) {
-        Text("\(value)")
-          .junoFont(size: 16, relativeTo: .body, weight: .semibold)
-          .monospacedDigit()
-        Text(title)
-          .junoFont(size: 10, relativeTo: .caption2, weight: .medium)
-          .junoMetaInk()
-          .lineLimit(1)
-      }
-      .frame(maxWidth: .infinity, alignment: .leading)
-    }
-    .frame(maxWidth: .infinity, alignment: .leading)
-  }
-
-  private func taskGroup(_ tasks: [NativeCodeTask]) -> some View {
-    VStack(spacing: JunoSpace.snug) {
-      ForEach(tasks) { task in
-        Button {
-          model.open(task)
-        } label: {
-          JunoCard(padding: 0) {
-            JunoMobileCodeTaskRow(task: task)
-          }
-        }
-        .buttonStyle(.plain)
-        .contentShape(.rect)
-      }
-    }
-  }
-
-  private func codeTaskSection(
-    title: String,
-    icon: JunoIcon,
-    tint: Color,
-    tasks: [NativeCodeTask]
-  ) -> some View {
-    VStack(alignment: .leading, spacing: JunoSpace.snug) {
-      HStack(spacing: JunoSpace.tight) {
-        JunoIconView(icon, size: 14)
-          .foregroundStyle(tint)
-        Text(title)
-          .junoFont(size: 13, relativeTo: .footnote, weight: .semibold)
-          .junoSecondaryInk()
-        Spacer(minLength: JunoSpace.hairline)
-        Text("\(tasks.count)")
-          .junoFont(size: 12, relativeTo: .caption, weight: .medium)
-          .monospacedDigit()
-          .foregroundStyle(Color.junoSecondaryInk)
-      }
-      .accessibilityElement(children: .combine)
-      .accessibilityLabel("\(title), \(tasks.count)")
-      taskGroup(tasks)
-    }
-  }
-
-  /// Who is signed in, what they are on, and how much of it is left.
-  ///
-  /// The website keeps its user menu in the sidebar in Code mode — avatar,
-  /// name, plan badge, quota meter — so none of that is ever a navigation away
-  /// while a run is costing money. This is that row, phone-shaped: identity on
-  /// the left, plan on the right, and the session and weekly meters underneath
-  /// once they have been read. Tapping it opens the full usage page; the
-  /// avatar in the navigation bar does the same, for a reader who has scrolled
-  /// past this.
-  ///
-  /// Nothing here is synthesised. Before the meters arrive the row shows the
-  /// account and nothing else, rather than an empty gauge that implies a
-  /// budget it has not read.
-  @ViewBuilder
-  private var accountBar: some View {
-    if let session {
-      Button {
-        showingUsage = true
-      } label: {
-        JunoCard(padding: 12) {
-          VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 10) {
-              JunoAvatar(
-                imageData: avatarData,
-                imageURL: session.profile.imageURL,
-                name: session.profile.name ?? session.profile.email,
-                size: 30
-              )
-              VStack(alignment: .leading, spacing: 1) {
-                Text(session.profile.name ?? session.profile.email)
-                  .junoFont(size: 14, relativeTo: .subheadline, weight: .semibold)
-                  .foregroundStyle(.primary)
-                  .lineLimit(1)
-                Text(session.profile.email)
-                  .junoFont(size: 11, relativeTo: .caption2)
-                  .junoSecondaryInk()
-                  .lineLimit(1)
-              }
-              Spacer(minLength: 6)
-              if let plan {
-                JunoStatusPill(text: plan.planName, tint: .junoAccent)
-              }
-              JunoIconView(.chevronRight, size: 11)
-                .junoMetaInk()
-            }
-
-            if let plan, !plan.isUnlimited, !plan.isBrowseOnly {
-              HStack(spacing: 12) {
-                meter("Session", plan.session)
-                meter("Weekly", plan.weekly)
-              }
-            }
-          }
-        }
-      }
-      .buttonStyle(.plain)
-      .accessibilityIdentifier("juno.mobile.code.account-card")
-      .contentShape(.rect)
-    }
-  }
-
-  /// One window's share of the plan, as a label and a bar.
-  private func meter(_ title: String, _ window: NativeUsagePlan.Window) -> some View {
-    VStack(alignment: .leading, spacing: 4) {
-      HStack(spacing: 6) {
-        Text(title)
-          .junoFont(size: 11, relativeTo: .caption2, weight: .medium)
-          .junoSecondaryInk()
-        Spacer(minLength: 4)
-        // Not monospaced. A percentage beside its own label is a UI
-        // label, not machine output, and setting it in the code face was
-        // what made a plan meter read as instrumentation.
-        Text(window.fraction.formatted(.percent.precision(.fractionLength(0))))
-          .junoFont(size: 11, relativeTo: .caption2, weight: .medium)
-          .monospacedDigit()
-          .junoSecondaryInk()
-      }
-      // Coral until it is nearly spent, then amber — the same rule the
-      // usage page follows, so a meter means the same thing on both.
-      JunoMobileUsageBar(
-        fraction: window.fraction,
-        tint: window.fraction >= 0.9 ? .junoCaution : .junoAccent
-      )
-    }
-    .accessibilityElement(children: .combine)
-    .accessibilityLabel(
-      "\(title) window: \(window.fraction.formatted(.percent.precision(.fractionLength(0)))) used"
-    )
   }
 
   /// The start composer: prompt, target toggle, target picker, go.
@@ -663,7 +450,7 @@ struct JunoMobileCodeView: View {
         }
       }
       .padding(7)
-      .background(JunoGlassBackground(cornerRadius: 26))
+      .glassEffect(.regular, in: .rect(cornerRadius: 24, style: .continuous))
     }
     .padding(.horizontal, 12)
     .padding(.vertical, 6)
@@ -1125,64 +912,63 @@ private struct JunoMobileCodeTargetSheet: View {
 private struct JunoMobileCodeTaskRow: View {
   let task: NativeCodeTask
 
+  /// A list row in the system's grammar: a status symbol, the title in body
+  /// text, one secondary line — where it runs, the status in words, when.
+  /// Colour only on the two states that ask something of the reader.
   var body: some View {
-    HStack(alignment: .top, spacing: JunoSpace.cozy) {
-      // A status-led rail gives the row a single scan point. The old list had
-      // three equal-weight text rows and asked the reader to hunt for what was
-      // actionable; the rail makes Needs you, Running and finished work read
-      // differently without turning every row into an alert.
-      RoundedRectangle(cornerRadius: 2, style: .continuous)
-        .fill(junoCodeStatusTint(task.status))
-        .frame(width: 4)
-
-      ZStack {
-        RoundedRectangle(cornerRadius: 10, style: .continuous)
-          .fill(Color.junoAccent.opacity(0.10))
-        JunoIconView(task.target == .cloud ? .cloud : .device, size: 15)
-          .foregroundStyle(Color.junoAccent)
-      }
-      .frame(width: 34, height: 34)
-
-      VStack(alignment: .leading, spacing: 6) {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
-          Text(task.title)
-            .font(JunoSerif.cardTitle)
-            .foregroundStyle(.primary)
-            .lineLimit(2)
-            .multilineTextAlignment(.leading)
-          Spacer(minLength: 0)
-          JunoIconView(.chevronRight, size: 11)
-            .junoMetaInk()
-        }
-
-        HStack(spacing: 6) {
+    HStack(alignment: .firstTextBaseline, spacing: 12) {
+      statusSymbol
+        .frame(width: 22)
+      VStack(alignment: .leading, spacing: 3) {
+        Text(task.title)
+          .font(.body)
+          .foregroundStyle(.primary)
+          .lineLimit(2)
+          .multilineTextAlignment(.leading)
+        HStack(spacing: 4) {
+          Text(junoCodeStatusText(task.status))
+            .foregroundStyle(statusIsLoud ? junoCodeStatusTint(task.status) : .secondary)
+          Text("·").accessibilityHidden(true)
           Text(task.whereItRuns)
-            .junoFont(size: 11, relativeTo: .caption2, weight: .medium)
-            .junoMetaInk()
             .lineLimit(1)
             .truncationMode(.head)
-          Text("·").junoMetaInk()
-          Text(task.updatedAt.formatted(.relative(presentation: .named)))
-            .junoFont(size: 11, relativeTo: .caption2)
-            .junoSecondaryInk()
-            .lineLimit(1)
           if task.pullRequestURL != nil {
-            JunoIconView(.pulls, size: 12)
-              .foregroundStyle(Color.junoAccent)
+            Image(systemName: "arrow.triangle.pull")
               .accessibilityLabel("Pull request")
           }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .font(.subheadline)
+        .foregroundStyle(.secondary)
       }
-
-      JunoStatusPill(
-        text: junoCodeStatusText(task.status),
-        tint: junoCodeStatusTint(task.status)
-      )
+      Spacer(minLength: 8)
+      Text(task.updatedAt, format: .relative(presentation: .numeric, unitsStyle: .narrow))
+        .font(.subheadline)
+        .foregroundStyle(.secondary)
+        .monospacedDigit()
     }
-    .padding(.horizontal, 14)
-    .padding(.vertical, 13)
-    .frame(maxWidth: .infinity, alignment: .leading)
+    .padding(.vertical, 4)
+    .contentShape(Rectangle())
+    .accessibilityElement(children: .combine)
+  }
+
+  private var statusIsLoud: Bool {
+    task.status == .awaitingApproval || task.status == .failed
+  }
+
+  @ViewBuilder
+  private var statusSymbol: some View {
+    switch task.status {
+    case .running, .queued:
+      ProgressView().controlSize(.small)
+    case .awaitingApproval:
+      Image(systemName: "hand.raised").foregroundStyle(Color.junoCaution)
+    case .failed:
+      Image(systemName: "exclamationmark.triangle").foregroundStyle(Color.junoDanger)
+    case .done:
+      Image(systemName: "checkmark.circle").foregroundStyle(.secondary)
+    case .cancelled:
+      Image(systemName: "stop.circle").foregroundStyle(.secondary)
+    }
   }
 }
 

@@ -1506,7 +1506,10 @@ struct JunoMobileRootView: View {
           avatarData: avatarModel?.imageData,
           requestSender: requestSender,
           modelCatalog: conversationModel?.modelCatalog ?? [],
-          openSettings: { openSidebarDestination(.settings) }
+          openSettings: { openSidebarDestination(.settings) },
+          // Work sessions are reached from Code on the phone (the drawer
+          // folds them in — see `JunoMobileSection.foldedDestinations`).
+          openWork: { openSidebarDestination(.work) }
         )
       } else {
         unavailable

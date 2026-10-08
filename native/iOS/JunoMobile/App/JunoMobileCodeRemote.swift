@@ -21,109 +21,91 @@ struct JunoMobileCodeHostsStrip: View {
 
   @State private var selectionHaptic = JunoMobileHapticTrigger()
 
+  /// Where runs go, as one compact header: the chosen computer's name with a
+  /// chevron, its state underneath, and a system menu to change it — the
+  /// shape Files and Music use for "which library". The strip of bordered
+  /// device cards it replaced was a web control.
   var body: some View {
-    ScrollView(.horizontal, showsIndicators: false) {
-      HStack(spacing: JunoSpace.snug) {
+    Menu {
+      Picker("Run on", selection: pickerSelection) {
         ForEach(hosts) { host in
-          chip(
-            title: host.name,
-            subtitle: host.online ? "Online" : "Seen \(host.lastSeenAt.formatted(.relative(presentation: .named)))",
-            icon: host.platform == "windows" ? "pc" : "laptopcomputer",
-            online: host.online,
-            selected: selection == .host(host.id)
-          ) {
-            selectionHaptic.fire()
-            selection = .host(host.id)
+          Label(host.name, systemImage: symbol(for: host))
+            .tag(JunoMobileCodeHostSelection.host(host.id))
+            .accessibilityIdentifier("juno.mobile.code-host-\(host.id)")
+        }
+        Label("Cloud", systemImage: "cloud")
+          .tag(JunoMobileCodeHostSelection.cloud)
+          .accessibilityIdentifier("juno.mobile.code-host-cloud")
+      }
+      .pickerStyle(.inline)
+      Divider()
+      Button(action: onPair) {
+        Label(hosts.isEmpty ? "Pair a Mac…" : "Pair another computer…", systemImage: "plus")
+      }
+      .accessibilityIdentifier("juno.mobile.code-pair")
+    } label: {
+      HStack(spacing: 10) {
+        Image(systemName: currentSymbol)
+          .font(.title3)
+          .foregroundStyle(.secondary)
+          .frame(width: 28)
+        VStack(alignment: .leading, spacing: 1) {
+          HStack(spacing: 4) {
+            Text(currentName)
+              .font(.headline)
+              .foregroundStyle(.primary)
+              .lineLimit(1)
+            Image(systemName: "chevron.down")
+              .font(.caption.weight(.semibold))
+              .foregroundStyle(.secondary)
           }
-          .accessibilityIdentifier("juno.mobile.code-host-\(host.id)")
+          Text(currentState)
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
         }
-        chip(
-          title: "Cloud",
-          subtitle: "Runs on Juno",
-          icon: "cloud",
-          online: nil,
-          selected: selection == .cloud
-        ) {
-          selectionHaptic.fire()
-          selection = .cloud
-        }
-        .accessibilityIdentifier("juno.mobile.code-host-cloud")
-        Button(action: onPair) {
-          HStack(spacing: JunoSpace.tight) {
-            JunoIconView(.plus, size: 13)
-            Text(hosts.isEmpty ? "Pair a Mac" : "Pair")
-              .junoFont(size: 13, relativeTo: .footnote, weight: .medium)
-          }
-          .foregroundStyle(Color.junoMutedForeground)
-          .padding(.horizontal, JunoSpace.cozy)
-          .frame(minHeight: 44)
-          .overlay(
-            RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
-              .strokeBorder(Color.junoBorder, style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
-          )
-          .contentShape(Rectangle())
-        }
-        .buttonStyle(.junoPress)
-        .accessibilityIdentifier("juno.mobile.code-pair")
+        Spacer(minLength: 0)
       }
       .padding(.horizontal, JunoSpace.regular)
       .padding(.vertical, JunoSpace.tight)
+      .frame(minHeight: 44)
+      .contentShape(Rectangle())
     }
+    .tint(Color.primary)
     .junoHaptic(JunoMobileHaptic.selection, trigger: selectionHaptic)
+    .accessibilityLabel("Run on \(currentName), \(currentState)")
     .accessibilityIdentifier("juno.mobile.code-hosts")
   }
 
-  private func chip(
-    title: String, subtitle: String, icon: String, online: Bool?, selected: Bool,
-    action: @escaping () -> Void
-  ) -> some View {
-    Button(action: action) {
-      HStack(spacing: JunoSpace.snug) {
-        Image(systemName: icon)
-          .junoFont(size: 15, relativeTo: .body)
-          .foregroundStyle(selected ? Color.junoForeground : Color.junoMutedForeground)
-          .frame(width: 22)
-        VStack(alignment: .leading, spacing: 1) {
-          Text(title)
-            .junoFont(size: 14, relativeTo: .subheadline, weight: .semibold)
-            .foregroundStyle(.primary)
-            .lineLimit(1)
-          HStack(spacing: 4) {
-            // Online is the ordinary state and says so in words; only an
-            // offline Mac earns a symbol.
-            if online == false {
-              Image(systemName: "wifi.slash")
-                .imageScale(.small)
-                .foregroundStyle(Color.junoSecondaryInk)
-                .accessibilityHidden(true)
-            }
-            Text(subtitle)
-              .junoFont(size: 11, relativeTo: .caption2)
-              .junoSecondaryInk()
-              .lineLimit(1)
-          }
-        }
+  private var pickerSelection: Binding<JunoMobileCodeHostSelection> {
+    Binding(
+      get: { selection },
+      set: { choice in
+        guard choice != selection else { return }
+        selectionHaptic.fire()
+        selection = choice
       }
-      .padding(.horizontal, JunoSpace.cozy)
-      .padding(.vertical, JunoSpace.snug)
-      .frame(minHeight: 44)
-      .background(
-        RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
-          .fill(selected ? Color.junoSurface : Color.junoMuted.opacity(0.6))
-          .shadow(
-            color: selected ? Color.junoCardShadow : .clear,
-            radius: JunoElevation.cardBlur, y: JunoElevation.cardOffsetY
-          )
-      )
-      .overlay(
-        RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
-          .strokeBorder(selected ? Color.junoForeground.opacity(0.35) : Color.junoHairline, lineWidth: selected ? 1.25 : 1)
-      )
-      .contentShape(Rectangle())
-    }
-    .buttonStyle(.junoPress)
-    .accessibilityLabel("\(title), \(subtitle)")
-    .accessibilityAddTraits(selected ? .isSelected : [])
+    )
+  }
+
+  private var currentHost: CodeRemoteHostSummary? {
+    guard case .host(let id) = selection else { return nil }
+    return hosts.first { $0.id == id }
+  }
+
+  private var currentName: String { currentHost?.name ?? "Cloud" }
+
+  private var currentSymbol: String { currentHost.map(symbol(for:)) ?? "cloud" }
+
+  private var currentState: String {
+    guard let host = currentHost else { return "Runs on Alevr's servers" }
+    return host.online
+      ? "Online"
+      : "Last seen \(host.lastSeenAt.formatted(.relative(presentation: .named)))"
+  }
+
+  private func symbol(for host: CodeRemoteHostSummary) -> String {
+    host.platform == "windows" ? "pc" : "laptopcomputer"
   }
 }
 
@@ -180,18 +162,14 @@ struct JunoMobileCodeRemoteSessionsList: View {
 
   var body: some View {
     VStack(spacing: 0) {
-      ScrollView(.horizontal, showsIndicators: false) {
-        JunoMobileSegmented(
-          options: JunoMobileCodeSessionFilter.allCases.map {
-            JunoMobileSegmented<JunoMobileCodeSessionFilter>.Option($0, $0.title)
-          },
-          selection: $filter,
-          accessibilityLabel: "Session filter",
-          compact: true
-        )
-        .padding(.horizontal, JunoSpace.regular)
-        .padding(.vertical, JunoSpace.snug)
+      Picker("Session filter", selection: $filter) {
+        ForEach(JunoMobileCodeSessionFilter.allCases) { option in
+          Text(option.title).tag(option)
+        }
       }
+      .pickerStyle(.segmented)
+      .padding(.horizontal, JunoSpace.regular)
+      .padding(.bottom, JunoSpace.tight)
       List {
         if sessions.isEmpty {
           ContentUnavailableView {
@@ -219,11 +197,11 @@ struct JunoMobileCodeRemoteSessionsList: View {
             JunoMobileCodeRemoteSessionRow(session: session)
           }
           .buttonStyle(.plain)
-          .listRowBackground(Color.junoSurface)
+          .listRowBackground(Color.clear)
           .accessibilityIdentifier("juno.mobile.code-session-\(session.sessionID)")
         }
       }
-      .listStyle(.insetGrouped)
+      .listStyle(.plain)
       .scrollContentBackground(.hidden)
       .refreshable { await model.loadSessions(deviceID: host.id) }
       .overlay(alignment: .top) {
@@ -241,7 +219,7 @@ struct JunoMobileCodeRemoteSessionsList: View {
   private var emptyDescription: String {
     switch filter {
     case .all: host.online
-      ? "Start one here or from Juno Code on \(host.name)."
+      ? "Start one here or from Alevr Code on \(host.name)."
       : "\(host.name) is offline. Sessions appear once it checks in."
     case .running: "Nothing is running on \(host.name) right now."
     case .needsYou: "Nothing is waiting on you."
@@ -250,53 +228,42 @@ struct JunoMobileCodeRemoteSessionsList: View {
   }
 }
 
-/// Status glyph · title · project/branch · diff stat · time.
+/// Status symbol · title · one secondary line · time — a system list row.
 struct JunoMobileCodeRemoteSessionRow: View {
   let session: CodeRemoteSessionSummary
 
   var body: some View {
-    HStack(alignment: .top, spacing: JunoSpace.cozy) {
+    HStack(alignment: .firstTextBaseline, spacing: 12) {
       statusGlyph
-        .frame(width: 22, height: 22)
-        .padding(.top, 1)
+        .frame(width: 22)
       VStack(alignment: .leading, spacing: 3) {
         Text(session.title)
-          .junoFont(size: 15, relativeTo: .subheadline, weight: .medium)
+          .font(.body)
           .foregroundStyle(.primary)
           .lineLimit(2)
-        HStack(spacing: JunoSpace.tight) {
+        HStack(spacing: 4) {
+          Text(statusWord)
+            .foregroundStyle(statusTint)
           if let workspace = session.workspaceName {
-            Text(workspace)
+            Text("·").accessibilityHidden(true)
+            Text(workspace).lineLimit(1)
           }
           if let branch = session.activeBranch {
             Text("·").accessibilityHidden(true)
-            HStack(spacing: 2) {
-              JunoIconView(.branch, size: 10)
-              Text(branch).lineLimit(1)
-            }
+            Text(branch).lineLimit(1).truncationMode(.middle)
           }
         }
-        .junoFont(size: 12, relativeTo: .caption)
-        .junoSecondaryInk()
+        .font(.subheadline)
+        .foregroundStyle(.secondary)
         .lineLimit(1)
-        HStack(spacing: JunoSpace.snug) {
-          Text(statusWord)
-            .junoFont(size: 12, relativeTo: .caption, weight: .medium)
-            .foregroundStyle(statusTint)
-          if session.pendingChangeCount > 0 {
-            Text("^[\(session.pendingChangeCount) file](inflect: true) changed")
-              .junoFont(size: 12, relativeTo: .caption)
-              .junoMetaInk()
-          }
-          Spacer(minLength: 0)
-          Text(session.updatedAt, style: .relative)
-            .junoFont(size: 11, relativeTo: .caption2)
-            .monospacedDigit()
-            .junoMetaInk()
-        }
       }
+      Spacer(minLength: 8)
+      Text(session.updatedAt, format: .relative(presentation: .numeric, unitsStyle: .narrow))
+        .font(.subheadline)
+        .monospacedDigit()
+        .foregroundStyle(.secondary)
     }
-    .padding(.vertical, JunoSpace.hairline)
+    .padding(.vertical, 4)
     .contentShape(Rectangle())
     .accessibilityElement(children: .combine)
   }
@@ -318,24 +285,23 @@ struct JunoMobileCodeRemoteSessionRow: View {
   private var statusTint: Color {
     if session.isAwaitingApproval { return Color.junoCaution }
     if session.currentStatus == "failed" { return Color.junoDanger }
-    return Color.junoSecondaryInk
+    return Color.secondary
   }
 
   @ViewBuilder
   private var statusGlyph: some View {
     if session.isAwaitingApproval {
-      JunoIconView(.permission, size: 15).foregroundStyle(Color.junoCaution)
+      Image(systemName: "hand.raised").foregroundStyle(Color.junoCaution)
     } else if session.isRunning {
       // The system's own quiet activity mark, not a breathing coloured dot.
       ProgressView()
-        .controlSize(.mini)
-        .frame(width: 15, height: 15)
+        .controlSize(.small)
         .accessibilityLabel("Running")
     } else {
       switch session.currentStatus {
-      case "completed": JunoIconView(.check, size: 15).foregroundStyle(Color.junoTertiaryInk)
-      case "failed": JunoIconView(.error, size: 15).foregroundStyle(Color.junoDanger)
-      default: JunoIconView(.code, size: 15).foregroundStyle(Color.junoMutedForeground)
+      case "completed": Image(systemName: "checkmark.circle").foregroundStyle(.secondary)
+      case "failed": Image(systemName: "exclamationmark.triangle").foregroundStyle(Color.junoDanger)
+      default: Image(systemName: "chevron.left.forwardslash.chevron.right").foregroundStyle(.secondary)
       }
     }
   }
@@ -383,7 +349,7 @@ struct JunoMobileCodeDevicesView: View {
       } header: {
         Text("Paired computers")
       } footer: {
-        Text("Swipe left on a computer to revoke it. Its sessions and pending approvals go with it; the Mac pairs again from Juno Code on the Mac.")
+        Text("Swipe left on a computer to revoke it. Its sessions and pending approvals go with it; the Mac pairs again from Alevr Code on the Mac.")
       }
 
       Section("How to pair a Mac") {
@@ -415,7 +381,7 @@ struct JunoMobileCodeDevicesView: View {
       Button("Cancel", role: .cancel) { pendingRevoke = nil }
         .contentShape(.rect)
     } message: { host in
-      Text("\(host.name) stops being listed, and its sessions and pending approvals go with it. The Mac can pair again from Juno Code on the Mac.")
+      Text("\(host.name) stops being listed, and its sessions and pending approvals go with it. The Mac can pair again from Alevr Code on the Mac.")
     }
     .alert(
       "Could not revoke this computer",
