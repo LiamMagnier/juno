@@ -73,7 +73,7 @@ struct JunoMobileLibraryPicker: View {
             JunoMobileQuietLoading()
         } else if model.items.isEmpty {
             ContentUnavailableView {
-                Label("library.empty.title", systemImage: "photo.on.rectangle")
+                Label("library.empty.title", image: JunoIcon.photos.assetName(.regular))
             } description: {
                 Text("library.empty.description")
             } actions: {
@@ -105,7 +105,7 @@ struct JunoMobileLibraryPicker: View {
 
                 if let error = model.lastErrorDescription {
                     HStack(spacing: JunoSpace.cozy) {
-                        Image(systemName: "exclamationmark.triangle")
+                        JunoSymbol(.triangleAlert)
                             .foregroundStyle(.secondary)
                         Text(error)
                             .font(.subheadline)
@@ -160,7 +160,7 @@ struct JunoMobileLibraryPicker: View {
                 .clipShape(.rect(cornerRadius: 6, style: .continuous))
                 .overlay(alignment: .bottomTrailing) {
                     if selected {
-                        Image(systemName: "checkmark.circle.fill")
+                        JunoSymbol(.circleCheck)
                             .font(.title3)
                             .symbolRenderingMode(.palette)
                             .foregroundStyle(.white, .tint)
@@ -193,7 +193,7 @@ struct JunoMobileLibraryPicker: View {
             EmptyView()
         case .unavailable:
             VStack(spacing: 6) {
-                Image(systemName: file.isImage ? "photo" : "doc.text")
+                JunoSymbol(file.isImage ? JunoIcon.image : JunoIcon.file)
                     .font(.title2)
                     .foregroundStyle(.secondary)
                 Text(file.fileName)

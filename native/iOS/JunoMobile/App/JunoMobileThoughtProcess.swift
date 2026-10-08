@@ -157,7 +157,7 @@ struct JunoMobileThoughtProcessRow: View {
                 Text(clock.duration.map { "Thought for \(JunoMobileRunCopy.span($0))" } ?? "Thought process")
                     .font(.subheadline)
                     .monospacedDigit()
-                Image(systemName: "chevron.right")
+                JunoSymbol(.chevronRight)
                     .font(.caption.weight(.semibold))
                     .imageScale(.small)
             }

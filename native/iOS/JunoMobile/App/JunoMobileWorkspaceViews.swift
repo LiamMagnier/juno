@@ -55,7 +55,7 @@ struct JunoMobileProjectsView: View {
         JunoMobileQuietLoading()
       case .failed where model.projects.isEmpty:
         ContentUnavailableView {
-          Label("Projects unavailable", systemImage: "exclamationmark.triangle")
+          Label("Projects unavailable", image: JunoIcon.triangleAlert.assetName(.regular))
         } description: {
           Text(model.lastErrorDescription ?? "Check your connection and try again.")
         } actions: {
@@ -77,7 +77,7 @@ struct JunoMobileProjectsView: View {
         Button {
           showingCreate = true
         } label: {
-          Label("New project", systemImage: "plus")
+          Label("New project", image: JunoIcon.plus.assetName(.regular))
         }
         .disabled(model.isMutating)
         .accessibilityIdentifier("juno.mobile.project-new")
@@ -207,7 +207,7 @@ struct JunoMobileProjectsView: View {
         pinHaptic.fire()
         Task { await model.updateProject(id: project.id, starred: !project.starred) }
       } label: {
-        Label(project.starred ? "Unpin" : "Pin", systemImage: project.starred ? "pin.slash" : "pin")
+        Label(project.starred ? "Unpin" : "Pin", image: (project.starred ? JunoIcon.pinOff : JunoIcon.pin).assetName(.regular))
       }
       .tint(.orange)
     }
@@ -215,13 +215,13 @@ struct JunoMobileProjectsView: View {
       Button(role: .destructive) {
         deleteTarget = project
       } label: {
-        Label("Delete", systemImage: "trash")
+        Label("Delete", image: JunoIcon.trash.assetName(.regular))
       }
       Button {
         renameValue = project.name
         renameTarget = project
       } label: {
-        Label("Rename", systemImage: "pencil")
+        Label("Rename", image: JunoIcon.pencil.assetName(.regular))
       }
       .tint(.gray)
     }
@@ -232,7 +232,7 @@ struct JunoMobileProjectsView: View {
 
   private var empty: some View {
     ContentUnavailableView {
-      Label("No Projects", systemImage: "folder")
+      Label("No Projects", image: JunoIcon.projects.assetName(.regular))
     } description: {
       Text("A project groups chats and files, and gives every chat in it the same instructions.")
     } actions: {
@@ -248,27 +248,27 @@ struct JunoMobileProjectsView: View {
       pinHaptic.fire()
       Task { await model.updateProject(id: project.id, starred: !project.starred) }
     } label: {
-      Label(project.starred ? "Unpin" : "Pin", systemImage: project.starred ? "pin.slash" : "pin")
+      Label(project.starred ? "Unpin" : "Pin", image: (project.starred ? JunoIcon.pinOff : JunoIcon.pin).assetName(.regular))
     }
     .contentShape(.rect)
     Button {
       renameValue = project.name
       renameTarget = project
     } label: {
-      Label("Rename", systemImage: "pencil")
+      Label("Rename", image: JunoIcon.pencil.assetName(.regular))
     }
     .contentShape(.rect)
     Button {
       moveTarget = project
     } label: {
-      Label("Move to…", systemImage: "folder")
+      Label("Move to…", image: JunoIcon.projects.assetName(.regular))
     }
     .contentShape(.rect)
     Divider()
     Button(role: .destructive) {
       deleteTarget = project
     } label: {
-      Label("Delete", systemImage: "trash")
+      Label("Delete", image: JunoIcon.trash.assetName(.regular))
     }
     .contentShape(.rect)
   }
@@ -282,7 +282,7 @@ private struct JunoMobileProjectRow: View {
 
   var body: some View {
     HStack(spacing: JunoSpace.cozy) {
-      Image(systemName: "folder")
+      JunoSymbol(.projects)
         .font(.title3)
         .foregroundStyle(.secondary)
         .frame(width: 32)
@@ -413,7 +413,7 @@ private struct JunoMobileProjectFileRow: View {
   var body: some View {
     Button(action: open) {
       HStack(spacing: JunoSpace.cozy) {
-        Image(systemName: file.kind == "IMAGE" ? "photo" : "doc.text")
+        JunoSymbol(file.kind == "IMAGE" ? JunoIcon.image : JunoIcon.file)
           .font(.title3)
           .foregroundStyle(.secondary)
           .frame(width: 32)
@@ -437,10 +437,10 @@ private struct JunoMobileProjectFileRow: View {
     }
     .buttonStyle(.plain)
     .contextMenu {
-      Button(action: open) { Label("Open", systemImage: "eye") }
-      Button(action: rename) { Label("Rename", systemImage: "pencil") }
+      Button(action: open) { Label("Open", image: JunoIcon.eye.assetName(.regular)) }
+      Button(action: rename) { Label("Rename", image: JunoIcon.pencil.assetName(.regular)) }
       Divider()
-      Button(role: .destructive, action: delete) { Label("Delete", systemImage: "trash") }
+      Button(role: .destructive, action: delete) { Label("Delete", image: JunoIcon.trash.assetName(.regular)) }
     }
     .accessibilityLabel(file.fileName)
   }
@@ -509,7 +509,7 @@ struct JunoMobileArtifactsView: View {
         JunoMobileQuietLoading()
       case .failed where model.artifacts.isEmpty:
         ContentUnavailableView {
-          Label("Artifacts unavailable", systemImage: "exclamationmark.triangle")
+          Label("Artifacts unavailable", image: JunoIcon.triangleAlert.assetName(.regular))
         } description: {
           Text(model.lastErrorDescription ?? "Check your connection and try again.")
         } actions: {
@@ -545,11 +545,7 @@ struct JunoMobileArtifactsView: View {
               }
             }
           } label: {
-            Label(
-              "Filter",
-              systemImage: kindFilter == nil
-                ? "line.3.horizontal.decrease" : "line.3.horizontal.decrease.circle.fill"
-            )
+            Label("Filter", image: JunoIcon.filter.assetName(kindFilter == nil ? .regular : .fill))
           }
           .accessibilityIdentifier("juno.mobile.artifacts-filter")
         }
@@ -558,7 +554,7 @@ struct JunoMobileArtifactsView: View {
         Button {
           showingDeleted = true
         } label: {
-          Label("Recently Deleted", systemImage: "trash")
+          Label("Recently Deleted", image: JunoIcon.trash.assetName(.regular))
         }
         .accessibilityIdentifier("juno.mobile.artifacts-recently-deleted")
       }
@@ -590,7 +586,7 @@ struct JunoMobileArtifactsView: View {
 
       if model.artifacts.isEmpty {
         ContentUnavailableView {
-          Label("No Artifacts", systemImage: "square.on.square")
+          Label("No Artifacts", image: JunoIcon.copy.assetName(.regular))
         } description: {
           Text("When Alevr builds a page, a component or a diagram in a chat, it’s kept here — every version of it.")
         }
@@ -612,8 +608,7 @@ struct JunoMobileArtifactsView: View {
   private func row(_ artifact: NativeArtifact) -> some View {
     NavigationLink(value: artifact.id) {
       HStack(spacing: JunoSpace.cozy) {
-        Image(systemName: Self.kindSymbol(artifact.kind))
-          .font(.title3)
+        JunoIconView(Self.kindIcon(artifact.kind), size: 20)
           .foregroundStyle(.secondary)
           .frame(width: 32)
           .accessibilityHidden(true)
@@ -638,16 +633,16 @@ struct JunoMobileArtifactsView: View {
     }
   }
 
-  static func kindSymbol(_ kind: NativeArtifactKind) -> String {
+  static func kindIcon(_ kind: NativeArtifactKind) -> JunoIcon {
     switch kind {
-    case .html: "globe"
-    case .react, .code: "chevron.left.forwardslash.chevron.right"
-    case .markdown, .document: "doc.text"
-    case .svg: "photo"
-    case .mermaid: "point.3.connected.trianglepath.dotted"
-    case .design: "paintbrush"
-    case .spreadsheet: "tablecells"
-    case .presentation: "rectangle.on.rectangle"
+    case .html: .web
+    case .react, .code: .code
+    case .markdown, .document: .file
+    case .svg: .image
+    case .mermaid: .workflow
+    case .design: .design
+    case .spreadsheet: .grid
+    case .presentation: .artifacts
     }
   }
 
@@ -688,7 +683,7 @@ struct JunoMobileWorkspaceStatus: View {
   var body: some View {
     if conflicted {
       VStack(alignment: .leading, spacing: JunoSpace.cozy) {
-        Label(conflictMessage, systemImage: "arrow.triangle.2.circlepath")
+        Label(conflictMessage, image: JunoIcon.refresh.assetName(.regular))
           .font(.subheadline)
           .foregroundStyle(.secondary)
         HStack(spacing: JunoSpace.regular) {
@@ -701,7 +696,7 @@ struct JunoMobileWorkspaceStatus: View {
       .accessibilityIdentifier("juno.mobile.project-conflict")
     } else if offline || message != nil {
       HStack(spacing: JunoSpace.cozy) {
-        Image(systemName: offline ? "wifi.slash" : "exclamationmark.triangle")
+        JunoSymbol(offline ? JunoIcon.wifiOff : JunoIcon.triangleAlert)
           .foregroundStyle(.secondary)
           .accessibilityHidden(true)
         Text(message ?? offlineMessage)
@@ -775,7 +770,7 @@ private struct JunoMobileProjectDetail: View {
         }
         Spacer(minLength: 0)
         if conversation.pinned {
-          Image(systemName: "pin.fill")
+          JunoSymbol(.pin)
             .font(.footnote)
             .foregroundStyle(.secondary)
             .accessibilityLabel("Pinned")
@@ -808,7 +803,7 @@ private struct JunoMobileProjectDetail: View {
         Button {
           createProjectConversation()
         } label: {
-          Label("New Chat", systemImage: "square.and.pencil")
+          Label("New Chat", image: JunoIcon.compose.assetName(.regular))
         }
         .disabled(project.isPending || conversationModel == nil)
         .accessibilityIdentifier("juno.mobile.project-new-chat")
@@ -844,7 +839,7 @@ private struct JunoMobileProjectDetail: View {
         } label: {
           Label(
             project.starred ? "Unpin project" : "Pin project",
-            systemImage: project.starred ? "pin.fill" : "pin"
+            image: (project.starred ? JunoIcon.pin : JunoIcon.pin).assetName(.regular)
           )
         }
         .disabled(project.isPending || model.isMutating)
@@ -855,19 +850,19 @@ private struct JunoMobileProjectDetail: View {
           Button {
             editName = project.name
             showingRename = true
-          } label: { Label("Rename", systemImage: "pencil") }
-          Button { showingImporter = true } label: { Label("Add File", systemImage: "paperclip") }
+          } label: { Label("Rename", image: JunoIcon.pencil.assetName(.regular)) }
+          Button { showingImporter = true } label: { Label("Add File", image: JunoIcon.attach.assetName(.regular)) }
           if model.newFolderRefusal(in: project.id) == nil {
-            Button { creatingFolder = true } label: { Label("New Folder", systemImage: "folder.badge.plus") }
+            Button { creatingFolder = true } label: { Label("New Folder", image: JunoIcon.folderPlus.assetName(.regular)) }
           }
           if workspaceModel != nil {
-            Button { showingAssistant = true } label: { Label("Assistant…", systemImage: "person.crop.circle") }
+            Button { showingAssistant = true } label: { Label("Assistant…", image: JunoIcon.userCircle.assetName(.regular)) }
           }
-          Button { showingMove = true } label: { Label("Move to…", systemImage: "folder") }
+          Button { showingMove = true } label: { Label("Move to…", image: JunoIcon.projects.assetName(.regular)) }
           Divider()
-          Button(role: .destructive) { deleteTarget = project } label: { Label("Delete", systemImage: "trash") }
+          Button(role: .destructive) { deleteTarget = project } label: { Label("Delete", image: JunoIcon.trash.assetName(.regular)) }
         } label: {
-          Label("Project actions", systemImage: "ellipsis")
+          Label("Project actions", image: JunoIcon.ellipsis.assetName(.regular))
         }
         .disabled(project.isPending || model.isMutating)
         .accessibilityIdentifier("juno.mobile.project-menu")
@@ -969,7 +964,7 @@ private struct JunoMobileProjectDetail: View {
                   await conversationModel?.setProject(id: conversation.id, projectID: nil)
                 }
               } label: {
-                Label("Remove", systemImage: "folder.badge.minus")
+                Label("Remove", image: JunoIcon.projects.assetName(.regular))
               }
               .tint(.gray)
             }
@@ -1000,13 +995,13 @@ private struct JunoMobileProjectDetail: View {
             deleteHaptic.fire()
             Task { await model.deleteFile(id: file.id) }
           } label: {
-            Label("Delete", systemImage: "trash")
+            Label("Delete", image: JunoIcon.trash.assetName(.regular))
           }
           Button {
             renameValue = file.fileName
             renameFileID = file.id
           } label: {
-            Label("Rename", systemImage: "pencil")
+            Label("Rename", image: JunoIcon.pencil.assetName(.regular))
           }
           .tint(.gray)
         }
@@ -1014,7 +1009,7 @@ private struct JunoMobileProjectDetail: View {
       Button {
         showingImporter = true
       } label: {
-        Label("Add File", systemImage: "plus")
+        Label("Add File", image: JunoIcon.plus.assetName(.regular))
       }
       .disabled(project.isPending || model.isPerformingFileAction)
     } header: {
@@ -1435,7 +1430,7 @@ struct JunoMobileArtifactDetail: View {
         }
       }
     } label: {
-      Label("Version \(shownVersion)", systemImage: "clock.arrow.circlepath")
+      Label("Version \(shownVersion)", image: JunoIcon.history.assetName(.regular))
     }
     .contentShape(.rect)
     .accessibilityLabel("Version")
@@ -1488,7 +1483,7 @@ struct JunoMobileArtifactDetail: View {
           .buttonBorderShape(.circle)
         if let close {
           Button(action: close) {
-            Label("Close artifact", systemImage: "xmark")
+            Label("Close artifact", image: JunoIcon.close.assetName(.regular))
               .labelStyle(.iconOnly)
           }
           .frame(minWidth: 44, minHeight: 44)
@@ -1555,7 +1550,7 @@ struct JunoMobileArtifactDetail: View {
       } else {
         ContentUnavailableView(
           "Version unavailable",
-          systemImage: "arrow.triangle.2.circlepath",
+          image: JunoIcon.refresh.assetName(.regular),
           description: Text("Reconnect to load the latest version.")
         )
       }
@@ -1584,7 +1579,7 @@ struct JunoMobileArtifactDetail: View {
           }
           ToolbarItem(placement: .topBarTrailing) {
             ShareLink(item: version?.content ?? "") {
-              Label("Share", systemImage: "square.and.arrow.up")
+              Label("Share", image: JunoIcon.share.assetName(.regular))
             }
             .disabled(version == nil)
           }
@@ -1602,12 +1597,12 @@ struct JunoMobileArtifactDetail: View {
     Menu {
       if !artifact.conversationID.isEmpty {
         Button { openConversation(artifact.conversationID) } label: {
-          Label("Open Chat", systemImage: "bubble.left")
+          Label("Open Chat", image: JunoIcon.conversation.assetName(.regular))
         }
       }
       if close != nil {
         ShareLink(item: version?.content ?? "") {
-          Label("Share Source", systemImage: "square.and.arrow.up")
+          Label("Share Source", image: JunoIcon.share.assetName(.regular))
         }
         if artifact.versions.count > 1 {
           Picker(selection: $selectedVersion) {
@@ -1615,13 +1610,13 @@ struct JunoMobileArtifactDetail: View {
               Text("Version \(candidate.version)").tag(candidate.version)
             }
           } label: {
-            Label("Version", systemImage: "clock.arrow.circlepath")
+            Label("Version", image: JunoIcon.history.assetName(.regular))
           }
           .pickerStyle(.menu)
         }
       }
       if let exportURL {
-        ShareLink(item: exportURL) { Label("Share Export", systemImage: "square.and.arrow.up.on.square") }
+        ShareLink(item: exportURL) { Label("Share Export", image: JunoIcon.share.assetName(.regular)) }
       }
       if let publishedURL {
         ShareLink(item: publishedURL) { Text("Share published link") }
@@ -1656,7 +1651,7 @@ struct JunoMobileArtifactDetail: View {
       }
       Button("Move to Recently Deleted", role: .destructive) { showingDelete = true }
     } label: {
-      Label("Artifact actions", systemImage: "ellipsis")
+      Label("Artifact actions", image: JunoIcon.ellipsis.assetName(.regular))
         .labelStyle(.iconOnly)
     }
     .frame(minWidth: 44, minHeight: 44)
@@ -1896,7 +1891,7 @@ private struct JunoMobileArtifactVersionDiff: View {
         }
       }
     } else {
-      ContentUnavailableView("No previous version", systemImage: "doc.text")
+      ContentUnavailableView("No previous version", image: JunoIcon.file.assetName(.regular))
     }
   }
 }

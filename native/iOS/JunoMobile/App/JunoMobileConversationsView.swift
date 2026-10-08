@@ -316,7 +316,7 @@ private struct JunoMobileDraftChat: View {
         if let resume = resumeConversation {
           JunoMobileResumeRow(
             title: resume.title,
-            symbol: resume.projectId != nil ? "folder" : (resume.kind == "code" ? "chevron.left.forwardslash.chevron.right" : "bubble.left")
+            icon: resume.projectId != nil ? .projects : (resume.kind == "code" ? .code : .conversation)
           ) {
             model.isDraftingNewConversation = false
             model.selectedConversationID = resume.id
@@ -1069,7 +1069,7 @@ private struct JunoMobileConversationDetail: View {
     if let newChat {
       ToolbarItem(placement: .topBarTrailing) {
         Button(action: newChat) {
-          Image(systemName: "square.and.pencil")
+          JunoSymbol(.compose)
         }
         .tint(Color.primary)
         .disabled(messages.isEmpty)
@@ -1085,7 +1085,7 @@ private struct JunoMobileConversationDetail: View {
       Button {
         Task { await createShare() }
       } label: {
-        Label("Share", systemImage: "square.and.arrow.up")
+        Label("Share", image: JunoIcon.share.assetName(.regular))
       }
       .contentShape(.rect)
       .disabled(sharing)
@@ -1093,7 +1093,7 @@ private struct JunoMobileConversationDetail: View {
     Button {
       find.open()
     } label: {
-      Label("Find in Conversation", systemImage: "magnifyingglass")
+      Label("Find in Conversation", image: JunoIcon.search.assetName(.regular))
     }
     .contentShape(.rect)
     .accessibilityIdentifier("juno.mobile.conversation-find")
@@ -1101,7 +1101,7 @@ private struct JunoMobileConversationDetail: View {
       editValue = conversation.title
       showingRename = true
     } label: {
-      Label("Rename", systemImage: "pencil")
+      Label("Rename", image: JunoIcon.pencil.assetName(.regular))
     }
     .contentShape(.rect)
     Button {
@@ -1109,7 +1109,7 @@ private struct JunoMobileConversationDetail: View {
         await model.setPinned(id: conversation.id, pinned: !conversation.pinned)
       }
     } label: {
-      Label(conversation.pinned ? "Unpin" : "Pin", systemImage: conversation.pinned ? "pin.slash" : "pin")
+      Label(conversation.pinned ? "Unpin" : "Pin", image: (conversation.pinned ? JunoIcon.pinOff : JunoIcon.pin).assetName(.regular))
     }
     .contentShape(.rect)
     Divider()
@@ -1119,7 +1119,7 @@ private struct JunoMobileConversationDetail: View {
     Button(role: .destructive) {
       showingDelete = true
     } label: {
-      Label("Delete", systemImage: "trash")
+      Label("Delete", image: JunoIcon.trash.assetName(.regular))
     }
     .contentShape(.rect)
   }
@@ -1556,7 +1556,7 @@ private struct JunoMobileConversationTitle: View {
         .font(.headline)
         .lineLimit(1)
         .truncationMode(.tail)
-      Image(systemName: "chevron.down")
+      JunoSymbol(.chevronDown)
         .font(.caption2.weight(.semibold))
         .foregroundStyle(.secondary)
         .accessibilityHidden(true)
@@ -2257,10 +2257,8 @@ private struct JunoMobileMessageRow: View {
           Button {
             copy()
           } label: {
-            Image(systemName: copied ? "checkmark" : "square.on.square")
-              .junoFont(size: 16, relativeTo: .body, weight: .regular)
+            JunoIconView(copied ? JunoIcon.check : JunoIcon.copy, size: 16)
               .foregroundStyle(Color.junoSecondaryInk)
-              .contentTransition(.symbolEffect(.replace))
               .frame(width: 38, height: 44)
               .contentShape(Rectangle())
           }
@@ -2271,13 +2269,13 @@ private struct JunoMobileMessageRow: View {
 
         if let setFeedback {
           symbolButton(
-            message.feedback == .up ? "hand.thumbsup.fill" : "hand.thumbsup",
+            .thumbsUp, on: message.feedback == .up,
             label: "message.good",
             identifier: "juno.mobile.message-thumbs-up"
           ) { setFeedback(message.id, message.feedback == .up ? nil : .up) }
 
           symbolButton(
-            message.feedback == .down ? "hand.thumbsdown.fill" : "hand.thumbsdown",
+            .thumbsDown, on: message.feedback == .down,
             label: "message.bad",
             identifier: "juno.mobile.message-thumbs-down"
           ) { setFeedback(message.id, message.feedback == .down ? nil : .down) }
@@ -2286,7 +2284,7 @@ private struct JunoMobileMessageRow: View {
         if let readAloud, !plainText.isEmpty {
           let speaking = readAloud.isSpeaking(message.id)
           symbolButton(
-            speaking ? "stop.circle" : "speaker.wave.2",
+            speaking ? .circleStop : .volume,
             label: speaking ? "message.stop-reading" : "message.read-aloud",
             identifier: "juno.mobile.message-read-aloud"
           ) {
@@ -2295,14 +2293,14 @@ private struct JunoMobileMessageRow: View {
         }
 
         if let share, !plainText.isEmpty {
-          symbolButton("square.and.arrow.up", label: "Share", identifier: "juno.mobile.message-share") {
+          symbolButton(.share, label: "Share", identifier: "juno.mobile.message-share") {
             share(plainText)
           }
         }
 
         if let regenerate {
           symbolButton(
-            "arrow.clockwise",
+            .refresh,
             label: "message.regenerate",
             identifier: "juno.mobile.message-regenerate",
             action: regenerate
@@ -2330,20 +2328,19 @@ private struct JunoMobileMessageRow: View {
         }
         if canContinue, let continueResponse {
           Button(action: continueResponse) {
-            Label("message.continue", systemImage: "arrow.down")
+            Label("message.continue", image: JunoIcon.arrowDown.assetName(.regular))
           }
         }
         if let branch {
           Button { branch(message.id) } label: {
-            Label("message.branch", systemImage: "arrow.triangle.branch")
+            Label("message.branch", image: JunoIcon.branch.assetName(.regular))
           }
         }
         Button { showingSelectText = true } label: {
-          Label("Select text", systemImage: "selection.pin.in.out")
+          Label("Select text", image: JunoIcon.textCursor.assetName(.regular))
         }
       } label: {
-        Image(systemName: "ellipsis")
-          .junoFont(size: 16, relativeTo: .body, weight: .regular)
+        JunoIconView(.ellipsis, size: 16)
           .foregroundStyle(Color.junoSecondaryInk)
           .frame(width: 38, height: 44)
           .contentShape(Rectangle())
@@ -2355,16 +2352,17 @@ private struct JunoMobileMessageRow: View {
   }
 
   private func symbolButton(
-    _ symbol: String,
+    _ icon: JunoIcon,
+    on: Bool = false,
     label: LocalizedStringKey,
     identifier: String,
     action: @escaping () -> Void
   ) -> some View {
     Button(action: action) {
-      Image(systemName: symbol)
-        .junoFont(size: 16, relativeTo: .body, weight: .regular)
+      // The web's message-action glyphs at its 16pt rung; the solid cut only
+      // for an "on" state (a rated answer).
+      JunoIconView(icon, size: 16, isOn: on)
         .foregroundStyle(Color.junoSecondaryInk)
-        .contentTransition(.symbolEffect(.replace))
         .frame(width: 38, height: 44)
         .contentShape(Rectangle())
     }
@@ -2590,14 +2588,13 @@ struct JunoMobileResumeRow: View {
   let title: String
   /// The thread's own kind — a chat, a project's chat, a Code session —
   /// the way ChatGPT marks its continue row with the thread's icon.
-  var symbol: String = "bubble.left"
+  var icon: JunoIcon = .conversation
   let action: () -> Void
 
   var body: some View {
     Button(action: action) {
       HStack(spacing: 8) {
-        Image(systemName: symbol)
-          .font(.subheadline)
+        JunoIconView(icon, size: 16)
           .foregroundStyle(.secondary)
           .frame(width: 20)
         Text(title)

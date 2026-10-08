@@ -462,7 +462,7 @@ struct LiveStopsView: View {
                             }
                             if let url = Self.appleMaps(stop.query) {
                                 Link(destination: url) {
-                                    Label("Open in Maps", systemImage: "arrow.up.right")
+                                    Label("Open in Maps", image: JunoIcon.external.assetName(.regular))
                                         .labelStyle(.titleAndIcon)
                                         .font(.caption)
                                 }
@@ -484,7 +484,7 @@ struct LiveStopsView: View {
             }
             if let route = Self.googleRoute(stops.stops.map(\.query)) {
                 Link(destination: route) {
-                    Label("Open the whole route", systemImage: "arrow.up.right").font(.subheadline)
+                    Label("Open the whole route", image: JunoIcon.external.assetName(.regular)).font(.subheadline)
                 }
                 .foregroundStyle(Color.junoForeground)
             }
@@ -516,7 +516,7 @@ struct LiveChecklistView: View {
                     withAnimation(JunoMotion.fast) { toggle(i) }
                 } label: {
                     HStack(alignment: .firstTextBaseline, spacing: 10) {
-                        Image(systemName: on ? "checkmark.square.fill" : "square")
+                        JunoSymbol(on ? JunoIcon.squareCheck : JunoIcon.square)
                             .foregroundStyle(on ? Color.junoForeground : Color.junoForeground.opacity(0.4))
                         VStack(alignment: .leading, spacing: 2) {
                             Text(checklist.items[i].label)

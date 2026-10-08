@@ -301,7 +301,7 @@ struct JunoStatusPill: View {
     var body: some View {
         HStack(spacing: 4) {
             if tone != .quiet, isGlyphWorthy {
-                Image(systemName: tone == .danger ? "xmark.octagon.fill" : "exclamationmark.circle.fill")
+                JunoSymbol(tone == .danger ? JunoIcon.octagonX : JunoIcon.error)
                     .imageScale(.small)
                     .accessibilityHidden(true)
             }

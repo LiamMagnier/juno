@@ -70,7 +70,7 @@ struct JunoMobileProjectFolderSection: View {
         ForEach(folders) { folder in
           NavigationLink(value: folder.id) {
             HStack(spacing: JunoSpace.cozy) {
-              Image(systemName: "folder")
+              JunoSymbol(.projects)
                 .font(.title3)
                 .foregroundStyle(.secondary)
                 .frame(width: 32)
@@ -93,7 +93,7 @@ struct JunoMobileProjectFolderSection: View {
         }
         if refusal == nil {
           Button(action: create) {
-            Label("New Folder", systemImage: "plus")
+            Label("New Folder", image: JunoIcon.plus.assetName(.regular))
           }
           .disabled(project.isPending || model.isMutating)
         }
@@ -274,7 +274,7 @@ struct JunoMobileMoveProjectSheet: View {
       choice = .some(destination.projectID)
     } label: {
       HStack(spacing: JunoSpace.snug) {
-        Image(systemName: destination.projectID == nil ? "tray" : "folder")
+        JunoSymbol(destination.projectID == nil ? JunoIcon.archive : JunoIcon.projects)
           .foregroundStyle(Color.junoMutedForeground)
           .frame(width: 22)
           .accessibilityHidden(true)
@@ -287,7 +287,7 @@ struct JunoMobileMoveProjectSheet: View {
         } else if let refusal = destination.refusal {
           Text(refusal.shortLabel).foregroundStyle(.secondary)
         } else if chosen?.id == destination.id {
-          Image(systemName: "checkmark")
+          JunoSymbol(.check)
             .foregroundStyle(.tint)
             .accessibilityLabel("Selected")
         }

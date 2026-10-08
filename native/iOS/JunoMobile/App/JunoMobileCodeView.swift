@@ -120,29 +120,29 @@ struct JunoMobileCodeView: View {
             Button {
               showingPulls = true
             } label: {
-              Label("Pull requests", systemImage: "arrow.triangle.pull")
+              Label("Pull requests", image: JunoIcon.pulls.assetName(.regular))
             }
             .accessibilityIdentifier("juno.mobile.code.pulls")
           }
           if let openWork {
             Button(action: openWork) {
-              Label("Work sessions", systemImage: "checklist")
+              Label("Work sessions", image: JunoIcon.listChecks.assetName(.regular))
             }
           }
           if session != nil {
             Button {
               showingUsage = true
             } label: {
-              Label("Your usage", systemImage: "chart.bar")
+              Label("Your usage", image: JunoIcon.usage.assetName(.regular))
             }
           }
           if let openSettings {
             Button(action: openSettings) {
-              Label("navigation.settings", systemImage: "gearshape")
+              Label("navigation.settings", image: JunoIcon.settings.assetName(.regular))
             }
           }
         } label: {
-          Image(systemName: "ellipsis")
+          JunoSymbol(.ellipsis)
         }
         .tint(Color.primary)
         .accessibilityLabel("More")
@@ -933,7 +933,7 @@ private struct JunoMobileCodeTaskRow: View {
             .lineLimit(1)
             .truncationMode(.head)
           if task.pullRequestURL != nil {
-            Image(systemName: "arrow.triangle.pull")
+            JunoSymbol(.pulls)
               .accessibilityLabel("Pull request")
           }
         }
@@ -961,13 +961,13 @@ private struct JunoMobileCodeTaskRow: View {
     case .running, .queued:
       ProgressView().controlSize(.small)
     case .awaitingApproval:
-      Image(systemName: "hand.raised").foregroundStyle(Color.junoCaution)
+      JunoSymbol(.hand).foregroundStyle(Color.junoCaution)
     case .failed:
-      Image(systemName: "exclamationmark.triangle").foregroundStyle(Color.junoDanger)
+      JunoSymbol(.triangleAlert).foregroundStyle(Color.junoDanger)
     case .done:
-      Image(systemName: "checkmark.circle").foregroundStyle(.secondary)
+      JunoSymbol(.circleCheck).foregroundStyle(.secondary)
     case .cancelled:
-      Image(systemName: "stop.circle").foregroundStyle(.secondary)
+      JunoSymbol(.circleStop).foregroundStyle(.secondary)
     }
   }
 }

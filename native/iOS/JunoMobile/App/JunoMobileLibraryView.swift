@@ -240,7 +240,7 @@ struct JunoMobileLibraryView: View {
                                     .lineLimit(1)
                             }
                         } icon: {
-                            Image(systemName: "square.stack")
+                            JunoSymbol(.artifacts)
                                 .foregroundStyle(.secondary)
                         }
                     }
@@ -260,11 +260,11 @@ struct JunoMobileLibraryView: View {
                                         .lineLimit(1)
                                 }
                             } icon: {
-                                Image(systemName: "square.on.square")
+                                JunoSymbol(.copy)
                                     .foregroundStyle(.secondary)
                             }
                             Spacer(minLength: 0)
-                            Image(systemName: "chevron.right")
+                            JunoSymbol(.chevronRight)
                                 .font(.footnote.weight(.semibold))
                                 .foregroundStyle(.tertiary)
                         }
@@ -367,7 +367,7 @@ struct JunoMobileLibraryView: View {
     /// Offline or a failed refresh, as one plain row with a Retry button.
     private var statusRow: some View {
         HStack(spacing: JunoSpace.cozy) {
-            Image(systemName: model.phase == .offline ? "wifi.slash" : "exclamationmark.triangle")
+            JunoSymbol(model.phase == .offline ? JunoIcon.wifiOff : JunoIcon.triangleAlert)
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
             Text(model.lastErrorDescription ?? "Offline — showing saved files.")
@@ -413,7 +413,7 @@ struct JunoMobileLibraryView: View {
 
     private func indexSummary(_ index: NativeDocumentIndexModel) -> some View {
         HStack(spacing: JunoSpace.cozy) {
-            Image(systemName: "doc.text.magnifyingglass")
+            JunoSymbol(.fileSearch)
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
             Text(indexSummaryLine(index))
@@ -433,7 +433,7 @@ struct JunoMobileLibraryView: View {
                         }
                     }
                 } label: {
-                    Image(systemName: "ellipsis")
+                    JunoSymbol(.ellipsis)
                         .foregroundStyle(.secondary)
                         .frame(width: 44, height: 44)
                         .contentShape(.rect)
@@ -464,7 +464,7 @@ struct JunoMobileLibraryView: View {
 
     private func indexFailure(_ message: String, index: NativeDocumentIndexModel) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: JunoSpace.cozy) {
-            Image(systemName: "exclamationmark.triangle")
+            JunoSymbol(.triangleAlert)
                 .foregroundStyle(Color.junoCaution)
                 .accessibilityHidden(true)
             Text(message)
@@ -537,13 +537,13 @@ struct JunoMobileLibraryView: View {
     private var empty: some View {
         if model.libraryFiles.isEmpty {
             ContentUnavailableView {
-                Label("library.empty.title", systemImage: "photo.on.rectangle")
+                Label("library.empty.title", image: JunoIcon.photos.assetName(.regular))
             } description: {
                 Text("library.empty.detail")
             }
         } else {
             ContentUnavailableView {
-                Label("library.no-matches.title", systemImage: "magnifyingglass")
+                Label("library.no-matches.title", image: JunoIcon.search.assetName(.regular))
             } description: {
                 Text("library.no-matches.detail")
             }
@@ -592,13 +592,13 @@ private struct JunoLibraryThumbnail: View {
         }
         .buttonStyle(NativeFilePreviewPressStyle())
         .contextMenu {
-            Button { open() } label: { Label("Open", systemImage: "eye") }
-            if let edit { Button { edit() } label: { Label("Edit Image…", systemImage: "wand.and.stars") } }
-            Button { rename() } label: { Label("Rename", systemImage: "pencil") }
+            Button { open() } label: { Label("Open", image: JunoIcon.eye.assetName(.regular)) }
+            if let edit { Button { edit() } label: { Label("Edit Image…", image: JunoIcon.sparkles.assetName(.regular)) } }
+            Button { rename() } label: { Label("Rename", image: JunoIcon.pencil.assetName(.regular)) }
             Divider()
             let removal = JunoLibraryRemovalLabel(file.libraryUse)
             Button(role: .destructive, action: remove) {
-                Label(removal.title, systemImage: "trash")
+                Label(removal.title, image: JunoIcon.trash.assetName(.regular))
                 if let detail = removal.detail { Text(detail) }
             }
         }
@@ -620,7 +620,7 @@ private struct JunoLibraryThumbnail: View {
         case .loading:
             EmptyView()
         case .unavailable:
-            Image(systemName: "photo")
+            JunoSymbol(.image)
                 .font(.title3)
                 .foregroundStyle(.tertiary)
         }
@@ -640,8 +640,7 @@ private struct JunoLibraryDocumentRow: View {
     var body: some View {
         Button(action: open) {
             HStack(spacing: JunoSpace.cozy) {
-                Image(systemName: Self.symbol(for: file.fileName))
-                    .font(.title3)
+                JunoIconView(Self.icon(for: file.fileName), size: 20)
                     .foregroundStyle(.secondary)
                     .frame(width: 32)
                     .accessibilityHidden(true)
@@ -664,17 +663,17 @@ private struct JunoLibraryDocumentRow: View {
         .buttonStyle(.plain)
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             Button(role: .destructive, action: remove) {
-                Label(JunoLibraryRemovalLabel(file.libraryUse).title, systemImage: "trash")
+                Label(JunoLibraryRemovalLabel(file.libraryUse).title, image: JunoIcon.trash.assetName(.regular))
             }
-            Button(action: rename) { Label("Rename", systemImage: "pencil") }
+            Button(action: rename) { Label("Rename", image: JunoIcon.pencil.assetName(.regular)) }
         }
         .contextMenu {
-            Button { open() } label: { Label("Open", systemImage: "eye") }
-            Button { rename() } label: { Label("Rename", systemImage: "pencil") }
+            Button { open() } label: { Label("Open", image: JunoIcon.eye.assetName(.regular)) }
+            Button { rename() } label: { Label("Rename", image: JunoIcon.pencil.assetName(.regular)) }
             Divider()
             let removal = JunoLibraryRemovalLabel(file.libraryUse)
             Button(role: .destructive, action: remove) {
-                Label(removal.title, systemImage: "trash")
+                Label(removal.title, image: JunoIcon.trash.assetName(.regular))
                 if let detail = removal.detail { Text(detail) }
             }
         }
@@ -686,16 +685,16 @@ private struct JunoLibraryDocumentRow: View {
         return "\(size) · \(JunoMobileRelativeDate.text(file.createdAt))"
     }
 
-    static func symbol(for fileName: String) -> String {
+    static func icon(for fileName: String) -> JunoIcon {
         switch URL(fileURLWithPath: fileName).pathExtension.lowercased() {
-        case "pdf": "doc.richtext"
-        case "xls", "xlsx", "csv", "numbers": "tablecells"
-        case "ppt", "pptx", "key": "rectangle.on.rectangle"
-        case "zip", "gz", "tar": "doc.zipper"
-        case "mp3", "m4a", "wav", "aac": "waveform"
-        case "mov", "mp4", "m4v": "film"
-        case "swift", "js", "ts", "tsx", "py", "json", "html", "css": "chevron.left.forwardslash.chevron.right"
-        default: "doc.text"
+        case "pdf": .file
+        case "xls", "xlsx", "csv", "numbers": .grid
+        case "ppt", "pptx", "key": .artifacts
+        case "zip", "gz", "tar": .box
+        case "mp3", "m4a", "wav", "aac": .audioLines
+        case "mov", "mp4", "m4v": .video
+        case "swift", "js", "ts", "tsx", "py", "json", "html", "css": .fileCode
+        default: .file
         }
     }
 }

@@ -123,39 +123,39 @@ struct JunoMobileComposerActions: View {
     /// native menu so the first screen stays short.
     private var panel: some View {
         VStack(alignment: .leading, spacing: 0) {
-            row("attachments.camera", symbol: "camera", enabled: canAttach) { open(.camera) }
-            row("attachments.photos", symbol: "photo.on.rectangle", enabled: canAttach) { open(.photos) }
-            row("attachments.files", symbol: "paperclip", enabled: canAttach) { open(.files) }
+            row("attachments.camera", icon: .camera, enabled: canAttach) { open(.camera) }
+            row("attachments.photos", icon: .photos, enabled: canAttach) { open(.photos) }
+            row("attachments.files", icon: .attach, enabled: canAttach) { open(.files) }
             if let openLibrary {
-                row("attachments.library", symbol: "books.vertical", enabled: canAttach, action: openLibrary)
+                row("attachments.library", icon: .library, enabled: canAttach, action: openLibrary)
             }
 
             divider
 
-            row("composer.deep-research", symbol: "binoculars", checked: tools.deepResearch) {
+            row("composer.deep-research", icon: .research, checked: tools.deepResearch) {
                 tools.deepResearch.toggle()
             }
             if modelSupportsWebSearch {
-                row("composer.web-search", symbol: "globe", checked: tools.webSearch) {
+                row("composer.web-search", icon: .web, checked: tools.webSearch) {
                     tools.webSearch.toggle()
                 }
             }
             if connectors.isEmpty {
-                row("Apps", symbol: "puzzlepiece.extension", enabled: canOpenPlugins, action: openPlugins)
+                row("Apps", icon: .connections, enabled: canOpenPlugins, action: openPlugins)
             } else {
-                menuRow(connectorLabel, symbol: "puzzlepiece.extension") { connectorRows }
+                menuRow(connectorLabel, icon: .connections) { connectorRows }
             }
             if let openOrbit {
-                row("Orbit", symbol: "circle.hexagongrid", action: openOrbit)
+                row("Orbit", icon: .agents, action: openOrbit)
             }
 
             divider
 
             if let chooseModel {
-                row("Model", symbol: "cpu", detail: JunoMobileModelControl.shortName(modelName), action: chooseModel)
+                row("Model", icon: .models, detail: JunoMobileModelControl.shortName(modelName), action: chooseModel)
                     .accessibilityIdentifier("juno.mobile.composer-model")
             }
-            menuRow(String(localized: "More"), symbol: "ellipsis.circle") { moreRows }
+            menuRow(String(localized: "More"), icon: .ellipsis) { moreRows }
                 .accessibilityIdentifier("juno.mobile.composer-tools")
         }
         .padding(.vertical, 8)
@@ -173,7 +173,7 @@ struct JunoMobileComposerActions: View {
 
     private func row(
         _ title: LocalizedStringKey,
-        symbol: String,
+        icon: JunoIcon,
         detail: String? = nil,
         checked: Bool? = nil,
         enabled: Bool = true,
@@ -189,8 +189,7 @@ struct JunoMobileComposerActions: View {
             HStack(spacing: 14) {
                 // Each glyph on a small round ground, as ChatGPT's "+" rows
                 // are drawn — the glass popover's one texture.
-                Image(systemName: symbol)
-                    .junoFont(size: 15, relativeTo: .body, weight: .regular)
+                JunoIconView(icon, size: 17)
                     .frame(width: 32, height: 32)
                     .background(Circle().fill(Color.junoMuted))
                 Text(title)
@@ -204,8 +203,7 @@ struct JunoMobileComposerActions: View {
                         .lineLimit(1)
                 }
                 if checked == true {
-                    Image(systemName: "checkmark")
-                        .junoFont(size: 14, relativeTo: .body, weight: .semibold)
+                    JunoIconView(.check, size: 14)
                         .foregroundStyle(Color.junoAccent)
                         .transition(.scale.combined(with: .opacity))
                 }
@@ -224,7 +222,7 @@ struct JunoMobileComposerActions: View {
 
     private func menuRow<Content: View>(
         _ title: String,
-        symbol: String,
+        icon: JunoIcon,
         @ViewBuilder content: () -> Content
     ) -> some View {
         Menu {
@@ -233,16 +231,14 @@ struct JunoMobileComposerActions: View {
             HStack(spacing: 14) {
                 // Each glyph on a small round ground, as ChatGPT's "+" rows
                 // are drawn — the glass popover's one texture.
-                Image(systemName: symbol)
-                    .junoFont(size: 15, relativeTo: .body, weight: .regular)
+                JunoIconView(icon, size: 17)
                     .frame(width: 32, height: 32)
                     .background(Circle().fill(Color.junoMuted))
                 Text(verbatim: title)
                     .junoFont(size: 17, relativeTo: .body)
                     .lineLimit(1)
                 Spacer(minLength: 8)
-                Image(systemName: "chevron.right")
-                    .junoFont(size: 12, relativeTo: .body, weight: .semibold)
+                JunoIconView(.chevronRight, size: 12)
                     .foregroundStyle(Color.junoSecondaryInk)
             }
             .foregroundStyle(Color.junoForeground)
@@ -270,7 +266,7 @@ struct JunoMobileComposerActions: View {
             presented = false
             openPlugins()
         } label: {
-            Label("composer.manage-connections", systemImage: "puzzlepiece.extension")
+            Label("composer.manage-connections", image: JunoIcon.connections.assetName(.regular))
                 .contentShape(.rect)
         }
         .disabled(!canOpenPlugins)
@@ -281,10 +277,10 @@ struct JunoMobileComposerActions: View {
     @ViewBuilder
     private var moreRows: some View {
         if thinkingScale?.fastModeRateMultiplier != nil {
-            Toggle(isOn: $tools.fastMode) { Label("Flash", systemImage: "bolt") }
+            Toggle(isOn: $tools.fastMode) { Label("Flash", image: JunoIcon.work.assetName(.regular)) }
         }
         if thinkingScale?.supportsProMode == true {
-            Toggle(isOn: $tools.proMode) { Label("Pro", systemImage: "sparkle") }
+            Toggle(isOn: $tools.proMode) { Label("Pro", image: JunoIcon.sparkles.assetName(.regular)) }
         }
         if canPickProject {
             projectMenu
@@ -294,15 +290,15 @@ struct JunoMobileComposerActions: View {
                 presented = false
                 startCanvas()
             } label: {
-                Label("composer.create-canvas", systemImage: "square.on.square")
+                Label("composer.create-canvas", image: JunoIcon.copy.assetName(.regular))
                     .contentShape(.rect)
             }
         }
         Toggle(isOn: $tools.canvas) {
-            Label("composer.canvas", systemImage: "rectangle.on.rectangle")
+            Label("composer.canvas", image: JunoIcon.copy.assetName(.regular))
         }
         if !modelSupportsWebSearch {
-            Label("composer.web-search.unsupported", systemImage: "globe")
+            Label("composer.web-search.unsupported", image: JunoIcon.web.assetName(.regular))
         }
         if let setMemoryEnabled {
             Toggle(
@@ -473,8 +469,7 @@ struct JunoMobileComposerActions: View {
     /// control that looks 32pt.
     /// A bare "+", as ChatGPT draws it: the card's glass is the only glass.
     private var plus: some View {
-        Image(systemName: "plus")
-            .junoFont(size: 21, relativeTo: .body, weight: .regular)
+        JunoIconView(.plus, size: 21)
             .foregroundStyle(Color.primary)
             .frame(width: 44, height: 44)
             .modifier(JunoMobileOptionalGlassID(id: "composer.plus", namespace: nil))

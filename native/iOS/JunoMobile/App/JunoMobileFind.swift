@@ -14,7 +14,7 @@ struct JunoMobileFindBar: View {
 
   var body: some View {
     HStack(spacing: JunoSpace.snug) {
-      Image(systemName: "magnifyingglass")
+      JunoSymbol(.search)
         .foregroundStyle(Color.junoSecondaryInk)
         .accessibilityHidden(true)
       TextField("Find in conversation", text: $model.query)
@@ -40,7 +40,7 @@ struct JunoMobileFindBar: View {
       Button {
         model.previous()
       } label: {
-        Image(systemName: "chevron.up")
+        JunoSymbol(.chevronUp)
           .frame(minWidth: 44, minHeight: 44)
           .contentShape(.rect)
       }
@@ -49,7 +49,7 @@ struct JunoMobileFindBar: View {
       Button {
         model.next()
       } label: {
-        Image(systemName: "chevron.down")
+        JunoSymbol(.chevronDown)
           .frame(minWidth: 44, minHeight: 44)
           .contentShape(.rect)
       }

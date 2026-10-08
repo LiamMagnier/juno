@@ -83,7 +83,7 @@ struct JunoMobileSearchView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if localGroups.isEmpty, serverGroups.isEmpty, model.phase == .failed, server?.state != .skipped {
             ContentUnavailableView {
-                Label("Search unavailable", systemImage: "exclamationmark.triangle")
+                Label("Search unavailable", image: JunoIcon.triangleAlert.assetName(.regular))
             } description: {
                 Text(model.lastErrorDescription ?? "Try again.")
             } actions: {
@@ -96,7 +96,7 @@ struct JunoMobileSearchView: View {
             }
         } else if localGroups.isEmpty, serverGroups.isEmpty, model.phase != .idle {
             ContentUnavailableView {
-                Label("No Results", systemImage: "magnifyingglass")
+                Label("No Results", image: JunoIcon.search.assetName(.regular))
             } description: {
                 Text(server == nil
                     ? "Nothing synced to this device matches “\(model.query)”."
@@ -159,8 +159,7 @@ struct JunoMobileSearchView: View {
         } label: {
             Label(
                 server?.typeFilter?.label ?? "Filter",
-                systemImage: server?.typeFilter == nil
-                    ? "line.3.horizontal.decrease" : "line.3.horizontal.decrease.circle.fill"
+                image: JunoIcon.filter.assetName(server?.typeFilter == nil ? .regular : .fill)
             )
         }
         .contentShape(.rect)
@@ -282,7 +281,7 @@ struct JunoMobileSearchView: View {
     private var recents: some View {
         if recentConversations.isEmpty && projects.isEmpty {
             ContentUnavailableView {
-                Label("Search Alevr", systemImage: "magnifyingglass")
+                Label("Search Alevr", image: JunoIcon.search.assetName(.regular))
             } description: {
                 Text("Chats, messages, projects and files — everything synced to this device, searchable offline.")
             }

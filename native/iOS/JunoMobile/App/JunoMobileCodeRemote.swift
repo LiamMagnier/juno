@@ -29,24 +29,23 @@ struct JunoMobileCodeHostsStrip: View {
     Menu {
       Picker("Run on", selection: pickerSelection) {
         ForEach(hosts) { host in
-          Label(host.name, systemImage: symbol(for: host))
+          Label(host.name, image: icon(for: host).assetName(.regular))
             .tag(JunoMobileCodeHostSelection.host(host.id))
             .accessibilityIdentifier("juno.mobile.code-host-\(host.id)")
         }
-        Label("Cloud", systemImage: "cloud")
+        Label("Cloud", image: JunoIcon.cloud.assetName(.regular))
           .tag(JunoMobileCodeHostSelection.cloud)
           .accessibilityIdentifier("juno.mobile.code-host-cloud")
       }
       .pickerStyle(.inline)
       Divider()
       Button(action: onPair) {
-        Label(hosts.isEmpty ? "Pair a Mac…" : "Pair another computer…", systemImage: "plus")
+        Label(hosts.isEmpty ? "Pair a Mac…" : "Pair another computer…", image: JunoIcon.plus.assetName(.regular))
       }
       .accessibilityIdentifier("juno.mobile.code-pair")
     } label: {
       HStack(spacing: 10) {
-        Image(systemName: currentSymbol)
-          .font(.title3)
+        JunoIconView(currentIcon, size: 22)
           .foregroundStyle(.secondary)
           .frame(width: 28)
         VStack(alignment: .leading, spacing: 1) {
@@ -55,7 +54,7 @@ struct JunoMobileCodeHostsStrip: View {
               .font(.headline)
               .foregroundStyle(.primary)
               .lineLimit(1)
-            Image(systemName: "chevron.down")
+            JunoSymbol(.chevronDown)
               .font(.caption.weight(.semibold))
               .foregroundStyle(.secondary)
           }
@@ -95,7 +94,7 @@ struct JunoMobileCodeHostsStrip: View {
 
   private var currentName: String { currentHost?.name ?? "Cloud" }
 
-  private var currentSymbol: String { currentHost.map(symbol(for:)) ?? "cloud" }
+  private var currentIcon: JunoIcon { currentHost.map(icon(for:)) ?? .cloud }
 
   private var currentState: String {
     guard let host = currentHost else { return "Runs on Alevr's servers" }
@@ -104,8 +103,8 @@ struct JunoMobileCodeHostsStrip: View {
       : "Last seen \(host.lastSeenAt.formatted(.relative(presentation: .named)))"
   }
 
-  private func symbol(for host: CodeRemoteHostSummary) -> String {
-    host.platform == "windows" ? "pc" : "laptopcomputer"
+  private func icon(for host: CodeRemoteHostSummary) -> JunoIcon {
+    host.platform == "windows" ? .monitor : .device
   }
 }
 
@@ -291,7 +290,7 @@ struct JunoMobileCodeRemoteSessionRow: View {
   @ViewBuilder
   private var statusGlyph: some View {
     if session.isAwaitingApproval {
-      Image(systemName: "hand.raised").foregroundStyle(Color.junoCaution)
+      JunoSymbol(.hand).foregroundStyle(Color.junoCaution)
     } else if session.isRunning {
       // The system's own quiet activity mark, not a breathing coloured dot.
       ProgressView()
@@ -299,9 +298,9 @@ struct JunoMobileCodeRemoteSessionRow: View {
         .accessibilityLabel("Running")
     } else {
       switch session.currentStatus {
-      case "completed": Image(systemName: "checkmark.circle").foregroundStyle(.secondary)
-      case "failed": Image(systemName: "exclamationmark.triangle").foregroundStyle(Color.junoDanger)
-      default: Image(systemName: "chevron.left.forwardslash.chevron.right").foregroundStyle(.secondary)
+      case "completed": JunoSymbol(.circleCheck).foregroundStyle(.secondary)
+      case "failed": JunoSymbol(.triangleAlert).foregroundStyle(Color.junoDanger)
+      default: JunoSymbol(.code).foregroundStyle(.secondary)
       }
     }
   }
@@ -335,7 +334,7 @@ struct JunoMobileCodeDevicesView: View {
                 Button(role: .destructive) {
                   pendingRevoke = host
                 } label: {
-                  Label("Revoke", systemImage: "trash")
+                  Label("Revoke", image: JunoIcon.trash.assetName(.regular))
                 }
                 .disabled(remoteModel?.revokingHostID != nil)
                 .accessibilityLabel("Revoke \(host.name)")
@@ -411,8 +410,7 @@ struct JunoMobileCodeDevicesView: View {
 
   private func hostRow(_ host: CodeRemoteHostSummary) -> some View {
     HStack(spacing: JunoSpace.cozy) {
-      Image(systemName: host.platform == "windows" ? "pc" : "laptopcomputer")
-        .junoFont(size: 17, relativeTo: .body)
+      JunoIconView(host.platform == "windows" ? JunoIcon.monitor : JunoIcon.device, size: 17)
         .foregroundStyle(Color.junoAccent)
         .frame(width: 26)
       VStack(alignment: .leading, spacing: 2) {
@@ -728,7 +726,7 @@ struct JunoMobileCodeRemoteThreadView: View {
                     Task { await model.patchSession(deviceID: session.deviceID, sessionID: session.sessionID, modelID: id) }
                   } label: {
                     if id == session.modelID {
-                      Label(junoDisplayModelName(id), systemImage: "checkmark")
+                      Label(junoDisplayModelName(id), image: JunoIcon.check.assetName(.regular))
                     } else {
                       Text(junoDisplayModelName(id))
                     }
@@ -744,7 +742,7 @@ struct JunoMobileCodeRemoteThreadView: View {
                     Task { await model.patchSession(deviceID: session.deviceID, sessionID: session.sessionID, reasoningEffort: effort) }
                   } label: {
                     if effort == session.reasoningEffort {
-                      Label(effort.capitalized, systemImage: "checkmark")
+                      Label(effort.capitalized, image: JunoIcon.check.assetName(.regular))
                     } else {
                       Text(effort.capitalized)
                     }
@@ -762,7 +760,7 @@ struct JunoMobileCodeRemoteThreadView: View {
                     Task { await model.patchSession(deviceID: session.deviceID, sessionID: session.sessionID, permissionMode: mode) }
                   } label: {
                     if mode == session.permissionMode {
-                      Label(title, systemImage: "checkmark")
+                      Label(title, image: JunoIcon.check.assetName(.regular))
                     } else {
                       Text(title)
                     }

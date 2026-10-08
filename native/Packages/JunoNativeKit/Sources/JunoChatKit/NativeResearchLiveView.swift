@@ -536,14 +536,14 @@ public struct NativeResearchQuestionRow: View {
         self.question = question
     }
 
-    private var symbol: String {
+    private var icon: JunoIcon {
         switch question.status {
-        case "covered": "checkmark.circle"
-        case "partial": "circle.lefthalf.filled"
-        case "thin": "exclamationmark.circle"
-        case "searching": "circle.dotted"
-        case "investigated": "checkmark"
-        default: "circle"
+        case "covered": .circleCheck
+        case "partial": .circleDot
+        case "thin": .error
+        case "searching": .circleDashed
+        case "investigated": .check
+        default: .circle
         }
     }
 
@@ -551,8 +551,7 @@ public struct NativeResearchQuestionRow: View {
 
     public var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
-            Image(systemName: symbol)
-                .junoFont(size: 12, relativeTo: .footnote)
+            JunoIconView(icon, size: 13)
                 .foregroundStyle(question.status == "thin" ? Color.junoWarningInk
                     : active || question.status == "covered" ? Color.junoForeground : Color.junoSecondaryInk)
                 .frame(width: 16)

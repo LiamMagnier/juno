@@ -102,8 +102,7 @@ struct JunoMobileAttachmentImage: View {
 
   private var broken: some View {
     VStack(spacing: JunoSpace.tight) {
-      Image(systemName: "photo.badge.exclamationmark")
-        .junoFont(size: 22, relativeTo: .title2)
+      JunoIconView(.imageOff, size: 22)
       Text("Couldn't load")
         .junoFont(size: 11, relativeTo: .caption2)
     }
@@ -270,7 +269,7 @@ struct JunoMobileImageViewer: View {
             UIPasteboard.general.image = image
             copyHaptic.fire()
           } label: {
-            Label("Copy", systemImage: "doc.on.doc")
+            Label("Copy", image: JunoIcon.copy.assetName(.regular))
           }
           Button {
             UIImageWriteToSavedPhotosAlbum(image, nil, nil, nil)
@@ -279,7 +278,7 @@ struct JunoMobileImageViewer: View {
               saved = true
             }
           } label: {
-            Label(saved ? "Saved" : "Save", systemImage: saved ? "checkmark" : "square.and.arrow.down")
+            Label(saved ? "Saved" : "Save", image: (saved ? JunoIcon.check : JunoIcon.download).assetName(.regular))
               .contentTransition(.symbolEffect(.replace))
           }
           .disabled(saved)

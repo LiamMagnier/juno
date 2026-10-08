@@ -119,7 +119,7 @@ public struct JunoLiveUIView: View {
                             touched = [:]
                             checks = [:]
                         } label: {
-                            Label("Reset", systemImage: "arrow.counterclockwise")
+                            Label("Reset", image: JunoIcon.rotateCcw.assetName(.regular))
                                 .font(.subheadline)
                         }
                         .buttonStyle(.borderless)
@@ -714,8 +714,7 @@ struct LiveButtonView: View {
         } label: {
             HStack(spacing: 6) {
                 Text(copied ? "Copied" : button.label)
-                Image(systemName: prompt != nil ? "arrow.up.right" : (copied ? "checkmark" : "doc.on.doc"))
-                    .imageScale(.small)
+                JunoIconView(prompt != nil ? .external : (copied ? .check : .copy), size: 13)
                     .foregroundStyle(Color.junoSecondaryInk)
             }
             .font(.subheadline)

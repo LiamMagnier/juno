@@ -334,12 +334,12 @@ struct JunoMobileModelSelectorView: View {
         }
         Spacer(minLength: 0)
         if selected {
-          Image(systemName: "checkmark")
+          JunoSymbol(.check)
             .font(.body.weight(.semibold))
             .foregroundStyle(.tint)
             .accessibilityHidden(true)
         } else if reason != nil {
-          Image(systemName: "lock")
+          JunoSymbol(.lock)
             .foregroundStyle(.secondary)
             .accessibilityHidden(true)
         }
@@ -819,7 +819,7 @@ private struct JunoMobileModelRowLabel: View {
 
             // The selection mark sits in its own trailing slot, so every row
             // keeps the same measure whether or not it is chosen.
-            Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+            JunoSymbol(selected ? JunoIcon.circleCheck : JunoIcon.circle)
                 .font(.title3)
                 .foregroundStyle(selected ? Color.junoAccent : Color.junoBorder)
                 .contentTransition(.symbolEffect(.replace))

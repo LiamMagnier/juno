@@ -118,23 +118,6 @@ enum JunoMobileSection: String, CaseIterable, Hashable, Identifiable {
         .work: .code,
     ]
 
-    /// The SF Symbol the redesigned phone sidebar draws for this destination:
-    /// regular weight, one family, the ChatGPT-grade drawer's line glyphs.
-    var sidebarSymbol: String {
-        switch self {
-        case .chat: "bubble.left"
-        case .search: "magnifyingglass"
-        case .code: "chevron.left.forwardslash.chevron.right"
-        case .work: "checklist"
-        case .agents: "circle.hexagongrid"
-        case .tasks: "clock"
-        case .projects: "folder"
-        case .library: "books.vertical"
-        case .artifacts: "square.on.square"
-        case .connections: "puzzlepiece.extension"
-        case .settings: "gearshape"
-        }
-    }
 
     /// The surfaces that are not products. On iPhone they push on the Chat
     /// stack from the history sheet; on iPad they are the hidden sidebar

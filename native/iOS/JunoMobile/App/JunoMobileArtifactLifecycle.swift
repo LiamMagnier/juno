@@ -57,14 +57,14 @@ struct JunoMobileArtifactHistory: View {
                     case .failed:
                         ContentUnavailableView(
                             "History unavailable",
-                            systemImage: "clock.arrow.circlepath",
+                            image: JunoIcon.history.assetName(.regular),
                             description: Text(history.errorDescription ?? "Check your connection and try again.")
                         )
                     case .ready:
                         list(history)
                     }
                 } else {
-                    ContentUnavailableView("History unavailable", systemImage: "clock.arrow.circlepath")
+                    ContentUnavailableView("History unavailable", image: JunoIcon.history.assetName(.regular))
                 }
             }
             .navigationTitle("Version history")
@@ -201,20 +201,20 @@ struct JunoMobileRecentlyDeletedArtifacts: View {
                     case .failed:
                         ContentUnavailableView(
                             "Recently Deleted unavailable",
-                            systemImage: "trash",
+                            image: JunoIcon.trash.assetName(.regular),
                             description: Text(trash.errorDescription ?? "Check your connection and try again.")
                         )
                     case .ready where trash.items.isEmpty:
                         ContentUnavailableView(
                             "Nothing recently deleted",
-                            systemImage: "trash",
+                            image: JunoIcon.trash.assetName(.regular),
                             description: Text("Deleted artifacts stay here for 30 days.")
                         )
                     case .ready:
                         list(trash)
                     }
                 } else {
-                    ContentUnavailableView("Recently Deleted unavailable", systemImage: "trash")
+                    ContentUnavailableView("Recently Deleted unavailable", image: JunoIcon.trash.assetName(.regular))
                 }
             }
             .navigationTitle("Recently Deleted")

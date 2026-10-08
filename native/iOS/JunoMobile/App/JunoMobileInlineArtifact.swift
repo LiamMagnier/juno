@@ -90,12 +90,12 @@ struct JunoMobileInlineArtifactView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 ShareLink(item: reference.content) {
-                    Label("artifact.share-source", systemImage: "square.and.arrow.up")
+                    Label("artifact.share-source", image: JunoIcon.share.assetName(.regular))
                 }
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Button(action: close) {
-                    Label("artifact.close", systemImage: "xmark")
+                    Label("artifact.close", image: JunoIcon.close.assetName(.regular))
                 }
                 .accessibilityIdentifier("juno.mobile.inline-artifact-close")
             }

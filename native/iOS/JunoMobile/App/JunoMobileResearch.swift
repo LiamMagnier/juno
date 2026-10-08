@@ -72,7 +72,7 @@ struct JunoMobileResearchReportView: View {
                         Button("Sources") { jump(to: NativeResearchReportArticle.sourcesID) }
                     }
                 } label: {
-                    Label("Contents", systemImage: "list.bullet")
+                    Label("Contents", image: JunoIcon.list.assetName(.regular))
                 }
                 .accessibilityIdentifier("juno.mobile.research-report.contents")
             }
@@ -81,23 +81,23 @@ struct JunoMobileResearchReportView: View {
                     UIPasteboard.general.string = report.markdown(accessed: Date())
                     copied = true
                 } label: {
-                    Label(copied ? "Copied" : "Copy as Markdown", systemImage: copied ? "checkmark" : "doc.on.doc")
+                    Label(copied ? "Copied" : "Copy as Markdown", image: (copied ? JunoIcon.check : JunoIcon.copy).assetName(.regular))
                 }
                 ShareLink(item: report.markdown(accessed: Date()), subject: Text(report.title)) {
-                    Label("Share as text", systemImage: "text.alignleft")
+                    Label("Share as text", image: JunoIcon.writing.assetName(.regular))
                 }
                 if let files {
                     ShareLink(item: files.markdown) {
-                        Label("Markdown file", systemImage: "doc.text")
+                        Label("Markdown file", image: JunoIcon.file.assetName(.regular))
                     }
                     if let pdf = files.pdf {
                         ShareLink(item: pdf) {
-                            Label("PDF", systemImage: "doc.richtext")
+                            Label("PDF", image: JunoIcon.file.assetName(.regular))
                         }
                     }
                 }
             } label: {
-                Label("Share", systemImage: "square.and.arrow.up")
+                Label("Share", image: JunoIcon.share.assetName(.regular))
             }
             .accessibilityIdentifier("juno.mobile.research-report.share")
         }

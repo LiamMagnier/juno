@@ -408,7 +408,7 @@ struct JunoMobileComposer: View {
                   HStack(spacing: JunoSpace.cozy) {
                     ForEach(armedTokens) { token in
                       JunoMobileComposerToken(
-                        symbol: token.symbol, title: token.title, remove: token.remove
+                        icon: token.icon, title: token.title, remove: token.remove
                       )
                     }
                   }
@@ -562,7 +562,7 @@ struct JunoMobileComposer: View {
   /// by default, and a token for the default would be noise on every message.
   private struct ArmedToken: Identifiable {
     let id: String
-    let symbol: String
+    let icon: JunoIcon
     let title: String
     let remove: () -> Void
   }
@@ -570,19 +570,19 @@ struct JunoMobileComposer: View {
   private var armedTokens: [ArmedToken] {
     var tokens: [ArmedToken] = []
     if tools.deepResearch {
-      tokens.append(ArmedToken(id: "research", symbol: "binoculars", title: String(localized: "Deep research")) {
+      tokens.append(ArmedToken(id: "research", icon: .research, title: String(localized: "Deep research")) {
         tools.deepResearch = false
       })
     }
     if tools.fastMode {
-      tokens.append(ArmedToken(id: "flash", symbol: "bolt", title: "Flash") { tools.fastMode = false })
+      tokens.append(ArmedToken(id: "flash", icon: .work, title: "Flash") { tools.fastMode = false })
     }
     if tools.proMode {
-      tokens.append(ArmedToken(id: "pro", symbol: "sparkle", title: "Pro") { tools.proMode = false })
+      tokens.append(ArmedToken(id: "pro", icon: .sparkles, title: "Pro") { tools.proMode = false })
     }
     for id in tools.connectors {
       let name = connectors.first { $0.id == id }?.label ?? id
-      tokens.append(ArmedToken(id: "app-\(id)", symbol: "puzzlepiece.extension", title: name) {
+      tokens.append(ArmedToken(id: "app-\(id)", icon: .connections, title: name) {
         tools.toggleConnector(id)
       })
     }
@@ -924,8 +924,7 @@ struct JunoMobileComposer: View {
         }
       }
     } label: {
-      Image(systemName: "plus")
-        .junoFont(size: 21, relativeTo: .body, weight: .regular)
+      JunoIconView(.plus, size: 21)
         .foregroundStyle(.primary)
         .frame(width: 44, height: 44)
         .contentShape(Rectangle())
@@ -957,8 +956,7 @@ struct JunoMobileComposer: View {
       composerFocused.wrappedValue = false
       setDictating(true)
     } label: {
-      Image(systemName: "mic")
-        .junoFont(size: 19, relativeTo: .body, weight: .regular)
+      JunoIconView(.mic, size: 19)
         .foregroundStyle(Color.primary)
         .frame(width: 40, height: 44)
         .contentShape(Rectangle())

@@ -160,48 +160,26 @@ struct JunoMobilePushDrawer<Sidebar: View, Content: View>: View {
 
 // MARK: - Top bar glyphs
 
-/// The sidebar mark: two strokes, the lower one shorter — the ChatGPT glyph,
-/// drawn rather than borrowed, because SF Symbols has no two-line variant and
-/// three lines reads as "menu", not "your chats".
+/// The sidebar mark: the website's own panel glyph (`AppIcons` /
+/// `PanelLeft`), the one the web's collapse button and command palette draw.
 struct JunoMobileSidebarGlyph: View {
   var body: some View {
-    Canvas { context, size in
-      let w = size.width
-      let h = size.height
-      let line: CGFloat = 1.8
-      var top = Path()
-      top.move(to: CGPoint(x: w * 0.12, y: h * 0.36))
-      top.addLine(to: CGPoint(x: w * 0.88, y: h * 0.36))
-      var bottom = Path()
-      bottom.move(to: CGPoint(x: w * 0.12, y: h * 0.66))
-      bottom.addLine(to: CGPoint(x: w * 0.58, y: h * 0.66))
-      let style = StrokeStyle(lineWidth: line, lineCap: .round)
-      context.stroke(top, with: .foreground, style: style)
-      context.stroke(bottom, with: .foreground, style: style)
-    }
-    .frame(width: 22, height: 22)
-    .accessibilityHidden(true)
+    JunoIconView(.panelLeft, size: 20)
+      .accessibilityHidden(true)
   }
 }
 
-/// The private-chat toggle's face: a dashed circle, filled with a check once
-/// the chat is private. The same control in both states, so turning it on
-/// reads as the button changing rather than a new button appearing.
+/// The private-chat toggle's face: the website's ghost — outlined while off,
+/// solid once the chat is private. The same control in both states, so
+/// turning it on reads as the button changing rather than a new button.
 struct JunoMobileTemporaryChatGlyph: View {
   let active: Bool
 
   var body: some View {
-    ZStack {
-      Image(systemName: "circle.dashed")
-        .junoFont(size: 18, relativeTo: .body, weight: .regular)
-      if active {
-        Image(systemName: "checkmark")
-          .junoFont(size: 8.5, relativeTo: .body, weight: .bold)
-          .transition(.scale(scale: 0.4).combined(with: .opacity))
-      }
-    }
-    .frame(width: 24, height: 24)
-    .accessibilityHidden(true)
+    JunoIconView(.privateChat, size: 20, isOn: active)
+      .contentTransition(.opacity)
+      .frame(width: 24, height: 24)
+      .accessibilityHidden(true)
   }
 }
 
@@ -265,9 +243,11 @@ extension ButtonStyle where Self == JunoMobileQuietPressStyle {
 /// The drawer's ground: the canvas in light, one step up from the black canvas
 /// in dark — so the pushed conversation still reads as a card against it.
 struct JunoMobileDrawerGround: View {
-  @Environment(\.colorScheme) private var colorScheme
 
   var body: some View {
-    colorScheme == .dark ? Color.junoSurface : Color.junoCanvas
+    // One step off the canvas in both appearances — ChatGPT's #F9F9F9 under
+    // its white card — so the pushed conversation reads as a sheet of paper
+    // on the drawer, not as more of the same white.
+    Color.junoSurface
   }
 }

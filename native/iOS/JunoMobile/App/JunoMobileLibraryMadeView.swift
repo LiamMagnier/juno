@@ -67,7 +67,7 @@ struct JunoMobileLibraryMadeView: View {
             } else {
                 ContentUnavailableView(
                     "Not on this iPhone yet",
-                    systemImage: "arrow.triangle.2.circlepath",
+                    image: JunoIcon.refresh.assetName(.regular),
                     description: Text("It will open once your account finishes syncing.")
                 )
             }
@@ -90,7 +90,7 @@ struct JunoMobileLibraryMadeView: View {
     private var overlay: some View {
         if model.items == nil, let error = model.errorDescription {
             ContentUnavailableView {
-                Label("Couldn’t load what Alevr made", systemImage: "exclamationmark.triangle")
+                Label("Couldn’t load what Alevr made", image: JunoIcon.triangleAlert.assetName(.regular))
             } description: {
                 Text(error)
             } actions: {
@@ -103,7 +103,7 @@ struct JunoMobileLibraryMadeView: View {
             if searchText.isEmpty {
                 ContentUnavailableView(
                     "Nothing made yet",
-                    systemImage: "square.stack",
+                    image: JunoIcon.artifacts.assetName(.regular),
                     description: Text("Pages, documents, spreadsheets and decks Alevr makes in your chats and tasks gather here.")
                 )
             } else {
@@ -115,8 +115,7 @@ struct JunoMobileLibraryMadeView: View {
     @ViewBuilder
     private func row(_ item: NativeLibraryMadeItem) -> some View {
         let label = HStack(spacing: JunoSpace.cozy) {
-            Image(systemName: Self.symbol(for: item))
-                .font(.title3)
+            JunoIconView(Self.icon(for: item), size: 20)
                 .foregroundStyle(.secondary)
                 .frame(width: 32)
             VStack(alignment: .leading, spacing: 2) {
@@ -151,12 +150,12 @@ struct JunoMobileLibraryMadeView: View {
         }
         .contextMenu {
             if item.kind == .deliverable, workClient != nil {
-                Button { save(item) } label: { Label("Save to Files", systemImage: "square.and.arrow.down") }
+                Button { save(item) } label: { Label("Save to Files", image: JunoIcon.download.assetName(.regular)) }
                     .contentShape(.rect)
             }
             if let conversationID = item.conversationId, let openConversation {
                 Button { openConversation(conversationID) } label: {
-                    Label("Open Its Chat", systemImage: "bubble.left")
+                    Label("Open Its Chat", image: JunoIcon.conversation.assetName(.regular))
                 }
                 .contentShape(.rect)
             }
@@ -186,17 +185,17 @@ struct JunoMobileLibraryMadeView: View {
         return parts.joined(separator: " · ")
     }
 
-    static func symbol(for item: NativeLibraryMadeItem) -> String {
+    static func icon(for item: NativeLibraryMadeItem) -> JunoIcon {
         switch item.type.uppercased() {
-        case "SPREADSHEET", "XLSX", "CSV": "tablecells"
-        case "PRESENTATION", "PPTX": "rectangle.on.rectangle"
-        case "DOCUMENT", "DOCX", "MARKDOWN": "doc.text"
-        case "PDF", "REPORT": "doc.richtext"
-        case "DESIGN", "SVG", "IMAGE": "paintbrush"
-        case "CODE", "REACT": "chevron.left.forwardslash.chevron.right"
-        case "HTML", "SITE": "globe"
-        case "MERMAID": "point.3.connected.trianglepath.dotted"
-        default: "square.stack"
+        case "SPREADSHEET", "XLSX", "CSV": .grid
+        case "PRESENTATION", "PPTX": .artifacts
+        case "DOCUMENT", "DOCX", "MARKDOWN": .file
+        case "PDF", "REPORT": .file
+        case "DESIGN", "SVG", "IMAGE": .design
+        case "CODE", "REACT": .code
+        case "HTML", "SITE": .web
+        case "MERMAID": .workflow
+        default: .artifacts
         }
     }
 
