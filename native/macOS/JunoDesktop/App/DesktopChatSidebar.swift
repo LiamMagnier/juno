@@ -208,7 +208,6 @@ struct DesktopChatSidebar: View {
         .listStyle(.sidebar)
         // The selection is still the platform's — only its colour is Juno's.
         .junoSidebarSelectionTint()
-        .junoProductSwitch(product: $product)
         // `safeAreaBar`, not `safeAreaInset`: the bar variant is what the
         // system's bottom scroll-edge effect is measured against, and that
         // effect is what lets the footer sit on a translucent column without an

@@ -189,7 +189,7 @@ enum ChatComposerPlaceholder {
         case "image": return "Describe an image to generate…"
         case "video": return "Describe a video to generate…"
         case "audio": return "Describe a song or a sound to generate…"
-        default: return "Message Juno…"
+        default: return "Ask Alevr"
         }
     }
 }
@@ -673,20 +673,18 @@ struct ComposerPrimaryDisc: View {
 
     var body: some View {
         Button(action: action) {
+            // One disc changing face, as on the iPhone and in ChatGPT: the ink
+            // fill stays put and the glyph swaps in place (voice → send →
+            // stop) on the send-morph spring. Ink, not the accent: the one
+            // filled control in the composer is the darkest thing on the page.
             ZStack {
                 Circle()
-                    .fill(face.isAccented ? Color.junoAccent : Color.junoGlassFill)
+                    .fill(isInk ? Color.junoForeground : Color.junoGlassFill)
                 glyph
             }
-            // A change of kind is a new face: it cross-fades in from 0.9.
-            .id(face.kind)
-            .transition(
-                .scale(scale: JunoMotion.scaleFrom(0.9, reduceMotion: reduceMotion))
-                    .combined(with: .opacity)
-            )
             .frame(width: JunoComposerMetrics.controlHeight, height: JunoComposerMetrics.controlHeight)
             .contentShape(Circle())
-            .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: face.kind)
+            .animation(JunoMotion.reduced(JunoMotion.sendMorph, when: reduceMotion, tier: .tint), value: face.kind)
         }
         .buttonStyle(ComposerDiscStyle())
         .disabled(!face.isEnabled)
@@ -697,22 +695,33 @@ struct ComposerPrimaryDisc: View {
         .accessibilityIdentifier(identifier ?? face.identifier)
     }
 
+    private var isInk: Bool {
+        switch face {
+        case .voice, .send, .stop, .busy: true
+        case .disabled: false
+        }
+    }
+
+    private var symbol: String {
+        switch face {
+        case .voice: "waveform"
+        case .stop: "stop.fill"
+        default: "arrow.up"
+        }
+    }
+
     @ViewBuilder
     private var glyph: some View {
         switch face {
-        case .voice:
-            JunoIconView(.audioLines, size: 14)
-                .foregroundStyle(Color.junoSecondaryInk)
-        case .send:
-            JunoIconView(.send, size: 14, weight: .bold)
-                .foregroundStyle(Color.junoOnAccent)
-        case .stop:
-            JunoIconView(.stop, size: 10, weight: .fill)
-                .foregroundStyle(Color.junoOnAccent)
+        case .voice, .send, .stop:
+            Image(systemName: symbol)
+                .junoFont(size: face.kind == ChatComposerFace.stop.kind ? 10 : 13, relativeTo: .body, weight: .bold)
+                .foregroundStyle(Color.junoCanvas)
+                .contentTransition(.symbolEffect(.replace.downUp))
         case .busy:
             ProgressView()
                 .controlSize(.small)
-                .tint(Color.junoOnAccent)
+                .tint(Color.junoCanvas)
                 // The small spinner draws in the appearance's ink; the dark
                 // appearance is the one whose ink reads on coral.
                 .environment(\.colorScheme, .dark)
@@ -1572,7 +1581,7 @@ struct ChatComposer: View {
                 : "Incognito chats are not saved or added to memory."
         }
         guard model.selectedConversationID != nil else { return nil }
-        return "Juno can make mistakes. Check important info."
+        return "Alevr can make mistakes. Check important info."
     }
 
     @ViewBuilder
@@ -1758,7 +1767,7 @@ struct ChatComposer: View {
             ComposerPlusMenu(menu: plusMenuModel)
         } label: {
             JunoIconView(.plus, size: 16)
-                .foregroundStyle(Color.junoSecondaryInk)
+                .foregroundStyle(Color.junoForeground)
                 .frame(width: JunoComposerMetrics.controlHeight, height: JunoComposerMetrics.controlHeight)
                 .contentShape(.rect)
         }
@@ -1801,7 +1810,7 @@ struct ChatComposer: View {
             beginDictation()
         } label: {
             JunoIconView(.mic, size: 16)
-                .foregroundStyle(Color.junoSecondaryInk)
+                .foregroundStyle(Color.junoForeground)
                 .frame(width: JunoComposerMetrics.controlHeight, height: JunoComposerMetrics.controlHeight)
                 .contentShape(.rect)
         }

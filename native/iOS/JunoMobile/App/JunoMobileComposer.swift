@@ -69,8 +69,16 @@ struct JunoMobileComposer: View {
   /// A one-shot request from a shortcut. The owner resets it as soon as the
   /// composer has claimed the microphone.
   var startDictation: Binding<Bool> = .constant(false)
+  /// Opens Orbit, the account's agents — the "+" menu's Orbit row. Nil hides it.
+  var openOrbit: (() -> Void)? = nil
+  /// The draft's placeholder. A private chat says so where the reader types.
+  var placeholder: LocalizedStringKey = "Ask Alevr"
 
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  /// The thinking dial, open in place of the control row.
+  @State private var thinkingOpen = false
+  /// The model picker, from the top of "+" or a long press on the dial.
+  @State private var showingModelPicker = false
   /// Send, stop and voice answer in the hand. See `JunoMobileHaptic`.
   @State private var sendHaptic = JunoMobileHapticTrigger()
   @State private var stopHaptic = JunoMobileHapticTrigger()
@@ -309,7 +317,7 @@ struct JunoMobileComposer: View {
       // which reads as a hung app rather than as work in progress.
       // Once the run has rows, the transcript carries it (the Deep Field
       // view in the answer's place); this stays only as the armed state.
-      if tools.deepResearch && model.researchActivity.isEmpty {
+      if tools.deepResearch && !model.researchActivity.isEmpty {
         JunoMobileResearchProgress(
           enabled: tools.deepResearch,
           depth: researchDepth,
@@ -319,6 +327,18 @@ struct JunoMobileComposer: View {
           onStop: generatingHere ? { model.stopGeneration() } : nil
         )
         .transition(.opacity)
+      }
+
+      // The dial's level, named over the composer while the dial is open —
+      // ChatGPT's "Instant" above its slider.
+      if thinkingOpen, let thinkingScale {
+        Text(verbatim: thinkingScale.stops.first { $0.effort == reasoningEffort }?.label ?? "Off")
+          .junoFont(size: 15, relativeTo: .subheadline, weight: .semibold)
+          .foregroundStyle(Color.junoForeground)
+          .contentTransition(.opacity)
+          .frame(maxWidth: .infinity)
+          .transition(.opacity.combined(with: .offset(y: 4)))
+          .accessibilityHidden(true)
       }
 
       // The composer is the call now (the web's `voiceCallParts`): no dock
@@ -350,47 +370,83 @@ struct JunoMobileComposer: View {
         .transition(.opacity.combined(with: .move(edge: .bottom)))
       } else {
         JunoGlass(spacing: JunoSpace.snug) {
-          VStack(spacing: JunoSpace.snug) {
-            if !attachments.isEmpty, let attachmentModel {
-              JunoMobileAttachmentChips(
-                attachments: attachments,
-                onRemove: { attachmentModel.remove($0) },
-                onRetry: { attachmentModel.retry($0, conversationID: conversation?.id) }
+          VStack(alignment: .leading, spacing: 0) {
+            if thinkingOpen, let thinkingScale, voiceSession == nil {
+              JunoMobileThinkingDialSlider(
+                scale: thinkingScale,
+                effort: $reasoningEffort,
+                close: closeThinking
               )
-              .transition(.opacity.combined(with: .move(edge: .bottom)))
-            }
-
-            if let slashQuery = JunoMobileSlashPalette.query(in: prompt), !showsCollapsedDraft {
-              JunoMobileSlashPalette(
-                commands: slashCommands,
-                query: slashQuery,
-                pick: runSlashCommand
-              )
-              .transition(.opacity.combined(with: .move(edge: .bottom)))
-            }
-
-            if showsCollapsedDraft {
-              collapsedDraftCard
-                .transition(.opacity)
+              .padding(.horizontal, JunoSpace.tight)
+              .padding(.vertical, JunoSpace.tight)
+              .transition(.opacity)
             } else {
-              TextField(
-                voiceActive ? "Type while you talk…" : "Message Juno",
-                text: $prompt,
-                axis: .vertical
-              )
+              if !attachments.isEmpty, let attachmentModel {
+                JunoMobileAttachmentChips(
+                  attachments: attachments,
+                  onRemove: { attachmentModel.remove($0) },
+                  onRetry: { attachmentModel.retry($0, conversationID: conversation?.id) }
+                )
+                .padding(.horizontal, JunoSpace.cozy)
+                .padding(.top, JunoSpace.cozy)
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
+              }
+
+              if let slashQuery = JunoMobileSlashPalette.query(in: prompt), !showsCollapsedDraft {
+                JunoMobileSlashPalette(
+                  commands: slashCommands,
+                  query: slashQuery,
+                  pick: runSlashCommand
+                )
+                .padding(.horizontal, JunoSpace.snug)
+                .padding(.top, JunoSpace.snug)
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
+              }
+
+              if voiceSession == nil, !armedTokens.isEmpty {
+                ScrollView(.horizontal) {
+                  HStack(spacing: JunoSpace.cozy) {
+                    ForEach(armedTokens) { token in
+                      JunoMobileComposerToken(
+                        symbol: token.symbol, title: token.title, remove: token.remove
+                      )
+                    }
+                  }
+                }
+                .scrollIndicators(.hidden)
+                .padding(.horizontal, JunoSpace.regular)
+                .padding(.top, JunoSpace.snug)
+                .transition(.opacity)
+              }
+
+              if showsCollapsedDraft {
+                collapsedDraftCard
+                  .padding(JunoSpace.snug)
+                  .transition(.opacity)
+              } else {
+                TextField(
+                  voiceActive ? "Type while you talk…" : placeholder,
+                  text: $prompt,
+                  axis: .vertical
+                )
+                .junoFont(size: 17, relativeTo: .body)
                 .lineLimit(1...6)
                 .textFieldStyle(.plain)
                 .focused(composerFocused)
-                .padding(.horizontal, JunoSpace.snug)
-                .padding(.top, JunoSpace.hairline)
+                .padding(.horizontal, JunoSpace.regular)
+                .padding(.top, 14)
+                .padding(.bottom, JunoSpace.tight)
                 .accessibilityIdentifier("juno.mobile.chat-composer")
 
-              if isLongDraft {
-                attachAsFileOffer
+                if isLongDraft {
+                  attachAsFileOffer
+                }
               }
-            }
 
-            controlRow
+              controlRow
+                .padding(.horizontal, JunoSpace.tight)
+                .padding(.bottom, JunoSpace.tight)
+            }
           }
           // In a call the glow carries the phase, so the words go here: the
           // composer is named as the call and its value is what it is doing.
@@ -398,14 +454,13 @@ struct JunoMobileComposer: View {
           .accessibilityLabel(voiceSession == nil ? Text("Message composer") : Text("Voice call"))
           .accessibilityValue(voiceSession.map { Text(verbatim: $0.callPhase.title) } ?? Text(verbatim: ""))
           .accessibilityHint(voiceBargeInHint)
-          .padding(.horizontal, JunoSpace.cozy)
-          .padding(.vertical, JunoSpace.snug)
           // Native Liquid Glass, as the owner requires for floating chrome:
-          // the system material, not a rebuilt one.
+          // the system material, not a rebuilt one. One rounded card, radius
+          // 24 — no border, no shadow, nothing inside it wearing its own glass.
           .junoGlass(
-            in: RoundedRectangle(cornerRadius: 26, style: .continuous)
+            in: RoundedRectangle(cornerRadius: 24, style: .continuous)
           )
-
+          .animation(JunoMotion.reduced(JunoMotion.chatControl, when: reduceMotion), value: thinkingOpen)
         }
         .transition(.opacity)
       }
@@ -453,6 +508,78 @@ struct JunoMobileComposer: View {
       if ended { voiceTurnError = nil }
     }
     .task { await applyPreviewFlags() }
+    .sheet(isPresented: $showingModelPicker) {
+      JunoMobileModelSelectorView(
+        models: model.modelCatalog,
+        selectedModelID: selectedModelID,
+        layout: .compact,
+        onSelect: { option in
+          selectedModelID = option.id
+          showingModelPicker = false
+        }
+      )
+      .presentationDetents([.medium, .large])
+      .presentationDragIndicator(.visible)
+    }
+    .onChange(of: composerFocused.wrappedValue) { _, focused in
+      if focused { closeThinking() }
+    }
+  }
+
+  // MARK: Thinking dial
+
+  private func openThinking() {
+    composerFocused.wrappedValue = false
+    withAnimation(JunoMotion.reduced(JunoMotion.chatControl, when: reduceMotion)) {
+      thinkingOpen = true
+    }
+  }
+
+  private func closeThinking() {
+    guard thinkingOpen else { return }
+    withAnimation(JunoMotion.reduced(JunoMotion.chatControl, when: reduceMotion)) {
+      thinkingOpen = false
+    }
+  }
+
+  private func chooseModel() {
+    composerFocused.wrappedValue = false
+    showingModelPicker = true
+  }
+
+  // MARK: Armed tools
+
+  /// What the next message will carry beyond its words, as tokens in the
+  /// field. Only what the reader turned on for *this* turn or chose as a
+  /// premium mode: web search and canvas are standing preferences that are on
+  /// by default, and a token for the default would be noise on every message.
+  private struct ArmedToken: Identifiable {
+    let id: String
+    let symbol: String
+    let title: String
+    let remove: () -> Void
+  }
+
+  private var armedTokens: [ArmedToken] {
+    var tokens: [ArmedToken] = []
+    if tools.deepResearch {
+      tokens.append(ArmedToken(id: "research", symbol: "binoculars", title: String(localized: "Deep research")) {
+        tools.deepResearch = false
+      })
+    }
+    if tools.fastMode {
+      tokens.append(ArmedToken(id: "flash", symbol: "bolt", title: "Flash") { tools.fastMode = false })
+    }
+    if tools.proMode {
+      tokens.append(ArmedToken(id: "pro", symbol: "sparkle", title: "Pro") { tools.proMode = false })
+    }
+    for id in tools.connectors {
+      let name = connectors.first { $0.id == id }?.label ?? id
+      tokens.append(ArmedToken(id: "app-\(id)", symbol: "puzzlepiece.extension", title: name) {
+        tools.toggleConnector(id)
+      })
+    }
+    return tokens
   }
 
   // MARK: Voice glow
@@ -612,6 +739,10 @@ struct JunoMobileComposer: View {
       if let level = JunoComposerPreviewFlags.forcedThinkingLevel {
         reasoningEffort = level
       }
+      if JunoComposerPreviewFlags.opensThinking, thinkingScale?.isAdjustable == true {
+        try? await Task.sleep(nanoseconds: 500_000_000)
+        openThinking()
+      }
       if JunoComposerPreviewFlags.focusesComposer {
         composerFocused.wrappedValue = true
       }
@@ -647,78 +778,36 @@ struct JunoMobileComposer: View {
     composerActionButton
   }
 
+  /// `+` on the left; the dial, the microphone and the one primary action on
+  /// the right. Bare glyphs on the card's own glass — ChatGPT's row, with
+  /// nothing wearing a chip.
   @ViewBuilder
   private var chatControlRow: some View {
       addMenu
 
-      // Laid out before the spacer and after the fixed-size buttons, so the
-      // pair is offered exactly the width the row has left.
-      chips
-        .layoutPriority(1)
-
       Spacer(minLength: 2)
 
-      if model.chatPhase != .idle {
+      // Only the states worth a word: a stall or a failure. A reply that is
+      // simply arriving is said by the stop button and the transcript.
+      if phaseWorthAWord {
         phaseIndicator
+          .transition(.opacity)
+      }
+
+      if let thinkingScale, thinkingScale.isPresentable || !model.modelCatalog.isEmpty {
+        JunoMobileThinkingDialButton(
+          scale: thinkingScale,
+          effort: reasoningEffort,
+          open: openThinking,
+          chooseModel: chooseModel
+        )
       }
 
       if canDictate {
         dictateButton
-        // The hairline is what makes the trailing pair read as *two*
-        // controls rather than as one two-part button.
-        Rectangle()
-          .fill(Color.junoHairline)
-          .frame(width: 1, height: 20)
-          .padding(.horizontal, 1)
-          .accessibilityHidden(true)
       }
 
       composerActionButton
-  }
-
-  /// Model · Thinking, at whatever length the row has room for.
-  ///
-  /// A phone's row leaves the pair about 170pt, and "Claude Opus 4.8" with
-  /// "Instant" beside it wants 210. Truncation was the previous answer, and
-  /// with the Thinking chip winning the model's name was the only thing left
-  /// to give — the chip read as a provider mark and an ellipsis. So the pair
-  /// is tried at four lengths, in order: both in full; the model name without
-  /// its vendor word; then Thinking as a glyph; and, last, the same with
-  /// truncation allowed so the row can never overflow. The first three hold
-  /// their width, which is what lets `ViewThatFits` measure them honestly.
-  private var chips: some View {
-    ViewThatFits(in: .horizontal) {
-      chipPair(name: .full, thinking: .label, holdsWidth: true)
-      chipPair(name: .short, thinking: .label, holdsWidth: true)
-      chipPair(name: .short, thinking: .icon, holdsWidth: true)
-      chipPair(name: .short, thinking: .icon, holdsWidth: false)
-    }
-  }
-
-  private func chipPair(
-    name: JunoMobileModelControl.NameStyle,
-    thinking: JunoMobileThinkingControl.Style,
-    holdsWidth: Bool
-  ) -> some View {
-    HStack(spacing: JunoSpace.tight) {
-      JunoMobileModelControl(
-        models: model.modelCatalog,
-        selectedModelID: $selectedModelID,
-        fallbackName: junoDisplayModelName(conversation?.model ?? ""),
-        nameStyle: name,
-        holdsWidth: holdsWidth
-      )
-      if let thinkingScale {
-        JunoMobileThinkingControl(
-          scale: thinkingScale,
-          effort: $reasoningEffort,
-          fastMode: $tools.fastMode,
-          proMode: $tools.proMode,
-          style: thinking,
-          holdsWidth: holdsWidth
-        )
-      }
-    }
   }
 
   /// The `+`, in an ordinary chat.
@@ -753,7 +842,11 @@ struct JunoMobileComposer: View {
         }
       },
       startCanvas: startCanvas,
-      openPlugins: { openPlugins?() }
+      openPlugins: { openPlugins?() },
+      openOrbit: openOrbit,
+      modelName: selectedModel?.displayName ?? junoDisplayModelName(conversation?.model ?? ""),
+      chooseModel: chooseModel,
+      thinkingScale: thinkingScale
     )
   }
 
@@ -799,11 +892,9 @@ struct JunoMobileComposer: View {
         }
       }
     } label: {
-      JunoIconView(.new, size: 16)
+      Image(systemName: "plus")
+        .junoFont(size: 21, relativeTo: .body, weight: .regular)
         .foregroundStyle(.primary)
-        .frame(width: 34, height: 34)
-        .modifier(JunoComposerGlassCircle())
-        .junoGlassID("composer.plus", in: glassNamespace)
         .frame(width: 44, height: 44)
         .contentShape(Rectangle())
     }
@@ -834,18 +925,13 @@ struct JunoMobileComposer: View {
       composerFocused.wrappedValue = false
       setDictating(true)
     } label: {
-      JunoIconView(.mic, size: 16)
-        // Was `Color.primary.opacity(0.75)`: a pure neutral, scaled down
-        // by hand, sitting on the warm composer bar with no material
-        // under it. The muted token is the design system's own answer
-        // for "quiet but still legible", and unlike a hand-scaled label
-        // colour it still responds to Increase Contrast.
-        .foregroundStyle(Color.junoMutedForeground)
-        .frame(width: 34, height: 34)
-        .frame(width: 44, height: 44)
+      Image(systemName: "mic")
+        .junoFont(size: 19, relativeTo: .body, weight: .regular)
+        .foregroundStyle(Color.primary)
+        .frame(width: 40, height: 44)
         .contentShape(Rectangle())
     }
-    .buttonStyle(.plain)
+    .buttonStyle(.junoQuietPress)
     .accessibilityLabel("Dictate")
     .accessibilityIdentifier("juno.mobile.chat-dictate")
   }
@@ -899,6 +985,13 @@ struct JunoMobileComposer: View {
     .font(.caption)
   }
 
+  private var phaseWorthAWord: Bool {
+    switch model.chatPhase {
+    case .reconnecting, .failed, .stopping: true
+    default: false
+    }
+  }
+
   private var isStreamingPhase: Bool {
     switch model.chatPhase {
     case .appending, .submitting, .reasoning, .streaming, .reconnecting: true
@@ -928,24 +1021,12 @@ struct JunoMobileComposer: View {
     }
   }
 
-  /// The one primary action, in three states.
+  /// The one primary action. End keeps its own red face during a call;
+  /// otherwise voice, send and stop are one button changing face — see
+  /// ``JunoMobileComposerPrimaryButton``.
   @ViewBuilder
   private var composerActionButton: some View {
-    if generatingHere {
-      Button {
-        stopHaptic.fire()
-        model.stopGeneration()
-      } label: {
-        actionLabel(active: true) {
-          JunoIconView(.stop, size: 14)
-        }
-      }
-      .buttonStyle(.plain)
-      .transition(.scale.combined(with: .opacity))
-      .accessibilityLabel("Stop generation")
-      .accessibilityIdentifier("juno.mobile.chat-stop")
-      .contentShape(.rect)
-    } else if showsEndAction, let voiceSession {
+    if !generatingHere, showsEndAction, let voiceSession {
       Button {
         endHaptic.fire()
         voiceSession.hangUp()
@@ -959,32 +1040,26 @@ struct JunoMobileComposer: View {
       .accessibilityIdentifier("juno.mobile.voice-end")
       .frame(minWidth: 44, minHeight: 44)
       .contentShape(.rect)
-    } else if showsVoiceAction, let openVoiceMode {
-      Button {
-        voiceStartHaptic.fire()
-        openVoiceMode()
-      } label: {
-        actionLabel(active: true) { JunoMobileVoiceWave() }
-      }
-      .buttonStyle(.plain)
-      .transition(.scale.combined(with: .opacity))
-      .accessibilityLabel("Start voice conversation")
-      .accessibilityIdentifier("juno.mobile.chat-voice")
-      .contentShape(.rect)
     } else {
-      Button(action: send) {
-        actionLabel(active: !sendDisabled) {
-          JunoIconView(.send, size: 15)
+      JunoMobileComposerPrimaryButton(face: primaryFace) {
+        switch primaryFace {
+        case .stop:
+          stopHaptic.fire()
+          model.stopGeneration()
+        case .voice:
+          voiceStartHaptic.fire()
+          openVoiceMode?()
+        case .send:
+          send()
         }
-        .scaleEffect(sendDisabled ? 0.92 : 1)
       }
-      .buttonStyle(.plain)
-      .disabled(sendDisabled)
-      .transition(.scale.combined(with: .opacity))
-      .accessibilityLabel("Send message")
-      .accessibilityIdentifier("juno.mobile.chat-send")
-      .contentShape(.rect)
     }
+  }
+
+  private var primaryFace: JunoMobileComposerPrimaryButton.Face {
+    if generatingHere { return .stop }
+    if showsVoiceAction, openVoiceMode != nil { return .voice }
+    return .send(enabled: !sendDisabled)
   }
 
   /// Voice takes the slot exactly when Send has nothing to do — which is what

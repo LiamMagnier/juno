@@ -89,11 +89,9 @@ struct DesktopProductSwitch: View {
     var body: some View {
         Picker("Product", selection: selection) {
             ForEach(DesktopProductMode.switchable) { mode in
-                Label(
-                    mode.label,
-                    image: mode.icon.assetName(product == mode ? .fill : .regular)
-                )
-                .labelStyle(.titleAndIcon)
+                // Words only, as ChatGPT's "Chat | Work": the lit segment
+                // already says which one you are in.
+                Text(mode.label)
                 .help(mode.help)
                 .tag(Optional(mode))
                 .accessibilityIdentifier("juno.product-brand.\(mode.rawValue)")
@@ -117,34 +115,6 @@ extension View {
         } else {
             pickerStyle(.segmented)
         }
-    }
-
-    /// Installs the Chat/Code switch in the toolbar of the column this is
-    /// applied to. Apply it to a product's **sidebar** content: an item
-    /// declared by the sidebar column lands in the sidebar's segment of the
-    /// unified toolbar, which is where §1.4 puts the switch.
-    ///
-    /// Declared once and unconditionally, per crash rule 3: the item's
-    /// identity never changes, only the picker's selection does. A product
-    /// swap rebuilds the whole workspace — and with it this toolbar — because
-    /// only one `NavigationSplitView` is ever alive.
-    func junoProductSwitch(product: Binding<DesktopProductMode>) -> some View {
-        toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                DesktopProductSwitch(product: product)
-            }
-        }
-    }
-
-    /// The name Code's column still calls.
-    ///
-    /// It used to pin a segmented control in a strip above the list; it now
-    /// installs the same toolbar switch as ``junoProductSwitch(product:)``, so
-    /// Code hosts the one switch component in the one position (§1.4) without
-    /// its column being edited ahead of its own rework. The call sites are
-    /// renamed when those columns are rewritten.
-    func junoSidebarProductHeader(product: Binding<DesktopProductMode>) -> some View {
-        junoProductSwitch(product: product)
     }
 }
 

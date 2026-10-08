@@ -107,7 +107,7 @@ enum PremiumShots {
             product: .chat,
             title: "New chat",
             subtitle: nil,
-            toolbar: [.icon(.privateChat, "Incognito")]
+            toolbar: [.symbol("circle.dashed", "Private chat")]
         ) {
             DesktopConversationView(
                 model: world.world.conversationModel,
@@ -131,7 +131,7 @@ enum PremiumShots {
             product: .chat,
             title: "Launch plan for Field Notes 2.0",
             subtitle: nil,
-            toolbar: [.icon(.share, "Share"), .icon(.privateChat, "Incognito")]
+            toolbar: [.icon(.share, "Share"), .symbol("circle.dashed", "Private chat")]
         ) {
             VStack(spacing: 0) {
                 // Laid over a flexible space rather than stacked, so a reply
@@ -309,6 +309,7 @@ enum PremiumShots {
 /// One toolbar item as the frame draws it.
 enum PremiumToolbarItem {
     case icon(JunoIcon, String)
+    case symbol(String, String)
     case labelled(JunoIcon, String, stat: (Int, Int)? = nil, isOn: Bool = false, isEnabled: Bool = true)
 }
 
@@ -395,7 +396,6 @@ struct PremiumWindow<Sidebar: View, Detail: View, Inspector: View>: View {
                     .foregroundStyle(Color.junoSidebarInk)
                     .padding(.leading, 14)
                 Spacer(minLength: 0)
-                PremiumProductSwitchStandIn(product: product)
             }
             .padding(.leading, 14)
             .padding(.trailing, 10)
@@ -416,7 +416,16 @@ struct PremiumWindow<Sidebar: View, Detail: View, Inspector: View>: View {
         .padding(PremiumFrame.paneInset)
     }
 
+    /// The bar as the redesign declares it (`ChatToolbar`): the title at the
+    /// leading edge, Chat | Code centred, the trailing items in one capsule.
     private var titleBar: some View {
+        ZStack {
+            PremiumProductSwitchStandIn(product: product)
+            titleRow
+        }
+    }
+
+    private var titleRow: some View {
         HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 1) {
                 Text(title)
@@ -451,6 +460,11 @@ struct PremiumWindow<Sidebar: View, Detail: View, Inspector: View>: View {
             JunoIconView(icon, size: 16)
                 .foregroundStyle(Color.junoForeground)
                 .frame(width: 30, height: 28)
+        case .symbol(let name, _):
+            Image(systemName: name)
+                .font(.system(size: 15))
+                .foregroundStyle(Color.junoForeground)
+                .frame(width: 30, height: 28)
         case .labelled(let icon, let label, let stat, let isOn, let isEnabled):
             HStack(spacing: 6) {
                 JunoSymbol(icon, weight: isOn ? .fill : .regular)
@@ -483,23 +497,20 @@ struct PremiumProductSwitchStandIn: View {
         HStack(spacing: 2) {
             ForEach(DesktopProductMode.switchable) { mode in
                 let selected = mode == product
-                HStack(spacing: 5) {
-                    JunoSymbol(mode.icon, weight: selected ? .fill : .regular)
-                    Text(mode.label)
-                        .junoFont(size: 12, relativeTo: .callout, weight: .medium)
-                }
-                .foregroundStyle(selected ? Color.junoForeground : Color.junoSecondaryInk)
-                .padding(.horizontal, 10)
-                .frame(height: 24)
+                Text(mode.label)
+                    .junoFont(size: 13, relativeTo: .callout)
+                .foregroundStyle(Color.junoForeground)
+                .padding(.horizontal, 14)
+                .frame(height: 26)
                 .background {
                     if selected {
-                        Capsule().fill(Color.junoCard).junoRaisedShadow()
+                        Capsule().fill(Color.junoForeground.opacity(0.09))
                     }
                 }
             }
         }
         .padding(3)
-        .background(Capsule().fill(Color.junoForeground.opacity(0.06)))
+        .background(Capsule().fill(Color.junoCard.opacity(0.92)))
         .overlay(Capsule().strokeBorder(Color.junoBorder.opacity(0.7), lineWidth: 0.5))
     }
 }
@@ -756,7 +767,7 @@ enum VoiceShots {
             product: .chat,
             title: "Launch plan for Field Notes 2.0",
             subtitle: nil,
-            toolbar: [.icon(.share, "Share"), .icon(.privateChat, "Incognito")]
+            toolbar: [.icon(.share, "Share"), .symbol("circle.dashed", "Private chat")]
         ) {
             VStack(spacing: 0) {
                 Color.clear

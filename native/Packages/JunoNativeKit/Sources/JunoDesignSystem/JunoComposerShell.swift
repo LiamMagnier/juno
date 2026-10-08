@@ -15,8 +15,9 @@ public enum JunoComposerMetrics {
     /// The transcript's reading measure. The composer and the transcript are one
     /// column, so they read one number for it.
     public static let maxWidth: CGFloat = JunoReadingMeasure.reading
-    /// The shell's radius: the web's `rounded-composer`, the panel rung.
-    public static let cornerRadius: CGFloat = JunoRadius.panel
+    /// The shell's radius: 24, the iPhone composer's and ChatGPT's — one card
+    /// shape across the apps (native redesign, Oct 2026).
+    public static let cornerRadius: CGFloat = 24
     /// How close two glass shapes in the cluster may come before the container
     /// starts blending them.
     public static let containerSpacing: CGFloat = JunoSpace.snug
@@ -33,7 +34,7 @@ public enum JunoComposerMetrics {
     public static let controlsInsets = EdgeInsets(top: 2, leading: 10, bottom: 10, trailing: 10)
     /// The Mac's pointer-control height (§0.6). Every control on the row is this
     /// tall; nothing in the composer is sized for a finger.
-    public static let controlHeight: CGFloat = 28
+    public static let controlHeight: CGFloat = 32
     /// Between the controls on the row.
     public static let controlSpacing: CGFloat = JunoSpace.hairline
 }

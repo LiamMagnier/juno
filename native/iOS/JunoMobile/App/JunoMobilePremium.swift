@@ -445,22 +445,13 @@ struct JunoMobileGrain: View {
 
 // MARK: - Navigation bar type
 
-/// Sets every large navigation title in the display face.
+/// Large navigation titles stay in the system face.
 ///
-/// One appearance-proxy line instead of eleven hand-built headers: Settings,
-/// Projects, Tasks and the rest keep the system's own large-title collapse on
-/// scroll, and all of them now open on Newsreader rather than on a bold SF
-/// that read as a default. Inline titles stay SF, as the system sets them.
+/// They were set in Newsreader app-wide; the native redesign (Oct 2026) keeps
+/// the serif for the one place it earns — report and research titles — and
+/// lets every navigation title be SF, as ChatGPT's and the system's are. Kept
+/// as a call site so a future face change is one line.
 enum JunoMobileAppearance {
   @MainActor
-  static func install() {
-    let size: CGFloat = 34
-    guard let base = UIFont(name: JunoSerif.Face.regular.rawValue, size: size) else { return }
-    let font = UIFontMetrics(forTextStyle: .largeTitle).scaledFont(for: base)
-    let attributes: [NSAttributedString.Key: Any] = [
-      .font: font,
-      .kern: -0.6,
-    ]
-    UINavigationBar.appearance().largeTitleTextAttributes = attributes
-  }
+  static func install() {}
 }

@@ -153,7 +153,6 @@ struct JunoMobileSettingsView: View {
         page
       }
     }
-    .background(Color.junoCanvas)
     // Blank, deliberately: the page states its own name in the serif heading
     // a line below the bar, and an inline bar title repeated it verbatim.
     .navigationTitle("")
@@ -295,7 +294,7 @@ struct JunoMobileSettingsView: View {
       Section("AI") {
         settingsLink(.models, title: "Models", icon: .models)
         settingsLink(.voice, title: "Voice", icon: .mic)
-        settingsLink(.code, title: "Juno Code", icon: .code)
+        settingsLink(.code, title: "Code", icon: .code)
       }
 
       Section("Chats") {
@@ -310,14 +309,36 @@ struct JunoMobileSettingsView: View {
       }
 
       Section("About") {
-        settingsLink(.about, title: "About Juno", icon: .about)
+        settingsLink(.about, title: "About Alevr", icon: .about)
+      }
+
+      // Log out on its own, in red, last — where ChatGPT and the system's
+      // own Settings put the one row that ends the session.
+      if authModel != nil {
+        Section {
+          Button(role: .destructive) {
+            showingSignOut = true
+          } label: {
+            HStack(spacing: 12) {
+              Image(systemName: "rectangle.portrait.and.arrow.right")
+                .junoFont(size: 16, relativeTo: .body, weight: .regular)
+                .frame(width: 28)
+              Text("Log out")
+            }
+            .foregroundStyle(Color.junoDanger)
+          }
+          .accessibilityIdentifier("juno.mobile.settings-log-out")
+        }
       }
     }
+    // The system's grouped list, untouched: grey page, white groups,
+    // hairline separators. No painted canvas over it.
     .listStyle(.insetGrouped)
     .scrollContentBackground(.hidden)
+    .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
     .refreshable { await model.refresh() }
     .navigationTitle("Settings")
-    .navigationBarTitleDisplayMode(.large)
+    .navigationBarTitleDisplayMode(.inline)
     .navigationDestination(for: JunoMobileSettingsRoute.self) { route in
       settingsDestination(route)
     }
@@ -458,32 +479,32 @@ struct JunoMobileSettingsView: View {
   @ViewBuilder
   private var profileHeader: some View {
     if let session {
+      // ChatGPT's settings head: the face centred over the name, the
+      // address under it, the whole block one tap into the account page.
       NavigationLink(value: JunoMobileSettingsRoute.data) {
-        HStack(spacing: 14) {
+        VStack(spacing: 8) {
           JunoAvatar(
             imageData: avatarData,
             imageURL: session.profile.imageURL,
             name: session.profile.name ?? session.profile.email,
-            size: 52
+            size: 72
           )
-          VStack(alignment: .leading, spacing: 3) {
+          VStack(spacing: 2) {
             Text(session.profile.name ?? "Your account")
-              .font(JunoMobileType.display(24, relativeTo: .title2))
-              .tracking(-0.4)
+              .junoFont(size: 17, relativeTo: .headline, weight: .semibold)
               .foregroundStyle(Color.primary)
             Text(session.profile.email)
-              .junoCaption()
+              .junoFont(size: 14, relativeTo: .subheadline)
+              .foregroundStyle(Color.junoSecondaryInk)
               .lineLimit(1)
-            Text("Profile, data and security")
-              .junoFont(size: 12, relativeTo: .caption)
-              .junoMetaInk()
           }
-          Spacer(minLength: 8)
         }
-        .padding(.vertical, 6)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 4)
+        .frame(maxWidth: .infinity)
         .contentShape(Rectangle())
       }
+      .buttonStyle(.plain)
+      .listRowBackground(Color.clear)
       .accessibilityIdentifier("juno.mobile.settings-profile")
     } else {
       HStack(spacing: 12) {
@@ -1818,17 +1839,11 @@ struct JunoMobileSettingsGlyph: View {
   var destructive = false
 
   var body: some View {
-    JunoIconView(icon, size: 15)
+    // A bare line glyph, as ChatGPT's settings rows and the system's own
+    // are drawn — no tile, no border.
+    JunoIconView(icon, size: 17)
       .foregroundStyle(destructive ? Color.junoDanger : Color.junoForeground)
       .frame(width: 28, height: 28)
-      .background(
-        RoundedRectangle(cornerRadius: 8, style: .continuous)
-          .fill(destructive ? Color.junoDanger.opacity(0.1) : Color.junoMuted)
-      )
-      .overlay(
-        RoundedRectangle(cornerRadius: 8, style: .continuous)
-          .strokeBorder(Color.junoHairline, lineWidth: 0.5)
-      )
       .accessibilityHidden(true)
   }
 }

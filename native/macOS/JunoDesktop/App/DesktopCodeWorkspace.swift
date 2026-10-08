@@ -481,6 +481,12 @@ struct DesktopCodeWorkspace: View {
 
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
+        // Chat | Code, centred in the window's bar — the same item, in the
+        // same place, as the Chat window declares (see `ChatToolbar`).
+        ToolbarItem(placement: .principal) {
+            DesktopProductSwitch(product: $product)
+        }
+
         ToolbarItem(placement: .navigation) {
             if let controller {
                 DesktopCodeRunClock(controller: controller)

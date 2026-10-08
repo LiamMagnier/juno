@@ -567,6 +567,7 @@ struct DesktopChatWorkspace: View {
 
     private var toolbar: ChatToolbar {
         ChatToolbar(
+            product: $product,
             isChatRoute: currentDestination == .chat,
             isSidebarCollapsed: columnVisibility == .detailOnly,
             canShare: canShareSelectedConversation,

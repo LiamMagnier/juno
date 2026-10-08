@@ -201,36 +201,29 @@ private struct ChatGreetingBody: View {
         }
     }
 
+    /// One quiet line over the centred composer — ChatGPT for Mac's "What can
+    /// I help with?" — in the display face at reading size. No name in
+    /// italics, no mark: the composer under it is the subject of the page.
     private var greeting: some View {
-        let size = ChatGreeting.size(forColumnWidth: columnWidth)
-        return Group {
-            if let name = ChatGreeting.firstName(from: profileName) {
-                // The name's run carries its own face — Newsreader's italic —
-                // and inherits the sentence's ink. Never the accent (§0.4).
-                Text("How can I help, \(Text(name).font(JunoType.displayItalic(size: size).font(scale: textScale)))?")
-            } else {
-                Text("How can I help?")
-            }
-        }
-        .junoType(.display(size: size))
-        .foregroundStyle(Color.junoForeground)
-        .fixedSize(horizontal: false, vertical: true)
-        .accessibilityAddTraits(.isHeader)
-        .accessibilityIdentifier("juno.desktop.chat.greeting")
+        Text("What can I help with?")
+            .font(JunoType.display(size: 30).font(scale: textScale))
+            .foregroundStyle(Color.junoForeground)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityAddTraits(.isHeader)
+            .accessibilityIdentifier("juno.desktop.chat.greeting")
     }
 
-    /// The web's `PrivateGreeting`: the page-title rung and one line of what
-    /// private means, in the web's words.
+    /// The private chat says what is different in one sentence, as the
+    /// iPhone and ChatGPT's temporary chat do; the page is otherwise the same.
     private var privateHeader: some View {
-        VStack(spacing: JunoSpace.snug) {
-            Text("You're incognito")
-                .junoPageTitle()
+        VStack(spacing: 6) {
+            Text("Private chat")
+                .junoFont(size: 17, relativeTo: .headline, weight: .semibold)
                 .foregroundStyle(Color.junoForeground)
                 .accessibilityAddTraits(.isHeader)
-            Text("Chats aren't saved, added to memory, or used to train models.")
-                .junoBodyLarge()
+            Text("This chat won’t appear in your history or be used for memory.")
+                .junoFont(size: 14, relativeTo: .subheadline)
                 .foregroundStyle(Color.junoSecondaryInk)
-                // The web's `max-w-md`.
                 .frame(maxWidth: 448)
         }
         .fixedSize(horizontal: false, vertical: true)

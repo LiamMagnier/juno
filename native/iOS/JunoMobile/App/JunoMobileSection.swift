@@ -31,12 +31,12 @@ enum JunoMobileSection: String, CaseIterable, Hashable, Identifiable {
         case .work: "Work"
         // A literal for the reason Work's is: the catalog has no
         // `navigation.agents` key, and a missing dotted key renders as itself.
-        case .agents: "Crew"
-        case .tasks: "navigation.tasks"
+        case .agents: "Orbit"
+        case .tasks: "Routines"
         case .projects: "navigation.projects"
         case .library: "navigation.library"
         case .artifacts: "navigation.artifacts"
-        case .connections: "Customize"
+        case .connections: "Apps"
         case .settings: "navigation.settings"
         }
     }
@@ -103,8 +103,26 @@ enum JunoMobileSection: String, CaseIterable, Hashable, Identifiable {
     /// both things you sit with. Agents sits beside it for the same reason:
     /// an agent is who that work is delegated to (docs/design/AGENTS.md §3.1).
     static let drawerDestinations: [JunoMobileSection] = [
-        .chat, .agents, .code, .library, .projects, .connections, .settings,
+        .library, .projects, .connections, .tasks, .code, .agents, .work, .artifacts,
     ]
+
+    /// The SF Symbol the redesigned phone sidebar draws for this destination:
+    /// regular weight, one family, the ChatGPT-grade drawer's line glyphs.
+    var sidebarSymbol: String {
+        switch self {
+        case .chat: "bubble.left"
+        case .search: "magnifyingglass"
+        case .code: "chevron.left.forwardslash.chevron.right"
+        case .work: "checklist"
+        case .agents: "circle.hexagongrid"
+        case .tasks: "clock"
+        case .projects: "folder"
+        case .library: "books.vertical"
+        case .artifacts: "square.on.square"
+        case .connections: "puzzlepiece.extension"
+        case .settings: "gearshape"
+        }
+    }
 
     /// The surfaces that are not products. On iPhone they push on the Chat
     /// stack from the history sheet; on iPad they are the hidden sidebar

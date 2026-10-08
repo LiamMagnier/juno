@@ -634,7 +634,6 @@ struct DesktopCodeSidebar: View {
         }
         .listStyle(.sidebar)
         .junoSidebarSelectionTint()
-        .junoProductSwitch(product: $product)
         .safeAreaBar(edge: .bottom, spacing: 0) {
             footer
         }

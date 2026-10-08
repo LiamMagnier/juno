@@ -25,6 +25,8 @@ import SwiftUI
 /// the metric — and no tint: ``ChatDetail`` applies the accent *below* the
 /// view that owns this toolbar, so every glyph here stays monochrome (§0.4).
 struct ChatToolbar: ToolbarContent {
+    /// Chat | Code, the bar's centre.
+    @Binding var product: DesktopProductMode
     /// The chat route — a conversation, a draft or a private chat — as opposed
     /// to a page.
     let isChatRoute: Bool
@@ -45,6 +47,14 @@ struct ChatToolbar: ToolbarContent {
     let togglePrivate: () -> Void
 
     var body: some ToolbarContent {
+        // The ChatGPT for Mac bar: the product switch centred as one Liquid
+        // Glass segmented capsule, the window's own sidebar toggle at the
+        // leading edge, and the private-chat toggle trailing. Declared
+        // unconditionally (crash rule 3); only its selection changes.
+        ToolbarItem(placement: .principal) {
+            DesktopProductSwitch(product: $product)
+        }
+
         // The web rail's New chat, for when the sidebar — and its own New chat
         // row — is hidden. Never both at once.
         ToolbarItem(placement: .navigation) {
@@ -122,10 +132,18 @@ private struct DesktopPrivateChatButton: View {
 
     var body: some View {
         Button(action: action) {
+            // The iPhone's mark: a dashed circle that fills with a check
+            // when the chat is private — one control changing state.
             Label {
-                Text("Incognito")
+                Text("Private chat")
             } icon: {
-                JunoSymbol(.privateChat, weight: isPrivate ? .fill : .regular)
+                ZStack {
+                    Image(systemName: "circle.dashed")
+                    if isPrivate {
+                        Image(systemName: "checkmark")
+                            .junoFont(size: 7, relativeTo: .body, weight: .bold)
+                    }
+                }
             }
             .contentShape(.rect)
         }
