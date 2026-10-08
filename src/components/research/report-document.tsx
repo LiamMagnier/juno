@@ -1,5 +1,6 @@
 "use client";
 
+import { isPrivateSourceUrl } from "@/lib/research/private-sources";
 import * as React from "react";
 import { useCitationAudit, type CitationAudit } from "@/components/chat/citation-audit";
 import { Markdown } from "@/components/chat/markdown";
@@ -27,7 +28,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { AlertTriangle, CheckCircle2, ChevronDown, Circle, CircleDashed, CircleSlash } from "@/components/ui/icons";
+import { AlertTriangle, CheckCircle2, ChevronDown, Circle, CircleDashed, CircleSlash, Lock } from "@/components/ui/icons";
 import { Phrase, usePhrase } from "@/lib/i18n-phrase";
 import type { PhraseLine, PhraseSpec } from "@/lib/run/types";
 import { cn } from "@/lib/utils";
@@ -205,11 +206,23 @@ export function ReportDocument({
 /** "Sources": Cited (numbered, in citation order), then Read, not cited. */
 export function ReportSources({ sections }: { sections: SourceSections }) {
   if (sections.cited.length === 0 && sections.read.length === 0) return null;
+  // Own sources: how many of the cited ones are the person's own records, so
+  // the reader knows the report leans on their data as well as the web.
+  const ownCited = sections.cited.filter((row) => isPrivateSourceUrl(row.url)).length;
   return (
     <section className="space-y-3 border-t border-border/60 pt-5">
-      <h4 className="text-ui font-medium text-foreground">
-        <Phrase text={RESEARCH_COPY.report.sources} />
-      </h4>
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <h4 className="text-ui font-medium text-foreground">
+          <Phrase text={RESEARCH_COPY.report.sources} />
+        </h4>
+        {ownCited > 0 && (
+          <p data-own-sources={ownCited} className="inline-flex items-center gap-1 text-caption text-muted-foreground">
+            <Lock aria-hidden className="size-3" />
+            <Phrase text={RESEARCH_COPY.own.fromYours} />
+            <span className="tabular-nums">{ownCited}</span>
+          </p>
+        )}
+      </div>
       {sections.cited.length > 0 && (
         <div className="space-y-1">
           <p className="px-2 text-caption text-muted-foreground">

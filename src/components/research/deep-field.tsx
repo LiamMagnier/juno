@@ -164,7 +164,7 @@ export function QuestionRail({ questions, working, language, sources, eventKey }
                   {hosts.length > 0 ? (
                     <p className="rf-annot mt-1 flex flex-wrap gap-x-2">
                       {hosts.map(source => (
-                        <a key={source.id} href={source.url} target="_blank" rel="noopener noreferrer" title={source.title} className="rf-link">
+                        <a key={source.id} href={isRenderableSourceUrl(source.url) ? source.url : undefined} target="_blank" rel="noopener noreferrer" title={source.title} className="rf-link">
                           <bdi translate="no">{hostOf(source.url)}</bdi>
                         </a>
                       ))}

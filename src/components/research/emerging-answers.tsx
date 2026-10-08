@@ -72,7 +72,7 @@ export function EmergingAnswers({
                 </p>
                 <p className="rf-annot mt-1.5 flex flex-wrap items-baseline gap-x-2">
                   {isRenderableSourceUrl(answer.url) ? (
-                    <a href={answer.url} target="_blank" rel="noopener noreferrer" title={answer.title} className="rf-link">
+                    <a href={isRenderableSourceUrl(answer.url) ? answer.url : undefined} target="_blank" rel="noopener noreferrer" title={answer.title} className="rf-link">
                       <bdi translate="no">{hostOf(answer.url)}</bdi>
                     </a>
                   ) : (

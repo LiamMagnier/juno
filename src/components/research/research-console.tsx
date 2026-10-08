@@ -171,7 +171,7 @@ export function ResearchConsole({ run, state, events, busy, notice, post, classN
                   <li key={finding.id} className="rf-finding">
                     <p lang={run.language ?? undefined} className="rf-claim">{finding.claim}</p>
                     {isRenderableSourceUrl(finding.url) && (
-                      <a href={finding.url} target="_blank" rel="noopener noreferrer" title={finding.title} className="rf-annot rf-link">
+                      <a href={isRenderableSourceUrl(finding.url) ? finding.url : undefined} target="_blank" rel="noopener noreferrer" title={finding.title} className="rf-annot rf-link">
                         <bdi translate="no">{hostOf(finding.url)}</bdi>
                       </a>
                     )}

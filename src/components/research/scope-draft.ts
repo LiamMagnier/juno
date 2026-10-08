@@ -38,6 +38,12 @@ export interface ScopeDraft {
   questions: DraftQuestion[];
   answers: Record<string, string>;
   pinnedSources: string[];
+  /**
+   * Which sources the run reads (own sources): the web and the keys of the
+   * person's own sources the server offered. Null when the run offered none,
+   * and then nothing about sources is sent (an older server ignores it).
+   */
+  sources: { web: boolean; enabled: string[]; offered: string[] } | null;
   /** Something was changed since the seed: "Update plan" shows. */
   edited: boolean;
   /** Counter for new question keys. */
@@ -48,7 +54,12 @@ export interface ScopeDraft {
 export interface ScopeRunInput {
   id: string;
   questions?: ResearchQuestionView[];
-  plan: { objectives?: Array<{ id: string; question: string }>; pinnedSources: string[]; clarificationAnswers?: Record<string, string> };
+  plan: {
+    objectives?: Array<{ id: string; question: string }>;
+    pinnedSources: string[];
+    clarificationAnswers?: Record<string, string>;
+    sources?: { web: boolean; enabled: string[]; options: Array<{ key: string }> };
+  };
   scope?: ResearchScope | null;
   estimate?: ResearchEstimate | null;
   estimateCaps?: ResearchEstimateCaps | null;
@@ -80,6 +91,13 @@ export function seedDraft(run: ScopeRunInput, revision: number): ScopeDraft {
     questions,
     answers: { ...(run.plan.clarificationAnswers ?? {}) },
     pinnedSources: [...run.plan.pinnedSources],
+    sources: run.plan.sources?.options.length
+      ? {
+          web: run.plan.sources.web,
+          enabled: run.plan.sources.enabled.filter((key) => run.plan.sources!.options.some((option) => option.key === key)),
+          offered: run.plan.sources.options.map((option) => option.key),
+        }
+      : null,
     edited: false,
     next: questions.length,
   };
@@ -152,6 +170,41 @@ export function removeSource(draft: ScopeDraft, url: string): ScopeDraft {
   return { ...draft, pinnedSources: draft.pinnedSources.filter((u) => u !== url), edited: true };
 }
 
+/** The key the web travels under in `toggleSource`, beside the private options' keys. */
+export const WEB_SOURCE_KEY = "web";
+
+/** Whether a source is switched on in the draft. */
+export function sourceOn(draft: ScopeDraft, key: string): boolean {
+  if (!draft.sources) return key === WEB_SOURCE_KEY;
+  return key === WEB_SOURCE_KEY ? draft.sources.web : draft.sources.enabled.includes(key);
+}
+
+/** How many sources are on, the web included. */
+function sourcesOn(draft: ScopeDraft): number {
+  if (!draft.sources) return 1;
+  return (draft.sources.web ? 1 : 0) + draft.sources.enabled.length;
+}
+
+/** Whether switching this one would leave nothing to read. */
+export function isLastSource(draft: ScopeDraft, key: string): boolean {
+  return sourceOn(draft, key) && sourcesOn(draft) <= 1;
+}
+
+/**
+ * Switches one source on or off. A key the server did not offer is ignored,
+ * and the last source left on cannot be switched off — a run with nothing
+ * to read is not a run. A source choice changes what is read, not the plan's
+ * questions, so it does not show "Update plan".
+ */
+export function toggleSource(draft: ScopeDraft, key: string): ScopeDraft {
+  const sources = draft.sources;
+  if (!sources || isLastSource(draft, key)) return draft;
+  if (key === WEB_SOURCE_KEY) return { ...draft, sources: { ...sources, web: !sources.web } };
+  if (!sources.offered.includes(key)) return draft;
+  const enabled = sources.enabled.includes(key) ? sources.enabled.filter((k) => k !== key) : [...sources.enabled, key];
+  return { ...draft, sources: { ...sources, enabled } };
+}
+
 /** The questions the server will take: trimmed, non-empty. */
 function submittedQuestions(draft: ScopeDraft): Array<{ id?: string; question: string }> {
   return draft.questions
@@ -176,11 +229,24 @@ export function draftEstimate(draft: ScopeDraft, run: ScopeRunInput): ResearchEs
 }
 
 export type PlanDecisionBody =
-  | { decision: "confirm" | "revise"; questions: Array<{ id?: string; question: string }>; answers: Record<string, string>; pinnedSources: string[] }
+  | {
+      decision: "confirm" | "revise";
+      questions: Array<{ id?: string; question: string }>;
+      answers: Record<string, string>;
+      pinnedSources: string[];
+      /** Only when the run offered own sources. */
+      sources?: { web: boolean; enabled: string[] };
+    }
   | { decision: "cancel" };
 
 export function planBody(draft: ScopeDraft, decision: "confirm" | "revise"): PlanDecisionBody {
-  return { decision, questions: submittedQuestions(draft), answers: { ...draft.answers }, pinnedSources: [...draft.pinnedSources] };
+  return {
+    decision,
+    questions: submittedQuestions(draft),
+    answers: { ...draft.answers },
+    pinnedSources: [...draft.pinnedSources],
+    ...(draft.sources ? { sources: { web: draft.sources.web, enabled: [...draft.sources.enabled] } } : {}),
+  };
 }
 
 /**
