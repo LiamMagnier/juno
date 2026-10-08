@@ -84,15 +84,8 @@ public enum ComputerUseRoutes {
     /// `(provider, model)` for a Juno model id: `anthropic:claude-opus-5-5`,
     /// `openai:gpt-5.5`, or an alias.
     public static func parse(_ modelID: String) -> (provider: String, model: String) {
-        let lowered = modelID.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        switch lowered {
-        case "opus": return ("anthropic", "claude-opus-5-5")
-        case "haiku": return ("anthropic", "claude-haiku-4-5")
-        case "sonnet", "pro": return ("anthropic", "claude-sonnet-5")
-        case "max": return ("qwen", "qwen3.8-max")
-        case "flash", "fast": return ("google", "gemini-3.8-flash")
-        default: break
-        }
+        // Aliases come from the shared Code v2 table (CodeV2.modelAliases).
+        let lowered = CodeV2.resolveModelAlias(modelID).lowercased()
         if lowered.hasPrefix("claude") { return ("anthropic", lowered) }
         let separator: Character = lowered.contains(":") ? ":" : "/"
         let parts = lowered.split(separator: separator, maxSplits: 1).map(String.init)

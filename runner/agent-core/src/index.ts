@@ -94,3 +94,5 @@ export {
   type LegacyTaskDowncastOptions,
   type LegacyTaskRow,
 } from './protocol-legacy.js';
+// Alevr Code v2 shared contracts (byte copy of src/lib/code-v2/contracts.ts).
+export * as codeV2 from './contracts/code-v2.js';

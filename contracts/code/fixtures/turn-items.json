@@ -1,0 +1,43 @@
+{
+  "$def": "TurnItem",
+  "cases": [
+    { "id": "i1", "turnId": "t1", "kind": "user_message", "createdAt": "2026-10-08T20:00:00Z", "text": "Fix the flaky login test", "delivery": "send",
+      "attachments": [{ "name": "failure.png", "mediaType": "image/png", "ref": "upload_9f2" }] },
+    { "id": "i2", "turnId": "t1", "kind": "reasoning", "createdAt": "2026-10-08T20:00:01Z", "text": "The test races the session cookie.", "streaming": false, "summary": true },
+    { "id": "i3", "turnId": "t1", "kind": "plan", "createdAt": "2026-10-08T20:00:02Z", "text": "Make the login test deterministic", "awaitingApproval": true,
+      "steps": [{ "text": "Reproduce", "status": "completed" }, { "text": "Await the cookie", "status": "in_progress" }, { "text": "Run the suite", "status": "pending" }] },
+    { "id": "i4", "turnId": "t1", "kind": "todo_list", "createdAt": "2026-10-08T20:00:03Z",
+      "todos": [{ "id": "a", "text": "Patch helper", "status": "in_progress" }, { "text": "Add regression test", "status": "pending" }] },
+    { "id": "i5", "turnId": "t1", "kind": "user_input_request", "createdAt": "2026-10-08T20:00:04Z", "requestId": "q1", "status": "answered",
+      "questions": [{ "id": "browser", "prompt": "Which browser should the test target?", "options": ["Chromium", "WebKit"], "multiSelect": false }],
+      "answers": { "browser": ["Chromium"] } },
+    { "id": "i6", "turnId": "t1", "kind": "search", "createdAt": "2026-10-08T20:00:05Z", "callId": "c1", "query": "loginAs(", "scope": "content", "matches": 7, "status": "completed" },
+    { "id": "i7", "turnId": "t1", "kind": "web_search", "createdAt": "2026-10-08T20:00:06Z", "callId": "c2", "query": "playwright wait for cookie", "status": "completed",
+      "results": [{ "title": "BrowserContext.cookies", "url": "https://playwright.dev/docs/api/class-browsercontext#browser-context-cookies" }] },
+    { "id": "i8", "turnId": "t1", "kind": "approval_request", "createdAt": "2026-10-08T20:00:07Z", "callId": "c3", "requestId": "r1", "action": "command",
+      "summary": "npm test -- login", "justification": "Run the login suite to reproduce the failure", "options": ["accept", "acceptForSession", "decline", "cancel"],
+      "decision": "accept", "status": "resolved" },
+    { "id": "i9", "turnId": "t1", "kind": "command_execution", "createdAt": "2026-10-08T20:00:08Z", "callId": "c3", "command": "npm test -- login", "cwd": "/repo",
+      "output": "1 failing", "exitCode": 1, "durationMs": 8123, "status": "failed" },
+    { "id": "i10", "turnId": "t1", "kind": "file_change", "createdAt": "2026-10-08T20:00:09Z", "callId": "c4", "status": "completed",
+      "changes": [
+        { "path": "tests/helpers/login.ts", "change": "modify", "diff": "@@ -1 +1 @@\n-await page.goto(url)\n+await page.goto(url, { waitUntil: 'networkidle' })\n", "additions": 1, "deletions": 1 },
+        { "path": "tests/helpers/session.ts", "change": "rename", "previousPath": "tests/helpers/cookie.ts" }
+      ] },
+    { "id": "i11", "turnId": "t1", "kind": "subagent", "createdAt": "2026-10-08T20:00:10Z", "agentId": "agent_2", "role": "explorer",
+      "model": { "instanceId": "alevr", "model": "google:gemini-3.8-flash", "fast": true }, "status": "completed",
+      "task": "Find every caller of loginAs", "closingText": "7 callers, all in tests/e2e.", "tokens": { "input": 41200, "output": 820, "cachedInput": 30000 } },
+    { "id": "i12", "turnId": "t1", "kind": "computer_action", "createdAt": "2026-10-08T20:00:11Z", "callId": "c5", "action": "click", "target": "Safari — Sign in button",
+      "screenshotRef": "shot_0003", "status": "completed" },
+    { "id": "i13", "turnId": "t1", "kind": "assistant_message", "createdAt": "2026-10-08T20:00:12Z", "text": "The login test now waits for the session cookie.", "streaming": false },
+    { "id": "i14", "turnId": "t1", "kind": "checkpoint", "createdAt": "2026-10-08T20:00:13Z", "checkpointId": "cp_1", "turnOrdinal": 1,
+      "ref": "refs/alevr/checkpoints/s1/turn/1", "filesChanged": 2, "additions": 1, "deletions": 1 },
+    { "id": "i15", "turnId": "t2", "kind": "compaction", "createdAt": "2026-10-08T20:10:00Z", "beforeTokens": 812000, "afterTokens": 140000, "strategy": "summarize", "summary": "Fixed the login race; next: CI." },
+    { "id": "i16", "turnId": "t2", "kind": "handoff", "createdAt": "2026-10-08T20:10:01Z",
+      "from": { "instanceId": "codex:default", "model": "gpt-6.1-sol" }, "to": { "instanceId": "alevr", "model": "openai:gpt-6.1-sol" }, "reason": "Codex weekly limit reached" },
+    { "id": "i17", "turnId": "t2", "kind": "interrupt", "createdAt": "2026-10-08T20:10:02Z", "reason": "limit", "message": "Weekly limit reached", "resumeAt": "2026-10-10T00:00:00Z" },
+    { "id": "i18", "kind": "system_notice", "createdAt": "2026-10-08T20:10:03Z", "level": "warning", "text": "Context is 80% full; compacting soon.", "code": "context_high" },
+    { "id": "i19", "turnId": "t2", "kind": "error", "createdAt": "2026-10-08T20:10:04Z", "message": "The model stopped responding.", "code": "timeout", "retryable": true },
+    { "id": "i20", "turnId": "t3", "kind": "assistant_message", "createdAt": "2026-10-08T20:11:00Z", "text": "Look", "streaming": true, "agentId": "agent_2" }
+  ]
+}

@@ -524,12 +524,16 @@ final class ComputerUseToolsTests: XCTestCase {
     }
 
     func testRoutesWithoutAVerifiedConventionGetNoComputerTools() async throws {
-        for model in ["google:gemini-3.8-flash", "qwen:qwen3.8-max", "max", "flash", "deepseek:deepseek-v4"] {
+        for model in ["google:gemini-3.8-flash", "qwen:qwen3.8-max", "flash", "deepseek:deepseek-v4"] {
             let names = await ScreenToolProvider().tools(for: try await providerContext(modelID: model)).map(\.name)
             XCTAssertTrue(names.isEmpty, model)
         }
         XCTAssertEqual(ComputerUseRoutes.imageBudget(forModelID: "haiku"), .anthropicStandard)
         XCTAssertEqual(ComputerUseRoutes.imageBudget(forModelID: "opus"), .anthropicHighResolution)
+        // Aliases resolve through the shared Code v2 table: Sonnet 5.5 and the
+        // Opus 5.5 flagship, never the retired Sonnet 5 or a Qwen model.
+        XCTAssertEqual(ComputerUseRoutes.imageBudget(forModelID: "sonnet"), .anthropicHighResolution)
+        XCTAssertEqual(ComputerUseRoutes.imageBudget(forModelID: "max"), .anthropicHighResolution)
         XCTAssertEqual(ComputerUseRoutes.imageBudget(forModelID: "anthropic:claude-sonnet-5"), .anthropicStandard)
         XCTAssertEqual(ComputerUseRoutes.imageBudget(forModelID: "openai:gpt-5.5"), .openAIHighDetail)
         XCTAssertEqual(ComputerUseRoutes.imageBudget(forModelID: "openai:gpt-5.5-codex"), .openAIOriginal)

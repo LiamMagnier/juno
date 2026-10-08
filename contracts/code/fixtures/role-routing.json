@@ -1,0 +1,25 @@
+{
+  "$def": "RoleRouting",
+  "cases": [
+    { "preset": "solo", "orchestrator": { "instanceId": "alevr", "model": "anthropic:claude-opus-5-5", "effort": "high" } },
+    {
+      "preset": "lead-workers",
+      "orchestrator": { "instanceId": "claude-agent:default", "model": "claude-opus-5-5", "effort": "xhigh" },
+      "workers": [{ "instanceId": "alevr", "model": "openai:gpt-6.1-sol", "effort": "medium", "contextTokens": 272000 }],
+      "reviewer": { "instanceId": "codex:default", "model": "gpt-6.1-sol" },
+      "explorer": { "instanceId": "alevr", "model": "google:gemini-3.8-flash", "fast": true },
+      "compaction": { "instanceId": "alevr", "model": "anthropic:claude-haiku-4-5" },
+      "budget": { "maxTokens": 4000000, "maxUsd": 12.5 }
+    },
+    {
+      "preset": "best-of-n",
+      "orchestrator": { "instanceId": "alevr", "model": "anthropic:claude-sonnet-5-5" },
+      "workers": [
+        { "instanceId": "alevr", "model": "anthropic:claude-opus-5-5" },
+        { "instanceId": "codex:default", "model": "gpt-6.1-sol", "effort": "high" },
+        { "instanceId": "acp:gemini", "model": "gemini-3.8-pro", "contextTokens": 1048576 }
+      ],
+      "reviewer": { "instanceId": "alevr", "model": "anthropic:claude-opus-5-5" }
+    }
+  ]
+}

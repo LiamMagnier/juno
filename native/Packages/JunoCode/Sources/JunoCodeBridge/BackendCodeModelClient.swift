@@ -69,52 +69,12 @@ public struct CodeModelProviderResolver: Sendable {
     /// Pro/Codex snapshots speak Responses, and every other configured lab
     /// speaks OpenAI-compatible Chat Completions.
     public static let `default` = CodeModelProviderResolver { modelID in
-        let trimmed = modelID.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Short aliases ("sonnet", "max", "flash"…) resolve through the shared
+        // Code v2 table (contracts/code), so the Mac, the runner and the web
+        // cannot disagree on what "max" means.
+        let trimmed = CodeV2.resolveModelAlias(modelID)
         let lowered = trimmed.lowercased()
 
-        // Short aliases and tier names that subagents or callers might supply
-        if lowered == "max" {
-            return CodeModelRoute(
-                providerID: "qwen",
-                providerModelID: "qwen3.8-max",
-                wireProtocol: .openAIChat
-            )
-        }
-        if lowered == "pro" {
-            return CodeModelRoute(
-                providerID: "anthropic",
-                providerModelID: "claude-sonnet-5",
-                wireProtocol: .anthropicMessages
-            )
-        }
-        if lowered == "flash" || lowered == "fast" {
-            return CodeModelRoute(
-                providerID: "google",
-                providerModelID: "gemini-3.8-flash",
-                wireProtocol: .openAIChat
-            )
-        }
-        if lowered == "haiku" {
-            return CodeModelRoute(
-                providerID: "anthropic",
-                providerModelID: "claude-haiku-4-5",
-                wireProtocol: .anthropicMessages
-            )
-        }
-        if lowered == "sonnet" {
-            return CodeModelRoute(
-                providerID: "anthropic",
-                providerModelID: "claude-sonnet-5",
-                wireProtocol: .anthropicMessages
-            )
-        }
-        if lowered == "opus" {
-            return CodeModelRoute(
-                providerID: "anthropic",
-                providerModelID: "claude-opus-5-5",
-                wireProtocol: .anthropicMessages
-            )
-        }
         if lowered.hasPrefix("claude") {
             return CodeModelRoute(
                 providerID: "anthropic",

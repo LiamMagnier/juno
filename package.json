@@ -62,6 +62,8 @@
     "work:contract:check": "node scripts/check-work-contract.mjs",
     "agent:protocol": "node scripts/generate-agent-protocol.mjs && tsx scripts/fold-agent-fixtures.ts",
     "agent:protocol:check": "node scripts/generate-agent-protocol.mjs --check && tsx scripts/fold-agent-fixtures.ts --check",
+    "code-v2:contracts": "node scripts/check-code-v2-contracts.mjs --write",
+    "code-v2:contracts:check": "node scripts/check-code-v2-contracts.mjs",
     "code:task-wire": "tsx scripts/generate-code-task-wire-fixtures.ts",
     "code:task-wire:check": "tsx scripts/generate-code-task-wire-fixtures.ts --check",
     "shell:contract:generate": "node scripts/generate-shell-contract.mjs",
