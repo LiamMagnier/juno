@@ -936,6 +936,7 @@ export const writeResearchReport: NonNullable<ResearchDeps["synthesize"]> = asyn
   goal,
   plan,
   sources,
+  footprint,
   findings = [],
   signal,
   revision,
@@ -974,8 +975,11 @@ export const writeResearchReport: NonNullable<ResearchDeps["synthesize"]> = asyn
             contract: "report",
             dateLine: plan.today ?? null,
             languageLine: plan.language ? researchLanguageLine(languageName(plan.language)) : null,
+            ...(footprint ? { footprint } : {}),
           }
-        : {}
+        : footprint
+          ? { footprint }
+          : {}
     ),
     ...(revision
       ? [

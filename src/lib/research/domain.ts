@@ -555,6 +555,15 @@ export interface ResearchGapAuditEntry {
   stale: string[];
 }
 
+/** What adaptive depth added to a run's envelope (`depth.ts`). */
+export interface ResearchDepthExtension {
+  extraRounds: number;
+  extraPages: number;
+  extraTokens: number;
+  reasons: string[];
+  at: string;
+}
+
 export interface ResearchGapAudit {
   at: string;
   /** How many audits the run has run; the follow-up they scheduled is bounded by the rounds. */
@@ -794,6 +803,22 @@ export function parseVector(value: unknown): ResearchVector | undefined {
     verify: cleanStringArray(raw.verify, MAX_VECTOR_ITEMS, MAX_VECTOR_ITEM_CHARS),
   };
   return vector.metrics.length || vector.sources.length || vector.verify.length ? vector : undefined;
+}
+
+/** Bounded on read: the engine's own ceilings (`depth.ts`) cap what it writes; this caps what it trusts. */
+function parseDepth(value: unknown): ResearchDepthExtension | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const raw = value as Record<string, unknown>;
+  const n = (v: unknown, max: number) => (typeof v === "number" && Number.isFinite(v) ? Math.max(0, Math.min(max, Math.floor(v))) : 0);
+  const extraRounds = n(raw.extraRounds, 2);
+  if (extraRounds === 0) return undefined;
+  return {
+    extraRounds,
+    extraPages: n(raw.extraPages, 250),
+    extraTokens: n(raw.extraTokens, 50_000_000),
+    reasons: cleanStringArray(raw.reasons, 6, 120),
+    at: typeof raw.at === "string" ? raw.at.slice(0, 40) : "",
+  };
 }
 
 function parseGapAudit(value: unknown): ResearchGapAudit | undefined {
@@ -1096,6 +1121,12 @@ export interface ResearchPlan {
   gapAudit?: ResearchGapAudit;
   /** URLs the sweep fetched, so a follow-up pass does not fetch a short page again. Newest last. */
   sweepFetched?: string[];
+  /**
+   * Adaptive depth (`depth.ts`): rounds, pages and worker tokens added beyond
+   * the envelope for a hard question, and why. `planBudget` adds them to the
+   * envelope's limits, so a resumed run keeps the extension.
+   */
+  depth?: ResearchDepthExtension;
 
   /*
    * The rework's fields (SPEC §9.2–§9.7). Every one is optional and has a
@@ -1557,6 +1588,7 @@ export function parsePlan(value: unknown): ResearchPlan {
       : {}),
     ...(parseGapAudit(raw.gapAudit) ? { gapAudit: parseGapAudit(raw.gapAudit)! } : {}),
     ...(Array.isArray(raw.sweepFetched) ? { sweepFetched: cleanList(raw.sweepFetched.slice(-250), 250, 2_000) } : {}),
+    ...(parseDepth(raw.depth) ? { depth: parseDepth(raw.depth)! } : {}),
     ...parseReworkFields(raw),
   };
 }
@@ -1785,8 +1817,19 @@ export function planBudget(plan: ResearchPlan): ResearchBudget {
   // legacy `budget` beside it is the previous build's copy, and its `effort`
   // is the nearest tier rather than a size (§9.2, INV-22).
   if (plan.envelope) {
+    const base = budgetFromEnvelope(plan.envelope);
+    // Adaptive depth adds rounds, pages and tokens for a hard question; the
+    // clock, the team and the money ceiling stay the envelope's.
+    const depth = plan.depth;
     return {
-      ...budgetFromEnvelope(plan.envelope),
+      ...base,
+      ...(depth
+        ? {
+            rounds: Math.min(MAX_RESEARCH_ROUNDS, base.rounds + depth.extraRounds),
+            pages: base.pages + depth.extraPages,
+            tokens: base.tokens + depth.extraTokens,
+          }
+        : {}),
       ...(plan.budget?.startedAt ? { startedAt: plan.budget.startedAt } : {}),
     };
   }

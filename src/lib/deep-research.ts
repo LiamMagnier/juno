@@ -1,4 +1,5 @@
 import "server-only";
+import { footprintOf } from "@/lib/research/depth";
 import { truncate } from "@/lib/utils";
 // Same helper the chat route uses — this was a third verbatim copy.
 import { sourceHost } from "@/lib/chat-responses";
@@ -420,7 +421,8 @@ export async function runDeepResearch(opts: {
   const finished = await store.loadRun(runId, opts.userId);
   // The same function that numbers the standalone report's corpus and audit,
   // so `[3]` means one row on every path.
-  const sources = citableSources(await store.listSources(runId, opts.userId));
+  const allSources = await store.listSources(runId, opts.userId);
+  const sources = citableSources(allSources);
   const costUsd = finished ? Number(finished.costMicroUsd) / 1_000_000 : 0;
 
   if (sources.length === 0) return { ...EMPTY, runId, costUsd, state: finished?.state, driveOwner };
@@ -438,7 +440,8 @@ export async function runDeepResearch(opts: {
 
   return {
     ok: true,
-    context: buildResearchCorpus(prompt, plan, sources, ledger),
+    // Found versus read, so the chat model's methodology can say it (depth.ts).
+    context: buildResearchCorpus(prompt, plan, sources, ledger, { footprint: footprintOf(plan, allSources.length, sources.length) }),
     // `cited` marks these as the numbered corpus the model was actually given,
     // which is what licenses the UI to resolve inline [n] markers positionally.
     // Deep research is the ONLY path that numbers sources for the model.

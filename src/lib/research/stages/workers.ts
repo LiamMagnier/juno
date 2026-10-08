@@ -23,6 +23,7 @@ import {
   PAGE_FETCH_FEE_MICRO_USD,
   type ResearchConflict,
   type ResearchDelegation,
+  type ResearchDepthExtension,
   type ResearchPlan,
   type ResearchRound,
   SATURATION_NEW_CLAIM_SHARE,
@@ -45,6 +46,7 @@ import {
   shouldAssist,
 } from "@/lib/research/audit-assist";
 import { comparisonOptions } from "@/lib/research/metric-match";
+import { newFigureCount, nextExtension, saturated, type DepthSignals } from "@/lib/research/depth";
 import {
   MAX_SOURCES,
   READ_ESTIMATE_MICRO_USD,
@@ -497,13 +499,13 @@ export function createWorkerStage(ctx: EngineContext) {
     if (!deps.runWorker) return { run };
     let current = run;
     let plan = parsePlan(current.plan);
-    const budget = planBudget(plan);
+    let budget = planBudget(plan);
     const startedAt = plan.budget?.startedAt ?? deps.now().toISOString();
     if (!plan.budget?.startedAt) {
       plan = { ...plan, budget: { ...budget, startedAt } };
       current = (await store.savePlan({ runId: run.id, userId: run.userId, plan })) ?? current;
     }
-    const totalRounds = Math.min(budget.rounds, MAX_RESEARCH_ROUNDS);
+    let totalRounds = Math.min(budget.rounds, MAX_RESEARCH_ROUNDS);
     let delegations: ResearchDelegation[] = [];
     const lastRecorded = plan.rounds?.[plan.rounds.length - 1];
     if (lastRecorded?.review?.decision === "synthesize") return { run: current };
@@ -548,7 +550,7 @@ export function createWorkerStage(ctx: EngineContext) {
        * `ResearchPlan.seedPagesRead`.
        */
       const readNow = (plan.seedPagesRead ?? 0) + (plan.rounds ?? []).reduce((n, item) => n + item.pagesRead, 0);
-      const pageCeiling = Math.min(MAX_SOURCES, budget.pages);
+      let pageCeiling = Math.min(MAX_SOURCES, budget.pages);
       if (readNow >= pageCeiling) break;
 
       if (delegations.length === 0) {
@@ -875,6 +877,56 @@ export function createWorkerStage(ctx: EngineContext) {
           }
         }
       }
+      /*
+       * Adaptive depth (depth.ts): when this was going to be the last round
+       * and the question is proving hard — many vectors, conflicting figures,
+       * figures still missing, open leads — and the round was still finding
+       * new facts, one more round with more pages, if the ceiling can pay for
+       * it with the writer's reserve held back and the window is not spent.
+       * Bounded by MAX_EXTRA_ROUNDS, MAX_RESEARCH_ROUNDS and +50% pages; the
+       * clock is never extended.
+       */
+      const depthSignals: DepthSignals = {
+        vectors: latestPlan.objectives.length,
+        conflicts: audit.entries.reduce((n, entry) => n + entry.conflicts.length, 0),
+        missingFigures: audit.entries.reduce((n, entry) => n + entry.missingFigures.length, 0),
+        unverified: audit.entries.reduce((n, entry) => n + entry.unverified.length, 0),
+        leads: leads.length,
+        roundFindings: roundFindings.length,
+        newClaims,
+        newFigures: newFigureCount(
+          roundFindings.map((finding) => finding.claim),
+          findings.filter((finding) => finding.round !== round).map((finding) => finding.claim)
+        ),
+        findings: findings.length,
+        round,
+      };
+      let extendedNow: ResearchDepthExtension | null = null;
+      let windowWasSpent = false;
+      if (round === totalRounds && latestPlan.envelope && !latestPlan.finishRequestedAt) {
+        const proposal = nextExtension({
+          signals: depthSignals,
+          envelope: { rounds: latestPlan.envelope.rounds, pages: latestPlan.envelope.pages, workerTokens: latestPlan.envelope.workerTokens },
+          current: latestPlan.depth,
+          maxRounds: MAX_RESEARCH_ROUNDS,
+          maxPages: MAX_SOURCES,
+          now: deps.now(),
+        });
+        const clockLeft = budget.wallClockMs - investigationElapsedMs(latestPlan, deps.now()) > Math.min(budget.workerWallClockMs, budget.wallClockMs / 4);
+        // The window check records the stop on the plan; the round's own save
+        // below must carry that mark rather than overwrite it.
+        windowWasSpent = !!proposal && clockLeft && (await windowSpent(current));
+        if (proposal && clockLeft && !windowWasSpent) {
+          const team = Math.min(budget.workers, MAX_DELEGATIONS_PER_ROUND);
+          if ((await affordableCount(current, perWorkerEstimate, team, writerReserve(latestPlan))) >= 1) {
+            extendedNow = proposal;
+            budget = planBudget({ ...latestPlan, depth: proposal });
+            totalRounds = Math.min(budget.rounds, MAX_RESEARCH_ROUNDS);
+            pageCeiling = Math.min(MAX_SOURCES, budget.pages);
+          }
+        }
+      }
+
       const questionOf = (id: string) => latestPlan.objectives.find((objective) => objective.id === id)?.question ?? id;
       const auditLines = renderGapAudit(audit.entries, questionOf);
       const reviewInput: ReviewRoundInput = {
@@ -979,7 +1031,7 @@ export function createWorkerStage(ctx: EngineContext) {
         .map((entry) => entry.objectiveId);
       const forcedRound =
         !leadsContinue &&
-        round < Math.min(MIN_RESEARCH_ROUNDS, totalRounds) &&
+        (round < Math.min(MIN_RESEARCH_ROUNDS, totalRounds) || !!extendedNow) &&
         pagesLeft > 0 &&
         !latestPlan.finishRequestedAt &&
         (leads.length > 0 || auditGapObjectives.length > 0);
@@ -1008,9 +1060,14 @@ export function createWorkerStage(ctx: EngineContext) {
       }
       const continuing = nextGaps.length > 0 && (leadsContinue || forcedRound);
       const recordedDecision: ReviewRoundOutput["decision"] = continuing ? "continue" : "synthesize";
-      const recordedReason = forcedRound && continuing
-        ? `${review.reason} A second round follows the ${leads.length} lead${leads.length === 1 ? "" : "s"} and ${auditGapObjectives.length} audit gap${auditGapObjectives.length === 1 ? "" : "s"} the first round surfaced.`.trim()
-        : review.reason;
+      const recordedReason = [
+        forcedRound && continuing
+          ? `${review.reason} Another round follows the ${leads.length} lead${leads.length === 1 ? "" : "s"} and ${auditGapObjectives.length} audit gap${auditGapObjectives.length === 1 ? "" : "s"} this round surfaced.`.trim()
+          : review.reason,
+        extendedNow && continuing ? `Depth extended for a hard question (${extendedNow.reasons.join(", ")}).` : "",
+      ]
+        .filter(Boolean)
+        .join(" ");
 
       const recorded: ResearchRound = {
         round,
@@ -1045,6 +1102,9 @@ export function createWorkerStage(ctx: EngineContext) {
           conflicts,
           rounds,
           ...(workerQueries.length ? { workerQueries } : {}),
+          // Recorded only when the round it bought actually goes out.
+          ...(extendedNow && continuing ? { depth: extendedNow } : {}),
+          ...(windowWasSpent ? { windowSpentAt: parsePlan(((await store.loadRun(current.id, current.userId)) ?? current).plan).windowSpentAt ?? deps.now().toISOString() } : {}),
           gapAudit: {
             at: deps.now().toISOString(),
             pass: (latestPlan.gapAudit?.pass ?? 0) + 1,
@@ -1071,6 +1131,7 @@ export function createWorkerStage(ctx: EngineContext) {
             ...(leads.length ? { leads: leads.map((lead) => ({ objectiveId: lead.objectiveId, query: lead.query, signal: lead.signal })) } : {}),
             ...(audit.hasGaps ? { audit: auditLines.slice(0, 8) } : {}),
             ...(assisted ? { assisted } : {}),
+            ...(extendedNow && continuing ? { extended: { rounds: extendedNow.extraRounds, pages: extendedNow.extraPages, reasons: extendedNow.reasons } } : {}),
           },
         },
         {
@@ -1092,8 +1153,10 @@ export function createWorkerStage(ctx: EngineContext) {
 
       if (!continuing) break;
       // Saturation is the lead's call, but the arithmetic backstops it: a
-      // round that added almost nothing new is not worth paying for again.
+      // round that added almost nothing new — few new pages cited, or no new
+      // figures — is not worth paying for again (depth.ts `saturated`).
       if (round > 1 && findings.length > 0 && newClaims < findings.length * SATURATION_NEW_CLAIM_SHARE) break;
+      if (saturated(depthSignals)) break;
       delegations = nextGaps.map((gap, i) => {
         const objective = objectives.find((item) => item.id === gap.objectiveId);
         return {

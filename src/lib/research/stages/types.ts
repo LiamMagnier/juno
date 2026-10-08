@@ -3,6 +3,7 @@
  * engine works with, and the engine's public interface. Split out of engine.ts
  * (docs/rework/program/ORCHESTRATION.md); engine.ts re-exports the public names.
  */
+import type { ResearchFootprint } from "@/lib/research/depth";
 import type { PlannerDraft } from "@/lib/research/planner";
 import type { ResearchBudgetRefusal } from "@/lib/research/envelope";
 import type {
@@ -469,6 +470,8 @@ export interface ResearchDeps {
     goal: string;
     plan: ResearchPlan;
     sources: ResearchSourceRow[];
+    /** What the run found and read, for the methodology (`depth.ts`). */
+    footprint?: ResearchFootprint;
     /** The workers' findings, when the store keeps them. */
     findings?: ResearchFindingRow[];
     signal?: AbortSignal;

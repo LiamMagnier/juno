@@ -35,7 +35,7 @@ Tables are citation-checked cell by cell: every figure in a table carries its [n
 5. "## Nuances & Gotchas": Hidden rate limits, token quotas, degraded performance under load, deprecations, IP and training terms, cancellation friction — whatever the evidence shows.
 6. "## Where Sources Disagree": Each conflicting claim, both sides cited, and which is better supported (official changelog or documentation over secondary reporting) and why.
 7. "## Limitations & Open Questions": What remains uncertain or unverifiable from current evidence.
-8. "## Methodology & Source Traceability": How the research was done in two or three sentences, then a table attributing the evidence to its primary domains: domain, kind of record, publication or update date, what it established, citations.
+8. "## Methodology & Source Traceability": How the research was done in two or three sentences (including sources found versus read in full, from the research footprint when it is given), then a table attributing the evidence to its primary domains: domain, kind of record, publication or update date, what it established, citations.
 9. "## Sources": Numbered list matching cited references as "[n] Title — URL".`;
 }
 
@@ -93,7 +93,7 @@ ${questionSections}
 {what the sources could not settle, including figures the gap audit found missing; never fill a gap from memory}
 <!-- juno:section=method -->
 ## Methodology and source traceability
-{two or three sentences on how the research was done (vectors, rounds, what was searched and read), then a Markdown table attributing the evidence to its primary domains: domain, kind of record (documentation, pricing page, changelog, filing, repository, press…), publication or update date, what it established, citations}
+{two or three sentences on how the research was done (vectors, rounds, what was searched, and how many sources were found against how many were read in full, from the research footprint when it is given), then a Markdown table attributing the evidence to its primary domains: domain, kind of record (documentation, pricing page, changelog, filing, repository, press…), publication or update date, what it established, citations}
 
 Tables are citation-checked cell by cell: every figure in a table carries its [n] in its own cell — or on the row label when one source backs the whole row, or on the column header when one source backs the whole column — so the deep dives explain what the figures mean rather than repeating every cell. Translate the headings ("Executive verdict", "Comparative matrix", "Nuances and gotchas", "Where sources disagree", "What could not be established", "Methodology and source traceability") into the report's language; a vector heading is the question as written above, translated when the report's language differs. Do not write a sources, references or bibliography section.`;
 }

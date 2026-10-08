@@ -1,3 +1,4 @@
+import { footprintLines, type ResearchFootprint } from "@/lib/research/depth";
 import { UNTRUSTED_CONTENT_RULE, wrapUntrusted } from "@/lib/untrusted-content";
 import { SNAPSHOT_CHARS, type ResearchSourceRow } from "@/lib/research/engine";
 import type { ResearchFindingRow } from "@/lib/research/agents/protocol";
@@ -260,6 +261,18 @@ export interface ResearchCorpusOptions {
   dateLine?: string | null;
   /** "Write in {language}." for the report contract (§9.5). */
   languageLine?: string | null;
+  /** What the run found and read (`depth.ts`), stated in the methodology. */
+  footprint?: ResearchFootprint;
+}
+
+/**
+ * The run's own numbers for the methodology section: sources found against
+ * pages read, searches, rounds and any depth extension. Our data, not page
+ * content, so it sits outside the untrusted envelope.
+ */
+function renderFootprint(footprint: ResearchFootprint | undefined): string {
+  if (!footprint) return "";
+  return `\n# Research Footprint (state these numbers in the methodology: how many sources were found and how many were read in full)\n${footprintLines(footprint).map((line) => `- ${line}`).join("\n")}\n`;
 }
 
 export function buildResearchCorpus(
@@ -295,7 +308,7 @@ export function buildResearchCorpus(
 ${CITATION_RULES}
 ${constraintsBlock(plan.constraints)}
 ${UNTRUSTED_CONTENT_RULE}
-${renderVectors(plan)}${renderFindings(findings)}${renderEvidenceState(plan, indexOf)}
+${renderVectors(plan)}${renderFindings(findings)}${renderEvidenceState(plan, indexOf)}${renderFootprint(options.footprint)}
 ${SOURCE_MATERIAL_HEADER}
 ${corpus}`;
 }
