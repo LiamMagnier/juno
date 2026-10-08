@@ -246,7 +246,9 @@ struct JunoMobileRootView: View {
           if CommandLine.arguments.contains("--juno-preview-sidebar") {
             showingHistory = true
           }
-          if CommandLine.arguments.contains("--juno-preview-settings") {
+          if CommandLine.arguments.contains("--juno-preview-settings")
+            || JunoPreviewEnvironment.initialRoute != nil
+          {
             showingSettings = true
           }
           // Opens straight into incognito, so the mode's own look is one

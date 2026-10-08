@@ -169,6 +169,10 @@ public actor PreviewSender: NativeChatRequestSending {
         ) {
             return body
         }
+        // Profile, @username and the Mac's billing extras.
+        if let body = PreviewProfileFixtures.body(for: request, empty: empty) {
+            return body
+        }
         // Memory, Skills and Assistants (Phase 4 Stage B): the pages' own
         // wire shapes, ahead of the generic memory answer below.
         if let body = PreviewAccountPageFixtures.body(path: path, method: request.method, empty: empty) {

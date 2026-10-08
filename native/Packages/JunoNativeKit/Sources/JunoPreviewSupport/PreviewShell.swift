@@ -104,6 +104,14 @@ public enum JunoPreviewEnvironment {
         value(for: "--juno-preview-settings-route", env: "JUNO_PREVIEW_SETTINGS_ROUTE")
     }
 
+    /// Opens one screen directly, from `--juno-preview-route <name>` or
+    /// `JUNO_PREVIEW_ROUTE`: `profile` (the profile page) and `username`
+    /// (Settings › Account › Username). On the iPhone they live under
+    /// Settings, so the sheet opens with the page pushed.
+    public static var initialRoute: String? {
+        value(for: "--juno-preview-route", env: "JUNO_PREVIEW_ROUTE")
+    }
+
     /// Optional accent override from `--juno-preview-accent <name>` or
     /// `JUNO_PREVIEW_ACCENT`, so each of the five accents can be screenshotted by
     /// relaunching instead of tapping into Settings and back out.

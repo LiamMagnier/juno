@@ -55,6 +55,8 @@ import UIKit
 private enum JunoMobileSettingsRoute: Hashable {
   case usage, appearance, models, writing, language, memory, notifications, data, advanced, about
   case archived, voice, code
+  /// The profile page and the @username field (JunoMobileProfileView.swift).
+  case profile, username
 
   /// The name a preview launch uses: `--juno-preview-settings-route voice`.
   init?(previewName: String) {
@@ -72,6 +74,8 @@ private enum JunoMobileSettingsRoute: Hashable {
     case "archived": self = .archived
     case "voice": self = .voice
     case "code": self = .code
+    case "profile": self = .profile
+    case "username": self = .username
     default: return nil
     }
   }
@@ -213,7 +217,7 @@ struct JunoMobileSettingsView: View {
     }
     .task {
       #if DEBUG
-        if let raw = JunoPreviewEnvironment.initialSettingsRoute,
+        if let raw = JunoPreviewEnvironment.initialSettingsRoute ?? JunoPreviewEnvironment.initialRoute,
           let route = JunoMobileSettingsRoute(previewName: raw)
         {
           try? await Task.sleep(nanoseconds: 350_000_000)
@@ -359,6 +363,8 @@ struct JunoMobileSettingsView: View {
     case .archived: "juno.mobile.settings-route-archived"
     case .voice: "juno.mobile.settings-route-voice"
     case .code: "juno.mobile.settings-route-code"
+    case .profile: "juno.mobile.settings-route-profile"
+    case .username: "juno.mobile.settings-route-username"
     }
   }
 
@@ -417,6 +423,10 @@ struct JunoMobileSettingsView: View {
       .task { await model.refreshServerSettings() }
     case .code:
       JunoMobileCodeSettingsView(remoteModel: remoteCodeModel)
+    case .profile:
+      JunoMobileProfileView(session: session, requestSender: requestSender, avatarData: avatarData)
+    case .username:
+      JunoMobileUsernameView(session: session, requestSender: requestSender)
     }
   }
 
@@ -538,6 +548,13 @@ struct JunoMobileSettingsView: View {
           }
           .padding(.vertical, 10)
           .frame(maxWidth: .infinity, alignment: .leading)
+        }
+      }
+
+      if session != nil, requestSender != nil {
+        Section {
+          settingsLink(.profile, title: "Profile", icon: .user)
+          settingsLink(.username, title: "Username", icon: .pencil)
         }
       }
 
