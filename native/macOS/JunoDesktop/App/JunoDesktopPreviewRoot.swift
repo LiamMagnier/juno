@@ -178,6 +178,17 @@ private struct JunoDesktopPreviewWorkspace: View {
             workbenchModel: workbenchModel,
             initialDestination: Self.requestedDestination
         )
+        .task {
+            // Started as the live root starts them, against the throwaway
+            // account, so the pages draw their content rather than loading.
+            let accountID = world.session.profile.id
+            configuration.libraryPageModel?.start(for: accountID)
+            configuration.memoryPageModel?.start(for: accountID)
+            configuration.assistantsModel?.start(for: accountID)
+            configuration.notificationsModel?.start(for: accountID)
+            await configuration.agentsModel?.start(for: accountID)
+            await configuration.skillLibraryModel?.start(for: accountID)
+        }
         .onAppear {
             // No field holds the caret in a product shot: a focused field is
             // where the system offers its own suggestions (a code from

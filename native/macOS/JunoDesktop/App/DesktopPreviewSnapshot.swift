@@ -59,11 +59,16 @@ enum DesktopPreviewSnapshot {
         // menu, a popover's button — so a menu or popover is in the picture.
         if let press = value("--juno-preview-press") {
             DispatchQueue.main.asyncAfter(deadline: .now() + max(1.5, delay - 2.5)) {
-                if let window = window(titled: title), let element = find(press, in: window) as? NSObject,
-                   element.responds(to: #selector(NSAccessibilityProtocol.accessibilityPerformPress))
-                {
-                    _ = (element as AnyObject).accessibilityPerformPress?()
+                var note = "press \(press): "
+                if let window = window(titled: title), let element = find(press, in: window) as? NSObject {
+                    note += "found \(type(of: element)) "
+                    if element.responds(to: #selector(NSAccessibilityProtocol.accessibilityPerformPress)) {
+                        note += "pressed=\((element as AnyObject).accessibilityPerformPress?() ?? false)"
+                    }
+                } else {
+                    note += "not found"
                 }
+                try? note.write(toFile: path + ".press.txt", atomically: true, encoding: .utf8)
             }
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
@@ -139,12 +144,21 @@ enum DesktopPreviewSnapshot {
         guard let handle = dlopen(nil, RTLD_NOW) else { return nil }
         // This process's own windows above the main one — an open menu, a
         // popover — composited over it, inside the main window's bounds.
+        // Popovers and sheets are windows of their own; the menus a
+        // pressed control opens are too, but not in `NSApp.windows`.
         let pid = ProcessInfo.processInfo.processIdentifier
-        let info = (CGWindowListCopyWindowInfo([.optionOnScreenAboveWindow], CGWindowID(window.windowNumber)) as? [[String: Any]]) ?? []
-        let above = info.compactMap { entry -> CGWindowID? in
-            guard (entry[kCGWindowOwnerPID as String] as? Int32) == pid else { return nil }
+        let info = (CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]]) ?? []
+        let menus = info.compactMap { entry -> CGWindowID? in
+            guard (entry[kCGWindowOwnerPID as String] as? Int32) == pid,
+                  (entry[kCGWindowLayer as String] as? Int ?? 0) > 0,
+                  (entry[kCGWindowLayer as String] as? Int ?? 0) < 25
+            else { return nil }
             return (entry[kCGWindowNumber as String] as? NSNumber).map { CGWindowID($0.uint32Value) }
         }
+        let children = NSApp.windows.filter {
+            $0 !== window && $0.isVisible && $0.frame.intersects(window.frame) && $0.level.rawValue < 25
+        }.map { CGWindowID($0.windowNumber) }
+        let above = children + menus
         if !above.isEmpty, let symbol = dlsym(handle, "CGWindowListCreateImageFromArray"),
            let screen = NSScreen.screens.first
         {
@@ -152,8 +166,9 @@ enum DesktopPreviewSnapshot {
             let function = unsafeBitCast(symbol, to: FromArray.self)
             let frame = window.frame
             let rect = CGRect(x: frame.minX, y: screen.frame.height - frame.maxY, width: frame.width, height: frame.height)
-            // Back to front: the main window, then what is above it.
-            let ids = ([CGWindowID(window.windowNumber)] + above.reversed()).map { NSNumber(value: $0) } as CFArray
+            // Front to back, as the window list orders them: what floats
+            // over the window first, the window last.
+            let ids = (above + [CGWindowID(window.windowNumber)]).map { NSNumber(value: $0) } as CFArray
             if let image = function(rect, ids, (1 << 3))?.takeRetainedValue() { return image }
         }
         guard let symbol = dlsym(handle, "CGWindowListCreateImage") else { return nil }

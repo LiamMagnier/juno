@@ -195,6 +195,9 @@ public actor PreviewSender: NativeChatRequestSending {
     /// real code path decodes cleanly. Never fetched from a server.
     private func cannedBody(for request: NativeBearerRequest) -> Data {
         let path = request.path
+        if let body = PreviewShowcaseServer.body(path: path, method: request.method.rawValue) {
+            return body
+        }
         // A question appended to a saved chat before its reply streams: the
         // route echoes the turn back with the id it stored it under.
         if request.method == .post, path.hasPrefix("/api/conversations/"), path.hasSuffix("/messages"),

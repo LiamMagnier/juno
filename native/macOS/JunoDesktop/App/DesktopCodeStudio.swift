@@ -529,7 +529,17 @@ struct DesktopCodeSidebar: View {
                         .contextMenu { runMenu(entry.sessionID) }
                     }
                 } header: {
-                    DesktopSidebarHeading(section.heading)
+                    // The group's word alone, as Chat's folds are; the one
+                    // that waits on the reader says how many, in words.
+                    HStack(spacing: JunoSpace.snug) {
+                        DesktopSidebarHeading(section.group.title)
+                        Spacer(minLength: 0)
+                        if section.group == .needsYou {
+                            Text("\(section.entries.count) waiting")
+                                .foregroundStyle(Color.junoAccentInk)
+                                .monospacedDigit()
+                        }
+                    }
                 }
             }
 
@@ -602,7 +612,7 @@ struct DesktopCodeSidebar: View {
                     Button {
                         showsArchived.toggle()
                     } label: {
-                        DesktopSidebarHeading("Archived (\(archived.count))")
+                        DesktopSidebarHeading("Archived")
                             .contentShape(.rect)
                     }
                     .buttonStyle(.plain)
@@ -736,7 +746,7 @@ struct DesktopCodeSidebar: View {
                 }
             }
         } label: {
-            navLabel(JunoShellCodeSidebar.More.label, icon: JunoShellCodeSidebar.More.icon, selected: false)
+            navLabel(JunoShellCodeSidebar.More.label, icon: JunoShellCodeSidebar.More.archivedIcon, selected: false)
         }
         .menuStyle(.button)
         .buttonStyle(.plain)
@@ -751,6 +761,7 @@ struct DesktopCodeSidebar: View {
     /// system accent otherwise.
     private func navLabel(_ title: String, icon: JunoIcon, selected: Bool) -> some View {
         let ink = selected ? Color.junoForeground : Color.junoSidebarInk
+        // The web's glyphs (the contract's), one weight down the column.
         return Label {
             Text(title)
         } icon: {

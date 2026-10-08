@@ -170,10 +170,19 @@ private struct NativeAgentsTeamHeader: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: JunoSpace.hairline) {
+            #if os(macOS)
+            // The Mac names the place as its sidebar row does, in the page
+            // title every other Mac page wears (round 2).
+            Text("Orbit")
+                .junoPageTitle(columnWidth: pageColumn)
+                .foregroundStyle(Color.junoForeground)
+                .accessibilityAddTraits(.isHeader)
+            #else
             Text("Agents")
                 .junoType(.display(size: JunoType.pageTitle(columnWidth: pageColumn ?? 640).size))
                 .foregroundStyle(Color.junoForeground)
                 .accessibilityAddTraits(.isHeader)
+            #endif
             Text(NativeAgentStarter.teamSentence(agents))
                 .junoType(.body)
                 .foregroundStyle(Color.junoSecondaryInk)

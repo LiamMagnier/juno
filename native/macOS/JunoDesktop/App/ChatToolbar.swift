@@ -55,16 +55,16 @@ struct ChatToolbar: ToolbarContent {
             DesktopProductSwitch(product: $product)
         }
 
-        // New chat beside the sidebar toggle, always — ChatGPT for Mac's and
-        // Notes' compose button: the one action a reader reaches for from any
-        // chat or page, whether the sidebar is open or not.
+        // The web rail's New chat, for when the sidebar — and its own New chat
+        // row — is hidden. Never both at once, as on the web.
         ToolbarItem(placement: .navigation) {
             Button(action: newChat) {
-                Label("New chat", systemImage: "square.and.pencil")
+                Label { Text("New chat") } icon: { JunoSymbol(.new) }
             }
             .help(JunoShortcutRegistry.help("New chat", .newChat))
             .accessibilityIdentifier("New chat")
         }
+        .hidden(!isSidebarCollapsed || !isChatRoute)
 
         // Three items at one placement, which the system draws in one shared
         // capsule. Separate items rather than one group because each hides on
@@ -137,13 +137,9 @@ private struct DesktopPrivateChatButton: View {
             Label {
                 Text("Private chat")
             } icon: {
-                ZStack {
-                    Image(systemName: "circle.dashed")
-                    if isPrivate {
-                        Image(systemName: "checkmark")
-                            .junoFont(size: 7, relativeTo: .body, weight: .bold)
-                    }
-                }
+                // The web's incognito glyph, filled while the chat is private
+                // ("fill means on").
+                JunoSymbol(.privateChat, weight: isPrivate ? .fill : .regular)
             }
             .contentShape(.rect)
         }

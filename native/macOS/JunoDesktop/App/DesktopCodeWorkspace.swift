@@ -190,6 +190,7 @@ struct DesktopCodeWorkspace: View {
         } detail: {
             canvas
                 .background(Studio.Surface.canvas)
+                .desktopContentPanel()
                 .navigationTitle(title)
                 .navigationSubtitle(subtitle)
                 .toolbar { toolbar }

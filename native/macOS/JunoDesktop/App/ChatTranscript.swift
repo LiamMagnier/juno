@@ -343,10 +343,7 @@ struct DesktopTranscript: View {
             actionError = nil
         }
         .contentMargins(.top, JunoSpace.section, for: .scrollContent)
-        // Soft under the toolbar; hard under the composer, whose footnote
-        // has to read over whatever line of the answer scrolls beneath it.
-        .scrollEdgeEffectStyle(.soft, for: .top)
-        .scrollEdgeEffectStyle(.hard, for: .bottom)
+        .scrollEdgeEffectStyle(.soft, for: [.top, .bottom])
         .onScrollGeometryChange(for: Bool.self) { geometry in
             Self.isAtBottom(geometry)
         } action: { _, isAtBottom in

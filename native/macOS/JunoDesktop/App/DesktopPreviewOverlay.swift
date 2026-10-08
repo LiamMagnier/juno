@@ -110,7 +110,8 @@ extension View {
             case .addMenu: present = addMenu
             }
             guard let present else { return }
-            try? await Task.sleep(for: .milliseconds(1200))
+            // Past the preview world's activation, which rebuilds the anchor.
+            try? await Task.sleep(for: .milliseconds(3500))
             present()
         }
         #else

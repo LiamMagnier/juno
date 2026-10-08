@@ -454,7 +454,10 @@ struct JunoDesktopApp: App {
             // on each detail column is what lets content scroll *under* the
             // toolbar and the sidebar's glass sample warm paper instead of
             // the system's grey.
-            .containerBackground(Color.junoCanvas, for: .window)
+            // The sidebar's ground (round 2): the column's glass samples it,
+            // and the chat and Code columns sit on it as rounded panels of
+            // the canvas (``DesktopContentPanel``), as the web's do.
+            .containerBackground(Color.junoSidebar, for: .window)
         }
         .defaultSize(width: 1240, height: 800)
         .windowResizability(.contentMinSize)

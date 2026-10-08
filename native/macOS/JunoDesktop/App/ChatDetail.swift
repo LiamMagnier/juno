@@ -66,6 +66,9 @@ struct ChatDetail<Content: View>: View {
             // The window's one toast host: 12pt above the composer where one
             // is docked, 24pt above the bottom otherwise — never in a sheet.
             .junoToastHost(toasts)
+            // The web's content panel: a rounded card of the canvas beside
+            // the sidebar, on the window's sidebar ground.
+            .desktopContentPanel()
             .junoAccentTint()
             .navigationTitle(title)
             .navigationSubtitle(subtitle)

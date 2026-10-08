@@ -702,11 +702,11 @@ struct ComposerPrimaryDisc: View {
         }
     }
 
-    private var symbol: String {
+    private var symbol: JunoIcon {
         switch face {
-        case .voice: "waveform"
-        case .stop: "stop.fill"
-        default: "arrow.up"
+        case .voice: .audioLines
+        case .stop: .stop
+        default: .arrowUp
         }
     }
 
@@ -714,10 +714,12 @@ struct ComposerPrimaryDisc: View {
     private var glyph: some View {
         switch face {
         case .voice, .send, .stop:
-            Image(systemName: symbol)
-                .junoFont(size: face.kind == ChatComposerFace.stop.kind ? 10 : 13, relativeTo: .body, weight: .bold)
+            // The web's glyphs (audio lines, arrow up, stop), swapped in
+            // place on the send-morph spring.
+            JunoIconView(symbol, size: face.kind == ChatComposerFace.stop.kind ? 12 : 16, weight: .bold)
                 .foregroundStyle(Color.junoCanvas)
-                .contentTransition(.symbolEffect(.replace.downUp))
+                .id(symbol)
+                .transition(.opacity.combined(with: .scale(scale: 0.8)))
         case .busy:
             ProgressView()
                 .controlSize(.small)

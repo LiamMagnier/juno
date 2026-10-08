@@ -38,11 +38,15 @@ public struct StudioRunRow: View {
                 .foregroundStyle(Studio.Ink.primary)
                 .lineLimit(1)
                 .truncationMode(.tail)
-            Text(Self.markdown(entry.sentence))
-                .font(Studio.Font.meta)
-                .foregroundStyle(Studio.Ink.secondary)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
+            // The section heading already says "Working" or "Done"; a row
+            // that only repeats its section's word says nothing more.
+            if entry.sentence != entry.group.title {
+                Text(Self.markdown(entry.sentence))
+                    .font(Studio.Font.meta)
+                    .foregroundStyle(Studio.Ink.secondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             if !entry.actions.isEmpty {
                 actions
                     .padding(.top, JunoSpace.hairline)

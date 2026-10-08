@@ -74,8 +74,8 @@ struct DesktopAccountFooter: View {
                 settingsButton
             }
         }
-        .padding(.horizontal, JunoSpace.close)
-        .padding(.bottom, JunoSpace.snug)
+        .padding(.horizontal, DesktopSidebarMetrics.fillInset)
+        .padding(.bottom, DesktopSidebarMetrics.fillInset)
         .task(id: session.profile.id) { await readPlan() }
         // The popover shows the meter, so a fresh read is worth its request
         // when the reader has asked to see it.
@@ -136,7 +136,7 @@ struct DesktopAccountFooter: View {
                 )
                 VStack(alignment: .leading, spacing: 0) {
                     Text(name)
-                        .junoFont(size: 13, relativeTo: .callout, weight: .medium)
+                        .junoFont(size: 14, relativeTo: .body, weight: .medium)
                         .junoInk()
                         .lineLimit(1)
                         .truncationMode(.tail)
@@ -148,12 +148,13 @@ struct DesktopAccountFooter: View {
                     }
                 }
                 Spacer(minLength: 0)
-                Image(systemName: "chevron.up.chevron.down")
-                    .imageScale(.small)
+                JunoIconView(.chevronsUpDown, size: 12)
                     .foregroundStyle(Color.junoSecondaryInk)
             }
-            .padding(.horizontal, JunoSpace.tight)
-            .frame(height: 44)
+            // The avatar on the 16pt glyph edge: 8 from the fill, which sits
+            // 8 in from the panel.
+            .padding(.horizontal, DesktopSidebarMetrics.fillInset)
+            .frame(height: DesktopSidebarMetrics.accountHeight)
             .background(
                 RoundedRectangle(cornerRadius: JunoRadius.control, style: .continuous)
                     .fill(isHoveringAccount ? Color.junoGlassHover : Color.clear)
@@ -191,7 +192,7 @@ struct DesktopAccountFooter: View {
         } label: {
             JunoIconView(.settings, size: 16)
                 .foregroundStyle(Color.junoSidebarInk)
-                .frame(width: 28, height: 28)
+                .frame(width: 36, height: 36)
                 .contentShape(.rect)
         }
         .buttonStyle(.borderless)
