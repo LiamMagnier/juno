@@ -358,6 +358,16 @@ export class AgentProtocolProjector {
       case 'error':
         this.lastError = event.message;
         return [this.emit({ type: 'session.error', error: { code: 'internal', message: event.message, retryable: false } })];
+      case 'workflow_update':
+      case 'best_of_n':
+      case 'user_input':
+      case 'queue_updated':
+      case 'auto_review':
+      case 'runtime_mode_changed':
+      case 'guard':
+        // Code v2 events: projected into TurnItems by harness/turn-items.ts;
+        // the canonical agent protocol has no item for them yet.
+        return [];
       case 'subagent_update': {
         const agent = event.agent;
         const status = (AGENT_SUBAGENT_STATUS_VALUES as readonly string[]).includes(agent.status)
@@ -532,6 +542,12 @@ export function toolKind(name: string): AgentToolKind {
     case 'await_subagents':
     case 'inspect_subagent':
     case 'cancel_subagent':
+    case 'spawn_agent':
+    case 'send_message':
+    case 'interrupt_agent':
+    case 'list_agents':
+    case 'workflow':
+    case 'best_of_n':
     case 'update_plan':
       return 'think';
     default:

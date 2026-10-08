@@ -58,7 +58,8 @@ test('reasoning stays separate and a tool call with end_turn still writes the se
       { type: 'done', stopReason: 'end_turn', usage: { inputTokens: 10, outputTokens: 5 } },
     ],
   ]);
-  const session = AgentSession.create({ provider, cwd, mode: 'auto-edit', callbacks: { onEvent: e => events.push(e), requestApproval: async () => 'allow' } });
+  // Read-before-edit has its own tests (harness-guards); this one is about reasoning.
+  const session = AgentSession.create({ provider, cwd, mode: 'auto-edit', guards: { readBeforeEdit: false }, callbacks: { onEvent: e => events.push(e), requestApproval: async () => 'allow' } });
   await session.prompt('change the greeting');
   assert.equal(fs.readFileSync(path.join(cwd, 'greet.txt'), 'utf8'), 'goodbye');
   const text = events.filter(e => e.type === 'assistant_delta').map(e => e.text).join('');
@@ -103,6 +104,7 @@ test('agent loop executes tools, gates approvals, checkpoints, and undoes', asyn
     provider,
     cwd,
     mode: 'auto-edit', // edits auto-approved, commands must ask
+    guards: { readBeforeEdit: false },
     callbacks: {
       onEvent: (e) => events.push(e),
       requestApproval: async (req): Promise<ApprovalDecision> => {
@@ -162,6 +164,7 @@ test('per-file rollback names files the way a caller does, and refuses the rest'
     provider,
     cwd,
     mode: 'auto-edit',
+    guards: { readBeforeEdit: false },
     callbacks: { onEvent: () => {}, requestApproval: async (): Promise<ApprovalDecision> => 'allow' },
   });
   await session.prompt('write both files');
