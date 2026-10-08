@@ -29,18 +29,10 @@ public struct NativeResearchField: View {
 
     public var body: some View {
         ZStack {
-            ForEach(0..<3, id: \.self) { ring in
-                FieldOrbit(rx: NativeResearchFieldModel.rings[ring].rx, ry: NativeResearchFieldModel.rings[ring].ry)
-                    .stroke(
-                        Color.junoSecondaryInk.opacity(ring == 2 ? 0.28 : 0.42),
-                        style: StrokeStyle(lineWidth: 1, lineCap: .round, dash: [0.5, 5])
-                    )
-            }
-            if working, let current = model.current {
-                FieldPresenceLine(x: current.x, y: current.y)
-                    .stroke(Color.junoAccent.opacity(0.7), style: StrokeStyle(lineWidth: 1, lineCap: .round))
-                    .transition(.opacity)
-            }
+            // The orbits and the runs to cited sources in the brand's dot
+            // matrix (the web's `DeepField` over `DotRings`), the presence run
+            // to the page being read. A finished field is drawn where it ended.
+            JunoDeepFieldDots(targets: dotTargets, animate: working)
             FieldLayout {
                 JunoResearchPresence(active: working, eventKey: eventKey, size: 22)
                     .layoutValue(key: FieldPlacement.self, value: .init(x: 0.5, y: 0.5))
@@ -68,6 +60,16 @@ public struct NativeResearchField: View {
         .animation(JunoMotion.reduced(JunoMotion.layout, when: reduceMotion), value: model)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel)
+    }
+
+    /// The web's lines: ink to every cited source, presence to the page being
+    /// read while the run works.
+    private var dotTargets: [JunoDeepFieldDots.Target] {
+        model.nodes.compactMap { node in
+            let current = working && node.current
+            guard current || node.state == .cited else { return nil }
+            return JunoDeepFieldDots.Target(x: node.x, y: node.y, current: current)
+        }
     }
 
     /// Whether a node's host fits on its outward side without leaving the
@@ -171,46 +173,5 @@ struct FieldLayout: Layout {
             let point = CGPoint(x: x, y: bounds.minY + bounds.height * place.y)
             subview.place(at: point, anchor: place.anchor, proposal: .unspecified)
         }
-    }
-}
-
-/// An orbit: an ellipse centred in the box, its radii fractions of the box.
-struct FieldOrbit: Shape {
-    let rx: Double
-    let ry: Double
-
-    func path(in rect: CGRect) -> Path {
-        Path(ellipseIn: CGRect(
-            x: rect.midX - rect.width * rx, y: rect.midY - rect.height * ry,
-            width: rect.width * rx * 2, height: rect.height * ry * 2
-        ))
-    }
-}
-
-/// The presence line: from the question to the page being read, animatable so
-/// it follows that page round the map.
-struct FieldPresenceLine: Shape {
-    var x: Double
-    var y: Double
-
-    var animatableData: AnimatablePair<Double, Double> {
-        get { AnimatablePair(x, y) }
-        set { x = newValue.first; y = newValue.second }
-    }
-
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        let centre = CGPoint(x: rect.midX, y: rect.midY)
-        let end = CGPoint(x: rect.minX + rect.width * x, y: rect.minY + rect.height * y)
-        // Starts clear of the centre mark and stops short of the logo's ring.
-        let dx = end.x - centre.x
-        let dy = end.y - centre.y
-        let length = max(1, (dx * dx + dy * dy).squareRoot())
-        let start = CGPoint(x: centre.x + dx / length * 15, y: centre.y + dy / length * 15)
-        let stop = CGPoint(x: end.x - dx / length * 12, y: end.y - dy / length * 12)
-        guard length > 30 else { return path }
-        path.move(to: start)
-        path.addLine(to: stop)
-        return path
     }
 }
