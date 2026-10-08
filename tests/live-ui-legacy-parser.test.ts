@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { findLearningBlocks, parseLearningBlock, salvageLearningBlock } from "@/lib/learning-blocks";
-import { parseStepLab, parseYamlSubset } from "@/lib/step-lab";
+import { findLearningBlocks, parseLearningBlock, salvageLearningBlock } from "@/lib/live-ui/legacy/learning-blocks";
+import { parseStepLab, parseYamlSubset } from "@/lib/live-ui/legacy/step-lab";
 
 /*
  * The contract this file pins, and which

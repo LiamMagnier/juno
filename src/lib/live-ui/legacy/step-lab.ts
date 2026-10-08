@@ -1,3 +1,10 @@
+/**
+ * LEGACY — history only. The `:::step-lab` YAML body parser and the forgiving
+ * YAML subset every old `:::kind` learning block was written in. Nothing asks a
+ * model for these any more (Live UI replaced them, docs/design/LIVE_UI.md §12);
+ * this survives so replies already saved with one still render, converted to
+ * Live UI by ./convert.ts. Do not build on it.
+ */
 import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export type StepLabVisualType =
@@ -61,8 +68,6 @@ export interface ParsedStepLabBlock {
   error?: string;
 }
 
-const STEP_LAB_OPEN = ":::step-lab";
-const STEP_LAB_CLOSE = ":::";
 const VALID_VISUAL_TYPES = new Set<StepLabVisualType>([
   "tokenization",
   "embedding",
@@ -420,100 +425,4 @@ export function parseStepLab(source: string, seed = ""): { block: StepLab; error
       takeaway: cleanString(raw.takeaway ?? raw.recap) || undefined,
     },
   });
-}
-
-export function findStepLabBlocks(text: string): ParsedStepLabBlock[] {
-  const blocks: ParsedStepLabBlock[] = [];
-  const linePattern = /.*(?:\r?\n|$)/g;
-  let inCodeFence = false;
-  let fenceMarker = "";
-  let pending: { start: number; innerStart: number } | null = null;
-
-  let match: RegExpExecArray | null;
-  while ((match = linePattern.exec(text))) {
-    const line = match[0];
-    if (!line) break;
-    const lineStart = match.index;
-    const trimmed = line.trim();
-
-    if (!pending && /^(```|~~~)/.test(trimmed)) {
-      const marker = trimmed.slice(0, 3);
-      if (!inCodeFence) {
-        inCodeFence = true;
-        fenceMarker = marker;
-      } else if (marker === fenceMarker) {
-        inCodeFence = false;
-        fenceMarker = "";
-      }
-    }
-
-    if (inCodeFence) continue;
-
-    if (!pending && (trimmed === STEP_LAB_OPEN || trimmed.startsWith(STEP_LAB_OPEN + " "))) {
-      pending = { start: lineStart, innerStart: lineStart + line.indexOf(STEP_LAB_OPEN) + STEP_LAB_OPEN.length };
-      continue;
-    }
-
-    if (pending && trimmed === STEP_LAB_CLOSE) {
-      const end = lineStart + line.length;
-      const inner = text.slice(pending.innerStart, lineStart);
-      const parsed = parseStepLab(inner, `${pending.start}:${end}`);
-      blocks.push({
-        block: parsed.block,
-        error: parsed.error,
-        start: pending.start,
-        end,
-        raw: text.slice(pending.start, end),
-      });
-      pending = null;
-    }
-  }
-
-  if (pending) {
-    const end = text.length;
-    const inner = text.slice(pending.innerStart);
-    const parsed = parseStepLab(inner, `${pending.start}:${end}`);
-    blocks.push({
-      block: parsed.block,
-      error: parsed.error,
-      start: pending.start,
-      end,
-      raw: text.slice(pending.start),
-    });
-  }
-
-  return blocks;
-}
-
-export function stepLabFromLegacySteps(input: {
-  title?: string;
-  description?: string;
-  label?: string;
-  steps: Array<{ title?: string; label?: string; body?: string; text?: string; detail?: string; value?: string }>;
-}): StepLab {
-  const seenIds = new Set<string>();
-  const steps = input.steps.map((step, index) => {
-    const title = cleanString(step.title ?? step.label, `Step ${index + 1}`);
-    const summary = cleanString(step.body ?? step.text ?? step.detail ?? step.value, "Explore this stage of the process.");
-    const visualType = normalizeVisualType(undefined, { title, summary, id: step.label ?? title });
-    let id = cleanString(step.label, `step_${index + 1}`).replace(/[^\w-]/g, "_");
-    while (seenIds.has(id)) id = `${id}_${index + 1}`;
-    seenIds.add(id);
-    return {
-      id,
-      title,
-      summary,
-      detail: cleanString(step.detail && step.detail !== summary ? step.detail : "") || undefined,
-      visualType,
-      data: undefined,
-    };
-  });
-  return {
-    blockId: stableId(`${input.title ?? ""}:${steps.map((step) => step.title).join("|")}`),
-    title: cleanString(input.title, "Interactive learning lab"),
-    label: input.label ?? "Step Lab",
-    description: cleanString(input.description) || undefined,
-    steps,
-    submitLabel: "Finish",
-  };
 }

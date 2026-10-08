@@ -10,24 +10,14 @@ import { AicssCodeBlock, CodeCopyButton, splitHighlightedLines } from "@/compone
 import { FileDiff, parseUnifiedDiff } from "@/components/aicss/file-diff";
 import { diffFilename, fenceFilename, hideDanglingLink } from "@/lib/markdown-fence";
 
-/**
- * The two rare fences, split out of the chat bundle.
- *
- * `InlineVisualBlock` pulls `StepLabBlock` behind it — 73 kB of source between
- * them — and both render for exactly one thing: a fence whose info string is
- * `juno-visual` (or `mermaid`). Almost no conversation contains one, and every
- * conversation was paying for both.
- *
- * `ssr: false` because both are interactive surfaces that do their work in an
- * effect or an iframe: the server render contributed nothing to hand over.
+/*
+ * Mermaid: split out of the chat bundle (most conversations never draw one).
+ * `ssr: false` because it does its work in a sandboxed iframe.
  */
-const InlineVisualBlock = nextDynamic(
-  () => import("@/components/chat/inline-visual-block").then((m) => m.InlineVisualBlock),
-  { ssr: false },
-);
 /*
  * Live UI (docs/design/LIVE_UI.md): an interactive view from a ```live-ui
- * fence. Split out for the same reason as the two above — most conversations
+ * fence, and the renderer for old ```juno-visual fences in saved replies
+ * (converted by live-ui/legacy/convert.ts). Split out because most conversations
  * never draw one — with a skeleton of the view's own shape while it loads, so
  * the transcript does not jump when it arrives.
  */
@@ -44,7 +34,7 @@ const LiveUIBlock = nextDynamic(
   },
 );
 const MermaidBlock = nextDynamic(
-  () => import("@/components/chat/learning/mermaid-block").then((m) => m.MermaidBlock),
+  () => import("@/components/chat/mermaid-block").then((m) => m.MermaidBlock),
   { ssr: false },
 );
 import { SourceChip } from "@/components/chat/source-chip";
@@ -55,6 +45,7 @@ import { allowedImageKeys, imageDecision } from "@/lib/web/image-policy";
 import type { ClientSource } from "@/types/chat";
 import { fenceMatchesWrittenFile } from "@/lib/chat/tool-receipt";
 import { isLiveUIFence } from "@/lib/live-ui/fence";
+import { isLegacyVisualFence, legacyVisualSource } from "@/lib/live-ui/legacy/convert";
 
 export const MARKDOWN_COPY = {
   /** Followed by the image's host: "Image from example.com". */
@@ -75,10 +66,6 @@ function textOf(node: React.ReactNode): string {
   if (Array.isArray(node)) return node.map(textOf).join("");
   if (React.isValidElement<{ children?: React.ReactNode }>(node)) return textOf(node.props.children);
   return "";
-}
-
-function isVisualLang(lang: string): boolean {
-  return ["juno-visual", "juno-ui", "juno-block", "visual", "visual-block"].includes(lang.toLowerCase());
 }
 
 type Fence = { char: string; length: number };
@@ -340,8 +327,9 @@ function CodeBlock({ children, node }: { children: React.ReactNode; node?: { chi
     );
   }
 
-  if (isVisualLang(lang)) {
-    return <InlineVisualBlock source={raw} streaming={streaming} />;
+  if (isLegacyVisualFence(lang)) {
+    // Legacy, history only: the old visual JSON drawn as the Live UI view it maps to.
+    return <LiveUIBlock source={legacyVisualSource(raw, streaming)} streaming={streaming} />;
   }
 
   if (isLiveUIFence(lang)) {

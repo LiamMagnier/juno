@@ -1,5 +1,10 @@
 /**
- * Inline visual learning blocks — the unified `:::kind … :::` layer.
+ * LEGACY — history only. The old inline learning blocks (`:::kind … :::`).
+ * Models are no longer taught them; Live UI replaced them (docs/design/
+ * LIVE_UI.md §12). Replies saved with one are converted to a Live UI view by
+ * ./convert.ts, so there is a single renderer. Do not build on this.
+ *
+ * What the blocks were:
  *
  * The assistant embeds compact interactive lessons directly in chat replies:
  *
@@ -26,7 +31,7 @@ import {
   parseYamlSubset,
   stableId,
   type StepLab,
-} from "@/lib/step-lab";
+} from "@/lib/live-ui/legacy/step-lab";
 
 export type LearningBlockKind =
   | "step-lab"

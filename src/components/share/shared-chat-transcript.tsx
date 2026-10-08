@@ -67,7 +67,6 @@ function AssistantMessage({ message, artifactsByIdentifier }: { message: SharedC
             const ref = artifactsByIdentifier.get(part.identifier);
             return <ArtifactChip key={i} title={ref?.title ?? part.title ?? "Artifact"} type={ref?.type ?? part.artifactType ?? "CODE"} />;
           }
-          // Interactive learning blocks are omitted from shared views.
           return null;
         })}
       </div>

@@ -1,0 +1,787 @@
+{
+ "$comment": "Legacy → Live UI conversion contract (src/lib/live-ui/legacy/convert.ts, JunoLiveUILegacy.swift). `block` sources are old `:::kind` learning blocks, `visual` sources are old ```juno-visual bodies; `expect` is the Live UI spec object each converts to (null: not a visual). Compared as JSON values, key order aside.",
+ "cases": [
+  {
+   "name": "demo learning-card",
+   "kind": "block",
+   "source": ":::learning-card\ntitle: Core intuition\nicon: 🧠\ntone: insight\ncontent: The model is not searching a database. It is calculating which token is statistically most likely to come next based on everything it has seen so far.\n:::\n",
+   "expect": {
+    "ui": [
+     {
+      "type": "callout",
+      "tone": "insight",
+      "title": "Core intuition",
+      "text": "The model is not searching a database. It is calculating which token is statistically most likely to come next based on everything it has seen so far."
+     }
+    ]
+   }
+  },
+  {
+   "name": "demo step-lab",
+   "kind": "block",
+   "source": ":::step-lab\ntitle: The Next-Token Prediction Pipeline\nlabel: Step Lab\ndescription: A compact interactive walkthrough of how a language model turns text into the next token.\ndensity: compact\nsteps:\n- id: tokenization\n  title: Tokenization\n  summary: Text is split into tokens.\n  detail: The model first converts your text into small units called tokens. Tokens can be words, word pieces, or punctuation.\n  visualType: tokenization\n  data:\n    input: \"The model predicts the next word\"\n    tokens:\n    - text: \"The\"\n      id: 791\n    - text: \"model\"\n      id: 2746\n    - text: \"predicts\"\n      id: 42119\n    - text: \"the\"\n      id: 279\n    - text: \"next\"\n      id: 1828\n    - text: \"word\"\n      id: 3492\n- id: embeddings\n  title: Embeddings\n  summary: Tokens become vectors.\n  detail: Each token ID is mapped to a vector, which is a list of numbers that represents meaning and relationships.\n  visualType: embedding\n  data:\n    examples:\n    - token: \"model\"\n      vector: [0.12, -0.44, 0.87, 0.31]\n    - token: \"predicts\"\n      vector: [0.52, 0.11, -0.73, 0.24]\n- id: attention\n  title: Attention\n  summary: Tokens look at each other.\n  detail: Attention helps the model decide which previous words matter most for understanding the current context.\n  visualType: attention\n  data:\n    tokens: [\"The\", \"model\", \"predicts\", \"the\", \"next\", \"word\"]\n    matrix:\n    - [0.1, 0.3, 0.2, 0.1, 0.2, 0.1]\n    - [0.2, 0.1, 0.4, 0.1, 0.1, 0.1]\n    - [0.1, 0.4, 0.1, 0.1, 0.2, 0.1]\n    - [0.1, 0.1, 0.2, 0.1, 0.4, 0.1]\n    - [0.1, 0.1, 0.2, 0.2, 0.1, 0.3]\n    - [0.2, 0.1, 0.1, 0.2, 0.3, 0.1]\n- id: probabilities\n  title: Probability Distribution\n  summary: The model scores possible next tokens.\n  detail: The model produces a probability distribution over possible next tokens.\n  visualType: probability-distribution\n  data:\n    candidates:\n    - token: \"word\"\n      probability: 0.42\n    - token: \"step\"\n      probability: 0.25\n    - token: \"token\"\n      probability: 0.18\n    - token: \"idea\"\n      probability: 0.1\n    - token: \".\"\n      probability: 0.05\n- id: output\n  title: Next Token\n  summary: One token is selected.\n  detail: The chosen token is added to the text, then the whole process repeats.\n  visualType: next-token-selection\n  data:\n    prompt: \"The model predicts the next\"\n    selectedToken: \"word\"\n:::\n",
+   "expect": {
+    "title": "The Next-Token Prediction Pipeline",
+    "data": {
+     "s1_tokens": [
+      {
+       "token": "The",
+       "id": 791
+      },
+      {
+       "token": "model",
+       "id": 2746
+      },
+      {
+       "token": "predicts",
+       "id": 42119
+      },
+      {
+       "token": "the",
+       "id": 279
+      },
+      {
+       "token": "next",
+       "id": 1828
+      },
+      {
+       "token": "word",
+       "id": 3492
+      }
+     ],
+     "s2_vectors": [
+      {
+       "token": "model",
+       "vector": "0.12, -0.44, 0.87, 0.31"
+      },
+      {
+       "token": "predicts",
+       "vector": "0.52, 0.11, -0.73, 0.24"
+      }
+     ],
+     "s3_attention": [
+      {
+       "token": "The",
+       "w0": 0.1,
+       "w1": 0.3,
+       "w2": 0.2,
+       "w3": 0.1,
+       "w4": 0.2,
+       "w5": 0.1
+      },
+      {
+       "token": "model",
+       "w0": 0.2,
+       "w1": 0.1,
+       "w2": 0.4,
+       "w3": 0.1,
+       "w4": 0.1,
+       "w5": 0.1
+      },
+      {
+       "token": "predicts",
+       "w0": 0.1,
+       "w1": 0.4,
+       "w2": 0.1,
+       "w3": 0.1,
+       "w4": 0.2,
+       "w5": 0.1
+      },
+      {
+       "token": "the",
+       "w0": 0.1,
+       "w1": 0.1,
+       "w2": 0.2,
+       "w3": 0.1,
+       "w4": 0.4,
+       "w5": 0.1
+      },
+      {
+       "token": "next",
+       "w0": 0.1,
+       "w1": 0.1,
+       "w2": 0.2,
+       "w3": 0.2,
+       "w4": 0.1,
+       "w5": 0.3
+      },
+      {
+       "token": "word",
+       "w0": 0.2,
+       "w1": 0.1,
+       "w2": 0.1,
+       "w3": 0.2,
+       "w4": 0.3,
+       "w5": 0.1
+      }
+     ],
+     "s4_candidates": [
+      {
+       "token": "word",
+       "p": 0.42
+      },
+      {
+       "token": "step",
+       "p": 0.25
+      },
+      {
+       "token": "token",
+       "p": 0.18
+      },
+      {
+       "token": "idea",
+       "p": 0.1
+      },
+      {
+       "token": ".",
+       "p": 0.05
+      }
+     ]
+    },
+    "ui": [
+     {
+      "type": "text",
+      "tone": "muted",
+      "text": "A compact interactive walkthrough of how a language model turns text into the next token."
+     },
+     {
+      "type": "steps",
+      "steps": [
+       {
+        "title": "Tokenization",
+        "summary": "Text is split into tokens.",
+        "detail": "The model first converts your text into small units called tokens. Tokens can be words, word pieces, or punctuation.",
+        "ui": [
+         {
+          "type": "text",
+          "tone": "muted",
+          "text": "Input: “The model predicts the next word”"
+         },
+         {
+          "type": "table",
+          "rows": "s1_tokens",
+          "columns": [
+           {
+            "label": "Token",
+            "value": "token"
+           },
+           {
+            "label": "ID",
+            "value": "id",
+            "format": "integer"
+           }
+          ]
+         }
+        ]
+       },
+       {
+        "title": "Embeddings",
+        "summary": "Tokens become vectors.",
+        "detail": "Each token ID is mapped to a vector, which is a list of numbers that represents meaning and relationships.",
+        "ui": [
+         {
+          "type": "table",
+          "rows": "s2_vectors",
+          "columns": [
+           {
+            "label": "Token",
+            "value": "token"
+           },
+           {
+            "label": "Vector",
+            "value": "vector"
+           }
+          ]
+         }
+        ]
+       },
+       {
+        "title": "Attention",
+        "summary": "Tokens look at each other.",
+        "detail": "Attention helps the model decide which previous words matter most for understanding the current context.",
+        "ui": [
+         {
+          "type": "table",
+          "rows": "s3_attention",
+          "rowHeader": true,
+          "columns": [
+           {
+            "label": "",
+            "value": "token"
+           },
+           {
+            "label": "The",
+            "value": "w0",
+            "format": "number"
+           },
+           {
+            "label": "model",
+            "value": "w1",
+            "format": "number"
+           },
+           {
+            "label": "predicts",
+            "value": "w2",
+            "format": "number"
+           },
+           {
+            "label": "the",
+            "value": "w3",
+            "format": "number"
+           },
+           {
+            "label": "next",
+            "value": "w4",
+            "format": "number"
+           },
+           {
+            "label": "word",
+            "value": "w5",
+            "format": "number"
+           }
+          ]
+         }
+        ]
+       },
+       {
+        "title": "Probability Distribution",
+        "summary": "The model scores possible next tokens.",
+        "detail": "The model produces a probability distribution over possible next tokens.",
+        "ui": [
+         {
+          "type": "chart",
+          "kind": "bar",
+          "rows": "s4_candidates",
+          "xKey": "token",
+          "series": [
+           {
+            "label": "Probability",
+            "y": "p"
+           }
+          ],
+          "format": "percent"
+         }
+        ]
+       },
+       {
+        "title": "Next Token",
+        "summary": "One token is selected.",
+        "detail": "The chosen token is added to the text, then the whole process repeats.",
+        "ui": [
+         {
+          "type": "text",
+          "text": "The model predicts the next **word**"
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "name": "demo process-timeline",
+   "kind": "block",
+   "source": ":::process-timeline\ntitle: The generation loop\nsteps:\n- label: Context in\n  description: The prompt plus everything generated so far.\n- label: Forward pass\n  description: Tokenize, embed, attend, and score candidates.\n- label: Select token\n  description: Sample one token from the probability distribution.\n- label: Append & repeat\n  description: The new token joins the context and the loop runs again.\n:::\n",
+   "expect": {
+    "title": "The generation loop",
+    "ui": [
+     {
+      "type": "timeline",
+      "items": [
+       {
+        "label": "Context in",
+        "detail": "The prompt plus everything generated so far."
+       },
+       {
+        "label": "Forward pass",
+        "detail": "Tokenize, embed, attend, and score candidates."
+       },
+       {
+        "label": "Select token",
+        "detail": "Sample one token from the probability distribution."
+       },
+       {
+        "label": "Append & repeat",
+        "detail": "The new token joins the context and the loop runs again."
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "name": "demo deep-dive",
+   "kind": "block",
+   "source": ":::deep-dive\ntitle: What is a vector embedding?\nsummary: A vector embedding is a list of numbers representing meaning.\ncontent: Words with similar meanings tend to have vectors that are closer together in mathematical space. This lets the model compare concepts numerically — \"cat\" and \"kitten\" land near each other, while \"cat\" and \"carburetor\" land far apart. Distance in this space is what the model actually reasons over.\n:::\n",
+   "expect": {
+    "ui": [
+     {
+      "type": "callout",
+      "tone": "note",
+      "title": "What is a vector embedding?",
+      "text": "A vector embedding is a list of numbers representing meaning.",
+      "more": "Words with similar meanings tend to have vectors that are closer together in mathematical space. This lets the model compare concepts numerically — \"cat\" and \"kitten\" land near each other, while \"cat\" and \"carburetor\" land far apart. Distance in this space is what the model actually reasons over."
+     }
+    ]
+   }
+  },
+  {
+   "name": "demo quiz",
+   "kind": "block",
+   "source": ":::quiz\nquestion: What is the model actually predicting at each generation step?\noptions:\n- The next full paragraph\n- The next token\n- The user's intention exactly\nanswer: The next token\nexplanation: The model repeatedly predicts one token at a time, then uses the updated context to predict the following token.\n:::\n",
+   "expect": {
+    "ui": [
+     {
+      "type": "quiz",
+      "questions": [
+       {
+        "question": "What is the model actually predicting at each generation step?",
+        "options": [
+         {
+          "label": "The next full paragraph"
+         },
+         {
+          "label": "The next token"
+         },
+         {
+          "label": "The user's intention exactly"
+         }
+        ],
+        "answer": 1,
+        "explanation": "The model repeatedly predicts one token at a time, then uses the updated context to predict the following token."
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "name": "comparison with verdict",
+   "kind": "block",
+   "source": ":::comparison\ntitle: SQL vs NoSQL\ncolumns: [\"SQL\", \"NoSQL\"]\nrows:\n- label: Schema\n  values: [\"Fixed, enforced\", \"Flexible, per-document\"]\n- label: Best for\n  values: [\"Relational integrity\", \"Evolving shapes at scale\"]\nverdict: Choose by data shape, not fashion.\n:::\n",
+   "expect": {
+    "title": "SQL vs NoSQL",
+    "data": {
+     "rows": [
+      {
+       "c0": "Schema",
+       "c1": "Fixed, enforced",
+       "c2": "Flexible, per-document"
+      },
+      {
+       "c0": "Best for",
+       "c1": "Relational integrity",
+       "c2": "Evolving shapes at scale"
+      }
+     ]
+    },
+    "ui": [
+     {
+      "type": "table",
+      "rows": "rows",
+      "rowHeader": true,
+      "columns": [
+       {
+        "label": "",
+        "value": "c0"
+       },
+       {
+        "label": "SQL",
+        "value": "c1"
+       },
+       {
+        "label": "NoSQL",
+        "value": "c2"
+       }
+      ]
+     },
+     {
+      "type": "callout",
+      "tone": "insight",
+      "text": "Choose by data shape, not fashion."
+     }
+    ]
+   }
+  },
+  {
+   "name": "quiz, several questions with hints",
+   "kind": "block",
+   "source": ":::quiz\ntitle: Check your understanding\nquestions:\n- question: What does the model update during training?\n  options:\n  - The browser CSS\n  - Its internal weights\n  - The user's keyboard\n  answer: Its internal weights\n  hint: Think about which part of the system is numerical and adjustable.\n  explanation: Training adjusts the model's internal numerical parameters, called weights.\n- question: Why can one word become several tokens?\n  options:\n  - label: The vocabulary is fixed, so rare words are split\n    correct: true\n    explanation: A finite vocabulary covers any text by composing rare words from fragments.\n  - label: Every syllable is always its own token\n:::\n",
+   "expect": {
+    "title": "Check your understanding",
+    "ui": [
+     {
+      "type": "quiz",
+      "questions": [
+       {
+        "question": "What does the model update during training?",
+        "options": [
+         {
+          "label": "The browser CSS"
+         },
+         {
+          "label": "Its internal weights"
+         },
+         {
+          "label": "The user's keyboard"
+         }
+        ],
+        "answer": 1,
+        "explanation": "Training adjusts the model's internal numerical parameters, called weights.",
+        "hint": "Think about which part of the system is numerical and adjustable."
+       },
+       {
+        "question": "Why can one word become several tokens?",
+        "options": [
+         {
+          "label": "The vocabulary is fixed, so rare words are split",
+          "explanation": "A finite vocabulary covers any text by composing rare words from fragments."
+         },
+         {
+          "label": "Every syllable is always its own token"
+         }
+        ],
+        "answer": 0
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "name": "learning card, warning tone",
+   "kind": "block",
+   "source": ":::learning-card\ntitle: Careful\nicon: ⚠️\ntone: warning\ncontent: Temperature changes the sampling, not what the model knows.\n:::\n",
+   "expect": {
+    "ui": [
+     {
+      "type": "callout",
+      "tone": "warning",
+      "title": "Careful",
+      "text": "Temperature changes the sampling, not what the model knows."
+     }
+    ]
+   }
+  },
+  {
+   "name": "step lab: transformer, generic and a missing visual",
+   "kind": "block",
+   "source": ":::step-lab\ntitle: Inside one forward pass\ndescription: Three stops.\ntakeaway: Depth is repetition.\nsteps:\n- id: layers\n  title: Layers\n  summary: The same block repeats.\n  visualType: transformer-processing\n  data:\n    layers: 32\n    tokens: [\"The\", \"cat\", \"sat\"]\n- id: generic\n  title: Normalise\n  summary: Values are rescaled.\n  notice: Watch the range shrink.\n  visualType: generic-process\n  data:\n    input: Raw activations\n    transform: Layer norm\n    output: Stable activations\n- id: nodata\n  title: Sample\n  summary: One token is drawn.\n  visualType: probability-distribution\nquiz:\n  question: What repeats?\n  options:\n  - The block\n  - The prompt\n  answer: The block\n:::\n",
+   "expect": {
+    "title": "Inside one forward pass",
+    "ui": [
+     {
+      "type": "text",
+      "tone": "muted",
+      "text": "Three stops."
+     },
+     {
+      "type": "steps",
+      "steps": [
+       {
+        "title": "Layers",
+        "summary": "The same block repeats.",
+        "ui": [
+         {
+          "type": "metric",
+          "label": "Layers",
+          "value": "32"
+         },
+         {
+          "type": "text",
+          "tone": "muted",
+          "text": "Tokens: The, cat, sat"
+         }
+        ]
+       },
+       {
+        "title": "Normalise",
+        "summary": "Values are rescaled.",
+        "notice": "Watch the range shrink.",
+        "ui": [
+         {
+          "type": "timeline",
+          "items": [
+           {
+            "label": "Input",
+            "detail": "Raw activations"
+           },
+           {
+            "label": "Transform",
+            "detail": "Layer norm"
+           },
+           {
+            "label": "Output",
+            "detail": "Stable activations"
+           }
+          ]
+         }
+        ]
+       },
+       {
+        "title": "Sample",
+        "summary": "One token is drawn.",
+        "ui": [
+         {
+          "type": "quiz",
+          "questions": [
+           {
+            "question": "What repeats?",
+            "options": [
+             {
+              "label": "The block"
+             },
+             {
+              "label": "The prompt"
+             }
+            ],
+            "answer": 0
+           }
+          ]
+         }
+        ]
+       }
+      ],
+      "takeaway": "Depth is repetition."
+     }
+    ]
+   }
+  },
+  {
+   "name": "cut off mid block (salvaged)",
+   "kind": "block",
+   "source": ":::process-timeline\ntitle: Training loop\nsteps:\n- label: Input\n  description: Examples arrive.\n- label: Update\n  description: Weights shift.",
+   "expect": {
+    "title": "Training loop",
+    "ui": [
+     {
+      "type": "timeline",
+      "items": [
+       {
+        "label": "Input",
+        "detail": "Examples arrive."
+       },
+       {
+        "label": "Update",
+        "detail": "Weights shift."
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "name": "unreadable",
+   "kind": "block",
+   "source": ":::comparison\ntitle: Nothing to compare\n:::\n",
+   "expect": {
+    "ui": [
+     {
+      "type": "callout",
+      "tone": "note",
+      "text": "This part of an earlier answer could not be shown."
+     }
+    ]
+   }
+  },
+  {
+   "name": "visual cards",
+   "kind": "visual",
+   "source": "{\"type\":\"cards\",\"title\":\"Three ideas\",\"subtitle\":\"Pick one.\",\"items\":[{\"title\":\"Tokens\",\"body\":\"Pieces of text.\"},{\"title\":\"Weights\",\"body\":\"Learned numbers.\"},\"Context\"]}",
+   "expect": {
+    "title": "Three ideas",
+    "ui": [
+     {
+      "type": "text",
+      "tone": "muted",
+      "text": "Pick one."
+     },
+     {
+      "type": "explorer",
+      "parts": [
+       {
+        "id": "p1",
+        "label": "Tokens",
+        "detail": "Pieces of text."
+       },
+       {
+        "id": "p2",
+        "label": "Weights",
+        "detail": "Learned numbers."
+       },
+       {
+        "id": "p3",
+        "label": "Card 3",
+        "detail": "Context"
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "name": "visual steps",
+   "kind": "visual",
+   "source": "{\"type\":\"steps\",\"title\":\"Boot\",\"description\":\"From power to prompt.\",\"steps\":[{\"title\":\"Firmware\",\"body\":\"Checks hardware.\"},{\"label\":\"Kernel\",\"text\":\"Loads drivers.\"}]}",
+   "expect": {
+    "title": "Boot",
+    "ui": [
+     {
+      "type": "text",
+      "tone": "muted",
+      "text": "From power to prompt."
+     },
+     {
+      "type": "steps",
+      "steps": [
+       {
+        "title": "Firmware",
+        "summary": "Checks hardware."
+       },
+       {
+        "title": "Kernel",
+        "summary": "Loads drivers."
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "name": "visual flow",
+   "kind": "visual",
+   "source": "{\"type\":\"flow\",\"title\":\"Request\",\"nodes\":[{\"title\":\"Client\"},{\"title\":\"Server\",\"detail\":\"Handles it.\"}],\"edges\":[{\"from\":\"Client\",\"to\":\"Server\"}]}",
+   "expect": {
+    "title": "Request",
+    "ui": [
+     {
+      "type": "timeline",
+      "items": [
+       {
+        "label": "Client"
+       },
+       {
+        "label": "Server",
+        "detail": "Handles it."
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "name": "visual comparison, keyed values",
+   "kind": "visual",
+   "source": "{\"type\":\"comparison\",\"title\":\"Plans\",\"columns\":[\"Free\",\"Pro\"],\"rows\":[{\"title\":\"Price\",\"values\":{\"Free\":0,\"pro\":\"12 a month\"}},{\"title\":\"Seats\",\"values\":[1,5]}]}",
+   "expect": {
+    "title": "Plans",
+    "data": {
+     "rows": [
+      {
+       "c0": "Price",
+       "c1": "0",
+       "c2": "12 a month"
+      },
+      {
+       "c0": "Seats",
+       "c1": "1",
+       "c2": "5"
+      }
+     ]
+    },
+    "ui": [
+     {
+      "type": "table",
+      "rows": "rows",
+      "rowHeader": true,
+      "columns": [
+       {
+        "label": "",
+        "value": "c0"
+       },
+       {
+        "label": "Free",
+        "value": "c1"
+       },
+       {
+        "label": "Pro",
+        "value": "c2"
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "name": "visual quiz",
+   "kind": "visual",
+   "source": "{\"type\":\"quiz\",\"question\":\"Which is a vowel?\",\"options\":[{\"text\":\"B\"},{\"text\":\"A\",\"correct\":true,\"why\":\"A is a vowel.\"}]}",
+   "expect": {
+    "ui": [
+     {
+      "type": "quiz",
+      "questions": [
+       {
+        "question": "Which is a vowel?",
+        "options": [
+         {
+          "label": "B"
+         },
+         {
+          "label": "A",
+          "explanation": "A is a vowel."
+         }
+        ],
+        "answer": 1
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "name": "visual callout",
+   "kind": "visual",
+   "source": "{\"type\":\"callout\",\"title\":\"Remember\",\"body\":\"Back up first.\",\"items\":[\"Twice.\"]}",
+   "expect": {
+    "ui": [
+     {
+      "type": "callout",
+      "tone": "insight",
+      "title": "Remember",
+      "text": "Back up first.\nTwice."
+     }
+    ]
+   }
+  },
+  {
+   "name": "visual timeline",
+   "kind": "visual",
+   "source": "{\"type\":\"timeline\",\"items\":[{\"label\":\"1969\",\"title\":\"Moon landing\",\"body\":\"Apollo 11.\"},{\"title\":\"Shuttle\"}]}",
+   "expect": {
+    "ui": [
+     {
+      "type": "timeline",
+      "items": [
+       {
+        "label": "Moon landing",
+        "detail": "Apollo 11.",
+        "time": "1969"
+       },
+       {
+        "label": "Shuttle"
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "name": "visual unknown type",
+   "kind": "visual",
+   "source": "{\"type\":\"hologram\"}",
+   "expect": null
+  }
+ ]
+}
