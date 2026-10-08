@@ -74,6 +74,12 @@ struct JunoMobileSidebarDrawer: View {
   @State private var selectionHaptic = JunoMobileHapticTrigger()
   /// Remembered across launches: a collapsed Projects section is a choice.
   @AppStorage("juno.mobile.drawer.projects-expanded") private var projectsExpanded = true
+  /// The drawer's own search state: the header becomes a field and the list
+  /// becomes matches, in place — ChatGPT's drawer search, not a pushed page.
+  @State private var searching = false
+  @State private var query = ""
+  @FocusState private var searchFocused: Bool
+  @Environment(\.junoMobileDrawerOpen) private var drawerOpen
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   private var projects: [NativeProject] {
@@ -129,7 +135,11 @@ struct JunoMobileSidebarDrawer: View {
     VStack(spacing: 0) {
       if layout == .drawer {
         header
-        list
+        if searching {
+          searchResults
+        } else {
+          list
+        }
         footer
       } else {
         sidebarList
@@ -302,8 +312,8 @@ struct JunoMobileSidebarDrawer: View {
   ) -> some View {
     JunoMobileConversationRow(
       title: conversation.title,
-      // The iPad's section header already says so.
-      pinned: pinned && layout == .drawer,
+      // The section header already says so, in both layouts.
+      pinned: false,
       pending: conversation.isPending,
       selected: !incognito && selection == .chat
         && conversationModel?.selectedConversationID == conversation.id,
@@ -476,7 +486,7 @@ struct JunoMobileSidebarDrawer: View {
     .listSectionSpacing(0)
     .scrollContentBackground(.hidden)
     .scrollIndicators(.hidden)
-    .environment(\.defaultMinListRowHeight, 40)
+    .environment(\.defaultMinListRowHeight, 44)
     // The footer floats over the list's end, so the last chat can scroll
     // clear of it.
     .contentMargins(.bottom, 12, for: .scrollContent)
@@ -545,32 +555,165 @@ struct JunoMobileSidebarDrawer: View {
   /// app, not in a logo stamped on every surface.
   private var header: some View {
     HStack(spacing: 12) {
-      Text(verbatim: "Alevr")
-        .junoFont(size: 20, relativeTo: .title3, weight: .semibold)
-        .foregroundStyle(Color.junoForeground)
-        .accessibilityAddTraits(.isHeader)
-      Spacer(minLength: 0)
-      JunoMobileInboxBell()
+      if searching {
+        HStack(spacing: 8) {
+          Image(systemName: "magnifyingglass")
+            .foregroundStyle(.secondary)
+          TextField("Search chats", text: $query)
+            .textFieldStyle(.plain)
+            .focused($searchFocused)
+            .submitLabel(.search)
+            .autocorrectionDisabled()
+            .accessibilityIdentifier("juno.mobile.sidebar-search-field")
+          if !query.isEmpty {
+            Button {
+              query = ""
+            } label: {
+              Image(systemName: "xmark.circle.fill")
+                .foregroundStyle(.tertiary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Clear search")
+          }
+        }
+        .font(.body)
+        .padding(.horizontal, 14)
+        .frame(height: 44)
+        .glassEffect(.regular.interactive(), in: Capsule())
+        .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .trailing)))
+
+        Button("Cancel") { setSearching(false) }
+          .font(.body)
+          .tint(Color.primary)
+          .transition(.opacity)
+      } else {
+        Text(verbatim: "Alevr")
+          .font(.title3.weight(.semibold))
+          .foregroundStyle(Color.junoForeground)
+          .accessibilityAddTraits(.isHeader)
+          .transition(.opacity)
+        Spacer(minLength: 0)
+        Button {
+          selectionHaptic.fire()
+          setSearching(true)
+        } label: {
+          Image(systemName: "magnifyingglass")
+            .font(.body)
+            .foregroundStyle(Color.primary)
+            .frame(width: 44, height: 44)
+            .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
         .glassEffect(.regular.interactive(), in: Circle())
-      Button {
-        selectionHaptic.fire()
-        openDestination(.search)
-      } label: {
-        Image(systemName: "magnifyingglass")
-          .junoFont(size: 17, relativeTo: .body, weight: .regular)
-          .foregroundStyle(Color.primary)
-          .frame(width: 44, height: 44)
-          .contentShape(Circle())
+        .accessibilityLabel("navigation.search")
+        .accessibilityIdentifier("juno.mobile.sidebar-search")
       }
-      .buttonStyle(.plain)
-      .glassEffect(.regular.interactive(), in: Circle())
-      .accessibilityLabel("navigation.search")
-      .accessibilityIdentifier("juno.mobile.sidebar-search")
     }
     .padding(.leading, 20)
     .padding(.trailing, 14)
     .padding(.top, 4)
     .padding(.bottom, 10)
+    .animation(JunoMotion.reduced(JunoMotion.chatControl, when: reduceMotion), value: searching)
+    .onChange(of: drawerOpen) { _, open in
+      if !open { setSearching(false) }
+    }
+    #if DEBUG
+      // `--juno-preview-sidebar --juno-preview-sidebar-search <query>` opens
+      // the drawer in its search state with the query typed.
+      .task {
+        let arguments = CommandLine.arguments
+        guard let index = arguments.firstIndex(of: "--juno-preview-sidebar-search") else { return }
+        try? await Task.sleep(for: .milliseconds(700))
+        query = arguments.indices.contains(index + 1) ? arguments[index + 1] : ""
+        searching = true
+      }
+    #endif
+  }
+
+  private func setSearching(_ on: Bool) {
+    withAnimation(JunoMotion.reduced(JunoMotion.chatControl, when: reduceMotion)) {
+      searching = on
+      if !on { query = "" }
+    }
+    searchFocused = on
+  }
+
+  // MARK: - Search state
+
+  private var trimmedQuery: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+  private var matchingChats: [NativeConversation] {
+    let chats = (conversationModel?.conversations ?? []).filter { $0.archivedAt == nil }
+      .sorted { $0.lastMessageAt > $1.lastMessageAt }
+    guard !trimmedQuery.isEmpty else { return Array(chats.prefix(12)) }
+    return chats.filter { $0.title.localizedCaseInsensitiveContains(trimmedQuery) }
+  }
+
+  private var matchingProjects: [NativeProject] {
+    guard !trimmedQuery.isEmpty else { return [] }
+    return projects.filter { $0.name.localizedCaseInsensitiveContains(trimmedQuery) }
+  }
+
+  /// Matches as you type: chat titles and project names, newest first, and a
+  /// last row that takes the query to the full search (messages and files).
+  /// Empty, it lists recent chats, as ChatGPT's does.
+  private var searchResults: some View {
+    List {
+      if !trimmedQuery.isEmpty, matchingChats.isEmpty, matchingProjects.isEmpty {
+        ContentUnavailableView.search(text: trimmedQuery)
+          .listRowSeparator(.hidden)
+          .listRowBackground(Color.clear)
+      }
+      if !matchingProjects.isEmpty {
+        Section {
+          ForEach(matchingProjects) { projectRow($0) }
+        } header: {
+          sectionLabel("Projects")
+        }
+        .listRowInsets(EdgeInsets(top: 0, leading: 8, bottom: 0, trailing: 8))
+        .listRowSeparator(.hidden)
+        .listRowBackground(Color.clear)
+      }
+      if !matchingChats.isEmpty {
+        Section {
+          ForEach(matchingChats) { conversationRow($0, pinned: false) }
+        } header: {
+          sectionLabel(trimmedQuery.isEmpty ? "Recent" : "Chats")
+        }
+        .listRowInsets(EdgeInsets(top: 0, leading: 8, bottom: 0, trailing: 8))
+        .listRowSeparator(.hidden)
+        .listRowBackground(Color.clear)
+      }
+      if !trimmedQuery.isEmpty {
+        Button {
+          selectionHaptic.fire()
+          openDestination(.search)
+        } label: {
+          Label {
+            Text("Search messages and files for “\(trimmedQuery)”")
+              .lineLimit(2)
+          } icon: {
+            Image(systemName: "text.magnifyingglass")
+          }
+          .font(.body)
+          .foregroundStyle(Color.junoForeground)
+          .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+          .padding(.horizontal, 12)
+          .contentShape(Rectangle())
+        }
+        .buttonStyle(JunoSidebarPressStyle())
+        .listRowInsets(EdgeInsets(top: 8, leading: 8, bottom: 0, trailing: 8))
+        .listRowSeparator(.hidden)
+        .listRowBackground(Color.clear)
+        .accessibilityIdentifier("juno.mobile.sidebar-search-all")
+      }
+    }
+    .listStyle(.plain)
+    .listSectionSpacing(0)
+    .scrollContentBackground(.hidden)
+    .scrollDismissesKeyboard(.immediately)
+    .environment(\.defaultMinListRowHeight, 44)
+    .transition(.opacity)
   }
 
   private func sectionLabel(_ key: LocalizedStringKey) -> some View {
@@ -616,6 +759,12 @@ struct JunoMobileSidebarDrawer: View {
 
         Spacer(minLength: 0)
 
+        // The inbox, beside settings: the header stays ChatGPT's — the name
+        // and one search button.
+        JunoMobileInboxBell()
+          .frame(width: 48, height: 48)
+          .glassEffect(.regular.interactive(), in: Circle())
+
         Button(action: { openDestination(.settings) }) {
           Image(systemName: "gearshape")
             .junoFont(size: 19, relativeTo: .body, weight: .regular)
@@ -643,9 +792,9 @@ extension JunoMobileSidebarDrawer {
   /// The destinations the iPad sidebar lists as rows, in the Mac's order: the
   /// two products that run work, then where content lives. Tasks and
   /// Connections sit behind More, as they do on the Mac.
-  fileprivate static let sidebarDestinations: [JunoMobileSection] = [
-    .chat, .agents, .code, .library, .projects, .connections, .settings,
-  ]
+  /// Since the round-2 redesign, the phone drawer's rows: settings lives in
+  /// the footer, and a new chat or a recent one is how you reach Chat.
+  fileprivate static let sidebarDestinations: [JunoMobileSection] = JunoMobileSection.drawerDestinations
   fileprivate static let sidebarOverflow: [JunoMobileSection] = []
 
   /// The iPad column: the Mac's sidebar, row for row.
@@ -659,7 +808,8 @@ extension JunoMobileSidebarDrawer {
       Group {
         JunoMobileIPadSidebarRow(
           icon: .new, title: "chat.new",
-          selected: selection == .chat && isDrafting
+          selected: selection == .chat && isDrafting,
+          symbol: "square.and.pencil"
         ) {
           selectionHaptic.fire()
           newChat()
@@ -668,7 +818,8 @@ extension JunoMobileSidebarDrawer {
         .accessibilityIdentifier("juno.mobile.sidebar-new-chat")
 
         JunoMobileIPadSidebarRow(
-          icon: .search, title: "navigation.search", selected: selection == .search
+          icon: .search, title: "navigation.search", selected: selection == .search,
+          symbol: "magnifyingglass"
         ) {
           selectionHaptic.fire()
           openDestination(.search)
@@ -683,7 +834,7 @@ extension JunoMobileSidebarDrawer {
         if Self.sidebarOverflow.contains(selection) {
           destinationRow(selection)
         }
-        moreMenu
+        if !Self.sidebarOverflow.isEmpty { moreMenu }
       }
       .listRowInsets(EdgeInsets(top: 0, leading: 10, bottom: 0, trailing: 10))
       .listRowSeparator(.hidden)
@@ -738,7 +889,8 @@ extension JunoMobileSidebarDrawer {
       icon: destination.junoIcon,
       title: destination.title,
       selected: selection == destination,
-      status: statuses[destination]
+      status: phoneStatus(for: destination),
+      symbol: destination.sidebarSymbol
     ) {
       selectionHaptic.fire()
       openDestination(destination)
@@ -791,7 +943,7 @@ extension JunoMobileSidebarDrawer {
         )
         VStack(alignment: .leading, spacing: 0) {
           Text(profileName)
-            .font(.subheadline.weight(.medium))
+            .font(.subheadline.weight(.semibold))
             .foregroundStyle(Color.junoForeground)
             .lineLimit(1)
           if let planName = plan?.planName {
@@ -802,7 +954,8 @@ extension JunoMobileSidebarDrawer {
           }
         }
         Spacer(minLength: 0)
-        JunoIconView(.settings, size: 16)
+        Image(systemName: "gearshape")
+          .font(.body)
           .foregroundStyle(Color.junoSecondaryInk)
       }
       .padding(.horizontal, 12)
@@ -911,7 +1064,7 @@ struct JunoMobileConversationRow: View {
             .foregroundStyle(Color.junoTertiaryInk)
         }
         Text(title)
-          .junoFont(size: sidebar ? 15 : 16, relativeTo: .body, weight: selected ? .medium : .regular)
+          .junoFont(size: sidebar ? 15 : 16, relativeTo: .body)
           .foregroundStyle(.primary)
           .lineLimit(1)
           .truncationMode(.tail)
@@ -922,7 +1075,7 @@ struct JunoMobileConversationRow: View {
         }
       }
       .padding(.horizontal, 10)
-      .frame(minHeight: sidebar ? 44 : 40)
+      .frame(minHeight: 44)
       .background(
         RoundedRectangle(cornerRadius: radius, style: .continuous)
           .fill(selected ? (sidebar ? Color.junoSelectedFill : Color.junoMuted) : .clear)
@@ -953,11 +1106,11 @@ struct JunoMobileDrawerRow: View {
     Button(action: action) {
       HStack(spacing: 14) {
         Image(systemName: symbol)
-          .junoFont(size: 17, relativeTo: .body, weight: .regular)
+          .font(.body)
           .foregroundStyle(Color.junoForeground)
-          .frame(width: 24)
+          .frame(width: 26)
         Text(title)
-          .junoFont(size: 16, relativeTo: .body)
+          .font(.body)
           .foregroundStyle(Color.junoForeground)
           .lineLimit(1)
         Spacer(minLength: 8)
@@ -974,7 +1127,7 @@ struct JunoMobileDrawerRow: View {
         }
       }
       .padding(.horizontal, 12)
-      .frame(maxWidth: .infinity, minHeight: 42, alignment: .leading)
+      .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
       .background(
         RoundedRectangle(cornerRadius: 12, style: .continuous)
           .fill(selected ? Color.junoMuted : .clear)
