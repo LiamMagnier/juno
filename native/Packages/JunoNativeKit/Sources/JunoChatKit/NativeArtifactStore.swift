@@ -489,6 +489,89 @@ public final class NativeArtifactModel<Repository: AccountScopedRepository> {
         }
     }
 
+    // MARK: Lifecycle (NativeArtifactLifecycle.swift)
+
+    /// Make a copy of `version` (the current one when nil) as a new artifact
+    /// of the account's. The copy arrives in the list through sync; its id is
+    /// returned so a surface can open it.
+    public func duplicateArtifact(id: String, version: Int?) async -> String? {
+        guard let accountID else { return nil }
+        isMutating = true
+        defer { isMutating = false }
+        do {
+            let copy = try await apiClient.duplicate(id: id, version: version, for: accountID)
+            guard self.accountID == accountID else { return nil }
+            lastErrorDescription = nil
+            await syncModel.refresh()
+            await reload()
+            return copy.artifact.id
+        } catch {
+            guard self.accountID == accountID else { return nil }
+            record(error)
+            return nil
+        }
+    }
+
+    /// One version's file, or a ZIP of it with its history, from the server.
+    public func downloadArtifact(
+        id: String,
+        version: Int?,
+        format: NativeArtifactDownloadFormat
+    ) async -> NativeArtifactDownload? {
+        guard let accountID else { return nil }
+        let fallback = artifacts.first { $0.id == id }.map { $0.title.isEmpty ? $0.identifier : $0.title } ?? "artifact"
+        isExporting = true
+        defer { isExporting = false }
+        do {
+            let file = try await apiClient.download(
+                id: id, version: version, format: format, fallbackName: fallback, for: accountID
+            )
+            guard self.accountID == accountID else { return nil }
+            lastErrorDescription = nil
+            return file
+        } catch {
+            guard self.accountID == accountID else { return nil }
+            record(error)
+            return nil
+        }
+    }
+
+    /// A paged history bound to this account, or nil while signed out.
+    public func history(for id: String) -> NativeArtifactHistory? {
+        guard let accountID else { return nil }
+        return NativeArtifactHistory(artifactID: id, client: apiClient, accountID: accountID)
+    }
+
+    /// Recently deleted, bound to this account; a restore pulls the artifact
+    /// back in through sync.
+    public func recentlyDeleted() -> NativeRecentlyDeletedArtifacts? {
+        guard let accountID else { return nil }
+        return NativeRecentlyDeletedArtifacts(client: apiClient, accountID: accountID) { [weak self] _ in
+            guard let self else { return }
+            await self.syncModel.refresh()
+            await self.reload()
+        }
+    }
+
+    /// Saves an older version's body — fetched from the server when it is not
+    /// held locally — as a new version (the web's "Restore version N").
+    @discardableResult
+    public func restoreVersion(id: String, version: Int) async -> Bool {
+        guard let accountID, let artifact = artifacts.first(where: { $0.id == id }) else { return false }
+        let body: String
+        if let local = artifact.versions.first(where: { $0.version == version }) {
+            body = local.content
+        } else {
+            do { body = try await apiClient.versionContent(id: id, version: version, for: accountID).content }
+            catch { record(error); return false }
+        }
+        return await performMutation(id: id) { client, accountID in
+            try await client.save(
+                id: id, content: body, baseVersion: artifact.currentVersion, origin: .restore, for: accountID
+            )
+        }
+    }
+
     public func publicationURL(id: String) async -> URL? {
         guard let accountID else { return nil }
         do { return try await apiClient.publicationURL(id: id, for: accountID) }
