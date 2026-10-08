@@ -82,10 +82,10 @@
 .alv-stage-foot { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 16px; }
 
 /* Streaming reveal: words fade up as they arrive. */
-.alv-word { opacity: 0; transition: opacity 360ms var(--alv-ease-out); }
-.alv-word[data-on] { opacity: 1; }
-.alv-pop { opacity: 0; transform: translateY(8px) scale(.985); transition: opacity 420ms var(--alv-ease), transform 520ms var(--alv-ease); }
-.alv-pop[data-on] { opacity: 1; transform: none; }
+.alv-word { opacity: 0; filter: blur(3px); transition: opacity 420ms var(--alv-ease-out), filter 420ms var(--alv-ease-out); }
+.alv-word[data-on] { opacity: 1; filter: none; }
+.alv-pop { opacity: 0; transform: translateY(6px); filter: blur(4px); transition: opacity 520ms var(--alv-ease-out), transform 640ms var(--alv-ease), filter 520ms var(--alv-ease-out); }
+.alv-pop[data-on] { opacity: 1; transform: none; filter: none; }
 .alv-pop[hidden] { display: none; }
 
 /* ───────────────────── Labs ───────────────────── */
@@ -123,7 +123,7 @@
 .alv-swap { animation: alv-enter 600ms var(--alv-ease) both; }
 .alv-showcase-stage { position: relative; height: 560px; margin-top: 20px; border-radius: 24px; background: var(--alv-card); outline: 1px solid var(--alv-hair); overflow: hidden; isolation: isolate; }
 .alv-showcase-stage::before { content: ""; position: absolute; inset: 0; z-index: -1; background: radial-gradient(60% 70% at 50% 100%, var(--alv-presence-soft), transparent 70%); opacity: .7; }
-.alv-showcase-scene { position: absolute; inset: 0; opacity: 0; transform: scale(.985); transition: opacity 520ms var(--alv-ease), transform 700ms var(--alv-ease); pointer-events: none; }
+.alv-showcase-scene { position: absolute; inset: 0; opacity: 0; transform: translateY(8px); transition: opacity 620ms var(--alv-ease-out), transform 760ms var(--alv-ease); pointer-events: none; }
 .alv-showcase-scene[data-on] { opacity: 1; transform: none; pointer-events: auto; }
 
 /* Models */
@@ -395,7 +395,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .alv-pop, .alv-word { transition: none; }
+  .alv-pop, .alv-word { transition: none; filter: none; }
 }
 @media (prefers-reduced-transparency: reduce) {
   .alv-hero-veil { display: none; }
@@ -407,7 +407,7 @@
 }
 
 /* Sequences: children with .alv-pop arrive in order once their parent is on screen. */
-.alv-seq[data-on] .alv-pop { opacity: 1; transform: none; }
+.alv-seq[data-on] .alv-pop { opacity: 1; transform: none; filter: none; }
 
 /* Reused landing sections, set on this page's scale. */
 .alv .alevr-section-heading { font-size: clamp(40px, 5.2vw, 76px); line-height: 1.02; letter-spacing: -.032em; }

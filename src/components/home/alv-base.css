@@ -70,9 +70,26 @@
 
 /* The construction is a dot matrix now (dot-construction.css); each surface below only places it. */
 @media (prefers-reduced-motion: no-preference) {
-  .alv-enter { opacity: 0; transform: translateY(24px); animation: alv-enter 1000ms var(--alv-ease) forwards; animation-delay: calc(var(--i, 0) * 90ms + 120ms); }
+  /* Entrances fade up out of a slight blur (owner: "make the animation of homepage fade"): 12 px of
+     rise, not 24, so it reads as settling into focus rather than sliding in. */
+  .alv-enter { opacity: 0; animation: alv-enter 900ms var(--alv-ease) both; animation-delay: calc(var(--i, 0) * 110ms + 120ms); }
 }
-@keyframes alv-enter { to { opacity: 1; transform: none; } }
+@keyframes alv-enter {
+  from { opacity: 0; transform: translateY(12px); filter: blur(8px); }
+  to { opacity: 1; transform: none; filter: none; }
+}
+
+/* The scroll reveal (home-reveal.tsx). On filter + translate so it never fights a section's own
+   opacity/transform motion. Only parts below the fold at load are held. */
+@media (prefers-reduced-motion: no-preference) {
+  .alv [data-reveal] {
+    filter: opacity(0) blur(4px);
+    translate: 0 14px;
+    transition: filter 760ms var(--alv-ease-out), translate 820ms var(--alv-ease);
+    transition-delay: var(--alv-reveal-delay, 0ms);
+  }
+  .alv [data-reveal="on"] { filter: opacity(1) blur(0); translate: 0 0; }
+}
 
 
 /* ───────────────────── Access (sign in, sign up, recovery) ───────────────────── */

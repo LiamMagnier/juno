@@ -13,6 +13,7 @@ import { CodeScene } from "./code-scene";
 import { Bento } from "./bento";
 import { Aleph } from "./aleph";
 import { Construction } from "./construction";
+import { HomeReveal } from "./home-reveal";
 import "@/components/landing/overview.css";
 import "./alv-base.css";
 import "./home.css";
@@ -80,6 +81,7 @@ export function AlevrHome() {
         </section>
       </main>
       <SiteFooter />
+      <HomeReveal />
     </div>
   );
 }
