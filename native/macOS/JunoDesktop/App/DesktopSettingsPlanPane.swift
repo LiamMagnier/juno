@@ -42,6 +42,8 @@ struct DesktopSettingsPlanPane: View {
                 Section {
                     planBlock(plan)
                 }
+                // Cancel, top-ups and invitations (the web's three cards).
+                DesktopBillingExtrasSections(context: context)
                 Section {
                     usageRows(plan)
                 } header: {

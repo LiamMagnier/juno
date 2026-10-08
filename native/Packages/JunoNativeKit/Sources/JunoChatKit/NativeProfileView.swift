@@ -369,6 +369,7 @@ struct NativeProfileActivitySection: View {
             }
             if activity.isEmpty, let onStartChat {
                 Button("Start a chat", action: onStartChat)
+                    .contentShape(.rect)
             }
         }
     }

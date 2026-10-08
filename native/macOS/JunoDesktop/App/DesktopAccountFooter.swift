@@ -140,6 +140,10 @@ struct DesktopAccountFooter: View {
                     isAccountOpen = false
                     DesktopSettingsRouter.open(.general, using: openSettings)
                 },
+                openProfile: {
+                    isAccountOpen = false
+                    DesktopPageRouter.shared.open(.profile)
+                },
                 // Stage C's Upgrade sheet (seam 4), for plans that can still
                 // go up; the row is absent otherwise, never a dead end.
                 openUpgrade: DesktopAccountPopoverRows.canUpgrade(planID: plan?.planID)
@@ -503,6 +507,7 @@ struct DesktopAccountUsage: Equatable {
 struct DesktopAccountPopoverRows: Equatable {
     var showsUpgrade: Bool
     var showsAdmin: Bool
+    var showsProfile = false
     /// An uncapped plan's sentence stands a little taller than the dots.
     var usageHasSentence = false
 
@@ -521,6 +526,7 @@ struct DesktopAccountPopoverRows: Equatable {
             + (usageHasSentence ? Self.sentenceExtra : 0)
             + (showsUpgrade ? Self.rowHeight : 0)
             + (showsAdmin ? Self.rowHeight : 0)
+            + (showsProfile ? Self.rowHeight : 0)
     }
 
     static let rowHeight: CGFloat = 28
@@ -536,8 +542,9 @@ struct DesktopAccountPopoverRows: Equatable {
 ///
 /// Settings…, Upgrade Plan (while a higher plan is for sale and the Upgrade
 /// sheet is wired), Admin Panel for owners; Keyboard Shortcuts; Sign Out.
-/// There is no Profile… (the web dropped it: it was one click from Settings)
-/// and no "Get the apps" (P3-15: this app is the download).
+/// Profile opens the profile page (the web's user menu links `/profile`
+/// again since the page shipped). No "Get the apps" (P3-15: this app is the
+/// download).
 ///
 /// **The signature detail** is the 18-dot bar — the web's own mark for how
 /// much is left, drawn in the accent until the week runs short.
@@ -550,6 +557,8 @@ struct DesktopAccountPopover: View {
     let usage: DesktopAccountUsage
     let isOwner: Bool
     let openSettings: () -> Void
+    /// The profile page (`/profile`); nil hides the row.
+    var openProfile: (() -> Void)? = nil
     /// Seam 4: nil hides Upgrade Plan.
     let openUpgrade: (() -> Void)?
     let openAdmin: () -> Void
@@ -562,6 +571,7 @@ struct DesktopAccountPopover: View {
         DesktopAccountPopoverRows(
             showsUpgrade: openUpgrade != nil,
             showsAdmin: isOwner,
+            showsProfile: openProfile != nil,
             usageHasSentence: usage.fraction == nil && usage.sentence != nil
         )
     }
@@ -572,6 +582,10 @@ struct DesktopAccountPopover: View {
             usageBlock
                 .padding(.top, JunoSpace.cozy)
             divider
+            if let openProfile {
+                DesktopPopoverRow(title: "Profile", icon: .user, action: openProfile)
+                    .accessibilityIdentifier("juno.desktop.account-menu.profile")
+            }
             DesktopPopoverRow(title: "Settings…", icon: .settings, shortcut: JunoShortcutRegistry.chord(.settings), action: openSettings)
             if let openUpgrade {
                 DesktopPopoverRow(title: "Upgrade Plan", icon: .sparkles, action: openUpgrade)

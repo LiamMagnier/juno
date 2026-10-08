@@ -57,6 +57,7 @@ public struct NativeUsernameFieldRows: View {
                 Spacer(minLength: 0)
                 if let onCancel {
                     Button("Cancel", action: onCancel)
+                        .contentShape(.rect)
                         .disabled(model.saving)
                         .keyboardShortcut(.cancelAction)
                 }
@@ -69,6 +70,7 @@ public struct NativeUsernameFieldRows: View {
                         Text("Save")
                     }
                 }
+                .contentShape(.rect)
                 .disabled(!model.canSave)
                 .accessibilityIdentifier("juno.username.save")
             }

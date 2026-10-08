@@ -25,6 +25,7 @@ struct DesktopSettingsAccountPane: View {
         DesktopSettingsRecordForm(context: context) { settings in
             Section {
                 profileBlock
+                DesktopUsernameRow(context: context)
             }
 
             Section {
