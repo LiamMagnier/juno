@@ -15,6 +15,9 @@ public enum PreviewAccountPageFixtures {
             case (.get, "/api/memory"): return Data(#"{"memories":[],"summary":null,"projectSummaries":[]}"#.utf8)
             case (.get, "/api/skills"): return Data(#"{"yours":[],"sources":[],"total":0,"truncated":false}"#.utf8)
             case (.get, "/api/assistants"): return Data(#"{"assistants":[]}"#.utf8)
+            case (.get, "/api/memory/skill-candidates"): return Data(#"{"candidates":[]}"#.utf8)
+            case (.get, "/api/approvals/grants"): return Data(#"{"grants":[]}"#.utf8)
+            case (.get, "/api/connectors/usage"): return Data(#"{"usage":{}}"#.utf8)
             default: break
             }
         }
@@ -26,8 +29,19 @@ public enum PreviewAccountPageFixtures {
             return Data(#"{"days":30,"themes":["Planning the Lisbon offsite","Rewriting the onboarding flow"],"conversations":14}"#.utf8)
         case (.get, "/api/skills"): return Data(skillsJSON.utf8)
         case (.get, "/api/assistants"): return Data(assistantsJSON.utf8)
+        case (.get, "/api/memory/skill-candidates"): return Data(skillCandidatesJSON.utf8)
+        // Clearing one project's memory; the query never reaches the path.
+        case (.delete, "/api/memory"): return Data(#"{"ok":true,"projectId":"p-thesis"}"#.utf8)
+        case (.get, "/api/approvals/grants"): return Data(grantsJSON.utf8)
+        case (.get, "/api/connectors/usage"): return Data(usageJSON.utf8)
         default:
             break
+        }
+        if method == .post, path.hasPrefix("/api/memory/skill-candidates/") {
+            return Data(#"{"ok":true,"slug":"weekly-design-review","href":"/skills/skill-preview"}"#.utf8)
+        }
+        if method == .delete, path.hasPrefix("/api/approvals/grants/") {
+            return Data(#"{"revoked":true}"#.utf8)
         }
         if method == .get, path.hasPrefix("/api/work/skills/"), path.hasSuffix("/versions") {
             return Data(versionsJSON.utf8)
@@ -53,9 +67,9 @@ public enum PreviewAccountPageFixtures {
         {
           "memories": [
             \(fact("m1", "Prefers answers with a short summary first, then the detail.", "preferences", "MANUAL", "manual", -2 * day)),
-            \(fact("m2", "Writes in British English and uses metric units.", "preferences", "AUTO", "conv-1", -6 * day)),
+            \(fact("m2", "Writes in British English and uses metric units.", "preferences", "AUTO", "conv-1", -6 * day, confidence: 0.5)),
             \(fact("m3", "Works as a product designer at a small studio in Lisbon.", "identity", "AUTO", "conv-1", -9 * day)),
-            \(fact("m4", "Is building Juno, a native Mac and iPhone assistant.", "projects", "AUTO", "conv-2", -1 * day)),
+            \(fact("m4", "Is building Alevr, a native Mac and iPhone assistant.", "projects", "AUTO", "conv-2", -1 * day, message: "msg-2")),
             \(fact("m5", "Uses SwiftUI and Next.js day to day.", "workflows", "AUTO", "conv-2", -12 * day)),
             \(fact("m6", "Wants to ship the Mac redesign before the October release.", "goals", "MANUAL", "manual", -3 * day)),
             \(fact("m7", "Cites sources in APA for the thesis.", "studies", "AUTO", "conv-3", -20 * day, project: ("p-thesis", "Thesis"))),
@@ -83,13 +97,44 @@ public enum PreviewAccountPageFixtures {
         _ offset: TimeInterval,
         project: (String, String)? = nil,
         status: String = "active",
-        supersededBy: String? = nil
+        supersededBy: String? = nil,
+        confidence: Double = 0.9,
+        message: String? = nil
     ) -> String {
+        let messageID = message.map { "\"\($0)\"" } ?? "null"
         let projectID = project.map { "\"\($0.0)\"" } ?? "null"
         let projectName = project.map { "\"\($0.1)\"" } ?? "null"
         let superseded = supersededBy.map { "\"\($0)\"" } ?? "null"
         return """
-        {"id":"\(id)","content":"\(content)","source":"\(source)","kind":"FACT","sourceRef":"\(sourceRef)","createdAt":"\(iso(offset))","category":"\(category)","projectId":\(projectID),"projectName":\(projectName),"sourceMessageId":null,"confidence":0.9,"status":"\(status)","reason":null,"expiresAt":null,"lastUsedAt":"\(iso(offset / 2))","lastVerifiedAt":null,"supersededById":\(superseded),"sensitive":null}
+        {"id":"\(id)","content":"\(content)","source":"\(source)","kind":"FACT","sourceRef":"\(sourceRef)","createdAt":"\(iso(offset))","category":"\(category)","projectId":\(projectID),"projectName":\(projectName),"sourceMessageId":\(messageID),"confidence":\(confidence),"status":"\(status)","reason":null,"expiresAt":null,"lastUsedAt":"\(iso(offset / 2))","lastVerifiedAt":null,"supersededById":\(superseded),"sensitive":null}
+        """
+    }
+
+    // MARK: Suggested skills, grants, last used
+
+    public static var skillCandidatesJSON: String {
+        """
+        {"candidates":[
+          {"id":"sc-review","title":"Weekly design review","projectId":null,"examples":["Review this week's Figma changes and list what drifted from the spec","What changed in the design files since Monday?"],"tools":["figma_read","web_search"],"runCount":5,"lastSeenAt":"\(iso(-1 * day))","status":"pending","skillId":null},
+          {"id":"sc-citations","title":"Check thesis citations","projectId":"p-thesis","examples":["Check every citation in chapter 3 against APA 7"],"tools":["library_search"],"runCount":3,"lastSeenAt":"\(iso(-4 * day))","status":"pending","skillId":null}
+        ]}
+        """
+    }
+
+    public static var grantsJSON: String {
+        """
+        {"grants":[
+          {"id":"grant-1","connectorId":"github","projectId":null,"toolName":"github_create_issue","action":"Open an issue","maxRiskClass":"write","createdAt":"\(iso(-3 * day))"},
+          {"id":"grant-2","connectorId":"github","projectId":"p-thesis","toolName":"github_comment","action":"Comment on a pull request","maxRiskClass":"write","createdAt":"\(iso(-8 * day))"}
+        ]}
+        """
+    }
+
+    public static var usageJSON: String {
+        """
+        {"usage":{
+          "github":{"at":"\(iso(-2 * 3600))","toolName":"github_list_pull_requests","access":"read","conversationId":"conv-1","conversationTitle":"Sidebar behaviour"}
+        }}
         """
     }
 

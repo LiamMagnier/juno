@@ -547,3 +547,122 @@ struct DesktopMemoryWelcome: View {
         )
     }
 }
+
+// MARK: - Suggested skills
+
+
+/// **Suggested skills** on the memory page (`skill-candidates.tsx`): methods
+/// the person's own runs repeated, proposed as skills. A heading, one line on
+/// what a skill is, then hairline-separated proposals — absent entirely when
+/// there is nothing to propose.
+///
+/// A proposal is a question, not a change: nothing happens until the person
+/// adds it as a skill (it opens in Skills with auto-selection off) or
+/// dismisses it (it is never proposed again).
+struct DesktopMemorySkillCandidates: View {
+    let page: NativeMemoryPageModel
+    let post: (NativeMemoryNotice?) -> Void
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.regular) {
+            VStack(alignment: .leading, spacing: JunoSpace.micro) {
+                Text("Suggested skills")
+                    .junoType(.heading)
+                    .foregroundStyle(Color.junoForeground)
+                    .accessibilityAddTraits(.isHeader)
+                Text("From your own runs. A skill is how Alevr does something; memory stays what it knows.")
+                    .junoType(.ui)
+                    .foregroundStyle(Color.junoSecondaryInk)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(page.skillCandidates.enumerated()), id: \.element.id) { index, candidate in
+                    if index > 0 {
+                        Rectangle()
+                            .fill(Color.junoBorder)
+                            .frame(height: 1)
+                            .accessibilityHidden(true)
+                    }
+                    row(candidate)
+                        .padding(.vertical, JunoSpace.cozy)
+                        .transition(.opacity)
+                }
+            }
+            .animation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion), value: page.skillCandidates.map(\.id))
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("juno.desktop.memory.skill-candidates")
+    }
+
+    private func row(_ candidate: NativeSkillCandidate) -> some View {
+        VStack(alignment: .leading, spacing: JunoSpace.tight) {
+            Text(candidate.title)
+                .junoType(JunoType.ui.weight(.semibold))
+                .foregroundStyle(Color.junoForeground)
+            Text(candidate.detailLine())
+                .junoType(.caption)
+                .foregroundStyle(Color.junoSecondaryInk)
+            if !candidate.examples.isEmpty {
+                VStack(alignment: .leading, spacing: JunoSpace.micro) {
+                    ForEach(Array(candidate.examples.enumerated()), id: \.offset) { _, example in
+                        Text("“\(example)”")
+                            .junoType(.ui)
+                            .foregroundStyle(Color.junoSecondaryInk)
+                            .lineLimit(2)
+                    }
+                }
+                .padding(.top, JunoSpace.hairline)
+            }
+            actions(candidate)
+                .padding(.top, JunoSpace.tight)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private func actions(_ candidate: NativeSkillCandidate) -> some View {
+        let busy = page.busyCandidateIDs.contains(candidate.id)
+        HStack(spacing: JunoSpace.snug) {
+            if let made = page.madeSkills[candidate.id] {
+                Label("Added to your skills", icon: .check)
+                    .junoType(.ui)
+                    .foregroundStyle(Color.junoSecondaryInk)
+                if let skillID = made.skillID {
+                    Button("Open the new skill") {
+                        DesktopPageRouter.shared.open(.skills, route: .skill(skillID))
+                    }
+                    .buttonStyle(DesktopUnderlineLinkStyle())
+                    .contentShape(.rect)
+                }
+            } else {
+                Button {
+                    Task { post(await page.decide(candidate, .accept)) }
+                } label: {
+                    if busy {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Text("Add as skill")
+                    }
+                }
+                .buttonStyle(.bordered)
+                .tint(nil)
+                .controlSize(.small)
+                .disabled(busy)
+                .accessibilityIdentifier("juno.desktop.memory.skill-candidate.accept.\(candidate.id)")
+                .contentShape(.rect)
+                Button("Dismiss") {
+                    Task { post(await page.decide(candidate, .dismiss)) }
+                }
+                .buttonStyle(.borderless)
+                .tint(nil)
+                .controlSize(.small)
+                .disabled(busy)
+                .help("Not a skill. Alevr won’t propose it again.")
+                .accessibilityIdentifier("juno.desktop.memory.skill-candidate.dismiss.\(candidate.id)")
+                .contentShape(.rect)
+            }
+        }
+    }
+}

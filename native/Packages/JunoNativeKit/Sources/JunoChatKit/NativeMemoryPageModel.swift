@@ -81,6 +81,16 @@ public final class NativeMemoryPageModel {
     /// Edits applied from the prompt dock, and when: each keeps its inline
     /// Undo for ``appliedHold``.
     public private(set) var justApplied: [String: Date] = [:]
+    /// Methods the person's runs repeated, proposed as skills; empty until
+    /// ``loadSkillCandidates()`` lands, and absent from the page while empty.
+    public private(set) var skillCandidates: [NativeSkillCandidate] = []
+    /// Proposals with a decision in flight.
+    public private(set) var busyCandidateIDs: Set<String> = []
+    /// Proposals made into skills this session, by candidate id: the row
+    /// stays, saying so, with a way to open the new skill.
+    public private(set) var madeSkills: [String: NativeSkillCandidateOutcome] = [:]
+    /// A project's memory being cleared.
+    public private(set) var clearingProjectID: String?
     /// A deferred removal that failed after its Undo window closed.
     public var onNotice: (@MainActor (NativeMemoryNotice) -> Void)?
 
@@ -127,6 +137,10 @@ public final class NativeMemoryPageModel {
         backfillRemaining = nil
         isBackfilling = false
         justApplied = [:]
+        skillCandidates = []
+        busyCandidateIDs = []
+        madeSkills = [:]
+        clearingProjectID = nil
         loadedOnce = false
     }
 
@@ -168,6 +182,49 @@ public final class NativeMemoryPageModel {
         }
         if let remaining = try? await client.backfillRemaining(for: accountID), self.accountID == accountID {
             backfillRemaining = remaining
+        }
+        await loadSkillCandidates()
+    }
+
+    // MARK: Suggested skills
+
+    /// Best effort, as the web's: a page that cannot read proposals simply
+    /// shows none.
+    public func loadSkillCandidates() async {
+        guard let accountID else { return }
+        if let list = try? await client.skillCandidates(for: accountID), self.accountID == accountID {
+            skillCandidates = list
+        }
+    }
+
+    /// Makes a proposal a skill (it stays on the page, saying so) or dismisses
+    /// it (it leaves the page and is never proposed again).
+    @discardableResult
+    public func decide(
+        _ candidate: NativeSkillCandidate,
+        _ action: NativeSkillCandidateAction
+    ) async -> NativeMemoryNotice? {
+        guard let accountID, !busyCandidateIDs.contains(candidate.id) else { return nil }
+        busyCandidateIDs.insert(candidate.id)
+        defer { busyCandidateIDs.remove(candidate.id) }
+        do {
+            let outcome = try await client.decideSkillCandidate(id: candidate.id, action: action, for: accountID)
+            switch action {
+            case .accept:
+                madeSkills[candidate.id] = outcome
+                return .success("Added to your skills.", detail: "Auto-selection is off until you turn it on.")
+            case .dismiss:
+                skillCandidates.removeAll { $0.id == candidate.id }
+                return nil
+            }
+        } catch let error as NativeMemoryRequestError where error.statusCode == 404 {
+            // Already decided elsewhere: it is no longer a question here either.
+            skillCandidates.removeAll { $0.id == candidate.id }
+            return .error(error.message)
+        } catch let error as NativeMemoryRequestError where error.statusCode != 0 {
+            return .error(error.message)
+        } catch {
+            return .error("That didn’t work. Try again.")
         }
     }
 
@@ -452,6 +509,23 @@ public final class NativeMemoryPageModel {
         }
     }
 
+    /// Deletes one project's memory, its facts and its summary, and nothing
+    /// else (`clearProjectMemory` in `use-memory.ts`).
+    public func clearProject(_ projectID: String) async -> NativeMemoryNotice {
+        let failure = NativeMemoryNotice.error("Couldn’t clear this project’s memory. Nothing was deleted.")
+        guard let accountID, clearingProjectID == nil else { return failure }
+        clearingProjectID = projectID
+        defer { clearingProjectID = nil }
+        do {
+            try await client.clearProject(projectID, for: accountID)
+            facts.removeAll { $0.isFact && $0.projectID == projectID }
+            projectSummaries.removeAll { $0.projectID == projectID }
+            return .success("This project’s memory is cleared.")
+        } catch {
+            return failure
+        }
+    }
+
     // MARK: Summary
 
     /// Rebuilds the account's summary, or one project's.
@@ -613,10 +687,12 @@ public final class NativeMemoryPageModel {
         _ snapshot: NativeMemorySnapshot,
         edits: [NativeMemoryEdit] = [],
         backfillRemaining: Int? = nil,
+        skillCandidates: [NativeSkillCandidate] = [],
         phase: Phase = .ready
     ) {
         apply(snapshot)
         self.edits = edits
+        self.skillCandidates = skillCandidates
         self.backfillRemaining = backfillRemaining
         self.phase = phase
         loadedOnce = phase == .ready

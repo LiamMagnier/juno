@@ -151,6 +151,12 @@ public enum JunoPreviewEnvironment {
         return PreviewAppearance(rawValue: raw.lowercased())
     }
 
+    /// Opens one app's details sheet on the Apps (Connections) screen:
+    /// `--juno-preview-app-detail github` or `JUNO_PREVIEW_APP_DETAIL`.
+    public static var initialAppDetail: String? {
+        value(for: "--juno-preview-app-detail", env: "JUNO_PREVIEW_APP_DETAIL")
+    }
+
     private static func value(for flag: String, env: String) -> String? {
         let arguments = CommandLine.arguments
         if let index = arguments.firstIndex(of: flag), index + 1 < arguments.count {

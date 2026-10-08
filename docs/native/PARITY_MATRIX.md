@@ -22,20 +22,20 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 
 ## Summary
 
-317 routes: 191 native, 60 planned, 53 web only, 13 internal. 49 pages: on the Mac 35 native, 2 partial, 3 planned, 9 web only; on iOS 19 native, 6 partial, 15 planned, 9 web only.
+317 routes: 196 native, 55 planned, 53 web only, 13 internal. 49 pages: on the Mac 35 native, 2 partial, 3 planned, 9 web only; on iOS 19 native, 6 partial, 15 planned, 9 web only.
 
 | Feature | Pages (Mac) | Pages (iOS) | Routes native | Planned | Web only | Internal |
 |---|---|---|---|---|---|---|
 | [Sign-in and account security](#auth) | – | – | 15 | 4 | 6 | 0 |
 | [Sync and bootstrap](#sync) | – | – | 6 | 0 | 2 | 0 |
-| [Chat and streaming](#chat) | 2/2 | 2/2 | 10 | 4 | 1 | 0 |
+| [Chat and streaming](#chat) | 2/2 | 2/2 | 12 | 2 | 1 | 0 |
 | [Conversations, messages and sharing](#conversations) | – | – | 9 | 2 | 3 | 0 |
 | [Search and recents](#search) | – | – | 2 | 0 | 0 | 0 |
 | [Projects](#projects) | 2/2 | 2/2 | 2 | 1 | 0 | 0 |
 | [Library, files and knowledge](#library) | 1/2 | 1/2 | 13 | 4 | 2 | 0 |
 | [Artifacts and Design](#artifacts) | 4/4 | 3/4 (+1 partial) | 12 | 7 | 3 | 0 |
-| [Memory](#memory) | 1/1 | 1/1 | 12 | 2 | 0 | 0 |
-| [Connections](#connections) | 2/2 | 2/2 | 15 | 2 | 4 | 2 |
+| [Memory](#memory) | 1/1 | 1/1 | 14 | 0 | 0 | 0 |
+| [Connections](#connections) | 2/2 | 2/2 | 16 | 1 | 4 | 2 |
 | [Skills](#skills) | 4/4 | 0/4 | 10 | 3 | 0 | 0 |
 | [Assistants](#assistants) | 1/1 | 0/1 | 2 | 1 | 0 | 0 |
 | [Tasks in chat](#tasks) | 2/2 | 0/2 (+2 partial) | 13 | 1 | 2 | 0 |
@@ -117,8 +117,8 @@ POST /api/chat's body and frames are classified field by field in the chat wire 
 |---|---|---|---|---|
 | `/api/approvals` | GET | Native | JunoChatKit |  |
 | `/api/approvals/[id]` | POST | Native | JunoChatKit |  |
-| `/api/approvals/grants` | GET | Planned |  | The standing "always allow" grants listed under Customize › Apps on the web, so a person can see what Juno may do without asking. The apps answer approvals but do not list standing grants yet. |
-| `/api/approvals/grants/[id]` | DELETE | Planned |  | Revoking one standing grant from that list (DELETE). As /api/approvals/grants. |
+| `/api/approvals/grants` | GET | Native | JunoChatKit |  |
+| `/api/approvals/grants/[id]` | DELETE | Native | JunoChatKit |  |
 | `/api/chat` | POST | Native | JunoChatKit |  |
 | `/api/chat/cancel` | POST | Native | JunoChatKit |  |
 | `/api/chat/clarify` | POST | Planned |  | Whether to ask a clarifying question before a turn runs; the Mac's composer has no pre-flight questions yet (request.preflightClarification in the chat wire). |
@@ -269,8 +269,8 @@ Design is a type of artifact (register #73).
 | `/api/memory/import/preview` | POST | Native | JunoChatKit |  |
 | `/api/memory/recap` | GET | Native | JunoChatKit |  |
 | `/api/projects/[id]/memory` | GET, POST | Native | JunoChatKit |  |
-| `/api/memory/skill-candidates` | GET | Planned |  | Methods Alevr noticed the person repeat, offered as draft skills on the web's Memory page. The apps do not list them yet. |
-| `/api/memory/skill-candidates/[id]` | POST | Planned |  | Accepting or dismissing a proposed skill; web first, like the list. |
+| `/api/memory/skill-candidates` | GET | Native | JunoChatKit |  |
+| `/api/memory/skill-candidates/[id]` | POST | Native | JunoChatKit |  |
 
 <a id="connections"></a>
 
@@ -285,7 +285,7 @@ Design is a type of artifact (register #73).
 |---|---|---|---|---|
 | `/api/connectors` | GET | Native | JunoChatKit |  |
 | `/api/connectors/[id]` | DELETE | Native | JunoChatKit |  |
-| `/api/connectors/usage` | GET | Planned |  | When each app was last used (tool, chat), for the app's details under Customize › Apps on the web. The apps do not show a last-used line yet. |
+| `/api/connectors/usage` | GET | Native | JunoChatKit |  |
 | `/api/connectors/[id]/callback` | GET | Web only |  | The provider redirects the browser here; the apps start the flow at /api/connectors/{id}/connect in the browser. |
 | `/api/connectors/[id]/connect` | GET | Native | JunoDesktop, JunoMobile |  |
 | `/api/connectors/[id]/credentials` | POST | Planned |  | Key and token connectors (Apple Music and others) are connected on the web; the apps have no credential form yet. |

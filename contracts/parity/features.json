@@ -104,12 +104,12 @@
         "/api/approvals": "native",
         "/api/approvals/[id]": "native",
         "/api/approvals/grants": {
-          "status": "planned",
-          "note": "The standing \"always allow\" grants listed under Customize › Apps on the web, so a person can see what Juno may do without asking. The apps answer approvals but do not list standing grants yet."
+          "status": "native",
+          "swift": "NativeAppAccessClient.grants(for:) in JunoChatKit/NativeAppDetail.swift; an app's details sheet (DesktopConnectionsScreen, JunoMobileConnectionsView)"
         },
         "/api/approvals/grants/[id]": {
-          "status": "planned",
-          "note": "Revoking one standing grant from that list (DELETE). As /api/approvals/grants."
+          "status": "native",
+          "swift": "NativeAppAccessClient.revokeGrant(id:for:) in JunoChatKit/NativeAppDetail.swift (DELETE), the sheet's Ask first"
         },
         "/api/chat": "native",
         "/api/chat/cancel": "native",
@@ -399,12 +399,12 @@
         "/api/memory/recap": "native",
         "/api/projects/[id]/memory": "native",
         "/api/memory/skill-candidates": {
-          "status": "planned",
-          "note": "Methods Alevr noticed the person repeat, offered as draft skills on the web's Memory page. The apps do not list them yet."
+          "status": "native",
+          "swift": "NativeMemoryClient.skillCandidates(for:) in JunoChatKit/NativeMemorySkillCandidates.swift; Suggested skills on DesktopMemoryScreen and JunoMobileMemoryView"
         },
         "/api/memory/skill-candidates/[id]": {
-          "status": "planned",
-          "note": "Accepting or dismissing a proposed skill; web first, like the list."
+          "status": "native",
+          "swift": "NativeMemoryClient.decideSkillCandidate(id:action:for:) in JunoChatKit/NativeMemorySkillCandidates.swift (accept / dismiss)"
         }
       }
     },
@@ -428,8 +428,8 @@
         "/api/connectors": "native",
         "/api/connectors/[id]": "native",
         "/api/connectors/usage": {
-          "status": "planned",
-          "note": "When each app was last used (tool, chat), for the app's details under Customize › Apps on the web. The apps do not show a last-used line yet."
+          "status": "native",
+          "swift": "NativeAppAccessClient.usage(for:) in JunoChatKit/NativeAppDetail.swift; the Last used line of an app's details sheet"
         },
         "/api/connectors/[id]/callback": {
           "status": "web-only",
