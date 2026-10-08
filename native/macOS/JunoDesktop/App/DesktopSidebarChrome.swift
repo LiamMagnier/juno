@@ -194,7 +194,8 @@ struct DesktopSidebarHeadingRow<Trailing: View>: View {
             }
             // The web's label rung for headings: mono, as `/dev/shell` sets it.
             Text(title)
-                .junoFont(size: DesktopSidebarMetrics.headingSize, relativeTo: .caption, weight: .medium, design: .monospaced)
+                .junoFont(size: DesktopSidebarMetrics.headingSize, relativeTo: .caption, design: .monospaced)
+                .tracking(0.6)
                 .foregroundStyle(hovered && action != nil ? Color.junoForeground : Color.junoSecondaryInk)
                 .lineLimit(1)
                 .accessibilityAddTraits(.isHeader)
@@ -268,9 +269,16 @@ struct DesktopSidebarAgentRow: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
             Spacer(minLength: 0)
+            // What the agent is doing, in a word, as the web's Orbit rows say
+            // it ("Working", "Needs your approval") — words, never a dot.
+            Text(agent.state.label)
+                .junoFont(size: 12, relativeTo: .caption)
+                .foregroundStyle(Color.junoSecondaryInk)
+                .lineLimit(1)
         }
         .foregroundStyle(selected || hovered ? Color.junoForeground : Color.junoSidebarInk)
         .padding(.leading, DesktopSidebarMetrics.glyphEdge - DesktopSidebarMetrics.listOrigin)
+        .padding(.trailing, DesktopSidebarMetrics.glyphEdge - DesktopSidebarMetrics.listOrigin)
         .onHover { hovered = $0 }
         .desktopSidebarRow(selected: selected, hovered: hovered)
     }
