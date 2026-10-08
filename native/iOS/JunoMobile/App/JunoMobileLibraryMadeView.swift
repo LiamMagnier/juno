@@ -37,11 +37,11 @@ struct JunoMobileLibraryMadeView: View {
                     }
                     .contentShape(.rect)
                     .disabled(model.isLoadingMore)
-                    .foregroundStyle(Color.junoSecondaryInk)
+                    .foregroundStyle(.secondary)
                 }
             }
         }
-        .listStyle(.insetGrouped)
+        .listStyle(.plain)
         .overlay { overlay }
         .navigationTitle("Made by Alevr")
         .navigationBarTitleDisplayMode(.large)
@@ -116,21 +116,22 @@ struct JunoMobileLibraryMadeView: View {
     private func row(_ item: NativeLibraryMadeItem) -> some View {
         let label = HStack(spacing: JunoSpace.cozy) {
             Image(systemName: Self.symbol(for: item))
-                .font(.body)
-                .foregroundStyle(Color.junoSecondaryInk)
-                .frame(width: 32, height: 32)
-                .background(Color.junoSecondary, in: .rect(cornerRadius: 8, style: .continuous))
+                .font(.title3)
+                .foregroundStyle(.secondary)
+                .frame(width: 32)
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.title.isEmpty ? "Untitled" : item.title)
                     .font(.body)
-                    .foregroundStyle(Color.junoForeground)
+                    .foregroundStyle(.primary)
                     .lineLimit(1)
                 Text(Self.meta(item))
-                    .font(.footnote)
-                    .foregroundStyle(Color.junoSecondaryInk)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
+            Spacer(minLength: 0)
         }
+        .frame(minHeight: 44)
         .accessibilityElement(children: .combine)
 
         Group {
@@ -178,7 +179,11 @@ struct JunoMobileLibraryMadeView: View {
     }
 
     static func meta(_ item: NativeLibraryMadeItem) -> String {
-        "\(item.byline) · \(item.typeLabel) · \(item.updatedAt.formatted(.relative(presentation: .named)))"
+        // The page is already titled "Made by Alevr"; only another maker
+        // (an Orbit agent) is worth naming on the row.
+        var parts = [item.typeLabel, JunoMobileRelativeDate.text(item.updatedAt)]
+        if item.byline != "Made by Alevr", !item.byline.isEmpty { parts.insert(item.byline, at: 0) }
+        return parts.joined(separator: " · ")
     }
 
     static func symbol(for item: NativeLibraryMadeItem) -> String {
