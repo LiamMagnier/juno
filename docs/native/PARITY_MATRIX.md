@@ -22,11 +22,11 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 
 ## Summary
 
-317 routes: 183 native, 66 planned, 55 web only, 13 internal. 49 pages: on the Mac 33 native, 4 partial, 3 planned, 9 web only; on iOS 17 native, 8 partial, 15 planned, 9 web only.
+317 routes: 189 native, 62 planned, 53 web only, 13 internal. 49 pages: on the Mac 34 native, 4 partial, 2 planned, 9 web only; on iOS 18 native, 8 partial, 14 planned, 9 web only.
 
 | Feature | Pages (Mac) | Pages (iOS) | Routes native | Planned | Web only | Internal |
 |---|---|---|---|---|---|---|
-| [Sign-in and account security](#auth) | – | – | 15 | 4 | 6 | 0 |
+| [Sign-in and account security](#auth) | – | – | 16 | 3 | 6 | 0 |
 | [Sync and bootstrap](#sync) | – | – | 6 | 0 | 2 | 0 |
 | [Chat and streaming](#chat) | 2/2 | 2/2 | 10 | 4 | 1 | 0 |
 | [Conversations, messages and sharing](#conversations) | – | – | 9 | 2 | 3 | 0 |
@@ -45,8 +45,8 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 | [Research](#research) | 2/2 | 2/2 | 7 | 0 | 0 | 0 |
 | [Voice](#voice) | – | – | 4 | 0 | 3 | 0 |
 | [Juno Code](#code) | 2/4 (+2 partial) | 0/4 (+3 partial) | 15 | 13 | 3 | 0 |
-| [Settings, notifications and announcements](#settings) | 2/3 | 2/3 | 11 | 6 | 2 | 0 |
-| [Plans and billing](#billing) | 1/2 | 0/2 | 3 | 2 | 2 | 1 |
+| [Settings, notifications and announcements](#settings) | 3/3 | 3/3 | 12 | 5 | 2 | 0 |
+| [Plans and billing](#billing) | 1/2 | 0/2 | 7 | 0 | 0 | 1 |
 | [Roadmap and Compare](#community) | 0/3 | 0/3 | 0 | 0 | 4 | 0 |
 | [Owner tools](#admin) | 0/6 | 0/6 | 0 | 0 | 15 | 0 |
 | [Platform endpoints](#platform) | – | – | 1 | 0 | 0 | 10 |
@@ -69,7 +69,7 @@ Browser sign-in hands the apps a PKCE code; everything after that is `/api/v1/au
 | `/api/account/mfa/start` | POST | Native | JunoChatKit |  |
 | `/api/account/password` | POST | Native | JunoChatKit |  |
 | `/api/account/sessions/revoke` | POST | Native | JunoChatKit |  |
-| `/api/account/username` | GET, PATCH | Planned |  | Choosing the @username (Settings › Account › Username on the web). The apps do not show or edit it yet, and have no profile screen to show it on (/profile is planned). |
+| `/api/account/username` | GET, PATCH | Native | JunoChatKit | Settings › Account › Username on both apps (DesktopUsernameRow on the Mac, JunoMobileUsernameView on the iPhone), with the web's debounced ?check= and its words; NativeUsernameClient/NativeUsernameModel in JunoChatKit/NativeUsername.swift. |
 | `/api/account/verification` | GET, POST | Planned |  | The web's check-your-inbox banner for an unverified email; the apps do not show it yet. |
 | `/api/auth/[...nextauth]` | GET, POST | Web only |  | The web's session (Auth.js). The apps sign in through the browser and hold /api/v1/auth tokens. |
 | `/api/auth/forgot-password` | POST | Native | JunoChatKit |  |
@@ -545,7 +545,7 @@ Owned by the Code rework (`docs/native/code-rework/`), which audits Code's parit
 |---|---|---|---|---|
 | `/settings` | Native | Native | DesktopSettingsWindow |  |
 | `/customize/instructions` | Native | Native | Settings › Personalization (DesktopSettingsPersonalizationPane) | The web's Customize › Instructions tab renders the same personalization section as Settings. |
-| `/profile` | Planned | Planned |  | The profile page (2026-10-03): lifetime tokens, streaks, a year of daily activity and usage by model. The apps still show usage in Settings › Account. |
+| `/profile` | Native | Native | NativeProfileView (DesktopProfileScreen from the account menu's Profile row; JunoMobileProfileView under Settings › Account) |  |
 
 | Route | Methods | Status | Called from | Note |
 |---|---|---|---|---|
@@ -563,7 +563,7 @@ Owned by the Code rework (`docs/native/code-rework/`), which audits Code's parit
 | `/api/push/subscriptions` | GET, POST, PATCH, DELETE | Web only |  | Browser push; the apps register through /api/v1/devices/apns. |
 | `/api/settings` | GET, PATCH | Native | JunoChatKit |  |
 | `/api/v1/devices/apns` | POST, DELETE | Native | JunoSync |  |
-| `/api/profile/activity` | GET | Planned |  | The profile page's activity read (tokens per local day, by model, longest run). The apps have no profile screen yet. |
+| `/api/profile/activity` | GET | Native | JunoChatKit | The profile page's activity read, with the reader's zone as ?tz=; NativeProfileClient in JunoChatKit/NativeProfileActivity.swift, drawn by NativeProfileView on both apps. |
 | `/api/secrets` | GET, POST | Planned |  | The credential vault the agent computer fills sign-ins from, managed in the web's Settings. The apps do not manage it yet. |
 | `/api/secrets/[id]` | PATCH, DELETE | Planned |  | Editing or deleting one stored credential; web first, like the list. |
 | `/api/secrets/grants` | POST | Planned |  | Which sites and tasks may use a stored credential; web first. |
@@ -584,10 +584,10 @@ Owned by the Code rework (`docs/native/code-rework/`), which audits Code's parit
 | `/api/stripe/checkout` | POST | Native | JunoChatKit |  |
 | `/api/stripe/portal` | POST | Native | JunoChatKit |  |
 | `/api/v1/billing/app-store` | GET, POST | Native | JunoAPI, JunoMobile |  |
-| `/api/billing/credits` | GET | Planned |  | Top-up credit balance and expiry, shown in the web's Billing section. The apps buy plans through the App Store and do not sell top-ups yet. |
-| `/api/stripe/topup` | POST | Web only |  | Buying a top-up pack through Stripe Checkout; App Store rules keep this purchase on the web. |
-| `/api/stripe/cancel` | GET, POST | Web only |  | Cancelling a Stripe subscription with the legal confirmation; an App Store subscription is cancelled in the App Store. |
-| `/api/referrals` | GET | Planned |  | The referral code and its rewards in the web's Billing section; the apps do not show it yet. |
+| `/api/billing/credits` | GET | Native | JunoChatKit | Mac only: the Top-ups block of Settings › Plan & usage (DesktopBillingExtras). The iPhone buys through the App Store and does not show top-ups. |
+| `/api/stripe/topup` | POST | Native | JunoChatKit | Mac only: Add opens the Stripe Checkout page in the browser, like the Mac's plan checkout. App Store rules keep this purchase off the iPhone. |
+| `/api/stripe/cancel` | GET, POST | Native | JunoChatKit | Mac only: Cancel subscription with the recap and the web's consent text (DesktopCancelSubscriptionSheet), and Keep my subscription. An App Store subscription is cancelled in the App Store; the iPhone does not show it. |
+| `/api/referrals` | GET | Native | JunoChatKit | Mac only: Invite a friend in Settings › Plan & usage (link, Copy, rewards). The iPhone does not show it yet. |
 
 <a id="community"></a>
 
