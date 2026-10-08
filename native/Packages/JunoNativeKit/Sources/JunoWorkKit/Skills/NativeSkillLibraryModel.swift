@@ -387,6 +387,24 @@ public final class NativeSkillLibraryModel {
         return result.message(fallback: "Couldn’t remove that repository. Its skills are still installed.")
     }
 
+    /// Deletes one skill and takes it out of the library. Returns nil when it
+    /// went, or the sentence; the list is untouched on a refusal.
+    public func deleteSkill(_ skill: NativeSkill) async -> String? {
+        guard let accountID else { return nil }
+        let result = await client.delete(id: skill.id, for: accountID)
+        guard self.accountID == accountID else { return nil }
+        if case .ok = result {
+            removeSkill(skill.id)
+            return nil
+        }
+        if case .failed(.notFound, _) = result {
+            // Already gone on the server: the list catches up.
+            removeSkill(skill.id)
+            return nil
+        }
+        return result.message(fallback: "Couldn’t delete that skill. It is still installed.")
+    }
+
     /// The client, for the pages that talk to one skill, the importer and
     /// the update sheet.
     public var skillsClient: NativeSkillsClient { client }
@@ -416,6 +434,15 @@ public final class NativeSkillLibraryModel {
             where library.sources[sourceIndex].skills[index].id == id {
                 change(&library.sources[sourceIndex].skills[index])
             }
+        }
+        self.library = library
+    }
+
+    private func removeSkill(_ id: String) {
+        guard var library else { return }
+        library.yours.removeAll { $0.id == id }
+        for index in library.sources.indices {
+            library.sources[index].skills.removeAll { $0.id == id }
         }
         self.library = library
     }
