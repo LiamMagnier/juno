@@ -89,8 +89,8 @@ Use existing tokens from `src/app/globals.css` / `tailwind.config.ts` (projected
 
 | Token | Light | Dark | Why |
 |---|---|---|---|
-| `--signal` | 14 64% 46% | 16 76% 64% | The coral. Working and needs-you only. Today `data-accent="coral"` resolves to graphite, so Code needs its own fixed coral that the accent picker cannot change. Contrast: 4.6:1 on `--card` light; 6.9:1 on `--card` dark. |
-| `--signal-ink` | 14 64% 42% | 16 80% 70% | Coral as text ("Waiting for you:", "Sign-in expired."). Clears 4.5:1 on `--background` and `--card` in both themes. |
+| `--signal` | 14 64% 46% | 16 76% 64% | The coral. Working and needs-you only. Today `data-accent="coral"` resolves to graphite, so Code needs its own fixed coral that the accent picker cannot change. Contrast: 4.8:1 on `--card` light; 5.9:1 on `--card` dark. |
+| `--signal-ink` | 14 64% 42% | 16 80% 70% | Coral as text ("Waiting for you:", "Sign-in expired."). 5.5:1 on `--background` light, 7.8:1 dark. |
 | `--diff-add` / `--diff-add-strong` | 139.6 55% 40% / .10, / .22 | 136 42% 55% / .10, / .22 | Line and word-level highlights. Today diffs use ad-hoc `bg-success/10`. |
 | `--diff-del` / `--diff-del-strong` | 3.2 71% 50% / .09, / .20 | 4.7 77% 70% / .09, / .20 | Same. |
 | `--shadow-pop` | 0 0 0 1px ink/.06, 0 8 24 -8 ink/.18, 0 24 56 -20 ink/.22 | 0 0 0 1px warm-white/.08, 0 12 28 -10 black/.6, 0 28 64 -22 black/.7 | Popovers only. They are temporary, so they may sit above the composer without breaking "one elevated object at rest". |
