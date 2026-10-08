@@ -1,4 +1,6 @@
 import "server-only";
+import { privateSourceOptionsFor, searchPrivateSources } from "@/lib/research/private-retrieval";
+import type { PrivateSourceOption } from "@/lib/research/private-sources";
 import { Prisma } from "@prisma/client";
 import { recordSpend } from "@/lib/spend";
 import { createHash } from "node:crypto";
@@ -920,6 +922,8 @@ export function researchEngine(): ResearchEngine {
     complete: completeResearchRun,
     search: searchTheWeb,
     fetchPage: fetchResearchPage,
+    privateSourceOptions: privateSourceOptionsFor,
+    searchPrivate: searchPrivateSources,
     expandQueries: expandResearchQueries,
     runWorker: runResearchWorker,
     reviewRound: reviewResearchRound,
@@ -992,6 +996,8 @@ export function gatheringOnlyEngine(): ResearchEngine {
     windowSpent: researchWindowSpent,
     search: searchTheWeb,
     fetchPage: fetchResearchPage,
+    privateSourceOptions: privateSourceOptionsFor,
+    searchPrivate: searchPrivateSources,
     expandQueries: expandResearchQueries,
     runWorker: runResearchWorker,
     reviewRound: reviewResearchRound,
@@ -1036,6 +1042,12 @@ export interface ResearchRunView extends ResearchRunViewAdditions {
     coverage: ResearchCoverageEntry[];
     conflicts: ResearchConflict[];
     followUpRound: number;
+    /**
+     * The sources the run reads: the web and the person's own (files, project,
+     * library, memory, connectors) — what was offered and what is switched
+     * on. Absent on runs planned before own sources, which read the web only.
+     */
+    sources?: { web: boolean; enabled: string[]; options: PrivateSourceOption[] };
     /**
      * The tier the run was started at. The plan gate is where a person
      * authorises the spend, and until this rode the wire the gate could not
@@ -1405,6 +1417,9 @@ export async function readResearchRun(input: {
         coverage: plan.coverage ?? [],
         conflicts: plan.conflicts ?? [],
         followUpRound: plan.followUpRound ?? 0,
+        ...(plan.sources
+          ? { sources: { web: plan.sources.web, enabled: plan.sources.enabled, options: plan.sources.options } }
+          : {}),
         // Null for every run sized by scope (§9.4): the stored tier exists only
         // for the previous build, and no web component ever shows a depth.
         effort: dtoEffort(plan),

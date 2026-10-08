@@ -117,6 +117,17 @@ export const decidePlanSchema = z.object({
   answers: z
     .record(z.string().trim().min(1).max(64), z.string().trim().max(MAX_CLARIFICATION_ANSWER_CHARS))
     .optional(),
+  /**
+   * The sources left switched on at the gate: the web and the keys of the
+   * offered private sources. The engine intersects with what it offered, so
+   * an unknown key is ignored rather than enabled.
+   */
+  sources: z
+    .object({
+      web: z.boolean().optional(),
+      enabled: z.array(z.string().trim().min(1).max(120)).max(12).optional(),
+    })
+    .optional(),
 });
 
 /**

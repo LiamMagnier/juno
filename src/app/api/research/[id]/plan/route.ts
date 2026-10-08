@@ -50,6 +50,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     pinnedSources: parsed.data.pinnedSources,
     questions: parsed.data.questions,
     answers: parsed.data.answers,
+    sources: parsed.data.sources,
   });
   if (!decided.ok) {
     const refusal = decided.refusal;

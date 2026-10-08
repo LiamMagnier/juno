@@ -19,9 +19,9 @@ import { dedupeQueries, subjectOf } from "@/lib/research/query-dedupe";
 import type { EngineContext } from "./context";
 import type { createCorpusStage } from "./corpus";
 
-export function createCoverageStage(ctx: EngineContext, stages: Pick<ReturnType<typeof createCorpusStage>, "doSearching" | "doBrowsing" | "doReading">) {
+export function createCoverageStage(ctx: EngineContext, stages: Pick<ReturnType<typeof createCorpusStage>, "doPrivateSources" | "doSearching" | "doBrowsing" | "doReading">) {
   const { deps, store, beat, append, advance, finish, affordable, writerReserve, applySteering, bill, windowSpent } = ctx;
-  const { doSearching, doBrowsing, doReading } = stages;
+  const { doPrivateSources, doSearching, doBrowsing, doReading } = stages;
   const doCoverage = async (
     runAtStart: ResearchRunRow,
     signal?: AbortSignal,
@@ -269,9 +269,16 @@ export function createCoverageStage(ctx: EngineContext, stages: Pick<ReturnType<
     signal?: AbortSignal,
     heartbeat?: () => Promise<void>
   ): Promise<StepOutcome> => {
-    const searched = await doSearching(run, signal, heartbeat);
+    // The person's own sources first: what they hold is the fingerprint every
+    // web query below is cleaned against.
+    const own = await doPrivateSources(run, signal, heartbeat);
+    if (own.kind === "raced" || own.kind === "finished" || own.kind === "blocked") return own;
+    const freshAfterOwn = (await store.loadRun(run.id, run.userId)) ?? run;
+    if (freshAfterOwn.state !== "investigating") return { kind: "raced" };
+
+    const searched = await doSearching(freshAfterOwn, signal, heartbeat);
     if (searched.kind === "raced" || searched.kind === "finished" || searched.kind === "blocked") return searched;
-    const freshAfterSearch = (await store.loadRun(run.id, run.userId)) ?? run;
+    const freshAfterSearch = (await store.loadRun(run.id, run.userId)) ?? freshAfterOwn;
     if (freshAfterSearch.state !== "investigating") return { kind: "raced" };
 
     const browsed = await doBrowsing(freshAfterSearch, signal, heartbeat);

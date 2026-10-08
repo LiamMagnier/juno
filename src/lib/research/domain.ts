@@ -14,6 +14,7 @@
  */
 
 import type { ResearchEnvelope, ResearchEstimateCaps, ResearchScope } from "@/types/research";
+import { parseSourceSelection, type ResearchSourceSelection } from "@/lib/research/private-sources";
 
 // ---------------------------------------------------------------------------
 // States
@@ -1154,6 +1155,12 @@ export interface ResearchPlan {
   digest?: boolean;
   /** A usage window ran out mid-run; the rounds stopped and the run wrote with what it had (§6). */
   windowSpentAt?: string;
+  /**
+   * Which sources the run reads: the web and/or the person's own sources
+   * (files, project, library, memory, connectors). Absent on runs planned
+   * before own sources existed, which read the web only. See private-sources.ts.
+   */
+  sources?: ResearchSourceSelection;
 }
 
 /** One piece of guidance from the reader, as the plan stores it. */
@@ -1711,6 +1718,7 @@ function parseReworkFields(raw: Record<string, unknown>): Partial<ResearchPlan> 
   const context = typeof raw.context === "string" ? raw.context.slice(0, MAX_PLAN_CONTEXT_CHARS) : "";
   const steering = parseSteering(raw.steering);
   const pendingRevision = parseRevision(raw.pendingRevision);
+  const sources = parseSourceSelection(raw.sources);
   return {
     ...(envelope ? { envelope } : {}),
     ...(scope ? { scope } : {}),
@@ -1741,6 +1749,7 @@ function parseReworkFields(raw: Record<string, unknown>): Partial<ResearchPlan> 
     ...(stageFailuresOf(raw.stageFailures) ? { stageFailures: stageFailuresOf(raw.stageFailures) } : {}),
     ...(raw.digest === true ? { digest: true } : {}),
     ...(isoOrUndefined(raw.windowSpentAt) ? { windowSpentAt: isoOrUndefined(raw.windowSpentAt) } : {}),
+    ...(sources ? { sources } : {}),
   };
 }
 

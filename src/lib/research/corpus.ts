@@ -18,6 +18,7 @@ import {
 import { renderGapAudit } from "@/lib/research/gap-audit";
 import { assessSource, type SourceTier } from "@/lib/research/source-policy";
 import { hostOfUrl } from "@/lib/research/claim-analysis";
+import { privateSourceMetaLine } from "@/lib/research/private-sources";
 
 /**
  * The synthesis contract and the numbered corpus.
@@ -70,6 +71,9 @@ const TIER_NAME: Record<SourceTier, string> = {
  * prefer the record over the roundup and fill the traceability table.
  */
 export function sourceMetaLine(source: Pick<ResearchCorpusSourceRow, "url" | "title" | "snapshot" | "publishedAt">): string {
+  // The person's own record: no domain to rank, and the writer must mark what it supports.
+  const own = privateSourceMetaLine(source.url, source.publishedAt);
+  if (own) return own;
   const tier = assessSource({ url: source.url, title: source.title, text: source.snapshot }).tier;
   const date = source.publishedAt instanceof Date && Number.isFinite(source.publishedAt.getTime())
     ? `published ${source.publishedAt.toISOString().slice(0, 10)}`

@@ -41,13 +41,19 @@ import { splitPassages } from "./writer-text";
 import { duplicateOf } from "@/lib/research/query-dedupe";
 import { assessSource, isAggregator } from "@/lib/research/source-policy";
 import type { EngineContext } from "./context";
+import { enabledOptions, isPrivateSourceUrl, webEnabled } from "@/lib/research/private-sources";
 import type { createWorkerStage } from "./workers";
+
+/** Questions one investigation pass asks of the person's own sources. */
+export const MAX_PRIVATE_QUESTIONS = 9;
+/** Private passages one pass stores, over every enabled source together. */
+export const MAX_PRIVATE_HITS = 24;
 
 /** Below this many better unread candidates, a sweep pass back-fills with aggregators. */
 export const AGGREGATOR_BACKFILL_BELOW = 3;
 
 export function createCorpusStage(ctx: EngineContext, stages: Pick<ReturnType<typeof createWorkerStage>, "doWorkerRounds">) {
-  const { deps, store, append, fetchPage, markSyndicatedCopies, advance, affordable, affordableCount, stopForBudget, bill } = ctx;
+  const { deps, store, append, fetchPage, markSyndicatedCopies, advance, affordable, affordableCount, stopForBudget, bill, webSearch, forgetFingerprint } = ctx;
   const { doWorkerRounds } = stages;
   const doSearching = async (
     run: ResearchRunRow,
@@ -55,6 +61,8 @@ export function createCorpusStage(ctx: EngineContext, stages: Pick<ReturnType<ty
     heartbeat?: () => Promise<void>
   ): Promise<StepOutcome> => {
     const plan = parsePlan(run.plan);
+    // The reader switched the web off at the gate: this run reads only their own sources.
+    if (!webEnabled(plan.sources)) return { kind: "advanced", state: "investigating" };
     const queries = plan.queries.length ? plan.queries : fallbackResearchQueries(run.goal, plan.effort);
     const resultsPerQuery = planBudget(plan).resultsPerQuery;
     const plannedIssued = new Set(plan.issuedQueries ?? []);
@@ -133,7 +141,9 @@ export function createCorpusStage(ctx: EngineContext, stages: Pick<ReturnType<ty
       const found = await Promise.all(
         wave.map(async (query) => ({
           query,
-          result: await deps.search({ userId: run.userId, query, count: resultsPerQuery, signal }),
+          // Through the context's guard: the web may be off for this run, and
+          // nothing from the person's own sources may reach a search vendor.
+          searched: await webSearch(current, query, resultsPerQuery, signal),
         }))
       );
 
@@ -141,14 +151,33 @@ export function createCorpusStage(ctx: EngineContext, stages: Pick<ReturnType<ty
       // parallel part is the network; the ledger, the event seq and the plan
       // row are per-run serial resources, and interleaving writes to them buys
       // nothing and races.
-      for (const { query, result } of found) {
+      for (const { query, searched } of found) {
+        if (!searched.ok) {
+          // Withheld, not run: recorded so a resumed pass does not try again,
+          // and said on the timeline so a thin web corpus has its reason.
+          if (searched.reason === "private_only") {
+            await append(run.id, run.userId, [
+              { kind: "query_issued", payload: { query, results: 0, withheld: "private" } },
+            ]);
+          }
+          issued.add(query);
+          const latestSkip = (await store.loadRun(current.id, current.userId)) ?? current;
+          await store.savePlan({
+            runId: current.id,
+            userId: current.userId,
+            plan: { ...parsePlan(latestSkip.plan), issuedQueries: [...issued] },
+          });
+          continue;
+        }
+        const result = searched.result;
         await bill(current, result.costMicroUsd, "search");
         await append(run.id, run.userId, [
           {
             kind: "query_issued",
             payload: {
-              query,
+              query: searched.sent,
               results: result.hits.length,
+              ...(searched.sanitised ? { sanitised: true } : {}),
               ...(result.engines?.length ? { engines: result.engines } : {}),
               ...(!providersAnnounced && result.providers ? { providers: result.providers } : {}),
             },
@@ -201,6 +230,113 @@ export function createCorpusStage(ctx: EngineContext, stages: Pick<ReturnType<ty
     // Searching, pinned-source ingestion and reading are one investigation
     // round now. The coordinator below calls the remaining two legs before it
     // hands the corpus to the lead for review.
+    return { kind: "advanced", state: "investigating" };
+  };
+
+  /**
+   * OWN SOURCES: the person's files, project, library, memory and connectors.
+   *
+   * Runs before the web sweep in every investigation pass, so the private
+   * fingerprint exists before any web query is sent (the sweep's and the
+   * workers' queries are cleaned against it). Each question is searched once
+   * per run: `plan.sources.issued` is the ledger, so a follow-up pass searches
+   * only questions it has not asked before. Only enabled, offered options are
+   * handed to the retriever, and a failure is a timeline line, never the end
+   * of the run — the web half still answers.
+   *
+   * Every hit becomes an ordinary source row — snapshot, hash, passages — so
+   * the workers can quote it, the writer can cite it and the citation audit
+   * can check it, exactly as for a web page. Its `private.invalid` URL is what
+   * marks it, everywhere, as the person's own.
+   */
+  const doPrivateSources = async (
+    run: ResearchRunRow,
+    signal?: AbortSignal,
+    heartbeat?: () => Promise<void>
+  ): Promise<StepOutcome> => {
+    const plan = parsePlan(run.plan);
+    const selection = plan.sources;
+    const options = enabledOptions(selection);
+    if (!deps.searchPrivate || !selection || options.length === 0) return { kind: "advanced", state: "investigating" };
+    const asked = new Set(selection.issued ?? []);
+    const questions = [run.goal, ...plan.objectives.map((objective) => objective.question)]
+      .map((question) => question.replace(/\s+/g, " ").trim())
+      .filter((question, i, all) => question && !asked.has(question) && all.indexOf(question) === i)
+      .slice(0, MAX_PRIVATE_QUESTIONS);
+    if (questions.length === 0) return { kind: "advanced", state: "investigating" };
+    await heartbeat?.();
+
+    let found: Awaited<ReturnType<NonNullable<typeof deps.searchPrivate>>>;
+    try {
+      found = await deps.searchPrivate({
+        userId: run.userId,
+        runId: run.id,
+        conversationId: run.conversationId,
+        options,
+        questions,
+        selection,
+        timeZone: plan.timeZone ?? null,
+        signal,
+      });
+    } catch (error) {
+      if (signal?.aborted) return { kind: "raced" };
+      console.error("[research] private source search failed", { runId: run.id, error });
+      await append(run.id, run.userId, [
+        { kind: "error", payload: { scope: "private_sources", recoverable: true, message: "Your own sources could not be searched this time." } },
+      ]);
+      found = { hits: [], skipped: [] };
+    }
+
+    const fresh = await store.loadRun(run.id, run.userId);
+    if (!fresh || fresh.state !== "investigating") return { kind: "raced" };
+
+    for (const skip of found.skipped) {
+      await append(run.id, run.userId, [
+        { kind: "error", payload: { scope: "private_source", key: skip.key, recoverable: true, message: skip.reason } },
+      ]);
+    }
+    let read = 0;
+    for (const hit of found.hits.slice(0, MAX_PRIVATE_HITS)) {
+      // Belt and braces: the retriever's contract is `private.invalid` addresses
+      // for enabled options only; anything else is dropped here.
+      if (!isPrivateSourceUrl(hit.url) || !selection.enabled.includes(hit.optionKey)) continue;
+      const text = hit.text.slice(0, SNAPSHOT_CHARS).trim();
+      if (!text) continue;
+      const stored = await store.upsertSource({
+        runId: run.id,
+        userId: run.userId,
+        url: hit.url,
+        title: hit.title,
+        ...(hit.publishedAt ? { publishedAt: hit.publishedAt } : {}),
+        contentHash: deps.hash(text),
+        snapshot: text,
+        // The person's own record: first-hand for whatever it says about
+        // their own affairs, and chosen by them at the gate.
+        authority: 1,
+        freshness: 1,
+        directness: 1,
+        independence: 1,
+        composite: 1,
+        sourceType: "primary",
+      });
+      await store.savePassages({ userId: run.userId, sourceId: stored.id, passages: splitPassages(text) });
+      read += 1;
+      await append(run.id, run.userId, [
+        ...(stored.created ? [{ kind: "source_found" as const, payload: { url: hit.url, title: hit.title, private: hit.kind } }] : []),
+        { kind: "source_read", payload: { url: hit.url, title: hit.title, private: hit.kind } },
+      ]);
+    }
+
+    const latest = (await store.loadRun(run.id, run.userId)) ?? fresh;
+    const latestPlan = parsePlan(latest.plan);
+    if (latestPlan.sources) {
+      await store.savePlan({
+        runId: run.id,
+        userId: run.userId,
+        plan: { ...latestPlan, sources: { ...latestPlan.sources, issued: [...(latestPlan.sources.issued ?? []), ...questions] } },
+      });
+    }
+    if (read > 0) forgetFingerprint(run.id);
     return { kind: "advanced", state: "investigating" };
   };
 
@@ -509,8 +645,12 @@ export function createCorpusStage(ctx: EngineContext, stages: Pick<ReturnType<ty
     // A page this sweep already fetched is read, however short it is: a short
     // pricing page fetched on the first pass is not re-fetched on every pass.
     const fetchedBefore = new Set((plan.sweepFetched ?? []).map((url) => canonicalUrl(url)));
+    // A private source is never fetched: its text is what the owner-scoped
+    // retrieval stored, however short (a calendar event is one line).
     const needsFetch = (source: ResearchSourceRow) =>
-      (source.snapshot ?? "").length < DEEPEN_BELOW_CHARS && !fetchedBefore.has(canonicalUrl(source.url));
+      !isPrivateSourceUrl(source.url) &&
+      (source.snapshot ?? "").length < DEEPEN_BELOW_CHARS &&
+      !fetchedBefore.has(canonicalUrl(source.url));
     const unread = live.filter(({ source }) => needsFetch(source));
     const aggregator = ({ source }: (typeof live)[number]) => isAggregator({ url: source.url, title: source.title, text: source.snapshot });
     const better = unread.filter((item) => !aggregator(item));
@@ -736,5 +876,5 @@ export function createCorpusStage(ctx: EngineContext, stages: Pick<ReturnType<ty
    * never read the same pages.
    */
 
-  return { doSearching, doBrowsing, doLinkHop, doReading };
+  return { doPrivateSources, doSearching, doBrowsing, doLinkHop, doReading };
 }

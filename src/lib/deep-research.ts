@@ -18,6 +18,7 @@ import { researchChatOwner } from "@/lib/research/lease-core";
 import { researchGoalContext, type ContextTurn } from "@/lib/research/planner";
 import type { ClientActivityEvent, ClientSource } from "@/types/chat";
 import { prisma } from "@/lib/db";
+import { isPrivateSourceUrl } from "@/lib/research/private-sources";
 
 /** Durable research adapter. Web chat reviews the plan inline before paid
  * investigation; native clients retain their existing streaming hand-off. */
@@ -446,8 +447,9 @@ export async function runDeepResearch(opts: {
       title: source.title,
       url: source.url,
       // The stored snapshot is the full fetched body; the client list wants a
-      // line, not a page.
-      snippet: (source.snapshot ?? "").replace(/\s+/g, " ").slice(0, 300),
+      // line, not a page. The person's own sources carry none: the message
+      // can be shared, and its title already says what the record is.
+      snippet: isPrivateSourceUrl(source.url) ? "" : (source.snapshot ?? "").replace(/\s+/g, " ").slice(0, 300),
       cited: true,
     })),
     costUsd,

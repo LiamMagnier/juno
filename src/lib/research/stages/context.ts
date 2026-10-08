@@ -24,6 +24,13 @@ import { RESEARCH_LEASE_RENEW_MS, withHeartbeat } from "@/lib/research/lease-cor
 import type { ResearchEventInput, ResearchPageResult, ResearchRunRow, StepOutcome } from "./types";
 import { detectSyndication, hostOfUrl } from "@/lib/research/claim-analysis";
 import type { ResearchDeps } from "./types";
+import {
+  type PrivateFingerprint,
+  buildPrivateFingerprint,
+  isPrivateSourceUrl,
+  sanitiseWebQuery,
+  webEnabled,
+} from "@/lib/research/private-sources";
 
 /** The live line when a usage window runs out mid-run (RESEARCH_V2 §6). */
 export const WINDOW_SPENT_MESSAGE = "Your usage window is used up. Writing the report with what the research has.";
@@ -51,6 +58,10 @@ export function createEngineContext(deps: ResearchDeps) {
    */
   const hosts = new HostLimiter(FETCH_PER_HOST);
   const fetchPage = async (userId: string, url: string, signal?: AbortSignal): Promise<ResearchPageResult | null> => {
+    // The person's own sources are never fetched: their text came from the
+    // owner-scoped retrieval that stored them, and a `https://private.invalid/` address is
+    // not something any network request may carry.
+    if (isPrivateSourceUrl(url)) return { skipped: "private_source" };
     let release: () => void;
     try {
       release = await hosts.acquire(url, signal);
@@ -440,10 +451,69 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
     return true;
   };
 
+  /*
+   * What may leave as a web query (private-sources.ts). Every web search the
+   * engine makes — the sweep's and every worker's — goes through `webSearch`,
+   * which strips anything the run's private sources contain before the query
+   * reaches a search vendor, and withholds a query with nothing public left.
+   * The fingerprint is cached per run and rebuilt whenever the count of
+   * private rows changes, so a resumed process rebuilds it from the store.
+   */
+  const fingerprints = new Map<string, { rows: number; fingerprint: PrivateFingerprint | null }>();
+  const MAX_FINGERPRINT_RUNS = 64;
+  const privateFingerprint = async (run: ResearchRunRow): Promise<PrivateFingerprint | null> => {
+    const plan = parsePlan(run.plan);
+    if (!plan.sources || plan.sources.enabled.length === 0) return null;
+    const urls = store.listSourceUrls
+      ? await store.listSourceUrls(run.id, run.userId)
+      : (await store.listSources(run.id, run.userId)).map((row) => ({ url: row.url, snapshotChars: row.snapshot?.length ?? 0 }));
+    const privateRows = urls.filter((row) => isPrivateSourceUrl(row.url)).length;
+    const cached = fingerprints.get(run.id);
+    if (cached && cached.rows === privateRows) return cached.fingerprint;
+    const rows = privateRows
+      ? (await store.listSources(run.id, run.userId)).filter((row) => isPrivateSourceUrl(row.url))
+      : [];
+    // The question and the plan's own questions are public by the person's
+    // choice: a name they asked about stays searchable.
+    const publicText = [run.goal, ...plan.objectives.map((objective) => objective.question)].join("\n");
+    const fingerprint = rows.length
+      ? buildPrivateFingerprint(rows.map((row) => ({ title: row.title, text: row.snapshot })), publicText)
+      : null;
+    if (fingerprints.size >= MAX_FINGERPRINT_RUNS) fingerprints.delete(fingerprints.keys().next().value as string);
+    fingerprints.set(run.id, { rows: privateRows, fingerprint });
+    return fingerprint;
+  };
+  const forgetFingerprint = (runId: string) => fingerprints.delete(runId);
+
+  /**
+   * One web search for the run, or a refusal: the web is switched off for
+   * this run, or nothing public was left of the query. `sent` is what
+   * actually went out, which is what the run records and shows.
+   */
+  const webSearch = async (
+    run: ResearchRunRow,
+    query: string,
+    count: number | undefined,
+    signal?: AbortSignal
+  ): Promise<
+    | { ok: true; sent: string; sanitised: boolean; result: Awaited<ReturnType<ResearchDeps["search"]>> }
+    | { ok: false; reason: "web_off" | "private_only" }
+  > => {
+    const plan = parsePlan(run.plan);
+    if (!webEnabled(plan.sources)) return { ok: false, reason: "web_off" };
+    const clean = sanitiseWebQuery(query, await privateFingerprint(run));
+    if (!clean.query) return { ok: false, reason: "private_only" };
+    const result = await deps.search({ userId: run.userId, query: clean.query, count, signal });
+    return { ok: true, sent: clean.query, sanitised: clean.changed, result };
+  };
+
   return {
     deps,
     store,
     heartbeatMs,
+    webSearch,
+    privateFingerprint,
+    forgetFingerprint,
     windowSpent,
     beat,
     append,

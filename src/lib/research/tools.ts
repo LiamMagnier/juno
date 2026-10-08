@@ -373,6 +373,7 @@ export const draftResearchPlanWithModel: NonNullable<ResearchDeps["draftPlan"]> 
         context: input.context,
         constraints: input.constraints,
         pinnedSources: input.pinnedSources,
+        privateSources: input.privateSources,
         dateLine: input.dateLine,
         languageName: input.languageName,
         revision: input.revision,
