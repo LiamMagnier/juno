@@ -106,13 +106,6 @@ export interface ContextTier {
   cachedInputPerMTok?: number;
   /** e.g. "2× input above 272K". */
   note?: string;
-  /**
-   * The catalogue has no verified rate for part of this window (a lab that
-   * prices long prompts higher than the rate shown, without the band being
-   * recorded). Clients say "price above N not confirmed" rather than imply
-   * the shown rate holds for the whole window.
-   */
-  unverified?: boolean;
 }
 
 /** A model an instance offers (Codex `model/list`, the Alevr catalogue, an ACP agent's models). */
@@ -149,37 +142,6 @@ export interface ProviderInstance {
   models?: ProviderModel[];
   /** ISO-8601 time of the last probe. */
   checkedAt?: string;
-}
-
-// ── Bring your own key (SPEC §2 BYOK) ──────────────────────────────────────
-
-/**
- * Labs whose API keys a user may store for the Alevr engine. Each is one
- * provider instance with id `byok:<provider>` (see `byokInstanceId`); runs on
- * it are routed with the user's key and never billed as Alevr spend.
- */
-export const BYOK_PROVIDER_VALUES = ["anthropic", "openai", "google", "xai", "deepseek"] as const;
-export type ByokProvider = (typeof BYOK_PROVIDER_VALUES)[number];
-
-export const isByokProvider = (v: unknown): v is ByokProvider =>
-  typeof v === "string" && (BYOK_PROVIDER_VALUES as readonly string[]).includes(v);
-
-/** `byok:anthropic` — the provider instance a stored key appears as. */
-export function byokInstanceId(provider: ByokProvider): string {
-  return `byok:${provider}`;
-}
-
-/**
- * The kind an instance id names: `alevr`, `byok:<provider>`, `claude-agent:<name>`,
- * `codex:<name>` or `acp:<name>`. Null for anything else.
- */
-export function instanceKindOf(instanceId: string): ProviderKind | null {
-  if (instanceId === "alevr") return "alevr";
-  const colon = instanceId.indexOf(":");
-  if (colon <= 0 || colon === instanceId.length - 1) return null;
-  const kind = instanceId.slice(0, colon);
-  if (kind === "byok") return isByokProvider(instanceId.slice(colon + 1)) ? "byok" : null;
-  return kind === "claude-agent" || kind === "codex" || kind === "acp" ? kind : null;
 }
 
 // ── Model and role selection ────────────────────────────────────────────────
