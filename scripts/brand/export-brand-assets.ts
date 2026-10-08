@@ -11,7 +11,7 @@
  * src/app/icon.svg (the browser-tab icon: the bare mark, graphite or pale by
  * the colour scheme, with the optical master for the size it is drawn at).
  * Raster (rendered by Chrome through Playwright, the renderer people see):
- * src/app/favicon.ico (16/32/48), src/app/apple-icon.png,
+ * src/app/icon1.ico + public/favicon.ico (16/32/48), src/app/apple-icon.png,
  * public/brand/icon-{192,512}.png, icon-maskable-512.png, app-icon-mac.png,
  * and every PNG in the macOS and iOS AppIcon catalogs (sizes read from their
  * Contents.json; file names kept). Icon Composer: native/Brand/Alevr.icon
@@ -256,7 +256,13 @@ async function writeRasters() {
   try {
     const frames = [{ size: 16, png: await favicon16() }];
     for (const size of [32, 48]) frames.push({ size, png: await render(browser, tileSvg(size, "favicon"), size, false) });
-    write("src/app/favicon.ico", packIco(frames));
+    // src/app/icon1.ico is linked with a content hash (`/icon1.ico?<hash>`; the
+    // suffix lets it sit beside icon.svg, which a plain `icon.ico` displaces), so a
+    // browser that cached the pre-rebrand favicon fetches this one; the copy in
+    // public/ answers browsers that still ask for /favicon.ico directly.
+    const ico = packIco(frames);
+    write("src/app/icon1.ico", ico);
+    write("public/favicon.ico", ico);
     write("src/app/apple-icon.png", await opaquePng(await render(browser, tileSvg(180, "square"), 180, true)));
     write("public/brand/icon-192.png", await render(browser, tileSvg(192, "rounded"), 192, false));
     write("public/brand/icon-512.png", await render(browser, tileSvg(512, "rounded"), 512, false));

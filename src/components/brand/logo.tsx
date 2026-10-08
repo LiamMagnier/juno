@@ -1,35 +1,24 @@
-import Image from "next/image";
 import { cn } from "@/lib/utils";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { ContinuumMark } from "./continuum-mark";
 
-// The Juno mark: a transparent black glyph (chat-bubble "G" + spark). `dark:invert`
-// flips it to light so it stays legible on the dark theme.
-//
-// `dark:brightness-[0.94]` rides with the invert. Inverting a pure-black glyph
-// yields pure #FFFFFF, and --foreground stops at 94% for the express purpose of
-// avoiding that glare (see the note in globals.css beside the dark ramp).
-// Without the clamp the mark was the single brightest object on every
-// signed-out page, worst at the 40-44px lockups on the auth and suspended
-// screens. 0.94 lands it exactly on the foreground ramp.
-//
-// `unoptimized`: serve the static PNG directly instead of routing through the
-// /_next/image optimizer. The mark is tiny, always-visible chrome on every page,
-// so it must never fail — and the optimizer is a dynamic endpoint that can
-// 500/OOM under memory pressure on the small self-hosted `next start` VM, which
-// surfaces as an intermittent broken-image box. A static file has no such
-// failure mode. (The asset is a small 2-tone PNG, so optimization saved little.)
+/**
+ * The product mark at a call site sized by a Tailwind `size-*` class: the
+ * Continuum (continuum-mark.tsx), in the row's own colour.
+ *
+ * This used to draw `public/juno-mark.png`, the pre-rebrand chat-bubble mark,
+ * which is how the model picker, the agent profile and notification rows kept
+ * showing the old logo after the Alevr brand shipped. The Continuum picks its
+ * optical master from the pixel size, so the size is read off the class
+ * (`size-4` is 16 px) rather than left to CSS scaling a 24 px drawing.
+ */
+function pxFromClass(className?: string): number {
+  const m = className?.match(/(?:^|\s)size-(\d+(?:\.5)?)(?=\s|$)/);
+  return m ? Number(m[1]) * 4 : 24;
+}
+
 export function JunoMark({ className }: { className?: string }) {
-  return (
-    <Image
-      src="/juno-mark.png"
-      alt={PRODUCT_NAME}
-      width={512}
-      height={512}
-      priority
-      unoptimized
-      className={cn("size-6 select-none dark:invert dark:brightness-[0.94]", className)}
-    />
-  );
+  return <ContinuumMark size={pxFromClass(className)} tone="current" title={PRODUCT_NAME} className={cn("select-none", className)} />;
 }
 
 export function JunoLogo({ className, showWordmark = true }: { className?: string; showWordmark?: boolean }) {

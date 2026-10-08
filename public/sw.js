@@ -116,7 +116,7 @@ self.addEventListener("push", (event) => {
       await self.registration.showNotification(message.title, {
         body: message.body,
         tag: message.tag,
-        icon: "/icon.png",
+        icon: "/brand/icon-192.png",
         timestamp: Date.now(),
         data: { path: message.path, notificationId: message.notificationId },
       });

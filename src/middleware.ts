@@ -165,6 +165,6 @@ export const config = {
   // and the document policy (a per-request nonce, 'strict-dynamic') is written
   // for pages. The worker is push-only and self-contained (public/sw.js).
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|icon.png|apple-icon.png|manifest.webmanifest|robots.txt|sitemap.xml|sw.js).*)",
+    "/((?!_next/static|_next/image|favicon.ico|icon1.ico|icon.svg|apple-icon.png|brand/|manifest.webmanifest|robots.txt|sitemap.xml|sw.js).*)",
   ],
 };
