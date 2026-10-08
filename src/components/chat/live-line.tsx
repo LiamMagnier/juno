@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ThinkingMark, type ThinkingPhase } from "@/components/brand/thinking-mark";
+import { GalaxyMark, type ThinkingPhase } from "@/components/brand/galaxy-mark";
 import { TIMING } from "@/lib/interaction";
 import { cn } from "@/lib/utils";
 
@@ -14,10 +14,10 @@ import { cn } from "@/lib/utils";
  * card's current step, a research run, an image being made, Python running.
  * One drawing means one behaviour, and one place where the rules hold:
  *
- *   - The Continuum ThinkingMark leads the words. It is stationary; when work
- *     starts, and when a real step arrives, it hands a tone of the presence
- *     colour along its blades once (coalesced by the mark itself), then holds
- *     still. No orb, no dots, no shimmer, no spinner, no caret.
+ *   - The galaxy mark (GalaxyMark, GALAXY_SPEC.md) leads the words: a small
+ *     spiral of dots that turns, inner stars faster, for as long as the work
+ *     is real, and slows to a stop when it is not. No orb, no shimmer, no
+ *     spinner, no caret.
  *   - The words are the truthful phase ("Thinking", "Searching the web",
  *     "Reading Q3 Forecast.xlsx", "Waiting for your answer"), in the second
  *     ink. Never the presence blue: blue words read as a link.
@@ -156,7 +156,7 @@ export function LiveLine({
         </span>
       ) : (
         <span className={cn("inline-grid shrink-0 place-items-center", size === 20 ? "size-5" : "size-4")}>
-          <ThinkingMark phase={phase} size={size} eventKey={eventKey === undefined ? held : `${held}\u0000${eventKey}`} />
+          <GalaxyMark phase={phase} size={size} eventKey={eventKey === undefined ? held : `${held}\u0000${eventKey}`} />
         </span>
       )}
       {/* The region stays mounted and only its child is keyed: a region

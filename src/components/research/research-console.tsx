@@ -23,7 +23,7 @@ import { readingHost, researchWorkspace } from "./workspace-model";
 import { isWorkingResearchState, type ResearchEventDTO, type ResearchState } from "@/lib/research/domain";
 import type { ResearchRunView } from "./use-research-run";
 import { cn } from "@/lib/utils";
-import { ThinkingMark } from "@/components/brand/thinking-mark";
+import { GalaxyMark } from "@/components/brand/galaxy-mark";
 import { FEATURE_NAMES } from "@/lib/brand/names";
 
 const WORKSPACE_COPY = {
@@ -120,7 +120,7 @@ export function ResearchConsole({ run, state, events, busy, notice, post, classN
         {subtitle && <p lang={run.language ?? undefined} className="mt-2 max-w-[38rem] text-pretty text-ui text-muted-foreground">{subtitle}</p>}
         {recovery && (
           <p key={recovery} role="status" className="rf-annot rf-recovery mt-3">
-            <ThinkingMark phase="working" size={12} />
+            <GalaxyMark phase="working" size={12} />
             {recovery}
           </p>
         )}

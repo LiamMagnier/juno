@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { User, ArrowUp, ChevronDown, FileText, JunoCode, JunoLibrary, JunoOrbit, Layers, Mic, PanelRight, Plus, Search, Share2, SquarePen, Telescope } from "@/components/ui/icons";
-import { ThinkingMark, type ThinkingPhase } from "@/components/brand/thinking-mark";
+import { GalaxyMark, type ThinkingPhase } from "@/components/brand/galaxy-mark";
 
 /**
  * The hero's product window: the Alevr desktop layout (frame, sidebar, inset
@@ -125,7 +125,7 @@ export function ProductWindow({ play, onReplayRef }: { play: boolean; onReplayRe
             </div>
             <div className="alv-pop alv-user-turn" data-on={stage.sent || undefined} hidden={!stage.sent}>{PROMPT}</div>
             <div className="alv-pop alv-work" data-on={stage.step >= 0 || undefined} hidden={stage.step < 0}>
-              <ThinkingMark phase={stage.done ? "finished" : step.phase} eventKey={stage.step} size={18} />
+              <GalaxyMark phase={stage.done ? "finished" : step.phase} eventKey={stage.step} size={18} />
               <span key={stage.done ? "done" : stage.step} className="alv-work-word">{stage.done ? "Researched 14 sources" : step.word}</span>
             </div>
             <div className="alv-answer" hidden={!stage.done}>

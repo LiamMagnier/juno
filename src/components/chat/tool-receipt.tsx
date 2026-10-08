@@ -54,7 +54,7 @@ import {
 } from "@/components/ui/icons";
 import { AppIcons, CodeIcons, StatusIcons } from "@/lib/app-icons";
 import { Collapse } from "@/components/ui/collapse";
-import { ThinkingMark } from "@/components/brand/thinking-mark";
+import { GalaxyMark } from "@/components/brand/galaxy-mark";
 import { formatSpan } from "@/lib/run-receipt";
 import {
   churnLabel,
@@ -184,7 +184,7 @@ export function ToolReceiptRow({
           settled rows fully still. */}
       <span aria-hidden="true" className="flex w-5 shrink-0 items-center justify-center">
         {running ? (
-          (mark ?? <ThinkingMark phase="working" size={16} eventKey={label} />)
+          (mark ?? <GalaxyMark phase="working" size={16} eventKey={label} />)
         ) : unknown ? (
           <HelpCircle className="size-4 text-warning" />
         ) : stopped ? (

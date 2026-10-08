@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { DotRings } from "@/components/home/dot-construction";
-import { ThinkingMark } from "@/components/brand/thinking-mark";
+import { GalaxyMark } from "@/components/brand/galaxy-mark";
 import { Check } from "@/components/ui/icons";
 import { hostOf, isRenderableSourceUrl } from "@/components/chat/source-chip";
 import { FIELD_CENTRE, FIELD_RINGS, deepField, type FieldSourceInput } from "./deep-field-model";
@@ -66,7 +66,7 @@ export function DeepField({
     <div className={className ? `rf-map ${className}` : "rf-map"} data-still={still || undefined} role="img" aria-label={summary}>
       <DotRings rings={FIELD_RINGS} lines={lines} animate={!still} className="rf-dots" />
       <span className="rf-centre" aria-hidden>
-        <ThinkingMark phase={working ? "working" : "idle"} eventKey={eventKey} size={18} />
+        <GalaxyMark phase={working ? "working" : "idle"} eventKey={eventKey} size={18} />
       </span>
       {model.nodes.map((node) => (
         <span
@@ -157,7 +157,7 @@ export function QuestionRail({ questions, working, language, sources, eventKey }
             return (
               <li key={question.id} data-state={question.status}>
                 <span className="rf-mark" aria-hidden>
-                  {question.status === "covered" ? <Check /> : now && working ? <ThinkingMark phase="working" eventKey={eventKey} size={14} /> : null}
+                  {question.status === "covered" ? <Check /> : now && working ? <GalaxyMark phase="working" eventKey={eventKey} size={14} /> : null}
                 </span>
                 <div className="min-w-0">
                   <p lang={language ?? undefined} className="rf-question">{question.question}</p>

@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { ThinkingState } from "@/components/aicss/thinking-state";
-import { ThinkingMark } from "@/components/brand/thinking-mark";
+import { GalaxyMark } from "@/components/brand/galaxy-mark";
 import { ArrowUp, CheckCircle2, ChevronUp, CircleDashed, Globe as GlobeGlyph, Search } from "@/components/ui/icons";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn, truncate } from "@/lib/utils";
@@ -134,7 +134,7 @@ export function WebSearchBlock({
           {settled ? (
             <Search className="size-3.5" motion="none" />
           ) : (
-            <ThinkingMark phase="working" size={16} eventKey={query ?? undefined} className="text-muted-foreground" />
+            <GalaxyMark phase="working" size={16} eventKey={query ?? undefined} className="text-muted-foreground" />
           )}
           <span className="aicss-ws-label">
             <ThinkingState settled={settled} tone="strong">

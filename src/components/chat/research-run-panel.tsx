@@ -10,7 +10,7 @@ import { RunTimeline } from "@/components/research/run-timeline";
 import { SourceDeck } from "@/components/research/source-deck";
 import { isResearchState, isTerminalResearchState, type ResearchEventDTO, type ResearchState } from "@/lib/research/domain";
 import { useResearchRun, type ResearchRunView } from "@/components/research/use-research-run";
-import { ThinkingMark } from "@/components/brand/thinking-mark";
+import { GalaxyMark } from "@/components/brand/galaxy-mark";
 import { Button } from "@/components/ui/button";
 import { FEATURE_NAMES } from "@/lib/brand/names";
 import { cn } from "@/lib/utils";
@@ -88,7 +88,7 @@ export function ResearchRunPanel({
       <p className="rf-annot flex items-center gap-2">
         <span className="shrink-0 whitespace-nowrap text-foreground">{FEATURE_NAMES.research.label}</span>
         <span aria-hidden>·</span>
-        {!trouble && <ThinkingMark phase="working" size={14} />}
+        {!trouble && <GalaxyMark phase="working" size={14} />}
         <span role={trouble ? "alert" : "status"} data-tone={trouble ? "attention" : undefined} className="rf-annot">
           {failed ? "Research unavailable" : disconnected ? "Could not reconnect to the research" : "Opening the research"}
         </span>

@@ -20,6 +20,7 @@ import {
 import { ContinuumMark } from "@/components/brand/continuum-mark";
 import { OrbitGlyph } from "@/components/brand/orbit-glyph";
 import { ThinkingMark, type ThinkingPhase } from "@/components/brand/thinking-mark";
+import { GalaxyMark } from "@/components/brand/galaxy-mark";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/juno-icons";
 import { cn } from "@/lib/utils";
@@ -567,6 +568,53 @@ function ThinkingBench() {
   );
 }
 
+
+/* ———————————————————————— Galaxy (the working mark) ———————————————————————— */
+
+const GALAXY_SIZES = [14, 16, 20, 24, 64, 96] as const;
+
+function GalaxyBench() {
+  const [phase, setPhase] = useState<ThinkingPhase>("thinking");
+  const [reduced, setReduced] = useState(false);
+  const [run, setRun] = useState(0);
+  const phases: ThinkingPhase[] = ["thinking", "working", "waiting", "finished", "idle"];
+  return (
+    <div className="flex flex-col gap-6" data-testid="galaxy-bench">
+      <div className="flex flex-wrap gap-2" role="group" aria-label="Galaxy mark controls">
+        {phases.map((p) => (
+          <Button key={p} size="sm" variant={phase === p ? "secondary" : "outline"} aria-pressed={phase === p} onClick={() => setPhase(p)}>
+            {p[0].toUpperCase() + p.slice(1)}
+          </Button>
+        ))}
+        <Button size="sm" variant="outline" onClick={() => setRun((n) => n + 1)}>Replay entrance</Button>
+        <Button size="sm" variant={reduced ? "secondary" : "outline"} aria-pressed={reduced} onClick={() => setReduced((r) => !r)}>
+          Reduced motion {reduced ? "on" : "off"}
+        </Button>
+      </div>
+      <div className="grid gap-4 md:grid-cols-2">
+        {(["light", "dark"] as const).map((tone) => (
+          <Plate key={tone} tone={tone} label={tone === "light" ? "Light" : "Dark"}>
+            <div className={cn("flex flex-col gap-6", tone === "dark" && "dark")}>
+              <div className="flex flex-wrap items-end gap-6">
+                {GALAXY_SIZES.map((n) => (
+                  <div key={n} className="flex flex-col items-center gap-2" data-testid={`galaxy-${tone}-${n}`}>
+                    <GalaxyMark key={`${run}-${n}`} phase={phase} size={n} reducedMotion={reduced || undefined} />
+                    <span className="font-mono text-label tabular-nums" style={{ color: PLATE[tone].sub }}>{n}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="flex items-center gap-2 text-ui" style={{ color: PLATE[tone].sub }}>
+                <GalaxyMark key={`row-${run}`} phase={phase} size={20} reducedMotion={reduced || undefined} />
+                <span>{phase === "working" ? "Searching the web" : phase === "waiting" ? "Waiting for your answer" : "Thinking"}</span>
+              </div>
+            </div>
+          </Plate>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /* ———————————————————————— Page ———————————————————————— */
 
 export function BrandGallery() {
@@ -609,7 +657,10 @@ export function BrandGallery() {
       <Section id="icons" title="Application icons and favicon" note="Exported by scripts/brand/export-brand-assets.ts from the same geometry: a charcoal tile with the pale mark at 64% of its width (52% when maskable); macOS on Apple's icon grid; the tab icon is the bare mark.">
         <Icons />
       </Section>
-      <Section id="thinking" title="Thinking mark" note="The silhouette never moves. A pass hands presence ink from blade to blade, clockwise: each rises over 120 ms and falls over 220 ms, the next starting as it peaks. Once when work starts, and again for a new real step; a step inside the window is absorbed, and while steps keep coming the window grows from 1.6 to 3.2 to 6.4 s. Nothing for the first 200 ms; once shown, at least 400 ms. Waiting and error are static; finished settles once, from wherever the pass was.">
+      <Section id="galaxy" title="Galaxy, the working mark" note="Replaces the moving Continuum wherever the product is thinking or working (GALAXY_SPEC.md). 120 deterministic stars in two arms (72 under 18 px), tilted to 0.62 and turned -18 degrees; inner stars turn faster and the arms wind and unwind every 12 s. The core breathes on 2.8 s. Ink is the row's colour; 8% of arm stars carry presence blue. Reduced motion draws one still frame.">
+        <GalaxyBench />
+      </Section>
+      <Section id="thinking" title="Thinking mark (retired from working rows)" note="The silhouette never moves. A pass hands presence ink from blade to blade, clockwise: each rises over 120 ms and falls over 220 ms, the next starting as it peaks. Once when work starts, and again for a new real step; a step inside the window is absorbed, and while steps keep coming the window grows from 1.6 to 3.2 to 6.4 s. Nothing for the first 200 ms; once shown, at least 400 ms. Waiting and error are static; finished settles once, from wherever the pass was.">
         <ThinkingBench />
       </Section>
     </main>

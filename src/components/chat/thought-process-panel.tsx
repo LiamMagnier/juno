@@ -19,7 +19,7 @@ import { Collapse } from "@/components/ui/collapse";
 import { IconSwap } from "@/components/ui/icon-swap";
 import { SourceFavicon, isRenderableSourceUrl } from "@/components/chat/source-chip";
 import { useThoughtPanel } from "@/components/chat/thought-panel-context";
-import { ThinkingMark } from "@/components/brand/thinking-mark";
+import { GalaxyMark } from "@/components/brand/galaxy-mark";
 import { DotRings } from "@/components/home/dot-construction";
 import { Button } from "@/components/ui/button";
 import "@/components/chat/thought-process.css";
@@ -815,14 +815,14 @@ export function ThoughtProcessPanel({
               data-hidden={heroVisible ? "" : undefined}
               className="tpp-compact absolute inset-0 flex min-w-0 items-center gap-2"
             >
-              {/* The Continuum thinking mark while the run works (it moves
-                  only when the run's phase changes, never on a loop). */}
+              {/* The galaxy mark while the run works, in the title's ink; its
+                  presence-blue stars are the panel's one accent here. */}
               {streaming ? (
-                <ThinkingMark
+                <GalaxyMark
                   phase={!live || live.message === "Thinking" ? "thinking" : "working"}
                   size={14}
                   eventKey={live?.message}
-                  className="shrink-0 text-[var(--tpp-presence)]"
+                  className="shrink-0 text-foreground"
                 />
               ) : null}
               <span className="min-w-0 truncate font-serif text-body-lg leading-none tracking-[-0.01em] text-foreground">

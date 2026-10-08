@@ -4,7 +4,7 @@ import * as React from "react";
 import { ArrowUp, Check, ChevronDown, Mic, Plus, Share2, Telescope } from "@/components/ui/icons";
 import { ProviderLogo } from "@/components/brand/provider-logo";
 import { ContinuumMark } from "@/components/brand/continuum-mark";
-import { ThinkingMark } from "@/components/brand/thinking-mark";
+import { GalaxyMark } from "@/components/brand/galaxy-mark";
 import type { Provider } from "@/lib/providers";
 import { DotRings } from "./dot-construction";
 
@@ -117,7 +117,7 @@ function ResearchScene({ on }: { on: boolean }) {
         <ol>
           {PLAN.map((p, i) => (
             <li key={p} data-state={i < step ? "done" : i === step ? "now" : "next"}>
-              <span className="alv-sc-plan-mark">{i < step ? <Check aria-hidden /> : i === step ? <ThinkingMark phase={on ? "working" : "idle"} size={14} /> : null}</span>{p}
+              <span className="alv-sc-plan-mark">{i < step ? <Check aria-hidden /> : i === step ? <GalaxyMark phase={on ? "working" : "idle"} size={14} /> : null}</span>{p}
             </li>
           ))}
         </ol>

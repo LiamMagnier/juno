@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Collapse } from "@/components/ui/collapse";
 import { ChevronRight } from "@/components/ui/icons";
 import { Icon } from "@/components/ui/juno-icons";
-import { ThinkingMark } from "@/components/brand/thinking-mark";
+import { GalaxyMark } from "@/components/brand/galaxy-mark";
 import { CHAT_COMPOSER_FIELD_ID } from "@/components/chat/composer";
 import { NeedsLead, QuietButton, VerbButton } from "@/components/chat/decision";
 import { formatLiveSeconds, useHeldPhase, useLiveSeconds } from "@/components/chat/live-line";
@@ -170,7 +170,7 @@ export function WorkRunPanel({
     >
       <header className="flex items-start gap-3 py-3 pl-4 pr-2.5">
         <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center text-muted-foreground">
-          <ThinkingMark phase={phase} size={20} eventKey={action?.title ?? phase} />
+          <GalaxyMark phase={phase} size={20} eventKey={action?.title ?? phase} />
         </span>
         <div className="min-w-0 flex-1">
           <h3 id={titleId} className="line-clamp-2 text-body font-medium text-foreground">
