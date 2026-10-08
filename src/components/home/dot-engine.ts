@@ -18,6 +18,8 @@
  * work without props.
  */
 
+import { applyBackingStore, backingStore, watchCanvas } from "@/lib/canvas/canvas-lifecycle";
+
 export type Rgb = readonly [number, number, number];
 
 export interface Palette {
@@ -235,8 +237,9 @@ export class Raster {
 const instances = new Set<DotCanvas>();
 let raf = 0;
 let timer: ReturnType<typeof setTimeout> | null = null;
-let io: IntersectionObserver | null = null;
+let installed = false;
 let reduceQuery: MediaQueryList | null = null;
+let schemeQuery: MediaQueryList | null = null;
 let themeObserver: MutationObserver | null = null;
 let parallaxUsers = 0;
 const pointer = { x: 0, y: 0 };
@@ -322,33 +325,28 @@ function onTheme() {
 }
 
 function setup() {
-  if (io) return;
-  io = new IntersectionObserver(
-    (entries) => {
-      for (const entry of entries) {
-        for (const inst of instances) if (inst.host === entry.target) inst.setVisible(entry.isIntersecting);
-      }
-    },
-    { rootMargin: "48px" },
-  );
+  if (installed) return;
+  installed = true;
   document.addEventListener("visibilitychange", onVisibility);
   reduceQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
   reduceQuery.addEventListener("change", onTheme);
-  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", onTheme);
+  schemeQuery = window.matchMedia("(prefers-color-scheme: dark)");
+  schemeQuery.addEventListener("change", onTheme);
   themeObserver = new MutationObserver(onTheme);
   themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["class", "style", "data-theme"] });
   if (process.env.NODE_ENV !== "production") (window as unknown as { __alvDots: Stats }).__alvDots = stats;
 }
 
 function teardown() {
-  if (instances.size) return;
-  io?.disconnect();
-  io = null;
+  if (instances.size || !installed) return;
+  installed = false;
   themeObserver?.disconnect();
   themeObserver = null;
   document.removeEventListener("visibilitychange", onVisibility);
   reduceQuery?.removeEventListener("change", onTheme);
   reduceQuery = null;
+  schemeQuery?.removeEventListener("change", onTheme);
+  schemeQuery = null;
 }
 
 /* ───────────────────────────── Colour reading ───────────────────────────── */
@@ -381,7 +379,7 @@ export class DotCanvas {
   scene: Scene;
   private ctx: CanvasRenderingContext2D | null;
   private raster = new Raster();
-  private ro: ResizeObserver;
+  private unwatch: () => void = () => {};
   private w = 0;
   private h = 0;
   private dpr = 1;
@@ -404,10 +402,18 @@ export class DotCanvas {
     setup();
     instances.add(this);
     if (scene.parallax) this.addParallax();
-    this.ro = new ResizeObserver(() => this.refresh());
-    this.ro.observe(host);
-    io?.observe(host);
-    this.refresh();
+    // Size (with a zero-size guard), DPR, context loss, bfcache, fonts and
+    // intersection, from the one helper every canvas surface shares.
+    this.unwatch = watchCanvas(host, canvas, {
+      resize: () => this.refresh(),
+      hidden: () => this.refresh(),
+      redraw: (reason) => {
+        if (reason === "fonts" && !this.scene.over) return;
+        this.invalidate(false);
+      },
+      visible: (on) => this.setVisible(on),
+    });
+    // The watcher has already measured once (resize or hidden), synchronously.
   }
 
   /** Held still by the caller (a field faded out under another view). */
@@ -469,15 +475,14 @@ export class DotCanvas {
     // getBoundingClientRect includes ancestors' transforms; the layout size is what we draw at.
     const w = this.host.clientWidth || rect.width;
     const h = this.host.clientHeight || rect.height;
-    this.dpr = Math.min(2, window.devicePixelRatio || 1);
-    this.w = w;
-    this.h = h;
-    const cw = Math.max(1, Math.round(w * this.dpr));
-    const ch = Math.max(1, Math.round(h * this.dpr));
-    if (this.canvas.width !== cw || this.canvas.height !== ch) {
-      this.canvas.width = cw;
-      this.canvas.height = ch;
-    }
+    const store = backingStore(w, h, window.devicePixelRatio || 1, 2);
+    // A box with no area (a collapsed or display:none ancestor) keeps its last
+    // bitmap and stops asking for frames; the watcher calls back with a size.
+    this.w = store ? w : 0;
+    this.h = store ? h : 0;
+    if (!store) return;
+    this.dpr = store.dpr;
+    applyBackingStore(this.canvas, store);
     const cs = getComputedStyle(this.host);
     const ink = parseColor(cs.color, this.palette.ink);
     const presence = parseColor(cs.borderTopColor, this.palette.presence);
@@ -558,8 +563,7 @@ export class DotCanvas {
   }
 
   destroy() {
-    this.ro.disconnect();
-    io?.unobserve(this.host);
+    this.unwatch();
     if (this.scene.parallax) this.removeParallax();
     instances.delete(this);
     teardown();
