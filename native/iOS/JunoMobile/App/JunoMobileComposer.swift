@@ -518,7 +518,9 @@ struct JunoMobileComposer: View {
           showingModelPicker = false
         }
       )
-      .presentationDetents([.medium, .large])
+      // Full height: a list of labs and models reads as a page, and at the
+      // medium detent only Auto and one lab were visible.
+      .presentationDetents([.large])
       .presentationDragIndicator(.visible)
     }
     .onChange(of: composerFocused.wrappedValue) { _, focused in

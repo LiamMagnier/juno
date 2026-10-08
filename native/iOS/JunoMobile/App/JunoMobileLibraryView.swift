@@ -40,6 +40,8 @@ struct JunoMobileLibraryView: View {
     var madeModel: NativeLibraryMadeModel? = nil
     var artifactModel: NativeArtifactModel<SQLiteAccountRepository>? = nil
     var workClient: NativeWorkClient? = nil
+    /// Opens Artifacts, which the phone drawer folds into Library.
+    var openArtifacts: (() -> Void)? = nil
 
     @State private var editing: NativeProjectFile?
     /// Opens "Made by Alevr" straight away: `--juno-preview-library-made` (DEBUG).
@@ -244,6 +246,33 @@ struct JunoMobileLibraryView: View {
                     }
                     .alignmentGuide(.listRowSeparatorLeading) { $0[.leading] }
                     .accessibilityIdentifier("juno.mobile.library-made")
+                }
+                if let openArtifacts, filter == .all, searchText.isEmpty {
+                    Button(action: openArtifacts) {
+                        HStack {
+                            Label {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Artifacts")
+                                        .font(.body)
+                                    Text("Code, pages and diagrams from your chats")
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
+                            } icon: {
+                                Image(systemName: "square.on.square")
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer(minLength: 0)
+                            Image(systemName: "chevron.right")
+                                .font(.footnote.weight(.semibold))
+                                .foregroundStyle(.tertiary)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .alignmentGuide(.listRowSeparatorLeading) { $0[.leading] }
+                    .accessibilityIdentifier("juno.mobile.library-artifacts")
                 }
             }
 

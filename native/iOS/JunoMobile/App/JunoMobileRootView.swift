@@ -1210,6 +1210,13 @@ struct JunoMobileRootView: View {
     }
   }
 
+  /// A destination reached from inside another (Artifacts from Library, Work
+  /// from Code): pushed on top, so Back returns to where it was opened.
+  private func pushDestination(_ destination: JunoMobileSection) {
+    guard sizeClass == .compact else { return openSidebarDestination(destination) }
+    if chatPath.last != destination { chatPath.append(destination) }
+  }
+
   private func openSidebarProject(_ id: String) {
     projectModel?.selectedProjectID = id
     show(.projects)
@@ -1509,7 +1516,7 @@ struct JunoMobileRootView: View {
           openSettings: { openSidebarDestination(.settings) },
           // Work sessions are reached from Code on the phone (the drawer
           // folds them in — see `JunoMobileSection.foldedDestinations`).
-          openWork: { openSidebarDestination(.work) }
+          openWork: { pushDestination(.work) }
         )
       } else {
         unavailable
@@ -1563,7 +1570,8 @@ struct JunoMobileRootView: View {
           openConversation: openConversation,
           madeModel: madeModel(),
           artifactModel: artifactModel,
-          workClient: workClient
+          workClient: workClient,
+          openArtifacts: { pushDestination(.artifacts) }
         )
       } else {
         unavailable
