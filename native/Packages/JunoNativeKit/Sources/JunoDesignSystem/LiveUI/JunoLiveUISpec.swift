@@ -26,6 +26,10 @@ public enum LiveSpecLimits {
     public static let stops = 25
     public static let checklist = 40
     public static let options = 12
+    public static let steps = 12
+    public static let questions = 10
+    public static let quizOptions = 6
+    public static let timeline = 20
     public static let text = 2000
     public static let label = 120
 }
@@ -118,6 +122,59 @@ public struct LiveTableSpec: Sendable {
     public var key: String
     public var rows: String
     public var columns: [Column]
+    /// The first column names each row (a comparison's aspect column).
+    public var rowHeader = false
+    /// A column index to set apart (the recommended option).
+    public var highlight: Int?
+}
+
+/// A guided walkthrough: each step has words and, optionally, its own visual.
+public struct LiveStepsSpec: Sendable {
+    public struct Step: Sendable {
+        public var title: String
+        public var summary: String?
+        public var detail: String?
+        public var notice: String?
+        public var ui: [LiveComponent]
+    }
+    public var key: String
+    public var title: String?
+    public var steps: [Step]
+    public var takeaway: String?
+}
+
+/// A self-check answered in place.
+public struct LiveQuizSpec: Sendable {
+    public struct Question: Sendable {
+        public var question: String
+        public var options: [(label: String, explanation: String?)]
+        public var answer: Int
+        public var explanation: String?
+        public var hint: String?
+    }
+    public var key: String
+    public var title: String?
+    public var questions: [Question]
+}
+
+public struct LiveCalloutSpec: Sendable {
+    public enum Tone: String, Sendable { case insight, tip, warning, note }
+    public var key: String
+    public var tone: Tone
+    public var title: String?
+    public var text: String
+    public var more: String?
+}
+
+public struct LiveTimelineSpec: Sendable {
+    public struct Item: Sendable {
+        public var label: String
+        public var detail: String?
+        public var time: String?
+    }
+    public var key: String
+    public var title: String?
+    public var items: [Item]
 }
 
 public struct LiveExplorerPart: Sendable, Identifiable {
@@ -174,6 +231,10 @@ public indirect enum LiveComponent: Sendable, Identifiable {
     case stops(LiveStopsSpec)
     case checklist(LiveChecklistSpec)
     case button(LiveButtonSpec)
+    case steps(LiveStepsSpec)
+    case quiz(LiveQuizSpec)
+    case callout(LiveCalloutSpec)
+    case timeline(LiveTimelineSpec)
     case pending(key: String)
 
     public var key: String {
@@ -189,6 +250,10 @@ public indirect enum LiveComponent: Sendable, Identifiable {
         case .stops(let c): c.key
         case .checklist(let c): c.key
         case .button(let c): c.key
+        case .steps(let c): c.key
+        case .quiz(let c): c.key
+        case .callout(let c): c.key
+        case .timeline(let c): c.key
         case .pending(let key): key
         }
     }
@@ -209,6 +274,10 @@ public indirect enum LiveComponent: Sendable, Identifiable {
         case .stops: "stops"
         case .checklist: "checklist"
         case .button: "button"
+        case .steps: "steps"
+        case .quiz: "quiz"
+        case .callout: "callout"
+        case .timeline: "timeline"
         case .pending: "pending"
         }
     }
@@ -229,6 +298,7 @@ public struct LiveSpec: Sendable {
         func walk(_ list: [LiveComponent]) {
             for c in list {
                 if case .layout(let l) = c { walk(l.children) }
+                if case .steps(let st) = c { for step in st.steps { walk(step.ui) } }
                 if case .input(let i) = c { out.append(i) }
             }
         }
@@ -249,7 +319,10 @@ public enum LiveSpecParser {
         "note": "text", "route": "stops", "map": "stops", "itinerary": "stops", "parts": "explorer",
         "diagram": "explorer", "todo": "checklist", "action": "button", "stack": "section", "group": "section",
         "card": "section", "columns": "row", "bar": "progress",
+        "walkthrough": "steps", "guide": "steps", "lesson": "steps", "key-idea": "callout", "keyidea": "callout",
+        "insight": "callout", "process": "timeline", "check": "quiz",
     ]
+    static let tones: Set<String> = ["insight", "tip", "warning", "note"]
     static let layouts: Set<String> = ["row", "grid", "section"]
 
     static func isIdent(_ s: String) -> Bool {
@@ -447,10 +520,93 @@ public enum LiveSpecParser {
             for c in raw["columns"]?.arrayValue ?? [] {
                 if columns.count >= LiveSpecLimits.tableColumns { break }
                 guard case .object(let co, _) = c, let value = expr(co["value"] ?? co["key"]) else { continue }
-                columns.append(.init(label: str(co["label"]) ?? value, value: value, format: fmt(co["format"]), unit: str(co["unit"], 16)))
+                // An empty label is a deliberate blank (a comparison's aspect column).
+                let label = str(co["label"]) ?? (co["label"] == .string("") ? "" : value)
+                columns.append(.init(label: label, value: value, format: fmt(co["format"]), unit: str(co["unit"], 16)))
             }
             guard let rows, !columns.isEmpty else { return nil }
-            return .table(LiveTableSpec(key: key, rows: rows, columns: columns))
+            var table = LiveTableSpec(key: key, rows: rows, columns: columns)
+            table.rowHeader = raw["rowHeader"] == .bool(true)
+            if let hi = num(raw["highlight"]), hi == hi.rounded(), hi >= 0, Int(hi) < columns.count { table.highlight = Int(hi) }
+            return .table(table)
+        case "steps":
+            if depth >= LiveSpecLimits.nesting { return nil }
+            let list = raw["steps"]?.arrayValue ?? raw["items"]?.arrayValue ?? []
+            var steps: [LiveStepsSpec.Step] = []
+            for (index, s) in list.enumerated() {
+                if steps.count >= LiveSpecLimits.steps { break }
+                guard case .object(let so, _) = s, let title = str(so["title"] ?? so["label"]) else { continue }
+                let kids = so["ui"]?.arrayValue ?? so["children"]?.arrayValue ?? []
+                let ui = components(kids, prefix: "\(key).\(index)", depth: depth + 1, counter: &counter)
+                steps.append(.init(
+                    title: title,
+                    summary: str(so["summary"] ?? so["text"] ?? so["body"], LiveSpecLimits.text),
+                    detail: str(so["detail"], LiveSpecLimits.text),
+                    notice: str(so["notice"], 400),
+                    ui: ui
+                ))
+            }
+            if steps.isEmpty { return nil }
+            return .steps(LiveStepsSpec(key: key, title: str(raw["title"]), steps: steps, takeaway: str(raw["takeaway"], 400)))
+        case "quiz":
+            let fromList = raw["questions"]?.arrayValue
+            let list: [LiveJSON] = fromList ?? (raw["question"] != nil ? [.object(raw, open: false)] : [])
+            var questions: [LiveQuizSpec.Question] = []
+            for q in list {
+                if questions.count >= LiveSpecLimits.questions { break }
+                guard case .object(let qo, _) = q else { continue }
+                let question = str(qo["question"] ?? qo["q"], 500)
+                var options: [(label: String, explanation: String?)] = []
+                var flagged = -1
+                for o in qo["options"]?.arrayValue ?? [] {
+                    if options.count >= LiveSpecLimits.quizOptions { break }
+                    switch o {
+                    case .string, .number:
+                        if let label = str(o, 300) { options.append((label, nil)) }
+                    case .object(let oo, _):
+                        guard let label = str(oo["label"] ?? oo["text"], 300) else { continue }
+                        if oo["correct"] == .bool(true) && flagged < 0 { flagged = options.count }
+                        options.append((label, str(oo["explanation"] ?? oo["why"], 600)))
+                    default:
+                        break
+                    }
+                }
+                var answer = -1
+                switch qo["answer"] {
+                case .number(let n) where n == n.rounded() && n >= 0 && Int(n) < options.count:
+                    answer = Int(n)
+                case .string(let a) where !a.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty:
+                    let want = a.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                    answer = options.firstIndex { $0.label.lowercased() == want } ?? -1
+                default:
+                    break
+                }
+                if answer < 0 { answer = flagged }
+                guard let question, options.count >= 2, answer >= 0 else { continue }
+                questions.append(.init(question: question, options: options, answer: answer, explanation: str(qo["explanation"], 800), hint: str(qo["hint"], 400)))
+            }
+            if questions.isEmpty { return nil }
+            return .quiz(LiveQuizSpec(key: key, title: fromList != nil ? str(raw["title"]) : nil, questions: questions))
+        case "callout":
+            guard let text = str(raw["text"] ?? raw["content"] ?? raw["body"], LiveSpecLimits.text) else { return nil }
+            var toneRaw = ""
+            if case .string(let t) = raw["tone"] { toneRaw = t.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+            let tone = LiveCalloutSpec.Tone(rawValue: tones.contains(toneRaw) ? toneRaw : tones.contains(typeRaw) ? typeRaw : "insight") ?? .insight
+            return .callout(LiveCalloutSpec(key: key, tone: tone, title: str(raw["title"]), text: text, more: str(raw["more"] ?? raw["detail"], LiveSpecLimits.text)))
+        case "timeline":
+            var items: [LiveTimelineSpec.Item] = []
+            for it in raw["items"]?.arrayValue ?? raw["steps"]?.arrayValue ?? [] {
+                if items.count >= LiveSpecLimits.timeline { break }
+                if case .string(let t) = it {
+                    let trimmed = t.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !trimmed.isEmpty { items.append(.init(label: String(decoding: trimmed.utf16.prefix(200), as: UTF16.self))) }
+                    continue
+                }
+                guard case .object(let io, _) = it, let label = str(io["label"] ?? io["title"] ?? io["name"], 200) else { continue }
+                items.append(.init(label: label, detail: str(io["detail"] ?? io["description"] ?? io["text"], 600), time: str(io["time"] ?? io["when"] ?? io["date"], 40)))
+            }
+            if items.isEmpty { return nil }
+            return .timeline(LiveTimelineSpec(key: key, title: str(raw["title"]), items: items))
         case "explorer":
             var parts: [LiveExplorerPart] = []
             var seen: Set<String> = []

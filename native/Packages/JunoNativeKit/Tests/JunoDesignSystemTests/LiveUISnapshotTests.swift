@@ -43,6 +43,17 @@ final class LiveUISnapshotTests: XCTestCase {
                     into: out
                 )
             }
+            if id == "llm" {
+                // The walkthrough and the quiz at phone width, where the step
+                // list folds into the segmented rail.
+                try await render(
+                    JunoLessonText(reply).environment(\.junoProseStyle, .reading),
+                    name: "llm-phone",
+                    width: 375,
+                    dark: true,
+                    into: out
+                )
+            }
             if id == "bill" {
                 // Mid-stream: the first two-thirds of the block.
                 let cut = reply.index(reply.startIndex, offsetBy: reply.count * 2 / 5)
@@ -61,6 +72,21 @@ final class LiveUISnapshotTests: XCTestCase {
                     into: out
                 )
             }
+        }
+    }
+
+    /// A reply saved with the retired `:::` learning blocks, converted to Live UI.
+    func testRendersLegacyReply() async throws {
+        guard let dir = ProcessInfo.processInfo.environment["JUNO_SNAPSHOT_DIR"] else {
+            throw XCTSkip("Set JUNO_SNAPSHOT_DIR to render the Live UI snapshots.")
+        }
+        let out = URL(fileURLWithPath: dir).appendingPathComponent("live-ui", isDirectory: true)
+        try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
+        let url = Self.samplesURL.deletingLastPathComponent().appendingPathComponent("legacy-reply.json")
+        let root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        let reply = try XCTUnwrap(root["reply"] as? String)
+        for dark in [false, true] {
+            try await render(JunoLessonText(reply).environment(\.junoProseStyle, .reading), name: "legacy", width: 680, dark: dark, into: out)
         }
     }
 

@@ -3,7 +3,7 @@ import XCTest
 
 /// Pins the native learning-block parser to the website's own behaviour.
 ///
-/// These are the same cases as `tests/learning-blocks.test.ts`, assertion for
+/// LEGACY, history only: the parser now feeds JunoLiveUILegacy. These are the same cases as `tests/live-ui-legacy-parser.test.ts`, assertion for
 /// assertion. The reason for the duplication is that the two clients disagreeing
 /// here is INVISIBLE: the website would draw a five-step timeline and the phone a
 /// four-step one, both confidently, and nothing would report the difference.
@@ -356,8 +356,8 @@ final class JunoLearningBlocksTests: XCTestCase {
         ].joined(separator: "\n")
         let segments = JunoLessonText.split(text)
         XCTAssertEqual(segments.count, 3)
-        if case .block = segments[0] {} else { XCTFail("expected a block first") }
-        if case .block = segments[1] {} else { XCTFail("expected a block second") }
+        if case .live = segments[0] {} else { XCTFail("expected a converted block first") }
+        if case .live = segments[1] {} else { XCTFail("expected a converted block second") }
         if case .markdown(let tail) = segments[2] {
             XCTAssertEqual(tail.trimmingCharacters(in: .whitespacesAndNewlines), "Tail.")
         } else {
