@@ -8,8 +8,9 @@ import SwiftUI
 /// the web's `components/ui/empty-state.tsx`).
 ///
 /// **Two sizes, two frames.**
-/// - ``Size/page`` owns the content column, so it is drawn *open*: no box, a
-///   48pt glyph tile, an 18pt heading and a sentence on the page itself. The
+/// - ``Size/page`` owns the content column, so it is drawn *open*: no box, the
+///   208 × 76 mark (a 48pt glyph tile for an error), an 18pt heading and a
+///   sentence on the page itself. The
 ///   web retired the column-high dashed recess because it read as a drop zone
 ///   for files rather than an answer.
 /// - ``Size/panel`` sits inside a card, a section or a list, where it needs a
@@ -18,9 +19,10 @@ import SwiftUI
 ///   radius (16), which is what the web draws today. Errata 9 had the well at
 ///   the field radius; the web moved it (register #47).
 ///
-/// **Two tones, and the difference is the tile.** An error keeps the heading
-/// in the foreground ink and tints only the tile (the destructive wash under a
-/// destructive glyph); a panel error trades the dashed edge for a solid one,
+/// **Two tones, and the difference is the mark.** An empty state draws the
+/// brand's dot-matrix mark (``JunoEmptyMark``); an error keeps the heading in
+/// the foreground ink and draws its glyph on a tinted tile (the destructive
+/// wash under a destructive glyph); a panel error trades the dashed edge for a solid one,
 /// because a failure is not a placeholder. Left unset, the tone follows the
 /// glyph: a warning or failure mark reads as an error.
 ///
@@ -137,7 +139,7 @@ public struct JunoEmptyState: View {
 
     private var content: some View {
         VStack(spacing: 0) {
-            tile
+            mark
             Text(title)
                 .junoType(isPage ? .heading : JunoType.body.weight(.semibold))
                 .foregroundStyle(Color.junoForeground)
@@ -170,6 +172,21 @@ public struct JunoEmptyState: View {
                     .contentShape(.rect)
                     .padding(.top, isPage ? JunoSpace.section : JunoSpace.regular)
             }
+        }
+    }
+
+    /// THE MARK, NOT A GLYPH IN A TILE (the web's `empty-state.tsx`): an
+    /// empty state draws the construction in miniature in the brand's dot
+    /// matrix (``JunoEmptyMark``), the presence trajectory its one blue thing.
+    /// The icon is still accepted and still used, but only by an error, where
+    /// the glyph takes the destructive tint and says what kind of thing failed:
+    /// a failure is not a placeholder and must not look like one.
+    @ViewBuilder
+    private var mark: some View {
+        if tone == .error {
+            tile
+        } else {
+            JunoEmptyMark(size: isPage ? .page : .panel)
         }
     }
 

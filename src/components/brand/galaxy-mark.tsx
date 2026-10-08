@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { watchCanvas } from "@/lib/canvas/canvas-lifecycle";
 import { cn } from "@/lib/utils";
 import {
   GALAXY_COUNT_SMALL,
@@ -250,8 +251,16 @@ export function GalaxyMark({ phase, size = 16, label, reducedMotion, className }
       if (!raf) draw(performance.now());
     });
     themeWatch.observe(document.documentElement, { attributes: true, attributeFilter: ["class", "style"] });
+    // A settled mark asks for no frames, so a new DPR (another display, page
+    // zoom), a restored context or a bfcache restore would otherwise leave it
+    // blurry or blank until its phase changed.
+    const repaint = () => {
+      if (!raf) draw(performance.now());
+    };
+    const unwatch = watchCanvas(el, el, { resize: repaint, redraw: repaint }, { maxDpr: 3 });
     start();
     return () => {
+      unwatch();
       stop();
       io?.disconnect();
       themeWatch.disconnect();
