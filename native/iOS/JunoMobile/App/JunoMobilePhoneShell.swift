@@ -47,25 +47,62 @@ struct JunoMobilePushDrawer<Sidebar: View, Content: View>: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.colorScheme) private var colorScheme
 
-  /// The device display's corner radius, near enough: the pushed card rounds
-  /// the way the screen does (55pt on the current Pro iPhones). A constant
-  /// rather than the private `_displayCornerRadius` key.
-  static var displayCornerRadius: CGFloat { 55 }
+  /// The device display's corner radius, so the pushed card is concentric
+  /// with the phone's own corners at every drag position. Apple publishes no
+  /// API for it (`_displayCornerRadius` is private), so it is read off the
+  /// screen's point width, which identifies the hardware family:
+  /// 16/17 Pro and Pro Max 62pt, 15 Pro and 14 Pro families 55pt, the
+  /// notched models 47pt, anything older or an iPad's window a modest 40pt.
+  static func displayCornerRadius(screenWidth: CGFloat) -> CGFloat {
+    switch screenWidth.rounded() {
+    case 402, 440: 62
+    case 393, 430: 55
+    case 390, 428, 375, 414: 47
+    default: 40
+    }
+  }
+
+  /// `--juno-preview-drawer-progress <0…1>` holds a closed drawer part-way
+  /// open, as a finger mid-drag would, for captures. Zero outside DEBUG.
+  static func previewDrag(full: CGFloat, open: Bool) -> CGFloat {
+    #if DEBUG
+      guard !open,
+        let index = CommandLine.arguments.firstIndex(of: "--juno-preview-drawer-progress"),
+        CommandLine.arguments.indices.contains(index + 1),
+        let fraction = Double(CommandLine.arguments[index + 1])
+      else { return 0 }
+      return full * CGFloat(fraction)
+    #else
+      return 0
+    #endif
+  }
 
   /// How far the conversation travels: most of the screen, so its edge stays
   /// in view as the "way back", and never wider than a comfortable column.
   private func width(in size: CGSize) -> CGFloat {
-    min(size.width * 0.84, 360)
+    // ChatGPT's proportion: the drawer takes four fifths of the screen, so
+    // about a fifth of the card (80pt on a 402pt iPhone) stays in view as the
+    // way back. Derived from the container, never a device constant.
+    min(size.width * 0.8, 380)
   }
 
   var body: some View {
     GeometryReader { proxy in
       let full = width(in: proxy.size)
       let resting: CGFloat = isOpen ? full : 0
-      let offset = min(max(resting + drag, 0), full)
+      let offset = min(max(resting + drag + Self.previewDrag(full: full, open: isOpen), 0), full)
       let progress = full > 0 ? offset / full : 0
+      let radius = Self.displayCornerRadius(screenWidth: proxy.size.width) * progress
 
       ZStack(alignment: .leading) {
+        // The drawer's ground spans the whole screen, not just the drawer's
+        // column: the card's rounded corners and its drag-time gap reveal
+        // this, never the app canvas behind (which read as a square block
+        // under the card's corner).
+        JunoMobileDrawerGround()
+          .frame(width: proxy.size.width, height: proxy.size.height)
+          .accessibilityHidden(true)
+
         sidebar()
           .safeAreaPadding(.top, insets.top)
           .safeAreaPadding(.bottom, insets.bottom)
@@ -92,15 +129,25 @@ struct JunoMobilePushDrawer<Sidebar: View, Content: View>: View {
               .onTapGesture { setOpen(false) }
               .accessibilityHidden(true)
           }
-          // ChatGPT's card: the screen's own corner radius, a soft shadow
-          // thrown back toward the drawer, and a hair of scale — all three
-          // following the drag, from nothing when closed to full when open.
-          .clipShape(.rect(cornerRadius: Self.displayCornerRadius * progress, style: .continuous))
-          .scaleEffect(reduceMotion ? 1 : 1 - 0.015 * progress, anchor: .leading)
-          .shadow(
-            color: .black.opacity((colorScheme == .dark ? 0.55 : 0.13) * progress),
-            radius: 26, x: -6, y: 0
-          )
+          // ChatGPT's card: the screen's own corner radius and a soft shadow
+          // thrown back toward the drawer, following the drag from nothing
+          // when closed to full when open. No scale: a scaled card's corners
+          // would no longer be concentric with the bezel.
+          //
+          // One composited layer, then the clip, so the navigation bar's
+          // glass and every background inside are rounded with it; the
+          // shadow is a separate rounded shape behind, never an unclipped
+          // container.
+          .compositingGroup()
+          .clipShape(.rect(cornerRadius: radius, style: .continuous))
+          .background {
+            RoundedRectangle(cornerRadius: radius, style: .continuous)
+              .fill(Color.junoCanvas)
+              .shadow(
+                color: .black.opacity((colorScheme == .dark ? 0.6 : 0.14) * progress),
+                radius: 26, x: -6, y: 0
+              )
+          }
           .offset(x: offset)
           .allowsHitTesting(!dragging)
       }
@@ -173,7 +220,7 @@ struct JunoMobilePushDrawer<Sidebar: View, Content: View>: View {
 /// `PanelLeft`), the one the web's collapse button and command palette draw.
 struct JunoMobileSidebarGlyph: View {
   var body: some View {
-    JunoIconView(.panelLeft, size: 20)
+    JunoIconView(.panelLeft, size: JunoMobileTopBarMetrics.glyph)
       .accessibilityHidden(true)
   }
 }

@@ -1,3 +1,4 @@
+import SwiftUI
 import XCTest
 @testable import JunoMobile
 
@@ -78,5 +79,25 @@ final class JunoMobileNavigationTests: XCTestCase {
 
         XCTAssertEqual(Set(grouped), Set(JunoMobileSection.allCases))
         XCTAssertEqual(grouped.count, JunoMobileSection.allCases.count)
+    }
+
+    /// The pushed card is concentric with the phone's corners: the radius
+    /// follows the hardware family, read off the screen's point width.
+    func testThePushedCardTakesTheDisplayCornerRadius() {
+        typealias Drawer = JunoMobilePushDrawer<EmptyView, EmptyView>
+        XCTAssertEqual(Drawer.displayCornerRadius(screenWidth: 402), 62)
+        XCTAssertEqual(Drawer.displayCornerRadius(screenWidth: 440), 62)
+        XCTAssertEqual(Drawer.displayCornerRadius(screenWidth: 393), 55)
+        XCTAssertEqual(Drawer.displayCornerRadius(screenWidth: 390), 47)
+        XCTAssertEqual(Drawer.displayCornerRadius(screenWidth: 1024), 40)
+    }
+
+    /// The drawer's search button is the top bar's button: one diameter, one
+    /// glyph size, so it can sit on the card's sidebar button's centre line.
+    func testTheDrawerHeaderButtonIsTheTopBarButton() {
+        XCTAssertEqual(JunoMobileTopBarMetrics.buttonDiameter, 44)
+        XCTAssertEqual(JunoMobileTopBarMetrics.glyph, 20)
+        XCTAssertEqual(JunoMobileDrawerMetrics.edge, 16)
+        XCTAssertEqual(JunoMobileDrawerMetrics.edge + JunoMobileDrawerMetrics.slot + JunoMobileDrawerMetrics.gap, 46)
     }
 }

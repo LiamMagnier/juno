@@ -554,7 +554,9 @@ struct JunoMobileSidebarDrawer: View {
   /// is set in the UI face at the bar's title weight; the brand is in the
   /// app, not in a logo stamped on every surface.
   private var header: some View {
-    HStack(spacing: 12) {
+    // Top-aligned so the search button's centre sits on the same line as the
+    // pushed card's sidebar button: the first row is the bar's own 44pt row.
+    HStack(alignment: .top, spacing: 12) {
       if searching {
         HStack(spacing: 8) {
           JunoSymbol(.search)
@@ -591,10 +593,11 @@ struct JunoMobileSidebarDrawer: View {
           .tint(Color.primary)
           .transition(.opacity)
       } else {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 0) {
           Text(verbatim: "Alevr")
             .font(.title3.weight(.semibold))
             .foregroundStyle(Color.junoForeground)
+            .frame(minHeight: JunoMobileTopBarMetrics.buttonDiameter)
             .accessibilityAddTraits(.isHeader)
           // The web sidebar's product orbit under the name: Chat and Code at
           // the two ends, the trail on the one in use.
@@ -613,8 +616,12 @@ struct JunoMobileSidebarDrawer: View {
           selectionHaptic.fire()
           setSearching(true)
         } label: {
-          JunoIconView(.search, size: 19)
+          JunoIconView(.search, size: JunoMobileTopBarMetrics.glyph)
             .foregroundStyle(Color.primary)
+            .frame(
+              width: JunoMobileTopBarMetrics.buttonDiameter,
+              height: JunoMobileTopBarMetrics.buttonDiameter
+            )
             .frame(minWidth: 44, minHeight: 44)
             .contentShape(Circle())
         }
@@ -627,7 +634,7 @@ struct JunoMobileSidebarDrawer: View {
     }
     .padding(.leading, JunoMobileDrawerMetrics.edge)
     .padding(.trailing, 12)
-    .padding(.top, 4)
+    .padding(.top, JunoMobileTopBarMetrics.rowTop)
     .padding(.bottom, 10)
     .animation(JunoMotion.reduced(JunoMotion.chatControl, when: reduceMotion), value: searching)
     .onChange(of: drawerOpen) { _, open in
@@ -1153,6 +1160,16 @@ struct JunoMobileDrawerRow: View {
     }
     .buttonStyle(JunoSidebarPressStyle())
   }
+}
+
+/// The top bar's round buttons, shared by the drawer's header so its search
+/// button and the pushed card's sidebar button are one size on one line.
+/// `rowTop` is how far below the safe area the iOS 26 navigation bar centres
+/// its 44pt items (measured: centre at safe top + 22pt).
+enum JunoMobileTopBarMetrics {
+  static let buttonDiameter: CGFloat = 44
+  static let glyph: CGFloat = 20
+  static let rowTop: CGFloat = 0
 }
 
 /// The drawer's two edges, in one place: 8pt list inset + 8pt row padding puts
