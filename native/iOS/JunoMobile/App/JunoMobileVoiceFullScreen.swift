@@ -327,7 +327,7 @@ struct JunoMobileVoiceFullScreen: View {
       }
       ForEach(lines) { line in
         HStack(alignment: .top, spacing: JunoSpace.snug) {
-          Text(line.role == .assistant ? "Juno" : "You")
+          Text(line.role == .assistant ? "Alevr" : "You")
             .junoFont(size: 11, relativeTo: .caption2, weight: .semibold)
             .foregroundStyle(line.role == .assistant ? Color.junoAccent : Color.junoMutedForeground)
             .frame(width: 34, alignment: .leading)

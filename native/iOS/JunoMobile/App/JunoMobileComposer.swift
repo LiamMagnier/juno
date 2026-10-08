@@ -761,7 +761,12 @@ struct JunoMobileComposer: View {
       if JunoComposerPreviewFlags.focusesComposer {
         composerFocused.wrappedValue = true
       }
-      if let sent = JunoComposerPreviewFlags.value("--juno-preview-send") {
+      if let sent = JunoComposerPreviewFlags.value("--juno-preview-send"),
+        // Only from the conversation the launch opened (if it named one):
+        // the home's composer appears first and must not send a draft.
+        JunoPreviewEnvironment.initialConversation == nil
+          || conversation?.id == JunoPreviewEnvironment.initialConversation
+      {
         try? await Task.sleep(nanoseconds: 600_000_000)
         prompt = sent
         send()

@@ -123,19 +123,19 @@ private struct JunoMobileWelcome: View {
       id: 0,
       eyebrow: "Chat, research, voice and code",
       title: "One assistant.\nEvery model.",
-      body: "Juno picks the right model for each question, or uses the one you choose."
+      body: "Alevr picks the right model for each question, or uses the one you choose."
     ),
     Page(
       id: 1,
       eyebrow: "Privacy",
       title: "It asks before\nit listens.",
-      body: "The microphone is used only for voice and dictation, the camera only when you show Juno something. Nothing runs in the background without telling you."
+      body: "The microphone is used only for voice and dictation, the camera only when you show Alevr something. Nothing runs in the background without telling you."
     ),
     Page(
       id: 2,
-      eyebrow: "Juno Code",
+      eyebrow: "Alevr Code",
       title: "Your Mac,\nin your pocket.",
-      body: "Pair Juno Code on your Mac to steer sessions, review diffs and approve changes from here."
+      body: "Pair Alevr Code on your Mac to steer sessions, review diffs and approve changes from here."
     ),
   ]
 

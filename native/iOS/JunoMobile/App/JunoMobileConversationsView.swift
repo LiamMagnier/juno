@@ -1927,7 +1927,7 @@ private struct JunoMobileMessageRow: View {
       .contentShape(Self.bubbleShape)
       .junoMessageContextMenu(menuActions)
       .sheet(isPresented: $showingSelectText) {
-        JunoMobileSelectTextSheet(title: isUser ? "Your message" : "Juno's reply", text: plainText)
+        JunoMobileSelectTextSheet(title: isUser ? "Your message" : "Alevr's reply", text: plainText)
       }
       .accessibilityLabel("You said, \(plainText)")
   }
@@ -2147,10 +2147,10 @@ private struct JunoMobileMessageRow: View {
     .frame(maxWidth: .infinity, alignment: .leading)
     .junoMessageContextMenu(menuActions)
     .sheet(isPresented: $showingSelectText) {
-      JunoMobileSelectTextSheet(title: "Juno's reply", text: plainText)
+      JunoMobileSelectTextSheet(title: "Alevr's reply", text: plainText)
     }
     .accessibilityElement(children: .contain)
-    .accessibilityLabel("Juno replied")
+    .accessibilityLabel("Alevr replied")
   }
 
   /// AIcss's search rows, in place of a horizontal rail of capsules.

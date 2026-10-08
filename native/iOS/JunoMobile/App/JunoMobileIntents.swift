@@ -144,7 +144,7 @@ final class JunoMobileLaunchRequests {
 
 struct StartNewChatIntent: AppIntent {
   static let title: LocalizedStringResource = "Start a new chat"
-  static let description = IntentDescription("Opens Juno on an empty chat.")
+  static let description = IntentDescription("Opens Alevr on an empty chat.")
   static let openAppWhenRun = true
 
   @MainActor
@@ -155,7 +155,7 @@ struct StartNewChatIntent: AppIntent {
 }
 
 struct StartVoiceIntent: AppIntent {
-  static let title: LocalizedStringResource = "Talk to Juno"
+  static let title: LocalizedStringResource = "Talk to Alevr"
   static let description = IntentDescription("Starts a voice conversation.")
   static let openAppWhenRun = true
 
@@ -169,8 +169,8 @@ struct StartVoiceIntent: AppIntent {
 /// Opens a new chat with Dictate ready. Kept separate from ``StartVoiceIntent``:
 /// dictation produces a message draft, while Voice starts a realtime call.
 struct StartDictationIntent: AppIntent {
-  static let title: LocalizedStringResource = "Dictate to Juno"
-  static let description = IntentDescription("Opens a new Juno chat and starts dictation.")
+  static let title: LocalizedStringResource = "Dictate to Alevr"
+  static let description = IntentDescription("Opens a new Alevr chat and starts dictation.")
   static let openAppWhenRun = true
 
   @MainActor
@@ -181,7 +181,7 @@ struct StartDictationIntent: AppIntent {
 }
 
 struct OpenCodeIntent: AppIntent {
-  static let title: LocalizedStringResource = "Open Juno Code"
+  static let title: LocalizedStringResource = "Open Alevr Code"
   static let description = IntentDescription("Shows your Macs and their coding sessions.")
   static let openAppWhenRun = true
 
@@ -193,15 +193,15 @@ struct OpenCodeIntent: AppIntent {
 }
 
 struct AskJunoIntent: AppIntent {
-  static let title: LocalizedStringResource = "Ask Juno"
-  static let description = IntentDescription("Sends a question to Juno in a new chat.")
+  static let title: LocalizedStringResource = "Ask Alevr"
+  static let description = IntentDescription("Sends a question to Alevr in a new chat.")
   static let openAppWhenRun = true
 
   @Parameter(title: "Question", requestValueDialog: "What would you like to ask?")
   var prompt: String
 
   static var parameterSummary: some ParameterSummary {
-    Summary("Ask Juno \(\.$prompt)")
+    Summary("Ask Alevr \(\.$prompt)")
   }
 
   @MainActor
@@ -246,7 +246,7 @@ struct JunoMobileShortcuts: AppShortcutsProvider {
         "Ask \(.applicationName)",
         "Ask \(.applicationName) a question",
       ],
-      shortTitle: "Ask Juno",
+      shortTitle: "Ask Alevr",
       systemImageName: "sparkles"
     )
     AppShortcut(
@@ -255,7 +255,7 @@ struct JunoMobileShortcuts: AppShortcutsProvider {
         "Open \(.applicationName) Code",
         "Show my coding sessions in \(.applicationName)",
       ],
-      shortTitle: "Juno Code",
+      shortTitle: "Alevr Code",
       systemImageName: "chevron.left.forwardslash.chevron.right"
     )
   }

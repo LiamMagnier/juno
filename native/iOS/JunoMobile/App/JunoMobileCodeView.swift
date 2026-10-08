@@ -1652,7 +1652,7 @@ private struct JunoMobileCodeSessionView: View {
   private var footer: some View {
     VStack(alignment: .leading, spacing: 12) {
       if let question = model.pendingQuestion {
-        Text("Juno needs your answer").font(.headline)
+        Text("Alevr needs your answer").font(.headline)
         Text(question.text).textSelection(.enabled)
         TextField("Your answer", text: $questionAnswer, axis: .vertical)
           .lineLimit(1...6)
@@ -1758,7 +1758,7 @@ private struct JunoMobileCodeSessionView: View {
     if !task.status.isTerminal {
       return String(
         localized: "code.followup.blocked.active",
-        defaultValue: "Juno is still working. You can reply once this run stops."
+        defaultValue: "Alevr is still working. You can reply once this run stops."
       )
     }
     if task.conversationID == nil {

@@ -99,7 +99,7 @@ final class JunoMobileCodeNotifications {
 
   private func notifyApproval(_ session: CodeRemoteSessionSummary) async {
     let content = UNMutableNotificationContent()
-    content.title = "Juno Code is waiting on you"
+    content.title = "Alevr Code is waiting on you"
     content.body = session.title
     content.sound = .default
     content.categoryIdentifier = Self.approvalCategory

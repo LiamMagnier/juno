@@ -353,7 +353,7 @@ struct JunoMobileCodeDevicesView: View {
       }
 
       Section("How to pair a Mac") {
-        step(1, "Open Juno Code on your Mac and sign in to the same account.")
+        step(1, "Open Alevr Code on your Mac and sign in to the same account.")
         step(2, "In the sidebar, turn on Remote and share the folders you want to reach from your phone.")
         step(3, "The Mac appears here within a minute. Sessions it runs show up under it.")
       }

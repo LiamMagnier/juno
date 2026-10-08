@@ -452,7 +452,7 @@ private struct JunoMobileIncognitoTurnRow: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityElement(children: .contain)
-            .accessibilityLabel("Juno replied")
+            .accessibilityLabel("Alevr replied")
         }
     }
 }
