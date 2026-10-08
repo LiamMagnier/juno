@@ -119,6 +119,17 @@ enum PreviewShowcaseFixtures {
             -9_000, model: "anthropic:claude-opus-4-8"
         )
 
+        for (index, chat) in liveUIChats.enumerated() {
+            let offset = -Double(4 + index) * 86_400
+            out.append(("conversation", chat.id, 3, json([
+                "id": chat.id, "title": chat.title, "model": "anthropic:claude-opus-4-8",
+                "kind": "chat", "pinned": false, "archivedAt": NSNull(),
+                "createdAt": iso(offset - 600), "updatedAt": iso(offset), "lastMessageAt": iso(offset),
+            ])))
+            message("\(chat.id)-q", chat.id, "user", chat.prompt, offset - 60)
+            message("\(chat.id)-a", chat.id, "assistant", chat.reply, offset, model: "anthropic:claude-opus-4-8")
+        }
+
         // Library files: what Maya has attached across her chats and project.
         let files: [(String, String, String, String, Int, String?, TimeInterval)] = [
             ("sc-file-1", "FILE", "Field Notes 2.0 launch brief.pdf", "application/pdf", 412_000, "proj-1", -7_200),
@@ -153,6 +164,55 @@ enum PreviewShowcaseFixtures {
         ])))
         return out
     }
+
+    /// Two Live UI answers, copied verbatim from the shared samples
+    /// (contracts/live-ui/samples.json), so the phone renders the same specs
+    /// the web and the Mac are tested against.
+    static let liveUIChats: [(id: String, title: String, prompt: String, reply: String)] = [
+        ("conv-live-calc", "Retirement savings at 65", "I'm 32 with €25k saved. If I put away €600 a month, what will I have at 65?", #"""
+At a 6% average yearly return you'd reach roughly **€925,000** by 65, about three and a half times the €262,600 you put in. Move the sliders to see how much the contribution and the return matter.
+
+```live-ui
+{"title":"Savings at retirement","currency":"EUR",
+ "let":{"years":"retire - age","balance":"fv(rate / 12, years * 12, monthly, start)","paidIn":"start + monthly * 12 * years","growth":"balance - paidIn","income":"balance * 0.04 / 12"},
+ "ui":[
+  {"type":"grid","columns":2,"children":[
+   {"type":"stepper","id":"age","label":"Age today","min":18,"max":70,"value":32},
+   {"type":"slider","id":"retire","label":"Retire at","min":50,"max":75,"step":1,"value":65},
+   {"type":"slider","id":"monthly","label":"Monthly saving","min":0,"max":3000,"step":50,"value":600,"format":"currency"},
+   {"type":"slider","id":"rate","label":"Yearly return","min":0.01,"max":0.1,"step":0.005,"value":0.06,"format":"percent"}]},
+  {"type":"number","id":"start","label":"Saved so far","value":25000,"min":0,"step":1000,"format":"currency"},
+  {"type":"row","children":[
+   {"type":"metric","label":"Balance at {{retire}}","value":"balance","format":"currency","emphasis":true,"hint":"{{fmt(growth,'currency',0)}} of it is growth"},
+   {"type":"metric","label":"Monthly income at 4%","value":"income","format":"currency","hint":"The 4% rule, before tax"}]},
+  {"type":"chart","kind":"area","title":"Balance by year","x":{"from":0,"to":"years","step":1,"var":"year","label":"Year"},"format":"currency",
+   "series":[{"label":"Balance","y":"fv(rate / 12, year * 12, monthly, start)"},{"label":"Paid in","y":"start + monthly * 12 * year"}]},
+  {"type":"text","tone":"muted","text":"Assumes a steady {{fmt(rate,'percent')}} return compounded monthly, in today's euros before inflation, fees and tax."}]}
+```
+
+Two things move this most: starting earlier and the return you actually get after fees. A 1% fee is roughly the difference between 6% and 5% here.
+"""#),
+        ("conv-live-trip", "A Saturday in Lisbon", "Plan a relaxed Saturday in Lisbon, mostly on foot, starting from Baixa.", #"""
+Here's an easy loop: Baixa to Alfama in the morning, lunch by the river, and sunset in Bairro Alto. It's about 7 km of walking with one tram ride to save your legs on the hill.
+
+```live-ui
+{"title":"A slow Saturday in Lisbon",
+ "ui":[
+  {"type":"stops","stops":[
+   {"name":"Praça do Comércio","time":"9:30","note":"Coffee and a pastel de nata at Confeitaria Nacional on the way","query":"Praça do Comércio, Lisbon"},
+   {"name":"Tram 28 to Graça","time":"10:15","note":"Board at Martim Moniz to get a seat; 25 minutes","query":"Martim Moniz, Lisbon"},
+   {"name":"Miradouro da Senhora do Monte","time":"10:45","note":"The best view over the castle and the river","query":"Miradouro da Senhora do Monte, Lisbon"},
+   {"name":"Alfama and the Sé","time":"11:30","note":"Walk downhill through the lanes to the cathedral","query":"Sé de Lisboa"},
+   {"name":"Lunch at Time Out Market","time":"13:30","note":"Busy but quick; go upstairs for a table","query":"Time Out Market Lisboa"},
+   {"name":"LX Factory","time":"15:30","note":"Bookshop Ler Devagar, then coffee","query":"LX Factory, Lisbon"},
+   {"name":"Miradouro de Santa Catarina","time":"18:45","note":"Sunset, then dinner in Bairro Alto","query":"Miradouro de Santa Catarina, Lisbon"}]},
+  {"type":"checklist","id":"pack","title":"Before you go","items":["Comfortable shoes with grip (the cobbles are slippery)","A Viva Viagem card loaded for the tram",{"label":"Book dinner","note":"Bairro Alto fills up after 20:00 on Saturdays"},"Water and sunscreen"]},
+  {"type":"button","label":"Make a rainy-day version","prompt":"Make a rainy-day version of this Lisbon Saturday, mostly indoors."}]}
+```
+
+If you'd rather skip the tram, the walk up to Graça is steep but only 20 minutes.
+"""#),
+    ]
 
     static let launchPlanAnswer = """
     Ship 2.0 to everyone on **November 12**, after a two-week public beta that opens October 27. The press embargo lifts at 9:00 PT on launch day.
