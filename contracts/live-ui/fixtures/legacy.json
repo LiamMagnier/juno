@@ -26,27 +26,27 @@
      "s1_tokens": [
       {
        "token": "The",
-       "id": 791
+       "id": "791"
       },
       {
        "token": "model",
-       "id": 2746
+       "id": "2746"
       },
       {
        "token": "predicts",
-       "id": 42119
+       "id": "42119"
       },
       {
        "token": "the",
-       "id": 279
+       "id": "279"
       },
       {
        "token": "next",
-       "id": 1828
+       "id": "1828"
       },
       {
        "token": "word",
-       "id": 3492
+       "id": "3492"
       }
      ],
      "s2_vectors": [
@@ -167,8 +167,7 @@
            },
            {
             "label": "ID",
-            "value": "id",
-            "format": "integer"
+            "value": "id"
            }
           ]
          }

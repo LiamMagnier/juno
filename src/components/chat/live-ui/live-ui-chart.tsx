@@ -147,7 +147,7 @@ export function LiveChart({
   const ticks = niceTicks(yMin, yMax);
   const lo = ticks[0];
   const hi = ticks[ticks.length - 1];
-  const labelW = Math.max(28, Math.max(...ticks.map((t) => fmtY(t, true).length)) * 6.6 + 10);
+  const labelW = Math.max(28, Math.max(...ticks.map((t) => fmtY(t, true).length)) * 7.6 + 12); // caption digits are ~7.3px; the old 6.6 clipped "100%" at phone width
   const padL = labelW;
   const padR = 8;
   const padT = 8;

@@ -85,7 +85,8 @@ function stepVisual(step: StepLabStep, n: number, data: Obj): J[] {
           if (t) rows.push({ token: t });
         } else if (isRecord(item)) {
           const t = text(item.text ?? item.token);
-          if (t) rows.push(obj([["token", t], ["id", number(item.id)]]));
+          // Shown as written: a vocabulary id is a label, not a quantity to group.
+          if (t) rows.push(obj([["token", t], ["id", text(item.id)]]));
         }
       }
       if (!rows.length) return [];
@@ -94,7 +95,7 @@ function stepVisual(step: StepLabStep, n: number, data: Obj): J[] {
       const input = text(d.input);
       if (input) out.push({ type: "text", tone: "muted", text: `Input: “${input}”` });
       const columns: J[] = [{ label: "Token", value: "token" }];
-      if (rows.some((r) => r.id !== undefined)) columns.push({ label: "ID", value: "id", format: "integer" });
+      if (rows.some((r) => r.id !== undefined)) columns.push({ label: "ID", value: "id" });
       out.push({ type: "table", rows: name("tokens"), columns });
       return out;
     }

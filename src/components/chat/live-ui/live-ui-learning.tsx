@@ -164,10 +164,11 @@ export function LiveSteps({
       aria-roledescription="walkthrough"
       aria-label={steps.title ? interp(steps.title) : "Walkthrough"}
     >
-      <div className="flex flex-col gap-2">
+      <div className={cn("flex flex-col gap-2", !steps.title && "@[40rem]:hidden")}>
         <div className="flex items-baseline justify-between gap-3">
           <p className="min-w-0 text-ui font-medium text-foreground">{steps.title ? interp(steps.title) : null}</p>
-          <p className="shrink-0 text-ui tabular-nums text-muted-foreground">
+          {/* The step list shows the position once it is visible; the count is for the narrow rail. */}
+          <p className="shrink-0 text-ui tabular-nums text-muted-foreground @[40rem]:hidden">
             {active + 1} of {total}
           </p>
         </div>

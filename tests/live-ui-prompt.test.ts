@@ -102,7 +102,7 @@ test("every example in the prompt is a complete view whose formulas evaluate", (
 });
 
 test("every gallery sample (shared with the native snapshots) is a valid view", () => {
-  for (const sample of samples.samples) assertValidViews(sample.reply, 1);
+  for (const sample of samples.samples) assertValidViews(sample.reply, (sample.reply.match(/```live-ui\n/g) ?? []).length || 1);
 });
 
 test("native builds opt in with the live_ui client feature", () => {
