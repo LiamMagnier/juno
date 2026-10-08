@@ -94,8 +94,10 @@ public enum PreviewArtifactFixtures {
     }
 
     /// The conversation, its two messages and the three stored artifacts.
-    static func records(_ a: StorageAccountID) -> [StoredRecord] {
-        let iso = PreviewFixtures.iso
+    static func records(
+        _ a: StorageAccountID,
+        iso: (TimeInterval) -> String = PreviewFixtures.iso
+    ) -> [StoredRecord] {
         var out: [StoredRecord] = []
         out.append(PreviewFixtures.record(a, "conversation", conversationID, 3, payload([
             "id": conversationID, "title": "Q3 planning pack", "model": "anthropic:claude-sonnet-4-6",

@@ -18,6 +18,8 @@ public enum PreviewImageFixtures {
     public static let userPhotoID = "img-user-1"
     /// The picture Juno generated in its answer.
     public static let generatedID = "img-gen-1"
+    /// The showcase Library's app screenshot ("Onboarding, screen 2.png").
+    public static let screenID = "sc-file-4"
 
     /// Answers `/api/attachments/<id>` with PNG bytes, or nil for an id this
     /// fixture does not draw.
@@ -25,11 +27,12 @@ public enum PreviewImageFixtures {
         switch id {
         case userPhotoID: return cached(id) { draw(width: 1200, height: 800, kind: .photo) }
         case generatedID: return cached(id) { draw(width: 1024, height: 1024, kind: .generated) }
+        case screenID: return cached(id) { draw(width: 750, height: 1624, kind: .screen) }
         default: return nil
         }
     }
 
-    private enum Kind { case photo, generated }
+    private enum Kind { case photo, generated, screen }
 
     private static let lock = NSLock()
     private nonisolated(unsafe) static var cache: [String: Data] = [:]
@@ -118,6 +121,29 @@ public enum PreviewImageFixtures {
                 x += w
                 index += 1
             }
+        case .screen:
+            // A phone screenshot: a light page, a title, three rows, a button.
+            context.setFillColor(CGColor(red: 0.98, green: 0.98, blue: 0.97, alpha: 1))
+            context.fill(rect)
+            let w = Double(width), h = Double(height)
+            context.setFillColor(CGColor(red: 0.12, green: 0.12, blue: 0.13, alpha: 1))
+            context.fill(CGRect(x: w * 0.08, y: h * 0.80, width: w * 0.55, height: h * 0.03))
+            context.setFillColor(CGColor(red: 0.62, green: 0.62, blue: 0.6, alpha: 1))
+            context.fill(CGRect(x: w * 0.08, y: h * 0.755, width: w * 0.7, height: h * 0.014))
+            for row in 0..<3 {
+                let y = h * (0.6 - Double(row) * 0.11)
+                context.setFillColor(CGColor(red: 0.93, green: 0.92, blue: 0.9, alpha: 1))
+                context.fill(CGRect(x: w * 0.08, y: y, width: w * 0.84, height: h * 0.085))
+                context.setFillColor(CGColor(red: 0.93, green: 0.45, blue: 0.36, alpha: 1))
+                context.fillEllipse(in: CGRect(x: w * 0.12, y: y + h * 0.02, width: h * 0.045, height: h * 0.045))
+            }
+            context.setFillColor(CGColor(red: 0.12, green: 0.12, blue: 0.13, alpha: 1))
+            let button = CGPath(
+                roundedRect: CGRect(x: w * 0.08, y: h * 0.08, width: w * 0.84, height: h * 0.06),
+                cornerWidth: h * 0.03, cornerHeight: h * 0.03, transform: nil
+            )
+            context.addPath(button)
+            context.fillPath()
         }
 
         guard let image = context.makeImage() else { return nil }

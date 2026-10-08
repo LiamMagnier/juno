@@ -35,15 +35,11 @@ struct JunoMobileLibraryPicker: View {
     @Environment(\.dismiss) private var dismiss
     @State private var previews = NativeFilePreviewLoader()
 
-    private let columns = [
-        GridItem(.flexible(), spacing: JunoSpace.regular),
-        GridItem(.flexible(), spacing: JunoSpace.regular),
-    ]
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: 3), count: 3)
 
     var body: some View {
         NavigationStack {
             content
-                .junoScreenCanvas()
                 .navigationTitle("attachments.library")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
@@ -77,15 +73,14 @@ struct JunoMobileLibraryPicker: View {
             JunoMobileQuietLoading()
         } else if model.items.isEmpty {
             ContentUnavailableView {
-                JunoIconLabel("library.empty.title", icon: .library, size: 28)
+                Label("library.empty.title", systemImage: "photo.on.rectangle")
             } description: {
                 Text("library.empty.description")
             } actions: {
                 if model.lastErrorDescription != nil {
                     Button("action.retry") { Task { await model.refresh() } }
-                        .buttonStyle(.borderedProminent)
-                        .tint(Color.junoAccent)
-                    .contentShape(.rect)
+                        .contentShape(.rect)
+                        .buttonStyle(.bordered)
                 }
             }
         } else {
@@ -93,35 +88,47 @@ struct JunoMobileLibraryPicker: View {
         }
     }
 
+    /// The system photo picker's shape: a segmented filter, then a tight
+    /// three-column grid of thumbnails with small corners and the system's
+    /// checkmark badge on what is selected.
     private var list: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: JunoSpace.regular) {
-                JunoMobileSegmented(
-                    options: NativeLibraryModel.Filter.allCases.map {
-                        .init($0, $0.title)
-                    },
-                    selection: $model.filter,
-                    accessibilityLabel: String(localized: "library.filter")
-                )
+            VStack(alignment: .leading, spacing: JunoSpace.cozy) {
+                Picker("library.filter", selection: $model.filter) {
+                    ForEach(NativeLibraryModel.Filter.allCases, id: \.self) { filter in
+                        Text(filter.title).tag(filter)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .padding(.horizontal, JunoSpace.regular)
 
                 if let error = model.lastErrorDescription {
-                    JunoInlineError(message: error) {
-                        Task { await model.refresh() }
+                    HStack(spacing: JunoSpace.cozy) {
+                        Image(systemName: "exclamationmark.triangle")
+                            .foregroundStyle(.secondary)
+                        Text(error)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        Spacer(minLength: 0)
+                        Button("action.retry") { Task { await model.refresh() } }
+                            .contentShape(.rect)
+                            .font(.subheadline)
                     }
+                    .padding(.horizontal, JunoSpace.regular)
                 }
 
                 Text(selectionLine)
-                    .junoFont(size: 12, relativeTo: .caption)
-                    .monospacedDigit()
-                    .foregroundStyle(Color.junoMutedForeground)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, JunoSpace.regular)
 
-                LazyVGrid(columns: columns, spacing: JunoSpace.regular) {
+                LazyVGrid(columns: columns, spacing: 3) {
                     ForEach(model.visibleItems) { item in
                         card(item)
                     }
                 }
             }
-            .padding(.horizontal, JunoSpace.regular)
             .padding(.top, JunoSpace.snug)
             .padding(.bottom, JunoSpace.section)
             .frame(maxWidth: 768)
@@ -131,64 +138,73 @@ struct JunoMobileLibraryPicker: View {
     }
 
     /// States the cap in words while it still matters and goes quiet once the
-    /// selection is empty — a permanent "0 of 8 selected" is chrome, not help.
+    /// selection is empty.
     private var selectionLine: String {
         guard !model.selection.isEmpty else {
             return String(localized: "library.pick")
         }
-        return "\(model.selection.count) / \(remainingCapacity)"
+        return "\(model.selection.count) of \(remainingCapacity) selected"
     }
 
     private func card(_ item: NativeLibraryItem) -> some View {
         let file = NativeFilePreviewRequest(item)
         let selected = model.selection.contains(item.id)
-        // Unselected cards go quiet at the ceiling rather than vanishing, so the
-        // limit reads as a limit instead of as a grid that stopped responding.
+        // Unselected cells go quiet at the ceiling rather than vanishing.
         let blocked = !selected && model.selection.count >= remainingCapacity
         return Button {
             model.toggle(item.id, limit: remainingCapacity)
         } label: {
-            NativeFilePreviewTile(
-                file: file,
-                state: previews.state(for: item.id),
-                cornerRadius: 26
-            )
-            .overlay {
-                // The selection ring is a stroke over the picture, never a wash
-                // across it: a coral tint over a photograph changes the
-                // photograph, which is the one thing this grid exists to show.
-                RoundedRectangle(cornerRadius: 26, style: .continuous)
-                    .strokeBorder(Color.junoAccent, lineWidth: 2)
-                    .opacity(selected ? 1 : 0)
-            }
-            .overlay(alignment: .topTrailing) {
-                ZStack {
-                    Circle()
-                        .fill(selected ? Color.junoAccent : Color.black.opacity(0.35))
-                        .frame(width: 22, height: 22)
+            Color(.secondarySystemFill)
+                .aspectRatio(1, contentMode: .fit)
+                .overlay { thumbnail(file, state: previews.state(for: item.id)) }
+                .clipShape(.rect(cornerRadius: 6, style: .continuous))
+                .overlay(alignment: .bottomTrailing) {
                     if selected {
-                        JunoIconView(.check, size: 12)
-                            .foregroundStyle(Color.junoOnAccent)
-                    } else {
-                        Circle()
-                            .strokeBorder(Color.white.opacity(0.95), lineWidth: 1.5)
-                            .frame(width: 20, height: 20)
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.title3)
+                            .symbolRenderingMode(.palette)
+                            .foregroundStyle(.white, .tint)
+                            .padding(6)
                     }
                 }
-                    .padding(JunoSpace.cozy)
-                    .shadow(color: .black.opacity(selected ? 0 : 0.25), radius: 2)
-            }
+                .contentShape(.rect)
         }
         .buttonStyle(NativeFilePreviewPressStyle())
         .disabled(blocked)
         .opacity(blocked ? 0.45 : 1)
         .accessibilityLabel("\(item.fileName), \(file.sizeLabel)")
         .accessibilityAddTraits(selected ? [.isSelected, .isButton] : .isButton)
-        .frame(minWidth: 44, minHeight: 44)
         .task(id: item.id) {
             await previews.load(file) { await model.accessFile(id: item.id) }
         }
-        .contentShape(.rect)
+    }
+
+    /// The picture, or — for a file with none — its type and name, the way the
+    /// Files app draws a document it cannot preview.
+    @ViewBuilder
+    private func thumbnail(_ file: NativeFilePreviewRequest, state: NativeFilePreviewLoader.State) -> some View {
+        switch state {
+        case .ready(let image):
+            Image(decorative: image, scale: 1)
+                .resizable()
+                .scaledToFill()
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: file.isImage ? .center : .top)
+        case .loading:
+            EmptyView()
+        case .unavailable:
+            VStack(spacing: 6) {
+                Image(systemName: file.isImage ? "photo" : "doc.text")
+                    .font(.title2)
+                    .foregroundStyle(.secondary)
+                Text(file.fileName)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+                    .truncationMode(.middle)
+            }
+            .padding(8)
+        }
     }
 
     private func commit() {

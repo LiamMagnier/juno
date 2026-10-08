@@ -61,7 +61,7 @@ final class JunoMobileWorkspaceScreensUITests: XCTestCase {
 
         // All three sections are on the screen at once — the whole point of
         // clamping the instructions rather than letting them run.
-        for section in ["Instructions", "Conversations", "Files"] {
+        for section in ["Instructions", "Chats", "Files"] {
             XCTAssertTrue(
                 app.staticTexts[section].exists,
                 "\"\(section)\" is not on the project screen. On screen:\n\(app.debugDescription)"
@@ -82,7 +82,9 @@ final class JunoMobileWorkspaceScreensUITests: XCTestCase {
         // measurement being broken through two earlier attempts.
         require(toggle, app, timeout: 10)
 
-        let files = app.staticTexts["Files"]
+        // The Assistant section sits under the instructions in the round-2
+        // single-list layout, so it is what an expansion pushes down.
+        let files = app.staticTexts["Assistant"]
         let filesBefore = files.frame.minY
         toggle.tap()
 
@@ -134,7 +136,7 @@ final class JunoMobileWorkspaceScreensUITests: XCTestCase {
     /// The fixture artifact is an HTML one, so it is a kind that *can* render —
     /// which is what puts the Preview/Source switch on screen.
     @MainActor
-    func testArtifactDetailShowsTheViewSwitchAndItsMetaChips() {
+    func testArtifactDetailShowsTheViewSwitchAndItsActions() {
         let app = launch(tab: "artifacts")
         require(app.descendants(matching: .any)["juno.mobile.artifact-list"].firstMatch, app)
 
@@ -146,8 +148,8 @@ final class JunoMobileWorkspaceScreensUITests: XCTestCase {
 
         require(app.buttons["juno.mobile.artifact-menu"], app, timeout: 10)
 
-        // Preview/Source is our own switch now, not a `.segmented` Picker: it
-        // reports as two selectable buttons inside one labelled container.
+        // Preview/Source is the system segmented control again (round 2): it
+        // reports as two selectable buttons inside one identified container.
         require(
             app.descendants(matching: .any)["juno.mobile.artifact-view-mode"].firstMatch,
             app,
@@ -156,13 +158,11 @@ final class JunoMobileWorkspaceScreensUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Preview"].exists, "The view switch lost its Preview option.")
         XCTAssertTrue(app.buttons["Source"].exists, "The view switch lost its Source option.")
 
-        // The chips carry the facts the old header put in a coral text button and
-        // a bare Picker: where it came from, what it is, and which version.
+        // The page states where it came from in its actions menu ("Open Chat")
+        // and its kind in the navigation bar's secondary line on the sheet.
         XCTAssertTrue(
-            app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "Quasar observations"))
-                .firstMatch.exists
-                || app.staticTexts["HTML"].exists,
-            "The artifact header lost its metadata chips. On screen:\n\(app.debugDescription)"
+            app.buttons["juno.mobile.artifact-menu"].exists,
+            "The artifact page lost its actions menu. On screen:\n\(app.debugDescription)"
         )
 
         // And the switch actually switches.

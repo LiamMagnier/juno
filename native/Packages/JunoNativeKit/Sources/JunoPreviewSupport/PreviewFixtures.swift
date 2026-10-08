@@ -145,6 +145,14 @@ public enum PreviewFixtures {
         for row in PreviewShowcaseFixtures.rows(now: Date()) {
             out.append(record(a, row.namespace, row.id, row.revision, row.json))
         }
+        // The Q3 pack (a spreadsheet, a document and a deck), so Artifacts and
+        // its detail pages have something to show in product shots.
+        let now = Date()
+        out.append(contentsOf: PreviewArtifactFixtures.records(a) { offset in
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            return formatter.string(from: now.addingTimeInterval(offset))
+        })
         return out
     }
 

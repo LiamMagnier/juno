@@ -59,13 +59,12 @@ struct JunoMobileLibraryView: View {
     /// `documentIndex.lastErrorDescription`: "the picker errored" and "this PDF
     /// has no text in it" want different sentences.
     @State private var documentPickerFailure: String?
-    @FocusState private var searchFocused: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private let columns = [
-        GridItem(.flexible(), spacing: JunoSpace.regular),
-        GridItem(.flexible(), spacing: JunoSpace.regular),
-    ]
+    private let columns = Array(
+        repeating: GridItem(.flexible(), spacing: 4),
+        count: 3
+    )
 
     /// `libraryFiles`, not `files`: a file taken out of the Library is still
     /// synced, because the chat or project that uses it still shows it.
@@ -83,7 +82,6 @@ struct JunoMobileLibraryView: View {
                 content
             }
         }
-        .background(Color.junoCanvas)
         .navigationTitle("navigation.library")
         .navigationBarTitleDisplayMode(.large)
         .toolbar { libraryToolbar }
@@ -131,17 +129,7 @@ struct JunoMobileLibraryView: View {
         // by name; this is what makes the same keystrokes look *inside* the
         // documents indexed on this phone.
         .onChange(of: searchText) { _, value in documentIndex?.setQuery(value) }
-        .navigationDestination(isPresented: $showingMade) {
-            if let madeModel {
-                JunoMobileLibraryMadeView(
-                    model: madeModel,
-                    artifactModel: artifactModel,
-                    accountID: accountID,
-                    workClient: workClient,
-                    openConversation: openConversation
-                )
-            }
-        }
+        .navigationDestination(isPresented: $showingMade) { madeDestination }
         #if DEBUG
         .task {
             if CommandLine.arguments.contains("--juno-preview-library-made"), madeModel != nil {
@@ -209,162 +197,178 @@ struct JunoMobileLibraryView: View {
         }
     }
 
+    // MARK: - Content
+
+    /// Images, then documents, in one stock `List`.
+    ///
+    /// Round 2 (native first): the Library was a grid of bordered 26pt cards
+    /// under a glass chip bar, with a floating hand-made search capsule. It is the
+    /// shape Photos and Files use now — a segmented `Picker` that scrolls with the
+    /// content, the pictures as a tight thumbnail grid with small corners and no
+    /// frames, documents as plain rows, and `.searchable` for the field.
     @ViewBuilder
     private var content: some View {
-        ScrollView {
-            filterBar
+        List {
+            Section {
+                Picker("library.filter", selection: filterSelection) {
+                    ForEach(JunoLibraryFilter.allCases) { option in
+                        Text(option.title).tag(option)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 12, trailing: 16))
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
+                .accessibilityIdentifier("juno.mobile.library-filter")
 
-            if let madeModel {
-                madeRow(madeModel)
-            }
+                if model.phase == .offline || model.lastErrorDescription != nil {
+                    statusRow
+                }
 
-            documentIndexPanel
-
-            LazyVGrid(columns: columns, spacing: JunoSpace.regular) {
-                ForEach(files) { file in
-                    JunoLibraryCard(
-                        file: file,
-                        previews: previews,
-                        open: { open(file) },
-                        rename: {
-                            renameValue = file.fileName
-                            renameFileID = file.id
-                        },
-                        // The Library's own route. `deleteFile` is the project
-                        // screen's delete: it would take the file out of the
-                        // chat it was sent in too.
-                        remove: { Task { await model.removeFromLibrary(id: file.id) } },
-                        edit: canEdit(file) ? { editing = file } : nil,
-                        load: { await model.accessFile(id: file.id) }
-                    )
+                if madeModel != nil, filter == .all, searchText.isEmpty {
+                    NavigationLink(value: JunoLibraryMadeRoute()) {
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Made by Alevr")
+                                    .font(.body)
+                                Text("Pages, documents, spreadsheets and decks")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+                        } icon: {
+                            Image(systemName: "square.stack")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .alignmentGuide(.listRowSeparatorLeading) { $0[.leading] }
+                    .accessibilityIdentifier("juno.mobile.library-made")
                 }
             }
-            .padding(.horizontal, JunoSpace.regular)
-            // Clears the floating search field, so the last row is never
-            // trapped underneath it.
-            .padding(.bottom, JunoSpace.region * 3)
-            .animation(
-                JunoMotion.reduced(JunoMotion.standard, when: reduceMotion), value: files.count
-            )
 
-            if files.isEmpty { empty }
+            documentIndexSection
+
+            if !images.isEmpty {
+                Section {
+                    LazyVGrid(columns: columns, spacing: Self.gridSpacing) {
+                        ForEach(images) { file in
+                            JunoLibraryThumbnail(
+                                file: file,
+                                previews: previews,
+                                open: { open(file) },
+                                rename: { beginRename(file) },
+                                remove: { Task { await model.removeFromLibrary(id: file.id) } },
+                                edit: canEdit(file) ? { editing = file } : nil,
+                                load: { await model.accessFile(id: file.id) }
+                            )
+                        }
+                    }
+                    .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 8, trailing: 16))
+                    .listRowSeparator(.hidden)
+                    .animation(
+                        JunoMotion.reduced(JunoMotion.standard, when: reduceMotion), value: images.count
+                    )
+                } header: {
+                    if filter == .all { Text("library.filter.images") }
+                }
+            }
+
+            if !documents.isEmpty {
+                Section {
+                    ForEach(documents) { file in
+                        JunoLibraryDocumentRow(
+                            file: file,
+                            open: { open(file) },
+                            rename: { beginRename(file) },
+                            remove: { Task { await model.removeFromLibrary(id: file.id) } }
+                        )
+                    }
+                } header: {
+                    if filter == .all { Text("library.filter.documents") }
+                }
+            }
+
+            if files.isEmpty {
+                empty
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+            }
         }
+        .listStyle(.plain)
+        .searchable(text: $searchText, prompt: Text("library.search"))
+        .refreshable { await model.reload() }
         .scrollDismissesKeyboard(.interactively)
         .accessibilityIdentifier("juno.mobile.file-list")
-        .safeAreaInset(edge: .bottom) { searchField }
+        .navigationDestination(for: JunoLibraryMadeRoute.self) { _ in madeDestination }
     }
 
-    /// The way into the Library's other half: what Alevr made.
-    private func madeRow(_: NativeLibraryMadeModel) -> some View {
-        Button {
-            showingMade = true
-        } label: {
-            HStack(spacing: JunoSpace.cozy) {
-                Image(systemName: "square.stack")
-                    .font(.body)
-                    .foregroundStyle(Color.junoSecondaryInk)
-                    .frame(width: 32, height: 32)
-                    .background(Color.junoSecondary, in: .rect(cornerRadius: 8, style: .continuous))
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Made by Alevr")
-                        .font(.body)
-                        .foregroundStyle(Color.junoForeground)
-                    Text("Pages, documents, spreadsheets and decks")
-                        .font(.footnote)
-                        .foregroundStyle(Color.junoSecondaryInk)
-                }
-                Spacer(minLength: 0)
-                Image(systemName: "chevron.right")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(Color.junoSecondaryInk)
+    private static let gridSpacing: CGFloat = 4
+
+    private var images: [NativeProjectFile] { files.filter { $0.kind.uppercased() == "IMAGE" } }
+    private var documents: [NativeProjectFile] { files.filter { $0.kind.uppercased() != "IMAGE" } }
+
+    private var filterSelection: Binding<JunoLibraryFilter> {
+        Binding(
+            get: { filter },
+            set: { value in
+                withAnimation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion)) { filter = value }
             }
-            .padding(JunoSpace.regular)
-            .frame(minHeight: 44)
-            .background(Color.junoSurface, in: .rect(cornerRadius: 16, style: .continuous))
-            .contentShape(.rect)
-        }
-        .buttonStyle(.plain)
-        .padding(.horizontal, JunoSpace.regular)
-        .padding(.bottom, JunoSpace.regular)
-        .accessibilityIdentifier("juno.mobile.library-made")
+        )
     }
 
-    /// All · Images · Documents. A filter, not navigation — the reader is
-    /// narrowing one collection, not moving between three.
-    ///
-    /// **In the scroll, not pinned above it.** It used to be a
-    /// `safeAreaInset(edge: .top)` painted with `.bar`, which put an opaque
-    /// full-width strip directly under the navigation bar — two stacked bars in
-    /// the same material, a hard horizontal seam across the top of the screen,
-    /// and a permanent slab of chrome for three words the reader touches once.
-    /// Nothing else in this app pins content-level controls: the project screen,
-    /// Memory and Settings all scroll their sections, and the status strip in
-    /// particular is documented as belonging *in* the content. It scrolls now,
-    /// and the only floating surface left on the screen is the search field,
-    /// which is glass on purpose because it is always reachable.
-    private var filterBar: some View {
-        VStack(spacing: 0) {
-            JunoMobileWorkspaceStatus(
-                conflicted: false,
-                offline: model.phase == .offline,
-                message: model.lastErrorDescription,
-                conflictMessage: "",
-                offlineMessage: "Offline — showing saved files.",
-                retry: { Task { await model.reload() } },
-                keepMine: {},
-                useServer: {}
+    private func beginRename(_ file: NativeProjectFile) {
+        renameValue = file.fileName
+        renameFileID = file.id
+    }
+
+    @ViewBuilder
+    private var madeDestination: some View {
+        if let madeModel {
+            JunoMobileLibraryMadeView(
+                model: madeModel,
+                artifactModel: artifactModel,
+                accountID: accountID,
+                workClient: workClient,
+                openConversation: openConversation
             )
-            .padding(.horizontal, JunoSpace.regular)
-
-            // The container stays: the selected chip is a glass element, and glass
-            // laid down outside one samples independently instead of blending
-            // with its neighbours. It is the `.bar` slab behind the row that is
-            // gone, not the chips' own material.
-            JunoGlass(spacing: JunoSpace.cozy) {
-                HStack(spacing: JunoSpace.snug) {
-                    ForEach(JunoLibraryFilter.allCases) { option in
-                        chip(option)
-                    }
-                    Spacer(minLength: 0)
-                }
-            }
-            .padding(.horizontal, JunoSpace.regular)
-            .padding(.top, JunoSpace.hairline)
-            .padding(.bottom, JunoSpace.cozy)
         }
+    }
+
+    /// Offline or a failed refresh, as one plain row with a Retry button.
+    private var statusRow: some View {
+        HStack(spacing: JunoSpace.cozy) {
+            Image(systemName: model.phase == .offline ? "wifi.slash" : "exclamationmark.triangle")
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            Text(model.lastErrorDescription ?? "Offline — showing saved files.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+            Spacer(minLength: 0)
+            Button("Retry") { Task { await model.reload() } }
+                .contentShape(.rect)
+                .font(.subheadline)
+        }
+        .listRowSeparator(.hidden)
     }
 
     // MARK: - Local document index
 
-    /// What the on-device index has to say, or nothing at all.
-    ///
-    /// Above the grid rather than below it, because while a search is running
-    /// these passages are the *answer* and the thumbnails are context. It
-    /// collapses entirely when the index is empty and idle, so a reader who never
-    /// indexes a document never sees a strip of chrome for a feature they are not
-    /// using.
+    /// What the on-device index has to say, or nothing at all: a summary row,
+    /// any failure, then the matching passages as plain rows.
     @ViewBuilder
-    private var documentIndexPanel: some View {
+    private var documentIndexSection: some View {
         if let index = documentIndex, index.isReady, indexPanelHasContent(index) {
-            VStack(alignment: .leading, spacing: JunoSpace.cozy) {
+            Section {
                 indexSummary(index)
                 if let failure = documentPickerFailure ?? index.lastErrorDescription {
                     indexFailure(failure, index: index)
                 }
                 indexResults(index)
+            } header: {
+                Text("On this iPhone")
             }
-            .padding(JunoSpace.regular)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
-                    .fill(Color.junoSurface)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
-                    .strokeBorder(Color.junoHairline, lineWidth: 1)
-            )
-            .padding(.horizontal, JunoSpace.regular)
-            .padding(.bottom, JunoSpace.cozy)
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Documents indexed on this phone")
             .accessibilityIdentifier("juno.mobile.library-document-index")
@@ -379,12 +383,13 @@ struct JunoMobileLibraryView: View {
     }
 
     private func indexSummary(_ index: NativeDocumentIndexModel) -> some View {
-        HStack(spacing: JunoSpace.snug) {
-            JunoIconView(.search, size: 16)
-                .junoSecondaryInk()
+        HStack(spacing: JunoSpace.cozy) {
+            Image(systemName: "doc.text.magnifyingglass")
+                .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
             Text(indexSummaryLine(index))
-                .junoFont(size: 15, relativeTo: .subheadline)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
                 .lineLimit(2)
             Spacer(minLength: 0)
             if index.isIngesting {
@@ -399,23 +404,20 @@ struct JunoMobileLibraryView: View {
                         }
                     }
                 } label: {
-                    JunoIconView(.ellipsis, size: 17)
-                        .junoFont(size: 17, relativeTo: .body)
-                        .junoSecondaryInk()
+                    Image(systemName: "ellipsis")
+                        .foregroundStyle(.secondary)
+                        .frame(width: 44, height: 44)
+                        .contentShape(.rect)
                 }
                 .accessibilityLabel("Manage indexed documents")
                 .accessibilityIdentifier("juno.mobile.library-document-index-manage")
-                .contentShape(.rect)
             }
         }
     }
 
     /// The counts come from the index, and the OCR clause appears only when some
-    /// document really was transcribed — a blanket "may contain OCR errors" over
-    /// documents that carried embedded text would warn about something that did
-    /// not happen. The memory-only note is stated rather than assumed: nothing
-    /// here writes document text to disk, so quitting does empty the index, and a
-    /// reader who expected otherwise would call the feature broken.
+    /// document really was transcribed. The memory-only note is stated rather
+    /// than assumed: nothing here writes document text to disk.
     private func indexSummaryLine(_ index: NativeDocumentIndexModel) -> String {
         if let name = index.ingestingFileName { return "Reading \(name)…" }
         guard !index.documents.isEmpty else {
@@ -432,21 +434,20 @@ struct JunoMobileLibraryView: View {
     }
 
     private func indexFailure(_ message: String, index: NativeDocumentIndexModel) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
-            JunoIconView(.error, size: 17)
+        HStack(alignment: .firstTextBaseline, spacing: JunoSpace.cozy) {
+            Image(systemName: "exclamationmark.triangle")
                 .foregroundStyle(Color.junoCaution)
                 .accessibilityHidden(true)
             Text(message)
-                .junoCaption()
+                .font(.subheadline)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
             Button("Dismiss") {
                 documentPickerFailure = nil
                 index.clearError()
             }
-            .buttonStyle(.plain)
-            .junoCaption()
             .contentShape(.rect)
+            .font(.subheadline)
         }
         .accessibilityIdentifier("juno.mobile.library-document-index-error")
     }
@@ -458,38 +459,32 @@ struct JunoMobileLibraryView: View {
     private func indexResults(_ index: NativeDocumentIndexModel) -> some View {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         if !query.isEmpty, !index.documents.isEmpty {
-            Divider()
             if index.isSearching, index.passages.isEmpty {
                 Text("Searching your documents…")
-                    .junoCaption()
-                    .junoSecondaryInk()
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
             } else if index.passages.isEmpty {
                 Text("No indexed document mentions “\(query)”.")
-                    .junoCaption()
-                    .junoSecondaryInk()
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
             } else {
-                VStack(alignment: .leading, spacing: JunoSpace.cozy) {
-                    ForEach(index.passages) { passage in
-                        passageRow(passage)
-                    }
+                ForEach(index.passages) { passage in
+                    passageRow(passage)
                 }
-                .accessibilityIdentifier("juno.mobile.library-document-passages")
             }
         }
     }
 
-    /// One hit: where it came from, then what it says. The locator leads because
-    /// it is what a reader checks before trusting the quote, and it names only the
-    /// positional facts the extractor actually observed.
+    /// One hit: where it came from, then what it says.
     private func passageRow(_ passage: NativeDocumentPassage) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(passage.locator)
-                .junoCaption()
-                .junoSecondaryInk()
+                .font(.footnote)
+                .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .truncationMode(.middle)
             Text(passage.text)
-                .junoFont(size: 15, relativeTo: .subheadline)
+                .font(.subheadline)
                 .lineLimit(4)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
@@ -497,12 +492,11 @@ struct JunoMobileLibraryView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(passage.locator). \(passage.text)")
+        .accessibilityIdentifier("juno.mobile.library-document-passages")
     }
 
     /// Reads the chosen files one after another, so the progress line always
-    /// names the file actually being read. The model re-ranks the query it is
-    /// holding as part of storing each document, so a file indexed while a search
-    /// was already typed answers that search immediately.
+    /// names the file actually being read.
     private func ingest(_ urls: [URL]) async {
         guard let documentIndex else { return }
         for url in urls {
@@ -510,78 +504,20 @@ struct JunoMobileLibraryView: View {
         }
     }
 
-    private func chip(_ option: JunoLibraryFilter) -> some View {
-        let selected = filter == option
-        return Button {
-            withAnimation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion)) {
-                filter = option
-            }
-        } label: {
-            Text(option.title)
-                .junoFont(size: 17, relativeTo: .body, weight: selected ? .semibold : .regular)
-                .foregroundStyle(selected ? Color.primary : Color.secondary)
-                .padding(.horizontal, JunoSpace.regular)
-                .frame(height: 40)
-                .modifier(JunoLibraryChipBackground(selected: selected))
-        }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(selected ? [.isSelected, .isButton] : .isButton)
-        .accessibilityIdentifier("juno.mobile.library-filter.\(option.rawValue)")
-        .frame(minWidth: 44, minHeight: 44)
-        .contentShape(.rect)
-    }
-
-    /// The search field floats over the grid rather than sitting in the
-    /// navigation bar. On a screen whose whole content is a grid, a search field
-    /// pinned to the top costs a row of previews on every scroll; down here it
-    /// costs nothing and is where the thumb already is.
-    private var searchField: some View {
-        JunoGlass(spacing: JunoSpace.regular) {
-            HStack(spacing: JunoSpace.cozy) {
-                JunoIconView(.search, size: 17)
-                    .junoFont(size: 17, relativeTo: .body, weight: .medium)
-                    .junoSecondaryInk()
-                TextField("library.search", text: $searchText)
-                    .textFieldStyle(.plain)
-                    .junoFont(size: 17, relativeTo: .body)
-                    .focused($searchFocused)
-                    .submitLabel(.search)
-                    .accessibilityIdentifier("juno.mobile.library-search")
-                if !searchText.isEmpty {
-                    Button {
-                        searchText = ""
-                    } label: {
-                        JunoIconView(.close, size: 17)
-                            .junoFont(size: 17, relativeTo: .body)
-                            .junoMetaInk()
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("library.search.clear")
-                    .contentShape(.rect)
-                }
-            }
-            .padding(.horizontal, JunoSpace.regular)
-            .frame(height: 52)
-            .junoGlass(in: Capsule(), interactive: true)
-        }
-        .padding(.horizontal, JunoSpace.regular)
-        .padding(.bottom, JunoSpace.cozy)
-    }
-
     @ViewBuilder
     private var empty: some View {
         if model.libraryFiles.isEmpty {
-            JunoLibraryMessage(
-                icon: .files,
-                title: "library.empty.title",
-                detail: "library.empty.detail"
-            )
+            ContentUnavailableView {
+                Label("library.empty.title", systemImage: "photo.on.rectangle")
+            } description: {
+                Text("library.empty.detail")
+            }
         } else {
-            JunoLibraryMessage(
-                icon: .search,
-                title: "library.no-matches.title",
-                detail: "library.no-matches.detail"
-            )
+            ContentUnavailableView {
+                Label("library.no-matches.title", systemImage: "magnifyingglass")
+            } description: {
+                Text("library.no-matches.detail")
+            }
         }
     }
 
@@ -597,46 +533,13 @@ struct JunoMobileLibraryView: View {
     }
 }
 
-private struct JunoLibraryMessage: View {
-    let icon: JunoIcon
-    let title: LocalizedStringKey
-    let detail: LocalizedStringKey
+/// The push into "Made by Alevr".
+private struct JunoLibraryMadeRoute: Hashable {}
 
-    var body: some View {
-        VStack(spacing: JunoSpace.cozy) {
-            JunoIconView(icon, size: 28)
-                .junoMetaInk()
-            Text(title)
-                .junoFont(size: 17, relativeTo: .headline, weight: .semibold)
-            Text(detail)
-                .font(.callout)
-                .junoSecondaryInk()
-                .multilineTextAlignment(.center)
-        }
-        .padding(.horizontal, JunoSpace.region)
-        .padding(.top, JunoSpace.region)
-        .frame(maxWidth: .infinity)
-    }
-}
+// MARK: - Thumbnail
 
-/// The selected filter chip's background. Glass when selected, nothing when not
-/// — a run of four glass capsules would read as four equally-active controls.
-private struct JunoLibraryChipBackground: ViewModifier {
-    let selected: Bool
-
-    func body(content: Content) -> some View {
-        if selected {
-            content.junoGlass(in: Capsule(), interactive: true)
-        } else {
-            content.contentShape(Capsule())
-        }
-    }
-}
-
-// MARK: - Card
-
-/// One file, shown as itself.
-private struct JunoLibraryCard: View {
+/// One picture in the grid: the thumbnail itself, small corners, no frame.
+private struct JunoLibraryThumbnail: View {
     let file: NativeProjectFile
     let previews: NativeFilePreviewLoader
     let open: () -> Void
@@ -645,53 +548,153 @@ private struct JunoLibraryCard: View {
     /// Present only for an image, and only when a model on this account can edit
     /// one. Absent rather than disabled — see `JunoMobileLibraryView`.
     let edit: (() -> Void)?
-    /// Fetches the bytes. Passed as a closure so the card never holds the model.
+    /// Fetches the bytes. Passed as a closure so the cell never holds the model.
     let load: () async -> NativeProjectFileAccess?
-
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var request: NativeFilePreviewRequest { NativeFilePreviewRequest(file) }
 
     var body: some View {
         Button(action: open) {
-            // The card, its fallback and its press behaviour are the shared ones
-            // — the attach-from-Library picker draws exactly this, and the two
-            // had already drifted into two designs once.
-            NativeFilePreviewTile(
-                file: request,
-                state: previews.state(for: file.id),
-                cornerRadius: 26
-            )
+            Color(.secondarySystemFill)
+                .aspectRatio(1, contentMode: .fit)
+                .overlay { picture }
+                .clipShape(.rect(cornerRadius: 6, style: .continuous))
+                .contentShape(.rect(cornerRadius: 6, style: .continuous))
         }
         .buttonStyle(NativeFilePreviewPressStyle())
         .contextMenu {
-            Button("Open", action: open)
-            if let edit { Button("Edit Image…", action: edit) }
-            Button("Rename", action: rename)
+            Button { open() } label: { Label("Open", systemImage: "eye") }
+            if let edit { Button { edit() } label: { Label("Edit Image…", systemImage: "wand.and.stars") } }
+            Button { rename() } label: { Label("Rename", systemImage: "pencil") }
             Divider()
             let removal = JunoLibraryRemovalLabel(file.libraryUse)
             Button(role: .destructive, action: remove) {
-                Text(removal.title)
-                // A menu item's second text is its subtitle: where the file
-                // stays is said before the tap, not after it.
+                Label(removal.title, systemImage: "trash")
                 if let detail = removal.detail { Text(detail) }
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(accessibilityLabel)
+        .accessibilityLabel("\(file.fileName), \(request.sizeLabel)")
         .accessibilityAddTraits(.isButton)
         .task(id: file.id) { await previews.load(request, using: load) }
-        .contentShape(.rect)
     }
 
-    private var sizeLabel: String {
-        ByteCountFormatter.string(fromByteCount: Int64(file.size), countStyle: .file)
-    }
-
-    private var accessibilityLabel: String {
-        "\(file.fileName), \(sizeLabel)"
+    @ViewBuilder
+    private var picture: some View {
+        switch previews.state(for: file.id) {
+        case .ready(let image):
+            Image(decorative: image, scale: 1)
+                .resizable()
+                .scaledToFill()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .transition(.opacity)
+        case .loading:
+            EmptyView()
+        case .unavailable:
+            Image(systemName: "photo")
+                .font(.title3)
+                .foregroundStyle(.tertiary)
+        }
     }
 }
+
+// MARK: - Document row
+
+/// One document as a plain list row: the type's symbol, the name, then size and
+/// date in secondary text.
+private struct JunoLibraryDocumentRow: View {
+    let file: NativeProjectFile
+    let open: () -> Void
+    let rename: () -> Void
+    let remove: () -> Void
+
+    var body: some View {
+        Button(action: open) {
+            HStack(spacing: JunoSpace.cozy) {
+                Image(systemName: Self.symbol(for: file.fileName))
+                    .font(.title3)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 32)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(file.fileName)
+                        .font(.body)
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Text(detail)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+            }
+            .frame(minHeight: 44)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            Button(role: .destructive, action: remove) {
+                Label(JunoLibraryRemovalLabel(file.libraryUse).title, systemImage: "trash")
+            }
+            Button(action: rename) { Label("Rename", systemImage: "pencil") }
+        }
+        .contextMenu {
+            Button { open() } label: { Label("Open", systemImage: "eye") }
+            Button { rename() } label: { Label("Rename", systemImage: "pencil") }
+            Divider()
+            let removal = JunoLibraryRemovalLabel(file.libraryUse)
+            Button(role: .destructive, action: remove) {
+                Label(removal.title, systemImage: "trash")
+                if let detail = removal.detail { Text(detail) }
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private var detail: String {
+        let size = ByteCountFormatter.string(fromByteCount: Int64(file.size), countStyle: .file)
+        return "\(size) · \(JunoMobileRelativeDate.text(file.createdAt))"
+    }
+
+    static func symbol(for fileName: String) -> String {
+        switch URL(fileURLWithPath: fileName).pathExtension.lowercased() {
+        case "pdf": "doc.richtext"
+        case "xls", "xlsx", "csv", "numbers": "tablecells"
+        case "ppt", "pptx", "key": "rectangle.on.rectangle"
+        case "zip", "gz", "tar": "doc.zipper"
+        case "mp3", "m4a", "wav", "aac": "waveform"
+        case "mov", "mp4", "m4v": "film"
+        case "swift", "js", "ts", "tsx", "py", "json", "html", "css": "chevron.left.forwardslash.chevron.right"
+        default: "doc.text"
+        }
+    }
+}
+
+/// "Now", "2 min", "3 hr", "Yesterday", "Tuesday", "12 Sep", "12 Sep 2024" —
+/// the short relative stamps Mail and Messages use. Shared by the workspace
+/// lists so every row reads its date the same way.
+enum JunoMobileRelativeDate {
+    static func text(_ date: Date, now: Date = .now, calendar: Calendar = .current) -> String {
+        let seconds = now.timeIntervalSince(date)
+        if seconds < 60 { return String(localized: "Now") }
+        if seconds < 3_600 {
+            return Duration.seconds(seconds).formatted(.units(allowed: [.minutes], width: .abbreviated))
+        }
+        if calendar.isDateInToday(date) {
+            return Duration.seconds(seconds).formatted(.units(allowed: [.hours], width: .abbreviated))
+        }
+        if calendar.isDateInYesterday(date) { return String(localized: "Yesterday") }
+        if let days = calendar.dateComponents([.day], from: date, to: now).day, days < 7 {
+            return date.formatted(.dateTime.weekday(.wide))
+        }
+        if calendar.isDate(date, equalTo: now, toGranularity: .year) {
+            return date.formatted(.dateTime.day().month(.abbreviated))
+        }
+        return date.formatted(.dateTime.day().month(.abbreviated).year())
+    }
+}
+
 
 // MARK: - Removal
 

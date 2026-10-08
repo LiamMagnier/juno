@@ -49,15 +49,30 @@ struct JunoMobileInlineArtifactView: View {
         Binding(get: { resolvedMode }, set: { displayMode = $0 })
     }
 
+    /// Round 2: a navigation bar with the title, the kind and "From this
+    /// conversation" as one secondary line, the system segmented control for
+    /// Preview/Source, and the artifact edge to edge — no card, no outline.
     var body: some View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: JunoSpace.cozy) {
-                header
-                controls
+                Text(metaLine)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                if availableModes.count > 1 {
+                    Picker("View", selection: modeSelection) {
+                        ForEach(availableModes) { mode in
+                            Text(mode.title).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .accessibilityIdentifier("juno.mobile.inline-artifact-view-mode")
+                }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, JunoSpace.regular)
-            .padding(.top, JunoSpace.hairline)
-            .padding(.bottom, JunoSpace.regular)
+            .padding(.bottom, JunoSpace.cozy)
 
             JunoMobileArtifactBody(
                 kind: artifact.kind,
@@ -68,78 +83,33 @@ struct JunoMobileInlineArtifactView: View {
             // document's errors onto the next.
             .id(artifact.id)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(
-                RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
-                    .fill(Color.junoSurface)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
-                    .strokeBorder(Color.junoHairline, lineWidth: 1)
-            )
-            .padding(.horizontal, JunoSpace.regular)
-            .padding(.bottom, JunoSpace.regular)
         }
-        .junoScreenCanvas()
+        .background(Color(.systemBackground))
         .navigationTitle(reference.title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button(action: close) {
-                    JunoIconView(.close, size: 15)
-                        .foregroundStyle(Color.primary)
+                ShareLink(item: reference.content) {
+                    Label("artifact.share-source", systemImage: "square.and.arrow.up")
                 }
-                .accessibilityLabel("artifact.close")
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button(action: close) {
+                    Label("artifact.close", systemImage: "xmark")
+                }
                 .accessibilityIdentifier("juno.mobile.inline-artifact-close")
             }
         }
         .accessibilityIdentifier("juno.mobile.inline-artifact")
     }
 
-    private var header: some View {
-        VStack(alignment: .leading, spacing: JunoSpace.cozy) {
-            Text(reference.title)
-                .junoPageHeading(compact: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .accessibilityAddTraits(.isHeader)
-
-            HStack(spacing: JunoSpace.tight) {
-                JunoMobileMetaChip(title: kindName, icon: kindGlyph)
-                if let language = reference.language, !language.isEmpty {
-                    JunoMobileMetaChip(title: language.uppercased())
-                }
-                // Says which copy this is, rather than pretending to be the
-                // stored one. "From this conversation" is the whole difference
-                // between the two screens.
-                JunoMobileMetaChip(
-                    title: String(localized: "artifact.from-conversation"),
-                    icon: .conversation
-                )
-            }
-        }
-    }
-
-    private var controls: some View {
-        HStack(spacing: JunoSpace.cozy) {
-            // Nothing for a kind with one view — a one-segment switcher is a
-            // label wearing a control's clothes — and three for a page, a graphic
-            // or a component, which now includes the live canvas.
-            if availableModes.count > 1 {
-                JunoMobileSegmented(
-                    options: availableModes.map { .init($0, $0.title) },
-                    selection: modeSelection,
-                    accessibilityLabel: "View"
-                )
-                .accessibilityIdentifier("juno.mobile.inline-artifact-view-mode")
-            }
-            Spacer(minLength: 0)
-            ShareLink(item: reference.content) {
-                JunoIconView(.share, size: 15)
-                    .foregroundStyle(Color.primary.opacity(0.75))
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
-            }
-            .accessibilityLabel("artifact.share-source")
-        }
+    /// The kind, the language, and which copy this is — "From this
+    /// conversation" is the whole difference between this and the stored one.
+    private var metaLine: String {
+        var parts = [kindName]
+        if let language = reference.language, !language.isEmpty { parts.append(language.uppercased()) }
+        parts.append(String(localized: "artifact.from-conversation"))
+        return parts.joined(separator: " · ")
     }
 
     private var kindName: String {
@@ -154,20 +124,6 @@ struct JunoMobileInlineArtifactView: View {
         case .spreadsheet: "Spreadsheet"
         case .document: "Document"
         case .presentation: "Deck"
-        }
-    }
-
-    private var kindGlyph: JunoIcon {
-        switch artifact.kind {
-        case .react, .html: .code
-        case .svg: .artifacts
-        case .mermaid: .branch
-        case .design: .writing
-        case .markdown: .file
-        case .code: .code
-        case .spreadsheet: .grid
-        case .document: .file
-        case .presentation: .squareStack
         }
     }
 }
