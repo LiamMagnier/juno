@@ -3225,39 +3225,23 @@
   .prose-juno hr { border: none; border-top: 1px solid hsl(var(--border)); }
   .prose-juno.prose-juno > hr { margin-block: 1.75em; }
 
-  /* Inline educational visuals own their internal layout; keep prose defaults
-     from adding heading margins, list markers, or table spacing inside them. */
+  /* Live UI views (.juno-visual) own their internal layout; keep prose
+     defaults from adding heading margins, list markers or table spacing. */
   .prose-juno .juno-visual p,
   .prose-juno .juno-visual h3,
   .prose-juno .juno-visual h4,
-  .prose-juno .juno-step-lab p,
-  .prose-juno .juno-step-lab h3,
-  .prose-juno .juno-step-lab h4,
-  .prose-juno .juno-step-lab h5 {
-    margin: 0;
-  }
+  .prose-juno .juno-visual h5,
   .prose-juno .juno-visual ol,
   .prose-juno .juno-visual ul,
+  .prose-juno .juno-visual li,
   .prose-juno .juno-visual details,
-  .prose-juno .juno-step-lab ol,
-  .prose-juno .juno-step-lab ul,
-  .prose-juno .juno-step-lab details {
+  .prose-juno .juno-visual table {
     margin: 0;
   }
   .prose-juno .juno-visual ol,
-  .prose-juno .juno-visual ul,
-  .prose-juno .juno-step-lab ol,
-  .prose-juno .juno-step-lab ul {
+  .prose-juno .juno-visual ul {
     padding-left: 0;
     list-style: none;
-  }
-  .prose-juno .juno-visual li,
-  .prose-juno .juno-step-lab li {
-    margin: 0;
-  }
-  .prose-juno .juno-visual table,
-  .prose-juno .juno-step-lab table {
-    margin: 0;
   }
 }
 

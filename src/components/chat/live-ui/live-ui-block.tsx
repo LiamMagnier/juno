@@ -21,7 +21,7 @@ import { cn } from "@/lib/utils";
  * is stable across stream deltas, so the reader can drag a slider while the
  * rest of the view is still arriving and keep what they set.
  *
- * Chrome is the learning blocks' (block-shell.tsx): a figure set into the
+ * Chrome: a figure set into the
  * article between two hairlines, no card fill, no shadow. Inside, structure is
  * spacing and type — two weights, the value in the first ink, everything that
  * explains it in the second — and the accent appears twice at most: the

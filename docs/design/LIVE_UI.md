@@ -5,9 +5,12 @@ iOS apps. Alevr's answer to GPT-6 "Intelligent UI" (Oct 2026): instead of a
 paragraph about how the tip changes the split, the reply carries the split,
 with the tip on a slider.
 
-Live UI is for lightweight, declarative views that live inside a message.
-Full apps and games stay in Canvas artifacts (sandboxed HTML/React), and
-lessons stay in the `:::` learning blocks. Live UI never runs code.
+Live UI is the one interactive-answer system: lightweight, declarative views
+inside a message, chosen by the model on its own when a view makes the answer
+clearly better (explaining, comparing, what-ifs, self-checks, exploring), the
+way ChatGPT's intelligent UI works. It replaced the old `:::` learning blocks
+and `juno-visual` fences (§12). Full apps and games stay in Canvas artifacts
+(sandboxed HTML/React). Live UI never runs code.
 
 ## 1. The block
 
@@ -61,10 +64,14 @@ Every component is `{"type": …}`. Inputs carry `id`, `label`, `value` (default
 |         | `text`      | `text` with `{{expr}}` and `**bold**`, `tone?` `muted` |
 |         | `progress`  | `label`, `value` (expr), `max?` (expr, default 1), `format?` |
 |         | `chart`     | `kind` line/area/bar; either `x:{from,to,step,var?,label?}` + `series:[{label,y}]` (y sees `x`), or `rows` (expr) + `xKey` (expr per row) + `series` (y per row); `format?`; `mark?` (an x to rule and rest the readout on; an area chart shades up to it) |
-|         | `table`     | `rows` (expr), `columns:[{label,value,format?}]` (value sees the row's fields) |
+|         | `table`     | `rows` (expr), `columns:[{label,value,format?}]` (value sees the row's fields), `rowHeader?` (first column labels the rows, for comparisons), `highlight?` (a column index to set apart) |
 |         | `explorer`  | `parts:[{id,label,summary?,detail,facts?:[{label,value}],at?:[x,y]}]`, `links?:[[a,b]]` |
 |         | `stops`     | `stops:[{name,time?,note?,query?}]` |
 |         | `checklist` | `id`, `items` (strings or `{label,note?}`) |
+| Teach   | `steps`     | `title?`, `steps:[{title, summary?, notice?, detail?, ui?:[components]}]`, `takeaway?`: a guided walkthrough with Back/Next, a step list (a segmented rail at phone width), each step's own visual built from any components, a "Notice" line, optional detail, and the takeaway once the end is reached |
+|         | `quiz`      | `title?`, `questions:[{question, options (strings or {label, explanation?, correct?}), answer (index, or the option's text), explanation?, hint?}]`: one question at a time, locked answers marked and explained, a score with the questions at the end, Try again |
+|         | `callout`   | `tone` insight/tip/warning/note, `title?`, `text`, `more?` (revealed on request): a key idea or a deep dive |
+|         | `timeline`  | `title?`, `items` (strings or `{label, detail?, time?}`): ordered stages on one rail |
 | Action  | `button`    | `label`, and `prompt` (text with `{{expr}}`, sent as the user's next message) or `copy` (expr) |
 
 `format`: `number`, `integer`, `currency`, `percent`, `compact`, `date`.
@@ -120,6 +127,7 @@ loops, no regexes, no network.
 | `data` lists | 200 rows; `range` 500 values |
 | Chart | 4 series, 400 points each |
 | Table rows / explorer parts / stops / checklist / options | 100 / 24 / 25 / 40 / 12 |
+| Steps / quiz questions / quiz options / timeline items | 12 / 10 / 6 / 20 |
 | `let` entries | 40 |
 | String results | 2,000 characters |
 
@@ -159,12 +167,23 @@ the cache prefix holds). It is on for the web and for native builds that
 declare the `live_ui` client feature (`src/lib/chat/client-features.ts`);
 shipped native builds that cannot render it never see it. Never in voice mode.
 
-When: numbers with what-ifs, budgets, loans, savings, splitting, conversions,
-comparisons where tweaking matters, exploring the parts of a system, a route
-or step plan to tick off. Allowed for ANSWER and UNDERSTAND.
-When not: simple facts, definitions, chit-chat, a single number with nothing to
-adjust, BUILD requests (they want real code or an artifact). One view per reply
-at most, always with prose that states the answer on its own.
+The model decides on its own, as it writes, whether a view makes the answer
+clearly better; the user never has to ask. When: how something works or a
+process with stages (steps), options side by side (table), what-ifs with
+numbers (inputs + metric/chart), checking understanding after teaching (quiz),
+the parts of a system (explorer), a plan to work through (checklist).
+When not: simple facts, definitions, quick answers, opinions, chit-chat, and
+BUILD requests (they want the code itself or an artifact). Never decorate:
+usually one view, two only when they do different jobs, always with prose that
+states the answer on its own. The examples are an explanation (steps + quiz), a
+comparison (table + callout) and a calculator. A diagram with branches or
+loops may be a ```` ```mermaid ```` block; a straight run of stages is a
+timeline or steps.
+
+Clients without `live_ui` (shipped native builds before 9b14e12d) get plain
+prose: no views and no old blocks. Those builds still contain the old block
+renderer, so their history keeps rendering there; new replies to them are
+prose only.
 
 ## 8. Renderers
 
@@ -199,7 +218,14 @@ web-motion lane and was not changed here.
 - Web UI: `src/components/chat/live-ui/*`, routed from `markdown.tsx`
 - Gallery: `/dev/live-ui` (samples in `contracts/live-ui/samples.json`, shared with the native snapshot test)
 - Swift core + views: `native/Packages/JunoNativeKit/Sources/JunoDesignSystem/LiveUI/*`
+- Legacy conversion: `src/lib/live-ui/legacy/*` (parsers + `convert.ts`),
+  `JunoLiveUILegacy.swift`, fixtures `contracts/live-ui/fixtures/legacy.json`,
+  demo reply `contracts/live-ui/legacy-reply.json`
+- Teaching components: `src/components/chat/live-ui/live-ui-learning.tsx`,
+  `JunoLiveUILearning.swift`
 - Tests: `tests/live-ui.test.ts` (fixtures, streaming prefixes, safety bounds),
+  `tests/live-ui-legacy.test.ts` + `JunoLiveUILegacyTests.swift` (conversion),
+  `tests/mermaid-inline.test.ts` (the inline diagram document),
   `tests/live-ui-prompt.test.ts` (prompt gating, cache stability, every prompt
   example and gallery sample is a valid view), `LiveUIFixtureTests.swift` (the
   same fixtures in Swift), `LiveUISnapshotTests.swift` (offscreen PNGs when
@@ -216,3 +242,43 @@ web-motion lane and was not changed here.
 - Liquid Glass on the explorer card cannot be photographed offscreen; check it
   in the running app.
 - Copying a whole reply copies the block's JSON with it.
+
+## 12. History: the retired learning blocks
+
+Until October 2026 models were taught two older systems: `:::kind` YAML
+learning blocks (step-lab, learning-card, process-timeline, comparison, quiz,
+deep-dive) and ```` ```juno-visual ```` JSON fences. Neither is taught any more;
+both had their own renderers on web and native, which are deleted.
+
+Saved replies still contain them, so they are **converted**, not rendered by a
+legacy view: `src/lib/live-ui/legacy/convert.ts` (and `JunoLiveUILegacy.swift`)
+map each one to a Live UI spec, and the one Live UI renderer draws it.
+
+- Web: `splitMessageContent` rewrites `:::` blocks into ```` ```live-ui ````
+  fences; `markdown.tsx` sends `juno-visual` fences through the converter.
+- Native: `JunoLessonText` splits old blocks out as Live UI sources;
+  `JunoMarkdownText` converts `juno-visual` fences.
+- Mapping: step-lab → `steps` (each step's visual from its own data: tokens
+  and embeddings as tables, attention as a row-headed weight table,
+  probabilities as a bar chart, next-token as text, generic as a timeline; a
+  step with no data gets no visual, nothing is invented; the lab's quiz goes on
+  the last step), learning-card → `callout`, process-timeline → `timeline`,
+  comparison → row-headed `table` + verdict `callout`, quiz → `quiz`,
+  deep-dive → `callout` with `more`. Visual cards → explorer list, steps →
+  steps, flow/timeline → timeline, comparison → table, quiz → quiz, callout →
+  callout. Anything unreadable is one quiet line, never YAML.
+- The parsers stay, marked legacy, only to feed the converter and to strip
+  old blocks from speech.
+
+## 13. Mermaid in chat
+
+Mermaid stays for diagrams with branches, loops or lanes. The inline block
+(`src/components/chat/mermaid-block.tsx`) draws in a sandboxed document built
+by `buildInlineMermaidDoc`: transparent, `color-scheme` matched, Mermaid's
+`base` theme fed from the app's tokens (redrawn on a theme change), drawn at
+natural size and fitted to the column between 0.6× and 1× (sideways scroll
+past the minimum), and the frame takes the drawing's reported height. Click or
+Expand opens it in a dialog at up to 2×. It replaced a fixed 18rem frame with
+Mermaid's light default centred in it (a small diagram in a large white box in
+dark mode). Native already draws Mermaid with its own themed renderer
+(`MermaidDiagramView`).

@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ArrowLeft, ArrowRight, Check, Eye, Info, Plus, RotateCcw, Target, TriangleAlert, X, Zap } from "@/components/ui/icons";
+import { ArrowLeft, ArrowRight, Check, Eye, Info, Plus, RotateCcw, Star, Target, TriangleAlert, X } from "@/components/ui/icons";
 import type { LiveCalloutTone, LiveComponent } from "@/lib/live-ui/spec";
 import { cn } from "@/lib/utils";
 
@@ -437,7 +437,7 @@ export function LiveQuiz({ quiz, interp }: { quiz: Quiz; interp: Interp }) {
 
 const TONE: Record<LiveCalloutTone, { label: string; Icon: typeof Info; rule: string }> = {
   insight: { label: "Key idea", Icon: Target, rule: "border-primary/70" },
-  tip: { label: "Tip", Icon: Zap, rule: "border-success/60" },
+  tip: { label: "Tip", Icon: Star, rule: "border-success/60" },
   warning: { label: "Watch out", Icon: TriangleAlert, rule: "border-warning/70" },
   note: { label: "Note", Icon: Info, rule: "border-foreground/25" },
 };
