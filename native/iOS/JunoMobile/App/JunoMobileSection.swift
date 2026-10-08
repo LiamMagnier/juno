@@ -102,8 +102,20 @@ enum JunoMobileSection: String, CaseIterable, Hashable, Identifiable {
     /// something on your behalf while you are elsewhere — Code and Tasks are
     /// both things you sit with. Agents sits beside it for the same reason:
     /// an agent is who that work is delegated to (docs/design/AGENTS.md §3.1).
+    ///
+    /// Round 2 (Oct 2026) cut the column to ChatGPT's length — six
+    /// destinations plus Research — by folding the two that are views of
+    /// another: Artifacts are things in your Library, and Work sessions are
+    /// runs you watch from Code. See ``foldedDestinations``.
     static let drawerDestinations: [JunoMobileSection] = [
-        .library, .projects, .connections, .tasks, .code, .agents, .work, .artifacts,
+        .library, .projects, .code, .agents, .tasks, .connections,
+    ]
+
+    /// Destinations reached from inside another rather than from the drawer:
+    /// the value is where the way in lives.
+    static let foldedDestinations: [JunoMobileSection: JunoMobileSection] = [
+        .artifacts: .library,
+        .work: .code,
     ]
 
     /// The SF Symbol the redesigned phone sidebar draws for this destination:

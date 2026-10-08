@@ -38,13 +38,22 @@ final class JunoMobileNavigationTests: XCTestCase {
     }
 
     /// The drawer lists every destination except the three that have their own
-    /// control: chat *is* the conversation list, search is the header button,
-    /// settings is the footer avatar.
+    /// control (chat *is* the conversation list, search is the header button,
+    /// settings is the footer gear) and the two folded into another screen
+    /// (Artifacts in Library, Work in Code) — and every folded one names a
+    /// host the drawer does list, so nothing becomes unreachable.
     func testTheDrawerListsEveryDestinationWithoutItsOwnControl() {
         let drawer = Set(JunoMobileSection.drawerDestinations)
-        let expected = Set(JunoMobileSection.allCases).subtracting([.chat, .search, .settings])
+        let folded = JunoMobileSection.foldedDestinations
+        let expected = Set(JunoMobileSection.allCases)
+            .subtracting([.chat, .search, .settings])
+            .subtracting(folded.keys)
 
         XCTAssertEqual(drawer, expected)
+        XCTAssertTrue(drawer.isDisjoint(with: folded.keys))
+        for host in folded.values {
+            XCTAssertTrue(drawer.contains(host), "\(host) hosts a folded destination but is not in the drawer")
+        }
         XCTAssertEqual(
             JunoMobileSection.drawerDestinations.count, drawer.count, "a destination is listed twice"
         )

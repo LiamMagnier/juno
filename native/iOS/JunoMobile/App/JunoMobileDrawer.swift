@@ -496,20 +496,23 @@ struct JunoMobileSidebarDrawer: View {
   /// (Library, Projects, Artifacts), what works for you (Research, Code, Orbit,
   /// Work), what runs on a schedule (Routines), and what Alevr can reach (Apps).
   private var drawerRows: [DrawerRow] {
-    var rows: [DrawerRow] = [
-      DrawerRow(kind: .destination(.library)),
-      DrawerRow(kind: .destination(.projects)),
-      DrawerRow(kind: .destination(.artifacts)),
-    ]
-    if startResearch != nil { rows.append(DrawerRow(kind: .research)) }
-    rows += [
-      DrawerRow(kind: .destination(.code)),
-      DrawerRow(kind: .destination(.agents)),
-      DrawerRow(kind: .destination(.work)),
-      DrawerRow(kind: .destination(.tasks)),
-      DrawerRow(kind: .destination(.connections)),
-    ]
+    var rows = JunoMobileSection.drawerDestinations.map { DrawerRow(kind: .destination($0)) }
+    // Research sits with the things that work for you, before Code.
+    if startResearch != nil {
+      rows.insert(DrawerRow(kind: .research), at: 2)
+    }
     return rows
+  }
+
+  /// Code's row speaks for Work too, which is reached from Code on the phone.
+  private func phoneStatus(for destination: JunoMobileSection) -> JunoMobileSidebarStatus? {
+    guard destination == .code else { return statuses[destination] }
+    let code = statuses[.code] ?? JunoMobileSidebarStatus()
+    let work = statuses[.work] ?? JunoMobileSidebarStatus()
+    let merged = JunoMobileSidebarStatus(
+      running: code.running + work.running, needsYou: code.needsYou + work.needsYou
+    )
+    return merged.isEmpty ? nil : merged
   }
 
   @ViewBuilder
@@ -520,7 +523,7 @@ struct JunoMobileSidebarDrawer: View {
         symbol: destination.sidebarSymbol,
         title: destination.title,
         selected: selection == destination,
-        status: statuses[destination]
+        status: phoneStatus(for: destination)
       ) {
         selectionHaptic.fire()
         openDestination(destination)
@@ -548,6 +551,7 @@ struct JunoMobileSidebarDrawer: View {
         .accessibilityAddTraits(.isHeader)
       Spacer(minLength: 0)
       JunoMobileInboxBell()
+        .glassEffect(.regular.interactive(), in: Circle())
       Button {
         selectionHaptic.fire()
         openDestination(.search)
