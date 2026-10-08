@@ -36,7 +36,9 @@ final class JunoMobileSearchUITests: XCTestCase {
     }
 
     private func field(_ app: XCUIApplication) -> XCUIElement {
-        app.textFields["juno.mobile.search-field"]
+        // The system's `.searchable` field since the round-2 restyle; iOS 26
+        // places it in the bottom toolbar.
+        app.searchFields.firstMatch
     }
 
     /// The field lives in the bottom inset, where the composer's does — thumb
@@ -114,7 +116,7 @@ final class JunoMobileSearchUITests: XCTestCase {
             timeout: 15
         )
 
-        let clear = app.buttons["juno.mobile.search-clear"]
+        let clear = field(app).buttons.firstMatch
         require(clear, app, timeout: 5)
         // Asserted separately from the tap: the field sits in the bottom inset now,
         // so "the button exists" and "the button is reachable above the keyboard"
