@@ -187,9 +187,12 @@ struct JunoMobileComposerActions: View {
             action()
         } label: {
             HStack(spacing: 14) {
+                // Each glyph on a small round ground, as ChatGPT's "+" rows
+                // are drawn — the glass popover's one texture.
                 Image(systemName: symbol)
-                    .font(.system(size: 17, weight: .regular))
-                    .frame(width: 24)
+                    .font(.system(size: 15, weight: .regular))
+                    .frame(width: 32, height: 32)
+                    .background(Circle().fill(Color.junoMuted))
                 Text(title)
                     .junoFont(size: 17, relativeTo: .body)
                     .lineLimit(1)
@@ -209,7 +212,7 @@ struct JunoMobileComposerActions: View {
             }
             .foregroundStyle(Color.junoForeground)
             .padding(.horizontal, 20)
-            .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: 50, alignment: .leading)
             .contentShape(Rectangle())
             .animation(JunoMotion.reduced(JunoMotion.chatControl, when: reduceMotion, tier: .tint), value: checked)
         }
@@ -228,9 +231,12 @@ struct JunoMobileComposerActions: View {
             content()
         } label: {
             HStack(spacing: 14) {
+                // Each glyph on a small round ground, as ChatGPT's "+" rows
+                // are drawn — the glass popover's one texture.
                 Image(systemName: symbol)
-                    .font(.system(size: 17, weight: .regular))
-                    .frame(width: 24)
+                    .font(.system(size: 15, weight: .regular))
+                    .frame(width: 32, height: 32)
+                    .background(Circle().fill(Color.junoMuted))
                 Text(verbatim: title)
                     .junoFont(size: 17, relativeTo: .body)
                     .lineLimit(1)
@@ -241,7 +247,7 @@ struct JunoMobileComposerActions: View {
             }
             .foregroundStyle(Color.junoForeground)
             .padding(.horizontal, 20)
-            .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: 50, alignment: .leading)
             .contentShape(Rectangle())
         }
         .menuOrder(.fixed)

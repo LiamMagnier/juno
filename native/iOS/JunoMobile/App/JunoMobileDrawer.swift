@@ -543,7 +543,7 @@ struct JunoMobileSidebarDrawer: View {
   private var header: some View {
     HStack(spacing: 12) {
       Text(verbatim: "Alevr")
-        .junoFont(size: 22, relativeTo: .title3, weight: .semibold)
+        .junoFont(size: 20, relativeTo: .title3, weight: .semibold)
         .foregroundStyle(Color.junoForeground)
         .accessibilityAddTraits(.isHeader)
       Spacer(minLength: 0)

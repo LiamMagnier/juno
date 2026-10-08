@@ -2525,8 +2525,8 @@ struct JunoMobileResumeRow: View {
           .foregroundStyle(Color.junoSecondaryInk)
           .frame(width: 20)
         Text(title)
-          .junoFont(size: 15, relativeTo: .subheadline)
-          .foregroundStyle(Color.junoSecondaryInk)
+          .junoFont(size: 16, relativeTo: .subheadline)
+          .foregroundStyle(Color.junoForeground.opacity(0.82))
           .lineLimit(1)
       }
       .padding(.horizontal, JunoSpace.tight)

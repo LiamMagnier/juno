@@ -27,7 +27,7 @@ struct JunoMobileThinkingDialButton: View {
       // nothing to dial; the honest thing the gauge can offer is the model.
       if scale?.isAdjustable == true { open() } else { chooseModel() }
     } label: {
-      JunoMobileDialGlyph(fraction: Self.fraction(scale: scale, effort: effort))
+      JunoDialGlyph(fraction: Self.fraction(scale: scale, effort: effort))
         .foregroundStyle(Color.primary)
         .frame(width: 40, height: 44)
         .contentShape(Rectangle())
@@ -51,53 +51,6 @@ struct JunoMobileThinkingDialButton: View {
   static func fraction(scale: NativeThinkingScale?, effort: NativeReasoningEffort?) -> Double {
     guard let scale, scale.isAdjustable, let index = scale.index(of: effort) else { return 0.5 }
     return Double(index) / Double(max(scale.stops.count - 1, 1))
-  }
-}
-
-/// The gauge: an open arc and a needle that swings to the current level on the
-/// control spring — the one moving part in the composer's row, and the
-/// signature of the dial (ChatGPT's "thinking speed" glyph, drawn so the needle
-/// can actually travel rather than swapping between four fixed symbols).
-struct JunoMobileDialGlyph: View {
-  let fraction: Double
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-  var body: some View {
-    JunoMobileDialShape(fraction: fraction)
-      .stroke(style: StrokeStyle(lineWidth: 1.9, lineCap: .round, lineJoin: .round))
-      .frame(width: 21, height: 21)
-      .animation(JunoMotion.reduced(JunoMotion.chatControl, when: reduceMotion), value: fraction)
-      .frame(width: 24, height: 24)
-      .accessibilityHidden(true)
-  }
-}
-
-/// The gauge as one animatable path: a 270° arc open at the bottom, and a
-/// needle from the hub. `fraction` interpolates, so the needle swings rather
-/// than jumping when the level changes.
-struct JunoMobileDialShape: Shape {
-  var fraction: Double
-
-  var animatableData: Double {
-    get { fraction }
-    set { fraction = newValue }
-  }
-
-  func path(in rect: CGRect) -> Path {
-    let center = CGPoint(x: rect.midX, y: rect.midY)
-    let radius = min(rect.width, rect.height) / 2
-    var path = Path()
-    // SwiftUI angles run clockwise from 3 o'clock; 135° is the lower left,
-    // 405° (45°) the lower right — the gap sits at the bottom.
-    path.addArc(
-      center: center, radius: radius,
-      startAngle: .degrees(135), endAngle: .degrees(405), clockwise: false
-    )
-    let angle = Angle.degrees(135 + 270 * min(max(fraction, 0), 1)).radians
-    let length = radius * 0.56
-    path.move(to: center)
-    path.addLine(to: CGPoint(x: center.x + cos(angle) * length, y: center.y + sin(angle) * length))
-    return path
   }
 }
 

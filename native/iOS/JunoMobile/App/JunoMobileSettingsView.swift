@@ -479,31 +479,32 @@ struct JunoMobileSettingsView: View {
   @ViewBuilder
   private var profileHeader: some View {
     if let session {
+      // ChatGPT's settings head: the face centred over the name, the
+      // address under it, the whole block one tap into the account page.
       NavigationLink(value: JunoMobileSettingsRoute.data) {
-        HStack(spacing: 14) {
+        VStack(spacing: 8) {
           JunoAvatar(
             imageData: avatarData,
             imageURL: session.profile.imageURL,
             name: session.profile.name ?? session.profile.email,
-            size: 52
+            size: 72
           )
-          VStack(alignment: .leading, spacing: 3) {
+          VStack(spacing: 2) {
             Text(session.profile.name ?? "Your account")
               .junoFont(size: 17, relativeTo: .headline, weight: .semibold)
               .foregroundStyle(Color.primary)
             Text(session.profile.email)
-              .junoCaption()
+              .junoFont(size: 14, relativeTo: .subheadline)
+              .foregroundStyle(Color.junoSecondaryInk)
               .lineLimit(1)
-            Text("Profile, data and security")
-              .junoFont(size: 12, relativeTo: .caption)
-              .junoMetaInk()
           }
-          Spacer(minLength: 8)
         }
-        .padding(.vertical, 6)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 4)
+        .frame(maxWidth: .infinity)
         .contentShape(Rectangle())
       }
+      .buttonStyle(.plain)
+      .listRowBackground(Color.clear)
       .accessibilityIdentifier("juno.mobile.settings-profile")
     } else {
       HStack(spacing: 12) {

@@ -81,7 +81,7 @@ struct JunoMobilePushDrawer<Sidebar: View, Content: View>: View {
           .overlay {
             // The dim and the tap-to-close catcher, one layer.
             Color.black
-              .opacity((colorScheme == .dark ? 0.32 : 0.12) * progress)
+              .opacity((colorScheme == .dark ? 0.32 : 0.05) * progress)
               .allowsHitTesting(isOpen)
               .contentShape(.rect)
               .onTapGesture { setOpen(false) }
@@ -99,10 +99,13 @@ struct JunoMobilePushDrawer<Sidebar: View, Content: View>: View {
       // The leading edge strip: where a closed drawer is pulled open from.
       .overlay(alignment: .leading) {
         if !isOpen, edgeSwipeEnabled {
+          // Below the bar, so the strip never sits over the sidebar
+          // button's own glass and steals its taps.
           Color.clear
             .frame(width: 22)
             .contentShape(.rect)
             .gesture(dragGesture(full: full))
+            .padding(.top, insets.top + 64)
             .accessibilityHidden(true)
         }
       }
@@ -265,6 +268,6 @@ struct JunoMobileDrawerGround: View {
   @Environment(\.colorScheme) private var colorScheme
 
   var body: some View {
-    colorScheme == .dark ? Color(white: 0.085) : Color.junoCanvas
+    colorScheme == .dark ? Color.junoSurface : Color.junoCanvas
   }
 }
