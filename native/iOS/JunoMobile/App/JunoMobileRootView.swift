@@ -89,6 +89,10 @@ struct JunoMobileRootView: View {
   /// in the sidebar and this stays empty.
   @State private var chatPath: [JunoMobileSection] = []
   @State private var showingSettings = false
+  #if DEBUG
+    /// The report reader, opened by `--juno-preview-report`.
+    @State private var previewReport: JunoMobileReportRoute?
+  #endif
   /// A link the drawer just published, waiting for the share sheet.
   @State private var drawerShare: NativeShare?
   /// Requests from Siri, Shortcuts, the Home Screen and notifications.
@@ -203,6 +207,7 @@ struct JunoMobileRootView: View {
     // let`, so it registers no observable dependency and cannot re-evaluate
     // this body.
     .junoScreenCanvas()
+    .modifier(previewReportSheet)
     .preferredColorScheme(preferredColorScheme)
     // The plans page, wherever a locked feature or Settings asks for it.
     .junoMobilePlansSheet()
@@ -274,6 +279,22 @@ struct JunoMobileRootView: View {
             selection = .chat
             conversationModel?.isDraftingNewConversation = true
             conversationModel?.selectedConversationID = nil
+          }
+          // `--juno-preview-conversation <id>` opens one chat; the fixture
+          // rows land a beat after launch, so wait for the row first.
+          if let id = JunoPreviewEnvironment.initialConversation {
+            for _ in 0..<30 where conversationModel?.conversations.contains(where: { $0.id == id }) != true {
+              try? await Task.sleep(for: .milliseconds(100))
+            }
+            openConversation(id)
+          }
+          // `--juno-preview-report` opens the research report reader over
+          // the home, on the harness's finished heat-pump run.
+          if CommandLine.arguments.contains("--juno-preview-report") {
+            previewReport = NativeResearchReport(
+              message: PreviewResearch.reportMessage(),
+              question: PreviewResearch.question
+            ).map(JunoMobileReportRoute.init(report:))
           }
           if CommandLine.arguments.contains("--juno-preview-voice")
             || JunoPreviewEnvironment.opensVoiceFullScreen
@@ -568,6 +589,15 @@ struct JunoMobileRootView: View {
         launchRequests.request(request)
       }
     }
+  }
+
+  /// The report reader `--juno-preview-report` opens; inert in Release.
+  private var previewReportSheet: JunoMobilePreviewReportSheet {
+    #if DEBUG
+      JunoMobilePreviewReportSheet(route: $previewReport)
+    #else
+      JunoMobilePreviewReportSheet()
+    #endif
   }
 
   /// The phone's shell: the conversation, with the sidebar pushed out from
@@ -1724,5 +1754,20 @@ private struct JunoMobileOfflineBanner: View {
     .frame(maxWidth: .infinity, alignment: .leading)
     .background(.thinMaterial)
     .accessibilityIdentifier("juno.mobile.offline-banner")
+  }
+}
+
+
+/// The DEBUG harness's report reader, as a modifier so the root body stays
+/// within the type checker's budget.
+struct JunoMobilePreviewReportSheet: ViewModifier {
+  var route: Binding<JunoMobileReportRoute?> = .constant(nil)
+
+  func body(content: Content) -> some View {
+    content.sheet(item: route) { route in
+      JunoMobileResearchReportView(report: route.report, close: { self.route.wrappedValue = nil })
+        .junoSheetSurface(.page)
+        .tint(Color.junoAccent)
+    }
   }
 }

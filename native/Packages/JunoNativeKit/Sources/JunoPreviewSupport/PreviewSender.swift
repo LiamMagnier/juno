@@ -80,6 +80,13 @@ public actor PreviewSender: NativeChatRequestSending {
                 body: Data(#"{"error":"Image not found."}"#.utf8)
             )
         }
+        if let appended = PreviewChatStream.appendResponse(for: request) {
+            return HTTPResponse(
+                statusCode: 200,
+                headers: try HTTPHeaders(["content-type": "application/json"]),
+                body: appended
+            )
+        }
         return HTTPResponse(
             statusCode: 200,
             headers: try HTTPHeaders(["content-type": "application/json"]),
@@ -93,6 +100,13 @@ public actor PreviewSender: NativeChatRequestSending {
     ) async throws -> HTTPByteStreamResponse {
         streamRequestCount += 1
         if fails { throw URLError(.notConnectedToInternet) }
+        if let paced = PreviewChatStream.bytes(for: request) {
+            return HTTPByteStreamResponse(
+                statusCode: 200,
+                headers: try HTTPHeaders(["content-type": "text/event-stream"]),
+                bytes: paced
+            )
+        }
         return HTTPByteStreamResponse(
             statusCode: 200,
             headers: try HTTPHeaders(["content-type": "text/event-stream"]),

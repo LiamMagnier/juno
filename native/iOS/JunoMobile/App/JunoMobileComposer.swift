@@ -739,12 +739,32 @@ struct JunoMobileComposer: View {
       if let level = JunoComposerPreviewFlags.forcedThinkingLevel {
         reasoningEffort = level
       }
+      if JunoComposerPreviewFlags.opensThinking || JunoComposerPreviewFlags.opensModelSelector {
+        // The dial needs the catalog to know the model's scale.
+        for _ in 0..<30 where thinkingScale == nil {
+          try? await Task.sleep(nanoseconds: 100_000_000)
+        }
+      }
       if JunoComposerPreviewFlags.opensThinking, thinkingScale?.isAdjustable == true {
         try? await Task.sleep(nanoseconds: 500_000_000)
         openThinking()
       }
+      if JunoComposerPreviewFlags.opensModelSelector {
+        try? await Task.sleep(nanoseconds: 400_000_000)
+        chooseModel()
+      }
+      // `--juno-preview-prompt <text>` types a draft; `--juno-preview-send
+      // <text>` types it and sends it, against the harness's paced stream.
+      if let typed = JunoComposerPreviewFlags.value("--juno-preview-prompt") {
+        prompt = typed
+      }
       if JunoComposerPreviewFlags.focusesComposer {
         composerFocused.wrappedValue = true
+      }
+      if let sent = JunoComposerPreviewFlags.value("--juno-preview-send") {
+        try? await Task.sleep(nanoseconds: 600_000_000)
+        prompt = sent
+        send()
       }
     #endif
   }
