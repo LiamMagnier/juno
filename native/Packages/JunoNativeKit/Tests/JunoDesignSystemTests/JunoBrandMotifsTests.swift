@@ -171,6 +171,22 @@ final class JunoBrandMotifsTests: XCTestCase {
         }
     }
 
+    func testTheEmptyStateDrawsTheMarkAndAnErrorKeepsItsGlyph() throws {
+        for scheme in [ColorScheme.light, .dark] {
+            let tone = scheme == .dark ? "dark" : "light"
+            try snapshot(
+                VStack(spacing: 24) {
+                    JunoEmptyState(title: "No projects yet", message: "Projects keep chats, files and instructions together.", icon: .library)
+                        .frame(height: 300)
+                    JunoEmptyState(title: "Nothing pinned", icon: .pin, size: .panel)
+                    JunoEmptyState(title: "Could not load", message: "Check your connection.", icon: .wifiOff, size: .panel)
+                }
+                .frame(width: 520),
+                scheme: scheme, t: .infinity, name: "empty-state-\(tone)"
+            )
+        }
+    }
+
     /// The trail layer on its own, mid-flight (what a switch to Code draws).
     private func trailToCode() -> some View {
         JunoDotRings(
