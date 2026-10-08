@@ -46,6 +46,8 @@ relay/dist
 
 # vendored agent core for the Cloud Code runner (built in CI)
 runner/agent-core/node_modules
+runner/env-server/node_modules
+runner/env-server/dist
 runner/agent-core/dist
 
 # Juno Desktop (Electron). Self-contained sub-workspace with its own lockfile,

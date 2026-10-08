@@ -258,13 +258,23 @@ function buildSchema() {
       items: arr(ref("TurnItem")),
       queue: arr(ref("QueuedInput")),
     },
-    { title: str, routing: ref("RoleRouting"), activeTurnId: str, resumeAt: iso, usage: ref("SessionUsage") },
+    {
+      title: str,
+      routing: ref("RoleRouting"),
+      activeTurnId: str,
+      resumeAt: iso,
+      usage: ref("SessionUsage"),
+      worktree: obj({ path: nonEmpty, branch: nonEmpty, repoRoot: nonEmpty }),
+    },
   );
 
   // Client commands.
   const sid = { sessionId: nonEmpty };
   const params = {
-    "session.open": obj({ cwd: nonEmpty }, { sessionId: nonEmpty, selection: ref("ModelSelection"), afterSequence: int }),
+    "session.open": obj(
+      { cwd: nonEmpty },
+      { sessionId: nonEmpty, selection: ref("ModelSelection"), afterSequence: int, worktree: bool },
+    ),
     "turn.start": obj(
       {
         ...sid,
@@ -296,6 +306,23 @@ function buildSchema() {
     "provider.setup": obj({ instanceId: nonEmpty, action: ref("ProviderSetupAction") }),
     "session.list": obj({}, { cwd: nonEmpty, query: str, limit: { type: "integer", minimum: 1 } }),
     "session.close": obj(sid),
+    "env.configure": obj(
+      {},
+      {
+        backend: obj(
+          { baseUrl: nonEmpty, authorization: nonEmpty },
+          {
+            models: arr(
+              obj(
+                { provider: nonEmpty, kind: en(["anthropic", "openai"]), model: nonEmpty, label: nonEmpty, available: bool },
+                { providerName: str, contextWindow: int, api: en(["chat", "responses"]) },
+              ),
+            ),
+          },
+        ),
+        byok: arr(obj({ provider: nonEmpty, apiKey: nonEmpty }, { baseUrl: str })),
+      },
+    ),
   };
   for (const t of C.CLIENT_COMMAND_TYPE_VALUES) if (!params[t]) throw new Error(`no params schema for ${t}`);
   definitions.ClientCommand = {

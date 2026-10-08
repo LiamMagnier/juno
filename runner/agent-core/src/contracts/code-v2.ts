@@ -550,6 +550,16 @@ export interface SessionSnapshot {
   items: TurnItem[];
   queue: QueuedInput[];
   usage?: SessionUsage;
+  /** Set when the session runs in its own git worktree (SPEC §3.9). */
+  worktree?: WorktreeInfo;
+}
+
+export interface WorktreeInfo {
+  /** The worktree directory; equals the session cwd. */
+  path: string;
+  branch: string;
+  /** The repository the worktree was created from. */
+  repoRoot: string;
 }
 
 export const CLIENT_COMMAND_TYPE_VALUES = [
@@ -571,11 +581,13 @@ export const CLIENT_COMMAND_TYPE_VALUES = [
   "provider.setup",
   "session.list",
   "session.close",
+  "env.configure",
 ] as const;
 export type ClientCommandType = (typeof CLIENT_COMMAND_TYPE_VALUES)[number];
 
 export interface ClientCommandParams {
-  "session.open": { sessionId?: string; cwd: string; selection?: ModelSelection; afterSequence?: number };
+  /** `worktree: true` on a new session creates a git worktree for it and runs the session there. */
+  "session.open": { sessionId?: string; cwd: string; selection?: ModelSelection; afterSequence?: number; worktree?: boolean };
   "turn.start": {
     sessionId: string;
     input: UserInput;
@@ -610,6 +622,39 @@ export interface ClientCommandParams {
   "session.list": { cwd?: string; query?: string; limit?: number };
   /** Stops the session's vendor runtime; the log stays and session.open resumes it. */
   "session.close": { sessionId: string };
+  /**
+   * Local-only (the device relay refuses it): how the built-in engine reaches
+   * Alevr's backend with the user's own session, and the user's BYOK keys.
+   * Held in memory by the env server, never written to disk or logged.
+   */
+  "env.configure": { backend?: EnvBackendConfig; byok?: ByokKey[] };
+}
+
+export interface EnvBackendModel {
+  /** Backend provider id, the path segment under /api/agent ("anthropic", "openai"). */
+  provider: string;
+  providerName?: string;
+  kind: "anthropic" | "openai";
+  model: string;
+  label: string;
+  available: boolean;
+  contextWindow?: number;
+  api?: "chat" | "responses";
+}
+
+export interface EnvBackendConfig {
+  /** e.g. https://alevr.com/api/agent (no trailing slash). */
+  baseUrl: string;
+  /** Full Authorization header value carrying the user's Alevr session. */
+  authorization: string;
+  models?: EnvBackendModel[];
+}
+
+export interface ByokKey {
+  /** "anthropic" | "openai" | "google" | "xai" | "deepseek" | "openrouter". */
+  provider: string;
+  apiKey: string;
+  baseUrl?: string;
 }
 
 export const PROVIDER_SETUP_ACTION_VALUES = ["install", "login"] as const;
@@ -663,6 +708,7 @@ export interface ClientCommandResults {
   "provider.setup": { step: ProviderSetupStep | null };
   "session.list": { sessions: SessionSummary[] };
   "session.close": Record<string, never>;
+  "env.configure": Record<string, never>;
 }
 
 export const WIRE_ERROR_CODE_VALUES = [

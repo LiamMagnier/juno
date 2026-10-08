@@ -20,6 +20,8 @@
     {"id": "17", "type": "checkpoint.diff", "params": {"sessionId": "s1"}},
     {"id": "18", "type": "provider.setup", "params": {"instanceId": "codex:default", "action": "login"}},
     {"id": "19", "type": "session.list", "params": {"cwd": "/repo", "query": "login test", "limit": 20}},
-    {"id": "20", "type": "session.close", "params": {"sessionId": "s1"}}
+    {"id": "20", "type": "session.close", "params": {"sessionId": "s1"}},
+    {"id": "21", "type": "session.open", "params": {"cwd": "/repo", "worktree": true, "selection": {"instanceId": "codex:default", "model": "gpt-6.1-codex"}}},
+    {"id": "22", "type": "env.configure", "params": {"backend": {"baseUrl": "https://alevr.com/api/agent", "authorization": "Bearer as_example", "models": [{"provider": "anthropic", "kind": "anthropic", "model": "claude-opus-5-5", "label": "Claude Opus 5.5", "available": true, "contextWindow": 200000}]}, "byok": [{"provider": "deepseek", "apiKey": "sk-example"}]}}
   ]
 }

@@ -738,6 +738,14 @@ public enum CodeV2 {
         case providerSetup = "provider.setup"
         case sessionList = "session.list"
         case sessionClose = "session.close"
+        case envConfigure = "env.configure"
+    }
+
+    /// The git worktree a session runs in (`SessionSnapshot.worktree`).
+    public struct WorktreeInfo: Codable, Sendable, Hashable {
+        public var path: String
+        public var branch: String
+        public var repoRoot: String
     }
 
     // contract: PROVIDER_SETUP_ACTION_VALUES
@@ -832,6 +840,7 @@ public enum CodeV2 {
         public var items: [TurnItem]
         public var queue: [QueuedInput]
         public var usage: SessionUsage?
+        public var worktree: WorktreeInfo?
     }
 
     /// A client → server command. `params` stays a JSON tree so one type can
