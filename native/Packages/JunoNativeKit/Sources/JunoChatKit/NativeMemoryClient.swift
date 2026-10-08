@@ -95,7 +95,7 @@ public struct NativeMemoryFact: Identifiable, Equatable, Sendable {
         case "edit": return "From an edit you made"
         case "forget": return "From a fact you forgot"
         case "import": return "Imported from another assistant"
-        default: return source == "MANUAL" ? "You told Juno" : nil
+        default: return source == "MANUAL" ? "You told Alevr" : nil
         }
     }
 

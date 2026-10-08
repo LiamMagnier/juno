@@ -122,6 +122,8 @@ struct DesktopMemoryPage: View {
     @State private var activityTab = DesktopMemoryActivityTab.edits
     @State private var showsImport = false
     @State private var confirmsReset = false
+    /// The project whose memory the clear dialog is asking about, when open.
+    @State private var clearing: DesktopMemoryProject?
     @State private var exportDocument: DesktopSettingsExportDocument?
     @State private var showsExporter = false
 
@@ -200,6 +202,25 @@ struct DesktopMemoryPage: View {
         } message: {
             Text("This permanently deletes everything Juno remembers, the summary and every project’s memory, and its edit history. It can’t be undone. Your chats stay as they are.")
         }
+        .confirmationDialog(
+            clearing.map { "Clear \($0.name)?" } ?? "",
+            isPresented: Binding(get: { clearing != nil }, set: { if !$0 { clearing = nil } }),
+            titleVisibility: .visible,
+            presenting: clearing
+        ) { project in
+            Button("Clear Project Memory", role: .destructive) {
+                clearing = nil
+                Task {
+                    post(await page.clearProject(project.id))
+                    scope = nil
+                }
+            }
+            .contentShape(.rect)
+            Button("Cancel", role: .cancel) { clearing = nil }
+                .contentShape(.rect)
+        } message: { _ in
+            Text("This permanently deletes what Alevr remembers inside this project and its summary. Your account-wide memory, your chats, and other members’ memory stay as they are.")
+        }
         .fileExporter(
             isPresented: $showsExporter,
             document: exportDocument,
@@ -259,6 +280,12 @@ struct DesktopMemoryPage: View {
                 .disabled(!page.anythingRemembered)
             Button { openActivity(.edits) } label: { Label("Activity", image: JunoIcon.history.assetName) }
             Divider()
+            if let project = activeProject {
+                Button(role: .destructive) { clearing = project } label: {
+                    Label("Clear \(project.name) Memory…", image: JunoIcon.delete.assetName)
+                }
+                .disabled(page.clearingProjectID != nil)
+            }
             Button { openMemorySettings() } label: { Label("Memory Settings…", image: JunoIcon.settings.assetName) }
             Divider()
             Button(role: .destructive) { confirmsReset = true } label: {
@@ -400,6 +427,12 @@ struct DesktopMemoryPage: View {
                         post: post
                     )
                     .padding(.top, JunoSpace.expanse)
+                    // Proposals are about the person's runs, not one project's
+                    // memory: shown on the whole-account view only, as the web.
+                    if activeScope == nil, !page.skillCandidates.isEmpty {
+                        DesktopMemorySkillCandidates(page: page, post: post)
+                            .padding(.top, JunoSpace.expanse)
+                    }
                 }
             } else {
                 DesktopMemoryWelcome(
@@ -423,23 +456,14 @@ struct DesktopMemoryPage: View {
     private var scopeBar: some View {
         if scopes.count > 1 {
             VStack(alignment: .leading, spacing: JunoSpace.snug) {
-                if scopes.count <= 5 {
-                    HStack(spacing: JunoSpace.tight) {
-                        ForEach(scopes) { option in
-                            DesktopMemoryScopeChip(option: option, isSelected: option.id == activeScope) {
-                                scope = option.id
-                            }
-                        }
-                    }
-                    .accessibilityElement(children: .contain)
-                    .accessibilityLabel("Show memory from")
-                } else {
-                    JunoPageMenu(
-                        options: scopes.map { JunoPageMenuOption($0.id ?? "", "\($0.label) \($0.count)") },
-                        selection: Binding(get: { activeScope ?? "" }, set: { scope = $0.isEmpty ? nil : $0 }),
-                        accessibilityLabel: "Show memory from"
-                    )
-                }
+                // A menu, never a row of capsules: the scope is a filter over
+                // one list, and a filter reads as plain text with a chevron.
+                JunoPageMenu(
+                    options: scopes.map { JunoPageMenuOption($0.id ?? "", "\($0.label) · \($0.count)") },
+                    selection: Binding(get: { activeScope ?? "" }, set: { scope = $0.isEmpty ? nil : $0 }),
+                    accessibilityLabel: "Show memory from"
+                )
+                .fixedSize()
                 if let project = activeProject {
                     HStack(spacing: JunoSpace.tight) {
                         Text("Only chats in this project use these memories, and they use nothing else Juno remembers.")
@@ -451,6 +475,12 @@ struct DesktopMemoryPage: View {
                         }
                         .buttonStyle(DesktopUnderlineLinkStyle())
                         .contentShape(.rect)
+                        Button("Clear project memory…") { clearing = project }
+                            .buttonStyle(DesktopUnderlineLinkStyle(ink: Color.junoDestructiveInk))
+                            .disabled(page.clearingProjectID != nil)
+                            .help("Delete what Alevr remembers inside \(project.name)")
+                            .accessibilityIdentifier("juno.desktop.memory.clear-project")
+                            .contentShape(.rect)
                     }
                     .transition(.opacity)
                 }
@@ -547,44 +577,6 @@ struct DesktopMemoryPage: View {
     private func export() {
         exportDocument = DesktopSettingsExportDocument(data: page.exportData())
         showsExporter = true
-    }
-}
-
-// MARK: - Scope chip
-
-private struct DesktopMemoryScopeChip: View {
-    let option: NativeMemoryScope
-    let isSelected: Bool
-    let select: () -> Void
-
-    @State private var isHovering = false
-
-    var body: some View {
-        Button(action: select) {
-            HStack(spacing: JunoSpace.tight) {
-                if option.id != nil {
-                    JunoIconView(.projects, size: 13)
-                        .accessibilityHidden(true)
-                }
-                Text(option.label)
-                    .lineLimit(1)
-                Text(option.count, format: .number)
-                    .monospacedDigit()
-                    .foregroundStyle(isSelected ? Color.junoCanvas.opacity(0.75) : Color.junoSecondaryInk)
-            }
-            .junoType(JunoType.ui.weight(.medium))
-            .foregroundStyle(isSelected ? Color.junoCanvas : Color.junoForeground)
-            .padding(.horizontal, JunoSpace.cozy)
-            .frame(height: 28)
-            .background(
-                Capsule(style: .continuous)
-                    .fill(isSelected ? Color.junoForeground : (isHovering ? Color.junoHover : Color.junoSecondary))
-            )
-            .contentShape(Capsule(style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .onHover { isHovering = $0 }
-        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
     }
 }
 
