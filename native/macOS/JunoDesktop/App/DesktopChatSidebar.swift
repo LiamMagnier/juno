@@ -295,7 +295,9 @@ struct DesktopChatSidebar: View {
         case .connections: .turns
         default: .none
         }
-        return DesktopSidebarNavRow(icon: item.junoIcon, title: item.label, selected: selected, gesture: gesture)
+        // Customize wears the web's sliders, as `/dev/shell` draws it.
+        let icon: JunoIcon = item == .connections ? .sliders : item.junoIcon
+        return DesktopSidebarNavRow(icon: icon, title: item.label, selected: selected, gesture: gesture)
             .tag(DesktopSidebarItem.destination(item))
             .accessibilityIdentifier("juno.desktop.sidebar.\(item.rawValue)")
     }
@@ -371,7 +373,11 @@ struct DesktopChatSidebar: View {
     /// "Orbit", with New agent at the heading's end. Pressing the words
     /// folds the roster.
     private var agentsHeader: some View {
-        DesktopSidebarHeadingRow(title: JunoShellChatSidebar.Heading.agents.label, action: { agentsCollapsed.toggle() }) {
+        DesktopSidebarHeadingRow(
+            title: JunoShellChatSidebar.Heading.agents.label,
+            icon: .agents,
+            action: { agentsCollapsed.toggle() }
+        ) {
             if let hireAgent {
                 DesktopSidebarHeadingAction(icon: .plus, help: "New agent", action: hireAgent)
             }

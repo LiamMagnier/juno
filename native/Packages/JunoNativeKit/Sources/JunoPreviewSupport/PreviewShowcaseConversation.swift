@@ -104,6 +104,38 @@ enum PreviewShowcaseConversation {
 
     static let researchQuestion = "Does a heat pump make sense for a 1930s semi with solid walls, and what would it cost?"
 
+    static let checklist = """
+    # Field Notes 2.0 — launch checklist
+
+    ## Week 1
+    - [x] Freeze features (Mon)
+    - [x] Cut the release candidate (Tue)
+    - [ ] Beta build and three-question survey (Wed)
+    - [ ] Triage feedback; fix blockers only (Fri)
+
+    ## Week 2
+    - [ ] Press kit and product shots — Maya
+    - [ ] Launch email, scheduled — Sam
+    - [ ] Pricing page behind `pricing-v2` — Priya
+    - [ ] Ship 9:00, announce 9:30 — everyone
+    """
+
+    static let budget = """
+    <!doctype html><html><head><meta charset="utf-8"><style>
+    body{font:14px -apple-system,system-ui;margin:24px;color:#1d1d1f}h1{font-size:20px;margin:0 0 4px}p{color:#6e6e73;margin:0 0 16px}
+    table{border-collapse:collapse;width:100%}th,td{padding:8px 10px;border-bottom:1px solid #e5e5ea;text-align:left}th{color:#6e6e73;font-weight:500}
+    td.n{text-align:right;font-variant-numeric:tabular-nums}tr.t td{font-weight:600;border-bottom:0}
+    @media (prefers-color-scheme:dark){body{color:#f5f5f7;background:#1c1c1e}th,p{color:#98989d}th,td{border-color:#38383a}}
+    </style></head><body><h1>Launch budget</h1><p>Field Notes 2.0, two weeks to the 14th</p>
+    <table><tr><th>Line</th><th>Owner</th><th class="n">Budget</th><th class="n">Spent</th></tr>
+    <tr><td>Product shots</td><td>Maya</td><td class="n">€1,800</td><td class="n">€1,240</td></tr>
+    <tr><td>Press kit design</td><td>Maya</td><td class="n">€900</td><td class="n">€900</td></tr>
+    <tr><td>Launch email tool</td><td>Sam</td><td class="n">€120</td><td class="n">€0</td></tr>
+    <tr><td>Pricing page copy</td><td>Priya</td><td class="n">€600</td><td class="n">€450</td></tr>
+    <tr><td>Paid social, launch week</td><td>Sam</td><td class="n">€2,500</td><td class="n">€0</td></tr>
+    <tr class="t"><td>Total</td><td></td><td class="n">€5,920</td><td class="n">€2,590</td></tr></table></body></html>
+    """
+
     /// The extra chats the showcase week holds: a live-UI answer and a deep
     /// research that is still working.
     static func extraRecords(_ a: StorageAccountID) -> [StoredRecord] {
@@ -116,6 +148,21 @@ enum PreviewShowcaseConversation {
             """),
             record(a, "message", "lv-2", """
             {"id":"lv-2","conversationId":"conv-live","role":"assistant","content":\(escaped(liveAnswer)),"model":"anthropic:claude-sonnet-4-6","createdAt":"\(iso(-7_000))"}
+            """),
+            record(a, "artifact", "art-checklist", """
+            {"id":"art-checklist","conversationId":"conv-1","messageId":"sc-2","identifier":"launch-checklist","title":"Launch checklist","type":"MARKDOWN","language":null,"currentVersion":1,"createdAt":"\(iso(-870))","updatedAt":"\(iso(-870))"}
+            """),
+            record(a, "artifact_version", "artv-checklist", """
+            {"id":"artv-checklist","artifactId":"art-checklist","version":1,"content":\(escaped(checklist)),"createdAt":"\(iso(-870))"}
+            """),
+            record(a, "artifact", "art-budget", """
+            {"id":"art-budget","conversationId":"conv-1","messageId":"sc-2","identifier":"launch-budget","title":"Launch budget","type":"HTML","language":null,"currentVersion":2,"createdAt":"\(iso(-860))","updatedAt":"\(iso(-500))"}
+            """),
+            record(a, "artifact_version", "artv-budget-1", """
+            {"id":"artv-budget-1","artifactId":"art-budget","version":1,"content":\(escaped(budget)),"createdAt":"\(iso(-860))"}
+            """),
+            record(a, "artifact_version", "artv-budget-2", """
+            {"id":"artv-budget-2","artifactId":"art-budget","version":2,"content":\(escaped(budget)),"createdAt":"\(iso(-500))"}
             """),
             record(a, "conversation", "conv-research", """
             {"id":"conv-research","title":"Heat pump for the Leeds house","model":"anthropic:claude-opus-4-6","kind":"chat","pinned":false,"archivedAt":null,"createdAt":"\(iso(-600))","updatedAt":"\(iso(-250))","lastMessageAt":"\(iso(-250))"}

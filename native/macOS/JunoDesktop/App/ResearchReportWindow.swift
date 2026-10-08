@@ -18,9 +18,21 @@ import JunoPreviewSupport
 /// reading time, sources. Copy, Share, Export (Markdown or PDF) and Print in
 /// the toolbar, declared once. A plain `HStack` — one `NavigationSplitView`
 /// per window, and this window has none.
+/// How the report is hosted: in the main window's trailing panel (the
+/// default, as the website's research panel is), or — only when the reader
+/// asks for it — in a window of its own.
+struct ResearchReportPanelChrome {
+    let close: () -> Void
+    let openInWindow: () -> Void
+    @Binding var isFullscreen: Bool
+}
+
 struct ResearchReportWindow: View {
     let runID: String
     let configuration: JunoDesktopConfiguration?
+    /// Set when the report is the conversation's trailing panel: a header
+    /// row of its own instead of the window's toolbar.
+    var panel: ResearchReportPanelChrome? = nil
 
     @State private var loadedRun: NativeResearchRun?
     @State private var audit: NativeResearchAudit?
@@ -55,12 +67,89 @@ struct ResearchReportWindow: View {
 
     var body: some View {
         let report = report
+        if let panel {
+            article(report)
+                .safeAreaInset(edge: .top, spacing: 0) { panelHeader(report, panel: panel) }
+                .task(id: runID) { await load() }
+                .accessibilityIdentifier("juno.research-report")
+        } else {
+            article(report)
+                .frame(minWidth: 640, minHeight: 480)
+                .navigationTitle(report?.title ?? "Research report")
+                .navigationSubtitle(report.map(Self.subtitle) ?? "")
+                .toolbar { toolbar(report) }
+                .task(id: runID) { await load() }
+                .accessibilityIdentifier("juno.research-report")
+        }
+    }
+
+    /// The panel's header (the web's research panel): the report's title and
+    /// facts, then Copy, Share, Export, Print, Full screen, Open in a new
+    /// window and Close — the website's glyphs, 28pt targets.
+    private func panelHeader(_ report: NativeResearchReport?, panel: ResearchReportPanelChrome) -> some View {
+        HStack(spacing: JunoSpace.tight) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(report?.title ?? "Research report")
+                    .junoFont(size: 13, relativeTo: .callout, weight: .semibold)
+                    .foregroundStyle(Color.junoForeground)
+                    .lineLimit(1)
+                if let report {
+                    Text(Self.subtitle(report))
+                        .junoFont(size: 11, relativeTo: .caption)
+                        .foregroundStyle(Color.junoSecondaryInk)
+                        .lineLimit(1)
+                }
+            }
+            Spacer(minLength: JunoSpace.snug)
+            DesktopPanelIconButton(icon: copied ? .check : .copy, help: "Copy the report as Markdown") { copy(report) }
+                .disabled(report == nil)
+            if let report {
+                ShareLink(item: report.markdown(accessed: Date()), subject: Text(report.title)) {
+                    DesktopPanelIconFace(icon: .share)
+                }
+                .buttonStyle(.plain)
+                .help("Share the report")
+            }
+            Menu {
+                Button("Markdown\u{2026}") { exportMarkdown(report) }
+                Button("PDF\u{2026}") { exportPDF(report) }
+                Button("Print\u{2026}") { printReport(report) }
+            } label: {
+                DesktopPanelIconFace(icon: .download)
+            }
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("Export the report")
+            .disabled(report == nil)
+            DesktopPanelIconButton(
+                icon: panel.isFullscreen ? .columns : .maximize,
+                help: panel.isFullscreen ? "Show the conversation" : "Read full screen"
+            ) {
+                panel.isFullscreen.toggle()
+            }
+            DesktopPanelIconButton(icon: .appWindow, help: "Open in a new window", action: panel.openInWindow)
+            DesktopPanelIconButton(icon: .close, help: "Close", action: panel.close)
+                .keyboardShortcut(.cancelAction)
+        }
+        .padding(.leading, JunoSpace.regular)
+        .padding(.trailing, JunoSpace.tight)
+        .frame(height: 52)
+        .background(.bar)
+    }
+
+    @ViewBuilder
+    private func article(_ report: NativeResearchReport?) -> some View {
         Group {
             if let report {
                 #if DEBUG
-                ResearchReportReader(report: report, audit: audit, initialSection: Self.previewSection)
+                ResearchReportReader(
+                    report: report, audit: audit, initialSection: Self.previewSection,
+                    showsContents: panel == nil || panel?.isFullscreen == true
+                )
                 #else
-                ResearchReportReader(report: report, audit: audit)
+                ResearchReportReader(report: report, audit: audit, showsContents: panel == nil || panel?.isFullscreen == true)
                 #endif
             } else if failed || (loadedRun != nil && report == nil) {
                 JunoEmptyState(
@@ -84,13 +173,7 @@ struct ResearchReportWindow: View {
         // toolbar declared below it.
         .junoAccentTint()
         .environment(\.nativeSourceFavicons, favicons)
-        .frame(minWidth: 640, minHeight: 480)
         .background(Color.junoCanvas)
-        .navigationTitle(report?.title ?? "Research report")
-        .navigationSubtitle(report.map(Self.subtitle) ?? "")
-        .toolbar { toolbar(report) }
-        .task(id: runID) { await load() }
-        .accessibilityIdentifier("juno.research-report")
     }
 
     /// "Research report · 2,140 words · 10 min read · 18 sources".
@@ -269,14 +352,23 @@ struct ResearchReportReader: View {
 
     /// - Parameter initialSection: the section to open at — how a fixture
     ///   draws the report mid-read.
-    init(report: NativeResearchReport, audit: NativeResearchAudit? = nil, initialSection: String? = nil) {
+    init(
+        report: NativeResearchReport,
+        audit: NativeResearchAudit? = nil,
+        initialSection: String? = nil,
+        showsContents: Bool = true
+    ) {
         self.report = report
         self.audit = audit
         self.initialSection = initialSection
+        self.showsContents = showsContents
         _reading = State(initialValue: initialSection)
     }
 
     private let initialSection: String?
+    /// The contents column: in a window and full screen, not in a side panel
+    /// too narrow to share with it.
+    private let showsContents: Bool
 
     /// The article's measure: the reading column, a touch narrower than the
     /// transcript so a line of Newsreader-led prose stays comfortable.
@@ -284,7 +376,7 @@ struct ResearchReportReader: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
-            if report.headings.count >= 2 {
+            if showsContents, report.headings.count >= 2 {
                 contents
                     .frame(width: 232, alignment: .topLeading)
                 Rectangle()
@@ -412,5 +504,39 @@ private struct ResearchReportSkeleton: View {
         .padding(JunoSpace.section)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .accessibilityLabel("Loading this report")
+    }
+}
+
+// MARK: - Panel controls
+
+/// A trailing panel's icon control: a website glyph in a 28pt target, muted
+/// at rest, the foreground under the pointer over the neutral hover fill.
+struct DesktopPanelIconButton: View {
+    let icon: JunoIcon
+    let help: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            DesktopPanelIconFace(icon: icon)
+        }
+        .buttonStyle(.plain)
+        .help(help)
+        .accessibilityLabel(help)
+    }
+}
+
+struct DesktopPanelIconFace: View {
+    let icon: JunoIcon
+    @State private var hovered = false
+
+    var body: some View {
+        JunoIconView(icon, size: 16)
+            .foregroundStyle(hovered ? Color.junoForeground : Color.junoSecondaryInk)
+            .frame(width: 28, height: 28)
+            .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(hovered ? Color.junoHover : .clear))
+            .contentShape(.rect)
+            .onHover { hovered = $0 }
+            .animation(JunoMotion.fast, value: hovered)
     }
 }

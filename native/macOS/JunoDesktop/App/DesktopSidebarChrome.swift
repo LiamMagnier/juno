@@ -175,6 +175,9 @@ extension DesktopSidebarNavRow where Trailing == EmptyView {
 /// words brighten instead. Pressing it folds the section when it folds.
 struct DesktopSidebarHeadingRow<Trailing: View>: View {
     let title: String
+    /// A heading that names a place wears its glyph (Orbit), and its words
+    /// move to the label edge.
+    var icon: JunoIcon? = nil
     var isFirst = false
     var action: (() -> Void)? = nil
     @ViewBuilder var trailing: () -> Trailing
@@ -184,8 +187,14 @@ struct DesktopSidebarHeadingRow<Trailing: View>: View {
 
     var body: some View {
         HStack(spacing: DesktopSidebarMetrics.gap) {
+            if let icon {
+                JunoIconView(icon, size: DesktopSidebarMetrics.glyphSize)
+                    .foregroundStyle(hovered && action != nil ? Color.junoForeground : Color.junoSecondaryInk)
+                    .frame(width: DesktopSidebarMetrics.glyphSlot, height: DesktopSidebarMetrics.glyphSlot)
+            }
+            // The web's label rung for headings: mono, as `/dev/shell` sets it.
             Text(title)
-                .junoFont(size: DesktopSidebarMetrics.headingSize, relativeTo: .caption, weight: .medium)
+                .junoFont(size: DesktopSidebarMetrics.headingSize, relativeTo: .caption, weight: .medium, design: .monospaced)
                 .foregroundStyle(hovered && action != nil ? Color.junoForeground : Color.junoSecondaryInk)
                 .lineLimit(1)
                 .accessibilityAddTraits(.isHeader)
@@ -209,8 +218,8 @@ struct DesktopSidebarHeadingRow<Trailing: View>: View {
 }
 
 extension DesktopSidebarHeadingRow where Trailing == EmptyView {
-    init(_ title: String, isFirst: Bool = false, action: (() -> Void)? = nil) {
-        self.init(title: title, isFirst: isFirst, action: action) { EmptyView() }
+    init(_ title: String, icon: JunoIcon? = nil, isFirst: Bool = false, action: (() -> Void)? = nil) {
+        self.init(title: title, icon: icon, isFirst: isFirst, action: action) { EmptyView() }
     }
 }
 

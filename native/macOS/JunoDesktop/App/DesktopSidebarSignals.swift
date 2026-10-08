@@ -28,6 +28,7 @@ struct DesktopNeedsYouHeader: View {
         Button(action: toggle) {
             HStack(spacing: 0) {
                 Text(JunoShellChatSidebar.Heading.needsYou.label)
+                    .junoFont(size: 12, relativeTo: .caption, weight: .medium, design: .monospaced)
                     .lineLimit(1)
                 Spacer(minLength: JunoSpace.snug)
                 // "2 waiting" in words at the header's end, in the attention

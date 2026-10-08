@@ -363,6 +363,11 @@ enum DesktopDockPanel: TrailingDockPanel {
     case research(runID: String)
     /// A task of this chat, by session id — the Task panel (register #59).
     case task(sessionID: String)
+    /// A finished research's report, read beside the conversation (the
+    /// web's research panel) rather than in a window of its own.
+    case report(runID: String)
+    /// A file, previewed by Quick Look inside the panel.
+    case file(url: URL)
 
     var id: String {
         switch self {
@@ -370,6 +375,8 @@ enum DesktopDockPanel: TrailingDockPanel {
         case .activity(let messageID, _): "activity:\(messageID)"
         case .research(let runID): "research:\(runID)"
         case .task(let sessionID): "task:\(sessionID)"
+        case .report(let runID): "report:\(runID)"
+        case .file(let url): "file:\(url.absoluteString)"
         }
     }
 
@@ -380,13 +387,15 @@ enum DesktopDockPanel: TrailingDockPanel {
         case .canvas: "dock.canvas.width"
         case .activity, .research: "dock.activity.width"
         case .task: "dock.task.width"
+        case .report: "dock.report.width"
+        case .file: "dock.file.width"
         }
     }
 
     var artifact: DesktopChatArtifact? {
         switch self {
         case .canvas(let artifact): artifact
-        case .activity, .research, .task: nil
+        case .activity, .research, .task, .report, .file: nil
         }
     }
 }

@@ -165,7 +165,7 @@ enum ChatWorkVocabulary {
     static func sentence(_ status: JunoWorkStatus, actor: String?) -> String {
         let sentence = sentence(status)
         guard let actor, !actor.isEmpty, sentence.hasPrefix("Alevr ") else { return sentence }
-        return actor + sentence.dropFirst("Juno".count)
+        return actor + sentence.dropFirst("Alevr".count)
     }
 
     /// Where Try Again is offered: an end that was not the task finishing.

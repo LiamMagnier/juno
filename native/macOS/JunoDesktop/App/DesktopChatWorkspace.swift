@@ -469,6 +469,35 @@ struct DesktopChatWorkspace: View {
             let id = arguments[index + 1]
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { openConversation(id) }
         }
+        // The trailing panel's states: a report (and full screen), an
+        // artifact by id, a file.
+        if arguments.contains("--juno-preview-report-panel") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                DesktopPanelRequests.shared.report = ResearchReportWindow.previewRunID
+            }
+        }
+        if let index = arguments.firstIndex(of: "--juno-preview-artifact"), index + 1 < arguments.count {
+            let id = arguments[index + 1]
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                if let artifact = configuration.artifactModel?.artifacts.first(where: { $0.id == id }) {
+                    DesktopPageRouter.shared.openArtifactInConversation(artifact)
+                }
+            }
+        }
+        if arguments.contains("--juno-preview-file") {
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent("Beta survey results.csv")
+            let rows = [
+                "Respondent,Plan,Would recommend,Most wanted",
+                "Ana,Plus,Yes,Search inside notes",
+                "Ben,Free,Yes,Offline mode",
+                "Chloé,Plus,No,Faster sync",
+                "Dev,Ultra,Yes,Search inside notes",
+                "Eli,Free,Yes,Shared notebooks",
+                "Fatima,Plus,Yes,Search inside notes",
+            ]
+            try? rows.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { DesktopPanelRequests.shared.file = url }
+        }
         if arguments.contains("--juno-preview-research-toast") {
             // A background research finishing while another chat is open:
             // the toast DesktopResearchCompletions posts, with its Open.
@@ -1124,10 +1153,11 @@ struct DesktopChatWorkspace: View {
         case .research(let id):
             // "Your research is ready": the report in its own window, and the
             // chat it belongs to behind it, where its report card now is.
-            openWindow(id: JunoDesktopWindow.researchReportID, value: id)
             Task {
-                guard let conversationID = await model.researchConversationID(runID: id) else { return }
-                await openThread(conversationID)
+                if let conversationID = await model.researchConversationID(runID: id) {
+                    await openThread(conversationID)
+                }
+                DesktopPanelRequests.shared.report = id
             }
         }
     }
@@ -1507,6 +1537,10 @@ struct DesktopConversationView: View {
     /// that asked: `.quickLookPreview` on a lazily built row loses its panel
     /// when the row scrolls away — the same reason the canvas lives here.
     @State private var quickLookURL: URL?
+    /// The report panel covers the conversation (the web's full-screen
+    /// report), still inside this window.
+    @State private var reportFullscreen = false
+    @State private var panelRequests = DesktopPanelRequests.shared
     /// The picture the edit sheet is open on.
     @State private var imageEditTarget: NativeChatAttachment?
     /// Why a file could not be opened or saved, for the alert.
@@ -1597,6 +1631,19 @@ struct DesktopConversationView: View {
                 Task { await work.discover() }
             }
             .onChange(of: windowVisible) { _, visible in conversationWork?.isVisible = visible }
+            .onChange(of: panelRequests.report, initial: true) { _, id in
+                guard let id else { return }
+                panelRequests.report = nil
+                openReport(id)
+                #if DEBUG
+                if CommandLine.arguments.contains("--juno-preview-report-fullscreen") { reportFullscreen = true }
+                #endif
+            }
+            .onChange(of: panelRequests.file, initial: true) { _, url in
+                guard let url else { return }
+                panelRequests.file = nil
+                openFilePanel(url)
+            }
             .background(DesktopWindowVisibilityReader { windowVisible = $0 })
             // Open in Conversation from the Artifacts page: once this chat is
             // the one on screen, the canvas opens on that row by id.
@@ -1703,7 +1750,7 @@ struct DesktopConversationView: View {
             .desktopOutputRequests(
                 conversationID: privateChat == nil ? model.selectedConversationID : nil,
                 openArtifact: { open(artifact: $0) },
-                quickLook: { attachment in withFile(attachment) { quickLookURL = $0 } }
+                quickLook: { attachment in withFile(attachment) { openFilePanel($0) } }
             )
             .sheet(item: $imageEditTarget) { target in
                 imageEditSheet(target)
@@ -1732,7 +1779,7 @@ struct DesktopConversationView: View {
     private var mediaActions: TranscriptMediaActions {
         var actions = TranscriptMediaActions()
         actions.quickLook = { attachment in
-            withFile(attachment) { url in quickLookURL = url }
+            withFile(attachment) { url in openFilePanel(url) }
         }
         actions.openWithDefaultApp = { attachment in
             withFile(attachment) { url in _ = NSWorkspace.shared.open(url) }
@@ -1856,9 +1903,46 @@ struct DesktopConversationView: View {
     /// came out of stays readable next to it. A draft has no artifact to show,
     /// so the dock is simply closed there — and wrapping both phases in it is
     /// what keeps the composer one view across the first send.
+    @ViewBuilder
     private var conversationContent: some View {
+        if reportFullscreen, case .report(let runID) = dockPanel {
+            reportPanel(runID)
+                .transition(.opacity)
+        } else {
+            dockedConversation
+        }
+    }
+
+    private func reportPanel(_ runID: String) -> some View {
+        ResearchReportWindow(
+            runID: runID,
+            configuration: configuration,
+            panel: ResearchReportPanelChrome(
+                close: {
+                    reportFullscreen = false
+                    closeResearch()
+                },
+                openInWindow: { openReportWindow(runID) },
+                isFullscreen: Binding(
+                    get: { reportFullscreen },
+                    set: { value in
+                        withAnimation(JunoMotion.reduced(JunoMotion.canvasEnter, when: reduceMotion)) {
+                            reportFullscreen = value
+                        }
+                    }
+                )
+            )
+        )
+        .id(runID)
+    }
+
+    private var dockedConversation: some View {
         TrailingDock(panel: dockPanel) { panel in
             switch panel {
+            case .report(let runID):
+                reportPanel(runID)
+            case .file(let url):
+                DesktopFilePreviewPanel(url: url, close: closeResearch)
             case .canvas(let artifact):
                 DesktopArtifactCanvas(
                     artifact: artifact,
@@ -1929,6 +2013,16 @@ struct DesktopConversationView: View {
             return .activity(messageID: openActivity.messageID, focusCallID: openActivity.focusCallID)
         }
         if let openTask { return .task(sessionID: openTask) }
+        // The report and a file preview ride the Research slot under a
+        // prefix, so every opener that clears Research clears them too.
+        if let openResearch, openResearch.hasPrefix(Self.reportPrefix) {
+            return .report(runID: String(openResearch.dropFirst(Self.reportPrefix.count)))
+        }
+        if let openResearch, openResearch.hasPrefix(Self.filePrefix),
+           let url = URL(string: String(openResearch.dropFirst(Self.filePrefix.count)))
+        {
+            return .file(url: url)
+        }
         return openResearch.map { .research(runID: $0) }
     }
 
@@ -2420,9 +2514,35 @@ struct DesktopConversationView: View {
         }
     }
 
-    /// A research report in its own window (register #65).
+    static let reportPrefix = "report:"
+    static let filePrefix = "file:"
+
+    /// A research report in the conversation's trailing panel, as the
+    /// website's research panel opens it — its own window only on request.
     private func openReport(_ runID: String) {
+        reportFullscreen = false
+        withAnimation(JunoMotion.reduced(JunoMotion.canvasEnter, when: reduceMotion)) {
+            openArtifact = nil
+            openActivity = nil
+            openTask = nil
+            openResearch = Self.reportPrefix + runID
+        }
+    }
+
+    /// The report in a window of its own: the panel's secondary action.
+    private func openReportWindow(_ runID: String) {
         openWindow(id: JunoDesktopWindow.researchReportID, value: runID)
+    }
+
+    /// A file in the trailing panel (Quick Look's own preview, hosted in the
+    /// window) rather than the floating Quick Look panel.
+    private func openFilePanel(_ url: URL) {
+        withAnimation(JunoMotion.reduced(JunoMotion.canvasEnter, when: reduceMotion)) {
+            openArtifact = nil
+            openActivity = nil
+            openTask = nil
+            openResearch = Self.filePrefix + url.absoluteString
+        }
     }
 
     /// Where this account's hidden research receipts are remembered.
