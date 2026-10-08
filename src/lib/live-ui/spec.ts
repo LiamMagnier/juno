@@ -14,11 +14,7 @@ import { readLiveJSON, type LiveJSON, type LiveJSONResult } from "@/lib/live-ui/
 import type { LiveValue } from "@/lib/live-ui/expr";
 import { isLiveFormat, parseISODate, type LiveFormat } from "@/lib/live-ui/format";
 
-export const LIVE_UI_FENCES = ["live-ui", "live", "juno-live"] as const;
-
-export function isLiveUIFence(lang: string | null | undefined): boolean {
-  return !!lang && (LIVE_UI_FENCES as readonly string[]).includes(lang.trim().toLowerCase());
-}
+export { LIVE_UI_FENCES, isLiveUIFence } from "@/lib/live-ui/fence";
 
 export const SPEC_LIMITS = {
   components: 80,
@@ -88,6 +84,8 @@ export type LiveComponent =
       series: LiveChartSeries[];
       format?: LiveFormat;
       xFormat?: LiveFormat;
+      /** An x to mark with a rule (a cutoff, "today"); the readout rests there. */
+      mark?: string;
     })
   | (Base & { type: "table"; rows: string; columns: { label: string; value: string; format?: LiveFormat; unit?: string }[] })
   | (Base & { type: "explorer"; title?: string; parts: LiveExplorerPart[]; links: [string, string][] })
@@ -335,7 +333,7 @@ function component(
     case "chart": {
       const kindRaw = typeof raw.kind === "string" ? raw.kind : typeof raw.chart === "string" ? raw.chart : "line";
       const kind = kindRaw === "bar" || kindRaw === "column" ? "bar" : kindRaw === "area" ? "area" : "line";
-      const seriesRaw = Array.isArray(raw.series) ? raw.series : raw.y !== undefined ? [{ label: str(raw.label) ?? "", y: raw.y }] : [];
+      const seriesRaw: LiveJSON[] = Array.isArray(raw.series) ? raw.series : raw.y !== undefined ? [{ label: str(raw.label) ?? "", y: raw.y }] : [];
       const series: LiveChartSeries[] = [];
       for (const s of seriesRaw) {
         if (series.length >= SPEC_LIMITS.chartSeries) break;
@@ -366,6 +364,7 @@ function component(
         series,
         format: fmt(raw.format),
         xFormat: fmt(raw.xFormat),
+        mark: expr(raw.mark),
       };
     }
     case "table": {

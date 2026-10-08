@@ -30,6 +30,7 @@ import { useComposerAutosize } from "@/components/ui/composer-shell";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Kbd } from "@/components/ui/kbd";
 import { useModifierKeyLabel } from "@/components/ui/platform";
+import { LiveUIHostProvider } from "@/components/chat/live-ui/host";
 import { Markdown } from "@/components/chat/markdown";
 import { AutoReceipt } from "@/components/chat/auto-receipt";
 import { receiptLine, type RoutingReceipt } from "@/lib/router/receipt";
@@ -1342,6 +1343,7 @@ export const MessageItem = React.memo(function MessageItem({
                 reply sits dimmed for its whole life. ~140 characters is past
                 the first wrap at every column width, which is the point where
                 the fade has a line of its own to sit on. */}
+            <LiveUIHostProvider value={{ messageId: message.id }}>
             <div className={cn("space-y-1", message.streaming && message.content.length > 140 && "stream-tail")}>
             {parts.map((part, i) =>
               part.type === "text" ? (
@@ -1391,6 +1393,7 @@ export const MessageItem = React.memo(function MessageItem({
               )
             )}
             </div>
+            </LiveUIHostProvider>
             {/* No trailing dot. A coral ball parked under the text was the
                 loudest thing on the page while a reply arrived, and it is
                 redundant now: the tail fade already says "still writing", and

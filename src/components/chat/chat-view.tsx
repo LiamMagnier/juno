@@ -20,6 +20,7 @@ import { Composer } from "@/components/chat/composer";
 import { AnimatedTitle } from "@/components/app/animated-title";
 import { EmptyGreeting, HomeField, PrivateGreeting } from "@/components/chat/empty-state";
 import { FollowUpSuggestions } from "@/components/chat/follow-up-suggestions";
+import { LiveUIHostProvider } from "@/components/chat/live-ui/host";
 import { PrivateChatToggle } from "@/components/chat/private-chat-toggle";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 /*
@@ -1794,6 +1795,12 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   // which must stay stable while this identity changes with the chat hook.
   const sendFromComposerRef = React.useRef(sendFromComposer);
   sendFromComposerRef.current = sendFromComposer;
+  // A Live UI view's prompt button sends through the same path as a follow-up
+  // suggestion. Stable, so a view does not re-render on every chat change.
+  const liveUIHost = React.useMemo(
+    () => ({ onPrompt: (text: string) => void sendFromComposerRef.current(text, []) }),
+    [],
+  );
 
   const openVoice = React.useCallback(() => {
     if (privateMode || chat.isBusy || chat.pendingClarification || voiceSavingRef.current || voiceSaveError) return;
@@ -2445,6 +2452,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                 <ConversationFind messages={displayMessages} onClose={() => setFindOpen(false)} />
               )}
               <AgentThreadContext.Provider value={agentThreadIdentity}>
+              <LiveUIHostProvider value={liveUIHost}>
               <MessageList
                 /*
                  * KEYED ON THE ROUTE'S CONVERSATION, which does two things
@@ -2530,6 +2538,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                 titleShownInHeader={topActionsSlotOwner && !privateMode && !!headerTitle}
                 speakerFor={room.detail ? roomSpeakerFor : undefined}
               />
+              </LiveUIHostProvider>
               </AgentThreadContext.Provider>
               {currentConversationId && !privateMode && (
                 // Same width cap, centring and gutter as the composer's root
