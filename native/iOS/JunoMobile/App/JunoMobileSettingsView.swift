@@ -159,7 +159,12 @@ struct JunoMobileSettingsView: View {
     .navigationTitle("")
     .navigationBarTitleDisplayMode(.inline)
     .navigationDestination(isPresented: $showMemoryPage) {
-      JunoMobileMemoryView(model: model)
+      JunoMobileMemoryView(
+        model: model,
+        requestSender: requestSender,
+        accountID: session?.profile.id,
+        openConversation: openConversation
+      )
     }
     .navigationDestination(isPresented: $showProposalsPage) {
       if let learningModel {
@@ -371,7 +376,9 @@ struct JunoMobileSettingsView: View {
     case .appearance:
       preferencePage(.appearance, title: "Appearance")
     case .models:
+      // Auto's two settings come from `GET /api/settings`, not the sync record.
       preferencePage(.models, title: "Models")
+        .task { await model.refreshServerSettings() }
     case .writing:
       preferencePage(.writing, title: "Personalization")
     case .language:
@@ -404,8 +411,10 @@ struct JunoMobileSettingsView: View {
     case .voice:
       JunoMobileVoiceSettingsView(
         settings: model.settings, disabled: model.isMutating, update: update,
-        messageActions: messageActionsClient, accountID: session?.profile.id
+        messageActions: messageActionsClient, accountID: session?.profile.id,
+        ttsProvider: model.ttsProvider
       )
+      .task { await model.refreshServerSettings() }
     case .code:
       JunoMobileCodeSettingsView(remoteModel: remoteCodeModel)
     }
@@ -1081,6 +1090,55 @@ private struct JunoMobileSettingsPreferences: View {
       .accessibilityIdentifier("juno.mobile.settings-default-model")
     } footer: {
       Text("New chats start with this model. You can change it per chat from the composer.")
+    }
+
+    // Settings › Models › Auto (`sections/models.tsx`).
+    let preference = NativeAutoPreference.option(for: settings.autoPreference)
+    let boundary = NativeAutoDataBoundary.option(for: settings.autoDataBoundary)
+    Section {
+      Picker(
+        "Optimise for",
+        selection: Binding(
+          get: { preference.id },
+          set: { value in
+            guard value != preference.id else { return }
+            selectionHaptic.fire()
+            update(NativeSettingsPatch(autoPreference: value))
+          }
+        )
+      ) {
+        ForEach(NativeAutoPreference.options) { option in
+          Text(option.label).tag(option.id)
+        }
+      }
+      .pickerStyle(.menu)
+      .disabled(disabled)
+      .accessibilityIdentifier("juno.mobile.settings-auto-preference")
+      Picker(
+        "Labs Auto may use",
+        selection: Binding(
+          get: { boundary.id },
+          set: { value in
+            guard value != boundary.id else { return }
+            selectionHaptic.fire()
+            update(NativeSettingsPatch(autoDataBoundary: value))
+          }
+        )
+      ) {
+        ForEach(NativeAutoDataBoundary.options) { option in
+          Text(option.label).tag(option.id)
+        }
+      }
+      .pickerStyle(.menu)
+      .disabled(disabled)
+      .accessibilityIdentifier("juno.mobile.settings-auto-data-boundary")
+    } header: {
+      Text("Auto")
+    } footer: {
+      Text(
+        "How Auto chooses when it picks the model for you. Choosing a model yourself always overrides it.\n\n"
+          + preference.description + " " + boundary.description
+      )
     }
 
     if !modelCatalog.isEmpty {

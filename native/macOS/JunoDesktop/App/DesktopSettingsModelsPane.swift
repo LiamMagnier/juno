@@ -23,6 +23,16 @@ struct DesktopSettingsModelsPane: View {
             }
 
             Section {
+                autoPreferenceRow(settings)
+                autoDataBoundaryRow(settings)
+            } header: {
+                DesktopSettingsGroupHeader(
+                    title: "Auto",
+                    note: "How Auto chooses when it picks the model for you. Choosing a model yourself always overrides it."
+                )
+            }
+
+            Section {
                 DesktopSettingToggleRow(
                     title: "Fast mode",
                     description: "Prefer the quickest capable model and skip extended thinking.",
@@ -75,7 +85,7 @@ struct DesktopSettingsModelsPane: View {
         return DesktopSettingRow(
             title: "Default model",
             description: auto
-                ? "Juno picks the model and thinking depth each message needs."
+                ? "Alevr picks the model and thinking depth each message needs."
                 : "New chats start on this model. You can switch in any message.",
             status: context.saves.status("defaultModel")
         ) {
@@ -85,7 +95,7 @@ struct DesktopSettingsModelsPane: View {
                 HStack(spacing: JunoSpace.snug) {
                     JunoProviderMark(
                         providerID: selected?.providerID ?? "juno",
-                        providerName: selected?.providerName ?? "Juno",
+                        providerName: selected?.providerName ?? "Alevr",
                         size: 16
                     )
                     Text(auto ? "Auto" : (selected?.displayName ?? junoDisplayModelName(settings.defaultModel)))
@@ -123,6 +133,60 @@ struct DesktopSettingsModelsPane: View {
                     height: JunoModelSelectorMetrics.standard.height
                 )
             }
+        }
+    }
+
+    // MARK: Auto
+
+    private func autoPreferenceRow(_ settings: NativeAccountSettings) -> some View {
+        let current = NativeAutoPreference.option(for: settings.autoPreference)
+        return DesktopSettingRow(
+            title: "Optimise for",
+            description: current.description,
+            status: context.saves.status("autoPreference")
+        ) {
+            Picker("What Auto optimises for", selection: Binding(
+                get: { current.id },
+                set: { value in
+                    guard value != current.id else { return }
+                    context.save("autoPreference", NativeSettingsPatch(autoPreference: value))
+                }
+            )) {
+                ForEach(NativeAutoPreference.options) { option in
+                    Text(option.label).tag(option.id)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .tint(nil)
+            .fixedSize()
+            .accessibilityIdentifier("juno.desktop.settings.auto-preference")
+        }
+    }
+
+    private func autoDataBoundaryRow(_ settings: NativeAccountSettings) -> some View {
+        let current = NativeAutoDataBoundary.option(for: settings.autoDataBoundary)
+        return DesktopSettingRow(
+            title: "Labs Auto may use",
+            description: current.description,
+            status: context.saves.status("autoDataBoundary")
+        ) {
+            Picker("Labs Auto may use", selection: Binding(
+                get: { current.id },
+                set: { value in
+                    guard value != current.id else { return }
+                    context.save("autoDataBoundary", NativeSettingsPatch(autoDataBoundary: value))
+                }
+            )) {
+                ForEach(NativeAutoDataBoundary.options) { option in
+                    Text(option.label).tag(option.id)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .tint(nil)
+            .fixedSize()
+            .accessibilityIdentifier("juno.desktop.settings.auto-data-boundary")
         }
     }
 
