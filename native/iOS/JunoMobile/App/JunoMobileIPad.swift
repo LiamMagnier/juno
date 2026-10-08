@@ -110,15 +110,23 @@ struct JunoMobileIPadSidebarRowLabel: View {
   let title: LocalizedStringKey
   var selected: Bool = false
   var status: JunoMobileSidebarStatus?
+  /// The SF Symbol the phone drawer uses for the same row. Preferred when
+  /// given, so the two columns share one icon family.
+  var symbol: String? = nil
 
   var body: some View {
     HStack(spacing: 10) {
-      JunoIconView(icon, size: 16)
-        .frame(width: 20)
-        // The only accent in the sidebar: the selected row's glyph.
-        .foregroundStyle(selected ? Color.junoAccent : Color.junoSidebarForeground)
+      Group {
+        if let symbol {
+          Image(systemName: symbol).font(.body)
+        } else {
+          JunoIconView(icon, size: 16)
+        }
+      }
+        .frame(width: 22)
+        .foregroundStyle(Color.junoForeground)
       Text(title)
-        .junoFont(size: 15, relativeTo: .body, weight: selected ? .medium : .regular)
+        .junoFont(size: 15, relativeTo: .body)
         .foregroundStyle(Color.junoForeground)
         .lineLimit(1)
       Spacer(minLength: 4)
@@ -164,11 +172,12 @@ struct JunoMobileIPadSidebarRow: View {
   let title: LocalizedStringKey
   var selected: Bool = false
   var status: JunoMobileSidebarStatus?
+  var symbol: String? = nil
   let action: () -> Void
 
   var body: some View {
     Button(action: action) {
-      JunoMobileIPadSidebarRowLabel(icon: icon, title: title, selected: selected, status: status)
+      JunoMobileIPadSidebarRowLabel(icon: icon, title: title, selected: selected, status: status, symbol: symbol)
     }
     .buttonStyle(JunoSidebarPressStyle())
     .frame(minWidth: 44, minHeight: 44)

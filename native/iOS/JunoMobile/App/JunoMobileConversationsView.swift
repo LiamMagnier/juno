@@ -374,12 +374,16 @@ private struct JunoMobileDraftChat: View {
       .toolbar {
         // The phone's bar carries the private-chat toggle itself (see the
         // shell); the iPad's detail column keeps it here.
+        if sizeClass == .regular {
+          // No title on the iPad's home either: the greeting names it.
+          ToolbarItem(placement: .principal) { Text(verbatim: "") }
+        }
         if let startIncognito, sizeClass == .regular {
           ToolbarItem(placement: .topBarTrailing) {
             Button(action: startIncognito) {
-              // The toggle, off. Incognito's own toolbar shows the same label
-              // in prominent glass, so the control changes state in place.
-              JunoIncognitoToggleLabel(active: false, showsTitle: sizeClass == .regular)
+              // The phone's private-chat glyph: the dashed circle, no label.
+              JunoMobileTemporaryChatGlyph(active: false)
+                .foregroundStyle(Color.primary)
             }
             .accessibilityLabel("Start an incognito chat")
             .accessibilityIdentifier("juno.mobile.incognito-start")
