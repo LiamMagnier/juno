@@ -94,6 +94,9 @@ export function composeTurnSystem({
     projectContext: promptContext,
     untrustedContent: untrustedContentInTurn,
     taskHandoff: taskToolOn,
+    // Interactive views: the web always renders them; a native build only
+    // when it says so (shipped builds would show raw JSON).
+    liveUi: legacyChatClientForOrigin(input) === "web" || (input.clientFeatures?.includes("live_ui") ?? false),
   });
   const baseSystem = baseSystemSections.variable
     ? `${baseSystemSections.stable}\n\n${baseSystemSections.variable}`

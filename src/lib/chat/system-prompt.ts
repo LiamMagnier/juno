@@ -48,7 +48,42 @@ export interface SystemPromptOptions {
    * tool: a rule about a tool the model does not have invites it to pretend.
    */
   taskHandoff?: boolean;
+  /**
+   * The client renders Live UI views (```live-ui fences, docs/design/LIVE_UI.md):
+   * the web, and native builds that declare the `live_ui` client feature.
+   * Adds LIVE_UI_SECTION to the stable tier. Never on a voice turn.
+   */
+  liveUi?: boolean;
 }
+
+/**
+ * When and how to put an interactive view in a reply (docs/design/LIVE_UI.md).
+ *
+ * Constant text, so it stays inside the cached head for everyone with the
+ * same toggles. Kept short on purpose: every token here is paid on every
+ * turn. The three examples are the contract's whole surface in miniature
+ * (inputs + formulas + table, a chart over a range, an explorer), with real
+ * content, because a model copies placeholders it is shown.
+ */
+export const LIVE_UI_SECTION = `# Live UI
+In ANSWER and UNDERSTAND replies you can add one small interactive view: a fenced \`\`\`live-ui block holding JSON. Use it when the reader will want to change inputs and watch the result: what-if numbers, budgets, loans, savings, splitting a bill, conversions, options compared by adjustable weights, exploring the parts of a system, a route or a checklist to work through. Do not use it for simple facts, definitions, chit-chat, a single number with nothing to adjust, or BUILD requests (those want real code, or an artifact for full apps and games). At most one view per reply, and the prose must still state the key answer, so the reply stands without it.
+
+Shape, keys in this order: {"title","currency"?,"data"?,"let"?,"ui"}. data holds constant lists and objects; let holds named formulas (strings); ui is a list of components, each {"type":...}:
+- Inputs (need id, label, value): slider (min, max, step), number (min?, max?, step?), stepper (min, max), select (options), toggle, date ("YYYY-MM-DD"), input (text).
+- Outputs: metric (label, value; emphasis:true on the headline figure; hint), text (text with {{expr}} and **bold**), progress (label, value, max), chart (kind line|area|bar; x:{from,to,step,var} with series:[{label,y}] where y uses var, or rows + xKey; mark: an x to highlight), table (rows, columns:[{label,value}], value sees the row's fields), explorer (parts:[{id,label,summary,detail,facts:[{label,value}],at:[x,y] on a 0-100 field}], links:[[id,id]]), stops (stops:[{name,time,note}]), checklist (id, items), button (label, and prompt sent as the user's next message, or copy: expr).
+- Layout: row (children), grid (columns 2-4, children), section (title, children).
+- format on inputs, metrics and columns: number | integer | currency | percent | compact. Percent values are fractions (0.12 shows as 12%). unit adds a suffix such as "km".
+Expressions: numbers, 'strings', names (input ids, let, data, row fields), + - * / % ^, comparisons, && || !, c ? a : b, list.field plucks a column, arithmetic on lists is element-wise. Functions: sum avg min max count round(x,d) floor ceil abs sqrt pow exp ln clamp if range(a,b,step) pmt(rate,n,pv) fv(rate,n,payment,pv) normpdf(x,mean,sd) normcdf(x,mean,sd) days(a,b) addDays(d,n) fmt(x,'currency'). Nothing else exists: no code, no loops, no URLs.
+
+\`\`\`live-ui
+{"title":"Split the bill","currency":"EUR","data":{"items":[{"item":"Pizza","price":14},{"item":"Pasta","price":16.5},{"item":"Wine","price":32}]},"let":{"total":"sum(items.price) * (1 + tip)","each":"total / people"},"ui":[{"type":"row","children":[{"type":"slider","id":"tip","label":"Tip","min":0,"max":0.25,"step":0.01,"value":0.1,"format":"percent"},{"type":"stepper","id":"people","label":"People","min":1,"max":12,"value":3}]},{"type":"metric","label":"Each pays","value":"each","format":"currency","emphasis":true},{"type":"table","rows":"items","columns":[{"label":"Item","value":"item"},{"label":"Price","value":"price","format":"currency"}]}]}
+\`\`\`
+\`\`\`live-ui
+{"title":"Savings over time","let":{"balance":"fv(rate / 12, years * 12, monthly, 0)"},"ui":[{"type":"grid","columns":3,"children":[{"type":"slider","id":"monthly","label":"Monthly","min":0,"max":2000,"step":50,"value":500,"format":"currency"},{"type":"slider","id":"rate","label":"Return","min":0,"max":0.1,"step":0.005,"value":0.05,"format":"percent"},{"type":"slider","id":"years","label":"Years","min":1,"max":40,"step":1,"value":20}]},{"type":"metric","label":"Balance after {{years}} years","value":"balance","format":"currency","emphasis":true},{"type":"chart","kind":"area","x":{"from":0,"to":"years","step":1,"var":"y"},"series":[{"label":"Balance","y":"fv(rate / 12, y * 12, monthly, 0)"}],"format":"currency"}]}
+\`\`\`
+\`\`\`live-ui
+{"title":"Parts of a road bike","ui":[{"type":"explorer","parts":[{"id":"frame","label":"Frame","at":[50,45],"summary":"Holds everything","detail":"Its angles decide whether the bike feels racy or relaxed."},{"id":"fork","label":"Fork","at":[72,45],"summary":"Steers","detail":"Holds the front wheel; its rake sets how calm the steering feels."},{"id":"drive","label":"Drivetrain","at":[44,74],"summary":"Turns pedalling into speed","detail":"Chainrings, chain and cassette; shifting keeps your cadence comfortable.","facts":[{"label":"Gears","value":"22 to 26"}]}],"links":[["frame","fork"],["frame","drive"]]}]}
+\`\`\``;
 
 /**
  * When to hand a request to a background task, and how to talk about it after.
@@ -123,7 +158,7 @@ If you receive a prompt that includes pre-answer clarification answers, answer t
 Before writing, classify what the user actually wants. This decides every formatting choice below:
 - BUILD — they asked you to make, create, write, fix, or improve something they will USE: a website, app, component, script, document, email, design. Deliver the finished work itself, directly. Do not teach them how it works, do not compare approaches they didn't ask about, do not walk them through your process, and NEVER attach learning blocks (no quiz, no comparison, no process timeline, no step lab) to a build request. "Build me a portfolio site" wants a portfolio site, not a lesson about portfolio sites.
 - UNDERSTAND — they asked you to explain, teach, or help them grasp a concept ("explain", "how does X work", "teach me", "what's the difference between"). This is the ONLY intent where the inline learning blocks below are allowed.
-- ANSWER / CHAT — a question, a quick task, or conversation. Plain prose. No blocks.
+- ANSWER / CHAT — a question, a quick task, or conversation. Plain prose. ${opts.liveUi ? "No learning blocks; a Live UI view (see below) is allowed when the reader will want to adjust numbers or explore." : "No blocks."}
 When a message mixes intents ("build X and explain how it works"), deliver the build first, then explain in plain prose — still no learning blocks; they are reserved for pure UNDERSTAND requests.
 
 # Inline visual learning blocks
@@ -337,6 +372,10 @@ You write the content; the USER picks the download format. Never say you attache
   // are the model deciding where a reply belongs. Never on a voice turn, which
   // has no panel to show a task in (the route withholds the tool there too).
   if (opts.taskHandoff && !opts.voiceMode) parts.push(TASK_HANDOFF_SECTION);
+
+  // Interactive views sit beside the learning blocks in meaning (both are
+  // things a reply can carry inline), and like them never reach a voice turn.
+  if (opts.liveUi && !opts.voiceMode) parts.push(LIVE_UI_SECTION);
 
   if (opts.memoryEnabled) {
     parts.push(
