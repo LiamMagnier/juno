@@ -514,6 +514,160 @@
       "name": "broken",
       "source": "{\"ui\":[}",
       "error": true
+    },
+    {
+      "name": "learning: steps with visuals, a dropped step and a takeaway",
+      "source": "{\"title\":\"How a request travels\",\"data\":{\"hops\":[{\"name\":\"DNS\",\"ms\":20},{\"name\":\"TLS\",\"ms\":45}]},\"ui\":[{\"type\":\"steps\",\"title\":\"Walkthrough\",\"takeaway\":\"Latency adds up hop by hop.\",\"steps\":[{\"title\":\"Resolve\",\"summary\":\"Find the address.\",\"notice\":\"Cached answers skip this.\",\"ui\":[{\"type\":\"slider\",\"id\":\"ttl\",\"label\":\"TTL\",\"min\":0,\"max\":600,\"step\":60,\"value\":300},{\"type\":\"metric\",\"label\":\"Lookup\",\"value\":\"ttl > 0 ? 0 : 20\",\"unit\":\"ms\"}]},{\"title\":\"Handshake\",\"text\":\"Agree on keys.\",\"ui\":[{\"type\":\"table\",\"rows\":\"hops\",\"rowHeader\":true,\"highlight\":1,\"columns\":[{\"label\":\"\",\"value\":\"name\"},{\"label\":\"ms\",\"value\":\"ms\"}]}]},{\"summary\":\"no title, dropped\"},{\"title\":\"Respond\"}]}]}",
+      "expect": {
+        "title": "How a request travels",
+        "currency": "USD",
+        "streaming": false,
+        "lets": [],
+        "data": [
+          "hops"
+        ],
+        "ui": [
+          {
+            "key": "0",
+            "type": "steps",
+            "steps": [
+              {
+                "title": "Resolve",
+                "notice": true,
+                "children": [
+                  {
+                    "key": "0.0.0",
+                    "type": "slider",
+                    "id": "ttl",
+                    "value": 300,
+                    "min": 0,
+                    "max": 600,
+                    "step": 60
+                  },
+                  {
+                    "key": "0.0.1",
+                    "type": "metric",
+                    "expr": "ttl > 0 ? 0 : 20"
+                  }
+                ]
+              },
+              {
+                "title": "Handshake",
+                "notice": false,
+                "children": [
+                  {
+                    "key": "0.1.0",
+                    "type": "table",
+                    "rowHeader": true,
+                    "highlight": 1
+                  }
+                ]
+              },
+              {
+                "title": "Respond",
+                "notice": false,
+                "children": []
+              }
+            ],
+            "takeaway": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "learning: steps still streaming is held back whole",
+      "source": "{\"title\":\"How a request travels\",\"data\":{\"hops\":[{\"name\":\"DNS\",\"ms\":20},{\"name\":\"TLS\",\"ms\":45}]},\"ui\":[{\"type\":\"steps\",\"title\":\"Walkthrough\",\"takeaway\":\"Latency adds up hop by hop.\",\"steps\":[{\"title\":\"Resolve\",\"summary\":\"Find the address.\",\"notice\":\"Cached ans",
+      "expect": {
+        "title": "How a request travels",
+        "currency": "USD",
+        "streaming": true,
+        "lets": [],
+        "data": [
+          "hops"
+        ],
+        "ui": [
+          {
+            "key": "0",
+            "type": "pending"
+          }
+        ]
+      }
+    },
+    {
+      "name": "learning: quiz answers by index, text and flag; unanswerable questions dropped",
+      "source": "{\"ui\":[{\"type\":\"quiz\",\"title\":\"Check\",\"questions\":[{\"question\":\"Index answer\",\"options\":[\"a\",\"b\",\"c\"],\"answer\":2},{\"question\":\"Text answer\",\"options\":[\"Alpha\",\"Beta\"],\"answer\":\"beta\"},{\"question\":\"Flagged\",\"options\":[{\"label\":\"x\"},{\"label\":\"y\",\"correct\":true,\"explanation\":\"why\"}]},{\"question\":\"No answer\",\"options\":[\"p\",\"q\"]},{\"question\":\"One option\",\"options\":[\"only\"],\"answer\":0}]},{\"type\":\"check\",\"question\":\"Flat single\",\"options\":[\"yes\",\"no\"],\"answer\":0}]}",
+      "expect": {
+        "title": null,
+        "currency": "USD",
+        "streaming": false,
+        "lets": [],
+        "data": [],
+        "ui": [
+          {
+            "key": "0",
+            "type": "quiz",
+            "answers": [
+              2,
+              1,
+              1
+            ]
+          },
+          {
+            "key": "1",
+            "type": "quiz",
+            "answers": [
+              0
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "learning: callouts, tones, aliases and timelines",
+      "source": "{\"ui\":[{\"type\":\"callout\",\"tone\":\"tip\",\"text\":\"Short.\"},{\"type\":\"key-idea\",\"title\":\"Idea\",\"text\":\"Big one.\",\"more\":\"Detail.\"},{\"type\":\"insight\",\"text\":\"From alias.\"},{\"type\":\"callout\",\"tone\":\"loud\",\"text\":\"Unknown tone.\"},{\"type\":\"callout\",\"title\":\"No text\"},{\"type\":\"timeline\",\"items\":[\"One\",{\"title\":\"Two\",\"description\":\"d\",\"date\":\"1999\"},{\"detail\":\"no label\"}]},{\"type\":\"process\",\"steps\":[\"A\",\"B\"]}]}",
+      "expect": {
+        "title": null,
+        "currency": "USD",
+        "streaming": false,
+        "lets": [],
+        "data": [],
+        "ui": [
+          {
+            "key": "0",
+            "type": "callout",
+            "tone": "tip",
+            "more": false
+          },
+          {
+            "key": "1",
+            "type": "callout",
+            "tone": "insight",
+            "more": true
+          },
+          {
+            "key": "2",
+            "type": "callout",
+            "tone": "insight",
+            "more": false
+          },
+          {
+            "key": "3",
+            "type": "callout",
+            "tone": "insight",
+            "more": false
+          },
+          {
+            "key": "5",
+            "type": "timeline",
+            "items": 2
+          },
+          {
+            "key": "6",
+            "type": "timeline",
+            "items": 2
+          }
+        ]
+      }
     }
   ]
 }
