@@ -386,7 +386,6 @@ struct JunoMobileAppDetailView: View {
                 }
             }
             .listStyle(.insetGrouped)
-            .junoGroupedPage()
             .navigationTitle(connector.label)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
