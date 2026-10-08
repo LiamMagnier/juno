@@ -70,6 +70,7 @@ struct DesktopLibraryMadeList: View {
                             Task { await model.loadMore() }
                         }
                         .buttonStyle(.bordered)
+                        .contentShape(.rect)
                         .disabled(model.isLoadingMore)
                         .frame(maxWidth: .infinity)
                     }
@@ -146,12 +147,15 @@ struct DesktopLibraryMadeList: View {
         switch item.kind {
         case .artifact:
             Button("Open") { open(item) }
+                .contentShape(.rect)
         case .deliverable:
             Button("Save a Copy…") { save(item) }
+                .contentShape(.rect)
                 .disabled(workClient == nil || accountID == nil)
         }
         if let conversationID = item.conversationId, openConversation != nil {
             Button("Open Its Chat") { openConversation?(conversationID) }
+                .contentShape(.rect)
         }
     }
 

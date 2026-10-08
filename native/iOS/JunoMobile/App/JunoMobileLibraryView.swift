@@ -279,6 +279,7 @@ struct JunoMobileLibraryView: View {
                     .foregroundStyle(Color.junoSecondaryInk)
             }
             .padding(JunoSpace.regular)
+            .frame(minHeight: 44)
             .background(Color.junoSurface, in: .rect(cornerRadius: 16, style: .continuous))
             .contentShape(.rect)
         }

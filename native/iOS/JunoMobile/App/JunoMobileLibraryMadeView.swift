@@ -35,6 +35,7 @@ struct JunoMobileLibraryMadeView: View {
                     Button(model.isLoadingMore ? "Loading…" : "Show more") {
                         Task { await model.loadMore() }
                     }
+                    .contentShape(.rect)
                     .disabled(model.isLoadingMore)
                     .foregroundStyle(Color.junoSecondaryInk)
                 }
@@ -79,6 +80,7 @@ struct JunoMobileLibraryMadeView: View {
         ) { _ in export = nil }
         .alert("Couldn’t download", isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } })) {
             Button("OK") { failure = nil }
+                .contentShape(.rect)
         } message: {
             Text(failure ?? "")
         }
@@ -93,6 +95,7 @@ struct JunoMobileLibraryMadeView: View {
                 Text(error)
             } actions: {
                 Button("Try Again") { Task { await model.reload() } }
+                    .contentShape(.rect)
             }
         } else if model.items == nil {
             ProgressView()
@@ -141,18 +144,20 @@ struct JunoMobileLibraryMadeView: View {
                     } else {
                         save(item)
                     }
-                } label: { label }
+                } label: { label.contentShape(.rect) }
                 .buttonStyle(.plain)
             }
         }
         .contextMenu {
             if item.kind == .deliverable, workClient != nil {
                 Button { save(item) } label: { Label("Save to Files", systemImage: "square.and.arrow.down") }
+                    .contentShape(.rect)
             }
             if let conversationID = item.conversationId, let openConversation {
                 Button { openConversation(conversationID) } label: {
                     Label("Open Its Chat", systemImage: "bubble.left")
                 }
+                .contentShape(.rect)
             }
         }
     }
