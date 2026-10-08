@@ -602,12 +602,13 @@ struct JunoMobileSidebarDrawer: View {
           setSearching(true)
         } label: {
           JunoIconView(.search, size: 19)
-            .frame(width: 30, height: 30)
+            .foregroundStyle(Color.primary)
+            .frame(minWidth: 44, minHeight: 44)
+            .contentShape(Circle())
         }
-        .buttonStyle(.glass)
-        .buttonBorderShape(.circle)
-        .controlSize(.regular)
-        .tint(Color.primary)
+        .buttonStyle(.plain)
+        // The system's interactive Liquid Glass, in the circle ChatGPT uses.
+        .glassEffect(.regular.interactive(), in: Circle())
         .accessibilityLabel("navigation.search")
         .accessibilityIdentifier("juno.mobile.sidebar-search")
       }
@@ -748,14 +749,14 @@ struct JunoMobileSidebarDrawer: View {
               .junoFont(size: 16, relativeTo: .body, weight: .semibold)
           }
           .foregroundStyle(Color.junoCanvas)
-          .padding(.horizontal, 6)
-          .frame(height: 30)
+          .padding(.horizontal, 18)
+          .frame(minWidth: 44, minHeight: 44)
+          .contentShape(Capsule())
         }
-        // The system's prominent glass, in ink: the one filled control.
-        .buttonStyle(.glassProminent)
-        .buttonBorderShape(.capsule)
-        .controlSize(.large)
-        .tint(Color.primary)
+        .buttonStyle(.plain)
+        // The system's interactive Liquid Glass tinted to ink: the one filled
+        // control in the drawer.
+        .glassEffect(.regular.tint(Color.primary).interactive(), in: Capsule())
         .disabled(!canCreateChat)
         .accessibilityLabel("chat.new")
         .accessibilityIdentifier("juno.mobile.sidebar-new-chat")
@@ -770,12 +771,12 @@ struct JunoMobileSidebarDrawer: View {
 
         Button(action: { openDestination(.settings) }) {
           JunoIconView(.settings, size: 20)
-            .frame(width: 30, height: 30)
+            .foregroundStyle(Color.primary)
+            .frame(minWidth: 44, minHeight: 44)
+            .contentShape(Circle())
         }
-        .buttonStyle(.glass)
-        .buttonBorderShape(.circle)
-        .controlSize(.regular)
-        .tint(Color.primary)
+        .buttonStyle(.plain)
+        .glassEffect(.regular.interactive(), in: Circle())
         .accessibilityLabel("Open settings for \(profileName)")
         .accessibilityIdentifier("juno.mobile.sidebar-profile")
       }
