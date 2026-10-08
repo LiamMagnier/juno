@@ -566,6 +566,11 @@ export const CLIENT_COMMAND_TYPE_VALUES = [
   "terminal.write",
   "terminal.resize",
   "terminal.close",
+  // env lane (additive): whole-thread / per-turn diffs, install/sign-in steps, session listing.
+  "checkpoint.diff",
+  "provider.setup",
+  "session.list",
+  "session.close",
 ] as const;
 export type ClientCommandType = (typeof CLIENT_COMMAND_TYPE_VALUES)[number];
 
@@ -598,6 +603,41 @@ export interface ClientCommandParams {
   "terminal.write": { terminalId: string; data: string };
   "terminal.resize": { terminalId: string; cols: number; rows: number };
   "terminal.close": { terminalId: string };
+  /** Diff of one checkpoint against the one before it, or of the whole thread when checkpointId is absent. */
+  "checkpoint.diff": { sessionId: string; checkpointId?: string };
+  /** The command the client types into an in-app terminal to install the runtime or sign in. Never run by the server. */
+  "provider.setup": { instanceId: string; action: ProviderSetupAction };
+  "session.list": { cwd?: string; query?: string; limit?: number };
+  /** Stops the session's vendor runtime; the log stays and session.open resumes it. */
+  "session.close": { sessionId: string };
+}
+
+export const PROVIDER_SETUP_ACTION_VALUES = ["install", "login"] as const;
+export type ProviderSetupAction = (typeof PROVIDER_SETUP_ACTION_VALUES)[number];
+
+/** One step the user runs themselves in an in-app terminal (SPEC §2: the client opens a terminal with it typed in). */
+export interface ProviderSetupStep {
+  action: ProviderSetupAction;
+  /** Shell text typed into the terminal, not executed by the server. */
+  command: string;
+  /** Plain-language label for the button / sheet ("Sign in to Codex"). */
+  label: string;
+  note?: string;
+  /** Vendor documentation for the step. */
+  url?: string;
+}
+
+export interface SessionSummary {
+  id: string;
+  cwd: string;
+  title?: string;
+  state: SessionState;
+  selection: ModelSelection;
+  /** ISO-8601. */
+  updatedAt: string;
+  lastSequence: number;
+  /** Set for subagent sessions: the session that spawned it. */
+  parentSessionId?: string;
 }
 
 export type ClientCommand = {
@@ -618,6 +658,11 @@ export interface ClientCommandResults {
   "terminal.write": Record<string, never>;
   "terminal.resize": Record<string, never>;
   "terminal.close": Record<string, never>;
+  "checkpoint.diff": { diff: string; files: FileChangeEntry[] };
+  /** step is null when the instance needs nothing for that action (already installed / signed in / no CLI login). */
+  "provider.setup": { step: ProviderSetupStep | null };
+  "session.list": { sessions: SessionSummary[] };
+  "session.close": Record<string, never>;
 }
 
 export const WIRE_ERROR_CODE_VALUES = [

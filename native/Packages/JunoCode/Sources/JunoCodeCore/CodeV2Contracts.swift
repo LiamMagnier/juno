@@ -734,6 +734,38 @@ public enum CodeV2 {
         case terminalWrite = "terminal.write"
         case terminalResize = "terminal.resize"
         case terminalClose = "terminal.close"
+        case checkpointDiff = "checkpoint.diff"
+        case providerSetup = "provider.setup"
+        case sessionList = "session.list"
+        case sessionClose = "session.close"
+    }
+
+    // contract: PROVIDER_SETUP_ACTION_VALUES
+    public enum ProviderSetupAction: String, Codable, Sendable, CaseIterable, Hashable {
+        case install
+        case login
+    }
+
+    /// A step the user runs in an in-app terminal (`provider.setup` result). The
+    /// server never runs it; the client opens a terminal with `command` typed in.
+    public struct ProviderSetupStep: Codable, Sendable, Hashable {
+        public var action: ProviderSetupAction
+        public var command: String
+        public var label: String
+        public var note: String?
+        public var url: String?
+    }
+
+    /// One row of `session.list`.
+    public struct SessionSummary: Codable, Sendable, Hashable, Identifiable {
+        public var id: String
+        public var cwd: String
+        public var title: String?
+        public var state: SessionState
+        public var selection: ModelSelection
+        public var updatedAt: String
+        public var lastSequence: Int
+        public var parentSessionId: String?
     }
 
     // contract: SERVER_EVENT_TYPE_VALUES
