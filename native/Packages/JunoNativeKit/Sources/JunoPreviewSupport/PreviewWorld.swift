@@ -100,10 +100,11 @@ public final class PreviewWorld {
         session = NativeAuthenticatedSession(
             profile: NativeAccountProfile(
                 id: account,
-                // The product shots name a sample person; everything else
-                // keeps the harness's obvious placeholder.
-                name: scenario == .showcase ? "Maya Okafor" : "Preview User",
-                email: scenario == .showcase ? "maya@fieldnotes.app" : "preview@juno.local",
+                // A believable sample person in every scenario: a placeholder
+                // like "Preview User" made every screenshot read as a mock.
+                // Fictional, and on a domain that is not the product's.
+                name: "Maya Okafor",
+                email: "maya@fieldnotes.app",
                 imageURL: nil
             ),
             deviceID: try DeviceID("preview-device")
