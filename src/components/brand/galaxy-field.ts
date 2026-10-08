@@ -23,7 +23,8 @@
  * set of rings. The differential part therefore winds and unwinds: the angle
  * at time s is
  *   θ(s) = θ0 + ω0 · (0.35 s + 0.65 (1 - r) · W(s)),  W(s) = (P / 2π) sin(2π s / P)
- * with P = 12 s. At s = 0, dθ/ds is exactly the spec's ω(r); the rim turns at
+ * with P = 11 s, and the turn runs against the winding so the arms trail
+ * (JunoGalaxyRenderer.angle is the same function). At s = 0, dθ/ds is exactly the spec's ω(r); the rim turns at
  * a steady 0.35 ω0 (one turn in ~15.7 s) and the arms wind by up to ~70 degrees
  * at the core and unwind again, every 12 s.
  */
@@ -34,7 +35,10 @@ export const GALAXY_COUNT_SMALL = 72;
 export const GALAXY_TILT = 0.62;
 export const GALAXY_ROTATION = (-18 * Math.PI) / 180;
 export const GALAXY_OMEGA0 = (2 * Math.PI) / 5.5;
-export const GALAXY_WIND_PERIOD = 12;
+export const GALAXY_WIND_PERIOD = 11;
+/** Wake behind each arm star (matches JunoGalaxyRenderer.trailStep / trailFades). */
+export const GALAXY_TRAIL_STEP = 0.075;
+export const GALAXY_TRAIL_FADES = [0.42, 0.22, 0.1] as const;
 export const GALAXY_CORE_BREATH = 2.8;
 export const GALAXY_ENTER_MS = 420;
 export const GALAXY_EXIT_MS = 240;
@@ -114,7 +118,8 @@ export function galaxyField(seed: number = GALAXY_SEED): GalaxyField {
 export function galaxyAngle(theta0: number, r: number, s: number): number {
   const P = GALAXY_WIND_PERIOD;
   const wind = (P / (2 * Math.PI)) * Math.sin((2 * Math.PI * s) / P);
-  return theta0 + GALAXY_OMEGA0 * (0.35 * s + 0.65 * Math.max(0, 1 - r) * wind);
+  // Turns against the arms' winding (screen counter-clockwise) so the arms trail, as on native.
+  return theta0 - GALAXY_OMEGA0 * (0.35 * s + 0.65 * Math.max(0, 1 - r) * wind);
 }
 
 /** Galaxy-space point (r, angle) → mark-space unit coordinates, tilted and turned. */

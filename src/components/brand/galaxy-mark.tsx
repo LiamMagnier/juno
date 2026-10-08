@@ -9,6 +9,8 @@ import {
   GALAXY_STATIC_TIME,
   easeOutCubic,
   galaxyAngle,
+  GALAXY_TRAIL_STEP,
+  GALAXY_TRAIL_FADES,
   galaxyCoreBreath,
   galaxyField,
   galaxyProject,
@@ -133,26 +135,26 @@ export function GalaxyMark({ phase, size = 16, label, reducedMotion, className }
       // clump of beads, so the dot grows slower than the galaxy (diameter ~ size/24 at 24 px, less above).
       const dotScale = size <= 24 ? 0.5 : 0.5 * Math.sqrt(24 / size);
       const minDot = 0.5 / dpr + 0.2;
-      const trails = size >= 32;
 
       ctx.fillStyle = rgb(ink);
       for (const p of list) {
         const rr = p.r * (0.6 + 0.4 * enter);
-        const angle = galaxyAngle(p.theta, p.r, s) - (1 - enter) * 0.9;
+        const angle = galaxyAngle(p.theta, p.r, s) + (1 - enter) * 0.9;
         const { x, y } = galaxyProject(rr, angle);
         const a = Math.min(1, p.alpha * galaxyTwinkle(p.i, s) * enter * dim * lift);
         if (a < 0.01) continue;
         ctx.fillStyle = p.accent ? rgb(presence) : rgb(ink);
-        if (trails && !p.dust) {
-          // A short wake along the orbit, like a long exposure: it is what lets the arms read as
-          // streams at hero sizes instead of loose dots. Trails lag behind the direction of travel.
-          for (let k = 1; k <= 3; k++) {
-            const w = galaxyProject(rr, angle - k * 0.055);
-            ctx.globalAlpha = a * (0.42 - k * 0.11);
+        if (!p.dust) {
+          // A short wake along the orbit, like a long exposure: it is what lets a field of dots read
+          // as a disc that spins. Inner stars turn faster and leave longer wakes (native parity).
+          const step = GALAXY_TRAIL_STEP * (0.6 + 0.8 * (1 - Math.min(p.r, 1)));
+          GALAXY_TRAIL_FADES.forEach((fade, k) => {
+            const w = galaxyProject(rr, angle + step * (k + 1));
+            ctx.globalAlpha = a * fade;
             ctx.beginPath();
-            ctx.arc(cx + w.x * half, cy + w.y * half, Math.max(minDot, p.size * unit * dotScale * (1 - k * 0.18)), 0, Math.PI * 2);
+            ctx.arc(cx + w.x * half, cy + w.y * half, Math.max(minDot, p.size * unit * dotScale * (0.85 - 0.12 * k)), 0, Math.PI * 2);
             ctx.fill();
-          }
+          });
         }
         ctx.globalAlpha = a;
         ctx.beginPath();

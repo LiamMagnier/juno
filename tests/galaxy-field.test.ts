@@ -26,10 +26,10 @@ test("the field is deterministic and shaped as specified", () => {
   for (const c of a.core) assert.ok(c.r < 0.06);
 });
 
-test("rotation: inner stars turn faster at the start, and the winding is bounded", () => {
+test("rotation: inner stars turn faster at the start (against the winding, so arms trail), and the winding is bounded", () => {
   const dt = 0.001;
-  const inner = (galaxyAngle(0, 0.1, dt) - galaxyAngle(0, 0.1, 0)) / dt;
-  const rim = (galaxyAngle(0, 1, dt) - galaxyAngle(0, 1, 0)) / dt;
+  const inner = (galaxyAngle(0, 0.1, 0) - galaxyAngle(0, 0.1, dt)) / dt;
+  const rim = (galaxyAngle(0, 1, 0) - galaxyAngle(0, 1, dt)) / dt;
   assert.ok(Math.abs(inner - GALAXY_OMEGA0 * (0.35 + 0.65 * 0.9)) < 1e-3);
   assert.ok(Math.abs(rim - GALAXY_OMEGA0 * 0.35) < 1e-3);
   // After ten minutes the inner/rim offset is still within a quarter-ish turn: no ring collapse.
