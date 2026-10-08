@@ -151,6 +151,9 @@ struct JunoMobileInlineArtifactView: View {
         case .svg: "SVG"
         case .mermaid: "Diagram"
         case .design: "Design"
+        case .spreadsheet: "Spreadsheet"
+        case .document: "Document"
+        case .presentation: "Deck"
         }
     }
 
@@ -162,6 +165,9 @@ struct JunoMobileInlineArtifactView: View {
         case .design: .writing
         case .markdown: .file
         case .code: .code
+        case .spreadsheet: .grid
+        case .document: .file
+        case .presentation: .squareStack
         }
     }
 }

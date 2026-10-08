@@ -2348,13 +2348,21 @@ private struct JunoMobileArtifactInlineCard: View {
     case "REACT", "HTML": .code
     case "SVG": .artifacts
     case "MERMAID": .branch
-    case "MARKDOWN": .file
+    case "MARKDOWN", "DOCUMENT": .file
+    case "SPREADSHEET": .grid
+    case "PRESENTATION": .squareStack
     default: .code
     }
   }
 
   private var subtitle: String {
     if artifact.streaming { return "Writing…" }
+    // A spreadsheet, document or deck says what is in it: "Deck · 8 slides".
+    if let kind = NativeArtifactKind(rawValue: artifact.kind), kind.isSemantic {
+      let label = NativeArtifactRuntimeInfo.resolve(kind: kind, language: nil).label
+      let summary = SemanticArtifact.summary(kind: kind, content: artifact.content)
+      return [label, summary].compactMap { $0 }.joined(separator: " · ")
+    }
     return artifact.language?.uppercased() ?? artifact.kind.capitalized
   }
 
