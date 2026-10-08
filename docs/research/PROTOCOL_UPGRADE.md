@@ -147,3 +147,56 @@ To reproduce: run the end-to-end tests in `tests/research-protocol.test.ts`. The
    - Do real workers respect the result labels and refusals?
    - Does the lead model produce a usable decision matrix and comparative matrix in the report's language?
    - What is the actual cost delta of the second round on PRO and PLUS windows? Check the `research.estimate.actual` logs.
+
+## Depth pass (Oct 8): reading depth, table audit, semantic gaps, multilingual leads, scale
+
+This pass closes remaining gaps 1–3 above and the "reading depth" and "scale" questions.
+
+### Reading depth (measured on `tests/fixtures/reading`, no network)
+
+Run `npx tsx tests/fixtures/reading/measure.ts [--full]` to see what the extractor yields; `tests/reading-depth.test.ts` asserts it.
+
+| Fixture | Before | After |
+|---|---|---|
+| `next-data.html` (empty `#__next`, page in `__NEXT_DATA__`) | `empty_document` (shell) | plans as a Markdown table, FAQ, `shell=false` |
+| `app-state.html` (`window.__INITIAL_STATE__`, JSON island) | `empty_document` | incidents and rate-limit tiers as tables |
+| `jsonld-product.html` (client-rendered, JSON-LD only) | `empty_document` | offers table with prices, rating, FAQ |
+| `jsonld-article.html` (empty root, JSON-LD article) | `empty_document` | article body, date and author |
+| `empty-spa.html` (config only) | `empty_document` (shell) | unchanged: still a shell, so the headless path decides |
+| `pricing-table.html` | cells flattened to space-separated rows; `colspan` value under one plan | Markdown table, header row, `colspan` repeated across the plans it covers |
+| `spec-sheet.html` (headerless key/value table, `rowspan`, `<dl>`) | space-separated pairs | `- key: value` list, `rowspan` carried down |
+| `pricing-table.pdf` | cells joined by single spaces | Markdown table with header |
+| `two-column.pdf` (stream written across the gutter) | alternating half-lines of both columns | left column, then right |
+| `report.pdf` | one block | paragraphs (blank lines) the passage splitter can use |
+
+- **PDF**: `unpdf` (pdf.js, already a dependency) is unchanged; `src/lib/search/pdf-layout.ts` lays its positioned items out (baselines, gaps, gutter, aligned columns). Rotated/RTL pages and pages with >20k items keep the stream-order join. No new dependency.
+- **JS-rendered pages**: `src/lib/web/embedded-data.ts` reads JSON-LD on every page and a framework's hydration state only when the markup is a shell. Bounded (1.5 MB a blob, 3 MB a page, 24 blobs, 30k nodes, depth 14, 40k chars out); never throws; plumbing keys and id/hash/URL values are dropped.
+- **Headless fallback**: the repo already has one (`src/lib/research/crawler.ts`, Playwright, opt-in with `RESEARCH_HEADLESS=1`, SSRF guard on every request). It now feeds the rendered DOM through the same extractor (tables, JSON-LD) instead of `innerText`. No reader API is configured anywhere in the repo, so none was added; a shell whose JSON held the page no longer needs the browser at all.
+- Fetch safety is unchanged: the same pinned transport, redirect guard, byte caps and deadlines; the new parsers only see bytes that already passed them.
+
+### Citation audit reads tables
+
+`extractClaims` turns Markdown table rows into `row — header: value` claims (`tableClaims`): a cell's own `[n]`, else the row label's, else the column header's. Methodology tables are skipped. At most 40% of the audit's claims are table claims. A repair annotates the cell in place. The writer contract no longer asks for every table figure to be repeated in prose; it asks for in-cell citations.
+
+### Gap audit, semantically
+
+`src/lib/research/metric-match.ts`: units and synonyms folded (seat/user/member, month/mo/monthly, year/annual, USD/$, EUR/€, GBP/£, price/cost/fee, limit/cap/quota, RPM/rate limit, context window/length, percent/%), a numeric-kind check, figures compared with currency, period (yearly at the monthly rate) and seat basis within 3%, and the options of a comparison read from the goal so each option needs its own figure (`metric — Option`, searched per option).
+
+### Multilingual leads
+
+`leads.ts` signals in EN, FR, DE, ES, IT, PT, JA and ZH; the micro-query is written in the source's language; known entities (the compared options, the subject) win over capitalised nouns. `contentTokens` adds CJK bigrams.
+
+### Optional cheap-model assist (one call per round)
+
+`ResearchDeps.auditAssist` (`audit-assist.ts`, wired in `run.ts` to the workers' cheapest model): called once per round only when a numeric finding sits on a vector with a missing figure or a finding is not in English, and only when the ceiling can pay with the writer's reserve held back. It can only remove a gap (naming a finding with a figure) or add a lead (same dedupe and caps). Prompt ≤ 14k chars, ≤ 900 output tokens.
+
+### Scale: adaptive depth
+
+`src/lib/research/depth.ts`. At the end of what would be the last round, a **hard** question (score ≥ 3 from: ≥5 vectors, conflicting figures, ≥3 missing figures, ≥2 unverified claims, ≥3 open leads) that is **not saturated** gets one more round and more pages, if the run's ceiling (the binding five-hour/weekly window's room, frozen on the envelope) can pay for another round with the writer's and audit's reserve held back, the window is not spent and a quarter of the clock is left. Ceilings: +2 rounds (`MAX_EXTRA_ROUNDS`), never past `MAX_RESEARCH_ROUNDS` (6); pages +50% of the envelope (at least 12 a round), never past 250; worker tokens in proportion; the clock never extends. Recorded on `plan.depth` (so `planBudget` and a resumed run keep it) and on `round_reviewed.extended`. **Early stop**: a round with no findings, almost no new pages cited, or no new figures and few new pages ends the rounds. Page reads were already parallel (`READ_CONCURRENCY` 8 in the sweep and follow-ups; workers run in parallel). The methodology now states sources found vs pages read in full, searches, rounds and any extension (`# Research Footprint` block in the writer's corpus, on the web and native paths).
+
+### Still open
+
+- Multi-line PDF table cells (a cell that wraps onto a second line) end the detected table; the wrapped text follows as a line.
+- Option detection needs capitalised names or "x vs y"; a comparison phrased only in lower case without "vs" is audited per vector, not per option.
+- The headless renderer stays opt-in; a pure client-rendered page with no JSON in its HTML is still `needs_browser`/`empty_document` without it.
+- Real-provider check still needed: does the assist's model return clean JSON on every provider, and how often is a run extended on PRO/PLUS windows (`research.estimate.actual`).
