@@ -1259,7 +1259,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Sign out of Juno?"
+            "value": "Sign out of Alevr?"
           }
         },
         "fr": {
@@ -2964,7 +2964,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Let Juno use your %@ account."
+            "value": "Let Alevr use your %@ account."
           }
         },
         "fr": {
@@ -3063,7 +3063,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Juno will stop being able to act in this app. You can connect it again at any time."
+            "value": "Alevr will stop being able to act in this app. You can connect it again at any time."
           }
         },
         "fr": {
@@ -3130,7 +3130,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Juno received an unexpected response from the connections service."
+            "value": "Alevr received an unexpected response from the connections service."
           }
         },
         "fr": {
@@ -3315,7 +3315,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Apps Juno can read from and act in on your behalf."
+            "value": "Apps Alevr can read from and act in on your behalf."
           }
         },
         "fr": {
@@ -4130,7 +4130,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Juno's natural voice — warm, clear, and adapts to the question."
+            "value": "Alevr's natural voice — warm, clear, and adapts to the question."
           }
         },
         "fr": {
@@ -5962,7 +5962,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Schedule a prompt — a morning briefing, a weekly summary — and Juno runs it without you."
+            "value": "Schedule a prompt — a morning briefing, a weekly summary — and Alevr runs it without you."
           }
         },
         "fr": {
@@ -5995,7 +5995,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Juno received an unexpected response from the tasks service."
+            "value": "Alevr received an unexpected response from the tasks service."
           }
         },
         "fr": {
@@ -6113,7 +6113,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Written the way you'd ask in chat. Juno answers it on the schedule below."
+            "value": "Written the way you'd ask in chat. Alevr answers it on the schedule below."
           }
         },
         "fr": {
@@ -6498,7 +6498,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Prompts Juno runs on a schedule and files into a chat."
+            "value": "Prompts Alevr runs on a schedule and files into a chat."
           }
         },
         "fr": {
