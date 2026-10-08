@@ -3,6 +3,9 @@ import JunoChatKit
 import JunoDesignSystem
 import SwiftUI
 import UniformTypeIdentifiers
+#if DEBUG
+import JunoPreviewSupport
+#endif
 
 // MARK: - The window
 
@@ -33,6 +36,10 @@ struct ResearchReportWindow: View {
     /// restored before the conversation loads fills in when it does), or
     /// from the run read once.
     private var report: NativeResearchReport? {
+        #if DEBUG
+        // The capture harness's report (`--juno-preview-research-report`).
+        if runID == Self.previewRunID, JunoPreviewEnvironment.isActive { return PreviewResearch.report }
+        #endif
         if let messageID {
             guard let model = configuration?.conversationModel else { return nil }
             for messages in model.messagesByConversation.values {
@@ -138,8 +145,18 @@ struct ResearchReportWindow: View {
         }
     }
 
+    #if DEBUG
+    static let previewRunID = "preview-report"
+    #endif
+
     private func load() async {
         failed = false
+        #if DEBUG
+        if runID == Self.previewRunID, JunoPreviewEnvironment.isActive {
+            audit = PreviewResearch.audit
+            return
+        }
+        #endif
         guard let model = configuration?.conversationModel else {
             failed = true
             return

@@ -91,8 +91,47 @@ public actor PreviewSender: NativeChatRequestSending {
         return HTTPByteStreamResponse(
             statusCode: 200,
             headers: try HTTPHeaders(["content-type": "text/event-stream"]),
-            bytes: streamBytes(for: request.path)
+            bytes: Self.heldChatStream(for: request) ?? streamBytes(for: request.path)
         )
+    }
+
+    /// `--juno-preview-hold-stream`: a chat reply that is mid-answer and stays
+    /// that way — its reasoning, the first lines of its answer, then an open
+    /// stream — so the working state can be looked at instead of raced.
+    private nonisolated static func heldChatStream(
+        for request: NativeBearerRequest
+    ) -> AsyncThrowingStream<UInt8, any Error>? {
+        guard CommandLine.arguments.contains("--juno-preview-hold-stream"),
+              request.path == "/api/chat"
+        else { return nil }
+        func frame(_ object: [String: Any]) -> [UInt8] {
+            let json = (try? JSONSerialization.data(withJSONObject: object)) ?? Data()
+            return Array("data: ".utf8) + Array(json) + Array("\n\n".utf8)
+        }
+        let answerStarts = CommandLine.arguments.contains("--juno-preview-hold-answer")
+        return AsyncThrowingStream { continuation in
+            Task {
+                // No `meta` frame: the conversation is the one the turn was
+                // sent in, and a frame naming another would be refused.
+                for part in [
+                    "Three angles: the date, the one feature people asked for most, and a quiet promise. ",
+                    "Keep each under 45 characters so it survives a phone's preview.",
+                ] {
+                    try? await Task.sleep(for: .milliseconds(300))
+                    for byte in frame(["type": "reasoning", "text": part]) { continuation.yield(byte) }
+                }
+                guard answerStarts else { return }
+                for part in [
+                    "Here are three, from plainest to boldest:\n\n",
+                    "1. **Field Notes 2.0 is here** — the notes app you asked for\n",
+                    "2. **Your notes, finally searchable**",
+                ] {
+                    try? await Task.sleep(for: .milliseconds(400))
+                    for byte in frame(["type": "delta", "text": part]) { continuation.yield(byte) }
+                }
+                // Never finished: the reply is still being written.
+            }
+        }
     }
 
     /// The bytes a stream request gets.
@@ -156,6 +195,25 @@ public actor PreviewSender: NativeChatRequestSending {
     /// real code path decodes cleanly. Never fetched from a server.
     private func cannedBody(for request: NativeBearerRequest) -> Data {
         let path = request.path
+        // A question appended to a saved chat before its reply streams: the
+        // route echoes the turn back with the id it stored it under.
+        if request.method == .post, path.hasPrefix("/api/conversations/"), path.hasSuffix("/messages"),
+           let body = request.body.flatMap({ try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }),
+           let turn = (body["turns"] as? [[String: Any]])?.first,
+           let clientID = turn["clientId"] as? String
+        {
+            let conversationID = String(path.dropFirst("/api/conversations/".count).dropLast("/messages".count))
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            let reply: [String: Any] = [
+                "conversationId": conversationID,
+                "messages": [[
+                    "clientId": clientID, "id": "msg-\(clientID)", "role": "USER",
+                    "content": turn["content"] as? String ?? "", "createdAt": formatter.string(from: Date()),
+                ]],
+            ]
+            return (try? JSONSerialization.data(withJSONObject: reply)) ?? Data()
+        }
         // Code first, and by request rather than by path alone: `/api/code/tasks`
         // is the session list on GET and creates a run on POST, and a list handed
         // to a create is refused by the wrapper decoder that reads it.
@@ -198,6 +256,13 @@ public actor PreviewSender: NativeChatRequestSending {
         if path.hasPrefix("/api/work/sessions") {
             if let sessionID = Self.workSessionID(in: path) {
                 return PreviewWorkFixtures.sessionBody(id: sessionID, empty: empty)
+            }
+            // The product shots' chats carry no tasks: a task card in Maya's
+            // launch plan would be a fixture showing through a story.
+            if CommandLine.arguments.contains("showcase"),
+               request.queryItems.contains(where: { $0.name == "conversationId" })
+            {
+                return PreviewWorkFixtures.sessionsBody(empty: true)
             }
             return PreviewWorkFixtures.sessionsBody(empty: empty)
         }
