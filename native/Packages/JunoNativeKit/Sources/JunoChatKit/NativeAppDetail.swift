@@ -290,3 +290,7 @@ extension NativeConnectorModel {
         )
     }
 }
+
+extension NativeAppDetailModel: Identifiable {
+    public nonisolated var id: String { connector.id }
+}
