@@ -20,6 +20,13 @@ export const ACCEPTED_ADVISORIES = [
       "No patched release exists (3.0.3 is the latest and is affected). braces arrives only through tailwindcss (chokidar, micromatch) and runs at build time on the repository's own content globs; no request, upload or user string ever reaches it, so the stack-exhaustion pattern cannot be supplied by an attacker. Re-check for a fixed release by the expiry.",
     expires: "2026-10-17",
   },
+  {
+    package: "postcss-selector-parser",
+    advisories: ["GHSA-rj75-hqrm-r3gf"],
+    reason:
+      "Fixed only in 7.1.6, and tailwindcss 3 (with postcss-nested) pins ^6, so the patched line cannot be installed without moving to Tailwind 4. It parses the repository's own CSS at build time; no request or user string reaches the selector parser at runtime, so the quadratic input cannot be supplied by an attacker. Remove when Tailwind moves to 4.",
+    expires: "2026-11-30",
+  },
 ];
 
 // An exception may not be dated further out than this, so "accepted" always
