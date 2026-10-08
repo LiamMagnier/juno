@@ -130,6 +130,15 @@ export class Raster {
   private counts = new Int32Array(LEVELS * 2 + 1);
 
   resize(w: number, h: number, pitch: number) {
+    // Zero what the last frame lit BEFORE forgetting it. `plot` only lists a
+    // cell when its brightness was 0, and `clear` only zeroes listed cells, so
+    // dropping the list (`n = 0`) over a buffer that is kept (same grid size)
+    // left every lit cell at its old brightness and off the list for good:
+    // never drawn, never cleared. Any refresh after a first frame (a theme or
+    // accent change on <html>, a font-size change, a resize that kept the cell
+    // count, a DPR change) erased every dot while the blooms, drawn straight
+    // to the context, stayed: the "blue smudge until reload" bug.
+    this.clear();
     this.pitch = pitch;
     this.gw = Math.max(1, Math.ceil(w / pitch));
     this.gh = Math.max(1, Math.ceil(h / pitch));
