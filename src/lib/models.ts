@@ -86,6 +86,16 @@ export interface ModelInfo {
   /** Real-world release month, "YYYY-MM" (curated entries only). */
   released?: string;
   contextWindow?: number;
+  /**
+   * Selectable context windows with their prices (Code v2 SPEC §4). Normally
+   * ABSENT on a catalogue entry: `tiersFor(model)` (src/lib/code-v2/
+   * context-tiers.ts) derives them from `contextWindow` and pricing.ts, which
+   * stay the single source of truth, and catalogue payloads attach the result
+   * (`withContextTiers`). Set it only for a window a lab offers that neither
+   * of those can express; `contextWindow` must then equal the default (first)
+   * tier.
+   */
+  contextTiers?: readonly import("@/lib/code-v2/contracts").ContextTier[];
   /** Kept in sync with status for existing consumers (true when not current). */
   legacy?: boolean;
   /** In the catalog but not yet callable (no live API) — shown disabled. */

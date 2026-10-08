@@ -115,10 +115,12 @@ public enum CodeV2 {
         public var outputPerMTok: Double
         public var cachedInputPerMTok: Double?
         public var note: String?
+        /// The catalogue has no verified rate for part of this window.
+        public var unverified: Bool?
 
         public init(
             tokens: Int, label: String, inputPerMTok: Double, outputPerMTok: Double,
-            cachedInputPerMTok: Double? = nil, note: String? = nil
+            cachedInputPerMTok: Double? = nil, note: String? = nil, unverified: Bool? = nil
         ) {
             self.tokens = tokens
             self.label = label
@@ -126,8 +128,22 @@ public enum CodeV2 {
             self.outputPerMTok = outputPerMTok
             self.cachedInputPerMTok = cachedInputPerMTok
             self.note = note
+            self.unverified = unverified
         }
     }
+
+    // contract: BYOK_PROVIDER_VALUES
+    /// Labs whose API keys a user may store; instance id `byok:<rawValue>`.
+    public enum ByokProvider: String, Codable, Sendable, CaseIterable, Hashable {
+        case anthropic
+        case openai
+        case google
+        case xai
+        case deepseek
+    }
+
+    /// `byok:anthropic` — the provider instance a stored key appears as.
+    public static func byokInstanceId(_ provider: ByokProvider) -> String { "byok:\(provider.rawValue)" }
 
     public struct ProviderModel: Codable, Sendable, Hashable {
         public var id: String
