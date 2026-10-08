@@ -325,7 +325,7 @@ private struct JunoMobileWorkHostCard: View {
                 .lineLimit(1)
             }
             Spacer(minLength: 6)
-            JunoStatusPill(text: style.label, tint: style.tint, filled: style.filled)
+            JunoMobileWorkStatusWord(label: style.label, tint: style.tint)
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(host.displayName). \(style.sentence)")
@@ -362,12 +362,12 @@ private struct JunoMobileWorkSessionCard: View {
                                 .accessibilityLabel("Pinned")
                         }
                         Text(session.title)
-                            .font(JunoSerif.cardTitle)
+                            .font(.headline)
                             .foregroundStyle(.primary)
                             .lineLimit(2)
                             .multilineTextAlignment(.leading)
                         Spacer(minLength: 6)
-                        JunoStatusPill(text: style.label, tint: style.tint, filled: style.filled)
+                        JunoMobileWorkStatusWord(label: style.label, tint: style.tint)
                     }
 
                     Text(session.goal)
@@ -625,10 +625,10 @@ private struct JunoMobileWorkThread: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(session.title)
-                    .junoPageHeading(compact: true)
+                    .font(.title2.weight(.semibold))
                     .accessibilityAddTraits(.isHeader)
                 Spacer(minLength: 6)
-                JunoStatusPill(text: style.label, tint: style.tint, filled: style.filled)
+                JunoMobileWorkStatusWord(label: style.label, tint: style.tint)
             }
             .padding(.top, 6)
 
@@ -1162,10 +1162,6 @@ private struct JunoMobileWorkApprovalCard: View {
                 .disabled(model.isMutating)
             }
         }
-        .overlay(
-            RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
-                .strokeBorder(tint.opacity(0.45), lineWidth: 1)
-        )
         .accessibilityIdentifier("juno.mobile.work.approval")
     }
 
@@ -2509,5 +2505,28 @@ private enum JunoMobileWorkLog {
         string(payload, "kind")
             .flatMap(JunoWorkArtifactKind.init(rawValue:))
             .map(JunoWorkVocabulary.artifactKind)
+    }
+}
+
+
+/// A status in words — no pill, no dot. Only a state that asks something of
+/// the reader takes its colour; the ordinary ones are secondary text.
+private struct JunoMobileWorkStatusWord: View {
+    let label: String
+    let tint: Color
+
+    /// Running, done and the quiet states are ordinary; only what waits on
+    /// the reader or went wrong is said in colour.
+    private var loud: Bool {
+        !["Draft", "Queued", "Preparing", "Running", "Paused", "Done", "Cancelled", "Online", "Idle"]
+            .contains(label)
+    }
+
+    var body: some View {
+        Text(label)
+            .font(.subheadline)
+            .foregroundStyle(loud ? tint : Color.secondary)
+            .lineLimit(1)
+            .fixedSize()
     }
 }
