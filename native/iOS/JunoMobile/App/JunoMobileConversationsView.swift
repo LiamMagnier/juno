@@ -480,6 +480,10 @@ private struct JunoMobileConversationDetail: View {
   /// than shared inline because the link does not exist until the server makes
   /// it — a `ShareLink` needs its URL up front, and there is none to give.
   @State private var createdShare: NativeShare?
+  /// The research report open in the reader sheet.
+  @State private var reportRoute: JunoMobileReportRoute?
+  /// Sources' logos for the research views, fetched once per site.
+  @State private var sourceFavicons = NativeSourceFavicons()
   @State private var sharing = false
   @State private var shareError: String?
 
@@ -716,6 +720,54 @@ private struct JunoMobileConversationDetail: View {
     }
   }
 
+  /// The reader's words a reply answers: the nearest question above it — a
+  /// research turn's title.
+  private func question(answeredBy message: NativeChatMessage) -> String? {
+    guard let index = messages.firstIndex(where: { $0.id == message.id }) else { return nil }
+    return messages[..<index].last { $0.role == .user }
+      .map { NativeMessageContent.plainText(of: $0.content) }
+  }
+
+  /// This conversation's background research runs that draw something: live
+  /// ones, gates, and the report of one whose report lives only on the run.
+  private var researchRuns: [NativeResearchRun] {
+    model.researchRuns(for: conversation.id).filter { $0.presentation != .none }
+  }
+
+  /// Where each run goes: under the question it answers; else after the
+  /// last turn created at or before it; else at the foot.
+  private var researchPlacement: (byMessage: [String: [NativeResearchRun]], atFoot: [NativeResearchRun]) {
+    var byMessage: [String: [NativeResearchRun]] = [:]
+    var atFoot: [NativeResearchRun] = []
+    for run in researchRuns {
+      if let question = run.userMessageID, messages.contains(where: { $0.id == question }) {
+        let anchor = messages.drop { $0.id != question }.dropFirst().first { $0.role == .assistant }?.id ?? question
+        byMessage[anchor, default: []].append(run)
+      } else if let created = run.createdAt, let anchor = messages.last(where: { $0.createdAt <= created }) {
+        byMessage[anchor.id, default: []].append(run)
+      } else {
+        atFoot.append(run)
+      }
+    }
+    return (byMessage, atFoot)
+  }
+
+  /// The runs still to follow, as a key: a hand-off changes it, which
+  /// restarts the follower.
+  private var openResearchKey: String {
+    model.researchRuns(for: conversation.id).filter { !$0.phase.isTerminal }.map(\.id).joined(separator: ",")
+  }
+
+  private func researchBlock(_ run: NativeResearchRun) -> some View {
+    JunoMobileResearchRunBlock(
+      run: run,
+      model: model,
+      conversationID: conversation.id,
+      openReport: { report in reportRoute = JunoMobileReportRoute(report: report) }
+    )
+    .transition(.opacity)
+  }
+
   /// The answer currently being produced, if any.
   private var streamingMessageID: String? {
     guard let last = messages.last, last.role == .assistant, last.isPending else { return nil }
@@ -833,7 +885,10 @@ private struct JunoMobileConversationDetail: View {
             imageLoader: imageLoader,
             quote: { text in quote(text) },
             share: { text in sharingMessage = JunoMobileSharedText(text: text) },
-            onCopy: { copyHaptic.fire() }
+            onCopy: { copyHaptic.fire() },
+            researchQuestion: message.role == .assistant ? question(answeredBy: message) : nil,
+            openReport: { report in reportRoute = JunoMobileReportRoute(report: report) },
+            stopResearch: message.id == streamingMessageID ? { model.stopGeneration() } : nil
           )
           // `rise-in`, as the web gives every new turn. Scoped to the
           // stack's `.animation(_:value: messages.count)` below, which
@@ -842,6 +897,17 @@ private struct JunoMobileConversationDetail: View {
           // already there on the first layout, so a loaded history
           // arrives settled rather than cascading up the screen.
           .transition(.opacity.combined(with: .offset(y: JunoSpace.snug)))
+
+          // The conversation's research runs that are not answers in it
+          // (started on the web, or handed off), under the turn they
+          // follow.
+          ForEach(researchPlacement.byMessage[message.id] ?? []) { run in
+            researchBlock(run)
+          }
+        }
+
+        ForEach(researchPlacement.atFoot) { run in
+          researchBlock(run)
         }
 
         // Approval receipts are rendered as their own safety surface,
@@ -1286,6 +1352,24 @@ private struct JunoMobileConversationDetail: View {
       .onChange(of: streamingMessageID) { previous, current in
         trackRun(from: previous, to: current)
       }
+      // The research report, read in a sheet of its own.
+      .sheet(item: $reportRoute) { route in
+        JunoMobileResearchReportView(
+          report: route.report,
+          loadAudit: { messageID in await model.researchAudit(messageID: messageID) },
+          close: { reportRoute = nil }
+        )
+        .environment(\.nativeSourceFavicons, sourceFavicons)
+        .junoSheetSurface(.page)
+        .tint(Color.junoAccent)
+      }
+      .environment(\.nativeSourceFavicons, sourceFavicons)
+      // The conversation's research runs, followed while it is open — and
+      // again whenever a hand-off adds one — so a run started on the web, or
+      // still working after a relaunch, shows here as it does on the Mac.
+      .task(id: "\(conversation.id):\(openResearchKey)") {
+        await model.followResearch(conversationID: conversation.id)
+      }
   }
 
   @ViewBuilder
@@ -1499,6 +1583,13 @@ private struct JunoMobileMessageRow: View {
   var share: ((String) -> Void)?
   /// The screen's copy haptic, fired here because the row cannot host it.
   var onCopy: (() -> Void)?
+  /// The question this reply answers, in the reader's words: a research
+  /// turn's title.
+  var researchQuestion: String? = nil
+  /// Opens a research report in the reader sheet.
+  var openReport: ((NativeResearchReport) -> Void)? = nil
+  /// Stops the research turn while it works (the composer's Stop, here too).
+  var stopResearch: (() -> Void)? = nil
 
   @State private var copied = false
   @State private var showingSelectText = false
@@ -1818,12 +1909,56 @@ private struct JunoMobileMessageRow: View {
     style: .continuous
   )
 
+  /// A research turn still working: the Deep Field view stands where the
+  /// run trace would, through the planning, reading and writing.
+  private var isLiveResearch: Bool {
+    guard !voice, message.isPending, message.mediaProgress == nil else { return false }
+    if NativeResearchRun.isInChatResearch(activity: message.activity) { return true }
+    return message.researchRequested && message.content.isEmpty
+      && !message.activity.contains { $0.seq != nil || $0.notice?.code == "research_skipped" }
+  }
+
+  /// The door into the research report this answer carries, in place of
+  /// the generic artifact card.
+  @ViewBuilder
+  private func researchReportCard(_ artifact: NativeMessageContent.ArtifactReference) -> some View {
+    if artifact.streaming {
+      NativeResearchReportCard(
+        content: .writing(
+          title: artifact.title,
+          words: artifact.content.split(whereSeparator: { $0.isWhitespace || $0.isNewline }).count,
+          section: NativeResearchReport.sections(of: artifact.content).last(where: { $0.level > 0 })?.title
+        ),
+        open: nil
+      )
+      .padding(.vertical, JunoSpace.snug)
+    } else if let report = NativeResearchReport(message: message, question: researchQuestion) {
+      NativeResearchReportCard(
+        content: .report(report),
+        open: openReport.map { open in { open(report) } } ?? openArtifact.map { open in { open(artifact) } }
+      )
+      .padding(.vertical, JunoSpace.snug)
+    } else {
+      JunoMobileArtifactInlineCard(artifact: artifact, open: openArtifact.map { open in { open(artifact) } })
+    }
+  }
+
   private var assistantAnswer: some View {
     VStack(alignment: .leading, spacing: JunoSpace.hairline) {
+      if isLiveResearch {
+        NativeResearchLiveView(
+          run: NativeResearchRun.inChat(message: message, live: true, question: researchQuestion),
+          citations: message.sources,
+          citingText: message.content,
+          actions: NativeResearchLiveActions(stop: stopResearch),
+          compact: true
+        )
+        .padding(.bottom, JunoSpace.snug)
+      }
       // The run trace leads the answer, as it does on the web: what Juno is
       // doing belongs above the thing it produced, not in a footnote under
       // it. Never on a spoken line — see ``voice``.
-      if !voice {
+      if !voice && !isLiveResearch {
         JunoMobileThoughtProcessRow(
           streaming: message.isPending,
           writing: !message.content.isEmpty,
@@ -1853,7 +1988,7 @@ private struct JunoMobileMessageRow: View {
       // While the answer has no words yet, say what is happening — the
       // web's shimmering status line — rather than leaving a blank row.
       if message.isPending, message.content.isEmpty, message.mediaProgress == nil,
-        (message.reasoning ?? "").isEmpty, !voice
+        (message.reasoning ?? "").isEmpty, !voice, !isLiveResearch
       {
         JunoShimmerText("Thinking…")
           .padding(.vertical, JunoSpace.tight)
@@ -1873,6 +2008,9 @@ private struct JunoMobileMessageRow: View {
               JunoLessonText(text, streaming: message.isPending)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
+            case .artifact(let artifact) where NativeResearchReport.isReport(artifact):
+              researchReportCard(artifact)
+                .junoStreamBlockReveal()
             case .artifact(let artifact):
               JunoMobileArtifactInlineCard(
                 artifact: artifact,

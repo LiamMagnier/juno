@@ -4,156 +4,59 @@ import JunoDesignSystem
 import SwiftUI
 import UniformTypeIdentifiers
 
-// MARK: - The document
-
-/// A research report, ready to read in its own window (register #65): the
-/// Markdown artifact's body split at its headings, so the Contents column can
-/// follow the reading position, and the sources it read, numbered as its
-/// `[n]` citations count them — positionally, from one.
-struct ResearchReportDocument: Equatable {
-    struct Section: Identifiable, Equatable {
-        let id: String
-        /// The heading's words; empty for what comes before the first one.
-        let title: String
-        /// 1 for `#`, 2 for `##`, 3 for `###`; 0 for the lead-in.
-        let level: Int
-        let markdown: String
-    }
-
-    let runID: String
-    let title: String
-    let body: String
-    let sections: [Section]
-    let sources: [NativeResearchRun.Source]
-    let words: Int
-    /// The answer the citation check was run on, when the report is one.
-    let messageID: String?
-    let auditSummary: NativeResearchRun.AuditSummary?
-
-    init?(run: NativeResearchRun) {
-        guard let body = run.reportBody, !body.isEmpty else { return nil }
-        runID = run.id
-        title = run.displayTitle
-        self.body = body
-        sections = Self.sections(of: body)
-        // `[n]` counts the sources read, in the order the run holds them.
-        sources = run.sources.filter(\.read)
-        words = body.split(whereSeparator: { $0.isWhitespace || $0.isNewline }).count
-        messageID = run.assistantMessageID
-        auditSummary = run.audit
-    }
-
-    /// The sections a reader can jump to.
-    var headings: [Section] { sections.filter { $0.level > 0 } }
-
-    /// The web's reading time: 220 words a minute, at least one.
-    var minutes: Int { max(1, Int((Double(words) / 220).rounded(.up))) }
-
-    /// "Research report · 2,140 words · ~10 min read · 18 sources read".
-    var subtitle: String {
-        "Research report \u{00B7} \(words.formatted()) words \u{00B7} ~\(minutes) min read \u{00B7} "
-            + "\(sources.count) \(sources.count == 1 ? "source" : "sources") read"
-    }
-
-    /// The report as a Markdown file: its words, then a `## Sources` appendix
-    /// numbered as the citations are.
-    func markdown(accessed: Date) -> String {
-        guard !sources.isEmpty else { return body + "\n" }
-        let day = accessed.formatted(.iso8601.year().month().day())
-        let list = sources.enumerated().map { index, source in
-            "[\(index + 1)] \(source.title) \u{2014} \(source.url.absoluteString) (accessed \(day))"
-        }
-        return body + "\n\n## Sources\n\n" + list.joined(separator: "\n\n") + "\n"
-    }
-
-    /// `{slug(title)}.md`, or `research-{yyyy-mm-dd}.md` when the title leaves
-    /// nothing: decomposed, marks stripped, lowercase, anything else a hyphen,
-    /// at most 80 characters.
-    func fileName(on date: Date) -> String {
-        let folded = title.decomposedStringWithCompatibilityMapping
-            .unicodeScalars
-            .filter { !CharacterSet.nonBaseCharacters.contains($0) }
-        var slug = ""
-        var pendingHyphen = false
-        for scalar in String(String.UnicodeScalarView(folded)).lowercased().unicodeScalars {
-            if CharacterSet.alphanumerics.contains(scalar), scalar.isASCII {
-                if pendingHyphen, !slug.isEmpty { slug.append("-") }
-                pendingHyphen = false
-                slug.unicodeScalars.append(scalar)
-            } else {
-                pendingHyphen = true
-            }
-        }
-        slug = String(slug.prefix(80))
-        while slug.hasSuffix("-") { slug.removeLast() }
-        if slug.isEmpty { slug = "research-\(date.formatted(.iso8601.year().month().day()))" }
-        return slug + ".md"
-    }
-
-    /// The body split at its `#`, `##` and `###` headings, outside code.
-    static func sections(of body: String) -> [Section] {
-        var sections: [Section] = []
-        var title = ""
-        var level = 0
-        var lines: [Substring] = []
-        var inFence = false
-        func close() {
-            let markdown = lines.joined(separator: "\n").trimmingCharacters(in: .newlines)
-            if !markdown.isEmpty || level > 0 {
-                sections.append(Section(id: "section-\(sections.count)", title: title, level: level, markdown: markdown))
-            }
-            lines = []
-        }
-        for line in body.split(separator: "\n", omittingEmptySubsequences: false) {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if trimmed.hasPrefix("```") || trimmed.hasPrefix("~~~") { inFence.toggle() }
-            if !inFence, let heading = heading(in: trimmed) {
-                close()
-                title = heading.title
-                level = heading.level
-            }
-            lines.append(line)
-        }
-        close()
-        return sections
-    }
-
-    private static func heading(in line: String) -> (title: String, level: Int)? {
-        let hashes = line.prefix { $0 == "#" }.count
-        guard (1...3).contains(hashes), line.dropFirst(hashes).first == " " else { return nil }
-        let text = line.dropFirst(hashes).trimmingCharacters(in: .whitespaces)
-            .trimmingCharacters(in: CharacterSet(charactersIn: "#"))
-            .trimmingCharacters(in: .whitespaces)
-        return text.isEmpty ? nil : (text, hashes)
-    }
-}
-
 // MARK: - The window
 
-/// The report's own window (register #65; the web opens a dialog): the
-/// window's title is the report's, its subtitle what it is — words, reading
-/// time, sources read. Copy, Export Markdown… and Print… in the toolbar,
-/// declared once. A plain `HStack` — one `NavigationSplitView` per window,
-/// and this window has none.
+/// A research report in its own window (register #65; the web opens a
+/// full-screen reader). Opened by id: `message:<id>` for a report the chat
+/// answer carries (today's path for an app), a run id for a web background
+/// run's report.
+///
+/// The window's title is the report's, its subtitle what it is — words,
+/// reading time, sources. Copy, Share, Export (Markdown or PDF) and Print in
+/// the toolbar, declared once. A plain `HStack` — one `NavigationSplitView`
+/// per window, and this window has none.
 struct ResearchReportWindow: View {
     let runID: String
     let configuration: JunoDesktopConfiguration?
 
-    @State private var run: NativeResearchRun?
+    @State private var loadedRun: NativeResearchRun?
     @State private var audit: NativeResearchAudit?
     @State private var failed = false
     @State private var copied = false
+    @State private var favicons = NativeSourceFavicons()
 
-    private var document: ResearchReportDocument? { run.flatMap(ResearchReportDocument.init(run:)) }
+    private var messageID: String? {
+        runID.hasPrefix("message:") ? String(runID.dropFirst("message:".count)) : nil
+    }
+
+    /// The report, read live from the store for an answer (so a window
+    /// restored before the conversation loads fills in when it does), or
+    /// from the run read once.
+    private var report: NativeResearchReport? {
+        if let messageID {
+            guard let model = configuration?.conversationModel else { return nil }
+            for messages in model.messagesByConversation.values {
+                guard let index = messages.firstIndex(where: { $0.id == messageID }) else { continue }
+                let question = messages[..<index].last { $0.role == .user }
+                    .map { NativeMessageContent.plainText(of: $0.content) }
+                return NativeResearchReport(message: messages[index], question: question)
+            }
+            return nil
+        }
+        return loadedRun.flatMap(NativeResearchReport.init(run:))
+    }
 
     var body: some View {
+        let report = report
         Group {
-            if let document {
-                ResearchReportReader(document: document, audit: audit)
-            } else if failed || (run != nil && document == nil) {
+            if let report {
+                ResearchReportReader(report: report, audit: audit)
+            } else if failed || (loadedRun != nil && report == nil) {
                 JunoEmptyState(
                     title: "Couldn\u{2019}t open this report",
-                    message: "Check your connection and try again.",
+                    message: messageID == nil
+                        ? "Check your connection and try again."
+                        : "Open the conversation it belongs to, then try again.",
                     icon: .error,
                     actionLabel: "Try Again",
                     action: { Task { await load() } },
@@ -169,50 +72,70 @@ struct ResearchReportWindow: View {
         // The accent reaches the report's links and buttons, not the
         // toolbar declared below it.
         .junoAccentTint()
+        .environment(\.nativeSourceFavicons, favicons)
         .frame(minWidth: 640, minHeight: 480)
         .background(Color.junoCanvas)
-        .navigationTitle(document?.title ?? "Research report")
-        .navigationSubtitle(document?.subtitle ?? "")
-        .toolbar {
-            ToolbarItemGroup(placement: .primaryAction) {
-                Button {
-                    copy()
-                } label: {
-                    Label {
-                        Text(copied ? "Copied" : "Copy")
-                    } icon: {
-                        JunoIconView(copied ? .check : .copy, size: 16)
-                    }
-                }
-                .help("Copy")
-                .disabled(document == nil)
-                Button {
-                    export()
-                } label: {
-                    Label {
-                        Text("Export Markdown\u{2026}")
-                    } icon: {
-                        JunoIconView(.download, size: 16)
-                    }
-                }
-                .help("Export Markdown\u{2026}")
-                .disabled(document == nil)
-                Button {
-                    printReport()
-                } label: {
-                    Label {
-                        Text("Print\u{2026}")
-                    } icon: {
-                        JunoIconView(.printer, size: 16)
-                    }
-                }
-                .keyboardShortcut("p", modifiers: .command)
-                .help("Print\u{2026}")
-                .disabled(document == nil)
-            }
-        }
+        .navigationTitle(report?.title ?? "Research report")
+        .navigationSubtitle(report.map(Self.subtitle) ?? "")
+        .toolbar { toolbar(report) }
         .task(id: runID) { await load() }
         .accessibilityIdentifier("juno.research-report")
+    }
+
+    /// "Research report · 2,140 words · 10 min read · 18 sources".
+    static func subtitle(_ report: NativeResearchReport) -> String {
+        "Research report \u{00B7} " + report.metaLine
+    }
+
+    @ToolbarContentBuilder
+    private func toolbar(_ report: NativeResearchReport?) -> some ToolbarContent {
+        ToolbarItemGroup(placement: .primaryAction) {
+            Button {
+                copy(report)
+            } label: {
+                Label {
+                    Text(copied ? "Copied" : "Copy")
+                } icon: {
+                    JunoIconView(copied ? .check : .copy, size: 16)
+                }
+            }
+            .help("Copy the report as Markdown")
+            .disabled(report == nil)
+            if let report {
+                ShareLink(item: report.markdown(accessed: Date()), subject: Text(report.title)) {
+                    Label {
+                        Text("Share")
+                    } icon: {
+                        JunoIconView(.share, size: 16)
+                    }
+                }
+                .help("Share the report")
+            }
+            Menu {
+                Button("Markdown\u{2026}") { exportMarkdown(report) }
+                Button("PDF\u{2026}") { exportPDF(report) }
+            } label: {
+                Label {
+                    Text("Export")
+                } icon: {
+                    JunoIconView(.download, size: 16)
+                }
+            }
+            .help("Export the report")
+            .disabled(report == nil)
+            Button {
+                printReport(report)
+            } label: {
+                Label {
+                    Text("Print\u{2026}")
+                } icon: {
+                    JunoIconView(.printer, size: 16)
+                }
+            }
+            .keyboardShortcut("p", modifiers: .command)
+            .help("Print\u{2026}")
+            .disabled(report == nil)
+        }
     }
 
     private func load() async {
@@ -221,11 +144,15 @@ struct ResearchReportWindow: View {
             failed = true
             return
         }
+        if let messageID {
+            audit = await model.researchAudit(messageID: messageID)
+            return
+        }
         guard let loaded = await model.loadResearchRun(id: runID) else {
             failed = true
             return
         }
-        run = loaded
+        loadedRun = loaded
         if let messageID = loaded.assistantMessageID {
             audit = await model.researchAudit(messageID: messageID)
         }
@@ -233,10 +160,10 @@ struct ResearchReportWindow: View {
 
     // MARK: Toolbar
 
-    private func copy() {
-        guard let document else { return }
+    private func copy(_ report: NativeResearchReport?) {
+        guard let report else { return }
         NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(document.body, forType: .string)
+        NSPasteboard.general.setString(report.markdown(accessed: Date()), forType: .string)
         copied = true
         Task {
             try? await Task.sleep(for: .seconds(2))
@@ -244,47 +171,58 @@ struct ResearchReportWindow: View {
         }
     }
 
-    private func export() {
-        guard let document else { return }
+    private func exportMarkdown(_ report: NativeResearchReport?) {
+        guard let report else { return }
         let panel = NSSavePanel()
-        panel.nameFieldStringValue = document.fileName(on: Date())
+        panel.nameFieldStringValue = report.fileName(on: Date())
         panel.allowedContentTypes = [UTType(filenameExtension: "md") ?? .plainText]
         panel.canCreateDirectories = true
-        let text = document.markdown(accessed: Date())
+        let text = report.markdown(accessed: Date())
         panel.begin { response in
             guard response == .OK, let url = panel.url else { return }
             try? text.write(to: url, atomically: true, encoding: .utf8)
         }
     }
 
+    private func exportPDF(_ report: NativeResearchReport?) {
+        guard let report, let data = NativeResearchReportPDF.data(for: report) else { return }
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = report.fileName(on: Date(), extension: "pdf")
+        panel.allowedContentTypes = [.pdf]
+        panel.canCreateDirectories = true
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            try? data.write(to: url, options: .atomic)
+        }
+    }
+
     /// The report laid out on paper: its words and sources at the page's
     /// width, in the light appearance, paginated by AppKit.
-    private func printReport() {
-        guard let document else { return }
+    private func printReport(_ report: NativeResearchReport?) {
+        guard let report else { return }
         let info = NSPrintInfo.shared.copy() as? NSPrintInfo ?? NSPrintInfo()
         info.horizontalPagination = .fit
         info.verticalPagination = .automatic
         info.isVerticallyCentered = false
         let width = info.paperSize.width - info.leftMargin - info.rightMargin
-        let host = NSHostingView(rootView: ResearchReportPrintout(document: document).frame(width: width))
+        let host = NSHostingView(rootView: ResearchReportPrintout(report: report).frame(width: width))
         host.appearance = NSAppearance(named: .aqua)
         host.frame = NSRect(origin: .zero, size: NSSize(width: width, height: max(1, host.fittingSize.height)))
         let operation = NSPrintOperation(view: host, printInfo: info)
-        operation.jobTitle = document.title
+        operation.jobTitle = report.title
         operation.run()
     }
 }
 
 // MARK: - The reader
 
-/// The report at the reading measure beside its Contents, then the sources it
-/// read.
+/// The report at the reading measure beside its Contents.
 ///
 /// **Signature detail:** the Contents column follows the reading position —
-/// the section being read is in the ink, the rest in the secondary ink — and
-/// a click there moves the report, not the column.
+/// the section being read is in the ink with a hairline beside it, the rest in
+/// the secondary ink — and a click there moves the report, not the column.
 struct ResearchReportReader: View {
-    let document: ResearchReportDocument
+    let report: NativeResearchReport
     var audit: NativeResearchAudit?
 
     /// The section at the top of the column, as the reader scrolls.
@@ -293,19 +231,21 @@ struct ResearchReportReader: View {
 
     /// - Parameter initialSection: the section to open at — how a fixture
     ///   draws the report mid-read.
-    init(document: ResearchReportDocument, audit: NativeResearchAudit? = nil, initialSection: String? = nil) {
-        self.document = document
+    init(report: NativeResearchReport, audit: NativeResearchAudit? = nil, initialSection: String? = nil) {
+        self.report = report
         self.audit = audit
         _reading = State(initialValue: initialSection)
     }
 
-    private static let sourcesID = "sources"
+    /// The article's measure: the reading column, a touch narrower than the
+    /// transcript so a line of Newsreader-led prose stays comfortable.
+    static let measure: CGFloat = 700
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
-            if document.headings.count >= 2 {
+            if report.headings.count >= 2 {
                 contents
-                    .frame(width: 220, alignment: .topLeading)
+                    .frame(width: 232, alignment: .topLeading)
                 Rectangle()
                     .fill(Color.junoHairline)
                     .frame(width: 1)
@@ -313,119 +253,46 @@ struct ResearchReportReader: View {
                     .accessibilityHidden(true)
             }
             ScrollView {
-                VStack(alignment: .leading, spacing: JunoSpace.regular) {
-                    cover
-                    ForEach(document.sections) { section in
-                        // As a reply's prose: citations open on a click, so
-                        // no selection here; Copy takes the whole report.
-                        JunoMarkdownText(section.markdown)
-                            .environment(\.junoProseStyle, .reading)
-                            .foregroundStyle(Color.junoForeground)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .id(section.id)
-                    }
-                    if !document.sources.isEmpty {
-                        sources
-                            .id(Self.sourcesID)
-                    }
-                }
-                .scrollTargetLayout()
-                .environment(\.junoCitationCount, document.sources.count)
-                .environment(\.junoCitationPopover, citationPopover)
-                .frame(maxWidth: DesktopChatMeasure.reading, alignment: .leading)
-                .padding(.horizontal, JunoSpace.section)
-                .padding(.vertical, JunoSpace.roomy)
-                .frame(maxWidth: .infinity)
+                NativeResearchReportArticle(report: report, audit: audit, tracksScroll: true)
+                    .frame(maxWidth: Self.measure, alignment: .leading)
+                    .padding(.horizontal, JunoSpace.region)
+                    .padding(.top, JunoSpace.region)
+                    .padding(.bottom, JunoSpace.vast)
+                    .frame(maxWidth: .infinity)
             }
             .scrollPosition(id: $reading, anchor: .top)
             .scrollEdgeEffectStyle(.soft, for: .top)
         }
     }
 
-    private var cover: some View {
-        VStack(alignment: .leading, spacing: JunoSpace.regular) {
-            Text("DEEP RESEARCH")
-                .junoFont(size: 11, relativeTo: .caption, weight: .medium)
-                .tracking(1.2)
-                .foregroundStyle(Color.junoSecondaryInk)
-            Text(document.title)
-                .font(JunoSerif.font(size: 36, relativeTo: .largeTitle))
-                .foregroundStyle(Color.junoForeground)
-                .fixedSize(horizontal: false, vertical: true)
-                .accessibilityAddTraits(.isHeader)
-            Text(document.subtitle)
-                .junoFont(size: 12, relativeTo: .footnote)
-                .foregroundStyle(Color.junoSecondaryInk)
-                .fixedSize(horizontal: false, vertical: true)
-            VStack(alignment: .leading, spacing: JunoSpace.tight) {
-                Text(auditHeadline)
-                    .junoFont(size: 12, relativeTo: .footnote, weight: .medium)
-                    .foregroundStyle(Color.junoForeground)
-                Text("Citation checks compare claims with cited passages. They do not establish that the research is complete.")
-                    .junoFont(size: 12, relativeTo: .footnote)
-                    .foregroundStyle(Color.junoSecondaryInk)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(.vertical, JunoSpace.cozy)
-            .overlay(alignment: .top) { Rectangle().fill(Color.junoHairline).frame(height: 1) }
-            .overlay(alignment: .bottom) { Rectangle().fill(Color.junoHairline).frame(height: 1) }
-        }
-        .padding(.bottom, JunoSpace.roomy)
-        .accessibilityIdentifier("juno.research-report.cover")
-    }
-
-    private var auditHeadline: String {
-        if let audit {
-            guard !audit.claims.isEmpty else { return "No checkable claims in this report" }
-            let supported = audit.claims.filter { $0.label == "supported" }.count
-            let unchecked = audit.claims.filter { $0.label == "unverified" }.count
-            return "\(supported)/\(audit.claims.count) claims supported"
-                + (unchecked > 0 ? " · \(unchecked) not checked" : "")
-        }
-        return document.auditSummary?.headline ?? "Citation check unavailable for this report"
-    }
-
     /// The section being read: the one at the top of the column, or the
     /// first until the reader moves.
     private var current: String? {
-        guard let reading else { return document.headings.first?.id }
-        if reading == Self.sourcesID { return document.headings.last?.id }
-        // A lead-in before the first heading counts as the first heading.
-        let index = document.sections.firstIndex { $0.id == reading } ?? 0
-        return document.sections[...index].last { $0.level > 0 }?.id ?? document.headings.first?.id
+        guard let reading else { return report.headings.first?.id }
+        if reading == NativeResearchReportArticle.sourcesID { return NativeResearchReportArticle.sourcesID }
+        let index = report.sections.firstIndex { $0.id == reading } ?? 0
+        return report.sections[...index].last { $0.level > 0 }?.id ?? report.headings.first?.id
     }
 
     private var contents: some View {
-        let minLevel = document.headings.map(\.level).min() ?? 1
+        let minLevel = report.headings.map(\.level).min() ?? 1
         return ScrollView {
             VStack(alignment: .leading, spacing: JunoSpace.micro) {
                 Text("Contents")
-                    .junoFont(size: 13, relativeTo: .callout, weight: .medium)
-                    .foregroundStyle(Color.junoForeground)
+                    .junoFont(size: 12, relativeTo: .caption, design: .monospaced)
+                    .foregroundStyle(Color.junoSecondaryInk)
                     .accessibilityAddTraits(.isHeader)
                     .padding(.bottom, JunoSpace.snug)
-                ForEach(document.headings) { heading in
-                    let isCurrent = heading.id == current
-                    Button {
-                        withAnimation(JunoMotion.reduced(JunoMotion.base, when: reduceMotion)) {
-                            reading = heading.id
-                        }
-                    } label: {
-                        Text(heading.title)
-                            .junoFont(size: 13, relativeTo: .callout, weight: isCurrent ? .medium : .regular)
-                            .foregroundStyle(isCurrent ? Color.junoForeground : Color.junoSecondaryInk)
-                            .multilineTextAlignment(.leading)
-                            .lineLimit(2)
-                            .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
-                            .padding(.leading, CGFloat(heading.level - minLevel) * 12)
-                            .contentShape(.rect)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityAddTraits(isCurrent ? .isSelected : [])
+                ForEach(report.headings) { heading in
+                    entry(heading.title, id: heading.id, indent: CGFloat(heading.level - minLevel) * 12)
+                }
+                if !report.sources.isEmpty {
+                    entry("Sources", id: NativeResearchReportArticle.sourcesID, indent: 0)
+                        .padding(.top, JunoSpace.snug)
                 }
             }
             .padding(.horizontal, JunoSpace.regular)
-            .padding(.vertical, JunoSpace.roomy)
+            .padding(.vertical, JunoSpace.region)
         }
         .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint), value: current)
         .accessibilityElement(children: .contain)
@@ -433,150 +300,41 @@ struct ResearchReportReader: View {
         .accessibilityIdentifier("juno.research-report.contents")
     }
 
-    private var sources: some View {
-        VStack(alignment: .leading, spacing: JunoSpace.tight) {
-            Rectangle()
-                .fill(Color.junoHairline)
-                .frame(height: 1)
-                .padding(.bottom, JunoSpace.regular)
-                .accessibilityHidden(true)
-            Text("Sources read \u{00B7} \(document.sources.count)")
-                .junoFont(size: 13, relativeTo: .callout, weight: .medium)
-                .foregroundStyle(Color.junoForeground)
-                .monospacedDigit()
-                .accessibilityAddTraits(.isHeader)
-            ForEach(Array(document.sources.enumerated()), id: \.element.id) { index, source in
-                SourceRow(source: NativeChatSource(title: source.title, url: source.url, snippet: ""), number: index + 1)
+    private func entry(_ title: String, id: String, indent: CGFloat) -> some View {
+        let isCurrent = id == current
+        return Button {
+            withAnimation(JunoMotion.reduced(JunoMotion.base, when: reduceMotion)) {
+                reading = id
             }
-        }
-        .padding(.top, JunoSpace.section)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Report sources")
-    }
-
-    /// A citation's source, and what the check found it used for.
-    private var citationPopover: JunoCitationPopover {
-        let sources = document.sources
-        let audit = audit
-        return JunoCitationPopover { number in
-            guard sources.indices.contains(number - 1) else { return AnyView(EmptyView()) }
-            let source = sources[number - 1]
-            return AnyView(ResearchCitationPopover(
-                source: NativeChatSource(title: source.title, url: source.url, snippet: ""),
-                number: number,
-                evidence: audit?.evidence(forSource: number) ?? []
-            ))
-        }
-    }
-}
-
-/// A citation's popover in a report: the source, and when the citation check
-/// has run, the verdict and the passage verbatim with "Open at passage",
-/// which opens the page scrolled to it (a text fragment of its first eight
-/// words). With no check, it is the source and "Open Page".
-struct ResearchCitationPopover: View {
-    let source: NativeChatSource
-    let number: Int
-    let evidence: [(claim: NativeResearchAudit.Claim, link: NativeResearchAudit.Link)]
-    @Environment(\.openURL) private var openURL
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: JunoSpace.tight) {
+        } label: {
             HStack(spacing: JunoSpace.snug) {
-                SourceFavicon(url: source.url, size: 16, circular: false)
-                Text(SourceHost.name(source.url))
-                    .junoFont(size: 12, relativeTo: .footnote)
-                    .foregroundStyle(Color.junoSecondaryInk)
-                    .lineLimit(1)
-                Spacer(minLength: JunoSpace.snug)
-                Text(number.formatted())
-                    .junoFont(size: 12, relativeTo: .footnote, design: .monospaced)
-                    .foregroundStyle(Color.junoSecondaryInk)
+                Rectangle()
+                    .fill(isCurrent ? Color.junoForeground : Color.clear)
+                    .frame(width: 1.5, height: 16)
+                Text(title)
+                    .junoFont(size: 13, relativeTo: .callout)
+                    .foregroundStyle(isCurrent ? Color.junoForeground : Color.junoSecondaryInk)
+                    .multilineTextAlignment(.leading)
+                    .lineLimit(2)
             }
-            Text(SourceHost.title(source))
-                .junoFont(size: 13, relativeTo: .callout, weight: .medium)
-                .lineLimit(2)
-            if let first = evidence.first {
-                Text(NativeResearchAudit.verdict(first.claim.label))
-                    .junoFont(size: 11, relativeTo: .caption, weight: .medium)
-                    .foregroundStyle(Self.tone(first.claim.label))
-                    .padding(.top, JunoSpace.micro)
-                if !first.link.passage.isEmpty {
-                    Text("\u{201C}\(first.link.passage)\u{201D}")
-                        .junoFont(size: 12, relativeTo: .footnote)
-                        .foregroundStyle(Color.junoForeground)
-                        .lineLimit(4)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .textSelection(.enabled)
-                }
-            }
-            Spacer(minLength: 0)
-            if let first = evidence.first, let url = Self.passageURL(source.url, passage: first.link.passage) {
-                Button("Open at passage") { openURL(url) }
-                    .buttonStyle(.link)
-                    .contentShape(.rect)
-            } else {
-                Button("Open Page") { openURL(source.url) }
-                    .buttonStyle(.link)
-                    .contentShape(.rect)
-            }
+            .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
+            .padding(.leading, indent)
+            .contentShape(.rect)
         }
-        .padding(JunoSpace.cozy)
-        .frame(width: 340, height: evidence.isEmpty ? 140 : 236, alignment: .topLeading)
-    }
-
-    /// The verdict's ink: supported in the success ink, partly or not
-    /// supported in the warning ink, contradicted in the destructive ink,
-    /// not checked in the secondary ink.
-    static func tone(_ label: String) -> Color {
-        switch label {
-        case "supported": .junoSuccessInk
-        case "partially supported", "unsupported": .junoWarningInk
-        case "contradicted": .junoDestructiveInk
-        default: .junoSecondaryInk
-        }
-    }
-
-    /// The page, scrolled to the passage: `#:~:text=` and its first eight
-    /// words, percent-encoded.
-    static func passageURL(_ url: URL, passage: String) -> URL? {
-        let words = passage.split(whereSeparator: { $0.isWhitespace }).prefix(8).joined(separator: " ")
-        guard !words.isEmpty else { return nil }
-        var allowed = CharacterSet.urlFragmentAllowed
-        allowed.remove(charactersIn: "-,&#")
-        guard let encoded = words.addingPercentEncoding(withAllowedCharacters: allowed),
-            var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
-        else { return nil }
-        components.fragment = nil
-        guard let base = components.url?.absoluteString else { return nil }
-        return URL(string: base + "#:~:text=" + encoded)
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isCurrent ? .isSelected : [])
     }
 }
 
-/// The report on paper: its words and its sources, at the page's width.
+/// The report on paper: the article at the page's width, without its
+/// interactive citations.
 private struct ResearchReportPrintout: View {
-    let document: ResearchReportDocument
+    let report: NativeResearchReport
 
     var body: some View {
-        VStack(alignment: .leading, spacing: JunoSpace.regular) {
-            JunoMarkdownText(document.body)
-                .environment(\.junoProseStyle, .reading)
-                .foregroundStyle(Color.junoForeground)
-            if !document.sources.isEmpty {
-                VStack(alignment: .leading, spacing: JunoSpace.tight) {
-                    Text("Sources read \u{00B7} \(document.sources.count)")
-                        .junoFont(size: 13, relativeTo: .callout, weight: .medium)
-                    ForEach(Array(document.sources.enumerated()), id: \.element.id) { index, source in
-                        Text("[\(index + 1)] \(source.title) \u{2014} \(source.url.absoluteString)")
-                            .junoFont(size: 11, relativeTo: .caption)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-                .foregroundStyle(Color.junoForeground)
-            }
-        }
-        .padding(.vertical, JunoSpace.regular)
-        .environment(\.colorScheme, .light)
+        NativeResearchReportArticle(report: report, compact: true, printing: true)
+            .padding(.vertical, JunoSpace.regular)
+            .environment(\.colorScheme, .light)
     }
 }
 
@@ -600,7 +358,7 @@ private struct ResearchReportSkeleton: View {
                 .padding(.top, paragraph == 0 ? JunoSpace.snug : 0)
             }
         }
-        .frame(maxWidth: DesktopChatMeasure.reading, alignment: .leading)
+        .frame(maxWidth: ResearchReportReader.measure, alignment: .leading)
         .padding(JunoSpace.section)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .accessibilityLabel("Loading this report")

@@ -52,7 +52,9 @@ public struct NativeResearchRun: Equatable, Sendable, Identifiable {
         public let id: String
         public let question: String
         public let rationale: String?
-        /// `pending`, `searching`, `covered`, `partial` or `thin`.
+        /// `pending`, `searching`, `covered`, `partial` or `thin` — and
+        /// `investigated` for a question the in-chat path finished working
+        /// without saying how well it was answered.
         public let status: String
 
         public init(id: String, question: String, rationale: String? = nil, status: String = "pending") {
@@ -381,7 +383,10 @@ public struct NativeResearchRun: Equatable, Sendable, Identifiable {
     }
 
     public var presentation: Presentation {
-        guard phase.isTerminal else { return .row }
+        // A run the chat confirmed itself is the in-chat path's: its answer
+        // row is the working view while it runs and carries the report after,
+        // so the conversation's run list must not draw it a second time.
+        guard phase.isTerminal else { return confirmedBy == "auto" ? .none : .row }
         if isInChatReport { return .none }
         // A background run that finished with a completion message: that
         // message is the report; the row stays only where it was seen working.
@@ -543,6 +548,7 @@ public struct NativeResearchRun: Equatable, Sendable, Identifiable {
         case "covered": "Covered"
         case "partial": "Partly covered"
         case "thin": "Little evidence"
+        case "investigated": "Investigated"
         default: "Not started"
         }
     }
@@ -700,9 +706,11 @@ extension NativeChatAPIClient {
 
 extension NativeChatAPIClient {
     /// Steers a run that is already going (`POST /api/research/{id}/steer`):
-    /// a link pins a source, anything else is a constraint written into the
-    /// plan — the web's rule (`use-conversation-run.ts`). Neither costs the
-    /// work already done. The server refuses a run that is not accepting input
+    /// a link pins a source; anything else is **guidance**, queued on the plan
+    /// and applied at the next round boundary — what the web's Guide control
+    /// sends (`research-console.tsx`). A raw `constraint` rewrites the plan at
+    /// once and can send a run back a stage; guidance never costs the work
+    /// already done, and adding it while paused keeps the run paused. The server refuses a run that is not accepting input
     /// with a sentence of its own, which the error carries.
     public func steerResearch(id: String, input: String, for accountID: AccountID) async throws {
         try requireIdentifier(id)
@@ -714,7 +722,7 @@ extension NativeChatAPIClient {
                 path: "/api/research/\(id)/steer",
                 method: .post,
                 headers: try HTTPHeaders(["Content-Type": "application/json"]),
-                body: try JSONEncoder().encode(isSource ? ["sourceUrl": text] : ["constraint": text])
+                body: try JSONEncoder().encode(isSource ? ["sourceUrl": text] : ["guidance": String(text.prefix(1_000))])
             ),
             for: accountID
         )
@@ -1229,32 +1237,57 @@ extension NativeResearchRun {
     /// A research turn a profile-1 server answers inside the chat — today's
     /// production — read as a run, so the transcript row and the Research
     /// panel describe it the way they describe a background run: searches as
-    /// they are issued, pages as they are read, the report as it is written.
+    /// they are issued, pages as they are read (with their titles), the
+    /// questions the researchers were sent after, and the report as it is
+    /// written.
+    ///
+    /// Everything here is read from rows the server sent (`deep-research.ts`
+    /// `toActivity`); nothing is inferred forward. `question` is the reader's
+    /// own words, shown as the run's title.
     public static func inChat(
         message: NativeChatMessage,
         live: Bool,
+        question: String? = nil,
         now: Date = Date()
     ) -> NativeResearchRun {
         var steps: [Step] = []
         var searches = 0
-        var readURLs: [URL] = []
+        var reads: [(url: URL, title: String)] = []
         var lastQuery: String?
         var lastDomain: String?
         var lastKind: NativeChatActivity.Kind?
+        var questions: [Question] = []
+        var approach: String?
+        var reviewing = false
+        var checking = false
+        var findings: [Finding] = []
+        func clean(_ text: String?) -> String? {
+            guard let text = text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return nil }
+            return text
+        }
         for (index, event) in message.activity.enumerated() {
             switch event.kind {
             case .search where event.title == "Searching the web" || event.title == "Following an evidence gap":
-                guard let query = event.detail?.trimmingCharacters(in: .whitespacesAndNewlines), !query.isEmpty else { continue }
+                guard let query = clean(event.detail) else { continue }
                 searches += 1
                 lastQuery = query
                 lastKind = .search
+                reviewing = false
                 steps.append(Step(id: index, line: NativeRunPhraseLine([NativeRunPhrase([.phrase("Searching for"), .quote(query)])]), at: event.createdAt))
             case .visit:
                 guard let raw = event.url, let url = URL(string: raw), let host = url.host() else { continue }
                 let domain = host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
-                if !readURLs.contains(url) { readURLs.append(url) }
+                // The detail is the page's own title when the server had one,
+                // else its host.
+                let title = clean(event.detail).flatMap { $0 == host || $0 == domain ? nil : $0 } ?? domain
+                if let existing = reads.firstIndex(where: { $0.url == url }) {
+                    if reads[existing].title == domain { reads[existing].title = title }
+                } else {
+                    reads.append((url, title))
+                }
                 lastDomain = domain
                 lastKind = .visit
+                reviewing = false
                 steps.append(Step(id: index, line: NativeRunPhraseLine([NativeRunPhrase([.phrase("Read"), .domain(domain)])]), at: event.createdAt))
             case .warning:
                 steps.append(Step(
@@ -1263,6 +1296,32 @@ extension NativeResearchRun {
                     isWarning: true,
                     at: event.createdAt
                 ))
+            case .reasoning, .context:
+                let title = event.title
+                if title.hasPrefix("Planned the research") {
+                    approach = clean(event.detail) ?? approach
+                } else if title.hasPrefix("Sending a researcher"), let objective = clean(event.detail) {
+                    if !questions.contains(where: { $0.question == objective }) {
+                        questions.append(Question(id: "q\(questions.count)", question: objective, status: "searching"))
+                    }
+                    steps.append(Step(id: index, line: NativeRunPhraseLine([NativeRunPhrase([.phrase("Researching"), .quote(objective)])]), at: event.createdAt))
+                } else if title == "A researcher reported back" {
+                    if let summary = clean(event.detail), !summary.hasSuffix("tool calls"), !summary.hasSuffix("tool call") {
+                        findings.insert(Finding(id: "f\(index)", claim: summary, quote: "", url: nil, title: ""), at: 0)
+                    }
+                } else if title.hasPrefix("Lead review") || title == "Reviewing what the researchers found"
+                    || title == "Checking each research question"
+                {
+                    reviewing = true
+                    if title.hasPrefix("Lead review") {
+                        steps.append(Step(id: index, line: NativeRunPhraseLine([NativeRunPhrase(title.replacingOccurrences(of: "Lead review: ", with: "Review: "))]), at: event.createdAt))
+                    }
+                } else if title == "Checking every citation against its source" {
+                    checking = true
+                    steps.append(Step(id: index, line: NativeRunPhraseLine([NativeRunPhrase("Checking citations")]), at: event.createdAt))
+                } else if title == "Writing the report" {
+                    steps.append(Step(id: index, line: NativeRunPhraseLine([NativeRunPhrase("Writing the report")]), at: event.createdAt))
+                }
             default:
                 continue
             }
@@ -1277,8 +1336,12 @@ extension NativeResearchRun {
             } else {
                 phase = .done
             }
+        } else if checking {
+            phase = .checking
         } else if answerStarted {
             phase = .writing
+        } else if reviewing {
+            phase = .reviewing
         } else if lastKind == .visit {
             phase = .reading
         } else if lastKind == .search {
@@ -1286,33 +1349,60 @@ extension NativeResearchRun {
         } else {
             phase = .planning
         }
-        let sources = readURLs.enumerated().map { index, url in
-            Source(id: "read-\(index)", url: url, title: url.host() ?? url.absoluteString, read: true)
+        // Once the writer has the evidence, every question it was sent after
+        // has been investigated; whether each is *answered* is the report's to
+        // say, so the status stays neutral.
+        if phase != .planning, phase != .searching, phase != .reading {
+            questions = questions.map { Question(id: $0.id, question: $0.question, status: "investigated") }
         }
+        // The corpus the answer cites is the numbered `sources` list; a page
+        // read is cited when that list carries it.
+        let citedURLs = Set(message.sources.filter(\.cited).map { Self.normalized($0.url) })
+        let sources = reads.enumerated().map { index, read in
+            Source(id: "read-\(index)", url: read.url, title: read.title, read: true)
+        }
+        let cited = message.sources.isEmpty ? 0 : (citedURLs.isEmpty ? message.sources.count : citedURLs.count)
         let worked = message.runStartedAt.map { started -> Int in
             let until = live ? now : (message.answerStartedAt ?? message.createdAt)
             return Int(max(0, until.timeIntervalSince(started)) * 1_000)
         }
-        return NativeResearchRun(
+        var run = NativeResearchRun(
             id: "message:\(message.id)",
             conversationID: message.conversationID,
-            goal: "",
+            goal: question?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
             state: live ? "investigating" : "completed",
             phase: phase,
             phaseQuery: lastQuery,
             phaseDomain: lastDomain,
+            approach: approach,
+            questions: questions,
             counts: Counts(
-                found: readURLs.count,
-                read: readURLs.count,
-                cited: message.sources.count,
+                found: reads.count,
+                read: reads.count,
+                cited: cited,
                 searches: searches,
-                pages: readURLs.count
+                pages: reads.count
             ),
             workingMs: worked,
             fetchedAt: now,
             assistantMessageID: live ? nil : message.id,
+            findings: Array(findings.prefix(3)),
             sources: sources,
             steps: Array(steps.reversed().prefix(50))
         )
+        run.seenLive = live
+        run.lastSeq = message.activity.count
+        run.maxSeq = message.activity.count
+        return run
+    }
+
+    /// A URL as two copies of one page compare: no fragment, no `www.`, no
+    /// trailing slash.
+    static func normalized(_ url: URL) -> String {
+        var text = url.absoluteString.lowercased()
+        if let hash = text.firstIndex(of: "#") { text = String(text[..<hash]) }
+        text = text.replacingOccurrences(of: "://www.", with: "://")
+        while text.hasSuffix("/") { text.removeLast() }
+        return text
     }
 }

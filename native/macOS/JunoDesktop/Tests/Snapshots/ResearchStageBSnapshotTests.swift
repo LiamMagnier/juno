@@ -2,6 +2,7 @@ import AppKit
 import Foundation
 import JunoChatKit
 import JunoDesignSystem
+import JunoPreviewSupport
 import SwiftUI
 import Testing
 
@@ -27,16 +28,59 @@ struct ResearchStageBSnapshotTests {
     @Test
     func theLiveResearchWorkspaceDraws() async throws {
         try await render(
-            DesktopResearchRow(run: TranscriptSnapshotFixtures.liveResearchRun, open: {})
-                .padding(JunoSpace.roomy)
-                .environment(\.junoSnapshotRunElapsed, 42),
+            TranscriptSnapshotFixtures.column {
+                TranscriptSnapshotFixtures.row(F.question)
+                DesktopResearchRow(
+                    run: PreviewResearch.liveRun,
+                    actions: NativeResearchLiveActions(stop: {}, pause: {}, resume: {}, guide: { _ in nil }),
+                    open: {}
+                )
+            }
+            .environment(\.junoSnapshotRunElapsed, 252),
             name: "research-live-cover"
         )
         try await render(
-            DesktopResearchPanel(run: TranscriptSnapshotFixtures.liveResearchRun, control: { _ in }, close: {})
-                .frame(height: 680),
+            DesktopResearchPanel(run: PreviewResearch.liveRun, control: { _ in }, steer: { _ in nil }, close: {})
+                .frame(height: 1_020)
+                .environment(\.junoSnapshotRunElapsed, 252),
             name: "research-live-panel",
-            width: 380
+            width: 400
+        )
+    }
+
+    @Test
+    func theInChatResearchDraws() async throws {
+        let question = PreviewResearch.questionMessage()
+        try await render(
+            TranscriptSnapshotFixtures.column {
+                TranscriptSnapshotFixtures.row(question)
+                TranscriptSnapshotFixtures.row(
+                    PreviewResearch.liveMessage(), newest: true, generating: true,
+                    researchQuestion: PreviewResearch.question
+                )
+            }
+            .environment(\.junoSnapshotRunElapsed, 188),
+            name: "research-inchat-reading"
+        )
+        try await render(
+            TranscriptSnapshotFixtures.column {
+                TranscriptSnapshotFixtures.row(question)
+                TranscriptSnapshotFixtures.row(
+                    PreviewResearch.liveMessage(writing: true), newest: true, generating: true,
+                    researchQuestion: PreviewResearch.question
+                )
+            }
+            .environment(\.junoSnapshotRunElapsed, 431),
+            name: "research-inchat-writing"
+        )
+        try await render(
+            TranscriptSnapshotFixtures.column {
+                TranscriptSnapshotFixtures.row(question)
+                TranscriptSnapshotFixtures.row(
+                    PreviewResearch.reportMessage(), newest: true, researchQuestion: PreviewResearch.question
+                )
+            },
+            name: "research-inchat-answer"
         )
     }
 
@@ -65,17 +109,76 @@ struct ResearchStageBSnapshotTests {
 
     @Test
     func theReportWindowDraws() async throws {
-        let document = try #require(ResearchReportDocument(run: F.recapRun))
+        let report = PreviewResearch.report
         try await render(
             VStack(spacing: 0) {
-                F.titleBar(document)
-                ResearchReportReader(document: document)
-                    .frame(height: 672)
+                F.titleBar(report)
+                ResearchReportReader(report: report, audit: PreviewResearch.audit)
+                    .frame(height: 1_100)
             }
             .junoAccentTint(),
             name: "research-report-window",
+            width: 1_100
+        )
+        let run = try #require(NativeResearchReport(run: F.recapRun))
+        try await render(
+            VStack(spacing: 0) {
+                F.titleBar(run)
+                ResearchReportReader(report: run, initialSection: run.headings.last?.id)
+                    .frame(height: 640)
+            }
+            .junoAccentTint(),
+            name: "research-report-window-run",
             width: 880
         )
+    }
+
+    /// The shared views at a phone's width, drawn by the Mac host — the
+    /// iOS suite draws the real ones; these keep the Mac honest about the
+    /// compact layout too.
+    @Test
+    func theCompactLayoutsDraw() async throws {
+        try await render(
+            NativeResearchLiveView(
+                run: PreviewResearch.liveRun,
+                actions: NativeResearchLiveActions(stop: {}, pause: {}, guide: { _ in nil }),
+                compact: true,
+                frozenElapsed: 252
+            )
+            .padding(.horizontal, JunoSpace.regular),
+            name: "research-compact-live",
+            width: 393
+        )
+        try await render(
+            NativeResearchReportArticle(report: PreviewResearch.report, audit: PreviewResearch.audit, compact: true)
+                .padding(.horizontal, JunoSpace.regular)
+                .padding(.vertical, JunoSpace.section),
+            name: "research-compact-article",
+            width: 393
+        )
+    }
+
+    @Test
+    func thePDFExports() async throws {
+        let data = try #require(NativeResearchReportPDF.data(for: PreviewResearch.report))
+        try data.write(to: directory.appendingPathComponent("research-report.pdf"))
+        let document = try #require(CGPDFDocument(CGDataProvider(data: data as CFData)!))
+        #expect(document.numberOfPages >= 2)
+        for index in 1...min(2, document.numberOfPages) {
+            let page = try #require(document.page(at: index))
+            let box = page.getBoxRect(.mediaBox)
+            let image = NSImage(size: NSSize(width: box.width * 2, height: box.height * 2), flipped: false) { rect in
+                guard let context = NSGraphicsContext.current?.cgContext else { return false }
+                context.setFillColor(NSColor.white.cgColor)
+                context.fill(rect)
+                context.scaleBy(x: 2, y: 2)
+                context.drawPDFPage(page)
+                return true
+            }
+            let tiff = try #require(image.tiffRepresentation)
+            let png = try #require(NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]))
+            try png.write(to: directory.appendingPathComponent("research-report-pdf-page\(index).png"))
+        }
     }
 
     private func render<V: View>(_ view: V, name: String, width: CGFloat = TranscriptSnapshotRenderer.columnWidth) async throws {
@@ -185,17 +288,17 @@ enum ResearchStageBFixtures {
     /// The window's title and toolbar as the reader sees them — drawn by the
     /// system in the app, stood in for here because offscreen rendering has
     /// no title bar.
-    static func titleBar(_ document: ResearchReportDocument) -> some View {
+    static func titleBar(_ report: NativeResearchReport) -> some View {
         HStack(spacing: JunoSpace.cozy) {
             VStack(alignment: .leading, spacing: 1) {
-                Text(document.title)
+                Text(report.title)
                     .junoFont(size: 13, relativeTo: .callout, weight: .semibold)
-                Text(document.subtitle)
+                Text(ResearchReportWindow.subtitle(report))
                     .junoFont(size: 11, relativeTo: .caption)
                     .foregroundStyle(Color.junoSecondaryInk)
             }
             Spacer()
-            ForEach([JunoIcon.copy, .download, .printer], id: \.self) { icon in
+            ForEach([JunoIcon.copy, .share, .download, .printer], id: \.self) { icon in
                 JunoIconView(icon, size: 16)
                     .foregroundStyle(Color.junoSecondaryInk)
                     .frame(width: 28, height: 28)

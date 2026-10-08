@@ -1428,6 +1428,8 @@ struct DesktopConversationView: View {
     @State private var find = TranscriptFindModel()
     /// Sources' logos, fetched once per site for this window.
     @State private var favicons = SourceFaviconLoader()
+    /// The same rule for the shared research views (Deep Field, reports).
+    @State private var sourceFavicons = NativeSourceFavicons()
     /// Whether the composer's draft is empty, for the follow-up chips.
     @State private var draftIsEmpty = true
     /// The conversation column's own size: its height is what a draft's
@@ -1850,6 +1852,7 @@ struct DesktopConversationView: View {
         .environment(\.junoWorkFileActions, workFileActions)
         .environment(\.junoTranscriptViewportHeight, columnHeight)
         .environment(\.junoFavicons, favicons)
+        .environment(\.nativeSourceFavicons, sourceFavicons)
     }
 
     /// Every turn on screen, store and local, in order: what the find bar and
@@ -1898,7 +1901,11 @@ struct DesktopConversationView: View {
             let messageID = String(runID.dropFirst("message:".count))
             if let message = findableMessages.first(where: { $0.id == messageID }) {
                 DesktopResearchPanel(
-                    run: NativeResearchRun.inChat(message: message, live: message.isPending),
+                    run: NativeResearchRun.inChat(
+                        message: message, live: message.isPending,
+                        question: findableMessages.last { $0.role == .user && $0.createdAt <= message.createdAt }
+                            .map { NativeMessageContent.plainText(of: $0.content) }
+                    ),
                     inChat: true,
                     close: closeResearch
                 )
@@ -1912,9 +1919,15 @@ struct DesktopConversationView: View {
                 run: run,
                 busy: model.researchBusyRunIDs.contains(runID),
                 error: model.researchErrors[runID],
+                unreachable: model.researchUnreachableRunIDs.contains(runID),
                 control: { action in
                     Task { await model.controlResearch(runID: runID, action: action, conversationID: conversationID) }
                 },
+                steer: { text in
+                    let result = await model.steerResearch(runID: runID, input: text, conversationID: conversationID)
+                    return result.accepted ? nil : (result.notice ?? "That guidance could not be added. Try again.")
+                },
+                retry: { Task { await model.refreshResearchRun(id: runID, conversationID: conversationID) } },
                 // Today's server answers "Finish now" with a 400: hide it
                 // where the server derives no phase, or once it has refused.
                 canFinish: run.derivesPhase && !model.researchFinishUnsupported,

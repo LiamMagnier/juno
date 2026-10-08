@@ -646,6 +646,10 @@ struct DesktopTranscript: View {
             DesktopResearchRow(
                 run: run,
                 ownsLoop: loopingResearchRunID == run.id,
+                actions: liveActions(for: run),
+                busy: model.researchBusyRunIDs.contains(run.id),
+                error: model.researchErrors[run.id],
+                unreachable: model.researchUnreachableRunIDs.contains(run.id),
                 open: {
                     // "Open report" opens the report's own window; anything
                     // still going opens the Research panel.
@@ -658,6 +662,31 @@ struct DesktopTranscript: View {
             )
             .id("research:\(run.id)")
         }
+    }
+
+    /// What a background run's working view can do from the transcript:
+    /// pause or resume, guidance, and Stop. "Write with what you have" and
+    /// the confirmation before Stop live in the Research panel.
+    private func liveActions(for run: NativeResearchRun) -> NativeResearchLiveActions {
+        guard let conversationID = model.selectedConversationID else { return NativeResearchLiveActions() }
+        let model = model
+        return NativeResearchLiveActions(
+            stop: { openResearch?(run.id) },
+            pause: { Task { await model.controlResearch(runID: run.id, action: .pause, conversationID: conversationID) } },
+            resume: { Task { await model.controlResearch(runID: run.id, action: .resume, conversationID: conversationID) } },
+            guide: { text in
+                let result = await model.steerResearch(runID: run.id, input: text, conversationID: conversationID)
+                return result.accepted ? nil : (result.notice ?? "That guidance could not be added. Try again.")
+            },
+            retry: { Task { await model.refreshResearchRun(id: run.id, conversationID: conversationID) } }
+        )
+    }
+
+    /// The reader's words this reply answers: the nearest question above it.
+    private func question(answeredBy message: NativeChatMessage) -> String? {
+        let messages = model.selectedMessages
+        guard let index = messages.firstIndex(where: { $0.id == message.id }) else { return nil }
+        return messages[..<index].last { $0.role == .user }.map { NativeMessageContent.plainText(of: $0.content) }
     }
 
     private func approvalCard(_ approval: NativeChatApproval) -> some View {
@@ -763,6 +792,8 @@ struct DesktopTranscript: View {
         }
         if message.role == .assistant {
             actions.openResearch = openResearch
+            actions.openReport = researchActions.openReport
+            actions.researchQuestion = question(answeredBy: message)
             if isNewest { actions.researchThis = researchThis }
         }
         if isNewest, message.role == .assistant, message.errorDescription != nil,

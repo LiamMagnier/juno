@@ -608,8 +608,10 @@ struct DesktopMessageRow: View {
                         // A research turn a profile-1 server answers in the
                         // chat: one research row while it works (SPEC §9.11.3).
                         DesktopResearchRow(
-                            run: NativeResearchRun.inChat(message: shown, live: true),
+                            run: NativeResearchRun.inChat(message: shown, live: true, question: actions.researchQuestion),
                             ownsLoop: activityPanelMessageID != shown.id,
+                            citations: shown.sources,
+                            citingText: shown.content,
                             open: { actions.openResearch?("message:\(shown.id)") }
                         )
                     } else {
@@ -693,8 +695,11 @@ struct DesktopMessageRow: View {
     /// A live research turn answered in the chat, whose report has not
     /// started: the research row stands where the run block would.
     private var isLiveInChatResearch: Bool {
-        guard shown.isPending, shown.answerStartedAt == nil, shown.mediaProgress == nil else { return false }
+        guard shown.isPending, shown.mediaProgress == nil else { return false }
+        // Through the writing too: the report takes minutes, and the working
+        // view says which section it is on while the answer streams below.
         if NativeResearchRun.isInChatResearch(activity: shown.activity) { return true }
+        guard shown.answerStartedAt == nil else { return false }
         // Asked for, and no sign yet of a server that hands research off or
         // refused it: a timeline server's rows carry `seq` from the first one.
         return shown.researchRequested && !shown.activity.contains { $0.seq != nil || $0.notice?.code == "research_skipped" }
@@ -744,6 +749,9 @@ struct DesktopMessageRow: View {
                 case .text(let text):
                     JunoLessonText(text, streaming: shown.isPending)
                         .environment(\.junoFindHighlight, findHighlight?.shifted(by: bases.indices.contains(index) ? bases[index] : 0))
+                case .artifact(let artifact) where NativeResearchReport.isReport(artifact):
+                    researchReportCard(artifact)
+                        .junoStreamBlockReveal()
                 case .artifact(let artifact):
                     let card = artifactResolver.card(
                         for: artifact,
@@ -758,6 +766,32 @@ struct DesktopMessageRow: View {
                     .junoStreamBlockReveal()
                 }
             }
+        }
+    }
+
+    /// The door into the research report this answer carries, in place of the
+    /// generic artifact card: while it is written, the section and the words
+    /// so far; once written, the report's card, which opens its window.
+    @ViewBuilder
+    private func researchReportCard(_ artifact: NativeMessageContent.ArtifactReference) -> some View {
+        if artifact.streaming {
+            NativeResearchReportCard(
+                content: .writing(
+                    title: artifact.title,
+                    words: artifact.content.split(whereSeparator: { $0.isWhitespace || $0.isNewline }).count,
+                    section: NativeResearchReport.sections(of: artifact.content).last(where: { $0.level > 0 })?.title
+                ),
+                open: nil
+            )
+        } else if let report = NativeResearchReport(message: shown, question: actions.researchQuestion) {
+            NativeResearchReportCard(
+                content: .report(report),
+                open: actions.openReport.map { open in { open(report.id) } }
+                    ?? { actions.openArtifact(artifact, shown) }
+            )
+        } else {
+            let card = artifactResolver.card(for: artifact, message: shown, messageIsPending: shown.isPending)
+            DesktopInlineArtifactCard(card: card, open: { actions.openArtifact(artifact, shown) })
         }
     }
 
