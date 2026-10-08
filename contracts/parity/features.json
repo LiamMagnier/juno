@@ -510,34 +510,34 @@
       "pages": {
         "/skills": {
           "mac": "native",
-          "ios": "planned",
-          "screen": "DesktopSkillsScreen",
-          "note": "No Skills pages on the phone yet."
+          "ios": "native",
+          "screen": "DesktopSkillsScreen · JunoMobileSkillsView",
+          "note": "On the phone: Customize › Skills, a list with on/off, search and Import from GitHub."
         },
         "/skills/[id]": {
           "mac": "native",
-          "ios": "planned",
-          "screen": "DesktopSkillPage",
-          "note": "As /skills."
+          "ios": "partial",
+          "screen": "DesktopSkillPage · JunoMobileSkillDetailView",
+          "note": "The phone reads a skill, switches it on or off and deletes it; editing instructions, versions, usage and consent stay on the Mac and the web."
         },
         "/skills/new": {
           "mac": "native",
           "ios": "planned",
           "screen": "DesktopSkillPage (new)",
-          "note": "As /skills."
+          "note": "Writing a new skill is Mac and web only; the phone imports skills from GitHub."
         },
         "/skills/import": {
           "mac": "native",
-          "ios": "planned",
-          "screen": "DesktopSkillSheets (Import from GitHub)",
-          "note": "A sheet on the Mac; no Skills pages on the phone yet."
+          "ios": "native",
+          "screen": "DesktopSkillSheets (Import from GitHub) · JunoMobileSkillImportView",
+          "note": "A sheet on both apps."
         }
       },
       "routes": {
         "/api/skills": "native",
         "/api/skills/import/file": {
           "status": "native",
-          "note": "Mac only: previews an uploaded SKILL.md (the web parses it in the browser); no Skills pages on the phone yet."
+          "note": "Mac only: previews an uploaded SKILL.md (the web parses it in the browser); the phone imports from GitHub only."
         },
         "/api/skills/import/github": "native",
         "/api/skills/import/package": {
@@ -633,21 +633,21 @@
       "pages": {
         "/automations": {
           "mac": "native",
-          "ios": "planned",
-          "screen": "DesktopAutomationsScreen",
-          "note": "No Automations on the phone yet."
+          "ios": "native",
+          "screen": "DesktopAutomationsScreen · JunoMobileRoutinesView",
+          "note": "On the phone: Customize › Routines, with Run Now, Pause/Resume and Delete."
         },
         "/automations/new": {
           "mac": "native",
-          "ios": "planned",
-          "screen": "DesktopAutomationEditor",
-          "note": "As /automations."
+          "ios": "partial",
+          "screen": "DesktopAutomationEditor · JunoMobileRoutineEditor",
+          "note": "The phone's editor sets a name, a prompt and one clock (hourly, daily, weekdays, weekly or monthly); event triggers, targets, budgets and policies stay on the Mac and the web."
         },
         "/automations/[id]": {
           "mac": "native",
-          "ios": "planned",
-          "screen": "DesktopAutomationPage",
-          "note": "As /automations."
+          "ios": "native",
+          "screen": "DesktopAutomationPage · JunoMobileRoutineDetailView",
+          "note": "Schedule in words, next and last run, recent runs, Run Now, Pause/Resume, Edit and Delete."
         }
       },
       "routes": {

@@ -202,6 +202,10 @@ struct JunoMobileRootView: View {
     .preferredColorScheme(preferredColorScheme)
     // The plans page, wherever a locked feature or Settings asks for it.
     .junoMobilePlansSheet()
+    // Inbox, announcements, server search, account security, Skills and
+    // Routines: one environment value the newer screens read
+    // (JunoMobileFeatureHub.swift).
+    .junoMobileFeatures(sender: requestSender, accountID: currentSession?.profile.id)
     // NOTE: `.tint(Color.junoAccent)` must NOT go here. Reading the accent in
     // this body makes the body re-evaluate whenever it changes, and this body is
     // an ancestor of the Settings sheet — so choosing a colour tore the sheet
@@ -1393,7 +1397,8 @@ struct JunoMobileRootView: View {
           openProject: { id in
             projectModel?.selectedProjectID = id
             show(.projects)
-          }
+          },
+          openServerHit: openSearchHit
         )
       } else {
         unavailable
@@ -1558,6 +1563,20 @@ struct JunoMobileRootView: View {
       JunoIconLabel("shell.unavailable.title", icon: .error)
     } description: {
       Text("shell.unavailable.description")
+    }
+  }
+
+  /// Where a server search hit (memory, knowledge, tasks) opens.
+  private func openSearchHit(_ destination: NativeSearchHitDestination) {
+    switch destination {
+    case .conversation(let id, _): openConversation(id)
+    case .workSession(let id): openWorkSession(id)
+    case .project(let id):
+      projectModel?.selectedProjectID = id
+      show(.projects)
+    case .artifact: show(.artifacts)
+    case .library: show(.library)
+    case .memory: show(.settings)
     }
   }
 

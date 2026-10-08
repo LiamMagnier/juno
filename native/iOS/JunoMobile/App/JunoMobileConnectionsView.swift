@@ -116,6 +116,7 @@ struct JunoMobileConnectionsView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: JunoSpace.cozy, pinnedViews: []) {
                 header
+                JunoMobileCustomizeLinks()
                 filters
                 if let error = model.lastErrorDescription {
                     JunoInlineError(message: error) { Task { await model.refresh() } }
