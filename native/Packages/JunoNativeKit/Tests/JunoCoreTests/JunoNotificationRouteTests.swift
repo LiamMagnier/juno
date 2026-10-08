@@ -19,7 +19,7 @@ final class JunoNotificationRouteTests: XCTestCase {
     }
 
     func testPathRoundTrips() {
-        for route: JunoNotificationRoute in [.agent(id: "a1"), .conversation(id: "c2"), .workSession(id: "s3")] {
+        for route: JunoNotificationRoute in [.agent(id: "a1"), .conversation(id: "c2"), .workSession(id: "s3"), .research(id: "r4")] {
             XCTAssertEqual(JunoNotificationRoute(path: route.path), route)
         }
     }
@@ -45,6 +45,16 @@ final class JunoNotificationRouteTests: XCTestCase {
         ] {
             XCTAssertNil(JunoNotificationRoute(path: path), path)
         }
+    }
+
+    /// The research push (`announceFinish` in `stages/context.ts`): its path
+    /// names the run, and the conversation rides beside it for older builds.
+    func testResearchReadyOpensTheRun() {
+        XCTAssertEqual(JunoNotificationRoute(path: "/research/run_7"), .research(id: "run_7"))
+        XCTAssertNil(JunoNotificationRoute(path: "/research/run_7/report"))
+        XCTAssertNil(JunoNotificationRoute(path: "/research/.."))
+        let push = ["path": "/research/run_7", "conversationId": "conv_2", "runId": "run_7", "kind": "work"]
+        XCTAssertEqual(JunoNotificationRoute(userInfo: push), .research(id: "run_7"))
     }
 
     func testUserInfoPrefersPath() {

@@ -641,11 +641,25 @@ extension NativeChatAPIClient {
         for accountID: AccountID
     ) async throws -> [NativeResearchRunSummary] {
         try requireIdentifier(conversationID)
+        return try await researchRunList(
+            queryItems: [URLQueryItem(name: "conversationId", value: conversationID)],
+            for: accountID
+        )
+    }
+
+    /// The account's live runs, and those that finished in the last ten
+    /// minutes (`GET /api/research?live=1`), newest first: what the
+    /// completion watcher reads (the web's `completion-watch.ts`).
+    public func liveResearchRuns(for accountID: AccountID) async throws -> [NativeResearchRunSummary] {
+        try await researchRunList(queryItems: [URLQueryItem(name: "live", value: "1")], for: accountID)
+    }
+
+    private func researchRunList(
+        queryItems: [URLQueryItem],
+        for accountID: AccountID
+    ) async throws -> [NativeResearchRunSummary] {
         let response = try await sender.send(
-            try NativeBearerRequest(
-                path: "/api/research",
-                queryItems: [URLQueryItem(name: "conversationId", value: conversationID)]
-            ),
+            try NativeBearerRequest(path: "/api/research", queryItems: queryItems),
             for: accountID
         )
         guard (200...299).contains(response.statusCode) else { throw serverError(response) }
@@ -658,9 +672,10 @@ extension NativeChatAPIClient {
                 conversationID: $0.conversationId,
                 state: $0.state,
                 phase: $0.phase.flatMap(NativeResearchRun.Phase.init(rawValue:)),
-                live: $0.live ?? !["completed", "partially_completed", "failed", "cancelled"].contains($0.state),
+                live: $0.live ?? !NativeResearchRunSummary.terminalStates.contains($0.state),
                 assistantMessageID: $0.assistantMessageId,
-                createdAt: $0.createdAt.flatMap(parseDate)
+                createdAt: $0.createdAt.flatMap(parseDate),
+                title: $0.title.flatMap { $0.isEmpty ? nil : $0 } ?? $0.goal.flatMap { $0.isEmpty ? nil : $0 }
             )
         }
     }
@@ -871,6 +886,11 @@ public struct NativeResearchRunSummary: Equatable, Sendable {
     public let live: Bool
     public let assistantMessageID: String?
     public let createdAt: Date?
+    /// The run's title, else its goal: what a "ready" notification names.
+    public var title: String? = nil
+
+    /// The states a run ends in.
+    public static let terminalStates: Set<String> = ["completed", "partially_completed", "failed", "cancelled"]
 }
 
 extension NativeResearchRun {
@@ -895,6 +915,8 @@ private struct ResearchRunListWire: Decodable {
         let live: Bool?
         let assistantMessageId: String?
         let createdAt: String?
+        let title: String?
+        let goal: String?
     }
 
     let runs: LossyList<Row>

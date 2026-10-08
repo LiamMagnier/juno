@@ -758,6 +758,26 @@ private struct JunoMobileConversationDetail: View {
     model.researchRuns(for: conversation.id).filter { !$0.phase.isTerminal }.map(\.id).joined(separator: ",")
   }
 
+  /// Opens the report a tapped notification named, when it belongs to this
+  /// chat: from its completion message (sources and citation check) when
+  /// this phone has it, else from the run's own report.
+  private func openPendingReport() async {
+    let requests = JunoMobileLaunchRequests.shared
+    guard let runID = requests.pendingReportRunID,
+      let run = await model.loadResearchRun(id: runID),
+      run.conversationID == conversation.id
+    else { return }
+    requests.pendingReportRunID = nil
+    if let messageID = run.assistantMessageID,
+      let message = model.messagesByConversation[conversation.id]?.first(where: { $0.id == messageID }),
+      let report = NativeResearchReport(message: message, question: run.goal)
+    {
+      reportRoute = JunoMobileReportRoute(report: report)
+    } else if let report = NativeResearchReport(run: run) {
+      reportRoute = JunoMobileReportRoute(report: report)
+    }
+  }
+
   private func researchBlock(_ run: NativeResearchRun) -> some View {
     JunoMobileResearchRunBlock(
       run: run,
@@ -1372,6 +1392,11 @@ private struct JunoMobileConversationDetail: View {
       // still working after a relaunch, shows here as it does on the Mac.
       .task(id: "\(conversation.id):\(openResearchKey)") {
         await model.followResearch(conversationID: conversation.id)
+      }
+      // "Your research is ready" was tapped: its report, once its chat is
+      // the one on screen.
+      .task(id: "\(conversation.id):\(JunoMobileLaunchRequests.shared.pendingReportRunID ?? "")") {
+        await openPendingReport()
       }
   }
 

@@ -1192,11 +1192,17 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         workStarts[start.conversationID ?? conversationID] = start
     }
 
+    /// Told when a chat hands a turn off to a research run, so the app's
+    /// completion watcher reads closely from now on and can ask for
+    /// notification permission at the moment its reason is obvious.
+    @ObservationIgnored public var onResearchHandoff: (@MainActor (_ runID: String) -> Void)?
+
     private func adoptResearchHandoff(
         _ handoff: NativeResearchHandoff,
         conversationID: String,
         userMessageID: String?
     ) {
+        defer { onResearchHandoff?(handoff.runID) }
         upsertResearchRun(
             NativeResearchRun(
                 id: handoff.runID,
@@ -1243,6 +1249,83 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
             }
             try? await Task.sleep(for: .seconds(working ? 2.5 : 8))
         }
+    }
+
+    // MARK: Research completions
+
+    /// Where the runs this device saw working are remembered between
+    /// launches, per account.
+    private func researchWatchKey(_ accountID: AccountID) -> String {
+        "juno.research.seenLive.\(accountID.rawValue)"
+    }
+
+    @ObservationIgnored private var researchWatchInFlight = false
+
+    /// Whether the last completion pass left runs this device saw working
+    /// still unfinished: a watcher reads often while true, rarely while not.
+    @ObservationIgnored public private(set) var researchRunsWatched = false
+
+    /// One pass of the research completion watcher: reads the account's live
+    /// runs (`GET /api/research?live=1`), and returns each run this device
+    /// saw working that has since finished — while it was in another
+    /// conversation, in the background, or not running at all (the runs seen
+    /// working are kept in `defaults`, so a relaunch still notices). A run
+    /// that fell out of the ten-minute list is read on its own. Conversations
+    /// a finished run belongs to are refreshed so the report message is
+    /// there when the reader looks. Empty while signed out, offline, or when
+    /// a pass is already running.
+    public func checkResearchCompletions(defaults: UserDefaults = .standard) async -> [NativeResearchCompletion] {
+        guard let chatClient, let accountID, !researchWatchInFlight else { return [] }
+        researchWatchInFlight = true
+        defer { researchWatchInFlight = false }
+        let key = researchWatchKey(accountID)
+        var watch = NativeResearchCompletionWatch(seenLive: Set(defaults.stringArray(forKey: key) ?? []))
+        // Runs this device is already following as live — a hand-off a
+        // moment ago — count even if they finish before this read.
+        watch.noteLive(
+            researchRunsByConversation.values.joined().filter { !$0.phase.isTerminal }.map(\.id)
+        )
+        guard let runs = try? await chatClient.liveResearchRuns(for: accountID),
+            self.accountID == accountID
+        else {
+            defaults.set(watch.seenLive.sorted(), forKey: key)
+            researchRunsWatched = !watch.seenLive.isEmpty
+            return []
+        }
+        let outcome = watch.apply(runs)
+        var finished = outcome.finished
+        for runID in outcome.missing {
+            do {
+                let run = try await chatClient.researchRun(id: runID, for: accountID)
+                if let completion = watch.settle(run) { finished.append(completion) }
+            } catch let error as NativeChatAPIError {
+                // Gone, or not this account's: nothing to announce. A
+                // network failure keeps it watched for the next pass.
+                if case .server(let status, _, _, _) = error, status == 404 || status == 403 {
+                    watch.forget(runID)
+                }
+            } catch {
+                continue
+            }
+        }
+        guard self.accountID == accountID else { return [] }
+        defaults.set(watch.seenLive.sorted(), forKey: key)
+        researchRunsWatched = !watch.seenLive.isEmpty
+        for conversationID in Set(finished.compactMap(\.conversationID)) {
+            if let run = finished.first(where: { $0.conversationID == conversationID }) {
+                await refreshResearchRun(id: run.runID, conversationID: conversationID)
+            }
+        }
+        if !finished.isEmpty { await syncModel.refresh() }
+        return finished
+    }
+
+    /// The conversation a run belongs to, read from the run when it is not
+    /// one this device follows — what a "your research is ready"
+    /// notification opens. Nil when the run cannot be read.
+    public func researchConversationID(runID: String) async -> String? {
+        if let known = researchRun(id: runID)?.conversationID { return known }
+        return await loadResearchRun(id: runID)?.conversationID
     }
 
     /// The conversation's runs from the server's list: live ones are

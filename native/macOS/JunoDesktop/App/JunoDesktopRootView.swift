@@ -272,6 +272,12 @@ struct JunoDesktopRootView: View {
         configuration.notificationsModel?.start(for: accountID)
         Task {
             await configuration.conversationModel?.start(for: accountID)
+            // Research runs are background jobs: notice the ones that finish
+            // while the reader is elsewhere, or finished while Juno was quit.
+            configuration.conversationModel?.onResearchHandoff = { _ in
+                DesktopResearchCompletions.shared.noteResearchStarted()
+            }
+            DesktopResearchCompletions.shared.start(model: configuration.conversationModel)
             await configuration.projectModel?.start(for: accountID)
             // After the projects, and given their ids: the workspace store reports
             // configurations whose project is missing so a screen can say so, and
@@ -441,6 +447,8 @@ struct JunoDesktopRootView: View {
         configuration.agentsModel?.onNeedsYouRise = nil
         // Clears the Dock badge and the menu-bar extra's list with the account.
         DesktopNeedsYouSignals.shared.stop()
+        DesktopResearchCompletions.shared.stop()
+        configuration.conversationModel?.onResearchHandoff = nil
         configuration.notificationsModel?.stop()
         configuration.notificationsModel?.onFailure = nil
         configuration.memoryPageModel?.stop()

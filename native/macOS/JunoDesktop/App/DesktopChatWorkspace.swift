@@ -1080,6 +1080,14 @@ struct DesktopChatWorkspace: View {
             Task { await openThread(id) }
         case .workSession(let id):
             Task { await openWorkSession(id) }
+        case .research(let id):
+            // "Your research is ready": the report in its own window, and the
+            // chat it belongs to behind it, where its report card now is.
+            openWindow(id: JunoDesktopWindow.researchReportID, value: id)
+            Task {
+                guard let conversationID = await model.researchConversationID(runID: id) else { return }
+                await openThread(conversationID)
+            }
         }
     }
 

@@ -312,6 +312,9 @@ struct JunoMobileRootView: View {
         connectProjectAssistantHooks()
         syncModel?.start(for: session.profile.id)
         Task { await conversationModel?.start(for: session.profile.id) }
+        // Research runs are background jobs: notice the ones that finish
+        // while the phone is elsewhere, or finished while the app was closed.
+        JunoMobileResearchNotifications.shared.attach(conversationModel)
         Task { await projectModel?.start(for: session.profile.id) }
         Task {
           await projectWorkspaceModel?.start(for: session.profile.id)
@@ -367,6 +370,7 @@ struct JunoMobileRootView: View {
           }
         #endif
       } else {
+        JunoMobileResearchNotifications.shared.attach(nil)
         syncModel?.stop()
         attachmentModel?.stop()
         conversationModel?.stop()
@@ -720,6 +724,18 @@ struct JunoMobileRootView: View {
     case .openWorkSession(let id):
       showingSettings = false
       openWorkSession(id)
+    case .openResearch(let runID):
+      showingSettings = false
+      // "Your research is ready": the run's chat, with its report open over
+      // it (the conversation presents it once it is on screen).
+      launchRequests.pendingReportRunID = runID
+      Task {
+        guard let conversationID = await conversationModel?.researchConversationID(runID: runID) else {
+          launchRequests.pendingReportRunID = nil
+          return
+        }
+        openAgentThread(conversationID)
+      }
     case .openRemoteSession(let deviceID, let sessionID):
       showingSettings = false
       show(.code)

@@ -28,12 +28,19 @@ final class JunoMobileLaunchRequests {
     case openAgent(String)
     /// A Work task's thread, from a push or a link.
     case openWorkSession(String)
+    /// A research run's report, from "your research is ready".
+    case openResearch(String)
     case openRemoteSession(deviceID: String, sessionID: String)
     case respondToRemoteApproval(deviceID: String, sessionID: String, requestID: String, approved: Bool)
   }
 
   /// The request waiting to be acted on. Cleared by whoever handles it.
   var pending: Request?
+
+  /// A research run whose report should open once its conversation is on
+  /// screen (``Request/openResearch(_:)``). Cleared by the conversation that
+  /// presents it.
+  var pendingReportRunID: String?
 
   private init() {}
 
@@ -89,6 +96,7 @@ final class JunoMobileLaunchRequests {
     case .agent(let id): .openAgent(id)
     case .conversation(let id): .openConversation(id)
     case .workSession(let id): .openWorkSession(id)
+    case .research(let id): .openResearch(id)
     }
   }
 

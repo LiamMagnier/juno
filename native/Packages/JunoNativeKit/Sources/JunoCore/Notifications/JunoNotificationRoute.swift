@@ -3,7 +3,8 @@ import Foundation
 /// Where a notification opens, as something an app can navigate to.
 ///
 /// The server stores and pushes one relative path per notification
-/// (`src/lib/notify/paths.ts`): `/agents/<id>`, `/chat/<id>` or `/work/<id>`.
+/// (`src/lib/notify/paths.ts`): `/agents/<id>`, `/chat/<id>`, `/work/<id>`
+/// or `/research/<id>` (a research run's "your report is ready").
 /// A push also carries the ids it was built from as flat string keys beside
 /// `aps` (`agentId`, `conversationId`, `sessionId`), so a payload whose path
 /// this build cannot read still lands somewhere sensible.
@@ -12,12 +13,18 @@ import Foundation
 /// app, and whatever comes out of here selects a screen and names a record to
 /// load, so only the three shapes the server writes are accepted, and every
 /// identifier is checked the way `NativeAgentsClient` checks the ids it puts
-/// in a URL path. Nothing here decides anything: a route opens a screen, and
+/// in a URL path.
+///
+/// `research` names a run, not where it lives: the app reads the run to find
+/// its conversation and opens the report. A build without it fell back to the
+/// push's `conversationId`, which the server still sends beside the path. Nothing here decides anything: a route opens a screen, and
 /// what happens on that screen is still the person's choice.
 public enum JunoNotificationRoute: Equatable, Sendable {
     case agent(id: String)
     case conversation(id: String)
     case workSession(id: String)
+    /// A research run (`/research/<id>`): open its report.
+    case research(id: String)
 
     /// The longest identifier accepted, matching the native clients' own limit.
     public static let maximumIdentifierLength = 200
@@ -27,7 +34,7 @@ public enum JunoNotificationRoute: Equatable, Sendable {
 
     /// Reads a stored or pushed path. The query and fragment carry nothing a
     /// route needs and are ignored; anything that is not exactly one of the
-    /// three shapes is nil.
+    /// four shapes is nil.
     public init?(path: String) {
         let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.utf8.count <= Self.maximumPathLength,
@@ -50,6 +57,7 @@ public enum JunoNotificationRoute: Equatable, Sendable {
         case "agents": self = .agent(id: identifier)
         case "chat": self = .conversation(id: identifier)
         case "work": self = .workSession(id: identifier)
+        case "research": self = .research(id: identifier)
         default: return nil
         }
     }
@@ -93,6 +101,7 @@ public enum JunoNotificationRoute: Equatable, Sendable {
         case .agent(let id): "/agents/\(id)"
         case .conversation(let id): "/chat/\(id)"
         case .workSession(let id): "/work/\(id)"
+        case .research(let id): "/research/\(id)"
         }
     }
 

@@ -149,7 +149,12 @@ struct JunoMobileApp: App {
             // Ask for a background check when the app goes away, so an
             // approval that lands while the phone is in a pocket still
             // reaches it.
-            if phase == .background { JunoMobileCodeNotifications.shared.scheduleRefresh() }
+            if phase == .background {
+                JunoMobileCodeNotifications.shared.scheduleRefresh()
+                // A research run this phone saw is still working: check back
+                // while it is away, so "your research is ready" reaches it.
+                JunoMobileResearchNotifications.shared.scheduleRefresh()
+            }
         }
     }
 
@@ -390,6 +395,7 @@ final class JunoMobileAppDelegate: NSObject, UIApplicationDelegate, UNUserNotifi
     ) -> Bool {
         UNUserNotificationCenter.current().delegate = self
         JunoMobileCodeNotifications.shared.registerBackgroundTask()
+        JunoMobileResearchNotifications.shared.registerBackgroundTask()
         // Every launch, as Apple asks: the token can change, and asking never
         // prompts. Whether a push may show is a separate question, asked at
         // sign-in (quietly) and in context (for banners).
