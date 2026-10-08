@@ -2,6 +2,7 @@
  * Research engine stage — scheduler: delegations, the lead's round review, worker tool binding, and parallel worker rounds under the per-host gate.
  * Moved verbatim out of createResearchEngine (engine.ts).
  */
+import { isPrivateSourceUrl } from "@/lib/research/private-sources";
 import {
   CHUNK_PREVIEW_CHARS,
   type ReviewRoundInput,
@@ -96,7 +97,7 @@ export function vectorBrief(objective: Pick<ResearchObjective, "vector">): strin
 }
 
 export function createWorkerStage(ctx: EngineContext) {
-  const { deps, store, heartbeatMs, beat, append, fetchPage, markSyndicatedCopies, affordable, affordableCount, writerReserve, applySteering, bill, windowSpent } = ctx;
+  const { deps, store, heartbeatMs, beat, append, fetchPage, markSyndicatedCopies, affordable, affordableCount, writerReserve, applySteering, bill, windowSpent, webSearch } = ctx;
   const initialDelegations = (plan: ResearchPlan, workers: number): ResearchDelegation[] => {
     const objectives = plan.objectives.length ? plan.objectives : buildResearchObjectives("", plan.queries);
     const ranked = [...objectives].sort((a, b) => b.importance - a.importance);
@@ -302,7 +303,23 @@ export function createWorkerStage(ctx: EngineContext) {
           await tick("search", query, startedAt, false);
           return { result: { hits: [], note: "The run's budget cannot pay for another search." }, stop: "budget" };
         }
-        const result = await deps.search({ userId: run.userId, query, count: shared.resultsPerQuery, signal });
+        // Through the context's guard: the web may be off for this run, and a
+        // query that quotes the person's own files or mail never leaves.
+        const searched = await webSearch(run, query, shared.resultsPerQuery, signal);
+        if (!searched.ok) {
+          await tick("search", query, startedAt, false);
+          return {
+            result: {
+              hits: [],
+              note:
+                searched.reason === "web_off"
+                  ? "Web search is switched off for this run: work from the person's own sources already in the corpus (open_page on their https://private.invalid/ addresses)."
+                  : "Not run: the query repeated details from the person's own sources, which never go to a web search engine. Search for the public facts only, in general terms.",
+            },
+            stop: await stopAfter(),
+          };
+        }
+        const result = searched.result;
         await bill(run, result.costMicroUsd, "search");
         // On the round's shared list, not written to the plan here: workers run
         // in parallel and a read-modify-write of the plan JSON from each call
@@ -310,7 +327,7 @@ export function createWorkerStage(ctx: EngineContext) {
         // round, which is what lets the gap expander see what the team tried.
         shared.queries.push(query);
         await append(run.id, run.userId, [
-          { kind: "query_issued", payload: { query, results: result.hits.length, workerId, round, ...(result.engines?.length ? { engines: result.engines } : {}) } },
+          { kind: "query_issued", payload: { query: searched.sent, results: result.hits.length, workerId, round, ...(searched.sanitised ? { sanitised: true } : {}), ...(result.engines?.length ? { engines: result.engines } : {}) } },
         ]);
         // What the run already holds, by URL and text length only: this map
         // marks results the run has read, and loading every snapshot to build
@@ -354,6 +371,13 @@ export function createWorkerStage(ctx: EngineContext) {
       async openPage(url) {
         const startedAt = Date.now();
         const existing = await sourceByUrl(url);
+        // The person's own sources are already read in full; there is nothing to fetch.
+        if (isPrivateSourceUrl(url)) {
+          await tick("open_page", url, startedAt, !!existing?.snapshot);
+          return existing?.snapshot
+            ? { result: digestOf(existing, true), stop: await stopAfter() }
+            : { result: { ok: false, url, reason: "that private source is not in this run's corpus" }, stop: await stopAfter() };
+        }
         if (existing?.snapshot && existing.snapshot.length >= 2_000) {
           await tick("open_page", url, startedAt, true);
           return { result: digestOf(existing, true), stop: await stopAfter() };

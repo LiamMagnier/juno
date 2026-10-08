@@ -14,6 +14,7 @@
  * beside it as argument nodes (§10.1).
  */
 
+import { PRIVATE_SOURCE_LABEL, parsePrivateSourceUrl } from "@/lib/research/private-sources";
 import { RESEARCH_COPY, phrase, sourcesCount } from "@/components/research/copy";
 import type { ResearchRunView, ResearchSourceView } from "@/components/research/use-research-run";
 import type { ResearchEventDTO } from "@/lib/research/domain";
@@ -204,6 +205,8 @@ function int(payload: Record<string, unknown>, key: string): number | null {
 }
 
 function hostOf(url: string): string {
+  const own = parsePrivateSourceUrl(url);
+  if (own) return PRIVATE_SOURCE_LABEL[own.kind];
   try {
     return new URL(url).hostname.replace(/^www\./, "");
   } catch {
@@ -222,6 +225,7 @@ const one = (text: string): PhraseLine => [phrase(text)];
 export function activityLines(events: readonly ResearchEventDTO[], max = MAX_ACTIVITY_LINES): ActivityLine[] {
   const out: ActivityLine[] = [];
   const roundsStarted = new Set<number>();
+  const ownKinds = new Set<string>();
   const push = (event: ResearchEventDTO, line: PhraseLine, tone: ActivityLine["tone"] = "default") => {
     out.push({ key: event.id, seq: event.seq, at: event.createdAt, line, tone });
   };
@@ -257,6 +261,11 @@ export function activityLines(events: readonly ResearchEventDTO[], max = MAX_ACT
         push(event, one(RESEARCH_COPY.activity.anotherRound));
         break;
       case "query_issued": {
+        // A web search withheld because it repeated the person's own data.
+        if (str(p, "withheld") === "private") {
+          push(event, one(RESEARCH_COPY.activity.keptPrivate));
+          break;
+        }
         const query = str(p, "query");
         // A worker's queries arrive again as its tool calls below; count each once.
         if (!query || str(p, "workerId")) break;
@@ -276,6 +285,15 @@ export function activityLines(events: readonly ResearchEventDTO[], max = MAX_ACT
         break;
       }
       case "source_read": {
+        // The person's own sources: one line per kind, the first time it is read.
+        const ownKind = str(p, "private");
+        if (ownKind) {
+          if (ownKinds.has(ownKind)) break;
+          ownKinds.add(ownKind);
+          const label = PRIVATE_SOURCE_LABEL[ownKind as keyof typeof PRIVATE_SOURCE_LABEL];
+          push(event, label ? [{ parts: [{ phrase: RESEARCH_COPY.activity.searchedOwn }, { kind: "domain", value: label }] }] : one(RESEARCH_COPY.activity.searchedOwn));
+          break;
+        }
         // Ranked reads resolve inside the searches above; a pinned read has no search.
         if (p.pinned !== true) break;
         const host = hostOf(str(p, "url"));

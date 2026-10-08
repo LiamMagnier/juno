@@ -14,6 +14,7 @@
  * transaction. `completion.ts` binds the port to Prisma.
  */
 
+import { isPrivateSourceUrl } from "@/lib/research/private-sources";
 import type { ParsedArtifact } from "@/lib/message-content";
 import { bottomLineOf, citationOrder, renumberCitations, stripModelSources } from "@/lib/research/report-structure";
 import type { ClientActivityEvent, ClientSource } from "@/types/chat";
@@ -122,7 +123,10 @@ export function orderCompletionSources(input: {
   const toClient = (row: CorpusSource, cited: boolean): ClientSource => ({
     title: row.title.replace(/\s+/g, " ").trim() || row.url,
     url: row.url,
-    snippet: (row.snapshot ?? "").replace(/\s+/g, " ").trim().slice(0, SNIPPET_CHARS),
+    // The person's own mail, files and events stay out of the message's
+    // source list: a message can be shared, and the title already says what
+    // the record is. The report cites it; the snippet would quote it.
+    snippet: isPrivateSourceUrl(row.url) ? "" : (row.snapshot ?? "").replace(/\s+/g, " ").trim().slice(0, SNIPPET_CHARS),
     cited,
     origin: "research",
   });

@@ -109,7 +109,8 @@ export const CITATION_RULES = `# Citation & Accuracy Rules:
 - Source hierarchy: each source below is labelled with its kind, domain and date. Cite the primary record (documentation, pricing page, changelog, filing, repository, benchmark) for every figure it carries; never cite an aggregator, affiliate roundup or sponsored list for a figure a primary record states, and say so when only an aggregator carries one.
 - State every figure exactly as the source does — number, unit, tier, version — with the date it applies from when the source gives one.
 - Do not treat absent evidence as evidence of absence. Failed fetches and unavailable sources remain limitations.
-- Keep the report proportionate to the question. Do not pad it to appear exhaustive.`;
+- Keep the report proportionate to the question. Do not pad it to appear exhaustive.
+- Sources labelled PRIVATE are the person's own files, mail, calendar, notes or memories, read with their permission. Cite them like any source, and mark every sentence that rests on one with "(your sources)" after its citation, so the reader can tell their own data from the public record. Quote from them only what the question needs; never reproduce whole messages or documents. When the public record and their own sources disagree, say so.`;
 
 /** The constraints block: the user's own instructions, for the whole report. */
 export function constraintsBlock(constraints: readonly string[]): string {

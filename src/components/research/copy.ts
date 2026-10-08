@@ -185,6 +185,8 @@ export const RESEARCH_COPY = {
     drafted: "Draft report written",
     checkedCitations: "Checked citations",
     stopped: "Research stopped",
+    searchedOwn: "Searched your sources",
+    keptPrivate: "Kept a search private",
   },
 
   /** The Sources tab and the report's sources section. */
@@ -195,6 +197,26 @@ export const RESEARCH_COPY = {
     readNotCited: "Read, not cited",
     noneYet: "No sources yet",
     noneRead: "No sources were read",
+    yours: "Your sources",
+  },
+
+  /**
+   * The person's own sources at the gate and in the report (Deep Research's
+   * own sources): which ones a run reads, and how they are marked.
+   */
+  own: {
+    readsFrom: "Reads from",
+    web: "Web",
+    file: "This chat's files",
+    project: "Project",
+    library: "Library",
+    memory: "Memories",
+    calendar: "Calendar",
+    mail: "Mail",
+    connector: "Connected app",
+    keepOne: "Keep at least one source on.",
+    privacyNote: "Your own sources are searched inside your account. Nothing from them is sent to web search.",
+    fromYours: "From your sources",
   },
 
   /** The Plan tab. */

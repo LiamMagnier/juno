@@ -2,6 +2,7 @@
  * Research engine stage — planner: clarify the goal, size the run (envelope), and plan it (structured or legacy).
  * Moved verbatim out of createResearchEngine (engine.ts).
  */
+import { enabledOptions, privateOptionName } from "@/lib/research/private-sources";
 import { CLARIFY_ESTIMATE_MICRO_USD, PLAN_ESTIMATE_MICRO_USD } from "./limits";
 import {
   DEFAULT_RESEARCH_EFFORT,
@@ -197,6 +198,7 @@ export function createPlanningStage(ctx: EngineContext) {
             context: plan.context ?? null,
             constraints: plan.constraints,
             pinnedSources: plan.pinnedSources,
+            privateSources: enabledOptions(plan.sources).map(privateOptionName),
             dateLine,
             languageName: plan.language ? languageName(plan.language) : null,
             leadModel: plan.envelope?.leadModel ?? null,

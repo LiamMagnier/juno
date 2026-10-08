@@ -1,4 +1,5 @@
 import Foundation
+import JunoDesignSystem
 
 /// A finished research report, ready to read — one model for both ways a
 /// report reaches a native app, so the Mac window and the phone's reader draw
@@ -172,7 +173,7 @@ public struct NativeResearchReport: Equatable, Sendable, Identifiable {
         guard !sources.isEmpty else { return text + "\n" }
         let day = accessed.formatted(.iso8601.year().month().day())
         let list = sources.enumerated().map { index, source in
-            "[\(index + 1)] \(Self.displayTitle(source)) \u{2014} \(source.url.absoluteString) (accessed \(day))"
+            "[\(index + 1)] \(Self.displayTitle(source)) \u{2014} \(NativePrivateSourceKind.of(source.url)?.label ?? source.url.absoluteString) (accessed \(day))"
         }
         return text + "\n\n## Sources\n\n" + list.joined(separator: "\n\n") + "\n"
     }
@@ -201,8 +202,10 @@ public struct NativeResearchReport: Equatable, Sendable, Identifiable {
         return slug + "." + ext
     }
 
-    /// The bare host, without the `www.` that carries no information.
+    /// The bare host, without the `www.` that carries no information. One of
+    /// the person's own sources says whose and what kind instead.
     public static func host(_ url: URL) -> String {
+        if let own = NativePrivateSourceKind.of(url) { return own.label }
         guard let host = url.host() else { return url.absoluteString }
         return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
     }
@@ -301,4 +304,49 @@ public struct NativeResearchReport: Equatable, Sendable, Identifiable {
 
 private extension String {
     var nilIfEmpty: String? { isEmpty ? nil : self }
+}
+
+
+/// One of the person's own sources in a Deep Research report — a file in the
+/// chat, the project, the library, a memory, a calendar event, an email or a
+/// connected app — addressed on the reserved host `private.invalid`
+/// (`src/lib/research/private-sources.ts`). Never a link and never a favicon
+/// request: the address goes nowhere by design.
+public enum NativePrivateSourceKind: String, CaseIterable, Sendable {
+    case file, project, library, memory, calendar, mail, connector
+
+    public static let host = "private.invalid"
+
+    /// The kind behind a private source's URL, or nil for a web source. A kind
+    /// this build does not know yet reads as a connected app.
+    public static func of(_ url: URL) -> NativePrivateSourceKind? {
+        guard url.scheme?.lowercased() == "https", url.host()?.lowercased() == host else { return nil }
+        let first = url.pathComponents.first { $0 != "/" } ?? ""
+        return NativePrivateSourceKind(rawValue: first.lowercased()) ?? .connector
+    }
+
+    /// What a source row shows where a web source shows its domain.
+    public var label: String {
+        switch self {
+        case .file: "Your files"
+        case .project: "Your project"
+        case .library: "Your library"
+        case .memory: "Your memories"
+        case .calendar: "Your calendar"
+        case .mail: "Your mail"
+        case .connector: "Your apps"
+        }
+    }
+
+    public var icon: JunoIcon {
+        switch self {
+        case .file: .file
+        case .project: .projects
+        case .library: .library
+        case .memory: .memory
+        case .calendar: .calendarCheck
+        case .mail: .conversation
+        case .connector: .connections
+        }
+    }
 }

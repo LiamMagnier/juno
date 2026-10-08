@@ -25,6 +25,7 @@ import type {
   WorkerResult,
 } from "@/lib/research/agents/protocol";
 import type { ResearchSourceType } from "@/lib/research/claim-analysis";
+import type { PrivateSourceKind, PrivateSourceOption, ResearchSourceSelection } from "@/lib/research/private-sources";
 
 // ---------------------------------------------------------------------------
 // Rows the engine works with
@@ -340,6 +341,8 @@ export function pageSkipMessage(page: ResearchPageSkipped): string {
       return "The page needs a browser to render and this build has none.";
     case "aborted":
       return "The fetch was stopped before the page arrived.";
+    case "private_source":
+      return "That is one of your own sources; it is read from your account, never fetched.";
     default:
       return "Could not be read.";
   }
@@ -377,8 +380,47 @@ export function permanentSkip(page: ResearchPageSkipped): boolean {
   }
 }
 
+/**
+ * One passage from the person's own sources, ready to store as a source row.
+ * `url` is a `https://private.invalid/` address (private-sources.ts); `title` is what it is
+ * cited by (file and page, subject and date, event and date).
+ */
+export interface PrivateResearchHit {
+  url: string;
+  title: string;
+  text: string;
+  kind: PrivateSourceKind;
+  /** The option it came from (`PrivateSourceOption.key`). */
+  optionKey: string;
+  /** The record's own date: when the mail was sent, when the event is, when the file was indexed. */
+  publishedAt?: Date | null;
+}
+
 export interface ResearchDeps {
   store: ResearchStore;
+  /**
+   * The person's own sources this run could read, offered at the gate.
+   * Optional: without it a run reads the web only, exactly as before. Called
+   * once, at start; a failure offers nothing rather than failing the start.
+   */
+  privateSourceOptions?(input: { userId: string; conversationId: string | null }): Promise<PrivateSourceOption[]>;
+  /**
+   * Searches the ENABLED private sources for the run's questions. Never
+   * called with a selection that enables nothing, and never handed a key the
+   * run did not offer (the engine intersects). Read-only by contract: the
+   * implementation may only call read tools, unattended, so an action that
+   * would need approval is refused rather than asked for.
+   */
+  searchPrivate?(input: {
+    userId: string;
+    runId: string;
+    conversationId: string | null;
+    options: PrivateSourceOption[];
+    questions: string[];
+    selection: ResearchSourceSelection;
+    timeZone?: string | null;
+    signal?: AbortSignal;
+  }): Promise<{ hits: PrivateResearchHit[]; skipped: Array<{ key: string; reason: string }> }>;
   /**
    * Reads the goal back and asks what it does not say. OPTIONAL: a deployment
    * with no clarifier, or a goal that needs nothing, skips straight to
@@ -507,6 +549,8 @@ export interface ResearchDeps {
     context?: string | null;
     constraints: string[];
     pinnedSources: string[];
+    /** The person's own sources switched on for this run, by name, so vectors can target them. */
+    privateSources?: string[];
     /** `plan.today`. */
     dateLine: string;
     /** The explicit content language, as a name ("French"), when there is one. */
@@ -739,6 +783,8 @@ export interface ResearchEngine {
     questions?: Array<{ id?: string; question: string }>;
     /** Answers to the planner's optional questions, by id. */
     answers?: Record<string, string>;
+    /** The sources the reader left switched on at the gate. Only offered keys apply. */
+    sources?: { web?: boolean; enabled?: string[] };
   }): Promise<ControlResult>;
   /**
    * Runs the planner again with the reader's edits, for a `revise` decision

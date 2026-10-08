@@ -1,5 +1,6 @@
 "use client";
 
+import type { PrivateSourceOption } from "@/lib/research/private-sources";
 import * as React from "react";
 import {
   EMPTY_SNAPSHOT,
@@ -171,6 +172,8 @@ export interface ResearchRunView extends ResearchRunViewAdditions {
     followUpRound?: number;
     /** The tier the run was started at, for the plan gate to state what it is asking approval for. */
     effort?: ResearchEffort | null;
+    /** What the run reads: the web and the person's own sources, offered and switched on. */
+    sources?: { web: boolean; enabled: string[]; options: PrivateSourceOption[] };
   };
   auditSummary?: {
     claims: number;

@@ -1,4 +1,5 @@
 import "server-only";
+import { isPrivateSourceUrl } from "@/lib/research/private-sources";
 import OpenAI from "openai";
 import { getAnthropic } from "@/lib/anthropic";
 import type { Plan } from "@prisma/client";
@@ -217,6 +218,8 @@ Only tool calls move the work forward. Do not write an essay; the lead only read
 
 function workerUserMessage(input: RunWorkerInput): string {
   const { brief } = input;
+  const ownSources = brief.visited.filter((url) => isPrivateSourceUrl(url));
+  const webVisited = brief.visited.filter((url) => !isPrivateSourceUrl(url));
   const lines = [
     ...(brief.today ? [brief.today] : []),
     `Research goal: ${truncate(brief.goal, 800)}`,
@@ -228,8 +231,14 @@ function workerUserMessage(input: RunWorkerInput): string {
     "",
     brief.delegation.boundaries ? `Leave to other workers:\n${brief.delegation.boundaries}\n` : "",
     brief.constraints.length ? `Constraints from the user:\n${brief.constraints.map((c) => `- ${c}`).join("\n")}\n` : "",
-    brief.visited.length
-      ? `Pages the run has already read (open only if you need a specific figure):\n${brief.visited.slice(0, 40).map((url) => `- ${url}`).join("\n")}\n`
+    // The person's own sources first, with the rule that keeps them private:
+    // the engine strips their details from every web query anyway, but a
+    // worker that knows the rule does not waste calls on refused searches.
+    ownSources.length
+      ? `The person's own sources (private: their files, project, library, memory or connected apps). Open one with open_page by its private.invalid address and cite it with note_finding like any page. Never put a name, figure, subject or phrase from them into a search query — searches go to a public engine; search only for the public facts:\n${ownSources.slice(0, 24).map((url) => `- ${url}`).join("\n")}\n`
+      : "",
+    webVisited.length
+      ? `Pages the run has already read (open only if you need a specific figure):\n${webVisited.slice(0, 40).map((url) => `- ${url}`).join("\n")}\n`
       : "",
     // The team's recent searches, so a worker goes somewhere the run has not
     // already been rather than paying to see the same page of results again.

@@ -43,6 +43,7 @@ import {
   todayLine,
 } from "@/lib/research/planner";
 import type { ResearchScope } from "@/types/research";
+import { applySourceChoice, defaultSourceSelection, enabledOptions, privateOptionName, type PrivateSourceOption } from "@/lib/research/private-sources";
 import { createEngineContext } from "@/lib/research/stages/context";
 import { createPlanningStage } from "@/lib/research/stages/planning";
 import { createWorkerStage } from "@/lib/research/stages/workers";
@@ -148,8 +149,8 @@ export function createResearchEngine(deps: ResearchDeps): ResearchEngine {
   const { store, append, advance, finish, stopForBudget, bill } = ctx;
   const { doClarifying, legacyEstimateCaps, frozenWith, sizeFor, isRefusal, doPlanning, doStructuredPlanning } = createPlanningStage(ctx);
   const { doWorkerRounds } = createWorkerStage(ctx);
-  const { doSearching, doBrowsing, doReading } = createCorpusStage(ctx, { doWorkerRounds });
-  const { doCoverage, doInvestigating } = createCoverageStage(ctx, { doSearching, doBrowsing, doReading });
+  const { doPrivateSources, doSearching, doBrowsing, doReading } = createCorpusStage(ctx, { doWorkerRounds });
+  const { doCoverage, doInvestigating } = createCoverageStage(ctx, { doPrivateSources, doSearching, doBrowsing, doReading });
   const { doSynthesis, deliverDigest } = createSynthesisStage(ctx);
   const { doValidation } = createValidationStage(ctx);
 
@@ -358,6 +359,7 @@ export function createResearchEngine(deps: ResearchDeps): ResearchEngine {
       queries?: string[];
       constraints?: string[];
       pinnedSources?: string[];
+      sources?: { web?: boolean; enabled?: string[] };
       now: Date;
     }
   ): Promise<ControlResult> => {
@@ -409,6 +411,7 @@ export function createResearchEngine(deps: ResearchDeps): ResearchEngine {
       revisingAt: undefined,
       pendingRevision: undefined,
       ...(edited ? { issuedQueries: [], followUpRound: 0, coverage: [], conflicts: [] } : {}),
+      ...(current.sources ? { sources: applySourceChoice(current.sources, edits.sources) } : {}),
     };
     const sized = await sizeFor(run, next, "confirm");
     if (isRefusal(sized)) return { ok: false, state: run.state, reason: "refused", refusal: sized };
@@ -427,6 +430,21 @@ export function createResearchEngine(deps: ResearchDeps): ResearchEngine {
   return {
     async start(input) {
       const createdAt = deps.now();
+      /*
+       * The person's own sources this run can offer (files in this chat, the
+       * project, the library, memory, connectors), with the defaults on.
+       * Asked once, here, so the gate shows what exists and a crafted confirm
+       * can only narrow it. A failure offers nothing: the run reads the web.
+       */
+      let offered: PrivateSourceOption[] = [];
+      if (deps.privateSourceOptions) {
+        try {
+          offered = await deps.privateSourceOptions({ userId: input.userId, conversationId: input.conversationId ?? null });
+        } catch (error) {
+          console.error("[research] private source options failed", { error });
+          offered = [];
+        }
+      }
       const explicitLanguage = input.language?.trim();
       const plan: ResearchPlan = {
         ...EMPTY_PLAN,
@@ -445,6 +463,7 @@ export function createResearchEngine(deps: ResearchDeps): ResearchEngine {
         ...(explicitLanguage && explicitLanguage !== "auto" ? { language: explicitLanguage } : {}),
         ...(input.preferredModel ? { preferredLead: input.preferredModel } : {}),
         ...(input.delivery === "background" ? { delivery: "background" as const } : {}),
+        ...(offered.length ? { sources: defaultSourceSelection(offered) } : {}),
       };
       const created = await store.createRun({
         userId: input.userId,
@@ -561,7 +580,7 @@ export function createResearchEngine(deps: ResearchDeps): ResearchEngine {
       return leave(await store.loadRun(runId, userId));
     },
 
-    async decidePlan({ runId, userId, decision, steps, queries, constraints, pinnedSources, questions, answers }) {
+    async decidePlan({ runId, userId, decision, steps, queries, constraints, pinnedSources, questions, answers, sources }) {
       const run = await store.loadRun(runId, userId);
       if (!run) return { ok: false, state: "", reason: "not_found" };
       if (run.state !== "awaiting_plan_confirmation") {
@@ -598,6 +617,7 @@ export function createResearchEngine(deps: ResearchDeps): ResearchEngine {
         };
         const next = parsePlan({
           ...current,
+          ...(current.sources ? { sources: applySourceChoice(current.sources, sources) } : {}),
           revising: true,
           revisingAt: now.toISOString(),
           revisions: (current.revisions ?? 0) + 1,
@@ -614,7 +634,7 @@ export function createResearchEngine(deps: ResearchDeps): ResearchEngine {
         a.length === b.length && a.every((value, i) => value.trim() === (b[i] ?? "").trim());
 
       if (current.scope || questions || answers) {
-        return confirmScopedPlan(run, current, { questions, answers, steps, queries, constraints, pinnedSources, now });
+        return confirmScopedPlan(run, current, { questions, answers, steps, queries, constraints, pinnedSources, sources, now });
       }
 
       const editedQueries = queries ?? current.queries;
@@ -657,6 +677,7 @@ export function createResearchEngine(deps: ResearchDeps): ResearchEngine {
           : {}),
         constraints: constraints ?? current.constraints,
         pinnedSources: pinnedSources ?? current.pinnedSources,
+        ...(current.sources ? { sources: applySourceChoice(current.sources, sources) } : {}),
         confirmedAt: now.toISOString(),
       });
       const saved = await store.savePlan({ runId, userId, plan: edited });
@@ -688,6 +709,7 @@ export function createResearchEngine(deps: ResearchDeps): ResearchEngine {
           context: plan.context ?? null,
           constraints: plan.constraints,
           pinnedSources: plan.pinnedSources,
+          privateSources: enabledOptions(plan.sources).map(privateOptionName),
           dateLine: plan.today ?? todayLine(run.createdAt, plan.timeZone),
           languageName: plan.language ? languageName(plan.language) : null,
           revision,

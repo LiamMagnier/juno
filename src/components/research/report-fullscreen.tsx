@@ -17,7 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { List, X } from "@/components/ui/icons";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { SourceFavicon } from "@/components/chat/source-chip";
+import { SourceFavicon, isRenderableSourceUrl } from "@/components/chat/source-chip";
 import { Phrase, PhraseWithArgs, formatPhrase, usePhrase } from "@/lib/i18n-phrase";
 import { cn } from "@/lib/utils";
 import { FEATURE_NAMES } from "@/lib/brand/names";
@@ -172,7 +172,7 @@ export function ReportFullscreen({ run, model, open, onOpenChange, printOnOpen }
                     {model.sections.cited.map((row) => (
                       <li key={row.key}>
                         <a
-                          href={row.url}
+                          href={isRenderableSourceUrl(row.url) ? row.url : undefined}
                           target="_blank"
                           rel="noopener noreferrer"
                           aria-current={active === row.cited ? "true" : undefined}

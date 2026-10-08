@@ -25,8 +25,14 @@ import {
   seedDraft,
   setAnswer,
   startRequest,
+  isLastSource,
+  sourceOn,
+  toggleSource,
+  WEB_SOURCE_KEY,
   type ScopeDraft,
 } from "@/components/research/scope-draft";
+import { PrivateSourceIcon } from "@/components/research/private-source-icon";
+import type { PrivateSourceKind } from "@/lib/research/private-sources";
 import { useResearchRun, type ResearchRunView } from "@/components/research/use-research-run";
 import { Button } from "@/components/ui/button";
 import { ChevronRight, Plus, X } from "@/components/ui/icons";
@@ -74,6 +80,18 @@ export interface ScopeCardProps {
   /** In the transcript workspace: reuse the gate without a second surface. */
   embedded?: boolean;
 }
+
+/** The phrase a source switch shows when the option has no name of its own. */
+const OWN_KIND_COPY: Record<PrivateSourceKind | "web", string> = {
+  web: RESEARCH_COPY.own.web,
+  file: RESEARCH_COPY.own.file,
+  project: RESEARCH_COPY.own.project,
+  library: RESEARCH_COPY.own.library,
+  memory: RESEARCH_COPY.own.memory,
+  calendar: RESEARCH_COPY.own.calendar,
+  mail: RESEARCH_COPY.own.mail,
+  connector: RESEARCH_COPY.own.connector,
+};
 
 /** How long the collapse on Start takes before the card unmounts (`.run-collapse`, 220 ms + slack). */
 const COLLAPSE_MS = 260;
@@ -250,6 +268,8 @@ function ScopeCardBody({
   const sourcePlaceholder = usePhrase(RESEARCH_COPY.scope.sourcePlaceholder);
   const groupName = usePhrase(RESEARCH_COPY.scope.groupName);
   const startName = usePhrase(RESEARCH_COPY.scope.startName);
+  const readsFromName = usePhrase(RESEARCH_COPY.own.readsFrom);
+  const keepOneName = usePhrase(RESEARCH_COPY.own.keepOne);
 
   const send = async (path: string, body: Record<string, unknown>) => {
     setError(null);
@@ -419,6 +439,42 @@ function ScopeCardBody({
             <h3 className="rf-annot me-2 text-foreground">
               <Phrase text={RESEARCH_COPY.scope.sources} />
             </h3>
+          </div>
+          {draft.sources && run.plan.sources && (
+            // Own sources: what the run reads, the web and the person's own,
+            // each a switch. The server offered these; the last one on stays on.
+            <div className="space-y-1.5">
+              <div role="group" aria-label={readsFromName} className="flex flex-wrap gap-1.5">
+                {[{ key: WEB_SOURCE_KEY, kind: "web" as const, label: undefined as string | undefined }, ...run.plan.sources.options].map((option) => {
+                  const on = sourceOn(draft, option.key);
+                  const last = isLastSource(draft, option.key);
+                  return (
+                    <Pressable
+                      key={option.key}
+                      kind="chip"
+                      role="switch"
+                      aria-checked={on}
+                      selected={on}
+                      disabled={locked || last}
+                      title={last ? keepOneName : undefined}
+                      data-source-kind={option.kind}
+                      onClick={() => setDraft((d) => toggleSource(d, option.key))}
+                      className="gap-1.5"
+                    >
+                      <PrivateSourceIcon kind={option.kind} className="size-3.5" />
+                      {option.label ? <bdi translate="no">{option.label}</bdi> : <Phrase text={OWN_KIND_COPY[option.kind]} />}
+                    </Pressable>
+                  );
+                })}
+              </div>
+              {draft.sources.enabled.length > 0 && (
+                <p className="text-caption text-muted-foreground">
+                  <Phrase text={RESEARCH_COPY.own.privacyNote} />
+                </p>
+              )}
+            </div>
+          )}
+          <div className="flex flex-wrap items-center gap-1.5">
             {kinds.length > 0 && (
               <span lang={contentLang} className="rf-annot">
                 {kinds.join(" · ")}

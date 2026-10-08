@@ -13,6 +13,22 @@
  */
 
 export const RESEARCH_COPY_DE: Readonly<Record<string, string>> = {
+  "Searched your sources": "Ihre Quellen durchsucht",
+  "Kept a search private": "Eine Suche privat gehalten",
+  "Your sources": "Ihre Quellen",
+  "Reads from": "Liest aus",
+  Web: "Web",
+  "This chat's files": "Dateien in diesem Chat",
+  Project: "Projekt",
+  Library: "Bibliothek",
+  Memories: "Erinnerungen",
+  Calendar: "Kalender",
+  Mail: "Mail",
+  "Connected app": "Verbundene App",
+  "Keep at least one source on.": "Lassen Sie mindestens eine Quelle eingeschaltet.",
+  "Your own sources are searched inside your account. Nothing from them is sent to web search.":
+    "Ihre eigenen Quellen werden in Ihrem Konto durchsucht. Nichts daraus wird an die Websuche gesendet.",
+  "From your sources": "Aus Ihren Quellen",
   "Planned from your question as asked, because the planner was unavailable. Add or reword questions before you start.":
     "Aus Ihrer Frage geplant, wie sie gestellt wurde, weil der Planer nicht verfügbar war. Fügen Sie vor dem Start Fragen hinzu oder formulieren Sie sie um.",
   "A simpler plan, because the planner's full plan was unavailable. Edit the questions before you start if you like.":

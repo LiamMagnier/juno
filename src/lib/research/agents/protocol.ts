@@ -1,4 +1,5 @@
 import { isDisallowedHost } from "@/lib/search/url-safety";
+import { isPrivateSourceUrl, parsePrivateSourceUrl } from "@/lib/research/private-sources";
 import type { ResearchDelegation, ResearchObjective, ResearchRoundReview } from "@/lib/research/domain";
 
 /**
@@ -175,6 +176,11 @@ export const WORKER_TOOLS: readonly WorkerToolDefinition[] = [
 export function validateToolUrl(raw: unknown): { ok: true; url: string } | { ok: false; reason: string } {
   if (typeof raw !== "string") return { ok: false, reason: "url must be a string" };
   const url = raw.trim().slice(0, MAX_URL_ARG_CHARS);
+  // One of the person's own sources, by its address. Never fetched: open_page
+  // serves it from the corpus, and the engine's fetch gate refuses it.
+  if (isPrivateSourceUrl(url)) {
+    return parsePrivateSourceUrl(url) ? { ok: true, url } : { ok: false, reason: "not a valid private source address" };
+  }
   if (!/^https?:\/\//i.test(url)) return { ok: false, reason: "only http(s) URLs can be opened" };
   try {
     new URL(url);

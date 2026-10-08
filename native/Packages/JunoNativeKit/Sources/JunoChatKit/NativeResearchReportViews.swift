@@ -446,7 +446,7 @@ public struct NativeResearchReportSources: View {
                     .foregroundStyle(Color.junoForeground)
                     .lineLimit(printing ? nil : 2)
                     .fixedSize(horizontal: false, vertical: true)
-                Text(printing ? source.url.absoluteString : NativeResearchReport.host(source.url))
+                Text(printing && NativePrivateSourceKind.of(source.url) == nil ? source.url.absoluteString : NativeResearchReport.host(source.url))
                     .junoFont(size: 12, relativeTo: .caption)
                     .foregroundStyle(Color.junoSecondaryInk)
                     .lineLimit(printing ? nil : 1)
@@ -459,6 +459,11 @@ public struct NativeResearchReportSources: View {
         .contentShape(.rect)
         if printing {
             label
+        } else if NativePrivateSourceKind.of(source.url) != nil {
+            // One of the person's own sources: nothing to open.
+            label
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Source \(number): \(NativeResearchReport.displayTitle(source)), \(NativeResearchReport.host(source.url))")
         } else {
             Button { openURL(source.url) } label: { label }
                 .buttonStyle(.plain)

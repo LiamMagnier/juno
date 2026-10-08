@@ -366,6 +366,7 @@ export async function draftResearchPlan(
     context?: string | null;
     constraints: string[];
     pinnedSources: string[];
+    privateSources?: string[];
     dateLine: string;
     languageName?: string | null;
     revision?: { questions: string[]; answers: Array<{ question: string; answer: string }> } | null;
@@ -377,6 +378,7 @@ export async function draftResearchPlan(
     dateLine: input.dateLine,
     languageLine: input.languageName ? researchLanguageLine(input.languageName) : null,
     pinnedSources: input.pinnedSources,
+    privateSources: input.privateSources,
     maxQueries: PLANNED_QUERY_LIMIT,
   });
   const request = plannerRequest(input);

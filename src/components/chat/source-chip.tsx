@@ -6,9 +6,15 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { cn } from "@/lib/utils";
 import type { ClientSource } from "@/types/chat";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { PrivateSourceIcon } from "@/components/research/private-source-icon";
+import { PRIVATE_SOURCE_LABEL, isPrivateSourceUrl, parsePrivateSourceUrl } from "@/lib/research/private-sources";
 
 /** Hostname without the `www.` noise — the label a reader actually recognises. */
 export function hostOf(url: string): string {
+  // One of the person's own sources (Deep Research): say whose and what kind,
+  // never the pseudo-host of its private.invalid address.
+  const own = parsePrivateSourceUrl(url);
+  if (own) return PRIVATE_SOURCE_LABEL[own.kind];
   try {
     return new URL(url).hostname.replace(/^www\./, "");
   } catch {
@@ -37,6 +43,9 @@ export function titleOf(source: ClientSource): string {
  * bypassed by adding a fourth producer later.
  */
 export function isRenderableSourceUrl(url: string): boolean {
+  // The person's own sources (Deep Research) have a reserved address that
+  // goes nowhere; they are drawn as their kind, never as a link.
+  if (isPrivateSourceUrl(url)) return false;
   try {
     const protocol = new URL(url).protocol;
     return protocol === "https:" || protocol === "http:";
@@ -120,6 +129,20 @@ export function SourceFavicon({
   const host = hostOf(url);
   const letter = /^[\p{L}\p{N}]/u.test(host) ? host[0].toUpperCase() : null;
   const v = VARIANTS[variant];
+  const own = parsePrivateSourceUrl(url);
+  if (own) {
+    // The person's own record: its kind's glyph, never a fetched favicon.
+    return (
+      <span
+        style={style}
+        aria-hidden="true"
+        data-private-source={own.kind}
+        className={cn("relative inline-grid shrink-0 place-items-center overflow-hidden bg-muted text-muted-foreground", v.box, className)}
+      >
+        <PrivateSourceIcon kind={own.kind} className={v.icon} />
+      </span>
+    );
+  }
 
   return (
     <span
@@ -188,6 +211,32 @@ export function SourceChip({ source, index }: { source: ClientSource; index: num
   // to know it was used — but it is rendered as inert text, not as something
   // they can click.
   const linkable = isRenderableSourceUrl(source.url);
+  const own = parsePrivateSourceUrl(source.url);
+  if (own) {
+    // One of the person's own sources (Deep Research): its kind's glyph and
+    // whose it is, inert — it has no address anyone could open.
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span
+            aria-label={`Source ${index}: ${title} — ${host}`}
+            data-private-source={own.kind}
+            className={cn(
+              "relative z-0 mx-[0.15em] inline-flex h-[1.3em] items-center gap-[0.3em] rounded-full",
+              "border border-border/70 bg-secondary px-[0.4em] align-middle text-[0.72em] leading-none"
+            )}
+          >
+            <PrivateSourceIcon kind={own.kind} className="size-[0.9em] text-muted-foreground" />
+            <span className="font-mono tabular-nums text-muted-foreground">{index}</span>
+          </span>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-[20rem]">
+          <span className="block truncate font-medium">{title}</span>
+          <span className="block text-[0.9em] opacity-65">{host}</span>
+        </TooltipContent>
+      </Tooltip>
+    );
+  }
   if (!linkable) {
     return (
       <Tooltip>

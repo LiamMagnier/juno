@@ -48,6 +48,8 @@ export const GALLERY_STATES = [
   "planner-fallback",
   "recovering",
   "digest",
+  "own-sources-scope",
+  "own-sources-report",
 ] as const;
 
 export type GalleryState = (typeof GALLERY_STATES)[number];
@@ -382,6 +384,65 @@ const DIGEST_REPORT = [
   "- Which backup heating is still needed, and when?",
 ].join("\n");
 
+/*
+ * Own sources: the person's files, mail and calendar beside the web. The gate
+ * offers what this conversation has (files, the project, the library, two
+ * connectors), with the defaults on; the report cites web pages and the
+ * person's own records in one numbering, the latter marked "(your sources)".
+ */
+const OWN_OPTIONS: NonNullable<ResearchRunView["plan"]["sources"]>["options"] = [
+  { key: "file", kind: "file", count: 2, defaultOn: true },
+  { key: "project", kind: "project", label: "House renovation", count: 6, defaultOn: true },
+  { key: "library", kind: "library", count: 41, defaultOn: false },
+  { key: "memory", kind: "memory", defaultOn: false },
+  { key: "calendar:apple-calendar", kind: "calendar", connectorId: "apple-calendar", label: "Apple Calendar", defaultOn: false },
+  { key: "mail:apple-mail", kind: "mail", connectorId: "apple-mail", label: "Apple Mail", defaultOn: false },
+];
+
+function ownSource(id: string, kind: string, ref: string, title: string, locator?: string): ResearchSourceView {
+  return {
+    ...source(id, "private.invalid", title, true),
+    url: `https://private.invalid/${kind}/${encodeURIComponent(ref)}${locator ? `?at=${encodeURIComponent(locator)}` : ""}`,
+    sourceType: "primary",
+  };
+}
+
+const OWN_SOURCES: ResearchSourceView[] = [
+  ownSource("p1", "file", "doc-budget", "Heating budget 2026.xlsx · Sheet 2", "Sheet 2"),
+  ownSource("p2", "mail", "INBOX:4182", "Installer quote: 8 kW air-to-water unit — 2026-09-18"),
+  ownSource("p3", "calendar", "ev-survey", "Heat pump site survey — 2026-10-14", "2026-10-14"),
+  ownSource("p4", "project", "doc-energy", "Energy certificate.pdf · page 3", "page 3"),
+];
+
+const OWN_REPORT = [
+  "<!-- juno:report title=\"A heat pump for our house, costed\" -->",
+  "# A heat pump for our house, costed",
+  "",
+  "<!-- juno:section=bottom-line -->",
+  "## Bottom line",
+  "A cold-climate unit keeps a seasonal COP above 2 at -20 °C [1][3], so the 8 kW unit you were quoted can heat the house without the oil boiler on most winter days [6] (your sources). The quote sits inside the budget you set for this year [5] (your sources).",
+  "",
+  "<!-- juno:section=question:q1 -->",
+  "## What seasonal COP do air-source heat pumps reach at -20 °C?",
+  "Units certified for cold climates stayed above a COP of 2.1 down to -20 °C [3]. Field trials in Norway measured 2.7 across three winters [4].",
+  "",
+  "<!-- juno:section=question:q3 -->",
+  "## What does a cold-climate installation cost, installed?",
+  "The IEA puts typical installed costs between 9,000 and 14,000 [2]. Your installer quoted 11,400 including the buffer tank [6] (your sources), against 12,000 set aside in your heating budget [5] (your sources).",
+  "",
+  "<!-- juno:section=question:q4 -->",
+  "## Which backup heating is still needed, and when?",
+  "Your energy certificate rates the house at 118 kWh/m² a year [8] (your sources), within the range where a single unit covers the design load [1]. The site survey on 14 October will confirm the radiator sizes [7] (your sources).",
+  "",
+  "<!-- juno:section=gaps -->",
+  "## What could not be established",
+  "No source measured the quoted model below -25 °C.",
+  "",
+  "<!-- juno:section=method -->",
+  "## Method",
+  "Four researchers read 10 pages over two rounds, and your files, mail and calendar were searched inside your account.",
+].join("\n");
+
 /** The runs each state shows, by run id (ids differ per state: the run store caches by id). */
 export function fixturesFor(state: GalleryState): Record<string, FixtureRun> {
   const id = `dev-${state}`;
@@ -528,6 +589,39 @@ export function fixturesFor(state: GalleryState): Record<string, FixtureRun> {
         },
       };
     }
+    case "own-sources-scope":
+      return {
+        [id]: gate(id, {
+          plan: { ...BASE_PLAN, sources: { web: true, enabled: ["file", "project"], options: OWN_OPTIONS } },
+        }),
+      };
+    case "own-sources-report":
+      return {
+        [id]: {
+          ...done(id, {
+            title: "A heat pump for our house, costed",
+            report: OWN_REPORT,
+            // No message audit in this state: citations number the read corpus, web first, then own sources.
+            assistantMessageId: null,
+            auditSummary: null,
+            counts: { found: 14, read: 8, cited: 8, searches: 9, pages: 10 },
+            sources: [
+              ...SOURCES.slice(0, 4).map((s, i) => ({ ...s, citedIndex: i + 1 })),
+              ...OWN_SOURCES.map((s, i) => ({ ...s, citedIndex: i + 5 })),
+              ...SOURCES.slice(4),
+            ],
+            plan: { ...BASE_PLAN, sources: { web: true, enabled: ["file", "project", "calendar:apple-calendar", "mail:apple-mail"], options: OWN_OPTIONS } },
+          }),
+          events: [
+            ...DONE_EVENTS.slice(0, 2),
+            ev("source_read", 1.5, { url: OWN_SOURCES[0].url, title: OWN_SOURCES[0].title, private: "file" }),
+            ev("source_read", 1.6, { url: OWN_SOURCES[1].url, title: OWN_SOURCES[1].title, private: "mail" }),
+            ev("source_read", 1.7, { url: OWN_SOURCES[2].url, title: OWN_SOURCES[2].title, private: "calendar" }),
+            ev("query_issued", 2.1, { query: "air to water heat pump installed cost", results: 0, withheld: "private" }),
+            ...DONE_EVENTS.slice(2),
+          ],
+        },
+      };
     case "two-live-runs":
       return {
         [`${id}-a`]: working(`${id}-a`),

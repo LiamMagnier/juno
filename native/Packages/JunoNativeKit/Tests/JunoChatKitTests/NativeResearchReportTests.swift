@@ -34,6 +34,23 @@ struct NativeResearchReportTests {
     }
 
     @Test
+    func ownSourcesReadAsTheirKindNeverAsAWebsite() throws {
+        let file = try #require(URL(string: "https://private.invalid/file/doc_1?at=page%203"))
+        let mail = try #require(URL(string: "https://private.invalid/mail/INBOX%3A42"))
+        let future = try #require(URL(string: "https://private.invalid/notebook/x"))
+        let web = try #require(URL(string: "https://example.org/a"))
+        #expect(NativePrivateSourceKind.of(file) == .file)
+        #expect(NativePrivateSourceKind.of(mail) == .mail)
+        #expect(NativePrivateSourceKind.of(future) == .connector, "a kind this build does not know reads as a connected app")
+        #expect(NativePrivateSourceKind.of(web) == nil)
+        #expect(NativeResearchReport.host(file) == "Your files")
+        #expect(NativeResearchReport.host(mail) == "Your mail")
+        #expect(NativeResearchReport.host(web) == "example.org")
+        let source = NativeChatSource(title: "Q3 plan.pdf · page 3", url: file, snippet: "", cited: true, origin: "research")
+        #expect(NativeResearchReport.displayTitle(source) == "Q3 plan.pdf · page 3")
+    }
+
+    @Test
     func aStreamingReportIsNotYetOpenable() {
         var message = answer("## Partial")
         message.content = "Prose\n\n<juno:artifact identifier=\"research-report\" type=\"MARKDOWN\" title=\"T\">\n## Half"
