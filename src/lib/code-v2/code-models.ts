@@ -14,7 +14,7 @@
  * A model that trains on prompts stays selectable but is never ranked into the
  * curated head, so no automatic "first in list" choice can land on it.
  */
-import { hasRetired, MODEL_LIST, trainsOnPrompts, type ModelInfo } from "@/lib/models";
+import { hasRetired, MODEL_LIST, MODELS, resolveModel, trainsOnPrompts, type ModelInfo } from "@/lib/models";
 import { getModelMetrics, reasoningCaps } from "@/lib/model-metrics";
 import { toolCapabilitiesFor } from "@/lib/model-tools";
 import { supportsFastMode } from "@/lib/pricing";
@@ -49,6 +49,17 @@ export const CODE_MODEL_RANKING: readonly string[] = [
 ];
 
 const RANK = new Map(CODE_MODEL_RANKING.map((id, i) => [id, i]));
+
+/**
+ * A CURATED catalogue model for an id (aliases of retired ids migrate), or
+ * null. Unlike `resolveModel` it never fabricates an entry for an id the
+ * catalogue has not met, and never answers for Auto: a Code selection or a
+ * context tier must name a model whose window and price are actually known.
+ */
+export function catalogModel(id: string): ModelInfo | null {
+  const m = resolveModel(id);
+  return m && MODELS[m.id] === m ? m : null;
+}
 
 /** Whether the model can drive a Code agent loop at all. */
 export function isCodeAgentModel(model: ModelInfo): boolean {
