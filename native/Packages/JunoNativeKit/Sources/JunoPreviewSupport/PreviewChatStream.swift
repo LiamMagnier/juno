@@ -64,6 +64,13 @@ enum PreviewChatStream {
                     try? await Task.sleep(for: .milliseconds(900))
                     frame(["type": "reasoning", "text": String(sentence) + ".", "part": 0, "round": 0])
                 }
+                // `--juno-preview-stream-hold thinking` stops here, so the
+                // thinking row can be captured without racing the clock.
+                if CommandLine.arguments.contains("thinking"),
+                    CommandLine.arguments.contains("--juno-preview-stream-hold")
+                {
+                    return
+                }
                 try? await Task.sleep(for: .milliseconds(1_200))
                 let words = PreviewShowcaseFixtures.streamedAnswer.split(separator: " ", omittingEmptySubsequences: false)
                 var index = 0
