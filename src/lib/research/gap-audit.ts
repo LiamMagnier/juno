@@ -22,14 +22,17 @@
  * review, and its verdicts are reproducible in tests.
  */
 
-import {
-  extractDates,
-  extractNumbers,
-  hostOfUrl,
-  numbersAgree,
-  tokenCoverage,
-} from "@/lib/research/claim-analysis";
+import { extractDates, extractNumbers, hostOfUrl, tokenCoverage } from "@/lib/research/claim-analysis";
 import type { ResearchGapAuditEntry, ResearchObjective } from "@/lib/research/domain";
+import {
+  canonicalTokens,
+  comparisonOptions,
+  figuresConflict,
+  mentionsOption,
+  metricCoverage,
+  optionKeys,
+  statesMetric,
+} from "@/lib/research/metric-match";
 import { dedupeQueries, subjectOf } from "@/lib/research/query-dedupe";
 
 export interface AuditFinding {
@@ -57,9 +60,10 @@ export interface GapAuditResult {
 export const MAX_GAP_QUERIES = 8;
 /** A figure older than this, on a vector where recency matters, is re-checked. */
 export const STALE_AFTER_DAYS = 540;
-/** How much of a metric's wording a finding must carry to count as stating it. */
-const METRIC_MATCH = 0.4;
+/** How much of a claim to verify a finding must address. */
 const VERIFY_MATCH = 0.4;
+/** Per-option gaps reported per vector, so a five-way comparison does not flood the audit. */
+const MAX_OPTION_GAPS = 4;
 /** Two findings this alike are about the same thing; their numbers must agree. */
 const SAME_THING = 0.55;
 
@@ -77,6 +81,16 @@ function recencyMatters(objective: ResearchObjective): boolean {
   return RECENCY_SENSITIVE.test(words);
 }
 
+/** Word overlap after folding units and synonyms ("per user" = "per seat"). */
+function similarity(a: string, b: string): number {
+  const ta = canonicalTokens(a);
+  if (ta.size === 0) return 0;
+  const tb = canonicalTokens(b);
+  let hit = 0;
+  for (const token of ta) if (tb.has(token)) hit += 1;
+  return Math.max(hit / ta.size, tokenCoverage(a, b));
+}
+
 /** Pairs of same-topic findings, on different hosts, whose same-kind figures disagree. */
 function conflictsIn(findings: readonly AuditFinding[]): ResearchGapAuditEntry["conflicts"] {
   const out: ResearchGapAuditEntry["conflicts"] = [];
@@ -85,19 +99,13 @@ function conflictsIn(findings: readonly AuditFinding[]): ResearchGapAuditEntry["
       const a = findings[i]!;
       const b = findings[j]!;
       if (hostOfUrl(a.url) === hostOfUrl(b.url)) continue;
-      const alike = Math.min(tokenCoverage(a.claim, b.claim), tokenCoverage(b.claim, a.claim));
+      const alike = Math.min(similarity(a.claim, b.claim), similarity(b.claim, a.claim));
       if (alike < SAME_THING) continue;
-      const na = extractNumbers(a.claim);
-      const nb = extractNumbers(b.claim);
-      if (na.length === 0 || nb.length === 0) continue;
-      // Every same-kind number of one must find an agreeing number in the
-      // other; a claim pair where none of them do states different figures.
-      const kinds = new Set(na.map((n) => n.kind).filter((kind) => nb.some((m) => m.kind === kind)));
-      if (kinds.size === 0) continue;
-      const disagree = [...kinds].some((kind) =>
-        na.filter((n) => n.kind === kind).every((n) => !nb.some((m) => m.kind === kind && numbersAgree(n.value, m.value)))
-      );
-      if (!disagree) continue;
+      if (extractNumbers(a.claim).length === 0 || extractNumbers(b.claim).length === 0) continue;
+      // Figures compared with their units: same currency and seat basis, a
+      // yearly price at its monthly rate, within rounding (metric-match.ts).
+      // "$19 per user per month" and "$228 per user per year" agree.
+      if (!figuresConflict(a.claim, b.claim)) continue;
       out.push({
         description: `"${a.claim.slice(0, 160)}" (${hostOfUrl(a.url)}) vs "${b.claim.slice(0, 160)}" (${hostOfUrl(b.url)})`,
         sourceIds: [a.sourceId, b.sourceId].filter((id): id is string => !!id),
@@ -119,8 +127,20 @@ export function auditGaps(input: {
   now: Date;
   subject: string;
   issued: readonly string[];
+  /** The run's goal, for the options a comparison is between. */
+  goal?: string;
+  /** The options compared; derived from `goal` when absent (`comparisonOptions`). */
+  options?: readonly string[];
+  /**
+   * Metrics a model confirmed are stated by a finding the deterministic
+   * match missed (`auditAssist`). Only ever removes a gap.
+   */
+  confirmed?: ReadonlyArray<{ objectiveId: string; metric: string }>;
 }): GapAuditResult {
   const sourceById = new Map(input.sources.map((source) => [source.id, source]));
+  const options = input.options ?? comparisonOptions(input.goal ?? "");
+  const keys = optionKeys(options);
+  const confirmed = new Set((input.confirmed ?? []).map((item) => `${item.objectiveId}\u0000${item.metric.toLowerCase()}`));
   const year = input.now.getUTCFullYear();
   const entries: ResearchGapAuditEntry[] = [];
   const wanted: string[] = [];
@@ -131,14 +151,41 @@ export function auditGaps(input: {
     const subject = input.subject || subjectOf(objective.question);
     const record = vector?.sources[0] ?? "official documentation";
 
-    const missingFigures = (vector?.metrics ?? []).filter(
-      (metric) => !own.some((finding) => hasFigure(finding.claim) && tokenCoverage(metric, `${finding.claim} ${finding.quote}`) >= METRIC_MATCH)
-    );
+    const isConfirmed = (metric: string) => confirmed.has(`${objective.id}\u0000${metric.toLowerCase()}`);
+    const states = (metric: string, finding: AuditFinding) =>
+      hasFigure(finding.claim) && (statesMetric(metric, finding.claim) || statesMetric(metric, `${finding.claim} ${finding.quote}`));
+    const missingFigures = (vector?.metrics ?? []).filter((metric) => !isConfirmed(metric) && !own.some((finding) => states(metric, finding)));
+    /*
+     * Each option's own figure. A comparison vector whose price metric is met
+     * by Copilot's page alone has not priced Cursor. The options in scope are
+     * the ones the vector names, or all of them when it names none ("What
+     * does each cost?").
+     */
+    const vectorText = [objective.question, ...(vector?.metrics ?? [])].join(" ");
+    const named = options.filter((option) => mentionsOption(keys.get(option) ?? [], vectorText, ""));
+    const inScope = named.length >= 1 ? named : options;
+    const optionGaps: Array<{ metric: string; option: string }> = [];
+    if (inScope.length >= 2 || (inScope.length === 1 && named.length === 1)) {
+      for (const metric of vector?.metrics ?? []) {
+        if (missingFigures.includes(metric)) continue;
+        for (const option of inScope) {
+          const optionKeysFor = keys.get(option) ?? [];
+          const covered = own.some(
+            (finding) => states(metric, finding) && mentionsOption(optionKeysFor, `${finding.claim} ${finding.quote}`, finding.url)
+          );
+          if (!covered && !isConfirmed(`${metric} — ${option}`) && optionGaps.length < MAX_OPTION_GAPS) optionGaps.push({ metric, option });
+        }
+      }
+    }
     // A vector with no named metrics still needs at least one figure when it has findings at all.
     const noFigureAtAll = !vector?.metrics.length && own.length > 0 && !own.some((finding) => hasFigure(finding.claim));
 
     const unverified = (vector?.verify ?? []).filter(
-      (claim) => !own.some((finding) => tokenCoverage(claim, `${finding.claim} ${finding.quote}`) >= VERIFY_MATCH)
+      (claim) =>
+        !own.some((finding) => {
+          const text = `${finding.claim} ${finding.quote}`;
+          return Math.max(tokenCoverage(claim, text), metricCoverage(claim, text)) >= VERIFY_MATCH;
+        })
     );
 
     const conflicts = conflictsIn(own);
@@ -166,14 +213,22 @@ export function auditGaps(input: {
 
     entries.push({
       objectiveId: objective.id,
-      missingFigures: noFigureAtAll ? ["any exact figure"] : missingFigures,
+      missingFigures: noFigureAtAll
+        ? ["any exact figure"]
+        : [...missingFigures, ...optionGaps.map((gap) => `${gap.metric} — ${gap.option}`)],
       unverified,
       conflicts,
       stale,
     });
 
     // One targeted search per kind of gap, most decisive first.
-    for (const metric of missingFigures.slice(0, 2)) wanted.push(`${subject} ${metric} ${record}`);
+    for (const metric of missingFigures.slice(0, 2)) {
+      // In a comparison, a missing figure is searched per option: the record
+      // that holds Cursor's price is Cursor's pricing page.
+      if (inScope.length >= 2) for (const option of inScope.slice(0, 3)) wanted.push(`${option} ${metric} ${record}`);
+      else wanted.push(`${subject} ${metric} ${record}`);
+    }
+    for (const gap of optionGaps.slice(0, 2)) wanted.push(`${gap.option} ${gap.metric} ${record}`);
     if (noFigureAtAll) wanted.push(`${subject} ${record} ${objective.question.replace(/\?$/, "").split(/\s+/).slice(-4).join(" ")}`);
     for (const conflict of conflicts.slice(0, 1)) {
       const topic = subjectOf(conflict.description.split('" (')[0]!.replace(/^"/, ""), new Set(subject.toLowerCase().split(/\s+/)));

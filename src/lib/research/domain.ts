@@ -562,6 +562,11 @@ export interface ResearchGapAudit {
   entries: ResearchGapAuditEntry[];
   /** The targeted searches the audit scheduled. */
   queries: string[];
+  /**
+   * Metrics a cheap model confirmed a finding states where the deterministic
+   * match did not (`auditAssist`); later passes treat them as found.
+   */
+  confirmed?: Array<{ objectiveId: string; metric: string }>;
 }
 
 /** The evidence contract the controller must satisfy before it stops. */
@@ -812,7 +817,8 @@ function parseGapAudit(value: unknown): ResearchGapAudit | undefined {
       : [];
     entries.push({
       objectiveId: entry.objectiveId.slice(0, 80),
-      missingFigures: cleanStringArray(entry.missingFigures, MAX_VECTOR_ITEMS, MAX_VECTOR_ITEM_CHARS),
+      // Metrics plus per-option gaps ("price per seat — Cursor").
+      missingFigures: cleanStringArray(entry.missingFigures, MAX_VECTOR_ITEMS * 2, MAX_VECTOR_ITEM_CHARS + 60),
       unverified: cleanStringArray(entry.unverified, MAX_VECTOR_ITEMS, MAX_VECTOR_ITEM_CHARS),
       conflicts,
       stale: cleanStringArray(entry.stale, MAX_VECTOR_ITEMS, 240),
@@ -823,6 +829,15 @@ function parseGapAudit(value: unknown): ResearchGapAudit | undefined {
     pass: typeof raw.pass === "number" && Number.isFinite(raw.pass) ? Math.max(0, Math.floor(raw.pass)) : 0,
     entries,
     queries: cleanStringArray(raw.queries, 16, MAX_QUERY_CHARS),
+    ...(Array.isArray(raw.confirmed)
+      ? {
+          confirmed: raw.confirmed
+            .filter((c): c is Record<string, unknown> => !!c && typeof c === "object" && !Array.isArray(c))
+            .filter((c) => typeof c.objectiveId === "string" && typeof c.metric === "string")
+            .map((c) => ({ objectiveId: String(c.objectiveId).slice(0, 80), metric: String(c.metric).slice(0, MAX_VECTOR_ITEM_CHARS) }))
+            .slice(0, 40),
+        }
+      : {}),
   };
 }
 
