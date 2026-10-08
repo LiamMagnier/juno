@@ -27,7 +27,7 @@ struct JunoMobileTasksView: View {
                 JunoMobileQuietLoading()
             case .failed:
                 ContentUnavailableView {
-                    Label("tasks.unavailable", systemImage: "exclamationmark.triangle")
+                    Label("tasks.unavailable", icon: .triangleAlert, size: 44)
                 } description: {
                     Text(model.lastErrorDescription ?? String(localized: "tasks.retry"))
                 } actions: {
@@ -52,7 +52,7 @@ struct JunoMobileTasksView: View {
                         draft: NativeScheduledTaskDraft(model: defaultModelID), taskID: nil
                     )
                 } label: {
-                    Image(systemName: "plus")
+                    JunoIconView(.plus, size: 18)
                 }
                 // `isCreatable` is the server's own word for it. The reading it
                 // replaced — no limit and no tasks — was false for every
@@ -107,13 +107,13 @@ struct JunoMobileTasksView: View {
     private var content: some View {
         if model.isRetiredAndEmpty {
             ContentUnavailableView {
-                Label("tasks.moved.title", systemImage: "checklist")
+                Label("tasks.moved.title", icon: .tasks, size: 44)
             } description: {
                 Text("tasks.moved.detail")
             }
         } else if model.tasks.isEmpty {
             ContentUnavailableView {
-                Label("tasks.empty.title", systemImage: "checklist")
+                Label("tasks.empty.title", icon: .tasks, size: 44)
             } description: {
                 Text("tasks.empty.detail")
             } actions: {
@@ -129,7 +129,7 @@ struct JunoMobileTasksView: View {
             List {
                 if let error = model.lastErrorDescription {
                     Section {
-                        Label(error, systemImage: "exclamationmark.triangle")
+                        Label(verbatim: error, icon: .triangleAlert)
                             .foregroundStyle(.secondary)
                         Button("Retry") { Task { await model.refresh() } }
                     }
@@ -226,13 +226,13 @@ private struct JunoMobileTaskRow: View {
                 .disabled(!editable)
         }
         .contextMenu {
-            Button("Edit", systemImage: "pencil") { onEdit() }
+            Button { onEdit() } label: { Label("Edit", icon: .pencil) }
                 .disabled(!editable)
             if task.conversationID != nil {
-                Button("tasks.results", systemImage: "bubble.left") { onOpenResults() }
+                Button { onOpenResults() } label: { Label("tasks.results", icon: .message) }
             }
             Divider()
-            Button("Delete", systemImage: "trash", role: .destructive) { onDelete() }
+            Button(role: .destructive) { onDelete() } label: { Label("Delete", icon: .trash) }
                 .disabled(!editable)
         }
     }

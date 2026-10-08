@@ -21,8 +21,9 @@ struct JunoMobileInboxBell: View {
       Button {
         isPresented = true
       } label: {
-        Image(systemName: model.dotTone == nil ? "bell" : "bell.badge")
-          .font(.body)
+        // One mark, read or unread: the count rides the accessibility
+        // value, never a badge dot.
+        JunoIconView(.bell, size: 19)
           .foregroundStyle(Color.primary)
           .frame(minWidth: 44, minHeight: 44)
           .contentShape(.rect)
@@ -65,7 +66,9 @@ struct JunoMobileNotificationsView: View {
       if let model {
         content(model)
       } else {
-        ContentUnavailableView("Notifications are unavailable", systemImage: "bell.slash")
+        ContentUnavailableView {
+          Label("Notifications are unavailable", icon: .bell, size: 44)
+        }
       }
     }
     .navigationTitle("Notifications")
@@ -74,10 +77,11 @@ struct JunoMobileNotificationsView: View {
       if let model, (model.count?.unreadCount ?? 0) > 0 || (model.items ?? []).contains(where: \.isUnread) {
         ToolbarItem(placement: .topBarLeading) {
           Menu {
-            Button("Mark All as Read", systemImage: "checkmark.circle") { model.markAllRead() }
+            Button { model.markAllRead() } label: { Label("Mark All as Read", icon: .circleCheck) }
               .accessibilityIdentifier("juno.mobile.notifications.mark-all")
           } label: {
-            Label("More", systemImage: "ellipsis")
+            JunoIconView(.ellipsis, size: 18)
+              .accessibilityLabel("More")
           }
         }
       }
@@ -93,7 +97,7 @@ struct JunoMobileNotificationsView: View {
     if let items = model.items {
       if items.isEmpty {
         ContentUnavailableView {
-          Label("Nothing new", systemImage: "bell")
+          Label("Nothing new", icon: .bell, size: 44)
         } description: {
           Text("Alevr tells you here when a task finishes, needs you, or an Orbit agent has something to share.")
         }
@@ -102,7 +106,7 @@ struct JunoMobileNotificationsView: View {
       }
     } else if model.listState == .failed {
       ContentUnavailableView {
-        Label("Couldn’t load notifications", systemImage: "wifi.exclamationmark")
+        Label("Couldn’t load notifications", icon: .wifiOff, size: 44)
       } description: {
         Text("Check your connection and try again.")
       } actions: {
@@ -203,7 +207,7 @@ struct JunoMobileNotificationRow: View {
         HStack(spacing: JunoSpace.snug) {
           Text(NativeNotificationsModel.ago(notification.createdAt, now: now))
           if notification.isUnread, notification.isPressing {
-            Label("Needs you", systemImage: "exclamationmark.circle")
+            Label("Needs you", icon: .error, size: 13)
               .foregroundStyle(Color.junoWarningInk)
           }
         }
@@ -212,8 +216,7 @@ struct JunoMobileNotificationRow: View {
       }
       .frame(maxWidth: .infinity, alignment: .leading)
       if notification.href != nil {
-        Image(systemName: "chevron.forward")
-          .font(.footnote)
+        JunoIconView(.chevronRight, size: 13)
           .foregroundStyle(Color.junoTertiaryInk)
           .padding(.top, 4)
           .accessibilityHidden(true)

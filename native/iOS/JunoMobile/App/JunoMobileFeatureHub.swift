@@ -239,13 +239,13 @@ struct JunoMobileCustomizeLinks: View {
       NavigationLink {
         JunoMobileSkillsView()
       } label: {
-        JunoMobileSettingsLabel(title: "Skills", systemImage: "wand.and.rays")
+        JunoMobileSettingsLabel(title: "Skills", icon: .skills)
       }
       .accessibilityIdentifier("juno.mobile.customize.skills")
       NavigationLink {
         JunoMobileRoutinesView()
       } label: {
-        JunoMobileSettingsLabel(title: "Routines", systemImage: "clock")
+        JunoMobileSettingsLabel(title: "Routines", icon: .automations)
       }
       .accessibilityIdentifier("juno.mobile.customize.routines")
     }

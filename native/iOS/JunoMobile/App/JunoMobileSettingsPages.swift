@@ -94,16 +94,14 @@ struct JunoMobileVoiceSettingsView: View {
               Button {
                 preview(voice)
               } label: {
-                Image(systemName: readAloud?.isSpeaking("voice-\(voice.id)") == true ? "stop.circle" : "speaker.wave.2")
-                  .font(.body)
+                JunoIconView(readAloud?.isSpeaking("voice-\(voice.id)") == true ? .stop : .volume, size: 18)
                   .foregroundStyle(.secondary)
                   .frame(width: 44, height: 44)
                 .contentShape(Circle())
               }
               .buttonStyle(.plain)
               .accessibilityLabel("Preview \(voice.label)")
-              Image(systemName: "checkmark")
-                .font(.body.weight(.semibold))
+              JunoIconView(.check, size: 17)
                 .foregroundStyle(Color.accentColor)
                 .opacity(voice.id == voiceID ? 1 : 0)
                 .accessibilityHidden(true)

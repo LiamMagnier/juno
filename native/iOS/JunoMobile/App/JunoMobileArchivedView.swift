@@ -34,7 +34,7 @@ struct JunoMobileArchivedView: View {
           Label {
             Text("No archived chats")
           } icon: {
-            Image(systemName: "archivebox")
+            JunoIconView(.archive, size: 44)
           }
         } description: {
           Text("Swipe a chat in the sidebar to archive it. It stays here until you restore or delete it.")
@@ -80,12 +80,12 @@ struct JunoMobileArchivedView: View {
                 restoreHaptic.fire()
                 Task { await model.setArchived(id: conversation.id, archived: false) }
               } label: {
-                Label("Restore", systemImage: "arrow.uturn.backward")
+                Label("Restore", icon: .archiveRestore)
               }
               Button(role: .destructive) {
                 deleteTarget = conversation
               } label: {
-                Label("Delete", systemImage: "trash")
+                Label("Delete", icon: .trash)
               }
             }
             .disabled(conversation.isPending)

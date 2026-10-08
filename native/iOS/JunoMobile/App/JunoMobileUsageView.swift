@@ -56,7 +56,7 @@ struct JunoMobileUsageView: View {
 
             if let loadError {
                 Section {
-                    Label(loadError, systemImage: "exclamationmark.triangle")
+                    Label(verbatim: loadError, icon: .triangleAlert)
                         .foregroundStyle(.secondary)
                     Button("Try Again") { Task { await load(force: true) } }
                 }
@@ -172,7 +172,7 @@ struct JunoMobileUsageView: View {
                         LabeledContent {
                             Text(NativeUsageFormat.tokens(row.totalTokens)).monospacedDigit()
                         } label: {
-                            Label(row.displayName, systemImage: usageSymbol(row.surface))
+                            Label(verbatim: row.displayName, icon: usageIcon(row.surface), size: 18)
                         }
                         ProgressView(value: Double(row.totalTokens) / Double(largest))
                             .tint(Color.secondary)
@@ -187,15 +187,15 @@ struct JunoMobileUsageView: View {
         }
     }
 
-    private func usageSymbol(_ surface: String) -> String {
+    private func usageIcon(_ surface: String) -> JunoIcon {
         switch surface {
-        case "chat": "bubble.left"
-        case "code": "chevron.left.forwardslash.chevron.right"
-        case "task": "checklist"
-        case "image": "photo"
-        case "video": "film"
-        case "voice": "waveform"
-        default: "chart.bar"
+        case "chat": .conversation
+        case "code": .code
+        case "task": .tasks
+        case "image": .photos
+        case "video": .video
+        case "voice": .volume
+        default: .usage
         }
     }
 

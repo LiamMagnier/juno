@@ -35,7 +35,7 @@ struct JunoMobileConnectionsView: View {
                 JunoMobileQuietLoading()
             case .failed:
                 ContentUnavailableView {
-                    Label("connections.unavailable", systemImage: "exclamationmark.triangle")
+                    Label("connections.unavailable", icon: .triangleAlert, size: 44)
                 } description: {
                     Text(model.lastErrorDescription ?? String(localized: "connections.retry"))
                 } actions: {
@@ -138,7 +138,7 @@ struct JunoMobileConnectionsView: View {
 
             if let error = model.lastErrorDescription {
                 Section {
-                    Label(error, systemImage: "exclamationmark.triangle")
+                    Label(verbatim: error, icon: .triangleAlert)
                         .foregroundStyle(.secondary)
                     Button("Retry") { Task { await model.refresh() } }
                 }
@@ -205,8 +205,7 @@ struct JunoMobileConnectionsView: View {
             } label: {
                 HStack(spacing: 12) {
                     rowLabel(connector)
-                    Image(systemName: "chevron.forward")
-                        .font(.footnote.weight(.semibold))
+                    JunoIconView(.chevronRight, size: 13)
                         .foregroundStyle(.tertiary)
                         .accessibilityHidden(true)
                 }
@@ -234,7 +233,7 @@ struct JunoMobileConnectionsView: View {
                 } else {
                     // No button where Connect cannot work; the reason is the
                     // row's own subtitle.
-                    Image(systemName: "lock")
+                    JunoIconView(.lock, size: 16)
                         .foregroundStyle(.tertiary)
                         .accessibilityHidden(true)
                 }
@@ -368,7 +367,7 @@ struct JunoMobileAppDetailView: View {
                     VStack(alignment: .leading, spacing: JunoSpace.tight) {
                         Text("Anything that changes something in \(connector.label) asks you first, unless you chose to allow it here.")
                         if let error = detail.grantError {
-                            Label(error, systemImage: "exclamationmark.triangle")
+                            Label(verbatim: error, icon: .triangleAlert)
                                 .foregroundStyle(.red)
                         }
                     }

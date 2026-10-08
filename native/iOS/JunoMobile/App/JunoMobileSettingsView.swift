@@ -101,7 +101,7 @@ struct JunoMobileSettingsView: View {
         JunoMobileQuietLoading()
       case .failed where model.settings == nil && model.memories.isEmpty:
         ContentUnavailableView {
-          Label("Settings unavailable", systemImage: "exclamationmark.triangle")
+          Label("Settings unavailable", icon: .triangleAlert, size: 44)
         } description: {
           Text(model.lastErrorDescription ?? "Try again.")
         } actions: {
@@ -206,35 +206,35 @@ struct JunoMobileSettingsView: View {
 
       Section {
         if session != nil {
-          settingsLink(.data, title: "Account", systemImage: "person.crop.circle")
+          settingsLink(.data, title: "Account", icon: .userCircle)
         }
         if session != nil, requestSender != nil {
-          settingsLink(.usage, title: "Plan & Usage", systemImage: "chart.pie")
+          settingsLink(.usage, title: "Plan & Usage", icon: .usage)
         }
       }
 
       Section {
-        settingsLink(.appearance, title: "Appearance", systemImage: "circle.lefthalf.filled")
-        settingsLink(.writing, title: "Personalization", systemImage: "text.bubble")
-        settingsLink(.memory, title: "Memory", systemImage: "bookmark")
-        settingsLink(.language, title: "Language", systemImage: "globe")
+        settingsLink(.appearance, title: "Appearance", icon: .appearance)
+        settingsLink(.writing, title: "Personalization", icon: .personalization)
+        settingsLink(.memory, title: "Memory", icon: .memory)
+        settingsLink(.language, title: "Language", icon: .language)
       }
 
       Section {
-        settingsLink(.models, title: "Models", systemImage: "cube")
-        settingsLink(.voice, title: "Voice", systemImage: "waveform")
-        settingsLink(.code, title: "Code", systemImage: "chevron.left.forwardslash.chevron.right")
+        settingsLink(.models, title: "Models", icon: .models)
+        settingsLink(.voice, title: "Voice", icon: .voice)
+        settingsLink(.code, title: "Code", icon: .code)
       }
 
       Section {
-        settingsLink(.notifications, title: "Notifications", systemImage: "bell")
-        settingsLink(.archived, title: "Archived chats", systemImage: "archivebox")
+        settingsLink(.notifications, title: "Notifications", icon: .notifications)
+        settingsLink(.archived, title: "Archived chats", icon: .archive)
       }
 
       Section("About") {
-        settingsLink(.about, title: "About Alevr", systemImage: "info.circle")
+        settingsLink(.about, title: "About Alevr", icon: .about)
         #if DEBUG
-          settingsLink(.advanced, title: "Advanced", systemImage: "wrench.and.screwdriver")
+          settingsLink(.advanced, title: "Advanced", icon: .tools)
         #endif
       }
 
@@ -247,7 +247,7 @@ struct JunoMobileSettingsView: View {
           } label: {
             JunoMobileSettingsLabel(
               title: "Log out",
-              systemImage: "rectangle.portrait.and.arrow.right",
+              icon: .logOut,
               destructive: true
             )
           }
@@ -298,10 +298,10 @@ struct JunoMobileSettingsView: View {
   private func settingsLink(
     _ route: JunoMobileSettingsRoute,
     title: LocalizedStringKey,
-    systemImage: String
+    icon: JunoIcon
   ) -> some View {
     NavigationLink(value: route) {
-      JunoMobileSettingsLabel(title: title, systemImage: systemImage)
+      JunoMobileSettingsLabel(title: title, icon: icon)
     }
     .accessibilityIdentifier(settingsRouteIdentifier(route))
   }
@@ -460,8 +460,8 @@ struct JunoMobileSettingsView: View {
 
       if session != nil, requestSender != nil {
         Section {
-          settingsLink(.profile, title: "Profile", systemImage: "person")
-          settingsLink(.username, title: "Username", systemImage: "at")
+          settingsLink(.profile, title: "Profile", icon: .user)
+          settingsLink(.username, title: "Username", icon: .edit)
         }
       }
 
@@ -472,7 +472,7 @@ struct JunoMobileSettingsView: View {
               await authModel?.signOut()
             }
           } label: {
-            JunoMobileSettingsLabel(title: "Sign-in & Security", systemImage: "lock")
+            JunoMobileSettingsLabel(title: "Sign-in & Security", icon: .security)
           }
           .accessibilityIdentifier("juno.mobile.settings-security")
         }
@@ -482,7 +482,7 @@ struct JunoMobileSettingsView: View {
         Section {
           Button(action: exportAccount) {
             HStack {
-              JunoMobileSettingsLabel(title: "Export data", systemImage: "square.and.arrow.up")
+              JunoMobileSettingsLabel(title: "Export data", icon: .share)
               Spacer(minLength: 8)
               if isExporting { ProgressView() }
             }
@@ -503,7 +503,7 @@ struct JunoMobileSettingsView: View {
             dangerError = nil
             showingDeleteAccount = true
           } label: {
-            JunoMobileSettingsLabel(title: "Delete account", systemImage: "trash", destructive: true)
+            JunoMobileSettingsLabel(title: "Delete account", icon: .trash, destructive: true)
           }
           .disabled(isDeletingAccount)
           .accessibilityIdentifier("juno.mobile.settings-delete-account")
@@ -523,7 +523,7 @@ struct JunoMobileSettingsView: View {
   /// rendering controls bound to defaults that would write themselves back.
   private var unsyncedSection: some View {
     Section {
-      Label("Account settings have not finished syncing.", systemImage: "arrow.triangle.2.circlepath")
+      Label("Account settings have not finished syncing.", icon: .refresh)
         .foregroundStyle(.secondary)
     }
   }
@@ -622,7 +622,7 @@ struct JunoMobileSettingsView: View {
         VStack(alignment: .leading, spacing: 6) {
           Text(settings.backgroundProviderMode.explanation)
           if settings.backgroundProviderMode.permitsCrossProvider {
-            Label("settings.background-provider.crosses", systemImage: "exclamationmark.triangle")
+            Label("settings.background-provider.crosses", icon: .triangleAlert, size: 13)
               .foregroundStyle(Color.junoCaution)
           }
         }
@@ -657,8 +657,7 @@ struct JunoMobileSettingsView: View {
           HStack {
             Text("diagnostics.title").foregroundStyle(Color.primary)
             Spacer()
-            Image(systemName: "chevron.forward")
-              .font(.footnote.weight(.semibold))
+            JunoIconView(.chevronRight, size: 13)
               .foregroundStyle(.tertiary)
           }
           .contentShape(.rect)
@@ -770,7 +769,7 @@ struct JunoMobileSettingsView: View {
   private var conflictBanner: some View {
     VStack(spacing: JunoSpace.snug) {
       HStack(spacing: JunoSpace.snug) {
-        Image(systemName: "arrow.triangle.2.circlepath")
+        JunoIconView(.refresh, size: 15)
         Text("Memory or settings changed on another device.")
           .lineLimit(2)
         Spacer()
@@ -796,7 +795,7 @@ struct JunoMobileSettingsView: View {
 
   private var statusBanner: some View {
     HStack(spacing: JunoSpace.snug) {
-      Image(systemName: model.phase == .offline ? "icloud.slash" : "exclamationmark.circle")
+      JunoIconView(model.phase == .offline ? .cloudOff : .error, size: 15)
       Text(
         model.lastErrorDescription
           ?? "Offline — showing saved settings. Changes will sync when Alevr reconnects."
@@ -815,12 +814,13 @@ struct JunoMobileSettingsView: View {
 
 // MARK: - Row label
 
-/// A settings row's label: a plain SF Symbol and a title, the way ChatGPT's
-/// settings sheet and the system's own rows are drawn. One shape for every
-/// row in this family, so icons line up and weights never mix.
+/// A settings row's label: one of the website's marks in the secondary ink,
+/// then the title — the way ChatGPT's settings sheet sets its rows, in Alevr's
+/// own icon set. One shape for every row in this family, so icons line up and
+/// weights never mix.
 struct JunoMobileSettingsLabel: View {
   let title: LocalizedStringKey
-  let systemImage: String
+  let icon: JunoIcon
   var destructive = false
 
   var body: some View {
@@ -828,8 +828,8 @@ struct JunoMobileSettingsLabel: View {
       Text(title)
         .foregroundStyle(destructive ? Color.red : Color.primary)
     } icon: {
-      Image(systemName: systemImage)
-        .foregroundStyle(destructive ? Color.red : Color.primary)
+      JunoIconView(icon, size: 20)
+        .foregroundStyle(destructive ? Color.red : Color.secondary)
     }
   }
 }
@@ -1115,8 +1115,7 @@ private struct JunoMobileSettingsPreferences: View {
             .fixedSize(horizontal: false, vertical: true)
         }
         Spacer(minLength: 8)
-        Image(systemName: "checkmark")
-          .font(.body.weight(.semibold))
+        JunoIconView(.check, size: 17)
           .foregroundStyle(Color.accentColor)
           .opacity(selected ? 1 : 0)
           .accessibilityHidden(true)

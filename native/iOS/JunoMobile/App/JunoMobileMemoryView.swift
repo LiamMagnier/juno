@@ -38,8 +38,8 @@ struct JunoMobileMemoryView: View {
             if let notice {
                 Section {
                     Label(
-                        notice.title,
-                        systemImage: notice.tone == .error ? "exclamationmark.triangle" : "checkmark"
+                        verbatim: notice.title,
+                        icon: notice.tone == .error ? .triangleAlert : .check
                     )
                     .foregroundStyle(notice.tone == .error ? Color.red : Color.secondary)
                 }
@@ -64,7 +64,8 @@ struct JunoMobileMemoryView: View {
                     Button {
                         Task { await model.refresh() }
                     } label: {
-                        Label("Rebuild summary", systemImage: "arrow.clockwise")
+                        JunoIconView(.refresh, size: 18)
+                            .accessibilityLabel("Rebuild summary")
                     }
                     .accessibilityIdentifier("juno.mobile.memory-rebuild")
                 }
@@ -445,14 +446,16 @@ private struct JunoMobileMemoryFactsView: View {
             Button("Delete", role: .destructive) { deleteMemoryID = memory.id }
         }
         .contextMenu {
-            Button("Edit", systemImage: "pencil") {
+            Button {
                 editContent = memory.content
                 editMemoryID = memory.id
+            } label: {
+                Label("Edit", icon: .pencil)
             }
             if let chatID = serverFact(memory.id)?.sourceChatID, let openConversation {
-                Button("Open the chat it came from", systemImage: "bubble.left") { openConversation(chatID) }
+                Button { openConversation(chatID) } label: { Label("Open the chat it came from", icon: .message) }
             }
-            Button("Delete", systemImage: "trash", role: .destructive) { deleteMemoryID = memory.id }
+            Button(role: .destructive) { deleteMemoryID = memory.id } label: { Label("Delete", icon: .trash) }
         }
     }
 
@@ -612,7 +615,7 @@ private struct JunoMobileSuggestedSkills: View {
     private func actions(_ candidate: NativeSkillCandidate) -> some View {
         let busy = page.busyCandidateIDs.contains(candidate.id)
         if page.madeSkills[candidate.id] != nil {
-            Label("Added to your skills", systemImage: "checkmark")
+            Label("Added to your skills", icon: .check)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         } else {
