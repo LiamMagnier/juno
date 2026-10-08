@@ -569,6 +569,22 @@ public enum CodeV2 {
         public var task: String?
         public var closingText: String?
         public var tokens: TokenCount?
+        // web lane (additive): agent tree / Agents dock fields.
+        public var title: String?
+        public var label: String?
+        public var liveLine: String?
+        public var elapsedMs: Double?
+        public var costUsd: Double?
+        public var worktreeBranch: String?
+        public var candidate: Candidate?
+
+        public struct Candidate: Codable, Sendable, Hashable {
+            public var additions: Int?
+            public var deletions: Int?
+            public var filesChanged: Int?
+            public var testsLine: String?
+            public var kept: Bool?
+        }
     }
 
     public struct ComputerAction: Codable, Sendable, Hashable {
@@ -1020,6 +1036,9 @@ public enum CodeV2 {
         public var contextTokens: Int?
         public var contextWindow: Int?
         public var costUsd: Double?
+        // web lane (additive): context gauge.
+        public var autoCompactAt: Int?
+        public var billing: String?
     }
 
     public struct QueuedInput: Codable, Sendable, Hashable, Identifiable {
