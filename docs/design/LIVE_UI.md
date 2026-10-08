@@ -60,7 +60,7 @@ Every component is `{"type": …}`. Inputs carry `id`, `label`, `value` (default
 | Output  | `metric`    | `label`, `value` (expr), `format?`, `unit?`, `hint?` (text), `emphasis?` |
 |         | `text`      | `text` with `{{expr}}` and `**bold**`, `tone?` `muted` |
 |         | `progress`  | `label`, `value` (expr), `max?` (expr, default 1), `format?` |
-|         | `chart`     | `kind` line/area/bar; either `x:{from,to,step,var?,label?}` + `series:[{label,y}]` (y sees `x`), or `rows` (expr) + `xKey` (expr per row) + `series` (y per row); `format?` |
+|         | `chart`     | `kind` line/area/bar; either `x:{from,to,step,var?,label?}` + `series:[{label,y}]` (y sees `x`), or `rows` (expr) + `xKey` (expr per row) + `series` (y per row); `format?`; `mark?` (an x to rule and rest the readout on; an area chart shades up to it) |
 |         | `table`     | `rows` (expr), `columns:[{label,value,format?}]` (value sees the row's fields) |
 |         | `explorer`  | `parts:[{id,label,summary?,detail,facts?:[{label,value}],at?:[x,y]}]`, `links?:[[a,b]]` |
 |         | `stops`     | `stops:[{name,time?,note?,query?}]` |
@@ -173,7 +173,7 @@ at most, always with prose that states the answer on its own.
   the emphasised metric only, no pills or status dots, keyboard operable,
   one column under 480px of container width. Charts are hand-drawn SVG (the web
   has no chart library) with a keyboard/hover crosshair readout.
-- Native: `JunoDesignSystem/LiveUI/*`. Native controls (Slider, TextField with
+- Native: `JunoDesignSystem/LiveUI/*` (`JunoLiveUIJSON`, `JunoLiveUIFormat`, `JunoLiveUIExpression`, `JunoLiveUISpec`, `JunoLiveUIView`, `JunoLiveUIParts`). Native controls (Slider, TextField with
   number formats, Stepper, Picker, Toggle, DatePicker), Swift Charts, Liquid
   Glass only on the explorer's detail card (`glassEffect`), never a fake blur.
   Prompt buttons call the `junoLiveUIHost` environment action, which the Mac
@@ -197,6 +197,22 @@ web-motion lane and was not changed here.
 - Contract and fixtures: `contracts/live-ui/fixtures/*.json`
 - TS core: `src/lib/live-ui/{json,expr,format,spec,state}.ts`
 - Web UI: `src/components/chat/live-ui/*`, routed from `markdown.tsx`
-- Gallery: `/dev/live-ui`
+- Gallery: `/dev/live-ui` (samples in `contracts/live-ui/samples.json`, shared with the native snapshot test)
 - Swift core + views: `native/Packages/JunoNativeKit/Sources/JunoDesignSystem/LiveUI/*`
-- Tests: `tests/live-ui-*.test.ts`, `JunoDesignSystemTests/LiveUI*Tests.swift`
+- Tests: `tests/live-ui.test.ts` (fixtures, streaming prefixes, safety bounds),
+  `tests/live-ui-prompt.test.ts` (prompt gating, cache stability, every prompt
+  example and gallery sample is a valid view), `LiveUIFixtureTests.swift` (the
+  same fixtures in Swift), `LiveUISnapshotTests.swift` (offscreen PNGs when
+  `JUNO_SNAPSHOT_DIR` is set)
+
+## 11. Known gaps
+
+- Model reliability is untested against live models from this lane: the
+  contract is compact and JSON-first, so frontier models (Claude, GPT, Gemini)
+  should follow it; small/local models may misuse it. The renderer degrades a
+  bad block to a quiet "couldn't be shown" with its source.
+- iOS prompt buttons fill the composer (as iOS follow-up chips do) rather than
+  sending; the Mac and web send directly.
+- Liquid Glass on the explorer card cannot be photographed offscreen; check it
+  in the running app.
+- Copying a whole reply copies the block's JSON with it.
