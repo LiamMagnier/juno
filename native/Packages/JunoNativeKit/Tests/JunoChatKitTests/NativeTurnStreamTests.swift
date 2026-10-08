@@ -65,7 +65,7 @@ final class NativeTurnStreamTests: XCTestCase {
 
         // The request always declares the features, the zone and the locale.
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try XCTUnwrap(request.body)) as? [String: Any])
-        XCTAssertEqual(object["clientFeatures"] as? [String], ["timeline", "resume", "research_background", "suggest_research", "citations"])
+        XCTAssertEqual(object["clientFeatures"] as? [String], ["timeline", "resume", "research_background", "suggest_research", "citations", "live_ui"])
         XCTAssertEqual(object["timeZone"] as? String, TimeZone.current.identifier)
         XCTAssertNotNil(object["locale"] as? String)
         XCTAssertNil(object["researchEffort"], "Research has no levels (R1)")
