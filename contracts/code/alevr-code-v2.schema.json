@@ -217,6 +217,16 @@
         "internal"
       ]
     },
+    "ByokProvider": {
+      "type": "string",
+      "enum": [
+        "anthropic",
+        "openai",
+        "google",
+        "xai",
+        "deepseek"
+      ]
+    },
     "UsageWindow": {
       "type": "object",
       "properties": {
@@ -351,6 +361,9 @@
         },
         "note": {
           "type": "string"
+        },
+        "unverified": {
+          "type": "boolean"
         }
       },
       "required": [

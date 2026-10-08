@@ -606,9 +606,14 @@ function anthropicCacheReadRatio(providerModel: string): number {
 }
 
 /**
- * Whole-request surcharges a lab applies once one prompt crosses a size
- * threshold. They cannot live in tokenRate: the threshold depends on this
- * request's usage, not only on the model.
+ * A lab's long-context surcharge: once one prompt crosses `threshold` input
+ * tokens the WHOLE request bills at `inputMultiplier` (input and cache rates)
+ * and `outputMultiplier`. `inclusive` says whether a prompt of exactly
+ * `threshold` tokens is already in the higher band.
+ *
+ * Exported because it is the single source of truth for two readers: billing
+ * (`longContextMultipliers` below) and the Code context-window selector, which
+ * turns each surcharge into a selectable tier (src/lib/code-v2/context-tiers.ts).
  *
  *  - OpenAI GPT-6 Astra, Sol and Luna: more than 272K input tokens bills the
  *    full request at 2x input and cache rates and 1.5x output.
@@ -618,13 +623,31 @@ function anthropicCacheReadRatio(providerModel: string): number {
  *    model page lists the same doubled tier for 4.5, 4.3, the 4.20 ids and
  *    Build, not just 4.6/4.7.
  */
-function longContextMultipliers(model: ModelInfo, totalInput: number): { input: number; output: number } {
+export interface LongContextPricing {
+  threshold: number;
+  inclusive: boolean;
+  inputMultiplier: number;
+  outputMultiplier: number;
+}
+
+export function longContextPricing(
+  model: Pick<ModelInfo, "provider" | "providerModel" | "modality">
+): LongContextPricing | null {
   const pm = model.providerModel.toLowerCase();
-  if (model.provider === "openai" && /gpt-6(?:\.\d+)?-(astra|sol|luna)/.test(pm) && totalInput > 272_000) {
-    return { input: 2, output: 1.5 };
+  if (model.provider === "openai" && /gpt-6(?:\.\d+)?-(astra|sol|luna)/.test(pm)) {
+    return { threshold: 272_000, inclusive: false, inputMultiplier: 2, outputMultiplier: 1.5 };
   }
-  if (model.provider === "xai" && pm.startsWith("grok-") && model.modality === "chat" && totalInput >= 200_000) {
-    return { input: 2, output: 2 };
+  if (model.provider === "xai" && pm.startsWith("grok-") && model.modality === "chat") {
+    return { threshold: 200_000, inclusive: true, inputMultiplier: 2, outputMultiplier: 2 };
+  }
+  return null;
+}
+
+/** Whole-request surcharge for this request's prompt size (see `longContextPricing`). */
+function longContextMultipliers(model: ModelInfo, totalInput: number): { input: number; output: number } {
+  const lc = longContextPricing(model);
+  if (lc && (lc.inclusive ? totalInput >= lc.threshold : totalInput > lc.threshold)) {
+    return { input: lc.inputMultiplier, output: lc.outputMultiplier };
   }
   return { input: 1, output: 1 };
 }
