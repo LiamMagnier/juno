@@ -596,6 +596,9 @@ private struct JunoMobileConversationDetail: View {
   /// New content keeps the transcript at its end: true until the reader drags
   /// away from the bottom, and again when they come back, jump or send.
   @State private var follows = true
+  /// The bar's width, which is this screen's: the title's room is measured
+  /// from it rather than capped at a number (`JunoLayout.Bar.titleWidth`).
+  @State private var barWidth: CGFloat = 0
   /// The reader's finger is on the transcript, so a change of position is
   /// theirs rather than the stream's.
   @State private var userScrolling = false
@@ -1096,6 +1099,9 @@ private struct JunoMobileConversationDetail: View {
       } label: {
         JunoMobileConversationTitle(
           title: conversation.title,
+          maxWidth: barWidth > 0
+            ? JunoLayout.Bar.titleWidth(barWidth: barWidth, leading: 1, trailing: newChat == nil ? 0 : 1)
+            : nil,
           justRenamed: model.recentlyRenamedConversationID == conversation.id,
           onAnimationShown: { model.acknowledgeTitleAnimation(for: conversation.id) }
         )
@@ -1408,6 +1414,7 @@ private struct JunoMobileConversationDetail: View {
       }
       .navigationBarTitleDisplayMode(.inline)
       .toolbar { conversationToolbar }
+      .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { barWidth = $0 }
       .junoTranscriptFind(
         find, messages: messages, signature: streamSignature,
         follows: $follows, scrollPosition: $scrollPosition
@@ -1644,6 +1651,8 @@ private struct JunoMobileConversationDetail: View {
 /// named this", short enough not to become chrome.
 private struct JunoMobileConversationTitle: View {
   let title: String
+  /// The room the bar leaves between its circles; nil until measured.
+  var maxWidth: CGFloat?
   let justRenamed: Bool
   let onAnimationShown: () -> Void
 
@@ -1651,7 +1660,7 @@ private struct JunoMobileConversationTitle: View {
   @State private var highlighted = false
 
   var body: some View {
-    HStack(spacing: 4) {
+    HStack(spacing: JunoSpace.hairline) {
       Text(title)
         .font(.headline)
         .lineLimit(1)
@@ -1659,10 +1668,12 @@ private struct JunoMobileConversationTitle: View {
       JunoSymbol(.chevronDown)
         .font(.caption2.weight(.semibold))
         .foregroundStyle(.secondary)
+        .fixedSize()
         .accessibilityHidden(true)
     }
       .foregroundStyle(highlighted ? Color.junoAccent : Color.primary)
-      .frame(maxWidth: 220)
+      .frame(maxWidth: maxWidth ?? JunoLayout.Bar.titleWidth(barWidth: 320))
+      .frame(minHeight: JunoLayout.Bar.button)
       .id(title)
       .transition(.blurReplace)
       .animation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion), value: title)
@@ -1981,7 +1992,7 @@ private struct JunoMobileMessageRow: View {
     // row: a spoken line exists only in the call controller, and there is no
     // stored message for a fork to branch away from.
     if !voice, branchPosition != nil {
-      HStack(spacing: 2) {
+      HStack(spacing: JunoSpace.micro) {
         // Tucked up under the bubble: it belongs to the words above it, and
         // at the full 44pt row height it floated halfway to the next turn.
         branchNavigator
@@ -2359,7 +2370,7 @@ private struct JunoMobileMessageRow: View {
           } label: {
             JunoIconView(copied ? JunoIcon.check : JunoIcon.copy, size: 16)
               .foregroundStyle(Color.junoSecondaryInk)
-              .frame(width: 38, height: 44)
+              .frame(width: JunoLayout.touchTarget, height: JunoLayout.touchTarget)
               .contentShape(Rectangle())
           }
           .buttonStyle(.junoQuietPress)
@@ -2411,7 +2422,9 @@ private struct JunoMobileMessageRow: View {
 
         Spacer(minLength: 0)
       }
-      .padding(.leading, -10)
+      // Each key is a full 44pt target; pulled in by half the air around its
+      // glyph so the first glyph sits on the text's own edge.
+      .padding(.leading, -(JunoLayout.touchTarget - JunoLayout.Transcript.actionGlyph) / 2)
       .accessibilityElement(children: .contain)
     }
   }
@@ -2440,9 +2453,9 @@ private struct JunoMobileMessageRow: View {
           Label("Select text", image: JunoIcon.textCursor.assetName(.regular))
         }
       } label: {
-        JunoIconView(.ellipsis, size: 16)
+        JunoIconView(.ellipsis, size: JunoLayout.Transcript.actionGlyph)
           .foregroundStyle(Color.junoSecondaryInk)
-          .frame(width: 38, height: 44)
+          .frame(width: JunoLayout.touchTarget, height: JunoLayout.touchTarget)
           .contentShape(Rectangle())
       }
       .tint(Color.primary)
@@ -2461,9 +2474,9 @@ private struct JunoMobileMessageRow: View {
     Button(action: action) {
       // The web's message-action glyphs at its 16pt rung; the solid cut only
       // for an "on" state (a rated answer).
-      JunoIconView(icon, size: 16, isOn: on)
+      JunoIconView(icon, size: JunoLayout.Transcript.actionGlyph, isOn: on)
         .foregroundStyle(Color.junoSecondaryInk)
-        .frame(width: 38, height: 44)
+        .frame(width: JunoLayout.touchTarget, height: JunoLayout.touchTarget)
         .contentShape(Rectangle())
     }
     .buttonStyle(.junoQuietPress)
@@ -2623,7 +2636,7 @@ private struct JunoMobileArtifactInlineCard: View {
         .foregroundStyle(Color.junoMutedForeground)
         .frame(minWidth: 22)
 
-      VStack(alignment: .leading, spacing: 1) {
+      VStack(alignment: .leading, spacing: JunoSpace.micro) {
         Text(artifact.title)
           .junoFont(size: 15, relativeTo: .subheadline, weight: .medium)
           .lineLimit(1)
@@ -2693,7 +2706,7 @@ struct JunoMobileResumeRow: View {
 
   var body: some View {
     Button(action: action) {
-      HStack(spacing: 8) {
+      HStack(spacing: JunoSpace.snug) {
         JunoIconView(icon, size: 16)
           .foregroundStyle(.secondary)
           .frame(width: 20)

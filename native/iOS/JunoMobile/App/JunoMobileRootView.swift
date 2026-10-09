@@ -977,20 +977,10 @@ struct JunoMobileRootView: View {
         }
       }
       .toolbar {
-        ToolbarItem(placement: .topBarTrailing) {
-          // A bare glyph, deliberately. From OS 26 the toolbar draws
-          // its own Liquid Glass capsule behind every item, so adding
-          // `JunoGlassCircle` here stacked a second bubble inside the
-          // system's one — two concentric rings around one ×.
-          Button {
-            showingSettings = false
-          } label: {
-            JunoIconView(.close, size: 15)
-              // Ink: closing a sheet is chrome, not emphasis.
-              .foregroundStyle(Color.primary)
-          }
-          .accessibilityLabel("Close settings")
-          .accessibilityIdentifier("juno.mobile.settings-close")
+        // The × every sheet closes with, on the leading edge (Calendar's
+        // grammar; docs/native/spacing-pass/AUDIT.md X4).
+        JunoMobileSheetClose(label: "Close settings", identifier: "juno.mobile.settings-close") {
+          showingSettings = false
         }
       }
       .junoScreenCanvas()
@@ -1395,7 +1385,7 @@ struct JunoMobileRootView: View {
   @ViewBuilder
   private var agentsDestination: some View {
     if !JunoMobilePlanStore.shared.allows(.agents) {
-      JunoMobilePlanLockedView(feature: .agents, title: "Agents", icon: .agents)
+      JunoMobilePlanLockedView(feature: .agents, title: "Orbit", icon: .agents)
     } else if let agentsModel {
       NativeAgentsScreen(
         model: agentsModel,
@@ -1772,19 +1762,18 @@ private struct JunoMobileOfflineBanner: View {
   let retry: () -> Void
 
   var body: some View {
-    HStack(spacing: 10) {
+    HStack(spacing: JunoSpace.close) {
       JunoIconView(.cloud, size: 16)
       Text("auth.offline.title")
         .font(.footnote)
       Spacer(minLength: 8)
       Button("auth.offline.retry", action: retry)
         .font(.footnote)
-        .buttonStyle(.bordered)
-        .controlSize(.mini)
+        .modifier(JunoMobileWorkspaceActionStyle())
         .contentShape(.rect)
     }
-    .padding(.horizontal, 16)
-    .padding(.vertical, 8)
+    .padding(.horizontal, JunoSpace.regular)
+    .padding(.vertical, JunoSpace.snug)
     .frame(maxWidth: .infinity, alignment: .leading)
     .background(.thinMaterial)
     .accessibilityIdentifier("juno.mobile.offline-banner")

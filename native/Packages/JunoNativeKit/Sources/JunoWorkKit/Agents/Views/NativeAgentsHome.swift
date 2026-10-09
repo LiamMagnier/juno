@@ -156,7 +156,8 @@ private struct NativeAgentsTeam: View {
     }
 }
 
-/// "Agents", then what is happening in one plain sentence.
+/// "Orbit" (on the Mac; the phone's bar carries it), then what is happening
+/// in one plain sentence.
 private struct NativeAgentsTeamHeader: View {
     let agents: [NativeAgent]
 
@@ -175,11 +176,6 @@ private struct NativeAgentsTeamHeader: View {
             // title every other Mac page wears (round 2).
             Text("Orbit")
                 .junoPageTitle(columnWidth: pageColumn)
-                .foregroundStyle(Color.junoForeground)
-                .accessibilityAddTraits(.isHeader)
-            #else
-            Text("Agents")
-                .junoType(.display(size: JunoType.pageTitle(columnWidth: pageColumn ?? 640).size))
                 .foregroundStyle(Color.junoForeground)
                 .accessibilityAddTraits(.isHeader)
             #endif

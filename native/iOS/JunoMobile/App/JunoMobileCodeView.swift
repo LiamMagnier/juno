@@ -93,6 +93,7 @@ struct JunoMobileCodeView: View {
           } actions: {
             Button("Retry") { Task { await model.refresh() } }
               .buttonStyle(.borderedProminent)
+              .controlSize(.large)
               .contentShape(.rect)
           }
         }
@@ -215,6 +216,14 @@ struct JunoMobileCodeView: View {
 
   // MARK: Session list + composer
 
+  /// Whether the chosen computer can take a new session from here.
+  private var remoteNewSessionAvailable: Bool {
+    guard let remoteModel, let host = remoteModel.selectedHost,
+      case .host(let id)? = hostSelection, id == host.id
+    else { return false }
+    return host.online
+  }
+
   private var sessions: some View {
     VStack(spacing: 0) {
       if let remoteModel {
@@ -231,6 +240,29 @@ struct JunoMobileCodeView: View {
           ),
           onPair: { showingDevices = true }
         )
+        // New session belongs to the chosen computer, so it sits on that
+        // computer's row as a glass circle — not in the bar, where a second
+        // trailing item shares the "…" capsule and pushes Chat | Code off
+        // centre (docs/native/spacing-pass/AUDIT.md X3).
+        .overlay(alignment: .trailing) {
+          if remoteNewSessionAvailable {
+            JunoGlass {
+              Button {
+                showingNewSession = true
+              } label: {
+                JunoIconView(.new, size: JunoLayout.Control.glyph)
+                  .foregroundStyle(Color.primary)
+                  .frame(width: JunoLayout.Control.height, height: JunoLayout.Control.height)
+                  .contentShape(Circle())
+              }
+              .buttonStyle(.plain)
+              .glassEffect(.regular.interactive(), in: Circle())
+            }
+            .padding(.trailing, JunoLayout.Page.gutter)
+            .accessibilityLabel("New session")
+            .accessibilityIdentifier("juno.mobile.code-remote-new")
+          }
+        }
         .padding(.top, JunoSpace.hairline)
       }
       if let remoteModel, let host = remoteModel.selectedHost,
@@ -242,19 +274,6 @@ struct JunoMobileCodeView: View {
           open: { session in remoteModel.openSession(session.sessionID) },
           newSession: host.online ? { showingNewSession = true } : nil
         )
-        .toolbar {
-          if host.online {
-            ToolbarItem(placement: .topBarTrailing) {
-              Button {
-                showingNewSession = true
-              } label: {
-                JunoIconView(.new, size: 16)
-              }
-              .accessibilityLabel("New session")
-              .accessibilityIdentifier("juno.mobile.code-remote-new")
-            }
-          }
-        }
       } else {
         cloudSessions
       }
@@ -312,7 +331,7 @@ struct JunoMobileCodeView: View {
     VStack(spacing: 0) {
       if model.tasks.isEmpty {
         ScrollView {
-          VStack(alignment: .leading, spacing: 12) {
+          VStack(alignment: .leading, spacing: JunoSpace.cozy) {
             if let error = model.lastErrorDescription {
               JunoInlineError(message: error) { Task { await model.refresh() } }
             }
@@ -325,7 +344,7 @@ struct JunoMobileCodeView: View {
             )
             .containerRelativeFrame(.vertical) { height, _ in height * 0.68 }
           }
-          .padding(.horizontal, 16)
+          .padding(.horizontal, JunoSpace.regular)
         }
       } else {
         List {
@@ -392,7 +411,7 @@ struct JunoMobileCodeView: View {
 
   /// The start composer: prompt, target toggle, target picker, go.
   private var composer: some View {
-    VStack(spacing: 8) {
+    VStack(spacing: JunoSpace.snug) {
       if let blocked = model.startBlockedReason, !prompt.isEmpty {
         Label {
           Text(blocked)
@@ -402,10 +421,10 @@ struct JunoMobileCodeView: View {
           .font(.caption2)
           .junoSecondaryInk()
           .frame(maxWidth: .infinity, alignment: .leading)
-          .padding(.horizontal, 6)
+          .padding(.horizontal, JunoSpace.tight)
           .transition(.opacity)
       }
-      VStack(spacing: 8) {
+      VStack(spacing: JunoSpace.snug) {
         TextField(
           model.isTargetless
             ? "code.composer.placeholder.none"
@@ -416,7 +435,7 @@ struct JunoMobileCodeView: View {
         .lineLimit(1...3)
         .textFieldStyle(.plain)
         .focused($composerFocused)
-        .padding(.horizontal, 8)
+        .padding(.horizontal, JunoSpace.snug)
         .frame(minHeight: 38, alignment: .top)
         .accessibilityIdentifier("juno.mobile.code-composer")
 
@@ -424,7 +443,7 @@ struct JunoMobileCodeView: View {
         // compact control row. The old stacked arrangement made the composer
         // cover the last run on a phone and made the destination feel like a
         // settings form instead of a launch control.
-        HStack(alignment: .center, spacing: 6) {
+        HStack(alignment: .center, spacing: JunoSpace.tight) {
           if !model.isTargetless {
             JunoMobileCodeTargetChip(model: model)
               .frame(maxWidth: .infinity, alignment: .leading)
@@ -449,11 +468,11 @@ struct JunoMobileCodeView: View {
           .accessibilityIdentifier("juno.mobile.code-start")
         }
       }
-      .padding(7)
+      .padding(JunoSpace.snug)
       .glassEffect(.regular, in: .rect(cornerRadius: 24, style: .continuous))
     }
-    .padding(.horizontal, 12)
-    .padding(.vertical, 6)
+    .padding(.horizontal, JunoSpace.cozy)
+    .padding(.vertical, JunoSpace.tight)
     .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: canStart)
   }
 
@@ -527,7 +546,7 @@ private struct JunoMobileCodeGreeting: View {
   @State private var phrase: LocalizedStringKey = "code.greeting.ready"
 
   var body: some View {
-    VStack(spacing: 12) {
+    VStack(spacing: JunoSpace.cozy) {
       // The wordmark, in the UI face. It was set in the code face, which
       // is the one thing the house rule reserves for code, paths and
       // terminal output — a product name in monospace is the single
@@ -536,7 +555,7 @@ private struct JunoMobileCodeGreeting: View {
         .junoFont(size: 11, relativeTo: .caption2, weight: .medium)
         .tracking(0.6)
         .junoMetaInk()
-      HStack(spacing: 9) {
+      HStack(spacing: JunoSpace.snug) {
         JunoMark(size: 20)
         Text(phrase)
           .font(JunoSerif.greeting(compact: true))
@@ -548,23 +567,23 @@ private struct JunoMobileCodeGreeting: View {
         .font(.callout)
         .junoSecondaryInk()
         .multilineTextAlignment(.center)
-        .padding(.horizontal, 24)
+        .padding(.horizontal, JunoSpace.section)
 
       if let onSelectIntent {
         ScrollView(.horizontal, showsIndicators: false) {
-          HStack(spacing: 8) {
+          HStack(spacing: JunoSpace.snug) {
             ForEach(Self.presets) { preset in
               Button {
                 onSelectIntent(preset.prompt)
               } label: {
-                HStack(spacing: 6) {
+                HStack(spacing: JunoSpace.tight) {
                   JunoIconView(preset.icon, size: 12)
                     .foregroundStyle(Color.junoAccent)
                   Text(preset.title)
                     .junoFont(size: 12, relativeTo: .caption, weight: .medium)
                     .foregroundStyle(.primary)
                 }
-                .padding(.horizontal, 10)
+                .padding(.horizontal, JunoSpace.close)
                 .frame(minHeight: 44)
                 .modifier(JunoGlassCapsule())
                 .contentShape(Capsule())
@@ -573,9 +592,9 @@ private struct JunoMobileCodeGreeting: View {
               .accessibilityLabel("Preset: \(preset.title)")
             }
           }
-          .padding(.horizontal, 16)
+          .padding(.horizontal, JunoSpace.regular)
         }
-        .padding(.top, 6)
+        .padding(.top, JunoSpace.tight)
       }
     }
     .frame(maxWidth: .infinity)
@@ -664,7 +683,7 @@ private struct JunoMobileCodeTargetChip: View {
       Button {
         picking = true
       } label: {
-        HStack(spacing: 6) {
+        HStack(spacing: JunoSpace.tight) {
           JunoIconView(model.target == .cloud ? .cloud : .device, size: 13)
           Text(displayLabel)
             .junoFont(size: 13, relativeTo: .footnote, weight: .medium)
@@ -675,7 +694,7 @@ private struct JunoMobileCodeTargetChip: View {
             .junoSecondaryInk()
         }
         .foregroundStyle(.primary)
-        .padding(.horizontal, 12)
+        .padding(.horizontal, JunoSpace.cozy)
         // A 36pt visual chip keeps the launch bar calm while the button's
         // surrounding row still meets the 44pt touch target. The previous
         // full-height chip stacked above the destination switch and made the
@@ -747,9 +766,7 @@ private struct JunoMobileCodeTargetSheet: View {
       )
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
-        ToolbarItem(placement: .confirmationAction) {
-          Button("Done") { dismiss() }
-        }
+        JunoMobileSheetClose(label: "Done") { dismiss() }
       }
     }
   }
@@ -771,11 +788,11 @@ private struct JunoMobileCodeTargetSheet: View {
             model.selectedRepository = repo
             dismiss()
           } label: {
-            HStack(spacing: 10) {
+            HStack(spacing: JunoSpace.close) {
               JunoIconView(repo.isPrivate ? .lock : .branch, size: 14)
                 .junoSecondaryInk()
                 .frame(width: 20)
-              VStack(alignment: .leading, spacing: 1) {
+              VStack(alignment: .leading, spacing: JunoSpace.micro) {
                 Text(repo.fullName)
                   .junoFont(size: 15, relativeTo: .subheadline, weight: .medium)
                 Text(repo.defaultBranch)
@@ -811,6 +828,7 @@ private struct JunoMobileCodeTargetSheet: View {
         if failure == .unreachable {
           Button("Retry") { model.loadRepositoriesIfNeeded(force: true) }
             .buttonStyle(.borderedProminent)
+            .controlSize(.large)
             .contentShape(.rect)
         }
       }
@@ -844,11 +862,11 @@ private struct JunoMobileCodeTargetSheet: View {
                 model.selectedWorkspaceKey = workspace.id
                 dismiss()
               } label: {
-                HStack(spacing: 10) {
+                HStack(spacing: JunoSpace.close) {
                   JunoIconView(.projects, size: 14)
                     .junoSecondaryInk()
                     .frame(width: 20)
-                  VStack(alignment: .leading, spacing: 1) {
+                  VStack(alignment: .leading, spacing: JunoSpace.micro) {
                     Text(workspace.name)
                       .junoFont(
                         size: 15, relativeTo: .subheadline, weight: .medium
@@ -882,7 +900,7 @@ private struct JunoMobileCodeTargetSheet: View {
                 .junoSecondaryInk()
             }
           } header: {
-            HStack(spacing: 6) {
+            HStack(spacing: JunoSpace.tight) {
               JunoIconView(.device, size: 14)
               Text(device.name)
               Spacer(minLength: 4)
@@ -916,16 +934,16 @@ private struct JunoMobileCodeTaskRow: View {
   /// text, one secondary line — where it runs, the status in words, when.
   /// Colour only on the two states that ask something of the reader.
   var body: some View {
-    HStack(alignment: .firstTextBaseline, spacing: 12) {
+    HStack(alignment: .firstTextBaseline, spacing: JunoSpace.cozy) {
       statusSymbol
         .frame(width: 22)
-      VStack(alignment: .leading, spacing: 3) {
+      VStack(alignment: .leading, spacing: JunoSpace.hairline) {
         Text(task.title)
           .font(.body)
           .foregroundStyle(.primary)
           .lineLimit(2)
           .multilineTextAlignment(.leading)
-        HStack(spacing: 4) {
+        HStack(spacing: JunoSpace.hairline) {
           Text(junoCodeStatusText(task.status))
             .foregroundStyle(statusIsLoud ? junoCodeStatusTint(task.status) : .secondary)
           Text("·").accessibilityHidden(true)
@@ -946,7 +964,7 @@ private struct JunoMobileCodeTaskRow: View {
         .foregroundStyle(.secondary)
         .monospacedDigit()
     }
-    .padding(.vertical, 4)
+    .padding(.vertical, JunoSpace.hairline)
     .contentShape(Rectangle())
     .accessibilityElement(children: .combine)
   }
@@ -1053,7 +1071,7 @@ private struct JunoMobileCodeSessionView: View {
   var body: some View {
     ScrollViewReader { proxy in
       ScrollView {
-        LazyVStack(alignment: .leading, spacing: 12) {
+        LazyVStack(alignment: .leading, spacing: JunoSpace.cozy) {
           if let task = model.openTask { summary(task) }
           surfaceSwitcher
           switch selectedSurface {
@@ -1074,8 +1092,8 @@ private struct JunoMobileCodeSessionView: View {
           }
           Color.clear.frame(height: 1).id(bottomAnchor)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 14)
+        .padding(.horizontal, JunoSpace.regular)
+        .padding(.vertical, JunoSpace.comfy)
       }
       .junoScreenCanvas()
       .defaultScrollAnchor(.bottom, for: .initialOffset)
@@ -1146,16 +1164,16 @@ private struct JunoMobileCodeSessionView: View {
         } description: {
           Text("Modified, created, and deleted files will appear here as the agent works.")
         }
-        .padding(.vertical, 24)
+        .padding(.vertical, JunoSpace.section)
       } else {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: JunoSpace.snug) {
           Text("\(fileEvents.count) file change\(fileEvents.count == 1 ? "" : "s")")
             .junoFont(size: 13, relativeTo: .footnote, weight: .medium)
             .junoSecondaryInk()
           ForEach(fileEvents) { event in
             JunoCard(padding: 12) {
-              VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 8) {
+              VStack(alignment: .leading, spacing: JunoSpace.tight) {
+                HStack(spacing: JunoSpace.snug) {
                   if let info = event.fileChangeInfo {
                     JunoStatusPill(
                       text: info.changeKind.prefix(1).uppercased(),
@@ -1188,7 +1206,7 @@ private struct JunoMobileCodeSessionView: View {
                     .junoSecondaryInk()
                     .lineLimit(10)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(8)
+                    .padding(JunoSpace.snug)
                     .background(
                       RoundedRectangle(cornerRadius: 6, style: .continuous)
                         .fill(Color.junoMuted.opacity(0.4))
@@ -1215,13 +1233,13 @@ private struct JunoMobileCodeSessionView: View {
         } description: {
           Text("Commands executed by the agent will stream here.")
         }
-        .padding(.vertical, 24)
+        .padding(.vertical, JunoSpace.section)
       } else {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: JunoSpace.close) {
           ForEach(toolEvents) { event in
             JunoCard(padding: 12) {
-              VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 6) {
+              VStack(alignment: .leading, spacing: JunoSpace.tight) {
+                HStack(spacing: JunoSpace.tight) {
                   JunoIconView(.terminal, size: 12)
                     .foregroundStyle(Color.junoAccent)
                   Text(event.title)
@@ -1243,7 +1261,7 @@ private struct JunoMobileCodeSessionView: View {
                     .junoSecondaryInk()
                     .lineLimit(8)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(8)
+                    .padding(JunoSpace.snug)
                     .background(
                       RoundedRectangle(cornerRadius: 6, style: .continuous)
                         .fill(Color.junoMuted.opacity(0.5))
@@ -1270,17 +1288,17 @@ private struct JunoMobileCodeSessionView: View {
         } description: {
           Text("Structured test suite executions and pass/fail metrics will appear here.")
         }
-        .padding(.vertical, 24)
+        .padding(.vertical, JunoSpace.section)
       } else {
         let totalRun = testSummaries.compactMap(\.testsRun).reduce(0, +)
         let totalPassed = testSummaries.compactMap(\.passed).reduce(0, +)
         let totalFailed = testSummaries.compactMap(\.failed).reduce(0, +)
         let totalSkipped = testSummaries.compactMap(\.skipped).reduce(0, +)
 
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: JunoSpace.close) {
           JunoCard(padding: 12) {
-            HStack(spacing: 16) {
-              VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: JunoSpace.regular) {
+              VStack(alignment: .leading, spacing: JunoSpace.micro) {
                 Text("Total Tests")
                   .junoFont(size: 11, relativeTo: .caption2)
                   .junoMetaInk()
@@ -1288,7 +1306,7 @@ private struct JunoMobileCodeSessionView: View {
                   .junoFont(size: 18, relativeTo: .title3, weight: .bold)
               }
               if totalPassed > 0 {
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: JunoSpace.micro) {
                   Text("Passed")
                     .junoFont(size: 11, relativeTo: .caption2)
                     .junoMetaInk()
@@ -1298,7 +1316,7 @@ private struct JunoMobileCodeSessionView: View {
                 }
               }
               if totalFailed > 0 {
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: JunoSpace.micro) {
                   Text("Failed")
                     .junoFont(size: 11, relativeTo: .caption2)
                     .junoMetaInk()
@@ -1308,7 +1326,7 @@ private struct JunoMobileCodeSessionView: View {
                 }
               }
               if totalSkipped > 0 {
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: JunoSpace.micro) {
                   Text("Skipped")
                     .junoFont(size: 11, relativeTo: .caption2)
                     .junoMetaInk()
@@ -1322,8 +1340,8 @@ private struct JunoMobileCodeSessionView: View {
           }
           ForEach(Array(testSummaries.enumerated()), id: \.offset) { _, summary in
             JunoCard(padding: 12) {
-              VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 8) {
+              VStack(alignment: .leading, spacing: JunoSpace.hairline) {
+                HStack(spacing: JunoSpace.snug) {
                   switch summary.status {
                   case .passed:
                     JunoIconView(.check, size: 13)
@@ -1386,13 +1404,13 @@ private struct JunoMobileCodeSessionView: View {
             "Visual verification frames, WebKit screenshots, and web preview diagnostics will appear here."
           )
         }
-        .padding(.vertical, 24)
+        .padding(.vertical, JunoSpace.section)
       } else {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: JunoSpace.close) {
           ForEach(Array(previewEvents.enumerated()), id: \.offset) { _, info in
             JunoCard(padding: 14) {
-              VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 8) {
+              VStack(alignment: .leading, spacing: JunoSpace.close) {
+                HStack(spacing: JunoSpace.snug) {
                   JunoIconView(.web, size: 14)
                     .foregroundStyle(Color.junoAccent)
                   Text(info.url ?? "Web Preview")
@@ -1422,13 +1440,13 @@ private struct JunoMobileCodeSessionView: View {
                             .stroke(Color.junoBorder, lineWidth: 1)
                         )
                     case .failure:
-                      HStack(spacing: 6) {
+                      HStack(spacing: JunoSpace.tight) {
                         JunoIconView(.error, size: 13)
                         Text("Could not load preview screenshot")
                       }
                       .junoFont(size: 12, relativeTo: .caption)
                       .junoMetaInk()
-                      .padding(12)
+                      .padding(JunoSpace.cozy)
                     case .empty:
                       ProgressView()
                         .frame(maxWidth: .infinity, minHeight: 120)
@@ -1437,7 +1455,7 @@ private struct JunoMobileCodeSessionView: View {
                     }
                   }
                   Link(destination: url) {
-                    HStack(spacing: 6) {
+                    HStack(spacing: JunoSpace.tight) {
                       JunoIconView(.external, size: 13)
                       Text("Open Full Visual Evidence")
                     }
@@ -1468,16 +1486,16 @@ private struct JunoMobileCodeSessionView: View {
           Text(
             "This run executed directly on the primary host runner without subagent delegations.")
         }
-        .padding(.vertical, 24)
+        .padding(.vertical, JunoSpace.section)
       } else {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: JunoSpace.close) {
           Text("\(agents.count) Delegated Agent\(agents.count == 1 ? "" : "s")")
             .junoFont(size: 13, relativeTo: .footnote, weight: .medium)
             .junoSecondaryInk()
           ForEach(Array(agents.enumerated()), id: \.offset) { _, agent in
             JunoCard(padding: 12) {
-              VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 8) {
+              VStack(alignment: .leading, spacing: JunoSpace.tight) {
+                HStack(spacing: JunoSpace.snug) {
                   JunoIconView(.user, size: 13)
                     .foregroundStyle(Color.junoAccent)
                   Text(agent.title ?? agent.role)
@@ -1511,10 +1529,10 @@ private struct JunoMobileCodeSessionView: View {
   private var gitContent: some View {
     guard let task = model.openTask else { return AnyView(EmptyView()) }
     return AnyView(
-      VStack(alignment: .leading, spacing: 10) {
+      VStack(alignment: .leading, spacing: JunoSpace.close) {
         JunoCard(padding: 14) {
-          VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
+          VStack(alignment: .leading, spacing: JunoSpace.close) {
+            HStack(spacing: JunoSpace.snug) {
               JunoIconView(.branch, size: 14)
                 .junoSecondaryInk()
               Text("Branch / Target")
@@ -1527,7 +1545,7 @@ private struct JunoMobileCodeSessionView: View {
               }
             }
             Divider()
-            HStack(spacing: 8) {
+            HStack(spacing: JunoSpace.snug) {
               Text("Location")
                 .junoFont(size: 12, relativeTo: .caption)
                 .junoMetaInk()
@@ -1538,7 +1556,7 @@ private struct JunoMobileCodeSessionView: View {
             if let pr = task.pullRequestURL {
               Divider()
               Link(destination: pr) {
-                HStack(spacing: 8) {
+                HStack(spacing: JunoSpace.snug) {
                   JunoIconView(.pulls, size: 14)
                   Text("code.open-pull-request")
                     .junoFont(size: 14, relativeTo: .subheadline, weight: .semibold)
@@ -1558,8 +1576,8 @@ private struct JunoMobileCodeSessionView: View {
 
   private func summary(_ task: NativeCodeTask) -> some View {
     JunoCard(padding: 14) {
-      VStack(alignment: .leading, spacing: 8) {
-        HStack(spacing: 8) {
+      VStack(alignment: .leading, spacing: JunoSpace.snug) {
+        HStack(spacing: JunoSpace.snug) {
           JunoIconView(task.target == .cloud ? .cloud : .device, size: 12)
             .junoSecondaryInk()
           Text(task.whereItRuns)
@@ -1650,7 +1668,7 @@ private struct JunoMobileCodeSessionView: View {
   @State private var questionAnswer = ""
 
   private var footer: some View {
-    VStack(alignment: .leading, spacing: 12) {
+    VStack(alignment: .leading, spacing: JunoSpace.cozy) {
       if let question = model.pendingQuestion {
         Text("Alevr needs your answer").font(.headline)
         Text(question.text).textSelection(.enabled)
@@ -1677,10 +1695,10 @@ private struct JunoMobileCodeSessionView: View {
       }
       followUpComposer
     }
-    .padding(14)
+    .padding(JunoSpace.comfy)
     .background(JunoGlassBackground(cornerRadius: 22))
-    .padding(.horizontal, 12)
-    .padding(.bottom, 8)
+    .padding(.horizontal, JunoSpace.cozy)
+    .padding(.bottom, JunoSpace.snug)
     .animation(
       JunoMotion.reduced(JunoMotion.standard, when: reduceMotion),
       value: model.pendingApproval
@@ -1700,13 +1718,13 @@ private struct JunoMobileCodeSessionView: View {
   /// the field says so plainly rather than accepting a message it would have to
   /// drop.
   private var followUpComposer: some View {
-    VStack(alignment: .leading, spacing: 8) {
+    VStack(alignment: .leading, spacing: JunoSpace.snug) {
       if let blocked = followUpBlockedReason {
         Text(blocked)
           .junoCaption()
           .frame(maxWidth: .infinity, alignment: .leading)
       }
-      HStack(alignment: .bottom, spacing: 8) {
+      HStack(alignment: .bottom, spacing: JunoSpace.snug) {
         TextField(
           String(
             localized: "code.followup.placeholder",
@@ -1789,8 +1807,8 @@ private struct JunoMobileCodeSessionView: View {
   }
 
   private func approvalPanel(_ approval: NativeCodeApproval) -> some View {
-    VStack(alignment: .leading, spacing: 10) {
-      HStack(spacing: 8) {
+    VStack(alignment: .leading, spacing: JunoSpace.close) {
+      HStack(spacing: JunoSpace.snug) {
         Label {
           Text("code.approval.title")
         } icon: {
@@ -1822,7 +1840,7 @@ private struct JunoMobileCodeSessionView: View {
       // lose their lensing. The system's bordered pair is the correct
       // vocabulary on a glass platter, and the explicit tint keeps
       // Allow on Juno's accent instead of the device's.
-      HStack(spacing: 10) {
+      HStack(spacing: JunoSpace.close) {
         Button {
           Task { await model.respondToApproval(approve: false) }
         } label: {
@@ -1835,7 +1853,7 @@ private struct JunoMobileCodeSessionView: View {
         // accented actions competing to be the obvious one — on the
         // single control in the product that stops an agent from
         // touching somebody's files. One tinted action per surface.
-        .buttonStyle(.bordered)
+        .modifier(JunoMobileWorkspaceActionStyle())
         .tint(Color.junoMutedForeground)
         .foregroundStyle(.primary)
         .controlSize(.large)
@@ -1886,14 +1904,14 @@ private struct JunoMobileCodeEventRow: View {
         .junoMetaInk()
         .frame(maxWidth: .infinity, alignment: .leading)
     default:
-      HStack(alignment: .top, spacing: 8) {
+      HStack(alignment: .top, spacing: JunoSpace.snug) {
         Group {
           JunoIconView(symbol, size: 12)
         }
         .junoSecondaryInk()
         .frame(width: 14)
-        .padding(.top, 2)
-        VStack(alignment: .leading, spacing: 1) {
+        .padding(.top, JunoSpace.micro)
+        VStack(alignment: .leading, spacing: JunoSpace.micro) {
           // The code face only where the content is code. A file
           // change is a path and a line count and belongs in it; a
           // tool call's summary and a sub-agent's status line are

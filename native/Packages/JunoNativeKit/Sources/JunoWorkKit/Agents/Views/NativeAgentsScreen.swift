@@ -70,8 +70,11 @@ public struct NativeAgentsScreen: View {
             openAgent: openThread
         )
         #if os(iOS)
-        .navigationTitle("Agents")
-        .navigationBarTitleDisplayMode(.inline)
+        // One title, the product's name, as the large bar title every other
+        // phone page wears; the header below keeps only its sentence
+        // (docs/native/spacing-pass/AUDIT.md X7).
+        .navigationTitle("Orbit")
+        .navigationBarTitleDisplayMode(.large)
         .refreshable { await model.refresh() }
         #else
         // A failure while the team is showing is a standing condition in the
