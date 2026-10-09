@@ -185,6 +185,8 @@ docker run --rm -i --platform linux/amd64 \
     step "vendored runner core"
     npm ci --prefix runner/agent-core --no-audit --no-fund
     npm run build --prefix runner/agent-core
+    step "Code env server dependencies"
+    npm ci --prefix runner/env-server --no-audit --no-fund
     step "relay dependencies"
     npm ci --prefix relay --no-audit --no-fund
     if [ "${JUNO_EMERGENCY_SKIP_GATES:-0}" = "1" ]; then
