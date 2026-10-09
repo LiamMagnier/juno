@@ -1298,7 +1298,8 @@ private struct JunoMobileConversationDetail: View {
       JunoMobileResearchReportView(
         report: route.report,
         loadAudit: { messageID in await model.researchAudit(messageID: messageID) },
-        close: { reportRoute = nil }
+        close: { reportRoute = nil },
+        docked: true
       )
       .environment(\.nativeSourceFavicons, sourceFavicons)
       .tint(Color.junoAccent)

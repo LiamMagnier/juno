@@ -136,6 +136,7 @@ struct JunoMobileApp: App {
                 // fixture account's stored preference.
                 .junoPreviewAppearance()
                 .buttonBorderShape(.capsule)
+                .modifier(JunoPreviewLandscapeCanvas())
             } else {
                 rootView
             }
@@ -533,3 +534,28 @@ private struct JunoMobileConfiguration {
     let pullsClient: NativeGitHubPullsClient?
     let shareClient: NativeShareClient?
 }
+
+#if DEBUG
+/// `--juno-preview-landscape`: the app laid out on a landscape canvas, turned
+/// a quarter so the portrait framebuffer holds it (rotate the capture back).
+/// iPadOS 26's windowing refuses a programmatic orientation change and simctl
+/// cannot rotate a device, so this is how the iPad's side-by-side inspector is
+/// looked at without touching the simulator's window. Presentations that the
+/// window owns (sheets, alerts) are not turned.
+struct JunoPreviewLandscapeCanvas: ViewModifier {
+    func body(content: Content) -> some View {
+        if CommandLine.arguments.contains("--juno-preview-landscape") {
+            GeometryReader { proxy in
+                content
+                    .frame(width: proxy.size.height, height: proxy.size.width)
+                    .rotationEffect(.degrees(90))
+                    .frame(width: proxy.size.width, height: proxy.size.height)
+            }
+            .ignoresSafeArea()
+            .statusBarHidden()
+        } else {
+            content
+        }
+    }
+}
+#endif

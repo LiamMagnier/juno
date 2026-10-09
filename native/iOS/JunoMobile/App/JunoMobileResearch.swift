@@ -19,6 +19,10 @@ struct JunoMobileResearchReportView: View {
     /// Reads the citation check on the answer, when there is one.
     var loadAudit: ((String) async -> NativeResearchAudit?)?
     let close: () -> Void
+    /// True in the iPad's inspector beside the thread. A navigation bar does
+    /// not draw there, so the reader carries its own row: close, Contents and
+    /// Share as glass circles, the iOS 26 Calendar's controls.
+    var docked = false
 
     @State private var audit: NativeResearchAudit?
     @State private var reading: String?
@@ -53,7 +57,11 @@ struct JunoMobileResearchReportView: View {
             .background(Color.junoCanvas)
             .navigationTitle(reading == nil ? "" : report.title)
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { toolbar }
+            .toolbar { if !docked { toolbar } }
+            .toolbar(docked ? .hidden : .automatic, for: .navigationBar)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                if docked { dockedHeader }
+            }
             .animation(JunoMotion.reduced(JunoMotion.base, when: reduceMotion, tier: .tint), value: reading == nil)
         }
         .task {
@@ -79,45 +87,91 @@ struct JunoMobileResearchReportView: View {
                 .accessibilityIdentifier("juno.mobile.research-report.done")
         }
         ToolbarItemGroup(placement: .topBarTrailing) {
-            if report.headings.count >= 2 || !report.sources.isEmpty {
-                Menu {
-                    ForEach(report.headings) { heading in
-                        Button(heading.level >= 3 ? "   " + heading.title : heading.title) { jump(to: heading.id) }
-                    }
-                    if !report.sources.isEmpty {
-                        Divider()
-                        Button("Sources") { jump(to: NativeResearchReportArticle.sourcesID) }
-                    }
-                } label: {
-                    Label("Contents", image: JunoIcon.list.assetName(.regular))
-                }
-                .accessibilityIdentifier("juno.mobile.research-report.contents")
+            contentsMenu
+            shareMenu
+        }
+    }
+
+    /// The docked reader's row: close on the leading edge, the two menus
+    /// grouped on the trailing one, each a glass circle.
+    private var dockedHeader: some View {
+        HStack(spacing: JunoSpace.tight) {
+            Button(action: close) {
+                // A Label, so the glass circle sizes it like the menus beside it.
+                Label { Text("Close report") } icon: { Self.headerGlyph(.close) }
+                    .contentShape(Circle())
             }
+            .accessibilityLabel("Close report")
+            .accessibilityIdentifier("juno.mobile.research-report.done")
+            Spacer(minLength: 0)
+            GlassEffectContainer {
+                HStack(spacing: JunoSpace.tight) {
+                    contentsMenu
+                    shareMenu
+                }
+            }
+        }
+        .labelStyle(.iconOnly)
+        .buttonStyle(.glass)
+        .buttonBorderShape(.circle)
+        .tint(Color.primary)
+        .padding(.horizontal, JunoSpace.regular)
+        .padding(.vertical, JunoSpace.tight)
+    }
+
+    /// One box for every glyph in the row, so the three glass circles come out
+    /// the same 44pt whatever the drawing inside them (owner: same size, same
+    /// line).
+    private static func headerGlyph(_ icon: JunoIcon) -> some View {
+        JunoIconView(icon, size: 17)
+            .frame(width: 29, height: 29)
+    }
+
+    @ViewBuilder
+    private var contentsMenu: some View {
+        if report.headings.count >= 2 || !report.sources.isEmpty {
             Menu {
-                Button {
-                    UIPasteboard.general.string = report.markdown(accessed: Date())
-                    copied = true
-                } label: {
-                    Label(copied ? "Copied" : "Copy as Markdown", image: (copied ? JunoIcon.check : JunoIcon.copy).assetName(.regular))
+                ForEach(report.headings) { heading in
+                    Button(heading.level >= 3 ? "   " + heading.title : heading.title) { jump(to: heading.id) }
                 }
-                ShareLink(item: report.markdown(accessed: Date()), subject: Text(report.title)) {
-                    Label("Share as text", image: JunoIcon.writing.assetName(.regular))
-                }
-                if let files {
-                    ShareLink(item: files.markdown) {
-                        Label("Markdown file", image: JunoIcon.file.assetName(.regular))
-                    }
-                    if let pdf = files.pdf {
-                        ShareLink(item: pdf) {
-                            Label("PDF", image: JunoIcon.file.assetName(.regular))
-                        }
-                    }
+                if !report.sources.isEmpty {
+                    Divider()
+                    Button("Sources") { jump(to: NativeResearchReportArticle.sourcesID) }
                 }
             } label: {
-                Label("Share", image: JunoIcon.share.assetName(.regular))
+                Label { Text("Contents") } icon: { Self.headerGlyph(.list) }
+                    .contentShape(.rect)
             }
-            .accessibilityIdentifier("juno.mobile.research-report.share")
+            .accessibilityIdentifier("juno.mobile.research-report.contents")
         }
+    }
+
+    private var shareMenu: some View {
+        Menu {
+            Button {
+                UIPasteboard.general.string = report.markdown(accessed: Date())
+                copied = true
+            } label: {
+                Label(copied ? "Copied" : "Copy as Markdown", image: (copied ? JunoIcon.check : JunoIcon.copy).assetName(.regular))
+            }
+            ShareLink(item: report.markdown(accessed: Date()), subject: Text(report.title)) {
+                Label("Share as text", image: JunoIcon.writing.assetName(.regular))
+            }
+            if let files {
+                ShareLink(item: files.markdown) {
+                    Label("Markdown file", image: JunoIcon.file.assetName(.regular))
+                }
+                if let pdf = files.pdf {
+                    ShareLink(item: pdf) {
+                        Label("PDF", image: JunoIcon.file.assetName(.regular))
+                    }
+                }
+            }
+        } label: {
+            Label { Text("Share") } icon: { Self.headerGlyph(.share) }
+                .contentShape(.rect)
+        }
+        .accessibilityIdentifier("juno.mobile.research-report.share")
     }
 
     private func jump(to id: String) {
