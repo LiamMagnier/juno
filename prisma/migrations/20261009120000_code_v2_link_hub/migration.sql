@@ -9,6 +9,7 @@ CREATE TABLE "CodeLinkHost" (
     "lastPullAt" TIMESTAMP(3) NOT NULL,
     "appVersion" TEXT,
     "globalSeq" INTEGER NOT NULL DEFAULT 0,
+    "terminalShared" BOOLEAN NOT NULL DEFAULT false,
 
     CONSTRAINT "CodeLinkHost_pkey" PRIMARY KEY ("userId","deviceId")
 );

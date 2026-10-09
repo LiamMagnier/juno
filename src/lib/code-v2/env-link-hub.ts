@@ -133,7 +133,8 @@ export interface LinkHostPullReply {
 export interface LinkEndpoint {
   rpc(command: ClientCommand): Promise<LinkReply>;
   poll(cursors: Record<string, number>, globalCursor?: number, waitMs?: number, signal?: AbortSignal): Promise<LinkReply>;
-  pull(waitMs?: number, signal?: AbortSignal, appVersion?: string): Promise<LinkHostPullReply>;
+  /** `terminal`: the Mac's latest pull says the user shared its terminal. */
+  pull(waitMs?: number, signal?: AbortSignal, appVersion?: string, terminal?: boolean): Promise<LinkHostPullReply>;
   push(input: { responses?: ServerResponse[]; events?: ServerEventEnvelope[] }): { accepted: number } | Promise<{ accepted: number }>;
 }
 

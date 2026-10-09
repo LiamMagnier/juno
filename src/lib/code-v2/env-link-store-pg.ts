@@ -28,6 +28,7 @@ import {
   LINK_LIMITS,
   LINK_REFUSED_COMMANDS,
   LINK_RELAYED_COMMANDS,
+  LINK_TERMINAL_COMMANDS,
   type LinkEndpoint,
   type LinkHostPullReply,
   type LinkHub,
@@ -91,13 +92,17 @@ export class PgDeviceLink implements LinkEndpoint {
     this.#clock = options.clock ?? Date.now;
   }
 
-  async online(): Promise<boolean> {
-    const rows = await this.sql.$queryRawUnsafe<{ lastPullAt: Date }[]>(
-      `SELECT "lastPullAt" FROM "CodeLinkHost" WHERE "userId" = $1 AND "deviceId" = $2`,
+  async #host(): Promise<{ lastPullAt: Date; terminalShared: boolean } | undefined> {
+    const rows = await this.sql.$queryRawUnsafe<{ lastPullAt: Date; terminalShared: boolean }[]>(
+      `SELECT "lastPullAt", "terminalShared" FROM "CodeLinkHost" WHERE "userId" = $1 AND "deviceId" = $2`,
       this.userId,
       this.deviceId,
     );
-    const at = rows[0]?.lastPullAt;
+    return rows[0];
+  }
+
+  async online(): Promise<boolean> {
+    const at = (await this.#host())?.lastPullAt;
     return !!at && this.#clock() - new Date(at).getTime() <= LINK_LIMITS.hostOnlineMs;
   }
 
@@ -108,10 +113,16 @@ export class PgDeviceLink implements LinkEndpoint {
       responses: [{ type: "response", id: String(command?.id ?? ""), ok: false, error: { code, message } }],
     });
     if (!command || typeof command.id !== "string" || typeof command.type !== "string") return refuse("bad_request", "Malformed command.");
-    if (LINK_REFUSED_COMMANDS.has(command.type) || !LINK_RELAYED_COMMANDS.has(command.type)) {
-      return refuse("unsupported", command.type.startsWith("terminal.") ? "Terminals open on the Mac itself, not from the web." : "That action is only available in Alevr on your Mac.");
+    const terminal = LINK_TERMINAL_COMMANDS.has(command.type);
+    if (LINK_REFUSED_COMMANDS.has(command.type) || (!terminal && !LINK_RELAYED_COMMANDS.has(command.type))) {
+      return refuse("unsupported", "That action is only available in Alevr on your Mac.");
     }
-    if (!(await this.online())) return { offline: true, message: "Your Mac is offline. Open Alevr on it to continue." };
+    const host = await this.#host();
+    const online = !!host && this.#clock() - new Date(host.lastPullAt).getTime() <= LINK_LIMITS.hostOnlineMs;
+    if (terminal && !host?.terminalShared) {
+      return refuse("unsupported", "The terminal on your Mac is not shared. Turn on Share terminal in Alevr on your Mac, under Remote hosting.");
+    }
+    if (!online) return { offline: true, message: "Your Mac is offline. Open Alevr on it to continue." };
     const queued = await this.sql.$queryRawUnsafe<{ n: bigint | number }[]>(
       `SELECT count(*)::int AS n FROM "CodeLinkCommand" WHERE "userId" = $1 AND "deviceId" = $2 AND "claimedAt" IS NULL`,
       this.userId,
@@ -253,19 +264,22 @@ export class PgDeviceLink implements LinkEndpoint {
 
   // ── Mac side ──────────────────────────────────────────────────────────
 
-  async #heartbeat(appVersion?: string): Promise<void> {
+  /** `terminal` is set only by a pull (the Mac's switch); other heartbeats keep it. */
+  async #heartbeat(appVersion?: string, terminal?: boolean): Promise<void> {
     await this.sql.$executeRawUnsafe(
-      `INSERT INTO "CodeLinkHost" ("userId", "deviceId", "lastPullAt", "appVersion") VALUES ($1, $2, $3, $4)
-       ON CONFLICT ("userId", "deviceId") DO UPDATE SET "lastPullAt" = $3, "appVersion" = COALESCE($4, "CodeLinkHost"."appVersion")`,
+      `INSERT INTO "CodeLinkHost" ("userId", "deviceId", "lastPullAt", "appVersion", "terminalShared") VALUES ($1, $2, $3, $4, COALESCE($5, false))
+       ON CONFLICT ("userId", "deviceId") DO UPDATE SET "lastPullAt" = $3, "appVersion" = COALESCE($4, "CodeLinkHost"."appVersion"),
+         "terminalShared" = COALESCE($5, "CodeLinkHost"."terminalShared")`,
       this.userId,
       this.deviceId,
       new Date(this.#clock()),
       appVersion ?? null,
+      terminal ?? null,
     );
   }
 
-  async pull(waitMs: number = LINK_LIMITS.hostPullWaitMs, signal?: AbortSignal, appVersion?: string): Promise<LinkHostPullReply> {
-    await this.#heartbeat(appVersion);
+  async pull(waitMs: number = LINK_LIMITS.hostPullWaitMs, signal?: AbortSignal, appVersion?: string, terminal = false): Promise<LinkHostPullReply> {
+    await this.#heartbeat(appVersion, terminal === true);
     const deadline = this.#clock() + Math.min(Math.max(0, waitMs), LINK_LIMITS.hostPullWaitMs);
     let commands = await this.#claim();
     while (commands.length === 0 && !signal?.aborted) {

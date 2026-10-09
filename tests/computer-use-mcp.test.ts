@@ -314,7 +314,7 @@ test("the unix-socket bridge sends one JSON line with the token and reads the ma
   const dir = scratch();
   const socketPath = join(dir, "bridge.sock");
   const tokenPath = join(dir, "bridge.token");
-  writeFileSync(tokenPath, "secret-token\n");
+  writeFileSync(tokenPath, "secretToken0123456789\n");
   chmodSync(tokenPath, 0o600);
   const seen: ComputerBridgeRequest[] = [];
   const server = createServer((socket) => {
@@ -338,7 +338,7 @@ test("the unix-socket bridge sends one JSON line with the token and reads the ma
     const bridge = createUnixSocketBridge({ socketPath, tokenPath });
     const response = await bridge.send({ type: "computer.status", sessionId: "s1" });
     assert.equal(response.text, "Screen control is ready.");
-    assert.equal(seen[0].token, "secret-token");
+    assert.equal(seen[0].token, "secretToken0123456789");
     assert.ok(validates("ComputerBridgeRequest", seen[0]));
     assert.ok(validates("ComputerBridgeResponse", response));
 

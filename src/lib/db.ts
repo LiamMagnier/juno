@@ -258,6 +258,13 @@ export const OWNER_COLUMN = new Map<string, "userId" | "accountId">([
   ["UsageCredit", "userId"],
   ["ReferralCode", "userId"],
   ["RenewalReminder", "userId"],
+  // Code v2 device-link hub (ALEVR_LINK_STORE=postgres). The store reaches
+  // these through raw SQL scoped by userId; guarded so any model call is too.
+  ["CodeLinkHost", "userId"],
+  ["CodeLinkCommand", "userId"],
+  ["CodeLinkResponse", "userId"],
+  ["CodeLinkEvent", "userId"],
+  ["CodeLinkSession", "userId"],
 ]);
 
 /**
