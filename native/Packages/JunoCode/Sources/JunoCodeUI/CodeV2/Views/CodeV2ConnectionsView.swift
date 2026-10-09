@@ -372,7 +372,8 @@ struct CodeV2ManagedRuntimeDetail: View {
                         .font(Studio.Font.meta).foregroundStyle(Studio.Ink.tertiary)
                         .fixedSize(horizontal: false, vertical: true)
                     HStack(spacing: JunoSpace.snug) {
-                        TextField("http://127.0.0.1:…", text: $pasted)
+                        TextField("Sign-in address", text: $pasted, prompt: Text("http://127.0.0.1:…"))
+                            .labelsHidden()
                             .textFieldStyle(.roundedBorder)
                             .font(Studio.Font.mono)
                             .onSubmit(complete)
