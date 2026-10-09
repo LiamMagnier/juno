@@ -271,7 +271,14 @@ export function ModelPicker({
                         </span>
                         {sub && <span className="sub block cv2-trunc" style={{ display: "block" }}>{sub}</span>}
                       </span>
-                      <span className="meta">{t ? (priced ? `${formatRate(t.inputPerMTok)} / ${formatRate(t.outputPerMTok)}` : formatTokens(t.tokens)) : ""}</span>
+                      <span className="meta">
+                        {t
+                          ? priced
+                            ? `${formatRate(t.inputPerMTok)} / ${formatRate(t.outputPerMTok)}`
+                            : // A plan prices nothing per token: show the largest window it offers (the Context control's ceiling).
+                              formatTokens(Math.max(...(pm?.contextTiers ?? [t]).map((x) => x.tokens)))
+                          : ""}
+                      </span>
                     </button>
                   );
                 })}
