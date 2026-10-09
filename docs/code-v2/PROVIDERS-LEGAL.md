@@ -60,6 +60,15 @@ The owner decided on 2026-10-09 to enable Antigravity as a normal provider, acce
 - `alevr` sends inference through Alevr's backend (`/api/agent/<lab>`) with the user's Alevr session, which the Mac app passes over `env.configure`, held in memory only. Usage is billed on the user's Alevr plan. Only Alevr's own provider contracts apply.
 - `byok` uses the user's own API keys from `env.configure` (memory only, never written by the env server and never sent back on the wire, which a test checks). Each lab's API terms apply to the user's key. Confirm that our UI copy says usage goes to the user's own account with that lab.
 
+### OpenRouter: `byok:openrouter` (the user's own OpenRouter key)
+
+- **Mechanism.** BYOK only: Alevr never holds an OpenRouter key of its own and never bills OpenRouter usage. Requests go through `/api/agent/openrouter/chat/completions` on the user's sealed key to `https://openrouter.ai/api/v1`, with `HTTP-Referer: https://alevr.com` and `X-Title: Alevr` (OpenRouter's app attribution). The key is tested with `GET /api/v1/key`; the picker reads OpenRouter's public model list without a key.
+- **Assumption to verify.** OpenRouter's terms for third-party apps sending requests on a user's key, and each upstream lab's terms for traffic routed through OpenRouter.
+
+### Antigravity on the web (2026-10-09)
+
+The owner turned Antigravity on ("enable antigravity"). The web lists it like any subscription and drives the runtime lane's managed install (`provider.install`) and sign-in (`provider.auth`) on the user's Mac. The sign-in is Google's own page; on the Mac its loopback redirect finishes by itself. From another device the user pastes the `http://localhost:<port>/…?code=…` address the browser ended on, and the web sends it to the Mac through the device link, so **that one-time authorization code transits Alevr's relay** (memory only, never logged or stored, and only a loopback URL with a `code` or `error` is accepted). Confirm with Google's terms that this paste-back path is acceptable, or drop it and keep the Mac-only loopback.
+
 ## The Alevr MCP server injected into vendor sessions
 
 The env server serves an MCP endpoint on 127.0.0.1 with a per-session scoped bearer. It is injected into Claude, Codex and ACP sessions and exposes `spawn_subagent` (on any instance, including another vendor's), `list/wait/cancel_subagent` and `search_threads`. The computer lane adds computer use. Verify:

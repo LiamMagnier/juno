@@ -16,7 +16,7 @@ import type {
 } from "@/lib/code-v2/contracts";
 import type { QueueRow } from "@/lib/code-v2/composer";
 import type { DockTab } from "@/lib/code-v2/dock";
-import type { HunkDecision } from "@/lib/code-v2/diff";
+import type { DiffFile, HunkDecision } from "@/lib/code-v2/diff";
 import type { DetailLevel } from "@/lib/code-v2/turns";
 import type { ThreadSummary } from "@/lib/code-v2/thread-sections";
 import type { ByokKeyRecord } from "@/lib/code-v2/byok-client";
@@ -27,6 +27,8 @@ export interface TerminalSession {
   /** Agent-run commands are read-only; the user's shell is writable. */
   readOnly: boolean;
   output: string;
+  /** Characters dropped from the front of `output` (see terminal-stream.ts). */
+  offset?: number;
   exited?: boolean;
 }
 
@@ -62,17 +64,27 @@ export interface WorkspaceActions {
   steerQueued(id: string): void;
   compact?(): void;
   rollback?(checkpointId: string): void;
-  decideHunk?(path: string, hunkId: string, decision: HunkDecision | null): void;
+  /**
+   * A hunk decision. `file` is the parsed file the hunk belongs to (the host
+   * builds the patch from it). Resolving `false` means the host could not
+   * apply it, and the dock takes the decision back.
+   */
+  decideHunk?(path: string, hunkId: string, decision: HunkDecision | null, file?: DiffFile): void | Promise<boolean | void>;
+  /** Cancels a scheduled resume (resume at reset). */
+  cancelResume?(): void;
   commit?(): void;
   messageAgent?(agentId: string, text: string): void;
   stopAgent?(agentId: string): void;
   keepCandidate?(agentId: string): void;
   approvePlan?(itemId: string, approve: boolean): void;
-  resumeAtReset?(): void;
+  /** Schedules the next turn for when the limit resets (`at`: the reset the composer shows). */
+  resumeAtReset?(at?: string): void | Promise<unknown>;
   openConnections?(): void;
   openThread?(id: string): void;
   newThread?(): void;
   terminalInput?(terminalId: string, data: string): void;
+  terminalResize?(terminalId: string, cols: number, rows: number): void;
+  closeTerminal?(terminalId: string): void;
   openTerminal?(command?: string): void;
   renameThread?(title: string): void;
 }
@@ -82,6 +94,8 @@ export interface WorkspaceModel {
   items: TurnItem[];
   state: SessionState;
   resumeAt?: string;
+  /** A turn the env server starts by itself when the limit resets. */
+  scheduledResume?: { id: string; at: string } | null;
   stateMessage?: string;
   usage?: SessionUsage;
   queue: QueueRow[];

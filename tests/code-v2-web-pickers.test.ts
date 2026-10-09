@@ -105,7 +105,9 @@ test("provider names, marks and rail order follow the owner rules", () => {
   assert.equal(displayName(instances[1]), "Grok");
   assert.equal(displayName(instances[0]), "Your Anthropic key");
   assert.deepEqual(instanceMark(instances[6]), { type: "lab", provider: "deepseek" });
-  assert.equal(isInstanceVisible(instances[2]), true, "Antigravity is a normal provider since 2026-10-09");
+  assert.equal(isInstanceVisible(instances[2]), true, "Antigravity is on (owner, 2026-10-09)");
+  assert.equal(displayName(instances[2]), "Antigravity");
+  assert.deepEqual(instanceMark(instances[2]), { type: "lab", provider: "google" });
   const rail = railEntries(instances, {}, NOW);
   assert.deepEqual(rail.map((e) => e.instance.id), ["alevr", "acp:antigravity", "claude-agent:default", "acp:grok", "codex:default", "byok:anthropic"]);
   assert.deepEqual(rail.map((e) => e.dim), [false, false, false, true, true, false]);

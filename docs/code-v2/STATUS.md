@@ -123,22 +123,26 @@ See the result object of this run for exact commands; summary:
   bundled env server in the running app; `/code/[id]` against a real account
   and Mac through the device link; computer use with Screen Recording and
   Accessibility granted.
-- **Web**: install `@xterm/xterm` for the Terminal tab; the Code sidebar is
-  ready but the app shell still renders its own. The runtime APIs below
-  (applyPatch, schedules, managed install/sign-in) have client functions but
-  no visuals yet: that is the UI rework's job.
 - **Antigravity**: a real Google sign-in and a real download of Google's 111 MB
   release on this Mac (the tests use a fake runtime and a local archive).
-- **Mac**: Terminal/Files/Preview dock tabs for env-server threads;
-  connected-agent approvals use NSAlert until they get a Studio card;
-  Orchestrate selections on other providers (subscriptions, BYOK) inherit the
-  parent's model in the Swift engine (no resolver yet); the overlay window has
-  no snapshot test.
-- **Release**: re-check every item in PROVIDERS-LEGAL.md (including the
-  Antigravity terms risk); Codex ChatGPT token sharing stays disabled.
-  OpenRouter BYOK is not in the catalogue.
+- **UI/UX rework**: the owner judged the current build's screens "awful AI
+  slop". The functional lanes deliberately left their new surfaces plain
+  (schedule, managed install/sign-in progress, dock Terminal/Files/Preview,
+  connected-agent card, OpenRouter row). Three design directions wait on
+  `code-v3/dir-a`, `dir-b`, `dir-c` for the owner's choice; none is merged.
+- **Gaps the lanes named**: a subscription subagent works in the parent
+  thread's folder (no own worktree for write tasks); the parent thread's model
+  client sends no `x-alevr-context-tokens` (only routed subagents do); BYOK
+  subagents use keys stored in the Alevr account, not Keychain-only keys; the
+  legacy CodeTask path (no env server) rejects hunks in the UI only and does
+  not pass BYOK selections; the Code v2 shell sidebar has no rename / archive
+  / delete menu or archived list; the Postgres link hub is opt-in
+  (`ALEVR_LINK_STORE=postgres`).
+- **Release**: re-check every item in PROVIDERS-LEGAL.md (the Antigravity terms
+  risk, OpenRouter, the one-time Google code relayed on the paste-back path);
+  Codex ChatGPT token sharing stays disabled.
 - Owner questions in DESIGN.md §11 (coral value, auto-deleting losing Best-of-N
-  worktrees, Antigravity visibility).
+  worktrees).
 
 ## Adversarial review (2026-10-09)
 

@@ -194,6 +194,7 @@ test("Connections names subscriptions by the owner's rules and lists Antigravity
     }),
   );
   assert.match(withAntigravity, /Antigravity<\/div><div class="ds"[^>]*>Not installed\. Alevr downloads Google&#x27;s official runtime/);
+  assert.match(html, /Antigravity/);
   assert.doesNotMatch(html, /Claude Code/);
   const offline = renderToStaticMarkup(React.createElement(ConnectionsPanel, { instances: [], device: null }));
   assert.match(offline, /Download for Mac/);

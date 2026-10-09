@@ -49,6 +49,7 @@ export function ThreadSidebar({
   onNew,
   onSearch,
   onConnections,
+  onCollapse,
   pullsHref = "/code/pulls",
   chatHref = "/chat",
 }: {
@@ -59,6 +60,8 @@ export function ThreadSidebar({
   onNew?: () => void;
   onSearch?: () => void;
   onConnections?: () => void;
+  /** The app shell's fold to its rail. */
+  onCollapse?: () => void;
   pullsHref?: string;
   chatHref?: string;
 }) {
@@ -88,6 +91,11 @@ export function ThreadSidebar({
             <Glyph name="code" size={14} /> Code
           </span>
         </div>
+        {onCollapse && (
+          <button type="button" className="cv2-iconbtn" aria-label="Collapse sidebar" title="Collapse sidebar" onClick={onCollapse}>
+            <Glyph name="sidebar-toggle" />
+          </button>
+        )}
       </div>
       <button type="button" className="cv2-nav" onClick={onNew}>
         <Glyph name="compose" />

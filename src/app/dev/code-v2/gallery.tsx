@@ -40,6 +40,7 @@ export function CodeV2Gallery() {
           alevrPlan={{ name: "Plus plan", spentUsd: 12.4, capUsd: 40 }}
           onProbe={async () => undefined}
           onSetup={async () => undefined}
+          onManaged={async () => ({})}
         />
       </div>
     );

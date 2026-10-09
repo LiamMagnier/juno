@@ -487,17 +487,26 @@ export const Composer = React.forwardRef<
   } else if (model.state === "limited") {
     const vendor = instance.kind === "claude-agent" ? "Claude" : instance.kind === "codex" ? "ChatGPT" : displayName(instance);
     const at = model.resumeAt ?? tightest?.resetsAt;
+    const scheduled = model.scheduledResume;
     body = (
       <div className="cv2-limited">
         <span className="cv2-mute">
-          {vendor} plan limit reached.{at ? ` Resets at ${formatReset(at)}.` : ""}
+          {vendor} plan limit reached.
+          {scheduled ? ` Alevr continues at ${formatReset(scheduled.at)}.` : at ? ` Resets at ${formatReset(at)}.` : ""}
         </span>
         <div className="acts">
-          {actions.resumeAtReset && at && (
-            <button type="button" className="cv2-btn ink" onClick={actions.resumeAtReset}>
-              Resume at reset
-            </button>
-          )}
+          {scheduled
+            ? actions.cancelResume && (
+                <button type="button" className="cv2-btn" onClick={() => actions.cancelResume?.()}>
+                  Don&apos;t continue
+                </button>
+              )
+            : actions.resumeAtReset &&
+              at && (
+                <button type="button" className="cv2-btn ink" onClick={() => void actions.resumeAtReset?.(at)}>
+                  Resume at reset
+                </button>
+              )}
           <button type="button" className="cv2-btn" onClick={() => setPopover("model")}>
             Switch model
           </button>

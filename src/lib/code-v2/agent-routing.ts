@@ -45,6 +45,18 @@ export type KeySourceDecision = { ok: true; source: "alevr" } | { ok: true; sour
 /** Whose key serves this call. `hasUserKey` = the user stored a working key for `provider`. */
 export function chooseKeySource(input: { preference: BillingPreference; provider: string; hasUserKey: boolean }): KeySourceDecision {
   const { preference, provider, hasUserKey } = input;
+  // A lab Alevr reaches only on the user's own key (OpenRouter): never Alevr's.
+  if (provider === "openrouter") {
+    if (preference === "alevr") {
+      return { ok: false, status: 400, body: { error: "OpenRouter runs on your own key only.", code: "BYOK_ONLY_PROVIDER", provider } };
+    }
+    if (hasUserKey) return { ok: true, source: "byok", provider };
+    return {
+      ok: false,
+      status: 409,
+      body: { error: "No working OpenRouter key is connected. Add one in Settings, Connections.", code: "BYOK_KEY_MISSING", provider },
+    };
+  }
   if (preference === "alevr") return { ok: true, source: "alevr" };
   if (!isByokProvider(provider)) {
     if (preference === "byok") {

@@ -111,6 +111,16 @@ export const INSTANCES: ProviderInstance[] = [
     capabilities: caps(),
   },
   { id: "acp:opencode", kind: "acp", label: "OpenCode", status: "not-installed", acpCommand: ["opencode", "acp"] },
+  // Antigravity mid sign-in (runtime lane `provider.auth`): the Google page is open, waiting for the loopback redirect.
+  {
+    id: "acp:antigravity",
+    kind: "acp",
+    label: "Antigravity",
+    status: "signed-out",
+    acpCommand: ["antigravity-acp"],
+    capabilities: caps(),
+    auth: { phase: "waiting", flowId: "flow_1", method: "Google account", authorizationUrl: "https://accounts.google.com/o/oauth2/v2/auth?client_id=example", expiresAt: "2026-10-09T18:10:00Z" },
+  } as ProviderInstance,
   {
     id: "byok:anthropic",
     kind: "byok",

@@ -23,7 +23,7 @@ import {
   usageMeterFor,
 } from "@/lib/agent-proxy";
 import { resolveModel } from "@/lib/models";
-import { byokAuthHeaders, byokBaseUrl } from "@/lib/code-v2/byok";
+import { BYOK_ONLY_DEFS, byokAuthHeaders, byokBaseUrl, isByokOnlyProvider } from "@/lib/code-v2/byok";
 import { catalogModel } from "@/lib/code-v2/code-models";
 import { markProviderKeyRejected, recordByokUsage, resolveProviderKey } from "@/lib/code-v2/byok-store";
 import {
@@ -133,7 +133,9 @@ export async function POST(
   const { path } = await ctx.params;
   const [providerRaw, ...rest] = path ?? [];
   const provider = providerRaw as Provider;
-  if (!provider || !(provider in PROVIDERS)) {
+  // OpenRouter exists here only as the user's own key (no PROVIDERS entry, no Alevr key).
+  const byokOnly = isByokOnlyProvider(providerRaw);
+  if (!provider || (!(provider in PROVIDERS) && !byokOnly)) {
     return NextResponse.json({ error: "Unknown provider." }, { status: 400 });
   }
 
@@ -211,7 +213,7 @@ export async function POST(
     remainingMicroUsd = remains.length ? Math.min(...remains) : null;
   }
 
-  const def = PROVIDERS[provider];
+  const def = byokOnly ? BYOK_ONLY_DEFS[providerRaw] : PROVIDERS[provider];
   const forwardPath = rest.join("/");
   if (!isAllowedPath(def.kind, provider, forwardPath)) {
     return NextResponse.json({ error: "Endpoint not allowed." }, { status: 403 });

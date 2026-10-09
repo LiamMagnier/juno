@@ -366,6 +366,7 @@ final class EnvServerTests: XCTestCase {
         XCTAssertEqual(bodies.first?["kind"] as? String, "pull")
         XCTAssertEqual(bodies.first?["protocol"] as? String, "alevr-code-v2")
         XCTAssertEqual(bodies.first?["appVersion"] as? String, "1.11.0")
+        XCTAssertEqual(bodies.first?["terminal"] as? Bool, false, "the hub relays terminal.* only while this says true")
         let pushes = bodies.filter { $0["kind"] as? String == "push" }
         let responses = pushes.flatMap { ($0["responses"] as? [[String: Any]]) ?? [] }
         XCTAssertEqual(Set(responses.compactMap { $0["id"] as? String }), ["link_1", "link_2"])

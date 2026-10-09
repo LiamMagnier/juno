@@ -41,7 +41,7 @@ test("link: a relayed command reaches the Mac under a relay id and its response 
   assert.equal(link.stats().pending, 0);
 });
 
-test("link: terminals and secrets are never relayed; an offline Mac says so", async () => {
+test("link: secrets are never relayed, terminals only while the Mac shares one; an offline Mac says so", async () => {
   const link = new DeviceLink();
   const offline = await link.rpc({ id: "1", type: "provider.list", params: {} });
   assert.equal(offline.offline, true);
@@ -52,6 +52,18 @@ test("link: terminals and secrets are never relayed; an offline Mac says so", as
     assert.ok(res && !res.ok && res.error.code === "unsupported", type);
   }
   assert.equal(link.stats().queued, 0);
+  // The Mac says the user shared its terminal: terminal.* is relayed, env.configure still is not.
+  await link.pull(0, undefined, undefined, true);
+  const relayed = link.rpc({ id: "3", type: "terminal.open", params: { cwd: "/", cols: 80, rows: 24 } });
+  const configure = await link.rpc({ id: "4", type: "env.configure", params: {} } as unknown as ClientCommand);
+  assert.equal(configure.responses?.[0]?.ok, false);
+  const { commands } = await link.pull(0, undefined, undefined, true);
+  assert.deepEqual(commands.map((c) => c.type), ["terminal.open"]);
+  link.push({ responses: [{ type: "response", id: commands[0].id, ok: true, result: { terminalId: "t1" } }] });
+  assert.deepEqual((await relayed).responses?.[0], { type: "response", id: "3", ok: true, result: { terminalId: "t1" } });
+  // Turned off again on the next pull.
+  await link.pull(0);
+  assert.equal((await link.rpc({ id: "5", type: "terminal.write", params: { terminalId: "t1", data: "ls\n" } })).responses?.[0]?.ok, false);
 });
 
 test("link: the Mac goes offline when it stops pulling", async () => {
@@ -126,6 +138,8 @@ test("link: request parsing rejects malformed bodies", () => {
   assert.equal(parseClientRequest({ kind: "rpc", command: { id: 1, type: "x", params: {} } }), null);
   assert.deepEqual(parseClientRequest({ kind: "poll", cursors: { a: 3.7, b: "x", c: Infinity } }), { kind: "poll", cursors: { a: 3 }, globalCursor: -1 });
   assert.deepEqual(parseHostRequest({ kind: "pull", waitMs: -5, appVersion: "1.11.0" }), { kind: "pull", appVersion: "1.11.0", waitMs: 0 });
+  assert.deepEqual(parseHostRequest({ kind: "pull", terminal: "yes" }), { kind: "pull" }, "only a literal true shares the terminal");
+  assert.deepEqual(parseHostRequest({ kind: "pull", terminal: true }), { kind: "pull", terminal: true });
   assert.equal(parseHostRequest({ kind: "nope" }), null);
 });
 

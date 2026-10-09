@@ -518,6 +518,25 @@ final class DesktopCodeHostModel {
 
     static let servesQueuedTasksKey = "juno.code.remote.servesQueuedTasks"
 
+    /// Whether the web may open a terminal on this Mac through the Code v2
+    /// device link (`terminal.*`). A second, separate consent under Remote
+    /// hosting: a shell is more than a session. Off by default, read per
+    /// command and reported on every pull, so switching it off is immediate.
+    var sharesTerminalRemotely: Bool {
+        get {
+            _ = terminalShareRevision  // observed, so the switch redraws
+            return defaults.bool(forKey: Self.sharesTerminalKey)
+        }
+        set {
+            defaults.set(newValue, forKey: Self.sharesTerminalKey)
+            terminalShareRevision += 1
+        }
+    }
+
+    private var terminalShareRevision = 0
+
+    static let sharesTerminalKey = "alevr.code.remote.sharesTerminal"
+
     /// The immediate kill switch. Stops serving and tells the relay in one step,
     /// so "off" means off now rather than off at the next heartbeat.
     func stopServingRemoteWork() {
@@ -626,6 +645,10 @@ final class DesktopCodeHostModel {
         envLink.start(
             deviceId: deviceID,
             allowedRoots: { [weak self] in self?.workspaces.map(\.path) ?? [] },
+            allowsTerminal: { [weak self] in
+                guard let self else { return false }
+                return self.servesQueuedTasks && self.sharesTerminalRemotely
+            },
             perform: { method, path, body in
                 let request = try NativeBearerRequest(
                     path: path,
@@ -1001,6 +1024,7 @@ final class DesktopCodeHostModel {
         defaults.removeObject(forKey: Self.deviceIDKey)
         defaults.set(true, forKey: Self.revokedKey)
         defaults.set(false, forKey: Self.servesQueuedTasksKey)
+        defaults.set(false, forKey: Self.sharesTerminalKey)
         lastRegisteredAt = nil
         lastError = nil
         revokeError = nil

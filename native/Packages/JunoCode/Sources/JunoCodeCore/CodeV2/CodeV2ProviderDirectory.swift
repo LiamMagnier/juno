@@ -376,6 +376,7 @@ public extension CodeV2.ByokProvider {
         case .google: "Google"
         case .xai: "xAI"
         case .deepseek: "DeepSeek"
+        case .openrouter: "OpenRouter"
         }
     }
 
@@ -389,6 +390,7 @@ public extension CodeV2.ByokProvider {
         case .openai: "sk-"
         case .xai: "xai-"
         case .deepseek: "sk-"
+        case .openrouter: "sk-or-"
         case .google: nil
         }
     }

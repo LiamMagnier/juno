@@ -266,6 +266,29 @@ export function rejectedPatch(file: DiffFile, decisions: Decisions): string {
   return out.join("\n") + "\n";
 }
 
+/**
+ * The forward patch of some hunks of one file, as the agent wrote them. The
+ * host rejects a hunk by applying this in reverse (`git apply -R`, the env
+ * server's `checkpoint.applyPatch` with `reverse: true`) and undoes the
+ * rejection by applying it forward again. A new file reverses into its
+ * removal; a deleted file into its restoration.
+ */
+export function hunkPatch(file: DiffFile, hunkIds: readonly string[]): string {
+  const hunks = file.hunks.filter((h) => hunkIds.includes(h.id));
+  if (hunks.length === 0) return "";
+  const from = file.change === "add" ? "/dev/null" : `a/${file.previousPath ?? file.path}`;
+  const to = file.change === "delete" ? "/dev/null" : `b/${file.path}`;
+  const out: string[] = [`diff --git a/${file.previousPath ?? file.path} b/${file.path}`];
+  if (file.change === "add") out.push("new file mode 100644");
+  if (file.change === "delete") out.push("deleted file mode 100644");
+  out.push(`--- ${from}`, `+++ ${to}`);
+  for (const h of hunks) {
+    out.push(`@@ -${h.oldStart},${h.oldLines} +${h.newStart},${h.newLines} @@${h.section ? ` ${h.section}` : ""}`);
+    for (const l of h.lines) out.push(`${l.kind === "add" ? "+" : l.kind === "del" ? "-" : " "}${l.text}`);
+  }
+  return out.join("\n") + "\n";
+}
+
 /** Split view rows: pair dels with adds side by side; context on both. */
 export interface SplitRow {
   left?: DiffLine;

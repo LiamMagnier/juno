@@ -163,6 +163,7 @@ public enum CodeV2 {
         case google
         case xai
         case deepseek
+        case openrouter
     }
 
     /// `byok:anthropic` — the provider instance a stored key appears as.
