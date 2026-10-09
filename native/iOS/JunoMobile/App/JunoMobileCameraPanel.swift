@@ -476,3 +476,65 @@ extension AnyTransition {
         )
     }
 }
+
+/// The "+" panel becoming Camera or Photos: the floating panel starts on the
+/// glass menu's frame and opens out to its resting place, anchored where the
+/// two share a corner, while the menu's glass fades out over it. One surface
+/// changing shape, which is how ChatGPT's "+" reads, rather than a menu
+/// leaving and a second surface arriving.
+///
+/// Animatable on one number, so the interpolation is ours and exact: the
+/// frame is mapped from the origin to the resting rect, and the content comes
+/// in over the first half of the move so the grid never reads as squeezed.
+nonisolated struct JunoPanelMorph: ViewModifier, Animatable {
+    /// 0 on the "+" panel's frame, 1 at rest.
+    var progress: Double
+    /// The "+" panel's frame, in global coordinates.
+    let origin: CGRect
+    let bottomSafeArea: CGFloat
+
+    var animatableData: Double {
+        get { progress }
+        set { progress = newValue }
+    }
+
+    @MainActor
+    func body(content: Content) -> some View {
+        content
+            .visualEffect { [progress, origin, bottomSafeArea] effect, proxy in
+                let size = proxy.size
+                let metrics = JunoFloatingPanelMetrics(size: size, bottomSafeArea: bottomSafeArea)
+                let target = CGRect(
+                    x: metrics.inset, y: size.height - metrics.inset - metrics.height,
+                    width: metrics.width, height: metrics.height
+                )
+                let global = proxy.frame(in: .global)
+                let start = origin.offsetBy(dx: -global.minX, dy: -global.minY)
+                let p = CGFloat(min(max(progress, 0), 1))
+                let rest = 1 - p
+                let scaleX = rest * start.width / max(target.width, 1) + p
+                let scaleY = rest * start.height / max(target.height, 1) + p
+                let anchor = UnitPoint(
+                    x: size.width > 0 ? target.minX / size.width : 0,
+                    y: size.height > 0 ? target.minY / size.height : 0
+                )
+                return effect
+                    .scaleEffect(x: scaleX, y: scaleY, anchor: anchor)
+                    .offset(x: rest * (start.minX - target.minX), y: rest * (start.minY - target.minY))
+            }
+            .opacity(min(1, progress * 2))
+    }
+}
+
+extension AnyTransition {
+    /// See ``JunoPanelMorph``. Callers fall back to ``junoFloatingPanel(reduceMotion:)``
+    /// under Reduce Motion.
+    @MainActor
+    static func junoPanelMorph(from origin: CGRect) -> AnyTransition {
+        let bottom = JunoScreenInsets.bottom
+        return .modifier(
+            active: JunoPanelMorph(progress: 0, origin: origin, bottomSafeArea: bottom),
+            identity: JunoPanelMorph(progress: 1, origin: origin, bottomSafeArea: bottom)
+        )
+    }
+}

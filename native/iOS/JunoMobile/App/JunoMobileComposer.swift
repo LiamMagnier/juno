@@ -79,6 +79,12 @@ struct JunoMobileComposer: View {
   @State private var thinkingOpen = false
   /// The "+" panel, drawn above the card in the composer's glass container.
   @State private var plusOpen = false
+  /// The "+" panel's frame on screen, so Camera and Photos can grow out of it.
+  @State private var plusPanelFrame: CGRect = .zero
+  /// Set for the frame before the "+" panel closes into Camera or Photos: it
+  /// then fades where it stands while the new surface opens out of its frame,
+  /// instead of shrinking back into the button.
+  @State private var plusMorphing = false
   /// The model picker, from the top of "+" or a long press on the dial.
   @State private var showingModelPicker = false
   /// Send, stop and voice answer in the hand. See `JunoMobileHaptic`.
@@ -480,11 +486,14 @@ struct JunoMobileComposer: View {
               .overlay(alignment: .bottomLeading) {
                 if plusOpen, voiceSession == nil {
                   plusPanel
+                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
+                      plusPanelFrame = $0
+                    }
                     .padding(.bottom, 8)
                     .fixedSize()
                     .transition(
-                  reduceMotion
-                    ? .opacity
+                      reduceMotion || plusMorphing
+                        ? .opacity
                         : .scale(scale: 0.2, anchor: .bottomLeading).combined(with: .opacity)
                     )
                 }
@@ -565,11 +574,15 @@ struct JunoMobileComposer: View {
     .onChange(of: composerFocused.wrappedValue) { _, focused in
       if focused { closeThinking(); closePlus() }
     }
+    .onChange(of: plusOpen) { _, open in
+      if open { plusMorphing = false }
+    }
   }
 
   // MARK: Thinking dial
 
   private func closePlus() {
+    plusMorphing = false
     withAnimation(JunoMotion.reduced(JunoMotion.chatControl, when: reduceMotion)) {
       plusOpen = false
     }
@@ -1215,7 +1228,21 @@ struct JunoMobileComposer: View {
   /// does nothing to focus at all, which is the point of it being a menu.
   private func open(_ surface: JunoAttachmentSurface) {
     if surface.dismissesKeyboard { composerFocused.wrappedValue = false }
-    attachmentCoordinator.present(surface, reduceMotion: reduceMotion)
+    guard plusOpen, surface.isFloatingPanel else {
+      attachmentCoordinator.present(surface, reduceMotion: reduceMotion)
+      return
+    }
+    // From the "+" panel: one render with the panel marked as morphing, so its
+    // exit is a fade in place, then the panel goes and the surface opens out
+    // of its frame in the same transaction.
+    plusMorphing = true
+    let origin = plusPanelFrame
+    DispatchQueue.main.async {
+      withAnimation(JunoMotion.reduced(JunoCameraMotion.entry, when: reduceMotion)) {
+        plusOpen = false
+      }
+      attachmentCoordinator.present(surface, reduceMotion: reduceMotion, from: origin)
+    }
   }
 
   /// "Create a canvas": turn artifacts on and hand the reader a sentence to

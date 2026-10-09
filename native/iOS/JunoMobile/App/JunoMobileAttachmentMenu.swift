@@ -140,8 +140,10 @@ struct JunoMobileComposerActions: View {
     /// native menu so the first screen stays short.
     private var panel: some View {
         VStack(alignment: .leading, spacing: 0) {
-            row("attachments.camera", icon: .camera, enabled: canAttach) { open(.camera) }
-            row("attachments.photos", icon: .photos, enabled: canAttach) { open(.photos) }
+            // Camera and Photos leave the panel to the composer, which morphs
+            // its glass into the viewfinder or the grid.
+            row("attachments.camera", icon: .camera, enabled: canAttach, closes: false) { open(.camera) }
+            row("attachments.photos", icon: .photos, enabled: canAttach, closes: false) { open(.photos) }
             row("attachments.files", icon: .attach, enabled: canAttach) { open(.files) }
             if let openLibrary {
                 row("attachments.library", icon: .library, enabled: canAttach, action: openLibrary)
@@ -196,13 +198,14 @@ struct JunoMobileComposerActions: View {
         detail: String? = nil,
         checked: Bool? = nil,
         enabled: Bool = true,
+        closes: Bool = true,
         action: @escaping () -> Void
     ) -> some View {
         Button {
             pickHaptic.fire()
             // A toggle stays open so a second tool can be armed; anything
             // that goes somewhere closes the popover first.
-            if checked == nil {
+            if checked == nil, closes {
                 withAnimation(JunoMotion.reduced(JunoMotion.chatControl, when: reduceMotion)) {
                     presented = false
                 }
@@ -548,6 +551,13 @@ struct JunoMobileComposerActions: View {
         if JunoComposerPreviewFlags.opensPlus {
             try? await Task.sleep(for: .milliseconds(600))
             presented = true
+            // With a picker flag too: the "+" panel morphing into it.
+            if let raw = JunoComposerPreviewFlags.opensPicker,
+               let surface = JunoAttachmentSurface(rawValue: raw)
+            {
+                try? await Task.sleep(for: .milliseconds(1_600))
+                open(surface)
+            }
             return
         }
         guard let raw = JunoComposerPreviewFlags.opensPicker,
