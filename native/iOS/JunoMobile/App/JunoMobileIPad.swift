@@ -111,26 +111,27 @@ struct JunoMobileIPadSidebarRowLabel: View {
   var selected: Bool = false
   var status: JunoMobileSidebarStatus?
   var body: some View {
-    HStack(spacing: 10) {
-      JunoIconView(icon, size: 18)
-        .frame(width: 20)
+    HStack(spacing: JunoMobileDrawerMetrics.gap) {
+      JunoIconView(icon, size: JunoMobileDrawerMetrics.glyph)
+        .frame(width: JunoMobileDrawerMetrics.slot)
         .foregroundStyle(Color.junoForeground)
       Text(title)
         .junoFont(size: 15, relativeTo: .body)
         .foregroundStyle(Color.junoForeground)
         .lineLimit(1)
-      Spacer(minLength: 4)
+      Spacer(minLength: JunoSpace.hairline)
       if let status, !status.isEmpty {
         JunoMobileSidebarStatusText(status: status)
       }
     }
-    .padding(.horizontal, 10)
-    .frame(minHeight: 44)
+    // On the 16/46 edges with the column's 8pt list inset, like the phone.
+    .padding(.horizontal, JunoMobileDrawerMetrics.rowPadding)
+    .frame(minHeight: JunoLayout.Row.height)
     .background(
-      RoundedRectangle(cornerRadius: 8, style: .continuous)
+      RoundedRectangle(cornerRadius: JunoLayout.Row.compactFillRadius, style: .continuous)
         .fill(selected ? Color.junoSelectedFill : .clear)
     )
-    .contentShape(.hoverEffect, RoundedRectangle(cornerRadius: 8, style: .continuous))
+    .contentShape(.hoverEffect, RoundedRectangle(cornerRadius: JunoLayout.Row.compactFillRadius, style: .continuous))
     .hoverEffect(.highlight)
   }
 }
@@ -169,8 +170,8 @@ struct JunoMobileIPadSidebarRow: View {
       JunoMobileIPadSidebarRowLabel(icon: icon, title: title, selected: selected, status: status)
     }
     .buttonStyle(JunoSidebarPressStyle())
-    .frame(minWidth: 44, minHeight: 44)
-    .contentShape(.rect(cornerRadius: 8))
+    .frame(minWidth: JunoLayout.touchTarget, minHeight: JunoLayout.touchTarget)
+    .contentShape(.rect(cornerRadius: JunoLayout.Row.compactFillRadius))
     .accessibilityAddTraits(selected ? .isSelected : [])
   }
 }
