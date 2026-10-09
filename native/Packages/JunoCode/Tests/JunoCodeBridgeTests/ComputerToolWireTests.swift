@@ -149,7 +149,7 @@ final class ComputerToolWireTests: XCTestCase {
         XCTAssertTrue(encoded.contains(#""detail":"high""#))
     }
 
-    func testRoutesWithoutAKnownCoordinateConventionGetNoComputerTools() throws {
+    func testRoutesWithoutAKnownTupleConventionLoseOnlyTheTupleTools() throws {
         for provider in ["google", "qwen", "deepseek", "mistral"] {
             let body = ComputerToolWire.openAI(
                 OpenAIChatRequestBuilder.body(for: request(), providerModelID: "model", providerID: provider, maxTokens: 1_024),
@@ -157,7 +157,34 @@ final class ComputerToolWireTests: XCTestCase {
                 wire: .openAIChat
             )
             let names = body["tools"]?.arrayValue?.compactMap { $0["function"]?["name"]?.stringValue } ?? []
-            XCTAssertEqual(names, ["read_file"], provider)
+            XCTAssertEqual(names, ["read_file", "computer_apps"], provider)
+        }
+    }
+
+    func testEveryOtherRouteKeepsThePortableToolAndSeesItsScreenshots() throws {
+        let portable = ModelToolDescriptor(
+            name: "computer_use",
+            description: "Use an app",
+            inputSchema: ["type": "object", "properties": ["action": ["type": "string"]], "required": ["action"]]
+        )
+        let messages: [ModelMessage] = [
+            .user("Look"),
+            .toolCall(id: "c1", name: "computer_use", input: ["action": "screenshot"]),
+            .toolResultWithImages(id: "c1", content: "Looked at Pages.", isError: false, images: [ModelImage(mediaType: "image/jpeg", data: Data([1]), detail: .original)]),
+        ]
+        for provider in ["google", "xai", "deepseek"] {
+            let body = ComputerToolWire.openAI(
+                OpenAIChatRequestBuilder.body(
+                    for: request(messages, tools: [readTool, portable, computerTool]), providerModelID: "m", providerID: provider, maxTokens: 1_024
+                ),
+                providerID: provider,
+                wire: .openAIChat
+            )
+            let names = body["tools"]?.arrayValue?.compactMap { $0["function"]?["name"]?.stringValue } ?? []
+            XCTAssertEqual(names, ["read_file", "computer_use"], provider)
+            let encoded = body.canonicalJSONString()
+            XCTAssertTrue(encoded.contains("image_url"), "the screenshot reaches the model")
+            XCTAssertFalse(encoded.contains(#""detail":"original""#), "no lab but OpenAI Responses knows original")
         }
     }
 }
