@@ -150,6 +150,7 @@ function ServerRun({
         if (res.status === 402) return refuse(body.message ?? "Running code on the server is part of the paid plans.");
         if (res.status === 401) return refuse("Sign in to run code.");
         if (res.status === 429) return refuse("Too many runs in a minute. Try again shortly.");
+        if (res.status === 503) return refuse(body.message ?? "The code sandbox isn’t available right now.");
         if (!res.ok) return refuse("This code couldn’t be run right now.");
         const ok = body.status === "succeeded";
         setResult({ ok, output: body.output ?? "", durationMs: body.durationMs ?? null });

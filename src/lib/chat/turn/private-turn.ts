@@ -142,6 +142,8 @@ export async function runPrivateTurn({
     // with no rule look like a boundary and are not one.
     untrustedContent: useWebSearch || !!privateSkillBlock?.untrusted,
     liveUi: legacyChatClientForOrigin(input) === "web" || (input.clientFeatures?.includes("live_ui") ?? false),
+    // Private chats never execute on the server (outputs would persist).
+    codeSandbox: false,
   });
   const baseSystem = baseSystemSections.variable
     ? `${baseSystemSections.stable}\n\n${baseSystemSections.variable}`

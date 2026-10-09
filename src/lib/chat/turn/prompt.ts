@@ -1,4 +1,5 @@
 import "server-only";
+import { isExecConfigured } from "@/lib/exec/config";
 import { legacyChatClientForOrigin } from "@/lib/chat-origin";
 import { buildSemanticEditPrompt } from "@/lib/artifact-ops";
 import { isSemanticArtifactType } from "@/lib/work/deliverables/semantic";
@@ -97,6 +98,7 @@ export function composeTurnSystem({
     // Interactive views: the web always renders them; a native build only
     // when it says so (shipped builds would show raw JSON).
     liveUi: legacyChatClientForOrigin(input) === "web" || (input.clientFeatures?.includes("live_ui") ?? false),
+    codeSandbox: isExecConfigured(),
   });
   const baseSystem = baseSystemSections.variable
     ? `${baseSystemSections.stable}\n\n${baseSystemSections.variable}`

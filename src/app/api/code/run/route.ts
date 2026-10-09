@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireUser } from "@/lib/code-remote";
+import { isExecConfigured } from "@/lib/exec/config";
 import { executeRunCode } from "@/lib/exec/runtime";
 import { SNIPPET_MAX_CHARS, serverSnippetLanguage, snippetProgram } from "@/lib/exec/snippets";
 import { rateLimit } from "@/lib/rate-limit";
@@ -15,6 +16,13 @@ const bodySchema = z.object({
   code: z.string().min(1).max(SNIPPET_MAX_CHARS),
   conversationId: z.string().max(100).nullish(),
 });
+
+/** Whether this server runs the sandbox languages, so the web shows Run on them only when it can. */
+export async function GET() {
+  const { error } = await requireUser();
+  if (error) return error;
+  return NextResponse.json({ sandbox: isExecConfigured() });
+}
 
 /**
  * Run one code block from the chat (or a Live UI exercise) in the hosted
@@ -32,6 +40,7 @@ export async function POST(req: Request) {
   if (!parsed.success) return NextResponse.json({ error: "invalid_request" }, { status: 400 });
   const language = serverSnippetLanguage(parsed.data.language);
   if (!language) return NextResponse.json({ error: "unsupported_language" }, { status: 400 });
+  if (!isExecConfigured()) return NextResponse.json({ error: "unavailable", message: "Running this language needs the code sandbox, which this server does not have yet." }, { status: 503 });
 
   if ((await getUserPlan(user.id)) === "FREE") {
     return NextResponse.json({ error: "plan", message: "Running code on the server is part of the paid plans." }, { status: 402 });

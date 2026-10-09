@@ -18,8 +18,35 @@ import { runTargetFor } from "@/lib/exec/snippet-languages";
 
 export { runTargetFor };
 
+/**
+ * Whether the server has the sandbox, asked once per page and shared. Until it
+ * answers (or if it cannot), sandbox languages show no Run: a button that can
+ * only fail is worse than none.
+ */
+let sandboxAnswer: Promise<boolean> | null = null;
+function serverSandbox(): Promise<boolean> {
+  sandboxAnswer ??= fetch("/api/code/run", { cache: "no-store" })
+    .then((res) => (res.ok ? (res.json() as Promise<{ sandbox?: boolean }>) : { sandbox: false }))
+    .then((body) => body.sandbox === true)
+    .catch(() => false);
+  return sandboxAnswer;
+}
+
 export function useCodeRun(lang: string) {
-  const target = React.useMemo(() => runTargetFor(lang), [lang]);
+  const candidate = React.useMemo(() => runTargetFor(lang), [lang]);
+  const [sandbox, setSandbox] = React.useState(false);
+  const needsServer = candidate?.where === "server";
+  React.useEffect(() => {
+    if (!needsServer) return;
+    let live = true;
+    void serverSandbox().then((ok) => {
+      if (live) setSandbox(ok);
+    });
+    return () => {
+      live = false;
+    };
+  }, [needsServer]);
+  const target = candidate && (candidate.where === "browser" || sandbox) ? candidate : null;
   const [open, setOpen] = React.useState(false);
   const [nonce, setNonce] = React.useState(0);
   const run = React.useCallback(() => {

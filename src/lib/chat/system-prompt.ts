@@ -54,6 +54,11 @@ export interface SystemPromptOptions {
    * Adds LIVE_UI_SECTION to the stable tier. Never on a voice turn.
    */
   liveUi?: boolean;
+  /**
+   * This server has the hosted code sandbox, so compiled-language blocks run
+   * too (CODE_RUN_SANDBOX_LINE). Server-wide, so the cached head stays shared.
+   */
+  codeSandbox?: boolean;
 }
 
 /**
@@ -62,7 +67,10 @@ export interface SystemPromptOptions {
  * drop it with the semantic types (MARKDOWN_ONLY_ARTIFACTS).
  */
 export const CODE_RUN_RULE = `# Runnable code
-Code blocks in the chat have a Run button: JavaScript, TypeScript, Python and SQL run in the reader's browser (SQL on SQLite, seeded with a sample of Oracle's HR schema: employees, departments, jobs, regions, dual); C, C++, Java, Go, Rust, Ruby, PHP, Lua, Perl and Bash run in a sandbox with no network. Always tag a fence with its language, and when an example is meant to be tried, make it complete and print its result (a main function, a final print or SELECT) so Run shows something.`;
+Code blocks in the chat have a Run button for JavaScript, TypeScript, Python and SQL, which run in the reader's browser (SQL on SQLite, seeded with a sample of Oracle's HR schema: employees, departments, jobs, regions, dual). Always tag a fence with its language, and when an example is meant to be tried, make it complete and print its result (a final print or SELECT) so Run shows something.`;
+
+/** Added only when this server has the hosted sandbox (src/lib/exec/config.ts). */
+export const CODE_RUN_SANDBOX_LINE = `C, C++, Java, Go, Rust, Ruby, PHP, Lua, Perl and Bash blocks run too, in a sandbox with no network; give them a main function where the language needs one.`;
 
 /**
  * The DOCUMENT artifact's Live UI block (owner, 2026-10-09: artifacts must
@@ -296,7 +304,7 @@ You write the content; the USER picks the download format. Never say you attache
   // Interactive views: the one interactive-answer system, for clients that
   // draw them (the web, native builds declaring `live_ui`). Never on voice.
   if (opts.liveUi && !opts.voiceMode) parts.push(LIVE_UI_SECTION);
-  if (!opts.voiceMode) parts.push(CODE_RUN_RULE);
+  if (!opts.voiceMode) parts.push(opts.codeSandbox ? `${CODE_RUN_RULE}\n${CODE_RUN_SANDBOX_LINE}` : CODE_RUN_RULE);
 
   if (opts.memoryEnabled) {
     parts.push(
@@ -374,6 +382,7 @@ If you ran code or a script this turn, say what it found, never the code, a comm
  * Applied as exact substitutions so the web prompt itself never changes.
  */
 const MARKDOWN_ONLY_ARTIFACTS: ReadonlyArray<readonly [string, string]> = [
+  [`\n\n${CODE_RUN_RULE}\n${CODE_RUN_SANDBOX_LINE}`, ""],
   [`\n\n${CODE_RUN_RULE}`, ""],
   [`\n${DOCUMENT_INTERACTIVE_RULE}`, ""],
   // Installed apps draw Live UI in the transcript, not yet inside artifacts.
