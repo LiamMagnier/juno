@@ -228,16 +228,25 @@ struct LiveExerciseView: View {
 
     /// The card's one primary action, in the Juno accent.
     private var sendButton: some View {
-        let button = Button(action: send) {
+        #if os(macOS)
+        return Button(action: send) {
             Text("Send answer")
                 .junoFont(size: 12, relativeTo: .footnote, weight: .medium)
                 .contentShape(Capsule())
         }
         .controlSize(.small)
-        #if os(macOS)
-        return button.buttonStyle(.junoProminent)
+        .buttonStyle(.junoProminent)
         #else
-        return button.buttonStyle(.glassProminent).buttonBorderShape(.capsule).tint(Color.junoAccent)
+        // The design system's prominent glass, with its label on the accent's
+        // own ink (white fails on the light accents).
+        return Button(action: send) {
+            Text("Send answer")
+                .junoFont(size: 12, relativeTo: .footnote, weight: .medium)
+                .foregroundStyle(canSend ? Color.junoOnAccent : Color.junoSecondaryInk)
+                .contentShape(Capsule())
+        }
+        .controlSize(.small)
+        .junoProminentAction()
         #endif
     }
 
