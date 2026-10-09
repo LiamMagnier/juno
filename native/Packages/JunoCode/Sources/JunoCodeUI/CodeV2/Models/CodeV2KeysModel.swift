@@ -39,6 +39,7 @@ public final class CodeV2KeysModel {
     }
 
     public func reload() async {
+        guard keychain != nil || account != nil else { return }
         var merged: [ByokKeyRecord] = []
         if let account, let remote = try? await account.records() { merged += remote }
         if let keychain {

@@ -37,7 +37,7 @@ struct CodeV2ModeControl: View {
         }
         .menuStyle(.button)
         .menuIndicator(.hidden)
-        .buttonStyle(CodeV2FooterButtonStyle())
+        .buttonStyle(CodeV2FooterButtonStyle()).contentShape(.rect)
         .fixedSize()
         .disabled(!isEnabled)
         .help("Permissions: what the agent may do without asking (⇧⌘A)")
@@ -124,14 +124,14 @@ struct CodeV2QueueDock: View {
                     Text(item.input.text).font(Studio.Font.label).foregroundStyle(Studio.Ink.primary).lineLimit(1)
                     Spacer(minLength: JunoSpace.snug)
                     Button { edit(item) } label: { JunoIconView(.pencil, size: 13) }
-                        .buttonStyle(StudioIconButtonStyle())
+                        .buttonStyle(StudioIconButtonStyle()).contentShape(.rect)
                         .help("Edit (⌥↑ for the last one)")
                         .accessibilityLabel("Edit queued message")
                     if let steer {
                         Button { steer(item) } label: {
                             HStack(spacing: JunoSpace.tight) { Text("Steer now"); CodeV2Keycap(keys: "⌘↵") }
                         }
-                        .buttonStyle(CodeV2OutlineButtonStyle(compact: true))
+                        .buttonStyle(CodeV2OutlineButtonStyle(compact: true)).contentShape(.rect)
                     }
                 }
                 .padding(.horizontal, JunoSpace.snug)
@@ -213,7 +213,7 @@ struct CodeV2ApprovalTakeover: View {
                     Button { respond(.decline) } label: {
                         HStack(spacing: JunoSpace.tight) { Text("Deny"); CodeV2Keycap(keys: "Esc") }
                     }
-                    .buttonStyle(StudioQuietButtonStyle())
+                    .buttonStyle(StudioQuietButtonStyle()).contentShape(.rect)
                     .keyboardShortcut(.cancelAction)
                 }
                 if options.contains(.cancel) {
@@ -228,14 +228,14 @@ struct CodeV2ApprovalTakeover: View {
                     Button { respond(.acceptForSession) } label: {
                         HStack(spacing: JunoSpace.tight) { Text("Allow for this session"); CodeV2Keycap(keys: "⇧⌘↵") }
                     }
-                    .buttonStyle(CodeV2OutlineButtonStyle())
+                    .buttonStyle(CodeV2OutlineButtonStyle()).contentShape(.rect)
                     .keyboardShortcut(.return, modifiers: [.command, .shift])
                 }
                 if options.contains(.accept) {
                     Button { respond(.accept) } label: {
                         HStack(spacing: JunoSpace.tight) { Text("Allow once"); Text("↵").foregroundStyle(Studio.Surface.canvas.opacity(0.7)) }
                     }
-                    .buttonStyle(CodeV2InkButtonStyle())
+                    .buttonStyle(CodeV2InkButtonStyle()).contentShape(.rect)
                     .keyboardShortcut(.defaultAction)
                 }
             }
@@ -298,7 +298,7 @@ struct CodeV2QuestionTakeover: View {
                     }
                     answer(answers)
                 }
-                .buttonStyle(CodeV2InkButtonStyle())
+                .buttonStyle(CodeV2InkButtonStyle()).contentShape(.rect)
                 .keyboardShortcut(.defaultAction)
             }
         }

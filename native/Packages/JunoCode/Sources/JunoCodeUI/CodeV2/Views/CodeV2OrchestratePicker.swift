@@ -19,7 +19,7 @@ struct CodeV2OrchestrateControl: View {
                 JunoIconView(.chevronDown, size: 11)
             }
         }
-        .buttonStyle(CodeV2FooterButtonStyle(isOpen: isOpen))
+        .buttonStyle(CodeV2FooterButtonStyle(isOpen: isOpen)).contentShape(.rect)
         .disabled(!isEnabled)
         .keyboardShortcut("o", modifiers: [.command, .shift])
         .help("Orchestrate: who leads, who works, who reviews (⇧⌘O)")
@@ -192,7 +192,7 @@ struct CodeV2OrchestratePicker: View {
                     }
                     Spacer()
                     Button("Add") { selection.wrappedValue = draft.lead }
-                        .buttonStyle(CodeV2OutlineButtonStyle(compact: true))
+                        .buttonStyle(CodeV2OutlineButtonStyle(compact: true)).contentShape(.rect)
                 }
                 .padding(.horizontal, JunoSpace.cozy)
                 .frame(minHeight: 52)

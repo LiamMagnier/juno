@@ -263,9 +263,9 @@ struct CodeV2Receipt: View {
                     Button(action: undo) {
                         HStack(spacing: JunoSpace.tight) { JunoIconView(.undo, size: 13); Text("Undo") }
                     }
-                    .buttonStyle(StudioQuietButtonStyle())
+                    .buttonStyle(StudioQuietButtonStyle()).contentShape(.rect)
                 }
-                Button("Review", action: review).buttonStyle(CodeV2OutlineButtonStyle(compact: true))
+                Button("Review", action: review).buttonStyle(CodeV2OutlineButtonStyle(compact: true)).contentShape(.rect)
             }
             .padding(.horizontal, JunoSpace.cozy)
             .frame(height: 44)
@@ -322,7 +322,7 @@ struct CodeV2CheckpointDivider: View {
             Rectangle().fill(Studio.Surface.hairline).frame(height: 1)
             if let editFromHere {
                 Button("Edit from here", action: editFromHere)
-                    .buttonStyle(StudioQuietButtonStyle())
+                    .buttonStyle(StudioQuietButtonStyle()).contentShape(.rect)
                     .opacity(hovering ? 1 : 0)
             }
         }

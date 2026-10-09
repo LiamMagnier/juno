@@ -49,7 +49,7 @@ struct CodeV2TraitsControl: View {
         }
         .menuStyle(.button)
         .menuIndicator(.hidden)
-        .buttonStyle(CodeV2FooterButtonStyle(isOpen: showsTiers))
+        .buttonStyle(CodeV2FooterButtonStyle(isOpen: showsTiers)).contentShape(.rect)
         .fixedSize()
         .disabled(!isEnabled)
         .help("Effort, speed and context window (⇧⌘E cycles effort)")
@@ -155,7 +155,7 @@ struct CodeV2TierSelector: View {
                     .font(Studio.Font.meta).foregroundStyle(Studio.Ink.secondary)
                 Spacer()
                 Button("Compact and switch") { apply(pendingCompact) }
-                    .buttonStyle(CodeV2OutlineButtonStyle(compact: true))
+                    .buttonStyle(CodeV2OutlineButtonStyle(compact: true)).contentShape(.rect)
             }
         } else if billsInDollars, let base = tiers.first {
             let cachedRate = base.cachedInputPerMTok ?? base.inputPerMTok

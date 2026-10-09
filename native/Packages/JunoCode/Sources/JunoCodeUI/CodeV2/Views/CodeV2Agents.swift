@@ -49,10 +49,13 @@ public struct CodeV2AgentNode: Identifiable, Equatable, Sendable {
         case .compaction: roleLabel = "Compaction"
         }
         if let start = CodeV2Dates.parse(subagent.createdAt) {
-            let end = subagent.status == .running || subagent.status == .waiting
-                ? now
-                : own.last?.createdDate.map { max($0, start) } ?? now
-            elapsedSeconds = max(0, Int(end.timeIntervalSince(start)))
+            if subagent.status == .running || subagent.status == .waiting {
+                elapsedSeconds = max(0, Int(now.timeIntervalSince(start)))
+            } else if let end = own.last?.createdDate {
+                elapsedSeconds = max(0, Int(end.timeIntervalSince(start)))
+            } else {
+                elapsedSeconds = nil
+            }
         }
     }
 
@@ -225,14 +228,14 @@ public struct CodeV2AgentsPane: View {
         VStack(spacing: 0) {
             HStack(spacing: JunoSpace.snug) {
                 Button { selected = nil } label: { JunoIconView(.chevronLeft, size: 13) }
-                    .buttonStyle(StudioIconButtonStyle())
+                    .buttonStyle(StudioIconButtonStyle()).contentShape(.rect)
                     .accessibilityLabel("All agents")
                 CodeV2Mark(id: CodeV2Marks.markID(model: node.selection.model, instanceId: node.selection.instanceId), size: 16)
                 Text(node.roleLabel).font(Studio.Font.labelEmphasis)
                 Text(CodeV2Formatting.modelName(node.selection.model)).font(Studio.Font.meta).foregroundStyle(Studio.Ink.secondary).lineLimit(1)
                 Spacer()
                 if let stop, node.status == .running || node.status == .waiting {
-                    Button("Stop") { stop(node.agentId) }.buttonStyle(StudioQuietButtonStyle())
+                    Button("Stop") { stop(node.agentId) }.buttonStyle(StudioQuietButtonStyle()).contentShape(.rect)
                 }
             }
             .padding(.horizontal, JunoSpace.cozy)
@@ -375,7 +378,7 @@ public struct CodeV2BestOfNCompare: View {
             }
             Spacer(minLength: JunoSpace.snug)
             Button("Keep this one") { keep(candidate.id) }
-                .buttonStyle(CodeV2OutlineButtonStyle(compact: true))
+                .buttonStyle(CodeV2OutlineButtonStyle(compact: true)).contentShape(.rect)
                 .disabled(!candidate.isFinished)
         }
         .padding(JunoSpace.cozy)
@@ -527,7 +530,7 @@ public struct CodeV2ScreenPane: View {
                     Spacer()
                     if let stop {
                         Button(action: stop) { HStack(spacing: JunoSpace.tight) { Text("Stop"); CodeV2Keycap(keys: "Esc") } }
-                            .buttonStyle(CodeV2InkButtonStyle())
+                            .buttonStyle(CodeV2InkButtonStyle()).contentShape(.rect)
                     }
                 }
             } else {

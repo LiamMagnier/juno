@@ -35,23 +35,21 @@ public struct CodeV2ConnectionsView: View {
     }
 
     public var body: some View {
-        Form {
-            Section {
-                VStack(alignment: .leading, spacing: JunoSpace.snug) {
-                    Text("Connections").junoFont(size: 22, relativeTo: .title2, weight: .medium)
-                    Text("Use the plans you already pay for. Alevr starts each vendor's own agent on your Mac, so your sign-in, billing and limits stay with the vendor.")
-                        .font(Studio.Font.label).foregroundStyle(Studio.Ink.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    if case let .failed(message) = hub.phase {
-                        Text(message).font(Studio.Font.meta).foregroundStyle(Studio.Signal.ink)
-                    } else if hub.phase == .starting {
-                        Text("Starting Alevr's local environment…").font(Studio.Font.meta).foregroundStyle(Studio.Ink.secondary)
-                    }
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: JunoSpace.snug) {
+                Text("Connections").junoFont(size: 22, relativeTo: .title2, weight: .medium)
+                Text("Use the plans you already pay for. Alevr starts each vendor's own agent on your Mac, so your sign-in, billing and limits stay with the vendor.")
+                    .font(Studio.Font.label).foregroundStyle(Studio.Ink.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if case let .failed(message) = hub.phase {
+                    Text(message).font(Studio.Font.meta).foregroundStyle(Studio.Signal.ink)
+                } else if hub.phase == .starting {
+                    Text("Starting Alevr's local environment…").font(Studio.Font.meta).foregroundStyle(Studio.Ink.secondary)
                 }
-                .listRowBackground(Color.clear)
-                .padding(.bottom, JunoSpace.snug)
             }
-
+            .padding(.horizontal, JunoSpace.roomy)
+            .padding(.top, JunoSpace.roomy)
+        Form {
             Section("Subscriptions") {
                 ForEach(subscriptions, id: \.id) { instance in
                     CodeV2SubscriptionRow(
@@ -97,6 +95,7 @@ public struct CodeV2ConnectionsView: View {
         }
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
+        }
         .background(Studio.Surface.canvas)
         .task {
             hub.start()
@@ -122,9 +121,9 @@ public struct CodeV2ConnectionsView: View {
                 if keys.isWorking.contains(provider) {
                     StudioSpinner().frame(width: 14, height: 14)
                 } else if record != nil {
-                    Button("Remove") { Task { await keys.remove(provider) } }.buttonStyle(StudioQuietButtonStyle())
+                    Button("Remove") { Task { await keys.remove(provider) } }.buttonStyle(StudioQuietButtonStyle()).contentShape(.rect)
                 } else if addingKey != provider {
-                    Button("Add key") { addingKey = provider; keyDraft = "" }.buttonStyle(CodeV2OutlineButtonStyle(compact: true))
+                    Button("Add key") { addingKey = provider; keyDraft = "" }.buttonStyle(CodeV2OutlineButtonStyle(compact: true)).contentShape(.rect)
                 }
             }
             if addingKey == provider {
@@ -133,8 +132,8 @@ public struct CodeV2ConnectionsView: View {
                         .textFieldStyle(.roundedBorder)
                         .font(Studio.Font.mono)
                         .onSubmit { commit(provider) }
-                    Button("Cancel") { addingKey = nil }.buttonStyle(StudioQuietButtonStyle())
-                    Button("Save") { commit(provider) }.buttonStyle(CodeV2InkButtonStyle()).disabled(keyDraft.isEmpty)
+                    Button("Cancel") { addingKey = nil }.buttonStyle(StudioQuietButtonStyle()).contentShape(.rect)
+                    Button("Save") { commit(provider) }.buttonStyle(CodeV2InkButtonStyle()).disabled(keyDraft.isEmpty).contentShape(.rect)
                 }
                 .padding(.leading, 44)
             }
@@ -234,12 +233,12 @@ struct CodeV2SubscriptionRow: View {
         } else {
             switch instance.status {
             case .notInstalled:
-                Button("Install") { setup(.install) }.buttonStyle(CodeV2OutlineButtonStyle(compact: true))
+                Button("Install") { setup(.install) }.buttonStyle(CodeV2OutlineButtonStyle(compact: true)).contentShape(.rect)
                     .help("Alevr opens a terminal with the install command so you can read it first.")
             case .signedOut:
-                Button(expired ? "Sign in again" : "Sign in") { setup(.login) }.buttonStyle(CodeV2OutlineButtonStyle(compact: true))
+                Button(expired ? "Sign in again" : "Sign in") { setup(.login) }.buttonStyle(CodeV2OutlineButtonStyle(compact: true)).contentShape(.rect)
             case .error, .unknown:
-                Button("Re-check", action: recheck).buttonStyle(CodeV2OutlineButtonStyle(compact: true))
+                Button("Re-check", action: recheck).buttonStyle(CodeV2OutlineButtonStyle(compact: true)).contentShape(.rect)
             case .ready, .limited:
                 Menu {
                     Button("Re-check", action: recheck)

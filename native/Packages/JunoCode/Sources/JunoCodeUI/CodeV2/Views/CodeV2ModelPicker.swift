@@ -27,7 +27,7 @@ struct CodeV2ModelControl: View {
                     .lineLimit(1)
             }
         }
-        .buttonStyle(CodeV2FooterButtonStyle(isOpen: isOpen))
+        .buttonStyle(CodeV2FooterButtonStyle(isOpen: isOpen)).contentShape(.rect)
         .disabled(!isEnabled)
         .keyboardShortcut("m", modifiers: [.command, .shift])
         .help("Model (⇧⌘M)")
@@ -271,15 +271,15 @@ struct CodeV2ModelPicker: View {
             HStack(spacing: JunoSpace.snug) {
                 switch instance.status {
                 case .notInstalled:
-                    Button("Install") { setup?(instance.id, .install) }.buttonStyle(CodeV2InkButtonStyle())
+                    Button("Install") { setup?(instance.id, .install) }.buttonStyle(CodeV2InkButtonStyle()).contentShape(.rect)
                 case .signedOut, .error:
                     Button(instance.statusMessage == nil ? "Sign in" : "Sign in again") { setup?(instance.id, .login) }
-                        .buttonStyle(CodeV2InkButtonStyle())
+                        .buttonStyle(CodeV2InkButtonStyle()).contentShape(.rect)
                 default:
                     EmptyView()
                 }
                 if let openConnections {
-                    Button("Open Connections", action: openConnections).buttonStyle(CodeV2OutlineButtonStyle())
+                    Button("Open Connections", action: openConnections).buttonStyle(CodeV2OutlineButtonStyle()).contentShape(.rect)
                 }
             }
         }
@@ -348,7 +348,7 @@ struct CodeV2ModelPicker: View {
                         JunoIconView(.chevronDown, size: 11)
                     }
                 }
-                .buttonStyle(CodeV2OutlineButtonStyle(compact: true))
+                .buttonStyle(CodeV2OutlineButtonStyle(compact: true)).contentShape(.rect)
                 .popover(isPresented: $showsTiers, arrowEdge: .top) {
                     if let instance = directory.instance(selection.instanceId), let model = selectedModel {
                         CodeV2TierSelector(

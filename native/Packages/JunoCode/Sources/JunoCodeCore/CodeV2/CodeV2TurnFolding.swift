@@ -115,6 +115,10 @@ public enum CodeV2TurnFolding {
                     turns[target].steps.append(.assistantMessage(previous))
                 }
                 turns[target].answer = message
+            case let .assistantMessage(message) where message.agentId != nil:
+                // A child's own narration belongs to the agent tree, not the
+                // lead's work log.
+                break
             case let .subagent(child):
                 if let index = turns[target].subagents.firstIndex(where: { $0.agentId == child.agentId }) {
                     turns[target].subagents[index] = child

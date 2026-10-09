@@ -55,7 +55,7 @@ public struct CodeV2Dock: View {
                 Spacer()
                 if let close {
                     Button(action: close) { JunoIconView(.panelRight, size: 14) }
-                        .buttonStyle(StudioIconButtonStyle())
+                        .buttonStyle(StudioIconButtonStyle()).contentShape(.rect)
                         .help("Close the dock")
                         .accessibilityLabel("Close dock")
                 }
@@ -152,7 +152,7 @@ public struct CodeV2ChangesPane: View {
                 Spacer()
                 CodeV2DiffCounts(additions: additions, deletions: deletions, font: Studio.Font.labelDigits)
                 if let commit {
-                    Button("Commit…", action: commit).buttonStyle(CodeV2InkButtonStyle()).disabled(files.isEmpty)
+                    Button("Commit…", action: commit).buttonStyle(CodeV2InkButtonStyle()).disabled(files.isEmpty).contentShape(.rect)
                 }
             }
             .padding(.horizontal, JunoSpace.cozy)
@@ -170,7 +170,7 @@ public struct CodeV2ChangesPane: View {
             } else {
                 ScrollViewReader { proxy in
                     ScrollView {
-                        LazyVStack(alignment: .leading, spacing: JunoSpace.snug, pinnedViews: [.sectionHeaders]) {
+                        VStack(alignment: .leading, spacing: JunoSpace.snug) {
                             ForEach(files) { file in
                                 Section {
                                     if !collapsed.contains(file.path) {
@@ -236,20 +236,22 @@ struct CodeV2HunkCard: View {
                     Text(decision == .accepted ? "Accepted" : "Rejected")
                         .font(Studio.Font.meta).foregroundStyle(Studio.Ink.secondary)
                 } else if let decide {
-                    Button("Reject") { decide(.rejected) }.buttonStyle(StudioQuietButtonStyle())
-                    Button("Accept") { decide(.accepted) }.buttonStyle(CodeV2OutlineButtonStyle(compact: true))
+                    Button("Reject") { decide(.rejected) }.buttonStyle(StudioQuietButtonStyle()).contentShape(.rect)
+                    Button("Accept") { decide(.accepted) }.buttonStyle(CodeV2OutlineButtonStyle(compact: true)).contentShape(.rect)
                 }
             }
             .padding(.horizontal, JunoSpace.snug)
             .frame(height: 30)
             .background(Studio.Surface.muted)
             Rectangle().fill(Studio.Surface.hairline).frame(height: 1)
-            VStack(alignment: .leading, spacing: 0) {
-                ForEach(Array(hunk.lines.enumerated()), id: \.offset) { _, line in
-                    StudioDiffLineRow(line: line, wraps: false)
+            ScrollView(.horizontal, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(hunk.lines.enumerated()), id: \.offset) { _, line in
+                        StudioDiffLineRow(line: line, wraps: false)
+                    }
                 }
+                .padding(.vertical, 2)
             }
-            .padding(.vertical, 2)
         }
         .background(Studio.Surface.raised)
         .clipShape(RoundedRectangle(cornerRadius: Studio.Radius.field, style: .continuous))

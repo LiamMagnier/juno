@@ -8,6 +8,7 @@ import JunoDesignSystem
 /// The pages of Juno Code's settings.
 public enum StudioSettingsSection: String, CaseIterable, Identifiable, Sendable {
     case general
+    case connections
     case permissions
     case environment
     case instructions
@@ -24,6 +25,7 @@ public enum StudioSettingsSection: String, CaseIterable, Identifiable, Sendable 
     var title: String {
         switch self {
         case .general: "General"
+        case .connections: "Connections"
         case .permissions: "Permissions"
         case .environment: "Environment"
         case .instructions: "Instructions"
@@ -40,6 +42,7 @@ public enum StudioSettingsSection: String, CaseIterable, Identifiable, Sendable 
     var icon: JunoIcon {
         switch self {
         case .general: .sliders
+        case .connections: .connections
         case .permissions: .shieldCheck
         case .environment: .terminal
         case .instructions: .writing
@@ -60,6 +63,16 @@ public enum StudioSettingsSection: String, CaseIterable, Identifiable, Sendable 
         default: false
         }
     }
+}
+
+/// Asks the open (or next) Code settings window to show a page: the model
+/// picker's "+" and a subscription's fix open Connections this way.
+@MainActor
+@Observable
+public final class StudioSettingsRouter {
+    public static let shared = StudioSettingsRouter()
+    public var requested: StudioSettingsSection?
+    public init() {}
 }
 
 /// Juno Code's settings: everything a coding agent lets you decide, in one
@@ -125,6 +138,12 @@ public struct StudioSettingsView: View {
                 }
         }
         .frame(minWidth: 760, minHeight: 540)
+        .onChange(of: StudioSettingsRouter.shared.requested, initial: true) { _, requested in
+            if let requested {
+                section = requested
+                StudioSettingsRouter.shared.requested = nil
+            }
+        }
         .onAppear {
             projectID = projectID ?? workbench?.workspaces.first?.id
             settings.selectProject(project?.access)
@@ -157,6 +176,20 @@ public struct StudioSettingsView: View {
 
     @ViewBuilder
     private var page: some View {
+        if section == .connections {
+            // Its own grouped form, with the page title and lede above it.
+            CodeV2ConnectionsView(hub: .shared, keys: keys)
+        } else {
+            settingsForm
+        }
+    }
+
+    /// Keys kept on this Mac (the account's keys are managed on the web's
+    /// Connections page; the Mac's runs read them from there).
+    @State private var keys = CodeV2KeysModel()
+
+    @ViewBuilder
+    private var settingsForm: some View {
         Form {
             if !settings.problems.isEmpty {
                 Section {
@@ -174,6 +207,7 @@ public struct StudioSettingsView: View {
             let locked = !settings.canEdit(scope)
             switch section {
             case .general: StudioGeneralSettings(workbench: workbench)
+            case .connections: EmptyView()
             case .permissions:
                 StudioPermissionsSettings(scope: scope, settings: settings)
                     .disabled(locked)

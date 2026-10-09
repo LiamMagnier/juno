@@ -127,7 +127,7 @@ struct CodeV2ContextCard: View {
             }
             if let compact {
                 Button("Compact now", action: compact)
-                    .buttonStyle(CodeV2OutlineButtonStyle(compact: true))
+                    .buttonStyle(CodeV2OutlineButtonStyle(compact: true)).contentShape(.rect)
                     .padding(.top, JunoSpace.tight)
             }
         }

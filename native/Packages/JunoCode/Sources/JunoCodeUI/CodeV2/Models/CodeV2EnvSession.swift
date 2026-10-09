@@ -172,10 +172,9 @@ public final class CodeV2EnvSession {
     }
 
     private func perform(_ body: @escaping (EnvServerConnection) async throws -> Void) async {
-        guard let hub else {
-            lastError = "This preview is not connected."
-            return
-        }
+        // A detached preview session has no server: nothing to do, and
+        // nothing to report.
+        guard let hub else { return }
         do {
             let connection = try await hub.ready()
             try await body(connection)
