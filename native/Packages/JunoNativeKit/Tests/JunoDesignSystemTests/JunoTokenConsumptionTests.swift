@@ -93,6 +93,12 @@ final class JunoTokenConsumptionTests: XCTestCase {
             ),
             "junoCodeString": .generated(.junoCodeString, G.codeString),
             "junoCodeNumber": .generated(.junoCodeNumber, G.codeNumber),
+            "junoCodeKeyword": .generated(.junoCodeKeyword, G.codeKeyword),
+            "junoCodeControl": .generated(.junoCodeControl, G.codeControl),
+            "junoCodeType": .generated(.junoCodeType, G.codeType),
+            "junoCodeFunction": .generated(.junoCodeFunction, G.codeFunction),
+            "junoCodeVariable": .generated(.junoCodeVariable, G.codeVariable),
+            "junoCodeComment": .generated(.junoCodeComment, G.codeComment),
             // Inside glass, and selection.
             "junoGlassHover": .generated(.junoGlassHover, foreground(0.06, 0.08)),
             "junoGlassFill": .generated(.junoGlassFill, foreground(0.08, 0.12)),

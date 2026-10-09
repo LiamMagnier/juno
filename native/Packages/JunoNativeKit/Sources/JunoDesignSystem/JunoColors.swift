@@ -185,7 +185,7 @@ public extension JunoColorToken {
     static let destructiveInkLight = JunoGeneratedColors.destructiveInk.light
     static let destructiveInkDark = JunoGeneratedColors.destructiveInk.dark
 
-    /// `--code-string` / `--code-number`: syntax. Keywords are the accent ink.
+    /// `--code-*`: syntax, VS Code's Light+ and Dark+ (globals.css `.hljs-*`).
     static let codeStringLight = JunoGeneratedColors.codeString.light
     static let codeStringDark = JunoGeneratedColors.codeString.dark
     static let codeNumberLight = JunoGeneratedColors.codeNumber.light
@@ -361,6 +361,30 @@ public extension Color {
     static let junoCodeString = Color.junoAdaptive(light: .codeStringLight, dark: .codeStringDark)
     /// `--code-number`.
     static let junoCodeNumber = Color.junoAdaptive(light: .codeNumberLight, dark: .codeNumberDark)
+    /// `--code-keyword`: `SELECT`, `const`, `def` — VS Code's blue.
+    static let junoCodeKeyword = Color.junoAdaptive(
+        light: JunoGeneratedColors.codeKeyword.light, dark: JunoGeneratedColors.codeKeyword.dark
+    )
+    /// `--code-control`: `if`, `return`, `for` — the flow words, purple.
+    static let junoCodeControl = Color.junoAdaptive(
+        light: JunoGeneratedColors.codeControl.light, dark: JunoGeneratedColors.codeControl.dark
+    )
+    /// `--code-type`: built-in types and class names.
+    static let junoCodeType = Color.junoAdaptive(
+        light: JunoGeneratedColors.codeType.light, dark: JunoGeneratedColors.codeType.dark
+    )
+    /// `--code-function`: a name being called.
+    static let junoCodeFunction = Color.junoAdaptive(
+        light: JunoGeneratedColors.codeFunction.light, dark: JunoGeneratedColors.codeFunction.dark
+    )
+    /// `--code-variable`: attributes, properties, parameters.
+    static let junoCodeVariable = Color.junoAdaptive(
+        light: JunoGeneratedColors.codeVariable.light, dark: JunoGeneratedColors.codeVariable.dark
+    )
+    /// `--code-comment`: comments, green and italic.
+    static let junoCodeComment = Color.junoAdaptive(
+        light: JunoGeneratedColors.codeComment.light, dark: JunoGeneratedColors.codeComment.dark
+    )
 
     // ── Inside glass, and selection ─────────────────────────────────────────
 

@@ -25,6 +25,34 @@ final class JunoProseTests: XCTestCase {
         XCTAssertFalse(classified.contains { $0.0 == "limit" }, "identifiers stay plain")
     }
 
+    /// The owner's screenshot (2026-10-09): SQL keywords drawn plain. They are
+    /// matched in any case and coloured as the web's VS Code palette does.
+    func testSQLIsClassifiedLikeTheWeb() {
+        let source = "Select last_name, NVL(commission_pct, 0) AS c\nFROM employees -- HR\nWHERE salary > 1000 AND hire_date < SYSDATE;\nCREATE TABLE t (id NUMBER, name VARCHAR2(20));"
+        let classified = JunoSyntaxHighlighter.tokens(in: source, language: "sql").map { (String(source[$0.0]), $0.1) }
+        for word in ["Select", "AS", "FROM", "WHERE", "AND", "SYSDATE", "CREATE", "TABLE"] {
+            XCTAssertTrue(classified.contains { $0 == (word, .keyword) }, word)
+        }
+        XCTAssertTrue(classified.contains { $0 == ("NVL", .type) }, "a SQL function is hljs built_in")
+        XCTAssertTrue(classified.contains { $0 == ("NUMBER", .type) })
+        XCTAssertTrue(classified.contains { $0 == ("VARCHAR2", .type) })
+        XCTAssertTrue(classified.contains { $0 == ("-- HR", .comment) })
+        XCTAssertTrue(classified.contains { $0 == ("1000", .number) })
+        XCTAssertFalse(classified.contains { $0.0 == "employees" })
+    }
+
+    func testCallsAndTypesInScripts() {
+        let source = "const total: number = Math.max(sum(a), 0)\nprint(len(items))"
+        let ts = JunoSyntaxHighlighter.tokens(in: source, language: "ts").map { (String(source[$0.0]), $0.1) }
+        XCTAssertTrue(ts.contains { $0 == ("number", .type) })
+        XCTAssertTrue(ts.contains { $0 == ("sum", .function) })
+        XCTAssertTrue(ts.contains { $0 == ("Math", .type) })
+        let py = "def area(r):\n    return round(3.14 * r ** 2, 2)"
+        let pyTokens = JunoSyntaxHighlighter.tokens(in: py, language: "python").map { (String(py[$0.0]), $0.1) }
+        XCTAssertTrue(pyTokens.contains { $0 == ("area", .function) })
+        XCTAssertTrue(pyTokens.contains { $0 == ("round", .type) })
+    }
+
     func testShellCommentsNeedAWordBoundaryAndPlainTextIsLeftAlone() {
         let shell = "echo ${#items} # count"
         let tokens = JunoSyntaxHighlighter.tokens(in: shell, language: "bash")

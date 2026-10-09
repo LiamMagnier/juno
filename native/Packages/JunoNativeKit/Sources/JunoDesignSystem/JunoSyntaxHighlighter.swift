@@ -2,17 +2,18 @@ import SwiftUI
 
 /// A small, honest syntax highlighter for the transcript's code blocks.
 ///
-/// Four classes and no more, which is what the web's reading of `highlight.js`
-/// comes to on the palette it is given (`globals.css`, `.hljs-*`): keywords in
-/// the accent's ink, strings in `--code-string`, numbers in `--code-number`,
-/// comments in the secondary ink and in italic. Everything else keeps the
-/// block's foreground. It is a scanner, not a parser: it knows each family's
-/// comment and string delimiters and a keyword list, which is all four colours
-/// need, and it never fails — an unknown language is scanned as a C-like one,
-/// and text it cannot classify stays plain.
+/// The web's reading of `highlight.js` on VS Code's palette (`globals.css`,
+/// `.hljs-*` over `--code-*`: Light+ in light, Dark+ in dark): keywords blue,
+/// built-in types and SQL functions teal, called names in the function ink,
+/// strings in `--code-string`, numbers in `--code-number`, comments green and
+/// italic. Everything else keeps the block's foreground. It is a scanner, not
+/// a parser: it knows each family's comment and string delimiters, its
+/// keywords and types, which is all the colours need, and it never fails — an
+/// unknown language is scanned as a C-like one, and text it cannot classify
+/// stays plain.
 public enum JunoSyntaxHighlighter {
     public enum Token: Equatable, Sendable {
-        case keyword, string, number, comment
+        case keyword, type, function, string, number, comment
     }
 
     /// The source, coloured. One `AttributedString` for the whole block, so a
@@ -29,13 +30,17 @@ public enum JunoSyntaxHighlighter {
             var piece = AttributedString(String(source[range]))
             switch token {
             case .keyword:
-                piece.foregroundColor = Color.junoAccentInk
+                piece.foregroundColor = Color.junoCodeKeyword
+            case .type:
+                piece.foregroundColor = Color.junoCodeType
+            case .function:
+                piece.foregroundColor = Color.junoCodeFunction
             case .string:
                 piece.foregroundColor = Color.junoCodeString
             case .number:
                 piece.foregroundColor = Color.junoCodeNumber
             case .comment:
-                piece.foregroundColor = Color.junoSecondaryInk
+                piece.foregroundColor = Color.junoCodeComment
                 // Relative, like the prose's maths: the italic of whatever
                 // face and size the block is set in.
                 piece.inlinePresentationIntent = .emphasized
@@ -148,9 +153,18 @@ public enum JunoSyntaxHighlighter {
                 while cursor < end, isIdentifierCharacter(source[cursor]) || source[cursor] == "$" {
                     cursor = source.index(after: cursor)
                 }
-                let word = source[index..<cursor]
-                if grammar.keywords.contains(String(word)) {
+                let word = String(source[index..<cursor])
+                let lookup = grammar == .sql ? word.lowercased() : word
+                if grammar.keywords.contains(lookup) {
                     found.append((index..<cursor, .keyword))
+                } else if grammar.types.contains(lookup) {
+                    found.append((index..<cursor, .type))
+                } else if grammar.callsAreWords, isCall(source, after: cursor) {
+                    // SQL's functions are hljs `built_in` (teal); elsewhere a
+                    // call is `title.function_`.
+                    found.append((index..<cursor, grammar == .sql ? .type : .function))
+                } else if grammar.capitalisedAreTypes, isTypeName(word) {
+                    found.append((index..<cursor, .type))
                 }
                 previous = source[source.index(before: cursor)]
                 index = cursor
@@ -161,6 +175,20 @@ public enum JunoSyntaxHighlighter {
             index = source.index(after: index)
         }
         return found
+    }
+
+    /// A name followed, past any spaces, by an opening parenthesis.
+    private static func isCall(_ source: String, after position: String.Index) -> Bool {
+        var cursor = position
+        while cursor < source.endIndex, source[cursor] == " " { cursor = source.index(after: cursor) }
+        return cursor < source.endIndex && source[cursor] == "("
+    }
+
+    /// `String`, `HashMap`, `Promise`: capitalised with a lower-case letter, so
+    /// `MAX_SIZE` and `ID` stay plain.
+    private static func isTypeName(_ word: String) -> Bool {
+        guard let first = word.first, first.isUppercase else { return false }
+        return word.contains { $0.isLowercase }
     }
 
     private static func isIdentifierCharacter(_ character: Character?) -> Bool {
@@ -267,6 +295,48 @@ public enum JunoSyntaxHighlighter {
             }
         }
 
+        /// Built-in types (hljs `type` / `built_in`), teal.
+        var types: Set<String> {
+            switch self {
+            case .cLike(let words) where words.contains("const") && words.contains("typeof"):
+                ["string", "number", "boolean", "any", "unknown", "never", "bigint", "symbol", "object",
+                 "console", "Math", "JSON", "Promise", "Array", "Object", "Map", "Set", "Date", "Error"]
+            case .cLike(let words) where words.contains("fn"):
+                ["i8", "i16", "i32", "i64", "i128", "isize", "u8", "u16", "u32", "u64", "u128", "usize",
+                 "f32", "f64", "bool", "char", "str", "String", "Vec", "Option", "Result", "Box"]
+            case .cLike(let words) where words.contains("chan"):
+                ["int", "int8", "int16", "int32", "int64", "uint", "uint8", "uint16", "uint32", "uint64",
+                 "float32", "float64", "string", "bool", "byte", "rune", "error", "any"]
+            case .hash(let words) where words.contains("def") && words.contains("lambda"):
+                ["int", "str", "float", "bool", "list", "dict", "tuple", "set", "bytes", "object",
+                 "print", "len", "range", "enumerate", "zip", "map", "filter", "sorted", "sum", "min",
+                 "max", "abs", "round", "open", "isinstance", "type", "input", "super"]
+            case .sql: Self.sqlTypes
+            default: []
+            }
+        }
+
+        /// Whether `name(` marks a call worth colouring.
+        var callsAreWords: Bool {
+            switch self {
+            case .cLike, .hash, .sql: true
+            default: false
+            }
+        }
+
+        var capitalisedAreTypes: Bool {
+            switch self {
+            case .cLike, .hash: true
+            default: false
+            }
+        }
+
+        static let sqlTypes: Set<String> = [
+            "varchar", "varchar2", "nvarchar2", "char", "nchar", "number", "integer", "int", "smallint",
+            "bigint", "decimal", "numeric", "float", "real", "double", "precision", "date", "time",
+            "timestamp", "interval", "text", "clob", "blob", "boolean", "serial", "uuid", "json", "jsonb",
+        ]
+
         var attributesAreWords: Bool {
             if case .cLike(let words) = self { return words.contains("guard") }
             return false
@@ -346,18 +416,22 @@ public enum JunoSyntaxHighlighter {
         "echo", "exit", "cd", "sudo",
     ]
 
-    static let sqlKeywords: Set<String> = {
-        let words = [
-            "select", "from", "where", "and", "or", "not", "insert", "into", "values", "update", "set",
-            "delete", "create", "table", "index", "view", "drop", "alter", "add", "column", "primary",
-            "key", "foreign", "references", "join", "left", "right", "inner", "outer", "on", "as",
-            "group", "by", "order", "having", "limit", "offset", "distinct", "union", "all", "null",
-            "is", "in", "like", "between", "exists", "case", "when", "then", "else", "end", "with",
-            "returning", "default", "unique", "count", "sum", "avg", "min", "max", "asc", "desc",
-            "true", "false", "begin", "commit", "rollback",
-        ]
-        return Set(words + words.map { $0.uppercased() })
-    }()
+    /// Lower-case: SQL is matched case-insensitively. The aggregate and string
+    /// functions are not here — they are coloured as calls (`COUNT(`).
+    static let sqlKeywords: Set<String> = [
+        "select", "from", "where", "and", "or", "not", "insert", "into", "values", "update", "set",
+        "delete", "create", "table", "index", "view", "drop", "alter", "add", "column", "primary",
+        "key", "foreign", "references", "join", "left", "right", "inner", "outer", "full", "cross",
+        "natural", "using", "on", "as", "group", "by", "order", "having", "limit", "offset",
+        "distinct", "union", "intersect", "minus", "except", "all", "any", "some", "null", "nulls",
+        "is", "in", "like", "between", "exists", "case", "when", "then", "else", "end", "with",
+        "returning", "default", "unique", "constraint", "check", "asc", "desc", "true", "false",
+        "begin", "commit", "rollback", "fetch", "first", "next", "rows", "row", "only", "connect",
+        "prior", "start", "level", "rownum", "sysdate", "replace", "sequence", "trigger",
+        "procedure", "function", "declare", "exception", "loop", "if", "elsif", "return",
+        "returns", "grant", "revoke", "truncate", "merge", "matched", "over", "partition", "escape",
+        "cascade", "temporary", "recursive",
+    ]
 
     static let genericKeywords: Set<String> = scriptKeywords
         .union(["def", "fn", "func", "fun", "struct", "impl", "let", "var", "val", "nil", "None", "True", "False"])
