@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { SettingRow, SettingsGroup, SettingsInlineError } from "@/components/settings/setting-row";
 import { useSettingsResource } from "@/components/settings/use-settings-resource";
 import { BRAND } from "@/lib/brand/names";
+import { SubscriptionConnections } from "@/components/code/v2/connections-settings";
 import type { ByokProvider, ProviderKeyView } from "@/lib/code-v2/byok";
 
 /**
@@ -174,6 +175,8 @@ export function ConnectionsSection() {
     return error ? <SettingsInlineError onRetry={reload}>Couldn&rsquo;t load your API keys.</SettingsInlineError> : null;
   }
   return (
+    <>
+    <SubscriptionConnections />
     <SettingsGroup
       title="API keys"
       description={`${BRAND.code.label} runs on your own key whenever you have one for that provider. The provider bills you directly, and those runs don't count against your plan.`}
@@ -188,5 +191,6 @@ export function ConnectionsSection() {
         />
       ))}
     </SettingsGroup>
+    </>
   );
 }

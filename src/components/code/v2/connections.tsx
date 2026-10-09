@@ -42,10 +42,15 @@ export interface ConnectionsProps {
   /** Runs `provider.probe`; resolves with the fresh instance. */
   onProbe?: (instanceId: string) => Promise<ProviderInstance | void>;
   /** Opens the in-app terminal with the vendor's install / login command typed in. */
-  onSetup?: (instance: ProviderInstance, action: "install" | "login") => Promise<void> | void;
+  /** Resolves with a sentence to show under the row ("typed into a terminal on …"). */
+  onSetup?: (instance: ProviderInstance, action: "install" | "login") => Promise<void | string> | void | string;
   onDisconnect?: (instanceId: string) => void;
   /** First-run sheet: a close button and no outer page padding. */
   sheet?: boolean;
+  /** Inside Settings: no page title or padding (the pane has its own). */
+  embedded?: boolean;
+  /** Show the API keys group (Settings keeps its own, with usage). Default true. */
+  showKeys?: boolean;
   onClose?: () => void;
 }
 
@@ -99,6 +104,7 @@ function SubscriptionRow({
   const [busy, setBusy] = React.useState<null | "probe" | "setup">(null);
   const [menu, setMenu] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const [setupLine, setSetupLine] = React.useState<string | null>(null);
   const action = connectionAction(instance);
   const expired = isExpired(instance);
   const key = instance.kind === "acp" ? Object.keys(ACP_RUNTIMES).find((k) => instance.acpCommand?.[0]?.endsWith(k) || instance.id.endsWith(k)) : null;
@@ -118,7 +124,8 @@ function SubscriptionRow({
     setBusy("setup");
     setError(null);
     try {
-      await onSetup?.(instance, a);
+      const said = await onSetup?.(instance, a);
+      if (typeof said === "string") setSetupLine(said);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not open a terminal on your Mac.");
     } finally {
@@ -146,6 +153,7 @@ function SubscriptionRow({
           </div>
         ) : null}
         {error && <div className="ds cv2-del">{error}</div>}
+        {setupLine && <div className="ds">{setupLine}</div>}
         {!disabled && instance.checkedAt && <div className="ds" style={{ fontSize: 12 }}>Checked {ago(instance.checkedAt)}.</div>}
       </div>
       <div style={{ position: "relative" }}>
@@ -318,7 +326,7 @@ export function ConnectionsPanel(props: ConnectionsProps) {
   const [loadError, setLoadError] = React.useState<string | null>(null);
   const [undo, setUndo] = React.useState<ByokKeyRecord | null>(null);
   React.useEffect(() => {
-    if (!byok || props.keys) return;
+    if (!byok || props.keys || props.showKeys === false) return;
     let live = true;
     byok
       .list()
@@ -327,7 +335,7 @@ export function ConnectionsPanel(props: ConnectionsProps) {
     return () => {
       live = false;
     };
-  }, [byok, props.keys]);
+  }, [byok, props.keys, props.showKeys]);
   React.useEffect(() => {
     if (!undo) return;
     const t = setTimeout(() => setUndo(null), 6000);
@@ -341,7 +349,7 @@ export function ConnectionsPanel(props: ConnectionsProps) {
 
   const content = (
     <div className="inner">
-      <div className="cv2-row" style={{ gap: 12, alignItems: "flex-start" }}>
+      <div className="cv2-row" style={{ gap: 12, alignItems: "flex-start", display: props.embedded ? "none" : undefined }}>
         <div className="cv2-grow">
           <h1 className="cv2-h1">Connections</h1>
           <p className="cv2-lede">Use the plans you already pay for. Alevr starts each vendor&apos;s own agent on your Mac, so your sign-in, billing and limits stay with the vendor.</p>
@@ -386,6 +394,7 @@ export function ConnectionsPanel(props: ConnectionsProps) {
         </div>
       </section>
 
+      {props.showKeys !== false && (
       <section className="cv2-group" aria-labelledby="cv2-keys">
         <h2 className="cv2-gh" id="cv2-keys">
           Your API keys <span className="note">Used by the Alevr engine and never billed by Alevr</span>
@@ -397,6 +406,7 @@ export function ConnectionsPanel(props: ConnectionsProps) {
           ))}
         </div>
       </section>
+      )}
 
       {props.alevrPlan && (
         <section className="cv2-group" aria-labelledby="cv2-alevr">
@@ -448,5 +458,6 @@ export function ConnectionsPanel(props: ConnectionsProps) {
       </>
     );
   }
+  if (props.embedded) return <div className="cv2">{content}</div>;
   return <div className="cv2-page">{content}</div>;
 }

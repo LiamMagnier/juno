@@ -56,7 +56,7 @@ const SECTION_LEDES: Record<SettingsSectionId, string> = {
   memory: `What ${PRODUCT_NAME} carries from one conversation to the next.`,
   models: "Which models answer, and where each new message starts.",
   connectors: `The apps ${PRODUCT_NAME} can read from and act in, and what it asks first.`,
-  connections: "Your own API keys. Code runs on them are billed by the provider, not your plan.",
+  connections: "The plans you already pay for, run on your Mac, and your own API keys. Neither is billed by your plan.",
   voice: "The voice that reads replies aloud, and how it listens.",
   devices: `The Macs ${PRODUCT_NAME} can work on, and what it may do there.`,
   data: "Your conversations: take them with you, bring them in, or let them go.",

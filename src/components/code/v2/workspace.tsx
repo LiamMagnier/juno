@@ -11,6 +11,7 @@ import * as React from "react";
 import type { DockTab } from "@/lib/code-v2/dock";
 import { DOCK_TAB_GLYPHS, DOCK_TAB_LABELS, dockReducer, initialDockState } from "@/lib/code-v2/dock";
 import { COMMAND_TITLES, DEFAULT_KEYBINDINGS, bindingFor, resolveKeybinding, type KeyContext } from "@/lib/code-v2/keymap";
+import { escPress } from "@/lib/code-v2/composer";
 import { DETAIL_LEVEL_LABELS, nextDetailLevel, type DetailLevel } from "@/lib/code-v2/turns";
 import { Composer, pendingRequests, type ComposerHandle, type PopoverName } from "./composer";
 import { ConnectionsPanel } from "./connections";
@@ -52,7 +53,7 @@ export interface CodeWorkspaceProps {
   byok?: ByokClient;
   /** Connections sheet hooks (probe / setup through the env server). */
   onProbe?: (instanceId: string) => Promise<ProviderInstance | void>;
-  onSetup?: (instance: ProviderInstance, action: "install" | "login") => Promise<void> | void;
+  onSetup?: (instance: ProviderInstance, action: "install" | "login") => Promise<void | string> | void | string;
   /** Open the Connections sheet on first run (no connected provider and never dismissed). */
   firstRun?: boolean;
   resolveScreenshot?: (ref: string) => string | null;
@@ -166,6 +167,7 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, userName, byok, 
   const [hidden, setHidden] = React.useState(false);
   const [toast, setToast] = React.useState<string | null>(null);
   const composer = React.useRef<ComposerHandle>(null);
+  const escArmed = React.useRef<number | null>(null);
   const root = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => writeStored(WIDTH_KEY, String(dock.width)), [dock.width]);
@@ -319,6 +321,15 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, userName, byok, 
         changesFocus: dock.open && dock.tab === "changes",
         queueNotEmpty: model.queue.length > 0,
       };
+      // Esc Esc stops the running turn from anywhere outside a field (the composer handles its own).
+      if (e.key === "Escape" && running && pending.length === 0 && popover === null && !palette && !editable) {
+        const r = escPress(escArmed.current, Date.now(), running);
+        escArmed.current = r.armedAt;
+        if (r.stop) model.actions.stop();
+        else setToast("Press Esc again to stop");
+        e.preventDefault();
+        return;
+      }
       // ⌥ chords report a composed character on the Mac: match by key code.
       const key = e.altKey && /^Key[A-Z]$/.test(e.code) ? e.code.slice(3).toLowerCase() : e.key;
       const command = resolveKeybinding({ key, metaKey: e.metaKey, ctrlKey: e.ctrlKey, shiftKey: e.shiftKey, altKey: e.altKey }, ctx, DEFAULT_KEYBINDINGS, mac);
@@ -333,7 +344,7 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, userName, byok, 
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [run, running, pending.length, popover, palette, dock.open, dock.tab, model.queue.length, mac]);
+  }, [run, running, pending.length, popover, palette, dock.open, dock.tab, model.queue.length, mac, model.actions]);
 
   const composerNode = (
     <Composer
