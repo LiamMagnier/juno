@@ -241,7 +241,7 @@ function agents(): SubagentItem[] {
   const base = { turnId: "turn3", createdAt: at(3) };
   return [
     { ...base, id: "sa1", kind: "subagent", agentId: "w1", role: "worker", label: "Worker 1", title: "Server route for the total", model: { instanceId: "codex:default", model: "gpt-6.1-sol" }, status: "completed", closingText: "Added /api/cart/total with tax before coupon.", elapsedMs: 112_000, candidate: { additions: 84, deletions: 6 }, task: "Add GET /api/cart/total computing tax before the coupon." },
-    { ...base, id: "sa2", kind: "subagent", agentId: "w2", role: "worker", label: "Worker 2", title: "Client reads the server total", model: { instanceId: "codex:default", model: "gpt-6.1-sol" }, status: "running", liveLine: "Editing src/cart/useCartTotal.ts", elapsedMs: 161_000, task: "Replace the client-side total in useCartTotal with a query to /api/cart/total. Keep the optimistic coupon state. Don't touch the server route.", costUsd: 0.21 },
+    { ...base, id: "sa2", kind: "subagent", agentId: "w2", role: "worker", label: "Worker 2", title: "Client reads the server total", model: { instanceId: "codex:default", model: "gpt-6.1-sol" }, status: "running", liveLine: "Editing src/cart/useCartTotal.ts", elapsedMs: 161_000, candidate: { additions: 9, deletions: 4 }, worktreeBranch: "alevr/w2-client-total", tokens: { input: 48_200, output: 6_100 }, task: "Replace the client-side total in useCartTotal with a query to /api/cart/total. Keep the optimistic coupon state. Don't touch the server route.", costUsd: 0.21 },
     { ...base, id: "sa3", kind: "subagent", agentId: "w3", role: "worker", label: "Worker 3", title: "Cart total regression suite", model: { instanceId: "codex:default", model: "gpt-6.1-sol" }, status: "waiting", liveLine: "wants to run a command", elapsedMs: 123_000, costUsd: 0.31 },
     { ...base, id: "sa4", kind: "subagent", agentId: "e1", role: "explorer", label: "Explorer", title: "Map every caller of selectCartTotal", model: { instanceId: "acp:dsh", model: "deepseek-v4-flash" }, status: "completed", closingText: "Found 3 call sites and 2 tests. Closed.", elapsedMs: 38_000, costUsd: 0.12 },
   ];
@@ -339,9 +339,9 @@ export const STATES: GalleryState[] = [
     id: "needs-you",
     label: "Needs you: approval takeover, agents",
     model: base({
-      thread: { id: "t2", title: "Move checkout totals to the server", repo: "storefront", branch: "alevr/server-totals" },
+      thread: { id: "t2", title: "Cart total regression suite", repo: "storefront", branch: "alevr/cart-suite" },
       items: [
-        { id: "u3", turnId: "turn3", kind: "user_message", text: "Move checkout totals to the server and add tests. Split the call sites across workers.", createdAt: at(4), delivery: "send" },
+        { id: "u3", turnId: "turn3", kind: "user_message", text: "Write the cart total regression suite and move the last call sites to the server total. Split the work across workers.", createdAt: at(4), delivery: "send" },
         { id: "r3", turnId: "turn3", kind: "reasoning", text: "Three call sites; one worker each.", streaming: false, createdAt: at(4, 2) },
         { id: "p3", turnId: "turn3", kind: "plan", text: "3 tasks, one per call site", steps: [{ text: "Server route for the total", status: "completed" }, { text: "Client reads the server total", status: "in_progress" }, { text: "Cart total regression suite", status: "in_progress" }], createdAt: at(4, 5) },
         { id: "a3", turnId: "turn3", kind: "assistant_message", text: "Three workers, one per call site. The explorer already mapped them; I'll merge their branches and have the reviewer read each diff.", streaming: false, createdAt: at(4, 8) },

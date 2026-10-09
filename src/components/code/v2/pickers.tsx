@@ -422,7 +422,7 @@ export function ModelPicker({
                     <span>Fixed</span>
                   )}
                   <span className="cv2-grow" />
-                  {usage && <span className="cv2-tnum cv2-trunc">{usage}</span>}
+                  {usage && <span className="cv2-trunc">{usage}</span>}
                 </div>
               </>
             )}

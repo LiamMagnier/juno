@@ -433,9 +433,11 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, userName, byok, 
         <main className="cv2-main" aria-label="Settings">
           <div className="cv2-left">
             <header className="cv2-top">
-              <button type="button" className="cv2-iconbtn" aria-label="Back to the session" title="Back" onClick={() => setSettings(null)} style={{ marginLeft: -8 }}>
-                <Glyph name="arrow-left" />
-              </button>
+              {!(sidebar && sideOpen) && (
+                <button type="button" className="cv2-iconbtn" aria-label="Back to the session" title="Back" onClick={() => setSettings(null)} style={{ marginLeft: -8 }}>
+                  <Glyph name="arrow-left" />
+                </button>
+              )}
               <div className="cv2-crumb">
                 <span className="proj">Settings</span>
                 <span className="slash" aria-hidden>

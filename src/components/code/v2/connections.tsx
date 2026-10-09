@@ -84,6 +84,13 @@ const PLACEHOLDER_SUBSCRIPTIONS: ProviderInstance[] = [
   { id: "acp:antigravity", kind: "acp", label: "Antigravity", status: "unknown", acpCommand: ["antigravity-acp"] },
 ];
 
+/** One line on what a connected source is; the facts table carries the rest. */
+function roleSentence(instance: ProviderInstance): string {
+  const vendor = instance.kind === "claude-agent" ? "Anthropic" : instance.kind === "codex" ? "OpenAI" : "the vendor";
+  const what = instance.kind === "claude-agent" ? "your own Claude" : instance.kind === "codex" ? "your own Codex" : displayName(instance);
+  return `Runs ${what} on your Mac. Sign-in, billing and limits stay with ${vendor}.`;
+}
+
 function ago(iso?: string): string {
   if (!iso) return "";
   const s = Math.max(0, (Date.now() - Date.parse(iso)) / 1000);
@@ -190,7 +197,10 @@ function SubscriptionDetail({
       setBusy(null);
     }
   };
-  const sentence = held ? UNOFFERED_SENTENCE : disabled ? "Connect your Mac to check this." : step ? step.sentence : connectionSentence(instance);
+  const facts = !disabled && !held && !!(instance.account?.email || instance.limits?.length || instance.checkedAt);
+  // When the facts below already name the account, plan and windows, the lead
+  // says only what this source is, not the same facts again.
+  const sentence = held ? UNOFFERED_SENTENCE : disabled ? "Connect your Mac to check this." : step ? step.sentence : facts && instance.status === "ready" && !expired ? roleSentence(instance) : connectionSentence(instance);
   return (
     <div className="cv2-md-detail" aria-disabled={disabled || undefined}>
       <div className="hd">

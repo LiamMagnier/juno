@@ -87,11 +87,23 @@ function highlight(line: DiffLine): React.ReactNode {
   return out;
 }
 
-function Line({ line }: { line: DiffLine }) {
+/**
+ * One diff row. Unified view carries two gutters (old, new) the way GitHub,
+ * Codex and T3 Code do, so a removed line and the line that replaced it never
+ * read as one jumbled count; split view has one gutter per side.
+ */
+function Line({ line, both }: { line: DiffLine; both?: boolean }) {
   return (
-    <div className={cn("cv2-ln", line.kind === "add" && "a", line.kind === "del" && "d")}>
-      <span className="cv2-tnum">{line.kind === "del" ? line.oldNo : line.newNo}</span>
-      <span>{highlight(line)}</span>
+    <div className={cn("cv2-ln", both && "two", line.kind === "add" && "a", line.kind === "del" && "d")}>
+      {both ? (
+        <>
+          <span className="cv2-tnum cv2-gut">{line.kind === "add" ? "" : line.oldNo}</span>
+          <span className="cv2-tnum cv2-gut">{line.kind === "del" ? "" : line.newNo}</span>
+        </>
+      ) : (
+        <span className="cv2-tnum cv2-gut">{line.kind === "del" ? line.oldNo : line.newNo}</span>
+      )}
+      <span className="cv2-code">{highlight(line)}</span>
     </div>
   );
 }
@@ -112,16 +124,17 @@ export function gapBefore(hunks: readonly DiffHunk[], i: number): number {
   return Math.max(0, h.newStart - (p.newStart + p.newLines));
 }
 
-function Gap({ count, lines, from }: { count: number; lines?: string[]; from: number }) {
+function Gap({ count, lines, from, oldFrom }: { count: number; lines?: string[]; from: number; oldFrom?: number }) {
   const [open, setOpen] = React.useState(false);
   if (count <= 0) return null;
   if (open && lines) {
     return (
       <>
         {lines.slice(from, from + count).map((t, i) => (
-          <div key={i} className="cv2-ln">
-            <span className="cv2-tnum">{from + i + 1}</span>
-            <span>{t || " "}</span>
+          <div key={i} className={cn("cv2-ln", oldFrom !== undefined && "two")}>
+            {oldFrom !== undefined && <span className="cv2-tnum cv2-gut">{oldFrom + i + 1}</span>}
+            <span className="cv2-tnum cv2-gut">{from + i + 1}</span>
+            <span className="cv2-code">{highlight({ kind: "context", text: t })}</span>
           </div>
         ))}
       </>
@@ -275,7 +288,7 @@ function ChangesPane({ model, focus, wide, active }: { model: WorkspaceModel; fo
                   const d = decisions[h.id];
                   return (
                     <React.Fragment key={h.id}>
-                      {f.change !== "add" && <Gap count={gapBefore(f.hunks, hi)} lines={content} from={hi === 0 ? 0 : f.hunks[hi - 1].newStart - 1 + f.hunks[hi - 1].newLines} />}
+                      {f.change !== "add" && <Gap count={gapBefore(f.hunks, hi)} lines={content} from={hi === 0 ? 0 : f.hunks[hi - 1].newStart - 1 + f.hunks[hi - 1].newLines} oldFrom={split && wide ? undefined : Math.max(0, f.hunks[hi].oldStart - 1 - gapBefore(f.hunks, hi))} />}
                       <div className={cn("cv2-diff", wrap && "wrap")} data-hunk={h.id} data-focused={focused === h.id} data-decision={d} onClick={() => setFocused(h.id)}>
                         {model.actions.decideHunk && (
                           <span className="cv2-hunkbar" data-on={d === "rejected" ? "true" : undefined}>
@@ -299,7 +312,7 @@ function ChangesPane({ model, focus, wide, active }: { model: WorkspaceModel; fo
                             <div>{splitRows(h).map((r, i) => (r.right ? <Line key={i} line={r.right} /> : <div key={i} className="cv2-ln">&nbsp;</div>))}</div>
                           </div>
                         ) : (
-                          h.lines.map((l, i) => <Line key={i} line={l} />)
+                          h.lines.map((l, i) => <Line key={i} line={l} both />)
                         )}
                       </div>
                     </React.Fragment>
@@ -476,8 +489,8 @@ function FilesPane({ model, focus, onMention }: { model: WorkspaceModel; focus: 
               <div className="cv2-viewer">
                 {text.split("\n").map((l, i) => (
                   <div key={i} className="cv2-ln">
-                    <span className="cv2-tnum">{i + 1}</span>
-                    <span>{highlight({ kind: "context", text: l })}</span>
+                    <span className="cv2-tnum cv2-gut">{i + 1}</span>
+                    <span className="cv2-code">{highlight({ kind: "context", text: l })}</span>
                   </div>
                 ))}
               </div>
