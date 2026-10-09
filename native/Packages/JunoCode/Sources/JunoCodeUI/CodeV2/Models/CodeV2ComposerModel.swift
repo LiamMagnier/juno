@@ -26,17 +26,38 @@ public enum CodeV2AlevrCatalog {
             account: plan.map { CodeV2.ProviderAccount(plan: $0) },
             status: .ready,
             capabilities: CodeV2KnownSubscription.alevrEngineCapabilities,
-            models: codingModels(models)
+            models: displayModels(models)
         )
+    }
+
+    /// The coding models in the catalogue's own display order (each lab's
+    /// newest generation first, as the manifest sends them), which is how the
+    /// picker lists a lab. The best for coding is marked `isDefault`, so "the
+    /// first Alevr model" still means the best one wherever that is asked.
+    public static func displayModels(_ models: [ModelOption]) -> [CodeV2.ProviderModel] {
+        let best = codingModels(models)
+        guard let top = best.first else { return [] }
+        var byID: [String: CodeV2.ProviderModel] = [:]
+        for model in best where byID[model.id] == nil { byID[model.id] = model }
+        var seen = Set<String>()
+        return models.compactMap { option -> CodeV2.ProviderModel? in
+            guard var model = byID[option.modelID], seen.insert(option.modelID).inserted else { return nil }
+            model.isDefault = model.id == top.id ? true : nil
+            return model
+        }
+    }
+
+    /// A text model that can drive the agent loop. Image, video and audio
+    /// models never are: Settings › Generation models picks those.
+    public static func isCodingModel(_ option: ModelOption) -> Bool {
+        guard let catalog = option.catalog else { return true }
+        return catalog.codeAgentic != false && catalog.modality == .chat
     }
 
     /// Agentic coding models only, "best for coding" first: the manifest's
     /// curated rank, then intelligence, then name.
     public static func codingModels(_ models: [ModelOption]) -> [CodeV2.ProviderModel] {
-        let usable = models.filter { option in
-            guard let catalog = option.catalog else { return true }
-            return catalog.codeAgentic != false && catalog.modality == .chat
-        }
+        let usable = models.filter(isCodingModel)
         let ordered = usable.enumerated().sorted { lhs, rhs in
             let a = lhs.element.catalog, b = rhs.element.catalog
             switch (a?.codeRank, b?.codeRank) {

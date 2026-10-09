@@ -46,6 +46,7 @@ public struct ToolRegistry: Sendable {
         goalStore: CodeSessionStore? = nil,
         changes: (any WorkspaceChangeDetecting)? = nil,
         webSearch: (any CodeWebSearching)? = nil,
+        mediaGeneration: (any CodeMediaGenerating)? = nil,
         shells: (any ShellSessionManaging)? = nil,
         workingDirectories: SessionWorkingDirectories? = nil,
         workspaceRoot: String = "",
@@ -90,6 +91,12 @@ public struct ToolRegistry: Sendable {
             tools.append(WebSearchTool(service: webSearch))
         }
         tools.append(WebFetchTool())
+        if let mediaGeneration, !workspaceRoot.isEmpty {
+            tools.append(contentsOf: GenerateMediaTool.all(
+                service: mediaGeneration,
+                workspaceRoot: URL(fileURLWithPath: workspaceRoot, isDirectory: true)
+            ) as [any CodeTool])
+        }
         tools.append(contentsOf: additionalTools)
         return ToolRegistry(tools: tools)
     }

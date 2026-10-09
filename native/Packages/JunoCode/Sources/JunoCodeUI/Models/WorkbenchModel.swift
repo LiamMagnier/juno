@@ -104,17 +104,22 @@ public final class WorkbenchModel {
         public let modelClient: any AgentModelClient
         public let availableModels: [ModelOption]
         public let webSearch: (any CodeWebSearching)?
+        /// Alevr's media generation, for `generate_image`, `generate_video`
+        /// and `generate_audio`. Nil leaves those tools out.
+        public let mediaGeneration: (any CodeMediaGenerating)?
 
         public init(
             storageRootURL: URL,
             modelClient: any AgentModelClient,
             availableModels: [ModelOption],
-            webSearch: (any CodeWebSearching)? = nil
+            webSearch: (any CodeWebSearching)? = nil,
+            mediaGeneration: (any CodeMediaGenerating)? = nil
         ) {
             self.storageRootURL = storageRootURL
             self.modelClient = modelClient
             self.availableModels = availableModels
             self.webSearch = webSearch
+            self.mediaGeneration = mediaGeneration
         }
 
         /// Default storage under a one-way account scope in
@@ -130,7 +135,8 @@ public final class WorkbenchModel {
             accountID: String,
             modelClient: any AgentModelClient,
             availableModels: [ModelOption],
-            webSearch: (any CodeWebSearching)? = nil
+            webSearch: (any CodeWebSearching)? = nil,
+            mediaGeneration: (any CodeMediaGenerating)? = nil
         ) -> Dependencies {
             let base = FileManager.default.urls(
                 for: .applicationSupportDirectory,
@@ -143,7 +149,8 @@ public final class WorkbenchModel {
                 storageRootURL: base,
                 modelClient: modelClient,
                 availableModels: availableModels,
-                webSearch: webSearch
+                webSearch: webSearch,
+                mediaGeneration: mediaGeneration
             )
         }
 
@@ -238,7 +245,8 @@ public final class WorkbenchModel {
                 record: record,
                 access: access,
                 storageRoot: dependencies.storageRootURL,
-                webSearch: dependencies.webSearch
+                webSearch: dependencies.webSearch,
+                mediaGeneration: dependencies.mediaGeneration
             )
             workspaces = await workspaceDirectory.allWorkspaces()
             workspaceNeedingAccess = nil
@@ -259,6 +267,9 @@ public final class WorkbenchModel {
     /// `dependencies.availableModels` and refreshable once the real manifest
     /// loads after sign-in.
     public private(set) var availableModels: [ModelOption]
+    /// The account's image, video and music models, for Settings › Generation
+    /// models. Never offered in the composer: Code runs on text models.
+    public private(set) var generationModels: [ModelOption] = []
 
     /// Canonical model id to human name, for the transcript's attribution line.
     ///
@@ -415,7 +426,8 @@ public final class WorkbenchModel {
                 record: record,
                 access: access,
                 storageRoot: dependencies.storageRootURL,
-                webSearch: dependencies.webSearch
+                webSearch: dependencies.webSearch,
+                mediaGeneration: dependencies.mediaGeneration
             )
             workspaces = await workspaceDirectory.allWorkspaces()
             lastError = nil
@@ -443,7 +455,8 @@ public final class WorkbenchModel {
                 record: record,
                 access: access,
                 storageRoot: dependencies.storageRootURL,
-                webSearch: dependencies.webSearch
+                webSearch: dependencies.webSearch,
+                mediaGeneration: dependencies.mediaGeneration
             )
             contexts[workspaceID] = context
             workspaces = await workspaceDirectory.allWorkspaces()
@@ -840,6 +853,13 @@ public final class WorkbenchModel {
     /// capabilities that no longer exist. This is deliberately an async setter:
     /// a manifest downgrade must stop an active Computer Use grant before the
     /// caller can consider the update applied.
+    /// Replaces the account's media models (Settings › Generation models) and
+    /// what the media tools resolve their model from.
+    public func setGenerationModels(_ models: [ModelOption]) {
+        generationModels = models
+        CodeGenerationModels.catalogue.replace(models)
+    }
+
     public func setAvailableModels(_ models: [ModelOption]) async {
         availableModels = models
         let currentControllers = Array(controllers.values)

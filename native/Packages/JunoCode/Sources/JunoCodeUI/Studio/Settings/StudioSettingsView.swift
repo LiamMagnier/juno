@@ -375,7 +375,8 @@ struct StudioGeneralSettings: View {
                 .foregroundStyle(Studio.Ink.tertiary)
             Picker("Model", selection: $defaults.modelID) {
                 Text("First available").tag("")
-                ForEach(models) { model in
+                // Text models that write code; media models are chosen below.
+                ForEach(models.filter(CodeV2AlevrCatalog.isCodingModel)) { model in
                     Text(model.displayName).tag(model.modelID)
                 }
             }
@@ -391,6 +392,7 @@ struct StudioGeneralSettings: View {
                 }
             }
         }
+        StudioGenerationModelsSettings(models: workbench?.generationModels ?? [])
         Section("While Alevr works") {
             Picker("Messages you send", selection: $preferences.followUp) {
                 ForEach(StudioFollowUpBehavior.allCases) { Text($0.label).tag($0) }

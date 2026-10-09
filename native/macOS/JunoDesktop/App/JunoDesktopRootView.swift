@@ -156,6 +156,7 @@ struct JunoDesktopRootView: View {
                 // authoritative revocation and must clear stale capabilities.
                 guard let models else { return }
                 let codeModels = Self.codeModels(from: models)
+                workbenchModel?.setGenerationModels(Self.generationModels(from: models))
                 Task {
                     await workbenchModel?.setAvailableModels(codeModels)
                 }
@@ -345,8 +346,18 @@ struct JunoDesktopRootView: View {
                     webSearch: BackendCodeWebSearchClient(
                         sender: runtime,
                         accountID: accountID
+                    ),
+                    // generate_image / _video / _audio, on the models chosen
+                    // in Code Settings › General › Generation models.
+                    mediaGeneration: BackendCodeMediaClient(
+                        sender: runtime,
+                        accountID: accountID,
+                        chooseModel: { kind in CodeGenerationModels.catalogue.resolved(kind) }
                     )
                 )
+            )
+            workbench.setGenerationModels(
+                Self.generationModels(from: configuration.conversationModel?.selectableModels ?? [])
             )
             workbenchModel = workbench
             configuration.codeHostModel?.connect(workbench: workbench)
@@ -394,6 +405,14 @@ struct JunoDesktopRootView: View {
             .filter(\.isChatCapable)
             .filter { CodeModelProviderResolver.supports($0.id) }
             .map { ModelOption(catalog: $0.junoDescriptor) }
+    }
+
+    /// The manifest's image, video and music models, for Code's
+    /// Settings › Generation models and its media tools.
+    static func generationModels(from manifest: [NativeChatModelOption]) -> [ModelOption] {
+        manifest
+            .map { ModelOption(catalog: $0.junoDescriptor) }
+            .filter { ($0.catalog?.modality ?? .chat) != .chat }
     }
 
     private var initialCodeModels: [ModelOption] {

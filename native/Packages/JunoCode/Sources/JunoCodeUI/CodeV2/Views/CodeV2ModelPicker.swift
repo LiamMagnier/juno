@@ -28,7 +28,9 @@ struct CodeV2ModelControl: View {
     static let catalogSize = CGSize(width: 380, height: 440)
 
     private var instance: CodeV2.ProviderInstance? { directory.instance(selection.instanceId) }
-    private var model: CodeV2.ProviderModel? { instance?.models?.first { $0.id == selection.model } }
+    private var model: CodeV2.ProviderModel? {
+        instance.flatMap { CodeV2ModelCatalogue.models(of: $0, in: directory).first { $0.id == selection.model } }
+    }
     private var isConnected: Bool { instance?.status == .ready || instance?.status == .limited }
 
     /// The selected model's effort levels as the shared panel's stops, its
@@ -224,10 +226,14 @@ enum CodeV2PickerCopy {
     }
 }
 
-/// The picker (TARGET §8.1): a 44pt rail of the connected sources, a search
-/// field, two-line rows (name over where it runs and what it costs), and a
-/// footer with the context window and the plan's usage. Effort and Fast live
-/// on the effort panel the chip opens first. 380 × 440 in the composer.
+/// The picker, organised like the web's model catalogue: a 44pt rail of the AI
+/// labs (Alevr's models and your keys, filed by who makes them), a hairline,
+/// then Subscriptions (the plans connected on this Mac, apart from the labs);
+/// a search field; rows grouped under where they run; and a footer with the
+/// context window and the plan's usage. Code is an agent, so only text models
+/// that call tools are here; image, video and music models are chosen in
+/// Settings › Generation models. Effort and Fast live on the effort panel the
+/// chip opens first. 380 × 440 in the composer.
 struct CodeV2ModelPicker: View {
     let directory: CodeV2ProviderDirectory
     @Binding var selection: CodeV2.ModelSelection
@@ -242,16 +248,15 @@ struct CodeV2ModelPicker: View {
     /// The list's height inside ``CodeV2ModelControl/catalogSize``.
     static let listHeight: CGFloat = CodeV2ModelControl.catalogSize.height - 40 - 39
 
-    @State private var focusedInstance: String?
+    @State private var focusedPlace: CodeV2ModelCatalogue.Place?
     @State private var query = ""
     @State private var showsTiers = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private var connected: [CodeV2.ProviderInstance] {
-        directory.rail.filter { CodeV2ProviderDirectory.railGroup($0) != .notConnected }
-    }
-    private var currentInstanceId: String { focusedInstance ?? selection.instanceId }
-    private var instance: CodeV2.ProviderInstance? { directory.instance(currentInstanceId) }
+    private typealias Catalogue = CodeV2ModelCatalogue
+
+    private var place: Catalogue.Place { focusedPlace ?? Catalogue.place(for: selection, in: directory) }
+    private var searching: Bool { !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -260,11 +265,7 @@ struct CodeV2ModelPicker: View {
                 search
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
-                        if query.isEmpty {
-                            list(for: instance)
-                        } else {
-                            searchResults
-                        }
+                        list
                     }
                     .padding(.horizontal, JunoSpace.tight + 2)
                     .padding(.bottom, JunoSpace.tight + 2)
@@ -298,61 +299,64 @@ struct CodeV2ModelPicker: View {
     }
 
     private func step(_ delta: Int) {
-        guard !connected.isEmpty else { return }
-        let index = connected.firstIndex { $0.id == currentInstanceId } ?? 0
-        let next = connected[(index + delta + connected.count) % connected.count]
-        withAnimation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion)) { focusedInstance = next.id }
+        let places = Catalogue.places(directory)
+        guard !places.isEmpty else { return }
+        let index = places.firstIndex(of: place) ?? 0
+        focus(places[(index + delta + places.count) % places.count])
+    }
+
+    private func focus(_ next: Catalogue.Place) {
+        withAnimation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion)) {
+            focusedPlace = next
+            query = ""
+        }
     }
 
     // MARK: Rail
 
     private var rail: some View {
-        VStack(spacing: JunoSpace.tight) {
-            // Subscriptions first, then your keys under a hairline, each
-            // key wearing a small key so a lab that appears twice (your plan
-            // and your key) never reads as a duplicate.
-            ForEach(connected.filter { $0.kind != .byok }, id: \.id) { item in railButton(item) }
-            let keyed = connected.filter { $0.kind == .byok }
-            if !keyed.isEmpty {
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(spacing: JunoSpace.tight) {
+                ForEach(Catalogue.labs(directory)) { lab in
+                    railTile(.lab(lab.id), help: lab.name) {
+                        CodeV2Mark(id: lab.id, name: lab.name, size: 16)
+                    }
+                }
                 Rectangle().fill(Studio.Surface.hairline).frame(width: 20, height: 1)
                     .padding(.vertical, 2)
-                ForEach(keyed, id: \.id) { item in railButton(item) }
-            }
-            if let openConnections {
-                Button(action: openConnections) {
-                    JunoIconView(.plus, size: 14)
-                        .foregroundStyle(Studio.Ink.secondary)
-                        .frame(width: 32, height: 32)
-                        .contentShape(.rect)
+                railTile(.subscriptions, help: subscriptionsHelp) {
+                    JunoIconView(.billing, size: 16)
+                        .foregroundStyle(Studio.Ink.primary)
                 }
-                .buttonStyle(.plain)
-                .help("Connect a subscription or add a key")
-                .accessibilityLabel("Connect")
+                if let openConnections {
+                    Button(action: openConnections) {
+                        JunoIconView(.plus, size: 14)
+                            .foregroundStyle(Studio.Ink.secondary)
+                            .frame(width: 32, height: 32)
+                            .contentShape(.rect)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Connect a subscription or add a key")
+                    .accessibilityLabel("Connect")
+                }
             }
-            Spacer(minLength: 0)
+            .padding(.vertical, JunoSpace.snug)
         }
-        .padding(.vertical, JunoSpace.snug)
         .frame(width: 44)
         .frame(maxHeight: .infinity)
         .background(Studio.Surface.muted.opacity(0.5))
         .overlay(alignment: .trailing) { Rectangle().fill(Studio.Surface.hairline).frame(width: 1) }
     }
 
-    private func railButton(_ item: CodeV2.ProviderInstance) -> some View {
-        let selected = item.id == currentInstanceId
-        return Button {
-            withAnimation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion)) { focusedInstance = item.id }
-        } label: {
-            CodeV2Mark(id: CodeV2Marks.markID(instance: item), name: item.label, size: 16)
-                .overlay(alignment: .bottomTrailing) {
-                    if item.kind == .byok {
-                        JunoIconView(.key, size: 8)
-                            .foregroundStyle(Studio.Ink.secondary)
-                            .padding(1.5)
-                            .background(Circle().fill(Studio.Surface.popover))
-                            .offset(x: 5, y: 5)
-                    }
-                }
+    private var subscriptionsHelp: String {
+        let connected = Catalogue.subscriptions(directory)
+        return connected.isEmpty ? "Subscriptions: none connected" : "Subscriptions: " + connected.map(Catalogue.sourceTitle).joined(separator: ", ")
+    }
+
+    private func railTile<Mark: View>(_ target: Catalogue.Place, help: String, @ViewBuilder mark: () -> Mark) -> some View {
+        let selected = !searching && target == place
+        return Button { focus(target) } label: {
+            mark()
                 .frame(width: 32, height: 32)
                 .background(
                     RoundedRectangle(cornerRadius: Studio.Radius.control, style: .continuous)
@@ -361,8 +365,8 @@ struct CodeV2ModelPicker: View {
                 .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .help(CodeV2ProviderDirectory.tooltip(item))
-        .accessibilityLabel(item.label)
+        .help(help)
+        .accessibilityLabel(help.components(separatedBy: ":").first ?? help)
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
@@ -382,46 +386,41 @@ struct CodeV2ModelPicker: View {
     // MARK: List
 
     @ViewBuilder
-    private func list(for instance: CodeV2.ProviderInstance?) -> some View {
-        if let instance {
-            let models = instance.models ?? []
-            if models.isEmpty {
-                Text("No models listed yet.")
-                    .studioType(.small).foregroundStyle(Studio.Ink.secondary)
-                    .padding(JunoSpace.cozy)
-            } else {
-                ForEach(models, id: \.id) { model in
-                    row(model, in: instance)
+    private var list: some View {
+        let groups = Catalogue.groups(place: place, directory: directory, query: query)
+        if searching, groups.isEmpty {
+            Text("No model matches \u{201C}\(query)\u{201D}")
+                .studioType(.small).foregroundStyle(Studio.Ink.secondary)
+                .padding(JunoSpace.cozy)
+        } else if !searching, place == .subscriptions, groups.isEmpty {
+            CodeV2ConnectSubscriptionRow(action: openConnections)
+                .padding(.top, JunoSpace.tight)
+        } else {
+            ForEach(groups) { group in
+                CodeV2PickerHeading(title: group.title, trailing: group.trailing)
+                if group.entries.isEmpty {
+                    Text("No models listed yet.")
+                        .studioType(.small).foregroundStyle(Studio.Ink.secondary)
+                        .padding(.horizontal, JunoSpace.snug)
+                        .frame(height: 32, alignment: .leading)
+                }
+                ForEach(group.entries) { entry in
+                    row(entry)
                 }
             }
         }
     }
 
-    private var searchResults: some View {
-        let needle = query.lowercased()
-        let hits = connected.flatMap { instance in
-            (instance.models ?? [])
-                .filter { $0.label.lowercased().contains(needle) || $0.id.lowercased().contains(needle) }
-                .map { (instance, $0) }
-        }
-        return Group {
-            if hits.isEmpty {
-                Text("No model matches \u{201C}\(query)\u{201D}")
-                    .studioType(.small).foregroundStyle(Studio.Ink.secondary)
-                    .padding(JunoSpace.cozy)
-            }
-            ForEach(hits, id: \.1.id) { pair in
-                row(pair.1, in: pair.0)
-            }
-        }
-    }
-
-    private func row(_ model: CodeV2.ProviderModel, in instance: CodeV2.ProviderInstance) -> some View {
-        let isSelected = selection.instanceId == instance.id && selection.model == model.id
+    private func row(_ entry: Catalogue.Entry) -> some View {
+        let isSelected = selection.instanceId == entry.instance.id && selection.model == entry.model.id
         return CodeV2ModelRow(
-            model: model, instance: instance, isSelected: isSelected,
+            model: entry.model, instance: entry.instance, isSelected: isSelected,
+            line: Catalogue.rowLine(entry.model, in: entry.instance, namesSource: searching),
             action: {
-                if let choose { choose(instance.id, model) } else { selection.model = model.id; selection.instanceId = instance.id }
+                if let choose { choose(entry.instance.id, entry.model) } else {
+                    selection.model = entry.model.id
+                    selection.instanceId = entry.instance.id
+                }
             }
         )
     }
@@ -430,7 +429,7 @@ struct CodeV2ModelPicker: View {
 
     private var selectedInstance: CodeV2.ProviderInstance? { directory.instance(selection.instanceId) }
     private var selectedModel: CodeV2.ProviderModel? {
-        selectedInstance?.models?.first { $0.id == selection.model }
+        selectedInstance.flatMap { Catalogue.models(of: $0, in: directory).first { $0.id == selection.model } }
     }
 
     private var footer: some View {
@@ -455,7 +454,7 @@ struct CodeV2ModelPicker: View {
                             )
                         }
                     }
-                        .contentShape(.rect)
+                    .contentShape(.rect)
                 }
                 Spacer(minLength: JunoSpace.snug)
                 if let instance = selectedInstance, let usage = CodeV2PickerCopy.usage(instance) {
@@ -468,12 +467,70 @@ struct CodeV2ModelPicker: View {
     }
 }
 
+/// A group's heading in the picker: where the rows under it run ("Alevr",
+/// "Your Anthropic key", "Claude plan"), and a subscription's usage on the
+/// right. Small secondary type, as the Chat catalogue's modality headings.
+struct CodeV2PickerHeading: View {
+    let title: String
+    var trailing: String?
+
+    var body: some View {
+        HStack(spacing: JunoSpace.snug) {
+            Text(title).studioType(.small).foregroundStyle(Studio.Ink.secondary).lineLimit(1)
+            Spacer(minLength: JunoSpace.snug)
+            if let trailing {
+                Text(trailing).studioType(.small).monospacedDigit().foregroundStyle(Studio.Ink.tertiary).lineLimit(1)
+            }
+        }
+        .padding(.horizontal, JunoSpace.snug)
+        .padding(.top, JunoSpace.snug)
+        .frame(height: 30, alignment: .bottom)
+        .accessibilityAddTraits(.isHeader)
+    }
+}
+
+/// Subscriptions with nothing connected: one row that opens Connections.
+struct CodeV2ConnectSubscriptionRow: View {
+    let action: (() -> Void)?
+    @State private var hovering = false
+
+    var body: some View {
+        Button { action?() } label: {
+            HStack(spacing: JunoSpace.snug) {
+                JunoIconView(.plus, size: 13)
+                    .foregroundStyle(Studio.Ink.secondary)
+                    .frame(width: 16)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Connect a subscription").studioType(.text).foregroundStyle(Studio.Ink.primary).lineLimit(1)
+                    Text(CodeV2ModelCatalogue.connectSubtitle)
+                        .studioType(.small).foregroundStyle(Studio.Ink.secondary).lineLimit(1)
+                }
+                Spacer(minLength: JunoSpace.snug)
+                JunoIconView(.chevronRight, size: 11).foregroundStyle(Studio.Ink.tertiary)
+            }
+            .padding(.horizontal, JunoSpace.snug)
+            .frame(height: 44)
+            .background(
+                RoundedRectangle(cornerRadius: Studio.Radius.control, style: .continuous)
+                    .fill(hovering ? Studio.Surface.hover : Color.clear)
+            )
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .disabled(action == nil)
+        .onHover { hovering = $0 }
+        .accessibilityIdentifier("juno.code.v2.model.connectSubscription")
+    }
+}
+
 /// One model: 44 tall, the name over where it runs, a check on the chosen
 /// one. No descriptions and no headers (TARGET §8.1).
 struct CodeV2ModelRow: View {
     let model: CodeV2.ProviderModel
     let instance: CodeV2.ProviderInstance
     let isSelected: Bool
+    /// The second line; the source's own words when nil.
+    var line: String?
     let action: () -> Void
 
     @State private var hovering = false
@@ -485,7 +542,7 @@ struct CodeV2ModelRow: View {
                     .frame(width: 16)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(model.label).studioType(.text).foregroundStyle(Studio.Ink.primary).lineLimit(1)
-                    Text(CodeV2PickerCopy.rowLine(model, in: instance))
+                    Text(line ?? CodeV2PickerCopy.rowLine(model, in: instance))
                         .studioType(.small).monospacedDigit().foregroundStyle(Studio.Ink.secondary).lineLimit(1)
                 }
                 Spacer(minLength: JunoSpace.snug)

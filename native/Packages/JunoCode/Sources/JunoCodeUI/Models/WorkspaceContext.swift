@@ -55,6 +55,9 @@ public final class WorkspaceContext: Sendable {
     /// Optional authenticated web search, shared with isolated sub-agent
     /// contexts as a read-only capability.
     public let webSearch: (any CodeWebSearching)?
+    /// Optional media generation (`generate_image` and its siblings), with
+    /// the models chosen in Settings › Generation models.
+    public let mediaGeneration: (any CodeMediaGenerating)?
     private let storageRoot: URL
 
     public init(
@@ -63,12 +66,14 @@ public final class WorkspaceContext: Sendable {
         storageRoot: URL,
         additionalWritablePaths: [String] = [],
         webSearch: (any CodeWebSearching)? = nil,
+        mediaGeneration: (any CodeMediaGenerating)? = nil,
         userSettingsDirectory: URL? = CodeSettingsStore.defaultUserDirectory
     ) {
         self.record = record
         self.access = access
         self.storageRoot = storageRoot
         self.webSearch = webSearch
+        self.mediaGeneration = mediaGeneration
         self.userSettingsDirectory = userSettingsDirectory
         self.hookPolicyStore = HookPolicyStore(
             storageRoot: storageRoot,
@@ -189,6 +194,7 @@ public final class WorkspaceContext: Sendable {
             // only account the transcript can honestly give of them.
             changes: WorkspaceChangeDetector(rootURL: access.rootURL),
             webSearch: webSearch,
+            mediaGeneration: mediaGeneration,
             shells: shells,
             workingDirectories: workingDirectories,
             workspaceRoot: access.rootURL.path,
@@ -309,6 +315,7 @@ public final class WorkspaceContext: Sendable {
                 access.rootURL.appendingPathComponent(".git").path,
             ],
             webSearch: webSearch,
+            mediaGeneration: mediaGeneration,
             userSettingsDirectory: userSettingsDirectory
         )
     }

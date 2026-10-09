@@ -218,7 +218,7 @@ public struct CodeV2EnvSessionView: View {
     /// Switch model from Limited: the first Alevr coding model the directory
     /// lists, so the thread can carry on on Alevr's plan.
     private func switchToAlevr() {
-        guard let alevr = directory.instance("alevr"), let model = alevr.models?.first else { return }
+        guard let alevr = directory.instance("alevr"), let model = alevr.models?.first(where: { $0.isDefault == true }) ?? alevr.models?.first else { return }
         composer.choose(instanceId: "alevr", model: model)
     }
 
