@@ -66,6 +66,14 @@ public struct StudioSessionView: View {
         if configuration.permissionMode != permission {
             Task { await controller.setPermissionMode(permission) }
         }
+        // Orchestrate (roles, budget) and the `auto` reviewer reach the engine too.
+        if controller.roleRouting != composer.routing {
+            controller.setRoleRouting(composer.routing)
+        }
+        let autoReview = composer.runtimeMode == .auto
+        if controller.autoReviewEnabled != autoReview {
+            Task { await controller.setAutoReview(autoReview) }
+        }
     }
 
     private var v2Context: CodeV2ContextReading? {
@@ -264,6 +272,8 @@ public struct StudioSessionView: View {
                 CodeV2ComposerLeading(model: v2.composer, directory: v2.directory, isEnabled: !isBusy)
                     .onChange(of: v2.composer.selection) { _, _ in syncV2(v2.composer) }
                     .onChange(of: v2.composer.runtimeMode) { _, _ in syncV2(v2.composer) }
+                    .onChange(of: v2.composer.routing) { _, _ in syncV2(v2.composer) }
+                    .onAppear { syncV2(v2.composer) }
             } else {
             StudioModeChip(mode: mode, select: select, isEnabled: !isBusy)
             }

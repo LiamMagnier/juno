@@ -171,5 +171,9 @@ export interface AppBootstrap {
     webPushPublicKey?: string | null;
     providers: Provider[];
     isOwner: boolean;
+    /** Alevr Code opens for this person even below its plan: they brought
+     *  their own inference (an API key, or a paired Mac running their own
+     *  subscriptions). Optional: an older server never sends it. */
+    codeOpen?: boolean;
   };
 }

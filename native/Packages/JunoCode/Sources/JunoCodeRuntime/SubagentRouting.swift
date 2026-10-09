@@ -241,6 +241,14 @@ public actor RunBudgetLedger {
     /// Why no more work may start, or nil while the budget lasts.
     public var exhaustedReason: String? { reason }
 
+    /// Starts a new run on the same limits (the host calls it as each turn
+    /// starts, so one turn's spend never starves the next). Listeners stay.
+    public func reset() {
+        tokens = 0
+        costUSD = 0
+        reason = nil
+    }
+
     public func snapshot() -> Snapshot {
         Snapshot(
             tokens: tokens,

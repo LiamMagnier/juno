@@ -18,6 +18,8 @@ import { chatSearchAvailable } from "@/lib/web/search";
 import { searchProviderStatus } from "@/lib/search/search-engine";
 import { researchEntitlement } from "@/lib/research/entitlement";
 import { isOwnerEmail } from "@/lib/owner";
+import { PLANS } from "@/lib/plans";
+import { codeAccessFor } from "@/lib/code-v2/code-access";
 import { DEFAULT_PERSONALITY } from "@/lib/personalities";
 import { AUTO_LOCALE } from "@/lib/i18n";
 import {
@@ -103,7 +105,7 @@ export async function getAppBootstrap(user: SessionUser): Promise<AppBootstrap> 
   const plan = planFromAccount(account?.email ?? null, subscription);
 
   const period = billingPeriodFor(subscription);
-  const [quota, conversations, folders, creditMicroUsd] = await Promise.all([
+  const [quota, conversations, folders, creditMicroUsd, codeAccess] = await Promise.all([
     // The plan is passed, so `getQuota` does not re-derive it — that is the
     // User+Subscription join above, a second time.
     getQuota(user.id, plan),
@@ -112,6 +114,8 @@ export async function getAppBootstrap(user: SessionUser): Promise<AppBootstrap> 
     // Usage credit (top-ups, referral rewards) on this period's ceiling; in
     // the same wave as the rest so it costs no extra round trip of its own.
     periodCreditMicroUsd(user.id, plan, period),
+    // Code below its plan (BYOK or a paired Mac): only looked up when the plan does not include it.
+    PLANS[plan].code ? null : codeAccessFor(user.id, plan).catch(() => null),
   ]);
 
   // The settings row is already in hand, so the effective ceiling costs nothing
@@ -239,6 +243,7 @@ export async function getAppBootstrap(user: SessionUser): Promise<AppBootstrap> 
       webPush: Boolean(pushPublicKey),
       webPushPublicKey: pushPublicKey,
       providers: configuredProviders(),
+      ...(codeAccess?.allowed ? { codeOpen: true } : {}),
       isOwner: isOwnerEmail(user.email),
     },
   };
