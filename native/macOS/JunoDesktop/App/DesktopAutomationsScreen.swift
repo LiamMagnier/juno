@@ -41,8 +41,8 @@ struct DesktopAutomationsScreen: View {
     var body: some View {
         JunoPage(measure: .wide) {
             JunoPageHeader(
-                "Automations",
-                lede: "Let a task start itself — at a time you choose or when something changes — with every run attached to the same task so context compounds."
+                "Routines",
+                lede: "Tasks that start themselves, on a schedule or when something changes."
             ) {
                 // Withheld while the page is loading, failed or empty: the
                 // empty state carries it then, as the web's does.

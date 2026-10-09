@@ -1298,6 +1298,9 @@ enum DesktopDestination: String, CaseIterable, Identifiable {
     /// The reader's profile: a year of tokens and the models they went to
     /// (`/profile`). Reached from the account menu, not the column.
     case profile
+    /// Customize › Instructions (`/customize/instructions`): how Alevr
+    /// responds, the web's Personalization section as a page (round 3).
+    case instructions
 
     var id: Self { self }
 
@@ -1322,6 +1325,7 @@ enum DesktopDestination: String, CaseIterable, Identifiable {
         case .memory: "Memory"
         case .permissions: "Permissions"
         case .profile: "Profile"
+        case .instructions: "Instructions"
         case .projects, .library, .artifacts, .agents, .connections, .assistants, .skills, .automations:
             shell?.label ?? rawValue
         }
@@ -1338,6 +1342,7 @@ enum DesktopDestination: String, CaseIterable, Identifiable {
         case .memory: .memory
         case .permissions: .permissions
         case .profile: .user
+        case .instructions: .file
         case .projects, .library, .artifacts, .agents, .connections, .assistants, .skills, .automations:
             shell?.icon ?? .home
         }
