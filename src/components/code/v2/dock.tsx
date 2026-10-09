@@ -39,16 +39,51 @@ export function modelLabelFor(modelId: string, instances: readonly ProviderInsta
 
 // ── Changes ─────────────────────────────────────────────────────────────────
 
-function highlight(line: DiffLine): React.ReactNode {
-  if (!line.marks?.length) return line.text || " ";
-  const out: React.ReactNode[] = [];
+const KEYWORDS = new Set("import export from const let var function return if else for while do switch case break continue new class extends async await try catch finally throw typeof instanceof in of as interface type enum implements public private protected readonly static void null undefined true false this super default yield".split(" "));
+const TOKEN_RE = /(\/\/.*$|\/\*.*?\*\/|#.*$)|("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)|(\b\d[\d_.]*\b)|([A-Za-z_$][\w$]*)/g;
+
+/** Light syntax colour for diff and file lines: comments, strings, numbers, keywords. */
+export function codeTokens(text: string): { s: number; e: number; cls?: string }[] {
+  const out: { s: number; e: number; cls?: string }[] = [];
   let at = 0;
-  line.marks.forEach(([a, b], i) => {
-    if (a > at) out.push(line.text.slice(at, a));
-    out.push(<mark key={i}>{line.text.slice(a, b)}</mark>);
-    at = b;
-  });
-  out.push(line.text.slice(at));
+  for (const m of text.matchAll(TOKEN_RE)) {
+    const s = m.index ?? 0;
+    const cls = m[1] ? "cv2-c" : m[2] ? "cv2-s" : m[3] ? "cv2-n" : m[4] && KEYWORDS.has(m[4]) ? "cv2-k" : undefined;
+    if (!cls) continue;
+    if (s > at) out.push({ s: at, e: s });
+    out.push({ s, e: s + m[0].length, cls });
+    at = s + m[0].length;
+  }
+  if (at < text.length) out.push({ s: at, e: text.length });
+  return out;
+}
+
+function highlight(line: DiffLine): React.ReactNode {
+  const text = line.text;
+  if (!text) return " ";
+  const marks = line.marks ?? [];
+  const cuts = new Set<number>([0, text.length]);
+  for (const t of codeTokens(text)) {
+    cuts.add(t.s);
+    cuts.add(t.e);
+  }
+  for (const [a, b] of marks) {
+    cuts.add(a);
+    cuts.add(b);
+  }
+  const points = [...cuts].sort((a, b) => a - b);
+  const tokens = codeTokens(text);
+  const out: React.ReactNode[] = [];
+  for (let i = 0; i < points.length - 1; i++) {
+    const a = points[i];
+    const b = points[i + 1];
+    if (a === b) continue;
+    const cls = tokens.find((t) => t.s <= a && b <= t.e)?.cls;
+    const marked = marks.some(([x, y]) => x <= a && b <= y);
+    const piece = text.slice(a, b);
+    const node = cls ? <span className={cls}>{piece}</span> : piece;
+    out.push(marked ? <mark key={i}>{node}</mark> : <React.Fragment key={i}>{node}</React.Fragment>);
+  }
   return out;
 }
 
@@ -117,7 +152,7 @@ function ChangesPane({ model, focus, wide, active }: { model: WorkspaceModel; fo
   const turn = (turnIndex >= 0 ? turns[turnIndex] : undefined) ?? [...turns].reverse().find((t) => t.changes.length > 0);
   const changes = scope === "turn" && turn ? turn.changes : aggregateChanges(model.items);
   const files = React.useMemo(() => filesFrom(changes), [changes]);
-  const decisions = { ...model.hunkDecisions, ...local };
+  const decisions = React.useMemo(() => ({ ...model.hunkDecisions, ...local }), [model.hunkDecisions, local]);
   const counts = keptCounts(files, decisions);
   const order = hunkOrder(files);
   const root = React.useRef<HTMLDivElement>(null);
@@ -442,7 +477,7 @@ function FilesPane({ model, focus, onMention }: { model: WorkspaceModel; focus: 
                 {text.split("\n").map((l, i) => (
                   <div key={i} className="cv2-ln">
                     <span className="cv2-tnum">{i + 1}</span>
-                    <span>{l || " "}</span>
+                    <span>{highlight({ kind: "context", text: l })}</span>
                   </div>
                 ))}
               </div>
@@ -620,7 +655,7 @@ function AgentsPane({ model, selectedId, onSelect }: { model: WorkspaceModel; se
             const c = a.candidate ?? {};
             const letter = String.fromCharCode(65 + i);
             return (
-              <button key={a.id} type="button" role="radio" aria-checked={chosen?.agentId === a.agentId} aria-pressed={chosen?.agentId === a.agentId} className="cv2-arow" onClick={() => setPick(a.agentId)}>
+              <button key={a.id} type="button" role="radio" aria-checked={chosen?.agentId === a.agentId} data-on={chosen?.agentId === a.agentId} className="cv2-arow" onClick={() => setPick(a.agentId)}>
                 <span style={{ minWidth: 0 }}>
                   <span className="l1">
                     <span className="cv2-m" style={{ width: 14 }}>{letter}</span>

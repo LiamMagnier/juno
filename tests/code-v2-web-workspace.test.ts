@@ -143,7 +143,7 @@ for (const s of STATES) {
   test(`renders the ${s.id} state without pills, with at most two weights`, () => {
     const f = fixture(s.id);
     const html = renderToStaticMarkup(React.createElement(CodeWorkspace, { model: f.model, ui: f.ui, userName: "Maya Okafor" }));
-    assert.ok(html.includes(f.model.thread.title));
+    if (!f.ui?.settings) assert.ok(html.includes(f.model.thread.title));
     assert.doesNotMatch(html, PILL);
     assert.doesNotMatch(html, /font-weight:\s*[6-9]00/);
     assert.doesNotMatch(html, /Claude Code/);

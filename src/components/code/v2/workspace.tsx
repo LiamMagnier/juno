@@ -20,6 +20,7 @@ import { Dock, type DockFocus } from "./dock";
 import { cycleEffort, cycleRuntimeMode, findInstance } from "./model-info";
 import { ComposerPopover, Glyph, Kbd, MenuList, useIsMac, type MenuEntry } from "./primitives";
 import { ThreadSidebar } from "./sidebar";
+import { SettingsContent, SettingsSidebar, type SettingsPane } from "./settings";
 import { Thread, ThreadSkeleton, type DockRequest } from "./thread";
 import type { WorkspaceModel, WorkspaceUiState } from "./types";
 import { cn } from "@/lib/utils";
@@ -178,6 +179,7 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, userName, byok, 
   const [shortcuts, setShortcuts] = React.useState(false);
   const [connections, setConnections] = React.useState(false);
   const [sideOpen, setSideOpen] = React.useState(sidebar);
+  const [settings, setSettings] = React.useState<SettingsPane | null>(ui.settings ?? null);
   const [agentId, setAgentId] = React.useState<string | null>(ui.selectedAgentId ?? null);
   const [approvalIndex, setApprovalIndex] = React.useState(0);
   const [composerFocus, setComposerFocus] = React.useState(false);
@@ -223,7 +225,7 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, userName, byok, 
   const toggleDock = (tab: DockTab) => dispatch({ type: "toggle", tab, threadId: model.thread.id });
   const openConnections = () => {
     if (model.actions.openConnections) model.actions.openConnections();
-    else setConnections(true);
+    else setSettings("connections");
   };
   const rename = () => {
     const next = window.prompt("Rename this session", model.thread.title);
@@ -419,8 +421,50 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, userName, byok, 
     { kind: "sep", id: "s1" },
     { id: "pulls", label: "Pull requests", icon: <Glyph name="pull-request" size={16} />, onSelect: () => window.location.assign("/code/pulls") },
     { id: "conn", label: "Connections", icon: <Glyph name="plug" size={16} />, onSelect: openConnections },
+    { id: "settings", label: "Settings", icon: <Glyph name="settings" size={16} />, onSelect: () => setSettings("general") },
     { id: "keys", label: "Keyboard shortcuts", icon: <Glyph name="keyboard" size={16} />, trail: <Kbd k="mod+/" mac={mac} />, onSelect: () => setShortcuts(true) },
   ];
+
+  const connectionsProps: ConnectionsProps = { instances: model.instances, device: model.device, flags: model.flags, byok, keys: model.byokKeys, onProbe, onManaged, onSetup, alevrPlan: ui.alevrPlan };
+  if (settings) {
+    return (
+      <div className={cn("cv2 cv2-app", !(sidebar && sideOpen) && "no-side", className)} data-reduced-motion={ui.reducedMotion ? "true" : undefined}>
+        {sidebar && sideOpen && <SettingsSidebar pane={settings} onPane={setSettings} onBack={() => setSettings(null)} />}
+        <main className="cv2-main" aria-label="Settings">
+          <div className="cv2-left">
+            <header className="cv2-top">
+              <button type="button" className="cv2-iconbtn" aria-label="Back to the session" title="Back" onClick={() => setSettings(null)} style={{ marginLeft: -8 }}>
+                <Glyph name="arrow-left" />
+              </button>
+              <div className="cv2-crumb">
+                <span className="proj">Settings</span>
+                <span className="slash" aria-hidden>
+                  /
+                </span>
+                <span className="title" style={{ pointerEvents: "none" }}>
+                  {settings.charAt(0).toUpperCase() + settings.slice(1)}
+                </span>
+              </div>
+            </header>
+            <div className="cv2-body">
+              <SettingsContent
+                pane={settings}
+                connections={connectionsProps}
+                instances={model.instances}
+                routing={model.routing}
+                lead={model.selection}
+                onRouting={model.actions.setRouting}
+                runtimeMode={model.runtimeMode}
+                onRuntimeMode={model.actions.setRuntimeMode}
+                detail={detail}
+                onDetail={setDetail}
+              />
+            </div>
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -437,7 +481,7 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, userName, byok, 
           onOpen={(id) => model.actions.openThread?.(id)}
           onNew={() => model.actions.newThread?.()}
           onSearch={() => setPalette(true)}
-          onSettings={openConnections}
+          onSettings={() => setSettings("general")}
         />
       )}
       <main className={cn("cv2-main", dock.open && dock.expanded && "expanded")} aria-label={model.thread.title}>

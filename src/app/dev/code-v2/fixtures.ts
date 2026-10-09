@@ -397,6 +397,11 @@ export const STATES: GalleryState[] = [
     ui: { dockOpen: true, dockTab: "agents" },
   },
   {
+    id: "settled",
+    label: "Settled thread",
+    model: base({ items: [...workedTurn(), { id: "u8", turnId: "turn8", kind: "user_message", text: "Also show the server total in the order confirmation email.", createdAt: at(6), delivery: "send" }, { id: "r8", turnId: "turn8", kind: "reasoning", text: "The email template reads the cart from the session.", streaming: false, createdAt: at(6, 2) }, { id: "s8", turnId: "turn8", kind: "search", callId: "c20", query: "src/emails/order-confirmation.tsx", scope: "files", status: "completed", createdAt: at(5.8) }, { id: "f8", turnId: "turn8", kind: "file_change", callId: "c21", status: "completed", createdAt: at(5), changes: [{ path: "src/emails/order-confirmation.tsx", change: "modify", additions: 4, deletions: 2 }] }, { id: "a8", turnId: "turn8", kind: "assistant_message", text: "The confirmation email now renders `total` from the same server route, so the receipt, the cart and the charge always agree.", streaming: false, createdAt: at(4.5) }] }),
+  },
+  {
     id: "model-picker",
     label: "Model picker",
     model: base({ items: workedTurn() }),
@@ -442,6 +447,18 @@ export const STATES: GalleryState[] = [
     label: "Offline device",
     model: base({ items: [...workedTurn(), ...runningTurn()], state: "running", offline: true, device: { ...DEVICE, online: false, lastSeenAt: at(6) } }),
     ui: { dockOpen: true, dockTab: "terminal" },
+  },
+  {
+    id: "connections",
+    label: "Settings: Connections",
+    model: base({ items: workedTurn() }),
+    ui: { settings: "connections", alevrPlan: { name: "Plus plan", spentUsd: 12.4, capUsd: 40 } },
+  },
+  {
+    id: "settings-orchestration",
+    label: "Settings: Orchestration",
+    model: base({ items: workedTurn(), routing: ROUTING_LEAD }),
+    ui: { settings: "orchestration" },
   },
   {
     id: "no-provider",

@@ -29,7 +29,7 @@ export function CodeV2Gallery() {
     if (t === "dark" || t === "light") setTheme(t);
   }, [params, setTheme]);
 
-  if (stateId === "connections") {
+  if (stateId === "connections-sheet") {
     return (
       <div className="cv2" style={{ height: "100dvh" }}>
         {!bare && <Chrome current={stateId} theme={resolvedTheme} setTheme={setTheme} log={log} />}
@@ -148,7 +148,7 @@ function LiveState({ id, reduced, onLog }: { id: string; reduced: boolean; onLog
 function Chrome({ current, theme, setTheme, log }: { current: string; theme?: string; setTheme: (t: string) => void; log: string[] }) {
   return (
     <div style={{ display: "flex", gap: 6, alignItems: "center", padding: "6px 10px", borderBottom: "1px solid hsl(var(--border))", fontSize: 12, overflowX: "auto", flex: "none", background: "hsl(var(--muted))" }}>
-      {[...STATES.map((s) => ({ id: s.id, label: s.label })), { id: "connections", label: "Connections" }].map((s) => (
+      {[...STATES.map((s) => ({ id: s.id, label: s.label })), { id: "connections-sheet", label: "Connections (standalone)" }].map((s) => (
         <a
           key={s.id}
           href={`?state=${s.id}`}

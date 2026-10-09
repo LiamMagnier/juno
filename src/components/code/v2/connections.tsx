@@ -497,6 +497,24 @@ export function ConnectionsPanel(props: ConnectionsProps) {
   let detail: React.ReactNode = null;
   if (selSub) detail = <SubscriptionDetail key={selSub.id} instance={selSub} disabled={!online} onProbe={props.onProbe} onSetup={props.onSetup} onDisconnect={props.onDisconnect} onManaged={props.onManaged} />;
   else if (selHeld) detail = <SubscriptionDetail key={selHeld.id} instance={selHeld} disabled held />;
+  else if (selected === "key:add" && showKeys)
+    detail = (
+      <div className="cv2-md-detail">
+        <div className="hd">
+          <Glyph name="key" size={20} />
+          <span className="cv2-m">Add a key</span>
+        </div>
+        <p className="cv2-ds" style={{ margin: 0 }}>Your own API keys run Alevr&apos;s engine on the lab&apos;s bill. Alevr never charges for them.</p>
+        <div className="cv2-set-card" style={{ borderRadius: 12 }}>
+          {BYOK_PROVIDER_VALUES.filter((p) => !keys.some((k) => k.provider === p)).map((p) => (
+            <button key={p} type="button" className="cv2-set-row" style={{ minHeight: 40 }} onClick={() => choose(`key:${p}`)}>
+              <span className="cv2-grow">{BYOK_LABELS[p]}</span>
+              <Glyph name="chevron-right" size={14} className="cv2-mute" />
+            </button>
+          ))}
+        </div>
+      </div>
+    );
   else if (selKey && showKeys) detail = <KeyDetail key={selKey} provider={selKey} record={keys.find((k) => k.provider === selKey)} client={byok} onChange={(r) => setKey(selKey, r)} onRemoved={setUndo} />;
   else if (selected === "alevr" && props.alevrPlan)
     detail = (
@@ -572,7 +590,7 @@ export function ConnectionsPanel(props: ConnectionsProps) {
               <div className="cv2-msect" style={{ marginTop: 8 }}>
                 Your API keys
               </div>
-              {BYOK_PROVIDER_VALUES.map((p) => {
+              {BYOK_PROVIDER_VALUES.filter((p) => keys.some((k) => k.provider === p) || selected === `key:${p}`).map((p) => {
                 const rec = keys.find((k) => k.provider === p);
                 return (
                   <button key={p} type="button" className="cv2-md-row" aria-current={selected === `key:${p}` ? "true" : undefined} onClick={() => choose(`key:${p}`)}>
@@ -584,6 +602,10 @@ export function ConnectionsPanel(props: ConnectionsProps) {
                   </button>
                 );
               })}
+              <button type="button" className="cv2-md-row" aria-current={selected === "key:add" ? "true" : undefined} onClick={() => choose("key:add")}>
+                <Glyph name="plus" size={16} />
+                <span className="nm block cv2-mute">Add a key</span>
+              </button>
             </>
           )}
           {props.alevrPlan && (
