@@ -680,7 +680,7 @@ struct JunoDesktopSignInView: View {
                 Text("Continue in browser")
                     .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.junoGlass)
             .controlSize(.large)
             .disabled(isBusy || authModel.phase == .unavailable)
             .accessibilityIdentifier("Sign in to Juno")
@@ -799,7 +799,7 @@ private struct JunoDesktopLocalStoreRecoveryNotice: View {
                 }
                 .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.junoGlass)
             .disabled(isRunning)
             .accessibilityIdentifier("juno.desktop.recover-local-store")
 

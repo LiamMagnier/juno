@@ -341,7 +341,7 @@ struct DesktopTaskRecordView: View {
             Button(action: close) {
                 Text("Done").frame(minWidth: 44, minHeight: 20).contentShape(.rect)
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.junoGlass)
             .tint(nil)
             .frame(minHeight: 28)
             .keyboardShortcut(.cancelAction)

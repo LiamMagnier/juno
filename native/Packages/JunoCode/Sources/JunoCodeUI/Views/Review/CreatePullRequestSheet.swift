@@ -117,7 +117,7 @@ public struct CreatePullRequestSheet: View {
                         createdURL = await controller.createPullRequestAndWatch(draft)
                     }
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.junoProminent)
                 .tint(Color.junoAccent)
                 .contentShape(.rect)
                 .keyboardShortcut(.defaultAction)
@@ -149,7 +149,7 @@ public struct CreatePullRequestSheet: View {
                     if let link = URL(string: url) { openURL(link) }
                     dismiss()
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.junoProminent)
                 .tint(Color.junoAccent)
                 .contentShape(.rect)
                 .keyboardShortcut(.defaultAction)

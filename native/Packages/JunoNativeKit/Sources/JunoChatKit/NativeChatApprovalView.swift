@@ -102,7 +102,7 @@ public struct NativeChatApprovalCard: View {
                                     .frame(maxWidth: .infinity, minHeight: 44)
                                     .contentShape(.rect)
                             }
-                            .buttonStyle(.bordered)
+                            .buttonStyle(.junoGlass)
                             .controlSize(.large)
                             .accessibilityIdentifier("juno.chat.approval.allow-scope")
                         }
@@ -114,7 +114,7 @@ public struct NativeChatApprovalCard: View {
                                 .frame(maxWidth: .infinity, minHeight: 44)
                                 .contentShape(.rect)
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.junoGlass)
                         .controlSize(.large)
                         .accessibilityIdentifier("juno.chat.approval.deny")
                     }

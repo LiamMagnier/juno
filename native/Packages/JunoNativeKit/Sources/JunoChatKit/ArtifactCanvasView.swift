@@ -905,24 +905,20 @@ public struct ArtifactCanvasView: View {
     @ViewBuilder
     private var controls: some View {
         HStack(spacing: 12) {
-            Picker("Layout", selection: $model.layout) {
-                ForEach(ArtifactCanvasLayout.allCases) { layout in
-                    Text(layout.title).tag(layout)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .frame(maxWidth: 160)
+            JunoSegmented(
+                options: ArtifactCanvasLayout.allCases.map { .init($0, $0.title) },
+                selection: $model.layout,
+                accessibilityLabel: "Layout",
+                size: .compact
+            )
 
             if model.layout == .tabbed {
-                Picker("Pane", selection: $model.selectedTab) {
-                    ForEach(ArtifactCanvasTab.allCases) { tab in
-                        Text(tab.title).tag(tab)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .frame(maxWidth: 260)
+                JunoSegmented(
+                    options: ArtifactCanvasTab.allCases.map { .init($0, $0.title) },
+                    selection: $model.selectedTab,
+                    accessibilityLabel: "Pane",
+                    size: .compact
+                )
             }
 
             Spacer(minLength: 0)

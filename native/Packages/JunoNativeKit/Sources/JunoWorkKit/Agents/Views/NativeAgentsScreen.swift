@@ -225,7 +225,7 @@ struct NativeAgentsNotice: View {
         } actions: {
             if let actionLabel, let action {
                 Button(actionLabel, action: action)
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.junoGlass)
                     .nativeAgentNeutralTint()
                     .frame(minHeight: 44)
                     .contentShape(.rect)

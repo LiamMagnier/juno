@@ -237,7 +237,7 @@ struct DesktopSkillPage: View {
                         Text("Couldn’t load this skill. Nothing has been changed by the attempt.")
                     } action: {
                         Button("Retry") { Task { await model.reload() } }
-                            .buttonStyle(.bordered)
+                            .buttonStyle(.junoGlass)
                             .tint(nil)
                             .controlSize(.small)
                             .contentShape(.rect)
@@ -424,7 +424,7 @@ struct DesktopSkillPage: View {
                     Button("Turn on") {
                         Task { if let sentence = await model.setSourceEnabled(true) { toast(.error(sentence)) } }
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.junoGlass)
                     .tint(nil)
                     .controlSize(.small)
                     .disabled(model.busy)
@@ -564,7 +564,7 @@ struct DesktopSkillPage: View {
                 Spacer()
                 if yours {
                     Button { editing = true } label: { Label("Edit", icon: .edit, size: 13) }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.junoGlass)
                         .tint(nil)
                         .contentShape(.rect)
                 }
@@ -712,7 +712,7 @@ struct DesktopSkillPage: View {
                 Text("Couldn’t load the history. Nothing about the skill has changed.")
             } action: {
                 Button("Try again") { Task { await model.reloadVersions() } }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.junoGlass)
                     .tint(nil)
                     .controlSize(.small)
                     .contentShape(.rect)
@@ -1029,7 +1029,7 @@ struct DesktopNewSkillPage: View {
                 Button { startDraft(DesktopSkillCopy.createPrompt) } label: {
                     Label("Create with Alevr", icon: .conversation, size: 13)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.junoGlass)
                 .tint(nil)
                 .contentShape(.rect)
             }
@@ -1037,7 +1037,7 @@ struct DesktopNewSkillPage: View {
             VStack(alignment: .leading, spacing: JunoSpace.section) {
                 VStack(alignment: .leading, spacing: JunoSpace.tight) {
                     Button(reading ? "Reading…" : "Import SKILL.md") { pickSkillFile() }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.junoGlass)
                         .disabled(saving || reading)
                         .contentShape(.rect)
                     Text(imported == nil ? "Bring a skill from your computer, or write one below." : "File loaded. Review the instructions before saving. Attach referenced files separately.")

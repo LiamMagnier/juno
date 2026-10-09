@@ -396,7 +396,7 @@ struct DesktopMessageRow: View {
                         JunoIconView(.refresh, size: 14)
                     }
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.junoGlass)
                 .controlSize(.small)
                 // The web's outline: neutral, never the column's coral tint.
                 .tint(nil)

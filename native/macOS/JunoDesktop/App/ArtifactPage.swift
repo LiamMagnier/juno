@@ -198,7 +198,7 @@ struct ArtifactPage: View {
                     reloadToken = UUID()
                 }
                     .contentShape(.rect)
-                .buttonStyle(.bordered)
+                .buttonStyle(.junoGlass)
                 .tint(nil)
                 .disabled(draft == nil)
                 .help("Throw away every change since the last save")
@@ -331,7 +331,7 @@ struct ArtifactPageTopRow<More: View>: View {
             }
             Button("Open in Chat", action: openInChat)
                 .contentShape(.rect)
-                .buttonStyle(.bordered)
+                .buttonStyle(.junoGlass)
                 .tint(nil)
                 .help("Open in the conversation it was made in")
             Menu {

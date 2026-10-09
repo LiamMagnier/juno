@@ -273,7 +273,7 @@ struct DesktopSharePopover: View {
                     ink: Color.junoDestructiveInk
                 )
                 Button("Try Again") { state.retry() }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.junoGlass)
                     .tint(nil)
                     .contentShape(.rect)
             }
@@ -462,7 +462,7 @@ struct DesktopShareSheet: View {
             HStack {
                 Spacer(minLength: 0)
                 Button("Done") { state.close() }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.junoGlass)
                     .tint(nil)
                     .keyboardShortcut(.cancelAction)
                     .contentShape(.rect)

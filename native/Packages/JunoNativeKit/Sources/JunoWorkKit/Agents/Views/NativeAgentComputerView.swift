@@ -112,7 +112,7 @@ struct NativeAgentComputerView: View {
                                 .frame(minHeight: NativeAgentMetrics.target)
                                 .contentShape(.rect)
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.junoGlass)
                         .disabled(isWorking)
                     }
                 }
@@ -171,7 +171,7 @@ struct NativeAgentComputerView: View {
                             .frame(minHeight: NativeAgentMetrics.target)
                     .contentShape(.rect)
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.junoGlass)
                     .disabled(isWorking)
 
                     if controlling {
@@ -187,7 +187,7 @@ struct NativeAgentComputerView: View {
                                 .frame(minHeight: NativeAgentMetrics.target)
                     .contentShape(.rect)
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.junoGlass)
                         .disabled(isWorking)
                     }
 
@@ -209,7 +209,7 @@ struct NativeAgentComputerView: View {
                             .frame(minHeight: NativeAgentMetrics.target)
                     .contentShape(.rect)
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.junoGlass)
                     .disabled(isWorking)
 
                 default:
@@ -357,7 +357,7 @@ private struct NativeAgentComputerHandoffSheet: View {
                         .frame(minHeight: NativeAgentMetrics.target)
                     .contentShape(.rect)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.junoGlass)
             }
             .padding(.horizontal, JunoSpace.roomy)
             .padding(.vertical, JunoSpace.cozy)

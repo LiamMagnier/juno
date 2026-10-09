@@ -69,7 +69,7 @@ struct DesktopLibraryMadeList: View {
                         Button(model.isLoadingMore ? "Loading…" : "Show more") {
                             Task { await model.loadMore() }
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.junoGlass)
                         .contentShape(.rect)
                         .disabled(model.isLoadingMore)
                         .frame(maxWidth: .infinity)

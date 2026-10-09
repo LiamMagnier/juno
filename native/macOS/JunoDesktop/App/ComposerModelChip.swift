@@ -216,7 +216,7 @@ struct ComposerModelChip: View {
                 .help(catalogError ?? "")
             Spacer(minLength: 0)
             Button("Try Again", action: reload)
-                .buttonStyle(.bordered)
+                .buttonStyle(.junoGlass)
                 // The popover inherits the composer's accent tint; a secondary
                 // button never wears it (§0.4).
                 .tint(nil)

@@ -119,7 +119,7 @@ struct ChatSkillCaptureSheet: View {
             HStack(spacing: JunoSpace.cozy) {
                 Spacer(minLength: 0)
                 Button("Cancel", role: .cancel, action: close)
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.junoGlass)
                     .tint(nil)
                     .keyboardShortcut(.cancelAction)
                     .disabled(saving)

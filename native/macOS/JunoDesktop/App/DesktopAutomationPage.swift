@@ -195,7 +195,7 @@ struct DesktopAutomationPage: View {
                         Text("Run now")
                     }
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.junoGlass)
                 .tint(nil)
                 .disabled(busy)
                 .help("Start one extra run now")
@@ -203,7 +203,7 @@ struct DesktopAutomationPage: View {
                 Button(role: .destructive, action: confirmDelete) {
                     Label("Delete", icon: .trash)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.junoGlass)
                 .tint(Color.junoDestructive)
                 .disabled(busy)
                 .accessibilityIdentifier("juno.desktop.automation.delete")
@@ -521,7 +521,7 @@ struct DesktopAutomationFireCard: View {
                         Text(hasToken ? "Issue a new token" : "Issue a token")
                     }
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.junoGlass)
                 .tint(nil)
                 .disabled(busy)
                 if hasToken {

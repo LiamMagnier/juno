@@ -509,7 +509,7 @@ struct DesktopTwoStepSetupSheet: View {
                         JunoIconView(copied ? .check : .copy, size: 13)
                     }
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.junoGlass)
                 .tint(nil)
                 .contentShape(.rect)
                 Button("I’ve Saved Them") { dismiss() }

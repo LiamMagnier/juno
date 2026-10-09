@@ -84,13 +84,12 @@ struct SemanticWorkbookView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if workbook.sheets.count > 1 {
-                Picker("Sheet", selection: $sheetIndex) {
-                    ForEach(Array(workbook.sheets.enumerated()), id: \.offset) { index, sheet in
-                        Text(sheet.name).tag(index)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
+                JunoSegmented(
+                    options: workbook.sheets.enumerated().map { .init($0.offset, $0.element.name) },
+                    selection: $sheetIndex,
+                    accessibilityLabel: "Sheet",
+                    size: .compact
+                )
                 .padding(.horizontal, JunoSpace.cozy)
                 .padding(.vertical, JunoSpace.snug)
             }

@@ -199,7 +199,7 @@ struct DesktopLibraryScreen: View {
                 } label: {
                     Label("Back to files", icon: .arrowLeft)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.junoGlass)
                 .tint(nil)
                 .contentShape(.rect)
             }
@@ -229,7 +229,7 @@ struct DesktopLibraryScreen: View {
                 } label: {
                     Label("Recently deleted", icon: .trash)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.junoGlass)
                 .tint(nil)
                 .contentShape(.rect)
                 // Withheld while the empty state carries "Upload files": one
@@ -270,14 +270,11 @@ struct DesktopLibraryScreen: View {
         } label: {
             JunoIconView(.ellipsis, size: 16)
                 .foregroundStyle(Color.junoForeground)
-                .frame(width: 28, height: 28)
+                .frame(width: 18, height: 18)
                 .contentShape(.rect)
         }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .frame(width: 28, height: 28)
+        .junoGlassMenu(.circle)
+        .frame(minWidth: 28, minHeight: 28)
         .help("More library actions")
         .accessibilityLabel("More library actions")
     }
@@ -807,7 +804,7 @@ struct DesktopLibraryScreen: View {
                 Task { await model.loadMore() }
             }
                 .contentShape(.rect)
-            .buttonStyle(.bordered)
+            .buttonStyle(.junoGlass)
             .tint(nil)
             .disabled(model.loadingMore)
             Spacer()
@@ -1454,7 +1451,7 @@ private struct DesktopLibraryUploadRow: View {
                 if retryable {
                     Button("Retry", action: retry)
                         .contentShape(.rect)
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.junoGlass)
                         .tint(nil)
                 }
                 Button(action: dismiss) {
@@ -1672,7 +1669,7 @@ struct DesktopLibraryVersionsList: View {
             } else {
                 Button(restoring == version.version ? "Restoring…" : "Restore") { restore(version.version) }
                     .contentShape(.rect)
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.junoGlass)
                     .tint(nil)
                     .disabled(restoring != nil)
             }

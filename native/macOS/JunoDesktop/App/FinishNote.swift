@@ -54,7 +54,7 @@ struct DesktopTurnNote: View {
                     }
                     .frame(minHeight: 28)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.junoGlass)
                 .controlSize(.small)
                 // The web's outline button: neutral. The column's accent tint
                 // would otherwise turn a bordered button coral, and coral is
@@ -112,7 +112,7 @@ struct DesktopTurnError: View {
                     }
                     .frame(minHeight: 28)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.junoGlass)
                 .controlSize(.small)
                 // Destructive-tinted, as the web's outline is: the tone of the
                 // box it sits in, never the accent.

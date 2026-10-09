@@ -124,7 +124,7 @@ public struct NativeAgentHireView: View {
                     .accessibilityIdentifier("juno.agents.hire.submit")
                     Button("Cancel", action: onCancel)
                         .keyboardShortcut(.cancelAction)
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.junoGlass)
                         .tint(nil)
                         .contentShape(.rect)
                     if let failure {
@@ -287,7 +287,7 @@ public struct NativeAgentHireView: View {
                             touched.insert("name")
                             draft.name = suggestion
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.junoGlass)
                         .nativeAgentNeutralTint()
                         .controlSize(.small)
                         .frame(minHeight: NativeAgentMetrics.target)

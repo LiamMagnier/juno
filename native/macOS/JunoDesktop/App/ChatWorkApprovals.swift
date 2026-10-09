@@ -95,7 +95,7 @@ struct ChatWorkApprovalQueue: View {
                 .frame(minHeight: 28)
                 .contentShape(.rect)
         }
-        .buttonStyle(.bordered)
+        .buttonStyle(.junoGlass)
         .tint(nil)
         .fixedSize()
         .disabled(isBusy)
@@ -368,7 +368,7 @@ struct ChatWorkApprovalCard: View {
         } label: {
             Text("Don\u{2019}t").frame(minHeight: 28).contentShape(.rect)
         }
-        .buttonStyle(.bordered)
+        .buttonStyle(.junoGlass)
         .tint(Color.junoDestructiveInk)
         .accessibilityIdentifier("juno.work.approval.deny")
 
@@ -382,7 +382,7 @@ struct ChatWorkApprovalCard: View {
             .frame(minHeight: 28)
             .contentShape(.rect)
         }
-        .buttonStyle(.bordered)
+        .buttonStyle(.junoGlass)
         .tint(nil)
         .accessibilityIdentifier("juno.work.approval.amend")
 
@@ -428,7 +428,7 @@ struct ChatWorkApprovalCard: View {
         if isPrimary {
             button.buttonStyle(.junoProminent)
         } else {
-            button.buttonStyle(.bordered).tint(nil)
+            button.buttonStyle(.junoGlass).tint(nil)
         }
     }
 
@@ -486,7 +486,7 @@ struct ChatWorkApprovalCard: View {
                 if isPrimary {
                     send.buttonStyle(.junoProminent)
                 } else {
-                    send.buttonStyle(.bordered).tint(nil)
+                    send.buttonStyle(.junoGlass).tint(nil)
                 }
             }
             .disabled(isBusy)

@@ -1489,7 +1489,7 @@ private struct DesktopCodeRemoteCanvas: View {
                         JunoIconView(.stop, size: 14)
                             .frame(width: 22, height: 22)
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.junoGlass)
                     .tint(Color.junoDanger)
                     .disabled(remote.isSendingCommand)
                     // ⌘. is Session › Stop, which stops this session too.
@@ -1606,7 +1606,7 @@ private struct DesktopCodeRemoteCanvas: View {
             Button("Retry") {
                 Task { await remote.pollEvents(deviceID: deviceID, sessionID: sessionID) }
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.junoGlass)
             .controlSize(.small)
         }
         .padding(.horizontal, JunoSpace.snug)
@@ -1686,7 +1686,7 @@ private struct DesktopCodeRelayApproval: View {
                 // `bg-primary` variant for the same reason. The accent stays
                 // where the web puts it; it left the places the web does not.
                 Button("Approve") { respond(true) }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.junoProminent)
                     .tint(Color.junoAccent)
                     .keyboardShortcut(.return, modifiers: .shift)
             }

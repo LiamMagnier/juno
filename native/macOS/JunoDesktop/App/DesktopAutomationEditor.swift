@@ -755,7 +755,7 @@ struct DesktopAutomationAddTrigger: View {
             Label("Add a trigger", icon: .plus)
         }
         .menuStyle(.button)
-        .buttonStyle(.bordered)
+        .buttonStyle(.junoGlass)
         .tint(nil)
         .fixedSize()
         .accessibilityIdentifier("juno.desktop.automation.add-trigger")
@@ -1055,7 +1055,7 @@ struct DesktopAutomationTriggerFields: View {
             if asked {
                 DesktopAutomationHint("This trigger still asks for it, so it will not start a run until the condition is removed.", warning: true)
                 Button("Remove this condition", action: clear)
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.junoGlass)
                     .tint(nil)
                     .controlSize(.small)
             }

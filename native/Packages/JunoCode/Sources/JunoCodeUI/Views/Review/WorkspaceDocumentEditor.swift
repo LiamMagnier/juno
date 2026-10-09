@@ -108,7 +108,7 @@ struct WorkspaceDocumentEditor: View {
             }
             Button("Save") { save() }
                 .controlSize(.small)
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.junoProminent)
                 .tint(Color.junoAccent)
                 .keyboardShortcut("s", modifiers: .command)
                 .disabled(!isEditable || !isDirty || isSaving)

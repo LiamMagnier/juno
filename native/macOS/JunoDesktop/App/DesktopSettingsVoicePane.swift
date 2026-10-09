@@ -121,9 +121,7 @@ struct DesktopSettingsVoicePane: View {
                     }
                 }
                 .labelsHidden()
-                .pickerStyle(.menu)
-                .tint(nil)
-                .fixedSize()
+                .junoGlassMenuPicker(current: voices.first { $0.id == active }?.label ?? "")
                 .accessibilityIdentifier("juno.desktop.settings.voice")
             }
         }

@@ -424,9 +424,7 @@ struct DesktopAssistantEditor: View {
                         }
                     }
                     .labelsHidden()
-                    .pickerStyle(.menu)
-                    .tint(nil)
-                    .frame(height: 32)
+                    .junoGlassMenuPicker(current: DesktopAssistantModelOption.label(for: draft.preferredModelID, in: models))
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -611,5 +609,15 @@ struct DesktopWrapRow: Layout {
             x += width + spacing
             line = max(line, size.height)
         }
+    }
+}
+
+extension DesktopAssistantModelOption {
+    /// The words a preferred-model menu shows for `id`: Auto when unset.
+    static func label(for id: String?, in models: [DesktopAssistantModelOption]) -> String {
+        guard let id, id != "juno:auto", let option = models.first(where: { $0.id == id }) else {
+            return "Auto · intelligent routing"
+        }
+        return "\(option.name) · \(option.provider)"
     }
 }

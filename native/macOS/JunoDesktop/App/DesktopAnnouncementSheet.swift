@@ -53,7 +53,7 @@ struct DesktopAnnouncementSheet: View {
                     Button(announcement.newsLabel?.isEmpty == false ? announcement.newsLabel! : "Read More") {
                         follow(news)
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.junoGlass)
                     .tint(nil)
                     .contentShape(.rect)
                 } else {

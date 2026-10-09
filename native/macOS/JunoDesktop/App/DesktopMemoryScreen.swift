@@ -322,7 +322,7 @@ struct DesktopMemoryPage: View {
                     Button("Turn on") {
                         Task { await settings.updateSettings(NativeSettingsPatch(memoryEnabled: true)) }
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.junoGlass)
                     .tint(nil)
                     .controlSize(.small)
                     .contentShape(.rect)
@@ -334,7 +334,7 @@ struct DesktopMemoryPage: View {
                     Text(policy).foregroundStyle(Color.junoSecondaryInk)
                 } action: {
                     Button("Background processing") { openMemorySettings() }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.junoGlass)
                         .tint(nil)
                         .controlSize(.small)
                         .contentShape(.rect)
@@ -359,7 +359,7 @@ struct DesktopMemoryPage: View {
                     )
                 } action: {
                     Button("Learn from them") { learn() }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.junoGlass)
                         .tint(nil)
                         .controlSize(.small)
                         .contentShape(.rect)

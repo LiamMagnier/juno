@@ -126,7 +126,7 @@ struct DesktopSkillsScreen: View {
                 Text(failure)
             } action: {
                 Button("Retry") { Task { await model.refresh() } }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.junoGlass)
                     .tint(nil)
                     .controlSize(.small)
                     .contentShape(.rect)
@@ -150,7 +150,7 @@ struct DesktopSkillsScreen: View {
                     Button { importing = DesktopSkillImportRequest(source: nil) } label: {
                         Label("Import from GitHub", icon: .github, size: 13)
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.junoGlass)
                     .tint(nil)
                     .contentShape(.rect)
                 }
@@ -265,7 +265,7 @@ struct DesktopSkillsScreen: View {
                     }
                         .contentShape(.rect)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.junoGlass)
                 .tint(nil)
                 DesktopPopularSources { repository in
                     importing = DesktopSkillImportRequest(source: repository)

@@ -90,7 +90,7 @@ struct DesktopSettingsDataPane: View {
                     Text("Export")
                 }
                 .menuStyle(.button)
-                .buttonStyle(.bordered)
+                .buttonStyle(.junoGlass)
                 .tint(nil)
                 .fixedSize()
                 .disabled(exporting != nil || context.services.accountData == nil)

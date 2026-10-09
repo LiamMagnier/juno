@@ -103,7 +103,7 @@ struct DesktopMemoryList: View {
                     .rotationEffect(.degrees(adding ? 45 : 0))
             }
         }
-        .buttonStyle(.bordered)
+        .buttonStyle(.junoGlass)
         .tint(nil)
         // The controls row's 32pt, beside the search field and the menu, at
         // the control radius rather than `.large`'s capsule.
@@ -428,7 +428,7 @@ struct DesktopMemoryRow: View {
                     .tint(nil)
                     .contentShape(.rect)
                 Button("Save") { Task { await commit() } }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.junoGlass)
                     .tint(nil)
                     .disabled(saving || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     .contentShape(.rect)
@@ -556,7 +556,7 @@ struct DesktopMemoryAddForm: View {
                     .tint(nil)
                     .contentShape(.rect)
                 Button("Save") { Task { await commit() } }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.junoGlass)
                     .tint(nil)
                     .disabled(saving || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     .contentShape(.rect)

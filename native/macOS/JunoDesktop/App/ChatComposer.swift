@@ -1958,7 +1958,7 @@ struct ChatComposer: View {
                 Label("Attach as file", icon: .files, size: 14)
                     .contentShape(.rect)
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.junoGlass)
             .accessibilityIdentifier("juno.desktop.chat.attach-draft")
         }
         .transition(.opacity)
@@ -2017,7 +2017,7 @@ struct ChatComposer: View {
                 }
                 Spacer(minLength: 0)
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.junoGlass)
         }
         .padding(JunoSpace.cozy)
         .frame(maxWidth: .infinity, alignment: .leading)

@@ -178,9 +178,7 @@ struct DesktopSettingsConnectorsPane: View {
                     }
                 }
                 .labelsHidden()
-                .pickerStyle(.menu)
-                .tint(nil)
-                .fixedSize()
+                .junoGlassMenuPicker(current: current?.label.desktopMenuTitle ?? "")
                 .accessibilityIdentifier("juno.desktop.settings.action-policy")
             }
             DesktopSettingToggleRow(

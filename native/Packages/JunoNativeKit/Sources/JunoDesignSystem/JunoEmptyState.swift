@@ -164,7 +164,7 @@ public struct JunoEmptyState: View {
                 .padding(.top, isPage ? JunoSpace.section : JunoSpace.regular)
             } else if let actionLabel, let perform {
                 Button(actionLabel, action: perform)
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.junoGlass)
                     // Neutral: the detail column's accent tint must not turn the
                     // outline coral (Phase 2 review).
                     .tint(nil)

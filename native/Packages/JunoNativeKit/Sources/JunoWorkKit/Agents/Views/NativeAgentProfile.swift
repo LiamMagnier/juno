@@ -414,7 +414,7 @@ public struct NativeAgentProfileView: View {
                             Spacer(minLength: JunoSpace.snug)
                             if let openComputer {
                                 Button("Open", action: openComputer)
-                                    .buttonStyle(.bordered)
+                                    .buttonStyle(.junoGlass)
                                     .buttonBorderShape(.capsule)
                                     .controlSize(.small)
                                     .tint(nil)
@@ -442,7 +442,7 @@ public struct NativeAgentProfileView: View {
                             }
                             Spacer(minLength: JunoSpace.snug)
                             Button("Give it one") { confirm = .computerOn }
-                                .buttonStyle(.bordered)
+                                .buttonStyle(.junoGlass)
                                 .buttonBorderShape(.capsule)
                                 .controlSize(.small)
                                 .tint(nil)
@@ -471,7 +471,7 @@ public struct NativeAgentProfileView: View {
             Button(agent.isPaused ? "Resume" : "Pause") {
                 act("pause") { await model.setPaused(id: agent.id, paused: !agent.isPaused) }
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.junoGlass)
             .buttonBorderShape(.capsule)
             .controlSize(.small)
             .tint(nil)

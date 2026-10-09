@@ -326,7 +326,7 @@ struct DesktopApprovalCard: View {
         } label: {
             Text(isHandoff ? "Don’t hand off" : isTask ? "Don’t start" : "Don’t allow").frame(minHeight: 28)
         }
-        .buttonStyle(.bordered)
+        .buttonStyle(.junoGlass)
         // The web's destructive outline: refusing, in the refusal's own ink.
         .tint(Color.junoDestructiveInk)
         .contentShape(.rect)
@@ -345,7 +345,7 @@ struct DesktopApprovalCard: View {
             } label: {
                 Text("Allow this action for this connector").frame(minHeight: 28)
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.junoGlass)
             // Neutral: Allow once is the card's one coral button (§0.4).
             .tint(nil)
             .contentShape(.rect)

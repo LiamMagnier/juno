@@ -383,8 +383,7 @@ public struct NativeImageEditView: View {
                     }
                 }
                 .labelsHidden()
-                .pickerStyle(.menu)
-                .fixedSize()
+                .junoGlassMenuPicker(current: editor?.displayName ?? "")
             } else if let editor {
                 Text(editor.displayName)
                     .junoFont(size: 11, relativeTo: .body, design: .monospaced)
