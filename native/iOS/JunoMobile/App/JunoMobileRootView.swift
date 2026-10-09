@@ -250,7 +250,15 @@ struct JunoMobileRootView: View {
     // perfectly good.
     .task {
       #if DEBUG
-        if previewSession != nil {
+        if let previewSession {
+          // Orbit reads its roster from the canned server like every other
+          // section; without a model the harness drew "Something went wrong".
+          if agentsModel == nil, let requestSender {
+            let agents = NativeAgentsModel(
+              client: NativeAgentsClient(sender: requestSender), workClient: workClient)
+            agentsModel = agents
+            Task { await agents.start(for: previewSession.profile.id) }
+          }
           await applyPreviewLaunchFlags()
           return
         }
