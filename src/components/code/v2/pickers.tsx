@@ -11,7 +11,11 @@
  *   (Alevr, each subscription, your keys) and "+"; rows read "Claude Opus 5.5"
  *   over "Your Claude plan · 1M" or "Alevr · $5 / $25 · 1M". In a team run, tabs
  *   along the top pick whose model you are choosing: Lead, Workers, Reviewer,
- *   Explorer. Two compact footer rows: Effort, and Context with the plan usage.
+ *   Explorer. The chip opens on the effort panel first (the chat's EffortPanel:
+ *   the rung, Flash, reset, the model under it), and the model's name there
+ *   leads to the catalogue; ⇧⌘M opens the catalogue directly. In a team run the
+ *   catalogue keeps an Effort row for the role being edited. A footer row holds
+ *   Context with the plan usage.
  * - Context opens the tier list inside the same popover: one row per tier with
  *   its size, rates and the next turn's estimate.
  * - The team popover: four role rows, a worker stepper, the budget. Role
@@ -35,6 +39,8 @@ import { cycleInstance, displayName, isConnected, pickerModels, railEntries, sea
 import { formatRate, formatReset, formatTokens, formatUsd, gaugeView, tierRows, tightestWindow, type TierRow } from "@/lib/code-v2/tier-view";
 import { EFFORT_LABELS, currentTier, defaultSelection, effectiveEffort, effortLevelsOf, findInstance, findModel, modelLabel, ratesFor, shortLabel, tiersOf } from "./model-info";
 import { ComposerPopover, DrawCheck, Glyph, InstanceMark, ModelMark, Segmented, useIsMac } from "./primitives";
+import { EffortPanelContext, ReasoningSlider } from "@/components/chat/reasoning-slider";
+import type { ReasoningEffort } from "@/types/chat";
 
 // ── Words ────────────────────────────────────────────────────────────────────
 
@@ -239,7 +245,9 @@ export function ModelPicker({
   routing?: RoleRouting;
   onRouting?: (r: RoleRouting) => void;
   initialTab?: RoleTab;
-  initialView?: "models" | "context";
+  /** `effort`: the slider-first stage, falling back to the catalogue where the
+   *  model has no choice of effort or a team run is picking per role. */
+  initialView?: "effort" | "models" | "context";
   threadTokens?: number;
   onCompactAndSwitch?: (sel: ModelSelection) => void;
   title?: string;
@@ -250,17 +258,21 @@ export function ModelPicker({
   const entries = React.useMemo(() => railEntries(instances, flags).filter((e) => e.group !== "installed"), [instances, flags]);
   const tabs = onRouting ? roleTabs(routing) : [];
   const [tab, setTab] = React.useState<RoleTab>(initialTab);
-  const [view, setView] = React.useState<"models" | "context">(initialView);
   const editing = routing && tabs.length ? roleSelection(routing, tab, selection) : selection;
+  const levels = effortLevelsOf(instances, editing).filter((l): l is ReasoningEffort => l !== "none");
+  const effortStage = !tabs.length && levels.length >= 2 && !!findModel(instances, editing);
+  const firstView = initialView === "effort" && !effortStage ? "models" : initialView;
+  const [view, setView] = React.useState<"effort" | "models" | "context">(firstView);
   const [active, setActive] = React.useState(editing.instanceId);
   const [query, setQuery] = React.useState("");
   const [hi, setHi] = React.useState(0);
   React.useEffect(() => {
     if (open) {
       setTab(initialTab);
-      setView(initialView);
+      setView(firstView);
       setQuery("");
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reset on open only
   }, [open, initialTab, initialView]);
   React.useEffect(() => setActive(editing.instanceId), [editing.instanceId, tab]);
 
@@ -300,8 +312,8 @@ export function ModelPicker({
     }
   };
 
-  const levels = effortLevelsOf(instances, editing).filter((l) => l !== "none");
   const effort = effectiveEffort(instances, editing);
+  const editingModel = findModel(instances, editing);
   const tier = currentTier(instances, editing);
   const selInstance = findInstance(instances, editing.instanceId);
   const usage = usageLine(selInstance);
@@ -321,7 +333,21 @@ export function ModelPicker({
             ))}
           </div>
         )}
-        {view === "context" ? (
+        {view === "effort" && editingModel ? (
+          <div style={{ padding: "14px 14px 12px" }}>
+            <EffortPanelContext.Provider value={{ modelName: modelLabel(instances, editing), onOpenModels: () => setView("models") }}>
+              <ReasoningSlider
+                variant="panel"
+                options={levels.map((l) => ({ value: l, label: EFFORT_LABELS[l] }))}
+                value={(effort && effort !== "none" ? effort : levels[0]) as ReasoningEffort}
+                defaultValue={editingModel.defaultEffort && editingModel.defaultEffort !== "none" ? editingModel.defaultEffort : undefined}
+                onChange={(l) => l && commit({ ...editing, effort: l })}
+                fastMode={!!editing.fast}
+                onFastModeChange={editingModel.supportsFast ? (v) => commit({ ...editing, fast: v }) : undefined}
+              />
+            </EffortPanelContext.Provider>
+          </div>
+        ) : view === "context" ? (
           <>
             <div className="cv2-pop-head">
               <button type="button" className="cv2-iconbtn" aria-label="Back to models" onClick={() => setView("models")}>
@@ -396,6 +422,7 @@ export function ModelPicker({
             </div>
             {findModel(instances, editing) && (
               <>
+                {tabs.length > 0 && (
                 <div className="cv2-pop-foot">
                   <span>Effort</span>
                   <span className="cv2-grow" />
@@ -411,6 +438,7 @@ export function ModelPicker({
                     <span>Fixed for this model</span>
                   )}
                 </div>
+                )}
                 <div className="cv2-pop-foot">
                   <span>Context</span>
                   {tier ? (

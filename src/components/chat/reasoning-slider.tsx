@@ -9,6 +9,10 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { Switch } from "@/components/ui/switch";
+
+/** Pro, said once wherever the switch is drawn, in the settings' words for effort. */
+export const PRO_MODE_HELP = "The model's deeper reasoning mode. Slower and costs more.";
 
 /**
  * Thinking effort, as a slider.
@@ -128,6 +132,8 @@ export function ReasoningSlider({
         className={className}
         fastMode={fastMode}
         onFastModeChange={onFastModeChange}
+        proMode={proMode}
+        onProModeChange={onProModeChange}
         defaultValue={defaultValue}
       />
     );
@@ -242,7 +248,7 @@ export function ReasoningSlider({
           {onProModeChange && (
             <ModeChip
               label="Pro"
-              help="Prefer the model's deeper reasoning mode when available."
+              help={PRO_MODE_HELP}
               pressed={proMode}
               disabled={disabled}
               onPress={() => onProModeChange(!proMode)}
@@ -308,6 +314,8 @@ function EffortPanel({
   className,
   fastMode,
   onFastModeChange,
+  proMode = false,
+  onProModeChange,
   defaultValue,
 }: {
   options: ReasoningOption[];
@@ -317,8 +325,12 @@ function EffortPanel({
   className?: string;
   fastMode: boolean;
   onFastModeChange?: (value: boolean) => void;
+  /** Absent where the model has no Pro mode: the row is not drawn at all. */
+  proMode?: boolean;
+  onProModeChange?: (value: boolean) => void;
   defaultValue?: ReasoningOption["value"];
 }) {
+  const proID = React.useId();
   const panel = React.useContext(EffortPanelContext);
   const count = options.length;
   const current = options[index];
@@ -424,6 +436,19 @@ function EffortPanel({
           className="pointer-events-none absolute -inset-[3px] rounded-full opacity-0 ring-2 ring-foreground/20 transition-opacity duration-fast ease-out-soft peer-focus-visible:opacity-100"
         />
       </div>
+
+      {/* Pro: a separate axis from the rung (the GPT-5.6 line reasons in a
+          deeper mode on the same model), so a switch under the track rather
+          than another stop on it. Only drawn where the model has the mode. */}
+      {onProModeChange ? (
+        <div className="mt-3 flex items-center justify-between gap-3 border-t border-border/60 pt-3">
+          <label htmlFor={proID} className="flex min-w-0 cursor-pointer flex-col">
+            <span className="text-ui font-medium text-foreground">Pro</span>
+            <span className="text-caption text-muted-foreground">{PRO_MODE_HELP}</span>
+          </label>
+          <Switch id={proID} checked={proMode} disabled={disabled} onCheckedChange={onProModeChange} />
+        </div>
+      ) : null}
     </div>
   );
 }

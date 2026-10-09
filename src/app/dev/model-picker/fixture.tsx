@@ -7,11 +7,11 @@ import { AppProvider } from "@/components/app/app-provider";
 import { BOOTSTRAP } from "@/app/dev/composer-landing/fixture";
 import { ReasoningSlider } from "@/components/chat/reasoning-slider";
 import { GEN_MODELS, MODEL_LIST, resolveModel, type ModelId } from "@/lib/models";
-import { clampReasoningEffort, defaultReasoning, reasoningOptions, withSupersededMarked } from "@/lib/model-metrics";
+import { clampReasoningEffort, defaultReasoning, reasoningOptions, supportsProMode, withSupersededMarked } from "@/lib/model-metrics";
 import { supportsFastMode } from "@/lib/pricing";
 import { PROVIDER_LIST } from "@/lib/providers";
 import type { AppBootstrap } from "@/types/app";
-import type { ReasoningEffort } from "@/types/chat";
+import type { ReasoningEffort } from "@/lib/model-metrics";
 
 const ModelSelector = nextDynamic(() => import("@/components/chat/model-selector").then((m) => m.ModelSelector), {
   ssr: false,
@@ -51,6 +51,7 @@ function Stage() {
     requested == null ? (resolved ? defaultReasoning(resolved) : null) : requested === "instant" ? null : (requested as ReasoningEffort),
   );
   const [fast, setFast] = React.useState(params.get("fast") === "1");
+  const [pro, setPro] = React.useState(params.get("pro") === "1");
   const thinking =
     !resolved || options.length < 2 ? null : (
       <ReasoningSlider
@@ -61,6 +62,8 @@ function Stage() {
         onChange={setEffort}
         fastMode={fast}
         onFastModeChange={supportsFastMode(resolved) ? setFast : undefined}
+        proMode={pro}
+        onProModeChange={supportsProMode(resolved) ? setPro : undefined}
       />
     );
   const effortLabel =

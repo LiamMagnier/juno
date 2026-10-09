@@ -265,7 +265,7 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, userName, byok, 
           dispatch({ type: "toggle-expand" });
           return true;
         case "picker.model":
-          setPopover("model");
+          setPopover("catalog");
           return true;
         case "picker.orchestrate":
           setPopover("team");
@@ -340,7 +340,7 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, userName, byok, 
         approvalOpen: pending.length > 0,
         approvalMany: pending.length > 1,
         popoverOpen: popover !== null || palette || headMenu !== null,
-        modelPickerOpen: popover === "model",
+        modelPickerOpen: popover === "model" || popover === "catalog",
         dockOpen: dock.open,
         changesFocus: dock.open && dock.tab === "changes",
         queueNotEmpty: model.queue.length > 0,

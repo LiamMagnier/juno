@@ -31,7 +31,8 @@ import { ComposerPopover, Glyph, MenuList, ModelMark, useIsMac, type MenuEntry }
 import type { WorkspaceModel } from "./types";
 import { cn } from "@/lib/utils";
 
-export type PopoverName = "model" | "context" | "team" | "overflow" | "attach" | "queue" | "device" | null;
+/** `model` opens the model chip on its effort stage; `catalog` on the model list. */
+export type PopoverName = "model" | "catalog" | "context" | "team" | "overflow" | "attach" | "queue" | "device" | null;
 
 type Pending = ApprovalRequestItem | UserInputRequestItem;
 
@@ -493,7 +494,7 @@ export const Composer = React.forwardRef<
                   Resume at reset
                 </button>
               )}
-          <button type="button" className="cv2-btn ink" onClick={() => setPopover("model")}>
+          <button type="button" className="cv2-btn ink" onClick={() => setPopover("catalog")}>
             Switch model
           </button>
         </div>
@@ -567,7 +568,7 @@ export const Composer = React.forwardRef<
                 <button type="button" className="cv2-ctl icon" aria-label="Add" title="Attach, mention or run a command" aria-haspopup="menu" aria-expanded={popover === "attach"} onClick={() => toggle("attach")}>
                   <Glyph name="plus" size={16} />
                 </button>
-                <button type="button" className="cv2-ctl" aria-expanded={popover === "model"} aria-haspopup="dialog" aria-label={`Model: ${words.model}${words.effort ? `, ${words.effort}` : ""}`} onClick={() => (setRoleTab("lead"), toggle("model"))}>
+                <button type="button" className="cv2-ctl" aria-expanded={popover === "model" || popover === "catalog"} aria-haspopup="dialog" aria-label={`Model: ${words.model}${words.effort ? `, ${words.effort}` : ""}`} onClick={() => (setRoleTab("lead"), toggle("model"))}>
                   {instance && <ModelMark modelId={selection.model} instance={instance} />}
                   <span className="v cv2-trunc">{words.model}</span>
                   {words.effort && <span className="eff">{words.effort}</span>}
@@ -640,7 +641,7 @@ export const Composer = React.forwardRef<
               <QueueMenu model={model} canSteer={canSteer && running} mac={mac} onEdit={(text, id) => (actions.removeQueued(id), setDraft(text), setPopover(null), requestAnimationFrame(() => textarea.current?.focus()))} />
             </ComposerPopover>
             <ModelPicker
-              open={popover === "model" || popover === "context"}
+              open={popover === "model" || popover === "catalog" || popover === "context"}
               onClose={() => setPopover(null)}
               instances={instances}
               selection={selection}
@@ -651,7 +652,7 @@ export const Composer = React.forwardRef<
               routing={routing}
               onRouting={actions.setRouting}
               initialTab={roleTab}
-              initialView={popover === "context" ? "context" : "models"}
+              initialView={popover === "context" ? "context" : popover === "catalog" ? "models" : "effort"}
               threadTokens={threadTokens}
               onCompactAndSwitch={(sel) => {
                 actions.compact?.();
@@ -667,7 +668,7 @@ export const Composer = React.forwardRef<
               onChange={actions.setRouting}
               onPickRole={(t) => {
                 setRoleTab(t);
-                setPopover("model");
+                setPopover("catalog");
               }}
               anchorRef={footRef}
             />
