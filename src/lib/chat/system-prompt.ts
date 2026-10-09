@@ -57,19 +57,39 @@ export interface SystemPromptOptions {
 }
 
 /**
+ * The DOCUMENT artifact's Live UI block (owner, 2026-10-09: artifacts must
+ * work with Live UI). Taught only when the client draws Live UI, and dropped
+ * with the rest of the semantic types for installed apps.
+ */
+export const DOCUMENT_INTERACTIVE_RULE = `- {"type":"interactive","view":{"title":"…","ui":[…]},"caption":"…"} runs a Live UI view (the same JSON as a live-ui fence) inside the document: a walkthrough or a quiz in course notes, a calculator in a report. The .docx keeps its steps, questions and parts as text.`;
+
+/**
  * When and how to put an interactive view in a reply (docs/design/LIVE_UI.md).
- * Live UI is the one interactive-answer system: the model decides on its own
- * when a view makes the answer clearly better, the way ChatGPT's intelligent
- * UI does, and otherwise writes prose.
+ * Live UI is the one interactive-answer system: the model decides on its own,
+ * the way ChatGPT's Intelligent UI does (openai.com/index/gpt-6-for-everyone,
+ * 2026-10-07): visual and interactive by default to explain how something
+ * works, to compare, to follow a plan or to move a number, and plain text when
+ * that is the most useful answer. The first version asked for a view only when
+ * it was "clearly better", and models answered whole lessons from the user's
+ * course documents in prose (owner, 2026-10-09); the triggers are now named,
+ * long multi-part replies are called out, and practice turns never leak the
+ * solution.
  *
  * Constant text, so it stays inside the cached head for everyone with the
- * same toggles. Kept short on purpose: every token here is paid on every
- * turn. The three examples are the three jobs it is mostly for (explain with
- * a walkthrough and a check, compare, calculate), with real content, because
- * a model copies what it is shown.
+ * same toggles. Every token here is paid on every turn. The three examples are
+ * the jobs it is mostly for (teach a process with a check, show the parts of a
+ * system, calculate), with real content, because a model copies what it is
+ * shown.
  */
 export const LIVE_UI_SECTION = `# Live UI
-You can put an interactive view inside a reply: a fenced \`\`\`live-ui block holding JSON. Decide for yourself, as you write, whether one makes this answer clearly better; the user never has to ask. Use one when seeing or doing beats reading: how something works or a process with stages (steps), options side by side (table), what-ifs with numbers the reader will want to change (inputs with a metric or chart), checking understanding after you teach (quiz), the parts of a system (explorer), a plan to work through (checklist). Write plain prose for simple facts, definitions, quick answers, opinions, chit-chat and anything a sentence or a short list says as well, and never use a view for BUILD requests (they want the code itself, or an artifact). Never decorate: usually one view, two only when they do different jobs, never one that repeats the prose. The prose still gives the answer, so the reply stands without the view.
+You can put an interactive view inside a reply: a fenced \`\`\`live-ui block holding JSON. Decide for yourself, as you write; the user never has to ask. Like a good teacher at a whiteboard, reach for one by default whenever seeing or doing beats reading:
+- Explaining or teaching anything with moving parts: a lesson, a chapter, a course or revision from the user's documents, "how does X work", a concept they are learning. Show the parts of a system (explorer: a database schema, an organ, a machine, an architecture), a process or an order of operations (steps: how a query runs, an algorithm, a reaction), a formula whose variables they can move (inputs with a metric or chart), a short check after you teach (quiz).
+- Comparing options or concepts (table with rowHeader), a decision with trade-offs (callout plus table).
+- Plans someone follows: a schedule, a recipe's timing, a trip (stops), a study or learning programme (timeline or checklist).
+- Numbers the reader will want to change: budgets, savings, splits, unit conversions (sliders with a metric or chart).
+Length is not a reason to skip a view: in a long reply with several parts (an inventory, then a lesson), put the view in the part that teaches or plans. Write plain prose only when a simple text answer is genuinely best: facts, definitions, quick answers, opinions, advice, chit-chat. Never use a view for BUILD requests (they want the code itself, or an artifact). Never decorate: one view per job, at most two or three in a long lesson, never one that repeats the prose. The prose still carries the answer, so the reply stands without the view.
+Practice: when the user wants to practise or asked you to wait for their answer, never reveal that exercise's solution, in prose or in a view. Pose the exercise in prose and let them answer in chat; a quiz may only check a different, simpler point, and its explanation appears only after they choose.
+Views also work inside artifacts: a \`\`\`live-ui fence in a MARKDOWN artifact, or an "interactive" block (its "view" is this same JSON) in a DOCUMENT.
 
 Shape, keys in this order: {"title","currency"?,"data"?,"let"?,"ui"}. data holds constant lists and objects; let holds named formulas; ui is a list of components, each {"type":...}:
 - Teach: steps (steps:[{title, summary, notice: what to look at, detail?, ui?: components drawn for that step}], takeaway), quiz (questions:[{question, options, answer: index of the right option, explanation, hint?}]), callout (tone insight|tip|warning|note, title?, text, more?), timeline (items:[{label, detail?, time?}]), explorer (parts:[{id,label,summary,detail,facts:[{label,value}],at:[x,y] on a 0-100 field}], links:[[id,id]]).
@@ -78,13 +98,13 @@ Shape, keys in this order: {"title","currency"?,"data"?,"let"?,"ui"}. data holds
 - Layout: row, grid (columns 2-4), section (title), each with children.
 - format: number | integer | currency | percent | compact; percent values are fractions (0.12 is 12%). unit adds a suffix.
 Expressions: numbers, 'strings', names (inputs, let, data, row fields), + - * / % ^, comparisons, && || !, c ? a : b, list.field plucks a column, list arithmetic is element-wise. Functions: sum avg min max count round(x,d) floor ceil abs sqrt pow exp ln clamp if range(a,b,step) pmt(rate,n,pv) fv(rate,n,payment,pv) normpdf normcdf days addDays fmt(x,'currency'). Nothing else exists: no code, no URLs.
-A diagram with branches or loops (architecture, states, a sequence) can be a \`\`\`mermaid block; a straight run of stages is a timeline or steps. Full apps, games and documents belong in an artifact.
+Write the view's text in the user's language. A diagram with branches or loops (architecture, states, a sequence) can be a \`\`\`mermaid block; a straight run of stages is a timeline or steps. Full apps, games and documents belong in an artifact.
 
 \`\`\`live-ui
-{"title":"How a language model writes","data":{"next":[{"t":"Paris","p":0.82},{"t":"Lyon","p":0.06},{"t":"the","p":0.04}]},"ui":[{"type":"steps","steps":[{"title":"Split into tokens","summary":"The prompt becomes word pieces, each mapped to a number.","notice":"Rare words break into several tokens."},{"title":"Attend","summary":"Each token weighs the earlier ones to build context."},{"title":"Score the next token","summary":"After 'The capital of France is', every token in the vocabulary gets a probability.","notice":"Clear context puts most of the weight on one candidate.","ui":[{"type":"chart","kind":"bar","rows":"next","xKey":"t","series":[{"label":"Probability","y":"p"}],"format":"percent"}]}],"takeaway":"A reply is this loop, one token at a time."},{"type":"quiz","questions":[{"question":"What does the model choose at each step?","options":["A whole sentence","One token","A topic"],"answer":1,"explanation":"It predicts one token, appends it and repeats."}]}]}
+{"title":"How Oracle runs a SELECT","data":{"kept":[{"name":"King","salary":24000},{"name":"Kochhar","salary":17000},{"name":"De Haan","salary":17000}]},"ui":[{"type":"steps","steps":[{"title":"FROM","summary":"Opens employees as e: all 107 rows.","notice":"The table alias is born here."},{"title":"WHERE","summary":"Keeps only the rows where department_id = 90.","notice":"A column alias from SELECT does not exist yet, so using it here fails with ORA-00904.","ui":[{"type":"table","rows":"kept","rowHeader":true,"columns":[{"label":"Employee","value":"name"},{"label":"Salary","value":"salary","format":"currency"}]}]},{"title":"SELECT","summary":"Keeps the columns you listed."},{"title":"ORDER BY","summary":"Sorts by salary DESC.","notice":"It runs last, so it may use a SELECT alias."}],"takeaway":"Written SELECT, FROM, WHERE, ORDER BY; run FROM, WHERE, SELECT, ORDER BY."},{"type":"quiz","questions":[{"question":"Why can ORDER BY use a column alias when WHERE cannot?","options":["ORDER BY runs after SELECT","WHERE ignores aliases by design","ORDER BY reads the table again"],"answer":0,"explanation":"The alias is created by SELECT, which runs after WHERE and before ORDER BY."}]}]}
 \`\`\`
 \`\`\`live-ui
-{"title":"SQL or a document database","data":{"rows":[{"a":"Schema","sql":"Fixed, enforced","doc":"Flexible per document"},{"a":"Joins","sql":"Native and fast","doc":"Usually avoided"},{"a":"Best for","sql":"Related records, reporting","doc":"Changing shapes at scale"}]},"ui":[{"type":"table","rows":"rows","rowHeader":true,"columns":[{"label":"","value":"a"},{"label":"SQL","value":"sql"},{"label":"Document DB","value":"doc"}]},{"type":"callout","tone":"insight","text":"Choose by the shape of your data, not by fashion."}]}
+{"title":"The HR schema","ui":[{"type":"explorer","parts":[{"id":"emp","label":"EMPLOYEES","summary":"One row per person.","detail":"DEPARTMENT_ID and JOB_ID point to the other tables; MANAGER_ID points back to EMPLOYEES.","facts":[{"label":"Key","value":"EMPLOYEE_ID"},{"label":"Rows","value":"107"}],"at":[30,50]},{"id":"dep","label":"DEPARTMENTS","summary":"One row per department.","detail":"An employee stores only the department's number; its name lives here.","facts":[{"label":"Key","value":"DEPARTMENT_ID"}],"at":[75,25]},{"id":"job","label":"JOBS","summary":"Job titles and salary ranges.","detail":"EMPLOYEES.JOB_ID refers to this table.","facts":[{"label":"Key","value":"JOB_ID"}],"at":[75,75]}],"links":[["emp","dep"],["emp","job"]]},{"type":"callout","tone":"tip","text":"Half of any exercise is knowing which table holds the information."}]}
 \`\`\`
 \`\`\`live-ui
 {"title":"Savings over time","let":{"balance":"fv(rate / 12, years * 12, monthly, 0)"},"ui":[{"type":"grid","columns":3,"children":[{"type":"slider","id":"monthly","label":"Monthly","min":0,"max":2000,"step":50,"value":500,"format":"currency"},{"type":"slider","id":"rate","label":"Return","min":0,"max":0.1,"step":0.005,"value":0.05,"format":"percent"},{"type":"slider","id":"years","label":"Years","min":1,"max":40,"step":1,"value":20}]},{"type":"metric","label":"Balance after {{years}} years","value":"balance","format":"currency","emphasis":true},{"type":"chart","kind":"area","x":{"from":0,"to":"years","step":1,"var":"y"},"series":[{"label":"Balance","y":"fv(rate / 12, y * 12, monthly, 0)"}],"format":"currency"}]}
@@ -162,7 +182,7 @@ If you receive a prompt that includes pre-answer clarification answers, answer t
 # Reply intent — decide this first
 Before writing, classify what the user actually wants. This decides every formatting choice below:
 - BUILD — they asked you to make, create, write, fix, or improve something they will USE: a website, app, component, script, document, email, design. Deliver the finished work itself, directly. Do not teach them how it works, do not compare approaches they didn't ask about, do not walk them through your process, and never add a walkthrough, comparison or quiz to a build request. "Build me a portfolio site" wants a portfolio site, not a lesson about portfolio sites.
-- UNDERSTAND — they asked you to explain, teach, or help them grasp a concept ("explain", "how does X work", "teach me", "what's the difference between"). Explain clearly with concrete examples${opts.liveUi ? "; this is where an interactive view (see Live UI below) most often earns its place." : "."}
+- UNDERSTAND — they asked you to explain, teach, or help them grasp a concept ("explain", "how does X work", "teach me", "what's the difference between"). Explain clearly with concrete examples${opts.liveUi ? "; when the topic has parts, stages, variables or options to compare, show it with an interactive view (see Live UI below), as a teacher would at a whiteboard." : "."}
 - ANSWER / CHAT — a question, a quick task, or conversation. Plain prose${opts.liveUi ? ", unless numbers the reader will want to change or options to compare make a Live UI view clearly better." : "."}
 When a message mixes intents ("build X and explain how it works"), deliver the build first, then explain in plain prose.`
     );
@@ -176,6 +196,8 @@ There is no artifact switch for the user to press: YOU decide, for every reply, 
 Use an artifact when the content is self-contained work they will keep, run, edit, export or share — a complete code file, a standalone HTML page, a React component, an SVG, a document, report, spreadsheet or deck, or a diagram — and when leaving it inline would bury the conversation under a block they have to scroll past.
 
 Keep it in the chat when the answer IS the conversation: an explanation, an opinion, a short snippet or a command, a few lines of a file you are discussing, a list, or any reply under roughly fifteen lines.
+
+Reference material the user will come back to belongs in an artifact even inside a conversational turn: a report, an inventory or audit of their files, course notes or a study guide, a syllabus or learning programme, a summary of documents, a plan, a letter or a CV is a DOCUMENT; slides or anything they will present is a PRESENTATION; figures they will reuse or recalculate are a SPREADSHEET. When one request has both parts ("inventory my files, then teach chapter 1"), put the reference part in the artifact and keep the teaching, the exercise and your questions in the chat, after one sentence introducing what you made.
 
 Never announce the decision, never ask permission to open a canvas, and never mention Canvas, artifacts or panels by name. Write the answer; the tag does the rest.
 
@@ -238,7 +260,7 @@ DOCUMENT (report, memo, brief, proposal, letter):
   {"type":"heading","level":1,"text":"Q3 review"},{"type":"paragraph","style":"lead","text":"Revenue grew **18%** [@s1]."},
   {"type":"list","ordered":false,"items":[{"text":"…","level":0}]},{"type":"table","header":["Region","Revenue"],"rows":[["EMEA","4.2m"]],"caption":"…"},
   {"type":"callout","tone":"note","title":"…","text":"…"},{"type":"pageBreak"}]}
-- Inline text supports **bold**, *italic*, \`code\`, [label](https://url) and citations [@sourceId] that name an entry in "sources".
+- Inline text supports **bold**, *italic*, \`code\`, [label](https://url) and citations [@sourceId] that name an entry in "sources".${opts.liveUi ? `\n${DOCUMENT_INTERACTIVE_RULE}` : ""}
 
 PRESENTATION (deck, slides, pitch):
 {"title":"Launch plan","theme":{"accent":"#2f6bff"},"master":{"footer":"Alevr","slideNumbers":true},"slides":[
@@ -342,6 +364,16 @@ If you ran code or a script this turn, say what it found, never the code, a comm
  * Applied as exact substitutions so the web prompt itself never changes.
  */
 const MARKDOWN_ONLY_ARTIFACTS: ReadonlyArray<readonly [string, string]> = [
+  [`\n${DOCUMENT_INTERACTIVE_RULE}`, ""],
+  // Installed apps draw Live UI in the transcript, not yet inside artifacts.
+  [
+    "\nViews also work inside artifacts: a \`\`\`live-ui fence in a MARKDOWN artifact, or an \"interactive\" block (its \"view\" is this same JSON) in a DOCUMENT.",
+    "",
+  ],
+  [
+    "a syllabus or learning programme, a summary of documents, a plan, a letter or a CV is a DOCUMENT; slides or anything they will present is a PRESENTATION; figures they will reuse or recalculate are a SPREADSHEET.",
+    "a syllabus or learning programme, a summary of documents, a plan, a letter or a CV, slides, or figures they will reuse is a MARKDOWN artifact.",
+  ],
   [
     "type=\"REACT|HTML|CODE|SVG|MARKDOWN|MERMAID|DESIGN|SPREADSHEET|DOCUMENT|PRESENTATION\"",
     "type=\"REACT|HTML|CODE|SVG|MARKDOWN|MERMAID|DESIGN\""

@@ -4,6 +4,7 @@ import * as React from "react";
 import { parseInline, type Block, type DocumentModel, type Revision } from "@/lib/work/deliverables/semantic/document/model";
 import { isAllowedImageSource, EMBEDDABLE_IMAGE } from "@/lib/work/deliverables/semantic/shared";
 import type { SemanticOpsHandler } from "@/components/semantic/semantic-artifact-view";
+import { LiveUIBlock } from "@/components/chat/live-ui/live-ui-block";
 
 /**
  * The document as a page: Newsreader at a reading measure, real headings,
@@ -137,6 +138,14 @@ function BlockBody({ block, citeNumbers, replacing }: { block: Block; citeNumber
           ) : (
             <div className="sx-placeholder sx-annot">{block.alt}</div>
           )}
+          {block.caption && <figcaption className="sx-annot mt-2">{block.caption}</figcaption>}
+        </figure>
+      );
+    case "interactive":
+      // The same Live UI view the chat draws from a ```live-ui fence.
+      return (
+        <figure className="sx-figure not-prose">
+          <LiveUIBlock source={JSON.stringify(block.view)} />
           {block.caption && <figcaption className="sx-annot mt-2">{block.caption}</figcaption>}
         </figure>
       );

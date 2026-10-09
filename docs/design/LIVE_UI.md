@@ -167,18 +167,34 @@ the cache prefix holds). It is on for the web and for native builds that
 declare the `live_ui` client feature (`src/lib/chat/client-features.ts`);
 shipped native builds that cannot render it never see it. Never in voice mode.
 
-The model decides on its own, as it writes, whether a view makes the answer
-clearly better; the user never has to ask. When: how something works or a
-process with stages (steps), options side by side (table), what-ifs with
-numbers (inputs + metric/chart), checking understanding after teaching (quiz),
-the parts of a system (explorer), a plan to work through (checklist).
-When not: simple facts, definitions, quick answers, opinions, chit-chat, and
-BUILD requests (they want the code itself or an artifact). Never decorate:
-usually one view, two only when they do different jobs, always with prose that
-states the answer on its own. The examples are an explanation (steps + quiz), a
-comparison (table + callout) and a calculator. A diagram with branches or
-loops may be a ```` ```mermaid ```` block; a straight run of stages is a
-timeline or steps.
+The model decides on its own, as it writes; the user never has to ask. Since
+2026-10-09 the defaults follow ChatGPT's Intelligent UI
+(openai.com/index/gpt-6-for-everyone): visual and interactive by default to
+explain how something works, to compare, to follow a plan or to move a number,
+and plain text when that is the most useful answer. The first version asked
+for a view only when it was "clearly better", and models taught whole lessons
+from the user's course documents in prose. The section now names the triggers
+(lessons and revision from the user's documents, a system's parts, an order of
+operations, formulas with variables, comparisons, schedules and learning
+programmes, budgets), says that a long multi-part reply is a reason to put the
+view in the part that teaches, and adds a practice rule: when the user wants to
+answer an exercise themselves, no view or prose reveals its solution, and a
+quiz may only check a different, simpler point. When not: facts, definitions,
+quick answers, opinions, advice, chit-chat and BUILD requests. Never decorate:
+one view per job, at most two or three in a long lesson, always with prose that
+states the answer on its own. The examples are a process taught from a course
+(steps with a table + quiz), a system's parts (explorer + callout) and a
+calculator. A diagram with branches or loops may be a ```` ```mermaid ````
+block; a straight run of stages is a timeline or steps.
+
+**In artifacts.** A MARKDOWN artifact renders ```` ```live-ui ```` fences with
+the chat's own Markdown renderer. A DOCUMENT artifact has an `interactive`
+block (`{"type":"interactive","view":{…},"caption"?}`), validated as a Live UI
+view of at most 24,000 characters; the canvas runs it, and the plain text, the
+outline and the .docx keep its readable parts (`src/lib/live-ui/summary.ts`:
+steps, timelines, quiz questions without answers, an explorer's parts,
+callouts, checklists, stops). The block is taught only when Live UI is on, and
+installed apps (markdown-only artifacts) are never told about it.
 
 Clients without `live_ui` (shipped native builds before 9b14e12d) get plain
 prose: no views and no old blocks. Those builds still contain the old block

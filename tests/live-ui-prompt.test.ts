@@ -45,10 +45,26 @@ test("the model decides on its own, with judgement, and the examples cover expla
   assert.match(LIVE_UI_SECTION, /Decide for yourself/);
   assert.match(LIVE_UI_SECTION, /the user never has to ask/);
   assert.match(LIVE_UI_SECTION, /Never decorate/);
-  assert.match(LIVE_UI_SECTION, /never use a view for BUILD requests/);
+  assert.match(LIVE_UI_SECTION, /Never use a view for BUILD requests/);
+  // ChatGPT-style defaults (owner, 2026-10-09): lessons from the user's
+  // documents, long multi-part replies and plans all name a view.
+  assert.match(LIVE_UI_SECTION, /reach for one by default/);
+  assert.match(LIVE_UI_SECTION, /a course or revision from the user's documents/);
+  assert.match(LIVE_UI_SECTION, /Length is not a reason to skip a view/);
+  assert.match(LIVE_UI_SECTION, /study or learning programme/);
   const types = [...LIVE_UI_SECTION.matchAll(/"type":"([a-z]+)"/g)].map((m) => m[1]);
-  for (const t of ["steps", "quiz", "table", "callout", "slider", "metric", "chart"]) assert.ok(types.includes(t), t);
+  for (const t of ["steps", "quiz", "table", "callout", "slider", "metric", "chart", "explorer"]) assert.ok(types.includes(t), t);
   assert.ok(LIVE_UI_SECTION.includes('"rowHeader":true'));
+});
+
+test("a practice turn never leaks the exercise's solution", () => {
+  assert.match(LIVE_UI_SECTION, /never reveal that exercise's solution, in prose or in a view/);
+  assert.match(LIVE_UI_SECTION, /a quiz may only check a different, simpler point/);
+});
+
+test("views are taught for artifacts too: a MARKDOWN fence and a DOCUMENT interactive block", () => {
+  assert.match(LIVE_UI_SECTION, /a ```live-ui fence in a MARKDOWN artifact/);
+  assert.match(LIVE_UI_SECTION, /an "interactive" block \(its "view" is this same JSON\) in a DOCUMENT/);
 });
 
 test("the head stays identical across users with Live UI on", () => {
@@ -58,9 +74,9 @@ test("the head stays identical across users with Live UI on", () => {
 });
 
 test("the section stays compact (it is paid on every turn)", () => {
-  // It replaced the ~6,000-character learning-blocks section, so the head
-  // with Live UI on is shorter than it was before.
-  assert.ok(LIVE_UI_SECTION.length < 5600, `Live UI section is ${LIVE_UI_SECTION.length} chars`);
+  // Grew from ~5,300 to ~7,000 characters on 2026-10-09 when the triggers
+  // were named (ChatGPT-style defaults); keep it under this ceiling.
+  assert.ok(LIVE_UI_SECTION.length < 7400, `Live UI section is ${LIVE_UI_SECTION.length} chars`);
 });
 
 function walk(list: readonly LiveComponent[], out: LiveComponent[] = []): LiveComponent[] {
