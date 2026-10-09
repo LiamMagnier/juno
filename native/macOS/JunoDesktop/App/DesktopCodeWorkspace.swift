@@ -1682,7 +1682,7 @@ private struct DesktopCodeRemoteCanvas: View {
     private var placeholder: String {
         guard let summary else { return "This session is not available" }
         if summary.fresh == false { return "That computer has stopped checking in" }
-        if summary.isRunning { return "Alevr is working — your message is queued" }
+        if summary.isRunning { return "Alevr is working. Your message is queued." }
         return "Send a message to this session"
     }
 

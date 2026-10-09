@@ -88,16 +88,15 @@ struct CodeV2OrchestratePicker: View {
                     }
                     if draft.candidates.count < CodeV2RoleDraft.candidateRange.upperBound {
                         Button { draft.setCandidateCount(draft.candidates.count + 1) } label: {
-                            HStack(spacing: JunoSpace.snug) {
-                                JunoIconView(.plus, size: 13)
-                                Text("Add candidate")
-                                Spacer(minLength: 0)
+                            CodeV2RowFace(height: 32) {
+                                HStack(spacing: JunoSpace.snug) {
+                                    JunoIconView(.plus, size: 13)
+                                    Text("Add candidate")
+                                    Spacer(minLength: 0)
+                                }
+                                .studioType(.text)
+                                .foregroundStyle(Studio.Ink.secondary)
                             }
-                            .studioType(.text)
-                            .foregroundStyle(Studio.Ink.secondary)
-                            .padding(.horizontal, JunoSpace.snug)
-                            .frame(height: 32)
-                            .contentShape(.rect)
                         }
                         .buttonStyle(.plain)
                     }
@@ -159,6 +158,7 @@ struct CodeV2OrchestratePicker: View {
             .menuStyle(.button).menuIndicator(.hidden)
             .buttonStyle(CodeV2FooterButtonStyle(compact: true)).fixedSize()
             .help("A hard stop for the run's Alevr spend. Subscriptions count against their own plans.")
+                .contentShape(.rect)
             Spacer(minLength: 0)
             Text("\(CodeV2ContextMath.estimate(estimate)) a run")
                 .studioType(.small).monospacedDigit().foregroundStyle(Studio.Ink.secondary)
@@ -173,14 +173,14 @@ struct CodeV2OrchestratePicker: View {
         VStack(spacing: 0) {
             HStack(spacing: JunoSpace.snug) {
                 Button { editing = nil } label: {
-                    HStack(spacing: JunoSpace.tight) {
-                        JunoIconView(.chevronLeft, size: 12)
-                        Text(title(role))
+                    CodeV2RowFace(height: 28, horizontal: 0) {
+                        HStack(spacing: JunoSpace.tight) {
+                            JunoIconView(.chevronLeft, size: 12)
+                            Text(title(role))
+                        }
+                        .studioType(.textMedium)
+                        .foregroundStyle(Studio.Ink.primary)
                     }
-                    .studioType(.textMedium)
-                    .foregroundStyle(Studio.Ink.primary)
-                    .frame(minHeight: 28)
-                    .contentShape(.rect)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Back to the team")
@@ -188,6 +188,7 @@ struct CodeV2OrchestratePicker: View {
                 if removable(role) {
                     Button("Remove") { set(role, nil); editing = nil }
                         .buttonStyle(StudioQuietButtonStyle())
+                        .contentShape(.rect)
                 }
             }
             .padding(.horizontal, JunoSpace.cozy)
@@ -301,11 +302,11 @@ struct CodeV2Stepper: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            Button { set(value - 1) } label: { JunoIconView(.minus, size: 11).frame(width: 28, height: 28).contentShape(.rect) }
-                .buttonStyle(.plain).disabled(value <= range.lowerBound).accessibilityLabel("Fewer")
+            Button { set(value - 1) } label: { JunoIconView(.minus, size: 11) }
+                .buttonStyle(StudioIconButtonStyle()).contentShape(.rect).disabled(value <= range.lowerBound).accessibilityLabel("Fewer")
             Text("\(value)").studioType(.small).monospacedDigit().frame(minWidth: 14)
-            Button { set(value + 1) } label: { JunoIconView(.plus, size: 11).frame(width: 28, height: 28).contentShape(.rect) }
-                .buttonStyle(.plain).disabled(value >= range.upperBound).accessibilityLabel("More")
+            Button { set(value + 1) } label: { JunoIconView(.plus, size: 11) }
+                .buttonStyle(StudioIconButtonStyle()).contentShape(.rect).disabled(value >= range.upperBound).accessibilityLabel("More")
         }
         .foregroundStyle(Studio.Ink.secondary)
     }

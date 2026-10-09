@@ -244,6 +244,7 @@ public struct CodeV2AgentsPane: View {
                         ForEach(nodes) { node in
                             Button { selected = node.agentId } label: { row(node) }
                                 .buttonStyle(CodeV2RowButtonStyle())
+                                .contentShape(.rect)
                         }
                     }
                 }
@@ -291,6 +292,7 @@ public struct CodeV2AgentsPane: View {
                 Spacer()
                 if let stop, node.status == .running || node.status == .waiting {
                     Button("Stop") { stop(node.agentId) }.buttonStyle(.borderless)
+                        .contentShape(.rect)
                 }
             }
             .padding(.horizontal, JunoSpace.regular)
@@ -401,6 +403,7 @@ public struct CodeV2BestOfNCompare: View {
                             row(candidate, letter: letter(index), isSelected: selected == candidate.id)
                         }
                         .buttonStyle(.plain)
+                            .contentShape(.rect)
                     }
                 }
                 .padding(JunoSpace.tight + 2)
@@ -413,6 +416,7 @@ public struct CodeV2BestOfNCompare: View {
                     Button("Keep \(letter(index))") { keep(candidates[index].id) }
                         .buttonStyle(CodeV2InkButtonStyle())
                         .disabled(!candidates[index].isFinished)
+                        .contentShape(.rect)
                 }
             }
             .padding(.horizontal, JunoSpace.regular)

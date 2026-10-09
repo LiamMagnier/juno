@@ -108,6 +108,7 @@ struct CodeV2ComposerLeading: View {
             .buttonStyle(CodeV2FooterButtonStyle()).fixedSize()
             .help("Plan first, then build when you approve")
             .accessibilityLabel("Plan mode")
+                .contentShape(.rect)
         }
         if model.runtimeMode != CodeV2PermissionCopy.defaultMode {
             Menu {
@@ -124,6 +125,7 @@ struct CodeV2ComposerLeading: View {
             .help(model.runtimeMode.summary)
             .accessibilityLabel("Permissions")
             .accessibilityValue(model.runtimeMode.title)
+                .contentShape(.rect)
         }
         if let computerUse, computerUse.wrappedValue {
             Menu {
@@ -135,6 +137,7 @@ struct CodeV2ComposerLeading: View {
             .buttonStyle(CodeV2FooterButtonStyle()).fixedSize()
             .help("Alevr may use apps on this Mac. Esc stops it.")
             .accessibilityLabel("Computer use")
+                .contentShape(.rect)
         }
         // The keyboard paths stay where the controls went: ⇧⌘A cycles the
         // permission, ⇧⌘E the effort.
@@ -143,9 +146,11 @@ struct CodeV2ComposerLeading: View {
                 Button("") { model.cycleMode(allowed: modes) }
                     .keyboardShortcut("a", modifiers: [.command, .shift])
                     .hidden()
+                    .contentShape(.rect)
                 Button("") { model.cycleEffort(levels: providerModel?.effortLevels ?? []) }
                     .keyboardShortcut("e", modifiers: [.command, .shift])
                     .hidden()
+                    .contentShape(.rect)
             }
             .accessibilityHidden(true)
     }
@@ -217,6 +222,7 @@ struct CodeV2QueuedMenu: View {
         .help("Follow-ups that send when the run finishes. ⌘↩ steers now.")
         .accessibilityLabel("Queued follow-ups")
         .accessibilityValue("\(queue.count)")
+            .contentShape(.rect)
     }
 }
 
@@ -327,6 +333,7 @@ public struct CodeV2ContextStrip: View {
             } label: { label }
                 .menuStyle(.button).menuIndicator(.hidden)
                 .buttonStyle(CodeV2FooterButtonStyle(compact: true)).fixedSize()
+                .contentShape(.rect)
         }
     }
 }
@@ -382,8 +389,11 @@ struct CodeV2ApprovalTakeover: View {
                         .fixedSize(horizontal: false, vertical: showsReason)
                     if !showsReason {
                         Button("More") { showsReason = true }
-                            .buttonStyle(.link)
+                            .buttonStyle(.plain)
                             .studioType(.small)
+                            .foregroundStyle(Studio.Ink.primary)
+                            .underline(color: Studio.Ink.tertiary)
+                            .contentShape(.rect)
                     }
                 }
             }
@@ -395,6 +405,7 @@ struct CodeV2ApprovalTakeover: View {
                     .menuStyle(.button).menuIndicator(.hidden)
                     .buttonStyle(StudioIconButtonStyle()).fixedSize()
                     .help("More").accessibilityLabel("More")
+                    .contentShape(.rect)
             }
             Spacer(minLength: 0)
             if options.contains(.decline) {
@@ -402,20 +413,24 @@ struct CodeV2ApprovalTakeover: View {
                     .buttonStyle(.borderless)
                     .keyboardShortcut(.cancelAction)
                     .help("Deny (Esc)")
+                    .contentShape(.rect)
             }
             if request.action == .fileChange, let showDiff {
                 Button("Review", action: showDiff).buttonStyle(.bordered)
+                    .contentShape(.rect)
             } else if options.contains(.acceptForSession) {
                 Button("Allow for Session") { respond(.acceptForSession) }
                     .buttonStyle(.bordered)
                     .keyboardShortcut(.return, modifiers: [.command, .shift])
                     .help("Allow for this session (⇧⌘↩)")
+                    .contentShape(.rect)
             }
             if options.contains(.accept) {
                 Button(request.action == .fileChange ? "Allow" : "Allow Once") { respond(.accept) }
                     .buttonStyle(CodeV2InkButtonStyle())
                     .keyboardShortcut(.defaultAction)
                     .help("Allow once (↩)")
+                    .contentShape(.rect)
             }
         }
         .onKeyPress(.leftArrow) { move?(-1); return move == nil ? .ignored : .handled }
@@ -505,6 +520,7 @@ struct CodeV2QuestionTakeover: View {
                                     chosen[question.id] = set
                                 }
                                 .buttonStyle(CodeV2ChoiceButtonStyle(isOn: on))
+                                    .contentShape(.rect)
                             }
                         }
                     } else {
@@ -526,6 +542,7 @@ struct CodeV2QuestionTakeover: View {
             }
             .buttonStyle(CodeV2InkButtonStyle())
             .keyboardShortcut(.defaultAction)
+                .contentShape(.rect)
         }
     }
 }
@@ -567,11 +584,13 @@ struct CodeV2LimitedNotice: View {
                 Button("Wait", action: resumeAtReset)
                     .buttonStyle(.bordered)
                     .help("Continue when the plan window resets")
+                    .contentShape(.rect)
             }
             if let switchModel {
                 Button("Switch to Alevr", action: switchModel)
                     .buttonStyle(CodeV2InkButtonStyle())
                     .keyboardShortcut(.defaultAction)
+                    .contentShape(.rect)
             }
         }
     }

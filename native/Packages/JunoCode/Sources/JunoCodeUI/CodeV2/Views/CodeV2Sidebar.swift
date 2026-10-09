@@ -88,9 +88,8 @@ public struct CodeSidebarSessionRow: View {
     private var trailing: some View {
         if hovering, let archive {
             Button(action: archive) { JunoIconView(.archive, size: 13) }
-                .buttonStyle(.plain)
-                .foregroundStyle(Studio.Ink.secondary)
-                .frame(width: 20, height: 20)
+                .buttonStyle(StudioIconButtonStyle())
+                .contentShape(.rect)
                 .help("Archive")
                 .accessibilityLabel("Archive")
         } else {
@@ -156,15 +155,14 @@ public struct CodeSidebarHeader<ProjectMenu: View>: View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: JunoSpace.tight) {
                 Button(action: search) {
-                    HStack(spacing: JunoSpace.snug + 2) {
-                        JunoIconView(.search, size: 15)
-                        Text("Search")
-                        Spacer(minLength: 0)
+                    CodeV2RowFace(height: 30) {
+                        HStack(spacing: JunoSpace.snug + 2) {
+                            JunoIconView(.search, size: 15)
+                            Text("Search")
+                            Spacer(minLength: 0)
+                        }
+                        .foregroundStyle(Color.junoSidebarInk)
                     }
-                    .foregroundStyle(Color.junoSidebarInk)
-                    .padding(.leading, JunoSpace.snug)
-                    .frame(height: 30)
-                    .contentShape(.rect)
                 }
                 .buttonStyle(.plain)
                 .help("Search sessions and commands (⌘K)")
@@ -176,19 +174,19 @@ public struct CodeSidebarHeader<ProjectMenu: View>: View {
                 .help("New session (⌘N)")
                 .accessibilityLabel("New session")
                 .accessibilityIdentifier("juno.code.new-conversation")
+                    .contentShape(.rect)
             }
             Menu {
                 projectMenu()
             } label: {
-                HStack(spacing: JunoSpace.tight) {
-                    Text(projectTitle)
-                    JunoIconView(.chevronDown, size: 9)
+                CodeV2RowFace(height: 28) {
+                    HStack(spacing: JunoSpace.tight) {
+                        Text(projectTitle)
+                        JunoIconView(.chevronDown, size: 9)
+                    }
+                    .studioType(.small)
+                    .foregroundStyle(Studio.Ink.secondary)
                 }
-                .studioType(.small)
-                .foregroundStyle(Studio.Ink.secondary)
-                .padding(.leading, JunoSpace.snug)
-                .frame(height: 28)
-                .contentShape(.rect)
             }
             .menuStyle(.button)
             .menuIndicator(.hidden)
@@ -215,16 +213,16 @@ public struct CodeSidebarFold: View {
 
     public var body: some View {
         Button { isOpen.toggle() } label: {
-            HStack(spacing: JunoSpace.snug) {
-                Text("\(title) (\(count))").studioType(.smallMedium).monospacedDigit()
-                Rectangle().fill(Studio.Surface.hairline).frame(height: 1)
-                JunoIconView(.chevronDown, size: 9)
-                    .rotationEffect(.degrees(isOpen ? 180 : 0))
+            CodeV2RowFace(height: 28, horizontal: 0) {
+                HStack(spacing: JunoSpace.snug) {
+                    Text("\(title) (\(count))").studioType(.smallMedium).monospacedDigit()
+                    CodeV2Rule()
+                    JunoIconView(.chevronDown, size: 9)
+                        .rotationEffect(.degrees(isOpen ? 180 : 0))
+                }
+                .foregroundStyle(Studio.Ink.secondary)
+                .padding(.leading, 6)
             }
-            .foregroundStyle(Studio.Ink.secondary)
-            .padding(.leading, 6)
-            .frame(height: 28)
-            .contentShape(.rect)
         }
         .buttonStyle(.plain)
         .accessibilityLabel("\(title), \(count)")

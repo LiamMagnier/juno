@@ -85,6 +85,7 @@ public struct CodeV2EnvDockView: View {
                         .keyboardShortcut(.cancelAction)
                         .help("Stop using the computer (Esc)")
                         .padding(.trailing, JunoSpace.tight)
+                        .contentShape(.rect)
                 )
             }
         ) { tab in

@@ -129,6 +129,7 @@ struct CodeV2ContextCard: View {
                 Button("Compact Now", action: compact)
                     .buttonStyle(.bordered).controlSize(.small)
                     .padding(.top, JunoSpace.tight)
+                    .contentShape(.rect)
             }
         }
         .padding(JunoSpace.cozy)

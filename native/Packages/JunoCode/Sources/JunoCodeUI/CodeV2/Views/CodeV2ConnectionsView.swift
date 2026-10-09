@@ -216,16 +216,20 @@ public struct CodeV2ConnectionsView: View {
             case .notInstalled:
                 Button("Install") { Task { await hub.openSetup(for: instance.id, action: .install) } }
                     .help("Alevr opens a terminal with the install command so you can read it first.")
+                    .contentShape(.rect)
             case .signedOut:
                 Button(expired ? "Sign In Again" : "Sign In") { Task { await hub.openSetup(for: instance.id, action: .login) } }
+                    .contentShape(.rect)
             case .error, .unknown:
                 Button("Re-check") { Task { await hub.probe(instance.id) } }
+                    .contentShape(.rect)
             case .ready, .limited:
                 Menu("Manage") {
                     Button("Re-check") { Task { await hub.probe(instance.id) } }
                     Button("Sign In Again") { Task { await hub.openSetup(for: instance.id, action: .login) } }
                 }
                 .fixedSize()
+                    .contentShape(.rect)
             }
         }
     }

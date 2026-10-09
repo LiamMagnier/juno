@@ -343,6 +343,7 @@ struct CodeV2ModelPicker: View {
                             )
                         }
                     }
+                        .contentShape(.rect)
                 }
                 if selectedModel?.supportsFast == true {
                     Toggle("Fast", isOn: Binding(get: { selection.fast == true }, set: { selection.fast = $0 }))

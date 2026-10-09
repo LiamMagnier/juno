@@ -252,3 +252,24 @@ struct CodeV2SectionHeading: View {
             .padding(.bottom, JunoSpace.tight)
     }
 }
+
+/// A 1pt hairline that fills its width: the fold lines.
+struct CodeV2Rule: View {
+    var body: some View {
+        Rectangle().fill(Studio.Surface.hairline).frame(height: 1)
+    }
+}
+
+/// A row's face at a fixed height: the label, padded, filling the row.
+struct CodeV2RowFace<Content: View>: View {
+    var height: CGFloat
+    var horizontal: CGFloat = JunoSpace.snug
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        content()
+            .padding(.horizontal, horizontal)
+            .frame(height: height)
+            .contentShape(.rect)
+    }
+}

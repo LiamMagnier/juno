@@ -82,6 +82,7 @@ public struct CodeV2Dock: View {
                         .buttonStyle(StudioIconButtonStyle())
                         .help("Close the panel")
                         .accessibilityLabel("Close panel")
+                        .contentShape(.rect)
                 }
             }
             .padding(.horizontal, JunoSpace.snug)
@@ -180,6 +181,7 @@ public struct CodeV2ChangesPane: View {
                 }
                 .menuStyle(.button).menuIndicator(.hidden)
                 .buttonStyle(CodeV2FooterButtonStyle(compact: true)).fixedSize()
+                    .contentShape(.rect)
                 CodeV2DiffCounts(additions: additions, deletions: deletions)
                 Spacer()
                 Menu {
@@ -193,10 +195,12 @@ public struct CodeV2ChangesPane: View {
                 .buttonStyle(StudioIconButtonStyle()).fixedSize()
                 .help("View options")
                 .accessibilityLabel("View options")
+                    .contentShape(.rect)
                 if let commit {
                     Button("Commit…", action: commit)
                         .buttonStyle(.bordered).controlSize(.small)
                         .disabled(files.isEmpty)
+                        .contentShape(.rect)
                 }
             }
             .padding(.horizontal, JunoSpace.snug)
@@ -318,6 +322,7 @@ struct CodeV2Hunk: View {
                 Button("Revert", action: revert)
                     .buttonStyle(.bordered).controlSize(.small)
                     .padding(.horizontal, JunoSpace.snug).padding(.top, 2)
+                    .contentShape(.rect)
             }
         }
         .opacity(decision == .rejected ? 0.5 : 1)

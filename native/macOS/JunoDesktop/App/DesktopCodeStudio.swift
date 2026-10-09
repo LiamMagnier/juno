@@ -593,6 +593,7 @@ struct DesktopCodeSidebar: View {
                 if projectFilter == record.id { projectFilter = nil }
                 Task { await workbench.removeWorkspace(id: record.id) }
             }
+                .contentShape(.rect)
         } message: { _ in
             Text("The folder and its files stay on disk. Alevr stops its running sessions and forgets its access; the sessions stay in your history.")
         }
@@ -615,6 +616,7 @@ struct DesktopCodeSidebar: View {
         } label: {
             if projectFilter == nil { Label("All Projects", image: JunoIcon.check.assetName) } else { Text("All Projects") }
         }
+            .contentShape(.rect)
         ForEach(workbench.workspaces) { record in
             Button {
                 projectFilter = record.id
@@ -625,22 +627,30 @@ struct DesktopCodeSidebar: View {
                     Text(record.descriptor.displayName)
                 }
             }
+                .contentShape(.rect)
         }
         Divider()
         Button("Open Project…", action: openRepository)
             .accessibilityIdentifier("juno.code.add-project")
+            .contentShape(.rect)
         if let projectFilter, let record = workbench.workspaces.first(where: { $0.id == projectFilter }) {
             Button("New Session in \(record.descriptor.displayName)") { newSession(record.id) }
+                .contentShape(.rect)
             Button("Reveal in Finder") {
                 NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: record.descriptor.localPathHint)])
             }
+                .contentShape(.rect)
             Button("Remove from Alevr…", role: .destructive) { projectPendingRemoval = record }
+                .contentShape(.rect)
         }
         Divider()
         Button("Pull Requests") { selection = .pulls }
+            .contentShape(.rect)
         Button("Artifacts") { DesktopPageRouter.shared.open(.artifacts) }
+            .contentShape(.rect)
         ForEach(JunoShellCodeSidebar.More.items, id: \.destination) { item in
             Button(item.destination.title) { DesktopSettingsRouter.open(.connectors) }
+                .contentShape(.rect)
         }
     }
 
@@ -745,11 +755,14 @@ struct DesktopCodeSidebar: View {
         case .session(let id):
             if let session = workbench.sessions.first(where: { $0.id == id }) {
                 Button("Rename…") { rename(session) }
+                    .contentShape(.rect)
                 Button(session.isFavorite ? "Unpin" : "Pin") {
                     Task { await workbench.toggleFavorite(id: id) }
                 }
+                    .contentShape(.rect)
                 if let workspaceID = session.workspaceID {
                     Button("New Session in This Project") { newSession(workspaceID) }
+                        .contentShape(.rect)
                 }
                 Divider()
                 sessionShipItems(id)
@@ -758,6 +771,7 @@ struct DesktopCodeSidebar: View {
                     if selection == run.item { selection = nil }
                     Task { await workbench.deleteSession(id: id) }
                 }
+                    .contentShape(.rect)
             }
         case .task(let id):
             if let task = code.tasks.first(where: { $0.id == id }) {
@@ -770,11 +784,13 @@ struct DesktopCodeSidebar: View {
                     Task { await code.cancelOpenTask() }
                 }
                 .disabled(!task.status.isActive)
+                    .contentShape(.rect)
             }
         case .remote(let deviceID, let sessionID):
             Button("Stop") {
                 Task { await remote.stopGeneration(deviceID: deviceID, sessionID: sessionID) }
             }
+                .contentShape(.rect)
         default:
             EmptyView()
         }

@@ -272,6 +272,7 @@ public struct StudioLanding: View {
                     .buttonStyle(.plain)
                     .fixedSize()
                     .help("Choose the project")
+                        .contentShape(.rect)
                     Text("?")
                 }
             } else {
@@ -345,10 +346,13 @@ public struct StudioLanding: View {
                     Text(record.descriptor.displayName)
                 }
             }
+                .contentShape(.rect)
         }
         if !workbench.workspaces.isEmpty { Divider() }
         Button("No Project") { selectProject(nil) }
+            .contentShape(.rect)
         Button("Open Folder…", action: addProject)
+            .contentShape(.rect)
     }
 
     private var projectMenu: some View {
@@ -363,6 +367,7 @@ public struct StudioLanding: View {
         .fixedSize()
         .help("The folder Alevr works in (⌘O to open another)")
         .accessibilityIdentifier("juno.code.launch-project")
+            .contentShape(.rect)
     }
 
     private var environmentMenu: some View {
@@ -395,6 +400,7 @@ public struct StudioLanding: View {
         .fixedSize()
         .help(environment.detail)
         .accessibilityIdentifier("juno.code.launch-target")
+            .contentShape(.rect)
     }
 
     private var environmentIcon: JunoIcon {
@@ -428,6 +434,7 @@ public struct StudioLanding: View {
             .menuIndicator(.hidden)
             .buttonStyle(.plain)
             .fixedSize()
+                .contentShape(.rect)
         }
     }
 
@@ -458,6 +465,7 @@ public struct StudioLanding: View {
             .menuIndicator(.hidden)
             .buttonStyle(.plain)
             .fixedSize()
+                .contentShape(.rect)
         }
     }
 

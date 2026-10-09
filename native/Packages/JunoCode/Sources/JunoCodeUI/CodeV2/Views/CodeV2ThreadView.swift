@@ -102,6 +102,7 @@ struct CodeV2TurnView: View {
                     if hovered, let checkpoint = turn.checkpoint, let edit = actions.editFromHere {
                         Button("Revert to here") { edit(checkpoint.checkpointId) }
                             .buttonStyle(StudioQuietButtonStyle())
+                            .contentShape(.rect)
                     }
                 }
             }
@@ -193,7 +194,7 @@ struct CodeV2FoldHeader: View {
                         .rotationEffect(.degrees(isExpanded ? 90 : 0))
                 }
                 .foregroundStyle(hovering ? Studio.Ink.primary : Studio.Ink.secondary)
-                Rectangle().fill(Studio.Surface.hairline).frame(height: 1)
+                CodeV2Rule()
                 if let time {
                     Text(time, format: .dateTime.hour().minute())
                         .studioType(.small)
@@ -364,8 +365,10 @@ struct CodeV2Receipt: View {
                 Spacer()
                 if let undo {
                     Button("Undo", action: undo).buttonStyle(.borderless)
+                        .contentShape(.rect)
                 }
                 Button("Review", action: review).buttonStyle(.bordered)
+                    .contentShape(.rect)
             }
             .controlSize(.small)
             .padding(.leading, JunoSpace.cozy + 2)
@@ -375,25 +378,25 @@ struct CodeV2Receipt: View {
             VStack(spacing: 0) {
                 ForEach(visible, id: \.path) { file in
                     Button { openFile(file.path) } label: {
-                        HStack(spacing: JunoSpace.snug) {
-                            Text((file.path as NSString).lastPathComponent)
-                                .studioType(.text).foregroundStyle(Studio.Ink.primary).lineLimit(1)
-                            Text((file.path as NSString).deletingLastPathComponent)
-                                .studioType(.small).foregroundStyle(Studio.Ink.secondary)
-                                .lineLimit(1).truncationMode(.head)
-                            Spacer(minLength: JunoSpace.snug)
-                            CodeV2DiffCounts(additions: file.additions ?? 0, deletions: file.deletions ?? 0)
+                        CodeV2RowFace(height: 30, horizontal: JunoSpace.cozy + 2) {
+                            HStack(spacing: JunoSpace.snug) {
+                                Text((file.path as NSString).lastPathComponent)
+                                    .studioType(.text).foregroundStyle(Studio.Ink.primary).lineLimit(1)
+                                Text((file.path as NSString).deletingLastPathComponent)
+                                    .studioType(.small).foregroundStyle(Studio.Ink.secondary)
+                                    .lineLimit(1).truncationMode(.head)
+                                Spacer(minLength: JunoSpace.snug)
+                                CodeV2DiffCounts(additions: file.additions ?? 0, deletions: file.deletions ?? 0)
+                            }
                         }
-                        .padding(.horizontal, JunoSpace.cozy + 2)
-                        .frame(height: 30)
-                        .contentShape(.rect)
                     }
                     .buttonStyle(CodeV2RowButtonStyle())
                 }
                 if files.count > 4, !showsAll {
                     Button("Show all \(files.count)") { showsAll = true }
                         .buttonStyle(StudioQuietButtonStyle())
-                        .frame(height: 30)
+                        .contentShape(.rect)
+                        .padding(.vertical, 3)
                 }
             }
             .padding(.bottom, JunoSpace.tight + 2)
