@@ -490,6 +490,10 @@ struct DesktopProjectChats: View {
             VStack(spacing: 0) {
                 ForEach(rows) { chat in row(chat) }
             }
+            // The hover fill bleeds into the gutter by its own pad, so a
+            // title sits on the column's edge under "Recent" and the row's
+            // trailing keys end on the edge the search field ends on.
+            .padding(.horizontal, -JunoSpace.snug)
         }
     }
 
