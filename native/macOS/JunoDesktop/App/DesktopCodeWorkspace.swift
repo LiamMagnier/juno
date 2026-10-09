@@ -137,14 +137,16 @@ struct DesktopCodeWorkspace: View {
     /// go through the backend proxy with their own billing and tier, roles on
     /// a subscription run as env-server turns in the thread's folder.
     private func subagentProviders(for controller: SessionController) -> CodeV2SubagentProviders {
-        let hub = envHub
+        let instances: [CodeV2.ProviderInstance] = v2Directory.instances
+        let backend = CodeV2SubagentProviders.backendFactory(from: workbenchModel.dependencies.modelClient)
+        let env = CodeV2SubagentProviders.envConnector(envHub)
         return CodeV2SubagentProviders(
-            instances: v2Directory.instances,
-            backend: CodeV2SubagentProviders.backendFactory(from: workbenchModel.dependencies.modelClient),
-            env: hub.isReady ? { try await hub.ready() } : nil,
+            instances: instances,
+            backend: backend,
+            env: env,
             cwd: controller.context?.access.rootURL.path,
             runtimeMode: v2Composer.runtimeMode,
-            approvals: .shared
+            approvals: CodeV2ConnectedApprovalSink.shared
         )
     }
 

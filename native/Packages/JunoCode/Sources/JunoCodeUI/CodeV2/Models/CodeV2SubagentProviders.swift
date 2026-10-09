@@ -103,6 +103,13 @@ public struct CodeV2SubagentProviders: Sendable {
         }
     }
 
+    /// The app's env server as a connector, while it is running.
+    @MainActor
+    public static func envConnector(_ hub: EnvServerHub) -> EnvConnector? {
+        guard hub.isReady else { return nil }
+        return { try await hub.ready() }
+    }
+
     /// `claude-sonnet-5` on an Anthropic key → `anthropic:claude-sonnet-5`.
     static func canonical(_ model: String, lab: CodeV2.ByokProvider) -> String {
         model.contains(":") || model.contains("/") ? model : "\(lab.rawValue):\(model)"

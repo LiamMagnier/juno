@@ -103,7 +103,7 @@ public struct CodeV2TerminalPane: View {
                 Button { Task { await terminal.send(control: .interrupt) } } label: {
                     CodeV2Keycap(keys: "⌃C")
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.plain).contentShape(.rect)
                 .keyboardShortcut("c", modifiers: [.control])
                 .disabled(!terminal.isRunning)
                 .help("Interrupt (⌃C)")
