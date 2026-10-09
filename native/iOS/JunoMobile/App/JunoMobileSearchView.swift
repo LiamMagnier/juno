@@ -157,10 +157,8 @@ struct JunoMobileSearchView: View {
                 }
             }
         } label: {
-            Label(
-                server?.typeFilter?.label ?? "Filter",
-                image: JunoIcon.filter.assetName(server?.typeFilter == nil ? .regular : .fill)
-            )
+            JunoIconView(.filter, size: JunoLayout.Control.glyph, isOn: server?.typeFilter != nil)
+                .accessibilityLabel(server?.typeFilter?.label ?? "Filter")
         }
         .contentShape(.rect)
         .accessibilityIdentifier("juno.mobile.search-filter")

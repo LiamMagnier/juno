@@ -548,7 +548,10 @@ struct JunoMobileArtifactsView: View {
               }
             }
           } label: {
-            Label("Filter", image: JunoIcon.filter.assetName(kindFilter == nil ? .regular : .fill))
+            // Drawn glyphs: a bar item built from `Label(_, image:)` showed
+            // its title in a capsule (docs/native/spacing-pass/AUDIT.md X5).
+            JunoIconView(.filter, size: JunoLayout.Control.glyph, isOn: kindFilter != nil)
+              .accessibilityLabel("Filter")
           }
           .accessibilityIdentifier("juno.mobile.artifacts-filter")
         }
@@ -557,7 +560,8 @@ struct JunoMobileArtifactsView: View {
         Button {
           showingDeleted = true
         } label: {
-          Label("Recently Deleted", image: JunoIcon.trash.assetName(.regular))
+          JunoIconView(.trash, size: JunoLayout.Control.glyph)
+            .accessibilityLabel("Recently Deleted")
         }
         .accessibilityIdentifier("juno.mobile.artifacts-recently-deleted")
       }
