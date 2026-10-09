@@ -55,6 +55,17 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
     /// new-session composer until the first keystroke, `.line` while a run
     /// works. Nil draws none.
     var beam: JunoBorderBeamStyle? = nil
+    /// The beam's colour: Code's fixed signal coral (DESIGN §3.2), never the
+    /// account accent — the glow means "working", not "brand".
+    var beamTint: Color = Studio.Signal.edge
+    /// ⌘↩ while a run works: steer it (Code v2 §5.6). Nil keeps ⌘↩ as send.
+    var steer: (() -> Void)? = nil
+    /// Esc twice within 600 ms while a run works stops it (DESIGN §8).
+    var stopOnDoubleEscape: Bool = false
+    /// Replaces the field and the control row in place: the approval or
+    /// question takeover (DESIGN §5.14). The shell, its position and its
+    /// glow stay; the edge holds coral instead of travelling.
+    var takeover: AnyView? = nil
     @ViewBuilder var leading: () -> Leading
     @ViewBuilder var trailing: () -> Trailing
 
@@ -115,11 +126,16 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .studioHairline(.bottom)
             }
-            if !attachments.isEmpty {
-                attachmentStrip
+            if let takeover {
+                takeover
+                    .transition(.opacity)
+            } else {
+                if !attachments.isEmpty {
+                    attachmentStrip
+                }
+                field
+                controlRow
             }
-            field
-            controlRow
         }
         // Chat's composer material (native Liquid Glass; the web's opaque
         // card under Reduce Transparency), so both products type into one
@@ -136,8 +152,17 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
         .junoBorderBeam(
             cornerRadius: Studio.Radius.composer,
             style: beam ?? .line,
-            isActive: beam != nil && !isDropTargeted
+            isActive: beam != nil && !isDropTargeted && takeover == nil,
+            tint: beamTint
         )
+        // Needs you: the edge holds, brighter, and does not travel.
+        .overlay {
+            if takeover != nil {
+                RoundedRectangle(cornerRadius: Studio.Radius.composer, style: .continuous)
+                    .strokeBorder(Studio.Signal.edge.opacity(0.7), lineWidth: 1.5)
+                    .allowsHitTesting(false)
+            }
+        }
         // Above the composer, never over it. The guide goes on the menu as a
         // whole: set inside the `if` branches it is lost through the
         // conditional, and the list was drawn down over the field being typed in.
@@ -178,6 +203,12 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
                     choose()
                     return .handled
                 }
+                if isRunning, press.modifiers.contains(.command), let steer,
+                   !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                {
+                    steer()
+                    return .handled
+                }
                 if preferences.commandReturnSends, !press.modifiers.contains(.command) {
                     return .ignored
                 }
@@ -198,6 +229,13 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
                 if menuCount > 0 {
                     text += " "
                     return .handled
+                }
+                if stopOnDoubleEscape, isRunning, let stop {
+                    if escapes.press() {
+                        stop()
+                        return .handled
+                    }
+                    return .ignored
                 }
                 guard let rewind, text.isEmpty, attachments.isEmpty else {
                     escapes.reset()
@@ -258,8 +296,9 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
         .padding(.bottom, JunoSpace.snug)
     }
 
-    /// The composer's one accented control, Chat's disc: coral while there is
-    /// something to send or a run to stop, a quiet well while there is not.
+    /// Send / Stop: a 32pt ink disc (Code v2 DESIGN §5.6). Ink, not coral —
+    /// coral is kept for working and needs-you; a quiet well while there is
+    /// nothing to send.
     @ViewBuilder
     private var sendButton: some View {
         if let stop,
@@ -268,9 +307,9 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
         {
             Button(action: stop) {
                 JunoIconView(.stop, size: 10, weight: .fill)
-                    .foregroundStyle(Color.junoOnAccent)
-                    .frame(width: Studio.Metrics.control, height: Studio.Metrics.control)
-                    .background(Circle().fill(Color.junoAccent))
+                    .foregroundStyle(Studio.Surface.canvas)
+                    .frame(width: Studio.Metrics.sendButton, height: Studio.Metrics.sendButton)
+                    .background(Circle().fill(Studio.Ink.primary))
                     .contentShape(Circle())
             }
             .buttonStyle(JunoPressButtonStyle())
@@ -284,9 +323,9 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
         } else {
             Button(action: submit) {
                 JunoIconView(.send, size: 14, weight: .bold)
-                    .foregroundStyle(canSend ? Color.junoOnAccent : Studio.Ink.tertiary)
-                    .frame(width: Studio.Metrics.control, height: Studio.Metrics.control)
-                    .background(Circle().fill(canSend ? Color.junoAccent : Studio.Surface.muted))
+                    .foregroundStyle(canSend ? Studio.Surface.canvas : Studio.Ink.tertiary)
+                    .frame(width: Studio.Metrics.sendButton, height: Studio.Metrics.sendButton)
+                    .background(Circle().fill(canSend ? Studio.Ink.primary : Studio.Surface.muted))
                     .contentShape(Circle())
                     .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint), value: canSend)
             }

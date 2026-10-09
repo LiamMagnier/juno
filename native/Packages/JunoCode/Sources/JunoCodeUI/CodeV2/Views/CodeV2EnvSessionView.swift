@@ -1,0 +1,266 @@
+import SwiftUI
+import JunoCodeCore
+import JunoDesignSystem
+
+/// The centre column for a thread a vendor runtime runs through the env
+/// server (Claude on the user's own `claude`, Codex on their ChatGPT plan,
+/// an ACP agent): the thread, the queue dock and the composer — the same
+/// composer and footer the Alevr engine's threads use.
+public struct CodeV2EnvSessionView: View {
+    let session: CodeV2EnvSession
+    @Bindable var composer: CodeV2ComposerModel
+    let directory: CodeV2ProviderDirectory
+    var dock: CodeV2DockController?
+    var openConnections: (() -> Void)?
+    var setup: ((String, CodeV2.ProviderSetupAction) -> Void)?
+
+    @State private var pendingIndex = 0
+    @FocusState private var focused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    public init(
+        session: CodeV2EnvSession,
+        composer: CodeV2ComposerModel,
+        directory: CodeV2ProviderDirectory,
+        dock: CodeV2DockController? = nil,
+        openConnections: (() -> Void)? = nil,
+        setup: ((String, CodeV2.ProviderSetupAction) -> Void)? = nil
+    ) {
+        self.session = session
+        self.composer = composer
+        self.directory = directory
+        self.dock = dock
+        self.openConnections = openConnections
+        self.setup = setup
+    }
+
+    private var snapshot: CodeV2.SessionSnapshot { session.snapshot }
+    private var instance: CodeV2.ProviderInstance? { directory.instance(snapshot.selection.instanceId) }
+    private var pending: [CodeV2.TurnItem] { session.pendingRequests }
+    private var isRunning: Bool { session.isRunning }
+    private var canSteer: Bool { instance?.capabilities?.steering ?? false }
+
+    private var context: CodeV2ContextReading? {
+        guard let usage = snapshot.usage, let used = usage.contextTokens else { return nil }
+        let window = usage.contextWindow ?? snapshot.selection.contextTokens ?? 0
+        guard window > 0 else { return nil }
+        let subscription = instance.map { !CodeV2ProviderDirectory.billsInDollars($0.kind) } ?? false
+        let plan = instance?.account?.plan.map { CodeV2ProviderDirectory.planName($0) } ?? (instance.map(CodeV2ProviderDirectory.vendorName) ?? "")
+        return CodeV2ContextReading(
+            usedTokens: used, maxTokens: window,
+            costUsd: subscription ? nil : usage.costUsd,
+            planSentence: subscription ? "Counts against your \(plan) plan" : nil
+        )
+    }
+
+    private var budget: (spent: Double, limit: Double)? {
+        guard let limit = snapshot.routing?.budget?.maxUsd else { return nil }
+        return (snapshot.usage?.costUsd ?? 0, limit)
+    }
+
+    public var body: some View {
+        VStack(spacing: 0) {
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(spacing: 0) {
+                        if snapshot.items.isEmpty {
+                            emptyState
+                        }
+                        CodeV2ThreadView(
+                            items: snapshot.items,
+                            activeTurnId: snapshot.activeTurnId,
+                            selectedAgent: dock?.selectedAgent,
+                            budget: budget,
+                            actions: actions
+                        )
+                        if let message = session.lastError {
+                            HStack(spacing: JunoSpace.snug) {
+                                JunoIconView(.circleX, size: 16).foregroundStyle(Studio.Ink.danger)
+                                Text(message).font(Studio.Font.label).foregroundStyle(Studio.Ink.primary)
+                                Spacer()
+                            }
+                            .frame(maxWidth: Studio.Metrics.measure)
+                            .padding(.top, JunoSpace.cozy)
+                        }
+                        Color.clear.frame(height: 1).id("end")
+                    }
+                    .padding(.horizontal, Studio.Metrics.gutter)
+                    .padding(.top, 28)
+                    .padding(.bottom, JunoSpace.regular)
+                    .frame(maxWidth: .infinity)
+                }
+                .onChange(of: snapshot.items.count) { _, _ in
+                    withAnimation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion)) { proxy.scrollTo("end", anchor: .bottom) }
+                }
+                .onAppear { proxy.scrollTo("end", anchor: .bottom) }
+            }
+            VStack(spacing: JunoSpace.snug) {
+                if !snapshot.queue.isEmpty, pending.isEmpty {
+                    CodeV2QueueDock(
+                        queue: snapshot.queue,
+                        edit: { item in composer.draft = item.input.text; focused = true },
+                        steer: canSteer ? { item in Task { await session.steer(item.input.text) } } : nil
+                    )
+                    .transition(.opacity)
+                }
+                composerView
+            }
+            .frame(maxWidth: Studio.Metrics.measure)
+            .padding(.horizontal, Studio.Metrics.gutter)
+            .padding(.bottom, JunoSpace.regular)
+            .frame(maxWidth: .infinity)
+            .animation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion), value: snapshot.queue.map(\.id))
+            .animation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion), value: pending.map(\.id))
+        }
+        .background(Studio.Surface.canvas)
+        .task(id: session.sessionId) {
+            focused = true
+            if session.state.cursor == nil { await session.open() }
+        }
+    }
+
+    private var emptyState: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.tight) {
+            Text((snapshot.cwd as NSString).lastPathComponent).font(Studio.Font.title)
+            Text("Runs \(instance?.label ?? "your agent") on this Mac. Your sign-in, billing and limits stay with the vendor.")
+                .font(Studio.Font.meta).foregroundStyle(Studio.Ink.secondary)
+        }
+        .frame(maxWidth: Studio.Metrics.measure, alignment: .leading)
+        .padding(.top, 120)
+    }
+
+    private var actions: CodeV2ThreadActions {
+        var actions = CodeV2ThreadActions()
+        actions.openFile = { path in dock?.show(.changes, path: path) }
+        actions.review = { _ in dock?.show(.changes) }
+        actions.selectAgent = { id in dock?.selectAgent(id) }
+        actions.openFrame = { id in dock?.showFrame(id) }
+        if instance?.capabilities?.rollback == true {
+            actions.undo = { id in Task { await session.rollback(to: id) } }
+            actions.editFromHere = { id in Task { await session.rollback(to: id) } }
+        }
+        return actions
+    }
+
+    // MARK: Composer
+
+    private var takeover: AnyView? {
+        guard !pending.isEmpty else {
+            if snapshot.state == .limited, let instance {
+                return AnyView(CodeV2LimitedNotice(
+                    sentence: CodeV2ProviderDirectory.limitedSentence(instance, resumeAt: snapshot.resumeAt),
+                    resumeAtReset: nil,
+                    switchModel: openConnections
+                ))
+            }
+            return nil
+        }
+        let index = min(pendingIndex, pending.count - 1)
+        switch pending[index] {
+        case let .approvalRequest(request):
+            return AnyView(CodeV2ApprovalTakeover(
+                request: request,
+                position: (index + 1, pending.count),
+                respond: { decision in Task { await session.respond(to: request.requestId, decision: decision) } },
+                showDiff: { dock?.show(.changes) },
+                move: pending.count > 1 ? { delta in pendingIndex = (index + delta + pending.count) % pending.count } : nil
+            ))
+        case let .userInputRequest(request):
+            return AnyView(CodeV2QuestionTakeover(request: request) { answers in
+                Task { await session.respond(to: request.requestId, decision: .accept, answers: answers) }
+            })
+        default:
+            return nil
+        }
+    }
+
+    private var composerView: some View {
+        let enabled = !isRunning
+        return StudioComposer(
+            text: $composer.draft,
+            placeholder: CodeV2ComposerLogic.placeholder(isRunning: isRunning, hasProvider: instance?.status == .ready || instance?.status == .limited),
+            slashCommands: CodeV2EnvSessionView.commands,
+            canSend: !composer.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && snapshot.state != .limited,
+            isRunning: isRunning,
+            send: send,
+            stop: { Task { await session.interrupt() } },
+            focus: $focused,
+            beam: snapshot.state == .running ? .line : nil,
+            steer: canSteer ? { steer() } : nil,
+            stopOnDoubleEscape: true,
+            takeover: takeover
+        ) {
+            CodeV2ComposerLeading(model: composer, directory: directory, isEnabled: enabled)
+        } trailing: {
+            CodeV2ComposerTrailing(
+                model: composer, directory: directory, context: context,
+                threadTokens: snapshot.usage?.contextTokens ?? 0, isEnabled: enabled,
+                openConnections: openConnections, setup: setup
+            )
+        }
+    }
+
+    /// The env server runs the vendor's own agent, which has its own slash
+    /// commands; Alevr's session verbs do not apply, so none are offered.
+    static let commands = CodeSlashCommandLibrary(commands: [])
+
+    private func send() {
+        let text = composer.draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        composer.draft = ""
+        if isRunning {
+            Task { await session.queue(text) }
+        } else {
+            Task {
+                await session.send(
+                    text, selection: composer.selection, routing: composer.routing,
+                    runtimeMode: composer.runtimeMode, interactionMode: composer.interactionMode
+                )
+            }
+        }
+    }
+
+    private func steer() {
+        let text = composer.draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        composer.draft = ""
+        Task { await session.steer(text) }
+    }
+}
+
+/// What the thread asks of the dock: which tab, which file, which agent.
+@MainActor
+@Observable
+public final class CodeV2DockController {
+    public var isOpen = false
+    public var tab: CodeV2DockTab = .changes
+    public var focusedPath: String?
+    public var selectedAgent: String?
+    public var selectedFrame: String?
+    public var scope: CodeV2ChangesPane.Scope = .thread
+    public var decisions = CodeV2HunkDecisions()
+    public var failure: String?
+
+    public init() {}
+
+    public func show(_ tab: CodeV2DockTab, path: String? = nil) {
+        self.tab = tab
+        if let path { focusedPath = path }
+        isOpen = true
+    }
+
+    public func selectAgent(_ id: String) {
+        selectedAgent = id
+        show(.agents)
+    }
+
+    public func showFrame(_ id: String) {
+        selectedFrame = id
+        show(.screen)
+    }
+
+    /// Toggles a tab the way the toolbar does: the open tab closes the dock.
+    public func toggle(_ tab: CodeV2DockTab) {
+        if isOpen, self.tab == tab { isOpen = false } else { show(tab) }
+    }
+}

@@ -41,6 +41,12 @@ public final class CodeV2EnvSession {
         self.state = CodeV2SessionState(snapshot: snapshot, cursor: 0)
     }
 
+    /// Previews and snapshot tests: the Changes a detached session shows.
+    public func setPreviewDiff(thread: [CodeV2DiffFile], turn: [CodeV2DiffFile] = []) {
+        threadDiff = thread
+        turnDiff = turn
+    }
+
     public var snapshot: CodeV2.SessionSnapshot { state.snapshot }
     public var isRunning: Bool { snapshot.state == .running || snapshot.state == .waiting }
     public var turns: [CodeV2Turn] { CodeV2TurnFolding.turns(from: snapshot.items, activeTurnId: snapshot.activeTurnId) }

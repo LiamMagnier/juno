@@ -283,6 +283,55 @@ final class EnvServerTests: XCTestCase {
     }
 }
 
+extension EnvServerTests {
+    private func git(_ args: [String], in dir: URL) throws -> String {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.arguments = ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"] + args
+        process.currentDirectoryURL = dir
+        let out = Pipe()
+        process.standardOutput = out
+        process.standardError = FileHandle.nullDevice
+        try process.run()
+        process.waitUntilExit()
+        return String(decoding: out.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+    }
+
+    func testHunkApplierAcceptsAndRejectsOneHunk() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("alevr-hunks-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("a.txt")
+        let original = (1...30).map { "line \($0)" }.joined(separator: "\n") + "\n"
+        try original.write(to: file, atomically: true, encoding: .utf8)
+        _ = try git(["init", "-q"], in: dir)
+        _ = try git(["add", "."], in: dir)
+        _ = try git(["commit", "-q", "-m", "base"], in: dir)
+        var lines = original.split(separator: "\n").map(String.init)
+        lines[1] = "line 2 changed"
+        lines[27] = "line 28 changed"
+        try (lines.joined(separator: "\n") + "\n").write(to: file, atomically: true, encoding: .utf8)
+
+        let files = CodeV2UnifiedDiff.parse(try git(["diff"], in: dir))
+        XCTAssertEqual(files.first?.hunks.count, 2)
+        let applier = CodeV2HunkApplier()
+        try await applier.apply(.reject, hunk: files[0].hunks[1], path: "a.txt", in: dir)
+        let after = try String(contentsOf: file, encoding: .utf8)
+        XCTAssertTrue(after.contains("line 2 changed"))
+        XCTAssertFalse(after.contains("line 28 changed"))
+
+        try await applier.apply(.accept, hunk: files[0].hunks[0], path: "a.txt", in: dir)
+        XCTAssertTrue(try git(["diff", "--cached"], in: dir).contains("+line 2 changed"))
+
+        do {
+            try await applier.apply(.reject, hunk: files[0].hunks[1], path: "a.txt", in: dir)
+            XCTFail("a hunk already reversed cannot be reversed again")
+        } catch {
+            XCTAssertNotNil(error as? CodeV2HunkApplier.Failure)
+        }
+    }
+}
+
 // MARK: - Test doubles
 
 final class ScriptedTransport: EnvServerTransport, @unchecked Sendable {

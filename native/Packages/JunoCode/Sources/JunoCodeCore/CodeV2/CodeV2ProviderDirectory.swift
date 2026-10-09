@@ -175,13 +175,13 @@ public struct CodeV2ProviderDirectory: Equatable, Sendable {
         return "\(vendor) plan limit reached." + (time.map { " Resets at \($0)." } ?? "")
     }
 
-    static func binaryName(_ instance: CodeV2.ProviderInstance) -> String {
+    public static func binaryName(_ instance: CodeV2.ProviderInstance) -> String {
         if let path = instance.binaryPath { return (path as NSString).lastPathComponent }
         if let command = instance.acpCommand?.first { return command }
         return instance.label
     }
 
-    static func planName(_ raw: String) -> String {
+    public static func planName(_ raw: String) -> String {
         switch raw.lowercased() {
         case "max", "claude_max": "Max"
         case "pro", "claude_pro": "Pro"
