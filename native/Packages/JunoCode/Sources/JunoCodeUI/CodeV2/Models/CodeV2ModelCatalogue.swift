@@ -244,6 +244,6 @@ public enum CodeV2ModelCatalogue {
         CodeV2ContextMath.dollars(value).replacingOccurrences(of: ".00", with: "")
     }
 
-    /// The subscriptions the empty state names: "Claude, ChatGPT, Gemini and more, on this Mac".
-    public static let connectSubtitle = "Claude, ChatGPT, Gemini and more, on this Mac"
+    /// The subscriptions the empty state names: "Claude, ChatGPT, Gemini and more".
+    public static let connectSubtitle = "Claude, ChatGPT, Gemini and more"
 }
