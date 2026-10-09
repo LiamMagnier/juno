@@ -1369,6 +1369,39 @@ public enum CodeShowcase {
         WorkbenchModel.showcase(workspaces: [workspace, docsWorkspace], sessions: sessions, selected: sessionID)
     }
 
+    /// The clock the showcase sessions' ages are measured against.
+    public static var now: Date { CodePreviewData.anchor }
+
+    /// The showcase's week plus older, finished work, so the sidebar's
+    /// Settled fold has something in it.
+    @MainActor
+    public static func sidebarWorkbench() -> WorkbenchModel {
+        func settled(_ id: String, _ title: String, _ workspace: WorkspaceRecord, days: Double, branch: String) -> CodeSession {
+            CodeSession(
+                id: CodeSessionID(value: id),
+                workspaceID: workspace.id,
+                title: title,
+                status: .completed,
+                configuration: configuration,
+                gitBranch: branch,
+                createdAt: CodePreviewData.minutes(days * 1_440 + 30),
+                updatedAt: CodePreviewData.minutes(days * 1_440)
+            )
+        }
+        let older = [
+            settled("sess-showcase-search", "Debounce the search box", workspace, days: 4, branch: "fix/search-debounce"),
+            settled("sess-showcase-tokens", "Move colours to design tokens", workspace, days: 9, branch: "chore/tokens"),
+            settled("sess-showcase-sitemap", "Generate the sitemap at build", docsWorkspace, days: 16, branch: "feat/sitemap"),
+        ]
+        return WorkbenchModel.showcase(workspaces: [workspace, docsWorkspace], sessions: sessions + older, selected: sessionID)
+    }
+
+    /// A workbench with no projects and no sessions: the first launch.
+    @MainActor
+    public static func emptyWorkbench() -> WorkbenchModel {
+        WorkbenchModel.showcase(workspaces: [], sessions: [], selected: sessionID)
+    }
+
     /// The session the product shot opens on: a finished bug fix with its
     /// diff, a command run and passing tests.
     @MainActor

@@ -427,19 +427,26 @@ enum DesktopCodeDraftReadiness {
 
 // MARK: - The column
 
-/// The Code window's navigation column (code-v4 TARGET §3): a list of work,
-/// not navigation.
+/// The Code window's navigation column, drawn in the Chat column's recipes
+/// (the web's `code-work-list.tsx` under `AppSidebar`).
 ///
-/// Search (with New session beside it) and the projects filter, then one row
-/// per session: its title, the project after it in muted ink, its age, and in
-/// the trailing slot a coral spinner while it works or a raised hand when it
-/// needs you. Sessions that need you come first, then the working ones, then
-/// the rest by recency; no section headers. Archived sessions fold at the end.
-/// Pull requests and Artifacts moved to the projects menu, the command palette
-/// and the toolbar's More menu; Customize is the footer's gear.
+/// WHAT IT SAYS is Code's: New session, Search, Open a project and Customize
+/// as the headerless action block, then one list of work under the projects
+/// filter. Sessions that need you come first, then working ones, then the
+/// rest by recency; anything finished and untouched for three days folds
+/// under Settled, and archived sessions fold under Archived at the end.
+///
+/// HOW IT LOOKS is Chat's: ``DesktopSidebarNavRow`` for the actions, the
+/// mono heading rung for the filter and the folds, the 8pt-inset hover and
+/// selected fills on every row, and the Chat list's two quiet lines when
+/// there is nothing to show. A session row is the web's two-line row: the
+/// title with its age, the project and branch under it. The trailing slot is
+/// the only state a row shows, and the only coral in the column: a spinner
+/// while it works, a raised hand when it needs you.
 ///
 /// The navigation model (what a selection is, how it survives a relaunch) is
-/// `DesktopCodeNavigationState` above.
+/// `DesktopCodeNavigationState` above; the split into active and settled work
+/// is ``DesktopCodeWorkList``.
 struct DesktopCodeSidebar: View {
     @Bindable var workbench: WorkbenchModel
     let code: NativeCodeModel
@@ -454,23 +461,29 @@ struct DesktopCodeSidebar: View {
     let newSession: (WorkspaceID?) -> Void
     let rename: (CodeSession) -> Void
     let openSettings: () -> Void
+    /// The clock the ages and the Settled fold read. Snapshots pin it.
+    var now = Date()
+    /// Snapshots draw the Settled fold open; the app never sets it.
+    var startsShowingSettled = false
 
     @State private var searchOpen = false
     @State private var searchFocused = false
-    @State private var collapsed: Set<WorkspaceID> = []
     @State private var projectPendingRemoval: WorkspaceRecord?
-    @State private var hoveringProjectsHeader = false
+    @State private var showsSettled = false
     @State private var showsArchived = false
     @State private var projectFilter: WorkspaceID?
-    private let clock = Date()
+
+    private var workspaceNames: [WorkspaceID: String] {
+        Dictionary(
+            workbench.workspaces.map { ($0.id, $0.descriptor.displayName) },
+            uniquingKeysWith: { first, _ in first }
+        )
+    }
 
     private var runs: [DesktopCodeRun] {
         DesktopCodeRunBuilder.runs(
             sessions: workbench.filteredSessions,
-            workspaceNames: Dictionary(
-                workbench.workspaces.map { ($0.id, $0.descriptor.displayName) },
-                uniquingKeysWith: { first, _ in first }
-            ),
+            workspaceNames: workspaceNames,
             tasks: code.tasks,
             query: workbench.sessionSearchText
         )
@@ -481,103 +494,79 @@ struct DesktopCodeSidebar: View {
     }
 
     var body: some View {
-        let all = runs
-        let known = Dictionary(workbench.workspaces.map { ($0.id, $0.descriptor.displayName) }, uniquingKeysWith: { first, _ in first })
-        let work = ordered(all.filter { run in
-            guard let projectFilter else { return true }
-            return run.workspaceID == projectFilter
-        })
+        let known = workspaceNames
+        let work = DesktopCodeWorkList.split(
+            runs.filter { run in
+                guard let projectFilter else { return true }
+                return run.workspaceID == projectFilter
+            },
+            now: now
+        )
         let archived = workbench.filteredArchivedSessions
 
         return List(selection: $selection) {
-            Section {
-                CodeSidebarHeader(
-                    projectTitle: projectFilter.flatMap { known[$0] } ?? "All projects",
-                    search: {
-                        searchOpen = true
-                        searchFocused = true
-                    },
-                    newSession: { newSession(projectFilter) }
-                ) {
-                    projectMenu
+            actionBlock
+
+            projectsHeading(title: projectFilter.flatMap { known[$0] } ?? "All projects")
+            ForEach(work.active) { run in row(run, project: run.workspaceID.flatMap { known[$0] }) }
+
+            if work.active.isEmpty, work.settled.isEmpty, !isBootstrapping {
+                emptyLines
+            }
+
+            if !work.settled.isEmpty {
+                // Searching opens the folds: a match hidden behind a fold is
+                // a match the reader cannot see.
+                let open = showsSettled || isSearching
+                DesktopSidebarHeadingRow(title: "Settled · \(work.settled.count)", action: { showsSettled.toggle() }) {
+                    DesktopCodeFoldChevron(isOpen: open)
                 }
-                .selectionDisabled()
-                .listRowInsets(EdgeInsets(top: 0, leading: 4, bottom: 0, trailing: 4))
-                if searchOpen || isSearching {
-                    DesktopSidebarSearchField(
-                        text: $workbench.sessionSearchText,
-                        prompt: "Search sessions",
-                        isFocused: $searchFocused
-                    )
-                    .selectionDisabled()
-                    .onChange(of: searchFocused) { _, focused in
-                        if !focused, !isSearching { searchOpen = false }
-                    }
+                .help(showsSettled ? "Hide settled sessions" : "Show settled sessions")
+                .accessibilityValue(open ? "Shown" : "Hidden")
+                if open {
+                    ForEach(work.settled) { run in row(run, project: run.workspaceID.flatMap { known[$0] }) }
                 }
             }
 
-            Section {
-                if workbench.workspaces.isEmpty, !isBootstrapping {
-                    Button(action: openRepository) {
-                        Label {
-                            Text("Open a project…")
-                        } icon: {
-                            JunoSymbol(.folderPlus)
-                                .foregroundStyle(Color.junoSidebarInk)
-                        }
-                        .foregroundStyle(Color.junoSecondaryInk)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(.rect)
-                    }
-                    .buttonStyle(.plain)
-                    .help(JunoShortcutRegistry.help("Open a project", .codeOpenFolder))
-                    .selectionDisabled()
-                    .accessibilityIdentifier("juno.code.add-project")
+            if !archived.isEmpty {
+                let open = showsArchived || isSearching
+                DesktopSidebarHeadingRow(title: "Archived · \(archived.count)", action: { showsArchived.toggle() }) {
+                    DesktopCodeFoldChevron(isOpen: open)
                 }
-                ForEach(work) { run in row(run, project: run.workspaceID.flatMap { known[$0] }) }
-                if work.isEmpty, isSearching {
-                    Text("No matches")
-                        .foregroundStyle(Color.junoSecondaryInk)
-                        .padding(.leading, DesktopSidebarMetrics.titleLeading)
-                        .selectionDisabled()
-                }
-                if !archived.isEmpty {
-                    CodeSidebarFold(title: "Archived", count: archived.count, isOpen: $showsArchived)
-                        .selectionDisabled()
-                        .help(showsArchived ? "Hide archived sessions" : "Show archived sessions")
-                    if showsArchived || isSearching {
-                        ForEach(archivedRuns(archived)) { run in row(run, project: run.workspaceID.flatMap { known[$0] }) }
-                    }
+                .help(showsArchived ? "Hide archived sessions" : "Show archived sessions")
+                .accessibilityValue(open ? "Shown" : "Hidden")
+                if open {
+                    ForEach(archivedRuns(archived)) { run in row(run, project: run.workspaceID.flatMap { known[$0] }) }
                 }
             }
 
             if !code.devices.isEmpty, !remote.sessions.isEmpty {
-                Section {
-                    ForEach(remote.sessions.filter(matchesSearch)) { summary in
-                        row(DesktopCodeRunBuilder.run(for: summary), project: summary.workspaceName)
-                    }
-                } header: {
-                    HStack(spacing: JunoSpace.tight) {
-                        DesktopSidebarHeading("Other computers")
-                        Spacer(minLength: 0)
-                        Picker("Computer", selection: $remoteDeviceID) {
-                            ForEach(code.devices) { device in
-                                Text(device.online ? device.name : "\(device.name), offline").tag(device.id)
-                            }
+                DesktopSidebarHeadingRow(title: "Other computers") {
+                    Picker("Computer", selection: $remoteDeviceID) {
+                        ForEach(code.devices) { device in
+                            Text(device.online ? device.name : "\(device.name), offline").tag(device.id)
                         }
-                        .pickerStyle(.menu)
-                        .labelsHidden()
-                        .fixedSize()
                     }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .fixedSize()
+                }
+                ForEach(remote.sessions.filter(matchesSearch)) { summary in
+                    row(DesktopCodeRunBuilder.run(for: summary), project: summary.workspaceName)
                 }
             }
         }
         .listStyle(.sidebar)
+        // The web's rows set their own heights, as Chat's column does.
+        .environment(\.defaultMinListRowHeight, 0)
         .junoSidebarSelectionTint()
         .safeAreaBar(edge: .bottom, spacing: 0) {
             footer
         }
         .junoSidebarScrollEdge()
+        .onAppear {
+            if startsShowingSettled { showsSettled = true }
+        }
         .confirmationDialog(
             "Remove \u{201C}\(projectPendingRemoval?.descriptor.displayName ?? "")\u{201D} from Alevr?",
             isPresented: Binding(
@@ -607,6 +596,82 @@ struct DesktopCodeSidebar: View {
         }
     }
 
+    // MARK: Actions
+
+    /// New session and Search, then Open a project and Customize: Chat's
+    /// headerless block, in the contract's words and the web's glyphs.
+    @ViewBuilder
+    private var actionBlock: some View {
+        // A button and never a tagged row: a draft selects nothing.
+        DesktopSidebarNavRow(
+            icon: JunoShellCodeSidebar.Action.new.icon,
+            title: JunoShellCodeSidebar.Action.new.label,
+            action: { newSession(projectFilter) }
+        )
+        .help(JunoShortcutRegistry.help(JunoShellCodeSidebar.Action.new.title, .newChat))
+        .accessibilityIdentifier("juno.code.new-conversation")
+
+        // Search filters this list in place, so its field opens under the
+        // row rather than in a panel over the window.
+        DesktopSidebarNavRow(
+            icon: JunoShellCodeSidebar.Action.search.icon,
+            title: JunoShellCodeSidebar.Action.search.label,
+            gesture: .tilts,
+            action: {
+                searchOpen = true
+                searchFocused = true
+            }
+        )
+        .help("Search sessions")
+        .accessibilityIdentifier("juno.code.sidebar.search")
+
+        if searchOpen || isSearching {
+            DesktopSidebarSearchField(
+                text: $workbench.sessionSearchText,
+                prompt: "Search sessions",
+                isFocused: $searchFocused
+            )
+            .padding(.horizontal, DesktopSidebarMetrics.fillInset - DesktopSidebarMetrics.listOrigin + JunoSpace.hairline)
+            .padding(.vertical, JunoSpace.micro)
+            .listRowInsets(EdgeInsets())
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
+            .selectionDisabled()
+            .onChange(of: searchFocused) { _, focused in
+                if !focused, !isSearching { searchOpen = false }
+            }
+        }
+
+        DesktopSidebarNavRow(
+            icon: .folderPlus,
+            title: "Open a project",
+            gesture: .folderOpens,
+            action: openRepository
+        )
+        .help(JunoShortcutRegistry.help("Open a project", .codeOpenFolder))
+        .accessibilityIdentifier("juno.code.add-project")
+
+        // Customize wears the web's sliders, as Chat's row does, and opens
+        // the settings for the product on screen.
+        DesktopSidebarNavRow(
+            icon: .sliders,
+            title: JunoShellDestination.customize.label,
+            gesture: .turns,
+            action: openSettings
+        )
+        .help("Customize Code")
+        .accessibilityIdentifier("juno.code.sidebar.customize")
+    }
+
+    // MARK: The filter
+
+    /// The list's first heading is its filter: the heading rung's mono words
+    /// with a chevron, opening the projects menu. The words brighten under
+    /// the pointer as a folding heading's do.
+    private func projectsHeading(title: String) -> some View {
+        DesktopCodeProjectsHeading(title: title) { projectMenu }
+    }
+
     /// The projects filter's menu: which project's work to list, opening and
     /// removing projects, and the destinations that left the column.
     @ViewBuilder
@@ -631,7 +696,6 @@ struct DesktopCodeSidebar: View {
         }
         Divider()
         Button("Open Project…", action: openRepository)
-            .accessibilityIdentifier("juno.code.add-project")
             .contentShape(.rect)
         if let projectFilter, let record = workbench.workspaces.first(where: { $0.id == projectFilter }) {
             Button("New Session in \(record.descriptor.displayName)") { newSession(record.id) }
@@ -654,13 +718,43 @@ struct DesktopCodeSidebar: View {
         }
     }
 
+    // MARK: Empty
+
+    /// The Chat list's two quiet lines, in Code's words: what is missing,
+    /// then where to start it.
+    private var emptyLines: some View {
+        let lines = DesktopCodeWorkList.emptyLines(
+            searching: isSearching,
+            project: projectFilter.flatMap { workspaceNames[$0] },
+            hasProjects: !workbench.workspaces.isEmpty
+        )
+        return VStack(alignment: .leading, spacing: JunoSpace.micro) {
+            Text(lines.first ?? "")
+                .junoFont(size: 13, relativeTo: .callout)
+                .junoSecondaryInk()
+            if lines.count > 1 {
+                Text(lines[1])
+                    .junoFont(size: 12, relativeTo: .footnote)
+                    .junoSecondaryInk()
+            }
+        }
+        .padding(.vertical, JunoSpace.tight)
+        .padding(.leading, DesktopSidebarMetrics.glyphEdge - DesktopSidebarMetrics.listOrigin)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .listRowInsets(EdgeInsets())
+        .listRowSeparator(.hidden)
+        .listRowBackground(Color.clear)
+        .selectionDisabled()
+        .accessibilityElement(children: .combine)
+    }
+
     // MARK: Rows
 
     private func row(_ run: DesktopCodeRun, project: String?) -> some View {
-        DesktopCodeSessionRow(run: run, project: projectFilter == nil ? project : nil, now: clock) {
+        let selected = selection == run.item
+        return DesktopCodeSessionRow(run: run, project: project, now: now, isSelected: selected) {
             archive(run)
         }
-        .junoSidebarRowSelection(selection == run.item)
         .tag(run.item)
         .contextMenu { menu(for: run) }
     }
@@ -678,35 +772,10 @@ struct DesktopCodeSidebar: View {
     private func archivedRuns(_ sessions: [CodeSession]) -> [DesktopCodeRun] {
         sorted(DesktopCodeRunBuilder.runs(
             sessions: sessions,
-            workspaceNames: Dictionary(
-                workbench.workspaces.map { ($0.id, $0.descriptor.displayName) },
-                uniquingKeysWith: { first, _ in first }
-            ),
+            workspaceNames: workspaceNames,
             tasks: [],
             query: workbench.sessionSearchText
         ))
-    }
-
-    /// Needs you, then working, then the rest by recency.
-    private func ordered(_ runs: [DesktopCodeRun]) -> [DesktopCodeRun] {
-        func rank(_ run: DesktopCodeRun) -> Int {
-            switch StudioStatus(run.status) {
-            case .needsYou: 0
-            case .working: 1
-            default: 2
-            }
-        }
-        return runs.sorted { a, b in
-            rank(a) == rank(b) ? a.updatedAt > b.updatedAt : rank(a) < rank(b)
-        }
-    }
-
-    /// A Runs row's menu: open it, fork it, archive it.
-    @ViewBuilder
-    private func runMenu(_ id: CodeSessionID) -> some View {
-        Button("Open") { selection = .session(id) }
-            .contentShape(.rect)
-        sessionShipItems(id)
     }
 
     /// Fork, worktree, export and archive (CODE_AGENT_SPEC §5.6, §5.7, §5.17).
@@ -824,7 +893,7 @@ struct DesktopCodeSidebar: View {
 
     // MARK: Footer
 
-    /// Chat's footer, verbatim, with its gear pointed at Code's settings — the
+    /// Chat's footer, verbatim, with its gear pointed at Code's settings: the
     /// settings for the product on screen. The app's Settings stay one press
     /// away in the account menu and on ⌘,.
     @ViewBuilder
@@ -854,34 +923,229 @@ struct DesktopCodeSidebar: View {
     }
 }
 
-/// One session in the column: ``CodeSidebarSessionRow`` from the Code
-/// package, so the window and its snapshots draw the same row.
+// MARK: - The list of work
+
+/// How the column splits its sessions (the web's `workList`): pure, so the
+/// order and the Settled rule are reachable from a test.
+enum DesktopCodeWorkList {
+    /// How long a finished session stays in the list before it settles.
+    static let settleAfter: TimeInterval = 3 * 24 * 60 * 60
+
+    /// Needs you, then working, then the rest by recency; and the settled
+    /// rest, newest first.
+    static func split(_ runs: [DesktopCodeRun], now: Date) -> (active: [DesktopCodeRun], settled: [DesktopCodeRun]) {
+        func rank(_ run: DesktopCodeRun) -> Int {
+            switch StudioStatus(run.status) {
+            case .needsYou: 0
+            case .working: 1
+            default: 2
+            }
+        }
+        var active: [DesktopCodeRun] = []
+        var settled: [DesktopCodeRun] = []
+        for run in runs {
+            if rank(run) == 2, now.timeIntervalSince(run.updatedAt) > settleAfter {
+                settled.append(run)
+            } else {
+                active.append(run)
+            }
+        }
+        active.sort { a, b in rank(a) == rank(b) ? a.updatedAt > b.updatedAt : rank(a) < rank(b) }
+        settled.sort { $0.updatedAt > $1.updatedAt }
+        return (active, settled)
+    }
+
+    /// What the list says when it has nothing to show, line by line.
+    static func emptyLines(searching: Bool, project: String?, hasProjects: Bool) -> [String] {
+        if searching { return ["No matches.", "Try another word, or a project's name."] }
+        if let project { return ["No sessions in \(project) yet.", "Start one above."] }
+        if !hasProjects { return ["No sessions yet.", "Open a project to start one."] }
+        return JunoShellCodeSidebar.emptyLines
+    }
+}
+
+// MARK: - Headings
+
+/// The projects filter as the list's first heading: the mono heading rung
+/// on the 16pt edge, its chevron always drawn because it opens a menu.
+private struct DesktopCodeProjectsHeading<Items: View>: View {
+    let title: String
+    @ViewBuilder let items: () -> Items
+
+    @State private var hovered = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Menu {
+                items()
+            } label: {
+                HStack(spacing: JunoSpace.tight) {
+                    Text(title)
+                        .junoFont(size: DesktopSidebarMetrics.headingSize, relativeTo: .caption, design: .monospaced)
+                        .tracking(DesktopSidebarMetrics.headingTracking)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    JunoIconView(.chevronDown, size: 10)
+                }
+                .foregroundStyle(hovered ? Color.junoForeground : Color.junoSecondaryInk)
+                .frame(height: DesktopSidebarMetrics.headingHeight)
+                .contentShape(.rect)
+            }
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .onHover { hovered = $0 }
+            .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint), value: hovered)
+            .help("Show one project's sessions")
+            .accessibilityLabel("Projects")
+            .accessibilityValue(title)
+            .accessibilityIdentifier("juno.code.sidebar.projects")
+            Spacer(minLength: 0)
+        }
+        .padding(.leading, DesktopSidebarMetrics.glyphEdge - DesktopSidebarMetrics.listOrigin)
+        .padding(.trailing, DesktopSidebarMetrics.glyphEdge - DesktopSidebarMetrics.listOrigin)
+        .padding(.top, DesktopSidebarMetrics.headingGap)
+        .frame(maxWidth: .infinity, alignment: .bottomLeading)
+        .listRowInsets(EdgeInsets())
+        .listRowSeparator(.hidden)
+        .listRowBackground(Color.clear)
+        .selectionDisabled()
+    }
+}
+
+/// A fold's chevron at its heading's end: down while open, right while shut.
+private struct DesktopCodeFoldChevron: View {
+    let isOpen: Bool
+
+    var body: some View {
+        JunoIconView(isOpen ? .chevronDown : .chevronRight, size: 10)
+            .foregroundStyle(Color.junoSecondaryInk)
+            .frame(width: DesktopSidebarMetrics.trailingSlot, height: DesktopSidebarMetrics.trailingSlot)
+            .accessibilityHidden(true)
+    }
+}
+
+// MARK: - The session row
+
+/// One session: the web's two-line work row in the Chat column's fills.
+///
+/// The title on the first line with its age at the end; the project and the
+/// branch under it in the muted ink. The age gives way to a coral spinner
+/// while the session works and a coral raised hand when it needs you, the
+/// column's only colour, and to Archive under the pointer.
 struct DesktopCodeSessionRow: View {
     let run: DesktopCodeRun
     var project: String?
     var now = Date()
+    var isSelected = false
     var archive: (() -> Void)?
 
-    private var state: CodeSidebarSession.State {
-        switch StudioStatus(run.status) {
-        case .idle: .idle
-        case .working: .working
-        case .needsYou: .needsYou
-        case .failed: .failed
-        }
+    @State private var hovered = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var status: StudioStatus { StudioStatus(run.status) }
+
+    /// The second line: the project, then where the work sits.
+    private var place: String? {
+        let name = project ?? (run.workspace.isEmpty ? nil : run.workspace)
+        return name
     }
 
     var body: some View {
-        CodeSidebarSessionRow(
-            session: CodeSidebarSession(
-                id: "\(run.item)", title: run.title, project: project,
-                updatedAt: run.updatedAt, state: state
-            ),
-            now: now,
-            archive: archive
-        )
-        .junoSidebarRowInk()
+        VStack(alignment: .leading, spacing: JunoSpace.hairline) {
+            HStack(spacing: JunoSpace.snug) {
+                Text(run.title)
+                    .junoFont(size: DesktopSidebarMetrics.labelSize, relativeTo: .body)
+                    .foregroundStyle(isSelected || hovered ? Color.junoForeground : Color.junoSidebarInk)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                trailing
+                    .frame(minWidth: DesktopSidebarMetrics.trailingSlot, minHeight: DesktopSidebarMetrics.trailingSlot, alignment: .trailing)
+            }
+            HStack(spacing: JunoSpace.tight) {
+                if let place {
+                    Text(place)
+                        .lineLimit(1)
+                        .layoutPriority(1)
+                }
+                if let branch = run.branch, !branch.isEmpty {
+                    JunoIconView(.branch, size: 11)
+                    Text(branch)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                Spacer(minLength: 0)
+            }
+            .junoFont(size: 12, relativeTo: .caption)
+            .foregroundStyle(Color.junoSecondaryInk)
+        }
+        .padding(.leading, DesktopSidebarMetrics.glyphEdge - DesktopSidebarMetrics.listOrigin)
+        .padding(.trailing, DesktopSidebarMetrics.glyphEdge - DesktopSidebarMetrics.listOrigin + JunoSpace.micro)
+        .onHover { hovered = $0 }
+        .desktopSidebarRow(selected: isSelected, hovered: hovered, height: JunoLayout.Row.height)
         .help("\(run.title)\n\(run.caption)")
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilityText)
+    }
+
+    @ViewBuilder
+    private var trailing: some View {
+        if hovered, let archive, case .session = run.item {
+            Button(action: archive) {
+                JunoIconView(.archive, size: 13)
+                    .foregroundStyle(Color.junoSecondaryInk)
+                    .frame(width: DesktopSidebarMetrics.trailingSlot, height: DesktopSidebarMetrics.trailingSlot)
+                    .contentShape(Rectangle().inset(by: -JunoSpace.micro))
+            }
+            .buttonStyle(.plain)
+            .help("Archive")
+            .accessibilityLabel("Archive")
+        } else {
+            switch status {
+            case .working:
+                Group {
+                    if reduceMotion {
+                        Circle().stroke(Studio.Signal.edge, lineWidth: 1.4)
+                    } else {
+                        StudioSpinner(color: Studio.Signal.edge, lineWidth: 1.4)
+                    }
+                }
+                .frame(width: 11, height: 11)
+                .frame(width: DesktopSidebarMetrics.trailingSlot, height: DesktopSidebarMetrics.trailingSlot)
+                .accessibilityHidden(true)
+            case .needsYou:
+                JunoIconView(.hand, size: 13)
+                    .foregroundStyle(Studio.Signal.edge)
+                    .frame(width: DesktopSidebarMetrics.trailingSlot, height: DesktopSidebarMetrics.trailingSlot)
+                    .accessibilityHidden(true)
+            case .failed:
+                age.foregroundStyle(Color.junoDestructiveInk)
+            case .idle:
+                age.foregroundStyle(Color.junoSecondaryInk)
+            }
+        }
+    }
+
+    private var age: some View {
+        Text(CodeSidebarSession.age(run.updatedAt, now: now))
+            .junoFont(size: 12, relativeTo: .caption)
+            .monospacedDigit()
+            .lineLimit(1)
+    }
+
+    private var accessibilityText: String {
+        var parts = [run.title]
+        if let place { parts.append(place) }
+        switch status {
+        case .working: parts.append("working")
+        case .needsYou: parts.append("needs you")
+        case .failed: parts.append("failed")
+        case .idle: break
+        }
+        return parts.joined(separator: ", ")
     }
 }
 
