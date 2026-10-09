@@ -304,9 +304,15 @@ public enum CodeV2KnownSubscription: String, CaseIterable, Sendable {
     public var note: String? {
         switch self {
         case .gemini: "Personal Google accounts can't be used here."
+        case .antigravity: "Alevr downloads Google's own runtime, checks it, and you sign in with Google in your browser."
         default: nil
         }
     }
+
+    /// Alevr installs (the vendor's release, checked against a pinned
+    /// SHA-256) and signs in this runtime itself, through the env server,
+    /// instead of typing a command into Terminal.
+    public var managedRuntime: Bool { self == .antigravity }
 
     /// Fallback setup steps (the env server's `provider.setup` wins). Typed
     /// into a terminal, never run by Alevr.

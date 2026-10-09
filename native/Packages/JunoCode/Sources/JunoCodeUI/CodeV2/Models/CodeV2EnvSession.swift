@@ -47,6 +47,10 @@ public final class CodeV2EnvSession {
         turnDiff = turn
     }
 
+    /// Dock › Terminal's shell in this thread's folder; nil for a detached
+    /// preview session.
+    public var terminal: CodeV2EnvTerminal? { hub?.terminal(for: self) }
+
     public var snapshot: CodeV2.SessionSnapshot { state.snapshot }
     public var isRunning: Bool { snapshot.state == .running || snapshot.state == .waiting }
     public var turns: [CodeV2Turn] { CodeV2TurnFolding.turns(from: snapshot.items, activeTurnId: snapshot.activeTurnId) }

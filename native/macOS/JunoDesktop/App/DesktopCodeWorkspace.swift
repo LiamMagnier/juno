@@ -119,7 +119,8 @@ struct DesktopCodeWorkspace: View {
         CodeV2ProviderDirectory.build(
             alevr: CodeV2AlevrCatalog.instance(from: workbenchModel.availableModels),
             envInstances: envHub.instances,
-            byokKeys: v2Keys.providers
+            byokKeys: v2Keys.providers,
+            antigravityEnabled: true
         )
     }
 
@@ -130,6 +131,23 @@ struct DesktopCodeWorkspace: View {
 
     private func envSession(_ binding: CodeV2SessionBindings.Binding) -> CodeV2EnvSession {
         envHub.session(id: binding.envSessionId, cwd: binding.cwd, selection: binding.selection)
+    }
+
+    /// Orchestrate on the Alevr engine: roles on Alevr models and BYOK keys
+    /// go through the backend proxy with their own billing and tier, roles on
+    /// a subscription run as env-server turns in the thread's folder.
+    private func subagentProviders(for controller: SessionController) -> CodeV2SubagentProviders {
+        let instances: [CodeV2.ProviderInstance] = v2Directory.instances
+        let backend = CodeV2SubagentProviders.backendFactory(from: workbenchModel.dependencies.modelClient)
+        let env = CodeV2SubagentProviders.envConnector(envHub)
+        return CodeV2SubagentProviders(
+            instances: instances,
+            backend: backend,
+            env: env,
+            cwd: controller.context?.access.rootURL.path,
+            runtimeMode: v2Composer.runtimeMode,
+            approvals: CodeV2ConnectedApprovalSink.shared
+        )
     }
 
     private func openConnections() {
@@ -273,7 +291,10 @@ struct DesktopCodeWorkspace: View {
         .inspector(isPresented: panelPresentation) {
             Group {
                 if let binding = envBinding {
-                    CodeV2EnvDockView(session: envSession(binding), dock: envDock, close: { envDock.isOpen = false })
+                    CodeV2EnvDockView(
+                        session: envSession(binding), dock: envDock, close: { envDock.isOpen = false },
+                        workspace: controller.map { CodeV2DockWorkspace(controller: $0, openPreviewWindow: openPreviewWindow) }
+                    )
                 } else if let controller {
                     StudioSidePanel(
                         controller: controller,
@@ -555,7 +576,8 @@ struct DesktopCodeWorkspace: View {
                 directory: v2Directory,
                 handoff: { text in handOff(controller, text: text) },
                 openConnections: openConnections,
-                setup: { id, action in Task { await envHub.openSetup(for: id, action: action) } }
+                setup: { id, action in Task { await envHub.openSetup(for: id, action: action) } },
+                subagentProviders: { subagentProviders(for: controller) }
             )
         )
         .task(id: controller.sessionID) { adoptV2Selection(from: controller) }
@@ -704,7 +726,9 @@ struct DesktopCodeWorkspace: View {
     }
 
     private func isPanelOn(_ tab: StudioPanelTab) -> Bool {
-        if envBinding != nil { return envDock.isOpen && tab == .changes && envDock.tab == .changes }
+        if envBinding != nil {
+            return envDock.isOpen && envDock.tab == (tab == .changes ? .changes : .terminal)
+        }
         return panelPresentation.wrappedValue && panelTab.wrappedValue == tab
     }
 
@@ -882,9 +906,9 @@ struct DesktopCodeWorkspace: View {
     private func togglePanel(_ tab: StudioPanelTab) {
         guard controller != nil else { return }
         if envBinding != nil {
-            // A subscription thread's dock: Changes here; its terminal is the
-            // vendor agent's own, shown in the thread's command rows.
-            if tab == .changes { envDock.toggle(.changes) }
+            // A subscription thread's dock: Changes, and a shell in the
+            // thread's folder run by the env server.
+            envDock.toggle(tab == .changes ? .changes : .terminal)
             return
         }
         if panelVisible, panelTab.wrappedValue == tab {
@@ -921,6 +945,10 @@ struct DesktopCodeWorkspace: View {
     }
 
     private func openPreview() {
+        if envBinding != nil, controller?.context != nil {
+            envDock.toggle(.preview)
+            return
+        }
         guard let root = controller?.context?.access.rootURL else { return }
         if previewTarget != nil {
             previewTarget = nil

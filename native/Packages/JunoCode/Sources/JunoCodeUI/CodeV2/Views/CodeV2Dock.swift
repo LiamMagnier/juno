@@ -3,15 +3,19 @@ import JunoCodeCore
 import JunoDesignSystem
 
 /// The dock's tabs (DESIGN §5.16). Screen shows only while computer use has
-/// frames; the Mac's Alevr engine keeps its own Terminal in the side panel.
+/// frames. Terminal, Files and Preview belong to the thread's folder on this
+/// Mac; the Alevr engine's threads keep the side panel instead.
 public enum CodeV2DockTab: String, CaseIterable, Identifiable, Sendable {
-    case changes, agents, screen
+    case changes, agents, terminal, files, preview, screen
     public var id: String { rawValue }
 
     var title: String {
         switch self {
         case .changes: "Changes"
         case .agents: "Agents"
+        case .terminal: "Terminal"
+        case .files: "Files"
+        case .preview: "Preview"
         case .screen: "Screen"
         }
     }
@@ -20,8 +24,22 @@ public enum CodeV2DockTab: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .changes: .diff
         case .agents: .agents
+        case .terminal: .terminal
+        case .files: .files
+        case .preview: .canvas
         case .screen: .monitor
         }
+    }
+}
+
+/// Which tabs an env-server thread's dock shows, in order.
+public enum CodeV2DockTabs {
+    public static func visible(hasTerminal: Bool, hasWorkspace: Bool, hasFrames: Bool) -> [CodeV2DockTab] {
+        var tabs: [CodeV2DockTab] = [.changes, .agents]
+        if hasTerminal { tabs.append(.terminal) }
+        if hasWorkspace { tabs += [.files, .preview] }
+        if hasFrames { tabs.append(.screen) }
+        return tabs
     }
 }
 
@@ -49,10 +67,11 @@ public struct CodeV2Dock: View {
     public var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: JunoSpace.tight) {
-                ForEach(tabs) { option in
-                    CodeV2DockTabButton(tab: option, count: counts[option], isSelected: tab == option) { tab = option }
+                ViewThatFits(in: .horizontal) {
+                    tabRow(compact: false)
+                    tabRow(compact: true)
                 }
-                Spacer()
+                Spacer(minLength: 0)
                 if let close {
                     Button(action: close) { JunoIconView(.panelRight, size: 14) }
                         .buttonStyle(StudioIconButtonStyle()).contentShape(.rect)
@@ -70,12 +89,22 @@ public struct CodeV2Dock: View {
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("juno.code.v2.dock")
     }
+
+    private func tabRow(compact: Bool) -> some View {
+        HStack(spacing: JunoSpace.tight) {
+            ForEach(tabs) { option in
+                CodeV2DockTabButton(tab: option, count: counts[option], isSelected: tab == option, compact: compact) { tab = option }
+            }
+        }
+        .fixedSize()
+    }
 }
 
 struct CodeV2DockTabButton: View {
     let tab: CodeV2DockTab
     let count: Int?
     let isSelected: Bool
+    var compact = false
     let action: () -> Void
     @State private var hovering = false
 
@@ -83,7 +112,7 @@ struct CodeV2DockTabButton: View {
         Button(action: action) {
             HStack(spacing: JunoSpace.tight + 1) {
                 JunoIconView(tab.icon, size: 14)
-                Text(tab.title)
+                if !compact || isSelected { Text(tab.title) }
                 if let count, count > 0 {
                     Text("\(count)").monospacedDigit().foregroundStyle(Studio.Ink.secondary)
                 }
@@ -100,6 +129,8 @@ struct CodeV2DockTabButton: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
+        .help(tab.title)
+        .accessibilityLabel(tab.title)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }

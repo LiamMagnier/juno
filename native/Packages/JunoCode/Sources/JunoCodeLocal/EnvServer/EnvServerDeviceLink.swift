@@ -107,6 +107,11 @@ public actor EnvServerDeviceLink {
     private var waiters: [UUID: CheckedContinuation<Void, Never>] = [:]
     /// Sessions opened through the link: a remote may only drive these.
     private var linkedSessions: Set<String> = []
+    /// Terminals opened through the link. Terminal events are global (keyed
+    /// by terminal id, not session), so only these are ever relayed, and a
+    /// remote may only write to, resize or close these: never the shells the
+    /// Mac's own Dock › Terminal opened.
+    private var linkedTerminals: Set<String> = []
     /// Where shareable events go as they arrive (the relay channel's outbox).
     private var outbound: (@Sendable (CodeV2.ServerEventEnvelope) async -> Void)?
 
@@ -147,8 +152,12 @@ public actor EnvServerDeviceLink {
     func shareable(_ envelope: CodeV2.ServerEventEnvelope) async -> Bool {
         switch envelope.stream {
         case .global:
-            if case .providerUpdated = envelope.event { return true }
-            return false
+            switch envelope.event {
+            case .providerUpdated: return true
+            case let .terminalOutput(id, _), let .terminalExited(id, _):
+                return linkedTerminals.contains(id) ? await allowsTerminal() : false
+            default: return false
+            }
         case .session:
             guard let sessionId = envelope.sessionId, linkedSessions.contains(sessionId) else { return false }
             switch envelope.event {
@@ -163,8 +172,11 @@ public actor EnvServerDeviceLink {
             switch envelope.stream {
             case .global:
                 guard envelope.sequence > globalCursor else { return false }
-                if case .providerUpdated = envelope.event { return true }
-                return false
+                switch envelope.event {
+                case .providerUpdated: return true
+                case let .terminalOutput(id, _), let .terminalExited(id, _): return terminal && linkedTerminals.contains(id)
+                default: return false
+                }
             case .session:
                 guard let sessionId = envelope.sessionId, let cursor = cursors[sessionId] else { return false }
                 guard envelope.sequence > cursor else { return false }
@@ -238,6 +250,9 @@ public actor EnvServerDeviceLink {
             if type == .sessionOpen, case let .object(object)? = result, case let .string(id)? = object["sessionId"] {
                 linkedSessions.insert(id)
             }
+            if type == .terminalOpen, case let .object(object)? = result, case let .string(id)? = object["terminalId"] {
+                linkedTerminals.insert(id)
+            }
             if type == .sessionList { let roots = await allowedRoots(); result = Self.onlyShared(result, roots: roots) }
             return CodeV2.ServerResponse(id: command.id, ok: true, result: result)
         } catch let EnvServerConnectionError.server(code, message) {
@@ -255,6 +270,11 @@ public actor EnvServerDeviceLink {
             // Re-opening a session the link already follows (the hub's replay
             // after a gap): the env server ignores `cwd` for an existing session.
             if type == .sessionOpen, case let .string(id)? = object["sessionId"], linkedSessions.contains(id) { return nil }
+            // Re-attaching to a terminal by id repaints its scrollback: only a
+            // terminal the link itself opened.
+            if type == .terminalOpen, case let .string(id)? = object["terminalId"], !linkedTerminals.contains(id) {
+                return "Open the terminal first."
+            }
             guard case let .string(cwd)? = object["cwd"] else { return "A folder is required." }
             let roots = await allowedRoots()
             guard Self.isInside(cwd, roots: roots) else {
@@ -278,6 +298,9 @@ public actor EnvServerDeviceLink {
                 return "That folder is not shared with other devices."
             }
             return nil
+        case .terminalWrite, .terminalResize, .terminalClose:
+            guard case let .string(id)? = object["terminalId"] else { return "A terminal is required." }
+            return linkedTerminals.contains(id) ? nil : "Open the terminal first."
         case .turnStart, .turnSteer, .turnQueue, .turnInterrupt, .approvalRespond, .checkpointRollback,
              .checkpointDiff, .sessionClose, .checkpointApplyPatch, .turnSchedule, .turnUnschedule:
             guard case let .string(id)? = object["sessionId"] else { return "A session is required." }

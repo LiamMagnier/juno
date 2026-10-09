@@ -52,6 +52,13 @@ public final class WebSocketEnvServerTransport: EnvServerTransport, @unchecked S
     }
 }
 
+/// A command as it goes on the wire, by its wire name.
+private struct EnvServerRawCommand: Encodable {
+    let id: String
+    let type: String
+    let params: JSONValue
+}
+
 public enum EnvServerConnectionError: Error, Equatable, LocalizedError, Sendable {
     case closed
     case timedOut(String)
@@ -76,6 +83,7 @@ public actor EnvServerConnection {
     private let commandTimeout: Duration
     private var pending: [String: CheckedContinuation<CodeV2.ServerResponse, Error>] = [:]
     private var subscribers: [UUID: AsyncStream<CodeV2.ServerEventEnvelope>.Continuation] = [:]
+    private var setupSubscribers: [UUID: AsyncStream<EnvRuntimeSetup.Update>.Continuation] = [:]
     private var receiveTask: Task<Void, Never>?
     private var nextID = 0
     private(set) public var isClosed = false
@@ -101,6 +109,8 @@ public actor EnvServerConnection {
         fail(all: .closed)
         for continuation in subscribers.values { continuation.finish() }
         subscribers.removeAll()
+        for continuation in setupSubscribers.values { continuation.finish() }
+        setupSubscribers.removeAll()
     }
 
     /// Every event envelope, session and global streams alike.
@@ -120,6 +130,24 @@ public actor EnvServerConnection {
 
     private func unsubscribe(_ id: UUID) { subscribers[id] = nil }
 
+    /// Managed-runtime install and sign-in progress (Antigravity), read from
+    /// `provider.updated` frames.
+    public func runtimeSetupUpdates() -> AsyncStream<EnvRuntimeSetup.Update> {
+        let id = UUID()
+        let (stream, continuation) = AsyncStream<EnvRuntimeSetup.Update>.makeStream(bufferingPolicy: .unbounded)
+        if isClosed {
+            continuation.finish()
+            return stream
+        }
+        setupSubscribers[id] = continuation
+        continuation.onTermination = { [weak self] _ in
+            Task { await self?.unsubscribeSetup(id) }
+        }
+        return stream
+    }
+
+    private func unsubscribeSetup(_ id: UUID) { setupSubscribers[id] = nil }
+
     private func readLoop() async {
         let decoder = JSONDecoder()
         while !Task.isCancelled {
@@ -137,6 +165,10 @@ public actor EnvServerConnection {
             case let .response(response):
                 pending.removeValue(forKey: response.id)?.resume(returning: response)
             case let .event(envelope):
+                if case .providerUpdated = envelope.event, !setupSubscribers.isEmpty,
+                   let update = EnvRuntimeSetup.update(fromFrame: frame) {
+                    for continuation in setupSubscribers.values { continuation.yield(update) }
+                }
                 for continuation in subscribers.values { continuation.yield(envelope) }
             case .unknown:
                 continue
@@ -146,6 +178,8 @@ public actor EnvServerConnection {
         fail(all: .closed)
         for continuation in subscribers.values { continuation.finish() }
         subscribers.removeAll()
+        for continuation in setupSubscribers.values { continuation.finish() }
+        setupSubscribers.removeAll()
     }
 
     private func fail(all error: EnvServerConnectionError) {
@@ -159,11 +193,17 @@ public actor EnvServerConnection {
     /// Sends one command and waits for its response. Throws the server's
     /// error when `ok` is false.
     public func send(_ type: CodeV2.ClientCommandType, params: some Encodable) async throws -> JSONValue? {
+        try await send(rawType: type.rawValue, params: params)
+    }
+
+    /// A command by its wire name: for commands newer than this build's
+    /// contract mirror (the runtime lane's `provider.install`, `provider.auth`).
+    public func send(rawType type: String, params: some Encodable) async throws -> JSONValue? {
         guard !isClosed else { throw EnvServerConnectionError.closed }
         start()
         nextID += 1
         let id = "mac-\(nextID)"
-        let command = CodeV2.ClientCommand(id: id, type: type, params: try CodeV2.ClientCommand.encodeParams(params))
+        let command = EnvServerRawCommand(id: id, type: type, params: try CodeV2.ClientCommand.encodeParams(params))
         let text = String(decoding: try JSONEncoder().encode(command), as: UTF8.self)
         let timeout = commandTimeout
         let response: CodeV2.ServerResponse = try await withCheckedThrowingContinuation { continuation in
@@ -176,7 +216,7 @@ public actor EnvServerConnection {
                     return
                 }
                 try? await Task.sleep(for: timeout)
-                self.resolve(id, with: .failure(EnvServerConnectionError.timedOut(type.rawValue)))
+                self.resolve(id, with: .failure(EnvServerConnectionError.timedOut(type)))
             }
         }
         guard response.ok else {

@@ -167,3 +167,66 @@ Owner request (2026-10-09): "enable antigravity and finish the remaining items".
 - **Release ships the env server**: `native/Scripts/release-macos.sh` typechecks, tests and bundles it, checks the bundle runs and that the exported app carries it; the JunoDesktop pre-build phase builds it for non-Debug configurations. The app checks the user's Node (22.18 or later) and says plainly in Connections when it is missing or too old.
 - **Computer bridge bound to the env server**: the Mac bridge checks each connection's peer with `getpeereid` and `LOCAL_PEERPID` and answers only env servers the app launched (`EnvServerHub.onLaunch`), so a shell command that read `bridge.token` is refused; the env server reads the token only from a private regular file, never through a symlink.
 - **Fixed on the way**: a provider runtime that finished starting after its session closed (a restart racing a resumed turn) was adopted and leaked; it is now stopped.
+
+## Code v3: Mac functional lane (`code-v3/macfn`, 2026-10-09)
+
+Logic and wiring only; the views stay plain because the full visual pass
+restyles them.
+
+- **Dock for env-server threads**: Terminal, Files and Preview tabs beside
+  Changes, Agents and Screen. Terminal is one shell per thread in its folder,
+  run by the env server (`terminal.open/write/resize/close`; SwiftTerm is not a
+  dependency, so `CodeV2TerminalScreen` keeps scrollback and applies CR, LF,
+  BS, TAB, erase and cursor moves and drops every other escape sequence,
+  across chunk boundaries). The hub routes the global `terminal.*` events by
+  terminal id and holds output that lands before `terminal.open` returns.
+  Files is the Studio workspace tree (files open in the document sheet);
+  Preview is the Studio `CodePreviewDock` on the thread's preview lease. The
+  toolbar's Terminal and the More menu's Preview open these tabs on an env
+  thread.
+- **Orchestrate on other instances (Swift engine)**: `CodeV2SubagentProviders`
+  resolves a role's `ModelSelection.instanceId`: `alevr` → the backend proxy
+  with `x-alevr-billing: alevr` and the tier's `x-alevr-context-tokens`;
+  `byok:<lab>` → the proxy with `x-alevr-billing: byok` and `lab:model`
+  (unbilled); a subscription → `EnvServerSubagentClient`, which runs the
+  child's task as one turn of its own env-server session in the thread's
+  folder and returns the closing message (follow-ups are further turns;
+  stopping the child interrupts the vendor turn; its approvals become
+  connected-agent cards). An instance that is not ready falls back to the
+  parent with a note. The resolver's fingerprint is part of the turn
+  contract. Alevr-engine threads now apply the v2 composer for Alevr **and
+  BYOK** selections: model, effort, permission, Orchestrate roles and budget,
+  `auto`, and the context tier or **Lean** window (`setContextWindowOverride`,
+  never above the model's own window), so compaction follows it.
+- **Connected-agent approvals**: the NSAlert approver is gone.
+  `StudioComputerBridgeApprover` asks through `CodeV2ConnectedApprovals`: the
+  thread's composer shows the card when that env session is on screen,
+  otherwise one Studio card over the window (root view, Chat or Code). With no
+  window the app is brought forward; quitting declines whatever is waiting.
+- **Overlay**: `ComputerActionOverlayPanelTests` checks the panel is
+  click-through, never key, excluded from capture, on every Space; the
+  `computer-overlay` gallery surface renders the ring and label offscreen
+  (plus `dock-terminal` and `connected-approval`).
+- **Device link**: terminal events are global, so the relay now shares and
+  drives only terminals opened through the link (the Mac's own Dock shells are
+  never relayed, written to or re-attached by id). Commands newer than the
+  Swift contract mirror (`provider.install`, `provider.auth`) are refused from
+  the web until the allow-lists name them.
+- **Antigravity on the Mac**: shown (no longer held) in the directory and
+  Connections. Built against the runtime lane's contract (uncommitted at the
+  time): Install runs `provider.install` and shows download progress from
+  `provider.updated` (`instance.install`, read from the raw frame so the older
+  Swift mirror does not drop it); Sign in runs `provider.auth start` and opens
+  the vendor's https page in the browser; the runtime's 127.0.0.1 callback
+  finishes on its own, and a paste field sends a loopback redirect address
+  back with `provider.auth complete`. When the runtime lane merges, swap
+  `EnvRuntimeSetup` for the contract's `ProviderInstance.install/.auth`.
+- **The 19 JunoDesktopTests failures are inherited**: the same 19 fail on the
+  trunk base `polish/research-next` 49a26fda in a clean worktree. They hold
+  older product decisions the shell has since changed: the generated shell
+  contract is v2 (tests expect v1), Chat's sidebar is now Projects, Library,
+  Customize with an empty More (tests expect Library, Projects, Made by Alevr,
+  Orbit and Assistants, Skills, Routines), `accountCustomize` has no matching
+  Chat page, the View menu folds the pages into one section, and the icon
+  geometry tests measure ink the current symbols no longer draw. Updating them
+  is a product call for the shell's owners, not a cheap fix here.
