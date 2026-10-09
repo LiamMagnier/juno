@@ -852,6 +852,12 @@
           "ios": "planned",
           "screen": "Code settings",
           "note": "Code's settings cover permissions, model, MCP, hooks, skills and agents; cloud environments are missing."
+        },
+        "/code/[id]": {
+          "mac": "native",
+          "ios": "partial",
+          "screen": "DesktopCodeWorkspace (thread)",
+          "note": "The phone supervises remote and cloud runs."
         }
       },
       "routes": {
@@ -933,7 +939,32 @@
           "status": "planned",
           "note": "The app is meant to mirror its Code workspaces here so the web's Code tab lists them; native Code does not yet."
         },
-        "/api/v1/code/devices/[deviceId]": "native"
+        "/api/v1/code/devices/[deviceId]": "native",
+        "/api/code/routing/[conversationId]": {
+          "status": "web-only",
+          "note": "Code v2 per-thread role routing (Orchestrate). The Mac keeps routing in its own session state and sends it with each run."
+        },
+        "/api/code/v2/link/[deviceId]": {
+          "status": "web-only",
+          "note": "The browser side of the Code v2 device link: the web drives the env server on the user's Mac through it."
+        },
+        "/api/code/v2/link/[deviceId]/host": {
+          "status": "native",
+          "swift": "EnvServerDeviceLink.swift builds /api/code/v2/link/<device>/host for the Mac's pull/push loop."
+        },
+        "/api/provider-keys": "native",
+        "/api/provider-keys/[provider]": {
+          "status": "native",
+          "swift": "ByokKeyStore.swift deletes /api/provider-keys/<provider>."
+        },
+        "/api/provider-keys/[provider]/test": {
+          "status": "web-only",
+          "note": "The web tests a key before storing it; the Mac stores keys through POST /api/provider-keys, which tests them server side."
+        },
+        "/api/provider-keys/[provider]/models": {
+          "status": "web-only",
+          "note": "OpenRouter model list for a stored key, used by the web model picker."
+        }
       }
     },
     {
