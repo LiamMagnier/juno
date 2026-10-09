@@ -134,11 +134,15 @@ export const INSTANCES: ProviderInstance[] = [
 export const DEVICE = { id: "dev-mac", name: "Maya's MacBook Pro", online: true, lastSeenAt: at(2) };
 
 export const THREADS: ThreadSummary[] = [
-  { id: "t1", title: "Move checkout totals to the server", project: "storefront", state: "running", updatedAt: at(0) },
-  { id: "t2", title: "Cart total regression suite", project: "storefront", state: "waiting", updatedAt: at(3), waitingFor: "wants to run a command" },
-  { id: "t3", title: "Lazy-load product images", project: "storefront", state: "idle", updatedAt: at(60) },
-  { id: "t4", title: "Fix the stale cart total", project: "storefront", state: "idle", updatedAt: at(240) },
-  { id: "t5", title: "Document the webhooks API", project: "docs-site", state: "idle", updatedAt: at(600) },
+  { id: "t1", title: "Move checkout totals to the server", project: "storefront", state: "running", updatedAt: at(0), branch: "alevr/server-totals" },
+  { id: "t2", title: "Cart total regression suite", project: "storefront", state: "waiting", updatedAt: at(3), waitingFor: "wants to run a command", branch: "alevr/cart-suite" },
+  { id: "t3", title: "Lazy-load product images", project: "storefront", state: "idle", updatedAt: at(48), pr: 7723, unread: true },
+  { id: "t6", title: "Webhook retries with backoff", project: "payments-api", state: "idle", updatedAt: at(130), branch: "alevr/webhook-retries" },
+  { id: "t4", title: "Fix the stale cart total", project: "storefront", state: "idle", updatedAt: at(240), pr: 7698 },
+  { id: "t5", title: "Document the webhooks API", project: "docs-site", state: "idle", updatedAt: at(60 * 26), branch: "main" },
+  { id: "t7", title: "Upgrade to React 20", project: "storefront", state: "idle", updatedAt: at(60 * 24 * 4), settled: true, pr: 7610 },
+  { id: "t8", title: "Rate limit the search endpoint", project: "payments-api", state: "idle", updatedAt: at(60 * 24 * 6), settled: true, branch: "alevr/search-limit" },
+  { id: "t9", title: "Dark mode for the receipt emails", project: "storefront", state: "idle", updatedAt: at(60 * 24 * 9), settled: true },
 ];
 
 const DIFF_TOTAL = `--- a/src/server/cart/total.ts
@@ -400,13 +404,19 @@ export const STATES: GalleryState[] = [
   },
   {
     id: "tiers",
-    label: "Context window tiers (Alevr)",
+    label: "Context window (Alevr)",
     model: base({ items: workedTurn(), selection: { instanceId: "alevr", model: "openai:gpt-6.1-sol", effort: "high" }, usage: USAGE_ALEVR }),
     ui: { popover: "tier" },
   },
   {
+    id: "overflow",
+    label: "Composer options menu",
+    model: base({ items: workedTurn() }),
+    ui: { popover: "overflow" },
+  },
+  {
     id: "orchestrate",
-    label: "Orchestrate",
+    label: "Team",
     model: base({ items: workedTurn(), routing: ROUTING_LEAD }),
     ui: { popover: "orchestrate" },
   },

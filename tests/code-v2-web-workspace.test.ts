@@ -112,9 +112,11 @@ test("tiers and rates: the chosen tier wins, subscriptions cost nothing to Alevr
 
 test("dock: tabs appear with their content, agents fold to their newest state, diffs parse to hunks", () => {
   const streaming = fixture("streaming").model;
-  assert.deepEqual(visibleTabs(streaming), ["changes", "terminal", "files", "preview"]);
+  // One tab strip: Changes, Terminal, Files, and only when relevant Preview, Agents, Screen (the plan lives in the thread).
+  assert.deepEqual(visibleTabs(streaming), ["changes", "terminal", "files"]);
+  assert.deepEqual(visibleTabs({ ...streaming, previewUrl: "http://localhost:3000" }), ["changes", "terminal", "files", "preview"]);
   const needs = fixture("needs-you").model;
-  assert.ok(visibleTabs(needs).includes("agents") && visibleTabs(needs).includes("plan"));
+  assert.ok(visibleTabs(needs).includes("agents") && !visibleTabs(needs).includes("plan"));
   const items: TurnItem[] = [
     { id: "a", kind: "subagent", agentId: "w1", role: "worker", model: { instanceId: "alevr", model: "m" }, status: "running", createdAt: "t" },
     { id: "b", kind: "subagent", agentId: "w1", role: "worker", model: { instanceId: "alevr", model: "m" }, status: "completed", createdAt: "t" },
@@ -160,40 +162,73 @@ test("the needs-you state takes the composer over with the asker and the three d
   assert.doesNotMatch(html, /Queue a follow-up/);
 });
 
-test("the limited state offers Resume at reset and Switch model, without the working glow", () => {
+test("the limited state offers Resume at reset and Switch model, in the composer and not in coral", () => {
   const f = fixture("limited");
   const html = renderToStaticMarkup(React.createElement(CodeWorkspace, { model: f.model, ui: f.ui }));
-  assert.match(html, /Claude plan limit reached\. Resets at/);
+  assert.match(html, /Claude plan limit reached, resets/);
   assert.match(html, /Resume at reset/);
   assert.match(html, /Switch model/);
-  assert.doesNotMatch(html, /cv2-composer working/);
+  assert.match(html, /cv2-approve neutral/);
+  assert.doesNotMatch(html, /cv2-composer needs/);
 });
 
-test("the streaming state glows, offers Stop and lists the queued follow-up with Steer now", () => {
+test("the streaming state is calm: no glow, a stop button, the queue as one control, the live row with its clock", () => {
   const f = fixture("streaming");
   const html = renderToStaticMarkup(React.createElement(CodeWorkspace, { model: f.model, ui: f.ui }));
-  assert.match(html, /cv2-composer working/);
+  assert.match(html, /class="cv2-composer" data-state="running"/);
+  assert.doesNotMatch(html, /cv2-glow|cv2-composer working|cv2-composer needs/);
   assert.match(html, /data-mode="stop"/);
-  assert.match(html, /Steer now/);
-  assert.match(html, /Also update the README/);
+  assert.match(html, /Queued \(1\)/);
+  assert.match(html, /Running<\/span>/);
   assert.match(html, /Changed 3 files/);
+});
+
+test("the composer at rest shows +, the model trigger, the options menu and send; mode, plan and permissions only when not default", () => {
+  const f = fixture("model-picker");
+  const html = renderToStaticMarkup(React.createElement(CodeWorkspace, { model: { ...f.model }, ui: {} }));
+  const foot = html.slice(html.indexOf('class="cv2-cfoot"'), html.indexOf('class="cv2-strip"'));
+  assert.match(foot, /aria-label="Add"/);
+  assert.match(foot, /aria-label="Model: Opus 5\.5, High"/);
+  assert.match(foot, /aria-label="More options"/);
+  assert.doesNotMatch(foot, /Lead \+|Best of|Auto-edit|>Plan</);
+  const team = renderToStaticMarkup(React.createElement(CodeWorkspace, { model: { ...f.model, runtimeMode: "full", interactionMode: "plan", routing: fixture("needs-you").model.routing }, ui: {} }));
+  assert.match(team, /Lead \+ 3/);
+  assert.match(team, /Full access/);
+  assert.match(team, />Plan</);
+});
+
+test("the sidebar is a list of work: needs you first, then working, project and branch under each title, the rest settled", () => {
+  const f = fixture("streaming");
+  const html = renderToStaticMarkup(React.createElement(CodeWorkspace, { model: f.model, ui: {} }));
+  const side = html.slice(html.indexOf('class="cv2-side"'), html.indexOf("</nav>"));
+  const order = [...side.matchAll(/class="t cv2-trunc">([^<]+)</g)].map((m) => m[1]);
+  assert.deepEqual(order.slice(0, 2), ["Cart total regression suite", "Move checkout totals to the server"]);
+  assert.match(side, /Settled \(3\)/);
+  assert.match(side, /#7723/);
+  assert.match(side, /alevr\/server-totals/);
+  assert.doesNotMatch(side, /Upgrade to React 20/, "settled sessions stay folded");
+  assert.doesNotMatch(side, /Pull requests|Connections/, "destinations moved to the palette and Settings");
 });
 
 test("Connections names subscriptions by the owner's rules and lists Antigravity as a normal provider", () => {
   const html = renderToStaticMarkup(React.createElement(ConnectionsPanel, { instances: INSTANCES, device: DEVICE }));
   assert.match(html, /Claude \(your subscription\)/);
   assert.match(html, /ChatGPT \(Codex\)/);
-  assert.match(html, /Sign in again/);
-  assert.match(html, /Install/);
+  assert.match(html, /Sign-in expired/);
+  assert.match(html, /Not installed/);
+  assert.doesNotMatch(html, /cv2-meter|progress/, "usage is a number, never a bar");
+  assert.match(renderToStaticMarkup(React.createElement(ConnectionsPanel, { instances: INSTANCES, device: DEVICE, initialSelected: "acp:grok" })), /Sign in again/);
+  assert.match(renderToStaticMarkup(React.createElement(ConnectionsPanel, { instances: INSTANCES, device: DEVICE, initialSelected: "acp:opencode" })), />Install</);
   // Enabled by the owner on 2026-10-09: listed like every other runtime, never as held.
   assert.doesNotMatch(html, /Not available yet/);
   const withAntigravity = renderToStaticMarkup(
     React.createElement(ConnectionsPanel, {
-      instances: [...INSTANCES, { id: "acp:antigravity", kind: "acp", label: "Antigravity", acpCommand: ["antigravity-acp"], status: "not-installed", install: { phase: "idle", version: "1.3.0" } }],
+      instances: [...INSTANCES.filter((i) => i.id !== "acp:antigravity"), { id: "acp:antigravity", kind: "acp", label: "Antigravity", acpCommand: ["antigravity-acp"], status: "not-installed", install: { phase: "idle", version: "1.3.0" } }],
       device: DEVICE,
+      initialSelected: "acp:antigravity",
     }),
   );
-  assert.match(withAntigravity, /Antigravity<\/div><div class="ds"[^>]*>Not installed\. Alevr downloads Google&#x27;s official runtime/);
+  assert.match(withAntigravity, /Antigravity<\/span>.*?<p class="cv2-ds"[^>]*>Not installed\. Alevr downloads Google&#x27;s official runtime/);
   assert.match(html, /Antigravity/);
   assert.doesNotMatch(html, /Claude Code/);
   const offline = renderToStaticMarkup(React.createElement(ConnectionsPanel, { instances: [], device: null }));

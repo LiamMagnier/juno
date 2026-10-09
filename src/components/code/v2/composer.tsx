@@ -1,50 +1,45 @@
 "use client";
 
 /**
- * The composer (DESIGN §5.5, §5.6, §5.10, §5.14, §6; INTERACTION I-1, I-2,
- * I-9, I-13, I-17): the one elevated object, and the one that carries state.
- * Idle it floats; working it wears the travelling coral edge; when the agent
- * needs the reader the approval takes the composer over in place. Limited,
- * offline, starting, no-provider and child-thread states live here too, as
- * words, never pills.
+ * The composer (TARGET §7): the same object as Chat's, quiet at rest.
+ *
+ * Portions adapted from T3 Code, Copyright (c) 2026 T3 Tools Inc., MIT License
+ * (ComposerSurface's context strip hanging under the field, and
+ * ComposerPendingApprovalPanel: approvals replace the composer body in place).
+ *
+ * At rest: "+" (attach, mention, commands), the model trigger (model and
+ * effort, one control), "…" (effort, context, mode, permissions, plan), the
+ * mic and send. A control for mode, plan or permissions appears only while
+ * that setting is not its default. Working is shown by the live work-log row
+ * and the sidebar spinner, never by the composer: no glow, no ring. When the
+ * agent needs you, the body becomes the request and the edge turns coral.
  *
  * Enter sends (queues while a turn runs), ⌘↵ steers, Shift+Enter is a
  * newline, Esc Esc stops, ⌥↑ edits the last queued message. `/` and `@` open
  * the command and mention menus at the caret.
  */
 import * as React from "react";
-import type { ApprovalDecision, ApprovalRequestItem, ProviderInstance, TurnItem, UserInputRequestItem } from "@/lib/code-v2/contracts";
-import {
-  SLASH_COMMANDS,
-  applyTrigger,
-  composerKeyIntent,
-  detectTrigger,
-  escPress,
-  filterByQuery,
-  placeholderFor,
-  rankFiles,
-  sendButtonMode,
-  visibleQueue,
-  type QueueRow,
-  type Trigger,
-} from "@/lib/code-v2/composer";
-import { orchestrateLabel } from "@/lib/code-v2/orchestrate";
-import { displayName, planName } from "@/lib/code-v2/providers-view";
-import { formatReset, tightestWindow } from "@/lib/code-v2/tier-view";
-import { findInstance, runtimeModeInfo, shortLabel } from "./model-info";
-import { ContextGauge, ModeMenu, ModelPicker, OrchestratePopover, TierPopover, TraitsMenu, traitsLabel } from "./pickers";
-import { Glyph, InstanceMark, Kbd, ModelMark, Roll, useIsMac } from "./primitives";
+import type { ApprovalDecision, ApprovalRequestItem, PlanItem, ProviderInstance, TurnItem, UserInputRequestItem } from "@/lib/code-v2/contracts";
+import { SLASH_COMMANDS, applyTrigger, composerKeyIntent, detectTrigger, escPress, filterByQuery, rankFiles, sendButtonMode, type Trigger } from "@/lib/code-v2/composer";
+import { orchestrateLabel, withPreset } from "@/lib/code-v2/orchestrate";
+import { displayName } from "@/lib/code-v2/providers-view";
+import { formatReset, formatTokens, tightestWindow } from "@/lib/code-v2/tier-view";
+import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
+import { EFFORT_LABELS, RUNTIME_MODES, currentTier, effectiveEffort, effortLevelsOf, findInstance, runtimeModeInfo } from "./model-info";
+import { ContextRing, ModelPicker, TeamPopover, triggerWords, type RoleTab } from "./pickers";
+import { ComposerPopover, Glyph, MenuList, ModelMark, useIsMac, type MenuEntry } from "./primitives";
 import type { WorkspaceModel } from "./types";
 import { cn } from "@/lib/utils";
 
-export type PopoverName = "model" | "traits" | "tier" | "orchestrate" | "mode" | "attach" | null;
+export type PopoverName = "model" | "context" | "team" | "overflow" | "attach" | "queue" | "device" | null;
 
 type Pending = ApprovalRequestItem | UserInputRequestItem;
 
+/** The permission a new session starts with; any other shows in the composer. */
+export const DEFAULT_RUNTIME_MODE = "auto-edit";
+
 export function pendingRequests(items: readonly TurnItem[]): Pending[] {
-  return items.filter(
-    (i): i is Pending => (i.kind === "approval_request" || i.kind === "user_input_request") && i.status === "pending",
-  );
+  return items.filter((i): i is Pending => (i.kind === "approval_request" || i.kind === "user_input_request") && i.status === "pending");
 }
 
 const ACTION_PHRASE: Record<ApprovalRequestItem["action"], string> = {
@@ -55,7 +50,11 @@ const ACTION_PHRASE: Record<ApprovalRequestItem["action"], string> = {
   computer: "wants to use the computer",
 };
 
-// ── Approval takeover ───────────────────────────────────────────────────────
+export function placeholder(running: boolean): string {
+  return running ? "Queue a follow-up. ⌘↵ to steer now" : "Ask for a change. @ for files, / for commands";
+}
+
+// ── Needs you: the body is the request ──────────────────────────────────────
 
 function ApprovalTakeover({
   requests,
@@ -63,68 +62,71 @@ function ApprovalTakeover({
   onIndex,
   onRespond,
   onShowDiff,
-  mac,
 }: {
   requests: Pending[];
   index: number;
   onIndex: (i: number) => void;
   onRespond: (requestId: string, decision: ApprovalDecision, answers?: Record<string, string[]>) => void;
   onShowDiff?: () => void;
-  mac: boolean;
 }) {
   const req = requests[Math.min(index, requests.length - 1)];
   const primary = React.useRef<HTMLButtonElement>(null);
   const [answers, setAnswers] = React.useState<Record<string, string[]>>({});
   const [other, setOther] = React.useState("");
+  const [more, setMore] = React.useState(false);
   React.useEffect(() => {
     primary.current?.focus({ preventScroll: true, focusVisible: false } as FocusOptions);
     setAnswers({});
     setOther("");
+    setMore(false);
   }, [req?.id]);
   if (!req) return null;
   const many = requests.length > 1;
   const who = req.kind === "approval_request" ? (req.agentLabel ?? "Alevr") : "Alevr";
-  const header = req.kind === "approval_request" ? `${who} ${ACTION_PHRASE[req.action]}` : req.questions[0]?.prompt ?? "A question for you";
+  const files = req.kind === "approval_request" && req.action === "file_change" ? (req.summary.match(/\d+/)?.[0] ?? null) : null;
+  const header =
+    req.kind === "approval_request"
+      ? req.action === "file_change" && files
+        ? `${who} wants to edit ${files} ${files === "1" ? "file" : "files"}`
+        : `${who} ${ACTION_PHRASE[req.action]}`
+      : (req.questions[0]?.prompt ?? "A question for you");
   const opts = req.kind === "approval_request" ? (req.options ?? ["accept", "acceptForSession", "decline"]) : [];
+  const counter = many && (
+    <span className="count">
+      <button type="button" className="cv2-iconbtn" style={{ width: 20, height: 20 }} aria-label="Previous request" onClick={() => onIndex((index - 1 + requests.length) % requests.length)}>
+        <Glyph name="chevron-left" size={12} />
+      </button>
+      {index + 1} of {requests.length}
+      <button type="button" className="cv2-iconbtn" style={{ width: 20, height: 20 }} aria-label="Next request" onClick={() => onIndex((index + 1) % requests.length)}>
+        <Glyph name="chevron-right" size={12} />
+      </button>
+    </span>
+  );
 
   return (
     <div className="cv2-approve" role="alertdialog" aria-label={header} key={req.id}>
       <div className="ah">
-        <Glyph name="needs-you" size={18} />
-        <span className="cv2-m cv2-grow">{header}</span>
-        {many && (
-          <span className="cv2-row cv2-mute cv2-tnum" style={{ gap: 2 }}>
-            <button type="button" className="cv2-iconbtn" style={{ width: 24, height: 24 }} aria-label="Previous request" onClick={() => onIndex((index - 1 + requests.length) % requests.length)}>
-              <Glyph name="chevron-left" size={14} />
-            </button>
-            <Roll k={index}>
-              {index + 1} of {requests.length}
-            </Roll>
-            <button type="button" className="cv2-iconbtn" style={{ width: 24, height: 24 }} aria-label="Next request" onClick={() => onIndex((index + 1) % requests.length)}>
-              <Glyph name="chevron-right" size={14} />
-            </button>
-          </span>
-        )}
+        <span className="title cv2-grow">{header}</span>
+        {counter}
       </div>
       {req.kind === "approval_request" ? (
         <>
-          {req.action === "file_change" ? (
-            <div className="cv2-well cv2-row" style={{ gap: 10, whiteSpace: "normal" }}>
-              <span className="cv2-grow cv2-trunc">{req.summary}</span>
-              {onShowDiff && (
-                <button type="button" className="cv2-btn sm" onClick={onShowDiff}>
-                  Show diff
+          <div className={cn("cv2-well", req.action === "file_change" && "plain")}>{req.action === "file_change" ? req.summary : (req.detail ?? req.summary)}</div>
+          {req.justification && (
+            <div className="why">
+              <span className={cn("txt", !more && "clamp")}>{req.justification}</span>
+              {!more && req.justification.length > 70 && (
+                <button type="button" className="cv2-link" style={{ fontSize: 12, flex: "none" }} onClick={() => setMore(true)}>
+                  More
                 </button>
               )}
             </div>
-          ) : (
-            <div className="cv2-well">{req.detail ?? req.summary}</div>
           )}
-          {req.justification && <div className="why">{req.justification}</div>}
           <div className="cv2-approve-actions">
+            <span className="spacer" />
             {opts.includes("decline") && (
-              <button type="button" className="cv2-btn ghost" onClick={() => onRespond(req.requestId, "decline")}>
-                Deny <Kbd k="escape" mac={mac} />
+              <button type="button" className="cv2-btn ghost" title="Deny (Esc)" onClick={() => onRespond(req.requestId, "decline")}>
+                Deny
               </button>
             )}
             {opts.includes("cancel") && (
@@ -132,14 +134,18 @@ function ApprovalTakeover({
                 Deny and stop
               </button>
             )}
-            <span className="spacer" />
-            {opts.includes("acceptForSession") && (
-              <button type="button" className="cv2-btn" onClick={() => onRespond(req.requestId, "acceptForSession")}>
-                Allow for this session <Kbd k="mod+shift+enter" mac={mac} />
+            {req.action === "file_change" && onShowDiff && (
+              <button type="button" className="cv2-btn" onClick={onShowDiff}>
+                Review
               </button>
             )}
-            <button ref={primary} type="button" className="cv2-btn ink" onClick={() => onRespond(req.requestId, "accept")}>
-              Allow once <Kbd k="enter" mac={mac} />
+            {opts.includes("acceptForSession") && req.action !== "file_change" && (
+              <button type="button" className="cv2-btn" title="Allow for this session (⌘⇧↵)" onClick={() => onRespond(req.requestId, "acceptForSession")}>
+                Allow for session
+              </button>
+            )}
+            <button ref={primary} type="button" className="cv2-btn ink" title="Allow once (↵)" onClick={() => onRespond(req.requestId, "accept")}>
+              {req.action === "file_change" ? "Allow" : "Allow once"}
             </button>
           </div>
         </>
@@ -164,27 +170,19 @@ function ApprovalTakeover({
                       })
                     }
                   >
-                    <Glyph name={on ? "check-circle" : "circle"} className={on ? undefined : "cv2-mute"} />
+                    <Glyph name={on ? "check-circle" : "circle"} size={16} className={on ? undefined : "cv2-mute"} />
                     <span>{o}</span>
                   </button>
                 );
               })}
-              {!(q.options?.length) && (
-                <input
-                  className="cv2-well"
-                  style={{ border: 0, outline: "none", fontFamily: "inherit", fontSize: 14 }}
-                  placeholder="Your answer"
-                  value={other}
-                  onChange={(e) => setOther(e.target.value)}
-                />
-              )}
+              {!q.options?.length && <input className="cv2-answer" placeholder="Your answer" value={other} onChange={(e) => setOther(e.target.value)} aria-label="Your answer" />}
             </div>
           ))}
           <div className="cv2-approve-actions">
-            <button type="button" className="cv2-btn ghost" onClick={() => onRespond(req.requestId, "decline")}>
-              Skip <Kbd k="escape" mac={mac} />
-            </button>
             <span className="spacer" />
+            <button type="button" className="cv2-btn ghost" title="Skip (Esc)" onClick={() => onRespond(req.requestId, "decline")}>
+              Skip
+            </button>
             <button
               ref={primary}
               type="button"
@@ -195,7 +193,7 @@ function ApprovalTakeover({
                 onRespond(req.requestId, "accept", merged);
               }}
             >
-              Answer <Kbd k="enter" mac={mac} />
+              Answer
             </button>
           </div>
         </>
@@ -204,86 +202,27 @@ function ApprovalTakeover({
   );
 }
 
-// ── Queue dock ──────────────────────────────────────────────────────────────
-
-function QueueDock({
-  rows,
-  mac,
-  canSteer,
-  onEdit,
-  onRemove,
-  onMove,
-  onSteer,
-}: {
-  rows: QueueRow[];
-  mac: boolean;
-  canSteer: boolean;
-  onEdit: (id: string, text: string) => void;
-  onRemove: (id: string) => void;
-  onMove: (id: string, to: number) => void;
-  onSteer: (id: string) => void;
-}) {
-  const [expanded, setExpanded] = React.useState(false);
-  const [editing, setEditing] = React.useState<string | null>(null);
-  const [drag, setDrag] = React.useState<string | null>(null);
-  const shown = visibleQueue(rows, expanded);
-  if (!rows.length) return null;
+function PlanApproval({ plan, onApprove, onRevise }: { plan: PlanItem; onApprove: () => void; onRevise: () => void }) {
+  const n = plan.steps?.length ?? 0;
+  const primary = React.useRef<HTMLButtonElement>(null);
+  React.useEffect(() => primary.current?.focus({ preventScroll: true, focusVisible: false } as FocusOptions), [plan.id]);
   return (
-    <div className="cv2-queue" role="list" aria-label="Queued messages">
-      {shown.rows.map((r, i) => (
-        <div
-          key={r.id}
-          role="listitem"
-          className={cn("cv2-q", drag === r.id && "dragging")}
-          draggable={editing !== r.id}
-          onDragStart={(e) => {
-            setDrag(r.id);
-            e.dataTransfer.effectAllowed = "move";
-          }}
-          onDragEnd={() => setDrag(null)}
-          onDragOver={(e) => {
-            e.preventDefault();
-            if (drag && drag !== r.id) onMove(drag, i);
-          }}
-        >
-          <Glyph name="corner-down-right" />
-          {editing === r.id ? (
-            <input
-              autoFocus
-              defaultValue={r.text}
-              aria-label="Edit queued message"
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  onEdit(r.id, e.currentTarget.value);
-                  setEditing(null);
-                } else if (e.key === "Escape") setEditing(null);
-              }}
-              onBlur={(e) => {
-                onEdit(r.id, e.currentTarget.value);
-                setEditing(null);
-              }}
-            />
-          ) : (
-            <span className="txt cv2-trunc cv2-grow">{r.text}</span>
-          )}
-          <button type="button" className="cv2-iconbtn" style={{ width: 26, height: 26 }} aria-label="Edit" onClick={() => setEditing(r.id)}>
-            <Glyph name="edit" size={14} />
-          </button>
-          <button type="button" className="cv2-iconbtn" style={{ width: 26, height: 26 }} aria-label="Remove from the queue" onClick={() => onRemove(r.id)}>
-            <Glyph name="close" size={14} />
-          </button>
-          {canSteer && (
-            <button type="button" className="cv2-btn" onClick={() => onSteer(r.id)}>
-              Steer now <Kbd k="mod+enter" mac={mac} />
-            </button>
-          )}
-        </div>
-      ))}
-      {shown.more > 0 && (
-        <button type="button" className="cv2-q cv2-mute" onClick={() => setExpanded(true)}>
-          <span style={{ paddingLeft: 26 }}>+{shown.more} more</span>
+    <div className="cv2-approve" role="alertdialog" aria-label="Plan ready">
+      <div className="ah">
+        <span className="title cv2-grow">Plan ready{n ? `, ${n} ${n === 1 ? "step" : "steps"}` : ""}</span>
+      </div>
+      <div className="why">
+        <span className="txt">Nothing changes until you approve it. Revise to tell Alevr what to change.</span>
+      </div>
+      <div className="cv2-approve-actions">
+        <span className="spacer" />
+        <button type="button" className="cv2-btn ghost" onClick={onRevise}>
+          Revise
         </button>
-      )}
+        <button ref={primary} type="button" className="cv2-btn ink" onClick={onApprove}>
+          Approve and build
+        </button>
+      </div>
     </div>
   );
 }
@@ -305,22 +244,25 @@ export const Composer = React.forwardRef<
     setPopover: (p: PopoverName) => void;
     approvalIndex: number;
     setApprovalIndex: (i: number) => void;
-    onOpenDock: (tab: "changes" | "agents") => void;
+    onOpenDock: (tab: "changes" | "agents" | "terminal") => void;
     onFocusChange?: (focused: boolean) => void;
+    /** Empty state: three lines tall. */
+    tall?: boolean;
   }
->(function Composer({ model, popover, setPopover, approvalIndex, setApprovalIndex, onOpenDock, onFocusChange }, ref) {
+>(function Composer({ model, popover, setPopover, approvalIndex, setApprovalIndex, onOpenDock, onFocusChange, tall }, ref) {
   const mac = useIsMac();
   const { actions, instances, selection } = model;
   const [draft, setDraft] = React.useState("");
   const [caret, setCaret] = React.useState(0);
   const [menuIndex, setMenuIndex] = React.useState(0);
   const [escArmed, setEscArmed] = React.useState<number | null>(null);
-  const [steered, setSteered] = React.useState(false);
-  const [tierDelta, setTierDelta] = React.useState<string | null>(null);
   const [menuDismissed, setMenuDismissed] = React.useState(false);
+  const [revising, setRevising] = React.useState(false);
+  const [roleTab, setRoleTab] = React.useState<RoleTab>("lead");
   const textarea = React.useRef<HTMLTextAreaElement>(null);
   const footRef = React.useRef<HTMLDivElement>(null);
-  const shellRef = React.useRef<HTMLDivElement>(null);
+  const stripRef = React.useRef<HTMLDivElement>(null);
+  const fileInput = React.useRef<HTMLInputElement>(null);
 
   const running = model.state === "running" || model.state === "waiting";
   const instance = findInstance(instances, selection.instanceId);
@@ -328,18 +270,22 @@ export const Composer = React.forwardRef<
   const canSteer = caps?.steering ?? true;
   const canQueue = caps?.queue ?? true;
   const pending = pendingRequests(model.items);
-  const needs = pending.length > 0;
-  const ready = !model.starting && !!instance;
+  const plan = [...model.items].reverse().find((i): i is PlanItem => i.kind === "plan" && !!i.awaitingApproval);
+  const needs = pending.length > 0 || (!!plan && !revising);
+  const connected = instances.some((i) => i.status === "ready" || i.status === "limited") && !!instance;
+  const ready = !model.starting && connected && !model.offline;
   const hasDraft = draft.trim().length > 0;
   const trigger: Trigger | null = menuDismissed ? null : detectTrigger(draft, caret);
   const menuItems = React.useMemo(() => {
     if (!trigger) return [];
-    if (trigger.kind === "slash") return filterByQuery(SLASH_COMMANDS, trigger.query, (c) => c.name).map((c) => ({ key: c.name, glyph: c.glyph, name: `/${c.name}`, sub: c.description, section: c.section, insert: c.insert ?? `/${c.name} ` }));
-    const files = rankFiles(model.files ?? [], trigger.query, 8).map((p) => ({ key: p, glyph: "file-code", name: p, sub: "", section: "Files", insert: `@${p} ` }));
-    const agents = filterByQuery(["explorer", "reviewer"], trigger.query, (a) => a).map((a) => ({ key: a, glyph: "agent", name: `@${a}`, sub: a === "explorer" ? "Maps something read-only" : "A second read of the changes", section: "Agents", insert: `@${a} ` }));
+    if (trigger.kind === "slash") return filterByQuery(SLASH_COMMANDS, trigger.query, (c) => c.name).map((c) => ({ key: c.name, name: `/${c.name}`, sub: c.description, section: c.section, insert: c.insert ?? `/${c.name} ` }));
+    const files = rankFiles(model.files ?? [], trigger.query, 8).map((p) => ({ key: p, name: p.split("/").pop() ?? p, sub: p.includes("/") ? p.slice(0, p.lastIndexOf("/")) : "", section: "Files", insert: `@${p} ` }));
+    const agents = filterByQuery(["explorer", "reviewer"], trigger.query, (a) => a).map((a) => ({ key: a, name: `@${a}`, sub: a === "explorer" ? "Maps something, read-only" : "A second read of the changes", section: "Agents", insert: `@${a} ` }));
     return [...files, ...agents];
   }, [trigger, model.files]);
   const menuOpen = !!trigger && menuItems.length > 0;
+
+  const speech = useSpeechRecognition({ onFinal: (t) => setDraft((d) => `${d}${d && !d.endsWith(" ") ? " " : ""}${t.trim()}`) });
 
   React.useImperativeHandle(ref, () => ({
     focus: () => textarea.current?.focus(),
@@ -360,26 +306,22 @@ export const Composer = React.forwardRef<
     },
   }));
 
-  // Grow with the content up to 40 vh, then scroll (I-2).
   React.useLayoutEffect(() => {
     const el = textarea.current;
     if (!el) return;
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, window.innerHeight * 0.4)}px`;
-  }, [draft]);
+  }, [draft, needs]);
 
   const submit = (intent: "send" | "queue" | "steer") => {
     const text = draft.trim();
     if (!text) return;
     if (intent === "send") void actions.send(text);
     else if (intent === "queue") actions.queue(text);
-    else {
-      void actions.steer(text);
-      setSteered(true);
-      setTimeout(() => setSteered(false), 1200);
-    }
+    else void actions.steer(text);
     setDraft("");
     setMenuDismissed(false);
+    setRevising(false);
   };
 
   const pick = (i: number) => {
@@ -417,11 +359,7 @@ export const Composer = React.forwardRef<
       e.preventDefault();
       return;
     }
-    const intent = composerKeyIntent(
-      { key: e.key, meta: e.metaKey, ctrl: e.ctrlKey, shift: e.shiftKey, alt: e.altKey },
-      { running, hasDraft, canSteer, canQueue, menuOpen, composing: e.nativeEvent.isComposing },
-      mac,
-    );
+    const intent = composerKeyIntent({ key: e.key, meta: e.metaKey, ctrl: e.ctrlKey, shift: e.shiftKey, alt: e.altKey }, { running, hasDraft, canSteer, canQueue, menuOpen, composing: e.nativeEvent.isComposing }, mac);
     if (!intent || intent === "newline") return;
     e.preventDefault();
     if (intent === "edit-last-queued") {
@@ -437,77 +375,125 @@ export const Composer = React.forwardRef<
   };
 
   const mode = sendButtonMode({ running, hasDraft, canQueue, canSteer }, ready);
-  const traits = traitsLabel(instances, selection);
+  const words = triggerWords(instances, selection);
   const runtime = runtimeModeInfo(model.runtimeMode);
+  const routing = model.routing;
   const tightest = tightestWindow(instance?.limits);
-  const planWaiting = model.items.some((i) => i.kind === "plan" && i.awaitingApproval);
-  const glow = needs || planWaiting ? "needs" : running && !model.offline ? "working" : "";
-  const todo = [...model.items].reverse().find((i) => i.kind === "todo_list");
-  const liveTodo = running && todo && todo.kind === "todo_list" ? todo : null;
   const threadTokens = model.usage?.contextTokens ?? 0;
+  const tier = currentTier(instances, selection);
+  const levels = effortLevelsOf(instances, selection).filter((l) => l !== "none");
+  const effort = effectiveEffort(instances, selection);
+  const toggle = (p: PopoverName) => setPopover(popover === p ? null : p);
 
   // ── Child thread (a subagent in full view) ──
   if (model.child) {
     return (
       <div className="cv2-childbar">
-        <Glyph name="subagent" />
         <span className="cv2-grow cv2-trunc">
-          <span className="cv2-m">{model.child.label}</span> <span className="cv2-mute">· {model.child.model} · Runs on its own</span>
+          <span className="cv2-m">{model.child.label}</span> <span className="cv2-mute">{model.child.model}</span>
         </span>
         <button type="button" className="cv2-btn" onClick={() => actions.openThread?.(model.thread.id)}>
-          Back to lead
+          Back to the lead
         </button>
       </div>
     );
   }
 
+  const overflow: MenuEntry[] = [
+    ...(levels.length
+      ? [
+          {
+            id: "effort",
+            label: "Effort",
+            icon: <Glyph name="sigma" size={16} />,
+            trail: effort ? EFFORT_LABELS[effort] : undefined,
+            sub: { title: "Effort", entries: levels.map((l) => ({ id: `e:${l}`, label: EFFORT_LABELS[l], checked: l === effort, onSelect: () => actions.setSelection({ ...selection, effort: l }) })) },
+          },
+        ]
+      : []),
+    ...(tier ? [{ id: "context", label: "Context window", icon: <Glyph name="layers" size={16} />, trail: formatTokens(tier.tokens), onSelect: () => setTimeout(() => setPopover("context"), 0) }] : []),
+    { kind: "sep", id: "s1" },
+    {
+      id: "mode",
+      label: "Mode",
+      icon: <Glyph name="agents" size={16} />,
+      trail: orchestrateLabel(routing),
+      sub: {
+        title: "Mode",
+        entries: [
+          { id: "m:solo", label: "Solo", l2: "One model does the whole run", checked: routing.preset === "solo", onSelect: () => actions.setRouting(withPreset(routing, "solo")) },
+          { id: "m:team", label: "Team", l2: "A lead plans, workers build in parallel", checked: routing.preset === "lead-workers", onSelect: () => actions.setRouting(withPreset(routing, "lead-workers")) },
+          { id: "m:best", label: "Best of N", l2: "Several attempts, you keep one", checked: routing.preset === "best-of-n", onSelect: () => actions.setRouting(withPreset(routing, "best-of-n")) },
+        ],
+      },
+    },
+    {
+      id: "perm",
+      label: "Permissions",
+      icon: <Glyph name="shield" size={16} />,
+      trail: runtime.label,
+      sub: {
+        title: "Permissions",
+        entries: RUNTIME_MODES.map((m) => {
+          const disabled = !!caps?.approvals?.length && !caps.approvals.includes(m.mode);
+          return { id: `p:${m.mode}`, label: m.label, l2: disabled ? "This runtime cannot enforce it" : m.description, checked: m.mode === model.runtimeMode, disabled, onSelect: () => actions.setRuntimeMode(m.mode) };
+        }),
+      },
+    },
+    ...((caps?.planMode ?? true)
+      ? [{ id: "plan", label: "Plan first", icon: <Glyph name="plan" size={16} />, checked: model.interactionMode === "plan", keepOpen: true, onSelect: () => actions.setInteractionMode(model.interactionMode === "plan" ? "default" : "plan") }]
+      : []),
+  ];
+  const attach: MenuEntry[] = [
+    { id: "file", label: "Attach files", icon: <Glyph name="attach" size={16} />, onSelect: () => fileInput.current?.click() },
+    { id: "mention", label: "Mention a file", icon: <Glyph name="at" size={16} />, trail: "@", onSelect: () => (setDraft((d) => `${d}${d && !d.endsWith(" ") ? " " : ""}@`), textarea.current?.focus()) },
+    { id: "cmd", label: "Commands", icon: <Glyph name="slash" size={16} />, trail: "/", onSelect: () => (setDraft("/"), textarea.current?.focus()) },
+  ];
+
+  // ── Body ──
   let body: React.ReactNode;
-  if (needs) {
+  let tone: "needs" | "" = "";
+  if (pending.length) {
+    tone = "needs";
+    body = <ApprovalTakeover requests={pending} index={approvalIndex} onIndex={setApprovalIndex} onRespond={(id, d, a) => void actions.respond(id, d, a)} onShowDiff={() => onOpenDock("changes")} />;
+  } else if (plan && !revising) {
+    tone = "needs";
     body = (
-      <ApprovalTakeover
-        requests={pending}
-        index={approvalIndex}
-        onIndex={setApprovalIndex}
-        mac={mac}
-        onRespond={(id, d, a) => void actions.respond(id, d, a)}
-        onShowDiff={() => onOpenDock("changes")}
+      <PlanApproval
+        plan={plan}
+        onApprove={() => actions.approvePlan?.(plan.id, true)}
+        onRevise={() => {
+          setRevising(true);
+          requestAnimationFrame(() => textarea.current?.focus());
+        }}
       />
     );
-  } else if (!instances.some((i) => i.status === "ready" || i.status === "limited") || !instance) {
-    body = (
-      <div className="cv2-limited">
-        <span className="cv2-mute">Connect a provider to start.</span>
-        <div className="acts">
-          <button type="button" className="cv2-btn ink" onClick={actions.openConnections}>
-            Open Connections
-          </button>
-        </div>
-      </div>
-    );
-  } else if (model.state === "limited") {
+  } else if (model.state === "limited" && instance) {
     const vendor = instance.kind === "claude-agent" ? "Claude" : instance.kind === "codex" ? "ChatGPT" : displayName(instance);
     const at = model.resumeAt ?? tightest?.resetsAt;
     const scheduled = model.scheduledResume;
     body = (
-      <div className="cv2-limited">
-        <span className="cv2-mute">
-          {vendor} plan limit reached.
-          {scheduled ? ` Alevr continues at ${formatReset(scheduled.at)}.` : at ? ` Resets at ${formatReset(at)}.` : ""}
-        </span>
-        <div className="acts">
+      <div className="cv2-approve neutral" role="status">
+        <div className="ah">
+          <span className="title">
+            {vendor} plan limit reached{scheduled ? `. Alevr continues at ${formatReset(scheduled.at)}` : at ? `, resets ${formatReset(at)}` : ""}
+          </span>
+        </div>
+        <div className="cv2-approve-actions">
+          <span className="spacer" />
           {scheduled
             ? actions.cancelResume && (
-                <button type="button" className="cv2-btn" onClick={() => actions.cancelResume?.()}>
+                <button type="button" className="cv2-btn ghost" onClick={() => actions.cancelResume?.()}>
                   Don&apos;t continue
                 </button>
               )
             : actions.resumeAtReset &&
               at && (
-                <button type="button" className="cv2-btn ink" onClick={() => void actions.resumeAtReset?.(at)}>
+                <button type="button" className="cv2-btn ghost" onClick={() => void actions.resumeAtReset?.(at)}>
                   Resume at reset
                 </button>
               )}
-          <button type="button" className="cv2-btn" onClick={() => setPopover("model")}>
+          <button type="button" className="cv2-btn ink" onClick={() => setPopover("model")}>
             Switch model
           </button>
         </div>
@@ -515,67 +501,45 @@ export const Composer = React.forwardRef<
     );
   } else {
     body = (
-      <div className="cv2-draft-wrap">
-        <textarea
-          ref={textarea}
-          className="cv2-draft"
-          rows={1}
-          value={draft}
-          placeholder={placeholderFor(running)}
-          aria-label="Message"
-          onChange={(e) => {
-            setDraft(e.target.value);
-            setCaret(e.target.selectionStart);
-            setMenuIndex(0);
-            setMenuDismissed(false);
-          }}
-          onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
-          onKeyDown={onKeyDown}
-          onFocus={() => onFocusChange?.(true)}
-          onBlur={() => onFocusChange?.(false)}
-        />
-      </div>
+      <textarea
+        ref={textarea}
+        className={cn("cv2-draft", tall && "tall")}
+        rows={1}
+        value={draft}
+        disabled={!connected}
+        placeholder={!connected ? "Connect a subscription or add a key to start" : revising ? "What should change in the plan?" : placeholder(running)}
+        aria-label="Message"
+        onChange={(e) => {
+          setDraft(e.target.value);
+          setCaret(e.target.selectionStart);
+          setMenuIndex(0);
+          setMenuDismissed(false);
+        }}
+        onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
+        onKeyDown={onKeyDown}
+        onFocus={() => onFocusChange?.(true)}
+        onBlur={() => onFocusChange?.(false)}
+      />
     );
   }
+  const showFoot = !pending.length && !(plan && !revising) && model.state !== "limited";
+  const deviceName = model.device ? "This Mac" : "Cloud";
 
-  const planLabel = planName(instance?.account?.plan);
   return (
-    <div className="cv2-col" style={{ gap: 8 }}>
-      {liveTodo && (
-        <div className="cv2-todo-pin" aria-live="polite">
-          <Glyph name="list" size={14} />
-          <span className="cv2-tnum">
-            {liveTodo.todos.filter((t) => t.status === "completed").length} of {liveTodo.todos.length}
-          </span>
-          <span aria-hidden>·</span>
-          <span className="cv2-trunc">{liveTodo.todos.find((t) => t.status === "in_progress")?.text ?? liveTodo.todos.find((t) => t.status === "pending")?.text}</span>
-        </div>
-      )}
-      {!needs && (
-        <QueueDock
-          rows={model.queue}
-          mac={mac}
-          canSteer={canSteer && running}
-          onEdit={actions.editQueued}
-          onRemove={actions.removeQueued}
-          onMove={actions.moveQueued}
-          onSteer={actions.steerQueued}
-        />
-      )}
-      <div ref={shellRef} className={cn("cv2-composer", glow, steered && "steered")} data-state={glow || "idle"}>
-        <span className="cv2-glow" aria-hidden />
+    <div className="cv2-cstack">
+      <div className={cn("cv2-composer", tone)} data-state={tone || (running ? "running" : "idle")}>
         {menuOpen && trigger && (
           <div className="cv2-menu-anchor">
-            <div className="cv2-pop" style={{ position: "static", width: "100%" }} role="listbox" aria-label={trigger.kind === "slash" ? "Commands" : "Mentions"}>
-              <div className="cv2-pop-body" style={{ paddingTop: 4, maxHeight: 320 }}>
+            <div className="cv2-pop" role="listbox" aria-label={trigger.kind === "slash" ? "Commands" : "Mentions"}>
+              <div className="cv2-pop-body" style={{ maxHeight: 300 }}>
                 {menuItems.map((m, i) => (
                   <React.Fragment key={m.key}>
-                    {(i === 0 || menuItems[i - 1].section !== m.section) && <div className="cv2-pop-sect">{m.section}</div>}
+                    {(i === 0 || menuItems[i - 1].section !== m.section) && <div className="cv2-msect">{m.section}</div>}
                     <button
                       type="button"
                       role="option"
                       aria-selected={i === menuIndex}
-                      className="cv2-opt"
+                      className="cv2-mi"
                       data-active={i === menuIndex}
                       onMouseDown={(e) => {
                         e.preventDefault();
@@ -583,9 +547,10 @@ export const Composer = React.forwardRef<
                       }}
                       onMouseEnter={() => setMenuIndex(i)}
                     >
-                      <Glyph name={m.glyph} className="cv2-mute" />
-                      <span className={cn(trigger.kind === "mention" && m.section === "Files" ? "cv2-mono" : undefined, "cv2-trunc")}>{m.name}</span>
-                      {m.sub && <span className="sub cv2-trunc">{m.sub}</span>}
+                      <span className="cv2-trunc" style={{ flex: "none", maxWidth: "60%" }}>
+                        {m.name}
+                      </span>
+                      {m.sub && <span className="cv2-small cv2-mute cv2-trunc">{m.sub}</span>}
                     </button>
                   </React.Fragment>
                 ))}
@@ -594,150 +559,200 @@ export const Composer = React.forwardRef<
           </div>
         )}
         {body}
-        {!needs && (
+        {showFoot && (
           <div className="cv2-cfoot" ref={footRef}>
-            <button type="button" className="cv2-ctl" aria-label="Add" aria-expanded={popover === "attach"} onClick={() => setPopover(popover === "attach" ? null : "attach")}>
-              <Glyph name="plus" />
-            </button>
-            <button type="button" className="cv2-ctl" aria-expanded={popover === "mode"} aria-haspopup="menu" onClick={() => setPopover(popover === "mode" ? null : "mode")}>
-              <Glyph name={model.interactionMode === "plan" ? "plan" : runtime.glyph} />
-              <span className="cv2-trunc cv2-ctl-lbl">{model.interactionMode === "plan" ? `Plan · ${runtime.label}` : runtime.label}</span>
-              <Glyph name="chevron-down" size={12} className="cv2-ctl-chev" />
-            </button>
-            <button type="button" className="cv2-ctl" aria-expanded={popover === "orchestrate"} aria-haspopup="dialog" onClick={() => setPopover(popover === "orchestrate" ? null : "orchestrate")}>
-              <Glyph name="workflow" />
-              <span className="cv2-ctl-lbl">
-                <Roll k={orchestrateLabel(model.routing)}>{orchestrateLabel(model.routing)}</Roll>
-              </span>
-              <Glyph name="chevron-down" size={12} className="cv2-ctl-chev" />
-            </button>
-            <span className="cv2-grow" />
-            <button
-              type="button"
-              className="cv2-ctl"
-              aria-expanded={popover === "model"}
-              aria-haspopup="dialog"
-              aria-label={`Model: ${shortLabel(instances, selection)}`}
-              onClick={() => setPopover(popover === "model" ? null : "model")}
-            >
-              {instance && <ModelMark modelId={selection.model} instance={instance} />}
-              <span className="v cv2-trunc" style={{ maxWidth: 140 }}>
-                {shortLabel(instances, selection)}
-              </span>
-            </button>
-            {(traits.effort || traits.tier) && (
-              <button type="button" className="cv2-ctl" aria-expanded={popover === "traits" || popover === "tier"} aria-haspopup="menu" onClick={() => setPopover(popover === "traits" ? null : "traits")}>
-                {traits.effort && <Roll k={traits.effort}>{traits.effort}</Roll>}
-                {traits.effort && traits.tier && <span aria-hidden>·</span>}
-                {traits.tier && <Roll k={traits.tier}>{traits.tier}</Roll>}
-                {traits.fast && <span>· Fast</span>}
-                {tierDelta && (
-                  <span className="delta cv2-tnum" key={tierDelta}>
-                    {tierDelta}
-                  </span>
+            <input ref={fileInput} type="file" multiple hidden onChange={(e) => e.target.files?.length && setDraft((d) => `${d}${d ? " " : ""}${[...e.target.files!].map((f) => `@${f.name}`).join(" ")} `)} />
+            {connected ? (
+              <>
+                <button type="button" className="cv2-ctl icon" aria-label="Add" title="Attach, mention or run a command" aria-haspopup="menu" aria-expanded={popover === "attach"} onClick={() => toggle("attach")}>
+                  <Glyph name="plus" size={16} />
+                </button>
+                <button type="button" className="cv2-ctl" aria-expanded={popover === "model"} aria-haspopup="dialog" aria-label={`Model: ${words.model}${words.effort ? `, ${words.effort}` : ""}`} onClick={() => (setRoleTab("lead"), toggle("model"))}>
+                  {instance && <ModelMark modelId={selection.model} instance={instance} />}
+                  <span className="v cv2-trunc">{words.model}</span>
+                  {words.effort && <span className="eff">{words.effort}</span>}
+                  <Glyph name="chevron-down" size={12} className="chev" />
+                </button>
+                {routing.preset !== "solo" && (
+                  <button type="button" className="cv2-ctl cv2-hide-narrow" aria-haspopup="dialog" aria-expanded={popover === "team"} onClick={() => toggle("team")}>
+                    {orchestrateLabel(routing)}
+                    <Glyph name="chevron-down" size={12} className="chev" />
+                  </button>
                 )}
-                <Glyph name="chevron-down" size={12} className="cv2-ctl-chev" />
+                {model.interactionMode === "plan" && (
+                  <button type="button" className="cv2-ctl cv2-hide-narrow" aria-haspopup="menu" title="Plan first: nothing changes until you approve" onClick={() => actions.setInteractionMode("default")}>
+                    Plan
+                    <Glyph name="close" size={12} className="chev" />
+                  </button>
+                )}
+                {model.runtimeMode !== DEFAULT_RUNTIME_MODE && (
+                  <button type="button" className="cv2-ctl" aria-haspopup="menu" aria-expanded={popover === "overflow"} title={runtime.description} onClick={() => toggle("overflow")}>
+                    <Glyph name="shield" size={14} />
+                    <span className="cv2-wide">{runtime.label}</span>
+                  </button>
+                )}
+                <button type="button" className="cv2-ctl icon" aria-label="More options" title="Effort, context, mode and permissions" aria-haspopup="menu" aria-expanded={popover === "overflow"} onClick={() => toggle("overflow")}>
+                  <Glyph name="more" size={16} />
+                </button>
+              </>
+            ) : (
+              <button type="button" className="cv2-ctl" onClick={actions.openConnections}>
+                <span className="v">Connect</span>
+                <Glyph name="chevron-down" size={12} className="chev" />
               </button>
             )}
-            <ContextGauge usage={model.usage} planLabel={planLabel} onCompact={actions.compact} />
+            <span className="cv2-grow" />
+            {model.queue.length > 0 && (
+              <button type="button" className="cv2-ctl" aria-haspopup="menu" aria-expanded={popover === "queue"} onClick={() => toggle("queue")}>
+                Queued ({model.queue.length})
+                <Glyph name="chevron-down" size={12} className="chev" />
+              </button>
+            )}
+            {connected && <ContextRing usage={model.usage} onOpen={() => toggle("context")} expanded={popover === "context"} />}
+            {connected && speech.supported && (
+              <button type="button" className="cv2-ctl icon" aria-label={speech.listening ? "Stop dictation" : "Dictate"} aria-pressed={speech.listening} onClick={() => (speech.listening ? speech.stop() : speech.start())}>
+                <Glyph name={speech.listening ? "mic-off" : "mic"} size={16} />
+              </button>
+            )}
             <button
               type="button"
               className="cv2-send"
               data-mode={mode}
               disabled={mode === "disabled"}
               aria-label={mode === "stop" ? "Stop" : mode === "queue" ? "Queue" : "Send"}
+              title={mode === "stop" ? "Stop (Esc Esc)" : undefined}
               onClick={() => (mode === "stop" ? actions.stop() : submit(running ? (canQueue ? "queue" : "steer") : "send"))}
             >
               <span className="glyph">
-                <Glyph name="arrow-up" />
+                <Glyph name="arrow-up" size={16} />
               </span>
               <span className="stop" />
             </button>
 
-            {popover === "attach" && (
-              <div className="cv2-pop" style={{ left: 0, width: 260, padding: 4 }} role="menu" aria-label="Add">
-                <button type="button" role="menuitem" className="cv2-opt" onClick={() => (setPopover(null), setDraft((d) => `${d}${d && !d.endsWith(" ") ? " " : ""}@`), textarea.current?.focus())}>
-                  <Glyph name="at" className="cv2-mute" /> Mention a file
-                </button>
-                <button type="button" role="menuitem" className="cv2-opt" onClick={() => (setPopover(null), setDraft("/"), textarea.current?.focus())}>
-                  <Glyph name="slash" className="cv2-mute" /> Run a command
-                </button>
-                <button type="button" role="menuitem" className="cv2-opt" onClick={() => (setPopover(null), onOpenDock("agents"))}>
-                  <Glyph name="agents" className="cv2-mute" /> Show agents
-                </button>
-              </div>
-            )}
-            <ModeMenu
-              open={popover === "mode"}
-              onClose={() => setPopover(null)}
-              mode={model.runtimeMode}
-              allowed={caps?.approvals}
-              planMode={model.interactionMode === "plan"}
-              canPlan={caps?.planMode ?? true}
-              onMode={actions.setRuntimeMode}
-              onPlan={(on) => actions.setInteractionMode(on ? "plan" : "default")}
-              anchorRef={footRef}
-            />
-            <OrchestratePopover
-              open={popover === "orchestrate"}
-              onClose={() => setPopover(null)}
-              instances={instances}
-              routing={model.routing}
-              flags={model.flags}
-              onChange={actions.setRouting}
-              onConnect={actions.openConnections}
-              anchorRef={footRef}
-            />
+            <ComposerPopover open={popover === "attach"} onClose={() => setPopover(null)} width={240} align="left" offset={0} label="Add" anchorRef={footRef} role="menu">
+              <MenuList entries={attach} onClose={() => setPopover(null)} label="Add" />
+            </ComposerPopover>
+            <ComposerPopover open={popover === "overflow"} onClose={() => setPopover(null)} width={280} align="left" offset={0} label="Options" anchorRef={footRef} role="menu">
+              <div className="cv2-pop-grab" aria-hidden />
+              <MenuList entries={overflow} onClose={() => setPopover(null)} label="Options" />
+            </ComposerPopover>
+            <ComposerPopover open={popover === "queue"} onClose={() => setPopover(null)} width={360} align="right" offset={0} label="Queued messages" anchorRef={footRef}>
+              <QueueMenu model={model} canSteer={canSteer && running} mac={mac} onEdit={(text, id) => (actions.removeQueued(id), setDraft(text), setPopover(null), requestAnimationFrame(() => textarea.current?.focus()))} />
+            </ComposerPopover>
             <ModelPicker
-              open={popover === "model"}
+              open={popover === "model" || popover === "context"}
               onClose={() => setPopover(null)}
               instances={instances}
               selection={selection}
               flags={model.flags}
               onSelect={actions.setSelection}
-              onOpenTier={() => setPopover("tier")}
               onConnect={actions.openConnections}
               anchorRef={footRef}
-            />
-            <TraitsMenu
-              open={popover === "traits"}
-              onClose={() => setPopover(null)}
-              instances={instances}
-              selection={selection}
-              onSelect={actions.setSelection}
-              onOpenTier={() => setPopover("tier")}
-              anchorRef={footRef}
-            />
-            <TierPopover
-              open={popover === "tier"}
-              onClose={() => setPopover(null)}
-              instances={instances}
-              selection={selection}
+              routing={routing}
+              onRouting={actions.setRouting}
+              initialTab={roleTab}
+              initialView={popover === "context" ? "context" : "models"}
               threadTokens={threadTokens}
-              onSelect={actions.setSelection}
               onCompactAndSwitch={(sel) => {
                 actions.compact?.();
                 actions.setSelection(sel);
               }}
-              onHoverDelta={setTierDelta}
+            />
+            <TeamPopover
+              open={popover === "team"}
+              onClose={() => setPopover(null)}
+              instances={instances}
+              routing={routing}
+              lead={selection}
+              onChange={actions.setRouting}
+              onPickRole={(t) => {
+                setRoleTab(t);
+                setPopover("model");
+              }}
               anchorRef={footRef}
             />
           </div>
         )}
         {escArmed !== null && running && <div className="cv2-esc-hint">Press Esc again to stop</div>}
       </div>
-      {model.offline && <div className="cv2-offline">Offline. Sends when {model.device?.name ?? "your Mac"} is back.</div>}
-      {instance && !needs && !model.offline && tightest && (instance.status === "ready" || instance.status === "limited") && (instance.kind === "claude-agent" || instance.kind === "codex" || instance.kind === "acp") && model.state !== "limited" && (
-        <div className="cv2-offline cv2-row cv2-wide" style={{ gap: 6 }}>
-          <InstanceMark instance={instance} size={12} />
-          <span className="cv2-tnum">
-            {displayName(instance)} · {tightest.label} {tightest.usedPct !== undefined ? `${Math.round(tightest.usedPct)}% used` : ""}
-            {tightest.resetsAt ? `, resets ${formatReset(tightest.resetsAt)}` : ""}
+      <div className="cv2-strip" ref={stripRef}>
+        <span className="s" title={model.thread.cwd ?? model.thread.repo}>
+          <Glyph name="folder" size={12} />
+          {model.thread.repo}
+        </span>
+        {model.thread.branch && (
+          <span className="s cv2-trunc" title={model.thread.branch}>
+            <Glyph name="branch" size={12} />
+            <span className="cv2-trunc">{model.thread.branch}</span>
           </span>
+        )}
+        <span className="cv2-grow" />
+        <button type="button" className="s" aria-haspopup="menu" aria-expanded={popover === "device"} onClick={() => toggle("device")}>
+          <Glyph name={model.device ? "laptop" : "cloud"} size={12} />
+          {deviceName}
+          {model.offline ? <span className="lbl-long">, offline</span> : null}
+          <Glyph name="chevron-down" size={12} />
+        </button>
+        <ComposerPopover open={popover === "device"} onClose={() => setPopover(null)} width={280} align="right" offset={0} label="Where it runs" anchorRef={stripRef} role="menu">
+          <MenuList
+            label="Where it runs"
+            onClose={() => setPopover(null)}
+            entries={[
+              {
+                id: "mac",
+                label: model.device?.name ?? "This Mac",
+                l2: model.device ? (model.device.online && !model.offline ? "Connected" : "Offline. Open Alevr on it to reconnect") : "Open Alevr for Mac to run here",
+                icon: <Glyph name="laptop" size={16} />,
+                checked: !!model.device,
+              },
+              { kind: "sep", id: "s" },
+              { id: "conn", label: "Connections", icon: <Glyph name="plug" size={16} />, onSelect: () => actions.openConnections?.() },
+            ]}
+          />
+        </ComposerPopover>
+      </div>
+      {model.offline && (
+        <div className="cv2-under">
+          <span>Reconnect to run on {model.device?.name ?? "your Mac"}. Messages send when it is back.</span>
+        </div>
+      )}
+      {!connected && !model.offline && (
+        <div className="cv2-under">
+          <button type="button" className="cv2-link" onClick={actions.openConnections}>
+            Open Connections
+          </button>
         </div>
       )}
     </div>
   );
 });
+
+function QueueMenu({ model, canSteer, mac, onEdit }: { model: WorkspaceModel; canSteer: boolean; mac: boolean; onEdit: (text: string, id: string) => void }) {
+  const { actions } = model;
+  return (
+    <div className="cv2-pop-body" role="list" aria-label="Queued messages">
+      {model.queue.map((q) => (
+        <div key={q.id} role="listitem" className="cv2-mi two" style={{ cursor: "default" }}>
+          <span className="cv2-grow">
+            <span className="block cv2-trunc">{q.text}</span>
+            <span className="l2" style={{ display: "flex", gap: 12, marginTop: 2 }}>
+              <button type="button" className="cv2-link" style={{ fontSize: 12 }} onClick={() => onEdit(q.text, q.id)}>
+                Edit
+              </button>
+              {canSteer && (
+                <button type="button" className="cv2-link" style={{ fontSize: 12 }} title={mac ? "⌘↵" : "Ctrl ↵"} onClick={() => actions.steerQueued(q.id)}>
+                  Steer now
+                </button>
+              )}
+              <button type="button" className="cv2-link" style={{ fontSize: 12 }} onClick={() => actions.removeQueued(q.id)}>
+                Remove
+              </button>
+            </span>
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export type { ProviderInstance };

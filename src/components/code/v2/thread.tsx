@@ -1,18 +1,28 @@
 "use client";
 
 /**
- * The thread (DESIGN §5.1–§5.4, §5.12, §5.15; INTERACTION I-6, I-7, I-8, I-12):
- * turns grouped from normalized `TurnItem`s, each settled turn folding to
- * "Worked for 4m 12s" at the reader's work-log detail level, the answer and
- * the changed-files receipt always visible below the fold, step rows that link
- * into the dock, the agent tree, the computer-use timeline, checkpoints with
- * "Edit from here", and the turn navigator rail on the right edge.
+ * The thread (TARGET §5, §6): the conversation is the interface.
+ *
+ * Portions adapted from T3 Code, Copyright (c) 2026 T3 Tools Inc., MIT License
+ * (the settled-turn fold "Worked for 3m 43s", WorkLog row geometry with a
+ * shine on the live row, the changed-files summary after the answer).
+ *
+ * - A user message is a right-aligned bubble; hovering it shows its time and
+ *   "Revert to here" (checkpoints live here and in the header menu, never as
+ *   dividers in the thread).
+ * - A settled turn folds all of its work behind one line, "Worked for 4m 13s",
+ *   with the final answer and the changed-files card below it. Live turns and
+ *   failures never fold.
+ * - The work log is one muted line per step: a verb, its object, file names
+ *   you can click, counts. No icons, no boxes, no per-step timers; the live
+ *   row carries the only clock. Commands are the only monospace.
+ * - A team run is one line ("3 workers and an explorer"); open, one line per
+ *   agent. "Waiting for you" is the only coral in the thread.
  */
 import * as React from "react";
 import { Markdown } from "@/components/chat/markdown";
-import { ComputerTimeline } from "@/components/code/computer-timeline";
 import type {
-  CheckpointItem,
+  ComputerActionItem,
   PlanItem,
   ProviderInstance,
   SessionState,
@@ -21,19 +31,10 @@ import type {
   TurnItem,
 } from "@/lib/code-v2/contracts";
 import type { DockTab } from "@/lib/code-v2/dock";
+import { splitPath } from "@/lib/code-v2/diff";
 import { formatTokens } from "@/lib/code-v2/tier-view";
-import {
-  describeItem,
-  groupTurns,
-  stepItems,
-  turnHeader,
-  turnMarks,
-  turnVisibility,
-  type DetailLevel,
-  type Turn,
-} from "@/lib/code-v2/turns";
-import { AgentTree } from "./agent-tree";
-import { Glyph, Spinner, useNow } from "./primitives";
+import { describeItem, formatDuration, groupTurns, stepItems, turnHeader, turnMarks, turnVisibility, type DetailLevel, type Turn } from "@/lib/code-v2/turns";
+import { Glyph, useNow } from "./primitives";
 import { cn } from "@/lib/utils";
 
 export interface DockRequest {
@@ -63,72 +64,63 @@ export interface ThreadProps {
   resolveScreenshot?: (ref: string) => string | null;
 }
 
-// ── Step rows ───────────────────────────────────────────────────────────────
+const base = (p: string) => splitPath(p).name;
+const clock = (iso?: string) => (iso ? new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "");
 
-function StepRowView({ item, detail, onOpenDock, now, delay }: { item: TurnItem; detail: boolean; onOpenDock?: (r: DockRequest) => void; now: number; delay: number }) {
-  const row = describeItem(item, now);
-  const [open, setOpen] = React.useState(false);
-  if (!row) return null;
-  const running = row.tone === "running";
-  const target: DockRequest | null =
-    item.kind === "file_change"
-      ? { tab: "changes", target: item.changes[0]?.path, scope: "turn", turnId: item.turnId }
-      : item.kind === "command_execution"
-        ? { tab: "terminal", target: item.id }
-        : item.kind === "computer_action"
-          ? { tab: "screen", target: item.id }
-          : null;
-  const expandable = !!row.detail && (item.kind === "reasoning" || item.kind === "plan");
-  const showDetail = row.detail && (detail || open);
-  const body = (
-    <>
-      {running ? <Spinner /> : <Glyph name={row.glyph} />}
-      <span className={cn("verb", running && "cv2-shimmer")}>{row.verb}</span>
-      {row.object && <span className={cn("obj", row.mono && "cv2-mono", running && "cv2-shimmer")}>{row.object}</span>}
-      {(row.additions !== undefined || row.deletions !== undefined) && !running && (row.additions || row.deletions) ? (
-        <span className="cv2-tnum" style={{ whiteSpace: "nowrap" }}>
-          <span className="cv2-add">+{row.additions ?? 0}</span> <span className="cv2-del">−{row.deletions ?? 0}</span>
-        </span>
-      ) : null}
-      {row.meta && <span className="t">{row.meta}</span>}
-    </>
-  );
-  const cls = cn("cv2-step", row.tone === "error" && "error", row.tone === "needs" && "needs");
+function Counts({ adds, dels }: { adds?: number; dels?: number }) {
+  if (!adds && !dels) return null;
   return (
-    <>
-      {target || expandable ? (
-        <button
-          type="button"
-          className={cls}
-          style={{ animationDelay: `${delay}ms` }}
-          aria-expanded={expandable ? open || detail : undefined}
-          onClick={() => (expandable ? setOpen((v) => !v) : target && onOpenDock?.(target))}
-        >
-          {body}
-        </button>
-      ) : (
-        <div className={cls} style={{ animationDelay: `${delay}ms` }}>
-          {body}
-        </div>
-      )}
-      {showDetail && <div className="cv2-detail">{row.detail}</div>}
-      {row.tail && (running || detail) && (
-        <div className="cv2-tail" aria-live={running ? "polite" : undefined}>
-          {row.tail.map((l, i) => (
-            <div key={`${i}:${l}`}>{l}</div>
-          ))}
-        </div>
-      )}
-    </>
+    <span className="n">
+      <span className="cv2-add">+{adds ?? 0}</span> <span className="cv2-del">−{dels ?? 0}</span>
+    </span>
+  );
+}
+
+// ── Work-log rows ────────────────────────────────────────────────────────────
+
+type Expand = { kind: "prose" | "mono"; text: string } | { kind: "list"; node: React.ReactNode } | null;
+
+interface LogLine {
+  key: string;
+  verb: string;
+  body?: React.ReactNode;
+  counts?: { adds?: number; dels?: number };
+  time?: string;
+  live: boolean;
+  tone?: "error" | "needs";
+  expand: Expand;
+  open?: DockRequest;
+}
+
+function FileLink({ path, onOpen }: { path: string; onOpen?: () => void }) {
+  return (
+    <span
+      role="link"
+      tabIndex={0}
+      className="file"
+      title={path}
+      onClick={(e) => {
+        e.stopPropagation();
+        onOpen?.();
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.stopPropagation();
+          onOpen?.();
+        }
+      }}
+    >
+      {base(path)}
+    </span>
   );
 }
 
 function Checklist({ steps }: { steps: { text: string; status: string }[] }) {
   return (
-    <div className="cv2-col" style={{ gap: 4 }}>
+    <div className="cv2-checks">
       {steps.map((s, i) => (
-        <div key={i} className={cn("cv2-plan-step", s.status === "completed" && "done")}>
-          {s.status === "completed" ? <Glyph name="check" /> : s.status === "in_progress" ? <Spinner /> : <Glyph name="circle-dashed" />}
+        <div key={i} className={cn("cv2-checkrow", s.status === "completed" && "done")}>
+          <Glyph name={s.status === "completed" ? "check-circle" : s.status === "in_progress" ? "circle-dashed" : "circle"} size={14} />
           <span>{s.text}</span>
         </div>
       ))}
@@ -136,133 +128,240 @@ function Checklist({ steps }: { steps: { text: string; status: string }[] }) {
   );
 }
 
-/** Plan mode: the plan waits for the reader (coral edge, one of the two needs-you objects). */
-function PlanCard({ item, onApprove }: { item: PlanItem; onApprove?: (id: string, approve: boolean) => void }) {
+function lineFor(item: TurnItem, now: number, openDock?: (r: DockRequest) => void): LogLine | null {
+  const row = describeItem(item, now);
+  if (!row) return null;
+  const live = row.tone === "running";
+  const common = { key: item.id, live, tone: row.tone === "error" ? ("error" as const) : row.tone === "needs" ? ("needs" as const) : undefined };
+  switch (item.kind) {
+    case "reasoning":
+      return { ...common, verb: live ? "Thinking" : "Thought", expand: item.text?.trim() ? { kind: "prose", text: item.text } : null };
+    case "file_change": {
+      const first = item.changes[0];
+      const req: DockRequest = { tab: "changes", target: first?.path, scope: "turn", turnId: item.turnId };
+      return {
+        ...common,
+        verb: row.verb,
+        body: first ? (
+          <>
+            <FileLink path={first.path} onOpen={() => openDock?.(req)} />
+            {item.changes.length > 1 ? ` and ${item.changes.length - 1} more` : ""}
+          </>
+        ) : undefined,
+        counts: live ? undefined : { adds: row.additions, dels: row.deletions },
+        expand: null,
+        open: req,
+      };
+    }
+    case "command_execution": {
+      const failed = row.tone === "error";
+      return {
+        ...common,
+        verb: live ? "Running" : failed ? "Failed" : item.background ? "Started" : "Ran",
+        body: <span className="cmd">{item.command}</span>,
+        time: live ? row.meta : undefined,
+        expand: item.output?.trim() ? { kind: "mono", text: `${item.output.trim()}${item.exitCode !== undefined && item.exitCode !== 0 ? `\nexit ${item.exitCode}` : ""}` } : null,
+      };
+    }
+    case "search":
+      if (item.scope === "files" && item.matches === undefined) return { ...common, verb: live ? "Reading" : "Read", body: <FileLink path={item.query} onOpen={() => openDock?.({ tab: "files", target: item.query })} />, expand: null };
+      return { ...common, verb: live ? "Searching for" : "Searched for", body: item.query, time: undefined, expand: null, counts: undefined };
+    case "web_search":
+      return { ...common, verb: live ? "Searching the web for" : "Searched the web for", body: <span className="cv2-fg">{item.query}</span>, expand: null };
+    case "plan":
+      return { ...common, verb: "Planned", body: row.object, expand: item.steps?.length ? { kind: "list", node: <Checklist steps={item.steps} /> } : item.text ? { kind: "prose", text: item.text } : null };
+    case "todo_list":
+      return { ...common, verb: "Tasks", body: row.object, expand: { kind: "list", node: <Checklist steps={item.todos} /> } };
+    case "error":
+      return { ...common, verb: item.message, tone: "error", expand: null };
+    default:
+      return { ...common, verb: row.verb, body: row.object, expand: row.detail ? { kind: "prose", text: row.detail } : null };
+  }
+}
+
+function LogRow({ line, forceOpen, onOpenDock }: { line: LogLine; forceOpen: boolean; onOpenDock?: (r: DockRequest) => void }) {
+  const [open, setOpen] = React.useState(false);
+  const shown = (open || forceOpen) && line.expand;
+  const clickable = !!line.expand || !!line.open;
+  const content = (
+    <>
+      <span className={cn("verb", line.live && "cv2-shine")}>{line.verb}</span>
+      {line.body !== undefined && <span className="obj">{line.body}</span>}
+      {line.counts && <Counts adds={line.counts.adds} dels={line.counts.dels} />}
+      {line.expand && <Glyph name="chevron-right" size={12} className="chev" />}
+      {line.time && <span className="t">{line.time}</span>}
+    </>
+  );
+  const cls = cn("cv2-wl", line.tone);
   return (
-    <div className={cn("cv2-plan", item.awaitingApproval && "awaiting")} role={item.awaitingApproval ? "group" : undefined} aria-label="Plan">
-      <div className="cv2-row" style={{ gap: 10 }}>
-        <Glyph name="plan" className={item.awaitingApproval ? "cv2-sig" : "cv2-mute"} />
-        <span className="cv2-m">{item.awaitingApproval ? "Plan, waiting for you" : "Plan"}</span>
-        {item.steps?.length ? <span className="cv2-mute">{item.steps.length} tasks</span> : null}
-      </div>
-      {item.text && (
-        <div className="cv2-prose" style={{ fontSize: 13.5, lineHeight: "21px" }}>
-          <Markdown content={item.text} />
-        </div>
+    <>
+      {clickable ? (
+        <button type="button" className={cls} aria-expanded={line.expand ? !!shown : undefined} onClick={() => (line.expand ? setOpen((v) => !v) : line.open && onOpenDock?.(line.open))}>
+          {content}
+        </button>
+      ) : (
+        <div className={cls}>{content}</div>
       )}
-      {item.steps?.length ? <Checklist steps={item.steps} /> : null}
-      {item.awaitingApproval && (
-        <div className="cv2-row" style={{ gap: 8, marginTop: 4 }}>
-          <button type="button" className="cv2-btn ghost" onClick={() => onApprove?.(item.id, false)}>
-            Revise
-          </button>
-          <span className="cv2-grow" />
-          <button type="button" className="cv2-btn ink" onClick={() => onApprove?.(item.id, true)}>
-            Approve and build
-          </button>
-        </div>
-      )}
-    </div>
+      {shown && line.expand && (line.expand.kind === "list" ? <div style={{ marginLeft: 22, marginBottom: 6 }}>{line.expand.node}</div> : <div className={cn("cv2-wl-detail", line.expand.kind === "prose" && "prose")}>{line.expand.text}</div>)}
+    </>
   );
 }
 
-function TodoBlock({ item }: { item: TodoListItem }) {
+/** Consecutive file reads read as one line: "Read 3 files". */
+function ReadsRow({ items, forceOpen, onOpenDock }: { items: Extract<TurnItem, { kind: "search" }>[]; forceOpen: boolean; onOpenDock?: (r: DockRequest) => void }) {
   const [open, setOpen] = React.useState(false);
-  const done = item.todos.filter((t) => t.status === "completed").length;
+  const shown = open || forceOpen;
+  const live = items.some((i) => i.status === "running" || i.status === "pending");
   return (
     <>
-      <button type="button" className="cv2-step" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
-        <Glyph name="list" />
-        <span className="verb">Tasks</span>
-        <span className="obj">
-          {done} of {item.todos.length} done
-        </span>
+      <button type="button" className="cv2-wl" aria-expanded={shown} onClick={() => setOpen((v) => !v)}>
+        <span className={cn("verb", live && "cv2-shine")}>{live ? "Reading" : "Read"}</span>
+        <span className="obj">{items.length} files</span>
+        <Glyph name="chevron-right" size={12} className="chev" />
       </button>
-      {open && (
-        <div style={{ paddingLeft: 28, paddingBottom: 6 }}>
-          <Checklist steps={item.todos} />
+      {shown && (
+        <div className="cv2-log" style={{ marginLeft: 22, marginBottom: 4 }}>
+          {items.map((i) => (
+            <div key={i.id} className="cv2-wl" style={{ minHeight: 24, padding: 0 }}>
+              <span className="obj">
+                <FileLink path={i.query} onOpen={() => onOpenDock?.({ tab: "files", target: i.query })} />
+                <span className="cv2-small"> {splitPath(i.query).dir}</span>
+              </span>
+            </div>
+          ))}
         </div>
       )}
     </>
   );
 }
 
-/** The step list of one turn, grouping fan-outs into trees and computer runs into a timeline. */
-function Steps({
-  turn,
-  items,
-  detail,
-  props,
-  now,
-}: {
-  turn: Turn;
-  items: TurnItem[];
-  detail: boolean;
-  props: ThreadProps;
-  now: number;
-}) {
+// ── Team runs ───────────────────────────────────────────────────────────────
+
+/** A Best of N candidate (the orchestrator names them "Candidate A", "Candidate B"). */
+export const isCandidate = (a: SubagentItem) => /^Candidate\b/.test(a.label ?? "") || !!a.candidate?.kept || !!a.candidate?.testsLine;
+
+export function teamHead(items: readonly SubagentItem[]): string {
+  const candidates = items.filter(isCandidate).length;
+  const workers = items.filter((i) => i.role === "worker" && !isCandidate(i)).length;
+  const others = items.filter((i) => i.role !== "worker");
+  if (candidates) return `${candidates} candidates`;
+  const w = workers ? `${workers} ${workers === 1 ? "worker" : "workers"}` : "";
+  const o = others.map((x) => (x.role === "explorer" ? "an explorer" : x.role === "reviewer" ? "a reviewer" : `a ${x.role}`));
+  const parts = [w, ...o].filter(Boolean);
+  if (!parts.length) return `${items.length} agents`;
+  const all = parts.length <= 1 ? parts[0] : `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
+  return all.charAt(0).toUpperCase() + all.slice(1);
+}
+
+export function agentStep(a: SubagentItem): { text: string; needs: boolean } {
+  if (a.status === "waiting") return { text: "Waiting for you", needs: true };
+  if (a.status === "running") return { text: a.liveLine ?? a.title ?? "Working", needs: false };
+  if (a.status === "failed") return { text: a.liveLine ? `Failed: ${a.liveLine}` : "Failed", needs: false };
+  if (a.status === "interrupted") return { text: "Stopped", needs: false };
+  return { text: a.closingText ?? a.title ?? "Done", needs: false };
+}
+
+function TeamGroup({ items, props, forceOpen }: { items: SubagentItem[]; props: ThreadProps; forceOpen: boolean }) {
+  const live = items.some((i) => i.status === "running" || i.status === "waiting");
+  const [open, setOpen] = React.useState<boolean | null>(null);
+  const shown = open ?? (live || forceOpen);
+  const elapsed = Math.max(0, ...items.map((i) => i.elapsedMs ?? 0));
+  return (
+    <div role="group" aria-label={teamHead(items)}>
+      <button type="button" className="cv2-wl" aria-expanded={shown} onClick={() => setOpen(!shown)}>
+        <span className={cn("verb", live && "cv2-shine")}>{teamHead(items)}</span>
+        <Glyph name="chevron-right" size={12} className="chev" />
+        {elapsed > 0 && <span className="t">{formatDuration(elapsed)}</span>}
+      </button>
+      {shown &&
+        items.map((a) => {
+          const step = agentStep(a);
+          return (
+            <button
+              key={a.id}
+              type="button"
+              className="cv2-agentline"
+              aria-pressed={props.selectedAgentId === a.agentId}
+              onClick={() => {
+                props.onSelectAgent?.(a.agentId);
+                props.onOpenDock?.({ tab: "agents", target: a.agentId });
+              }}
+            >
+              <span className="who">{a.label ?? (a.role === "explorer" ? "Explorer" : a.role === "reviewer" ? "Reviewer" : "Worker")}</span>
+              <span className={cn("what", step.needs && "cv2-sig", a.status === "running" && "cv2-shine")}>{step.text}</span>
+              <span className="t">{a.elapsedMs !== undefined ? formatDuration(a.elapsedMs) : ""}</span>
+            </button>
+          );
+        })}
+    </div>
+  );
+}
+
+// ── Computer use ────────────────────────────────────────────────────────────
+
+function ComputerLine({ items, props }: { items: ComputerActionItem[]; props: ThreadProps }) {
+  const last = items[items.length - 1];
+  const live = items.some((i) => i.status === "running" || i.status === "pending");
+  const app = [...items].reverse().find((i) => i.app)?.app;
+  const shot = [...items].reverse().find((i) => i.screenshotRef)?.screenshotRef;
+  const src = shot ? props.resolveScreenshot?.(shot) : null;
+  return (
+    <>
+      <button type="button" className="cv2-wl" onClick={() => props.onOpenDock?.({ tab: "screen", target: last.id })}>
+        <span className={cn("verb", live && "cv2-shine")}>{live ? `Using ${app ?? "the computer"}` : `Used ${app ?? "the computer"}`}</span>
+        <span className="obj">{last.summary ?? last.target ?? `${items.length} steps`}</span>
+      </button>
+      {src && (
+        <button type="button" className="cv2-thumb" aria-label="Open the screen" onClick={() => props.onOpenDock?.({ tab: "screen", target: last.id })}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={src} alt="" />
+        </button>
+      )}
+    </>
+  );
+}
+
+// ── Steps of one turn ───────────────────────────────────────────────────────
+
+function Steps({ turn, items, detail, props, now }: { turn: Turn; items: TurnItem[]; detail: boolean; props: ThreadProps; now: number }) {
   const out: React.ReactNode[] = [];
-  let staggered = 0;
   for (let i = 0; i < items.length; i++) {
     const item = items[i];
     if (item.kind === "subagent") {
-      const group: SubagentItem[] = [];
-      while (i < items.length && items[i].kind === "subagent") group.push(items[i++] as SubagentItem);
+      const by = new Map<string, SubagentItem>();
+      while (i < items.length && items[i].kind === "subagent") {
+        const s = items[i++] as SubagentItem;
+        by.set(s.agentId, s);
+      }
       i--;
-      out.push(
-        <AgentTree
-          key={`tree-${group[0].id}`}
-          items={group}
-          instances={props.instances}
-          budgetUsd={props.budgetUsd}
-          selectedId={props.selectedAgentId}
-          onSelect={(id) => {
-            props.onSelectAgent?.(id);
-            props.onOpenDock?.({ tab: "agents", target: id });
-          }}
-        />,
-      );
+      out.push(<TeamGroup key={`team-${item.id}`} items={[...by.values()]} props={props} forceOpen={detail} />);
       continue;
     }
     if (item.kind === "computer_action") {
-      const group: TurnItem[] = [];
-      while (i < items.length && items[i].kind === "computer_action") group.push(items[i++]);
+      const group: ComputerActionItem[] = [];
+      while (i < items.length && items[i].kind === "computer_action") group.push(items[i++] as ComputerActionItem);
       i--;
-      out.push(
-        <div key={`cu-${group[0].id}`} className="cv2-cu">
-          <ComputerTimeline
-            items={group}
-            resolveScreenshot={props.resolveScreenshot}
-            defaultCollapsed={turn.status === "done"}
-            onSelectStep={(frame) => props.onOpenDock?.({ tab: "screen", target: frame.id })}
-          />
-        </div>,
-      );
+      out.push(<ComputerLine key={`cu-${item.id}`} items={group} props={props} />);
       continue;
+    }
+    if (item.kind === "search" && item.scope === "files" && item.matches === undefined) {
+      const group: Extract<TurnItem, { kind: "search" }>[] = [];
+      while (i < items.length && items[i].kind === "search" && (items[i] as Extract<TurnItem, { kind: "search" }>).scope === "files" && (items[i] as Extract<TurnItem, { kind: "search" }>).matches === undefined)
+        group.push(items[i++] as Extract<TurnItem, { kind: "search" }>);
+      i--;
+      if (group.length > 1) {
+        out.push(<ReadsRow key={`reads-${item.id}`} items={group} forceOpen={detail} onOpenDock={props.onOpenDock} />);
+        continue;
+      }
     }
     if (item.kind === "plan" && item.awaitingApproval) {
-      out.push(<PlanCard key={item.id} item={item} onApprove={props.onApprovePlan} />);
-      continue;
-    }
-    if (item.kind === "plan" && item.steps?.length && detail) {
-      out.push(
-        <div key={item.id}>
-          <StepRowView item={item} detail={false} onOpenDock={props.onOpenDock} now={now} delay={0} />
-          <div style={{ paddingLeft: 28, paddingBottom: 6 }}>
-            <Checklist steps={item.steps} />
-          </div>
-        </div>,
-      );
-      continue;
-    }
-    if (item.kind === "todo_list") {
-      out.push(<TodoBlock key={item.id} item={item} />);
+      out.push(<PlanBlock key={item.id} item={item} />);
       continue;
     }
     if (item.kind === "assistant_message") {
-      if (item.agentId) continue; // a subagent's words live in Dock › Agents
+      if (item.agentId) continue; // a subagent's words live in the Agents panel
       out.push(
-        <div key={item.id} className="cv2-prose" style={{ padding: "4px 0" }}>
+        <div key={item.id} className="cv2-prose" style={{ padding: "6px 0" }}>
           <Markdown content={item.text} streaming={item.streaming} />
         </div>,
       );
@@ -270,36 +369,31 @@ function Steps({
     }
     if (item.kind === "user_message") {
       out.push(
-        <React.Fragment key={item.id}>
-          <div className="cv2-you" style={{ margin: "6px 0" }}>
-            {item.text}
-          </div>
-          <div className="cv2-you-cap" style={{ marginTop: -2 }}>
-            {item.delivery === "steer" ? "Steered" : "Queued"}
-          </div>
-        </React.Fragment>,
+        <div key={item.id} className="cv2-you-wrap" style={{ margin: "8px 0" }}>
+          <div className="cv2-you">{item.text}</div>
+          <div className="cv2-you-cap">{item.delivery === "steer" ? "Steered" : "Queued"}</div>
+        </div>,
       );
       continue;
     }
     if (item.kind === "system_notice") {
       out.push(
-        <div key={item.id} className="cv2-notice" style={{ padding: "4px 0" }}>
-          {item.text}
+        <div key={item.id} className="cv2-wl">
+          <span className="obj">{item.text}</span>
         </div>,
       );
       continue;
     }
     if (item.kind === "compaction") {
-      out.push(<CompactionDivider key={item.id} before={item.beforeTokens} after={item.afterTokens} summary={item.summary} />);
+      out.push(<CompactionRow key={item.id} before={item.beforeTokens} after={item.afterTokens} summary={item.summary} forceOpen={detail} />);
       continue;
     }
     if (item.kind === "error") {
       out.push(
-        <div key={item.id} className="cv2-error" role="alert" style={{ minHeight: 28 }}>
-          <Glyph name="error-circle" />
-          <span className="msg">{item.message}</span>
+        <div key={item.id} className="cv2-err" role="alert">
+          <span>{item.message}</span>
           {item.retryable && props.onRetry && (
-            <button type="button" className="cv2-btn sm" onClick={props.onRetry}>
+            <button type="button" className="cv2-link" onClick={props.onRetry}>
               Retry
             </button>
           )}
@@ -307,103 +401,74 @@ function Steps({
       );
       continue;
     }
-    const delay = staggered < 5 ? staggered * 30 : 150;
-    staggered++;
-    out.push(<StepRowView key={item.id} item={item} detail={detail} onOpenDock={props.onOpenDock} now={now} delay={delay} />);
+    const line = lineFor(item, now, props.onOpenDock);
+    if (line) out.push(<LogRow key={line.key} line={line} forceOpen={detail && line.expand?.kind === "prose"} onOpenDock={props.onOpenDock} />);
   }
-  return <div className="cv2-steps">{out}</div>;
+  void turn;
+  return <div className="cv2-log">{out}</div>;
 }
 
-function CompactionDivider({ before, after, summary }: { before: number; after: number; summary?: string }) {
-  const [open, setOpen] = React.useState(false);
-  return (
-    <>
-      <button type="button" className="cv2-divider" style={{ width: "100%" }} aria-expanded={open} onClick={() => summary && setOpen((v) => !v)}>
-        <span>
-          Compacted {formatTokens(before)} to {formatTokens(after)}
-        </span>
-        <span className="rule" />
-      </button>
-      {open && summary && <div className="cv2-detail">{summary}</div>}
-    </>
-  );
+function CompactionRow({ before, after, summary, forceOpen }: { before: number; after: number; summary?: string; forceOpen: boolean }) {
+  const line: LogLine = { key: "c", verb: "Compacted", body: `${formatTokens(before)} to ${formatTokens(after)}`, live: false, expand: summary ? { kind: "prose", text: summary } : null };
+  return <LogRow line={line} forceOpen={forceOpen} />;
 }
 
-function CheckpointDivider({ item, onRollback, filesAfter, turnsAfter }: { item: CheckpointItem; onRollback?: (id: string) => void; filesAfter: number; turnsAfter: number }) {
-  const [confirm, setConfirm] = React.useState(false);
+/** Plan mode: the plan is prose and a checklist; Approve and Revise live in the composer. */
+function PlanBlock({ item }: { item: PlanItem }) {
   return (
-    <div className="cv2-divider">
-      {confirm ? (
-        <span className="cv2-roll cv2-row" style={{ gap: 8 }}>
-          <span style={{ color: "hsl(var(--foreground))" }}>
-            Revert {filesAfter} {filesAfter === 1 ? "file" : "files"} and {turnsAfter} {turnsAfter === 1 ? "turn" : "turns"}?
-          </span>
-          <button
-            type="button"
-            className="cv2-btn sm"
-            onClick={() => {
-              setConfirm(false);
-              onRollback?.(item.checkpointId);
-            }}
-          >
-            Revert
-          </button>
-          <button type="button" className="cv2-btn sm ghost" onClick={() => setConfirm(false)}>
-            Cancel
-          </button>
-        </span>
-      ) : (
-        <span>Checkpoint {item.turnOrdinal}</span>
+    <div className="cv2-col" style={{ gap: 4, margin: "4px 0" }} aria-label="Plan">
+      {item.text && (
+        <div className="cv2-prose">
+          <Markdown content={item.text} />
+        </div>
       )}
-      <span className="rule" />
-      {!confirm && onRollback && turnsAfter > 0 && (
-        <button type="button" className="edit cv2-btn sm ghost" onClick={() => setConfirm(true)}>
-          Edit from here
-        </button>
-      )}
+      {item.steps?.length ? <Checklist steps={item.steps} /> : null}
     </div>
   );
 }
 
-/** "Changed 3 files" receipt at the end of a turn (DESIGN §5.2). */
+/** "Changed 3 files +16 −4" after the answer: the only box in a turn. */
 export function Receipt({ turn, onOpenDock, onUndo }: { turn: Turn; onOpenDock?: (r: DockRequest) => void; onUndo?: () => void }) {
   const [more, setMore] = React.useState(false);
   const files = turn.changes;
   if (!files.length) return null;
   const adds = files.reduce((s, f) => s + (f.additions ?? 0), 0);
   const dels = files.reduce((s, f) => s + (f.deletions ?? 0), 0);
-  const shown = more || files.length <= 5 ? files : files.slice(0, 4);
+  const shown = more || files.length <= 4 ? files : files.slice(0, 4);
   return (
-    <div className="cv2-receipt">
-      <div className="rh">
-        <Glyph name="diff" />
+    <div className="cv2-card">
+      <div className="ch">
         <span className="cv2-m">
           Changed {files.length} {files.length === 1 ? "file" : "files"}
         </span>
-        <span className="cv2-tnum">
+        <span className="cv2-small cv2-tnum">
           <span className="cv2-add">+{adds}</span> <span className="cv2-del">−{dels}</span>
         </span>
         <span className="cv2-grow" />
         {onUndo && (
           <button type="button" className="cv2-btn ghost" onClick={onUndo}>
-            <Glyph name="undo" size={14} /> Undo
+            Undo
           </button>
         )}
         <button type="button" className="cv2-btn" onClick={() => onOpenDock?.({ tab: "changes", scope: "turn", turnId: turn.id })}>
           Review
         </button>
       </div>
-      {shown.map((f) => (
-        <button key={f.path} type="button" className="rf" onClick={() => onOpenDock?.({ tab: "changes", target: f.path, scope: "turn", turnId: turn.id })}>
-          <span className="cv2-mono cv2-trunc cv2-grow">{f.path}</span>
-          <span className="cv2-tnum">
-            <span className="cv2-add">+{f.additions ?? 0}</span> <span className="cv2-del">−{f.deletions ?? 0}</span>
-          </span>
-        </button>
-      ))}
-      {!more && files.length > 5 && (
-        <button type="button" className="rf cv2-mute" onClick={() => setMore(true)}>
-          Show {files.length - 4} more
+      {shown.map((f) => {
+        const { name, dir } = splitPath(f.path);
+        return (
+          <button key={f.path} type="button" className="cf" title={f.path} onClick={() => onOpenDock?.({ tab: "changes", target: f.path, scope: "turn", turnId: turn.id })}>
+            <span className="cv2-fg">{name}</span>
+            <span className="dir cv2-trunc">{dir.replace(/\/$/, "")}</span>
+            <span className="n">
+              <span className="cv2-add">+{f.additions ?? 0}</span> <span className="cv2-del">−{f.deletions ?? 0}</span>
+            </span>
+          </button>
+        );
+      })}
+      {!more && files.length > 4 && (
+        <button type="button" className="cf more" onClick={() => setMore(true)}>
+          Show all {files.length}
         </button>
       )}
     </div>
@@ -412,49 +477,86 @@ export function Receipt({ turn, onOpenDock, onUndo }: { turn: Turn; onOpenDock?:
 
 // ── Turns ───────────────────────────────────────────────────────────────────
 
+function UserBubble({ turn, revert }: { turn: Turn; revert?: { onConfirm: () => void; files: number; turns: number } }) {
+  const [confirm, setConfirm] = React.useState(false);
+  const u = turn.user!;
+  return (
+    <div className="cv2-you-wrap" data-turn-start>
+      <div className="cv2-you">
+        {u.attachments?.length ? (
+          <div className="files">
+            {u.attachments.map((a, i) => (
+              <span key={i} className="file">
+                <Glyph name="document" size={12} />
+                {a.name}
+              </span>
+            ))}
+          </div>
+        ) : null}
+        {u.text}
+      </div>
+      <div className="cv2-you-meta" data-on={confirm ? "true" : undefined}>
+        {confirm && revert ? (
+          <>
+            <span className="cv2-fg">
+              Revert {revert.files} {revert.files === 1 ? "file" : "files"} and {revert.turns} {revert.turns === 1 ? "turn" : "turns"}?
+            </span>
+            <button type="button" onClick={() => (setConfirm(false), revert.onConfirm())}>
+              Revert
+            </button>
+            <button type="button" onClick={() => setConfirm(false)}>
+              Cancel
+            </button>
+          </>
+        ) : (
+          <>
+            <span className="cv2-tnum">{clock(u.createdAt)}</span>
+            {revert && (
+              <button type="button" onClick={() => setConfirm(true)}>
+                Revert to here
+              </button>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function TurnView({
   turn,
   props,
   unfolded,
   onToggle,
   now,
-  after,
+  revert,
 }: {
   turn: Turn;
   props: ThreadProps;
   unfolded: boolean | undefined;
   onToggle: (open: boolean) => void;
   now: number;
-  after: { files: number; turns: number };
+  revert?: { onConfirm: () => void; files: number; turns: number };
 }) {
   const vis = turnVisibility(turn, props.detailLevel, unfolded);
   const steps = stepItems(turn);
-  // Live turns and plan approvals never hide; folding only touches settled work.
   const open = vis.steps;
   const visibleSteps = open ? steps : steps.filter((i) => i.kind === "plan" && i.awaitingApproval);
+  const live = turn.status === "running" || turn.status === "waiting";
   return (
-    <section data-turn={turn.id} aria-label={`Turn ${turn.ordinal + 1}`} className="cv2-col" style={{ gap: 10 }}>
-      {turn.user && (
-        <div className="cv2-you" data-turn-start>
-          {turn.user.attachments?.length ? (
-            <div className="cv2-mute" style={{ fontSize: 12, marginBottom: 4 }}>
-              {turn.user.attachments.map((a) => a.name).join(", ")}
-            </div>
-          ) : null}
-          {turn.user.text}
-        </div>
-      )}
+    <section data-turn={turn.id} aria-label={`Turn ${turn.ordinal + 1}`} className="cv2-turn">
+      {turn.user && <UserBubble turn={turn} revert={revert} />}
       {vis.header && steps.length > 0 && (
-        <button type="button" className="cv2-turnhead" aria-expanded={open} onClick={() => onToggle(!open)}>
-          <Glyph name="chevron-right" size={14} className="chev" />
+        <button type="button" className="cv2-foldh" aria-expanded={open} onClick={() => onToggle(!open)}>
           <span className="cv2-tnum">{turnHeader(turn, now)}</span>
-          <span className="rule" />
+          <Glyph name="chevron-right" size={14} className="chev" />
+          <span className="rule" aria-hidden />
+          <span className="when cv2-tnum">{clock(turn.endedAt ?? turn.startedAt)}</span>
         </button>
       )}
-      {!vis.header && turn.status === "running" && steps.length === 0 && (
-        <div className="cv2-step">
-          <Spinner />
-          <span className="verb cv2-shimmer">Working</span>
+      {live && steps.length === 0 && (
+        <div className="cv2-wl">
+          <span className="verb cv2-shine">Working</span>
         </div>
       )}
       {vis.header ? (
@@ -469,10 +571,7 @@ function TurnView({
           <Markdown content={turn.answer.text} streaming={turn.answer.streaming} />
         </div>
       )}
-      {turn.status !== "running" && turn.status !== "waiting" && (
-        <Receipt turn={turn} onOpenDock={props.onOpenDock} onUndo={props.onUndoTurn ? () => props.onUndoTurn?.(turn) : undefined} />
-      )}
-      {turn.checkpoint && <CheckpointDivider item={turn.checkpoint} onRollback={props.onRollback} filesAfter={after.files} turnsAfter={after.turns} />}
+      {!live && <Receipt turn={turn} onOpenDock={props.onOpenDock} onUndo={props.onUndoTurn ? () => props.onUndoTurn?.(turn) : undefined} />}
     </section>
   );
 }
@@ -484,17 +583,10 @@ function TurnRail({ turns, onJump, current }: { turns: Turn[]; onJump: (id: stri
   return (
     <nav className="cv2-nav-rail" aria-label="Turns">
       {marks.map((m) => (
-        <button
-          key={m.id}
-          type="button"
-          className={cn("cv2-nav-tick", m.status === "waiting" && "needs")}
-          aria-current={current === m.id ? "true" : undefined}
-          aria-label={`Turn ${m.ordinal + 1}: ${m.label}`}
-          onClick={() => onJump(m.id)}
-        >
+        <button key={m.id} type="button" className="cv2-nav-tick" aria-current={current === m.id ? "true" : undefined} aria-label={`Turn ${m.ordinal + 1}: ${m.label}`} onClick={() => onJump(m.id)}>
           <span className="cv2-nav-tip">
             {m.label}
-            {m.changed ? ` · ${m.changed} ${m.changed === 1 ? "file" : "files"}` : ""}
+            {m.changed ? `, ${m.changed} ${m.changed === 1 ? "file" : "files"}` : ""}
           </span>
         </button>
       ))}
@@ -512,7 +604,6 @@ export function Thread(props: ThreadProps) {
   const pinned = React.useRef(true);
   const [current, setCurrent] = React.useState<string | null>(null);
 
-  // Pinned to the end while the reader is at the end (DESIGN §4.2).
   const onScroll = () => {
     const el = scrollRef.current;
     if (!el) return;
@@ -532,38 +623,51 @@ export function Thread(props: ThreadProps) {
     el?.scrollIntoView({ block: "start", behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
   };
 
-  // What reverting a checkpoint would undo: the turns after it and their files.
-  const afterCounts = React.useMemo(
+  // Reverting to the start of turn i rolls back to the checkpoint the turn before it left.
+  const reverts = React.useMemo(
     () =>
-      turns.map((_, i) => {
-        const later = turns.slice(i + 1);
-        return { turns: later.filter((t) => t.user).length, files: new Set(later.flatMap((t) => t.changes.map((c) => c.path))).size };
+      turns.map((t, i) => {
+        const cp = i > 0 ? turns[i - 1].checkpoint : undefined;
+        if (!cp || !props.onRollback) return undefined;
+        const later = turns.slice(i);
+        return {
+          onConfirm: () => props.onRollback?.(cp.checkpointId),
+          turns: later.filter((x) => x.user).length,
+          files: new Set(later.flatMap((x) => x.changes.map((c) => c.path))).size,
+        };
       }),
-    [turns],
+    [turns, props],
   );
 
   return (
     <div className="cv2-scroll" ref={scrollRef} onScroll={onScroll}>
-      <div className="cv2-col" style={{ gap: 22 }}>
+      <div className="cv2-col">
         {props.starting && (
-          <div className="cv2-notice cv2-row" style={{ gap: 8 }}>
-            <Spinner size={14} /> {props.starting}
+          <div className="cv2-wl">
+            <span className="verb cv2-shine">{props.starting}</span>
           </div>
         )}
         {turns.map((turn, i) => (
-          <TurnView
-            key={turn.id}
-            turn={turn}
-            props={props}
-            now={now}
-            unfolded={unfolded[turn.id]}
-            onToggle={(open) => setUnfolded((u) => ({ ...u, [turn.id]: open }))}
-            after={afterCounts[i]}
-          />
+          <TurnView key={turn.id} turn={turn} props={props} now={now} unfolded={unfolded[turn.id]} onToggle={(open) => setUnfolded((u) => ({ ...u, [turn.id]: open }))} revert={reverts[i]} />
         ))}
-        {props.offline && live && <div className="cv2-notice">Paused while offline</div>}
+        {props.offline && live && <div className="cv2-notice" style={{ marginTop: 16 }}>Paused while offline</div>}
       </div>
       <TurnRail turns={turns} onJump={jump} current={current} />
     </div>
   );
 }
+
+/** Loading a session: three skeleton lines where the thread will be. */
+export function ThreadSkeleton() {
+  return (
+    <div className="cv2-scroll">
+      <div className="cv2-col cv2-skel" aria-busy="true" aria-label="Loading">
+        <i style={{ width: "46%", alignSelf: "flex-end", height: 36, borderRadius: 18 }} />
+        <i style={{ width: "88%" }} />
+        <i style={{ width: "72%" }} />
+      </div>
+    </div>
+  );
+}
+
+export type { TodoListItem };
