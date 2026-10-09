@@ -203,6 +203,9 @@ public actor PreviewSender: NativeChatRequestSending {
         if let body = PreviewShowcaseServer.body(path: path, method: request.method.rawValue, query: request.queryItems) {
             return body
         }
+        if let body = PreviewPracticeFixtures.body(for: request) {
+            return body
+        }
         // A question appended to a saved chat before its reply streams: the
         // route echoes the turn back with the id it stored it under.
         if request.method == .post, path.hasPrefix("/api/conversations/"), path.hasSuffix("/messages"),

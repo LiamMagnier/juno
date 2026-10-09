@@ -292,6 +292,8 @@ public enum PreviewFixtures {
 
         // A spreadsheet, a document and a deck, made in one conversation.
         out.append(contentsOf: PreviewArtifactFixtures.records(a))
+        // Practice: an exercise card and runnable SQL and Python blocks.
+        out.append(contentsOf: PreviewPracticeFixtures.records(a))
 
         // Memory entries.
         out.append(record(a, "memory", "mem-1", 2, """

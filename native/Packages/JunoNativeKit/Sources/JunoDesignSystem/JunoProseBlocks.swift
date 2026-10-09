@@ -37,6 +37,9 @@ public struct JunoProseCodeBlock: View {
     /// code, and every Run bumps the token so the same code runs afresh.
     @State private var runToken = 0
     @State private var outputOpen = false
+    #if DEBUG
+    @Environment(\.junoCodeRunOpensBlocks) private var opensBlocks
+    #endif
 
     public init(language: String?, source: String) {
         self.language = language
@@ -110,6 +113,7 @@ public struct JunoProseCodeBlock: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(label == "code" ? "Code" : "\(label) code")
+        .onAppear(perform: openForSnapshot)
         #else
         VStack(alignment: .leading, spacing: 0) {
             header
@@ -133,6 +137,16 @@ public struct JunoProseCodeBlock: View {
         )
         .accessibilityElement(children: .contain)
         .accessibilityLabel(label == "code" ? "Code" : "\(label) code")
+        .onAppear(perform: openForSnapshot)
+        #endif
+    }
+
+    private func openForSnapshot() {
+        #if DEBUG
+        if opensBlocks, runTarget != nil, !outputOpen {
+            outputOpen = true
+            runToken = 1
+        }
         #endif
     }
 

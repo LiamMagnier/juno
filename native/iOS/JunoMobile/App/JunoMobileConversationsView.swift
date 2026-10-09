@@ -7,6 +7,21 @@ import JunoWorkKit
 import SwiftUI
 import UIKit
 
+#if DEBUG
+  import JunoPreviewSupport
+
+  /// `--juno-preview-practice typed|run|sent`: the practice conversation's
+  /// first exercise in that state, and with `run` every block's output open
+  /// (``PreviewPracticeFixtures``).
+  private struct JunoMobilePracticePreview: ViewModifier {
+    func body(content: Content) -> some View {
+      content
+        .environment(\.junoLiveUIExerciseSeeds, PreviewPracticeFixtures.seeds(for: PreviewPracticeFixtures.state))
+        .environment(\.junoCodeRunOpensBlocks, PreviewPracticeFixtures.state == "run")
+    }
+  }
+#endif
+
 /// The chat destination: the selected conversation's transcript + composer, or —
 /// when nothing is selected — a **draft**: the website's serif greeting above an
 /// empty composer.
@@ -206,6 +221,9 @@ struct JunoMobileChatDetailScreen: View {
     // Run on a code block or an exercise answer: the web's console document,
     // run on the phone (``JunoCodeRunOutput``).
     .environment(\.junoCodeRunner, codeRunner)
+    #if DEBUG
+      .modifier(JunoMobilePracticePreview())
+    #endif
   }
 
   private var codeRunner: JunoCodeRunner? {

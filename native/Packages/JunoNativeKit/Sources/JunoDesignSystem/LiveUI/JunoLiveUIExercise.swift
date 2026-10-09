@@ -120,7 +120,10 @@ struct LiveExerciseView: View {
                     .focused($focused)
                     .padding(.horizontal, editorInset.width)
                     .padding(.vertical, editorInset.height)
-                    .frame(minHeight: isCode ? 112 : 84, alignment: .topLeading)
+                    // A TextEditor takes all the height it is offered, and a
+                    // transcript offers infinite height: the box is sized to
+                    // its lines instead, growing with the answer up to a cap.
+                    .frame(height: editorHeight, alignment: .topLeading)
                     .accessibilityLabel("Your answer to \(title)")
                     .onKeyPress(.return, phases: .down) { press in
                         guard press.modifiers.contains(.command) else { return .ignored }
@@ -139,6 +142,12 @@ struct LiveExerciseView: View {
                 .fill(Color.junoSecondary)
         )
         .clipShape(RoundedRectangle(cornerRadius: JunoRadius.field, style: .continuous))
+    }
+
+    private var editorHeight: CGFloat {
+        let lines = answer.reduce(into: 1) { count, character in if character == "\n" { count += 1 } }
+        let shown = min(max(lines, isCode ? 4 : 3), 14)
+        return CGFloat(shown) * 21 + 24
     }
 
     private var editorFont: Font {

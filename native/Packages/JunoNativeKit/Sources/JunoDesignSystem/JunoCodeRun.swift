@@ -84,6 +84,11 @@ public struct JunoCodeRunStills: Sendable {
 public extension EnvironmentValues {
     @Entry var junoCodeRunner: JunoCodeRunner? = nil
     @Entry var junoCodeRunStills: JunoCodeRunStills? = nil
+    #if DEBUG
+    /// Runnable code blocks open with their output, for the snapshot and
+    /// preview harnesses' screenshots of a run.
+    @Entry var junoCodeRunOpensBlocks = false
+    #endif
 }
 
 /// A run's state, in words — never a dot (owner, 2026-10-09).
