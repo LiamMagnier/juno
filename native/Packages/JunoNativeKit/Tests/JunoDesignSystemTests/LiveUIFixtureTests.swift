@@ -158,6 +158,12 @@ final class LiveUIFixtureTests: XCTestCase {
             o["steps"] = st.steps.map { ["title": $0.title, "notice": $0.notice != nil, "children": $0.ui.map(summarize)] as [String: Any] }
             o["takeaway"] = st.takeaway != nil
         case .quiz(let q): o["answers"] = q.questions.map(\.answer)
+        case .exercise(let e):
+            o["id"] = e.id
+            o["title"] = e.title
+            o["tag"] = e.tag ?? NSNull()
+            o["language"] = e.language ?? NSNull()
+            o["hints"] = e.hints.count
         case .callout(let c):
             o["tone"] = c.tone.rawValue
             o["more"] = c.more != nil

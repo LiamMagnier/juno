@@ -112,6 +112,12 @@ function summarize(c: LiveComponent): Record<string, unknown> {
     o.takeaway = !!c.takeaway;
   }
   if (c.type === "quiz") o.answers = c.questions.map((q) => q.answer);
+  if (c.type === "exercise") {
+    o.title = c.title;
+    o.tag = c.tag ?? null;
+    o.language = c.language ?? null;
+    o.hints = c.hints.length;
+  }
   if (c.type === "callout") {
     o.tone = c.tone;
     o.more = !!c.more;

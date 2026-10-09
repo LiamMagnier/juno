@@ -30,8 +30,13 @@ public struct JunoProseCodeBlock: View {
     @Environment(\.junoTextScale) private var textScale
     @Environment(\.junoFindHighlight) private var find
     @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.junoCodeRunner) private var runner
     @State private var copied = false
     @State private var copiedReset: Task<Void, Never>?
+    /// Run, as the web has it (code-run.tsx): the output opens under the
+    /// code, and every Run bumps the token so the same code runs afresh.
+    @State private var runToken = 0
+    @State private var outputOpen = false
 
     public init(language: String?, source: String) {
         self.language = language
@@ -67,6 +72,20 @@ public struct JunoProseCodeBlock: View {
         return trimmed.isEmpty ? "code" : trimmed
     }
 
+    /// What Run runs, when this app can run it.
+    private var runTarget: JunoCodeRunTarget? {
+        runner == nil ? nil : JunoCodeRunTarget.target(for: language)
+    }
+
+    @ViewBuilder
+    private var output: some View {
+        if outputOpen, let runTarget {
+            JunoCodeRunOutput(target: runTarget, code: listing, runToken: runToken) {
+                outputOpen = false
+            }
+        }
+    }
+
     public var body: some View {
         #if os(macOS)
         // The Mac's listing (round 2): one quiet filled well, Xcode's and
@@ -76,6 +95,7 @@ public struct JunoProseCodeBlock: View {
         VStack(alignment: .leading, spacing: 0) {
             header
             codeBody
+            output
         }
         .background(
             RoundedRectangle(cornerRadius: JunoRadius.field, style: .continuous)
@@ -97,6 +117,7 @@ public struct JunoProseCodeBlock: View {
                 .fill(Color.junoBorder.opacity(JunoHairline.opacity(increaseContrast: contrast == .increased)))
                 .frame(height: 1)
             codeBody
+            output
         }
         .background(
             RoundedRectangle(cornerRadius: JunoRadius.field, style: .continuous)
@@ -124,6 +145,14 @@ public struct JunoProseCodeBlock: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
             Spacer(minLength: JunoSpace.snug)
+            if let runTarget {
+                JunoCodeRunButton {
+                    outputOpen = true
+                    runToken += 1
+                }
+                .help("Run this \(runTarget.label) here")
+                .accessibilityLabel("Run \(runTarget.label)")
+            }
             Button(action: copy) {
                 JunoProseCopyGlyph(copied: copied)
             }

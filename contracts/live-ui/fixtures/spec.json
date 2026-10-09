@@ -668,6 +668,46 @@
           }
         ]
       }
+    },
+    {
+      "name": "learning: exercises with hints, a language and aliases; no title or statement drops one; a solution never survives",
+      "source": "{\"title\":\"Pratique\",\"ui\":[{\"type\":\"exercise\",\"id\":\"ex1\",\"title\":\"Exercice 1\",\"tag\":\"SQL\",\"prompt\":\"Affiche **les employés** du département `60`.\",\"language\":\"SQL\",\"placeholder\":\"-- Ta requête\",\"hints\":[\"Filtre sur department_id.\",\"WHERE department_id = 60\",3,\"\",\"d\",\"e\",\"f\"],\"solution\":\"SELECT * FROM employees WHERE department_id = 60;\"},{\"type\":\"practice\",\"title\":\"Alias\",\"question\":\"Explain what an alias does.\",\"hint\":\"Think of AS.\"},{\"type\":\"question\",\"title\":\"Bad language\",\"prompt\":\"x\",\"lang\":\"c sharp\"},{\"type\":\"exercise\",\"title\":\"No statement\"},{\"type\":\"answer\",\"prompt\":\"No title\"}]}",
+      "expect": {
+        "title": "Pratique",
+        "currency": "USD",
+        "streaming": false,
+        "lets": [],
+        "data": [],
+        "ui": [
+          {
+            "key": "0",
+            "type": "exercise",
+            "id": "ex1",
+            "title": "Exercice 1",
+            "tag": "SQL",
+            "language": "sql",
+            "hints": 5
+          },
+          {
+            "key": "1",
+            "type": "exercise",
+            "id": "exercise_1",
+            "title": "Alias",
+            "tag": null,
+            "language": null,
+            "hints": 1
+          },
+          {
+            "key": "2",
+            "type": "exercise",
+            "id": "exercise_2",
+            "title": "Bad language",
+            "tag": null,
+            "language": null,
+            "hints": 0
+          }
+        ]
+      }
     }
   ]
 }

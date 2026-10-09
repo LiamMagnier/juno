@@ -20,10 +20,19 @@ import UIKit
 public struct JunoLiveUIHost: Sendable {
     public var messageID: String?
     public var onPrompt: (@MainActor @Sendable (String) -> Void)?
+    /// Sends a message straight away — an exercise's "Send answer", which
+    /// posts the answer as the reader's next turn. Where it is not set (the Mac,
+    /// whose `onPrompt` already sends) the exercise uses `onPrompt`.
+    public var onSend: (@MainActor @Sendable (String) -> Void)?
 
-    public init(messageID: String? = nil, onPrompt: (@MainActor @Sendable (String) -> Void)? = nil) {
+    public init(
+        messageID: String? = nil,
+        onPrompt: (@MainActor @Sendable (String) -> Void)? = nil,
+        onSend: (@MainActor @Sendable (String) -> Void)? = nil
+    ) {
         self.messageID = messageID
         self.onPrompt = onPrompt
+        self.onSend = onSend
     }
 }
 
@@ -98,7 +107,8 @@ public struct JunoLiveUIView: View {
                 if set.contains(index) { set.remove(index) } else { set.insert(index) }
                 checks[id] = set
             },
-            onPrompt: host.onPrompt
+            onPrompt: host.onPrompt,
+            onSend: host.onSend ?? host.onPrompt
         )
 
         return VStack(alignment: .leading, spacing: 0) {
@@ -222,6 +232,7 @@ struct LiveUIContext {
     let setValue: (String, LiveValue) -> Void
     let toggleCheck: (String, Int) -> Void
     let onPrompt: (@MainActor @Sendable (String) -> Void)?
+    var onSend: (@MainActor @Sendable (String) -> Void)? = nil
 
     var currency: String { spec.currency }
 
@@ -278,6 +289,8 @@ struct LiveNodeView: View {
             }
         case .button(let button):
             LiveButtonView(button: button, context: context)
+        case .exercise(let exercise):
+            LiveExerciseView(exercise: exercise, context: context)
         case .steps(let steps):
             LiveStepsView(steps: steps, context: context)
         case .quiz(let quiz):

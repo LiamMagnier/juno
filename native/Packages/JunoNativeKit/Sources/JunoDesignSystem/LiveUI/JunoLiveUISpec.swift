@@ -25,6 +25,7 @@ public enum LiveSpecLimits {
     public static let links = 40
     public static let stops = 25
     public static let checklist = 40
+    public static let hints = 5
     public static let options = 12
     public static let steps = 12
     public static let questions = 10
@@ -212,6 +213,21 @@ public struct LiveChecklistSpec: Sendable {
     public var items: [(label: String, note: String?)]
 }
 
+/// An exercise the reader answers in the view: a statement, a box to write in
+/// (a code editor when `language` is set), hints revealed one at a time, and a
+/// send that posts the answer as the reader's next message. It never carries a
+/// solution — the web's `exercise` (src/lib/live-ui/spec.ts).
+public struct LiveExerciseSpec: Sendable {
+    public var key: String
+    public var id: String
+    public var title: String
+    public var tag: String?
+    public var prompt: String
+    public var placeholder: String?
+    public var language: String?
+    public var hints: [String]
+}
+
 public struct LiveButtonSpec: Sendable {
     public var key: String
     public var label: String
@@ -231,6 +247,7 @@ public indirect enum LiveComponent: Sendable, Identifiable {
     case stops(LiveStopsSpec)
     case checklist(LiveChecklistSpec)
     case button(LiveButtonSpec)
+    case exercise(LiveExerciseSpec)
     case steps(LiveStepsSpec)
     case quiz(LiveQuizSpec)
     case callout(LiveCalloutSpec)
@@ -250,6 +267,7 @@ public indirect enum LiveComponent: Sendable, Identifiable {
         case .stops(let c): c.key
         case .checklist(let c): c.key
         case .button(let c): c.key
+        case .exercise(let c): c.key
         case .steps(let c): c.key
         case .quiz(let c): c.key
         case .callout(let c): c.key
@@ -274,6 +292,7 @@ public indirect enum LiveComponent: Sendable, Identifiable {
         case .stops: "stops"
         case .checklist: "checklist"
         case .button: "button"
+        case .exercise: "exercise"
         case .steps: "steps"
         case .quiz: "quiz"
         case .callout: "callout"
@@ -317,7 +336,8 @@ public enum LiveSpecParser {
         "stat": "metric", "kpi": "metric", "switch": "toggle", "segmented": "select", "dropdown": "select",
         "picker": "select", "textfield": "input", "text-input": "input", "field": "number", "heading": "text",
         "note": "text", "route": "stops", "map": "stops", "itinerary": "stops", "parts": "explorer",
-        "diagram": "explorer", "todo": "checklist", "action": "button", "stack": "section", "group": "section",
+        "diagram": "explorer", "todo": "checklist", "practice": "exercise", "question": "exercise",
+        "answer": "exercise", "action": "button", "stack": "section", "group": "section",
         "card": "section", "columns": "row", "bar": "progress",
         "walkthrough": "steps", "guide": "steps", "lesson": "steps", "key-idea": "callout", "keyidea": "callout",
         "insight": "callout", "process": "timeline", "check": "quiz",
@@ -675,6 +695,28 @@ public enum LiveSpecParser {
                 id = idRaw.trimmingCharacters(in: .whitespaces)
             }
             return .checklist(LiveChecklistSpec(key: key, id: id, title: str(raw["title"]), items: items))
+        case "exercise":
+            guard let title = str(raw["title"] ?? raw["label"], 200),
+                let prompt = str(raw["prompt"] ?? raw["question"] ?? raw["text"], LiveSpecLimits.text)
+            else { return nil }
+            let list: [LiveJSON] = raw["hints"]?.arrayValue ?? (raw["hint"].map { [$0] } ?? [])
+            var hints: [String] = []
+            for h in list {
+                if hints.count >= LiveSpecLimits.hints { break }
+                if let hint = str(h, 600) { hints.append(hint) }
+            }
+            let languageRaw = str(raw["language"] ?? raw["lang"], 20)?.lowercased()
+            let language = languageRaw.flatMap { l in
+                l.unicodeScalars.allSatisfy { ("0"..."9").contains($0) || ("a"..."z").contains($0) || "+#-".unicodeScalars.contains($0) } ? l : nil
+            }
+            var id = "exercise_" + key.replacingOccurrences(of: ".", with: "_")
+            if case .string(let idRaw) = raw["id"], isIdent(idRaw.trimmingCharacters(in: .whitespaces)) {
+                id = idRaw.trimmingCharacters(in: .whitespaces)
+            }
+            return .exercise(LiveExerciseSpec(
+                key: key, id: id, title: title, tag: str(raw["tag"] ?? raw["kind"], 40), prompt: prompt,
+                placeholder: str(raw["placeholder"], 200), language: language, hints: hints
+            ))
         case "button":
             guard let label = str(raw["label"]) else { return nil }
             let prompt = str(raw["prompt"] ?? raw["send"], LiveSpecLimits.text)
