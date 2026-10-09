@@ -18,7 +18,7 @@ import SwiftUI
 // Liquid Glass is composited by the window server, so a view photographed
 // offscreen (`cacheDisplay`) shows none of it. Under Reduce Transparency, and
 // when the snapshot harness sets ``SwiftUI/EnvironmentValues/junoSnapshotOpaqueGlass``,
-// each control draws its opaque stand-in instead: the popover fill, a
+// each control draws its opaque stand-in instead: the secondary fill, a
 // hairline and the raised shadow, in the same capsule at the same metrics.
 
 /// The capsule metrics the glass controls share, by control size: the
@@ -99,7 +99,7 @@ struct JunoGlassButton: View {
     }
 }
 
-/// The opaque capsule that stands in for a glass button: the popover fill (or
+/// The opaque capsule that stands in for a glass button: the secondary fill (or
 /// the accent, prominent), a hairline and the raised shadow.
 struct JunoGlassStandInStyle: ButtonStyle {
     let prominent: Bool
@@ -142,14 +142,17 @@ struct JunoGlassLabelStyle: LabelStyle {
     }
 }
 
-/// The stand-in's material: popover fill or accent, hairline, raised shadow.
+/// The stand-in's material: the secondary fill or the accent, hairline,
+/// raised shadow.
 struct JunoGlassStandInShape<S: Shape>: View {
     var prominent = false
     let shape: S
 
     var body: some View {
         shape
-            .fill(prominent ? Color.junoAccent : Color.junoPopover)
+            // Glass over the warm canvas reads a shade off it, not paper
+            // white: the stand-in takes the secondary fill for that.
+            .fill(prominent ? Color.junoAccent : Color.junoSecondary)
             .overlay {
                 shape.stroke(
                     prominent ? Color.white.opacity(0.18) : Color.junoBorder.opacity(0.9),
