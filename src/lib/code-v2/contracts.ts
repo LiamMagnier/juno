@@ -451,6 +451,11 @@ export interface ApprovalRequestItem extends TurnItemBase {
   options?: ApprovalDecision[];
   decision?: ApprovalDecision;
   status: "pending" | "resolved" | "expired";
+  // web lane (additive, DESIGN §5.14): who is asking, for the takeover header.
+  /** The subagent that asked; absent when the lead (orchestrator) asked. */
+  agentId?: string;
+  /** How the takeover names the asker ("Worker 3"). */
+  agentLabel?: string;
 }
 export interface CheckpointItem extends TurnItemBase {
   kind: "checkpoint";

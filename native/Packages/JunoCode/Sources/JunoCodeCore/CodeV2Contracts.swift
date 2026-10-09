@@ -495,6 +495,8 @@ public enum CodeV2 {
         public var options: [ApprovalDecision]?
         public var decision: ApprovalDecision?
         public var status: Status
+        public var agentId: String?
+        public var agentLabel: String?
     }
 
     public struct Checkpoint: Codable, Sendable, Hashable {
