@@ -401,6 +401,8 @@ export class SessionManager {
       }
       const provider = await this.#ensureProvider(live, instance, params.selection);
       const sink = this.#sink(live, instance.id, turnId);
+      // Interrupted while the runtime was starting: nothing was sent yet.
+      if (abort.signal.aborted) throw new TurnStoppedEarly();
       result = await provider.runTurn({
         sessionId: log.id,
         turnId,
@@ -416,7 +418,7 @@ export class SessionManager {
       });
       if (live.provider) log.updateMeta({ providerState: { ...live.provider.resumeState(), instanceId: instance.id } });
     } catch (error) {
-      result = { outcome: "failed", message: describeError(error) };
+      result = error instanceof TurnStoppedEarly ? { outcome: "interrupted" } : { outcome: "failed", message: describeError(error) };
     }
     if (live.active?.userInterrupted && result.outcome === "failed") result = { outcome: "interrupted" };
     // Requests still open when the turn ended can no longer be answered.
@@ -454,10 +456,12 @@ export class SessionManager {
       this.#o.registry.update(instance.id, { status: "ready" });
     }
     log.updateMeta({ turnCount: ordinal });
-    log.emit({ type: "turn.completed", turnId, outcome: result.outcome, ...(result.usage ? { usage: this.#usageWithWindow(live, result.usage) } : {}) });
+    // The limited state (with its reset time) lands before turn.completed so a
+    // client that reacts to the completion already sees when to resume.
     if (result.outcome === "limited") {
       log.emit({ type: "session.state", state: "limited", ...(result.resumeAt ? { resumeAt: result.resumeAt } : {}), message: result.message ?? "Usage limit reached." });
     }
+    log.emit({ type: "turn.completed", turnId, outcome: result.outcome, ...(result.usage ? { usage: this.#usageWithWindow(live, result.usage) } : {}) });
     live.active = undefined;
     for (const listener of this.#turnEnded) {
       try {
@@ -642,3 +646,5 @@ function matches(title: string, items: TurnItem[], query: string): boolean {
 }
 
 export type { ApprovalDecision, FileChangeEntry, UserInput };
+
+class TurnStoppedEarly extends Error {}

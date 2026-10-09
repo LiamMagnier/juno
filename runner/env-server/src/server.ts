@@ -59,6 +59,8 @@ export interface EnvServerOptions {
   alevrEngine?: AlevrEngine;
   mcpBridge?: McpBridgeCommand;
   forcePipeTerminals?: boolean;
+  /** Shell for in-app terminals (default: $SHELL). Tests pin /bin/sh. */
+  terminalShell?: string;
   /** Extra adapters (tests) or replacements by kind. */
   adapters?: ProviderAdapter[];
   /** Probe every installed instance after start (default true). */
@@ -128,7 +130,7 @@ export async function startEnvServer(options: EnvServerOptions = {}): Promise<En
       exited: (terminalId, exitCode) => broadcast({ type: "terminal.exited", terminalId, ...(exitCode !== undefined ? { exitCode } : {}) }),
     },
     logger,
-    { forcePipe: options.forcePipeTerminals ?? false },
+    { forcePipe: options.forcePipeTerminals ?? false, ...(options.terminalShell ? { shell: options.terminalShell } : {}) },
   );
 
   const allowedOrigins = new Set(options.allowedOrigins ?? []);

@@ -243,15 +243,18 @@ class AcpSession implements ProviderSession {
   async runTurn(request: TurnRequest): Promise<TurnResult> {
     if (!this.#acpSessionId) throw new Error("ACP session is not open");
     if (this.#turn) throw new Error("an ACP turn is already running");
-    await this.#applyMode(request.runtimeMode);
-    await this.#applyModel(request.selection.model);
     const turn: AcpTurn = { turnId: request.turnId, sink: request.sink, runtimeMode: request.runtimeMode, tools: new Map() };
     this.#turn = turn;
     const abort = new AbortController();
     this.#abort = abort;
     const onAbort = () => abort.abort();
     request.signal.addEventListener("abort", onAbort, { once: true });
+    if (request.signal.aborted) abort.abort();
     try {
+      await this.#applyMode(request.runtimeMode);
+      await this.#applyModel(request.selection.model);
+      // Stopped while the mode and model were being set: never send the prompt.
+      if (abort.signal.aborted) return { outcome: "interrupted" };
       const res = await this.#client.prompt({ sessionId: this.#acpSessionId, prompt: toAcpPrompt(request.input) }, abort.signal);
       this.#finishStreaming(turn);
       const usage = res.usage

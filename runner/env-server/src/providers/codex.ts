@@ -238,6 +238,9 @@ interface ActiveTurn {
   /** codex item id → our item */
   items: Map<string, TurnItem>;
   todoItemId?: string;
+  usage?: SessionUsage;
+  /** An interrupt asked for before codex told us its turn id; sent as soon as it does. */
+  interruptRequested?: boolean;
 }
 
 class CodexSession implements ProviderSession {
@@ -308,6 +311,7 @@ class CodexSession implements ProviderSession {
     this.#active = active;
     const onAbort = () => void this.interrupt();
     request.signal.addEventListener("abort", onAbort, { once: true });
+    if (request.signal.aborted) active.interruptRequested = true;
     try {
       const policy = codexTurnPolicy(request.runtimeMode);
       const effort = request.selection.effort;
@@ -328,10 +332,11 @@ class CodexSession implements ProviderSession {
         };
       }
       const res = await this.#rpc.request<{ turn?: { id?: string } }>("turn/start", params);
-      active.codexTurnId = res?.turn?.id;
+      active.codexTurnId ??= res?.turn?.id;
+      if (active.interruptRequested) void this.interrupt();
       const result = await active.done.promise;
       if (active.codexTurnId) this.#codexTurns[request.turnOrdinal - 1] = active.codexTurnId;
-      return result;
+      return active.usage && !result.usage ? { ...result, usage: active.usage } : result;
     } catch (error) {
       const limit = classifyUsageLimit({ message: describeError(error), code: errorCode(error) });
       if (limit.limited) return { outcome: "limited", message: describeError(error), ...(limit.resetsAt ? { resumeAt: limit.resetsAt } : {}) };
@@ -356,7 +361,12 @@ class CodexSession implements ProviderSession {
 
   async interrupt(): Promise<void> {
     const active = this.#active;
-    if (!active?.codexTurnId || !this.#threadId) return;
+    if (!active) return;
+    if (!active.codexTurnId || !this.#threadId) {
+      // turn/start has not answered yet: interrupt as soon as the turn id is known.
+      active.interruptRequested = true;
+      return;
+    }
     await this.#rpc.request("turn/interrupt", { threadId: this.#threadId, turnId: active.codexTurnId }).catch((e) => {
       this.#logger.warn(`codex turn/interrupt: ${describeError(e)}`);
     });
@@ -462,7 +472,10 @@ class CodexSession implements ProviderSession {
     switch (method) {
       case "turn/started": {
         const turn = p.turn as { id?: string } | undefined;
-        if (!active.codexTurnId && turn?.id) active.codexTurnId = turn.id;
+        if (!active.codexTurnId && turn?.id) {
+          active.codexTurnId = turn.id;
+          if (active.interruptRequested) void this.interrupt();
+        }
         return;
       }
       case "item/started":
@@ -512,6 +525,7 @@ class CodexSession implements ProviderSession {
         };
         if (usage.last?.totalTokens !== undefined) u.contextTokens = usage.last.inputTokens ?? usage.last.totalTokens;
         if (usage.modelContextWindow) u.contextWindow = usage.modelContextWindow;
+        active.usage = u;
         sink.usage(u);
         return;
       }

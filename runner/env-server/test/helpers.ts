@@ -183,6 +183,8 @@ export function fakeClaudeQuery(record: { options?: unknown[]; prompts?: string[
       stream({ type: "content_block_start", index: 0, content_block: { type: "thinking", thinking: "" } });
       stream({ type: "content_block_delta", index: 0, delta: { type: "thinking_delta", thinking: "Hmm." } });
       const blocks: Record<string, unknown>[] = [{ type: "thinking", thinking: "Hmm." }];
+      // Like the real CLI, every text block is streamed before the assistant message repeats it.
+      let answered = "";
       if (/bash/.test(text)) {
         out.push({ type: "assistant", message: { content: [{ type: "tool_use", id: "tu1", name: "Bash", input: { command: "ls -la", description: "List files" } }] }, parent_tool_use_id: null, uuid: "a-tool", session_id });
         const r = await options.canUseTool!("Bash", { command: "ls -la" }, { signal: new AbortController().signal, suggestions: [{ type: "addRules", rules: [{ toolName: "Bash", ruleContent: "ls:*" }], behavior: "allow", destination: "session" }], toolUseID: "tu1" } as never);
@@ -196,7 +198,7 @@ export function fakeClaudeQuery(record: { options?: unknown[]; prompts?: string[
       }
       if (/ask/.test(text)) {
         const r = await options.canUseTool!("AskUserQuestion", { questions: [{ question: "Which browser?", header: "browser", options: [{ label: "WebKit" }, { label: "Chromium" }] }] }, { signal: new AbortController().signal, toolUseID: "tu-ask" } as never);
-        blocks.push({ type: "text", text: `answers=${JSON.stringify((r as { updatedInput?: { answers?: unknown } }).updatedInput?.answers ?? null)}` });
+        answered = ` answers=${JSON.stringify((r as { updatedInput?: { answers?: unknown } }).updatedInput?.answers ?? null)}`;
       }
       if (/limit/.test(text)) {
         const resetsAt = Math.floor(Date.now() / 1000) + 1800;
@@ -218,7 +220,7 @@ export function fakeClaudeQuery(record: { options?: unknown[]; prompts?: string[
           return;
         }
       }
-      const reply = steered.length ? `Claude heard: ${text} + ${steered.join(" + ")}` : `Claude says: ${text}`;
+      const reply = (steered.length ? `Claude heard: ${text} + ${steered.join(" + ")}` : `Claude says: ${text}`) + answered;
       consumed.push(...steeredUuids);
       steered = [];
       steeredUuids = [];

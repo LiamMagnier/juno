@@ -30,6 +30,7 @@ async function boot(extra: Parameters<typeof startEnvServer>[0] = {}) {
     probeOnStart: false,
     coalesceMs: 5,
     forcePipeTerminals: true,
+    terminalShell: "/bin/sh",
     claudeQuery: fakeClaudeQuery(record),
     ...extra,
   });
@@ -44,6 +45,13 @@ const items = (c: TestClient, sid: string): TurnItem[] => c.snapshot(sid).items;
 const pendingApproval = (c: TestClient, sid: string) =>
   c.waitFor(() => items(c, sid).find((i): i is ApprovalRequestItem => i.kind === "approval_request" && i.status === "pending"), 8000, "an approval request");
 const lastAssistant = (c: TestClient, sid: string) => [...items(c, sid)].reverse().find((i) => i.kind === "assistant_message") as Extract<TurnItem, { kind: "assistant_message" }> | undefined;
+
+/** item.delta events after the given turn started (earlier turns' deltas do not count). */
+function deltasSince(c: TestClient, sid: string, turnId: string): number {
+  const events = c.sessionEvents(sid);
+  const start = events.findIndex((e) => e.event.type === "turn.started" && e.event.turnId === turnId);
+  return start < 0 ? 0 : events.slice(start).filter((e) => e.event.type === "item.delta").length;
+}
 
 async function openSession(c: TestClient, cwd: string, selection: ModelSelection): Promise<string> {
   const { sessionId } = await c.command<{ sessionId: string }>("session.open", { cwd, selection });
@@ -127,7 +135,7 @@ test("codex: steer lands in the running turn, interrupt stops the next", async (
   const sid = await openSession(client, tempDir("cwd"), { instanceId: "codex:default", model: "gpt-6.1-codex" });
   const selection = { instanceId: "codex:default", model: "gpt-6.1-codex" };
   const t1 = await client.command<{ turnId: string }>("turn.start", { sessionId: sid, input: { text: "slow one" }, selection, ...ask });
-  await client.waitFor(() => client.sessionEvents(sid).some((e) => e.event.type === "item.delta"), 5000, "streaming");
+  await client.waitFor(() => deltasSince(client, sid, t1.turnId) > 0, 5000, "streaming");
   const steer = await client.command<{ accepted: boolean }>("turn.steer", { sessionId: sid, turnId: t1.turnId, input: { text: "use tabs" } });
   assert.equal(steer.accepted, true);
   assert.equal((await client.turnCompleted(sid, t1.turnId)).outcome, "completed");
@@ -135,7 +143,7 @@ test("codex: steer lands in the running turn, interrupt stops the next", async (
   assert.ok(items(client, sid).some((i) => i.kind === "user_message" && i.delivery === "steer"));
 
   const t2 = await client.command<{ turnId: string }>("turn.start", { sessionId: sid, input: { text: "slow two" }, selection, ...ask });
-  await client.waitFor(() => client.snapshot(sid).state === "running", 4000, "running");
+  await client.waitFor(() => deltasSince(client, sid, t2.turnId) > 0, 5000, "streaming");
   // A message queued while running waits; the interrupt does not drain it.
   await client.command("turn.queue", { sessionId: sid, input: { text: "after that" } });
   assert.equal(client.snapshot(sid).queue.length, 1);
@@ -268,7 +276,7 @@ test("acp: initialize-only probe, permission options, cancel and quota errors", 
   assert.match(lastAssistant(client, sid)?.text ?? "", /ACP says: edit it/);
 
   const t2 = await client.command<{ turnId: string }>("turn.start", { sessionId: sid, input: { text: "slow" }, selection, ...ask });
-  await client.waitFor(() => client.snapshot(sid).state === "running" && client.sessionEvents(sid).some((e) => e.event.type === "item.delta"), 5000, "stream");
+  await client.waitFor(() => client.snapshot(sid).state === "running" && deltasSince(client, sid, t2.turnId) > 0, 5000, "stream");
   await client.command("turn.interrupt", { sessionId: sid });
   assert.equal((await client.turnCompleted(sid, t2.turnId)).outcome, "interrupted");
 
@@ -376,6 +384,11 @@ test("reconnect: afterSequence replays exactly the missed events; restart restor
 test("terminals: pipe fallback runs a typed command and streams output", async () => {
   const { client } = await boot();
   const { terminalId } = await client.command<{ terminalId: string }>("terminal.open", { cwd: tempDir("term"), cols: 80, rows: 24, command: "echo alevr-$((40+2))" });
+  const output = () => client.events.filter((e) => e.event.type === "terminal.output" && e.event.terminalId === terminalId).map((e) => (e.event as { data: string }).data).join("");
+  // The setup command is typed, not submitted: nothing runs until the user presses Return.
+  await new Promise((r) => setTimeout(r, 300));
+  assert.ok(!output().includes("alevr-42"));
+  await client.command("terminal.write", { terminalId, data: "\r" });
   await client.waitFor(
     () => client.events.filter((e) => e.event.type === "terminal.output" && e.event.terminalId === terminalId).map((e) => (e.event as { data: string }).data).join("").includes("alevr-42"),
     6000,
