@@ -37,6 +37,7 @@ public final class EnvServerHub {
     @ObservationIgnored private var startTask: Task<Void, Never>?
     @ObservationIgnored private var sessions: [String: WeakSession] = [:]
     @ObservationIgnored private var terminals: [String: WeakTerminal] = [:]
+    @ObservationIgnored private var unclaimedTerminalEvents: [String: [CodeV2.ServerEvent]] = [:]
     /// Dock › Terminal: one shell per env-server thread, kept for the app's life.
     @ObservationIgnored private var threadTerminals: [ObjectIdentifier: CodeV2EnvTerminal] = [:]
     @ObservationIgnored private var relaySinks: [UUID: @MainActor (CodeV2.ServerEventEnvelope) -> Void] = [:]
@@ -154,7 +155,18 @@ public final class EnvServerHub {
         }
         switch envelope.event {
         case let .terminalOutput(terminalId, _), let .terminalExited(terminalId, _):
-            terminals[terminalId]?.value?.receive(envelope.event)
+            if let terminal = terminals[terminalId]?.value {
+                terminal.receive(envelope.event)
+            } else {
+                // Output can land before `terminal.open`'s caller has the id:
+                // keep a little of it for the terminal that registers next.
+                var held = unclaimedTerminalEvents[terminalId, default: []]
+                held.append(envelope.event)
+                unclaimedTerminalEvents[terminalId] = Array(held.suffix(64))
+                if unclaimedTerminalEvents.count > 16, let stale = unclaimedTerminalEvents.keys.first(where: { $0 != terminalId }) {
+                    unclaimedTerminalEvents[stale] = nil
+                }
+            }
         default:
             break
         }
@@ -249,6 +261,7 @@ public final class EnvServerHub {
 
     func register(_ terminal: CodeV2EnvTerminal, as id: String) {
         terminals[id] = WeakTerminal(value: terminal)
+        for event in unclaimedTerminalEvents.removeValue(forKey: id) ?? [] { terminal.receive(event) }
     }
 
     func unregisterTerminal(_ id: String) {

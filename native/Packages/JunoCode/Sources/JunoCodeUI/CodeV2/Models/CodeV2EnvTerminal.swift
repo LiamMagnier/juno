@@ -69,13 +69,15 @@ public final class CodeV2EnvTerminal {
         phase = .opening
         do {
             let connection = try await connection()
+            // Outside a hub, follow the connection before anything is sent,
+            // so the shell's first prompt is not missed.
+            if connect != nil, listener == nil { listen(to: await connection.events()) }
             if reattaching != nil { screen.clear() }
             let id = try await connection.terminalOpen(
                 cwd: cwd, cols: size.cols, rows: size.rows, terminalId: reattaching
             )
             terminalId = id
             hub?.register(self, as: id)
-            if connect != nil, listener == nil { listen(on: connection) }
             phase = .running
         } catch {
             phase = .failed(CodeV2EnvSession.describe(error))
@@ -129,9 +131,8 @@ public final class CodeV2EnvTerminal {
     // MARK: Events
 
     /// Outside a hub (tests), the terminal follows the connection itself.
-    private func listen(on connection: EnvServerConnection) {
+    private func listen(to events: AsyncStream<CodeV2.ServerEventEnvelope>) {
         listener = Task { [weak self] in
-            let events = await connection.events()
             for await envelope in events {
                 guard let self else { return }
                 self.receive(envelope.event)
