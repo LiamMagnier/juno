@@ -1,40 +1,25 @@
 "use client";
 
 /**
- * The right dock (DESIGN §4.1, §5.16; INTERACTION I-10, I-11): one workbench
- * with tabs for Changes, Terminal, Files, Preview, Plan, Agents and Screen.
- * Resizable by its leading edge (pointer-captured, rAF-batched, snaps to
- * 360 / 460 / 760 on release, double-click resets), expandable over the
- * thread (⌘⇧D), a sheet from the right below 1024 px.
+ * The right panel (TARGET §10): closed by default, one tab strip with text
+ * labels (Changes, Terminal, Files, and only when relevant Preview, Agents,
+ * Screen), expand and close at the right. Resizable by its leading edge,
+ * a sheet from the right below 1024 px.
+ *
+ * Portions adapted from T3 Code, Copyright (c) 2026 T3 Tools Inc., MIT License
+ * (the diff panel: a turn/session scope menu, file sections, unchanged regions
+ * collapsed to an "N unmodified lines" bar, and no accept/reject per hunk).
  */
 import * as React from "react";
-import { motion, useReducedMotion } from "framer-motion";
 import { ComputerTimeline } from "@/components/code/computer-timeline";
-import type { FileChangeEntry, PlanItem, ProviderInstance, SubagentItem, TodoListItem, TurnItem } from "@/lib/code-v2/contracts";
-import {
-  DOCK_TAB_GLYPHS,
-  DOCK_TAB_LABELS,
-  type DockState,
-  type DockAction,
-  type DockTab,
-  effectiveDockWidth,
-  nudgeDockWidth,
-} from "@/lib/code-v2/dock";
-import {
-  hunkOrder,
-  keptCounts,
-  moveHunkFocus,
-  parseUnifiedDiff,
-  splitPath,
-  splitRows,
-  type DiffFile,
-  type DiffLine,
-  type HunkDecision,
-} from "@/lib/code-v2/diff";
+import type { FileChangeEntry, ProviderInstance, SubagentItem, TurnItem } from "@/lib/code-v2/contracts";
+import { DOCK_TAB_LABELS, type DockState, type DockAction, type DockTab, nudgeDockWidth } from "@/lib/code-v2/dock";
+import { hunkOrder, keptCounts, moveHunkFocus, parseUnifiedDiff, splitPath, splitRows, type DiffFile, type DiffHunk, type DiffLine, type HunkDecision } from "@/lib/code-v2/diff";
 import { aggregateChanges, groupTurns, formatDuration } from "@/lib/code-v2/turns";
-import { displayName } from "@/lib/code-v2/providers-view";
-import { AgentTree, BestOfN, modelLabelFor } from "./agent-tree";
-import { Glyph, Kbd, ModelMark, Spinner, useIsMac } from "./primitives";
+import { budgetLine } from "@/lib/code-v2/orchestrate";
+import { displayName, shortModelLabel } from "@/lib/code-v2/providers-view";
+import { ComposerPopover, Glyph, MenuList, ModelMark, Spinner, useIsMac } from "./primitives";
+import { agentStep, isCandidate, teamHead } from "./thread";
 import type { WorkspaceModel } from "./types";
 import { XtermView } from "./xterm-view";
 import { cn } from "@/lib/utils";
@@ -46,28 +31,79 @@ export interface DockFocus {
   turnId?: string;
 }
 
+export function modelLabelFor(modelId: string, instances: readonly ProviderInstance[], instanceId: string): string {
+  const instance = instances.find((i) => i.id === instanceId);
+  const m = instance?.models?.find((x) => x.id === modelId);
+  return m?.label ?? shortModelLabel(modelId.split(":").pop() ?? modelId);
+}
+
 // ── Changes ─────────────────────────────────────────────────────────────────
 
-function highlight(line: DiffLine): React.ReactNode {
-  if (!line.marks?.length) return line.text || " ";
-  const out: React.ReactNode[] = [];
+const KEYWORDS = new Set("import export from const let var function return if else for while do switch case break continue new class extends async await try catch finally throw typeof instanceof in of as interface type enum implements public private protected readonly static void null undefined true false this super default yield".split(" "));
+const TOKEN_RE = /(\/\/.*$|\/\*.*?\*\/|#.*$)|("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)|(\b\d[\d_.]*\b)|([A-Za-z_$][\w$]*)/g;
+
+/** Light syntax colour for diff and file lines: comments, strings, numbers, keywords. */
+export function codeTokens(text: string): { s: number; e: number; cls?: string }[] {
+  const out: { s: number; e: number; cls?: string }[] = [];
   let at = 0;
-  line.marks.forEach(([a, b], i) => {
-    if (a > at) out.push(line.text.slice(at, a));
-    out.push(<mark key={i}>{line.text.slice(a, b)}</mark>);
-    at = b;
-  });
-  out.push(line.text.slice(at));
+  for (const m of text.matchAll(TOKEN_RE)) {
+    const s = m.index ?? 0;
+    const cls = m[1] ? "cv2-c" : m[2] ? "cv2-s" : m[3] ? "cv2-n" : m[4] && KEYWORDS.has(m[4]) ? "cv2-k" : undefined;
+    if (!cls) continue;
+    if (s > at) out.push({ s: at, e: s });
+    out.push({ s, e: s + m[0].length, cls });
+    at = s + m[0].length;
+  }
+  if (at < text.length) out.push({ s: at, e: text.length });
   return out;
 }
 
-function Line({ line }: { line: DiffLine }) {
-  const sign = line.kind === "add" ? "+" : line.kind === "del" ? "−" : " ";
+function highlight(line: DiffLine): React.ReactNode {
+  const text = line.text;
+  if (!text) return " ";
+  const marks = line.marks ?? [];
+  const cuts = new Set<number>([0, text.length]);
+  for (const t of codeTokens(text)) {
+    cuts.add(t.s);
+    cuts.add(t.e);
+  }
+  for (const [a, b] of marks) {
+    cuts.add(a);
+    cuts.add(b);
+  }
+  const points = [...cuts].sort((a, b) => a - b);
+  const tokens = codeTokens(text);
+  const out: React.ReactNode[] = [];
+  for (let i = 0; i < points.length - 1; i++) {
+    const a = points[i];
+    const b = points[i + 1];
+    if (a === b) continue;
+    const cls = tokens.find((t) => t.s <= a && b <= t.e)?.cls;
+    const marked = marks.some(([x, y]) => x <= a && b <= y);
+    const piece = text.slice(a, b);
+    const node = cls ? <span className={cls}>{piece}</span> : piece;
+    out.push(marked ? <mark key={i}>{node}</mark> : <React.Fragment key={i}>{node}</React.Fragment>);
+  }
+  return out;
+}
+
+/**
+ * One diff row. Unified view carries two gutters (old, new) the way GitHub,
+ * Codex and T3 Code do, so a removed line and the line that replaced it never
+ * read as one jumbled count; split view has one gutter per side.
+ */
+function Line({ line, both }: { line: DiffLine; both?: boolean }) {
   return (
-    <div className={cn("cv2-ln", line.kind === "add" && "a", line.kind === "del" && "d")}>
-      <span className="cv2-tnum">{line.kind === "del" ? line.oldNo : line.newNo}</span>
-      <span>{sign}</span>
-      <span>{highlight(line)}</span>
+    <div className={cn("cv2-ln", both && "two", line.kind === "add" && "a", line.kind === "del" && "d")}>
+      {both ? (
+        <>
+          <span className="cv2-tnum cv2-gut">{line.kind === "add" ? "" : line.oldNo}</span>
+          <span className="cv2-tnum cv2-gut">{line.kind === "del" ? "" : line.newNo}</span>
+        </>
+      ) : (
+        <span className="cv2-tnum cv2-gut">{line.kind === "del" ? line.oldNo : line.newNo}</span>
+      )}
+      <span className="cv2-code">{highlight(line)}</span>
     </div>
   );
 }
@@ -76,51 +112,70 @@ export function filesFrom(changes: readonly FileChangeEntry[]): DiffFile[] {
   return changes.map((c) => {
     const parsed = c.diff ? parseUnifiedDiff(c.diff, c.path) : [];
     const file = parsed.find((f) => f.path === c.path) ?? parsed[0];
-    return file
-      ? { ...file, path: c.path, change: c.change }
-      : { path: c.path, change: c.change, hunks: [], additions: c.additions ?? 0, deletions: c.deletions ?? 0 };
+    return file ? { ...file, path: c.path, change: c.change } : { path: c.path, change: c.change, hunks: [], additions: c.additions ?? 0, deletions: c.deletions ?? 0 };
   });
 }
 
-function ChangesPane({
-  model,
-  focus,
-  wide,
-  active,
-}: {
-  model: WorkspaceModel;
-  focus: DockFocus;
-  wide: boolean;
-  active: boolean;
-}) {
+/** Lines between hunks that the diff does not show ("41 unmodified lines"). */
+export function gapBefore(hunks: readonly DiffHunk[], i: number): number {
+  const h = hunks[i];
+  if (i === 0) return Math.max(0, h.newStart - 1);
+  const p = hunks[i - 1];
+  return Math.max(0, h.newStart - (p.newStart + p.newLines));
+}
+
+function Gap({ count, lines, from, oldFrom }: { count: number; lines?: string[]; from: number; oldFrom?: number }) {
+  const [open, setOpen] = React.useState(false);
+  if (count <= 0) return null;
+  if (open && lines) {
+    return (
+      <>
+        {lines.slice(from, from + count).map((t, i) => (
+          <div key={i} className={cn("cv2-ln", oldFrom !== undefined && "two")}>
+            {oldFrom !== undefined && <span className="cv2-tnum cv2-gut">{oldFrom + i + 1}</span>}
+            <span className="cv2-tnum cv2-gut">{from + i + 1}</span>
+            <span className="cv2-code">{highlight({ kind: "context", text: t })}</span>
+          </div>
+        ))}
+      </>
+    );
+  }
+  return (
+    <button type="button" className="cv2-gap" disabled={!lines} onClick={() => setOpen(true)} title={lines ? "Show them" : undefined}>
+      {count} unmodified {count === 1 ? "line" : "lines"}
+    </button>
+  );
+}
+
+function ChangesPane({ model, focus, wide, active }: { model: WorkspaceModel; focus: DockFocus; wide: boolean; active: boolean }) {
   const mac = useIsMac();
   const turns = React.useMemo(() => groupTurns(model.items, { state: model.state }), [model.items, model.state]);
   const [scope, setScope] = React.useState<"turn" | "thread">(focus.scope ?? "turn");
   const [split, setSplit] = React.useState(false);
+  const [wrap, setWrap] = React.useState(false);
   const [local, setLocal] = React.useState<Record<string, HunkDecision>>({});
   const [focused, setFocused] = React.useState<string | null>(null);
   const [collapsed, setCollapsed] = React.useState<Record<string, boolean>>({});
-  const [undo, setUndo] = React.useState<string | null>(null);
+  const [menu, setMenu] = React.useState<null | "scope" | "view">(null);
+  const bar = React.useRef<HTMLDivElement>(null);
   React.useEffect(() => {
     if (focus.scope) setScope(focus.scope);
   }, [focus.scope, focus.turnId]);
-  const turn = (focus.turnId ? turns.find((t) => t.id === focus.turnId) : undefined) ?? [...turns].reverse().find((t) => t.changes.length > 0);
+  const turnIndex = focus.turnId ? turns.findIndex((t) => t.id === focus.turnId) : -1;
+  const turn = (turnIndex >= 0 ? turns[turnIndex] : undefined) ?? [...turns].reverse().find((t) => t.changes.length > 0);
   const changes = scope === "turn" && turn ? turn.changes : aggregateChanges(model.items);
   const files = React.useMemo(() => filesFrom(changes), [changes]);
-  const decisions = { ...model.hunkDecisions, ...local };
+  const decisions = React.useMemo(() => ({ ...model.hunkDecisions, ...local }), [model.hunkDecisions, local]);
   const counts = keptCounts(files, decisions);
   const order = hunkOrder(files);
   const root = React.useRef<HTMLDivElement>(null);
+  const many = files.length > 5;
 
   React.useEffect(() => {
     if (!focus.target) return;
-    const el = root.current?.querySelector<HTMLElement>(`[data-file="${CSS.escape(focus.target)}"]`);
-    el?.scrollIntoView({ block: "start" });
+    setCollapsed((c) => ({ ...c, [focus.target!]: false }));
+    requestAnimationFrame(() => root.current?.querySelector<HTMLElement>(`[data-file="${CSS.escape(focus.target!)}"]`)?.scrollIntoView({ block: "start" }));
   }, [focus.target]);
-  React.useEffect(() => {
-    if (!focused) return;
-    root.current?.querySelector<HTMLElement>(`[data-hunk="${CSS.escape(focused)}"]`)?.scrollIntoView({ block: "nearest", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
-  }, [focused]);
 
   const decide = React.useCallback(
     (file: DiffFile, hunkId: string, d: HunkDecision | null) => {
@@ -134,17 +189,12 @@ function ChangesPane({
         });
       set(d ?? undefined);
       const applied = model.actions.decideHunk?.(file.path, hunkId, d, file);
-      // The host could not apply it (the file moved on, the Mac is gone): take the decision back.
       if (applied instanceof Promise) void applied.then((ok) => ok === false && set(before));
-      if (d === "rejected") {
-        setUndo(hunkId);
-        setTimeout(() => setUndo((u) => (u === hunkId ? null : u)), 6000);
-      }
     },
     [model.actions, local],
   );
 
-  // ] [ A R and ⌥⌘D while Changes has focus (DESIGN §8).
+  // ] [ move between hunks, r reverts the focused one, ⌥⌘D toggles split.
   React.useEffect(() => {
     if (!active) return;
     const onKey = (e: KeyboardEvent) => {
@@ -154,12 +204,11 @@ function ChangesPane({
       if (e.key === "]" || e.key === "[") {
         e.preventDefault();
         setFocused((f) => moveHunkFocus(order, f, e.key === "]" ? 1 : -1));
-      } else if ((e.key === "a" || e.key === "r") && !e.metaKey && !e.ctrlKey && focused) {
+      } else if (e.key === "r" && !e.metaKey && !e.ctrlKey && focused) {
         const file = files.find((f) => f.hunks.some((h) => h.id === focused));
         if (file) {
           e.preventDefault();
-          decide(file, focused, e.key === "a" ? "accepted" : "rejected");
-          setFocused((f) => moveHunkFocus(order, f, 1));
+          decide(file, focused, decisions[focused] === "rejected" ? null : "rejected");
         }
       } else if (e.code === "KeyD" && e.altKey && (mac ? e.metaKey : e.ctrlKey) && wide) {
         e.preventDefault();
@@ -168,113 +217,116 @@ function ChangesPane({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [active, order, focused, files, decide, mac, wide]);
+  }, [active, order, focused, files, decide, mac, wide, decisions]);
 
+  const scopeLabel = scope === "thread" ? "Whole session" : turnIndex >= 0 || turn ? `Turn ${(turn?.ordinal ?? 0) + 1}` : "This turn";
   return (
     <div className="cv2-dock-pane" ref={root} tabIndex={-1}>
-      <div className="cv2-dockbar">
-        <div className="cv2-seg" role="radiogroup" aria-label="Scope">
-          {(["turn", "thread"] as const).map((s) => (
-            <button key={s} type="button" role="radio" aria-checked={scope === s} onClick={() => setScope(s)}>
-              {scope === s && <motion.span layoutId="changes-scope" className="cv2-seg-fill" transition={{ type: "spring", stiffness: 420, damping: 40 }} />}
-              <span style={{ position: "relative" }}>{s === "turn" ? "This turn" : "Whole thread"}</span>
-            </button>
-          ))}
-        </div>
-        <span className="cv2-grow" />
-        {wide && (
-          <button type="button" className="cv2-iconbtn" aria-pressed={split} aria-label="Split view" title="Split view" onClick={() => setSplit((s) => !s)}>
-            <Glyph name="columns" />
-          </button>
-        )}
-        <span className="cv2-tnum">
+      <div className="cv2-dockbar" ref={bar}>
+        <button type="button" className="cv2-ctl" style={{ marginLeft: -6 }} aria-haspopup="menu" aria-expanded={menu === "scope"} onClick={() => setMenu(menu === "scope" ? null : "scope")}>
+          <span className="v">{scopeLabel}</span>
+          <Glyph name="chevron-down" size={12} className="chev" />
+        </button>
+        <span className="n">
           <span className="cv2-add">+{counts.additions}</span> <span className="cv2-del">−{counts.deletions}</span>
         </span>
+        <span className="cv2-grow" />
+        <button type="button" className="cv2-iconbtn" aria-label="View options" aria-haspopup="menu" aria-expanded={menu === "view"} onClick={() => setMenu(menu === "view" ? null : "view")}>
+          <Glyph name="more" />
+        </button>
         {model.actions.commit && (
-          <button type="button" className="cv2-btn ink" onClick={model.actions.commit} disabled={!files.length}>
+          <button type="button" className="cv2-btn" onClick={model.actions.commit} disabled={!files.length}>
             Commit…
           </button>
         )}
+        <ComposerPopover open={menu === "scope"} onClose={() => setMenu(null)} width={220} align="left" offset={8} label="Scope" anchorRef={bar} down role="menu">
+          <MenuList
+            label="Scope"
+            onClose={() => setMenu(null)}
+            entries={[
+              { id: "turn", label: turn ? `Turn ${turn.ordinal + 1}` : "This turn", checked: scope === "turn", onSelect: () => setScope("turn") },
+              { id: "thread", label: "Whole session", checked: scope === "thread", onSelect: () => setScope("thread") },
+            ]}
+          />
+        </ComposerPopover>
+        <ComposerPopover open={menu === "view"} onClose={() => setMenu(null)} width={220} align="right" offset={8} label="View" anchorRef={bar} down role="menu">
+          <MenuList
+            label="View"
+            onClose={() => setMenu(null)}
+            entries={[
+              { id: "unified", label: "Unified", checked: !split, onSelect: () => setSplit(false) },
+              ...(wide ? [{ id: "split", label: "Split", checked: split, onSelect: () => setSplit(true) }] : []),
+              { kind: "sep", id: "s" },
+              { id: "wrap", label: "Wrap lines", checked: wrap, keepOpen: true, onSelect: () => setWrap((w) => !w) },
+              { id: "expand", label: "Expand all files", onSelect: () => setCollapsed({}) },
+              { id: "collapse", label: "Collapse all files", onSelect: () => setCollapsed(Object.fromEntries(files.map((f) => [f.path, true]))) },
+            ]}
+          />
+        </ComposerPopover>
       </div>
       <div className="cv2-dockscroll">
         {files.length === 0 && <div className="cv2-dock-empty">{scope === "turn" ? "This turn changed no files." : "Nothing changed yet."}</div>}
         {files.map((f) => {
           const { name, dir } = splitPath(f.path);
-          const isCollapsed = collapsed[f.path] ?? false;
+          const isCollapsed = collapsed[f.path] ?? many;
           const fc = keptCounts([f], decisions);
+          const content = model.fileContents?.[f.path]?.split("\n");
           return (
             <div key={f.path} data-file={f.path}>
-              <button type="button" className="cv2-fileh" aria-expanded={!isCollapsed} onClick={() => setCollapsed((c) => ({ ...c, [f.path]: !isCollapsed }))}>
+              <button type="button" className="cv2-fileh" aria-expanded={!isCollapsed} onClick={() => setCollapsed((c) => ({ ...c, [f.path]: !isCollapsed }))} title={f.path}>
                 <Glyph name="chevron-down" size={14} className="chev" />
-                <span className="cv2-mono" style={{ color: "hsl(var(--foreground))" }}>
-                  {name}
-                </span>
-                <span className="cv2-mono cv2-mute cv2-trunc cv2-grow">{dir}</span>
-                {f.change !== "modify" && <span className="cv2-mute">{f.change === "add" ? "new" : f.change === "delete" ? "deleted" : "renamed"}</span>}
-                <span className="cv2-tnum">
+                <span className="nm">{name}</span>
+                <span className="dir cv2-trunc">{dir.replace(/\/$/, "")}</span>
+                {f.change !== "modify" && <span className="dir">{f.change === "add" ? "new" : f.change === "delete" ? "deleted" : "renamed"}</span>}
+                <span className="n">
                   <span className="cv2-add">+{fc.additions}</span> <span className="cv2-del">−{fc.deletions}</span>
                 </span>
               </button>
-              {!isCollapsed && f.hunks.length === 0 && <div className="cv2-mute" style={{ padding: "0 14px 10px 36px" }}>No line diff for this file yet.</div>}
+              {!isCollapsed && f.hunks.length === 0 && <div className="cv2-mute cv2-small" style={{ padding: "10px 16px 14px 34px" }}>No line diff for this file yet.</div>}
               {!isCollapsed &&
-                f.hunks.map((h) => {
+                f.hunks.map((h, hi) => {
                   const d = decisions[h.id];
                   return (
-                    <div key={h.id} className="cv2-diff" data-hunk={h.id} data-focused={focused === h.id} data-decision={d} onClick={() => setFocused(h.id)}>
-                      <div className="cv2-hunk">
-                        <span className="cv2-mono cv2-trunc cv2-grow">
-                          {h.header}
-                          {h.section ? ` ${h.section}` : ""}
-                        </span>
-                        {d ? (
-                          <span className="decided cv2-row" style={{ gap: 6 }}>
-                            {d === "accepted" ? "Accepted" : "Rejected"}
-                            {(undo === h.id || d === "accepted") && (
-                              <button type="button" className="cv2-btn sm ghost" onClick={(e) => (e.stopPropagation(), decide(f, h.id, null))}>
-                                Undo
+                    <React.Fragment key={h.id}>
+                      {f.change !== "add" && <Gap count={gapBefore(f.hunks, hi)} lines={content} from={hi === 0 ? 0 : f.hunks[hi - 1].newStart - 1 + f.hunks[hi - 1].newLines} oldFrom={split && wide ? undefined : Math.max(0, f.hunks[hi].oldStart - 1 - gapBefore(f.hunks, hi))} />}
+                      <div className={cn("cv2-diff", wrap && "wrap")} data-hunk={h.id} data-focused={focused === h.id} data-decision={d} onClick={() => setFocused(h.id)}>
+                        {model.actions.decideHunk && (
+                          <span className="cv2-hunkbar" data-on={d === "rejected" ? "true" : undefined}>
+                            {d === "rejected" ? (
+                              <>
+                                Reverted
+                                <button type="button" className="cv2-btn ghost" onClick={(e) => (e.stopPropagation(), decide(f, h.id, null))}>
+                                  Undo
+                                </button>
+                              </>
+                            ) : (
+                              <button type="button" className="cv2-btn" onClick={(e) => (e.stopPropagation(), decide(f, h.id, "rejected"))}>
+                                Revert
                               </button>
                             )}
                           </span>
+                        )}
+                        {split && wide ? (
+                          <div className="cv2-split">
+                            <div>{splitRows(h).map((r, i) => (r.left ? <Line key={i} line={r.left} /> : <div key={i} className="cv2-ln">&nbsp;</div>))}</div>
+                            <div>{splitRows(h).map((r, i) => (r.right ? <Line key={i} line={r.right} /> : <div key={i} className="cv2-ln">&nbsp;</div>))}</div>
+                          </div>
                         ) : (
-                          <>
-                            <button type="button" className="cv2-btn sm ghost" onClick={(e) => (e.stopPropagation(), decide(f, h.id, "rejected"))}>
-                              Reject
-                            </button>
-                            <button type="button" className="cv2-btn sm" onClick={(e) => (e.stopPropagation(), decide(f, h.id, "accepted"))}>
-                              Accept
-                            </button>
-                          </>
+                          h.lines.map((l, i) => <Line key={i} line={l} both />)
                         )}
                       </div>
-                      {split && wide ? (
-                        <div className="cv2-split">
-                          <div>
-                            {splitRows(h).map((r, i) => (r.left ? <Line key={i} line={r.left} /> : <div key={i} className="cv2-ln">&nbsp;</div>))}
-                          </div>
-                          <div>
-                            {splitRows(h).map((r, i) => (r.right ? <Line key={i} line={r.right} /> : <div key={i} className="cv2-ln">&nbsp;</div>))}
-                          </div>
-                        </div>
-                      ) : (
-                        (d === "rejected" ? h.lines.filter((l) => l.kind !== "add").map((l) => ({ ...l, kind: "context" as const })) : h.lines).map((l, i) => <Line key={i} line={l} />)
-                      )}
-                    </div>
+                    </React.Fragment>
                   );
                 })}
             </div>
           );
         })}
-        {order.length > 1 && (
-          <div className="cv2-mute cv2-wide cv2-row" style={{ gap: 6, padding: "4px 14px 16px", fontSize: 12 }}>
-            <Kbd k="]" /> <Kbd k="[" /> move between hunks, <Kbd k="a" /> accept, <Kbd k="r" /> reject
-          </div>
-        )}
       </div>
     </div>
   );
 }
 
-// ── Terminal (xterm.js; the user's shells are live, agent commands read-only) ─
+// ── Terminal ────────────────────────────────────────────────────────────────
 
 function TerminalPane({ model, focus }: { model: WorkspaceModel; focus: DockFocus }) {
   const commands = model.items.filter((i): i is Extract<TurnItem, { kind: "command_execution" }> => i.kind === "command_execution");
@@ -284,7 +336,7 @@ function TerminalPane({ model, focus }: { model: WorkspaceModel; focus: DockFocu
       id: c.id,
       title: c.command,
       readOnly: true,
-      output: `$ ${c.command}\n${c.output ?? ""}${c.exitCode !== undefined ? `\n[exit ${c.exitCode}${c.durationMs ? ` · ${formatDuration(c.durationMs)}` : ""}]` : ""}`,
+      output: `$ ${c.command}\n${c.output ?? ""}${c.exitCode !== undefined ? `\n[exit ${c.exitCode}${c.durationMs ? `, ${formatDuration(c.durationMs)}` : ""}]` : ""}`,
       offset: 0,
       exited: c.status !== "running",
     }));
@@ -294,27 +346,18 @@ function TerminalPane({ model, focus }: { model: WorkspaceModel; focus: DockFocu
   React.useEffect(() => {
     if (focus.target) setActive(focus.target);
   }, [focus.target]);
-  const current = sessions.find((s) => s.id === active) ?? sessions[0];
+  const current = sessions.find((s) => s.id === active) ?? sessions[sessions.length - 1];
   if (model.offline) return <div className="cv2-dock-empty">Offline. Terminals come back when {model.device?.name ?? "your Mac"} is back.</div>;
   return (
     <div className="cv2-dock-pane">
-      <div className="cv2-dockbar" style={{ gap: 4, overflowX: "auto" }} role="tablist" aria-label="Terminals">
+      <div className="cv2-dockbar" style={{ gap: 2, overflowX: "auto", scrollbarWidth: "none" }} role="tablist" aria-label="Terminals">
         {sessions.map((s) => (
-          <span key={s.id} className="cv2-row" style={{ gap: 0 }}>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={s.id === current?.id}
-              className={cn("cv2-btn sm", s.id === current?.id ? "" : "ghost")}
-              title={s.title}
-              onClick={() => setActive(s.id)}
-              style={{ maxWidth: 200 }}
-            >
-              <Glyph name={s.readOnly ? "terminal" : "keyboard"} size={14} />
-              <span className="cv2-trunc cv2-mono">{s.title}</span>
+          <span key={s.id} className="cv2-row" style={{ gap: 0, flex: "none" }}>
+            <button type="button" role="tab" aria-selected={s.id === current?.id} className="cv2-ttab" title={s.title} onClick={() => setActive(s.id)}>
+              <span className="cv2-trunc">{s.readOnly ? s.title.split(" ").slice(0, 2).join(" ") : s.title}</span>
             </button>
             {!s.readOnly && model.actions.closeTerminal && (
-              <button type="button" className="cv2-iconbtn" aria-label={`Close ${s.title}`} title="Close terminal" onClick={() => model.actions.closeTerminal?.(s.id)}>
+              <button type="button" className="cv2-iconbtn" style={{ width: 20, height: 20 }} aria-label={`Close ${s.title}`} onClick={() => model.actions.closeTerminal?.(s.id)}>
                 <Glyph name="close" size={12} />
               </button>
             )}
@@ -341,8 +384,8 @@ function TerminalPane({ model, focus }: { model: WorkspaceModel; focus: DockFocu
               onResize={current.readOnly ? undefined : (cols, rows) => model.actions.terminalResize?.(current.id, cols, rows)}
             />
           </div>
-          {current.readOnly && <div className="cv2-term-input cv2-mute">Run by the agent. Read-only.</div>}
-          {!current.readOnly && current.exited && <div className="cv2-term-input cv2-mute">This shell has exited.</div>}
+          {current.readOnly && <div className="cv2-term-note">Run by the agent. Read-only.</div>}
+          {!current.readOnly && current.exited && <div className="cv2-term-note">This shell has exited.</div>}
         </>
       )}
     </div>
@@ -372,12 +415,15 @@ function buildTree(paths: readonly string[]): TreeNode {
   return root;
 }
 
-function FilesPane({ model, onMention }: { model: WorkspaceModel; onMention?: (path: string) => void }) {
+function FilesPane({ model, focus, onMention }: { model: WorkspaceModel; focus: DockFocus; onMention?: (path: string) => void }) {
   const files = React.useMemo(() => model.files ?? [], [model.files]);
   const changed = React.useMemo(() => new Map(aggregateChanges(model.items).map((c) => [c.path, c])), [model.items]);
   const [query, setQuery] = React.useState("");
   const [open, setOpen] = React.useState<Record<string, boolean>>({});
-  const [selected, setSelected] = React.useState<string | null>(null);
+  const [selected, setSelected] = React.useState<string | null>(focus.target && files.includes(focus.target) ? focus.target : null);
+  React.useEffect(() => {
+    if (focus.target && files.some((f) => f === focus.target || f.endsWith(`/${focus.target}`))) setSelected(files.find((f) => f === focus.target || f.endsWith(`/${focus.target}`)) ?? null);
+  }, [focus.target, files]);
   const tree = React.useMemo(() => buildTree(files), [files]);
   const filtered = query.trim() ? files.filter((f) => f.toLowerCase().includes(query.trim().toLowerCase())) : null;
   const render = (node: TreeNode, depth: number): React.ReactNode =>
@@ -385,21 +431,21 @@ function FilesPane({ model, onMention }: { model: WorkspaceModel; onMention?: (p
       .sort((a, b) => Number(a.file) - Number(b.file) || a.name.localeCompare(b.name))
       .map((child) => {
         const c = changed.get(child.path);
-        const isOpen = open[child.path] ?? depth < 1;
+        const isOpen = open[child.path] ?? depth < 2;
         return (
           <React.Fragment key={child.path}>
             <button
               type="button"
               className="cv2-tree-row"
-              style={{ paddingLeft: 12 + depth * 14 }}
+              style={{ paddingLeft: 8 + depth * 14 }}
               aria-expanded={child.file ? undefined : isOpen}
               aria-current={selected === child.path ? "true" : undefined}
               onClick={() => (child.file ? setSelected(child.path) : setOpen((o) => ({ ...o, [child.path]: !isOpen })))}
             >
-              <Glyph name={child.file ? "file-code" : isOpen ? "folder-open" : "folder"} />
-              <span className={cn("cv2-trunc cv2-grow", child.file && "cv2-mono")}>{child.name}</span>
+              <Glyph name={child.file ? "document" : isOpen ? "folder-open" : "folder"} size={16} />
+              <span className="cv2-trunc">{child.name}</span>
               {c && (
-                <span className="cv2-tnum" style={{ fontSize: 12 }}>
+                <span className="n">
                   <span className="cv2-add">+{c.additions ?? 0}</span> <span className="cv2-del">−{c.deletions ?? 0}</span>
                 </span>
               )}
@@ -408,55 +454,65 @@ function FilesPane({ model, onMention }: { model: WorkspaceModel; onMention?: (p
           </React.Fragment>
         );
       });
-  if (selected) {
-    const text = model.fileContents?.[selected];
-    return (
-      <div className="cv2-dock-pane">
-        <div className="cv2-dockbar">
-          <button type="button" className="cv2-iconbtn" aria-label="Back to files" onClick={() => setSelected(null)}>
-            <Glyph name="chevron-left" />
-          </button>
-          <span className="cv2-mono cv2-trunc cv2-grow">{selected}</span>
-          {onMention && (
-            <button type="button" className="cv2-btn" onClick={() => onMention(selected)}>
-              Mention in composer
-            </button>
-          )}
-        </div>
-        <div className="cv2-dockscroll">
-          {text === undefined ? (
-            <div className="cv2-dock-empty">The file opens when your Mac sends it.</div>
-          ) : (
-            <div className="cv2-viewer">
-              {text.split("\n").map((l, i) => (
-                <div key={i} className="cv2-ln">
-                  <span className="cv2-tnum">{i + 1}</span>
-                  <span />
-                  <span>{l || " "}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
+  const text = selected ? model.fileContents?.[selected] : undefined;
+  const parts = selected?.split("/") ?? [];
   return (
     <div className="cv2-dock-pane">
-      <label className="cv2-pop-search" style={{ height: 44 }}>
-        <Glyph name="search" />
-        <input placeholder="Search files" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Search files" />
-      </label>
-      <div className="cv2-dockscroll" style={{ padding: "6px 6px 12px" }}>
-        {files.length === 0 && <div className="cv2-dock-empty">{model.offline ? `Offline. Files come back when ${model.device?.name ?? "your Mac"} is back.` : "No file list for this workspace yet."}</div>}
-        {filtered
-          ? filtered.slice(0, 200).map((p) => (
-              <button key={p} type="button" className="cv2-tree-row" style={{ paddingLeft: 12 }} onClick={() => setSelected(p)}>
-                <Glyph name="file-code" />
-                <span className="cv2-mono cv2-trunc">{p}</span>
+      <div className={cn("cv2-files", "split")}>
+        <div style={{ display: "flex", flexDirection: "column", minHeight: 0, minWidth: 0 }}>
+          <div className="cv2-dockbar">
+            {selected ? (
+              <span className="cv2-bc cv2-grow" title={selected}>
+                {parts.slice(0, -1).map((p, i) => (
+                  <React.Fragment key={i}>
+                    <span className="cv2-trunc" style={{ flex: "0 1 auto" }}>{p}</span>
+                    <Glyph name="chevron-right" size={12} />
+                  </React.Fragment>
+                ))}
+                <span className="last cv2-trunc">{parts[parts.length - 1]}</span>
+              </span>
+            ) : (
+              <span className="cv2-mute cv2-grow cv2-small">Choose a file</span>
+            )}
+            {selected && onMention && (
+              <button type="button" className="cv2-btn ghost" onClick={() => onMention(selected)}>
+                Mention
               </button>
-            ))
-          : render(tree, 0)}
+            )}
+          </div>
+          <div className="cv2-dockscroll">
+            {!selected ? (
+              <div className="cv2-dock-empty">{files.length ? "Pick a file in the tree to read it." : model.offline ? `Offline. Files come back when ${model.device?.name ?? "your Mac"} is back.` : "No file list for this workspace yet."}</div>
+            ) : text === undefined ? (
+              <div className="cv2-dock-empty">The file opens when your Mac sends it.</div>
+            ) : (
+              <div className="cv2-viewer">
+                {text.split("\n").map((l, i) => (
+                  <div key={i} className="cv2-ln">
+                    <span className="cv2-tnum cv2-gut">{i + 1}</span>
+                    <span className="cv2-code">{highlight({ kind: "context", text: l })}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="tree">
+          <label className="cv2-pop-search" style={{ height: 40 }}>
+            <Glyph name="search" size={16} />
+            <input placeholder="Search files" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Search files" />
+          </label>
+          <div className="cv2-dockscroll" style={{ padding: "6px 6px 12px" }}>
+            {filtered
+              ? filtered.slice(0, 200).map((p) => (
+                  <button key={p} type="button" className="cv2-tree-row" style={{ paddingLeft: 8 }} aria-current={selected === p ? "true" : undefined} onClick={() => setSelected(p)} title={p}>
+                    <Glyph name="document" size={16} />
+                    <span className="cv2-trunc">{p.split("/").pop()}</span>
+                  </button>
+                ))
+              : render(tree, 0)}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -482,55 +538,14 @@ function PreviewPane({ model }: { model: WorkspaceModel }) {
       >
         <input className="cv2-preview-url" value={url} onChange={(e) => setUrl(e.target.value)} aria-label="Preview address" spellCheck={false} />
         <button type="button" className="cv2-iconbtn" aria-label="Reload" onClick={() => (setShown(url), setNonce((n) => n + 1))}>
-          <Glyph name="refresh" />
+          <Glyph name="refresh" size={16} />
         </button>
-        <div className="cv2-seg" role="radiogroup" aria-label="Width">
-          {[false, true].map((n) => (
-            <button key={String(n)} type="button" role="radio" aria-checked={narrow === n} onClick={() => setNarrow(n)}>
-              {narrow === n && <span className="cv2-seg-fill" />}
-              <span style={{ position: "relative" }}>{n ? "390" : "Desktop"}</span>
-            </button>
-          ))}
-        </div>
+        <button type="button" className="cv2-iconbtn" aria-pressed={narrow} aria-label="Phone width" title="Phone width" onClick={() => setNarrow((n) => !n)}>
+          <Glyph name="phone" size={16} />
+        </button>
       </form>
       <div className="cv2-preview-frame">
-        {shown ? (
-          <iframe key={nonce} title="Preview" src={shown} style={narrow ? { maxWidth: 390 } : undefined} sandbox="allow-scripts allow-forms" />
-        ) : (
-          <div className="cv2-dock-empty">Start the dev server, then open its address here.</div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ── Plan ────────────────────────────────────────────────────────────────────
-
-function PlanPane({ model }: { model: WorkspaceModel }) {
-  const plan = [...model.items].reverse().find((i): i is PlanItem => i.kind === "plan");
-  const todo = [...model.items].reverse().find((i): i is TodoListItem => i.kind === "todo_list");
-  if (!plan && !todo) return <div className="cv2-dock-empty">No plan yet. Turn on Plan first in the permissions menu to get one before any change.</div>;
-  const steps = todo?.todos ?? plan?.steps ?? [];
-  return (
-    <div className="cv2-dock-pane">
-      <div className="cv2-dockscroll" style={{ padding: "16px 18px", display: "flex", flexDirection: "column", gap: 12 }}>
-        {plan?.text && <div className="cv2-prose" style={{ whiteSpace: "pre-wrap", fontSize: 13.5, lineHeight: "21px" }}>{plan.text}</div>}
-        {steps.map((s, i) => (
-          <div key={i} className={cn("cv2-plan-step", s.status === "completed" && "done")}>
-            {s.status === "completed" ? <Glyph name="check" /> : s.status === "in_progress" ? <Spinner /> : <Glyph name="circle-dashed" />}
-            <span>{s.text}</span>
-          </div>
-        ))}
-        {plan?.awaitingApproval && model.actions.approvePlan && (
-          <div className="cv2-row" style={{ gap: 8 }}>
-            <button type="button" className="cv2-btn ghost" onClick={() => model.actions.approvePlan?.(plan.id, false)}>
-              Revise
-            </button>
-            <button type="button" className="cv2-btn ink" onClick={() => model.actions.approvePlan?.(plan.id, true)}>
-              Approve and build
-            </button>
-          </div>
-        )}
+        {shown ? <iframe key={nonce} title="Preview" src={shown} style={narrow ? { maxWidth: 390 } : undefined} sandbox="allow-scripts allow-forms" /> : <div className="cv2-dock-empty">Start the dev server, then open its address here.</div>}
       </div>
     </div>
   );
@@ -543,63 +558,70 @@ function AgentDetail({ agent, model, onBack }: { agent: SubagentItem; model: Wor
   const words = model.items.filter((i): i is Extract<TurnItem, { kind: "assistant_message" }> => i.kind === "assistant_message" && i.agentId === agent.agentId);
   const [msg, setMsg] = React.useState("");
   const live = agent.status === "running" || agent.status === "waiting";
+  const step = agentStep(agent);
+  const name = agent.label ?? "Agent";
   return (
-    <div className="cv2-dock-pane" style={{ ["--cv2-pane-shift" as string]: "8px" }} key={agent.agentId}>
+    <div className="cv2-dock-pane" key={agent.agentId}>
       <div className="cv2-dockbar">
-        <button type="button" className="cv2-iconbtn" aria-label="All agents" onClick={onBack}>
+        <button type="button" className="cv2-iconbtn" aria-label="All agents" onClick={onBack} style={{ marginLeft: -6 }}>
           <Glyph name="chevron-left" />
         </button>
-        <ModelMark modelId={agent.model.model} instance={instance} />
-        <span className="cv2-m">{agent.label ?? "Agent"}</span>
-        <span className="cv2-mute cv2-trunc cv2-grow">
+        <span className="cv2-m">{name}</span>
+        <span className="cv2-mute cv2-small cv2-trunc cv2-grow">
           {modelLabelFor(agent.model.model, model.instances, agent.model.instanceId)}
-          {instance ? ` · ${displayName(instance)}` : ""}
+          {instance && instance.kind !== "alevr" ? ` · ${displayName(instance)}` : ""}
         </span>
         {live && model.actions.stopAgent && (
-          <button type="button" className="cv2-btn ghost" onClick={() => model.actions.stopAgent?.(agent.agentId)}>
+          <button type="button" className="cv2-link" onClick={() => model.actions.stopAgent?.(agent.agentId)}>
             Stop
           </button>
         )}
       </div>
-      <div className="cv2-dockscroll" style={{ padding: "14px 18px", display: "flex", flexDirection: "column", gap: 12 }}>
+      <div className="cv2-dockscroll" style={{ padding: "16px 18px", display: "flex", flexDirection: "column", gap: 14 }}>
         {agent.task && (
           <div>
-            <div className="cv2-mute" style={{ fontSize: 12 }}>
-              Task from the lead
+            <div className="cv2-mute cv2-small">Task from the lead</div>
+            <div className="cv2-prose" style={{ marginTop: 4, whiteSpace: "pre-wrap" }}>
+              {agent.task}
             </div>
-            <div style={{ fontSize: 13.5, lineHeight: "21px", marginTop: 4, whiteSpace: "pre-wrap" }}>{agent.task}</div>
           </div>
         )}
-        {agent.status === "waiting" && (
-          <div>
-            <span className="cv2-sig">Waiting for you:</span> <span className="cv2-mute">{agent.liveLine ?? "needs an answer"}</span>
-          </div>
-        )}
-        {agent.status === "running" && agent.liveLine && (
-          <div className="cv2-step">
-            <Spinner />
-            <span className="verb cv2-shimmer">{agent.liveLine}</span>
+        <div className="cv2-log">
+          <div className={cn("cv2-wl", step.needs && "needs")}>
+            <span className={cn("verb", agent.status === "running" && "cv2-shine")}>{agent.status === "running" ? "Now" : agent.status === "waiting" ? "Needs you" : "Last"}</span>
+            <span className="obj">{step.text}</span>
             {agent.elapsedMs !== undefined && <span className="t">{formatDuration(agent.elapsedMs)}</span>}
           </div>
-        )}
+          {agent.candidate?.additions !== undefined && (
+            <div className="cv2-wl">
+              <span className="verb">Changed</span>
+              <span className="n">
+                <span className="cv2-add">+{agent.candidate.additions}</span> <span className="cv2-del">−{agent.candidate.deletions ?? 0}</span>
+              </span>
+            </div>
+          )}
+          {agent.worktreeBranch && (
+            <div className="cv2-wl">
+              <span className="verb">Branch</span>
+              <span className="obj">{agent.worktreeBranch}</span>
+            </div>
+          )}
+        </div>
         {words.map((w) => (
-          <div key={w.id} className="cv2-prose" style={{ fontSize: 13.5, lineHeight: "21px", whiteSpace: "pre-wrap" }}>
+          <div key={w.id} className="cv2-prose" style={{ whiteSpace: "pre-wrap" }}>
             {w.text}
           </div>
         ))}
-        {agent.closingText && <div style={{ whiteSpace: "pre-wrap" }}>{agent.closingText}</div>}
-        {agent.worktreeBranch && <div className="cv2-mono cv2-mute">{agent.worktreeBranch}</div>}
         {agent.tokens && (
-          <div className="cv2-mute cv2-tnum" style={{ fontSize: 12 }}>
-            {Math.round(agent.tokens.input / 1000)}K in · {Math.round(agent.tokens.output / 1000)}K out
-            {agent.costUsd !== undefined ? ` · $${agent.costUsd.toFixed(2)}` : ""}
+          <div className="cv2-mute cv2-small cv2-tnum">
+            {Math.round(agent.tokens.input / 1000)}K in, {Math.round(agent.tokens.output / 1000)}K out
+            {agent.costUsd !== undefined ? `, $${agent.costUsd.toFixed(2)}` : ""}
           </div>
         )}
       </div>
       {live && model.actions.messageAgent && (
         <form
-          className="cv2-term-input"
-          style={{ fontFamily: "inherit", fontSize: 13, padding: 10 }}
+          className="cv2-mini"
           onSubmit={(e) => {
             e.preventDefault();
             if (!msg.trim()) return;
@@ -607,16 +629,10 @@ function AgentDetail({ agent, model, onBack }: { agent: SubagentItem; model: Wor
             setMsg("");
           }}
         >
-          <input
-            value={msg}
-            onChange={(e) => setMsg(e.target.value)}
-            placeholder={`Message ${agent.label ?? "the agent"}`}
-            aria-label={`Message ${agent.label ?? "the agent"}`}
-            style={{ height: 34, padding: "0 12px", borderRadius: 17, boxShadow: "inset 0 0 0 1px hsl(var(--border))" }}
-          />
-          <button type="submit" className="cv2-send" style={{ width: 28, height: 28 }} aria-label="Send" disabled={!msg.trim()}>
+          <input value={msg} onChange={(e) => setMsg(e.target.value)} placeholder={`Message ${name}`} aria-label={`Message ${name}`} />
+          <button type="submit" className="cv2-send" aria-label="Send" disabled={!msg.trim()}>
             <span className="glyph">
-              <Glyph name="arrow-up" size={14} />
+              <Glyph name="arrow-up" size={16} />
             </span>
           </button>
         </form>
@@ -625,36 +641,101 @@ function AgentDetail({ agent, model, onBack }: { agent: SubagentItem; model: Wor
   );
 }
 
-function AgentsPane({
-  model,
-  selectedId,
-  onSelect,
-}: {
-  model: WorkspaceModel;
-  selectedId: string | null;
-  onSelect: (id: string | null) => void;
-}) {
+function AgentsPane({ model, selectedId, onSelect }: { model: WorkspaceModel; selectedId: string | null; onSelect: (id: string | null) => void }) {
   const agents = latestAgents(model.items);
   const selected = agents.find((a) => a.agentId === selectedId);
-  if (selected) return <AgentDetail agent={selected} model={model} onBack={() => onSelect(null)} />;
-  if (!agents.length) return <div className="cv2-dock-empty">No agents in this thread. Choose Lead + workers or Best of N in Orchestrate to fan out.</div>;
-  if (model.routing.preset === "best-of-n" && agents.some((a) => a.candidate)) {
+  const [pick, setPick] = React.useState<string | null>(null);
+  const best = model.routing.preset === "best-of-n" || agents.some(isCandidate);
+  if (selected && !best) return <AgentDetail agent={selected} model={model} onBack={() => onSelect(null)} />;
+  if (!agents.length) return <div className="cv2-dock-empty">No agents in this session. Choose Team or Best of N under the composer&apos;s options to fan out.</div>;
+  const elapsed = Math.max(0, ...agents.map((a) => a.elapsedMs ?? 0));
+  const costs = agents.map((a) => a.costUsd).filter((c): c is number => c !== undefined);
+  const spent = costs.length ? costs.reduce((a, b) => a + b, 0) : undefined;
+  const money = budgetLine(spent, model.routing.budget?.maxUsd);
+
+  if (best) {
+    const kept = agents.find((a) => a.candidate?.kept);
+    const chosen = agents.find((a) => a.agentId === (pick ?? selectedId)) ?? kept ?? agents[0];
     return (
       <div className="cv2-dock-pane">
         <div className="cv2-dockbar">
-          <span className="cv2-m">Compare</span>
-          <span className="cv2-mute">Each ran in its own worktree. Keep one; the others are deleted.</span>
+          <span className="cv2-m">{teamHead(agents)}</span>
+          <span className="cv2-grow" />
+          <span className="cv2-mute cv2-small cv2-tnum">{money ?? (elapsed ? formatDuration(elapsed) : "")}</span>
         </div>
-        <div className="cv2-dockscroll">
-          <BestOfN items={agents.filter((a) => a.candidate || a.role === "worker")} instances={model.instances} onKeep={model.actions.keepCandidate} />
+        <div className="cv2-dockscroll" style={{ paddingTop: 6 }} role="radiogroup" aria-label="Candidates">
+          {agents.map((a, i) => {
+            const c = a.candidate ?? {};
+            const letter = String.fromCharCode(65 + i);
+            return (
+              <button key={a.id} type="button" role="radio" aria-checked={chosen?.agentId === a.agentId} data-on={chosen?.agentId === a.agentId} className="cv2-arow" onClick={() => setPick(a.agentId)}>
+                <span style={{ minWidth: 0 }}>
+                  <span className="l1">
+                    <span className="cv2-m" style={{ width: 14 }}>{letter}</span>
+                    <ModelMark modelId={a.model.model} instance={model.instances.find((x) => x.id === a.model.instanceId)} />
+                    <span className="cv2-trunc">{modelLabelFor(a.model.model, model.instances, a.model.instanceId)}</span>
+                    {a.status === "running" && <Spinner size={12} />}
+                  </span>
+                  <span className="l2" style={{ display: "block", paddingLeft: 22 }}>
+                    {c.testsLine ? `${c.testsLine}. ` : ""}
+                    {a.closingText ?? a.liveLine ?? ""}
+                  </span>
+                </span>
+                <span className="t">
+                  {a.elapsedMs !== undefined ? formatDuration(a.elapsedMs) : ""}
+                  {c.additions !== undefined && (
+                    <>
+                      {"  "}
+                      <span className="cv2-add">+{c.additions}</span> <span className="cv2-del">−{c.deletions ?? 0}</span>
+                    </>
+                  )}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        <div className="cv2-mini" style={{ justifyContent: "flex-end" }}>
+          {kept ? (
+            <span className="cv2-mute">Kept {String.fromCharCode(65 + agents.indexOf(kept))}. The other worktrees were removed.</span>
+          ) : (
+            <>
+              <span className="cv2-mute cv2-small cv2-grow">The others&apos; worktrees are removed.</span>
+              <button type="button" className="cv2-btn ink" disabled={!chosen || chosen.status === "running"} onClick={() => chosen && model.actions.keepCandidate?.(chosen.agentId)}>
+                Keep {String.fromCharCode(65 + Math.max(0, agents.indexOf(chosen!)))}
+              </button>
+            </>
+          )}
         </div>
       </div>
     );
   }
   return (
     <div className="cv2-dock-pane">
-      <div className="cv2-dockscroll" style={{ padding: "12px 16px" }}>
-        <AgentTree items={agents} instances={model.instances} budgetUsd={model.routing.budget?.maxUsd} selectedId={selectedId} onSelect={(id) => onSelect(id)} />
+      <div className="cv2-dockbar">
+        <span className="cv2-m">{teamHead(agents)}</span>
+        <span className="cv2-grow" />
+        <span className="cv2-mute cv2-small cv2-tnum">{money ?? (elapsed ? formatDuration(elapsed) : "")}</span>
+      </div>
+      <div className="cv2-dockscroll" style={{ paddingTop: 6 }}>
+        {agents.map((a) => {
+          const step = agentStep(a);
+          const instance = model.instances.find((x) => x.id === a.model.instanceId);
+          return (
+            <button key={a.id} type="button" className="cv2-arow" aria-pressed={selectedId === a.agentId} onClick={() => onSelect(a.agentId)}>
+              <span style={{ minWidth: 0 }}>
+                <span className="l1">
+                  <span>{a.label ?? "Agent"}</span>
+                  <ModelMark modelId={a.model.model} instance={instance} />
+                  <span className="mdl cv2-trunc">{modelLabelFor(a.model.model, model.instances, a.model.instanceId)}</span>
+                </span>
+                <span className={cn("l2", step.needs && "cv2-sig", a.status === "running" && "cv2-shine")} style={{ display: "block" }}>
+                  {step.text}
+                </span>
+              </span>
+              <span className="t">{a.elapsedMs !== undefined ? formatDuration(a.elapsedMs) : ""}</span>
+            </button>
+          );
+        })}
       </div>
     </div>
   );
@@ -678,28 +759,23 @@ function ScreenPane({ model, resolveScreenshot }: { model: WorkspaceModel; resol
       <div className="cv2-dockbar">
         <span className="cv2-grow cv2-mute">{running ? "Using the computer" : "Finished using the computer"}</span>
         {running && (
-          <>
-            <button type="button" className="cv2-btn" onClick={() => model.actions.stop()}>
-              Take over
-            </button>
-            <button type="button" className="cv2-btn ink" onClick={() => model.actions.stop()}>
-              Stop <Kbd k="escape" />
-            </button>
-          </>
+          <button type="button" className="cv2-btn" title="Stop (Esc)" onClick={() => model.actions.stop()}>
+            Stop
+          </button>
         )}
       </div>
-      <div className="cv2-dockscroll" style={{ padding: 12 }}>
+      <div className="cv2-dockscroll cv2-screen">
         <ComputerTimeline items={steps} resolveScreenshot={resolveScreenshot} />
       </div>
     </div>
   );
 }
 
-// ── The dock ────────────────────────────────────────────────────────────────
+// ── The panel ───────────────────────────────────────────────────────────────
 
 export function visibleTabs(model: WorkspaceModel): DockTab[] {
-  const tabs: DockTab[] = ["changes", "terminal", "files", "preview"];
-  if (model.items.some((i) => i.kind === "plan" || i.kind === "todo_list")) tabs.push("plan");
+  const tabs: DockTab[] = ["changes", "terminal", "files"];
+  if (model.previewUrl) tabs.push("preview");
   if (model.items.some((i) => i.kind === "subagent")) tabs.push("agents");
   if (model.items.some((i) => i.kind === "computer_action")) tabs.push("screen");
   return tabs;
@@ -724,25 +800,21 @@ export function Dock({
   onSelectAgent: (id: string | null) => void;
   onMention?: (path: string) => void;
   resolveScreenshot?: (ref: string) => string | null;
-  /** The composer, re-parented into the dock while expanded. */
+  /** The composer, re-parented into the panel while expanded. */
   composer?: React.ReactNode;
 }) {
-  const reduce = useReducedMotion();
   const tabs = visibleTabs(model);
-  const width = effectiveDockWidth(dock);
+  const tab = tabs.includes(dock.tab) ? dock.tab : dock.tab === "preview" ? "preview" : tabs[0];
+  const shownTabs = tabs.includes(tab) ? tabs : [...tabs, tab];
   const handle = React.useRef<HTMLDivElement>(null);
   const [dragging, setDragging] = React.useState(false);
+  const [width, setWidth] = React.useState<number | null>(dock.width && dock.width !== 460 ? dock.width : null);
   const frame = React.useRef(0);
   const counts: Partial<Record<DockTab, number>> = {
     changes: aggregateChanges(model.items).length || undefined,
     agents: latestAgents(model.items).length || undefined,
   };
-  const prevTab = React.useRef(dock.tab);
-  const dir = tabs.indexOf(dock.tab) >= tabs.indexOf(prevTab.current) ? 1 : -1;
-  React.useEffect(() => {
-    prevTab.current = dock.tab;
-  }, [dock.tab]);
-
+  const bodyRight = () => (handle.current?.closest(".cv2-main") as HTMLElement | null)?.getBoundingClientRect().right ?? window.innerWidth;
   const onPointerDown = (e: React.PointerEvent) => {
     e.preventDefault();
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
@@ -750,69 +822,68 @@ export function Dock({
   };
   const onPointerMove = (e: React.PointerEvent) => {
     if (!dragging) return;
-    const right = (handle.current?.closest(".cv2-body") as HTMLElement | null)?.getBoundingClientRect().right ?? window.innerWidth;
-    const w = right - e.clientX;
+    const w = bodyRight() - e.clientX;
     cancelAnimationFrame(frame.current);
-    frame.current = requestAnimationFrame(() => dispatch({ type: "drag", width: w }));
+    frame.current = requestAnimationFrame(() => setWidth(Math.max(420, w)));
   };
   const onPointerUp = (e: React.PointerEvent) => {
     if (!dragging) return;
     setDragging(false);
-    const right = (handle.current?.closest(".cv2-body") as HTMLElement | null)?.getBoundingClientRect().right ?? window.innerWidth;
-    dispatch({ type: "release", width: right - e.clientX });
+    const w = Math.max(420, bodyRight() - e.clientX);
+    setWidth(w);
+    dispatch({ type: "release", width: Math.min(w, 760) });
   };
 
   return (
-    <aside className="cv2-dock" style={{ ["--dock-w" as string]: `${width}px` }} aria-label="Dock">
+    <aside className="cv2-dock" style={width ? { ["--dock-w" as string]: `${width}px` } : undefined} aria-label="Panel">
       <div
         ref={handle}
         className="cv2-dock-handle"
         role="separator"
         aria-orientation="vertical"
-        aria-label="Resize the dock"
-        aria-valuemin={360}
-        aria-valuemax={760}
-        aria-valuenow={width}
+        aria-label="Resize the panel"
+        aria-valuemin={420}
+        aria-valuenow={width ?? undefined}
         tabIndex={0}
         data-dragging={dragging}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
-        onDoubleClick={() => dispatch({ type: "reset-width" })}
+        onDoubleClick={() => (setWidth(null), dispatch({ type: "reset-width" }))}
         onKeyDown={(e) => {
           if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
             e.preventDefault();
-            dispatch({ type: "release", width: nudgeDockWidth(dock.width, e.key === "ArrowLeft" ? 1 : -1, e.shiftKey) });
+            const next = nudgeDockWidth(width ?? dock.width, e.key === "ArrowLeft" ? 1 : -1, e.shiftKey);
+            setWidth(next);
+            dispatch({ type: "release", width: next });
           }
         }}
       />
-      <div className={cn("cv2-tabs", tabs.length > 4 && width < 560 && !dock.expanded && "compact")} role="tablist" aria-label="Dock tabs">
-        <button type="button" className="cv2-iconbtn cv2-only-narrow" aria-label="Close the dock" onClick={() => dispatch({ type: "close" })}>
-          <Glyph name="close" />
-        </button>
-        {tabs.map((t) => (
-          <button key={t} type="button" role="tab" aria-selected={dock.tab === t} className="cv2-tab" title={DOCK_TAB_LABELS[t]} aria-label={DOCK_TAB_LABELS[t]} onClick={() => dispatch({ type: "open", tab: t, threadId: model.thread.id })}>
-            {dock.tab === t && <motion.span layoutId="dock-tab" className="fill" transition={reduce ? { duration: 0 } : { type: "spring", stiffness: 420, damping: 40 }} />}
-            <Glyph name={DOCK_TAB_GLYPHS[t]} size={14} />
-            <span className="lbl">{DOCK_TAB_LABELS[t]}</span>
+      <div className="cv2-tabs" role="tablist" aria-label="Panel tabs">
+        {shownTabs.map((t) => (
+          <button key={t} type="button" role="tab" aria-selected={tab === t} className="cv2-tab" onClick={() => dispatch({ type: "open", tab: t, threadId: model.thread.id })}>
+            {DOCK_TAB_LABELS[t]}
             {counts[t] ? <span className="n">{counts[t]}</span> : null}
           </button>
         ))}
         <span className="cv2-grow" />
-        <button type="button" className="cv2-iconbtn cv2-wide" aria-label={dock.expanded ? "Restore the dock" : "Expand the dock"} title={dock.expanded ? "Restore" : "Expand"} aria-pressed={dock.expanded} onClick={() => dispatch({ type: "toggle-expand" })}>
-          <Glyph name={dock.expanded ? "collapse" : "expand"} />
+        <button type="button" className="cv2-iconbtn cv2-wide" aria-label={dock.expanded ? "Restore the panel" : "Expand the panel"} title={dock.expanded ? "Restore (⌘⇧D)" : "Expand (⌘⇧D)"} aria-pressed={dock.expanded} onClick={() => dispatch({ type: "toggle-expand" })}>
+          <Glyph name={dock.expanded ? "collapse" : "expand"} size={16} />
+        </button>
+        <button type="button" className="cv2-iconbtn" aria-label="Close the panel" title="Close" onClick={() => dispatch({ type: "close" })}>
+          <Glyph name="close" size={16} />
         </button>
       </div>
-      <div key={dock.tab} className="cv2-dock-pane" style={{ ["--cv2-pane-shift" as string]: `${dir * 4}px` }} role="tabpanel" aria-label={DOCK_TAB_LABELS[dock.tab]}>
-        {dock.tab === "changes" && <ChangesPane model={model} focus={focus} wide={width >= 640 || dock.expanded} active />}
-        {dock.tab === "terminal" && <TerminalPane model={model} focus={focus} />}
-        {dock.tab === "files" && <FilesPane model={model} onMention={onMention} />}
-        {dock.tab === "preview" && <PreviewPane model={model} />}
-        {dock.tab === "plan" && <PlanPane model={model} />}
-        {dock.tab === "agents" && <AgentsPane model={model} selectedId={selectedAgentId} onSelect={onSelectAgent} />}
-        {dock.tab === "screen" && <ScreenPane model={model} resolveScreenshot={resolveScreenshot} />}
+      <div key={tab} className="cv2-dock-pane" role="tabpanel" aria-label={DOCK_TAB_LABELS[tab]} style={{ borderTop: "1px solid hsl(var(--border))" }}>
+        {tab === "changes" && <ChangesPane model={model} focus={focus} wide={(width ?? 700) >= 640 || dock.expanded} active />}
+        {tab === "terminal" && <TerminalPane model={model} focus={focus} />}
+        {tab === "files" && <FilesPane model={model} focus={focus} onMention={onMention} />}
+        {tab === "preview" && <PreviewPane model={model} />}
+        {tab === "agents" && <AgentsPane model={model} selectedId={selectedAgentId} onSelect={onSelectAgent} />}
+        {tab === "screen" && <ScreenPane model={model} resolveScreenshot={resolveScreenshot} />}
+        {tab === "plan" && <div className="cv2-dock-empty">The plan is in the thread.</div>}
       </div>
-      {dock.expanded && composer && <div className="cv2-cwrap">{composer}</div>}
+      {dock.expanded && composer && <div className="cv2-cwrap" style={{ paddingTop: 8 }}>{composer}</div>}
     </aside>
   );
 }

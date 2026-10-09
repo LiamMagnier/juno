@@ -1,25 +1,27 @@
 "use client";
 
 /**
- * The Alevr Code v2 workspace (DESIGN §1, §4.1, §4.2, §6, §8): sidebar, top
- * bar, the thread with its composer, and the right dock. Renders entirely
- * from a `WorkspaceModel` (the live route builds it from the env server or
- * the CodeTask path; the /dev/code-v2 gallery from fixtures), so every state
- * can be shown and tested without a backend.
+ * The Alevr Code workspace (TARGET §2): the sidebar's list of work, a 48 px
+ * header with the breadcrumb and at most three icon buttons, the thread with
+ * its composer, and the right panel, closed until asked for. Renders entirely
+ * from a `WorkspaceModel` (the live route builds it from the env server or the
+ * CodeTask path; the /dev/code-v2 gallery from fixtures), so every state can
+ * be shown and tested without a backend.
  */
 import * as React from "react";
 import type { DockTab } from "@/lib/code-v2/dock";
-import { DOCK_TAB_GLYPHS, DOCK_TAB_LABELS, dockReducer, initialDockState } from "@/lib/code-v2/dock";
-import { COMMAND_TITLES, DEFAULT_KEYBINDINGS, bindingFor, resolveKeybinding, type KeyContext } from "@/lib/code-v2/keymap";
+import { dockReducer, initialDockState } from "@/lib/code-v2/dock";
+import { COMMAND_TITLES, DEFAULT_KEYBINDINGS, resolveKeybinding, type KeyContext } from "@/lib/code-v2/keymap";
 import { escPress } from "@/lib/code-v2/composer";
-import { DETAIL_LEVEL_LABELS, nextDetailLevel, type DetailLevel } from "@/lib/code-v2/turns";
+import { DETAIL_LEVELS, DETAIL_LEVEL_LABELS, groupTurns, nextDetailLevel, type DetailLevel } from "@/lib/code-v2/turns";
 import { Composer, pendingRequests, type ComposerHandle, type PopoverName } from "./composer";
 import { ConnectionsPanel, type ConnectionsProps } from "./connections";
-import { Dock, visibleTabs, type DockFocus } from "./dock";
+import { Dock, type DockFocus } from "./dock";
 import { cycleEffort, cycleRuntimeMode, findInstance } from "./model-info";
-import { Glyph, Kbd, useIsMac } from "./primitives";
+import { ComposerPopover, Glyph, Kbd, MenuList, useIsMac, type MenuEntry } from "./primitives";
 import { ThreadSidebar } from "./sidebar";
-import { Thread, type DockRequest } from "./thread";
+import { SettingsContent, SettingsSidebar, type SettingsPane } from "./settings";
+import { Thread, ThreadSkeleton, type DockRequest } from "./thread";
 import type { WorkspaceModel, WorkspaceUiState } from "./types";
 import { cn } from "@/lib/utils";
 import type { ByokClient } from "@/lib/code-v2/byok-client";
@@ -44,6 +46,14 @@ function writeStored(key: string, value: string) {
   }
 }
 
+/** Gallery and deep-link names for the composer's popovers. */
+function popoverFromUi(p: string | null | undefined): PopoverName {
+  if (p === "tier") return "context";
+  if (p === "orchestrate") return "team";
+  if (p === "model" || p === "context" || p === "team" || p === "overflow" || p === "attach" || p === "queue" || p === "device") return p;
+  return null;
+}
+
 export interface CodeWorkspaceProps {
   model: WorkspaceModel;
   ui?: WorkspaceUiState;
@@ -51,13 +61,13 @@ export interface CodeWorkspaceProps {
   sidebar?: boolean;
   userName?: string;
   byok?: ByokClient;
-  /** Connections sheet hooks (probe / setup through the env server). */
   onProbe?: (instanceId: string) => Promise<ProviderInstance | void>;
   onSetup?: (instance: ProviderInstance, action: "install" | "login") => Promise<void | string> | void | string;
-  /** Managed install / sign-in on the Mac (Antigravity); see ConnectionsProps.onManaged. */
   onManaged?: ConnectionsProps["onManaged"];
   /** Open the Connections sheet on first run (no connected provider and never dismissed). */
   firstRun?: boolean;
+  /** Draw skeleton lines while the session loads. */
+  loading?: boolean;
   resolveScreenshot?: (ref: string) => string | null;
   className?: string;
 }
@@ -66,11 +76,12 @@ function Palette({ onClose, onRun, threads, onOpenThread }: { onClose: () => voi
   const mac = useIsMac();
   const [q, setQ] = React.useState("");
   const [hi, setHi] = React.useState(0);
-  const commands = DEFAULT_KEYBINDINGS.filter((b) => !b.command.startsWith("approval.") && !b.command.startsWith("hunk.") && b.command !== "palette.toggle" && b.command !== "composer.steer");
+  const commands = DEFAULT_KEYBINDINGS;
   const rows = [
-    ...threads.map((t) => ({ id: `t:${t.id}`, section: "Threads", label: t.title, key: "", run: () => onOpenThread(t.id) })),
-    ...commands.map((b) => ({ id: b.command, section: "Commands", label: COMMAND_TITLES[b.command] ?? b.command, key: b.key, run: () => onRun(b.command) })),
-    { id: "connections", section: "Settings", label: "Connections", key: "", run: () => onRun("connections.open") },
+    ...threads.map((t) => ({ id: `t:${t.id}`, section: "Sessions", label: t.title, key: "", run: () => onOpenThread(t.id) })),
+    { id: "pulls", section: "Go to", label: "Pull requests", key: "", run: () => window.location.assign("/code/pulls") },
+    { id: "connections", section: "Go to", label: "Connections", key: "", run: () => onRun("connections.open") },
+    ...commands.filter((b) => !b.command.startsWith("approval.") && !b.command.startsWith("hunk.") && b.command !== "palette.toggle" && b.command !== "composer.steer").map((b) => ({ id: b.command, section: "Commands", label: COMMAND_TITLES[b.command] ?? b.command, key: b.key, run: () => onRun(b.command) })),
   ].filter((r) => !q.trim() || r.label.toLowerCase().includes(q.trim().toLowerCase()));
   return (
     <>
@@ -92,18 +103,18 @@ function Palette({ onClose, onRun, threads, onOpenThread }: { onClose: () => voi
         }}
       >
         <label className="cv2-pop-search">
-          <Glyph name="search" />
-          <input autoFocus placeholder="Search threads and commands" value={q} onChange={(e) => (setQ(e.target.value), setHi(0))} aria-label="Search" />
+          <Glyph name="search" size={16} />
+          <input autoFocus placeholder="Search sessions and commands" value={q} onChange={(e) => (setQ(e.target.value), setHi(0))} aria-label="Search" />
         </label>
         <div className="cv2-pop-body" role="listbox">
           {rows.map((r, i) => (
             <React.Fragment key={r.id}>
-              {(i === 0 || rows[i - 1].section !== r.section) && <div className="cv2-pop-sect">{r.section}</div>}
+              {(i === 0 || rows[i - 1].section !== r.section) && <div className="cv2-msect">{r.section}</div>}
               <button
                 type="button"
                 role="option"
                 aria-selected={i === hi}
-                className="cv2-opt"
+                className="cv2-mi"
                 data-active={i === hi}
                 onMouseEnter={() => setHi(i)}
                 onClick={() => {
@@ -112,7 +123,11 @@ function Palette({ onClose, onRun, threads, onOpenThread }: { onClose: () => voi
                 }}
               >
                 <span className="cv2-grow cv2-trunc">{r.label}</span>
-                {r.key && <Kbd k={r.key} mac={mac} />}
+                {r.key && (
+                  <span className="trail">
+                    <Kbd k={r.key} mac={mac} />
+                  </span>
+                )}
               </button>
             </React.Fragment>
           ))}
@@ -128,20 +143,20 @@ function Shortcuts({ onClose }: { onClose: () => void }) {
   return (
     <>
       <div className="cv2-scrim" onClick={onClose} aria-hidden />
-      <div className="cv2-sheet" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts" onKeyDown={(e) => e.key === "Escape" && onClose()}>
+      <div className="cv2-sheet narrow" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts" onKeyDown={(e) => e.key === "Escape" && onClose()}>
         <div className="cv2-page">
-          <div className="cv2-row" style={{ marginBottom: 14 }}>
+          <div className="cv2-row">
             <h1 className="cv2-h1 cv2-grow">Keyboard</h1>
             <button type="button" className="cv2-iconbtn" aria-label="Close" autoFocus onClick={onClose}>
               <Glyph name="close" />
             </button>
           </div>
-          <div className="cv2-list">
+          <div className="cv2-keys">
             {DEFAULT_KEYBINDINGS.map((b) => (
-              <div key={`${b.key}:${b.command}`} className="cv2-li" style={{ gridTemplateColumns: "minmax(0,1fr) auto", padding: "8px 16px" }}>
+              <React.Fragment key={`${b.key}:${b.command}`}>
                 <span>{COMMAND_TITLES[b.command] ?? b.command}</span>
                 <Kbd k={b.key} mac={mac} />
-              </div>
+              </React.Fragment>
             ))}
           </div>
         </div>
@@ -150,7 +165,7 @@ function Shortcuts({ onClose }: { onClose: () => void }) {
   );
 }
 
-export function CodeWorkspace({ model, ui = {}, sidebar = true, userName, byok, onProbe, onSetup, onManaged, firstRun, resolveScreenshot, className }: CodeWorkspaceProps) {
+export function CodeWorkspace({ model, ui = {}, sidebar = true, userName, byok, onProbe, onSetup, onManaged, firstRun, loading, resolveScreenshot, className }: CodeWorkspaceProps) {
   const mac = useIsMac();
   const [dock, dispatch] = React.useReducer(dockReducer, undefined, () => {
     const s = initialDockState(readStored(WIDTH_KEY, Number) ?? undefined);
@@ -158,11 +173,13 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, userName, byok, 
   });
   const [focus, setFocus] = React.useState<DockFocus>({});
   const [detail, setDetail] = React.useState<DetailLevel>(() => ui.detailLevel ?? readStored(DETAIL_KEY, (s) => s as DetailLevel) ?? "summary");
-  const [popover, setPopover] = React.useState<PopoverName>((ui.popover as PopoverName) ?? null);
+  const [popover, setPopover] = React.useState<PopoverName>(popoverFromUi(ui.popover));
   const [palette, setPalette] = React.useState(ui.popover === "palette");
+  const [headMenu, setHeadMenu] = React.useState<null | "session" | "more">(ui.popover === "session" ? "session" : ui.popover === "more" ? "more" : null);
   const [shortcuts, setShortcuts] = React.useState(false);
   const [connections, setConnections] = React.useState(false);
   const [sideOpen, setSideOpen] = React.useState(sidebar);
+  const [settings, setSettings] = React.useState<SettingsPane | null>(ui.settings ?? null);
   const [agentId, setAgentId] = React.useState<string | null>(ui.selectedAgentId ?? null);
   const [approvalIndex, setApprovalIndex] = React.useState(0);
   const [composerFocus, setComposerFocus] = React.useState(false);
@@ -170,7 +187,8 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, userName, byok, 
   const [toast, setToast] = React.useState<string | null>(null);
   const composer = React.useRef<ComposerHandle>(null);
   const escArmed = React.useRef<number | null>(null);
-  const root = React.useRef<HTMLDivElement>(null);
+  const headRef = React.useRef<HTMLDivElement>(null);
+  const crumbRef = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => writeStored(WIDTH_KEY, String(dock.width)), [dock.width]);
   React.useEffect(() => writeStored(DETAIL_KEY, detail), [detail]);
@@ -182,10 +200,9 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, userName, byok, 
   }, []);
   React.useEffect(() => {
     if (!toast) return;
-    const t = setTimeout(() => setToast(null), 6000);
+    const t = setTimeout(() => setToast(null), 5000);
     return () => clearTimeout(t);
   }, [toast]);
-  // First run: no connected provider at all, and the reader has not dismissed the sheet.
   React.useEffect(() => {
     if (!firstRun) return;
     if (readStored("alevr.code.connectionsSeen", (s) => s === "1")) return;
@@ -194,7 +211,8 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, userName, byok, 
 
   const running = model.state === "running" || model.state === "waiting";
   const pending = pendingRequests(model.items);
-  const tabs = visibleTabs(model);
+  const turns = React.useMemo(() => groupTurns(model.items, { state: model.state }), [model.items, model.state]);
+  const checkpoints = turns.filter((t) => t.checkpoint).map((t) => ({ turn: t, cp: t.checkpoint! }));
 
   const openDock = React.useCallback(
     (req: DockRequest) => {
@@ -207,7 +225,11 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, userName, byok, 
   const toggleDock = (tab: DockTab) => dispatch({ type: "toggle", tab, threadId: model.thread.id });
   const openConnections = () => {
     if (model.actions.openConnections) model.actions.openConnections();
-    else setConnections(true);
+    else setSettings("connections");
+  };
+  const rename = () => {
+    const next = window.prompt("Rename this session", model.thread.title);
+    if (next && next.trim()) model.actions.renameThread?.(next.trim());
   };
 
   const run = React.useCallback(
@@ -221,7 +243,6 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, userName, byok, 
           a.newThread?.();
           return true;
         case "sidebar.toggle":
-          // Inside the app shell, the shell's column is the Code sidebar.
           if (!sidebar) window.dispatchEvent(new CustomEvent("juno:toggle-sidebar"));
           else setSideOpen((s) => !s);
           return true;
@@ -247,10 +268,10 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, userName, byok, 
           setPopover("model");
           return true;
         case "picker.orchestrate":
-          setPopover("orchestrate");
+          setPopover("team");
           return true;
         case "picker.contextWindow":
-          setPopover("tier");
+          setPopover("context");
           return true;
         case "composer.cycleEffort":
           a.setSelection(cycleEffort(model.instances, model.selection));
@@ -282,8 +303,8 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, userName, byok, 
           setApprovalIndex((i) => (i + 1) % pending.length);
           return true;
         case "thread.copyReference":
-          void navigator.clipboard?.writeText(`${model.thread.title} (${model.thread.repo}${model.thread.branch ? ` · ${model.thread.branch}` : ""})`);
-          setToast("Copied a reference to this thread.");
+          void navigator.clipboard?.writeText(`${model.thread.title} (${model.thread.repo}${model.thread.branch ? `, ${model.thread.branch}` : ""})`);
+          setToast("Copied a reference to this session.");
           return true;
         case "shortcuts.show":
           setShortcuts(true);
@@ -307,25 +328,23 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, userName, byok, 
     [model, pending, approvalIndex],
   );
 
-  // The keyboard map (DESIGN §8), resolved against the focus context.
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
       const editable = !!t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName));
       const ctx: KeyContext = {
-        terminalFocus: !!t?.closest?.(".cv2-term, .cv2-term-input"),
+        terminalFocus: !!t?.closest?.(".cv2-term"),
         composerFocus: !!t?.classList?.contains("cv2-draft"),
         editableFocus: editable,
         turnRunning: running,
         approvalOpen: pending.length > 0,
         approvalMany: pending.length > 1,
-        popoverOpen: popover !== null || palette,
+        popoverOpen: popover !== null || palette || headMenu !== null,
         modelPickerOpen: popover === "model",
         dockOpen: dock.open,
         changesFocus: dock.open && dock.tab === "changes",
         queueNotEmpty: model.queue.length > 0,
       };
-      // Esc Esc stops the running turn from anywhere outside a field (the composer handles its own).
       if (e.key === "Escape" && running && pending.length === 0 && popover === null && !palette && !editable) {
         const r = escPress(escArmed.current, Date.now(), running);
         escArmed.current = r.armedAt;
@@ -334,11 +353,9 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, userName, byok, 
         e.preventDefault();
         return;
       }
-      // ⌥ chords report a composed character on the Mac: match by key code.
       const key = e.altKey && /^Key[A-Z]$/.test(e.code) ? e.code.slice(3).toLowerCase() : e.key;
       const command = resolveKeybinding({ key, metaKey: e.metaKey, ctrlKey: e.ctrlKey, shiftKey: e.shiftKey, altKey: e.altKey }, ctx, DEFAULT_KEYBINDINGS, mac);
       if (!command) return;
-      // The composer and the Changes pane own these when they have focus.
       if (command === "composer.steer" || command.startsWith("hunk.") || command === "diff.toggleSplit" || command === "thread.undoLastTurn" || command === "thread.find") return;
       if (command === "approval.allowOnce" && editable) return;
       if (run(command)) {
@@ -348,8 +365,9 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, userName, byok, 
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [run, running, pending.length, popover, palette, dock.open, dock.tab, model.queue.length, mac, model.actions]);
+  }, [run, running, pending.length, popover, palette, headMenu, dock.open, dock.tab, model.queue.length, mac, model.actions]);
 
+  const empty = model.items.length === 0 && !model.starting && !loading;
   const composerNode = (
     <Composer
       ref={composer}
@@ -360,14 +378,98 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, userName, byok, 
       setApprovalIndex={setApprovalIndex}
       onOpenDock={(tab) => openDock({ tab })}
       onFocusChange={setComposerFocus}
+      tall={empty}
     />
   );
-  const empty = model.items.length === 0 && !model.starting;
-  const narrowDockOpen = dock.open;
+
+  const sessionMenu: MenuEntry[] = [
+    ...(model.actions.renameThread ? [{ id: "rename", label: "Rename", icon: <Glyph name="rename" size={16} />, onSelect: rename }] : []),
+    { id: "copy", label: "Copy reference", icon: <Glyph name="copy" size={16} />, onSelect: () => run("thread.copyReference") },
+    ...(checkpoints.length && model.actions.rollback
+      ? [
+          {
+            id: "checkpoints",
+            label: "Checkpoints",
+            icon: <Glyph name="history" size={16} />,
+            sub: {
+              title: "Revert to a checkpoint",
+              entries: checkpoints.map(({ turn, cp }) => ({
+                id: cp.checkpointId,
+                label: `After turn ${cp.turnOrdinal}`,
+                l2: (turn.user?.text ?? "").replace(/\s+/g, " ").slice(0, 60),
+                trail: cp.filesChanged ? `${cp.filesChanged} ${cp.filesChanged === 1 ? "file" : "files"}` : undefined,
+                onSelect: () => model.actions.rollback?.(cp.checkpointId),
+              })),
+            },
+          },
+        ]
+      : []),
+    { kind: "sep", id: "s1" },
+    {
+      id: "detail",
+      label: "Work log",
+      icon: <Glyph name="list" size={16} />,
+      trail: DETAIL_LEVEL_LABELS[detail].label,
+      sub: { title: "Work log", entries: DETAIL_LEVELS.map((d) => ({ id: d, label: DETAIL_LEVEL_LABELS[d].label, l2: DETAIL_LEVEL_LABELS[d].description, checked: d === detail, onSelect: () => setDetail(d) })) },
+    },
+  ];
+  const moreMenu: MenuEntry[] = [
+    ...(model.actions.commit ? [{ id: "commit", label: "Commit…", icon: <Glyph name="commit" size={16} />, onSelect: () => model.actions.commit?.() }] : []),
+    { id: "pr", label: "Create pull request…", icon: <Glyph name="pull-request" size={16} />, onSelect: () => composer.current?.setDraft("/pr ") },
+    { id: "files", label: "Files", icon: <Glyph name="file-tree" size={16} />, trail: <Kbd k="mod+p" mac={mac} />, onSelect: () => openDock({ tab: "files" }) },
+    { id: "preview", label: "Preview", icon: <Glyph name="browser" size={16} />, onSelect: () => openDock({ tab: "preview" }) },
+    { kind: "sep", id: "s1" },
+    { id: "pulls", label: "Pull requests", icon: <Glyph name="pull-request" size={16} />, onSelect: () => window.location.assign("/code/pulls") },
+    { id: "conn", label: "Connections", icon: <Glyph name="plug" size={16} />, onSelect: openConnections },
+    { id: "settings", label: "Settings", icon: <Glyph name="settings" size={16} />, onSelect: () => setSettings("general") },
+    { id: "keys", label: "Keyboard shortcuts", icon: <Glyph name="keyboard" size={16} />, trail: <Kbd k="mod+/" mac={mac} />, onSelect: () => setShortcuts(true) },
+  ];
+
+  const connectionsProps: ConnectionsProps = { instances: model.instances, device: model.device, flags: model.flags, byok, keys: model.byokKeys, onProbe, onManaged, onSetup, alevrPlan: ui.alevrPlan };
+  if (settings) {
+    return (
+      <div className={cn("cv2 cv2-app", !(sidebar && sideOpen) && "no-side", className)} data-reduced-motion={ui.reducedMotion ? "true" : undefined}>
+        {sidebar && sideOpen && <SettingsSidebar pane={settings} onPane={setSettings} onBack={() => setSettings(null)} />}
+        <main className="cv2-main" aria-label="Settings">
+          <div className="cv2-left">
+            <header className="cv2-top">
+              {!(sidebar && sideOpen) && (
+                <button type="button" className="cv2-iconbtn" aria-label="Back to the session" title="Back" onClick={() => setSettings(null)} style={{ marginLeft: -8 }}>
+                  <Glyph name="arrow-left" />
+                </button>
+              )}
+              <div className="cv2-crumb">
+                <span className="proj">Settings</span>
+                <span className="slash" aria-hidden>
+                  /
+                </span>
+                <span className="title" style={{ pointerEvents: "none" }}>
+                  {settings.charAt(0).toUpperCase() + settings.slice(1)}
+                </span>
+              </div>
+            </header>
+            <div className="cv2-body">
+              <SettingsContent
+                pane={settings}
+                connections={connectionsProps}
+                instances={model.instances}
+                routing={model.routing}
+                lead={model.selection}
+                onRouting={model.actions.setRouting}
+                runtimeMode={model.runtimeMode}
+                onRuntimeMode={model.actions.setRuntimeMode}
+                detail={detail}
+                onDetail={setDetail}
+              />
+            </div>
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div
-      ref={root}
       className={cn("cv2 cv2-app", !(sidebar && sideOpen) && "no-side", className)}
       data-reduced-motion={ui.reducedMotion ? "true" : undefined}
       data-hidden={hidden ? "true" : undefined}
@@ -381,64 +483,61 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, userName, byok, 
           onOpen={(id) => model.actions.openThread?.(id)}
           onNew={() => model.actions.newThread?.()}
           onSearch={() => setPalette(true)}
-          onConnections={openConnections}
+          onSettings={() => setSettings("general")}
         />
       )}
-      <main className="cv2-main" aria-label={model.thread.title}>
+      <main className={cn("cv2-main", dock.open && dock.expanded && "expanded")} aria-label={model.thread.title}>
+        <div className="cv2-left">
         <header className="cv2-top">
-          <button type="button" className="cv2-iconbtn cv2-only-narrow" aria-label="Threads" onClick={() => model.actions.openThread ? setPalette(true) : undefined}>
-            <Glyph name="chevron-left" />
+          <button type="button" className="cv2-iconbtn cv2-only-narrow" aria-label="Sessions" onClick={() => (sidebar ? setPalette(true) : window.dispatchEvent(new CustomEvent("juno:toggle-sidebar")))}>
+            <Glyph name="sidebar-toggle" />
           </button>
-          <button
-            type="button"
-            className="cv2-top-title cv2-trunc"
-            title="Double-click to rename"
-            onDoubleClick={() => {
-              const next = window.prompt("Rename this thread", model.thread.title);
-              if (next && next.trim()) model.actions.renameThread?.(next.trim());
-            }}
-          >
-            {model.thread.title}
-          </button>
-          <span className="cv2-top-where cv2-mono cv2-trunc">
-            {model.thread.repo}
-            {model.thread.branch ? ` · ${model.thread.branch}` : ""}
-          </span>
-          <div className="cv2-top-actions">
-            {(["terminal", "changes", "files", "preview", "agents"] as DockTab[])
-              .filter((t) => t !== "agents" || tabs.includes("agents"))
-              .map((t) => {
-                const b = bindingFor(`dock.${t}`);
-                return (
-                  <button
-                    key={t}
-                    type="button"
-                    className={cn("cv2-iconbtn", t !== "changes" && "cv2-wide")}
-                    aria-pressed={dock.open && dock.tab === t}
-                    aria-label={DOCK_TAB_LABELS[t]}
-                    title={b ? `${DOCK_TAB_LABELS[t]} (${b.key.replace("mod", mac ? "⌘" : "Ctrl").replace("shift", "⇧").replace(/\+/g, "").toUpperCase()})` : DOCK_TAB_LABELS[t]}
-                    onClick={() => toggleDock(t)}
-                  >
-                    <Glyph name={DOCK_TAB_GLYPHS[t]} />
-                  </button>
-                );
-              })}
-            <button type="button" className="cv2-iconbtn" aria-label="Command palette" title="More" onClick={() => setPalette(true)}>
+          <div className="cv2-crumb" ref={crumbRef}>
+            <span className="proj">{model.thread.repo}</span>
+            <span className="slash" aria-hidden>
+              /
+            </span>
+            <button type="button" className="title" aria-haspopup="menu" aria-expanded={headMenu === "session"} onClick={() => setHeadMenu(headMenu === "session" ? null : "session")} onDoubleClick={rename} title={model.thread.title}>
+              <span className="cv2-trunc">{empty ? "New session" : model.thread.title}</span>
+              <Glyph name="chevron-down" size={14} className="cv2-mute" />
+            </button>
+            <ComposerPopover open={headMenu === "session"} onClose={() => setHeadMenu(null)} width={260} align="left" offset={0} label="Session" anchorRef={crumbRef} down role="menu">
+              <MenuList entries={sessionMenu} onClose={() => setHeadMenu(null)} label="Session" />
+            </ComposerPopover>
+          </div>
+          <div className="cv2-top-actions" ref={headRef}>
+            <button type="button" className="cv2-iconbtn" aria-pressed={dock.open && dock.tab === "terminal"} aria-label="Terminal" title={`Terminal (${mac ? "⌘J" : "Ctrl J"})`} onClick={() => toggleDock("terminal")}>
+              <Glyph name="terminal" />
+            </button>
+            <button type="button" className="cv2-iconbtn" aria-pressed={dock.open && dock.tab !== "terminal"} aria-label="Changes and panel" title={`Changes (${mac ? "⌘D" : "Ctrl D"})`} onClick={() => (dock.open && dock.tab !== "terminal" ? dispatch({ type: "close" }) : openDock({ tab: dock.tab === "terminal" ? "changes" : dock.tab }))}>
+              <Glyph name="panel-right" />
+            </button>
+            <button type="button" className="cv2-iconbtn" aria-label="More" aria-haspopup="menu" aria-expanded={headMenu === "more"} onClick={() => setHeadMenu(headMenu === "more" ? null : "more")}>
               <Glyph name="more" />
             </button>
+            <ComposerPopover open={headMenu === "more"} onClose={() => setHeadMenu(null)} width={260} align="right" offset={0} label="More" anchorRef={headRef} down role="menu">
+              <MenuList entries={moreMenu} onClose={() => setHeadMenu(null)} label="More" />
+            </ComposerPopover>
           </div>
         </header>
-        <div className={cn("cv2-body", dock.open && dock.expanded && "expanded")}>
+        <div className="cv2-body">
           <div className="cv2-thread-col">
-            {empty ? (
+            {loading ? (
+              <ThreadSkeleton />
+            ) : empty ? (
               <div className="cv2-empty">
-                <div className="where cv2-mono">
-                  {model.thread.repo}
-                  {model.thread.branch ? ` · ${model.thread.branch}` : ""}
-                </div>
-                <div className="cv2-col" style={{ width: "100%" }}>
-                  {composerNode}
-                </div>
+                <div className="spacer-top" />
+                <h1>
+                  {model.thread.repo ? (
+                    <>
+                      What should we build in <span className="proj">{model.thread.repo}</span>?
+                    </>
+                  ) : (
+                    "What should we build?"
+                  )}
+                </h1>
+                <div className="cv2-col">{composerNode}</div>
+                <div className="spacer-bottom" />
               </div>
             ) : (
               <>
@@ -466,9 +565,11 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, userName, byok, 
               </>
             )}
           </div>
+        </div>
+        </div>
           {dock.open && (
             <>
-              {narrowDockOpen && <div className="cv2-scrim cv2-only-overlay" onClick={() => dispatch({ type: "close" })} aria-hidden />}
+              <div className="cv2-scrim cv2-only-overlay" onClick={() => dispatch({ type: "close" })} aria-hidden />
               <Dock
                 model={model}
                 dock={dock}
@@ -482,7 +583,6 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, userName, byok, 
               />
             </>
           )}
-        </div>
       </main>
       {palette && (
         <Palette

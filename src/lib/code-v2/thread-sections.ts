@@ -19,6 +19,14 @@ export interface ThreadSummary {
   pinned?: boolean;
   /** What it is waiting for ("wants to run a command"). */
   waitingFor?: string;
+  /** The branch or worktree the session writes to ("alevr/server-totals"). */
+  branch?: string;
+  /** Its pull request number, once one is open. */
+  pr?: number;
+  /** New activity the reader has not opened yet (title in weight 500). */
+  unread?: boolean;
+  /** Done with: listed under the collapsed "Settled" divider. */
+  settled?: boolean;
 }
 
 export interface ThreadSection {
@@ -104,4 +112,56 @@ export function planFlip(prev: ReadonlyMap<string, number>, next: ReadonlyMap<st
     moves.set(id, clamped);
   });
   return { moves, entering, leaving, skipFades: entering.length + leaving.length > FLIP_MAX_FADES };
+}
+
+// ── The list of work (Alevr Code v4 sidebar, T3 Code's thread list) ────────
+
+/** How long a finished session stays in the active list before it settles by itself. */
+export const SETTLE_AFTER_MS = 3 * 24 * 60 * 60 * 1000;
+
+export interface WorkList {
+  /** Needs you first, then working, then the rest by recency. No section headers. */
+  active: ThreadSummary[];
+  /** Behind the "Settled (n)" divider, newest first. */
+  settled: ThreadSummary[];
+}
+
+const STATE_RANK: Record<ThreadState, number> = { waiting: 0, running: 1, limited: 2, error: 2, idle: 3 };
+
+export function isSettled(t: ThreadSummary, now = Date.now()): boolean {
+  if (t.state === "waiting" || t.state === "running") return false;
+  if (t.settled !== undefined) return t.settled;
+  return now - Date.parse(t.updatedAt) > SETTLE_AFTER_MS;
+}
+
+/** One flat list of work, optionally filtered to a project, and the settled rest. */
+export function workList(threads: readonly ThreadSummary[], opts: { project?: string | null; now?: number } = {}): WorkList {
+  const now = opts.now ?? Date.now();
+  const pool = opts.project ? threads.filter((t) => t.project === opts.project) : [...threads];
+  const active = pool
+    .filter((t) => !isSettled(t, now))
+    .sort((a, b) => STATE_RANK[a.state] - STATE_RANK[b.state] || byRecent(a, b));
+  const settled = pool.filter((t) => isSettled(t, now)).sort(byRecent);
+  return { active, settled };
+}
+
+/** Projects in the list, most recently active first. */
+export function workProjects(threads: readonly ThreadSummary[]): string[] {
+  const latest = new Map<string, string>();
+  for (const t of threads) if ((latest.get(t.project) ?? "") < t.updatedAt) latest.set(t.project, t.updatedAt);
+  return [...latest.entries()].sort((a, b) => b[1].localeCompare(a[1]) || a[0].localeCompare(b[0])).map(([p]) => p);
+}
+
+/** "now", "12m", "3h", "2d", "5w": the sidebar's trailing age. */
+export function relativeAge(iso: string, now = Date.now()): string {
+  const s = Math.max(0, (now - Date.parse(iso)) / 1000);
+  if (!Number.isFinite(s)) return "";
+  if (s < 60) return "now";
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h`;
+  const d = Math.floor(h / 24);
+  if (d < 14) return `${d}d`;
+  return `${Math.floor(d / 7)}w`;
 }

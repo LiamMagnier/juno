@@ -135,4 +135,8 @@ export interface WorkspaceUiState {
   popover?: string | null;
   selectedAgentId?: string | null;
   reducedMotion?: boolean;
+  /** Open on a Settings pane (connections, orchestration, permissions, keyboard, general). */
+  settings?: "general" | "connections" | "orchestration" | "permissions" | "keyboard" | null;
+  /** The Alevr plan row in Connections (name, spend this month, cap). */
+  alevrPlan?: { name: string; spentUsd?: number; capUsd?: number };
 }
