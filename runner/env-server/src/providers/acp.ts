@@ -34,6 +34,8 @@ import {
   type SessionNotification,
 } from "./acp/schema.js";
 import { acpPreset, acpSetup } from "./presets.js";
+import { AntigravityError, antigravityCapabilities, isAntigravity, type AntigravityService } from "./antigravity/service.js";
+import { SIGN_IN_REQUIRED, authorizationUrlFromLine } from "./antigravity/auth-support.js";
 import { findBinary, spawnPath } from "./detect.js";
 import { classifyUsageLimit } from "./limits.js";
 import type {
@@ -57,6 +59,18 @@ export interface McpBridgeCommand {
 
 export interface AcpAdapterOptions {
   mcpBridge?: McpBridgeCommand;
+  /** Antigravity's managed runtime, private profile and Google sign-in. */
+  antigravity?: AntigravityService;
+}
+
+/** How one session launches its agent. */
+interface AcpLaunchPlan {
+  launch: LaunchCommand;
+  envPassthrough: string[];
+  /** ACP authenticate method sent before session/new; a sign-in prompt instead of success means "signed out". */
+  authMethod?: string;
+  /** Releases the runtime lease and cleans up after the process exits. */
+  onClosed?: () => void;
 }
 
 export function launchFor(instance: ProviderInstance, argv?: string[]): LaunchCommand {
@@ -79,7 +93,8 @@ export class AcpAdapter implements ProviderAdapter {
 
   constructor(private readonly options: AcpAdapterOptions = {}) {}
 
-  capabilities(_instance: ProviderInstance): ProviderCapabilities {
+  capabilities(instance: ProviderInstance): ProviderCapabilities {
+    if (isAntigravity(instance)) return antigravityCapabilities();
     return {
       steering: false,
       queue: true,
@@ -100,10 +115,13 @@ export class AcpAdapter implements ProviderAdapter {
   }
 
   setup(instance: ProviderInstance, action: ProviderSetupAction): ProviderSetupStep | null {
+    // Antigravity installs and signs in through provider.install / provider.auth, not a terminal.
+    if (isAntigravity(instance) && this.options.antigravity) return null;
     return acpSetup(instance, action);
   }
 
   async probe(instance: ProviderInstance, options: ProbeOptions): Promise<ProbeResult> {
+    if (isAntigravity(instance) && this.options.antigravity) return this.options.antigravity.probe(instance);
     if (!instance.binaryPath && !instance.acpCommand?.length) return { status: "not-installed" };
     const preset = acpPreset(instance);
     const attempts = [instance.acpCommand ?? preset?.command ?? [], ...(preset?.fallbacks ?? [])].filter((a) => a.length);
@@ -139,8 +157,34 @@ export class AcpAdapter implements ProviderAdapter {
   }
 
   async openSession(instance: ProviderInstance, options: OpenSessionOptions): Promise<ProviderSession> {
-    const session = new AcpSession(instance, options, this.options.mcpBridge);
-    await session.start();
+    let plan: AcpLaunchPlan;
+    const antigravity = this.options.antigravity;
+    if (isAntigravity(instance) && antigravity) {
+      let launched;
+      try {
+        launched = antigravity.launch(instance);
+      } catch (error) {
+        throw error instanceof AntigravityError ? new Error(error.message) : error;
+      }
+      plan = {
+        launch: launched.launch,
+        envPassthrough: [],
+        authMethod: antigravity.authMethod,
+        onClosed: () => {
+          launched.release();
+          launched.cleanup();
+        },
+      };
+    } else {
+      plan = { launch: launchFor(instance), envPassthrough: passthrough(instance) };
+    }
+    const session = new AcpSession(instance, options, plan, this.options.mcpBridge);
+    try {
+      await session.start();
+    } catch (error) {
+      await session.close().catch(() => undefined);
+      throw error;
+    }
     return session;
   }
 }
@@ -166,24 +210,38 @@ class AcpSession implements ProviderSession {
   #modelOption: { id: string; current?: unknown } | undefined;
   #model: string | undefined;
   readonly #logger: Logger;
+  #signInRequired = false;
+  #closed = false;
 
   constructor(
     private readonly instance: ProviderInstance,
     private readonly options: OpenSessionOptions,
+    private readonly plan: AcpLaunchPlan,
     private readonly bridge?: McpBridgeCommand,
   ) {
     this.#logger = options.logger;
     const s = options.resumeState ?? {};
     if (typeof s.acpSessionId === "string") this.#acpSessionId = s.acpSessionId;
+    // A runtime that asks for a browser sign-in during a normal launch is signed out: the
+    // prompt is never shown or followed here, the launch stops and says so.
+    const onAuthLine = plan.authMethod
+      ? (line: string) => {
+          if (!authorizationUrlFromLine(line) || this.#signInRequired) return;
+          this.#signInRequired = true;
+          void this.#client.stop();
+        }
+      : undefined;
     this.#client = new AcpClient({
-      launch: launchFor(instance),
+      launch: plan.launch,
       cwd: options.cwd,
-      envPassthrough: passthrough(instance),
+      envPassthrough: plan.envPassthrough,
       clientInfo: { name: "alevr-env", version: "0.1.0" },
       handlers: {
         onSessionUpdate: (n) => this.#onUpdate(n),
         onRequestPermission: (r) => this.#onPermission(r),
         onProtocolWarning: (m) => this.#logger.debug(`acp: ${m}`),
+        ...(onAuthLine ? { onTextLine: onAuthLine, onStderrLine: onAuthLine } : {}),
+        onExit: () => this.#released(),
       },
       logger: { debug: (m) => this.#logger.debug(m), warn: (m) => this.#logger.warn(m), error: (m) => this.#logger.error(m) },
     });
@@ -194,6 +252,15 @@ class AcpSession implements ProviderSession {
       this.#init = await this.#client.start();
     } catch (error) {
       throw new Error(`${this.instance.label} did not start: ${describeError(error)}`);
+    }
+    if (this.plan.authMethod) {
+      try {
+        await this.#client.authenticate(this.plan.authMethod);
+      } catch (error) {
+        if (this.#signInRequired || (error instanceof AcpError && error.code === -32000)) throw new Error(SIGN_IN_REQUIRED);
+        throw new Error(`${this.instance.label} could not authenticate: ${describeError(error)}`);
+      }
+      if (this.#signInRequired) throw new Error(SIGN_IN_REQUIRED);
     }
     const mcpServers = this.#mcpServers(this.options.mcp);
     const canLoad = this.#init.agentCapabilities?.loadSession === true || !!this.#init.agentCapabilities?.sessionCapabilities?.resume;
@@ -294,6 +361,13 @@ class AcpSession implements ProviderSession {
 
   async close(): Promise<void> {
     await this.#client.stop();
+    this.#released();
+  }
+
+  #released(): void {
+    if (this.#closed) return;
+    this.#closed = true;
+    this.plan.onClosed?.();
   }
 
   async #applyMode(mode: RuntimeMode): Promise<void> {

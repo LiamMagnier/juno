@@ -114,7 +114,10 @@ export interface OpenSessionOptions {
 
 /** Fields a probe may fill in on an instance. Probes never open sessions, run hooks or start logins. */
 export type ProbeResult = Partial<
-  Pick<ProviderInstance, "status" | "statusMessage" | "version" | "account" | "limits" | "models" | "capabilities" | "binaryPath" | "acpCommand">
+  Pick<
+    ProviderInstance,
+    "status" | "statusMessage" | "version" | "account" | "limits" | "models" | "capabilities" | "binaryPath" | "acpCommand" | "install" | "auth"
+  >
 >;
 
 export interface ProbeOptions {

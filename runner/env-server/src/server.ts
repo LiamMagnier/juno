@@ -23,7 +23,10 @@ import {
   isClientCommandType,
   type ByokKey,
   type ClientCommand,
+  type ClientCommandParams,
+  type ClientCommandResults,
   type ClientCommandType,
+  type ProviderInstance,
   type ProviderKind,
   type ServerEvent,
   type ServerEventEnvelope,
@@ -35,6 +38,7 @@ import { ClaudeAgentAdapter, type ClaudeQueryFn } from "./providers/claude-agent
 import { CodexAdapter } from "./providers/codex.js";
 import { AcpAdapter, type McpBridgeCommand } from "./providers/acp.js";
 import { AlevrEngineAdapter, type AlevrEngine } from "./providers/alevr.js";
+import { AntigravityError, AntigravityService, isAntigravity, type AntigravityServiceOptions } from "./providers/antigravity/service.js";
 import { SessionManager, WireError } from "./sessions/session-manager.js";
 import { AlevrMcpServer } from "./mcp/alevr-mcp.js";
 import { registerSubagentTools } from "./mcp/subagent-tools.js";
@@ -69,6 +73,8 @@ export interface EnvServerOptions {
   adapters?: ProviderAdapter[];
   /** Probe every installed instance after start (default true). */
   probeOnStart?: boolean;
+  /** Antigravity test seams (release, fetch, search dirs, Node path). */
+  antigravity?: Partial<Pick<AntigravityServiceOptions, "release" | "fetchImpl" | "searchDirs" | "nodePath" | "authTimeoutMs">>;
   /**
    * `computer_use` on the Alevr MCP server (SPEC §3.12), executed by the Mac
    * app's computer bridge. Default: on, through the bridge's Unix socket, and
@@ -96,6 +102,7 @@ export interface EnvServer {
   readonly mcp: AlevrMcpServer;
   readonly terminals: TerminalManager;
   readonly secrets: EnvSecrets;
+  readonly antigravity: AntigravityService;
   close(): Promise<void>;
 }
 
@@ -115,13 +122,32 @@ export async function startEnvServer(options: EnvServerOptions = {}): Promise<En
     for (const c of connections) c.sendGlobal(event);
   };
 
+  let registryRef: ProviderRegistry | undefined;
+  const antigravity = new AntigravityService({
+    dataDir,
+    logger,
+    ...(options.searchDirs ? { searchDirs: () => options.searchDirs! } : {}),
+    ...(options.antigravity ?? {}),
+    publish: (instanceId, patch) => {
+      const registry = registryRef;
+      if (!registry) return;
+      const ids = instanceId === "*" ? registry.antigravityIds() : [instanceId];
+      for (const id of ids) {
+        const { install: _install, auth: _auth, ...rest } = patch;
+        // install/auth are decorated from the service on read; an update just re-broadcasts them.
+        registry.update(id, rest);
+        if (patch.install?.phase === "succeeded") void registry.probe(id).catch(() => undefined);
+      }
+    },
+  });
+
   const adapters = new Map<ProviderKind, ProviderAdapter>();
   const builtIns: ProviderAdapter[] = [
     new AlevrEngineAdapter("alevr", secrets, options.alevrEngine ? { engine: options.alevrEngine } : {}),
     new AlevrEngineAdapter("byok", secrets, options.alevrEngine ? { engine: options.alevrEngine } : {}),
     new ClaudeAgentAdapter(options.claudeQuery ? { queryFn: options.claudeQuery } : {}),
     new CodexAdapter(),
-    new AcpAdapter(options.mcpBridge ? { mcpBridge: options.mcpBridge } : {}),
+    new AcpAdapter({ ...(options.mcpBridge ? { mcpBridge: options.mcpBridge } : {}), antigravity }),
   ];
   for (const a of [...builtIns, ...(options.adapters ?? [])]) adapters.set(a.kind, a);
 
@@ -131,7 +157,9 @@ export async function startEnvServer(options: EnvServerOptions = {}): Promise<En
     logger,
     ...(options.searchDirs ? { searchDirs: options.searchDirs } : {}),
     onUpdate: (instance) => broadcast({ type: "provider.updated", instance }),
+    antigravity,
   });
+  registryRef = registry;
   const mcp = new AlevrMcpServer(logger);
   let port = 0;
   const sessions = new SessionManager({
@@ -188,7 +216,7 @@ export async function startEnvServer(options: EnvServerOptions = {}): Promise<En
       return;
     }
     wss.handleUpgrade(req, socket, head, (ws) => {
-      const connection = new Connection(ws, { sessions, registry, terminals, secrets, logger });
+      const connection = new Connection(ws, { sessions, registry, terminals, secrets, logger, antigravity });
       connections.add(connection);
       ws.on("close", () => {
         connection.dispose();
@@ -203,6 +231,8 @@ export async function startEnvServer(options: EnvServerOptions = {}): Promise<En
   });
   port = (server.address() as { port: number }).port;
   logger.info(`listening on 127.0.0.1:${port}`);
+  // Schedules saved before a restart: armed once the listener (and its MCP endpoint) is up.
+  sessions.restoreSchedules();
 
   if (options.probeOnStart ?? true) {
     setTimeout(() => void registry.probeAll().catch(() => undefined), 500).unref?.();
@@ -218,6 +248,7 @@ export async function startEnvServer(options: EnvServerOptions = {}): Promise<En
     mcp,
     terminals,
     secrets,
+    antigravity,
     close: async () => {
       removeSubagentTools();
       removeComputerClose?.();
@@ -225,6 +256,7 @@ export async function startEnvServer(options: EnvServerOptions = {}): Promise<En
       for (const ws of wss.clients) ws.terminate();
       terminals.closeAll();
       await sessions.shutdown();
+      await antigravity.shutdown();
       await computer?.dispose();
       await new Promise<void>((resolve) => wss.close(() => resolve()));
       await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -301,6 +333,7 @@ interface ConnectionDeps {
   terminals: TerminalManager;
   secrets: EnvSecrets;
   logger: Logger;
+  antigravity?: AntigravityService;
 }
 
 /** One client connection: command dispatch, session subscriptions, global stream. */
@@ -401,6 +434,16 @@ export async function dispatchCommand(deps: ConnectionDeps, cmd: ClientCommand, 
       return sessions.rollback(cmd.params);
     case "checkpoint.diff":
       return sessions.diff(cmd.params);
+    case "checkpoint.applyPatch":
+      return sessions.applyPatch(cmd.params);
+    case "turn.schedule":
+      return sessions.schedule(cmd.params);
+    case "turn.unschedule":
+      return sessions.unschedule(cmd.params);
+    case "provider.install":
+      return providerInstall(deps, cmd.params);
+    case "provider.auth":
+      return providerAuth(deps, cmd.params);
     case "provider.list": {
       const instances = registry.list().map((i) => {
         const adapter = registry.adapterFor(i.kind);
@@ -449,6 +492,58 @@ export async function dispatchCommand(deps: ConnectionDeps, cmd: ClientCommand, 
       const never: never = cmd;
       throw new WireError("unsupported", `Unknown command ${String(type)} ${String(never)}`);
     }
+  }
+}
+
+/** The managed-runtime instance a provider.install / provider.auth names (Antigravity today). */
+function managedInstance(deps: ConnectionDeps, instanceId: unknown): { instance: ProviderInstance; service: AntigravityService } {
+  if (typeof instanceId !== "string") throw new WireError("bad_request", "instanceId is required.");
+  const instance = deps.registry.get(instanceId);
+  if (!instance) throw new WireError("not_found", `No provider instance ${instanceId}.`);
+  if (!deps.antigravity || !isAntigravity(instance)) throw new WireError("unsupported", `${instance.label} installs and signs in through its own CLI (provider.setup).`);
+  return { instance, service: deps.antigravity };
+}
+
+function wire<T>(run: () => T): T {
+  try {
+    return run();
+  } catch (error) {
+    if (error instanceof AntigravityError) throw new WireError(error.wireCode, error.message);
+    throw error;
+  }
+}
+
+async function wireAsync<T>(run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (error) {
+    if (error instanceof AntigravityError) throw new WireError(error.wireCode, error.message);
+    throw error;
+  }
+}
+
+function providerInstall(deps: ConnectionDeps, params: ClientCommandParams["provider.install"]): ClientCommandResults["provider.install"] {
+  const { service } = managedInstance(deps, params?.instanceId);
+  if (!["start", "cancel", "remove"].includes(params.action)) throw new WireError("bad_request", "action must be start, cancel or remove.");
+  return { install: wire(() => service.install(params.action, params.operationId)) };
+}
+
+async function providerAuth(deps: ConnectionDeps, params: ClientCommandParams["provider.auth"]): Promise<ClientCommandResults["provider.auth"]> {
+  const { instance, service } = managedInstance(deps, params?.instanceId);
+  switch (params.action) {
+    case "start":
+      // A new sign-in replaces the account the running sessions use: stop them first.
+      await deps.sessions.closeProviderSessions(instance.id);
+      return { auth: await wireAsync(() => service.authStart(instance)) };
+    case "complete":
+      return { auth: await wireAsync(() => service.authComplete(instance, params.flowId, params.callbackUrl)) };
+    case "cancel":
+      return { auth: await wireAsync(() => service.authCancel(instance, params.flowId)) };
+    case "logout":
+      await deps.sessions.closeProviderSessions(instance.id);
+      return { auth: await wireAsync(() => service.logout(instance)) };
+    default:
+      throw new WireError("bad_request", "action must be start, complete, cancel or logout.");
   }
 }
 

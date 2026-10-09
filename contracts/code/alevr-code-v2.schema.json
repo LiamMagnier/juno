@@ -184,7 +184,12 @@
         "provider.setup",
         "session.list",
         "session.close",
-        "env.configure"
+        "env.configure",
+        "checkpoint.applyPatch",
+        "turn.schedule",
+        "turn.unschedule",
+        "provider.install",
+        "provider.auth"
       ]
     },
     "ServerEventType": {
@@ -201,7 +206,8 @@
         "usage.updated",
         "provider.updated",
         "terminal.output",
-        "terminal.exited"
+        "terminal.exited",
+        "session.scheduled"
       ]
     },
     "TurnOutcome": {
@@ -240,6 +246,108 @@
       "enum": [
         "install",
         "login"
+      ]
+    },
+    "ProviderInstallPhase": {
+      "type": "string",
+      "enum": [
+        "idle",
+        "downloading",
+        "extracting",
+        "verifying",
+        "succeeded",
+        "failed",
+        "cancelled"
+      ]
+    },
+    "ProviderAuthPhase": {
+      "type": "string",
+      "enum": [
+        "idle",
+        "starting",
+        "waiting",
+        "verifying",
+        "succeeded",
+        "failed",
+        "cancelled"
+      ]
+    },
+    "ProviderInstallAction": {
+      "type": "string",
+      "enum": [
+        "start",
+        "cancel",
+        "remove"
+      ]
+    },
+    "ProviderAuthAction": {
+      "type": "string",
+      "enum": [
+        "start",
+        "complete",
+        "cancel",
+        "logout"
+      ]
+    },
+    "ProviderInstallState": {
+      "type": "object",
+      "properties": {
+        "phase": {
+          "$ref": "#/definitions/ProviderInstallPhase"
+        },
+        "operationId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "downloadedBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "totalBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "version": {
+          "type": "string"
+        },
+        "installedVersion": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "phase"
+      ]
+    },
+    "ProviderAuthState": {
+      "type": "object",
+      "properties": {
+        "phase": {
+          "$ref": "#/definitions/ProviderAuthPhase"
+        },
+        "flowId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "authorizationUrl": {
+          "type": "string",
+          "pattern": "^https://"
+        },
+        "expiresAt": {
+          "type": "string",
+          "minLength": 10
+        },
+        "message": {
+          "type": "string"
+        },
+        "method": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "phase"
       ]
     },
     "UsageWindow": {
@@ -495,6 +603,12 @@
         "checkedAt": {
           "type": "string",
           "minLength": 10
+        },
+        "install": {
+          "$ref": "#/definitions/ProviderInstallState"
+        },
+        "auth": {
+          "$ref": "#/definitions/ProviderAuthState"
         }
       },
       "required": [
@@ -2030,6 +2144,31 @@
         "queuedAt"
       ]
     },
+    "ScheduledResume": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "at": {
+          "type": "string",
+          "minLength": 10
+        },
+        "createdAt": {
+          "type": "string",
+          "minLength": 10
+        },
+        "input": {
+          "$ref": "#/definitions/UserInput"
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "createdAt"
+      ]
+    },
     "SessionSnapshot": {
       "type": "object",
       "properties": {
@@ -2102,6 +2241,9 @@
             "branch",
             "repoRoot"
           ]
+        },
+        "scheduledResume": {
+          "$ref": "#/definitions/ScheduledResume"
         }
       },
       "required": [
@@ -2833,6 +2975,194 @@
             "type",
             "params"
           ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": {
+              "const": "checkpoint.applyPatch"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "sessionId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "patch": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "reverse": {
+                  "type": "boolean"
+                },
+                "checkOnly": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "sessionId",
+                "patch"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "type",
+            "params"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": {
+              "const": "turn.schedule"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "sessionId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "at": {
+                  "type": "string",
+                  "minLength": 10
+                },
+                "input": {
+                  "$ref": "#/definitions/UserInput"
+                }
+              },
+              "required": [
+                "sessionId"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "type",
+            "params"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": {
+              "const": "turn.unschedule"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "sessionId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "scheduleId": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "sessionId"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "type",
+            "params"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": {
+              "const": "provider.install"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "instanceId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "action": {
+                  "$ref": "#/definitions/ProviderInstallAction"
+                },
+                "operationId": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "instanceId",
+                "action"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "type",
+            "params"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": {
+              "const": "provider.auth"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "instanceId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "action": {
+                  "$ref": "#/definitions/ProviderAuthAction"
+                },
+                "flowId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "callbackUrl": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 16384
+                }
+              },
+              "required": [
+                "instanceId",
+                "action"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "type",
+            "params"
+          ]
         }
       ]
     },
@@ -3127,6 +3457,20 @@
           "required": [
             "type",
             "terminalId"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "session.scheduled"
+            },
+            "scheduledResume": {
+              "$ref": "#/definitions/ScheduledResume"
+            }
+          },
+          "required": [
+            "type"
           ]
         }
       ]

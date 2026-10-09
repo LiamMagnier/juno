@@ -92,6 +92,18 @@ function buildSchema() {
     WireErrorCode: en(C.WIRE_ERROR_CODE_VALUES),
     ByokProvider: en(C.BYOK_PROVIDER_VALUES),
     ProviderSetupAction: en(C.PROVIDER_SETUP_ACTION_VALUES),
+    ProviderInstallPhase: en(C.PROVIDER_INSTALL_PHASE_VALUES),
+    ProviderAuthPhase: en(C.PROVIDER_AUTH_PHASE_VALUES),
+    ProviderInstallAction: en(C.PROVIDER_INSTALL_ACTION_VALUES),
+    ProviderAuthAction: en(C.PROVIDER_AUTH_ACTION_VALUES),
+    ProviderInstallState: obj(
+      { phase: ref("ProviderInstallPhase") },
+      { operationId: nonEmpty, downloadedBytes: int, totalBytes: int, version: str, installedVersion: str, message: str },
+    ),
+    ProviderAuthState: obj(
+      { phase: ref("ProviderAuthPhase") },
+      { flowId: nonEmpty, authorizationUrl: { type: "string", pattern: "^https://" }, expiresAt: iso, message: str, method: str },
+    ),
 
     UsageWindow: obj({ id: nonEmpty, label: nonEmpty }, { usedPct: { type: "number", minimum: 0, maximum: 100 }, resetsAt: iso }),
     ProviderAccount: obj({}, { email: str, plan: str, tokenSource: str }),
@@ -140,6 +152,8 @@ function buildSchema() {
         capabilities: ref("ProviderCapabilities"),
         models: arr(ref("ProviderModel")),
         checkedAt: iso,
+        install: ref("ProviderInstallState"),
+        auth: ref("ProviderAuthState"),
       },
     ),
 
@@ -305,6 +319,7 @@ function buildSchema() {
     { title: str, parentSessionId: nonEmpty },
   );
   definitions.QueuedInput = obj({ id: nonEmpty, input: ref("UserInput"), queuedAt: iso });
+  definitions.ScheduledResume = obj({ id: nonEmpty, at: iso, createdAt: iso }, { input: ref("UserInput") });
   definitions.SessionSnapshot = obj(
     {
       id: nonEmpty,
@@ -323,6 +338,7 @@ function buildSchema() {
       resumeAt: iso,
       usage: ref("SessionUsage"),
       worktree: obj({ path: nonEmpty, branch: nonEmpty, repoRoot: nonEmpty }),
+      scheduledResume: ref("ScheduledResume"),
     },
   );
 
@@ -381,6 +397,14 @@ function buildSchema() {
         byok: arr(obj({ provider: nonEmpty, apiKey: nonEmpty }, { baseUrl: str })),
       },
     ),
+    "checkpoint.applyPatch": obj({ ...sid, patch: nonEmpty }, { reverse: bool, checkOnly: bool }),
+    "turn.schedule": obj(sid, { at: iso, input: ref("UserInput") }),
+    "turn.unschedule": obj(sid, { scheduleId: nonEmpty }),
+    "provider.install": obj({ instanceId: nonEmpty, action: ref("ProviderInstallAction") }, { operationId: nonEmpty }),
+    "provider.auth": obj(
+      { instanceId: nonEmpty, action: ref("ProviderAuthAction") },
+      { flowId: nonEmpty, callbackUrl: { type: "string", minLength: 1, maxLength: 16384 } },
+    ),
   };
   for (const t of C.CLIENT_COMMAND_TYPE_VALUES) if (!params[t]) throw new Error(`no params schema for ${t}`);
   definitions.ClientCommand = {
@@ -412,6 +436,7 @@ function buildSchema() {
     "provider.updated": { instance: ref("ProviderInstance") },
     "terminal.output": { terminalId: nonEmpty, data: str },
     "terminal.exited": [{ terminalId: nonEmpty }, { exitCode: { type: "integer" } }],
+    "session.scheduled": [{}, { scheduledResume: ref("ScheduledResume") }],
   };
   for (const t of C.SERVER_EVENT_TYPE_VALUES) if (!payloads[t]) throw new Error(`no payload schema for ${t}`);
   definitions.ServerEvent = {
@@ -512,6 +537,25 @@ for (const k of C.TURN_ITEM_KIND_VALUES) if (!seenKinds.has(k)) fail(`no fixture
 for (const t of C.CLIENT_COMMAND_TYPE_VALUES) if (!seenCommands.has(t)) fail(`no fixture covers command "${t}"`);
 for (const t of C.SERVER_EVENT_TYPE_VALUES) if (!seenEvents.has(t)) fail(`no fixture covers event "${t}"`);
 
+// 3b. The snapshot + cursor rule (classifyEvent): a snapshot older than the
+// cursor never applies (it would roll the thread back).
+const snap = (n) => ({ sequence: n, event: { type: "session.snapshot", snapshotSequence: n, session: {} } });
+const delta = (n) => ({ sequence: n, event: { type: "item.delta", itemId: "i", field: "text", append: "x" } });
+const classifyCases = [
+  [null, snap(4), "apply"],
+  [7, snap(7), "apply"],
+  [7, snap(9), "apply"],
+  [7, snap(3), "duplicate"],
+  [7, delta(8), "apply"],
+  [7, delta(7), "duplicate"],
+  [7, delta(9), "gap"],
+  [null, delta(1), "gap"],
+];
+for (const [cursor, envelope, expected] of classifyCases) {
+  const got = C.classifyEvent(cursor, envelope);
+  if (got !== expected) fail(`classifyEvent(${cursor}, ${envelope.event.type}@${envelope.sequence}) is ${got}, expected ${expected}`);
+}
+
 // 4. Swift mirror.
 const swift = await readFile(SWIFT, "utf8").catch(() => null);
 if (swift === null) {
@@ -533,6 +577,12 @@ if (swift === null) {
   }
   for (const name of Object.keys(C).filter((k) => k.endsWith("_VALUES"))) {
     if (!checked.has(name)) fail(`Swift CodeV2Contracts.swift has no enum marked "// contract: ${name}"`);
+  }
+  // The Swift classify must carry the same stale-snapshot rule.
+  const classify = swift.match(/\/\/ contract: classifyEvent\n([\s\S]*?)\n {4}\}/);
+  if (!classify) fail("Swift has no function marked // contract: classifyEvent");
+  else if (!/snapshotSequence[^\n]*<\s*cursor|sequence[^\n]*<\s*cursor/.test(classify[1]) || !/\.duplicate/.test(classify[1])) {
+    fail("Swift classify does not refuse a snapshot older than the cursor");
   }
   const aliasBlock = swift.match(/\/\/ contract: CODE_MODEL_ALIASES\n[^\[]*\[([\s\S]*?)\n\s*\]/);
   if (!aliasBlock) {

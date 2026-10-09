@@ -48,6 +48,12 @@ export function applySessionEvent(snapshot: SessionSnapshot, event: ServerEvent)
       return { ...snapshot, queue: event.queue };
     case "usage.updated":
       return { ...snapshot, usage: event.usage };
+    case "session.scheduled": {
+      const next: SessionSnapshot = { ...snapshot };
+      if (event.scheduledResume) next.scheduledResume = event.scheduledResume;
+      else delete next.scheduledResume;
+      return next;
+    }
     default:
       return snapshot;
   }

@@ -123,7 +123,7 @@ test("reducer: limited and failed outcomes", () => {
   assert.equal(applySessionEvent(limited, { type: "turn.started", turnId: "t2", selection: base.selection }).resumeAt, undefined);
 });
 
-test("presets: honest names, isolated login commands, Antigravity on legal hold", () => {
+test("presets: honest names, isolated login commands, Antigravity enabled with no ambient credentials", () => {
   const claude = defaultInstances().find((i) => i.kind === "claude-agent")!;
   assert.equal(claude.label, "Claude (your subscription)");
   for (const i of defaultInstances()) assert.ok(!/claude code/i.test(i.label), `${i.label} must not present Claude Code as Alevr's`);
@@ -133,7 +133,10 @@ test("presets: honest names, isolated login commands, Antigravity on legal hold"
   assert.equal(codexSetup({ ...codex, configDir: "/Users/me/codex home" }, "login").command, "CODEX_HOME='/Users/me/codex home' codex login");
   assert.equal(acpSetup({ id: "acp:grok", kind: "acp", label: "Grok", status: "unknown" }, "login")?.command, "grok login");
   assert.equal(acpSetup({ id: "acp:dsh", kind: "acp", label: "dsh", status: "unknown" }, "login"), null);
-  assert.ok(ACP_PRESETS.find((p) => p.preset === "antigravity")?.legalHold);
+  const antigravity = ACP_PRESETS.find((p) => p.preset === "antigravity");
+  assert.ok(antigravity);
+  assert.equal(antigravity.legalHold, undefined, "the owner enabled Antigravity on 2026-10-09");
+  assert.deepEqual(antigravity.envPassthrough, []);
   assert.equal(shellQuote("it's"), `'it'\\''s'`);
   assert.equal(parseVersion("2.1.50 (Claude Code)"), "2.1.50");
   assert.equal(parseVersion("codex-cli 0.160.0"), "0.160.0");

@@ -198,9 +198,23 @@ export class GitCheckpoints {
 
   /**
    * Restores the working tree to checkpoint `turn`. Returns the number of
-   * paths written or removed and the ref holding the pre-rollback state.
+   * paths written or removed, the ref holding the pre-rollback state, and the
+   * paths a scope left alone.
+   *
+   * Without `scope` every path of the repository that differs is restored.
+   * With it (what sessions use) only paths that are both inside
+   * `scope.subtree` and were changed by this thread's own turns after `turn`
+   * (the diffs between its consecutive checkpoints, up to `scope.latestTurn`,
+   * plus `scope.paths`) are touched. A path that changed again after the
+   * thread's latest checkpoint (another session, or the user) is skipped and
+   * reported, never reverted.
    */
-  async rollback(cwd: string, threadId: string, turn: number): Promise<{ restoredFiles: number; undoRef: string }> {
+  async rollback(
+    cwd: string,
+    threadId: string,
+    turn: number,
+    scope?: RollbackScope,
+  ): Promise<{ restoredFiles: number; undoRef: string; skipped: string[] }> {
     const root = await this.repoRoot(cwd);
     if (!root) throw new Error("not a git repository");
     const target = await this.resolve(root, threadId, turn);
@@ -209,11 +223,39 @@ export class GitCheckpoints {
     const undoRef = `${CHECKPOINT_REF_ROOT}/${safeRefSegment(threadId)}/pre-rollback/${Date.now()}`;
     await gitOk(root, ["update-ref", undoRef, current]);
     const changed = (await gitOk(root, ["diff", "--name-status", "--no-renames", "-z", current, target])).split("\0").filter(Boolean);
+    let allowed: ((file: string) => boolean) | undefined;
+    const skipped: string[] = [];
+    if (scope) {
+      const prefix = await subtreePrefix(root, scope.subtree ?? cwd);
+      const touched = new Set<string>((scope.paths ?? []).map(normalizeRepoPath).filter((p): p is string => !!p));
+      const latest = scope.latestTurn ?? turn;
+      let previous = target;
+      for (let t = turn + 1; t <= latest; t++) {
+        const commit = await this.resolve(root, threadId, t);
+        if (!commit) continue;
+        for (const file of (await gitOk(root, ["diff", "--name-only", "--no-renames", "-z", previous, commit])).split("\0").filter(Boolean)) touched.add(file);
+        previous = commit;
+      }
+      // What the thread's latest checkpoint holds; anything different now was written by someone else since.
+      const laterEdits = new Set<string>();
+      if (latest > turn && previous !== target) {
+        for (const file of (await gitOk(root, ["diff", "--name-only", "--no-renames", "-z", previous, current])).split("\0").filter(Boolean)) laterEdits.add(file);
+      }
+      allowed = (file) => {
+        if (!inPrefix(file, prefix) || !touched.has(file)) return false;
+        if (laterEdits.has(file)) {
+          skipped.push(file);
+          return false;
+        }
+        return true;
+      };
+    }
     const toWrite: string[] = [];
     const toDelete: string[] = [];
     for (let i = 0; i + 1 < changed.length; i += 2) {
       const code = changed[i];
       const file = changed[i + 1];
+      if (allowed && !allowed(file)) continue;
       if (code === "A" || code === "M" || code === "T") toWrite.push(file);
       else if (code === "D") toDelete.push(file);
     }
@@ -235,7 +277,43 @@ export class GitCheckpoints {
         fs.rmSync(tmp, { recursive: true, force: true });
       }
     }
-    return { restoredFiles: toWrite.length + toDelete.length, undoRef };
+    return { restoredFiles: toWrite.length + toDelete.length, undoRef, skipped: skipped.sort() };
+  }
+
+  /**
+   * Applies a unified diff to the working tree of the repository holding
+   * `cwd`, all or nothing (`git apply`, never the index). Paths are relative
+   * to the repository root and must stay inside `cwd`'s subtree: absolute
+   * paths, `..`, `.git/` and anything outside the folder are refused before
+   * git sees the patch, and git itself refuses to write through a symlink.
+   */
+  async applyPatch(cwd: string, patch: string, options: { reverse?: boolean; checkOnly?: boolean } = {}): Promise<{ applied: boolean; files: string[] }> {
+    const root = await this.repoRoot(cwd);
+    if (!root) throw new PatchError("unsupported", "Applying a change needs a git repository.");
+    if (!patch.trim()) throw new PatchError("bad_request", "The patch is empty.");
+    if (Buffer.byteLength(patch) > MAX_PATCH_BYTES) throw new PatchError("bad_request", "The patch is too large.");
+    const text = patch.endsWith("\n") ? patch : `${patch}\n`;
+    const flags = ["--recount", "--whitespace=nowarn", ...(options.reverse ? ["-R"] : [])];
+    const prefix = await subtreePrefix(root, cwd);
+    const files = patchPaths(text);
+    // git's own reading of the patch must agree with ours (no path we did not see).
+    const numstat = await git(root, ["apply", ...flags, "--numstat", "-z", "-"], {}, text);
+    if (numstat.code !== 0) throw new PatchError("bad_request", `The patch could not be read: ${firstLine(numstat.stderr)}`);
+    for (const file of numstatPaths(numstat.stdout)) files.add(file);
+    if (files.size === 0) throw new PatchError("bad_request", "The patch names no file.");
+    for (const file of files) {
+      const clean = normalizeRepoPath(file);
+      if (!clean || clean !== file) throw new PatchError("bad_request", `The patch names an unsafe path: ${file}`);
+      if (clean === ".git" || clean.startsWith(".git/") || clean.split("/").includes(".git")) throw new PatchError("bad_request", "The patch may not touch .git.");
+      if (!inPrefix(clean, prefix)) throw new PatchError("bad_request", `${clean} is outside this session's folder.`);
+    }
+    const check = await git(root, ["apply", ...flags, "--check", "-"], {}, text);
+    if (check.code !== 0) throw new PatchError("conflict", `The change no longer applies: ${firstLine(check.stderr)}`);
+    const list = [...files].sort();
+    if (options.checkOnly) return { applied: false, files: list };
+    const applied = await git(root, ["apply", ...flags, "-"], {}, text);
+    if (applied.code !== 0) throw new PatchError("conflict", `The change could not be applied: ${firstLine(applied.stderr)}`);
+    return { applied: true, files: list };
   }
 
   /** Deletes every checkpoint ref of a thread (session deleted). */
@@ -245,6 +323,104 @@ export class GitCheckpoints {
     const r = await git(root, ["for-each-ref", "--format=%(refname)", `${CHECKPOINT_REF_ROOT}/${safeRefSegment(threadId)}/`]);
     for (const ref of r.stdout.split("\n").map((l) => l.trim()).filter(Boolean)) await git(root, ["update-ref", "-d", ref]);
   }
+}
+
+export interface RollbackScope {
+  /** Folder the session runs in; only paths under it are restored (default: the cwd passed in). */
+  subtree?: string;
+  /** The thread's newest turn; its checkpoints since `turn` say which paths the thread changed. */
+  latestTurn?: number;
+  /** Extra repository-relative paths the thread is known to have changed (its file_change items). */
+  paths?: string[];
+}
+
+export class PatchError extends Error {
+  constructor(
+    readonly code: "bad_request" | "conflict" | "unsupported",
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+const MAX_PATCH_BYTES = 4 * 1024 * 1024;
+
+function firstLine(text: string): string {
+  return text.trim().split("\n")[0]?.replace(/^error:\s*/, "").slice(0, 300) || "git refused it";
+}
+
+/** Repository-relative, forward-slash path with no `.`/`..` segments; undefined when it escapes or is absolute. */
+export function normalizeRepoPath(file: string): string | undefined {
+  if (!file || file.includes("\0") || path.isAbsolute(file) || /^[A-Za-z]:[\\/]/.test(file)) return undefined;
+  const parts: string[] = [];
+  for (const part of file.replace(/\\/g, "/").split("/")) {
+    if (part === "" || part === ".") continue;
+    if (part === "..") return undefined;
+    parts.push(part);
+  }
+  return parts.length ? parts.join("/") : undefined;
+}
+
+/** The folder's path relative to the repository root ("" = the whole repository). */
+async function subtreePrefix(root: string, folder: string): Promise<string> {
+  let real = folder;
+  let realRoot = root;
+  try {
+    real = fs.realpathSync(folder);
+    realRoot = fs.realpathSync(root);
+  } catch {
+    /* compare as given */
+  }
+  const rel = path.relative(realRoot, real);
+  if (rel.startsWith("..") || path.isAbsolute(rel)) throw new PatchError("bad_request", "The session's folder is outside its repository.");
+  return rel.split(path.sep).join("/");
+}
+
+function inPrefix(file: string, prefix: string): boolean {
+  return prefix === "" || file === prefix || file.startsWith(`${prefix}/`);
+}
+
+/** Paths named in a unified diff's headers (`diff --git`, `---`, `+++`, rename/copy lines), without their a/ b/ prefix. */
+export function patchPaths(patch: string): Set<string> {
+  const out = new Set<string>();
+  const take = (raw: string, strip: boolean) => {
+    let value = raw.trim().replace(/\t.*$/, "");
+    if (value.startsWith('"') && value.endsWith('"')) value = value.slice(1, -1);
+    if (value === "/dev/null" || !value) return;
+    if (strip) value = value.replace(/^[ab]\//, "");
+    out.add(value);
+  };
+  for (const line of patch.split("\n")) {
+    if (line.startsWith("--- ")) take(line.slice(4), true);
+    else if (line.startsWith("+++ ")) take(line.slice(4), true);
+    else if (/^(rename|copy) (from|to) /.test(line)) take(line.replace(/^(rename|copy) (from|to) /, ""), false);
+    else if (line.startsWith("diff --git ")) {
+      const m = line.match(/^diff --git a\/(\S+) b\/(\S+)$/);
+      if (m) {
+        out.add(m[1]);
+        out.add(m[2]);
+      }
+    }
+  }
+  return out;
+}
+
+/** Paths from `git apply --numstat -z` ("adds\tdels\tpath\0", or "adds\tdels\t\0from\0to\0" for a rename). */
+function numstatPaths(out: string): string[] {
+  const parts = out.split("\0");
+  const files: string[] = [];
+  for (let i = 0; i < parts.length; i++) {
+    const segment = parts[i];
+    if (!segment) continue;
+    const fields = segment.split("\t");
+    if (fields.length < 3) continue;
+    if (fields[2] === "") {
+      if (parts[i + 1]) files.push(parts[i + 1]);
+      if (parts[i + 2]) files.push(parts[i + 2]);
+      i += 2;
+    } else files.push(fields.slice(2).join("\t"));
+  }
+  return files;
 }
 
 function pruneEmptyDirs(dir: string, root: string): void {

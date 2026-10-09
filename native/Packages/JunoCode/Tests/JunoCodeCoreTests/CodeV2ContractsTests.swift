@@ -86,7 +86,14 @@ final class CodeV2ContractsTests: XCTestCase {
         }
         XCTAssertEqual(responses, 2)
         XCTAssertEqual(types, Set(CodeV2.ServerEventType.allCases.map(\.rawValue)))
-        XCTAssertEqual(cursor, 48)
+        XCTAssertEqual(cursor, 50)
+        let snapshot = CodeV2.ServerEvent.sessionSnapshot(
+            snapshotSequence: 40,
+            session: CodeV2.SessionSnapshot(id: "s1", cwd: "/repo", selection: CodeV2.ModelSelection(instanceId: "alevr", model: "m"))
+        )
+        XCTAssertEqual(CodeV2.classify(cursor: 48, sequence: 40, event: snapshot), .duplicate)
+        XCTAssertEqual(CodeV2.classify(cursor: 40, sequence: 40, event: snapshot), .apply)
+        XCTAssertEqual(CodeV2.classify(cursor: nil, sequence: 40, event: snapshot), .apply)
         let delta = CodeV2.ServerEvent.itemDelta(itemId: "i", field: "text", append: "x")
         XCTAssertEqual(CodeV2.classify(cursor: 48, sequence: 48, event: delta), .duplicate)
         XCTAssertEqual(CodeV2.classify(cursor: 48, sequence: 50, event: delta), .gap)

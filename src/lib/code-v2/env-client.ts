@@ -20,10 +20,16 @@ import {
   type ClientCommandParams,
   type ClientCommandResults,
   type ClientCommandType,
+  type ProviderAuthAction,
+  type ProviderAuthState,
+  type ProviderInstallAction,
+  type ProviderInstallState,
   type ProviderInstance,
+  type ScheduledResume,
   type ServerEventEnvelope,
   type ServerMessage,
   type ServerResponse,
+  type UserInput,
 } from "@/lib/code-v2/contracts";
 import { applyCoalesced, emptySessionView, type SessionView } from "@/lib/code-v2/session-store";
 
@@ -213,6 +219,39 @@ export class EnvClient {
   // Convenience wrappers.
   listProviders(): Promise<ProviderInstance[]> {
     return this.request("provider.list", {}).then((r) => r.instances);
+  }
+
+  /**
+   * Reverts rejected hunks on the Mac: `patch` is `rejectedPatch(file, decisions)`
+   * from diff.ts (already the reverse), applied all or nothing in the session's
+   * folder. `checkOnly` asks whether it still applies without writing.
+   */
+  applyPatch(sessionId: string, patch: string, options: { reverse?: boolean; checkOnly?: boolean } = {}): Promise<ClientCommandResults["checkpoint.applyPatch"]> {
+    return this.request("checkpoint.applyPatch", { sessionId, patch, ...(options.reverse ? { reverse: true } : {}), ...(options.checkOnly ? { checkOnly: true } : {}) });
+  }
+
+  /** Resume a limited session by itself at `at` (default: its own reset time). */
+  scheduleResume(sessionId: string, options: { at?: string; input?: UserInput } = {}): Promise<ScheduledResume> {
+    return this.request("turn.schedule", { sessionId, ...options }).then((r) => r.schedule);
+  }
+
+  cancelScheduledResume(sessionId: string, scheduleId?: string): Promise<boolean> {
+    return this.request("turn.unschedule", { sessionId, ...(scheduleId ? { scheduleId } : {}) }).then((r) => r.cancelled);
+  }
+
+  /** Managed runtimes (Antigravity): download Google's runtime, cancel it, or remove it. */
+  providerInstall(instanceId: string, action: ProviderInstallAction, operationId?: string): Promise<ProviderInstallState> {
+    return this.request("provider.install", { instanceId, action, ...(operationId ? { operationId } : {}) }).then((r) => r.install);
+  }
+
+  /**
+   * Google sign-in for a managed runtime. `start` returns at once; the
+   * authorization URL arrives on the instance (`provider.updated`, `auth.phase
+   * === "waiting"`). From a device other than the Mac, `complete` sends the
+   * address Google's page ended on.
+   */
+  providerAuth(instanceId: string, action: ProviderAuthAction, options: { flowId?: string; callbackUrl?: string } = {}): Promise<ProviderAuthState> {
+    return this.request("provider.auth", { instanceId, action, ...options }).then((r) => r.auth);
   }
 
   private failPending(message: string) {

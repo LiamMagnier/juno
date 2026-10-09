@@ -70,19 +70,15 @@ export const ACP_PRESETS: readonly AcpPreset[] = [
     login: { command: "opencode auth login", label: "Sign in to OpenCode" },
   },
   {
+    // Google's official ACP runtime. Enabled by the owner on 2026-10-09 (PROVIDERS-LEGAL.md).
+    // Alevr installs it (provider.install: Google's CDN, pinned size and SHA-256) and signs it in
+    // with Google (provider.auth: the runtime's own 127.0.0.1 callback); see providers/antigravity/.
     preset: "antigravity",
     label: "Antigravity",
     command: ["antigravity-acp"],
-    binaryAliases: ["agy_acp_server", "agy-acp-server"],
-    install: {
-      command: "open 'https://github.com/agentclientprotocol/registry/tree/main/antigravity-acp'",
-      label: "Install Antigravity",
-      note: "Alevr does not download Antigravity for you. Get Google's official ACP runtime from the registry entry, check its SHA-256, and link agy_acp_server.par to ~/.alevr/runtimes/bin/antigravity-acp.",
-      url: "https://github.com/agentclientprotocol/registry",
-    },
-    login: { command: "antigravity-acp", label: "Sign in to Antigravity", note: "Antigravity signs in with Google in your browser the first time it starts." },
-    legalHold:
-      "Antigravity is off until Alevr confirms Google's terms allow a third-party app to run it. Your administrator can turn it on in ~/.alevr/env/instances.json.",
+    binaryAliases: ["agy_acp_server.par", "agy_acp_server", "agy-acp-server"],
+    // No ambient Google credentials: the instance's own sign-in is the only one the runtime sees.
+    envPassthrough: [],
   },
 ];
 

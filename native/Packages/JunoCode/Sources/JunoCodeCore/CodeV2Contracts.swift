@@ -209,6 +209,9 @@ public enum CodeV2 {
         public var capabilities: ProviderCapabilities?
         public var models: [ProviderModel]?
         public var checkedAt: String?
+        // runtime lane (additive): managed runtimes (Antigravity).
+        public var install: ProviderInstallState?
+        public var auth: ProviderAuthState?
 
         public init(
             id: String, kind: CodeV2.ProviderKind, label: String, binaryPath: String? = nil,
@@ -216,7 +219,8 @@ public enum CodeV2 {
             acpCommand: [String]? = nil, account: CodeV2.ProviderAccount? = nil,
             status: CodeV2.ProviderStatus, statusMessage: String? = nil, version: String? = nil,
             limits: [CodeV2.UsageWindow]? = nil, capabilities: CodeV2.ProviderCapabilities? = nil,
-            models: [CodeV2.ProviderModel]? = nil, checkedAt: String? = nil
+            models: [CodeV2.ProviderModel]? = nil, checkedAt: String? = nil,
+            install: CodeV2.ProviderInstallState? = nil, auth: CodeV2.ProviderAuthState? = nil
         ) {
             self.id = id
             self.kind = kind
@@ -234,7 +238,94 @@ public enum CodeV2 {
             self.capabilities = capabilities
             self.models = models
             self.checkedAt = checkedAt
+            self.install = install
+            self.auth = auth
         }
+    }
+
+    // contract: PROVIDER_INSTALL_PHASE_VALUES
+    public enum ProviderInstallPhase: String, Codable, Sendable, CaseIterable, Hashable {
+        case idle
+        case downloading
+        case extracting
+        case verifying
+        case succeeded
+        case failed
+        case cancelled
+    }
+
+    /// A managed runtime download (`provider.install`): the vendor's own
+    /// release, pinned by size and SHA-256.
+    public struct ProviderInstallState: Codable, Sendable, Hashable {
+        public var phase: ProviderInstallPhase
+        public var operationId: String?
+        public var downloadedBytes: Int?
+        public var totalBytes: Int?
+        public var version: String?
+        public var installedVersion: String?
+        public var message: String?
+
+        public init(
+            phase: CodeV2.ProviderInstallPhase, operationId: String? = nil, downloadedBytes: Int? = nil,
+            totalBytes: Int? = nil, version: String? = nil, installedVersion: String? = nil, message: String? = nil
+        ) {
+            self.phase = phase
+            self.operationId = operationId
+            self.downloadedBytes = downloadedBytes
+            self.totalBytes = totalBytes
+            self.version = version
+            self.installedVersion = installedVersion
+            self.message = message
+        }
+    }
+
+    // contract: PROVIDER_AUTH_PHASE_VALUES
+    public enum ProviderAuthPhase: String, Codable, Sendable, CaseIterable, Hashable {
+        case idle
+        case starting
+        case waiting
+        case verifying
+        case succeeded
+        case failed
+        case cancelled
+    }
+
+    /// A browser sign-in the vendor runtime runs on 127.0.0.1 (`provider.auth`).
+    /// Never holds a code or a token.
+    public struct ProviderAuthState: Codable, Sendable, Hashable {
+        public var phase: ProviderAuthPhase
+        public var flowId: String?
+        public var authorizationUrl: String?
+        public var expiresAt: String?
+        public var message: String?
+        public var method: String?
+
+        public init(
+            phase: CodeV2.ProviderAuthPhase, flowId: String? = nil, authorizationUrl: String? = nil,
+            expiresAt: String? = nil, message: String? = nil, method: String? = nil
+        ) {
+            self.phase = phase
+            self.flowId = flowId
+            self.authorizationUrl = authorizationUrl
+            self.expiresAt = expiresAt
+            self.message = message
+            self.method = method
+        }
+    }
+
+    // contract: PROVIDER_INSTALL_ACTION_VALUES
+    public enum ProviderInstallAction: String, Codable, Sendable, CaseIterable, Hashable {
+        case start
+        case cancel
+        case remove
+    }
+
+    // contract: PROVIDER_AUTH_ACTION_VALUES
+    public enum ProviderAuthAction: String, Codable, Sendable, CaseIterable, Hashable {
+        case start
+        case complete
+        case cancel
+        case logout
     }
 
     // MARK: Model and role selection
@@ -1371,6 +1462,11 @@ public enum CodeV2 {
         case sessionList = "session.list"
         case sessionClose = "session.close"
         case envConfigure = "env.configure"
+        case checkpointApplyPatch = "checkpoint.applyPatch"
+        case turnSchedule = "turn.schedule"
+        case turnUnschedule = "turn.unschedule"
+        case providerInstall = "provider.install"
+        case providerAuth = "provider.auth"
     }
 
     /// The git worktree a session runs in (`SessionSnapshot.worktree`).
@@ -1444,6 +1540,7 @@ public enum CodeV2 {
         case providerUpdated = "provider.updated"
         case terminalOutput = "terminal.output"
         case terminalExited = "terminal.exited"
+        case sessionScheduled = "session.scheduled"
     }
 
     // contract: TURN_OUTCOME_VALUES
@@ -1519,6 +1616,8 @@ public enum CodeV2 {
         public var queue: [QueuedInput]
         public var usage: SessionUsage?
         public var worktree: WorktreeInfo?
+        // runtime lane (additive): resume at reset.
+        public var scheduledResume: ScheduledResume?
 
         public init(
             id: String, cwd: String, title: String? = nil, selection: CodeV2.ModelSelection,
@@ -1526,7 +1625,7 @@ public enum CodeV2 {
             interactionMode: CodeV2.InteractionMode = .default, state: CodeV2.SessionState = .idle,
             activeTurnId: String? = nil, resumeAt: String? = nil, items: [CodeV2.TurnItem] = [],
             queue: [CodeV2.QueuedInput] = [], usage: CodeV2.SessionUsage? = nil,
-            worktree: CodeV2.WorktreeInfo? = nil
+            worktree: CodeV2.WorktreeInfo? = nil, scheduledResume: CodeV2.ScheduledResume? = nil
         ) {
             self.id = id
             self.cwd = cwd
@@ -1542,6 +1641,24 @@ public enum CodeV2 {
             self.queue = queue
             self.usage = usage
             self.worktree = worktree
+            self.scheduledResume = scheduledResume
+        }
+    }
+
+    /// A turn the env server starts by itself at `at` (a usage window reset),
+    /// until cancelled (`turn.schedule` / `turn.unschedule`).
+    public struct ScheduledResume: Codable, Sendable, Hashable, Identifiable {
+        public var id: String
+        public var at: String
+        public var createdAt: String
+        /// Absent means "continue where the limit stopped you".
+        public var input: UserInput?
+
+        public init(id: String, at: String, createdAt: String, input: CodeV2.UserInput? = nil) {
+            self.id = id
+            self.at = at
+            self.createdAt = createdAt
+            self.input = input
         }
     }
 
@@ -1602,11 +1719,13 @@ public enum CodeV2 {
         case providerUpdated(ProviderInstance)
         case terminalOutput(terminalId: String, data: String)
         case terminalExited(terminalId: String, exitCode: Int?)
+        /// A resume-at-reset schedule set, or cleared (nil).
+        case sessionScheduled(ScheduledResume?)
         case unknown(type: String)
 
         private enum Keys: String, CodingKey {
             case type, snapshotSequence, session, state, resumeAt, message, turnId, selection, outcome, usage
-            case item, itemId, field, append, queue, instance, terminalId, data, exitCode
+            case item, itemId, field, append, queue, instance, terminalId, data, exitCode, scheduledResume
         }
 
         public var type: String {
@@ -1623,6 +1742,7 @@ public enum CodeV2 {
             case .providerUpdated: ServerEventType.providerUpdated.rawValue
             case .terminalOutput: ServerEventType.terminalOutput.rawValue
             case .terminalExited: ServerEventType.terminalExited.rawValue
+            case .sessionScheduled: ServerEventType.sessionScheduled.rawValue
             case let .unknown(type): type
             }
         }
@@ -1678,6 +1798,8 @@ public enum CodeV2 {
                     terminalId: try c.decode(String.self, forKey: .terminalId),
                     exitCode: try c.decodeIfPresent(Int.self, forKey: .exitCode)
                 )
+            case .sessionScheduled:
+                self = .sessionScheduled(try c.decodeIfPresent(ScheduledResume.self, forKey: .scheduledResume))
             }
         }
 
@@ -1714,6 +1836,8 @@ public enum CodeV2 {
             case let .terminalExited(terminalId, exitCode):
                 try c.encode(terminalId, forKey: .terminalId)
                 try c.encodeIfPresent(exitCode, forKey: .exitCode)
+            case let .sessionScheduled(schedule):
+                try c.encodeIfPresent(schedule, forKey: .scheduledResume)
             case .unknown:
                 break
             }
@@ -1759,9 +1883,15 @@ public enum CodeV2 {
     public enum EventDisposition: String, Sendable, Hashable { case apply, duplicate, gap }
 
     /// Snapshot + cursor rule, identical to `classifyEvent` in contracts.ts:
-    /// a snapshot always applies; otherwise apply iff sequence == cursor + 1.
+    /// a snapshot applies unless it is older than the cursor (a stale
+    /// snapshot would roll the thread back); otherwise apply iff
+    /// sequence == cursor + 1.
+    // contract: classifyEvent
     public static func classify(cursor: Int?, sequence: Int, event: ServerEvent) -> EventDisposition {
-        if case .sessionSnapshot = event { return .apply }
+        if case let .sessionSnapshot(snapshotSequence, _) = event {
+            if let cursor, snapshotSequence < cursor { return .duplicate }
+            return .apply
+        }
         guard let cursor else { return .gap }
         if sequence <= cursor { return .duplicate }
         return sequence == cursor + 1 ? .apply : .gap

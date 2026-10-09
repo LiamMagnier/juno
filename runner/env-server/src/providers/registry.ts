@@ -15,6 +15,7 @@ import { isProviderKind } from "../contracts/code-v2.js";
 import { acpPreset, defaultInstances } from "./presets.js";
 import { candidateDirs, expandHome, findBinary } from "./detect.js";
 import type { ProbeResult, ProviderAdapter } from "./types.js";
+import { isAntigravity, type AntigravityService } from "./antigravity/service.js";
 import type { Logger } from "../util.js";
 import { describeError, nowIso } from "../util.js";
 
@@ -41,6 +42,8 @@ export interface RegistryOptions {
   /** Directories searched for binaries; tests point this at fake vendor CLIs. */
   searchDirs?: string[];
   onUpdate?: (instance: ProviderInstance) => void;
+  /** Antigravity's managed runtime: detection and its install / sign-in state on every instance. */
+  antigravity?: AntigravityService;
 }
 
 export class ProviderRegistry {
@@ -117,12 +120,22 @@ export class ProviderRegistry {
   }
 
   list(): ProviderInstance[] {
-    return [...this.#instances.values()].map((i) => structuredClone(i));
+    return [...this.#instances.values()].map((i) => this.#decorate(structuredClone(i)));
   }
 
   get(id: string): ProviderInstance | undefined {
     const instance = this.#instances.get(id);
-    return instance ? structuredClone(instance) : undefined;
+    return instance ? this.#decorate(structuredClone(instance)) : undefined;
+  }
+
+  #decorate(instance: ProviderInstance): ProviderInstance {
+    const service = this.#options.antigravity;
+    return service && isAntigravity(instance) ? service.decorate(instance) : instance;
+  }
+
+  /** Every Antigravity instance (install state is shared by all of them). */
+  antigravityIds(): string[] {
+    return [...this.#instances.values()].filter((i) => isAntigravity(i)).map((i) => i.id);
   }
 
   /** Whether a session may be started on this instance (legal holds, user switches). */
@@ -148,9 +161,14 @@ export class ProviderRegistry {
     if (!current) return undefined;
     const next: ProviderInstance = { ...current, ...patch };
     if (patch.status === "ready" && !patch.statusMessage) delete next.statusMessage;
+    for (const key of Object.keys(patch) as (keyof ProviderInstance)[]) if (patch[key as keyof typeof patch] === undefined) delete next[key];
+    // Install and sign-in progress is owned by the Antigravity service and decorated on read.
+    delete next.install;
+    delete next.auth;
     this.#instances.set(id, next);
-    this.#options.onUpdate?.(structuredClone(next));
-    return structuredClone(next);
+    const out = this.#decorate(structuredClone(next));
+    this.#options.onUpdate?.(out);
+    return out;
   }
 
   /** Runs the adapter's probe (cheap, no sessions, no hooks, no logins). Concurrent probes of one instance share a result. */
@@ -196,6 +214,21 @@ export class ProviderRegistry {
 
   /** Filesystem-only detection: binary path and not-installed status. Never runs anything. */
   #detect(instance: ProviderInstance): void {
+    const service = this.#options.antigravity;
+    if (service && isAntigravity(instance)) {
+      // Managed runtime first, then a hand-installed one; the resolved path is never written back.
+      const found = service.detect(instance);
+      if (found.found) {
+        if (instance.status === "not-installed") {
+          instance.status = "unknown";
+          delete instance.statusMessage;
+        }
+      } else {
+        instance.status = "not-installed";
+        instance.statusMessage = found.statusMessage ?? `${instance.label} is not installed on this Mac.`;
+      }
+      return;
+    }
     const dirs = this.#options.searchDirs ?? candidateDirs();
     const names = binaryNames(instance);
     if (names.length === 0) {

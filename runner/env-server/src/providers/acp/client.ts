@@ -369,6 +369,13 @@ export interface AcpClientHandlers {
   onProtocolWarning?(message: string): void;
   /** Fired exactly once. `stderr` is already redacted. */
   onExit?(info: { code: number | null; signal: NodeJS.Signals | null; stderr: string }): void;
+  /**
+   * A stdout line that is not JSON (an agent's own sign-in prompt). Never
+   * logged when a handler is set; the default is a protocol warning.
+   */
+  onTextLine?(line: string): void;
+  /** One raw stderr line, before redaction (a sign-in helper's output). Lines over 32 KiB are dropped. */
+  onStderrLine?(line: string): void;
 }
 
 export interface AcpClientOptions {
@@ -496,7 +503,10 @@ export class AcpClient {
     });
 
     child.stdout.on('data', (chunk: Buffer) => this.#onStdout(chunk));
-    child.stderr.on('data', (chunk: Buffer) => this.#stderr.append(chunk));
+    child.stderr.on('data', (chunk: Buffer) => {
+      this.#stderr.append(chunk);
+      this.#onStderr(chunk);
+    });
     child.stdout.on('error', (error) => this.logger.warn(`agent stdout error: ${describeError(error)}`));
     child.stdin.on('error', (error) => this.logger.warn(`agent stdin error: ${describeError(error)}`));
 
@@ -723,11 +733,37 @@ export class AcpClient {
     for (const line of lines) this.#onLine(line);
   }
 
+  #stderrPending = '';
+
+  #onStderr(chunk: Buffer): void {
+    const handler = this.options.handlers.onStderrLine;
+    if (!handler) return;
+    const lines = (this.#stderrPending + chunk.toString('utf8')).split('\n');
+    this.#stderrPending = lines.pop() ?? '';
+    if (this.#stderrPending.length > 32 * 1024) this.#stderrPending = '';
+    for (const line of lines) {
+      if (line.length > 32 * 1024) continue;
+      try {
+        handler(line);
+      } catch (error) {
+        this.logger.error(`stderr line handler threw: ${describeError(error)}`);
+      }
+    }
+  }
+
   #onLine(line: string): void {
     let raw: unknown;
     try {
       raw = JSON.parse(line);
     } catch {
+      if (this.options.handlers.onTextLine) {
+        try {
+          this.options.handlers.onTextLine(line);
+        } catch (error) {
+          this.logger.error(`text line handler threw: ${describeError(error)}`);
+        }
+        return;
+      }
       this.#warn(`the agent emitted a line that is not JSON (${line.length} chars)`);
       return;
     }

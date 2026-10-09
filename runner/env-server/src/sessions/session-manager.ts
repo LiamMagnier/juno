@@ -20,6 +20,7 @@ import type {
   ProviderInstance,
   QueuedInput,
   RuntimeMode,
+  ScheduledResume,
   SessionSummary,
   SessionUsage,
   TurnItem,
@@ -31,7 +32,7 @@ import type {
 import { SessionLog, type SessionMeta } from "../protocol/session-log.js";
 import type { ProviderRegistry } from "../providers/registry.js";
 import type { ApprovalAnswer, McpEndpoint, ProviderSession, TurnResult, TurnSink } from "../providers/types.js";
-import { GitCheckpoints } from "../git/checkpoints.js";
+import { GitCheckpoints, PatchError, normalizeRepoPath } from "../git/checkpoints.js";
 import { createWorktree, runWorktreeSetup } from "../git/worktrees.js";
 import { AlevrMcpServer, MCP_SERVER_NAME } from "../mcp/alevr-mcp.js";
 import { deferred, describeError, newId, nowIso, type Deferred, type Logger } from "../util.js";
@@ -67,6 +68,8 @@ interface LiveSession {
   pending: Map<string, PendingRequest>;
   known: Set<string>;
   mcpToken?: string;
+  /** Bumped by close(): a runtime that finishes starting after a close is stopped, not adopted. */
+  generation?: number;
   /** Resolves each time a turn ends (subagent waiters). */
   idleWaiters: (() => void)[];
 }
@@ -96,6 +99,8 @@ export class SessionManager {
   #turnEnded = new Set<(sessionId: string, outcome: TurnOutcome) => void>();
   /** Listeners for "a session was closed" (per-session tool state, e.g. computer use). */
   #closed = new Set<(sessionId: string) => void | Promise<void>>();
+  /** Armed resume-at-reset timers, by session. */
+  #scheduleTimers = new Map<string, { id: string; timer: NodeJS.Timeout }>();
 
   constructor(options: SessionManagerOptions) {
     this.#o = options;
@@ -245,6 +250,8 @@ export class SessionManager {
       ...(params.routing ? { routing: params.routing } : {}),
       ...(log.meta.title ? {} : { title: titleFrom(params.input.text) }),
     });
+    // Any new turn supersedes a resume-at-reset waiting for this session.
+    if (log.snapshot.scheduledResume) this.#clearSchedule(live);
     const turnId = newId("t");
     const ordinal = log.meta.turnCount + 1;
     this.#addItem(live, { id: newId("u"), kind: "user_message", turnId, createdAt: nowIso(), text: params.input.text, ...(params.input.attachments?.length ? { attachments: params.input.attachments } : {}), delivery: "send" });
@@ -333,8 +340,17 @@ export class SessionManager {
     if (ordinal === undefined) throw new WireError("not_found", "No such checkpoint.");
     const cwd = live.log.meta.cwd;
     let restoredFiles = 0;
+    let skipped: string[] = [];
     try {
-      restoredFiles = (await this.checkpoints.rollback(cwd, live.log.id, ordinal)).restoredFiles;
+      // Scoped to this session: only files its own turns changed after the checkpoint, inside its
+      // folder. Another session's (or the user's) edits in the same repository are never reverted.
+      const result = await this.checkpoints.rollback(cwd, live.log.id, ordinal, {
+        subtree: cwd,
+        latestTurn: live.log.meta.turnCount,
+        paths: await this.#touchedPaths(live, item),
+      });
+      restoredFiles = result.restoredFiles;
+      skipped = result.skipped;
     } catch (error) {
       throw new WireError("unsupported", `Files could not be restored: ${describeError(error)}`);
     }
@@ -343,10 +359,182 @@ export class SessionManager {
     this.#notice(
       live.log.id,
       "info",
-      `Restored ${restoredFiles} file${restoredFiles === 1 ? "" : "s"} to ${ordinal === 0 ? "before the first turn" : `the end of turn ${ordinal}`}.${rewound || !live.provider ? "" : " The agent still remembers the later turns."}`,
+      `Restored ${restoredFiles} file${restoredFiles === 1 ? "" : "s"} to ${ordinal === 0 ? "before the first turn" : `the end of turn ${ordinal}`}.${rewound || !live.provider ? "" : " The agent still remembers the later turns."}${
+        skipped.length ? ` Left ${skipped.length} file${skipped.length === 1 ? "" : "s"} alone that changed after this thread's last turn: ${skipped.slice(0, 5).join(", ")}${skipped.length > 5 ? "…" : ""}.` : ""
+      }`,
       "rollback",
     );
     return { restoredFiles };
+  }
+
+  /** Repository-relative paths of the file_change items after a checkpoint (all of them for cp_0). */
+  async #touchedPaths(live: LiveSession, checkpoint: CheckpointItem | undefined): Promise<string[]> {
+    const cwd = live.log.meta.cwd;
+    const root = await this.checkpoints.repoRoot(cwd);
+    if (!root) return [];
+    const items = live.log.snapshot.items;
+    const start = checkpoint ? items.indexOf(checkpoint) + 1 : 0;
+    const out = new Set<string>();
+    for (const item of items.slice(Math.max(0, start))) {
+      if (item.kind !== "file_change") continue;
+      for (const change of item.changes) {
+        for (const file of [change.path, change.previousPath]) {
+          if (!file) continue;
+          const abs = path.isAbsolute(file) ? file : path.join(cwd, file);
+          const rel = normalizeRepoPath(path.relative(root, abs).split(path.sep).join("/"));
+          if (rel) out.add(rel);
+        }
+      }
+    }
+    return [...out];
+  }
+
+  /**
+   * Applies a patch (or its reverse: a rejected hunk) in the session's own folder, all or nothing.
+   * Refused while a turn runs, so it never races the agent's own edits.
+   */
+  async applyPatch(params: ClientCommandParams["checkpoint.applyPatch"]): Promise<ClientCommandResults["checkpoint.applyPatch"]> {
+    const live = this.#get(params.sessionId);
+    if (typeof params.patch !== "string" || !params.patch.trim()) throw new WireError("bad_request", "patch is required.");
+    if (live.active && !params.checkOnly) throw new WireError("conflict", "Stop the running turn before changing its files.");
+    let result: ClientCommandResults["checkpoint.applyPatch"];
+    try {
+      result = await this.checkpoints.applyPatch(live.log.meta.cwd, params.patch, { reverse: params.reverse === true, checkOnly: params.checkOnly === true });
+    } catch (error) {
+      if (error instanceof PatchError) throw new WireError(error.code, error.message);
+      throw new WireError("internal", describeError(error));
+    }
+    if (result.applied) {
+      const n = result.files.length;
+      this.#notice(live.log.id, "info", `${params.reverse ? "Reverted" : "Applied"} a change to ${n === 1 ? result.files[0] : `${n} files`}.`, "patch_applied");
+    }
+    return result;
+  }
+
+  // ── Resume at reset ────────────────────────────────────────────────────
+
+  /** Schedules a turn for when the usage window resets (default: the session's resumeAt). Replaces an earlier one. */
+  schedule(params: ClientCommandParams["turn.schedule"]): ClientCommandResults["turn.schedule"] {
+    const live = this.#get(params.sessionId);
+    const when = params.at ?? live.log.snapshot.resumeAt ?? this.#limitResumeAt(live);
+    if (!when) throw new WireError("bad_request", "No reset time is known for this session; pass `at`.");
+    const at = Date.parse(when);
+    if (!Number.isFinite(at)) throw new WireError("bad_request", "`at` must be an ISO-8601 time.");
+    if (at - Date.now() > MAX_SCHEDULE_AHEAD_MS) throw new WireError("bad_request", "A resume can be scheduled at most 8 days ahead.");
+    if (params.input !== undefined && (typeof params.input !== "object" || typeof params.input.text !== "string")) {
+      throw new WireError("bad_request", "input must be {text}.");
+    }
+    this.#clearTimer(live.log.id);
+    const schedule: ScheduledResume = { id: newId("rs"), at: new Date(at).toISOString(), createdAt: nowIso(), ...(params.input ? { input: params.input } : {}) };
+    live.log.emit({ type: "session.scheduled", scheduledResume: schedule });
+    this.#writeScheduleIndex();
+    this.#arm(live.log.id, schedule);
+    return { schedule };
+  }
+
+  unschedule(params: ClientCommandParams["turn.unschedule"]): ClientCommandResults["turn.unschedule"] {
+    const live = this.#get(params.sessionId);
+    const current = live.log.snapshot.scheduledResume;
+    if (!current || (params.scheduleId && params.scheduleId !== current.id)) return { cancelled: false };
+    this.#clearSchedule(live);
+    return { cancelled: true };
+  }
+
+  /** Re-arms schedules saved before a restart (called once at startup). A schedule already due fires now. */
+  restoreSchedules(): number {
+    let armed = 0;
+    for (const [sessionId, id] of Object.entries(this.#readScheduleIndex())) {
+      let live: LiveSession;
+      try {
+        live = this.#get(sessionId);
+      } catch {
+        continue;
+      }
+      const schedule = live.log.snapshot.scheduledResume;
+      if (!schedule || schedule.id !== id) continue;
+      this.#arm(sessionId, schedule);
+      armed++;
+    }
+    this.#writeScheduleIndex();
+    return armed;
+  }
+
+  #limitResumeAt(live: LiveSession): string | undefined {
+    const items = live.log.snapshot.items;
+    for (let i = items.length - 1; i >= 0; i--) {
+      const item = items[i];
+      if (item.kind === "interrupt" && item.reason === "limit") return item.resumeAt;
+      if (item.kind === "user_message") return undefined;
+    }
+    return undefined;
+  }
+
+  #arm(sessionId: string, schedule: ScheduledResume): void {
+    this.#clearTimer(sessionId);
+    const delay = Math.max(0, Math.min(Date.parse(schedule.at) - Date.now(), MAX_SCHEDULE_AHEAD_MS));
+    const timer = setTimeout(() => this.#fire(sessionId, schedule.id), delay);
+    timer.unref?.();
+    this.#scheduleTimers.set(sessionId, { id: schedule.id, timer });
+  }
+
+  #fire(sessionId: string, id: string): void {
+    this.#scheduleTimers.delete(sessionId);
+    let live: LiveSession;
+    try {
+      live = this.#get(sessionId);
+    } catch {
+      return;
+    }
+    const schedule = live.log.snapshot.scheduledResume;
+    if (!schedule || schedule.id !== id) return;
+    this.#clearSchedule(live);
+    this.#notice(sessionId, "info", "The usage window reset, so the paused turn is starting again.", "resume_at_reset");
+    // Through the queue: if a turn is somehow running it waits its turn, and a still-limited
+    // provider leaves the message queued with a notice instead of losing it.
+    this.queue({ sessionId, input: schedule.input ?? { text: RESUME_TEXT } });
+  }
+
+  #clearSchedule(live: LiveSession): void {
+    this.#clearTimer(live.log.id);
+    if (live.log.snapshot.scheduledResume) live.log.emit({ type: "session.scheduled" });
+    this.#writeScheduleIndex();
+  }
+
+  #clearTimer(sessionId: string): void {
+    const armed = this.#scheduleTimers.get(sessionId);
+    if (armed) clearTimeout(armed.timer);
+    this.#scheduleTimers.delete(sessionId);
+  }
+
+  get #scheduleFile(): string {
+    return path.join(this.#o.dataDir, "schedules.json");
+  }
+
+  #readScheduleIndex(): Record<string, string> {
+    try {
+      const raw = JSON.parse(fs.readFileSync(this.#scheduleFile, "utf8")) as unknown;
+      if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+      return Object.fromEntries(Object.entries(raw).filter((e): e is [string, string] => typeof e[1] === "string" && /^[A-Za-z0-9_.-]{1,128}$/.test(e[0])));
+    } catch {
+      return {};
+    }
+  }
+
+  /** sessionId → schedule id for every live session with a schedule, merged with sessions not loaded yet. */
+  #writeScheduleIndex(): void {
+    const index = this.#readScheduleIndex();
+    for (const [id, live] of this.#live) {
+      const schedule = live.log.snapshot.scheduledResume;
+      if (schedule) index[id] = schedule.id;
+      else delete index[id];
+    }
+    const tmp = `${this.#scheduleFile}.${process.pid}.tmp`;
+    try {
+      fs.writeFileSync(tmp, JSON.stringify(index), { mode: 0o600 });
+      fs.renameSync(tmp, this.#scheduleFile);
+    } catch (error) {
+      this.#o.logger.warn(`schedules: ${describeError(error)}`);
+    }
   }
 
   async diff(params: ClientCommandParams["checkpoint.diff"]): Promise<ClientCommandResults["checkpoint.diff"]> {
@@ -384,6 +572,7 @@ export class SessionManager {
   async close(sessionId: string): Promise<void> {
     const live = this.#live.get(sessionId);
     if (!live) return;
+    live.generation = (live.generation ?? 0) + 1;
     if (live.active) await this.interrupt({ sessionId });
     await live.provider?.close().catch(() => undefined);
     live.provider = undefined;
@@ -393,7 +582,15 @@ export class SessionManager {
     await Promise.all([...this.#closed].map((l) => Promise.resolve(l(sessionId)).catch(() => undefined)));
   }
 
+  /** Stops every session running on one provider instance (sign-in replaced or signed out). The logs stay. */
+  async closeProviderSessions(instanceId: string): Promise<number> {
+    const ids = [...this.#live.entries()].filter(([, live]) => live.providerInstanceId === instanceId).map(([id]) => id);
+    await Promise.all(ids.map((id) => this.close(id)));
+    return ids.length;
+  }
+
   async shutdown(): Promise<void> {
+    for (const id of [...this.#scheduleTimers.keys()]) this.#clearTimer(id);
     await Promise.all([...this.#live.keys()].map((id) => this.close(id)));
     for (const live of this.#live.values()) live.log.close();
   }
@@ -425,12 +622,15 @@ export class SessionManager {
   ): Promise<TurnOutcome> {
     const log = live.log;
     const cwd = log.meta.cwd;
+    const generation = live.generation ?? 0;
     let result: TurnResult;
     try {
       if (ordinal === 1 || !(await this.checkpoints.resolve(cwd, log.id, ordinal - 1).catch(() => undefined))) {
         await this.checkpoints.create(cwd, log.id, ordinal - 1).catch((e) => this.#o.logger.debug(`baseline checkpoint: ${describeError(e)}`));
       }
-      const provider = await this.#ensureProvider(live, instance, params.selection);
+      // Stopped (or the session closed) while the baseline checkpoint was written: start nothing.
+      if (abort.signal.aborted || (live.generation ?? 0) !== generation) throw new TurnStoppedEarly();
+      const provider = await this.#ensureProvider(live, instance, params.selection, generation);
       const sink = this.#sink(live, instance.id, turnId);
       // Interrupted while the runtime was starting: nothing was sent yet.
       if (abort.signal.aborted) throw new TurnStoppedEarly();
@@ -530,7 +730,7 @@ export class SessionManager {
     }
   }
 
-  async #ensureProvider(live: LiveSession, instance: ProviderInstance, selection: ModelSelection): Promise<ProviderSession> {
+  async #ensureProvider(live: LiveSession, instance: ProviderInstance, selection: ModelSelection, generation = live.generation ?? 0): Promise<ProviderSession> {
     if (live.provider && live.providerInstanceId === instance.id) return live.provider;
     if (live.provider) {
       await live.provider.close().catch(() => undefined);
@@ -545,7 +745,7 @@ export class SessionManager {
       live.mcpToken ??= this.#o.mcp.issueToken({ sessionId: live.log.id, depth: meta.parentSessionId ? 1 : 0 });
       mcp = { name: MCP_SERVER_NAME, url: `${this.#o.baseUrl()}/mcp`, authorization: `Bearer ${live.mcpToken}` };
     }
-    live.provider = await adapter.openSession(instance, {
+    const opened = await adapter.openSession(instance, {
       sessionId: live.log.id,
       cwd: meta.cwd,
       selection,
@@ -553,6 +753,11 @@ export class SessionManager {
       ...(mcp ? { mcp } : {}),
       logger: this.#o.logger,
     });
+    if ((live.generation ?? 0) !== generation) {
+      await opened.close().catch(() => undefined);
+      throw new TurnStoppedEarly();
+    }
+    live.provider = opened;
     live.providerInstanceId = instance.id;
     return live.provider;
   }
@@ -665,6 +870,9 @@ export class SessionManager {
     this.#o.registry.update(instanceId, { limits: [...byId.values()] });
   }
 }
+
+const MAX_SCHEDULE_AHEAD_MS = 8 * 24 * 60 * 60 * 1000;
+const RESUME_TEXT = "Your usage window has reset. Continue where you stopped.";
 
 function titleFrom(text: string): string {
   const line = text.trim().split("\n")[0] ?? "";

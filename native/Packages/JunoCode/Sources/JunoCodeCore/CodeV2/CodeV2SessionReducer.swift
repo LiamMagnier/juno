@@ -104,6 +104,8 @@ public enum CodeV2SessionReducer {
             state.snapshot.queue = queue
         case let .usageUpdated(usage):
             state.snapshot.usage = usage
+        case let .sessionScheduled(schedule):
+            state.snapshot.scheduledResume = schedule
         case .providerUpdated, .terminalOutput, .terminalExited, .unknown:
             break
         }

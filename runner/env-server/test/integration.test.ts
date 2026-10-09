@@ -121,11 +121,12 @@ test("codex: approval, file change, checkpoint and per-turn diff", async () => {
   fs.writeFileSync(path.join(repo, "README.md"), "hello again\n");
   const whole = await client.command<{ files: { path: string }[] }>("checkpoint.diff", { sessionId: sid });
   assert.deepEqual(whole.files.map((f) => f.path).sort(), ["README.md", "notes.md"]);
-  // Rolling back to before the first turn restores both.
+  // Rolling back to before the first turn undoes what this session's turns did (notes.md) and
+  // leaves README.md alone: that edit came after the session's last turn, from someone else.
   const { restoredFiles } = await client.command<{ restoredFiles: number }>("checkpoint.rollback", { sessionId: sid, checkpointId: "cp_0" });
-  assert.equal(restoredFiles, 2);
+  assert.equal(restoredFiles, 1);
   assert.equal(fs.existsSync(path.join(repo, "notes.md")), false);
-  assert.equal(fs.readFileSync(path.join(repo, "README.md"), "utf8"), "hello\n");
+  assert.equal(fs.readFileSync(path.join(repo, "README.md"), "utf8"), "hello again\n");
   // The next turn takes ordinal 1 again; the old turn-1 checkpoint is superseded, not silently reused.
   const again = await client.command<{ turnId: string }>("turn.start", { sessionId: sid, input: { text: "write other.md" }, selection: { instanceId: "codex:default", model: "gpt-6.1-codex" }, ...ask });
   await client.turnCompleted(sid, again.turnId);
@@ -301,13 +302,17 @@ test("acp: the Alevr MCP server reaches agents (stdio bridge when http MCP is no
   assert.match(lastAssistant(client, sid)?.text ?? "", /"name":"alevr"/);
 });
 
-test("acp: legal-hold preset stays off until enabled", async () => {
+test("acp: Antigravity without its runtime and harness is not installed and refuses turns", async () => {
   const { client, bin } = await boot();
+  // A bare executable on PATH is not enough: Google's runtime needs localharness_external next to it.
   fs.writeFileSync(path.join(bin, "antigravity-acp"), `#!/bin/sh\nexec "${process.execPath}" "${path.join(path.dirname(new URL(import.meta.url).pathname), "fixtures", "fake-acp.mjs")}" "$@"\n`, { mode: 0o755 });
+  const { instance } = await client.command<{ instance: { status: string; install?: { phase: string } } }>("provider.probe", { instanceId: "acp:antigravity" });
+  assert.equal(instance.status, "not-installed");
+  assert.ok(instance.install);
   const sid = await openSession(client, tempDir("cwd"), { instanceId: "acp:antigravity", model: "default" });
   await assert.rejects(
     client.command("turn.start", { sessionId: sid, input: { text: "hi" }, selection: { instanceId: "acp:antigravity", model: "default" }, ...ask }),
-    (e: Error & { code?: string }) => e.code === "not_ready" || e.code === "not_found",
+    (e: Error & { code?: string }) => e.code === "not_ready",
   );
 });
 

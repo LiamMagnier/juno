@@ -149,6 +149,49 @@ export interface ProviderInstance {
   models?: ProviderModel[];
   /** ISO-8601 time of the last probe. */
   checkedAt?: string;
+  // runtime lane (additive): runtimes Alevr installs and signs in itself (Antigravity).
+  /** A managed runtime download (provider.install); absent for CLIs the user installs. */
+  install?: ProviderInstallState;
+  /** A sign-in that runs inside the env server (provider.auth); absent for terminal logins. */
+  auth?: ProviderAuthState;
+}
+
+export const PROVIDER_INSTALL_PHASE_VALUES = ["idle", "downloading", "extracting", "verifying", "succeeded", "failed", "cancelled"] as const;
+export type ProviderInstallPhase = (typeof PROVIDER_INSTALL_PHASE_VALUES)[number];
+
+/** Progress of a managed runtime install: the vendor's own release, pinned by size and SHA-256. */
+export interface ProviderInstallState {
+  phase: ProviderInstallPhase;
+  /** Id of the running install; provider.install cancel names it. */
+  operationId?: string;
+  downloadedBytes?: number;
+  totalBytes?: number;
+  /** The release this build installs. */
+  version?: string;
+  /** The release on disk now, if any. */
+  installedVersion?: string;
+  message?: string;
+}
+
+export const PROVIDER_AUTH_PHASE_VALUES = ["idle", "starting", "waiting", "verifying", "succeeded", "failed", "cancelled"] as const;
+export type ProviderAuthPhase = (typeof PROVIDER_AUTH_PHASE_VALUES)[number];
+
+/**
+ * A browser sign-in the vendor runtime runs on 127.0.0.1. `waiting` carries
+ * the vendor's own authorization URL; a browser on this Mac finishes on its
+ * own, another device pastes the redirect URL back with provider.auth
+ * complete. Never holds a code or a token.
+ */
+export interface ProviderAuthState {
+  phase: ProviderAuthPhase;
+  flowId?: string;
+  /** The vendor's sign-in page (accounts.google.com), shown while `waiting`. */
+  authorizationUrl?: string;
+  /** ISO-8601; the flow is abandoned after this. */
+  expiresAt?: string;
+  message?: string;
+  /** How the instance signs in ("Google account"). */
+  method?: string;
 }
 
 // ── Bring your own key (SPEC §2 BYOK) ──────────────────────────────────────
@@ -689,6 +732,7 @@ export const DESKTOP_LOCK_STALE_MS = 15_000;
 // and only falls back to a snapshot when it no longer holds them. Clients
 // apply an event iff sequence === cursor + 1 (see classifyEvent); ≤ cursor is
 // a duplicate, > cursor + 1 is a gap → re-open with afterSequence = cursor.
+// A snapshot older than the cursor is a duplicate too: never roll a thread back.
 // Text deltas are coalesced server-side into ≤ 50 ms batches.
 
 export const SESSION_STATE_VALUES = ["idle", "running", "waiting", "limited", "error"] as const;
@@ -735,6 +779,20 @@ export interface SessionSnapshot {
   usage?: SessionUsage;
   /** Set when the session runs in its own git worktree (SPEC §3.9). */
   worktree?: WorktreeInfo;
+  // runtime lane (additive): resume at reset.
+  /** A turn scheduled for when a usage window resets (turn.schedule). */
+  scheduledResume?: ScheduledResume;
+}
+
+/** A turn the env server starts by itself at `at` (a subscription window reset), until cancelled. */
+export interface ScheduledResume {
+  id: string;
+  /** ISO-8601. */
+  at: string;
+  /** ISO-8601. */
+  createdAt: string;
+  /** What is sent when it fires; absent means "continue where the limit stopped you". */
+  input?: UserInput;
 }
 
 export interface WorktreeInfo {
@@ -765,6 +823,12 @@ export const CLIENT_COMMAND_TYPE_VALUES = [
   "session.list",
   "session.close",
   "env.configure",
+  // runtime lane (additive): hunk reject/apply, resume at reset, managed runtimes.
+  "checkpoint.applyPatch",
+  "turn.schedule",
+  "turn.unschedule",
+  "provider.install",
+  "provider.auth",
 ] as const;
 export type ClientCommandType = (typeof CLIENT_COMMAND_TYPE_VALUES)[number];
 
@@ -811,7 +875,27 @@ export interface ClientCommandParams {
    * Held in memory by the env server, never written to disk or logged.
    */
   "env.configure": { backend?: EnvBackendConfig; byok?: ByokKey[] };
+  /**
+   * Applies a unified diff (paths relative to the repository root) to the
+   * session's working tree, or its reverse (`reverse: true`, a rejected hunk).
+   * Every path must lie inside the session's folder; nothing is written unless
+   * the whole patch applies. `checkOnly` reports without writing.
+   */
+  "checkpoint.applyPatch": { sessionId: string; patch: string; reverse?: boolean; checkOnly?: boolean };
+  /** Starts `input` (default: a "continue" message) at `at` (default: the session's resumeAt). Replaces an earlier schedule. */
+  "turn.schedule": { sessionId: string; at?: string; input?: UserInput };
+  "turn.unschedule": { sessionId: string; scheduleId?: string };
+  /** Downloads and verifies the vendor's own runtime (instances with `install`), cancels it, or removes it. */
+  "provider.install": { instanceId: string; action: ProviderInstallAction; operationId?: string };
+  /** Starts, completes (pasted redirect URL), cancels a sign-in, or signs the instance out. */
+  "provider.auth": { instanceId: string; action: ProviderAuthAction; flowId?: string; callbackUrl?: string };
 }
+
+export const PROVIDER_INSTALL_ACTION_VALUES = ["start", "cancel", "remove"] as const;
+export type ProviderInstallAction = (typeof PROVIDER_INSTALL_ACTION_VALUES)[number];
+
+export const PROVIDER_AUTH_ACTION_VALUES = ["start", "complete", "cancel", "logout"] as const;
+export type ProviderAuthAction = (typeof PROVIDER_AUTH_ACTION_VALUES)[number];
 
 export interface EnvBackendModel {
   /** Backend provider id, the path segment under /api/agent ("anthropic", "openai"). */
@@ -892,6 +976,12 @@ export interface ClientCommandResults {
   "session.list": { sessions: SessionSummary[] };
   "session.close": Record<string, never>;
   "env.configure": Record<string, never>;
+  /** `files`: repository-relative paths the patch touches. `applied` is false for checkOnly. */
+  "checkpoint.applyPatch": { applied: boolean; files: string[] };
+  "turn.schedule": { schedule: ScheduledResume };
+  "turn.unschedule": { cancelled: boolean };
+  "provider.install": { install: ProviderInstallState };
+  "provider.auth": { auth: ProviderAuthState };
 }
 
 export const WIRE_ERROR_CODE_VALUES = [
@@ -922,6 +1012,8 @@ export const SERVER_EVENT_TYPE_VALUES = [
   "provider.updated",
   "terminal.output",
   "terminal.exited",
+  // runtime lane (additive): a schedule set or cleared (absent scheduledResume = cleared).
+  "session.scheduled",
 ] as const;
 export type ServerEventType = (typeof SERVER_EVENT_TYPE_VALUES)[number];
 
@@ -943,6 +1035,7 @@ export interface ServerEventPayloads {
   "provider.updated": { instance: ProviderInstance };
   "terminal.output": { terminalId: string; data: string };
   "terminal.exited": { terminalId: string; exitCode?: number };
+  "session.scheduled": { scheduledResume?: ScheduledResume };
 }
 
 export const GLOBAL_EVENT_TYPES: readonly ServerEventType[] = ["provider.updated", "terminal.output", "terminal.exited"];
@@ -970,11 +1063,16 @@ export type EventDisposition = "apply" | "duplicate" | "gap";
 
 /**
  * What a client does with a session-stream envelope given the last sequence
- * it applied (`cursor`; null before any snapshot). A snapshot always applies
- * and resets the cursor to its snapshotSequence.
+ * it applied (`cursor`; null before any snapshot). A snapshot applies and
+ * resets the cursor to its snapshotSequence, unless it is older than the
+ * cursor: a stale snapshot (a relay ring or a slow replay) would roll the
+ * thread back, so it counts as a duplicate.
  */
 export function classifyEvent(cursor: number | null, envelope: Pick<ServerEventEnvelope, "sequence" | "event">): EventDisposition {
-  if (envelope.event.type === "session.snapshot") return "apply";
+  if (envelope.event.type === "session.snapshot") {
+    const at = typeof envelope.event.snapshotSequence === "number" ? envelope.event.snapshotSequence : envelope.sequence;
+    return cursor !== null && at < cursor ? "duplicate" : "apply";
+  }
   if (cursor === null) return "gap";
   if (envelope.sequence <= cursor) return "duplicate";
   if (envelope.sequence === cursor + 1) return "apply";

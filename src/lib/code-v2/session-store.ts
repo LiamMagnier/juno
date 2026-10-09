@@ -17,6 +17,7 @@ import {
   type RuntimeMode,
   type ServerEventEnvelope,
   type SessionSnapshot,
+  type ScheduledResume,
   type SessionState,
   type SessionUsage,
   type TurnItem,
@@ -46,6 +47,8 @@ export interface SessionView {
   needsResync: boolean;
   /** Outcome of the most recent finished turn, for the Limited / error states. */
   lastOutcome?: TurnOutcome;
+  /** A turn the env server will start at a usage window reset (turn.schedule). */
+  scheduledResume?: ScheduledResume;
 }
 
 export function emptySessionView(id: string, selection: ModelSelection, cwd = ""): SessionView {
@@ -87,6 +90,7 @@ export function sessionViewFromSnapshot(snapshot: SessionSnapshot, sequence: num
     items,
     queue: snapshot.queue,
     usage: snapshot.usage,
+    ...(snapshot.scheduledResume ? { scheduledResume: snapshot.scheduledResume } : {}),
     cursor: sequence,
     needsResync: false,
   };
@@ -175,6 +179,9 @@ export function applyEnvelope(view: SessionView, envelope: ServerEventEnvelope):
       break;
     case "usage.updated":
       next = { ...view, usage: event.usage };
+      break;
+    case "session.scheduled":
+      next = { ...view, scheduledResume: event.scheduledResume };
       break;
     default:
       break;

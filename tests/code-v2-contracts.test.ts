@@ -70,11 +70,21 @@ test("snapshot + cursor: fixtures apply in order; duplicates and gaps are detect
     assert.equal(classifyEvent(cursor, e), "apply", `sequence ${e.sequence}`);
     cursor = e.sequence;
   }
-  assert.equal(cursor, 48);
+  assert.equal(cursor, 50);
   const delta = { sequence: 48, event: { type: "item.delta", itemId: "i", field: "text", append: "x" } } as const;
   assert.equal(classifyEvent(48, delta), "duplicate");
   assert.equal(classifyEvent(48, { ...delta, sequence: 50 }), "gap");
   assert.equal(classifyEvent(null, delta), "gap");
+});
+
+test("snapshot + cursor: a snapshot older than the cursor never applies", () => {
+  const snapshot = (n: number) =>
+    ({ sequence: n, event: { type: "session.snapshot", snapshotSequence: n, session: {} as never } }) as const;
+  assert.equal(classifyEvent(null, snapshot(3)), "apply");
+  assert.equal(classifyEvent(10, snapshot(10)), "apply");
+  assert.equal(classifyEvent(10, snapshot(12)), "apply");
+  assert.equal(classifyEvent(10, snapshot(9)), "duplicate");
+  assert.equal(classifyEvent(10, snapshot(0)), "duplicate");
 });
 
 test("model aliases point at models that exist and are current", () => {
