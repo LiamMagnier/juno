@@ -5,11 +5,14 @@ import {
   readAgentOptions,
   runWorkflow,
   validateWorkflowMeta,
+  workflowGuestAvailable,
   type WorkflowChildPort,
   type WorkflowProgress,
 } from '../harness/workflow.js';
 
 const meta = { name: 'demo', description: 'test workflow' };
+// The guest needs `node --permission`; emulated containers refuse it at start-up.
+const guest = workflowGuestAvailable() ? false : 'node --permission cannot start on this host (emulated container)';
 
 function port(
   answer: (prompt: string, opts: { schema?: unknown; seq: number }) => { text: string; structured?: unknown; tokens?: number; ok?: boolean; delayMs?: number },
@@ -41,7 +44,7 @@ function port(
   };
 }
 
-test('workflow runs agent/parallel/pipeline/phase/log and returns JSON', async () => {
+test('workflow runs agent/parallel/pipeline/phase/log and returns JSON', { skip: guest }, async () => {
   const progress: WorkflowProgress[] = [];
   const children = port((prompt) => ({ text: `done:${prompt}` }));
   const result = await runWorkflow({
@@ -68,7 +71,7 @@ test('workflow runs agent/parallel/pipeline/phase/log and returns JSON', async (
   assert.equal(result.budget.tokens, 40);
 });
 
-test('structured agents return the schema value; a failed child is null inside parallel', async () => {
+test('structured agents return the schema value; a failed child is null inside parallel', { skip: guest }, async () => {
   const children = port((prompt) =>
     prompt === 'bad' ? { text: '', ok: false } : { text: '{"n":1}', structured: { n: 1 } },
   );
@@ -83,7 +86,7 @@ test('structured agents return the schema value; a failed child is null inside p
   assert.deepEqual(result.value, [{ n: 1 }, null]);
 });
 
-test('the hard budget stops every child and the script, even inside parallel', async () => {
+test('the hard budget stops every child and the script, even inside parallel', { skip: guest }, async () => {
   const children = port((_prompt, { seq }) => (seq === 1 ? { text: 'first', tokens: 600 } : { text: 'slow', tokens: 600, delayMs: 50 }));
   const result = await runWorkflow({
     meta,
@@ -103,7 +106,7 @@ test('the hard budget stops every child and the script, even inside parallel', a
   assert.ok(result.agentsStarted <= 4);
 });
 
-test('the script cannot reach the filesystem, require, process or the host Function', async () => {
+test('the script cannot reach the filesystem, require, process or the host Function', { skip: guest }, async () => {
   const children = port(() => ({ text: 'x' }));
   const probes = [
     `return typeof require + ',' + typeof process + ',' + typeof fetch;`,
@@ -124,7 +127,7 @@ test('the script cannot reach the filesystem, require, process or the host Funct
   }
 });
 
-test('Stop kills the guest, and an infinite loop hits the sync slice limit', async () => {
+test('Stop kills the guest, and an infinite loop hits the sync slice limit', { skip: guest }, async () => {
   const controller = new AbortController();
   const children = port(() => ({ text: 'slow', delayMs: 5_000 }));
   const pending = runWorkflow({ meta, script: `return await agent('wait');`, budget: new BudgetLedger(), children, signal: controller.signal });

@@ -18,7 +18,7 @@
  * wall-clock limit.
  */
 
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import readline from 'node:readline';
 import type { Usage } from '../types.js';
 import type { EffortLevel } from '../contracts/code-v2.js';
@@ -209,6 +209,21 @@ function permissionFlags(): string[] {
   if (flags.has('--permission')) return ['--permission'];
   if (flags.has('--experimental-permission')) return ['--experimental-permission'];
   return [];
+}
+
+
+let guestProbe: boolean | undefined;
+/**
+ * Whether this host can start the isolated guest at all. Some sandboxes and
+ * emulated containers (linux/amd64 under emulation on Apple silicon) refuse
+ * `node --permission` on start-up, reading /proc paths the permission model
+ * blocks. Callers and tests use this to say so plainly instead of failing late.
+ */
+export function workflowGuestAvailable(nodePath: string = process.execPath): boolean {
+  if (guestProbe !== undefined) return guestProbe;
+  const result = spawnSync(nodePath, [...permissionFlags(), '-e', 'process.stdout.write("ok")'], { env: {}, encoding: 'utf8', timeout: 10_000 });
+  guestProbe = result.status === 0 && result.stdout === 'ok';
+  return guestProbe;
 }
 
 export interface RunWorkflowInput {

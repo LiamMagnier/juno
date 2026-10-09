@@ -1,3 +1,4 @@
+import { workflowGuestAvailable } from '../harness/workflow.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -318,7 +319,7 @@ test('a hard session budget stops every child at the line and refuses new ones',
   assert.match(all, /run budget is exhausted/);
 });
 
-test('the workflow tool fans out through the session and reports the budget', async () => {
+test('the workflow tool fans out through the session and reports the budget', { skip: workflowGuestAvailable() ? false : 'node --permission cannot start on this host (emulated container)' }, async () => {
   const cwd = gitRepo();
   let rootSecond: ProviderRequest | null = null;
   const provider = scriptedProvider(
