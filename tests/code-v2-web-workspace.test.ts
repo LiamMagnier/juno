@@ -235,3 +235,16 @@ test("Connections names subscriptions by the owner's rules and lists Antigravity
   assert.match(offline, /Download for Mac/);
   assert.match(offline, /aria-disabled="true"/);
 });
+
+test("the model chip opens slider-first: the chat's effort panel, the model's name leading to the catalogue; the catalogue on its own keeps context and usage", () => {
+  const f = fixture("model-picker");
+  const effort = renderToStaticMarkup(React.createElement(CodeWorkspace, { model: f.model, ui: { popover: "model" } }));
+  assert.match(effort, /aria-label="Thinking effort"/);
+  assert.match(effort, /aria-label="Reset to the model&#x27;s default"/);
+  assert.doesNotMatch(effort, /aria-label="Search models"/);
+  const catalog = renderToStaticMarkup(React.createElement(CodeWorkspace, { model: f.model, ui: { popover: "catalog" } }));
+  assert.match(catalog, /aria-label="Search models"/);
+  assert.match(catalog, />Context</);
+  assert.doesNotMatch(catalog, /aria-label="Thinking effort"/);
+  assert.doesNotMatch(catalog, /id="picker-effort-lead"/, "effort lives on the panel, not the catalogue footer");
+});

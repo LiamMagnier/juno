@@ -403,9 +403,15 @@ export const STATES: GalleryState[] = [
   },
   {
     id: "model-picker",
-    label: "Model picker",
+    label: "Model picker (effort first)",
     model: base({ items: workedTurn() }),
     ui: { popover: "model" },
+  },
+  {
+    id: "model-catalog",
+    label: "Model picker (catalogue)",
+    model: base({ items: workedTurn() }),
+    ui: { popover: "catalog" },
   },
   {
     id: "tiers",

@@ -38,9 +38,12 @@ public enum JunoEffortPanelMetrics {
     public static let knobInset: CGFloat = (trackHeight - knob) / 2
     /// The panel's height: inset, header, gap, track, inset.
     public static let height: CGFloat = inset + headerHeight + trackGap + trackHeight + inset
-    /// The Pro row under the track: a hairline, the gap, then the name over
-    /// its one line of explanation beside a switch (the web's `mt-3 pt-3`).
-    public static let proRowHeight: CGFloat = trackGap * 2 + 36
+    /// The Pro row's content: the name over its two-line explanation, beside
+    /// a switch.
+    public static let proRowContentHeight: CGFloat = 50
+    /// The Pro row under the track: the gap, a hairline, the gap, then the
+    /// content (the web's `mt-3 border-t pt-3`).
+    public static let proRowHeight: CGFloat = trackGap + 1 + trackGap + proRowContentHeight
     /// The panel's height with or without the Pro row, for callers that
     /// state the popover's frame.
     public static func height(showsPro: Bool) -> CGFloat {
@@ -357,8 +360,8 @@ private struct JunoEffortProRow: View {
                     Text(JunoProMode.help)
                         .junoType(.caption)
                         .foregroundStyle(Color.junoSecondaryInk)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.9)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 Toggle(JunoProMode.title, isOn: $isOn)
@@ -370,7 +373,7 @@ private struct JunoEffortProRow: View {
                     .accessibilityHint(JunoProMode.help)
                     .accessibilityIdentifier("juno.effort-panel.pro")
             }
-            .frame(height: 36 - 1)
+            .frame(height: JunoEffortPanelMetrics.proRowContentHeight)
         }
     }
 }
