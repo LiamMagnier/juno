@@ -97,6 +97,10 @@ public enum CodeV2Fixtures {
     )
 
     public static let opencode = CodeV2KnownSubscription.opencode.placeholder(envServerRunning: false)
+    public static let antigravity = CodeV2.ProviderInstance(
+        id: CodeV2KnownSubscription.antigravity.instanceId, kind: .acp, label: "Antigravity",
+        acpCommand: ["antigravity-acp"], status: .signedOut, version: "1.4.2"
+    )
 
     public static let anthropicKey = CodeV2.ProviderInstance(
         id: "byok:anthropic", kind: .byok, label: "Anthropic key", status: .ready,

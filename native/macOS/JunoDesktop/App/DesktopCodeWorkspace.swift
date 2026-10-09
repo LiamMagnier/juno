@@ -119,7 +119,8 @@ struct DesktopCodeWorkspace: View {
         CodeV2ProviderDirectory.build(
             alevr: CodeV2AlevrCatalog.instance(from: workbenchModel.availableModels),
             envInstances: envHub.instances,
-            byokKeys: v2Keys.providers
+            byokKeys: v2Keys.providers,
+            antigravityEnabled: true
         )
     }
 

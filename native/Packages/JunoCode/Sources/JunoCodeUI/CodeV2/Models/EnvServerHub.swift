@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import JunoCodeCore
 import JunoCodeLocal
@@ -28,6 +29,12 @@ public final class EnvServerHub {
     /// Instance ids whose setup terminal is opening.
     public private(set) var openingSetup: Set<String> = []
     public private(set) var lastError: String?
+    /// Runtimes Alevr installs and signs in itself (Antigravity): download
+    /// and sign-in progress per instance id.
+    public private(set) var runtimeSetup: [String: CodeV2RuntimeSetup] = [:]
+    /// Opens the vendor's sign-in page (the browser on this Mac).
+    @ObservationIgnored public var openURL: @MainActor (URL) -> Void = { NSWorkspace.shared.open($0) }
+    @ObservationIgnored private var setupTask: Task<Void, Never>?
 
     @ObservationIgnored private let sidecar: EnvServerSidecar
     @ObservationIgnored private let makeTransport: @Sendable (EnvServerLaunch) -> any EnvServerTransport
@@ -127,6 +134,13 @@ public final class EnvServerHub {
     private func adopt(_ connection: EnvServerConnection) {
         self.connection = connection
         phase = .ready
+        setupTask?.cancel()
+        setupTask = Task { [weak self] in
+            let updates = await connection.runtimeSetupUpdates()
+            for await update in updates {
+                self?.apply(update)
+            }
+        }
         eventTask?.cancel()
         eventTask = Task { [weak self] in
             await connection.start()
@@ -234,6 +248,111 @@ public final class EnvServerHub {
         }
     }
 
+    // MARK: Managed runtimes (Antigravity)
+
+    /// Whether Alevr installs and signs in this instance itself rather than
+    /// handing the user a terminal command.
+    public func managesRuntime(_ instanceId: String) -> Bool {
+        runtimeSetup[instanceId] != nil
+            || CodeV2KnownSubscription.allCases.first { $0.instanceId == instanceId }?.managedRuntime == true
+    }
+
+    func apply(_ update: EnvRuntimeSetup.Update) {
+        var state = runtimeSetup[update.instanceId] ?? CodeV2RuntimeSetup()
+        if let install = update.install { state.install = install }
+        if let auth = update.auth { state.auth = auth }
+        runtimeSetup[update.instanceId] = state
+    }
+
+    private func setup(_ instanceId: String, _ change: (inout CodeV2RuntimeSetup) -> Void) {
+        var state = runtimeSetup[instanceId] ?? CodeV2RuntimeSetup()
+        change(&state)
+        runtimeSetup[instanceId] = state
+    }
+
+    /// Downloads the vendor's own runtime and checks it (size and SHA-256).
+    public func installRuntime(_ instanceId: String) async {
+        await runtimeCommand(instanceId) { connection in
+            let install = try await connection.providerInstall(instanceId, action: .start)
+            self.setup(instanceId) { $0.install = install }
+            if install.phase == .succeeded { await self.probe(instanceId) }
+        }
+    }
+
+    public func cancelInstall(_ instanceId: String) async {
+        let operation = runtimeSetup[instanceId]?.install?.operationId
+        await runtimeCommand(instanceId) { connection in
+            let install = try await connection.providerInstall(instanceId, action: .cancel, operationId: operation)
+            self.setup(instanceId) { $0.install = install }
+        }
+    }
+
+    /// Starts the browser sign-in and opens the vendor's page. A browser on
+    /// this Mac finishes on its own (the runtime listens on 127.0.0.1); the
+    /// redirect address can be pasted back when it does not.
+    public func signIn(_ instanceId: String) async {
+        await runtimeCommand(instanceId) { connection in
+            let auth = try await connection.providerAuth(instanceId, action: .start)
+            self.setup(instanceId) { $0.auth = auth }
+            self.openSignInPage(instanceId)
+            if auth.phase == .succeeded { await self.probe(instanceId) }
+        }
+    }
+
+    /// Opens the sign-in page again (the user closed the tab).
+    public func openSignInPage(_ instanceId: String) {
+        guard let url = EnvRuntimeSetup.isOpenableAuthorizationURL(runtimeSetup[instanceId]?.auth?.authorizationUrl) else { return }
+        openURL(url)
+    }
+
+    /// The paste fallback: the address the browser landed on after signing in.
+    @discardableResult
+    public func completeSignIn(_ instanceId: String, redirect: String) async -> Bool {
+        let pasted = redirect.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard EnvRuntimeSetup.isLoopbackRedirect(pasted) else {
+            setup(instanceId) { $0.pasteError = "Paste the whole address from the browser's address bar. It starts with http://127.0.0.1 or http://localhost." }
+            return false
+        }
+        let flow = runtimeSetup[instanceId]?.auth?.flowId
+        var done = false
+        await runtimeCommand(instanceId) { connection in
+            let auth = try await connection.providerAuth(instanceId, action: .complete, flowId: flow, callbackUrl: pasted)
+            self.setup(instanceId) {
+                $0.auth = auth
+                $0.pasteError = nil
+            }
+            done = auth.phase == .succeeded || auth.phase == .verifying
+            if auth.phase == .succeeded { await self.probe(instanceId) }
+        }
+        return done
+    }
+
+    public func cancelSignIn(_ instanceId: String) async {
+        let flow = runtimeSetup[instanceId]?.auth?.flowId
+        await runtimeCommand(instanceId) { connection in
+            let auth = try await connection.providerAuth(instanceId, action: .cancel, flowId: flow)
+            self.setup(instanceId) { $0.auth = auth }
+        }
+    }
+
+    public func signOut(_ instanceId: String) async {
+        await runtimeCommand(instanceId) { connection in
+            let auth = try await connection.providerAuth(instanceId, action: .logout)
+            self.setup(instanceId) { $0.auth = auth }
+            await self.probe(instanceId)
+        }
+    }
+
+    private func runtimeCommand(_ instanceId: String, _ body: (EnvServerConnection) async throws -> Void) async {
+        do {
+            let connection = try await ready()
+            try await body(connection)
+            lastError = nil
+        } catch {
+            lastError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
     // MARK: Sessions
 
     /// The session model for an env-server session, created on first use.
@@ -290,5 +409,19 @@ public final class EnvServerHub {
 
     private struct WeakTerminal {
         weak var value: CodeV2EnvTerminal?
+    }
+}
+
+/// A managed runtime's state on this Mac: its install and its sign-in.
+public struct CodeV2RuntimeSetup: Equatable, Sendable {
+    public var install: EnvRuntimeSetup.InstallState?
+    public var auth: EnvRuntimeSetup.AuthState?
+    /// Why a pasted redirect was not sent.
+    public var pasteError: String?
+
+    public init(install: EnvRuntimeSetup.InstallState? = nil, auth: EnvRuntimeSetup.AuthState? = nil, pasteError: String? = nil) {
+        self.install = install
+        self.auth = auth
+        self.pasteError = pasteError
     }
 }

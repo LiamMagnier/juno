@@ -14,12 +14,12 @@ public struct CodeV2ConnectionsView: View {
     let hub: EnvServerHub
     let keys: CodeV2KeysModel
     var alevrPlanLine: String?
-    var antigravityEnabled = false
+    var antigravityEnabled = true
 
     @State private var addingKey: CodeV2.ByokProvider?
     @State private var keyDraft = ""
 
-    public init(hub: EnvServerHub, keys: CodeV2KeysModel, alevrPlanLine: String? = nil, antigravityEnabled: Bool = false) {
+    public init(hub: EnvServerHub, keys: CodeV2KeysModel, alevrPlanLine: String? = nil, antigravityEnabled: Bool = true) {
         self.hub = hub
         self.keys = keys
         self.alevrPlanLine = alevrPlanLine
@@ -62,7 +62,8 @@ public struct CodeV2ConnectionsView: View {
                         isProbing: hub.probing.contains(instance.id),
                         isOpening: hub.openingSetup.contains(instance.id),
                         setup: { action in Task { await hub.openSetup(for: instance.id, action: action) } },
-                        recheck: { Task { await hub.probe(instance.id) } }
+                        recheck: { Task { await hub.probe(instance.id) } },
+                        managed: hub.managesRuntime(instance.id) ? CodeV2ManagedRuntime(hub: hub, instanceId: instance.id) : nil
                     )
                 }
                 if !antigravityEnabled {
@@ -203,6 +204,8 @@ struct CodeV2SubscriptionRow: View {
     var isOpening = false
     var setup: (CodeV2.ProviderSetupAction) -> Void
     var recheck: () -> Void
+    /// Antigravity: Alevr installs and signs in the runtime itself.
+    var managed: CodeV2ManagedRuntime?
 
     private var known: CodeV2KnownSubscription? {
         CodeV2KnownSubscription.allCases.first { $0.instanceId == instance.id }
@@ -221,6 +224,9 @@ struct CodeV2SubscriptionRow: View {
                     .fixedSize(horizontal: false, vertical: true)
                 if let note = known?.note {
                     Text(note).font(Studio.Font.meta).foregroundStyle(Studio.Ink.tertiary)
+                }
+                if let managed {
+                    CodeV2ManagedRuntimeDetail(managed: managed)
                 }
                 if connected, let limits = instance.limits, !limits.isEmpty {
                     HStack(spacing: JunoSpace.regular) {
@@ -247,7 +253,9 @@ struct CodeV2SubscriptionRow: View {
 
     @ViewBuilder
     private var action: some View {
-        if isProbing || isOpening {
+        if let managed {
+            CodeV2ManagedRuntimeAction(managed: managed, status: instance.status, recheck: recheck)
+        } else if isProbing || isOpening {
             StudioSpinner().frame(width: 14, height: 14).frame(width: 28, height: 28)
         } else {
             switch instance.status {
@@ -272,6 +280,141 @@ struct CodeV2SubscriptionRow: View {
                 .help("Re-check or sign in again")
                 .contentShape(.rect)
             }
+        }
+    }
+}
+
+// MARK: - Managed runtimes (Antigravity)
+
+/// What a managed runtime's row reads and does: the hub's state for it and
+/// the hub's install and sign-in commands.
+@MainActor
+struct CodeV2ManagedRuntime {
+    let hub: EnvServerHub
+    let instanceId: String
+
+    var state: CodeV2RuntimeSetup { hub.runtimeSetup[instanceId] ?? CodeV2RuntimeSetup() }
+    var installing: Bool { state.install?.isRunning == true }
+    var signingIn: Bool { state.auth?.isOpen == true }
+}
+
+/// The row's trailing control for a managed runtime.
+struct CodeV2ManagedRuntimeAction: View {
+    let managed: CodeV2ManagedRuntime
+    let status: CodeV2.ProviderStatus
+    let recheck: () -> Void
+
+    var body: some View {
+        if managed.installing {
+            Button("Cancel") { Task { await managed.hub.cancelInstall(managed.instanceId) } }
+                .buttonStyle(StudioQuietButtonStyle()).contentShape(.rect)
+        } else if managed.signingIn {
+            Button("Cancel") { Task { await managed.hub.cancelSignIn(managed.instanceId) } }
+                .buttonStyle(StudioQuietButtonStyle()).contentShape(.rect)
+        } else {
+            switch status {
+            case .notInstalled:
+                Button("Install") { Task { await managed.hub.installRuntime(managed.instanceId) } }
+                    .buttonStyle(CodeV2OutlineButtonStyle(compact: true)).contentShape(.rect)
+                    .help("Alevr downloads Google's own runtime and checks it before it runs.")
+            case .signedOut:
+                Button("Sign in") { Task { await managed.hub.signIn(managed.instanceId) } }
+                    .buttonStyle(CodeV2OutlineButtonStyle(compact: true)).contentShape(.rect)
+                    .help("Opens Google's sign-in page in your browser.")
+            case .ready, .limited:
+                Menu {
+                    Button("Re-check", action: recheck)
+                    Button("Sign in again") { Task { await managed.hub.signIn(managed.instanceId) } }
+                    Button("Sign out") { Task { await managed.hub.signOut(managed.instanceId) } }
+                } label: {
+                    Text("Manage")
+                }
+                .menuStyle(.button).menuIndicator(.hidden)
+                .buttonStyle(CodeV2OutlineButtonStyle(compact: true)).fixedSize().contentShape(.rect)
+            case .error, .unknown:
+                Button("Re-check", action: recheck).buttonStyle(CodeV2OutlineButtonStyle(compact: true)).contentShape(.rect)
+            }
+        }
+    }
+}
+
+/// Under the row: download progress, or the browser sign-in with its paste
+/// fallback, or what went wrong.
+struct CodeV2ManagedRuntimeDetail: View {
+    let managed: CodeV2ManagedRuntime
+    @State private var pasted = ""
+
+    var body: some View {
+        let state = managed.state
+        VStack(alignment: .leading, spacing: JunoSpace.snug) {
+            if let install = state.install {
+                if install.isRunning {
+                    Text(Self.progress(install)).font(Studio.Font.metaDigits).foregroundStyle(Studio.Ink.secondary)
+                } else if install.phase == .failed {
+                    Text(install.message ?? "The download did not finish. Try again.")
+                        .font(Studio.Font.meta).foregroundStyle(Studio.Signal.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            if let auth = state.auth {
+                switch auth.phase {
+                case .starting:
+                    Text("Starting the sign-in…").font(Studio.Font.meta).foregroundStyle(Studio.Ink.secondary)
+                case .waiting:
+                    Text("Finish signing in with Google in your browser. Alevr picks it up from there.")
+                        .font(Studio.Font.meta).foregroundStyle(Studio.Ink.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(spacing: JunoSpace.snug) {
+                        Button("Open the page again") { managed.hub.openSignInPage(managed.instanceId) }
+                            .buttonStyle(StudioQuietButtonStyle()).contentShape(.rect)
+                    }
+                    Text("Signed in on another device, or the page said it could not connect? Paste the address it ended on.")
+                        .font(Studio.Font.meta).foregroundStyle(Studio.Ink.tertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(spacing: JunoSpace.snug) {
+                        TextField("http://127.0.0.1:…", text: $pasted)
+                            .textFieldStyle(.roundedBorder)
+                            .font(Studio.Font.mono)
+                            .onSubmit(complete)
+                            .accessibilityLabel("Sign-in address")
+                        Button("Continue", action: complete)
+                            .buttonStyle(CodeV2OutlineButtonStyle(compact: true)).contentShape(.rect)
+                            .disabled(pasted.trimmingCharacters(in: .whitespaces).isEmpty)
+                    }
+                    if let error = state.pasteError {
+                        Text(error).font(Studio.Font.meta).foregroundStyle(Studio.Signal.ink)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                case .verifying:
+                    Text("Checking your sign-in…").font(Studio.Font.meta).foregroundStyle(Studio.Ink.secondary)
+                case .failed:
+                    Text(auth.message ?? "The sign-in did not finish. Try again.")
+                        .font(Studio.Font.meta).foregroundStyle(Studio.Signal.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                case .idle, .succeeded, .cancelled:
+                    EmptyView()
+                }
+            }
+        }
+    }
+
+    private func complete() {
+        let text = pasted
+        Task {
+            if await managed.hub.completeSignIn(managed.instanceId, redirect: text) { pasted = "" }
+        }
+    }
+
+    /// "Downloading 34 of 120 MB", "Checking the download".
+    static func progress(_ install: EnvRuntimeSetup.InstallState) -> String {
+        switch install.phase {
+        case .downloading:
+            guard let done = install.downloadedBytes, let total = install.totalBytes, total > 0 else { return "Downloading…" }
+            let mb = { (bytes: Int) in Int((Double(bytes) / 1_048_576).rounded()) }
+            return "Downloading \(mb(done)) of \(mb(total)) MB"
+        case .extracting: return "Unpacking…"
+        case .verifying: return "Checking the download…"
+        default: return ""
         }
     }
 }

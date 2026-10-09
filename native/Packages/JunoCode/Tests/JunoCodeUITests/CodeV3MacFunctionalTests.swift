@@ -25,19 +25,29 @@ final class FakeEnvServer: EnvServerTransport, @unchecked Sendable {
     private let lock = NSLock()
     private var frames: [String?] = []
     private var waiting: CheckedContinuation<String?, Error>?
-    private var log: [CodeV2.ClientCommand] = []
-    var handle: (CodeV2.ClientCommand) -> Reply = { _ in Reply() }
+    /// A command as sent, by wire name (newer commands have no enum case here).
+    struct Command: Decodable {
+        let id: String
+        let type: String
+        let params: JSONValue
+        var kind: CodeV2.ClientCommandType? { CodeV2.ClientCommandType(rawValue: type) }
+    }
 
-    var commands: [CodeV2.ClientCommand] { lock.withLock { log } }
+    private var log: [Command] = []
+    var handle: (Command) -> Reply = { _ in Reply() }
+
+    var commands: [Command] { lock.withLock { log } }
 
     func send(_ text: String) async throws {
-        let command = try JSONDecoder().decode(CodeV2.ClientCommand.self, from: Data(text.utf8))
+        let command = try JSONDecoder().decode(Command.self, from: Data(text.utf8))
         lock.withLock { log.append(command) }
         let reply = handle(command)
         let response = CodeV2.ServerResponse(id: command.id, ok: reply.error == nil, result: reply.result, error: reply.error)
         push(String(decoding: try JSONEncoder().encode(response), as: UTF8.self))
         for event in reply.events { emit(event) }
     }
+
+    func emitRaw(_ frame: String) { push(frame) }
 
     func emit(_ envelope: CodeV2.ServerEventEnvelope) {
         push(String(decoding: (try? JSONEncoder().encode(envelope)) ?? Data(), as: UTF8.self))
@@ -99,7 +109,7 @@ final class CodeV2EnvTerminalTests: XCTestCase {
     func testOpensWritesResizesAndFollowsItsOwnOutput() async throws {
         let server = FakeEnvServer()
         server.handle = { command in
-            switch command.type {
+            switch command.kind {
             case .terminalOpen:
                 return .init(result: FakeEnvServer.value(["terminalId": "t1"]), events: [
                     FakeEnvServer.event(nil, 1, .terminalOutput(terminalId: "t1", data: "\u{1B}[32m$\u{1B}[0m ")),
@@ -122,7 +132,7 @@ final class CodeV2EnvTerminalTests: XCTestCase {
         XCTAssertTrue(painted, terminal.screen.text)
         await terminal.send(control: .interrupt)
         await terminal.resize(cols: 120, rows: 40)
-        let types = server.commands.map(\.type)
+        let types = server.commands.map(\.kind)
         XCTAssertEqual(types, [.terminalOpen, .terminalWrite, .terminalWrite, .terminalResize])
         XCTAssertEqual(server.commands[0].params["cwd"]?.stringValue, "/tmp/repo")
         XCTAssertEqual(server.commands[1].params["data"]?.stringValue, "ls\r")
@@ -281,7 +291,7 @@ final class EnvServerSubagentClientTests: XCTestCase {
     func testTheChildsTaskIsOneVendorTurnAndItsClosingTextIsTheReply() async throws {
         let server = FakeEnvServer()
         server.handle = { [unowned self] command in
-            switch command.type {
+            switch command.kind {
             case .sessionOpen:
                 return .init(result: FakeEnvServer.value(["sessionId": "env-1"]))
             case .turnStart:
@@ -325,9 +335,9 @@ final class EnvServerSubagentClientTests: XCTestCase {
         XCTAssertEqual(usage?.0, 1_200)
         XCTAssertEqual(usage?.1, 300)
         XCTAssertEqual(stop, .endTurn)
-        let open = try XCTUnwrap(server.commands.first { $0.type == .sessionOpen })
+        let open = try XCTUnwrap(server.commands.first { $0.kind == .sessionOpen })
         XCTAssertEqual(open.params["cwd"]?.stringValue, "/tmp/repo")
-        let start = try XCTUnwrap(server.commands.first { $0.type == .turnStart })
+        let start = try XCTUnwrap(server.commands.first { $0.kind == .turnStart })
         XCTAssertEqual(start.params["input"]?["text"]?.stringValue, "Fix the flaky upload test in tests/upload.test.ts.")
         XCTAssertEqual(start.params["runtimeMode"]?.stringValue, "auto-edit")
         let sessionId = await client.sessionId
@@ -417,5 +427,92 @@ final class ComputerActionOverlayPanelTests: XCTestCase {
         XCTAssertTrue(panel.collectionBehavior.contains(.canJoinAllSpaces))
         XCTAssertTrue(panel.collectionBehavior.contains(.fullScreenAuxiliary))
         XCTAssertTrue(panel.styleMask.contains(.nonactivatingPanel))
+    }
+}
+
+// MARK: - Antigravity: install and sign in through the env server
+
+@MainActor
+final class CodeV2ManagedRuntimeTests: XCTestCase {
+    private let id = "acp:antigravity"
+
+    func testSignInOpensGooglesPageAndThePasteFallbackSendsTheRedirect() async throws {
+        let server = FakeEnvServer()
+        server.handle = { command in
+            guard command.type == "provider.auth" else { return .init() }
+            switch command.params["action"]?.stringValue {
+            case "start":
+                return .init(result: .object(["auth": .object([
+                    "phase": .string("waiting"), "flowId": .string("flow-1"),
+                    "authorizationUrl": .string("https://accounts.google.com/o/oauth2/v2/auth?client_id=x"),
+                ])]))
+            case "complete":
+                return .init(result: .object(["auth": .object(["phase": .string("succeeded")])]))
+            default:
+                return .init(result: .object(["auth": .object(["phase": .string("cancelled")])]))
+            }
+        }
+        let connection = EnvServerConnection(transport: server, commandTimeout: .seconds(5))
+        let hub = EnvServerHub(connection: connection)
+        var opened: [URL] = []
+        hub.openURL = { opened.append($0) }
+        XCTAssertTrue(hub.managesRuntime(id))
+        XCTAssertFalse(hub.managesRuntime("codex:default"))
+
+        await hub.signIn(id)
+        XCTAssertEqual(hub.runtimeSetup[id]?.auth?.phase, .waiting)
+        XCTAssertEqual(opened.map(\.host), ["accounts.google.com"])
+
+        let refused = await hub.completeSignIn(id, redirect: "https://evil.example/?code=1")
+        XCTAssertFalse(refused)
+        XCTAssertNotNil(hub.runtimeSetup[id]?.pasteError)
+        XCTAssertFalse(server.commands.contains { $0.params["action"]?.stringValue == "complete" }, "a non-loopback address is never sent")
+
+        let done = await hub.completeSignIn(id, redirect: "  http://127.0.0.1:51121/oauth-callback?code=abc&state=s  ")
+        XCTAssertTrue(done)
+        let complete = try XCTUnwrap(server.commands.first { $0.params["action"]?.stringValue == "complete" })
+        XCTAssertEqual(complete.params["flowId"]?.stringValue, "flow-1")
+        XCTAssertEqual(complete.params["callbackUrl"]?.stringValue, "http://127.0.0.1:51121/oauth-callback?code=abc&state=s")
+        XCTAssertNil(hub.runtimeSetup[id]?.pasteError)
+        XCTAssertTrue(server.commands.contains { $0.kind == .providerProbe }, "a finished sign-in re-checks the instance")
+        await connection.close()
+    }
+
+    func testInstallProgressArrivesOnProviderUpdated() async throws {
+        let server = FakeEnvServer()
+        server.handle = { command in
+            if command.type == "provider.install" {
+                return .init(result: .object(["install": .object(["phase": .string("downloading"), "operationId": .string("op-1")])]))
+            }
+            return .init()
+        }
+        let connection = EnvServerConnection(transport: server, commandTimeout: .seconds(5))
+        let hub = EnvServerHub(connection: connection)
+        await hub.installRuntime(id)
+        XCTAssertEqual(hub.runtimeSetup[id]?.install?.operationId, "op-1")
+        server.emitRaw("""
+            {"type":"event","stream":"global","sequence":7,"at":"2026-10-09T10:00:00Z","event":{"type":"provider.updated","instance":{"id":"acp:antigravity","kind":"acp","label":"Antigravity","status":"not-installed","install":{"phase":"downloading","operationId":"op-1","downloadedBytes":35651584,"totalBytes":125829120}}}}
+            """)
+        let progressed = await eventually { hub.runtimeSetup[self.id]?.install?.downloadedBytes == 35_651_584 }
+        XCTAssertTrue(progressed)
+        let install = try XCTUnwrap(hub.runtimeSetup[id]?.install)
+        XCTAssertEqual(CodeV2ManagedRuntimeDetail.progress(install), "Downloading 34 of 120 MB")
+        XCTAssertEqual(hub.instances?.first?.id, "acp:antigravity", "the instance itself still updates")
+        await hub.cancelInstall(id)
+        let cancel = try XCTUnwrap(server.commands.last)
+        XCTAssertEqual(cancel.params["action"]?.stringValue, "cancel")
+        XCTAssertEqual(cancel.params["operationId"]?.stringValue, "op-1")
+        await connection.close()
+    }
+
+    func testOnlyWebPagesOpenAndOnlyLoopbackRedirectsAreSent() {
+        XCTAssertNotNil(EnvRuntimeSetup.isOpenableAuthorizationURL("https://accounts.google.com/o/oauth2/v2/auth"))
+        XCTAssertNil(EnvRuntimeSetup.isOpenableAuthorizationURL("file:///etc/passwd"))
+        XCTAssertNil(EnvRuntimeSetup.isOpenableAuthorizationURL("javascript:alert(1)"))
+        XCTAssertTrue(EnvRuntimeSetup.isLoopbackRedirect("http://localhost:8080/cb?code=1"))
+        XCTAssertTrue(EnvRuntimeSetup.isLoopbackRedirect("http://127.0.0.1:51121/oauth-callback?code=abc"))
+        XCTAssertFalse(EnvRuntimeSetup.isLoopbackRedirect("http://127.0.0.1:51121/oauth-callback"), "no query, nothing to finish")
+        XCTAssertFalse(EnvRuntimeSetup.isLoopbackRedirect("https://accounts.google.com/?code=1"))
+        XCTAssertFalse(EnvRuntimeSetup.isLoopbackRedirect("http://127.0.0.1.evil.com/?code=1"))
     }
 }

@@ -119,7 +119,16 @@ public enum CodeV2Gallery {
             let hub = EnvServerHub(previewInstances: [
                 CodeV2Fixtures.claude, CodeV2Fixtures.codex, CodeV2Fixtures.gemini,
                 CodeV2Fixtures.grok, CodeV2Fixtures.deepseekHarness, CodeV2Fixtures.opencode,
+                CodeV2Fixtures.antigravity,
             ])
+            // Antigravity mid sign-in: the browser is open, the paste fallback below.
+            hub.apply(EnvRuntimeSetup.Update(
+                instanceId: CodeV2Fixtures.antigravity.id,
+                auth: EnvRuntimeSetup.AuthState(
+                    phase: .waiting, flowId: "flow-1",
+                    authorizationUrl: "https://accounts.google.com/o/oauth2/v2/auth", method: "Google account"
+                )
+            ))
             let keys = CodeV2KeysModel(preview: [
                 ByokKeyRecord(provider: .anthropic, hint: "sk-ant-…4f2a", addedAt: CodeV2Fixtures.origin.addingTimeInterval(-86_400 * 9),
                               lastUsedAt: nil, isValid: true, location: .account),
