@@ -30,11 +30,11 @@ extension View {
         Label { Text("Copy") } icon: { JunoIconView(.copy, size: 15) }
       }
       Button(action: actions.selectText) {
-        Label("Select text", systemImage: "selection.pin.in.out")
+        Label("Select text", image: JunoIcon.textCursor.assetName(.regular))
       }
       if let quote = actions.quote {
         Button(action: quote) {
-          Label("Quote in reply", systemImage: "text.quote")
+          Label("Quote in reply", image: JunoIcon.quote.assetName(.regular))
         }
       }
       if let share = actions.share {

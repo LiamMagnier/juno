@@ -77,6 +77,7 @@
 		8ED4331CB2A7B50AC02A5E98 /* JunoMobileThinkingControl.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4590489166AC95EB987F2C19 /* JunoMobileThinkingControl.swift */; };
 		8FE41C06BD0740693C5608C8 /* JunoMobileNavigationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9ADEDC5B4FBF00B7F6F68EF8 /* JunoMobileNavigationTests.swift */; };
 		9065653AC650C9E3CC3564F7 /* JunoMobileLiveActivities.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0287B230611C9B9F8EDC4FFF /* JunoMobileLiveActivities.swift */; };
+		91546746843898A63019E79B /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 263173540341BD6A4CF6F923 /* Assets.xcassets */; };
 		93F6A116687E2725B521AE32 /* JunoMobileCodeNotifications.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E14DA2F4DF16A7B17C4ED0C /* JunoMobileCodeNotifications.swift */; };
 		99113336EA78EB1AD84BE8F8 /* JunoMobileAccentUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2E6A5FA96525D921505F3ED /* JunoMobileAccentUITests.swift */; };
 		993122239EDB4708CA71678A /* JunoMobileUsageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B84DAAD8B8263E45CBC9DD78 /* JunoMobileUsageView.swift */; };
@@ -586,6 +587,7 @@
 			buildConfigurationList = 200DBD2FC30530866D5574BD /* Build configuration list for PBXNativeTarget "JunoMobileWidgets" */;
 			buildPhases = (
 				49BE35A75A3B258F02040F90 /* Sources */,
+				D1AD153A224B5E43FC71C07B /* Resources */,
 				19BAF7756A81062F143C6ED5 /* Frameworks */,
 			);
 			buildRules = (
@@ -737,6 +739,14 @@
 				A908564273F70766C6733C0F /* Newsreader24pt-SemiBold.ttf in Resources */,
 				DCDE5B7242729090BC8A8C3B /* OFL.txt in Resources */,
 				3332E2E0FBA80209F4D9FFB4 /* PrivacyInfo.xcprivacy in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D1AD153A224B5E43FC71C07B /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				91546746843898A63019E79B /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

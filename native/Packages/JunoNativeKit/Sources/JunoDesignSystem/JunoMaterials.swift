@@ -90,7 +90,7 @@ public extension View {
 
 private struct JunoProminentAction: ViewModifier {
     func body(content: Content) -> some View {
-        content.buttonStyle(.glassProminent).tint(Color.junoAccent)
+        content.buttonStyle(.glassProminent).buttonBorderShape(.capsule).tint(Color.junoAccent)
     }
 }
 

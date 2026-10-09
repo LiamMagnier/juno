@@ -45,7 +45,12 @@ struct JunoMobileQuietLoading: View {
         Group {
             switch shape {
             case .blank:
-                Color.junoCanvas
+                // The website's empty mark while the first page arrives: it
+                // draws on once, then holds still.
+                ZStack {
+                    Color.junoCanvas
+                    JunoEmptyMark(size: .page)
+                }
             case .rows(let count):
                 VStack(alignment: .leading, spacing: 0) {
                     JunoSkeletonRows(count: count)
@@ -301,7 +306,7 @@ struct JunoStatusPill: View {
     var body: some View {
         HStack(spacing: 4) {
             if tone != .quiet, isGlyphWorthy {
-                Image(systemName: tone == .danger ? "xmark.octagon.fill" : "exclamationmark.circle.fill")
+                JunoSymbol(tone == .danger ? JunoIcon.octagonX : JunoIcon.error)
                     .imageScale(.small)
                     .accessibilityHidden(true)
             }
@@ -389,6 +394,6 @@ extension View {
 /// today and drifts from the platform the moment the platform moves.
 struct JunoGlassButtonStyle: ViewModifier {
     func body(content: Content) -> some View {
-        content.buttonStyle(.glass)
+        content.buttonStyle(.glass).buttonBorderShape(.capsule)
     }
 }

@@ -110,15 +110,13 @@ struct JunoMobileIPadSidebarRowLabel: View {
   let title: LocalizedStringKey
   var selected: Bool = false
   var status: JunoMobileSidebarStatus?
-
   var body: some View {
     HStack(spacing: 10) {
-      JunoIconView(icon, size: 16)
+      JunoIconView(icon, size: 18)
         .frame(width: 20)
-        // The only accent in the sidebar: the selected row's glyph.
-        .foregroundStyle(selected ? Color.junoAccent : Color.junoSidebarForeground)
+        .foregroundStyle(Color.junoForeground)
       Text(title)
-        .junoFont(size: 15, relativeTo: .body, weight: selected ? .medium : .regular)
+        .junoFont(size: 15, relativeTo: .body)
         .foregroundStyle(Color.junoForeground)
         .lineLimit(1)
       Spacer(minLength: 4)

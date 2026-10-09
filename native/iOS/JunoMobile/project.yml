@@ -90,6 +90,10 @@ targets:
         excludes:
           - Info.plist
       - path: App/JunoMobileLiveActivities.swift
+      # The website's icon set (generated symbols), so widgets and Live
+      # Activities draw the same marks as the app instead of SF Symbols.
+      - path: Resources/Assets.xcassets
+        buildPhase: resources
     configFiles:
       Debug: ../../Config/JunoMobile-Debug.xcconfig
       Stable: ../../Config/JunoMobile-Stable.xcconfig

@@ -340,7 +340,10 @@ private struct JunoMobileDraftChat: View {
       VStack(alignment: .leading, spacing: 0) {
         Spacer(minLength: 0)
         if let resume = resumeConversation {
-          JunoMobileResumeRow(title: resume.title) {
+          JunoMobileResumeRow(
+            title: resume.title,
+            icon: resume.projectId != nil ? .projects : (resume.kind == "code" ? .code : .conversation)
+          ) {
             model.isDraftingNewConversation = false
             model.selectedConversationID = resume.id
           }
@@ -397,12 +400,16 @@ private struct JunoMobileDraftChat: View {
       .toolbar {
         // The phone's bar carries the private-chat toggle itself (see the
         // shell); the iPad's detail column keeps it here.
+        if sizeClass == .regular {
+          // No title on the iPad's home either: the greeting names it.
+          ToolbarItem(placement: .principal) { Text(verbatim: "") }
+        }
         if let startIncognito, sizeClass == .regular {
           ToolbarItem(placement: .topBarTrailing) {
             Button(action: startIncognito) {
-              // The toggle, off. Incognito's own toolbar shows the same label
-              // in prominent glass, so the control changes state in place.
-              JunoIncognitoToggleLabel(active: false, showsTitle: sizeClass == .regular)
+              // The phone's private-chat glyph: the dashed circle, no label.
+              JunoMobileTemporaryChatGlyph(active: false)
+                .foregroundStyle(Color.primary)
             }
             .accessibilityLabel("Start an incognito chat")
             .accessibilityIdentifier("juno.mobile.incognito-start")
@@ -927,7 +934,14 @@ private struct JunoMobileConversationDetail: View {
       // The width clamp is not decoration — it is what keeps a line of
       // running text at a readable measure on an iPad, where a full-bleed
       // answer runs to ~90 characters.
-      LazyVStack(spacing: JunoSpace.section) {
+      // A plain `VStack`, not a lazy one. Measured on the iOS 26/27
+      // simulator: with `LazyVStack` under a bottom-anchored
+      // `ScrollPosition`, sending a turn in a long conversation left the
+      // whole visible transcript blank for the length of the reply — the
+      // stack kept a stale layout (content height frozen while the answer
+      // grew) and drew no rows in the viewport. An eager stack lays every
+      // row out and follows the stream correctly.
+      VStack(spacing: JunoSpace.section) {
         ForEach(messages) { message in
           JunoMobileMessageRow(
             message: message,
@@ -1074,84 +1088,81 @@ private struct JunoMobileConversationDetail: View {
   /// was on its own enough to time the type checker out.
   @ToolbarContentBuilder
   private var conversationToolbar: some ToolbarContent {
+    // The title is the menu: the conversation's own verbs live under its name,
+    // the way Notes and Photos put a document's actions under its title, so
+    // the bar keeps exactly three things — sidebar, title, new chat.
     ToolbarItem(placement: .principal) {
-      JunoMobileConversationTitle(
-        title: conversation.title,
-        justRenamed: model.recentlyRenamedConversationID == conversation.id,
-        onAnimationShown: { model.acknowledgeTitleAnimation(for: conversation.id) }
-      )
-    }
-    ToolbarItemGroup(placement: .topBarTrailing) {
-      if !messages.isEmpty, let newChat {
-        Button(action: newChat) {
-          Image(systemName: "square.and.pencil")
-            .junoFont(size: 17, relativeTo: .body, weight: .regular)
-            .foregroundStyle(Color.primary)
-            .frame(width: 32, height: 32)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .frame(minWidth: 44, minHeight: 44)
-        .accessibilityLabel("New chat")
-        .accessibilityIdentifier("juno.mobile.chat-new")
-      }
       Menu {
-        if shareClient != nil {
-          Button {
-            Task { await createShare() }
-          } label: {
-            JunoIconLabel(verbatim: "Share…", icon: .share)
-          }
-          .disabled(sharing)
-        }
-        Button {
-          find.open()
-        } label: {
-          JunoIconLabel(verbatim: "Find in Conversation", icon: .search)
-        }
-        .disabled(messages.isEmpty)
-        .accessibilityIdentifier("juno.mobile.conversation-find")
-        Button {
-          editValue = conversation.title
-          showingRename = true
-        } label: {
-          JunoIconLabel(verbatim: "Rename", icon: .pencil)
-        }
-        Button {
-          Task {
-            await model.setPinned(id: conversation.id, pinned: !conversation.pinned)
-          }
-        } label: {
-          JunoIconLabel(
-            verbatim: conversation.pinned ? "Unpin" : "Pin",
-            icon: .pin
-          )
-        }
-        Divider()
-        // Delete, not archive. Archiving moved a conversation into a
-        // folder this app has no screen for, which from the phone is
-        // indistinguishable from losing it.
-        Button(role: .destructive) {
-          showingDelete = true
-        } label: {
-          JunoIconLabel(verbatim: "Delete", icon: .trash)
-        }
+        conversationMenuItems
       } label: {
-        Image(systemName: "ellipsis")
-          .junoFont(size: 17, relativeTo: .body, weight: .regular)
-          .foregroundStyle(Color.primary)
-          .frame(width: 44, height: 44)
-          .contentShape(Rectangle())
+        JunoMobileConversationTitle(
+          title: conversation.title,
+          justRenamed: model.recentlyRenamedConversationID == conversation.id,
+          onAnimationShown: { model.acknowledgeTitleAnimation(for: conversation.id) }
+        )
       }
-      // On the Menu, not on the Label. A `Menu` tints its whole label with
-      // the accent, and a `foregroundStyle` inside cannot override that —
-      // the same trap `JunoMobileComposerActions` already documents for the
-      // composer's "+". With the accent applied this came out coral.
+      .menuIndicator(.hidden)
       .tint(Color.primary)
       .disabled(model.isMutating || conversation.isPending)
       .accessibilityLabel("Conversation actions")
       .accessibilityIdentifier("juno.mobile.conversation-menu")
     }
+    if let newChat {
+      ToolbarItem(placement: .topBarTrailing) {
+        Button(action: newChat) {
+          JunoSymbol(.compose)
+        }
+        .tint(Color.primary)
+        .disabled(messages.isEmpty)
+        .accessibilityLabel("New chat")
+        .accessibilityIdentifier("juno.mobile.chat-new")
+      }
+    }
+  }
+
+  @ViewBuilder
+  private var conversationMenuItems: some View {
+    if shareClient != nil {
+      Button {
+        Task { await createShare() }
+      } label: {
+        Label("Share", image: JunoIcon.share.assetName(.regular))
+      }
+      .contentShape(.rect)
+      .disabled(sharing)
+    }
+    Button {
+      find.open()
+    } label: {
+      Label("Find in Conversation", image: JunoIcon.search.assetName(.regular))
+    }
+    .contentShape(.rect)
+    .accessibilityIdentifier("juno.mobile.conversation-find")
+    Button {
+      editValue = conversation.title
+      showingRename = true
+    } label: {
+      Label("Rename", image: JunoIcon.pencil.assetName(.regular))
+    }
+    .contentShape(.rect)
+    Button {
+      Task {
+        await model.setPinned(id: conversation.id, pinned: !conversation.pinned)
+      }
+    } label: {
+      Label(conversation.pinned ? "Unpin" : "Pin", image: (conversation.pinned ? JunoIcon.pinOff : JunoIcon.pin).assetName(.regular))
+    }
+    .contentShape(.rect)
+    Divider()
+    // Delete, not archive. Archiving moved a conversation into a folder this
+    // app has no screen for, which from the phone is indistinguishable from
+    // losing it.
+    Button(role: .destructive) {
+      showingDelete = true
+    } label: {
+      Label("Delete", image: JunoIcon.trash.assetName(.regular))
+    }
+    .contentShape(.rect)
   }
 
   /// Returns the reader to the newest turn.
@@ -1302,25 +1313,62 @@ private struct JunoMobileConversationDetail: View {
   /// scroll position and remounting the composer every time an artifact was
   /// opened or closed. Keeping the stack means only the pane comes and goes.
   var body: some View {
-    HStack(spacing: 0) {
-      thread
-      if let artifact = dockedArtifact {
-        Rectangle()
-          .fill(Color.junoHairline)
-          .frame(width: 1)
-          .accessibilityHidden(true)
-        JunoMobileArtifactDetail(
-          model: artifactModel!,
-          artifact: artifact,
-          // Already in the conversation this came from; the only
-          // sensible "go there" is to close.
-          openConversation: { _ in closeArtifact() },
-          close: closeArtifact
-        )
-        .frame(width: 420)
-        .transition(.move(edge: .trailing).combined(with: .opacity))
+    // On a regular-width screen what the reader opens from the thread — an
+    // artifact, a research report — stands in the system's trailing
+    // inspector beside it, the website's right-side panel: resizable, the
+    // thread keeping its place. On the phone the same content is a sheet.
+    thread
+      .inspector(isPresented: inspectorShown) {
+        inspectorContent
+          .inspectorColumnWidth(min: 360, ideal: 460, max: 640)
       }
+  }
+
+  @ViewBuilder
+  private var inspectorContent: some View {
+    if let artifact = dockedArtifact {
+      JunoMobileArtifactDetail(
+        model: artifactModel!,
+        artifact: artifact,
+        // Already in the conversation this came from; the only
+        // sensible "go there" is to close.
+        openConversation: { _ in closeArtifact() },
+        close: closeArtifact
+      )
+    } else if let route = dockedReport {
+      JunoMobileResearchReportView(
+        report: route.report,
+        loadAudit: { messageID in await model.researchAudit(messageID: messageID) },
+        close: { reportRoute = nil },
+        docked: true
+      )
+      .environment(\.nativeSourceFavicons, sourceFavicons)
+      .tint(Color.junoAccent)
     }
+  }
+
+  private var inspectorShown: Binding<Bool> {
+    Binding(
+      get: { dockedArtifact != nil || dockedReport != nil },
+      set: { shown in
+        guard !shown else { return }
+        openArtifact = nil
+        reportRoute = nil
+      }
+    )
+  }
+
+  /// The report, when this screen is wide enough to read it beside the thread.
+  private var dockedReport: JunoMobileReportRoute? {
+    sizeClass == .regular ? reportRoute : nil
+  }
+
+  /// The report as a sheet — the phone's presentation.
+  private var sheetedReport: Binding<JunoMobileReportRoute?> {
+    Binding(
+      get: { sizeClass == .regular ? nil : reportRoute },
+      set: { reportRoute = $0 }
+    )
   }
 
   /// The artifact the reader opened, when this screen is wide enough to dock it.
@@ -1369,7 +1417,7 @@ private struct JunoMobileConversationDetail: View {
       // it is doing, and the way to its page (docs/design/AGENTS.md §5.3).
       // Always applied, empty for an ordinary chat, so a roster that loads
       // after the thread opened does not remount the transcript under it.
-      .safeAreaBar(edge: .top, spacing: 0) { agentHeader }
+      .safeAreaInset(edge: .top, spacing: 0) { agentHeader }
       .alert("Rename conversation", isPresented: $showingRename) {
         TextField("Title", text: $editValue)
         Button("Cancel", role: .cancel) {}
@@ -1469,8 +1517,31 @@ private struct JunoMobileConversationDetail: View {
       .onChange(of: streamingMessageID) { previous, current in
         trackRun(from: previous, to: current)
       }
+      #if DEBUG
+        // `--juno-preview-open-artifact` opens the thread's first artifact,
+        // as a tap on its card would.
+        .task {
+          guard CommandLine.arguments.contains("--juno-preview-open-artifact") else { return }
+          for _ in 0..<40 {
+            try? await Task.sleep(for: .milliseconds(150))
+            if messages.contains(where: { $0.content.contains("<juno:artifact") }),
+              artifactModel?.artifacts.isEmpty == false
+            { break }
+          }
+          let references = messages.flatMap { message in
+            NativeMessageContent.parts(of: message.content).compactMap { part -> NativeMessageContent.ArtifactReference? in
+              if case .artifact(let reference) = part { return reference }
+              return nil
+            }
+          }
+          // A stored artifact first (it docks); the tag's own body otherwise.
+          if let reference = references.first(where: { storedArtifact(for: $0) != nil }) ?? references.first {
+            openArtifact(reference)
+          }
+        }
+      #endif
       // The research report, read in a sheet of its own.
-      .sheet(item: $reportRoute) { route in
+      .sheet(item: sheetedReport) { route in
         JunoMobileResearchReportView(
           report: route.report,
           loadAudit: { messageID in await model.researchAudit(messageID: messageID) },
@@ -1581,11 +1652,18 @@ private struct JunoMobileConversationTitle: View {
   @State private var highlighted = false
 
   var body: some View {
-    Text(title)
-      .junoFont(size: 16, relativeTo: .headline, weight: .semibold)
-      .lineLimit(1)
-      .truncationMode(.tail)
+    HStack(spacing: 4) {
+      Text(title)
+        .font(.headline)
+        .lineLimit(1)
+        .truncationMode(.tail)
+      JunoSymbol(.chevronDown)
+        .font(.caption2.weight(.semibold))
+        .foregroundStyle(.secondary)
+        .accessibilityHidden(true)
+    }
       .foregroundStyle(highlighted ? Color.junoAccent : Color.primary)
+      .frame(maxWidth: 220)
       .id(title)
       .transition(.blurReplace)
       .animation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion), value: title)
@@ -1959,7 +2037,7 @@ private struct JunoMobileMessageRow: View {
       .contentShape(Self.bubbleShape)
       .junoMessageContextMenu(menuActions)
       .sheet(isPresented: $showingSelectText) {
-        JunoMobileSelectTextSheet(title: isUser ? "Your message" : "Juno's reply", text: plainText)
+        JunoMobileSelectTextSheet(title: isUser ? "Your message" : "Alevr's reply", text: plainText)
       }
       .accessibilityLabel("You said, \(plainText)")
   }
@@ -2179,10 +2257,10 @@ private struct JunoMobileMessageRow: View {
     .frame(maxWidth: .infinity, alignment: .leading)
     .junoMessageContextMenu(menuActions)
     .sheet(isPresented: $showingSelectText) {
-      JunoMobileSelectTextSheet(title: "Juno's reply", text: plainText)
+      JunoMobileSelectTextSheet(title: "Alevr's reply", text: plainText)
     }
     .accessibilityElement(children: .contain)
-    .accessibilityLabel("Juno replied")
+    .accessibilityLabel("Alevr replied")
   }
 
   /// AIcss's search rows, in place of a horizontal rail of capsules.
@@ -2280,11 +2358,9 @@ private struct JunoMobileMessageRow: View {
           Button {
             copy()
           } label: {
-            Image(systemName: copied ? "checkmark" : "doc.on.doc")
-              .junoFont(size: 15, relativeTo: .body, weight: .regular)
+            JunoIconView(copied ? JunoIcon.check : JunoIcon.copy, size: 16)
               .foregroundStyle(Color.junoSecondaryInk)
-              .contentTransition(.symbolEffect(.replace))
-              .frame(width: 40, height: 44)
+              .frame(width: 38, height: 44)
               .contentShape(Rectangle())
           }
           .buttonStyle(.junoQuietPress)
@@ -2294,13 +2370,13 @@ private struct JunoMobileMessageRow: View {
 
         if let setFeedback {
           symbolButton(
-            message.feedback == .up ? "hand.thumbsup.fill" : "hand.thumbsup",
+            .thumbsUp, on: message.feedback == .up,
             label: "message.good",
             identifier: "juno.mobile.message-thumbs-up"
           ) { setFeedback(message.id, message.feedback == .up ? nil : .up) }
 
           symbolButton(
-            message.feedback == .down ? "hand.thumbsdown.fill" : "hand.thumbsdown",
+            .thumbsDown, on: message.feedback == .down,
             label: "message.bad",
             identifier: "juno.mobile.message-thumbs-down"
           ) { setFeedback(message.id, message.feedback == .down ? nil : .down) }
@@ -2309,7 +2385,7 @@ private struct JunoMobileMessageRow: View {
         if let readAloud, !plainText.isEmpty {
           let speaking = readAloud.isSpeaking(message.id)
           symbolButton(
-            speaking ? "stop.circle" : "speaker.wave.2",
+            speaking ? .circleStop : .volume,
             label: speaking ? "message.stop-reading" : "message.read-aloud",
             identifier: "juno.mobile.message-read-aloud"
           ) {
@@ -2318,14 +2394,14 @@ private struct JunoMobileMessageRow: View {
         }
 
         if let share, !plainText.isEmpty {
-          symbolButton("square.and.arrow.up", label: "Share", identifier: "juno.mobile.message-share") {
+          symbolButton(.share, label: "Share", identifier: "juno.mobile.message-share") {
             share(plainText)
           }
         }
 
         if let regenerate {
           symbolButton(
-            "arrow.clockwise",
+            .refresh,
             label: "message.regenerate",
             identifier: "juno.mobile.message-regenerate",
             action: regenerate
@@ -2353,22 +2429,21 @@ private struct JunoMobileMessageRow: View {
         }
         if canContinue, let continueResponse {
           Button(action: continueResponse) {
-            Label("message.continue", systemImage: "arrow.down")
+            Label("message.continue", image: JunoIcon.arrowDown.assetName(.regular))
           }
         }
         if let branch {
           Button { branch(message.id) } label: {
-            Label("message.branch", systemImage: "arrow.triangle.branch")
+            Label("message.branch", image: JunoIcon.branch.assetName(.regular))
           }
         }
         Button { showingSelectText = true } label: {
-          Label("Select text", systemImage: "selection.pin.in.out")
+          Label("Select text", image: JunoIcon.textCursor.assetName(.regular))
         }
       } label: {
-        Image(systemName: "ellipsis")
-          .junoFont(size: 15, relativeTo: .body, weight: .regular)
+        JunoIconView(.ellipsis, size: 16)
           .foregroundStyle(Color.junoSecondaryInk)
-          .frame(width: 40, height: 44)
+          .frame(width: 38, height: 44)
           .contentShape(Rectangle())
       }
       .tint(Color.primary)
@@ -2378,17 +2453,18 @@ private struct JunoMobileMessageRow: View {
   }
 
   private func symbolButton(
-    _ symbol: String,
+    _ icon: JunoIcon,
+    on: Bool = false,
     label: LocalizedStringKey,
     identifier: String,
     action: @escaping () -> Void
   ) -> some View {
     Button(action: action) {
-      Image(systemName: symbol)
-        .junoFont(size: 15, relativeTo: .body, weight: .regular)
+      // The web's message-action glyphs at its 16pt rung; the solid cut only
+      // for an "on" state (a rated answer).
+      JunoIconView(icon, size: 16, isOn: on)
         .foregroundStyle(Color.junoSecondaryInk)
-        .contentTransition(.symbolEffect(.replace))
-        .frame(width: 40, height: 44)
+        .frame(width: 38, height: 44)
         .contentShape(Rectangle())
     }
     .buttonStyle(.junoQuietPress)
@@ -2611,17 +2687,20 @@ enum JunoMobileCost {
 /// in secondary ink, to pick straight back up. ChatGPT's "continue" row.
 struct JunoMobileResumeRow: View {
   let title: String
+  /// The thread's own kind — a chat, a project's chat, a Code session —
+  /// the way ChatGPT marks its continue row with the thread's icon.
+  var icon: JunoIcon = .conversation
   let action: () -> Void
 
   var body: some View {
     Button(action: action) {
-      HStack(spacing: 10) {
-        Image(systemName: "arrow.uturn.backward")
-          .junoFont(size: 14, relativeTo: .body, weight: .regular)
-          .foregroundStyle(Color.junoSecondaryInk)
+      HStack(spacing: 8) {
+        JunoIconView(icon, size: 16)
+          .foregroundStyle(.secondary)
+          .frame(width: 20)
         Text(title)
-          .junoFont(size: 16, relativeTo: .subheadline)
-          .foregroundStyle(Color.junoForeground.opacity(0.82))
+          .font(.subheadline)
+          .foregroundStyle(.secondary)
           .lineLimit(1)
       }
       .padding(.horizontal, JunoSpace.tight)

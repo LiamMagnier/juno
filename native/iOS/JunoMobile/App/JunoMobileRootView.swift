@@ -89,6 +89,10 @@ struct JunoMobileRootView: View {
   /// in the sidebar and this stays empty.
   @State private var chatPath: [JunoMobileSection] = []
   @State private var showingSettings = false
+  #if DEBUG
+    /// The report reader, opened by `--juno-preview-report`.
+    @State private var previewReport: JunoMobileReportRoute?
+  #endif
   /// A link the drawer just published, waiting for the share sheet.
   @State private var drawerShare: NativeShare?
   /// Requests from Siri, Shortcuts, the Home Screen and notifications.
@@ -203,6 +207,7 @@ struct JunoMobileRootView: View {
     // let`, so it registers no observable dependency and cannot re-evaluate
     // this body.
     .junoScreenCanvas()
+    .modifier(previewReportSheet)
     .preferredColorScheme(preferredColorScheme)
     // The plans page, wherever a locked feature or Settings asks for it.
     .junoMobilePlansSheet()
@@ -245,44 +250,16 @@ struct JunoMobileRootView: View {
     // perfectly good.
     .task {
       #if DEBUG
-        if previewSession != nil {
-          if let raw = JunoPreviewEnvironment.initialDestination,
-            let section = JunoMobileSection(rawValue: raw)
-          {
-            show(section)
+        if let previewSession {
+          // Orbit reads its roster from the canned server like every other
+          // section; without a model the harness drew "Something went wrong".
+          if agentsModel == nil, let requestSender {
+            let agents = NativeAgentsModel(
+              client: NativeAgentsClient(sender: requestSender), workClient: workClient)
+            agentsModel = agents
+            Task { await agents.start(for: previewSession.profile.id) }
           }
-          if CommandLine.arguments.contains("--juno-preview-sidebar") {
-            showingHistory = true
-          }
-          if CommandLine.arguments.contains("--juno-preview-settings")
-            || ["profile", "username"].contains(JunoPreviewEnvironment.initialRoute ?? "")
-          {
-            showingSettings = true
-          }
-          // Opens straight into incognito, so the mode's own look is one
-          // relaunch away rather than a scripted tap.
-          if CommandLine.arguments.contains("--juno-preview-incognito") {
-            selection = .chat
-            conversationModel?.selectedConversationID = nil
-            incognito = true
-          }
-          // A draft is a first-class preview state. Keep it separate from the
-          // signed-in fixture conversation so header controls can be audited
-          // in both states without relying on a prior tap or restored scene
-          // storage.
-          if CommandLine.arguments.contains("--juno-preview-chat-draft") {
-            selection = .chat
-            conversationModel?.isDraftingNewConversation = true
-            conversationModel?.selectedConversationID = nil
-          }
-          if CommandLine.arguments.contains("--juno-preview-voice")
-            || JunoPreviewEnvironment.opensVoiceFullScreen
-          {
-            startVoice()
-            if JunoPreviewEnvironment.opensVoiceFullScreen {
-              voiceSession?.isFullScreen = true
-            }
-          }
+          await applyPreviewLaunchFlags()
           return
         }
         // Opens the real, signed-in shell straight onto one destination, so
@@ -568,6 +545,82 @@ struct JunoMobileRootView: View {
         launchRequests.request(request)
       }
     }
+  }
+
+  #if DEBUG
+    /// The harness's launch flags, applied once the shell is up. Its own
+    /// function so the root body stays within the type checker's budget.
+    private func applyPreviewLaunchFlags() async {
+          if let raw = JunoPreviewEnvironment.initialDestination,
+            let section = JunoMobileSection(rawValue: raw)
+          {
+            show(section)
+          }
+          if CommandLine.arguments.contains("--juno-preview-sidebar") {
+            showingHistory = true
+          }
+          if CommandLine.arguments.contains("--juno-preview-settings")
+            || ["profile", "username"].contains(JunoPreviewEnvironment.initialRoute ?? "")
+          {
+            showingSettings = true
+          }
+          // Opens straight into incognito, so the mode's own look is one
+          // relaunch away rather than a scripted tap.
+          if CommandLine.arguments.contains("--juno-preview-incognito") {
+            selection = .chat
+            conversationModel?.selectedConversationID = nil
+            incognito = true
+          }
+          // A draft is a first-class preview state. Keep it separate from the
+          // signed-in fixture conversation so header controls can be audited
+          // in both states without relying on a prior tap or restored scene
+          // storage.
+          if CommandLine.arguments.contains("--juno-preview-chat-draft") {
+            selection = .chat
+            conversationModel?.isDraftingNewConversation = true
+            conversationModel?.selectedConversationID = nil
+          }
+          // `--juno-preview-conversation <id>` opens one chat; the fixture
+          // rows land a beat after launch, so wait for the row first.
+          if let id = JunoPreviewEnvironment.initialConversation {
+            for _ in 0..<30 where conversationModel?.conversations.contains(where: { $0.id == id }) != true {
+              try? await Task.sleep(for: .milliseconds(100))
+            }
+            openConversation(id)
+          }
+          // `--juno-preview-notification research` takes the path a tapped
+          // "Your research is ready" notification takes: the run's chat, then
+          // its report over it.
+          if JunoComposerPreviewFlags.value("--juno-preview-notification") == "research" {
+            try? await Task.sleep(for: .milliseconds(1_200))
+            launchRequests.request(.openResearch("rr_sc_done"))
+          }
+          // `--juno-preview-report` opens the research report reader over
+          // the home, on the harness's finished heat-pump run.
+          if CommandLine.arguments.contains("--juno-preview-report") {
+            previewReport = NativeResearchReport(
+              message: PreviewResearch.reportMessage(),
+              question: PreviewResearch.question
+            ).map(JunoMobileReportRoute.init(report:))
+          }
+          if CommandLine.arguments.contains("--juno-preview-voice")
+            || JunoPreviewEnvironment.opensVoiceFullScreen
+          {
+            startVoice()
+            if JunoPreviewEnvironment.opensVoiceFullScreen {
+              voiceSession?.isFullScreen = true
+            }
+          }
+    }
+  #endif
+
+  /// The report reader `--juno-preview-report` opens; inert in Release.
+  private var previewReportSheet: JunoMobilePreviewReportSheet {
+    #if DEBUG
+      JunoMobilePreviewReportSheet(route: $previewReport)
+    #else
+      JunoMobilePreviewReportSheet()
+    #endif
   }
 
   /// The phone's shell: the conversation, with the sidebar pushed out from
@@ -1180,6 +1233,13 @@ struct JunoMobileRootView: View {
     }
   }
 
+  /// A destination reached from inside another (Artifacts from Library, Work
+  /// from Code): pushed on top, so Back returns to where it was opened.
+  private func pushDestination(_ destination: JunoMobileSection) {
+    guard sizeClass == .compact else { return openSidebarDestination(destination) }
+    if chatPath.last != destination { chatPath.append(destination) }
+  }
+
   private func openSidebarProject(_ id: String) {
     projectModel?.selectedProjectID = id
     show(.projects)
@@ -1476,7 +1536,10 @@ struct JunoMobileRootView: View {
           avatarData: avatarModel?.imageData,
           requestSender: requestSender,
           modelCatalog: conversationModel?.modelCatalog ?? [],
-          openSettings: { openSidebarDestination(.settings) }
+          openSettings: { openSidebarDestination(.settings) },
+          // Work sessions are reached from Code on the phone (the drawer
+          // folds them in — see `JunoMobileSection.foldedDestinations`).
+          openWork: { pushDestination(.work) }
         )
       } else {
         unavailable
@@ -1530,7 +1593,8 @@ struct JunoMobileRootView: View {
           openConversation: openConversation,
           madeModel: madeModel(),
           artifactModel: artifactModel,
-          workClient: workClient
+          workClient: workClient,
+          openArtifacts: { pushDestination(.artifacts) }
         )
       } else {
         unavailable
@@ -1724,5 +1788,20 @@ private struct JunoMobileOfflineBanner: View {
     .frame(maxWidth: .infinity, alignment: .leading)
     .background(.thinMaterial)
     .accessibilityIdentifier("juno.mobile.offline-banner")
+  }
+}
+
+
+/// The DEBUG harness's report reader, as a modifier so the root body stays
+/// within the type checker's budget.
+struct JunoMobilePreviewReportSheet: ViewModifier {
+  var route: Binding<JunoMobileReportRoute?> = .constant(nil)
+
+  func body(content: Content) -> some View {
+    content.sheet(item: route) { route in
+      JunoMobileResearchReportView(report: route.report, close: { self.route.wrappedValue = nil })
+        .junoSheetSurface(.page)
+        .tint(Color.junoAccent)
+    }
   }
 }

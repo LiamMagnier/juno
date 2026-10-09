@@ -28,7 +28,7 @@ struct JunoMobileProjectBreadcrumbs: View {
           NavigationLink(value: crumb.id) {
             Text(crumb.name)
               .foregroundStyle(Color.junoMutedForeground)
-              .frame(minHeight: 44)
+              .frame(minHeight: 32)
               .contentShape(.rect)
           }
           .buttonStyle(.plain)
@@ -40,7 +40,7 @@ struct JunoMobileProjectBreadcrumbs: View {
         Text(current)
           .foregroundStyle(.primary)
       }
-      .junoFont(size: 13, relativeTo: .footnote)
+      .font(.subheadline)
       .lineLimit(1)
     }
     .scrollIndicators(.hidden)
@@ -53,77 +53,58 @@ struct JunoMobileProjectBreadcrumbs: View {
 
 // MARK: - Folders tab
 
-struct JunoMobileProjectFoldersList: View {
+/// The project page's Folders section: one row per folder (the folder symbol,
+/// its name, what it holds), then New Folder. Nothing at all when the project
+/// has no folders and cannot take one.
+struct JunoMobileProjectFolderSection: View {
   @Bindable var model: NativeProjectModel<SQLiteAccountRepository>
   let project: NativeProject
-  @State private var creating = false
+  let create: () -> Void
 
   private var folders: [NativeProject] { model.children(of: project.id) }
   private var refusal: NativeProjectMoveRefusal? { model.newFolderRefusal(in: project.id) }
 
   var body: some View {
-    List {
-      if folders.isEmpty {
-        ContentUnavailableView {
-          Label("Arrange it in folders", systemImage: "folder")
-        } description: {
-          Text(refusal?.message
-            ?? "A folder keeps one part of \(project.name) together. Its chats follow this project’s instructions and read its files.")
-        } actions: {
-          if refusal == nil {
-            Button("New folder") { creating = true }
-              .disabled(project.isPending || model.isMutating)
-              .contentShape(.rect)
-          }
-        }
-        .listRowBackground(Color.clear)
-        .listRowSeparator(.hidden)
-      } else {
-        Section {
-          ForEach(folders) { folder in
-            NavigationLink(value: folder.id) {
-              Label {
-                VStack(alignment: .leading, spacing: 2) {
-                  Text(folder.name)
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                  Text(JunoMobileProjectFolderLine.summary(folder, model: model))
-                    .junoCaption()
-                    .lineLimit(1)
-                }
-              } icon: {
-                Image(systemName: "folder")
-                  .foregroundStyle(Color.junoMutedForeground)
+    if !folders.isEmpty || refusal == nil {
+      Section {
+        ForEach(folders) { folder in
+          NavigationLink(value: folder.id) {
+            HStack(spacing: JunoSpace.cozy) {
+              JunoSymbol(.projects)
+                .font(.title3)
+                .foregroundStyle(.secondary)
+                .frame(width: 32)
+                .accessibilityHidden(true)
+              VStack(alignment: .leading, spacing: 2) {
+                Text(folder.name)
+                  .font(.body)
+                  .foregroundStyle(.primary)
+                  .lineLimit(1)
+                Text(JunoMobileProjectFolderLine.summary(folder, model: model))
+                  .font(.subheadline)
+                  .foregroundStyle(.secondary)
+                  .lineLimit(1)
               }
             }
-            .listRowBackground(Color.junoSurface)
-            .accessibilityIdentifier("juno.mobile.project-folder-\(folder.id)")
+            .frame(minHeight: 44)
+            .accessibilityElement(children: .combine)
           }
-        } header: {
-          HStack {
-            Text("Folders")
-            Spacer()
-            if refusal == nil {
-              Button("New folder") { creating = true }
-                .textCase(nil)
-                .disabled(project.isPending || model.isMutating)
-                .contentShape(.rect)
-            }
+          .accessibilityIdentifier("juno.mobile.project-folder-\(folder.id)")
+        }
+        if refusal == nil {
+          Button(action: create) {
+            Label("New Folder", image: JunoIcon.plus.assetName(.regular))
           }
+          .disabled(project.isPending || model.isMutating)
+        }
+      } header: {
+        Text("Folders")
+      } footer: {
+        if folders.isEmpty {
+          Text("A folder keeps one part of \(project.name) together. Its chats follow this project’s instructions and read its files.")
         }
       }
-    }
-    .listStyle(.insetGrouped)
-    .scrollContentBackground(.hidden)
-    .accessibilityIdentifier("juno.mobile.project-folders")
-    .sheet(isPresented: $creating) {
-      JunoMobileNewFolderSheet(parentName: project.name) { name in
-        guard await model.createFolder(name: name, in: project.id) != nil else {
-          return model.lastErrorDescription ?? "Alevr couldn’t create this folder."
-        }
-        return nil
-      }
-      .presentationDetents([.medium])
+      .accessibilityIdentifier("juno.mobile.project-folders")
     }
   }
 }
@@ -161,17 +142,15 @@ struct JunoMobileInheritedSections: View {
         let instructions = source.instructions.trimmingCharacters(in: .whitespacesAndNewlines)
         if !instructions.isEmpty {
           Text(instructions)
-            .junoFont(size: 14, relativeTo: .subheadline)
+            .font(.subheadline)
             .foregroundStyle(.secondary)
             .lineLimit(8)
             .textSelection(.enabled)
         }
         if source.fileCount > 0 {
-          Label(
-            "Reads \(JunoMobileProjectFolderLine.plural(source.fileCount, "file"))",
-            systemImage: "doc"
-          )
-          .foregroundStyle(.secondary)
+          Text("Reads \(JunoMobileProjectFolderLine.plural(source.fileCount, "file"))")
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
         }
         NavigationLink(value: source.id) {
           Text("Open \(source.name)")
@@ -295,7 +274,7 @@ struct JunoMobileMoveProjectSheet: View {
       choice = .some(destination.projectID)
     } label: {
       HStack(spacing: JunoSpace.snug) {
-        Image(systemName: destination.projectID == nil ? "tray" : "folder")
+        JunoSymbol(destination.projectID == nil ? JunoIcon.archive : JunoIcon.projects)
           .foregroundStyle(Color.junoMutedForeground)
           .frame(width: 22)
           .accessibilityHidden(true)
@@ -308,8 +287,8 @@ struct JunoMobileMoveProjectSheet: View {
         } else if let refusal = destination.refusal {
           Text(refusal.shortLabel).foregroundStyle(.secondary)
         } else if chosen?.id == destination.id {
-          Image(systemName: "checkmark")
-            .foregroundStyle(Color.junoAccent)
+          JunoSymbol(.check)
+            .foregroundStyle(.tint)
             .accessibilityLabel("Selected")
         }
       }

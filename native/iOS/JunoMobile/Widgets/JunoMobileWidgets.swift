@@ -77,20 +77,20 @@ struct JunoMobileQuickActionsView: View {
         VStack(alignment: .leading, spacing: 8) {
           mediumHeader
           HStack(spacing: 8) {
-            action("Chat", icon: "square.and.pencil", route: "chat")
-            action("Voice", icon: "waveform", route: "voice")
-            action("Code", icon: "chevron.left.forwardslash.chevron.right", route: "code")
-            action("Dictate", icon: "mic", route: "dictate")
+            action("Chat", icon: .compose, route: "chat")
+            action("Voice", icon: .audioLines, route: "voice")
+            action("Code", icon: .code, route: "code")
+            action("Dictate", icon: .mic, route: "dictate")
           }
         }
       default:
         // The small square carries the four actions alone: a header would
         // crowd every tile below a comfortable thumb's reach.
         VStack(spacing: 8) {
-          action("Chat", icon: "square.and.pencil", route: "chat")
-          action("Voice", icon: "waveform", route: "voice")
-          action("Code", icon: "chevron.left.forwardslash.chevron.right", route: "code")
-          action("Dictate", icon: "mic", route: "dictate")
+          action("Chat", icon: .compose, route: "chat")
+          action("Voice", icon: .audioLines, route: "voice")
+          action("Code", icon: .code, route: "code")
+          action("Dictate", icon: .mic, route: "dictate")
         }
       }
     }
@@ -100,7 +100,7 @@ struct JunoMobileQuickActionsView: View {
 
   private var mediumHeader: some View {
     VStack(alignment: .leading, spacing: 2) {
-      Label("Juno", systemImage: "sparkles")
+      Label("Alevr", image: JunoIcon.home.assetName(.regular))
         .font(.headline.weight(.semibold))
         .foregroundStyle(Color.junoForeground)
       Text("Pick up where your thinking left off.")
@@ -110,11 +110,10 @@ struct JunoMobileQuickActionsView: View {
     }
   }
 
-  private func action(_ title: LocalizedStringKey, icon: String, route: String) -> some View {
+  private func action(_ title: LocalizedStringKey, icon: JunoIcon, route: String) -> some View {
     Link(destination: JunoMobileWidgetRoute.url(path: route)) {
       VStack(spacing: 5) {
-        Image(systemName: icon)
-          .font(.body.weight(.medium))
+        JunoIconView(icon, size: 18)
           .foregroundStyle(Color.junoAccent)
         Text(title)
           .font(.caption2.weight(.semibold))
@@ -132,7 +131,7 @@ struct JunoMobileVoiceLiveActivity: Widget {
     } dynamicIsland: { context in
       DynamicIsland {
         DynamicIslandExpandedRegion(.leading) {
-          Image(systemName: "waveform").foregroundStyle(Color.junoAccent)
+          JunoIconView(.audioLines, size: 18).foregroundStyle(Color.junoAccent)
         }
         DynamicIslandExpandedRegion(.trailing) {
           Text(context.state.phase).font(.caption)
@@ -141,11 +140,11 @@ struct JunoMobileVoiceLiveActivity: Widget {
           Text(context.state.muted ? "Muted" : "Voice conversation in progress")
         }
       } compactLeading: {
-        Image(systemName: "waveform")
+        JunoIconView(.audioLines, size: 18)
       } compactTrailing: {
         Text(context.state.muted ? "Muted" : context.state.phase).font(.caption2)
       } minimal: {
-        Image(systemName: "waveform")
+        JunoIconView(.audioLines, size: 18)
       }
       .widgetURL(JunoMobileWidgetRoute.url(path: "voice"))
     }
@@ -160,7 +159,7 @@ struct JunoMobileCodeApprovalLiveActivity: Widget {
     } dynamicIsland: { context in
       DynamicIsland {
         DynamicIslandExpandedRegion(.leading) {
-          Image(systemName: "chevron.left.forwardslash.chevron.right")
+          JunoIconView(.code, size: 18)
             .foregroundStyle(Color.junoAccent)
         }
         DynamicIslandExpandedRegion(.trailing) {
@@ -170,11 +169,11 @@ struct JunoMobileCodeApprovalLiveActivity: Widget {
           Text(context.state.summary).lineLimit(2)
         }
       } compactLeading: {
-        Image(systemName: "chevron.left.forwardslash.chevron.right")
+        JunoIconView(.code, size: 18)
       } compactTrailing: {
-        Image(systemName: "exclamationmark.circle.fill").foregroundStyle(Color.junoAccent)
+        JunoIconView(.error, size: 16, isOn: true).foregroundStyle(Color.junoAccent)
       } minimal: {
-        Image(systemName: "exclamationmark.circle.fill")
+        JunoIconView(.error, size: 16, isOn: true)
       }
       .widgetURL(
         JunoMobileWidgetRoute.url(
@@ -190,8 +189,7 @@ private struct VoiceActivityLockScreenView: View {
 
   var body: some View {
     HStack(spacing: 12) {
-      Image(systemName: "waveform")
-        .font(.title2)
+      JunoIconView(.audioLines, size: 24)
         .foregroundStyle(Color.junoAccent)
       VStack(alignment: .leading, spacing: 2) {
         Text(context.attributes.title).font(.headline)
@@ -200,7 +198,7 @@ private struct VoiceActivityLockScreenView: View {
           .foregroundStyle(Color.junoMutedForeground)
       }
       Spacer()
-      Text("Open Juno")
+      Text("Open Alevr")
         .font(.caption.weight(.semibold))
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
@@ -218,7 +216,7 @@ private struct CodeApprovalActivityView: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
-      Label("Juno Code needs approval", systemImage: "exclamationmark.shield")
+      Label("Alevr Code needs approval", image: JunoIcon.permission.assetName(.regular))
         .font(.headline)
       Text(context.state.summary)
         .font(.subheadline)

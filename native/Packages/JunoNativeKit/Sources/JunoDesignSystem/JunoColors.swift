@@ -50,17 +50,31 @@ public extension JunoColorToken {
     /// pass, and is the one place the two apps' grounds differ. Light mode is
     /// the generated value on both: the old `warmWhite` sat one 8-bit step from
     /// it.
-    static let canvasLight = JunoGeneratedColors.background.light
+    ///
+    /// **iPhone and iPad (round-2 redesign, Oct 2026):** the system's own
+    /// grounds — pure white and pure black, `systemBackground` — and neutral
+    /// greys one and two steps up for the card and the user bubble, the
+    /// values ChatGPT and Apple's own apps sit on. The warm near-blacks read
+    /// as muddy next to the system's glass, sheets and keyboard. The Mac keeps
+    /// the generated web values.
     #if os(iOS)
-    static let canvasDark = JunoColorToken(unchecked: 0.042, 0.0412, 0.038)
+    static let canvasLight = JunoColorToken(unchecked: 1, 1, 1)
+    static let canvasDark = JunoColorToken(unchecked: 0, 0, 0)
     #else
+    static let canvasLight = JunoGeneratedColors.background.light
     static let canvasDark = JunoGeneratedColors.background.dark
     #endif
 
     /// `--card`: #FEFDFC / #252422. One step above the canvas: run cards, code,
-    /// tables, the sources pill, attachment cards.
+    /// tables, the sources pill, attachment cards. On iOS: #F7F7F8 / #1C1C1E,
+    /// the system's secondary grouped steps.
+    #if os(iOS)
+    static let surfaceLight = JunoColorToken(unchecked: 0.969, 0.969, 0.973)
+    static let surfaceDark = JunoColorToken(unchecked: 0.110, 0.110, 0.118)
+    #else
     static let surfaceLight = JunoGeneratedColors.card.light
     static let surfaceDark = JunoGeneratedColors.card.dark
+    #endif
 
     /// `--popover`: one step above the card. **Not painted on the Mac**, where
     /// popovers, menus and sheets are system glass; kept for the phone.
@@ -69,13 +83,24 @@ public extension JunoColorToken {
 
     /// `--muted`. The same values as `--secondary` today; kept because the
     /// phone reads it by this name.
+    #if os(iOS)
+    static let mutedLight = JunoColorToken(unchecked: 0.953, 0.953, 0.957)
+    static let mutedDark = JunoColorToken(unchecked: 0.173, 0.173, 0.180)
+    #else
     static let mutedLight = JunoGeneratedColors.muted.light
     static let mutedDark = JunoGeneratedColors.muted.dark
+    #endif
 
     /// `--secondary`: #F2F0EB / #302E2C. The user bubble, wells, inline code,
     /// pressed chips, keycaps.
+    /// On iOS: #F3F3F4 / #2C2C2E — ChatGPT's bubble greys, without the warm cast.
+    #if os(iOS)
+    static let secondaryLight = JunoColorToken(unchecked: 0.953, 0.953, 0.957)
+    static let secondaryDark = JunoColorToken(unchecked: 0.173, 0.173, 0.180)
+    #else
     static let secondaryLight = JunoGeneratedColors.secondary.light
     static let secondaryDark = JunoGeneratedColors.secondary.dark
+    #endif
 
     /// `--accent` — the web's *neutral* hover, not the brand colour (the web
     /// names its action colour `--primary`): #EEECE5 / #383633. The hover fill

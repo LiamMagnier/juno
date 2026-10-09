@@ -1,3 +1,4 @@
+import SwiftUI
 import XCTest
 @testable import JunoMobile
 
@@ -38,13 +39,22 @@ final class JunoMobileNavigationTests: XCTestCase {
     }
 
     /// The drawer lists every destination except the three that have their own
-    /// control: chat *is* the conversation list, search is the header button,
-    /// settings is the footer avatar.
+    /// control (chat *is* the conversation list, search is the header button,
+    /// settings is the footer gear) and the two folded into another screen
+    /// (Artifacts in Library, Work in Code) — and every folded one names a
+    /// host the drawer does list, so nothing becomes unreachable.
     func testTheDrawerListsEveryDestinationWithoutItsOwnControl() {
         let drawer = Set(JunoMobileSection.drawerDestinations)
-        let expected = Set(JunoMobileSection.allCases).subtracting([.chat, .search, .settings])
+        let folded = JunoMobileSection.foldedDestinations
+        let expected = Set(JunoMobileSection.allCases)
+            .subtracting([.chat, .search, .settings])
+            .subtracting(folded.keys)
 
         XCTAssertEqual(drawer, expected)
+        XCTAssertTrue(drawer.isDisjoint(with: folded.keys))
+        for host in folded.values {
+            XCTAssertTrue(drawer.contains(host), "\(host) hosts a folded destination but is not in the drawer")
+        }
         XCTAssertEqual(
             JunoMobileSection.drawerDestinations.count, drawer.count, "a destination is listed twice"
         )
@@ -69,5 +79,25 @@ final class JunoMobileNavigationTests: XCTestCase {
 
         XCTAssertEqual(Set(grouped), Set(JunoMobileSection.allCases))
         XCTAssertEqual(grouped.count, JunoMobileSection.allCases.count)
+    }
+
+    /// The pushed card is concentric with the phone's corners: the radius
+    /// follows the hardware family, read off the screen's point width.
+    func testThePushedCardTakesTheDisplayCornerRadius() {
+        typealias Drawer = JunoMobilePushDrawer<EmptyView, EmptyView>
+        XCTAssertEqual(Drawer.displayCornerRadius(screenWidth: 402), 62)
+        XCTAssertEqual(Drawer.displayCornerRadius(screenWidth: 440), 62)
+        XCTAssertEqual(Drawer.displayCornerRadius(screenWidth: 393), 55)
+        XCTAssertEqual(Drawer.displayCornerRadius(screenWidth: 390), 47)
+        XCTAssertEqual(Drawer.displayCornerRadius(screenWidth: 1024), 40)
+    }
+
+    /// The drawer's search button is the top bar's button: one diameter, one
+    /// glyph size, so it can sit on the card's sidebar button's centre line.
+    func testTheDrawerHeaderButtonIsTheTopBarButton() {
+        XCTAssertEqual(JunoMobileTopBarMetrics.buttonDiameter, 44)
+        XCTAssertEqual(JunoMobileTopBarMetrics.glyph, 20)
+        XCTAssertEqual(JunoMobileDrawerMetrics.edge, 16)
+        XCTAssertEqual(JunoMobileDrawerMetrics.edge + JunoMobileDrawerMetrics.slot + JunoMobileDrawerMetrics.gap, 46)
     }
 }

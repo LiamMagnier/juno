@@ -27,7 +27,8 @@ struct JunoMobileThinkingDialButton: View {
       // nothing to dial; the honest thing the gauge can offer is the model.
       if scale?.isAdjustable == true { open() } else { chooseModel() }
     } label: {
-      JunoDialGlyph(fraction: Self.fraction(scale: scale, effort: effort))
+      // 19pt at a 1.6pt stroke: the weight of the SF Symbols beside it.
+      JunoDialGlyph(fraction: Self.fraction(scale: scale, effort: effort), size: 19, lineWidth: 1.6)
         .foregroundStyle(Color.primary)
         .frame(width: 40, height: 44)
         .contentShape(Rectangle())
@@ -162,11 +163,12 @@ struct JunoMobileComposerPrimaryButton: View {
 
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-  private var symbol: String {
+  /// The web composer's own faces: the waveform, the up arrow, the stop.
+  private var icon: JunoIcon {
     switch face {
-    case .voice: "waveform"
-    case .send: "arrow.up"
-    case .stop: "stop.fill"
+    case .voice: .audioLines
+    case .send: .arrowUp
+    case .stop: .stop
     }
   }
 
@@ -177,10 +179,10 @@ struct JunoMobileComposerPrimaryButton: View {
 
   var body: some View {
     Button(action: action) {
-      Image(systemName: symbol)
-        .junoFont(size: face == .stop ? 13 : 16, relativeTo: .body, weight: face == .voice ? .bold : .semibold)
+      JunoIconView(icon, size: face == .stop ? 14 : 18, weight: face == .stop ? .fill : .bold)
         .foregroundStyle(enabled ? Color.junoCanvas : Color.junoSecondaryInk)
-        .contentTransition(.symbolEffect(.replace.downUp))
+        .id(icon)
+        .transition(.scale(scale: 0.6).combined(with: .opacity))
         .frame(width: 36, height: 36)
         .modifier(JunoComposerSendBackground(active: enabled, tint: Color.primary))
         .frame(width: 44, height: 44)
@@ -214,19 +216,17 @@ struct JunoMobileComposerPrimaryButton: View {
 /// shows a chosen tool: its glyph and name in the accent ink, and an × that
 /// disarms it. No capsule — it is part of what is being typed, not a status.
 struct JunoMobileComposerToken: View {
-  let symbol: String
+  let icon: JunoIcon
   let title: String
   let remove: () -> Void
 
   var body: some View {
     Button(action: remove) {
       HStack(spacing: 5) {
-        Image(systemName: symbol)
-          .junoFont(size: 13, relativeTo: .body, weight: .regular)
+        JunoIconView(icon, size: 14)
         Text(title)
           .junoFont(size: 15, relativeTo: .subheadline)
-        Image(systemName: "xmark")
-          .junoFont(size: 10, relativeTo: .body, weight: .semibold)
+        JunoIconView(.close, size: 10)
           .foregroundStyle(Color.junoSecondaryInk)
       }
       .foregroundStyle(Color.junoAccent)

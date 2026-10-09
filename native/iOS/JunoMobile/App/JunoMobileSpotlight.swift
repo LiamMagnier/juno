@@ -20,7 +20,7 @@ enum JunoMobileSpotlight {
       .map { conversation -> CSSearchableItem in
         let attributes = CSSearchableItemAttributeSet(contentType: UTType.text)
         attributes.title = conversation.title
-        attributes.contentDescription = "Chat in Juno"
+        attributes.contentDescription = "Chat in Alevr"
         attributes.contentModificationDate = conversation.lastMessageAt
         attributes.relatedUniqueIdentifier = conversation.id
         let item = CSSearchableItem(

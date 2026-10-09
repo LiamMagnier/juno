@@ -336,4 +336,20 @@ final class JunoMobileChatChromeUITests: XCTestCase {
 
         require(app.buttons["juno.mobile.chat-plus"], app, timeout: 10)
     }
+
+    /// The open drawer's search button and the pushed card's sidebar button
+    /// are one control size on one line: same diameter, same vertical centre.
+    @MainActor
+    func testDrawerSearchAndSidebarButtonShareSizeAndCentreLine() {
+        let app = launch(["--juno-preview-sidebar"])
+
+        let search = app.buttons["juno.mobile.sidebar-search"]
+        let toggle = app.buttons["juno.mobile.menu"]
+        require(search, app, timeout: 10)
+        require(toggle, app, timeout: 10)
+
+        XCTAssertEqual(search.frame.midY, toggle.frame.midY, accuracy: 1.5, "centre lines differ")
+        XCTAssertEqual(search.frame.height, toggle.frame.height, accuracy: 2, "heights differ")
+        XCTAssertEqual(search.frame.width, toggle.frame.width, accuracy: 2, "widths differ")
+    }
 }

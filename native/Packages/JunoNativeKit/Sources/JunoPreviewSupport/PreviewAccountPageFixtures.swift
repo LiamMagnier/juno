@@ -77,7 +77,7 @@ public enum PreviewAccountPageFixtures {
             \(fact("m9", "Used imperial units.", "preferences", "AUTO", "conv-1", -40 * day, status: "superseded", supersededBy: "m2"))
           ],
           "summary": {
-            "content": "Liam is a product designer in Lisbon who is building Juno, a native assistant for the Mac and iPhone.\\n\\n## How he likes answers\\nA short summary first, then the detail. British English and metric units.\\n\\n## What he is working on\\nThe Mac redesign, due before the October release, and a thesis that cites in APA.",
+            "content": "Maya runs product at Field Notes, a small notes-app team in Lisbon.\\n\\n## How she likes answers\\nA short summary first, then the detail. British English and metric units.\\n\\n## What she is working on\\nThe Field Notes 2.0 launch on November 12, and the pricing page that goes with it.",
             "updatedAt": "\(iso(-2 * 3600))",
             "entryCount": 8
           },

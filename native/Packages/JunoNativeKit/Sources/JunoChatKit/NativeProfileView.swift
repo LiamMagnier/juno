@@ -81,7 +81,7 @@ public struct NativeProfileView: View {
             case .failed(let message):
                 Section {
                     ContentUnavailableView {
-                        Label("Couldn’t load your activity", image: JunoIcon.warning.assetName)
+                        Label("Couldn’t load your activity", image: JunoIcon.triangleAlert.assetName(.regular))
                     } description: {
                         Text(message)
                     } actions: {

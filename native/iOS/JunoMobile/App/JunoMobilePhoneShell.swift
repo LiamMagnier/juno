@@ -47,20 +47,62 @@ struct JunoMobilePushDrawer<Sidebar: View, Content: View>: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.colorScheme) private var colorScheme
 
+  /// The device display's corner radius, so the pushed card is concentric
+  /// with the phone's own corners at every drag position. Apple publishes no
+  /// API for it (`_displayCornerRadius` is private), so it is read off the
+  /// screen's point width, which identifies the hardware family:
+  /// 16/17 Pro and Pro Max 62pt, 15 Pro and 14 Pro families 55pt, the
+  /// notched models 47pt, anything older or an iPad's window a modest 40pt.
+  static func displayCornerRadius(screenWidth: CGFloat) -> CGFloat {
+    switch screenWidth.rounded() {
+    case 402, 440: 62
+    case 393, 430: 55
+    case 390, 428, 375, 414: 47
+    default: 40
+    }
+  }
+
+  /// `--juno-preview-drawer-progress <0…1>` holds a closed drawer part-way
+  /// open, as a finger mid-drag would, for captures. Zero outside DEBUG.
+  static func previewDrag(full: CGFloat, open: Bool) -> CGFloat {
+    #if DEBUG
+      guard !open,
+        let index = CommandLine.arguments.firstIndex(of: "--juno-preview-drawer-progress"),
+        CommandLine.arguments.indices.contains(index + 1),
+        let fraction = Double(CommandLine.arguments[index + 1])
+      else { return 0 }
+      return full * CGFloat(fraction)
+    #else
+      return 0
+    #endif
+  }
+
   /// How far the conversation travels: most of the screen, so its edge stays
   /// in view as the "way back", and never wider than a comfortable column.
   private func width(in size: CGSize) -> CGFloat {
-    min(size.width * 0.84, 360)
+    // ChatGPT's proportion: the drawer takes four fifths of the screen, so
+    // about a fifth of the card (80pt on a 402pt iPhone) stays in view as the
+    // way back. Derived from the container, never a device constant.
+    min(size.width * 0.8, 380)
   }
 
   var body: some View {
     GeometryReader { proxy in
       let full = width(in: proxy.size)
       let resting: CGFloat = isOpen ? full : 0
-      let offset = min(max(resting + drag, 0), full)
+      let offset = min(max(resting + drag + Self.previewDrag(full: full, open: isOpen), 0), full)
       let progress = full > 0 ? offset / full : 0
+      let radius = Self.displayCornerRadius(screenWidth: proxy.size.width) * progress
 
       ZStack(alignment: .leading) {
+        // The drawer's ground spans the whole screen, not just the drawer's
+        // column: the card's rounded corners and its drag-time gap reveal
+        // this, never the app canvas behind (which read as a square block
+        // under the card's corner).
+        JunoMobileDrawerGround()
+          .frame(width: proxy.size.width, height: proxy.size.height)
+          .accessibilityHidden(true)
+
         sidebar()
           .safeAreaPadding(.top, insets.top)
           .safeAreaPadding(.bottom, insets.bottom)
@@ -81,17 +123,31 @@ struct JunoMobilePushDrawer<Sidebar: View, Content: View>: View {
           .overlay {
             // The dim and the tap-to-close catcher, one layer.
             Color.black
-              .opacity((colorScheme == .dark ? 0.32 : 0.05) * progress)
+              .opacity((colorScheme == .dark ? 0.30 : 0.04) * progress)
               .allowsHitTesting(isOpen)
               .contentShape(.rect)
               .onTapGesture { setOpen(false) }
               .accessibilityHidden(true)
           }
-          .clipShape(.rect(cornerRadius: 34 * progress, style: .continuous))
-          .shadow(
-            color: .black.opacity((colorScheme == .dark ? 0 : 0.10) * progress),
-            radius: 18, x: -2, y: 0
-          )
+          // ChatGPT's card: the screen's own corner radius and a soft shadow
+          // thrown back toward the drawer, following the drag from nothing
+          // when closed to full when open. No scale: a scaled card's corners
+          // would no longer be concentric with the bezel.
+          //
+          // One composited layer, then the clip, so the navigation bar's
+          // glass and every background inside are rounded with it; the
+          // shadow is a separate rounded shape behind, never an unclipped
+          // container.
+          .compositingGroup()
+          .clipShape(.rect(cornerRadius: radius, style: .continuous))
+          .background {
+            RoundedRectangle(cornerRadius: radius, style: .continuous)
+              .fill(Color.junoCanvas)
+              .shadow(
+                color: .black.opacity((colorScheme == .dark ? 0.6 : 0.14) * progress),
+                radius: 26, x: -6, y: 0
+              )
+          }
           .offset(x: offset)
           .allowsHitTesting(!dragging)
       }
@@ -160,80 +216,57 @@ struct JunoMobilePushDrawer<Sidebar: View, Content: View>: View {
 
 // MARK: - Top bar glyphs
 
-/// The sidebar mark: two strokes, the lower one shorter — the ChatGPT glyph,
-/// drawn rather than borrowed, because SF Symbols has no two-line variant and
-/// three lines reads as "menu", not "your chats".
+/// The sidebar mark: the website's own panel glyph (`AppIcons` /
+/// `PanelLeft`), the one the web's collapse button and command palette draw.
 struct JunoMobileSidebarGlyph: View {
   var body: some View {
-    Canvas { context, size in
-      let w = size.width
-      let h = size.height
-      let line: CGFloat = 1.8
-      var top = Path()
-      top.move(to: CGPoint(x: w * 0.12, y: h * 0.36))
-      top.addLine(to: CGPoint(x: w * 0.88, y: h * 0.36))
-      var bottom = Path()
-      bottom.move(to: CGPoint(x: w * 0.12, y: h * 0.66))
-      bottom.addLine(to: CGPoint(x: w * 0.58, y: h * 0.66))
-      let style = StrokeStyle(lineWidth: line, lineCap: .round)
-      context.stroke(top, with: .foreground, style: style)
-      context.stroke(bottom, with: .foreground, style: style)
-    }
-    .frame(width: 22, height: 22)
-    .accessibilityHidden(true)
+    JunoIconView(.panelLeft, size: JunoMobileTopBarMetrics.glyph)
+      .accessibilityHidden(true)
   }
 }
 
-/// The private-chat toggle's face: a dashed circle, filled with a check once
-/// the chat is private. The same control in both states, so turning it on
-/// reads as the button changing rather than a new button appearing.
+/// The private-chat toggle's face: the website's ghost — outlined while off,
+/// solid once the chat is private. The same control in both states, so
+/// turning it on reads as the button changing rather than a new button.
 struct JunoMobileTemporaryChatGlyph: View {
   let active: Bool
 
   var body: some View {
-    ZStack {
-      Image(systemName: "circle.dashed")
-        .junoFont(size: 18, relativeTo: .body, weight: .regular)
-      if active {
-        Image(systemName: "checkmark")
-          .junoFont(size: 8.5, relativeTo: .body, weight: .bold)
-          .transition(.scale(scale: 0.4).combined(with: .opacity))
-      }
-    }
-    .frame(width: 24, height: 24)
-    .accessibilityHidden(true)
+    JunoIconView(.privateChat, size: 20, isOn: active)
+      .contentTransition(.opacity)
+      .frame(width: 24, height: 24)
+      .accessibilityHidden(true)
   }
 }
 
 // MARK: - Chat | Code
 
-/// The two products, as the bar's centre: a system segmented control, which
-/// the OS 26 toolbar draws as one Liquid Glass capsule with a lit segment — no
-/// hand-built knob, no custom blur.
+/// The two products, as the bar's centre: the website's product orbit —
+/// Chat and Code in the serif at the two ends of a dot orbit, the presence
+/// trail running to the one in use (`components/app/product-switch.tsx`,
+/// ported in `JunoProductOrbit`), in one interactive Liquid Glass capsule.
 struct JunoMobileProductSwitch: View {
   @Binding var selection: JunoMobileSection
   @State private var haptic = JunoMobileHapticTrigger()
 
   var body: some View {
-    Picker("Product", selection: productBinding) {
-      Text("Chat").tag(JunoMobileSection.chat)
-      Text("Code").tag(JunoMobileSection.code)
+    JunoProductOrbit(
+      active: selection == .code ? .code : .chat,
+      locked: JunoMobilePlanStore.shared.allows(.code) ? [] : [.code]
+    ) { product in
+      let target: JunoMobileSection = product == .code ? .code : .chat
+      guard target != selection else { return }
+      haptic.fire()
+      selection = target
     }
-    .pickerStyle(.segmented)
+    .padding(.horizontal, 12)
+    .frame(minHeight: 44)
+    .contentShape(Capsule())
+    // The bar's glass capsule, as the system draws for its own controls.
+    .glassEffect(.regular.interactive(), in: Capsule())
     .fixedSize()
     .junoHaptic(JunoMobileHaptic.selection, trigger: haptic)
     .accessibilityIdentifier("juno.mobile.product-switch")
-  }
-
-  private var productBinding: Binding<JunoMobileSection> {
-    Binding(
-      get: { selection == .code ? .code : .chat },
-      set: { newValue in
-        guard newValue != selection else { return }
-        haptic.fire()
-        selection = newValue
-      }
-    )
   }
 }
 
@@ -265,9 +298,11 @@ extension ButtonStyle where Self == JunoMobileQuietPressStyle {
 /// The drawer's ground: the canvas in light, one step up from the black canvas
 /// in dark — so the pushed conversation still reads as a card against it.
 struct JunoMobileDrawerGround: View {
-  @Environment(\.colorScheme) private var colorScheme
 
   var body: some View {
-    colorScheme == .dark ? Color.junoSurface : Color.junoCanvas
+    // One step off the canvas in both appearances — ChatGPT's #F9F9F9 under
+    // its white card — so the pushed conversation reads as a sheet of paper
+    // on the drawer, not as more of the same white.
+    Color.junoSurface
   }
 }

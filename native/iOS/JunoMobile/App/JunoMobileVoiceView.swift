@@ -200,7 +200,7 @@ enum JunoMobileVoiceCallPhase: Equatable {
         case .reconnecting: String(localized: "Reconnecting")
         case .listening: String(localized: "Listening")
         case .thinking: String(localized: "Thinking")
-        case .speaking: String(localized: "Juno is speaking")
+        case .speaking: String(localized: "Alevr is speaking")
         case .interrupting: String(localized: "Stopping")
         case .muted: String(localized: "Muted")
         case .ended: String(localized: "Call ended")
@@ -235,8 +235,8 @@ enum JunoMobileVoiceCallPhase: Equatable {
         case .reconnecting: String(localized: "Reconnecting the call.")
         case .listening: String(localized: "Listening.")
         case .thinking: String(localized: "Thinking about your answer.")
-        case .speaking: String(localized: "Juno is speaking. Talk any time to interrupt.")
-        case .interrupting: String(localized: "Stopping Juno.")
+        case .speaking: String(localized: "Alevr is speaking. Talk any time to interrupt.")
+        case .interrupting: String(localized: "Stopping Alevr.")
         case .muted: String(localized: "Your microphone is muted.")
         case .ended: String(localized: "The call has ended.")
         case .unavailable: String(localized: "There is a problem with the call.")
@@ -431,7 +431,7 @@ struct JunoMobileVoiceCallControls: View {
                 }
             } else {
                 if controller.assistantSpeaking && session.isLive {
-                    round(icon: .stop, size: 12, label: "Stop Juno speaking", identifier: "juno.mobile.voice-stop") {
+                    round(icon: .stop, size: 12, label: "Stop Alevr speaking", identifier: "juno.mobile.voice-stop") {
                         stopHaptic.fire()
                         controller.interrupt()
                     }
@@ -497,7 +497,7 @@ struct JunoMobileVoiceCallControls: View {
                     )
                 }
                 Toggle(isOn: $pushToTalk) {
-                    Label("Push to talk", systemImage: "hand.tap")
+                    Label("Push to talk", image: JunoIcon.hand.assetName(.regular))
                 }
             }
             Section {

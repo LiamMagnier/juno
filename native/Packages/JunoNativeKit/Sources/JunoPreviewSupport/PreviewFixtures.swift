@@ -113,7 +113,7 @@ public enum PreviewFixtures {
     private static func memorySummary(_ accountID: StorageAccountID) -> StoredRecord {
         // The store persists the summary under its own namespace/key.
         record(accountID, "native_memory_summary", "summary", 1, """
-        {"content":"Works on the Juno native apps. Prefers concise, structured answers. Based in Europe/Paris.","updatedAt":"\(iso(-3600))","entryCount":3}
+        {"content":"Leads product on Field Notes, a notes app shipping 2.0 in November. Prefers concise, structured answers. Based in Lisbon.","updatedAt":"\(iso(-3600))","entryCount":3}
         """)
     }
 
@@ -140,37 +140,23 @@ public enum PreviewFixtures {
     /// only, with the same ids as the normal set so `conv-1` opens the same way.
     private static func showcaseRecords(_ a: StorageAccountID) -> [StoredRecord] {
         var out: [StoredRecord] = [settings(a), memorySummary(a)]
-        // Timed against the clock (``PreviewShowcaseConversation``), so the
-        // column's date sections read as a real week.
-        let iso = PreviewShowcaseConversation.iso
-        let chats: [(String, String, Bool, String?, TimeInterval)] = [
-            ("conv-1", "Launch plan for Field Notes 2.0", true, nil, -400),
-            ("conv-7", "Investor update, October", false, nil, -3 * 3_600),
-            ("conv-proj", "Beta feedback, week 3", false, "proj-1", -5 * 3_600),
-            ("conv-2", "Pricing page copy", false, nil, -26 * 3_600),
-            ("conv-8", "Podcast questions for Ana", false, nil, -2 * 86_400),
-            ("conv-4", "Onboarding email sequence", false, nil, -3 * 86_400),
-            ("conv-5", "Q4 hiring plan", false, nil, -9 * 86_400),
-            ("conv-9", "Translate the FAQ into French", false, nil, -12 * 86_400),
-            ("conv-6", "Lisbon offsite agenda", false, nil, -20 * 86_400),
-        ]
-        for (index, chat) in chats.enumerated() {
-            let project = chat.3.map { #","projectId":"\#($0)""# } ?? ""
-            out.append(record(a, "conversation", chat.0, UInt64(6 - index % 3), """
-            {"id":"\(chat.0)","title":"\(chat.1)","model":"anthropic:claude-sonnet-4-6","kind":"chat","pinned":\(chat.2),"archivedAt":null\(project),"createdAt":"\(iso(chat.4 - 3600))","updatedAt":"\(iso(chat.4))","lastMessageAt":"\(iso(chat.4))"}
-            """))
+        // Relative to now, so the sidebar groups the week the way a live
+        // account's does. See ``PreviewShowcaseFixtures``.
+        for row in PreviewShowcaseFixtures.rows(now: Date()) {
+            out.append(record(a, row.namespace, row.id, row.revision, row.json))
         }
-        out += PreviewShowcaseConversation.messages(a)
+        // The Q3 pack (a spreadsheet, a document and a deck), so Artifacts and
+        // its detail pages have something to show in product shots.
+        let now = Date()
+        out.append(contentsOf: PreviewArtifactFixtures.records(a) { offset in
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            return formatter.string(from: now.addingTimeInterval(offset))
+        })
+        // The Mac's capture chats on top of the iPhone's week: the Trattoria
+        // Moro bill splitter, the heat-pump research run that
+        // ``PreviewShowcaseServer`` serves, and conv-1's checklist and budget.
         out += PreviewShowcaseConversation.extraRecords(a)
-        out.append(record(a, "project", "proj-1", 8, """
-        {"id":"proj-1","name":"Field Notes","nameSource":"user","instructions":"The notes app we are launching. Keep the voice warm and plain.","starred":true,"createdAt":"\(iso(-200000))","updatedAt":"\(iso(-1500))"}
-        """))
-        out.append(record(a, "project", "proj-2", 4, """
-        {"id":"proj-2","name":"Fundraising","nameSource":"user","instructions":"Seed extension. Numbers first, no hype.","starred":false,"createdAt":"\(iso(-900000))","updatedAt":"\(iso(-3 * 3_600))"}
-        """))
-        out.append(record(a, "project", "proj-3", 4, """
-        {"id":"proj-3","name":"Hiring","nameSource":"user","instructions":"Two engineers and a designer before January.","starred":false,"createdAt":"\(iso(-1_200_000))","updatedAt":"\(iso(-9 * 86_400))"}
-        """))
         return out
     }
 
@@ -300,7 +286,7 @@ public enum PreviewFixtures {
         {"id":"mem-1","content":"Prefers concise, structured answers.","source":"AUTO","kind":"FACT","sourceRef":"conv-1","createdAt":"\(iso(-500000))","updatedAt":"\(iso(-500000))"}
         """))
         out.append(record(a, "memory", "mem-2", 2, """
-        {"id":"mem-2","content":"Building the Juno native macOS and iOS apps.","source":"MANUAL","kind":"FACT","sourceRef":"manual","createdAt":"\(iso(-400000))","updatedAt":"\(iso(-400000))"}
+        {"id":"mem-2","content":"Leads product for Field Notes 2.0.","source":"MANUAL","kind":"FACT","sourceRef":"manual","createdAt":"\(iso(-400000))","updatedAt":"\(iso(-400000))"}
         """))
         out.append(record(a, "memory", "mem-3", 2, """
         {"id":"mem-3","content":"Never mention the discontinued beta program.","source":"MANUAL","kind":"SUPPRESSION","sourceRef":"manual","createdAt":"\(iso(-300000))","updatedAt":"\(iso(-300000))"}

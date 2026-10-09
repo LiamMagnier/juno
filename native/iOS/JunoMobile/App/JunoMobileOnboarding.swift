@@ -33,7 +33,16 @@ struct JunoMobileSignInView: View {
         .transition(.opacity)
       }
     }
-    .junoScreenCanvas()
+    // The website's paper: the faint dot grid behind the front door, as the
+    // web's onboarding and access panel set it.
+    .background {
+      ZStack {
+        Color.junoCanvas
+        JunoDotGrid(spacing: 26)
+          .opacity(0.45)
+      }
+      .ignoresSafeArea()
+    }
     .tint(Color.junoAccent)
   }
 
@@ -123,19 +132,19 @@ private struct JunoMobileWelcome: View {
       id: 0,
       eyebrow: "Chat, research, voice and code",
       title: "One assistant.\nEvery model.",
-      body: "Juno picks the right model for each question, or uses the one you choose."
+      body: "Alevr picks the right model for each question, or uses the one you choose."
     ),
     Page(
       id: 1,
       eyebrow: "Privacy",
       title: "It asks before\nit listens.",
-      body: "The microphone is used only for voice and dictation, the camera only when you show Juno something. Nothing runs in the background without telling you."
+      body: "The microphone is used only for voice and dictation, the camera only when you show Alevr something. Nothing runs in the background without telling you."
     ),
     Page(
       id: 2,
-      eyebrow: "Juno Code",
+      eyebrow: "Alevr Code",
       title: "Your Mac,\nin your pocket.",
-      body: "Pair Juno Code on your Mac to steer sessions, review diffs and approve changes from here."
+      body: "Pair Alevr Code on your Mac to steer sessions, review diffs and approve changes from here."
     ),
   ]
 
@@ -219,7 +228,7 @@ private struct JunoMobileWelcome: View {
             HStack(spacing: JunoSpace.snug) {
               Text(isLast ? "Get started" : "Continue")
                 .contentTransition(.opacity)
-              Image(systemName: "arrow.right")
+              JunoSymbol(.arrowRight)
                 .font(.subheadline.weight(.semibold))
             }
             .frame(maxWidth: .infinity)
@@ -369,7 +378,7 @@ private struct JunoMobileSignInForm: View {
   /// system's own sign-in sheets, rather than two separately boxed fields.
   private var credentials: some View {
     VStack(spacing: 0) {
-      row(icon: "envelope") {
+      row(icon: .message) {
         TextField("auth.email.placeholder", text: $email)
           .textContentType(.username)
           .keyboardType(.emailAddress)
@@ -384,7 +393,7 @@ private struct JunoMobileSignInForm: View {
         .fill(Color.junoHairline)
         .frame(height: 0.75)
         .padding(.leading, 50)
-      row(icon: "lock") {
+      row(icon: .lock) {
         SecureField("auth.password.label", text: $password)
           .textContentType(.password)
           .focused($focusedField, equals: .password)
@@ -396,10 +405,9 @@ private struct JunoMobileSignInForm: View {
     .junoMobileRaised(cornerRadius: 18)
   }
 
-  private func row<Content: View>(icon: String, @ViewBuilder _ content: () -> Content) -> some View {
+  private func row<Content: View>(icon: JunoIcon, @ViewBuilder _ content: () -> Content) -> some View {
     HStack(spacing: JunoSpace.cozy) {
-      Image(systemName: icon)
-        .font(.body)
+      JunoIconView(icon, size: 18)
         .foregroundStyle(Color.junoTertiaryInk)
         .frame(width: 22)
         .accessibilityHidden(true)

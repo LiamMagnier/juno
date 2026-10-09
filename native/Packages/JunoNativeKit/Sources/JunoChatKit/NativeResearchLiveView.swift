@@ -492,7 +492,9 @@ public struct NativeResearchLiveView: View {
                     controlButton("Pause", icon: .pause, action: pause)
                 }
                 if showsFinish, let finish = actions.finish {
-                    controlButton("Write with what you have", icon: nil, action: finish)
+                    // The phone's row has room for four short verbs, not a
+                    // sentence that wraps inside its capsule.
+                    controlButton(compact ? "Write now" : "Write with what you have", icon: nil, action: finish)
                         .disabled(run.finishRequested)
                 }
                 Spacer(minLength: 0)
@@ -513,6 +515,7 @@ public struct NativeResearchLiveView: View {
             HStack(spacing: JunoSpace.tight) {
                 if let icon { JunoIconView(icon, size: 12) }
                 Text(title)
+                    .lineLimit(1)
             }
             .junoFont(size: 13, relativeTo: .callout, weight: .medium)
             .frame(minHeight: compact ? 32 : 24)
@@ -536,32 +539,7 @@ public struct NativeResearchQuestionRow: View {
         self.question = question
     }
 
-    private var symbol: String {
-        switch question.status {
-        case "covered": "checkmark.circle"
-        case "partial": "circle.lefthalf.filled"
-        case "thin": "exclamationmark.circle"
-        case "searching": "circle.dotted"
-        case "investigated": "checkmark"
-        default: "circle"
-        }
-    }
-
-    private var active: Bool { question.status == "searching" }
-
-    /// The Mac draws the web's glyphs (owner rule, round 2); the iPhone keeps
-    /// its symbols until its own lane moves them.
-    @ViewBuilder
-    private var glyph: some View {
-        #if os(macOS)
-        JunoIconView(webIcon, size: 12)
-        #else
-        Image(systemName: symbol)
-            .junoFont(size: 12, relativeTo: .footnote)
-        #endif
-    }
-
-    private var webIcon: JunoIcon {
+    private var icon: JunoIcon {
         switch question.status {
         case "covered": .circleCheck
         case "partial": .circleDot
@@ -572,9 +550,11 @@ public struct NativeResearchQuestionRow: View {
         }
     }
 
+    private var active: Bool { question.status == "searching" }
+
     public var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
-            glyph
+            JunoIconView(icon, size: 13)
                 .foregroundStyle(question.status == "thin" ? Color.junoWarningInk
                     : active || question.status == "covered" ? Color.junoForeground : Color.junoSecondaryInk)
                 .frame(width: 16)

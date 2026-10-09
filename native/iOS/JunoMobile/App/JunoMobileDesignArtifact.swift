@@ -154,9 +154,8 @@ struct JunoMobileDesignArtifactBody: View {
                 ForEach(document.pages, id: \.id) { page in
                     VStack(alignment: .leading, spacing: JunoSpace.snug) {
                         Text(page.name)
-                            .junoFont(size: 12, relativeTo: .caption, weight: .semibold)
-                            .junoMetaInk()
-                            .textCase(.uppercase)
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(.secondary)
                             .accessibilityAddTraits(.isHeader)
 
                         let rows = JunoMobileDesignOutline.rows(of: page, in: document)
@@ -186,12 +185,12 @@ struct JunoMobileDesignArtifactBody: View {
                 .frame(width: 16)
             VStack(alignment: .leading, spacing: 2) {
                 Text(row.name)
-                    .junoFont(size: 14, relativeTo: .subheadline)
+                    .font(.body)
                     .lineLimit(1)
                 if let characters = row.characters {
                     Text(characters)
-                        .font(.callout)
-                        .junoSecondaryInk()
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -216,28 +215,17 @@ struct JunoMobileDesignArtifactBody: View {
     /// not to the artifact chrome already stacked above this view — and because
     /// the canvas is what the thumb should not be covering.
     private var footer: some View {
-        HStack(spacing: JunoSpace.cozy) {
-            JunoMobileSegmented(
-                options: [
-                    .init(Reading.drawing, "Design"),
-                    .init(Reading.layers, "Layers"),
-                    .init(Reading.source, "Source"),
-                ],
-                selection: $reading,
-                accessibilityLabel: "Design view"
-            )
-            .accessibilityIdentifier("juno.mobile.design.view-mode")
-            Spacer(minLength: 0)
+        Picker("Design view", selection: $reading) {
+            Text("Design").tag(Reading.drawing)
+            Text("Layers").tag(Reading.layers)
+            Text("Source").tag(Reading.source)
         }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .accessibilityIdentifier("juno.mobile.design.view-mode")
         .padding(.horizontal, JunoSpace.regular)
         .padding(.vertical, JunoSpace.cozy)
-        .background(Color.junoSurface.opacity(0.5))
-        .overlay(alignment: .top) {
-            Rectangle()
-                .fill(Color.junoHairline)
-                .frame(height: 1)
-                .accessibilityHidden(true)
-        }
+        .background(.bar)
     }
 
     /// Decodes natively, before the editor ever sees the body.

@@ -5,14 +5,14 @@ import JunoDesignSystem
 import JunoSync
 import SwiftUI
 
-/// **Usage** — the account's own spend, across every surface that costs: Chat,
-/// Code, scheduled tasks and media.
+/// **Plan & Usage** — the account's own plan meters and spend, across every
+/// surface that costs: Chat, Code, scheduled tasks and media.
 ///
 /// The same two routes the Mac reads (`/api/profile/usage/breakdown` and
 /// `/api/profile/usage`), through the same shared client, so the phone and the
-/// desktop cannot quietly disagree about a number. The layout is the part that
-/// is phone-shaped: the Mac lays its cards out side by side at 960pt, and here
-/// they stack in one column with the activity grid scrolling horizontally.
+/// desktop cannot quietly disagree about a number. Laid out as a stock
+/// inset-grouped list: the plan first, then the range, then the numbers as
+/// labelled rows.
 ///
 /// Nothing here is synthesised. An account with no spend gets an empty state,
 /// not a plausible-looking shape — every zero on this page is a real zero.
@@ -29,261 +29,159 @@ struct JunoMobileUsageView: View {
     @State private var breakdown: NativeUsageBreakdown?
     @State private var plan: NativeUsagePlan?
     @State private var loadError: String?
-    /// The server has the plan-meter route but not the breakdown one — explained
-    /// to the reader rather than reported as an error, since nothing is wrong
-    /// from the app's side and no retry could change it.
+    /// The server has the plan-meter route but not the breakdown one.
     @State private var serverTooOld = false
     @State private var isLoading = false
 
     var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: JunoSpace.cozy) {
-                header
+        List {
+            if let plan {
+                planSection(plan)
+            }
 
-                if let loadError {
-                    JunoInlineError(message: loadError) {
-                        Task { await load(force: true) }
+            Section {
+                Picker("Range", selection: $range) {
+                    ForEach(NativeUsageRange.allCases, id: \.self) { option in
+                        Text(option.label).tag(option)
                     }
-                } else if let breakdown {
-                    if breakdown.totals.requests == 0 {
-                        emptyState
-                    } else {
-                        content(breakdown)
+                }
+                .pickerStyle(.segmented)
+                .listRowInsets(EdgeInsets(top: 10, leading: 12, bottom: 10, trailing: 12))
+                .accessibilityIdentifier("juno.mobile.usage.range")
+            } header: {
+                Text("Usage")
+            } footer: {
+                Text(subhead)
+            }
+
+            if let loadError {
+                Section {
+                    Label(verbatim: loadError, icon: .triangleAlert)
+                        .foregroundStyle(.secondary)
+                    Button("Try Again") { Task { await load(force: true) } }
+                }
+            } else if let breakdown {
+                if breakdown.totals.requests == 0 {
+                    Section {
+                        Text("No requests in the \(range.subtitle). Ask Alevr something and this fills in.")
+                            .foregroundStyle(.secondary)
                     }
-                } else if isLoading {
-                    JunoMobileQuietLoading(.paragraph)
-                        .frame(height: 200)
+                } else {
+                    overview(breakdown)
+                    surfaces(breakdown)
+                    models(breakdown)
+                }
+            } else if isLoading {
+                Section {
+                    HStack(spacing: 10) {
+                        ProgressView()
+                        Text("Reading your usage…").foregroundStyle(.secondary)
+                    }
                 }
             }
-            .padding(.horizontal, JunoSpace.regular)
-            .padding(.bottom, JunoSpace.section)
         }
-        .junoScreenCanvas()
-        .navigationTitle("Usage")
+        .listStyle(.insetGrouped)
+        .junoGroupedPage()
+        .navigationTitle("Plan & Usage")
         .navigationBarTitleDisplayMode(.inline)
-        .task(id: range) { await load(force: false) }
+        .task(id: range) { await load(force: false, rangeChanged: true) }
         .refreshable { await load(force: true) }
         .accessibilityIdentifier("juno.mobile.usage")
     }
 
-    // MARK: Header
-
-    private var header: some View {
-        VStack(alignment: .leading, spacing: JunoSpace.cozy) {
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
-                    // The big number is *tokens*, not euros: it is the one
-                    // quantity that is meaningful on every plan, including the
-                    // unlimited ones where a spend figure has no budget to sit
-                    // against.
-                    Text(headline)
-                        .junoPageHeading(compact: true)
-                        .contentTransition(.numericText())
-                    if isLoading {
-                        ProgressView().controlSize(.small)
-                    }
-                }
-                Text(subhead)
-                    .junoFont(size: 13, relativeTo: .footnote)
-                    .junoSecondaryInk()
-            }
-
-            // Juno's own switch, not `.pickerStyle(.segmented)`. The system
-            // control fills its selected segment with the app tint, which put a
-            // slab of coral across the top of this page — and the website's
-            // equivalent is neutral: `bg-background text-foreground`, with the
-            // accent kept for what is actually an action.
-            JunoMobileSegmented(
-                options: NativeUsageRange.allCases.map {
-                    JunoMobileSegmented<NativeUsageRange>.Option($0, $0.label)
-                },
-                selection: $range,
-                accessibilityLabel: "Range"
-            )
-            .accessibilityIdentifier("juno.mobile.usage.range")
-        }
-        .padding(.top, JunoSpace.hairline)
-        .padding(.bottom, JunoSpace.hairline)
-    }
-
-    private var headline: String {
-        guard let breakdown else { return "—" }
-        return NativeUsageFormat.tokens(breakdown.totals.totalTokens)
-    }
-
     private var subhead: String {
-        guard let breakdown else { return "Reading your ledger…" }
+        guard let breakdown else { return range.subtitle.localizedCapitalized }
         let surfaces = breakdown.surfaces
             .filter { $0.requests > 0 }
             .map(\.displayName)
         let places = surfaces.isEmpty ? "no activity" : surfaces.formatted(.list(type: .and))
-        return "Tokens across \(places) · \(range.subtitle)"
+        return "\(NativeUsageFormat.tokens(breakdown.totals.totalTokens)) tokens across \(places) in the \(range.subtitle)."
     }
 
-    // MARK: Content
+    // MARK: Plan
 
-    @ViewBuilder
-    private func content(_ breakdown: NativeUsageBreakdown) -> some View {
-        JunoMobileUsageStats(breakdown: breakdown)
-        JunoMobileUsageSurfaces(breakdown: breakdown)
-        JunoMobileUsageTokenMix(totals: breakdown.totals)
-        JunoMobileUsageModels(breakdown: breakdown, catalog: modelCatalog)
-        if let plan {
-            JunoMobileUsagePlanCard(plan: plan)
-        }
-    }
-
-    private var emptyState: some View {
-        JunoCard {
-            VStack(alignment: .leading, spacing: JunoSpace.tight) {
-                Text("Nothing yet")
-                    .junoFont(size: 16, relativeTo: .headline, weight: .semibold)
-                Text("No requests in the \(range.subtitle). Ask Juno something and this fills in.")
-                    .junoFont(size: 13, relativeTo: .footnote)
-                    .junoSecondaryInk()
+    private func planSection(_ plan: NativeUsagePlan) -> some View {
+        Section {
+            LabeledContent("Plan", value: plan.planName)
+            if plan.isUnlimited {
+                Text("No usage limits on this plan.")
+                    .foregroundStyle(.secondary)
+            } else if plan.isBrowseOnly {
+                Text("Your monthly allowance is used up. A plan opens more models and more usage.")
+                    .foregroundStyle(.secondary)
+            } else {
+                meter("Session", plan.session)
+                meter("Weekly", plan.weekly)
+            }
+            if plan.plan.canUpgrade {
+                Button("See Plans") { JunoMobilePlanStore.shared.showPlans() }
+                    .accessibilityIdentifier("juno.mobile.usage.plans")
+            }
+        } footer: {
+            if let renewsAt = plan.renewsAt {
+                Text("\(plan.renewalLabel) \(renewsAt.formatted(date: .abbreviated, time: .omitted))")
             }
         }
     }
 
-    // MARK: Loading
-
-    private func load(force: Bool) async {
-        guard let requestSender else {
-            loadError = NativeUsageError.unavailable.localizedDescription
-            return
-        }
-        if isLoading { return }
-        if !force, breakdown != nil { return }
-        isLoading = true
-        defer { isLoading = false }
-
-        // `load` no longer throws: the two routes it reads fail for genuinely
-        // different reasons, and a server older than the app serves the plan
-        // meters while 404ing the breakdown. Collapsing that into one thrown
-        // error produced a screen saying Juno couldn't load the usage against a
-        // deployment where the limits were readable the whole time.
-        let snapshot = await NativeUsageClient(sender: requestSender)
-            .load(range: range, for: session.profile.id)
-        breakdown = snapshot.breakdown
-        plan = snapshot.plan
-        JunoMobilePlanStore.shared.update(planID: snapshot.plan?.planID)
-        serverTooOld = snapshot.isServerTooOld
-        // A server that simply predates the breakdown route is explained, not
-        // reported as a failure — there is nothing wrong from the app's side and
-        // nothing a retry could change.
-        loadError = snapshot.isServerTooOld
-            ? nil
-            : snapshot.breakdownFailure?.localizedDescription
-    }
-}
-
-// MARK: - Stats
-
-/// The four numbers worth reading before any chart: how much was asked, how
-/// often, how consistently, and how recently. A 2×2 grid rather than the Mac's
-/// single row — four columns on a phone leaves each number about forty points
-/// of width, which is where "12,481" starts wrapping mid-thousand.
-private struct JunoMobileUsageStats: View {
-    let breakdown: NativeUsageBreakdown
-
-    var body: some View {
-        JunoCard {
-            VStack(spacing: JunoSpace.regular) {
-                HStack(spacing: 0) {
-                    stat(NativeUsageFormat.count(breakdown.totals.requests), "Requests")
-                    divider
-                    stat("\(breakdown.activeDays)", "Active days")
-                }
-                Rectangle()
-                    .fill(Color.junoHairline)
-                    .frame(height: 1)
-                    .accessibilityHidden(true)
-                HStack(spacing: 0) {
-                    stat("\(breakdown.currentStreakDays)", "Day streak")
-                    divider
-                    stat(NativeUsageFormat.count(breakdown.pace.last24h), "Last 24 hours")
-                }
+    private func meter(_ title: LocalizedStringKey, _ window: NativeUsagePlan.Window) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            LabeledContent(title) {
+                Text(window.fraction.formatted(.percent.precision(.fractionLength(0))))
+                    .monospacedDigit()
+            }
+            // Accent until it is nearly spent, then amber: the colour is a
+            // warning only where there is something to warn about.
+            ProgressView(value: max(0, min(1, window.fraction)))
+                .tint(window.fraction >= 0.9 ? Color.junoCaution : Color.accentColor)
+            if let resetsAt = window.resetsAt {
+                Text("Resets \(resetsAt.formatted(date: .omitted, time: .shortened))")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
         }
-    }
-
-    private func stat(_ value: String, _ label: String) -> some View {
-        VStack(spacing: 2) {
-            Text(value)
-                .junoFont(size: 22, relativeTo: .title2, weight: .semibold)
-                .contentTransition(.numericText())
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-            Text(label)
-                .junoFont(size: 12, relativeTo: .caption)
-                .junoSecondaryInk()
-        }
-        .frame(maxWidth: .infinity)
+        .padding(.vertical, 2)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(label): \(value)")
     }
 
-    private var divider: some View {
-        Rectangle()
-            .fill(Color.junoHairline)
-            .frame(width: 1, height: 30)
-            .accessibilityHidden(true)
+    // MARK: Numbers
+
+    private func overview(_ breakdown: NativeUsageBreakdown) -> some View {
+        Section {
+            LabeledContent("Requests", value: NativeUsageFormat.count(breakdown.totals.requests))
+            LabeledContent("Active days", value: "\(breakdown.activeDays)")
+            LabeledContent("Day streak", value: "\(breakdown.currentStreakDays)")
+            LabeledContent("Last 24 hours", value: NativeUsageFormat.count(breakdown.pace.last24h))
+            LabeledContent("Prompt tokens", value: NativeUsageFormat.tokens(breakdown.totals.promptTokens))
+            LabeledContent("Completion tokens", value: NativeUsageFormat.tokens(breakdown.totals.completionTokens))
+        }
+        .monospacedDigit()
     }
-}
 
-// The year's activity grid moved to the profile page (JunoMobileProfileView).
-
-// MARK: - Surfaces
-
-/// Where the tokens went. "Where did it go" is the question this page exists to
-/// answer, and it is the one the plan meters below cannot.
-private struct JunoMobileUsageSurfaces: View {
-    let breakdown: NativeUsageBreakdown
-
-    private var rows: [NativeUsageSurfaceTotals] {
-        breakdown.surfaces
+    /// Where the tokens went — the question this page exists to answer.
+    @ViewBuilder
+    private func surfaces(_ breakdown: NativeUsageBreakdown) -> some View {
+        let rows = breakdown.surfaces
             .filter { $0.totalTokens > 0 || $0.requests > 0 }
             .sorted { $0.totalTokens > $1.totalTokens }
-    }
-
-    private var largest: Int {
-        max(rows.first?.totalTokens ?? 0, 1)
-    }
-
-    var body: some View {
-        JunoCard {
-            VStack(alignment: .leading, spacing: JunoSpace.cozy) {
-                Text("By surface")
-                    .junoFont(size: 16, relativeTo: .headline, weight: .semibold)
-
-                if rows.isEmpty {
-                    Text("No surface has spent anything in this window.")
-                        .junoFont(size: 13, relativeTo: .footnote)
-                        .junoSecondaryInk()
-                } else {
-                    ForEach(rows) { row in
-                        VStack(alignment: .leading, spacing: JunoSpace.tight) {
-                            HStack(spacing: JunoSpace.snug) {
-                                JunoIconView(usageIcon(row.surface), size: 13)
-                                    .frame(width: 18)
-                                    .junoSecondaryInk()
-                                Text(row.displayName)
-                                    .junoFont(size: 15, relativeTo: .subheadline)
-                                Spacer(minLength: 6)
-                                Text(NativeUsageFormat.tokens(row.totalTokens))
-                                    .junoFont(size: 13, relativeTo: .footnote)
-                                    .monospacedDigit()
-                                    .junoSecondaryInk()
-                            }
-                            JunoMobileUsageBar(
-                                fraction: Double(row.totalTokens) / Double(largest)
-                            )
+        let largest = max(rows.first?.totalTokens ?? 0, 1)
+        if !rows.isEmpty {
+            Section("By surface") {
+                ForEach(rows) { row in
+                    VStack(alignment: .leading, spacing: 6) {
+                        LabeledContent {
+                            Text(NativeUsageFormat.tokens(row.totalTokens)).monospacedDigit()
+                        } label: {
+                            Label(verbatim: row.displayName, icon: usageIcon(row.surface), size: 18)
                         }
-                        .accessibilityElement(children: .combine)
-                        .accessibilityLabel(
-                            "\(row.displayName): \(NativeUsageFormat.tokens(row.totalTokens)) tokens over \(row.requests) requests"
-                        )
+                        ProgressView(value: Double(row.totalTokens) / Double(largest))
+                            .tint(Color.secondary)
                     }
+                    .padding(.vertical, 2)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel(
+                        "\(row.displayName): \(NativeUsageFormat.tokens(row.totalTokens)) tokens over \(row.requests) requests"
+                    )
                 }
             }
         }
@@ -295,10 +193,60 @@ private struct JunoMobileUsageSurfaces: View {
         case "code": .code
         case "task": .tasks
         case "image": .photos
-        case "video": .artifacts
+        case "video": .video
         case "voice": .volume
         default: .usage
         }
+    }
+
+    /// Which models did the work, named from the signed-in manifest where possible.
+    @ViewBuilder
+    private func models(_ breakdown: NativeUsageBreakdown) -> some View {
+        let rows = breakdown.models
+            .filter { $0.totalTokens > 0 }
+            .sorted { $0.totalTokens > $1.totalTokens }
+            .prefix(8)
+        if !rows.isEmpty {
+            Section("By model") {
+                ForEach(Array(rows)) { row in
+                    LabeledContent {
+                        Text(NativeUsageFormat.tokens(row.totalTokens)).monospacedDigit()
+                    } label: {
+                        Text(name(for: row.model))
+                        Text("^[\(row.requests) request](inflect: true)")
+                    }
+                }
+            }
+        }
+    }
+
+    private func name(for id: String) -> String {
+        modelCatalog.first { $0.id == id }?.displayName ?? junoDisplayModelName(id)
+    }
+
+    // MARK: Loading
+
+    private func load(force: Bool, rangeChanged: Bool = false) async {
+        guard let requestSender else {
+            loadError = NativeUsageError.unavailable.localizedDescription
+            return
+        }
+        if isLoading { return }
+        if !force, !rangeChanged, breakdown != nil { return }
+        isLoading = true
+        defer { isLoading = false }
+
+        // The two routes fail for genuinely different reasons, and a server
+        // older than the app serves the plan meters while 404ing the breakdown.
+        let snapshot = await NativeUsageClient(sender: requestSender)
+            .load(range: range, for: session.profile.id)
+        breakdown = snapshot.breakdown
+        plan = snapshot.plan
+        JunoMobilePlanStore.shared.update(planID: snapshot.plan?.planID)
+        serverTooOld = snapshot.isServerTooOld
+        loadError = snapshot.isServerTooOld
+            ? nil
+            : snapshot.breakdownFailure?.localizedDescription
     }
 }
 
@@ -306,8 +254,7 @@ private struct JunoMobileUsageSurfaces: View {
 /// spend reads as "nothing here" rather than as a missing row.
 ///
 /// Internal rather than private: the Code section draws the same two plan meters
-/// in its account row, and a second bar built to look like this one is a bar
-/// free to stop looking like it.
+/// in its account row.
 struct JunoMobileUsageBar: View {
     let fraction: Double
     var tint: Color = .junoAccent
@@ -323,185 +270,5 @@ struct JunoMobileUsageBar: View {
         }
         .frame(height: 6)
         .accessibilityHidden(true)
-    }
-}
-
-// MARK: - Token mix
-
-/// What the tokens were: the question asked, or the answer written. A prompt-
-/// heavy account and a completion-heavy one cost the same on this page's
-/// headline and very different amounts in reality, which is why the split is
-/// here at all.
-private struct JunoMobileUsageTokenMix: View {
-    let totals: NativeUsageTotals
-
-    private var promptShare: Double {
-        guard totals.totalTokens > 0 else { return 0 }
-        return Double(totals.promptTokens) / Double(totals.totalTokens)
-    }
-
-    var body: some View {
-        JunoCard {
-            VStack(alignment: .leading, spacing: JunoSpace.cozy) {
-                Text("In and out")
-                    .junoFont(size: 16, relativeTo: .headline, weight: .semibold)
-                JunoMobileUsageBar(fraction: promptShare)
-                HStack(spacing: 0) {
-                    label("Prompt", NativeUsageFormat.tokens(totals.promptTokens))
-                    Spacer(minLength: 8)
-                    label("Completion", NativeUsageFormat.tokens(totals.completionTokens))
-                }
-            }
-        }
-    }
-
-    private func label(_ title: String, _ value: String) -> some View {
-        VStack(alignment: .leading, spacing: 1) {
-            Text(value)
-                .junoFont(size: 14, relativeTo: .subheadline, weight: .medium)
-                .monospacedDigit()
-            Text(title)
-                .junoFont(size: 12, relativeTo: .caption)
-                .junoSecondaryInk()
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(title): \(value) tokens")
-    }
-}
-
-// MARK: - Models
-
-/// Which models did the work. Named from the signed-in manifest where possible —
-/// a model absent from it (retired since the spend happened) keeps its wire
-/// identifier rather than being renamed into something it was not.
-private struct JunoMobileUsageModels: View {
-    let breakdown: NativeUsageBreakdown
-    let catalog: [NativeChatModelOption]
-
-    private var rows: [NativeUsageModelTotals] {
-        breakdown.models
-            .filter { $0.totalTokens > 0 }
-            .sorted { $0.totalTokens > $1.totalTokens }
-            .prefix(8)
-            .map { $0 }
-    }
-
-    private func name(for id: String) -> String {
-        catalog.first { $0.id == id }?.displayName ?? junoDisplayModelName(id)
-    }
-
-    var body: some View {
-        if !rows.isEmpty {
-            JunoCard {
-                VStack(alignment: .leading, spacing: JunoSpace.cozy) {
-                    Text("By model")
-                        .junoFont(size: 16, relativeTo: .headline, weight: .semibold)
-                    ForEach(rows) { row in
-                        HStack(spacing: JunoSpace.snug) {
-                            Text(name(for: row.model))
-                                .junoFont(size: 15, relativeTo: .subheadline)
-                                .lineLimit(1)
-                            Spacer(minLength: 6)
-                            Text("\(NativeUsageFormat.count(row.requests))×")
-                                .junoFont(size: 12, relativeTo: .caption)
-                                .monospacedDigit()
-                                .junoMetaInk()
-                            Text(NativeUsageFormat.tokens(row.totalTokens))
-                                .junoFont(size: 13, relativeTo: .footnote)
-                                .monospacedDigit()
-                                .junoSecondaryInk()
-                        }
-                        .accessibilityElement(children: .combine)
-                        .accessibilityLabel(
-                            "\(name(for: row.model)): \(row.requests) requests, \(NativeUsageFormat.tokens(row.totalTokens)) tokens"
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-// MARK: - Plan
-
-/// The two meters that actually stop a turn starting, and when they reset.
-private struct JunoMobileUsagePlanCard: View {
-    let plan: NativeUsagePlan
-
-    var body: some View {
-        JunoCard {
-            VStack(alignment: .leading, spacing: JunoSpace.cozy) {
-                HStack {
-                    Text("Plan")
-                        .junoFont(size: 16, relativeTo: .headline, weight: .semibold)
-                    Spacer(minLength: 6)
-                    Text(plan.planName)
-                        .junoFont(size: 16, relativeTo: .headline)
-                        .junoSecondaryInk()
-                }
-
-                if plan.isUnlimited {
-                    Text("No usage limits on this plan.")
-                        .junoFont(size: 13, relativeTo: .footnote)
-                        .junoSecondaryInk()
-                } else if plan.isBrowseOnly {
-                    Text("Your monthly allowance is used up. A plan opens more models and more usage.")
-                        .junoFont(size: 13, relativeTo: .footnote)
-                        .junoSecondaryInk()
-                } else {
-                    meter("Session", plan.session)
-                    meter("Weekly", plan.weekly)
-                }
-
-                if let renewsAt = plan.renewsAt {
-                    Text("\(plan.renewalLabel) \(renewsAt.formatted(date: .abbreviated, time: .omitted))")
-                        .junoFont(size: 12, relativeTo: .caption)
-                        .junoSecondaryInk()
-                }
-
-                if plan.plan.canUpgrade {
-                    Button {
-                        JunoMobilePlanStore.shared.showPlans()
-                    } label: {
-                        Text("See Plans")
-                            .junoFont(size: 15, relativeTo: .body, weight: .semibold)
-                            .foregroundStyle(Color.junoAccentInk)
-                            .frame(minWidth: 44, minHeight: 44, alignment: .leading)
-                            .contentShape(.rect)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("juno.mobile.usage.plans")
-                }
-            }
-        }
-    }
-
-    private func meter(_ title: String, _ window: NativeUsagePlan.Window) -> some View {
-        VStack(alignment: .leading, spacing: JunoSpace.tight) {
-            HStack(spacing: JunoSpace.tight) {
-                Text(title)
-                    .junoFont(size: 14, relativeTo: .subheadline)
-                Spacer(minLength: 6)
-                Text(window.fraction.formatted(.percent.precision(.fractionLength(0))))
-                    .junoFont(size: 13, relativeTo: .footnote)
-                    .monospacedDigit()
-                    .junoSecondaryInk()
-            }
-            // Coral until it is nearly spent, then amber: the colour is a
-            // warning only where there is something to warn about.
-            JunoMobileUsageBar(
-                fraction: window.fraction,
-                tint: window.fraction >= 0.9 ? .junoCaution : .junoAccent
-            )
-            if let resetsAt = window.resetsAt {
-                Text("Resets \(resetsAt.formatted(date: .omitted, time: .shortened))")
-                    .junoFont(size: 12, relativeTo: .caption)
-                    .junoMetaInk()
-            }
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(
-            "\(title) window: \(window.fraction.formatted(.percent.precision(.fractionLength(0)))) used"
-        )
     }
 }

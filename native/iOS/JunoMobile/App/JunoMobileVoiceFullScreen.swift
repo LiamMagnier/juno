@@ -123,8 +123,7 @@ struct JunoMobileVoiceFullScreen: View {
           captions.toggle()
         }
       } label: {
-        Image(systemName: captions ? "captions.bubble.fill" : "captions.bubble")
-          .junoFont(size: 16, relativeTo: .body)
+        JunoIconView(captions ? JunoIcon.message : JunoIcon.message, size: 16)
           .foregroundStyle(captions ? Color.junoAccent : Color.primary)
           .frame(width: 44, height: 44)
           .modifier(JunoGlassCircle())
@@ -141,7 +140,7 @@ struct JunoMobileVoiceFullScreen: View {
               controller.switchProvider(provider)
             } label: {
               if provider == controller.provider {
-                Label(provider.modelName, systemImage: "checkmark")
+                Label(provider.modelName, image: JunoIcon.check.assetName(.regular))
               } else {
                 Text(provider.modelName)
               }
@@ -164,7 +163,7 @@ struct JunoMobileVoiceFullScreen: View {
         }
         Section {
           Toggle(isOn: $pushToTalk) {
-            Label("Push to talk", systemImage: "hand.tap")
+            Label("Push to talk", image: JunoIcon.hand.assetName(.regular))
           }
         }
         if !canSee {
@@ -327,7 +326,7 @@ struct JunoMobileVoiceFullScreen: View {
       }
       ForEach(lines) { line in
         HStack(alignment: .top, spacing: JunoSpace.snug) {
-          Text(line.role == .assistant ? "Juno" : "You")
+          Text(line.role == .assistant ? "Alevr" : "You")
             .junoFont(size: 11, relativeTo: .caption2, weight: .semibold)
             .foregroundStyle(line.role == .assistant ? Color.junoAccent : Color.junoMutedForeground)
             .frame(width: 34, alignment: .leading)

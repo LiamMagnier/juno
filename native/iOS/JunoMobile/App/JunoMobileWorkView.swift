@@ -160,7 +160,7 @@ struct JunoMobileWorkView: View {
     private var content: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 10) {
-                JunoPageSubtitle("Things you have handed Juno to go and do.")
+                JunoPageSubtitle("Things you have handed Alevr to go and do.")
                     .padding(.top, 6)
 
                 if let error = model.lastErrorDescription {
@@ -219,7 +219,7 @@ struct JunoMobileWorkView: View {
             VStack(alignment: .leading, spacing: 10) {
                 Text("No tasks yet").junoEmptyTitle()
                 Text(
-                    "A task is something you hand to Juno to go and do — sort a folder, pull a report together, work through an inbox. It runs on one of your Macs or in the cloud, and tells you here what it did."
+                    "A task is something you hand to Alevr to go and do — sort a folder, pull a report together, work through an inbox. It runs on one of your Macs or in the cloud, and tells you here what it did."
                 )
                 .font(.callout)
                 .junoSecondaryInk()
@@ -288,7 +288,7 @@ private struct JunoMobileWorkHostCard: View {
 
                 if hosts.isEmpty {
                     Text(
-                        "No Mac is signed in to Juno Work, so only tasks that need nothing local can run. Juno Work is switched on at the Mac itself."
+                        "No Mac is signed in to Alevr Work, so only tasks that need nothing local can run. Alevr Work is switched on at the Mac itself."
                     )
                     .font(.caption)
                     .junoSecondaryInk()
@@ -325,7 +325,7 @@ private struct JunoMobileWorkHostCard: View {
                 .lineLimit(1)
             }
             Spacer(minLength: 6)
-            JunoStatusPill(text: style.label, tint: style.tint, filled: style.filled)
+            JunoMobileWorkStatusWord(label: style.label, tint: style.tint)
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(host.displayName). \(style.sentence)")
@@ -362,12 +362,12 @@ private struct JunoMobileWorkSessionCard: View {
                                 .accessibilityLabel("Pinned")
                         }
                         Text(session.title)
-                            .font(JunoSerif.cardTitle)
+                            .font(.headline)
                             .foregroundStyle(.primary)
                             .lineLimit(2)
                             .multilineTextAlignment(.leading)
                         Spacer(minLength: 6)
-                        JunoStatusPill(text: style.label, tint: style.tint, filled: style.filled)
+                        JunoMobileWorkStatusWord(label: style.label, tint: style.tint)
                     }
 
                     Text(session.goal)
@@ -490,7 +490,7 @@ private struct JunoMobileWorkThread: View {
             Button("Cancel", role: .cancel) {}
             .contentShape(.rect)
         } message: {
-            Text("Juno stops where it is. Anything it has already changed stays changed.")
+            Text("Alevr stops where it is. Anything it has already changed stays changed.")
         }
         .confirmationDialog(
             "Try this again?", isPresented: $confirmingRetry, titleVisibility: .visible
@@ -501,7 +501,7 @@ private struct JunoMobileWorkThread: View {
             .contentShape(.rect)
         } message: {
             Text(
-                "Juno starts a second task with the same goal, aimed at the same place. The one you are reading is kept as it is."
+                "Alevr starts a second task with the same goal, aimed at the same place. The one you are reading is kept as it is."
             )
         }
         // The thread owns the stream, opening it on appear and closing it on
@@ -625,10 +625,10 @@ private struct JunoMobileWorkThread: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(session.title)
-                    .junoPageHeading(compact: true)
+                    .font(.title2.weight(.semibold))
                     .accessibilityAddTraits(.isHeader)
                 Spacer(minLength: 6)
-                JunoStatusPill(text: style.label, tint: style.tint, filled: style.filled)
+                JunoMobileWorkStatusWord(label: style.label, tint: style.tint)
             }
             .padding(.top, 6)
 
@@ -692,7 +692,7 @@ private struct JunoMobileWorkThread: View {
     private func runningWhere(_ session: WorkSessionSummary) -> String {
         let effective = run?.effectiveTarget ?? session.effectiveTarget
         guard let effective, let target = JunoWorkTarget(rawValue: effective) else {
-            return "Juno has not chosen where this runs yet"
+            return "Alevr has not chosen where this runs yet"
         }
         switch target {
         case .cloud: return "Runs in the cloud"
@@ -823,7 +823,7 @@ private struct JunoMobileWorkThread: View {
                             .lineLimit(1)
                     }
                     if !live {
-                        Text("This is the last thing Juno reported. Nothing is running it now.")
+                        Text("This is the last thing Alevr reported. Nothing is running it now.")
                             .font(.caption)
                             .junoSecondaryInk()
                             .fixedSize(horizontal: false, vertical: true)
@@ -848,7 +848,7 @@ private struct JunoMobileWorkThread: View {
             let steps = JunoMobileWorkLog.plan(from: events)
             if steps.isEmpty {
                 quiet(
-                    "Juno hasn't written a plan for this yet. One appears here as soon as it has decided how to approach the task."
+                    "Alevr hasn't written a plan for this yet. One appears here as soon as it has decided how to approach the task."
                 )
             } else {
                 ForEach(steps) { step in
@@ -881,7 +881,7 @@ private struct JunoMobileWorkThread: View {
             let references = JunoMobileWorkLog.references(in: events)
             if references.isEmpty {
                 quiet(
-                    "Nothing has been read or written yet. Every page Juno cites and every file it changes is listed here as it goes."
+                    "Nothing has been read or written yet. Every page Alevr cites and every file it changes is listed here as it goes."
                 )
             } else {
                 ForEach(references) { reference in
@@ -914,7 +914,7 @@ private struct JunoMobileWorkThread: View {
                 // cannot work, and a control that cannot work is worse than the
                 // sentence saying so.
                 if JunoMobileWorkLog.hasAppliedBatch(in: events) {
-                    quiet("Juno can't be asked to undo these from here yet.")
+                    quiet("Alevr can't be asked to undo these from here yet.")
                 }
             }
         }
@@ -925,7 +925,7 @@ private struct JunoMobileWorkThread: View {
             let produced = JunoMobileWorkLog.artifacts(in: events)
             if produced.isEmpty {
                 quiet(
-                    "No documents yet. Anything Juno produces — a workbook, a report, a deck — is listed here as it is written."
+                    "No documents yet. Anything Alevr produces — a workbook, a report, a deck — is listed here as it is written."
                 )
             } else {
                 ForEach(produced) { artifact in
@@ -1003,7 +1003,7 @@ private struct JunoMobileWorkThread: View {
             let entries = JunoMobileWorkLog.entries(in: events)
             if entries.isEmpty {
                 quiet(
-                    "Nothing has happened yet. Every step Juno takes appears here as it takes it."
+                    "Nothing has happened yet. Every step Alevr takes appears here as it takes it."
                 )
             } else {
                 ForEach(entries) { entry in
@@ -1162,10 +1162,6 @@ private struct JunoMobileWorkApprovalCard: View {
                 .disabled(model.isMutating)
             }
         }
-        .overlay(
-            RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
-                .strokeBorder(tint.opacity(0.45), lineWidth: 1)
-        )
         .accessibilityIdentifier("juno.mobile.work.approval")
     }
 
@@ -1237,7 +1233,7 @@ private struct JunoMobileWorkAnswerSheet: View {
                     ContentUnavailableView {
                         JunoIconLabel("Already answered", icon: .check, size: 28)
                     } description: {
-                        Text("This was answered somewhere else, and Juno has carried on.")
+                        Text("This was answered somewhere else, and Alevr has carried on.")
                     }
                 }
             }
@@ -1351,8 +1347,8 @@ private struct JunoMobileWorkThreadComposerCard: View {
 
     private var sentence: String {
         switch intent {
-        case .instruct: "Juno is working. You can add something for it to take into account."
-        case .start: "This task has not started yet. Your message starts it, and Juno reads it before its first step."
+        case .instruct: "Alevr is working. You can add something for it to take into account."
+        case .start: "This task has not started yet. Your message starts it, and Alevr reads it before its first step."
         case .restart: "This attempt is over. Your message starts a new one on this same task."
         }
     }
@@ -1464,20 +1460,20 @@ private struct JunoMobileWorkThreadComposerSheet: View {
     private var lead: String {
         switch intent {
         case .instruct, .none:
-            "Juno reads this before its next step. It does not undo what it has already done."
+            "Alevr reads this before its next step. It does not undo what it has already done."
         case .start:
-            "Juno reads this before its first step, then works until it is done or it needs you."
+            "Alevr reads this before its first step, then works until it is done or it needs you."
         case .restart:
-            "Juno starts a new attempt on this task and reads this before its first step. "
+            "Alevr starts a new attempt on this task and reads this before its first step. "
                 + "Everything the last attempt did stays as it is."
         }
     }
 
     private var placeholder: String {
         switch intent {
-        case .instruct, .none: "What should Juno take into account?"
-        case .start: "What should Juno do first?"
-        case .restart: "What should Juno do differently this time?"
+        case .instruct, .none: "What should Alevr take into account?"
+        case .start: "What should Alevr do first?"
+        case .restart: "What should Alevr do differently this time?"
         }
     }
 
@@ -1488,7 +1484,7 @@ private struct JunoMobileWorkThreadComposerSheet: View {
                     field
                 } else {
                     ContentUnavailableView {
-                        JunoIconLabel("Juno has stopped", icon: .conversation, size: 28)
+                        JunoIconLabel("Alevr has stopped", icon: .conversation, size: 28)
                     } description: {
                         Text(
                             "This task is waiting on your answer, or it is closed, so a message "
@@ -1582,13 +1578,13 @@ private struct JunoMobileWorkComposer: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("What should Juno do?", text: $goal, axis: .vertical)
+                    TextField("What should Alevr do?", text: $goal, axis: .vertical)
                         .lineLimit(4...10)
                         .focused($focused)
                         .accessibilityIdentifier("juno.mobile.work.composer-goal")
                 } footer: {
                     Text(
-                        "Describe the outcome, not the steps. Juno writes the plan and asks before anything it cannot undo."
+                        "Describe the outcome, not the steps. Alevr writes the plan and asks before anything it cannot undo."
                     )
                 }
 
@@ -1649,9 +1645,9 @@ private struct JunoMobileWorkComposer: View {
     private var targetFooter: String {
         switch target {
         case .automatic:
-            "Juno picks from what the task needs and what is reachable. Only a Mac can open your files, your apps and your signed-in browser."
+            "Alevr picks from what the task needs and what is reachable. Only a Mac can open your files, your apps and your signed-in browser."
         case .cloud:
-            "Runs on Juno's own executor, which keeps going while every device of yours is offline. It cannot reach anything local."
+            "Runs on Alevr's own executor, which keeps going while every device of yours is offline. It cannot reach anything local."
         case .local:
             "Runs on a Mac of yours, which is the only place your files, apps and signed-in browser exist."
         }
@@ -1751,19 +1747,19 @@ private struct JunoMobileWorkStatusStyle {
         case .running:
             JunoMobileWorkStatusStyle(
                 label: "Running",
-                sentence: "Juno is working on this now.",
+                sentence: "Alevr is working on this now.",
                 symbol: "bolt.horizontal", tint: Color.junoAccent, filled: true
             )
         case .waitingInput:
             JunoMobileWorkStatusStyle(
                 label: "Needs an answer",
-                sentence: "Juno has asked you something and cannot continue until you answer.",
+                sentence: "Alevr has asked you something and cannot continue until you answer.",
                 symbol: "questionmark.bubble", tint: Color.junoCaution, filled: true
             )
         case .waitingApproval:
             JunoMobileWorkStatusStyle(
                 label: "Needs approval",
-                sentence: "Juno is waiting for you to allow or refuse an action.",
+                sentence: "Alevr is waiting for you to allow or refuse an action.",
                 symbol: "shield.lefthalf.filled", tint: Color.junoCaution, filled: true
             )
         case .paused:
@@ -1793,7 +1789,7 @@ private struct JunoMobileWorkStatusStyle {
         case .interrupted:
             JunoMobileWorkStatusStyle(
                 label: "Interrupted",
-                sentence: "The executor stopped reporting and its lease expired. Juno does not restart an interrupted run on its own, because it may already have changed something.",
+                sentence: "The executor stopped reporting and its lease expired. Alevr does not restart an interrupted run on its own, because it may already have changed something.",
                 symbol: "exclamationmark.triangle", tint: Color.junoCaution, filled: true
             )
         case .hostOffline:
@@ -1834,14 +1830,14 @@ private struct JunoMobileWorkHostStyle {
         if host.revokedAt != nil {
             return JunoMobileWorkHostStyle(
                 label: "Revoked",
-                sentence: "This Mac's access to Juno Work was revoked. It has to be paired again before it can take anything.",
+                sentence: "This Mac's access to Alevr Work was revoked. It has to be paired again before it can take anything.",
                 symbol: "xmark.shield", tint: Color.junoDanger, filled: true
             )
         }
         if !host.enabled {
             return JunoMobileWorkHostStyle(
                 label: "Switched off",
-                sentence: "Juno Work is switched off on this Mac. Turn it back on at the Mac itself.",
+                sentence: "Alevr Work is switched off on this Mac. Turn it back on at the Mac itself.",
                 symbol: "power", tint: .secondary, filled: false
             )
         }
@@ -1861,7 +1857,7 @@ private struct JunoMobileWorkHostStyle {
         case .stale:
             return JunoMobileWorkHostStyle(
                 label: "Not answering",
-                sentence: "The last heartbeat from this Mac is old enough to doubt. Juno will not send it anything new until it answers again.",
+                sentence: "The last heartbeat from this Mac is old enough to doubt. Alevr will not send it anything new until it answers again.",
                 symbol: "laptopcomputer.trianglebadge.exclamationmark",
                 tint: Color.junoCaution, filled: true
             )
@@ -2509,5 +2505,28 @@ private enum JunoMobileWorkLog {
         string(payload, "kind")
             .flatMap(JunoWorkArtifactKind.init(rawValue:))
             .map(JunoWorkVocabulary.artifactKind)
+    }
+}
+
+
+/// A status in words — no pill, no dot. Only a state that asks something of
+/// the reader takes its colour; the ordinary ones are secondary text.
+private struct JunoMobileWorkStatusWord: View {
+    let label: String
+    let tint: Color
+
+    /// Running, done and the quiet states are ordinary; only what waits on
+    /// the reader or went wrong is said in colour.
+    private var loud: Bool {
+        !["Draft", "Queued", "Preparing", "Running", "Paused", "Done", "Cancelled", "Online", "Idle"]
+            .contains(label)
+    }
+
+    var body: some View {
+        Text(label)
+            .font(.subheadline)
+            .foregroundStyle(loud ? tint : Color.secondary)
+            .lineLimit(1)
+            .fixedSize()
     }
 }

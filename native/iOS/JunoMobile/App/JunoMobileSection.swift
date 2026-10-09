@@ -102,27 +102,22 @@ enum JunoMobileSection: String, CaseIterable, Hashable, Identifiable {
     /// something on your behalf while you are elsewhere — Code and Tasks are
     /// both things you sit with. Agents sits beside it for the same reason:
     /// an agent is who that work is delegated to (docs/design/AGENTS.md §3.1).
+    ///
+    /// Round 2 (Oct 2026) cut the column to ChatGPT's length — six
+    /// destinations plus Research — by folding the two that are views of
+    /// another: Artifacts are things in your Library, and Work sessions are
+    /// runs you watch from Code. See ``foldedDestinations``.
     static let drawerDestinations: [JunoMobileSection] = [
-        .library, .projects, .connections, .tasks, .code, .agents, .work, .artifacts,
+        .library, .projects, .code, .agents, .tasks, .connections,
     ]
 
-    /// The SF Symbol the redesigned phone sidebar draws for this destination:
-    /// regular weight, one family, the ChatGPT-grade drawer's line glyphs.
-    var sidebarSymbol: String {
-        switch self {
-        case .chat: "bubble.left"
-        case .search: "magnifyingglass"
-        case .code: "chevron.left.forwardslash.chevron.right"
-        case .work: "checklist"
-        case .agents: "circle.hexagongrid"
-        case .tasks: "clock"
-        case .projects: "folder"
-        case .library: "books.vertical"
-        case .artifacts: "square.on.square"
-        case .connections: "puzzlepiece.extension"
-        case .settings: "gearshape"
-        }
-    }
+    /// Destinations reached from inside another rather than from the drawer:
+    /// the value is where the way in lives.
+    static let foldedDestinations: [JunoMobileSection: JunoMobileSection] = [
+        .artifacts: .library,
+        .work: .code,
+    ]
+
 
     /// The surfaces that are not products. On iPhone they push on the Chat
     /// stack from the history sheet; on iPad they are the hidden sidebar

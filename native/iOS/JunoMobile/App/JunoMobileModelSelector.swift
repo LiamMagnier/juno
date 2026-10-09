@@ -68,7 +68,7 @@ struct JunoMobileModelControl: View {
             HStack(spacing: JunoSpace.tight) {
                 JunoProviderMark(
                     providerID: selected?.providerID ?? "juno",
-                    providerName: selected?.providerName ?? "Juno",
+                    providerName: selected?.providerName ?? "Alevr",
                     size: 15
                 )
                 Text(chipName)
@@ -121,7 +121,7 @@ struct JunoMobileModelControl: View {
         .buttonStyle(JunoMobileChipPressStyle())
         .accessibilityLabel("Model")
         .accessibilityValue(
-            selected.map { "\($0.displayName), \($0.providerName)" } ?? fallbackName
+            selected.map { "\($0.displayName), \(JunoMobileModelSelectorView.labName($0.providerName))" } ?? fallbackName
         )
         .accessibilityHint("Opens the model picker")
         .accessibilityIdentifier("juno.mobile.chat-model")
@@ -263,47 +263,145 @@ struct JunoMobileModelSelectorView: View {
 
     // MARK: Layouts
 
-    private var compactLayout: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
-                if !providers.isEmpty {
-                    providerRail
-                        .padding(.horizontal, JunoSpace.cozy)
-                        .padding(.vertical, JunoSpace.snug)
+    /// Round 2 (native first): an inset-grouped `List`, one section per lab with
+  /// the lab's name as its header, `.searchable` in the navigation bar, and a
+  /// checkmark on the chosen model. No provider chip rail, no inline spec
+  /// sheets, no row cascade — the system picker shape.
+  private var compactLayout: some View {
+    NavigationStack {
+      List {
+        if labGroups.isEmpty {
+          noResults
+            .listRowBackground(Color.clear)
+        } else {
+          ForEach(labGroups, id: \.id) { group in
+            Section {
+              ForEach(group.current) { compactRow($0) }
+              if !group.legacy.isEmpty {
+                DisclosureGroup(isExpanded: legacyExpansion(for: group.id)) {
+                  ForEach(group.legacy) { compactRow($0) }
+                } label: {
+                  Text("Older Models")
+                    .foregroundStyle(.secondary)
                 }
-                List {
-                    if filtered.isEmpty {
-                        Section { noResults.listRowSeparator(.hidden) }
-                    } else {
-                        ForEach(sections) { section in
-                            sectionContent(section, showsDetailToggle: true)
-                        }
-                    }
-                }
-                .listStyle(.plain)
-                .scrollContentBackground(.hidden)
-                .scrollDismissesKeyboard(.interactively)
+                .accessibilityIdentifier("juno.mobile.model-legacy.\(group.id)")
+              }
+            } header: {
+              if let title = group.title { Text(title) }
             }
-            // The list is reading material, so it sits on an opaque canvas.
-            // Glass stays on the chrome — the chips, the composer, the search
-            // bar — rather than washing out the content behind everything.
-            .junoScreenCanvas()
-            .navigationTitle("Model")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
-                }
-            }
-            .searchable(
-                text: $query,
-                placement: .navigationBarDrawer(displayMode: .always),
-                prompt: "Search models"
-            )
+          }
         }
+      }
+      .listStyle(.insetGrouped)
+      .scrollDismissesKeyboard(.interactively)
+      .accessibilityIdentifier("juno.mobile.model-list")
+      .navigationTitle("Model")
+      .navigationBarTitleDisplayMode(.inline)
+      .toolbar {
+        ToolbarItem(placement: .confirmationAction) {
+          Button("Done") { dismiss() }
+        }
+      }
+      .searchable(
+        text: $query,
+        placement: .navigationBarDrawer(displayMode: .always),
+        prompt: "Search models"
+      )
     }
+  }
 
-    /// The website's three regions, side by side: provider rail, model list,
+  /// One model: the name in `.body`, one quiet line under it, a checkmark when
+  /// it is the chosen one. A model this account cannot use says why instead.
+  private func compactRow(_ model: NativeChatModelOption) -> some View {
+    let reason = NativeModelPresentation.unavailabilityReason(model)
+    let selected = model.id == selectedModelID
+    return Button {
+      guard reason == nil else { return }
+      onSelect(model)
+    } label: {
+      HStack(spacing: JunoSpace.cozy) {
+        VStack(alignment: .leading, spacing: 2) {
+          Text(model.displayName)
+            .font(.body)
+            .foregroundStyle(.primary)
+            .lineLimit(1)
+          if let line = reason ?? Self.secondaryLine(model) {
+            Text(line)
+              .font(.subheadline)
+              .foregroundStyle(.secondary)
+              .lineLimit(2)
+          }
+        }
+        Spacer(minLength: 0)
+        if selected {
+          JunoSymbol(.check)
+            .font(.body.weight(.semibold))
+            .foregroundStyle(.tint)
+            .accessibilityHidden(true)
+        } else if reason != nil {
+          JunoSymbol(.lock)
+            .foregroundStyle(.secondary)
+            .accessibilityHidden(true)
+        }
+      }
+      .frame(minHeight: 44)
+      .contentShape(.rect)
+    }
+    .buttonStyle(.plain)
+    .disabled(reason != nil)
+    .opacity(reason == nil ? 1 : 0.6)
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel(
+      [model.displayName, Self.labName(model.providerName), selected ? "selected" : nil, reason]
+        .compactMap { $0 }.joined(separator: ", ")
+    )
+    .accessibilityAddTraits(selected ? [.isSelected, .isButton] : .isButton)
+    .accessibilityIdentifier("juno.mobile.model-row.\(model.id)")
+  }
+
+  /// The model's one-sentence summary, or what it can do when it has none.
+  static func secondaryLine(_ model: NativeChatModelOption) -> String? {
+    if let summary = model.summary, !summary.isEmpty { return summary }
+    let capabilities = NativeModelPresentation.capabilityChips(model).prefix(3).map(\.label)
+    return capabilities.isEmpty ? nil : capabilities.joined(separator: " · ")
+  }
+
+  /// The product's own router ("Auto") leads without a header; every lab's
+  /// models follow under the lab's name, in the server's order.
+  private var labGroups: [(id: String, title: String?, current: [NativeChatModelOption], legacy: [NativeChatModelOption])] {
+    var order: [String] = []
+    var byLab: [String: [NativeChatModelOption]] = [:]
+    for model in filtered {
+      if byLab[model.providerID] == nil { order.append(model.providerID) }
+      byLab[model.providerID, default: []].append(model)
+    }
+    let own = order.filter { Self.isOwnProvider($0) }
+    let labs = order.filter { !Self.isOwnProvider($0) }
+    return (own + labs).map { id in
+      let models = byLab[id] ?? []
+      let name = models.first.map { Self.labName($0.providerName) }
+      return (
+        id: id,
+        title: Self.isOwnProvider(id) ? nil : name,
+        current: models.filter { !$0.isLegacy },
+        legacy: models.filter(\.isLegacy)
+      )
+    }
+  }
+
+  static func isOwnProvider(_ id: String) -> Bool {
+    let lower = id.lowercased()
+    return lower == "juno" || lower == "alevr"
+  }
+
+  /// The lab alone ("Anthropic · Claude" → "Anthropic"), and never the old
+  /// product name: the router is Alevr's.
+  static func labName(_ providerName: String) -> String {
+    let short = shortProviderName(providerName)
+    return short.caseInsensitiveCompare("Juno") == .orderedSame ? "Alevr" : short
+  }
+
+  /// The website's three regions, side by side: provider rail, model list,
     /// selected-model detail.
     ///
     /// Deliberately not `NavigationSplitView`. Inside a popover the split view
@@ -321,7 +419,7 @@ struct JunoMobileModelSelectorView: View {
                         // rail this narrow, and the lab is the part that
                         // identifies the group.
                         providerListRow(
-                            id: entry.id, name: entry.shortName, count: entry.count
+                            id: entry.id, name: Self.labName(entry.name), count: entry.count
                         )
                     }
                 }
@@ -532,49 +630,6 @@ struct JunoMobileModelSelectorView: View {
         .frame(minWidth: 44, minHeight: 44)
     }
 
-    /// A horizontally scrolling provider filter — the compact-width stand-in for
-    /// the website's icon rail.
-    private var providerRail: some View {
-        ScrollView(.horizontal) {
-            HStack(spacing: JunoSpace.snug) {
-                providerChip(id: nil, name: "All")
-                ForEach(providers, id: \.id) { entry in
-                    providerChip(id: entry.id, name: entry.shortName)
-                }
-            }
-            .padding(.horizontal, JunoSpace.hairline)
-        }
-        .scrollIndicators(.hidden)
-        .accessibilityIdentifier("juno.mobile.model-provider-rail")
-    }
-
-    private func providerChip(id: String?, name: String) -> some View {
-        let active = provider == id
-        return Button {
-            provider = active ? nil : id
-        } label: {
-            HStack(spacing: JunoSpace.tight) {
-                if let id {
-                    JunoProviderMark(providerID: id, providerName: name, size: 15)
-                }
-                Text(name)
-                    .font(.footnote.weight(active ? .semibold : .regular))
-                    .lineLimit(1)
-            }
-            .padding(.horizontal, JunoSpace.cozy)
-            .padding(.vertical, JunoSpace.tight)
-            .foregroundStyle(active ? JunoMobilePalette.onInk : Color.junoForeground)
-            .background {
-                Capsule().fill(active ? Color.junoForeground : Color.junoMuted)
-            }
-            .animation(JunoMotion.standard, value: active)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(name)
-        .accessibilityAddTraits(active ? [.isSelected] : [])
-        .contentShape(.rect)
-    }
-
     private var noResults: some View {
         ContentUnavailableView.search(text: query)
             .frame(maxWidth: .infinity, minHeight: 200)
@@ -764,7 +819,7 @@ private struct JunoMobileModelRowLabel: View {
 
             // The selection mark sits in its own trailing slot, so every row
             // keeps the same measure whether or not it is chosen.
-            Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+            JunoSymbol(selected ? JunoIcon.circleCheck : JunoIcon.circle)
                 .font(.title3)
                 .foregroundStyle(selected ? Color.junoAccent : Color.junoBorder)
                 .contentTransition(.symbolEffect(.replace))
@@ -779,7 +834,7 @@ private struct JunoMobileModelRowLabel: View {
     }
 
     private var metaLine: String {
-        var parts = [model.providerName]
+        var parts = [JunoMobileModelSelectorView.labName(model.providerName)]
         if let cost = NativeModelPresentation.costGlyph(model.pricing) { parts.append(cost) }
         let capabilities = NativeModelPresentation.capabilityChips(model).prefix(3).map(\.label)
         parts.append(contentsOf: capabilities)
@@ -787,7 +842,7 @@ private struct JunoMobileModelRowLabel: View {
     }
 
     private var accessibilityLabel: String {
-        var parts = [model.displayName, model.providerName]
+        var parts = [model.displayName, JunoMobileModelSelectorView.labName(model.providerName)]
         if selected { parts.append("selected") }
         if let unavailabilityReason { parts.append(unavailabilityReason) }
         parts.append(contentsOf: NativeModelPresentation.capabilityChips(model).map(\.label))

@@ -55,23 +55,17 @@
     }
   },
   "symbols": {
-    "total": 6,
-    "modules": {
-      "JunoNativeKit (shared)": 6
-    },
-    "files": {
-      "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeResearchLiveView.swift": 1,
-      "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/LiveUI/JunoLiveUIParts.swift": 3,
-      "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/LiveUI/JunoLiveUIView.swift": 2
-    }
+    "total": 0,
+    "modules": {},
+    "files": {}
   },
   "targets": {
-    "total": 172,
+    "total": 169,
     "modules": {
-      "JunoNativeKit (shared)": 35,
+      "JunoNativeKit (shared)": 33,
       "JunoCode (shared)": 63,
       "JunoDesktop (macOS)": 52,
-      "JunoMobile (iOS)": 22
+      "JunoMobile (iOS)": 21
     },
     "files": {
       "native/Packages/JunoCode/Sources/JunoCodeUI/Studio/Settings/StudioSettingsView.swift": 2,
@@ -98,16 +92,15 @@
       "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/JunoAIcssSearch.swift": 1,
       "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/JunoAIcssTodo.swift": 1,
       "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/JunoComposerAura.swift": 1,
-      "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/JunoLearningBlockViews.swift": 3,
       "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/JunoMathView.swift": 1,
       "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/JunoModelSelector.swift": 1,
-      "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/JunoStepLabView.swift": 5,
       "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/JunoVoiceAura.swift": 1,
       "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/JunoVoiceOrb.swift": 1,
+      "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/LiveUI/JunoLiveUILearning.swift": 3,
+      "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/LiveUI/JunoLiveUIView.swift": 3,
       "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/MermaidDiagramView.swift": 2,
       "native/iOS/JunoMobile/App/JunoMobileArchivedView.swift": 2,
       "native/iOS/JunoMobile/App/JunoMobileCodeRemote.swift": 5,
-      "native/iOS/JunoMobile/App/JunoMobileDrawer.swift": 1,
       "native/iOS/JunoMobile/App/JunoMobileMessageImages.swift": 2,
       "native/iOS/JunoMobile/App/JunoMobileMessageMenu.swift": 8,
       "native/iOS/JunoMobile/App/JunoMobileOnboarding.swift": 3,

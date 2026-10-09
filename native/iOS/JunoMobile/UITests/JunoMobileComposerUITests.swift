@@ -498,19 +498,19 @@ final class JunoMobileComposerUITests: XCTestCase {
         XCTAssertGreaterThanOrEqual(plus.frame.height, 44, "+ hit area collapsed to the glyph")
     }
 
-    /// Diagnostic companion to the "+" test: the model chip sits in the same
-    /// row, inside the same bottom safe-area inset, and opens the same kind of
-    /// popover. If this passes while "+" fails, the cause is positional rather
-    /// than structural — the "+" is the leftmost control, and the root view
-    /// arms a drag gesture that opens the sidebar from `startLocation.x < 32`.
+    /// The model is chosen from the top of "+" since the composer lost its
+    /// model chip: the row opens the native model list.
     @MainActor
-    func testTheModelChipInTheSameRowOpensItsPopoverOnTap() {
+    func testTheModelRowInPlusOpensTheModelList() {
         let app = launch([])
 
-        let chip = app.buttons["juno.mobile.chat-model"]
-        require(chip, app)
-        chip.tap()
-        require(app.descendants(matching: .any)["juno.mobile.model-provider-rail"].firstMatch, app, timeout: 5)
+        let plus = app.buttons["juno.mobile.chat-plus"]
+        require(plus, app)
+        plus.tap()
+        let model = app.descendants(matching: .any)["juno.mobile.composer-model"].firstMatch
+        require(model, app, timeout: 5)
+        model.tap()
+        require(app.descendants(matching: .any)["juno.mobile.model-list"].firstMatch, app, timeout: 5)
     }
 
     /// The primary action owns one slot. On an empty chat that slot is the

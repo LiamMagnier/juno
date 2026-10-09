@@ -18,6 +18,8 @@ public enum PreviewImageFixtures {
     public static let userPhotoID = "img-user-1"
     /// The picture Juno generated in its answer.
     public static let generatedID = "img-gen-1"
+    /// The showcase Library's app screenshot ("Onboarding, screen 2.png").
+    public static let screenID = "sc-file-4"
 
     /// Answers `/api/attachments/<id>` with PNG bytes, or nil for an id this
     /// fixture does not draw.
@@ -25,11 +27,12 @@ public enum PreviewImageFixtures {
         switch id {
         case userPhotoID: return cached(id) { draw(width: 1200, height: 800, kind: .photo) }
         case generatedID: return cached(id) { draw(width: 1024, height: 1024, kind: .generated) }
+        case screenID: return cached(id) { draw(width: 750, height: 1624, kind: .screen) }
         default: return nil
         }
     }
 
-    private enum Kind { case photo, generated }
+    private enum Kind { case photo, generated, screen }
 
     private static let lock = NSLock()
     private nonisolated(unsafe) static var cache: [String: Data] = [:]
@@ -83,19 +86,64 @@ public enum PreviewImageFixtures {
             context.addPath(hill)
             context.fillPath()
         case .generated:
-            // Concentric rings in the brand's coral on cream — obviously made.
-            context.setFillColor(CGColor(red: 0.97, green: 0.95, blue: 0.91, alpha: 1))
-            context.fill(rect)
-            let centre = CGPoint(x: Double(width) * 0.5, y: Double(height) * 0.5)
-            for ring in stride(from: 9, through: 1, by: -1) {
-                let radius = Double(width) * 0.045 * Double(ring)
-                let shade = 1 - Double(ring) / 12
-                context.setFillColor(CGColor(red: 0.93 * shade + 0.05, green: 0.45 * shade + 0.1, blue: 0.36 * shade + 0.1, alpha: 1))
+            // A poster made from the photo: a dusk gradient to the edges, the
+            // sun as a ringed disc, the skyline as one dark line. Full bleed —
+            // a generated picture has no mat around it.
+            let sky = [
+                CGColor(red: 0.99, green: 0.62, blue: 0.42, alpha: 1),
+                CGColor(red: 0.83, green: 0.36, blue: 0.43, alpha: 1),
+                CGColor(red: 0.27, green: 0.18, blue: 0.40, alpha: 1),
+                CGColor(red: 0.10, green: 0.09, blue: 0.20, alpha: 1),
+            ] as CFArray
+            if let gradient = CGGradient(colorsSpace: space, colors: sky, locations: [0, 0.38, 0.72, 1]) {
+                context.drawLinearGradient(
+                    gradient, start: CGPoint(x: 0, y: 0), end: CGPoint(x: 0, y: height), options: []
+                )
+            }
+            let centre = CGPoint(x: Double(width) * 0.5, y: Double(height) * 0.46)
+            for ring in stride(from: 6, through: 1, by: -1) {
+                let radius = Double(width) * 0.06 * Double(ring)
+                context.setFillColor(CGColor(red: 1, green: 0.86, blue: 0.62, alpha: 0.07 + 0.02 * Double(7 - ring)))
                 context.fillEllipse(in: CGRect(x: centre.x - radius, y: centre.y - radius, width: radius * 2, height: radius * 2))
             }
-            context.setFillColor(CGColor(red: 0.97, green: 0.95, blue: 0.91, alpha: 1))
-            let small = Double(width) * 0.05
-            context.fillEllipse(in: CGRect(x: centre.x - small, y: centre.y - small, width: small * 2, height: small * 2))
+            let sun = Double(width) * 0.13
+            context.setFillColor(CGColor(red: 1, green: 0.92, blue: 0.74, alpha: 1))
+            context.fillEllipse(in: CGRect(x: centre.x - sun, y: centre.y - sun, width: sun * 2, height: sun * 2))
+            // The skyline: blocks of varying height along the lower third.
+            context.setFillColor(CGColor(red: 0.07, green: 0.06, blue: 0.13, alpha: 1))
+            var x = 0.0
+            let heights = [0.16, 0.22, 0.13, 0.27, 0.19, 0.31, 0.15, 0.24, 0.18, 0.12, 0.26, 0.17]
+            var index = 0
+            while x < Double(width) {
+                let w = Double(width) * (0.06 + 0.03 * Double(index % 3))
+                let h = Double(height) * heights[index % heights.count]
+                context.fill(CGRect(x: x, y: 0, width: w + 1, height: h))
+                x += w
+                index += 1
+            }
+        case .screen:
+            // A phone screenshot: a light page, a title, three rows, a button.
+            context.setFillColor(CGColor(red: 0.98, green: 0.98, blue: 0.97, alpha: 1))
+            context.fill(rect)
+            let w = Double(width), h = Double(height)
+            context.setFillColor(CGColor(red: 0.12, green: 0.12, blue: 0.13, alpha: 1))
+            context.fill(CGRect(x: w * 0.08, y: h * 0.80, width: w * 0.55, height: h * 0.03))
+            context.setFillColor(CGColor(red: 0.62, green: 0.62, blue: 0.6, alpha: 1))
+            context.fill(CGRect(x: w * 0.08, y: h * 0.755, width: w * 0.7, height: h * 0.014))
+            for row in 0..<3 {
+                let y = h * (0.6 - Double(row) * 0.11)
+                context.setFillColor(CGColor(red: 0.93, green: 0.92, blue: 0.9, alpha: 1))
+                context.fill(CGRect(x: w * 0.08, y: y, width: w * 0.84, height: h * 0.085))
+                context.setFillColor(CGColor(red: 0.93, green: 0.45, blue: 0.36, alpha: 1))
+                context.fillEllipse(in: CGRect(x: w * 0.12, y: y + h * 0.02, width: h * 0.045, height: h * 0.045))
+            }
+            context.setFillColor(CGColor(red: 0.12, green: 0.12, blue: 0.13, alpha: 1))
+            let button = CGPath(
+                roundedRect: CGRect(x: w * 0.08, y: h * 0.08, width: w * 0.84, height: h * 0.06),
+                cornerWidth: h * 0.03, cornerHeight: h * 0.03, transform: nil
+            )
+            context.addPath(button)
+            context.fillPath()
         }
 
         guard let image = context.makeImage() else { return nil }

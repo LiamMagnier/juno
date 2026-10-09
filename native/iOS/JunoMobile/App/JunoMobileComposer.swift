@@ -77,6 +77,14 @@ struct JunoMobileComposer: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   /// The thinking dial, open in place of the control row.
   @State private var thinkingOpen = false
+  /// The "+" panel, drawn above the card in the composer's glass container.
+  @State private var plusOpen = false
+  /// The "+" panel's frame on screen, so Camera and Photos can grow out of it.
+  @State private var plusPanelFrame: CGRect = .zero
+  /// Set for the frame before the "+" panel closes into Camera or Photos: it
+  /// then fades where it stands while the new surface opens out of its frame,
+  /// instead of shrinking back into the button.
+  @State private var plusMorphing = false
   /// The model picker, from the top of "+" or a long press on the dial.
   @State private var showingModelPicker = false
   /// Send, stop and voice answer in the hand. See `JunoMobileHaptic`.
@@ -408,7 +416,7 @@ struct JunoMobileComposer: View {
                   HStack(spacing: JunoSpace.cozy) {
                     ForEach(armedTokens) { token in
                       JunoMobileComposerToken(
-                        symbol: token.symbol, title: token.title, remove: token.remove
+                        icon: token.icon, title: token.title, remove: token.remove
                       )
                     }
                   }
@@ -424,11 +432,16 @@ struct JunoMobileComposer: View {
                   .padding(JunoSpace.snug)
                   .transition(.opacity)
               } else {
+                // The placeholder in secondary ink, not the system's paler
+                // placeholder grey: ChatGPT's "Ask ChatGPT" reads at a glance.
                 TextField(
-                  voiceActive ? "Type while you talk…" : placeholder,
                   text: $prompt,
+                  prompt: Text(voiceActive ? "Type while you talk…" : placeholder)
+                    .foregroundStyle(Color.secondary),
                   axis: .vertical
-                )
+                ) {
+                  Text(voiceActive ? "Type while you talk…" : placeholder)
+                }
                 .junoFont(size: 17, relativeTo: .body)
                 .lineLimit(1...6)
                 .textFieldStyle(.plain)
@@ -461,6 +474,41 @@ struct JunoMobileComposer: View {
             in: RoundedRectangle(cornerRadius: 24, style: .continuous)
           )
           .animation(JunoMotion.reduced(JunoMotion.chatControl, when: reduceMotion), value: thinkingOpen)
+          // The "+" panel grows up out of the composer's leading corner, its
+          // foot 8pt above the card: it never covers the field, and it shares
+          // the card's glass container so the two read as one material.
+          .overlay(alignment: .top) {
+            // A zero-height shelf on the card's top edge; the panel stands on
+            // it, so its foot is always 8pt above the field.
+            Color.clear
+              .frame(maxWidth: .infinity)
+              .frame(height: 0)
+              .overlay(alignment: .bottomLeading) {
+                if plusOpen, voiceSession == nil {
+                  plusPanel
+                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
+                      plusPanelFrame = $0
+                    }
+                    .padding(.bottom, 8)
+                    .fixedSize()
+                    .transition(
+                      reduceMotion || plusMorphing
+                        ? .opacity
+                        : .scale(scale: 0.2, anchor: .bottomLeading).combined(with: .opacity)
+                    )
+                }
+              }
+          }
+          // Anywhere else on the screen closes it.
+          .background {
+            if plusOpen {
+              Color.clear
+                .frame(width: 4_000, height: 4_000)
+                .contentShape(.rect)
+                .onTapGesture { closePlus() }
+                .accessibilityHidden(true)
+            }
+          }
         }
         .transition(.opacity)
       }
@@ -518,15 +566,27 @@ struct JunoMobileComposer: View {
           showingModelPicker = false
         }
       )
-      .presentationDetents([.medium, .large])
+      // Full height: a list of labs and models reads as a page, and at the
+      // medium detent only Auto and one lab were visible.
+      .presentationDetents([.large])
       .presentationDragIndicator(.visible)
     }
     .onChange(of: composerFocused.wrappedValue) { _, focused in
-      if focused { closeThinking() }
+      if focused { closeThinking(); closePlus() }
+    }
+    .onChange(of: plusOpen) { _, open in
+      if open { plusMorphing = false }
     }
   }
 
   // MARK: Thinking dial
+
+  private func closePlus() {
+    plusMorphing = false
+    withAnimation(JunoMotion.reduced(JunoMotion.chatControl, when: reduceMotion)) {
+      plusOpen = false
+    }
+  }
 
   private func openThinking() {
     composerFocused.wrappedValue = false
@@ -555,7 +615,7 @@ struct JunoMobileComposer: View {
   /// by default, and a token for the default would be noise on every message.
   private struct ArmedToken: Identifiable {
     let id: String
-    let symbol: String
+    let icon: JunoIcon
     let title: String
     let remove: () -> Void
   }
@@ -563,19 +623,19 @@ struct JunoMobileComposer: View {
   private var armedTokens: [ArmedToken] {
     var tokens: [ArmedToken] = []
     if tools.deepResearch {
-      tokens.append(ArmedToken(id: "research", symbol: "binoculars", title: String(localized: "Deep research")) {
+      tokens.append(ArmedToken(id: "research", icon: .research, title: String(localized: "Deep research")) {
         tools.deepResearch = false
       })
     }
     if tools.fastMode {
-      tokens.append(ArmedToken(id: "flash", symbol: "bolt", title: "Flash") { tools.fastMode = false })
+      tokens.append(ArmedToken(id: "flash", icon: .work, title: "Flash") { tools.fastMode = false })
     }
     if tools.proMode {
-      tokens.append(ArmedToken(id: "pro", symbol: "sparkle", title: "Pro") { tools.proMode = false })
+      tokens.append(ArmedToken(id: "pro", icon: .sparkles, title: "Pro") { tools.proMode = false })
     }
     for id in tools.connectors {
       let name = connectors.first { $0.id == id }?.label ?? id
-      tokens.append(ArmedToken(id: "app-\(id)", symbol: "puzzlepiece.extension", title: name) {
+      tokens.append(ArmedToken(id: "app-\(id)", icon: .connections, title: name) {
         tools.toggleConnector(id)
       })
     }
@@ -739,12 +799,37 @@ struct JunoMobileComposer: View {
       if let level = JunoComposerPreviewFlags.forcedThinkingLevel {
         reasoningEffort = level
       }
+      if JunoComposerPreviewFlags.opensThinking || JunoComposerPreviewFlags.opensModelSelector {
+        // The dial needs the catalog to know the model's scale.
+        for _ in 0..<30 where thinkingScale == nil {
+          try? await Task.sleep(nanoseconds: 100_000_000)
+        }
+      }
       if JunoComposerPreviewFlags.opensThinking, thinkingScale?.isAdjustable == true {
         try? await Task.sleep(nanoseconds: 500_000_000)
         openThinking()
       }
+      if JunoComposerPreviewFlags.opensModelSelector {
+        try? await Task.sleep(nanoseconds: 400_000_000)
+        chooseModel()
+      }
+      // `--juno-preview-prompt <text>` types a draft; `--juno-preview-send
+      // <text>` types it and sends it, against the harness's paced stream.
+      if let typed = JunoComposerPreviewFlags.value("--juno-preview-prompt") {
+        prompt = typed
+      }
       if JunoComposerPreviewFlags.focusesComposer {
         composerFocused.wrappedValue = true
+      }
+      if let sent = JunoComposerPreviewFlags.value("--juno-preview-send"),
+        // Only from the conversation the launch opened (if it named one):
+        // the home's composer appears first and must not send a draft.
+        JunoPreviewEnvironment.initialConversation == nil
+          || conversation?.id == JunoPreviewEnvironment.initialConversation
+      {
+        try? await Task.sleep(nanoseconds: 600_000_000)
+        prompt = sent
+        send()
       }
     #endif
   }
@@ -811,7 +896,13 @@ struct JunoMobileComposer: View {
   }
 
   /// The `+`, in an ordinary chat.
-  private var addMenu: some View {
+  private var addMenu: some View { composerActions(rendersPanel: false) }
+
+  /// The "+" panel itself: the same menu, drawn as the glass surface above
+  /// the card.
+  private var plusPanel: some View { composerActions(rendersPanel: true) }
+
+  private func composerActions(rendersPanel: Bool) -> some View {
     JunoMobileComposerActions(
       projects: projects,
       selectedProjectID: conversation?.projectId,
@@ -846,7 +937,9 @@ struct JunoMobileComposer: View {
       openOrbit: openOrbit,
       modelName: selectedModel?.displayName ?? junoDisplayModelName(conversation?.model ?? ""),
       chooseModel: chooseModel,
-      thinkingScale: thinkingScale
+      thinkingScale: thinkingScale,
+      isPresented: $plusOpen,
+      rendersPanel: rendersPanel
     )
   }
 
@@ -892,8 +985,7 @@ struct JunoMobileComposer: View {
         }
       }
     } label: {
-      Image(systemName: "plus")
-        .junoFont(size: 21, relativeTo: .body, weight: .regular)
+      JunoIconView(.plus, size: 21)
         .foregroundStyle(.primary)
         .frame(width: 44, height: 44)
         .contentShape(Rectangle())
@@ -925,8 +1017,7 @@ struct JunoMobileComposer: View {
       composerFocused.wrappedValue = false
       setDictating(true)
     } label: {
-      Image(systemName: "mic")
-        .junoFont(size: 19, relativeTo: .body, weight: .regular)
+      JunoIconView(.mic, size: 19)
         .foregroundStyle(Color.primary)
         .frame(width: 40, height: 44)
         .contentShape(Rectangle())
@@ -1137,7 +1228,21 @@ struct JunoMobileComposer: View {
   /// does nothing to focus at all, which is the point of it being a menu.
   private func open(_ surface: JunoAttachmentSurface) {
     if surface.dismissesKeyboard { composerFocused.wrappedValue = false }
-    attachmentCoordinator.present(surface, reduceMotion: reduceMotion)
+    guard plusOpen, surface.isFloatingPanel else {
+      attachmentCoordinator.present(surface, reduceMotion: reduceMotion)
+      return
+    }
+    // From the "+" panel: one render with the panel marked as morphing, so its
+    // exit is a fade in place, then the panel goes and the surface opens out
+    // of its frame in the same transaction.
+    plusMorphing = true
+    let origin = plusPanelFrame
+    DispatchQueue.main.async {
+      withAnimation(JunoMotion.reduced(JunoCameraMotion.entry, when: reduceMotion)) {
+        plusOpen = false
+      }
+      attachmentCoordinator.present(surface, reduceMotion: reduceMotion, from: origin)
+    }
   }
 
   /// "Create a canvas": turn artifacts on and hand the reader a sentence to

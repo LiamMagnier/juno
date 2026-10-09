@@ -15,7 +15,7 @@ struct JunoMobileMessageImages: View {
   let loader: NativeChatImageLoader
   /// Trailing for the reader's own message, leading for Juno's.
   var alignment: HorizontalAlignment = .leading
-  var maxWidth: CGFloat = 288
+  var maxWidth: CGFloat = 300
 
   @State private var viewing: NativeChatAttachment?
   @Namespace private var zoom
@@ -57,12 +57,10 @@ struct JunoMobileMessageImages: View {
     } label: {
       JunoMobileAttachmentImage(attachment: image, loader: loader)
         .frame(width: width, height: height)
-        .clipShape(RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous))
-        .overlay(
-          RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
-            .strokeBorder(Color.junoHairline, lineWidth: 1)
-        )
-        .contentShape(RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous))
+        // The picture is the surface: 18pt corners, no frame, no hairline —
+        // the way Photos and Messages set an image in a thread.
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
     .buttonStyle(.junoPress)
     .modifier(JunoMobileZoomTransitionAnchor(id: image.id, namespace: zoom))
@@ -104,8 +102,7 @@ struct JunoMobileAttachmentImage: View {
 
   private var broken: some View {
     VStack(spacing: JunoSpace.tight) {
-      Image(systemName: "photo.badge.exclamationmark")
-        .junoFont(size: 22, relativeTo: .title2)
+      JunoIconView(.imageOff, size: 22)
       Text("Couldn't load")
         .junoFont(size: 11, relativeTo: .caption2)
     }
@@ -240,7 +237,7 @@ struct JunoMobileImageViewer: View {
         Spacer()
         if let currentAttachment {
           Text(currentAttachment.fileName)
-            .junoFont(size: 13, relativeTo: .footnote, weight: .medium)
+            .font(.footnote.weight(.semibold))
             .foregroundStyle(.white.opacity(0.85))
             .lineLimit(1)
         }
@@ -272,7 +269,7 @@ struct JunoMobileImageViewer: View {
             UIPasteboard.general.image = image
             copyHaptic.fire()
           } label: {
-            Label("Copy", systemImage: "doc.on.doc")
+            Label("Copy", image: JunoIcon.copy.assetName(.regular))
           }
           Button {
             UIImageWriteToSavedPhotosAlbum(image, nil, nil, nil)
@@ -281,12 +278,12 @@ struct JunoMobileImageViewer: View {
               saved = true
             }
           } label: {
-            Label(saved ? "Saved" : "Save", systemImage: saved ? "checkmark" : "square.and.arrow.down")
+            Label(saved ? "Saved" : "Save", image: (saved ? JunoIcon.check : JunoIcon.download).assetName(.regular))
               .contentTransition(.symbolEffect(.replace))
           }
           .disabled(saved)
         }
-        .junoFont(size: 14, relativeTo: .subheadline, weight: .medium)
+        .font(.subheadline.weight(.semibold))
         .foregroundStyle(.white)
         .padding(.horizontal, JunoSpace.regular)
         .frame(minHeight: 44)

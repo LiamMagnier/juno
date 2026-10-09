@@ -47,7 +47,9 @@ struct JunoMobileThoughtProcessRow: View {
     /// sent, never a claim about where its steps were. See
     /// `JunoAIcssReasoningLines`.
     private var reasoningLines: [String] {
-        guard streaming else { return [] }
+        // Only while thinking: once the answer is being written, the trace
+        // steps aside and the answer is what the eye follows.
+        guard streaming, !writing else { return [] }
         return JunoAIcssReasoningLines.lines(text: reasoning)
     }
 
@@ -139,7 +141,7 @@ struct JunoMobileThoughtProcessRow: View {
         // `reduceMotion` gate that used to live here is gone.
         return JunoAIcssThinkingLabel(
             elapsed == nil ? phrase : "\(phrase) · \(JunoMobileRunCopy.liveSpan(elapsed!))",
-            size: 17
+            size: 16
         )
         .lineLimit(1)
         .truncationMode(.tail)
@@ -147,41 +149,20 @@ struct JunoMobileThoughtProcessRow: View {
 
     // MARK: - Resting
 
+    /// ChatGPT's receipt: one quiet line — "Thought for 6s ›" — that opens
+    /// the trace. No dot, no second line, no card.
     private var restingStrip: some View {
         Button { showingPanel = true } label: {
-            HStack(spacing: JunoSpace.cozy) {
-                // The web's `w-9` slot with its 1.5×1.5 point at the centre: what
-                // nine travelling points collapse to once there is nothing left
-                // to travel.
-                Circle()
-                    .fill(Color.junoMutedForeground.opacity(0.45))
-                    .frame(width: 6, height: 6)
-                    .frame(width: Self.gutter)
-
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("Thought process")
-                        .font(JunoType.ui.weight(.medium).font())
-                        .kerning(0.13)
-                        .foregroundStyle(Color.junoMutedForeground)
-                    Text("See how this response was made")
-                        .junoFont(size: 15, relativeTo: .subheadline)
-                        .foregroundStyle(Color.primary.opacity(0.78))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                if let duration = clock.duration {
-                    Text(JunoMobileRunCopy.span(duration))
-                        .junoFont(size: 12, relativeTo: .caption)
-                        .monospacedDigit()
-                        .foregroundStyle(Color.junoMutedForeground)
-                }
-
-                JunoIconView(.chevronRight, size: 12)
-                    .foregroundStyle(Color.junoMutedForeground)
+            HStack(spacing: 4) {
+                Text(clock.duration.map { "Thought for \(JunoMobileRunCopy.span($0))" } ?? "Thought process")
+                    .font(.subheadline)
+                    .monospacedDigit()
+                JunoSymbol(.chevronRight)
+                    .font(.caption.weight(.semibold))
+                    .imageScale(.small)
             }
-            .frame(minHeight: 48)
+            .foregroundStyle(.secondary)
+            .frame(minHeight: 44)
             .padding(.horizontal, JunoSpace.snug)
             .contentShape(RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous))
         }

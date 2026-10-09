@@ -42,7 +42,7 @@ public struct SemanticArtifactView: View {
             SemanticDeckView(deck: deck, presentation: presentation)
         case .failure(let error):
             VStack(spacing: JunoSpace.snug) {
-                Image(JunoIcon.warning.assetName)
+                JunoSymbol(.triangleAlert)
                     .foregroundStyle(Color.junoWarningInk)
                     .accessibilityHidden(true)
                 Text((error as? LocalizedError)?.errorDescription ?? "This version could not be opened.")
@@ -307,7 +307,7 @@ struct SemanticDocumentView: View {
                     Label {
                         Text(title.map { "\(tone.capitalized) · \($0)" } ?? tone.capitalized)
                     } icon: {
-                        Image((tone == "warning" ? JunoIcon.warning : JunoIcon.info).assetName)
+                        JunoSymbol(tone == "warning" ? JunoIcon.triangleAlert : tone == "tip" ? JunoIcon.sparkles : JunoIcon.about)
                     }
                     .font(.caption)
                     .foregroundStyle(tone == "warning" ? AnyShapeStyle(Color.junoWarningInk) : AnyShapeStyle(.secondary))
@@ -318,7 +318,7 @@ struct SemanticDocumentView: View {
                     Rectangle().fill(Color.junoHairline).frame(width: 2)
                 }
             case .figure(let alt, let caption):
-                Label(caption ?? alt, image: JunoIcon.image.assetName)
+                Label(caption ?? alt, image: JunoIcon.image.assetName(.regular))
                     .font(.callout)
                     .foregroundStyle(.secondary)
             case .pageBreak:
@@ -341,14 +341,14 @@ struct SemanticDocumentView: View {
                         // The suggested text is markdown, as the block's own text is.
                         Text((try? AttributedString(markdown: suggestionLine(revision))) ?? AttributedString(suggestionLine(revision)))
                     } icon: {
-                        Image(JunoIcon.pencil.assetName)
+                        JunoSymbol(.pencil)
                     }
                 }
                 ForEach(comments) { comment in
                     Label {
                         Text("\(comment.author): \(comment.text)")
                     } icon: {
-                        Image(JunoIcon.message.assetName)
+                        JunoSymbol(.message)
                     }
                 }
             }
@@ -504,7 +504,7 @@ struct SemanticSlideView: View {
                 }
             }
         case .image(let alt):
-            Label(alt, image: JunoIcon.image.assetName)
+            Label(alt, image: JunoIcon.image.assetName(.regular))
                 .font(.callout)
                 .foregroundStyle(.secondary)
         case .shape(let text):

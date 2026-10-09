@@ -57,14 +57,14 @@ struct JunoMobileArtifactHistory: View {
                     case .failed:
                         ContentUnavailableView(
                             "History unavailable",
-                            systemImage: "clock.arrow.circlepath",
+                            image: JunoIcon.history.assetName(.regular),
                             description: Text(history.errorDescription ?? "Check your connection and try again.")
                         )
                     case .ready:
                         list(history)
                     }
                 } else {
-                    ContentUnavailableView("History unavailable", systemImage: "clock.arrow.circlepath")
+                    ContentUnavailableView("History unavailable", image: JunoIcon.history.assetName(.regular))
                 }
             }
             .navigationTitle("Version history")
@@ -123,10 +123,9 @@ struct JunoMobileArtifactHistory: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(entry.version == artifact.currentVersion
                                  ? "Version \(entry.version) — Current" : "Version \(entry.version)")
-                                .monospacedDigit()
                                 .foregroundStyle(.primary)
                             Text(subtitle(entry, local: local))
-                                .font(.caption)
+                                .font(.subheadline)
                                 .foregroundStyle(.secondary)
                         }
                         .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
@@ -202,20 +201,20 @@ struct JunoMobileRecentlyDeletedArtifacts: View {
                     case .failed:
                         ContentUnavailableView(
                             "Recently Deleted unavailable",
-                            systemImage: "trash",
+                            image: JunoIcon.trash.assetName(.regular),
                             description: Text(trash.errorDescription ?? "Check your connection and try again.")
                         )
                     case .ready where trash.items.isEmpty:
                         ContentUnavailableView(
                             "Nothing recently deleted",
-                            systemImage: "trash",
+                            image: JunoIcon.trash.assetName(.regular),
                             description: Text("Deleted artifacts stay here for 30 days.")
                         )
                     case .ready:
                         list(trash)
                     }
                 } else {
-                    ContentUnavailableView("Recently Deleted unavailable", systemImage: "trash")
+                    ContentUnavailableView("Recently Deleted unavailable", image: JunoIcon.trash.assetName(.regular))
                 }
             }
             .navigationTitle("Recently Deleted")
@@ -248,22 +247,22 @@ struct JunoMobileRecentlyDeletedArtifacts: View {
                     HStack(spacing: JunoSpace.cozy) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(item.title.isEmpty ? "Untitled artifact" : item.title)
+                                .font(.body)
                                 .lineLimit(1)
                             Text(subtitle(item))
-                                .font(.caption)
+                                .font(.subheadline)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
                         }
                         Spacer(minLength: JunoSpace.cozy)
                         if trash.restoring.contains(item.id) {
                             Text("Restoring…")
-                                .font(.caption)
+                                .font(.subheadline)
                                 .foregroundStyle(.secondary)
                         } else {
                             Button("Restore") { Task { await trash.restore(id: item.id) } }
-                                .buttonStyle(.bordered)
+                                .buttonStyle(.borderless)
                                 .frame(minHeight: 44)
-                                .contentShape(.rect)
                         }
                     }
                 }
@@ -294,8 +293,13 @@ struct JunoMobileRecentlyDeletedArtifacts: View {
         case nil: item.type.capitalized
         }
         var parts = [kind]
-        if let purgeAt = item.purgeAt {
-            parts.append("Removed \(purgeAt.formatted(date: .abbreviated, time: .omitted))")
+        // What the reader needs to know about something in the bin: how long
+        // it has left. `purgeAt` is when it goes for good.
+        if let purgeAt = item.purgeAt, purgeAt > .now {
+            let days = max(1, Calendar.current.dateComponents([.day], from: .now, to: purgeAt).day ?? 1)
+            parts.append(days == 1 ? "1 day left" : "\(days) days left")
+        } else if let deletedAt = item.deletedAt {
+            parts.append("Deleted \(JunoMobileRelativeDate.text(deletedAt))")
         }
         return parts.joined(separator: " · ")
     }

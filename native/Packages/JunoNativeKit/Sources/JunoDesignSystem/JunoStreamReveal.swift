@@ -122,6 +122,13 @@ public struct JunoPacedStream<Content: View>: View {
     @State private var pacer: JunoStreamPacer?
     @State private var span: Double = 0
     @State private var paced = false
+    /// The source's current length, mirrored into state. The pacing loop runs
+    /// in a `.task` that captured this view's value when it started, so its
+    /// own `source` is the text as it was *then* — empty, for a reply that
+    /// began streaming after its row was built. Reading the target through
+    /// state is what lets the loop see the reply grow; reading `source`
+    /// directly left every live answer blank until its `done` frame.
+    @State private var liveLength = 0
 
     public init(_ source: String, live: Bool, @ViewBuilder content: @escaping (String) -> Content) {
         self.source = source
@@ -138,6 +145,9 @@ public struct JunoPacedStream<Content: View>: View {
             // mid-stream fade that way).
             .transformEnvironment(\.junoStreamReveal) { reveal in
                 if paced { reveal = reduceMotion ? nil : JunoStreamReveal(span: span) }
+            }
+            .onChange(of: sourceLength, initial: true) { _, length in
+                liveLength = length
             }
             .task(id: live) {
                 guard live else {
@@ -160,7 +170,7 @@ public struct JunoPacedStream<Content: View>: View {
         // lazy stack rebuilding it, a conversation opened mid-stream) starts
         // near its end rather than replaying everything it has.
         if pacer == nil {
-            pacer = JunoStreamPacer(shown: max(0, sourceLength - 24))
+            pacer = JunoStreamPacer(shown: max(0, liveLength - 24))
         }
         paced = true
         var last = Date()
@@ -169,7 +179,7 @@ public struct JunoPacedStream<Content: View>: View {
             let dt = min(now.timeIntervalSince(last), 0.1)
             last = now
             var next = pacer ?? JunoStreamPacer()
-            let target = sourceLength
+            let target = liveLength
             let before = Int(next.shown)
             let after = next.step(target: target, dt: dt)
             if after != before || next.velocity != pacer?.velocity {

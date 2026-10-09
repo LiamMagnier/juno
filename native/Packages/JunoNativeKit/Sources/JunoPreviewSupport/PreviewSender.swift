@@ -62,8 +62,27 @@ public actor PreviewSender: NativeChatRequestSending {
             )
         }
         // The transcript's pictures. A real PNG so the row's decode path runs.
-        if request.path.hasPrefix("/api/attachments/") {
-            let id = String(request.path.dropFirst("/api/attachments/".count))
+        // An attachment's signed location, as the Library asks for it before
+        // drawing a thumbnail: every id points at `/api/files/<id>` below,
+        // which answers with real bytes where a fixture draws them.
+        if request.path == "/api/v1/entities",
+            request.queryItems.first(where: { $0.name == "type" })?.value == "attachment",
+            let ids = request.queryItems.first(where: { $0.name == "ids" })?.value
+        {
+            let items = ids.split(separator: ",").map { id in
+                #"{"type":"attachment","id":"\#(id)","revision":2,"deletedAt":null,"data":{"id":"\#(id)","url":"/api/files/\#(id)"}}"#
+            }
+            let body = Data(#"{"entities":[\#(items.joined(separator: ","))]}"#.utf8)
+            return HTTPResponse(
+                statusCode: 200,
+                headers: try HTTPHeaders(["content-type": "application/json"]),
+                body: body
+            )
+        }
+        // `/api/files/<id>` too: the Library's thumbnails fetch through the
+        // attachment's own `url`, which the showcase points here.
+        if request.path.hasPrefix("/api/attachments/") || request.path.hasPrefix("/api/files/") {
+            let id = String(request.path.split(separator: "/").last ?? "")
             if let png = PreviewImageFixtures.png(for: id) {
                 return HTTPResponse(
                     statusCode: 200,
@@ -80,6 +99,20 @@ public actor PreviewSender: NativeChatRequestSending {
                 body: Data(#"{"error":"Image not found."}"#.utf8)
             )
         }
+        if let research = PreviewResearchRunFixtures.body(for: request) {
+            return HTTPResponse(
+                statusCode: 200,
+                headers: try HTTPHeaders(["content-type": "application/json"]),
+                body: research
+            )
+        }
+        if let appended = PreviewChatStream.appendResponse(for: request) {
+            return HTTPResponse(
+                statusCode: 200,
+                headers: try HTTPHeaders(["content-type": "application/json"]),
+                body: appended
+            )
+        }
         return HTTPResponse(
             statusCode: 200,
             headers: try HTTPHeaders(["content-type": "application/json"]),
@@ -93,6 +126,13 @@ public actor PreviewSender: NativeChatRequestSending {
     ) async throws -> HTTPByteStreamResponse {
         streamRequestCount += 1
         if fails { throw URLError(.notConnectedToInternet) }
+        if let paced = PreviewChatStream.bytes(for: request) {
+            return HTTPByteStreamResponse(
+                statusCode: 200,
+                headers: try HTTPHeaders(["content-type": "text/event-stream"]),
+                bytes: paced
+            )
+        }
         return HTTPByteStreamResponse(
             statusCode: 200,
             headers: try HTTPHeaders(["content-type": "text/event-stream"]),

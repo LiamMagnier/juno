@@ -67,7 +67,7 @@ private struct JunoAttachmentSurfaces: ViewModifier {
                 onPick: importPhotos,
                 close: { coordinator.dismissPanel(.photos, reduceMotion: reduceMotion) }
             )
-            .transition(.junoFloatingPanel(reduceMotion: reduceMotion))
+            .transition(panelTransition)
             .zIndex(2)
         }
         if coordinator.isShowingCamera {
@@ -77,9 +77,17 @@ private struct JunoAttachmentSurfaces: ViewModifier {
                 openPhotos: { coordinator.showPhotosFromCamera(reduceMotion: reduceMotion) },
                 close: { coordinator.dismissCamera(reduceMotion: reduceMotion) }
             )
-            .transition(.junoFloatingPanel(reduceMotion: reduceMotion))
+            .transition(panelTransition)
             .zIndex(2)
         }
+    }
+
+    /// Out of the "+" panel when it was chosen there; up from below otherwise.
+    private var panelTransition: AnyTransition {
+        if !reduceMotion, let origin = coordinator.morphOrigin {
+            return .junoPanelMorph(from: origin)
+        }
+        return .junoFloatingPanel(reduceMotion: reduceMotion)
     }
 
     private var remainingCapacity: Int {

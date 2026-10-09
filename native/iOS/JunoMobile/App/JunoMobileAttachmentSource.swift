@@ -72,6 +72,12 @@ final class JunoMobileAttachmentCoordinator {
     /// Set while the camera is animating out and the Photos picker is waiting
     /// its turn, so a tap in that window cannot start a third presentation.
     private var handingOff = false
+    /// Where a floating panel grows from, in global coordinates: the "+" glass
+    /// panel's frame when Camera or Photos was chosen from it, so the menu's
+    /// surface becomes the grid or the viewfinder (ChatGPT's morph) instead of
+    /// one surface leaving and another arriving. Nil: the panel rises from
+    /// below, as it does from the camera's own library button.
+    private(set) var morphOrigin: CGRect?
 
     var isShowingCamera: Bool { surface == .camera }
     var isShowingPhotos: Bool { surface == .photos }
@@ -94,8 +100,9 @@ final class JunoMobileAttachmentCoordinator {
     /// The guard is the defence against a double tap on a menu row: the second
     /// tap arrives while the first surface is presenting, and without this it
     /// would queue a second presentation of the same picker.
-    func present(_ surface: JunoAttachmentSurface, reduceMotion: Bool) {
+    func present(_ surface: JunoAttachmentSurface, reduceMotion: Bool, from origin: CGRect? = nil) {
         guard self.surface == nil, !handingOff else { return }
+        morphOrigin = origin.flatMap { $0.isEmpty ? nil : $0 }
         guard surface.isFloatingPanel else {
             self.surface = surface
             return

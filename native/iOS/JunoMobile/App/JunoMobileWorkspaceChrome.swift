@@ -307,7 +307,7 @@ struct JunoMobileWorkspaceSection<Content: View>: View {
 /// bordered control as the older-system fallback.
 struct JunoMobileWorkspaceActionStyle: ViewModifier {
     func body(content: Content) -> some View {
-        content.buttonStyle(.glass)
+        content.buttonStyle(.glass).buttonBorderShape(.capsule)
     }
 }
 
@@ -317,11 +317,16 @@ struct JunoMobileWorkspaceActionStyle: ViewModifier {
 struct JunoMobileEmptyLine: View {
     let text: String
 
+    /// The website's empty mark — the construction in miniature, drawn on
+    /// once — over the one quiet line, as the web's `EmptyState` sets it.
     var body: some View {
-        Text(text)
-            .junoFont(size: 14, relativeTo: .subheadline)
-            .foregroundStyle(Color.junoMutedForeground)
-            .frame(maxWidth: .infinity, alignment: .leading)
+        VStack(alignment: .leading, spacing: JunoSpace.cozy) {
+            JunoEmptyMark(size: .panel)
+            Text(text)
+                .junoFont(size: 14, relativeTo: .subheadline)
+                .foregroundStyle(Color.junoMutedForeground)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
