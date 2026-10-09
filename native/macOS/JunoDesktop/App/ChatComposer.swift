@@ -619,7 +619,9 @@ struct ComposerControlStyle: ButtonStyle {
             configuration.label
                 .opacity(isEnabled ? 1 : 0.5)
                 .background {
-                    JunoRadius.concentric()
+                    // A capsule (round 3): a control is never a rounded
+                    // rectangle on the Mac, the composer's included.
+                    Capsule(style: .continuous)
                         .fill(Color.junoGlassHover)
                         .opacity(hovered && isEnabled ? 1 : 0)
                 }

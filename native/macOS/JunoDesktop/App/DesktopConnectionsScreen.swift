@@ -182,12 +182,9 @@ struct DesktopConnectionsScreen: View {
                 }
                 .keyboardShortcut("r", modifiers: .command)
                 .accessibilityIdentifier("connections.refresh")
-                // Bring your own: the page's one header action, beside the
-                // quiet refresh — the web's "Add MCP server".
-                DesktopOutlineButton(title: "Add MCP Server", icon: .plus) { addServer() }
-                    .disabled(model.phase != .ready)
-                    .help("Add a remote MCP server by its address")
-                    .accessibilityIdentifier("connections.add-server")
+                // No second "Add MCP Server" here (round 3): it repeated the
+                // prominent button's words beside it. A custom server is added
+                // from the directory's own Add tile, as on the web.
             }
         } controls: {
             if model.phase == .ready {

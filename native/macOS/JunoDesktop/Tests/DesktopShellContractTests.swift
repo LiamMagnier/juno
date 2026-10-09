@@ -81,7 +81,7 @@ import Testing
 
     @Test func theMacsOwnDestinationsAreTheStoredAndSettingsReachedOnes() {
         let macOnly = DesktopDestination.allCases.filter { $0.shell == nil }
-        #expect(macOnly == [.chat, .search, .design, .memory, .permissions, .profile])
+        #expect(macOnly == [.chat, .search, .design, .memory, .permissions, .profile, .instructions])
     }
 
     @Test func theColumnSaysTheWebsWords() {

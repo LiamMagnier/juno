@@ -379,8 +379,11 @@ struct DesktopCoverDrawing {
                     let dx = x - ring.cx * size.width
                     let dy = y - ring.cy * unit
                     let distance = abs((dx * dx + dy * dy).squareRoot() - ring.r * unit)
-                    if distance < 1.6 { strength = max(strength, 0.55); break }
-                    if distance < 3.2 { strength = max(strength, 0.22) }
+                    // Half a pitch either side of the orbit: every column of
+                    // the matrix the circle crosses lights one dot, so the
+                    // orbit reads as an unbroken dotted line.
+                    if distance <= pitch / 2 { strength = max(strength, 0.5); break }
+                    if distance <= pitch { strength = max(strength, 0.16) }
                 }
                 let dot = CGRect(x: x - 0.9, y: y - 0.9, width: 1.8, height: 1.8)
                 context.fill(Path(ellipseIn: dot), with: .color(ink.opacity(strength)))

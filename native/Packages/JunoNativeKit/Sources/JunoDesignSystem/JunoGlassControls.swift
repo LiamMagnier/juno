@@ -302,3 +302,13 @@ public extension View {
         .accessibilityValue(current)
     }
 }
+
+// MARK: Field capsule
+
+public extension View {
+    /// A field's (or any control's) glass capsule behind it: the surface
+    /// ``JunoPageSearchField`` and the segmented track sit on.
+    func junoGlassCapsule() -> some View {
+        modifier(JunoGlassSegmentTrack())
+    }
+}

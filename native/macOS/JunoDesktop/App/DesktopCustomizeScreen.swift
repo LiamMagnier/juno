@@ -96,8 +96,10 @@ struct DesktopInstructionsScreen: View {
                 lede: "How Alevr responds, and what it should know about you before you say a word."
             )
             .padding(.top, JunoSpace.wide)
-            .padding(.horizontal, JunoSpace.section)
-            .frame(maxWidth: JunoPageMeasure.reading.maxWidth ?? 720, alignment: .leading)
+            // On the rows' own edge: the grouped form insets its cards and
+            // their labels, and the title lines up with the labels.
+            .padding(.horizontal, 54)
+            .frame(maxWidth: (JunoPageMeasure.reading.maxWidth ?? 720) + JunoSpace.section, alignment: .leading)
             .frame(maxWidth: .infinity)
             DesktopSettingsPersonalizationPane(context: context)
                 .frame(maxWidth: (JunoPageMeasure.reading.maxWidth ?? 720) + JunoSpace.section, alignment: .top)

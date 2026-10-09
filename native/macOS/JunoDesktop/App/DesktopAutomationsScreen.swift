@@ -257,9 +257,9 @@ struct DesktopAutomationRow<Actions: View>: View {
                                 .junoType(JunoType.ui.weight(.medium))
                                 .foregroundStyle(Color.junoForeground)
                                 .lineLimit(1)
-                            if !schedule.enabled {
-                                DesktopWorkTag("Paused")
-                            }
+                            // No "Paused" pill (owner rule: no status pills):
+                            // the Paused section and the line under the name
+                            // already say it in words.
                             if let repository = schedule.codeRepository {
                                 DesktopWorkTag(repository)
                             }

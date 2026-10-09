@@ -37,9 +37,27 @@ struct DesktopStageCPagesTests {
     @Test
     func aMorePageIsTheSelection() {
         #expect(
-            DesktopNavigationState.selection(destination: .automations, selectedConversationID: "c")
-                == .destination(.automations)
+            DesktopNavigationState.selection(destination: .assistants, selectedConversationID: "c")
+                == .destination(.assistants)
         )
+    }
+
+    /// Every Customize tab lights the one Customize row, which is the Apps
+    /// destination (round 3: the web's `startsWith` check).
+    @Test
+    func everyCustomizeTabLightsTheCustomizeRow() {
+        #expect(DesktopDestination.customizeTabs == [.connections, .skills, .automations, .memory, .instructions])
+        for tab in DesktopDestination.customizeTabs {
+            #expect(
+                DesktopNavigationState.selection(destination: tab, selectedConversationID: "c")
+                    == .destination(.connections),
+                "\(tab)"
+            )
+            #expect(tab.pageIdentity == "customize")
+        }
+        #expect(DesktopDestination.library.pageIdentity == "library")
+        #expect(DesktopDestination.automations.customizeLabel == "Routines")
+        #expect(DesktopDestination.connections.customizeLabel == "Apps")
     }
 
     @Test
