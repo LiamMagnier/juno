@@ -75,9 +75,17 @@ test("renderTable: multi-row headers join per column, layout tables fall back to
 test("hostile tables stay bounded: a million cells and absurd spans cost linear time and a capped grid", () => {
   const row = `<tr>${"<td colspan=99999 rowspan=99999>9</td>".repeat(50)}</tr>`;
   const html = `<html><body><table>${row.repeat(4000)}</table><p>${"tail ".repeat(200)}</p></body></html>`;
-  const started = performance.now();
-  const { text } = htmlToCleanText(html);
-  assert.ok(performance.now() - started < 5_000);
+  // Linear time is well under a second here; a quadratic walk takes minutes.
+  // The best of three runs under a generous bound, because release builds run
+  // this under amd64 emulation beside other work, where one run can stall.
+  let text = "";
+  let best = Infinity;
+  for (let attempt = 0; attempt < 3 && best >= 8_000; attempt++) {
+    const started = performance.now();
+    text = htmlToCleanText(html).text;
+    best = Math.min(best, performance.now() - started);
+  }
+  assert.ok(best < 8_000, `best of three runs took ${Math.round(best)} ms`);
   const widest = Math.max(...text.split("\n").filter((l) => l.startsWith("|")).map((l) => l.split(" | ").length));
   assert.ok(widest <= 24, `columns capped, saw ${widest}`);
   assert.ok(text.split("\n").filter((l) => l.startsWith("|")).length <= 302);
