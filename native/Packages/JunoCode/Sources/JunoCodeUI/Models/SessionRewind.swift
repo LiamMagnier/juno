@@ -104,8 +104,8 @@ public enum RewindOutcome: Equatable, Sendable {
 /// person reading the confirmation, not for a log.
 enum RewindCopy {
     static let noProject = "This conversation has no project, so there are no files to restore."
-    static let running = "Juno is working. Stop it before rewinding."
-    static let compacting = "Juno is compacting the conversation. Rewind once it has finished, or stop it."
+    static let running = "Alevr is working. Stop it before rewinding."
+    static let compacting = "Alevr is compacting the conversation. Rewind once it has finished, or stop it."
     static let preview = "Preview mode does not rewind."
     /// What a message, a `/compact` or a second rewind is told while a rewind
     /// is cutting the session back.
@@ -114,20 +114,20 @@ enum RewindCopy {
     /// its own tools write, and nothing a command writes. The exception is a
     /// file its tools also changed, which goes back whole — a command's edit
     /// to it included, once the divergence question has been answered.
-    static let untracked = "Edits made by shell commands aren't tracked and stay as they are, unless Juno's tools also changed that file: restoring it undoes those edits too."
+    static let untracked = "Edits made by shell commands aren't tracked and stay as they are, unless Alevr's tools also changed that file: restoring it undoes those edits too."
 
     static func message(for error: TurnCheckpointError) -> String {
         switch error {
         case .notRecorded:
-            "Juno has no file snapshots from this message."
+            "Alevr has no file snapshots from this message."
         case .incomplete(.pruned):
             "Older file snapshots were cleared to save space, so code can't go back this far."
         case .incomplete(.notCaptured):
             "A file changed after this message was too large to snapshot, so code can't go back this far."
         case let .diverged(paths):
             paths.count == 1
-                ? "A file was edited outside Juno."
-                : "\(paths.count) files were edited outside Juno."
+                ? "A file was edited outside Alevr."
+                : "\(paths.count) files were edited outside Alevr."
         case let .restoreFailed(path, message):
             "Could not restore \(path): \(message)"
         }
@@ -138,7 +138,7 @@ enum RewindCopy {
         case .turnNotFound:
             "This message is no longer in the conversation."
         case .notRecorded:
-            "This message was sent before Juno kept rewind points."
+            "This message was sent before Alevr kept rewind points."
         case .summarized:
             "This message was folded into a summary when the context was compacted."
         case .outOfSync:

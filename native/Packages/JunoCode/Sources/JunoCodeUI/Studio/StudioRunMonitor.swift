@@ -180,7 +180,7 @@ public enum RunNotificationPlanner {
                 identifier: "juno.code.question.\(question.id)",
                 category: .question,
                 title: current.title,
-                body: question.questions.first?.question ?? "Juno has a question.",
+                body: question.questions.first?.question ?? "Alevr has a question.",
                 userInfo: info
             )
         }
@@ -231,7 +231,7 @@ public enum RunNotificationPlanner {
     }
 
     /// Why a screen card's banner has no Allow once.
-    static let screenApprovalNote = "Open the session to allow it: its card shows what Juno will click."
+    static let screenApprovalNote = "Open the session to allow it: its card shows what Alevr will click."
 
     static func title(for category: CodeNotificationCategory, entry: RunIndexEntry) -> String {
         switch category {
@@ -604,7 +604,7 @@ public final class StudioRunMonitor: NSObject, UNUserNotificationCenterDelegate 
         if wanted, activity == nil {
             activity = ProcessInfo.processInfo.beginActivity(
                 options: [.idleSystemSleepDisabled, .userInitiated],
-                reason: "Juno Code is running a task"
+                reason: "Alevr Code is running a task"
             )
         } else if !wanted, let current = activity {
             ProcessInfo.processInfo.endActivity(current)

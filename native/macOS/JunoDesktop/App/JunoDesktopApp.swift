@@ -130,6 +130,7 @@ private final class JunoDesktopAppDelegate: NSObject, NSApplicationDelegate, UNU
             DesktopPageLinks.install()
             #if DEBUG
             if JunoPreviewEnvironment.isActive {
+                DesktopPreviewSnapshot.scheduleIfRequested()
                 // The harness never polls, downloads or stages anything. It only
                 // seeds the phase the footer card draws, so that card can be
                 // looked at in both appearances instead of reasoned about — the
@@ -461,6 +462,9 @@ struct JunoDesktopApp: App {
             // on each detail column is what lets content scroll *under* the
             // toolbar and the sidebar's glass sample warm paper instead of
             // the system's grey.
+            // The detail columns are full-bleed canvas (``DesktopContentPanel``),
+            // so the window ground is the canvas too: no darker band shows
+            // around the conversation under the toolbar or at the edges.
             .containerBackground(Color.junoCanvas, for: .window)
         }
         .defaultSize(width: 1240, height: 800)
@@ -518,6 +522,9 @@ struct JunoDesktopApp: App {
         Settings {
             DesktopSettingsWindow(configuration: configuration)
                 .junoAccountAppearance(configuration)
+                #if DEBUG
+                .modifier(DesktopPreviewAppearance())
+                #endif
                 // Settings › Memory's embedded page reads its model from
                 // here, so `DesktopMemoryScreen(model:back:)` keeps its two
                 // arguments (Phase 4 B1).
@@ -528,7 +535,7 @@ struct JunoDesktopApp: App {
                 .junoAccentTint()
         }
 
-        Window("Juno Code Settings", id: JunoDesktopWindow.codeSettingsID) {
+        Window("Alevr Code Settings", id: JunoDesktopWindow.codeSettingsID) {
             DesktopCodeSettingsWindow(configuration: configuration)
                 .junoAccountAppearance(configuration)
         }
@@ -548,6 +555,9 @@ struct JunoDesktopApp: App {
             if let runID {
                 ResearchReportWindow(runID: runID, configuration: configuration)
                     .junoAccountAppearance(configuration)
+                    #if DEBUG
+                    .modifier(DesktopPreviewAppearance())
+                    #endif
             }
         }
         .defaultSize(width: 880, height: 720)
@@ -557,7 +567,7 @@ struct JunoDesktopApp: App {
         // About Juno and Software Update (premium pass): fixed-size utility
         // windows, never restored at launch and kept out of the Window menu's
         // generated list — each has its own item in the application menu.
-        Window("About Juno", id: JunoDesktopWindow.aboutID) {
+        Window("About Alevr", id: JunoDesktopWindow.aboutID) {
             DesktopAboutWindow()
                 .junoAccountAppearance(configuration)
                 .junoAccentTint()
@@ -600,13 +610,26 @@ struct JunoDesktopApp: App {
             // Unreachable outside the preview harness: `configuration` is only
             // nil when the preview branch above is taken.
             JunoEmptyState(
-                title: "Juno could not start",
+                title: "Alevr could not start",
                 message: "The application runtime was not composed.",
                 icon: .error
             )
         }
     }
 }
+
+#if DEBUG
+/// The harness's pinned appearance on a window other than the main one.
+private struct DesktopPreviewAppearance: ViewModifier {
+    func body(content: Content) -> some View {
+        if JunoPreviewEnvironment.isActive {
+            content.junoPreviewAppearance()
+        } else {
+            content
+        }
+    }
+}
+#endif
 
 // `JunoDesktopCommands` and the focused-value plumbing it reads live in
 // DesktopCommands.swift.

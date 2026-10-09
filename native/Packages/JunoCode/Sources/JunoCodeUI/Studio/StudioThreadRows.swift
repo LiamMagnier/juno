@@ -659,7 +659,7 @@ struct StudioCompactionDivider: View {
             }
             .buttonStyle(.plain)
             .onHover { hovering = $0 }
-            .help(isExpanded ? "Hide the summary" : "Show what Juno kept of the earlier conversation")
+            .help(isExpanded ? "Hide the summary" : "Show what Alevr kept of the earlier conversation")
             .accessibilityLabel("Context compacted")
             .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
             .accessibilityIdentifier("juno.code.transcript.compaction").frame(minWidth: 44, minHeight: 44)

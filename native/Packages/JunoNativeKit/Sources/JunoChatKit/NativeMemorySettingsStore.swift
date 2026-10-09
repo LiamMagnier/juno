@@ -106,6 +106,12 @@ public struct NativeAccountSettings: Equatable, Sendable {
     public var monthlySpendCapEur: Int?
     /// The one bypass of the ceiling. Read-only: no client can write it.
     public var spendCapDisabled: Bool?
+    /// What Auto optimises for (`AUTO_PREFERENCES`); nil is "not known yet".
+    /// See ``NativeAutoPreference``.
+    public var autoPreference: String?
+    /// Which labs Auto may choose (`AUTO_DATA_BOUNDARIES`); nil is "not known
+    /// yet". See ``NativeAutoDataBoundary``.
+    public var autoDataBoundary: String?
     public var updatedAt: Date
     public let revision: UInt64
     public var isPending: Bool
@@ -134,6 +140,8 @@ public struct NativeAccountSettings: Equatable, Sendable {
         blockedConnectors: [String]? = nil,
         monthlySpendCapEur: Int? = nil,
         spendCapDisabled: Bool? = nil,
+        autoPreference: String? = nil,
+        autoDataBoundary: String? = nil,
         updatedAt: Date,
         revision: UInt64,
         isPending: Bool = false
@@ -161,6 +169,8 @@ public struct NativeAccountSettings: Equatable, Sendable {
         self.blockedConnectors = blockedConnectors
         self.monthlySpendCapEur = monthlySpendCapEur
         self.spendCapDisabled = spendCapDisabled
+        self.autoPreference = autoPreference
+        self.autoDataBoundary = autoDataBoundary
         self.updatedAt = updatedAt
         self.revision = revision
         self.isPending = isPending
@@ -195,6 +205,10 @@ public struct NativeSettingsPatch: Equatable, Sendable {
     /// The monthly ceiling. `.some(nil)` sends `null`, "back to the default";
     /// `.none` leaves it alone.
     public var monthlySpendCapEur: Int??
+    /// What Auto optimises for; one of ``NativeAutoPreference/values``.
+    public var autoPreference: String?
+    /// Which labs Auto may choose; one of ``NativeAutoDataBoundary/values``.
+    public var autoDataBoundary: String?
 
     public init(
         theme: NativeThemePreference? = nil,
@@ -216,7 +230,9 @@ public struct NativeSettingsPatch: Equatable, Sendable {
         actionApprovalPolicy: String? = nil,
         lockdownMode: Bool? = nil,
         blockedConnectors: [String]? = nil,
-        monthlySpendCapEur: Int?? = nil
+        monthlySpendCapEur: Int?? = nil,
+        autoPreference: String? = nil,
+        autoDataBoundary: String? = nil
     ) {
         self.theme = theme
         self.accent = accent
@@ -238,6 +254,8 @@ public struct NativeSettingsPatch: Equatable, Sendable {
         self.lockdownMode = lockdownMode
         self.blockedConnectors = blockedConnectors
         self.monthlySpendCapEur = monthlySpendCapEur
+        self.autoPreference = autoPreference
+        self.autoDataBoundary = autoDataBoundary
     }
 
     /// `ACTION_PERMISSION_POLICIES` in `src/lib/action-approval.ts`, in order.
@@ -284,6 +302,8 @@ public struct NativeSettingsPatch: Equatable, Sendable {
         if let lockdownMode { result["lockdownMode"] = lockdownMode }
         if let blockedConnectors { result["blockedConnectors"] = blockedConnectors }
         if let monthlySpendCapEur { result["monthlySpendCapEur"] = monthlySpendCapEur ?? NSNull() }
+        if let autoPreference { result["autoPreference"] = autoPreference }
+        if let autoDataBoundary { result["autoDataBoundary"] = autoDataBoundary }
         return result
     }
 
@@ -532,6 +552,8 @@ public actor NativeMemorySettingsStore<Repository: AccountScopedRepository> {
             blockedConnectors: wire.blockedConnectors,
             monthlySpendCapEur: wire.monthlySpendCapEur,
             spendCapDisabled: wire.spendCapDisabled,
+            autoPreference: wire.autoPreference,
+            autoDataBoundary: wire.autoDataBoundary,
             updatedAt: updatedAt,
             revision: record.revision
         )
@@ -754,6 +776,18 @@ public actor NativeMemorySettingsStore<Repository: AccountScopedRepository> {
             guard let value = raw as? Bool else { throw NativeMemorySettingsError.invalidMutation }
             settings.spendCapDisabled = value
         }
+        if let raw = patch["autoPreference"] {
+            guard let value = raw as? String, NativeAutoPreference.values.contains(value) else {
+                throw NativeMemorySettingsError.invalidMutation
+            }
+            settings.autoPreference = value
+        }
+        if let raw = patch["autoDataBoundary"] {
+            guard let value = raw as? String, NativeAutoDataBoundary.values.contains(value) else {
+                throw NativeMemorySettingsError.invalidMutation
+            }
+            settings.autoDataBoundary = value
+        }
     }
 
     private func validMemory(_ value: String) -> String? {
@@ -912,6 +946,8 @@ public final class NativeMemorySettingsModel<Repository: AccountScopedRepository
     /// Where `GET /api/settings` stands — the read that supplies the fields the
     /// sync record does not carry (Phase 3).
     public private(set) var serverSettingsPhase: ServerSettingsPhase = .idle
+    /// The live speech provider, from the same read; `.unknown` until it answers.
+    public private(set) var ttsProvider: NativeTTSProviderStatus = .unknown
 
     public enum ServerSettingsPhase: Equatable, Sendable {
         case idle
@@ -971,6 +1007,7 @@ public final class NativeMemorySettingsModel<Repository: AccountScopedRepository
         acceptedSettings = [:]
         serverOverlay = [:]
         serverSettingsPhase = .idle
+        ttsProvider = .unknown
         lastErrorDescription = nil
         isMutating = false
         isRefreshingSummary = false
@@ -1214,6 +1251,7 @@ public final class NativeMemorySettingsModel<Repository: AccountScopedRepository
             var overlay = fetched.overlay
             for (field, value) in serverOverlay where overlay[field] == nil { overlay[field] = value }
             serverOverlay = overlay
+            ttsProvider = fetched.ttsProvider
             serverSettingsPhase = .ready
             await reload()
         } catch {
@@ -1421,6 +1459,10 @@ public final class NativeMemorySettingsModel<Repository: AccountScopedRepository
             blocked.count > 200 || blocked.contains(where: { $0.isEmpty || $0.count > 120 })
         { return false }
         if let cap = patch["monthlySpendCapEur"] as? Int, !(0...100_000).contains(cap) { return false }
+        if let preference = patch["autoPreference"] as? String,
+            !NativeAutoPreference.values.contains(preference) { return false }
+        if let boundary = patch["autoDataBoundary"] as? String,
+            !NativeAutoDataBoundary.values.contains(boundary) { return false }
         return true
     }
 
@@ -1471,6 +1513,8 @@ private struct SettingsWire: Decodable {
     let blockedConnectors: [String]?
     let monthlySpendCapEur: Int?
     let spendCapDisabled: Bool?
+    let autoPreference: String?
+    let autoDataBoundary: String?
     let updatedAt: String
 }
 
@@ -1517,6 +1561,10 @@ public struct NativeServerSettings: Equatable, Sendable {
     public var blockedConnectors: [String]?
     public var monthlySpendCapEur: Int?
     public var spendCapDisabled: Bool?
+    public var autoPreference: String?
+    public var autoDataBoundary: String?
+    /// The live speech provider, sent beside the settings.
+    public var ttsProvider: NativeTTSProviderStatus
 
     public init(
         memorySensitiveTopics: [String]? = nil,
@@ -1526,7 +1574,10 @@ public struct NativeServerSettings: Equatable, Sendable {
         lockdownMode: Bool? = nil,
         blockedConnectors: [String]? = nil,
         monthlySpendCapEur: Int? = nil,
-        spendCapDisabled: Bool? = nil
+        spendCapDisabled: Bool? = nil,
+        autoPreference: String? = nil,
+        autoDataBoundary: String? = nil,
+        ttsProvider: NativeTTSProviderStatus = .unknown
     ) {
         self.memorySensitiveTopics = memorySensitiveTopics
         self.memoryBackgroundLearning = memoryBackgroundLearning
@@ -1536,6 +1587,9 @@ public struct NativeServerSettings: Equatable, Sendable {
         self.blockedConnectors = blockedConnectors
         self.monthlySpendCapEur = monthlySpendCapEur
         self.spendCapDisabled = spendCapDisabled
+        self.autoPreference = autoPreference
+        self.autoDataBoundary = autoDataBoundary
+        self.ttsProvider = ttsProvider
     }
 
     /// As the raw patch the model lays over the sync record. A ceiling of
@@ -1550,6 +1604,14 @@ public struct NativeServerSettings: Equatable, Sendable {
         if let blockedConnectors { result["blockedConnectors"] = blockedConnectors }
         result["monthlySpendCapEur"] = monthlySpendCapEur.map { $0 as Any } ?? NSNull()
         if let spendCapDisabled { result["spendCapDisabled"] = spendCapDisabled }
+        // An unknown value from a newer server is left out rather than failing
+        // the whole overlay; the row then shows the default.
+        if let autoPreference, NativeAutoPreference.values.contains(autoPreference) {
+            result["autoPreference"] = autoPreference
+        }
+        if let autoDataBoundary, NativeAutoDataBoundary.values.contains(autoDataBoundary) {
+            result["autoDataBoundary"] = autoDataBoundary
+        }
         return result
     }
 }
@@ -1573,7 +1635,16 @@ public struct NativeServerSettingsClient: Sendable {
         )
         try Self.requireSuccess(response, fallback: "Juno could not load your settings")
         do {
-            let wire = try JSONDecoder().decode(ServerSettingsResponseWire.self, from: response.body)
+            return try Self.decode(response.body)
+        } catch {
+            throw NativeMemoryAPIError.malformedResponse
+        }
+    }
+
+    /// The `GET /api/settings` body, as ``fetch(for:)`` reads it.
+    public static func decode(_ body: Data) throws -> NativeServerSettings {
+        do {
+            let wire = try JSONDecoder().decode(ServerSettingsResponseWire.self, from: body)
             let s = wire.settings
             return NativeServerSettings(
                 memorySensitiveTopics: s.memorySensitiveTopics,
@@ -1583,10 +1654,11 @@ public struct NativeServerSettingsClient: Sendable {
                 lockdownMode: s.lockdownMode,
                 blockedConnectors: s.blockedConnectors,
                 monthlySpendCapEur: s.monthlySpendCapEur,
-                spendCapDisabled: s.spendCapDisabled
+                spendCapDisabled: s.spendCapDisabled,
+                autoPreference: s.autoPreference,
+                autoDataBoundary: s.autoDataBoundary,
+                ttsProvider: wire.ttsProvider
             )
-        } catch {
-            throw NativeMemoryAPIError.malformedResponse
         }
     }
 
@@ -1631,7 +1703,27 @@ private struct ServerSettingsResponseWire: Decodable {
         let blockedConnectors: [String]?
         let monthlySpendCapEur: Int?
         let spendCapDisabled: Bool?
+        let autoPreference: String?
+        let autoDataBoundary: String?
     }
 
     let settings: Settings
+    /// Absent (an older server) is `.unknown`; `null` is `.unavailable`.
+    let ttsProvider: NativeTTSProviderStatus
+
+    private enum CodingKeys: String, CodingKey {
+        case settings, ttsProvider
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        settings = try container.decode(Settings.self, forKey: .settings)
+        if container.contains(.ttsProvider) {
+            ttsProvider = NativeTTSProviderStatus(
+                serverValue: try container.decodeIfPresent(String.self, forKey: .ttsProvider)
+            )
+        } else {
+            ttsProvider = .unknown
+        }
+    }
 }

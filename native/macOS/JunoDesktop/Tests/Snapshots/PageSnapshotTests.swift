@@ -128,7 +128,7 @@ enum PageFixtures {
                             fileName: "Kickoff notes.docx",
                             size: 48_000,
                             isImage: false,
-                            status: .failed("Juno couldn’t reach the server.", retryable: true)
+                            status: .failed("Alevr couldn’t reach the server.", retryable: true)
                         ),
                     ]),
                     view: "list"

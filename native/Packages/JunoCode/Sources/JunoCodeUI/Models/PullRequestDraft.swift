@@ -63,7 +63,7 @@ public struct PullRequestDraft: Equatable, Sendable {
     ) -> PullRequestDraft {
         var title = sessionTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         if title.isEmpty || title == "New session" || title == "New conversation" {
-            title = "Changes from Juno Code"
+            title = "Changes from Alevr Code"
         }
         if title.count > 72 {
             title = String(title.prefix(69)).trimmingCharacters(in: .whitespaces) + "…"
@@ -101,10 +101,10 @@ public struct PullRequestDraft: Equatable, Sendable {
 
         if let branch, !branch.isEmpty {
             sections.append("")
-            sections.append("_Opened from Juno Code on `\(branch)`._")
+            sections.append("_Opened from Alevr Code on `\(branch)`._")
         } else {
             sections.append("")
-            sections.append("_Opened from Juno Code._")
+            sections.append("_Opened from Alevr Code._")
         }
 
         return PullRequestDraft(title: title, body: sections.joined(separator: "\n"))

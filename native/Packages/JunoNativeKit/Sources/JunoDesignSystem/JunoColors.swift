@@ -372,6 +372,10 @@ public extension Color {
     /// pill, the search button: foreground at 8% / 12%.
     static let junoGlassFill = Color.junoAdaptive(light: .glassFillLight, dark: .glassFillDark)
 
+    /// `--sidebar-hover`: a sidebar row under the pointer — one rung off the
+    /// panel, one rung short of ``junoSelectedFill``.
+    static let junoSidebarHover = Color.junoAdaptive(JunoGeneratedColors.sidebarHover)
+
     /// `--sidebar-selected`, opaque: the selected sidebar row. Never the
     /// accent — selection is not an action.
     static let junoSelectedFill = Color.junoAdaptive(

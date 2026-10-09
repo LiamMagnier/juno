@@ -19,6 +19,8 @@ export const CLIENT_FEATURES = [
   "suggest_research",    // the suggest_research tool may be attached (SPEC §3.8.9)
   "citations",           // resolves [n] against message.sources[cited]; Juno search numbers results (SPEC §3.8.1)
   "live_ui",             // renders ```live-ui interactive views; the prompt may teach them (docs/design/LIVE_UI.md)
+  "live_ui_exercise",    // renders the Live UI `exercise` card (answer box, hints, send); without it exercises are posed in prose
+  "code_run",            // shows Run on chat code blocks (JS, TS, Python, SQL); the prompt may say so
 ] as const;
 export type ClientFeature = (typeof CLIENT_FEATURES)[number];
 

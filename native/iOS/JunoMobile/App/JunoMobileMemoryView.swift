@@ -1,6 +1,9 @@
+import JunoAuth
 import JunoChatKit
+import JunoCore
 import JunoDesignSystem
 import JunoStorage
+import JunoSync
 import SwiftUI
 
 /// **Memory**, rebuilt on the website's own structure.
@@ -23,6 +26,17 @@ import SwiftUI
 /// editable here — the same capability, reached the way this client can.
 struct JunoMobileMemoryView: View {
     @Bindable var model: NativeMemorySettingsModel<SQLiteAccountRepository>
+    /// The memory routes the synced store does not carry: suggested skills,
+    /// each fact's provenance, and clearing one project. Nil where the app
+    /// could not be configured; those parts are then absent.
+    var requestSender: (any NativeAuthenticatedRequestSending)? = nil
+    var accountID: AccountID? = nil
+    /// Opens the chat a fact was learned in.
+    var openConversation: ((String) -> Void)? = nil
+
+    @State private var page: NativeMemoryPageModel?
+    @State private var clearingProject: NativeMemoryScope?
+    @State private var notice: NativeMemoryNotice?
 
     @State private var newMemory = ""
     @State private var editMemoryID: String?
@@ -43,8 +57,15 @@ struct JunoMobileMemoryView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: JunoSpace.section) {
                 header
+                if let notice {
+                    JunoMobileMemoryNoticeLine(notice: notice)
+                }
                 summaryCard
+                if let page, !page.skillCandidates.isEmpty {
+                    JunoMobileSuggestedSkills(page: page) { show($0) }
+                }
                 factsSection
+                projectMemorySection
                 privacySection
             }
             .padding(.horizontal, JunoSpace.regular)
@@ -59,7 +80,29 @@ struct JunoMobileMemoryView: View {
         // on every screen of this app that has a heading.
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
-        .refreshable { await model.refresh() }
+        .refreshable {
+            await model.refresh()
+            await page?.reload()
+            await page?.loadSkillCandidates()
+        }
+        .task { await startPage() }
+        .confirmationDialog(
+            clearingProject.map { "Clear \($0.label)?" } ?? "",
+            isPresented: Binding(get: { clearingProject != nil }, set: { if !$0 { clearingProject = nil } }),
+            titleVisibility: .visible,
+            presenting: clearingProject
+        ) { project in
+            Button("Clear project memory", role: .destructive) {
+                clearingProject = nil
+                guard let id = project.id, let page else { return }
+                Task { show(await page.clearProject(id)) }
+            }
+            .contentShape(.rect)
+            Button("Cancel", role: .cancel) { clearingProject = nil }
+                .contentShape(.rect)
+        } message: { _ in
+            Text("This permanently deletes what Alevr remembers inside this project and its summary. Your account-wide memory, your chats, and other members’ memory stay as they are.")
+        }
         .task(id: exportSignature) { rebuildExport() }
         .accessibilityIdentifier("juno.mobile.memory-list")
         // A sheet with a real text editor, not an `alert` with a `TextField`.
@@ -438,12 +481,20 @@ struct JunoMobileMemoryView: View {
                 }
                 .junoFont(size: 12, relativeTo: .caption)
                 .foregroundStyle(Color.junoMutedForeground)
+                if let provenance = serverFact(memory.id).flatMap({ NativeMemoryProvenance.line(for: $0) }) {
+                    Text(provenance)
+                        .junoFont(size: 12, relativeTo: .caption)
+                        .foregroundStyle(Color.junoMutedForeground)
+                }
             }
 
             Menu {
                 Button("Edit") {
                     editContent = memory.content
                     editMemoryID = memory.id
+                }
+                if let chatID = serverFact(memory.id)?.sourceChatID, let openConversation {
+                    Button("Open the chat it came from") { openConversation(chatID) }
                 }
                 Button("Delete", role: .destructive) { deleteMemoryID = memory.id }
             } label: {
@@ -458,6 +509,80 @@ struct JunoMobileMemoryView: View {
         .padding(.horizontal, JunoSpace.regular)
         .padding(.vertical, JunoSpace.cozy)
         .accessibilityElement(children: .combine)
+    }
+
+    // MARK: - Server-side parts
+
+    private func startPage() async {
+        guard page == nil, let requestSender, let accountID else { return }
+        let page = NativeMemoryPageModel(client: NativeMemoryClient(sender: requestSender))
+        page.start(for: accountID)
+        self.page = page
+        await page.loadIfNeeded()
+    }
+
+    private func serverFact(_ id: String) -> NativeMemoryFact? {
+        page?.facts.first { $0.id == id }
+    }
+
+    private func show(_ next: NativeMemoryNotice?) {
+        guard let next else { return }
+        withAnimation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion)) { notice = next }
+        Task {
+            try? await Task.sleep(for: .seconds(4))
+            withAnimation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion)) {
+                if notice == next { notice = nil }
+            }
+        }
+    }
+
+    /// The projects Alevr keeps memory for, each with its own clear. A plain
+    /// list of rows: the project's name, its count as text, and the action.
+    @ViewBuilder
+    private var projectMemorySection: some View {
+        let projects = page.map {
+            NativeMemoryPresentation.scopes(facts: $0.facts, projectSummaries: $0.projectSummaries)
+                .filter { $0.id != nil }
+        } ?? []
+        if !projects.isEmpty {
+            JunoMobileWorkspaceSection(
+                title: "Project memory",
+                footnote: "Only chats in a project use its memory, and they use nothing else Alevr remembers."
+            ) {
+                JunoCard(padding: 0) {
+                    VStack(spacing: 0) {
+                        ForEach(Array(projects.enumerated()), id: \.element.id) { index, project in
+                            if index > 0 { Divider().padding(.leading, JunoSpace.regular) }
+                            HStack(spacing: JunoSpace.cozy) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(project.label)
+                                        .junoFont(size: 15, relativeTo: .subheadline)
+                                    Text(project.count == 1 ? "1 memory" : "\(project.count) memories")
+                                        .junoFont(size: 12, relativeTo: .caption)
+                                        .foregroundStyle(Color.junoMutedForeground)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                if page?.clearingProjectID == project.id {
+                                    ProgressView().controlSize(.small)
+                                } else {
+                                    Button("Clear…") { clearingProject = project }
+                                        .junoFont(size: 14, relativeTo: .subheadline, weight: .medium)
+                                        .buttonStyle(.plain)
+                                        .foregroundStyle(Color.junoDanger)
+                                        .disabled(page?.clearingProjectID != nil)
+                                        .accessibilityLabel("Clear \(project.label) memory")
+                                        .frame(minWidth: 44, minHeight: 44)
+                                        .contentShape(.rect)
+                                }
+                            }
+                            .padding(.horizontal, JunoSpace.regular)
+                            .padding(.vertical, JunoSpace.tight)
+                        }
+                    }
+                }
+            }
+            .accessibilityIdentifier("juno.mobile.memory-projects")
+        }
     }
 
     // MARK: - Privacy
@@ -705,5 +830,109 @@ struct JunoMemorySummarySection: Identifiable, Equatable {
         guard rest.first?.isWhitespace == true else { return nil }
         let title = rest.trimmingCharacters(in: .whitespaces)
         return title.isEmpty ? nil : title
+    }
+}
+
+// MARK: - Suggested skills
+
+/// Methods the person's own runs repeated, proposed as skills
+/// (`skill-candidates.tsx`). Absent when there is nothing to propose.
+private struct JunoMobileSuggestedSkills: View {
+    let page: NativeMemoryPageModel
+    let post: (NativeMemoryNotice?) -> Void
+
+    var body: some View {
+        JunoMobileWorkspaceSection(
+            title: "Suggested skills",
+            footnote: "From your own runs. A skill is how Alevr does something; memory stays what it knows."
+        ) {
+            JunoCard(padding: 0) {
+                VStack(spacing: 0) {
+                    ForEach(Array(page.skillCandidates.enumerated()), id: \.element.id) { index, candidate in
+                        if index > 0 { Divider().padding(.leading, JunoSpace.regular) }
+                        row(candidate)
+                    }
+                }
+            }
+        }
+        .accessibilityIdentifier("juno.mobile.memory-skill-candidates")
+    }
+
+    private func row(_ candidate: NativeSkillCandidate) -> some View {
+        VStack(alignment: .leading, spacing: JunoSpace.tight) {
+            Text(candidate.title)
+                .junoFont(size: 15, relativeTo: .subheadline, weight: .semibold)
+            Text(candidate.detailLine())
+                .junoFont(size: 12, relativeTo: .caption)
+                .foregroundStyle(Color.junoMutedForeground)
+            ForEach(Array(candidate.examples.prefix(2).enumerated()), id: \.offset) { _, example in
+                Text("“\(example)”")
+                    .junoFont(size: 14, relativeTo: .subheadline)
+                    .foregroundStyle(Color.junoMutedForeground)
+                    .lineLimit(2)
+            }
+            actions(candidate)
+                .padding(.top, JunoSpace.hairline)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, JunoSpace.regular)
+        .padding(.vertical, JunoSpace.cozy)
+    }
+
+    @ViewBuilder
+    private func actions(_ candidate: NativeSkillCandidate) -> some View {
+        let busy = page.busyCandidateIDs.contains(candidate.id)
+        if page.madeSkills[candidate.id] != nil {
+            Label {
+                Text("Added to your skills")
+            } icon: {
+                JunoIconView(.check, size: 12)
+            }
+            .junoFont(size: 14, relativeTo: .subheadline)
+            .foregroundStyle(Color.junoMutedForeground)
+        } else {
+            HStack(spacing: JunoSpace.regular) {
+                Button {
+                    Task { post(await page.decide(candidate, .accept)) }
+                } label: {
+                    if busy {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Text("Add as skill")
+                            .junoFont(size: 14, relativeTo: .subheadline, weight: .semibold)
+                    }
+                }
+                .buttonStyle(.glass)
+                .disabled(busy)
+                .accessibilityIdentifier("juno.mobile.memory-skill-accept")
+                .contentShape(.rect)
+                Button("Dismiss") {
+                    Task { post(await page.decide(candidate, .dismiss)) }
+                }
+                .junoFont(size: 14, relativeTo: .subheadline, weight: .medium)
+                .buttonStyle(.plain)
+                .foregroundStyle(Color.junoMutedForeground)
+                .disabled(busy)
+                .frame(minHeight: 44)
+                .contentShape(.rect)
+            }
+        }
+    }
+}
+
+/// A quiet line saying what just happened: an icon and plain text, no container.
+private struct JunoMobileMemoryNoticeLine: View {
+    let notice: NativeMemoryNotice
+
+    var body: some View {
+        Label {
+            Text(notice.title)
+        } icon: {
+            JunoIconView(notice.tone == .error ? .triangleAlert : .check, size: 13)
+        }
+        .junoFont(size: 14, relativeTo: .subheadline)
+        .foregroundStyle(notice.tone == .error ? Color.junoDanger : Color.junoMutedForeground)
+        .transition(.opacity)
+        .accessibilityAddTraits(.updatesFrequently)
     }
 }

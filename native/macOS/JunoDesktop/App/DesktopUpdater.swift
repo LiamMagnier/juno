@@ -160,11 +160,11 @@ final class DesktopUpdateModel {
             return "Automatic updates are off for \(build.channel) builds."
         }
         guard bundleURL.pathExtension == "app" else {
-            return "Juno is not running from an application bundle."
+            return "Alevr is not running from an application bundle."
         }
         let parent = bundleURL.deletingLastPathComponent()
         guard FileManager.default.isWritableFile(atPath: parent.path) else {
-            return "Juno can't update itself where it is installed. Download the new version instead."
+            return "Alevr can't update itself where it is installed. Download the new version instead."
         }
         return nil
     }
@@ -268,7 +268,7 @@ final class DesktopUpdateModel {
         }
 
         let staging = try stagingDirectory()
-        let image = staging.appending(path: "Juno-\(candidate.version).dmg")
+        let image = staging.appending(path: "Alevr-\(candidate.version).dmg")
         try? FileManager.default.removeItem(at: image)
         try FileManager.default.moveItem(at: temporary, to: image)
         defer { try? FileManager.default.removeItem(at: image) }
@@ -464,7 +464,7 @@ final class DesktopUpdateModel {
             installerLaunched = true
             return true
         } catch {
-            phase = .failed("Juno couldn't start the installer. \(error.localizedDescription)")
+            phase = .failed("Alevr couldn't start the installer. \(error.localizedDescription)")
             return false
         }
     }
@@ -487,7 +487,7 @@ private enum UpdateError: Error {
     var message: String {
         switch self {
         case .feedUnavailable:
-            "Juno couldn't reach the update server."
+            "Alevr couldn't reach the update server."
         case .downloadFailed:
             "The update download didn't complete."
         case .sizeMismatch(let expected, let actual):
@@ -497,7 +497,7 @@ private enum UpdateError: Error {
         case .noApplicationInImage:
             "The update disk image didn't contain an application."
         case .signatureRejected(let detail):
-            "The update isn't signed by Juno. \(detail)"
+            "The update isn't signed by Alevr. \(detail)"
         case .gatekeeperRejected:
             "macOS refused the update — it isn't notarized."
         case .versionMismatch(let feed, let bundle):
@@ -555,7 +555,7 @@ private enum CodeSignature {
     /// `/usr/bin/codesign -R` against this exact string.
     static func requirementString(matching running: URL) throws -> String {
         guard let identifier = Bundle(url: running)?.bundleIdentifier else {
-            throw SignatureError("Juno's own bundle identifier could not be read.")
+            throw SignatureError("Alevr's own bundle identifier could not be read.")
         }
 
         // An ad-hoc signature has no authenticated publisher. An identifier
@@ -563,7 +563,7 @@ private enum CodeSignature {
         // Require a real signing identity before automated replacement; local
         // development builds can still be installed manually.
         guard let team = teamIdentifier(of: running) else {
-            throw SignatureError("This development build has no trusted signing identity. Install a signed Juno release manually to enable automatic updates.")
+            throw SignatureError("This development build has no trusted signing identity. Install a signed Alevr release manually to enable automatic updates.")
         }
 
         // Apple-anchored, this identifier, this team — always. Each clause
@@ -673,7 +673,7 @@ private enum CodeSignature {
     private struct SignatureError: Error, LocalizedError {
         let detail: String
         init(_ detail: String) { self.detail = detail }
-        var errorDescription: String? { "The update isn't signed by Juno. \(detail)" }
+        var errorDescription: String? { "The update isn't signed by Alevr. \(detail)" }
     }
 }
 

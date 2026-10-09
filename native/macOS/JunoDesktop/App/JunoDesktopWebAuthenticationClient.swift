@@ -11,11 +11,11 @@ enum JunoDesktopWebAuthenticationError: Error, LocalizedError {
     var errorDescription: String? {
         switch self {
         case .alreadyInProgress:
-            "A Juno sign-in window is already open."
+            "An Alevr sign-in window is already open."
         case .cancelled:
             "Sign-in was cancelled."
         case .invalidCallback:
-            "Juno returned an invalid sign-in response."
+            "Alevr returned an invalid sign-in response."
         case .unavailable:
             "The system sign-in window is unavailable."
         }

@@ -107,6 +107,20 @@ function summarize(c: LiveComponent): Record<string, unknown> {
     o.range = !!c.x;
   }
   if (c.type === "text") o.tone = c.tone;
+  if (c.type === "steps") {
+    o.steps = c.steps.map((s) => ({ title: s.title, notice: !!s.notice, children: s.ui.map(summarize) }));
+    o.takeaway = !!c.takeaway;
+  }
+  if (c.type === "quiz") o.answers = c.questions.map((q) => q.answer);
+  if (c.type === "callout") {
+    o.tone = c.tone;
+    o.more = !!c.more;
+  }
+  if (c.type === "timeline") o.items = c.items.length;
+  if (c.type === "table") {
+    if (c.rowHeader) o.rowHeader = true;
+    if (c.highlight !== undefined) o.highlight = c.highlight;
+  }
   return o;
 }
 

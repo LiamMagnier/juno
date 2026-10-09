@@ -487,12 +487,12 @@ enum SlashCommandHandlers {
             let found = await host.commandRediscoverChecks()
             center.present(.verify)
             host.commandNotice(found.isEmpty
-                ? "Juno found no checks in this project."
-                : "Juno found \(found.count == 1 ? "one check" : "\(found.count) checks"): \(found.joined(separator: ", ")).")
+                ? "Alevr found no checks in this project."
+                : "Alevr found \(found.count == 1 ? "one check" : "\(found.count) checks"): \(found.joined(separator: ", ")).")
         case .all:
             let commands = host.commandCheckCommands
             guard !commands.isEmpty else {
-                host.commandNotice("Juno knows no checks for this project yet. Try /verify setup.")
+                host.commandNotice("Alevr knows no checks for this project yet. Try /verify setup.")
                 return
             }
             for command in commands {

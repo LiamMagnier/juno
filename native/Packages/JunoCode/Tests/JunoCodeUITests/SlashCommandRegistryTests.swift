@@ -147,7 +147,7 @@ struct SlashCommandRegistryTests {
         let center = CommandCenterModel()
         let compact = CodeSlashCommandLibrary.builtIn.command(named: "compact")!
         #expect(!center.run(compact, argument: "keep it", host: host))
-        #expect(host.notices.last == "/compact is available when Juno finishes.")
+        #expect(host.notices.last == "/compact is available when Alevr finishes.")
         // A sheet opens whatever the session is doing.
         #expect(center.run(CodeSlashCommandLibrary.builtIn.command(named: "cost")!, argument: "", host: host))
         // A parse error keeps the argument too.

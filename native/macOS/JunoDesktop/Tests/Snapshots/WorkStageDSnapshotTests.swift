@@ -202,7 +202,7 @@ enum WorkStageDFixtures {
                     now: now
                 )),
                 actions: actions,
-                failure: "Couldn’t send that answer, so Juno hasn’t seen it. Try again.",
+                failure: "Couldn’t send that answer, so Alevr hasn’t seen it. Try again.",
                 close: {}
             )
         case "task-record-sheet-done":

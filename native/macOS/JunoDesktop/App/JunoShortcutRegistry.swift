@@ -93,7 +93,7 @@ enum JunoShortcutRegistry {
         // Quick Entry's global hotkey is installed by its controller; the menu
         // item shows the chord and opens the same panel.
         JunoShortcut(
-            .askJuno, menu: "Ask Juno…", list: "Ask Juno from anywhere",
+            .askJuno, menu: "Ask Alevr…", list: "Ask Alevr from anywhere",
             key: " ", [.option], keys: ["⌥", "Space"],
             group: .everywhere, in: .file, section: 3, glyph: .home
         ),
@@ -113,7 +113,7 @@ enum JunoShortcutRegistry {
         ),
         // Help: Juno Help ↗ · Keyboard Shortcuts · Roadmap & Feature Requests ↗.
         // The two links have no chord, so they are not listed.
-        JunoShortcut(.help, menuOnly: "Juno Help", in: .help, section: 0, glyph: .circleHelp),
+        JunoShortcut(.help, menuOnly: "Alevr Help", in: .help, section: 0, glyph: .circleHelp),
         JunoShortcut(
             .keyboardShortcuts, menu: "Keyboard Shortcuts", list: "Keyboard shortcuts",
             key: "/", [.command], group: .everywhere, in: .help, section: 0, glyph: .keyboard
@@ -285,7 +285,7 @@ enum JunoShortcutRegistry {
             glyph: .file
         ),
         JunoShortcut(
-            .codeSendReview, field: "Send your review to Juno",
+            .codeSendReview, field: "Send your review to Alevr",
             keys: ["⇧", "⌘", "↩"], group: .code, context: .code
         ),
         JunoShortcut(

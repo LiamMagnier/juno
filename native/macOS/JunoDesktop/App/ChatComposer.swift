@@ -155,7 +155,7 @@ enum ChatComposerPlaceholder {
         /// its curly apostrophe included.
         var placeholder: String {
             switch self {
-            case .question: "Answer Juno\u{2019}s question…"
+            case .question: "Answer Alevr\u{2019}s question…"
             case .task: "Add an instruction to the running task…"
             case .research: "Add a constraint, or paste a source to include…"
             }
@@ -702,11 +702,11 @@ struct ComposerPrimaryDisc: View {
         }
     }
 
-    private var symbol: String {
+    private var symbol: JunoIcon {
         switch face {
-        case .voice: "waveform"
-        case .stop: "stop.fill"
-        default: "arrow.up"
+        case .voice: .audioLines
+        case .stop: .stop
+        default: .arrowUp
         }
     }
 
@@ -714,10 +714,12 @@ struct ComposerPrimaryDisc: View {
     private var glyph: some View {
         switch face {
         case .voice, .send, .stop:
-            Image(systemName: symbol)
-                .junoFont(size: face.kind == ChatComposerFace.stop.kind ? 10 : 13, relativeTo: .body, weight: .bold)
+            // The web's glyphs (audio lines, arrow up, stop), swapped in
+            // place on the send-morph spring.
+            JunoIconView(symbol, size: face.kind == ChatComposerFace.stop.kind ? 12 : 16, weight: .bold)
                 .foregroundStyle(Color.junoCanvas)
-                .contentTransition(.symbolEffect(.replace.downUp))
+                .id(symbol)
+                .transition(.opacity.combined(with: .scale(scale: 0.8)))
         case .busy:
             ProgressView()
                 .controlSize(.small)
@@ -2449,7 +2451,7 @@ struct ChatComposer: View {
     /// in the same transaction shape, and the words are still in the field.
     private func handBack() {
         firstTurnError = model.chatErrorDescription ?? model.lastErrorDescription
-            ?? "Juno couldn't start this chat. Your message is still here — try again."
+            ?? "Alevr couldn't start this chat. Your message is still here — try again."
         withAnimation(JunoMotion.handoff(reduceMotion: reduceMotion)) {
             onFirstTurn?(.refused)
         }
@@ -2698,8 +2700,8 @@ struct ComposerPendingSteers: View {
 
     private var header: String {
         steers.count == 1
-            ? "Queued \u{2014} Juno reads this before its next step"
-            : "Queued \u{2014} Juno reads these \(steers.count) before its next step, in order"
+            ? "Queued \u{2014} Alevr reads this before its next step"
+            : "Queued \u{2014} Alevr reads these \(steers.count) before its next step, in order"
     }
 
     var body: some View {

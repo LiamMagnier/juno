@@ -124,7 +124,7 @@ struct DesktopApprovalCard: View {
                     Text(
                         isHandoff ? "Unanswered, this expires and nothing is handed off."
                             : isTask ? "Unanswered, this expires and the task does not start."
-                            : "Unanswered, this expires and Juno stops rather than acting on it."
+                            : "Unanswered, this expires and Alevr stops rather than acting on it."
                     )
                         .junoFont(size: 11, relativeTo: .caption)
                 }
@@ -203,7 +203,7 @@ struct DesktopApprovalCard: View {
     private var title: String {
         if isHandoff { return answerable ? "Hand this to a teammate?" : "Handoff to a teammate" }
         if isTask { return answerable ? "Start a background task?" : "Background task" }
-        return answerable ? "Juno needs your approval" : "Approval request"
+        return answerable ? "Alevr needs your approval" : "Approval request"
     }
 
     /// The exact arguments the digest covers, folded until asked for — never
@@ -359,7 +359,7 @@ struct DesktopApprovalCard: View {
         switch approval.riskClass {
         case .readOnly: "Reads only"
         case .reversibleWrite: "Reversible change"
-        case .externalWrite: "Leaves Juno"
+        case .externalWrite: "Leaves Alevr"
         case .destructiveOrSensitive: "Cannot be undone"
         case .unknown: "Unverified"
         }
@@ -367,12 +367,12 @@ struct DesktopApprovalCard: View {
 
     private var riskDetail: String {
         switch approval.riskClass {
-        case .readOnly: "This reads. Nothing outside Juno changes."
+        case .readOnly: "This reads. Nothing outside Alevr changes."
         case .reversibleWrite: "This changes something that can be put back, like a label, a folder or a draft."
-        case .externalWrite: "This sends something to another service. Once it lands there, Juno cannot take it back."
+        case .externalWrite: "This sends something to another service. Once it lands there, Alevr cannot take it back."
         case .destructiveOrSensitive: "This deletes, pays for, or touches something private. Nothing here can undo it afterwards."
         case .unknown:
-            "Juno could not verify that this only reads, so it is treated as a change that leaves Juno. Read the arguments below before you answer."
+            "Alevr could not verify that this only reads, so it is treated as a change that leaves Alevr. Read the arguments below before you answer."
         }
     }
 
@@ -406,23 +406,23 @@ struct DesktopApprovalCard: View {
         }
         switch approval.status {
         case .pending: return nil
-        case .allowed: return "Allowed. Juno is carrying this out."
-        case .denied: return "Denied. Juno did not carry this out."
-        case .executing: return "Juno is carrying this out now."
-        case .executed: return "Juno carried this out."
-        case .failed: return "Juno tried this and it failed."
+        case .allowed: return "Allowed. Alevr is carrying this out."
+        case .denied: return "Denied. Alevr did not carry this out."
+        case .executing: return "Alevr is carrying this out now."
+        case .executed: return "Alevr carried this out."
+        case .failed: return "Alevr tried this and it failed."
         case .expired: return "This expired before it was answered. Nothing was sent."
         case .superseded:
-            return "The arguments or your permissions changed after this was raised, so Juno cancelled it and will ask again."
-        case .blocked: return "Your permissions blocked this, so Juno never sent it."
+            return "The arguments or your permissions changed after this was raised, so Alevr cancelled it and will ask again."
+        case .blocked: return "Your permissions blocked this, so Alevr never sent it."
         }
     }
 
     static let untrusted = "The model wrote these arguments from content it read: a web page, a file, or output from another connector. That content can contain text written to steer what gets sent. Check the values below are what you meant before you allow it."
-    static let taskUntrusted = "This chat includes content Juno read from outside it, such as a web page, a file or a connected app. Check that the brief below is what you asked for before you start it."
-    static let taskDescription = "Juno works on this on its own and reports back in this chat. It asks before risky steps, and you can stop it at any time."
+    static let taskUntrusted = "This chat includes content Alevr read from outside it, such as a web page, a file or a connected app. Check that the brief below is what you asked for before you start it."
+    static let taskDescription = "Alevr works on this on its own and reports back in this chat. It asks before risky steps, and you can stop it at any time."
     static let handoffDescription = "It becomes their task, in their own thread, with their apps and autonomy. They report back there, not in this chat, and you can stop it at any time."
-    static let handoffUntrusted = "This chat includes content Juno read from outside it, such as a web page, a file or a connected app. Check that the brief below is what you asked for before you hand it off."
+    static let handoffUntrusted = "This chat includes content Alevr read from outside it, such as a web page, a file or a connected app. Check that the brief below is what you asked for before you hand it off."
 
     /// `TASK_STATUS_COPY`, verbatim: said once the card is no longer asking.
     static func taskStatus(_ status: NativeChatApprovalStatus, expired: Bool) -> String? {

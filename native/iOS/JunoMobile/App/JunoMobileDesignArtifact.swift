@@ -380,7 +380,7 @@ enum JunoMobileArtifactViewMode: String, CaseIterable, Identifiable, Hashable {
     /// is what this screen already did for a code artifact.
     static func available(for kind: NativeArtifactKind) -> [JunoMobileArtifactViewMode] {
         var modes: [JunoMobileArtifactViewMode] = []
-        if kind.supportsRenderedPreview { modes.append(.preview) }
+        if kind.supportsRenderedPreview || kind.isSemantic { modes.append(.preview) }
         modes.append(.source)
         if kind.supportsLiveCanvas { modes.append(.canvas) }
         return modes
@@ -418,6 +418,9 @@ struct JunoMobileArtifactBody: View {
     var body: some View {
         if kind.isDesignDocument {
             JunoMobileDesignArtifactBody(content: content, readOnly: readOnly, onEdit: onEdit)
+        } else if kind.isSemantic, mode == .preview {
+            // A spreadsheet, document or deck, drawn from its model.
+            SemanticArtifactView(kind: kind, content: content)
         } else if mode == .canvas {
             JunoMobileArtifactLiveCanvas(kind: kind, content: content)
         } else {

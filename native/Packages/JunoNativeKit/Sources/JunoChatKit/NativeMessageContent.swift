@@ -241,7 +241,55 @@ public enum NativeMessageContent {
     private static func stripped(_ raw: String) -> String {
         var text = removingBlocks(open: memoryOpen, close: memoryClose, in: raw)
         text = removingWizards(in: text)
+        text = rewritingArtifactOps(in: text)
         return text
+    }
+
+    private static let opsOpen = "<juno:artifact-ops"
+    private static let opsClose = "</juno:artifact-ops>"
+
+    /// An edit to a semantic artifact streams as `<juno:artifact-ops
+    /// identifier="…">[operations]</juno:artifact-ops>`; the server rewrites it
+    /// into the artifact tag before the message is saved. The web's
+    /// `splitMessageContent`: a closed block reads as a reference to the
+    /// artifact it edited (an empty tag of the same attributes), and one still
+    /// arriving is cut off and shown as a card writing "Editing" — never as
+    /// raw JSON, and never swallowed by the artifact matcher, whose opener it
+    /// shares a prefix with.
+    private static func rewritingArtifactOps(in text: String) -> String {
+        guard text.contains("<juno:artifact-o") else { return text }
+        var result = ""
+        var cursor = text.startIndex
+        while let open = text.range(of: opsOpen, range: cursor..<text.endIndex) {
+            result += text[cursor..<open.lowerBound]
+            guard let tagEnd = text.range(of: ">", range: open.upperBound..<text.endIndex),
+                let close = text.range(of: opsClose, range: tagEnd.upperBound..<text.endIndex)
+            else {
+                // Still arriving: a placeholder the artifact matcher reads as
+                // an unclosed (streaming) tag titled "Editing".
+                let attributes = text.range(of: ">", range: open.upperBound..<text.endIndex)
+                    .map { parseAttributes(String(text[open.upperBound..<$0.lowerBound])) }
+                    ?? parseAttributes(String(text[open.upperBound...]))
+                let identifier = attributes["identifier"] ?? ""
+                result += "<juno:artifact identifier=\"\(identifier)\" title=\"Editing\">"
+                return result
+            }
+            let attributes = String(text[open.upperBound..<tagEnd.lowerBound]).trimmingCharacters(in: .whitespaces)
+            result += "<juno:artifact \(attributes) data-ops=\"1\"></juno:artifact>"
+            cursor = close.upperBound
+        }
+        // A trailing `<juno:artifact-o`, `-op` that has not finished its name.
+        var tail = String(text[cursor...])
+        if let partial = tail.range(of: "<juno:artifact-o", options: .backwards),
+            !tail[partial.lowerBound...].contains(">")
+        {
+            let rest = tail[partial.upperBound...]
+            if "ps".hasPrefix(rest) {
+                tail = String(tail[..<partial.lowerBound])
+            }
+        }
+        result += tail
+        return result
     }
 
     private static func removingBlocks(
@@ -345,7 +393,8 @@ public enum NativeMessageContent {
             // nothing is worse than no card. The *range* is still consumed:
             // returning no match at all left the literal tag in the prose, which
             // is the one outcome this type exists to prevent.
-            let isEmpty = !streaming
+            let isEdit = attributes["data-ops"] == "1"
+            let isEmpty = !streaming && !isEdit
                 && body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             matches.append(
                 ArtifactMatch(
@@ -410,6 +459,7 @@ public enum NativeMessageContent {
 
     private static let knownKinds: Set<String> = [
         "HTML", "REACT", "CODE", "MARKDOWN", "SVG", "MERMAID", "DESIGN",
+        "SPREADSHEET", "DOCUMENT", "PRESENTATION",
     ]
 
     private static func normalizedKind(_ raw: String?) -> String {

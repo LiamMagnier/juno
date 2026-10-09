@@ -96,6 +96,7 @@ final class JunoTokenConsumptionTests: XCTestCase {
             // Inside glass, and selection.
             "junoGlassHover": .generated(.junoGlassHover, foreground(0.06, 0.08)),
             "junoGlassFill": .generated(.junoGlassFill, foreground(0.08, 0.12)),
+            "junoSidebarHover": .generated(.junoSidebarHover, G.sidebarHover),
             "junoSelectedFill": .generated(.junoSelectedFill, G.sidebarSelected),
             "junoSelectedEdge": .generated(.junoSelectedEdge, foreground(0.12, 0.14)),
             // Shadows: `--shadow-ink` at the alphas one native blur needs.
@@ -376,7 +377,6 @@ final class JunoTokenConsumptionTests: XCTestCase {
             "JunoGeneratedColors.ultra": "The web's thinking aura; native draws the Ultra ramp from ultraFrom / ultraTo.",
             "JunoGeneratedColors.sidebarAccent": sidebar,
             "JunoGeneratedColors.sidebarBorder": sidebar,
-            "JunoGeneratedColors.sidebarHover": sidebar,
             "JunoGeneratedColors.sidebarSelectedBorder": sidebar,
             "JunoGeneratedType.hero": "The marketing site's rung; the apps have no marketing surface.",
             "JunoGeneratedRadius.stage": "The front door's plates and product shots only (tailwind.config.ts); the apps have no marketing surface.",

@@ -131,7 +131,7 @@ public struct StudioLanding: View {
         case .device:
             guard let code else { return "Other computers are unavailable." }
             if !attachments.isEmpty { return "Pictures and file mentions run on this Mac only." }
-            if code.devices.isEmpty { return "No other computer is signed in to Juno." }
+            if code.devices.isEmpty { return "No other computer is signed in to Alevr." }
             return code.startBlockedReason
         }
     }
@@ -238,28 +238,20 @@ public struct StudioLanding: View {
         }
     }
 
-    /// The headline in Chat's display system (premium pass, rule 2): one
-    /// sentence in Newsreader, centred, fluid with the column like Chat's
-    /// "How can I help, *Name*?" — the project's name set in the italic cut,
-    /// the way Chat sets the reader's.
+    /// The headline in Chat's voice (round 2): one quiet line in the display
+    /// face at Chat's size — "What should we build?" — with no italic name in
+    /// it. The project is named once, in the place row under the field, where
+    /// it can also be changed.
     private var greetingView: some View {
-        let size = JunoType.displaySize(forColumnWidth: columnWidth)
-        return Group {
-            if let name = project?.descriptor.displayName {
-                Text("What should we build in \(Text(name).font(JunoType.displayItalic(size: size).font(scale: textScale)))?")
-            } else {
-                Text("What should we build?")
-            }
-        }
-        .junoType(.display(size: size))
-        .foregroundStyle(Studio.Ink.primary)
-        .multilineTextAlignment(.center)
-        .lineLimit(2)
-        .fixedSize(horizontal: false, vertical: true)
-        .frame(maxWidth: .infinity)
-        .contentTransition(.opacity)
-        .accessibilityAddTraits(.isHeader)
-        .accessibilityIdentifier("juno.code.greeting")
+        Text("What should we build?")
+            .junoType(.display(size: 30))
+            .foregroundStyle(Studio.Ink.primary)
+            .multilineTextAlignment(.center)
+            .lineLimit(2)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity)
+            .accessibilityAddTraits(.isHeader)
+            .accessibilityIdentifier("juno.code.greeting")
     }
 
     // MARK: Place
@@ -291,7 +283,7 @@ public struct StudioLanding: View {
                     selectProject(record.id)
                 } label: {
                     if record.id == project?.id {
-                        Label(record.descriptor.displayName, systemImage: "checkmark")
+                        Label(record.descriptor.displayName, image: JunoIcon.check.assetName)
                     } else {
                         Text(record.descriptor.displayName)
                     }
@@ -310,7 +302,7 @@ public struct StudioLanding: View {
         .menuIndicator(.hidden)
         .buttonStyle(.plain)
         .fixedSize()
-        .help("The folder Juno works in (⌘O to open another)")
+        .help("The folder Alevr works in (⌘O to open another)")
         .accessibilityIdentifier("juno.code.launch-project")
     }
 

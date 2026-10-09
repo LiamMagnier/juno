@@ -107,7 +107,7 @@ struct DesktopDictation: View {
 
     private var previewText: AttributedString {
         guard !transcript.isEmpty else {
-            var listening = AttributedString("Speak now, Juno is listening…")
+            var listening = AttributedString("Speak now, Alevr is listening…")
             listening.foregroundColor = Color.junoMutedForeground
             return listening
         }

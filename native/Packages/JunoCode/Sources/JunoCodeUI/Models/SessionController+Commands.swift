@@ -287,7 +287,7 @@ enum SessionMarkdownExport {
         for event in events {
             switch event.payload {
             case let .userPrompt(prompt): parts.append("Reader: \(prompt.text)")
-            case let .assistantMessage(message): parts.append("Juno: \(message.text)")
+            case let .assistantMessage(message): parts.append("Alevr: \(message.text)")
             default: continue
             }
         }

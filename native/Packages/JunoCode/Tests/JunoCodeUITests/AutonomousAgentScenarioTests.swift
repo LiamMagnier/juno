@@ -323,7 +323,7 @@ final class AutonomousAgentScenarioTests: XCTestCase {
             store: store,
             configuration: AgentOrchestrator.Configuration(
                 compactionSummary: nil,
-                systemPrompt: "You are Juno Code.",
+                systemPrompt: "You are Alevr Code.",
                 autonomy: AutonomyConfiguration(
                     settings: settings,
                     ledger: RunLedgerRecorder(sessionID: session.id, store: store),
@@ -456,7 +456,7 @@ final class AutonomousAgentScenarioTests: XCTestCase {
             store: store,
             configuration: AgentOrchestrator.Configuration(
                 compactionSummary: nil,
-                systemPrompt: "You are Juno Code.",
+                systemPrompt: "You are Alevr Code.",
                 autonomy: AutonomyConfiguration(
                     settings: settings,
                     ledger: RunLedgerRecorder(sessionID: session.id, store: store),
@@ -705,7 +705,7 @@ final class AutonomousAgentScenarioTests: XCTestCase {
             store: store,
             configuration: AgentOrchestrator.Configuration(
                 compactionSummary: nil,
-                systemPrompt: "You are Juno Code.",
+                systemPrompt: "You are Alevr Code.",
                 autonomy: AutonomyConfiguration(
                     settings: settings,
                     ledger: RunLedgerRecorder(sessionID: session.id, store: store)
@@ -730,7 +730,7 @@ final class AutonomousAgentScenarioTests: XCTestCase {
 
         let reopened = CodeSessionStore(directoryURL: relaunched)
         let restored = try await reopened.session(id: session.id)
-        XCTAssertEqual(restored.status, .failed, "a run Juno quit in the middle of reads as interrupted")
+        XCTAssertEqual(restored.status, .failed, "a run Alevr quit in the middle of reads as interrupted")
         XCTAssertTrue(RunIndex.isInterrupted(restored), "the Runs list offers Resume")
         let resumeModel = ScenarioModel([.text("The migration's state is unknown; checking it first.")])
         let controller = SessionController(session: restored, context: nil, store: reopened, modelClient: resumeModel)

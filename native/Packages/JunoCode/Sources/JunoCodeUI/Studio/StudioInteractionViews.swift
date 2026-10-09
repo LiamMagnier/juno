@@ -201,7 +201,7 @@ struct StudioQuestionPrompt: View {
                     )
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(request.questions.count == 1 ? "Juno has a question" : "Juno has \(request.questions.count) questions")
+                    Text(request.questions.count == 1 ? "Alevr has a question" : "Alevr has \(request.questions.count) questions")
                         .font(Studio.Font.labelEmphasis)
                         .foregroundStyle(Studio.Ink.primary)
                     Text("It is waiting for your answer before it continues.")

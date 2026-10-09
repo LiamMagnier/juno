@@ -8,13 +8,13 @@ import JunoSync
 public enum PreviewFixtures {
     private static let base = Date(timeIntervalSince1970: 1_753_000_000)
 
-    private static func iso(_ offset: TimeInterval) -> String {
+    static func iso(_ offset: TimeInterval) -> String {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return formatter.string(from: base.addingTimeInterval(offset))
     }
 
-    private static func record(
+    static func record(
         _ accountID: StorageAccountID,
         _ namespace: String,
         _ id: String,
@@ -140,13 +140,19 @@ public enum PreviewFixtures {
     /// only, with the same ids as the normal set so `conv-1` opens the same way.
     private static func showcaseRecords(_ a: StorageAccountID) -> [StoredRecord] {
         var out: [StoredRecord] = [settings(a), memorySummary(a)]
+        // Timed against the clock (``PreviewShowcaseConversation``), so the
+        // column's date sections read as a real week.
+        let iso = PreviewShowcaseConversation.iso
         let chats: [(String, String, Bool, String?, TimeInterval)] = [
-            ("conv-1", "Launch plan for Field Notes 2.0", true, nil, -300),
-            ("conv-proj", "Beta feedback, week 3", false, "proj-1", -1_500),
-            ("conv-2", "Pricing page copy", false, nil, -5_400),
-            ("conv-4", "Onboarding email sequence", false, nil, -20_000),
-            ("conv-5", "Q4 hiring plan", false, nil, -86_000),
-            ("conv-6", "Lisbon offsite agenda", false, nil, -170_000),
+            ("conv-1", "Launch plan for Field Notes 2.0", true, nil, -400),
+            ("conv-7", "Investor update, October", false, nil, -3 * 3_600),
+            ("conv-proj", "Beta feedback, week 3", false, "proj-1", -5 * 3_600),
+            ("conv-2", "Pricing page copy", false, nil, -26 * 3_600),
+            ("conv-8", "Podcast questions for Ana", false, nil, -2 * 86_400),
+            ("conv-4", "Onboarding email sequence", false, nil, -3 * 86_400),
+            ("conv-5", "Q4 hiring plan", false, nil, -9 * 86_400),
+            ("conv-9", "Translate the FAQ into French", false, nil, -12 * 86_400),
+            ("conv-6", "Lisbon offsite agenda", false, nil, -20 * 86_400),
         ]
         for (index, chat) in chats.enumerated() {
             let project = chat.3.map { #","projectId":"\#($0)""# } ?? ""
@@ -154,8 +160,16 @@ public enum PreviewFixtures {
             {"id":"\(chat.0)","title":"\(chat.1)","model":"anthropic:claude-sonnet-4-6","kind":"chat","pinned":\(chat.2),"archivedAt":null\(project),"createdAt":"\(iso(chat.4 - 3600))","updatedAt":"\(iso(chat.4))","lastMessageAt":"\(iso(chat.4))"}
             """))
         }
+        out += PreviewShowcaseConversation.messages(a)
+        out += PreviewShowcaseConversation.extraRecords(a)
         out.append(record(a, "project", "proj-1", 8, """
         {"id":"proj-1","name":"Field Notes","nameSource":"user","instructions":"The notes app we are launching. Keep the voice warm and plain.","starred":true,"createdAt":"\(iso(-200000))","updatedAt":"\(iso(-1500))"}
+        """))
+        out.append(record(a, "project", "proj-2", 4, """
+        {"id":"proj-2","name":"Fundraising","nameSource":"user","instructions":"Seed extension. Numbers first, no hype.","starred":false,"createdAt":"\(iso(-900000))","updatedAt":"\(iso(-3 * 3_600))"}
+        """))
+        out.append(record(a, "project", "proj-3", 4, """
+        {"id":"proj-3","name":"Hiring","nameSource":"user","instructions":"Two engineers and a designer before January.","starred":false,"createdAt":"\(iso(-1_200_000))","updatedAt":"\(iso(-9 * 86_400))"}
         """))
         return out
     }
@@ -212,11 +226,17 @@ public enum PreviewFixtures {
 
         // Projects (one starred).
         out.append(record(a, "project", "proj-1", 8, """
-        {"id":"proj-1","name":"Astro research","nameSource":"user","instructions":"\(promptShapedInstructions)","starred":true,"createdAt":"\(iso(-200000))","updatedAt":"\(iso(-1200))"}
+        {"id":"proj-1","name":"Astro research","nameSource":"user","parentId":null,"instructions":"\(promptShapedInstructions)","starred":true,"createdAt":"\(iso(-200000))","updatedAt":"\(iso(-1200))"}
         """))
         out.append(record(a, "project", "proj-2", 4, """
-        {"id":"proj-2","name":"Native apps","nameSource":"user","instructions":"Ship the macOS and iOS clients with real backend transport.","starred":false,"createdAt":"\(iso(-400000))","updatedAt":"\(iso(-80000))"}
+        {"id":"proj-2","name":"Native apps","nameSource":"user","parentId":null,"instructions":"Ship the macOS and iOS clients with real backend transport.","starred":false,"createdAt":"\(iso(-400000))","updatedAt":"\(iso(-80000))"}
         """))
+        // Folders inside Astro research (project subfolders).
+        for folder in PreviewProjectFolderFixtures.folders {
+            out.append(record(a, "project", folder.id, 2, """
+            {"id":"\(folder.id)","name":"\(folder.name)","nameSource":"user","parentId":"\(folder.parentID)","instructions":"\(folder.instructions)","starred":false,"createdAt":"\(iso(-150000))","updatedAt":"\(iso(folder.updated))"}
+            """))
+        }
 
         // Files (project + conversation).
         out.append(record(a, "attachment", "file-1", 2, """
@@ -269,6 +289,9 @@ public enum PreviewFixtures {
         out.append(record(a, "artifact_version", "artv-design", 1, """
         {"id":"artv-design","artifactId":"art-design","version":1,"content":"\(designDocumentLiteral)","createdAt":"\(iso(-90000))"}
         """))
+
+        // A spreadsheet, a document and a deck, made in one conversation.
+        out.append(contentsOf: PreviewArtifactFixtures.records(a))
 
         // Memory entries.
         out.append(record(a, "memory", "mem-1", 2, """

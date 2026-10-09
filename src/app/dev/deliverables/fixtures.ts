@@ -58,6 +58,22 @@ const document = {
     { type: "table", header: ["Region", "Revenue", "vs plan"], rows: [["EMEA", "4.2m", "+6%"], ["Americas", "6.1m", "+11%"], ["APAC", "1.9m", "−4%"]], caption: "Revenue by region, Q3" },
     { type: "callout", tone: "warning", title: "Watch", text: "APAC churn is up for the second quarter running [@s2]." },
     { type: "paragraph", text: "We recommend holding hiring until the APAC retention plan lands." },
+    // A Live UI view inside the document (the "interactive" block).
+    {
+      type: "interactive",
+      caption: "Move the inputs to test the hiring decision.",
+      view: {
+        title: "Hiring break-even",
+        let: { months: "cost / max(margin, 1)" },
+        ui: [
+          { type: "grid", columns: 2, children: [
+            { type: "slider", id: "cost", label: "Hiring cost", min: 20000, max: 200000, step: 5000, value: 90000, format: "currency" },
+            { type: "slider", id: "margin", label: "Monthly margin added", min: 1000, max: 30000, step: 500, value: 12000, format: "currency" },
+          ] },
+          { type: "metric", label: "Months to break even", value: "months", format: "number", emphasis: true },
+        ],
+      },
+    },
   ],
 };
 

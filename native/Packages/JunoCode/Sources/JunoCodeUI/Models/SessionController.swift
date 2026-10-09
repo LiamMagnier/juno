@@ -55,7 +55,7 @@ public enum FileRevertResult: Sendable, Equatable {
         case .restored:
             nil
         case let .diverged(path):
-            "\(path) changed after Juno captured it. Restoring would discard the newer content."
+            "\(path) changed after Alevr captured it. Restoring would discard the newer content."
         case let .failed(message):
             message
         }
@@ -349,7 +349,7 @@ public final class SessionController {
             .first
         settingsNotice = settingsStore.awaitingApproval(projectRoot: root).first.map { scope in
             let name = scope == .project ? ".juno/settings.json" : ".juno/settings.local.json"
-            return "\(name) is not approved, so only its deny and ask rules apply. Review it in Juno Code Settings to use its allow rules, environment and folders."
+            return "\(name) is not approved, so only its deny and ask rules apply. Review it in Alevr Code Settings to use its allow rules, environment and folders."
         }
         await live.permissions.setRules(resolved.rules)
         live.context?.commandOverrides.update(
@@ -401,7 +401,7 @@ public final class SessionController {
         instructions += settings.instructions
         if settings.coAuthorTrailer {
             instructions.append(
-                "When you create a Git commit, end its message with a blank line and `Co-authored-by: Juno <juno@users.noreply.github.com>`."
+                "When you create a Git commit, end its message with a blank line and `Co-authored-by: Alevr <juno@users.noreply.github.com>`."
             )
         }
         return instructions
@@ -1063,7 +1063,7 @@ public final class SessionController {
                             finalize: {
                                 try await context.worktrees.finalize(
                                     worktree,
-                                    message: "Juno sub-agent: \(request.title)"
+                                    message: "Alevr sub-agent: \(request.title)"
                                 )
                             }
                         )
@@ -2397,10 +2397,10 @@ public final class SessionController {
         } catch OrchestratorError.promptBlocked {
             // A prompt hook vets a redirect like any steer. Its row in the
             // thread says why; the text is kept here to be revised.
-            failure = "Declined. A hook stopped this from reaching Juno: “\(text)”."
+            failure = "Declined. A hook stopped this from reaching Alevr: “\(text)”."
         } catch {
             // Kept where the reader can see it and send it again.
-            failure = "Declined, but this did not reach Juno: “\(text)”. Send it from the composer."
+            failure = "Declined, but this did not reach Alevr: “\(text)”. Send it from the composer."
         }
         // Declined whatever became of the redirect: the reader said no.
         await deny(approvalID)
@@ -4271,7 +4271,7 @@ public final class SessionController {
         // still deciding has no run yet, and the orchestrator refuses to fold
         // a history that prompt is about to join.
         guard !isRunning else {
-            transientError = "Juno is still working. Compaction happens between turns; try again once this one ends."
+            transientError = "Alevr is still working. Compaction happens between turns; try again once this one ends."
             return
         }
         // The fold saves over the conversation a rewind is cutting, and would

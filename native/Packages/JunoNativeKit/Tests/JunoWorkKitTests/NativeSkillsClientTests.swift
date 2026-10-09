@@ -224,6 +224,36 @@ final class NativeSkillsClientTests: XCTestCase {
         XCTAssertEqual(model.library?.yours.first?.enabled, true, "a refused switch is put back")
     }
 
+    @MainActor
+    func testDeletingASkillTakesItOutOfEveryListAndARefusalLeavesIt() async throws {
+        let transport = SkillsTransport(routes: [
+            "GET /api/skills": (200, libraryJSON),
+            "DELETE /api/work/skills/s-yours-1": (200, #"{"ok":true}"#),
+            "DELETE /api/work/skills/s-src-1": (404, #"{"error":"not_found"}"#),
+            "DELETE /api/work/skills/s-yours-2": (409, #"{"error":"in_use","message":"An automation still uses this skill."}"#),
+        ])
+        let model = NativeSkillLibraryModel(client: NativeSkillsClient(sender: transport))
+        await model.start(for: account)
+        let library = try XCTUnwrap(model.library)
+
+        let gone = await model.deleteSkill(library.yours[0])
+        XCTAssertNil(gone)
+        XCTAssertEqual(model.library?.yours.map(\.id), ["s-yours-2"])
+
+        let alreadyGone = await model.deleteSkill(library.sources[0].skills[0])
+        XCTAssertNil(alreadyGone, "a 404 means it is already gone")
+        XCTAssertEqual(model.library?.sources.first?.skills.map(\.id), ["s-src-2", "s-src-3"])
+
+        let refused = await model.deleteSkill(library.yours[1])
+        XCTAssertEqual(refused, "An automation still uses this skill.")
+        XCTAssertEqual(model.library?.yours.map(\.id), ["s-yours-2"], "a refusal leaves the row")
+
+        let requests = await transport.recorded()
+        XCTAssertEqual(requests.filter { $0.method == .delete }.map(\.path), [
+            "/api/work/skills/s-yours-1", "/api/work/skills/s-src-1", "/api/work/skills/s-yours-2",
+        ])
+    }
+
     // MARK: Helpers
 
     private func body(_ request: NativeBearerRequest) throws -> [String: JunoJSONValue] {

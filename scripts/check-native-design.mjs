@@ -14,7 +14,7 @@ import process from "node:process";
  * `--list` prints every violation each of them can see.
  */
 
-const GATES = ["type", "motion", "glass", "targets", "prominent", "menus"];
+const GATES = ["type", "motion", "glass", "targets", "prominent", "menus", "symbols"];
 
 const results = [];
 for (const rule of GATES) {

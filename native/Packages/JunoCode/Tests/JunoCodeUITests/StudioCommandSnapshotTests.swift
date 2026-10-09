@@ -57,7 +57,7 @@ final class StudioCommandSnapshotTests: XCTestCase {
             try await render(
                 StudioSheetFrame(
                     title: "Context",
-                    subtitle: "What the model reads on each turn, by part. Each part is Juno's estimate, scaled to the size the provider last reported.",
+                    subtitle: "What the model reads on each turn, by part. Each part is Alevr's estimate, scaled to the size the provider last reported.",
                     done: {}
                 ) {
                     StudioContextBreakdownView(breakdown: breakdown)
@@ -156,7 +156,7 @@ final class StudioCommandSnapshotTests: XCTestCase {
             kind: .http, url: URL(string: "http://localhost:8787/juno/stop")
         )
         let judge = HookDefinition(
-            event: .stop, command: "Did Juno run the tests it changed? $ARGUMENTS", timeoutSeconds: 30, source: .juno,
+            event: .stop, command: "Did Alevr run the tests it changed? $ARGUMENTS", timeoutSeconds: 30, source: .juno,
             path: HookConfigurationFile.junoUser.path, trust: .readerConfiguration, kind: .prompt
         )
         let compact = HookDefinition(event: .preCompact, matcher: HookMatcher(pattern: "auto"), command: "./scripts/save-notes.sh", source: .juno, path: ".juno/settings.json")

@@ -116,10 +116,10 @@ public struct StudioSessionView: View {
     }
 
     private var placeholder: String {
-        guard controller.isAgentTransportConfigured else { return "Sign in to Juno to run the agent" }
+        guard controller.isAgentTransportConfigured else { return "Sign in to Alevr to run the agent" }
         if isRunning {
             return controller.activeInstructionKind == .steer
-                ? "Steer Juno while it works"
+                ? "Steer Alevr while it works"
                 : "Queue a follow-up for when it finishes"
         }
         return controller.events.isEmpty ? "Describe the change you want" : "Ask for a follow-up"
@@ -292,7 +292,7 @@ public struct StudioSessionView: View {
             }
             if isRunning, v2 == nil {
                 Menu {
-                    Picker("While Juno works", selection: $controller.activeInstructionKind) {
+                    Picker("While Alevr works", selection: $controller.activeInstructionKind) {
                         Text("Steer the current run").tag(UserInstructionKind.steer)
                         Text("Queue for after it finishes").tag(UserInstructionKind.queue)
                     }
@@ -304,7 +304,7 @@ public struct StudioSessionView: View {
                 .menuIndicator(.hidden)
                 .buttonStyle(.plain)
                 .fixedSize()
-                .help("What your next message does while Juno is working")
+                .help("What your next message does while Alevr is working")
             }
         } trailing: {
             if let v2 {

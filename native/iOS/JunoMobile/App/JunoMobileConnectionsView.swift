@@ -3,6 +3,10 @@ import JunoCore
 import JunoDesignSystem
 import SwiftUI
 
+#if DEBUG
+    import JunoPreviewSupport
+#endif
+
 /// **Connections** — every app Juno can act through, in one searchable list.
 ///
 /// The two backends are deliberately not separated. Juno's own integrations and
@@ -17,6 +21,9 @@ struct JunoMobileConnectionsView: View {
 
     @State private var connectURL: URL?
     @State private var disconnectTarget: NativeConnector?
+    /// The app whose details are open: status, last used, what runs without
+    /// asking, Disconnect (`app-detail-sheet.tsx`).
+    @State private var appDetail: NativeAppDetailModel?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private let backend = URL(string: JunoBackend.productionURLString)
@@ -62,6 +69,16 @@ struct JunoMobileConnectionsView: View {
             }
             .ignoresSafeArea()
         }
+        .sheet(item: $appDetail) { detail in
+            JunoMobileAppDetailView(
+                detail: detail,
+                disconnect: {
+                    appDetail = nil
+                    disconnectTarget = detail.connector
+                },
+                close: { appDetail = nil }
+            )
+        }
         .confirmationDialog(
             disconnectTarget.map { String(format: String(localized: "connections.disconnect.confirm"), $0.label) } ?? "",
             isPresented: Binding(
@@ -82,6 +99,15 @@ struct JunoMobileConnectionsView: View {
             Text("connections.disconnect.detail")
         }
         .accessibilityIdentifier("juno.mobile.connections")
+        #if DEBUG
+            .task(id: model.phase) {
+                guard model.phase == .ready, appDetail == nil,
+                    let id = JunoPreviewEnvironment.initialAppDetail,
+                    let connector = model.linked.first(where: { $0.id == id })
+                else { return }
+                appDetail = model.makeAppDetailModel(for: connector)
+            }
+        #endif
     }
 
     // MARK: List
@@ -90,6 +116,7 @@ struct JunoMobileConnectionsView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: JunoSpace.cozy, pinnedViews: []) {
                 header
+                JunoMobileCustomizeLinks()
                 filters
                 if let error = model.lastErrorDescription {
                     JunoInlineError(message: error) { Task { await model.refresh() } }
@@ -174,51 +201,38 @@ struct JunoMobileConnectionsView: View {
                 accessibilityLabel: String(localized: "connections.filter")
             )
 
+            // A menu, never a row of capsules: the category is a filter
+            // over one list, and reads as plain text with a chevron.
             if !model.categories.isEmpty {
-                ScrollView(.horizontal) {
-                    HStack(spacing: JunoSpace.snug) {
-                        categoryChip(id: nil, label: String(localized: "connections.category.all"), count: nil)
+                Menu {
+                    Picker("connections.filter", selection: $model.selectedCategory) {
+                        Text("connections.category.all").tag(String?.none)
                         ForEach(model.categories) { category in
-                            categoryChip(
-                                id: category.id, label: category.label, count: category.count
-                            )
+                            Text(category.count.map { "\(category.label) · \($0)" } ?? category.label)
+                                .tag(Optional(category.id))
                         }
                     }
-                    // 1pt, so the chips' capsules are not clipped by the
-                    // scroll view's bounds. Not a gap, so not on the ladder.
-                    .padding(.vertical, 1)
+                } label: {
+                    HStack(spacing: JunoSpace.tight) {
+                        Text(selectedCategoryLabel)
+                            .junoFont(size: 15, relativeTo: .subheadline, weight: .medium)
+                        JunoIconView(.chevronDown, size: 11)
+                    }
+                    .foregroundStyle(Color.junoForeground)
+                    .frame(minHeight: 44)
+                    .contentShape(.rect)
                 }
-                .scrollIndicators(.hidden)
-                .scrollBounceBehavior(.basedOnSize)
+                .accessibilityIdentifier("juno.mobile.connections-category")
             }
         }
         .padding(.bottom, JunoSpace.hairline)
     }
 
-    private func categoryChip(id: String?, label: String, count: Int?) -> some View {
-        let active = model.selectedCategory == id
-        return Button {
-            model.selectedCategory = id
-        } label: {
-            HStack(spacing: JunoSpace.tight) {
-                Text(label).junoFont(size: 14, relativeTo: .subheadline, weight: .medium)
-                if let count {
-                    Text("\(count)")
-                        .junoFont(size: 12, relativeTo: .caption, weight: .medium)
-                        .foregroundStyle(active ? JunoMobilePalette.onInk.opacity(0.75) : Color.junoSecondaryInk)
-                }
-            }
-            .foregroundStyle(active ? JunoMobilePalette.onInk : Color.junoForeground)
-            .padding(.horizontal, JunoSpace.cozy)
-            .frame(height: 32)
-            .background(
-                Capsule().fill(active ? Color.junoForeground : Color.junoMuted)
-            )
-        }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(active ? [.isButton, .isSelected] : .isButton)
-        .frame(minWidth: 44, minHeight: 44)
-        .contentShape(.rect)
+    private var selectedCategoryLabel: String {
+        guard let id = model.selectedCategory,
+            let category = model.categories.first(where: { $0.id == id })
+        else { return String(localized: "connections.category.all") }
+        return category.label
     }
 
     private var empty: some View {
@@ -272,7 +286,7 @@ struct JunoMobileConnectionsView: View {
     private func action(for connector: NativeConnector) -> some View {
         if connector.connected {
             Button {
-                disconnectTarget = connector
+                appDetail = model.makeAppDetailModel(for: connector)
             } label: {
                 // A status, not a call to action: plain secondary text, no
                 // container. Tapping it still offers to disconnect.
@@ -283,9 +297,8 @@ struct JunoMobileConnectionsView: View {
             }
             .buttonStyle(.plain)
             .disabled(model.isMutating)
-            .accessibilityLabel(
-                Text(String(format: String(localized: "connections.disconnect.label"), connector.label))
-            )
+            .accessibilityLabel("\(connector.label) details")
+            .accessibilityIdentifier("juno.mobile.connections-details.\(connector.id)")
             .frame(minWidth: 44, minHeight: 44)
             .contentShape(.rect)
         } else if connector.canConnect {
@@ -385,4 +398,122 @@ private struct JunoMobileConnectorTile: View {
 /// to hold for a one-shot browser flow.
 extension URL: @retroactive Identifiable {
     public var id: String { absoluteString }
+}
+
+// MARK: - App details
+
+/// **An app's details** (`app-detail-sheet.tsx`): status, last used, what
+/// Alevr may do without asking (each grant revocable back to Ask first), and
+/// Disconnect. A native inset-grouped list; every line is a real server state.
+struct JunoMobileAppDetailView: View {
+    @Bindable var detail: NativeAppDetailModel
+    let disconnect: () -> Void
+    let close: () -> Void
+
+    private var connector: NativeConnector { detail.connector }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    LabeledContent("Status", value: connector.connected ? "Connected" : "Not connected")
+                    if let account = connector.accountLabel, !account.isEmpty, account != connector.label {
+                        LabeledContent("Account", value: account)
+                    }
+                    LabeledContent("Last used") { lastUsed }
+                }
+
+                Section {
+                    grants
+                } header: {
+                    Text("What Alevr can do without asking")
+                } footer: {
+                    VStack(alignment: .leading, spacing: JunoSpace.tight) {
+                        Text("Anything that changes something in \(connector.label) asks you first, unless you chose to allow it here.")
+                        if let error = detail.grantError {
+                            Label {
+                                Text(error)
+                            } icon: {
+                                JunoIconView(.triangleAlert, size: 12)
+                            }
+                            .foregroundStyle(Color.junoDanger)
+                        }
+                    }
+                }
+
+                if connector.connected {
+                    Section {
+                        Button(role: .destructive, action: disconnect) {
+                            Text(connector.isCustomMCP ? "Remove \(connector.label)" : "Disconnect \(connector.label)")
+                        }
+                        .accessibilityIdentifier("juno.mobile.connections-detail-disconnect")
+                    } footer: {
+                        Text(detail.consequence)
+                    }
+                }
+            }
+            .listStyle(.insetGrouped)
+            .navigationTitle(connector.label)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done", action: close)
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+        .task { await detail.load() }
+        .accessibilityIdentifier("juno.mobile.connections-detail")
+    }
+
+    @ViewBuilder
+    private var lastUsed: some View {
+        switch detail.usage {
+        case .loading:
+            ProgressView()
+        case .loaded(nil):
+            Text("Not used yet")
+                .foregroundStyle(.secondary)
+        case .loaded(let usage?):
+            Text(usage.line())
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.trailing)
+        }
+    }
+
+    @ViewBuilder
+    private var grants: some View {
+        if let grants = detail.grants {
+            if grants.isEmpty {
+                Text("Nothing. Every change asks first.")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(grants) { grant in
+                    HStack(spacing: JunoSpace.cozy) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(grant.action)
+                            Text(grant.scopeLine)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength: JunoSpace.snug)
+                        if detail.revokingID == grant.id {
+                            ProgressView()
+                        } else {
+                            Button("Ask first") { Task { await detail.revoke(grant) } }
+                                .buttonStyle(.borderless)
+                                .disabled(detail.revokingID != nil)
+                                .accessibilityLabel("Revoke \(grant.action)")
+                                .contentShape(.rect)
+                        }
+                    }
+                }
+            }
+        } else {
+            HStack(spacing: JunoSpace.snug) {
+                ProgressView()
+                Text("Loading…").foregroundStyle(.secondary)
+            }
+        }
+    }
 }

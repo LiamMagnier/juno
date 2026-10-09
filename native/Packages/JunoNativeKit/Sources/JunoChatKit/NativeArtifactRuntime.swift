@@ -22,6 +22,8 @@ public struct NativeArtifactRuntimeInfo: Equatable, Sendable {
         case none
         /// A Juno Design document, which is opened rather than executed.
         case design
+        /// A semantic spreadsheet, document or deck, drawn from its model.
+        case semantic
     }
 
     public enum Engine: String, Sendable {
@@ -73,6 +75,9 @@ public struct NativeArtifactRuntimeInfo: Equatable, Sendable {
         case .svg: return Self(mode: .web, lang: "svg", label: "SVG")
         case .mermaid: return Self(mode: .web, lang: "mermaid", label: "Mermaid")
         case .markdown: return Self(mode: .web, lang: "markdown", label: "Markdown")
+        case .spreadsheet: return Self(mode: .semantic, lang: "json", label: "Spreadsheet")
+        case .document: return Self(mode: .semantic, lang: "json", label: "Document")
+        case .presentation: return Self(mode: .semantic, lang: "json", label: "Deck")
         case .code: break
         }
         switch lang {

@@ -49,22 +49,22 @@ final class StudioScreenControlTests: XCTestCase {
             permissions: status(.denied, .denied)
         )
         XCTAssertEqual(notice, .active)
-        XCTAssertEqual(notice?.message, "Juno can use the apps you grant")
-        XCTAssertEqual(notice?.message(app: "Safari"), "Juno is using Safari")
+        XCTAssertEqual(notice?.message, "Alevr can use the apps you grant")
+        XCTAssertEqual(notice?.message(app: "Safari"), "Alevr is using Safari")
         XCTAssertNil(notice?.nextPermission)
     }
 
     func testTakingOverPausesInWords() {
         let notice = StudioScreenControlNotice(isActive: true, startBlocked: false, permissions: status(.granted, .granted), paused: true)
         XCTAssertEqual(notice, .paused)
-        XCTAssertEqual(notice?.message, "You took over. Juno is waiting.")
+        XCTAssertEqual(notice?.message, "You took over. Alevr is waiting.")
     }
 
     func testAGrantVoidedByAnUpdateSaysHowToFixIt() {
         let lost = ComputerUsePermissionStatus(screenRecording: .granted, accessibility: .denied, accessibilityTrustLostAfterUpdate: true)
         let notice = StudioScreenControlNotice(isActive: false, startBlocked: true, permissions: lost)
         XCTAssertEqual(notice, .trustLost)
-        XCTAssertEqual(notice?.message, "macOS no longer trusts this build of Juno. Remove Juno from the Accessibility list and add it again.")
+        XCTAssertEqual(notice?.message, "macOS no longer trusts this build of Alevr. Remove Alevr from the Accessibility list and add it again.")
         XCTAssertEqual(notice?.nextPermission, .accessibility)
     }
 
@@ -205,7 +205,7 @@ final class StudioScreenControlTests: XCTestCase {
             sessionID: session,
             latest: nil
         )
-        XCTAssertEqual(model.sentence, "Juno is using Safari")
+        XCTAssertEqual(model.sentence, "Alevr is using Safari")
         model.setPreviewPresence(
             ScreenPresenceState(holder: ScreenControlHolder(id: "other", kind: .codeSession, title: "t", appName: "Safari")),
             sessionID: session,

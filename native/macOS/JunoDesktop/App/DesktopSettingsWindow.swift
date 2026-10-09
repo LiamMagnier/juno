@@ -75,25 +75,25 @@ enum DesktopSettingsSection: String, CaseIterable, Identifiable {
         case .general:
             ["Appearance", "Theme", "Light", "Dark", "System", "Accent color", "Custom accent color", "Text size", "About", "Version", "Updates", "Diagnostics"]
         case .personalization:
-            ["What Juno calls you", "Name", "Custom instructions", "Responses", "Personality", "Response language"]
+            ["What Alevr calls you", "Name", "Custom instructions", "Responses", "Personality", "Response language"]
         case .memory:
-            ["Reference saved memories", "Learn from past chats in the background", "Memories", "Sensitive subjects", "Health", "Politics", "Money", "Background work", "Who may read your chats for it", "What Juno noticed"]
+            ["Reference saved memories", "Learn from past chats in the background", "Memories", "Sensitive subjects", "Health", "Politics", "Money", "Background work", "Who may read your chats for it", "What Alevr noticed"]
         case .models:
             ["Default model", "On this device", "Fast mode", "Favorites", "Pinned models"]
         case .connectors:
-            ["Connected apps", "Browse apps", "Permissions", "When Juno acts in an app", "Lockdown"]
+            ["Connected apps", "Browse apps", "Permissions", "When Alevr acts in an app", "Lockdown"]
         case .devices:
             ["This Mac", "Your Macs", "Work", "Hosts", "Permissions"]
         case .voice:
             ["Read aloud", "Voice", "Preview", "Dictation"]
         case .data:
-            ["Export your data", "JSON", "Juno package", "CSV", "Import chat history", "ChatGPT", "Claude", "Gemini", "Shared links", "Delete all conversations"]
+            ["Export your data", "JSON", "Alevr package", "CSV", "Import chat history", "ChatGPT", "Claude", "Gemini", "Shared links", "Delete all conversations"]
         case .account:
             ["Profile picture", "Change name", "Sign-in and security", "Two-step verification", "Password", "Email address", "This session", "Sign out", "Sign out everywhere", "Notifications", "Budget alerts", "Weekly digest", "When something needs you", "Updates", "Delete account"]
         case .billing:
             ["Plan", "Upgrade", "Change plan", "Manage billing", "Usage", "This month", "Current session", "This week", "Spend ceiling", "Monthly ceiling", "History"]
         case .code:
-            ["Juno Code", "Permissions", "Environment", "MCP", "Remote", "Pair"]
+            ["Alevr Code", "Permissions", "Environment", "MCP", "Remote", "Pair"]
         }
     }
 
@@ -158,14 +158,36 @@ enum DesktopSettingsRouter {
 ///
 /// It applies the account's theme, the accent and this Mac's text size
 /// itself (§C1), and hosts its own toasts and the Upgrade sheet.
+#if DEBUG
+/// The preview harness's world, handed to the Settings scene: the scene is
+/// built before the main window composes its throwaway account, so it reads
+/// this and redraws when the account lands.
+@MainActor @Observable
+final class DesktopPreviewSettingsWorld {
+    static let shared = DesktopPreviewSettingsWorld()
+    var configuration: JunoDesktopConfiguration?
+    var session: NativeAuthenticatedSession?
+}
+#endif
+
 struct DesktopSettingsWindow: View {
     let configuration: JunoDesktopConfiguration?
 
+    private var resolved: (JunoDesktopConfiguration, NativeAuthenticatedSession)? {
+        #if DEBUG
+        let world = DesktopPreviewSettingsWorld.shared
+        if configuration == nil, let previewConfiguration = world.configuration, let session = world.session {
+            return (previewConfiguration, session)
+        }
+        #endif
+        guard let configuration, case .signedIn(let session) = configuration.authModel.phase else { return nil }
+        return (configuration, session)
+    }
+
     var body: some View {
         Group {
-            if let configuration,
-               let settingsModel = configuration.memorySettingsModel,
-               case .signedIn(let session) = configuration.authModel.phase
+            if let (configuration, session) = resolved,
+               let settingsModel = configuration.memorySettingsModel
             {
                 DesktopSettingsSignedInWindow(
                     configuration: configuration,
@@ -176,7 +198,7 @@ struct DesktopSettingsWindow: View {
             } else {
                 JunoEmptyState(
                     title: "Sign in to change settings",
-                    message: "Juno’s settings belong to your account and sync across your devices.",
+                    message: "Alevr’s settings belong to your account and sync across your devices.",
                     icon: .user
                 )
             }
@@ -188,7 +210,7 @@ struct DesktopSettingsWindow: View {
             idealHeight: DesktopSettingsMetrics.windowIdeal.height
         )
         .containerBackground(Color.junoCanvas, for: .window)
-        .preferredColorScheme(Self.colorScheme(configuration?.memorySettingsModel?.settings?.theme))
+        .preferredColorScheme(Self.colorScheme((configuration ?? resolved?.0)?.memorySettingsModel?.settings?.theme))
         .junoAccentTint()
         .desktopTextScale()
         .accessibilityIdentifier("juno.desktop.settings.window")
@@ -407,7 +429,7 @@ struct DesktopCodeSettingsScreen: View {
         DesktopSettingsForm {
             Section {
                 DesktopSettingRow(
-                    title: "Juno Code has its own settings",
+                    title: "Alevr Code has its own settings",
                     description: "Permissions and rules, environment, instructions, the agent, Git, tools and MCP, appearance and notifications."
                 ) {
                     DesktopOutlineButton(title: "Open Code Settings") {
@@ -445,7 +467,7 @@ struct DesktopCodeRemoteHostTile: View {
 
     var body: some View {
         if let host {
-            JunoSettingsTile("Juno Code Remote") {
+            JunoSettingsTile("Alevr Code Remote") {
                 Toggle(
                     isOn: Binding(
                         get: { host.servesQueuedTasks },
@@ -453,10 +475,10 @@ struct DesktopCodeRemoteHostTile: View {
                     )
                 ) {
                     VStack(alignment: .leading, spacing: JunoSpace.hairline) {
-                        Text("Allow remote Juno Code on this Mac")
+                        Text("Allow remote Alevr Code on this Mac")
                             .junoRowLabel()
                         Text(
-                            "Lets your phone and the web start Juno Code sessions that run here, "
+                            "Lets your phone and the web start Alevr Code sessions that run here, "
                                 + "in the workspaces you have shared. Off, this Mac stays visible "
                                 + "but runs nothing sent to it."
                         )
@@ -551,7 +573,7 @@ struct DesktopCodeHostRevokeSection: View {
             Divider()
             Text(
                 "This Mac was unpaired and no longer appears on your other devices. "
-                    + "Pair it again to run Juno Code sessions from your phone."
+                    + "Pair it again to run Alevr Code sessions from your phone."
             )
             .junoCaption()
             .fixedSize(horizontal: false, vertical: true)

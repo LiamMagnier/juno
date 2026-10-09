@@ -5,6 +5,10 @@ import JunoCore
 import JunoDesignSystem
 import SwiftUI
 
+#if DEBUG
+    import JunoPreviewSupport
+#endif
+
 /// **Connections** — every app Juno can act through, as the website's directory
 /// of cards rather than a source list with an inspector.
 ///
@@ -54,6 +58,9 @@ struct DesktopConnectionsScreen: View {
     @State private var serverDraft: NativeCustomConnectorDraft?
     /// The server whose manage sheet is open.
     @State private var serverEditor: NativeCustomConnectorEditor?
+    /// The app whose details sheet is open: status, last used, what runs
+    /// without asking, Disconnect (`app-detail-sheet.tsx`).
+    @State private var appDetail: NativeAppDetailModel?
     @Environment(\.junoToast) private var toast
 
     private let backend = URL(string: JunoBackend.productionURLString)
@@ -83,7 +90,7 @@ struct DesktopConnectionsScreen: View {
                 Button("Cancel", role: .cancel) { disconnectTarget = nil }
                     .contentShape(.rect)
             } message: { target in
-                Text("Juno will lose access to your \(target.label) account. You can reconnect anytime.")
+                Text("Alevr will lose access to your \(target.label) account. You can reconnect anytime.")
             }
             // The authorisation round trip happens in the browser and ends on
             // Juno's own web page, so nothing reports back into this process. The
@@ -109,6 +116,16 @@ struct DesktopConnectionsScreen: View {
                     close: { serverDraft = nil }
                 )
             }
+            .sheet(item: $appDetail) { detail in
+                DesktopAppDetailSheet(
+                    detail: detail,
+                    disconnect: {
+                        appDetail = nil
+                        disconnectTarget = detail.connector
+                    },
+                    close: { appDetail = nil }
+                )
+            }
             .sheet(item: $serverEditor) { editor in
                 DesktopManageServerSheet(
                     editor: editor,
@@ -120,6 +137,15 @@ struct DesktopConnectionsScreen: View {
                 )
             }
             .accessibilityIdentifier("juno.desktop.connections")
+        #if DEBUG
+            .task(id: model.phase) {
+                guard model.phase == .ready, appDetail == nil,
+                    let id = JunoPreviewEnvironment.initialAppDetail,
+                    let connector = model.linked.first(where: { $0.id == id })
+                else { return }
+                appDetail = model.makeAppDetailModel(for: connector)
+            }
+        #endif
     }
 
     // MARK: Content
@@ -137,7 +163,7 @@ struct DesktopConnectionsScreen: View {
             // badge for that reason).
             JunoPageHeader(
                 "Connections",
-                lede: "Link an app so Juno can work with your repositories, designs, docs, and workspace tools."
+                lede: "Link an app so Alevr can work with your repositories, designs, docs, and workspace tools."
             ) {
                 Button {
                     editingMCP = nil
@@ -281,57 +307,24 @@ struct DesktopConnectionsScreen: View {
     /// the catalog endpoint cannot narrow it by category.
     @ViewBuilder
     private var categories: some View {
+        // A menu, never a row of capsules: the category is a filter over one
+        // directory, and a filter reads as plain text with a chevron.
         if !model.categories.isEmpty, !model.showsConnectedOnly {
-            ScrollView(.horizontal) {
-                HStack(spacing: JunoSpace.tight) {
-                    categoryChip(id: nil, label: "All categories", count: nil)
-                    ForEach(model.categories) { category in
-                        categoryChip(
-                            id: category.id,
-                            label: category.label,
-                            count: category.count
-                        )
-                    }
+            Picker(selection: $model.selectedCategory) {
+                Text("All categories").tag(String?.none)
+                Divider()
+                ForEach(model.categories) { category in
+                    Text(category.count.map { "\(category.label) · \($0)" } ?? category.label)
+                        .tag(Optional(category.id))
                 }
-                .padding(.vertical, JunoSpace.hairline)
+            } label: {
+                Text("Category")
             }
-            .scrollIndicators(.hidden)
-            .scrollBounceBehavior(.basedOnSize)
+            .pickerStyle(.menu)
+            .fixedSize()
             .accessibilityLabel("Filter by category")
+            .accessibilityIdentifier("connections.category")
         }
-    }
-
-    /// A filled pill, never an outlined one. Ten outlined chips read as ten boxes
-    /// competing with the cards below; a filled set reads as one control. Selected
-    /// inverts to the label colour on the canvas colour — the web's
-    /// `bg-foreground text-background` — rather than going coral, which is spent
-    /// on primary actions and never on a filter.
-    private func categoryChip(id: String?, label: String, count: Int?) -> some View {
-        let active = model.selectedCategory == id
-        return Button {
-            model.selectedCategory = active ? nil : id
-        } label: {
-            HStack(spacing: JunoSpace.hairline) {
-                Text(label)
-                    .font(.callout.weight(.medium))
-                if let count {
-                    Text(count, format: .number)
-                        .font(.junoCodeSmall)
-                        .foregroundStyle(active ? Color.junoCanvasWarm : Color.junoMutedForeground)
-                }
-            }
-            .foregroundStyle(active ? Color.junoCanvasWarm : Color.junoForeground)
-            .padding(.horizontal, JunoSpace.cozy)
-            .frame(height: DesktopConnectorGrid.chipHeight)
-            .background(
-                Capsule(style: .continuous)
-                    .fill(active ? AnyShapeStyle(Color.primary) : AnyShapeStyle(Color.junoMuted))
-            )
-            .contentShape(Capsule(style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(active ? [.isButton, .isSelected] : .isButton)
-        .accessibilityIdentifier("connections.category.\(id ?? "all")")
     }
 
     // MARK: Results
@@ -356,7 +349,7 @@ struct DesktopConnectionsScreen: View {
                     // hundreds more behind the cursor, so a number here would be a
                     // lie about how many apps exist.
                     section(
-                        "Available", "Connect an app to let Juno work inside it.", availableConnectors,
+                        "Available", "Connect an app to let Alevr work inside it.", availableConnectors,
                         endsWithAddTile: showsAddTile
                     )
                 }
@@ -470,7 +463,7 @@ struct DesktopConnectionsScreen: View {
                     beginCustomSignIn(connector.id)
                 }
                 .disabled(state == .connecting)
-                .help("Juno opens this server’s sign-in page in your browser. You approve Juno there, then choose its tools here.")
+                .help("Alevr opens this server’s sign-in page in your browser. You approve Alevr there, then choose its tools here.")
                 .accessibilityLabel("Sign in to \(connector.label)")
                 .accessibilityIdentifier("connections.sign-in.\(connector.id)")
             }
@@ -481,11 +474,17 @@ struct DesktopConnectionsScreen: View {
     private func builtInAction(_ connector: NativeConnector, state: DesktopConnectorState) -> some View {
         switch state {
         case .connected:
-            wideButton("Disconnect", role: .destructive) { disconnectTarget = connector }
-                .disabled(model.isMutating)
-                .help("Revoke Juno's access to \(connector.label)")
-                .accessibilityLabel("Disconnect \(connector.label)")
-                .accessibilityIdentifier("connections.disconnect.\(connector.id)")
+            HStack(spacing: JunoSpace.snug) {
+                wideButton("Details") { showDetails(connector) }
+                    .help("Last used, what runs without asking, and Disconnect")
+                    .accessibilityLabel("\(connector.label) details")
+                    .accessibilityIdentifier("connections.details.\(connector.id)")
+                wideButton("Disconnect", role: .destructive) { disconnectTarget = connector }
+                    .disabled(model.isMutating)
+                    .help("Revoke Alevr's access to \(connector.label)")
+                    .accessibilityLabel("Disconnect \(connector.label)")
+                    .accessibilityIdentifier("connections.disconnect.\(connector.id)")
+            }
 
         case .available, .connecting:
             wideButton(state == .connecting ? "Waiting for your browser…" : "Connect") {
@@ -514,7 +513,7 @@ struct DesktopConnectionsScreen: View {
         case .unavailable:
             // Deliberately no control. A button that is guaranteed to fail is
             // worse than a sentence saying why there isn't one.
-            Text("The Juno server this app talks to has no OAuth app for \(connector.label) yet.")
+            Text("The Alevr server this app talks to has no OAuth app for \(connector.label) yet.")
                 .junoCaption()
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -527,6 +526,10 @@ struct DesktopConnectionsScreen: View {
     private func cardMenu(_ connector: NativeConnector, state: DesktopConnectorState) -> some View {
         if connector.isCustom {
             Button("Manage \(connector.label)…") { manageServer(connector) }
+            if connector.connected {
+                Button("\(connector.label) Details…") { showDetails(connector) }
+                    .contentShape(.rect)
+            }
             if !connector.connected {
                 Button("Sign In to \(connector.label)") { beginCustomSignIn(connector.id) }
                     .disabled(state == .connecting)
@@ -553,6 +556,8 @@ struct DesktopConnectionsScreen: View {
     private func builtInMenu(_ connector: NativeConnector, state: DesktopConnectorState) -> some View {
         switch state {
         case .connected:
+            Button("\(connector.label) Details…") { showDetails(connector) }
+                .contentShape(.rect)
             Button("Disconnect \(connector.label)", role: .destructive) {
                 disconnectTarget = connector
             }
@@ -695,7 +700,7 @@ struct DesktopConnectionsScreen: View {
                             singular: "connection"
                         ).humanized(
                             error,
-                            fallback: "Juno couldn't refresh your connections."
+                            fallback: "Alevr couldn't refresh your connections."
                         ),
                         icon: .triangleAlert,
                         tint: Color.junoDanger,
@@ -711,7 +716,7 @@ struct DesktopConnectionsScreen: View {
                     // and cannot edit its environment, so this states the fact and
                     // stops rather than handing out an instruction they cannot act on.
                     DesktopConnectionsNotice(
-                        message: "The managed app directory is off on this server, so only the apps built into Juno are listed.",
+                        message: "The managed app directory is off on this server, so only the apps built into Alevr are listed.",
                         icon: .about,
                         tint: Color.junoCaution
                     )
@@ -822,7 +827,7 @@ struct DesktopConnectionsScreen: View {
         case .connecting:
             return "Finishing connection…"
         case .unavailable:
-            return "Not set up on this Juno server"
+            return "Not set up on this Alevr server"
         case .setup:
             return "Needs its own app credentials in Composio"
         case .available:
@@ -834,13 +839,13 @@ struct DesktopConnectionsScreen: View {
     private func authorizationText(_ connector: NativeConnector) -> String {
         switch connector.source {
         case .native where connector.kind == "credentials":
-            return "\(connector.label) signs in with an app-specific password. Juno opens your Connections page in your browser to collect it — passwords are never typed into this app."
+            return "\(connector.label) signs in with an app-specific password. Alevr opens your Connections page in your browser to collect it — passwords are never typed into this app."
         case .native:
-            return "Juno opens \(connector.label)'s authorisation page in your browser. You approve the permissions there, and Juno keeps only the resulting token, encrypted."
+            return "Alevr opens \(connector.label)'s authorisation page in your browser. You approve the permissions there, and Alevr keeps only the resulting token, encrypted."
         case .composio:
-            return "Juno opens \(connector.label)'s authorisation page in your browser through Composio, the managed connector service. You approve the permissions there."
+            return "Alevr opens \(connector.label)'s authorisation page in your browser through Composio, the managed connector service. You approve the permissions there."
         case .custom:
-            return "Juno opens this server’s sign-in page in your browser. You approve Juno there."
+            return "Alevr opens this server’s sign-in page in your browser. You approve Alevr there."
         }
     }
 
@@ -899,6 +904,10 @@ struct DesktopConnectionsScreen: View {
     }
 
     // MARK: Custom servers
+
+    private func showDetails(_ connector: NativeConnector) {
+        appDetail = model.makeAppDetailModel(for: connector)
+    }
 
     private func addServer() {
         serverDraft = model.makeCustomConnectorDraft()
@@ -1148,7 +1157,7 @@ struct DesktopMCPServerSheet: View {
         VStack(alignment: .leading, spacing: JunoSpace.roomy) {
             VStack(alignment: .leading, spacing: JunoSpace.tight) {
                 Text(editing == nil ? "Add MCP server" : "Manage MCP server").junoType(.heading)
-                Text("Connect tools from your own remote server. Juno stores your credential encrypted.")
+                Text("Connect tools from your own remote server. Alevr stores your credential encrypted.")
                     .junoType(.ui).foregroundStyle(Color.junoSecondaryInk)
             }
             Form {
@@ -1161,7 +1170,7 @@ struct DesktopMCPServerSheet: View {
             }
             .textFieldStyle(.roundedBorder)
             .disabled(busy)
-            Text("Use a public HTTPS endpoint reachable by Juno. For a local server, use the project’s MCP settings in Juno Code.")
+            Text("Use a public HTTPS endpoint reachable by Alevr. For a local server, use the project’s MCP settings in Alevr Code.")
                 .junoType(.caption).foregroundStyle(Color.junoSecondaryInk)
             HStack(spacing: JunoSpace.snug) {
                 Button(testing ? "Testing…" : "Test connection") { test() }
@@ -1219,6 +1228,150 @@ struct DesktopMCPServerSheet: View {
                 dismiss()
             } else { error = model.lastErrorDescription ?? "Couldn’t save this server. Try again." }
             saving = false
+        }
+    }
+}
+
+// MARK: - App details
+
+
+/// **An app's details** (`app-detail-sheet.tsx`), in the order a person asks:
+/// which account, when it was last used, what it may do without asking (each
+/// standing grant revocable back to Ask first), and how to stop it.
+///
+/// A grouped `Form` in a sheet: every line is a real server state, nothing is a
+/// local toggle the server does not read.
+struct DesktopAppDetailSheet: View {
+    @Bindable var detail: NativeAppDetailModel
+    /// Asks to disconnect; the screen owns the confirmation.
+    let disconnect: () -> Void
+    let close: () -> Void
+
+    private var connector: NativeConnector { detail.connector }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    LabeledContent("Status") {
+                        Text(connector.connected ? "Connected" : "Not connected")
+                            .foregroundStyle(Color.junoSecondaryInk)
+                    }
+                    if let account = connector.accountLabel, !account.isEmpty, account != connector.label {
+                        LabeledContent("Account") {
+                            Text(account)
+                                .foregroundStyle(Color.junoSecondaryInk)
+                                .textSelection(.enabled)
+                        }
+                    }
+                    LabeledContent("Last used") {
+                        lastUsed
+                    }
+                }
+
+                Section {
+                    grants
+                } header: {
+                    Text("What Alevr can do without asking")
+                } footer: {
+                    VStack(alignment: .leading, spacing: JunoSpace.tight) {
+                        Text("Anything that changes something in \(connector.label) asks you first, unless you chose to allow it here.")
+                        if let error = detail.grantError {
+                            Label {
+                                Text(error)
+                            } icon: {
+                                JunoIconView(.triangleAlert, size: 12)
+                            }
+                            .foregroundStyle(Color.junoDestructiveInk)
+                        }
+                    }
+                    .junoType(.caption)
+                    .foregroundStyle(Color.junoSecondaryInk)
+                }
+
+                if connector.connected {
+                    Section {
+                        Button(connector.isCustomMCP ? "Remove \(connector.label)…" : "Disconnect \(connector.label)…", role: .destructive) {
+                            disconnect()
+                        }
+                        .accessibilityIdentifier("connections.detail.disconnect")
+                    } footer: {
+                        Text(detail.consequence)
+                            .junoType(.caption)
+                            .foregroundStyle(Color.junoSecondaryInk)
+                    }
+                }
+            }
+            .formStyle(.grouped)
+            .navigationTitle(connector.label)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done", action: close)
+                        .keyboardShortcut(.defaultAction)
+                }
+            }
+        }
+        .frame(minWidth: 460, idealWidth: 480, minHeight: 420)
+        .task { await detail.load() }
+        .accessibilityIdentifier("connections.detail")
+    }
+
+    @ViewBuilder
+    private var lastUsed: some View {
+        switch detail.usage {
+        case .loading:
+            ProgressView().controlSize(.small)
+        case .loaded(nil):
+            Text("Alevr hasn’t used it yet.")
+                .foregroundStyle(Color.junoSecondaryInk)
+        case .loaded(let usage?):
+            Text(usage.line())
+                .foregroundStyle(Color.junoSecondaryInk)
+                .multilineTextAlignment(.trailing)
+        }
+    }
+
+    @ViewBuilder
+    private var grants: some View {
+        if let grants = detail.grants {
+            if grants.isEmpty {
+                Text("Nothing. Every change asks first.")
+                    .foregroundStyle(Color.junoSecondaryInk)
+            } else {
+                ForEach(grants) { grant in
+                    HStack(alignment: .center, spacing: JunoSpace.cozy) {
+                        VStack(alignment: .leading, spacing: JunoSpace.micro) {
+                            Text(grant.action)
+                                .foregroundStyle(Color.junoForeground)
+                            Text(grant.scopeLine)
+                                .junoType(.caption)
+                                .foregroundStyle(Color.junoSecondaryInk)
+                        }
+                        Spacer(minLength: JunoSpace.snug)
+                        Button {
+                            Task { await detail.revoke(grant) }
+                        } label: {
+                            if detail.revokingID == grant.id {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                Text("Ask First")
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(nil)
+                        .controlSize(.small)
+                        .disabled(detail.revokingID != nil)
+                        .help("Revoke: Alevr will ask before doing this again")
+                        .accessibilityLabel("Revoke \(grant.action)")
+                        .contentShape(.rect)
+                    }
+                }
+            }
+        } else {
+            HStack(spacing: JunoSpace.snug) {
+                ProgressView().controlSize(.small)
+                Text("Loading…").foregroundStyle(Color.junoSecondaryInk)
+            }
         }
     }
 }

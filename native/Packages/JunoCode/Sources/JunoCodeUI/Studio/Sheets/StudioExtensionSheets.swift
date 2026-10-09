@@ -23,7 +23,7 @@ struct StudioPermissionsSheet: View {
     var body: some View {
         StudioSheetFrame(
             title: "Permissions",
-            subtitle: "What Juno may do without asking, by where the rule is written. Deny beats ask beats allow; nothing silences an action that leaves the project.",
+            subtitle: "What Alevr may do without asking, by where the rule is written. Deny beats ask beats allow; nothing silences an action that leaves the project.",
             done: done
         ) {
             Form {
@@ -201,7 +201,7 @@ struct StudioAgentsSheet: View {
     var body: some View {
         StudioSheetFrame(
             title: "Agents",
-            subtitle: "Agents Juno can hand work to with delegate_task. An agent can narrow what a sub-agent may do, never widen it.",
+            subtitle: "Agents Alevr can hand work to with delegate_task. An agent can narrow what a sub-agent may do, never widen it.",
             done: done
         ) {
             Form {
@@ -261,7 +261,7 @@ struct StudioAgentsSheet: View {
         if let steps = agent.maxSteps { traits.append("at most \(steps) steps") }
         var lines = [agent.description].filter { !$0.isEmpty } + [traits.joined(separator: " · "), agent.path]
         if agent.isShadowedByBuiltIn {
-            lines.append("Not used: Juno's built-in \(agent.targetName) keeps this name. Rename the file, or put it in ~/.juno/agents to replace the built-in.")
+            lines.append("Not used: Alevr's built-in \(agent.targetName) keeps this name. Rename the file, or put it in ~/.juno/agents to replace the built-in.")
         }
         return StudioSheetRow(
             label: agent.name,
@@ -337,7 +337,7 @@ struct StudioMCPSheet: View {
     var body: some View {
         StudioSheetFrame(
             title: "MCP servers",
-            subtitle: "Servers Juno's tools can come from. A project's servers start only once you allow them; yours start when needed; Claude Code's start once you turn them on. Every tool call still asks.",
+            subtitle: "Servers Alevr's tools can come from. A project's servers start only once you allow them; yours start when needed; Claude Code's start once you turn them on. Every tool call still asks.",
             done: done
         ) {
             Form {
@@ -506,7 +506,7 @@ struct StudioHooksSheet: View {
     let done: () -> Void
 
     var body: some View {
-        StudioSheetFrame(title: "Hooks", subtitle: "Commands, endpoints and checks that run around Juno's work.", done: done) {
+        StudioSheetFrame(title: "Hooks", subtitle: "Commands, endpoints and checks that run around Alevr's work.", done: done) {
             Form {
                 StudioHooksSettings(
                     hooks: controller.hookDiscoveryResult,

@@ -196,7 +196,7 @@ indirect enum PreviewBrowserAction: Equatable, Sendable {
             return .type(ref: ref, text: text, secret: secret, submit: input["submit"]?.boolValue == true, replace: string("mode") == "replace")
         case "key":
             let chord = try required("chord", "key needs a chord such as Enter or Meta+K")
-            guard PreviewInput.parseChord(chord) != nil else { throw ToolError.invalidInput(message: "\(chord) is not a key chord Juno knows") }
+            guard PreviewInput.parseChord(chord) != nil else { throw ToolError.invalidInput(message: "\(chord) is not a key chord Alevr knows") }
             return .key(chord: chord, repeat: min(max(input["repeat"]?.intValue ?? 1, 1), 100))
         case "select":
             guard let ref = try ref() else { throw ToolError.invalidInput(message: "select needs the ref of a select") }
@@ -300,11 +300,11 @@ enum PreviewBrowserError: Error, LocalizedError, Sendable {
         case .invalidReference:
             "The ref is not on the page any more. Take a fresh snapshot."
         case .stopped:
-            "The reader stopped Juno using the preview. Do not retry; say what you still need."
+            "The reader stopped Alevr using the preview. Do not retry; say what you still need."
         case .dialogOpen:
             "The page is waiting on a dialog. Answer it with preview_browser dialog (accept or dismiss) first."
         case let .consequential(what):
-            "\(what) always needs the reader's approval, whatever the permission mode. Take a snapshot and act on it by its ref, so Juno can ask the reader first."
+            "\(what) always needs the reader's approval, whatever the permission mode. Take a snapshot and act on it by its ref, so Alevr can ask the reader first."
         case let .notOnPreview(url):
             "The page is on \(url), not the preview's own server; the agent only acts on loopback previews."
         case let .failed(message):
@@ -1225,7 +1225,7 @@ struct PreviewScreenshot: Sendable {
 
     static func encode(_ image: NSImage, nativeDensity: Bool, scale: Double?) throws -> PreviewScreenshot {
         guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
-            throw PreviewBrowserError.failed("WebKit returned an image Juno could not read.")
+            throw PreviewBrowserError.failed("WebKit returned an image Alevr could not read.")
         }
         var width = CGFloat(cgImage.width)
         var height = CGFloat(cgImage.height)

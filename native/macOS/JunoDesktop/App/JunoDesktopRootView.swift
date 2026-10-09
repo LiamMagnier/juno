@@ -74,6 +74,7 @@ struct JunoDesktopRootView: View {
             // theme is handed to it rather than inherited.
             .onChange(of: preferredColorScheme, initial: true) { _, scheme in
                 DesktopQuickEntryController.shared.setColorScheme(scheme)
+                DesktopAppAppearance.apply(scheme)
             }
             .task {
                 applyStartupRouteIfNeeded()
@@ -242,6 +243,7 @@ struct JunoDesktopRootView: View {
         configuration.privateChatModel?.start(for: accountID)
         configuration.libraryModel?.start(for: accountID)
         configuration.libraryPageModel?.start(for: accountID)
+        configuration.libraryMadeModel?.start(for: accountID)
         configuration.documentIndexModel?.start(for: accountID)
         // Account only: both read when their page first appears.
         configuration.memoryPageModel?.start(for: accountID)
@@ -469,6 +471,7 @@ struct JunoDesktopRootView: View {
         configuration.workHostModel?.detach()
         configuration.libraryModel?.stop()
         configuration.libraryPageModel?.stop()
+        configuration.libraryMadeModel?.stop()
         // Not merely "forget the list": the plaintext of every indexed document
         // is in that index, so `stop()` wipes the account's partition. Signing
         // out has to leave nothing behind for the next person at this Mac.
@@ -613,10 +616,10 @@ struct JunoDesktopSignInView: View {
             // what persists is the device token the server hands back.
             VStack(spacing: JunoSpace.tight) {
                 Text(
-                    "Your password is sent once to Juno and never stored on this Mac. Sign in through the browser instead if your account uses Google."
+                    "Your password is sent once to Alevr and never stored on this Mac. Sign in through the browser instead if your account uses Google."
                 )
                 Text(
-                    "By continuing you agree to use Juno responsibly. Your conversations are private to your account."
+                    "By continuing you agree to use Alevr responsibly. Your conversations are private to your account."
                 )
             }
             .junoCaption()
@@ -642,7 +645,7 @@ struct JunoDesktopSignInView: View {
                 Text("Welcome back")
                     .junoType(.display(size: 30))
                     .accessibilityAddTraits(.isHeader)
-                Text("Sign in to continue to Juno.")
+                Text("Sign in to continue to Alevr.")
                     .font(.callout)
                     .junoSecondaryInk()
             }
@@ -774,10 +777,10 @@ private struct JunoDesktopLocalStoreRecoveryNotice: View {
 
             VStack(alignment: .leading, spacing: JunoSpace.tight) {
                 Text(
-                    "Starting a fresh local copy gets you past this screen. Your conversations, projects, artifacts and settings download again once you sign in. Changes made on this Mac that hadn't reached Juno yet — anything edited while offline — won't come back."
+                    "Starting a fresh local copy gets you past this screen. Your conversations, projects, artifacts and settings download again once you sign in. Changes made on this Mac that hadn't reached Alevr yet — anything edited while offline — won't come back."
                 )
                 Text(
-                    "The old copy is moved aside in Application Support ▸ Juno ▸ Desktop, not deleted."
+                    "The old copy is moved aside in Application Support ▸ Alevr ▸ Desktop, not deleted."
                 )
             }
             .junoCaption()
@@ -794,7 +797,7 @@ private struct JunoDesktopLocalStoreRecoveryNotice: View {
                             Text("Starting a fresh copy…")
                         }
                     } else {
-                        Text("Start a fresh copy and restart Juno")
+                        Text("Start a fresh copy and restart Alevr")
                     }
                 }
                 .frame(maxWidth: .infinity)
@@ -854,8 +857,10 @@ struct JunoDesktopSignInPlate: View {
                     startRadius: 0,
                     endRadius: 620
                 )
-                JunoDotField()
+                // The web's access panel: the dot construction, ticks on.
+                JunoDotConstruction(ticks: true)
                     .opacity(0.9)
+                    .accessibilityHidden(true)
             }
             // A foot of ink under the words, so they read on any plate.
             LinearGradient(
@@ -913,5 +918,24 @@ private struct JunoDotField: View {
             }
         }
         .accessibilityHidden(true)
+    }
+}
+
+/// The account's theme, given to AppKit as well as SwiftUI.
+///
+/// `.preferredColorScheme` repaints the SwiftUI views, but the AppKit controls
+/// SwiftUI hosts — the sidebar's search field, menus, pop-up buttons — read
+/// the application's appearance. With the Mac in Dark and the account on
+/// Light, the search field typed white on a light field. Setting the app's
+/// appearance keeps every control on the theme the reader chose; nil hands
+/// it back to the system.
+@MainActor
+enum DesktopAppAppearance {
+    static func apply(_ scheme: ColorScheme?) {
+        switch scheme {
+        case .light: NSApp.appearance = NSAppearance(named: .aqua)
+        case .dark: NSApp.appearance = NSAppearance(named: .darkAqua)
+        default: NSApp.appearance = nil
+        }
     }
 }

@@ -81,7 +81,8 @@ struct DesktopArtifactsFilterTests {
     @Test
     func theChipLabelsAreTheWebs() {
         #expect(NativeArtifactKind.allCases.map(DesktopArtifactKinds.chipLabel) ==
-            ["Sites", "Components", "Code", "Documents", "Graphics", "Diagrams", "Designs"])
+            // The semantic kinds the parity lane added (spreadsheet, doc, deck).
+            ["Sites", "Components", "Code", "Documents", "Graphics", "Diagrams", "Designs", "Spreadsheets", "Docs", "Decks"])
     }
 
     /// Open in Conversation asks for the row by its id (A1).

@@ -29,6 +29,9 @@ import {
   nextId,
   oneLine,
 } from "@/lib/work/deliverables/semantic/shared";
+import { LIVE_UI_MAX_SOURCE } from "@/lib/live-ui/json";
+import { parseLiveUI, type LiveSpec } from "@/lib/live-ui/spec";
+import { liveUISummaryLines } from "@/lib/live-ui/summary";
 
 // ---------------------------------------------------------------------------
 // Bounds
@@ -63,6 +66,16 @@ const isoDateSchema = z
 // ---------------------------------------------------------------------------
 // Blocks
 // ---------------------------------------------------------------------------
+
+/**
+ * A Live UI view (docs/design/LIVE_UI.md) living in a document: the same JSON
+ * a ```live-ui fence holds in chat. The canvas runs it; the .docx export and
+ * the plain text keep its readable parts (``interactiveSummary``).
+ */
+const liveViewSchema = z
+  .record(z.string(), z.unknown())
+  .refine((view) => JSON.stringify(view).length <= LIVE_UI_MAX_SOURCE, `a view is at most ${LIVE_UI_MAX_SOURCE} characters of JSON`)
+  .refine((view) => (parseLiveUI(JSON.stringify(view)).spec?.ui.length ?? 0) > 0, "view must be a Live UI view with at least one component");
 
 const listItemSchema = z.object({
   text: requiredTextSchema,
@@ -120,6 +133,12 @@ function blockVariants<I extends z.ZodType, L extends z.ZodType>(id: I, listItem
       caption: shortTextSchema.optional(),
       widthPct: z.number().int().min(10).max(100).optional(),
     }),
+    z.object({
+      id,
+      type: z.literal("interactive"),
+      view: liveViewSchema,
+      caption: shortTextSchema.optional(),
+    }),
     z.object({ id, type: z.literal("pageBreak") }),
   ]);
 }
@@ -138,6 +157,18 @@ export type ListBlock = Extract<Block, { type: "list" }>;
 export type TableBlock = Extract<Block, { type: "table" }>;
 export type CalloutBlock = Extract<Block, { type: "callout" }>;
 export type FigureBlock = Extract<Block, { type: "figure" }>;
+export type InteractiveBlock = Extract<Block, { type: "interactive" }>;
+
+/** An interactive block's view, parsed; null only if the stored JSON stopped parsing. */
+export function interactiveSpec(block: InteractiveBlock): LiveSpec | null {
+  return parseLiveUI(JSON.stringify(block.view)).spec;
+}
+
+/** An interactive block as a title and readable lines, for export and plain text. */
+export function interactiveSummary(block: InteractiveBlock): { title: string; lines: string[] } {
+  const spec = interactiveSpec(block);
+  return { title: spec?.title ?? block.caption ?? "Interactive view", lines: spec ? liveUISummaryLines(spec) : [] };
+}
 /** The blocks whose single `text` an edit or a tracked change can rewrite. */
 export type TextBlock = HeadingBlock | ParagraphBlock | CalloutBlock;
 
@@ -438,6 +469,8 @@ export function blockTexts(block: Block): string[] {
       return [...block.header, ...block.rows.flat(), ...(block.caption ? [block.caption] : [])];
     case "figure":
       return block.caption ? [block.caption] : [];
+    case "interactive":
+      return block.caption ? [block.caption] : [];
     case "pageBreak":
       return [];
   }
@@ -470,6 +503,7 @@ const BLOCK_KEYS: Record<BlockType, string[]> = {
   table: ["id", "type", "header", "rows", "caption"],
   callout: ["id", "type", "tone", "title", "text"],
   figure: ["id", "type", "src", "alt", "caption", "widthPct"],
+  interactive: ["id", "type", "view", "caption"],
   pageBreak: ["id", "type"],
 };
 
@@ -864,6 +898,11 @@ export function documentPlainText(model: DocumentModel): string {
       case "figure":
         parts.push(block.caption ? `${block.alt} (${inlinePlainText(block.caption)})` : block.alt);
         break;
+      case "interactive": {
+        const { title, lines } = interactiveSummary(block);
+        parts.push([title, ...lines].join("\n"));
+        break;
+      }
       case "pageBreak":
         break;
     }
@@ -903,6 +942,10 @@ function outlineBlock(block: Block): string[] {
           block.src.startsWith("data:") ? " (embedded image)" : ` src=${oneLine(block.src, 80)}`
         }`,
       ];
+    case "interactive": {
+      const { title, lines } = interactiveSummary(block);
+      return [`${id} INTERACTIVE "${oneLine(title, 80)}"${block.caption ? ` caption="${oneLine(block.caption, 80)}"` : ""} (${lines.length} readable lines; replace the block to change the view)`];
+    }
     case "pageBreak":
       return [`${id} PAGE BREAK`];
   }

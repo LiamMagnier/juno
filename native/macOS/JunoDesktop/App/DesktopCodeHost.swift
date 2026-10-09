@@ -172,11 +172,11 @@ private enum DesktopQueuedCodeError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .workspaceUnavailable(let name):
-            "This Mac can no longer open \(name). Re-share the folder in Juno Code."
+            "This Mac can no longer open \(name). Re-share the folder in Alevr Code."
         case .noModelAvailable:
             "No coding model is available for this account."
         case .sessionUnavailable:
-            "Juno could not create a local session for this remote task."
+            "Alevr could not create a local session for this remote task."
         case .startFailed(let message): message
         }
     }

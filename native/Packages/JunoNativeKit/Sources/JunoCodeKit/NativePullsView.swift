@@ -65,11 +65,12 @@ public struct NativePullsView: View {
                         .frame(minHeight: 44)
                 }
             } else if pulls.isEmpty {
-                ContentUnavailableView(
-                    "No pull requests",
-                    systemImage: "arrow.trianglehead.pull",
-                    description: Text("Pull requests Juno Code opens from your sessions appear here.")
-                )
+                ContentUnavailableView {
+                    // The web's pull-request glyph.
+                    Label("No pull requests", image: JunoIcon.pulls.assetName)
+                } description: {
+                    Text("Pull requests Juno Code opens from your sessions appear here.")
+                }
             } else {
                 list
             }

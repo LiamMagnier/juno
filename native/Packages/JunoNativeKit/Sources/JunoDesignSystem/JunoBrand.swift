@@ -285,6 +285,8 @@ public struct JunoLogo: View {
 /// Apple's.
 public enum JunoIcon: String, CaseIterable, Sendable {
     case home, work, code, library, artifacts, projects
+    /// The sidebar's New chat — the web's `new-chat` drawing (MessageSquarePlus).
+    case newChat
     case tasks, connections, pulls, conversation, new, search
 
     /// The web reaches Settings from the user menu rather than the rail, and
@@ -442,6 +444,7 @@ public enum JunoIcon: String, CaseIterable, Sendable {
         case .connections, .connectors: "ph.plug"
         case .pulls: "ph.gitpullrequest"
         case .new, .plus: "ph.plus"
+        case .newChat: "ph.newchat"
         case .search: "ph.magnifyingglass"
         case .settings: "ph.gearsix"
         case .assistants: "ph.robot"

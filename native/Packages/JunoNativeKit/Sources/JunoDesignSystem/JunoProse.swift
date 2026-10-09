@@ -219,7 +219,7 @@ public enum JunoFindText {
         JunoLessonText.split(source).reduce(0) { total, segment in
             switch segment {
             case .markdown(let text): total + count(of: query, inMarkdown: text, citations: citations)
-            case .block: total
+            case .live: total
             }
         }
     }

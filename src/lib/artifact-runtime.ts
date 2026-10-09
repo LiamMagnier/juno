@@ -16,7 +16,7 @@ export interface RuntimeInfo {
   /** Human label for chrome ("React", "Python", "TypeScript", "Go"). */
   label: string;
   /** console sub-runtime, when mode === "console". */
-  engine?: "js" | "python" | "unsupported";
+  engine?: "js" | "python" | "sql" | "unsupported";
   /** Verb shown on the action button: "Preview" for web, "Run" for console. */
   /** "Edit" for a design document, which is opened rather than executed. */
   runVerb: "Preview" | "Run" | "Edit";
@@ -126,6 +126,12 @@ export function runtimeFor(type: ArtifactType, language?: string | null): Runtim
       return { mode: "console", engine: "js", lang, label: "TypeScript", runVerb: "Run" };
     case "python":
       return { mode: "console", engine: "python", lang, label: "Python", runVerb: "Run" };
+    case "sql":
+    case "plsql":
+    case "pgsql":
+    case "mysql":
+    case "sqlite":
+      return { mode: "console", engine: "sql", lang: "sql", label: "SQL", runVerb: "Run" };
     default:
       return { mode: "console", engine: "unsupported", lang: lang || "plaintext", label: langLabel(lang), runVerb: "Run" };
   }

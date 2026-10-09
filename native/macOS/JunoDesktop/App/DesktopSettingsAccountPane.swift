@@ -25,6 +25,7 @@ struct DesktopSettingsAccountPane: View {
         DesktopSettingsRecordForm(context: context) { settings in
             Section {
                 profileBlock
+                DesktopUsernameRow(context: context)
             }
 
             Section {
@@ -37,8 +38,8 @@ struct DesktopSettingsAccountPane: View {
                 ) {
                     DesktopOutlineButton(title: "Sign Out") {
                         confirmation = JunoConfirmation(
-                            title: "Sign out of Juno?",
-                            message: "Juno removes this Mac's local copy of your conversations and settings. Nothing is deleted on the server.",
+                            title: "Sign out of Alevr?",
+                            message: "Alevr removes this Mac's local copy of your conversations and settings. Nothing is deleted on the server.",
                             confirmTitle: "Sign Out"
                         ) { Task { await context.signOut?() } }
                     }
@@ -363,12 +364,12 @@ struct DesktopSettingsMacNotifications: View {
     /// Where these switches reach, or why they cannot yet.
     private var rowDescription: String {
         if authorization == .denied {
-            return "Off in System Settings. Allow notifications for Juno there, then come back."
+            return "Off in System Settings. Allow notifications for Alevr there, then come back."
         }
         if pushes.tokenHex != nil {
-            return "Sent to this Mac even when Juno is closed. These switches are for this Mac only."
+            return "Sent to this Mac even when Alevr is closed. These switches are for this Mac only."
         }
-        return "While Juno is open, this Mac tells you when an agent needs you. Updates reach your iPhone and Juno on the web."
+        return "While Alevr is open, this Mac tells you when an agent needs you. Updates reach your iPhone and Alevr on the web."
     }
 
     @ViewBuilder
@@ -484,7 +485,7 @@ struct DesktopTwoStepSetupSheet: View {
         if let codes {
             DesktopSettingsSheet(
                 title: "Save your recovery codes",
-                message: "Each one signs you in once if you lose your authenticator app. This is the only time they are shown: they are stored hashed, so nobody, including Juno, can show them to you again."
+                message: "Each one signs you in once if you lose your authenticator app. This is the only time they are shown: they are stored hashed, so nobody, including Alevr, can show them to you again."
             ) {
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: JunoSpace.snug) {
                     ForEach(codes, id: \.self) { value in

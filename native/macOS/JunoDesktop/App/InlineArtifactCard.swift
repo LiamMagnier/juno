@@ -76,6 +76,9 @@ struct DesktopInlineArtifactCard: View {
     private var hasPreview: Bool {
         guard hasContent else { return false }
         if isDesign { return card.drawsDesign }
+        // A semantic body draws from the stored row or the tag's authoring
+        // form alike; one that does not parse shows its source.
+        if card.kind.isSemantic { return SemanticArtifact.parsed(kind: card.kind, content: content) != nil }
         return runtimeInfo.runsOnThisMac
     }
     /// Console earns its place once the page has said something — the web's
@@ -388,6 +391,9 @@ struct DesktopInlineArtifactCard: View {
     private var previewSheet: some View {
         if isDesign, let stored = card.stored {
             InlineDesignPreviewBody(artifactID: stored.id, version: stored.currentVersion, open: open)
+        } else if card.kind.isSemantic {
+            SemanticArtifactView(kind: card.kind, content: content, presentation: .inline)
+                .background(Color.junoCanvas)
         } else {
             NativeArtifactPreview(
                 kind: card.kind,

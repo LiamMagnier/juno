@@ -4,7 +4,7 @@
 // type, spacing). Regenerate with `npm run design:tokens`; `npm run design:tokens:check`
 // fails CI when this file no longer matches its sources.
 //
-// tokens-digest: b0dc72d689d998c5
+// tokens-digest: ad52564df1f49d6d
 //
 
 import CoreGraphics
@@ -142,16 +142,52 @@ public enum JunoGeneratedColors {
         dark: JunoColorToken(unchecked: 0.9098, 0.9137, 0.9216)
     )
 
+    /// `--code-comment`
+    public static let codeComment = JunoGeneratedPair(
+        light: JunoColorToken(unchecked: 0.112, 0.448, 0.112),
+        dark: JunoColorToken(unchecked: 0.4643, 0.6592, 0.3808)
+    )
+
+    /// `--code-control`
+    public static let codeControl = JunoGeneratedPair(
+        light: JunoColorToken(unchecked: 0.6133, 0.08, 0.72),
+        dark: JunoColorToken(unchecked: 0.814, 0.586, 0.814)
+    )
+
+    /// `--code-function`
+    public static let codeFunction = JunoGeneratedPair(
+        light: JunoColorToken(unchecked: 0.4712, 0.3637, 0.1488),
+        dark: JunoColorToken(unchecked: 0.8608, 0.8608, 0.6592)
+    )
+
+    /// `--code-keyword`
+    public static let codeKeyword = JunoGeneratedPair(
+        light: JunoColorToken(unchecked: 0.09, 0.186, 0.81),
+        dark: JunoColorToken(unchecked: 0.3882, 0.6432, 0.8518)
+    )
+
     /// `--code-number`
     public static let codeNumber = JunoGeneratedPair(
-        light: JunoColorToken(unchecked: 0.612, 0.3581, 0.068),
-        dark: JunoColorToken(unchecked: 0.96, 0.696, 0.24)
+        light: JunoColorToken(unchecked: 0.054, 0.486, 0.3204),
+        dark: JunoColorToken(unchecked: 0.7073, 0.8056, 0.6544)
     )
 
     /// `--code-string`
     public static let codeString = JunoGeneratedPair(
-        light: JunoColorToken(unchecked: 0.132, 0.468, 0.3112),
-        dark: JunoColorToken(unchecked: 0.34, 0.78, 0.5747)
+        light: JunoColorToken(unchecked: 0.646, 0.114, 0.114),
+        dark: JunoColorToken(unchecked: 0.8198, 0.5908, 0.5002)
+    )
+
+    /// `--code-type`
+    public static let codeType = JunoGeneratedPair(
+        light: JunoColorToken(unchecked: 0.136, 0.4556, 0.544),
+        dark: JunoColorToken(unchecked: 0.3115, 0.7885, 0.6931)
+    )
+
+    /// `--code-variable`
+    public static let codeVariable = JunoGeneratedPair(
+        light: JunoColorToken(unchecked: 0.045, 0.113, 0.555),
+        dark: JunoColorToken(unchecked: 0.604, 0.8588, 0.996)
     )
 
     /// `--destructive`

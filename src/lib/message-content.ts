@@ -8,7 +8,7 @@
  *   <juno:forget>The user works at Acme.</juno:forget>
  */
 
-import { findLearningBlocks, type ParsedLearningBlock } from "@/lib/learning-blocks";
+import { rewriteLegacyBlocks } from "@/lib/live-ui/legacy/convert";
 
 export type ArtifactType =
   | "HTML"
@@ -330,26 +330,16 @@ export type ContentPart =
       artifactType?: ArtifactType;
       language?: string;
       content?: string;
-    }
-  | { type: "learning"; parsed: ParsedLearningBlock };
+    };
 
+/**
+ * A run of prose. Old `:::kind` learning blocks in saved replies are rewritten
+ * to ```live-ui fences here (legacy/convert.ts), so they render through Live
+ * UI like any new interactive answer instead of as YAML.
+ */
 function pushTextParts(parts: ContentPart[], text: string) {
   if (!text.trim()) return;
-  const blocks = findLearningBlocks(text);
-  if (blocks.length === 0) {
-    parts.push({ type: "text", text });
-    return;
-  }
-
-  let lastIndex = 0;
-  for (const entry of blocks) {
-    const before = text.slice(lastIndex, entry.start);
-    if (before.trim()) parts.push({ type: "text", text: before });
-    parts.push({ type: "learning", parsed: entry });
-    lastIndex = entry.end;
-  }
-  const rest = text.slice(lastIndex);
-  if (rest.trim()) parts.push({ type: "text", text: rest });
+  parts.push({ type: "text", text: rewriteLegacyBlocks(text) });
 }
 
 /** Split a message into ordered text + artifact-reference parts for rendering. */

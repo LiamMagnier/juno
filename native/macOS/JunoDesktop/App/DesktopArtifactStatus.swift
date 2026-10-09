@@ -91,8 +91,8 @@ struct DesktopStatusCopy {
     let subject: String
     let singular: String
 
-    var genericLoad: String { "Juno couldn't load your \(subject). Something went wrong on the way here." }
-    var genericLocal: String { "Juno couldn't complete that. Please try again." }
+    var genericLoad: String { "Alevr couldn't load your \(subject). Something went wrong on the way here." }
+    var genericLocal: String { "Alevr couldn't complete that. Please try again." }
     var offline: String { "You're offline — showing the \(subject) saved on this Mac." }
 
     /// The shortest length at which a server message is treated as prose.
@@ -122,15 +122,15 @@ struct DesktopStatusCopy {
         case "not found", "notfound", "404":
             // Deliberately not "this was deleted": a 404 covers a removed record
             // *and* a stale identifier, and asserting which would be a guess.
-            "Juno couldn't find this \(singular). It may have been deleted from another device."
+            "Alevr couldn't find this \(singular). It may have been deleted from another device."
         case "unauthorized", "401":
             "Your session expired. Sign in again to see your \(subject)."
         case "forbidden", "403":
             "This account doesn't have access to that \(singular)."
         case "bad request", "400":
-            "Juno couldn't ask for your \(subject) correctly. This is a bug — please report it."
+            "Alevr couldn't ask for your \(subject) correctly. This is a bug — please report it."
         case "internal server error", "500", "502", "503", "504":
-            "Juno's server had a problem loading your \(subject). Try again in a moment."
+            "Alevr's server had a problem loading your \(subject). Try again in a moment."
         case "offline", "the internet connection appears to be offline.":
             offline
         case "timeout", "timed out", "request timed out":

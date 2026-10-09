@@ -284,6 +284,7 @@ struct DesktopCodeWorkspace: View {
         } detail: {
             canvas
                 .background(Studio.Surface.canvas)
+                .desktopContentPanel()
                 .navigationTitle(title)
                 .navigationSubtitle(subtitle)
                 .toolbar { toolbar }
@@ -326,7 +327,7 @@ struct DesktopCodeWorkspace: View {
             allowsMultipleSelection: false,
             onCompletion: grantRepository
         )
-        .fileDialogMessage(Text("Choose the folder Juno may read and write in."))
+        .fileDialogMessage(Text("Choose the folder Alevr may read and write in."))
         .fileDialogConfirmationLabel(Text("Open Project"))
         .sheet(isPresented: $isOpeningQuickly) {
             if let controller {
@@ -362,7 +363,7 @@ struct DesktopCodeWorkspace: View {
         ) {
             Button("OK", role: .cancel) { voiceUnavailable = nil }
         } message: {
-            Text(voiceUnavailable ?? "Juno could not start voice mode.")
+            Text(voiceUnavailable ?? "Alevr could not start voice mode.")
         }
         .task { await bootstrap() }
         // The env server lists the subscriptions the model picker's rail
@@ -466,7 +467,7 @@ struct DesktopCodeWorkspace: View {
                 JunoEmptyState(
                     title: "This session cannot be opened",
                     message: workbenchModel.lastError
-                        ?? "Juno could not reopen the folder this session works in.",
+                        ?? "Alevr could not reopen the folder this session works in.",
                     icon: .error,
                     actionLabel: "Open Folder…",
                     action: { isChoosingRepository = true }
@@ -690,7 +691,7 @@ struct DesktopCodeWorkspace: View {
                 // As `/compact`: between runs only, and once at a time.
                 .disabled(controller == nil || controller?.isRunning == true || controller?.isCompacting == true)
                 Divider()
-                Button(controller?.computerUseActive == true ? "Stop Juno Using Apps" : "Let Juno Use Apps",
+                Button(controller?.computerUseActive == true ? "Stop Alevr Using Apps" : "Let Alevr Use Apps",
                        action: toggleComputerUse)
                     .disabled(controller?.computerUseUnavailableReason != nil)
                 Button("Voice Conversation") {
@@ -1124,7 +1125,7 @@ struct DesktopCodeWorkspace: View {
     private func startVoice(modelID: String, projectID: String?) {
         guard voiceSession == nil else { return }
         guard let configuration, let session, let sender = configuration.requestSender else {
-            voiceUnavailable = "Juno is not signed in, so it cannot start a voice conversation."
+            voiceUnavailable = "Alevr is not signed in, so it cannot start a voice conversation."
             return
         }
         guard configuration.voiceTranscriptClient != nil else {
@@ -1329,7 +1330,7 @@ private struct DesktopRemoteEventPresentation {
             )
         case "text", "assistant", "assistant_text", "response":
             return Self(
-                title: value(["text", "message"]) ?? "Juno replied",
+                title: value(["text", "message"]) ?? "Alevr replied",
                 detail: nil,
                 icon: .conversation,
                 tint: .junoAccent,
@@ -1673,7 +1674,7 @@ private struct DesktopCodeRemoteCanvas: View {
     private var placeholder: String {
         guard let summary else { return "This session is not available" }
         if summary.fresh == false { return "That computer has stopped checking in" }
-        if summary.isRunning { return "Juno is working — your message is queued" }
+        if summary.isRunning { return "Alevr is working — your message is queued" }
         return "Send a message to this session"
     }
 
@@ -1692,7 +1693,7 @@ private struct DesktopCodeRemoteCanvas: View {
                     id: id,
                     summary: event.payload["summary"]?.stringValue
                         ?? event.payload["text"]?.stringValue
-                        ?? "Juno is asking to run a tool on that computer.",
+                        ?? "Alevr is asking to run a tool on that computer.",
                     risk: event.payload["risk"]?.stringValue ?? "write",
                     toolName: event.payload["toolName"]?.stringValue
                 )

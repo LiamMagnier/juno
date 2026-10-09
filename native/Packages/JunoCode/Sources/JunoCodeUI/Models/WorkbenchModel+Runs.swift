@@ -78,7 +78,7 @@ public extension WorkbenchModel {
             return .refused("That run is not loaded. Open the session to answer.")
         }
         if await controller.isAllowedOnlyOnItsCard(approvalID: approvalID) {
-            return .refused("Screen actions are allowed on their card in the session, which shows what Juno will click. Open the session to allow it, or decline from here.")
+            return .refused("Screen actions are allowed on their card in the session, which shows what Alevr will click. Open the session to allow it, or decline from here.")
         }
         return await controller.allowOnce(approvalID: approvalID, digest: digest)
             ? .done
@@ -119,7 +119,7 @@ public extension WorkbenchModel {
         guard let controller = await controller(for: sessionID) else {
             return .refused("The session could not be opened.")
         }
-        return await controller.keepGoing() ? .done : .refused("Juno could not carry on: the session is busy.")
+        return await controller.keepGoing() ? .done : .refused("Alevr could not carry on: the session is busy.")
     }
 
     /// Resume after quit.
@@ -128,7 +128,7 @@ public extension WorkbenchModel {
             return .refused("The session could not be opened.")
         }
         guard controller.isInterrupted else { return .refused("This run was not interrupted.") }
-        return await controller.resumeInterrupted() ? .done : .refused("Juno could not resume: the session is busy.")
+        return await controller.resumeInterrupted() ? .done : .refused("Alevr could not resume: the session is busy.")
     }
 
     /// Retry a failed turn: no duplicate message, no clobbered draft. Only
@@ -143,7 +143,7 @@ public extension WorkbenchModel {
         }
         return await controller.resumeRun(note: .retry, origin: .user)
             ? .done
-            : .refused("Juno could not retry: the session is busy.")
+            : .refused("Alevr could not retry: the session is busy.")
     }
 
     /// How long after it was interrupted a run still resumes by itself at
@@ -206,7 +206,7 @@ public extension WorkbenchModel {
         guard let session = sessions.first(where: { $0.id == id }) else {
             return refuse("That session no longer exists.")
         }
-        guard !session.status.isActive else { return refuse("Stop Juno before archiving this session.") }
+        guard !session.status.isActive else { return refuse("Stop Alevr before archiving this session.") }
         if removingWorktree, session.executionRootPath != nil {
             // A worktree with changes is kept, and so is the session: archiving
             // it would hide work that exists nowhere else.
@@ -471,9 +471,9 @@ enum SessionExport {
             case let .userPrompt(prompt):
                 lines += ["", "## You", "", prompt.text]
             case let .userInstruction(instruction):
-                lines += ["", "## You, while Juno worked", "", instruction.text]
+                lines += ["", "## You, while Alevr worked", "", instruction.text]
             case let .assistantMessage(message):
-                lines += ["", "## Juno", "", message.text]
+                lines += ["", "## Alevr", "", message.text]
             case let .toolProposed(proposed):
                 lines.append("- \(proposed.summary)")
             case let .fileChanged(change):

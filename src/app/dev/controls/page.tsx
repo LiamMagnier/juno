@@ -14,7 +14,7 @@ import { ControlsGallery } from "./gallery";
  * tokens, in both themes.
  *
  * Not linked from anywhere and 404s outside development — same contract as
- * /dev/learning, /dev/aicss and /dev/voice.
+ * /dev/live-ui, /dev/aicss and /dev/voice.
  */
 export default function ControlsDevPage() {
   if (process.env.NODE_ENV === "production") notFound();

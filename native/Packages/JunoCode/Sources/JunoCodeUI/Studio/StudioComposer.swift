@@ -261,7 +261,7 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
                 attachments.forEach(addAttachment)
                 return .handled
             }
-            .accessibilityLabel("Message Juno")
+            .accessibilityLabel("Message Alevr")
             .accessibilityIdentifier(fieldIdentifier)
         return Group {
             if let focus { field.focused(focus) } else { field }

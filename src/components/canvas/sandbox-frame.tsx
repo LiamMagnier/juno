@@ -6,6 +6,7 @@ import { runtimeFor, type RunMode } from "@/lib/artifact-runtime";
 import { SANDBOX_FLAGS, sandboxPolicyMeta, type SandboxProfile } from "@/lib/sandbox-policy";
 import { SandboxDocumentFrame, useSandboxProfile } from "@/components/canvas/sandbox-document-frame";
 import { designPosterUrl } from "@/lib/design/poster-url";
+import { HR_SAMPLE_NOTE, HR_SAMPLE_SQL } from "@/lib/sandbox/hr-sample";
 
 const TAILWIND_CDN = "https://cdn.tailwindcss.com";
 const REACT_CDN = "https://unpkg.com/react@18.3.1/umd/react.development.js";
@@ -13,6 +14,8 @@ const REACT_DOM_CDN = "https://unpkg.com/react-dom@18.3.1/umd/react-dom.developm
 const BABEL_CDN = "https://unpkg.com/@babel/standalone/babel.min.js";
 const MERMAID_CDN = "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
 const PYODIDE_INDEX = "https://cdn.jsdelivr.net/pyodide/v0.26.4/full/";
+/** SQLite compiled to WebAssembly: a SQL block runs against the HR sample (src/lib/sandbox/hr-sample.ts). */
+const SQLJS_INDEX = "https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/";
 
 /*
  * ── WHAT ISOLATES A PREVIEW, AND WHERE ITS POLICY COMES FROM ────────────────
@@ -577,6 +580,142 @@ mermaid.initialize({ startOnLoad: true });
 </${"script"}></body></html>`;
 }
 
+/** The diagram's colours, read from the app's own tokens so it sits on the page in either theme. */
+export interface MermaidTheme {
+  dark: boolean;
+  /** The surface the diagram sits on (the block's card). */
+  surface: string;
+  fill: string;
+  stroke: string;
+  line: string;
+  text: string;
+  muted: string;
+}
+
+export interface InlineMermaidOptions {
+  theme: MermaidTheme;
+  /** Never drawn larger than this (a two-node chart should not fill the column). */
+  maxScale: number;
+  /** Never drawn smaller than this; past it the diagram scrolls sideways instead. */
+  minScale: number;
+}
+
+/** What an inline diagram tells its block: its drawn size, and that it was clicked. */
+export const MERMAID_SIZE_MESSAGE = "juno:mermaid-size";
+export const MERMAID_CLICK_MESSAGE = "juno:mermaid-click";
+
+/**
+ * A Mermaid diagram for the chat column (not the canvas): transparent on the
+ * block's own surface, themed from the app's tokens, drawn at its natural size
+ * then fitted to the width between `minScale` and `maxScale`, and reporting its
+ * height so the frame is exactly as tall as the drawing. The old inline frame
+ * was a fixed 18rem with Mermaid's light default centred in it: a small
+ * diagram in a large white box in dark mode.
+ */
+function mermaidInlineDoc(code: string, o: InlineMermaidOptions): string {
+  const t = o.theme;
+  const font = "ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif";
+  const vars = {
+    darkMode: t.dark,
+    background: t.surface,
+    fontFamily: font,
+    fontSize: "14px",
+    primaryColor: t.fill,
+    primaryBorderColor: t.stroke,
+    primaryTextColor: t.text,
+    secondaryColor: t.fill,
+    secondaryBorderColor: t.stroke,
+    secondaryTextColor: t.text,
+    tertiaryColor: t.surface,
+    tertiaryBorderColor: t.stroke,
+    tertiaryTextColor: t.text,
+    lineColor: t.line,
+    textColor: t.text,
+    mainBkg: t.fill,
+    nodeBorder: t.stroke,
+    clusterBkg: t.surface,
+    clusterBorder: t.stroke,
+    titleColor: t.text,
+    edgeLabelBackground: t.surface,
+    actorBkg: t.fill,
+    actorBorder: t.stroke,
+    actorTextColor: t.text,
+    signalColor: t.line,
+    signalTextColor: t.text,
+    labelBoxBkgColor: t.fill,
+    labelTextColor: t.text,
+    noteBkgColor: t.fill,
+    noteBorderColor: t.stroke,
+    noteTextColor: t.text,
+  };
+  const config = {
+    startOnLoad: false,
+    securityLevel: "strict",
+    theme: "base",
+    themeVariables: vars,
+    fontFamily: font,
+    flowchart: { useMaxWidth: false, htmlLabels: true, curve: "basis", padding: 12 },
+    sequence: { useMaxWidth: false },
+    gantt: { useMaxWidth: false },
+    journey: { useMaxWidth: false },
+    class: { useMaxWidth: false },
+    state: { useMaxWidth: false },
+    er: { useMaxWidth: false },
+    mindmap: { useMaxWidth: false },
+    timeline: { useMaxWidth: false },
+  };
+  return `<!doctype html><html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<style>
+:root{color-scheme:${t.dark ? "dark" : "light"}}
+html,body{margin:0;background:transparent;color:${t.text};font-family:${font}}
+#d{padding:12px 0;overflow-x:auto;overflow-y:hidden;cursor:zoom-in;text-align:center}
+#d svg{display:inline-block;max-width:none;height:auto;vertical-align:top}
+#e{margin:0;padding:12px 16px;white-space:pre-wrap;font:12px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;color:${t.muted}}
+</style></head>
+<body><div id="d" role="img" aria-label="Diagram"></div><script type="text/plain" id="src">${esc(code)}</${"script"}>
+<script type="module">
+const d = document.getElementById("d");
+const src = document.getElementById("src").textContent;
+let last = -1;
+function post(h) { if (h !== last) { last = h; try { parent.postMessage({ type: "${MERMAID_SIZE_MESSAGE}", height: h }, "*"); } catch (e) {} } }
+function fit() {
+  const svg = d.querySelector("svg");
+  if (!svg) { post(Math.ceil(document.body.scrollHeight)); return; }
+  const vb = svg.viewBox && svg.viewBox.baseVal;
+  const w = vb && vb.width ? vb.width : svg.getBBox().width;
+  const h = vb && vb.height ? vb.height : svg.getBBox().height;
+  const avail = Math.max(1, document.documentElement.clientWidth - 16);
+  const s = Math.max(${o.minScale}, Math.min(${o.maxScale}, avail / w));
+  svg.setAttribute("width", String(Math.round(w * s)));
+  svg.setAttribute("height", String(Math.round(h * s)));
+  svg.style.maxWidth = "none";
+  const scrolls = w * s > avail + 1;
+  post(Math.ceil(h * s) + 24 + (scrolls ? 12 : 0));
+}
+d.addEventListener("click", () => { try { parent.postMessage({ type: "${MERMAID_CLICK_MESSAGE}" }, "*"); } catch (e) {} });
+try {
+  const { default: mermaid } = await import("${MERMAID_CDN}");
+  mermaid.initialize(${JSON.stringify(config)});
+  const { svg } = await mermaid.render("juno-mermaid", src);
+  d.innerHTML = svg;
+  fit();
+  new ResizeObserver(fit).observe(document.documentElement);
+} catch (err) {
+  d.remove();
+  const e = document.createElement("pre");
+  e.id = "e";
+  e.textContent = "This diagram could not be drawn. " + (err && err.message ? String(err.message).split("\\n")[0] : "");
+  document.body.appendChild(e);
+  fit();
+}
+</${"script"}></body></html>`;
+}
+
+/** An inline chat diagram's document (MermaidBlock). The static profile never gets here; it shows the source. */
+export function buildInlineMermaidDoc(code: string, o: InlineMermaidOptions, profile: SandboxProfile = "private"): string {
+  return withChrome(mermaidInlineDoc(code, o), profile, true);
+}
+
 const TERMINAL_STYLE = `<style>
 :root{color-scheme:dark}
 html,body{margin:0;height:100%;background:#0b0b0e;color:#e7e7ea}
@@ -587,19 +726,61 @@ html,body{margin:0;height:100%;background:#0b0b0e;color:#e7e7ea}
 .ln{display:block;padding:1px 0}
 .log{color:#e7e7ea}.info{color:#7dd3fc}.warn{color:#fbbf24}.error{color:#f87171}.muted{color:#6b6b76}.result{color:#a7f3d0}
 .error::selection{background:#7f1d1d}
+table.rs{border-collapse:collapse;margin:6px 0 4px;white-space:nowrap}
+table.rs th,table.rs td{border:1px solid #26262e;padding:3px 10px;text-align:left}
+table.rs th{color:#9cdcfe;font-weight:600;background:#15151c}
+table.rs td.n{text-align:right;color:#b5cea8}
+table.rs td.null{color:#6b6b76;font-style:italic}
 </style>`;
+
+/**
+ * How a console run is drawn. `terminal` is the canvas's dark terminal with
+ * its own bar. `inline` is a run under a chat code block (code-run-output.tsx):
+ * no bar and no status dot (the host draws the header in text), a transparent
+ * ground in the app's own theme, and its height posted to the parent so the
+ * output takes exactly the room it needs.
+ */
+export interface ConsoleAppearance {
+  inline: boolean;
+  theme: "light" | "dark";
+}
+
+export const CONSOLE_SIZE_MESSAGE = "juno:console-size";
+
+function inlineConsoleStyle(theme: "light" | "dark"): string {
+  const c =
+    theme === "dark"
+      ? { fg: "#e6e6e9", muted: "#8b8b96", info: "#7cc4f8", warn: "#e5b25a", error: "#f2827a", result: "#b5cea8", num: "#b5cea8", rule: "rgba(255,255,255,.09)", head: "#a9a9b3" }
+      : { fg: "#1d1d21", muted: "#6b6b75", info: "#1f6fb2", warn: "#9a5b00", error: "#b42318", result: "#0a7a50", num: "#0a7a50", rule: "rgba(0,0,0,.09)", head: "#5f5f69" };
+  return `<style>
+:root{color-scheme:${theme}}
+html,body{margin:0;background:transparent;color:${c.fg}}
+#wrap{font:12.5px/1.65 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+#bar{display:none}
+#term{padding:8px 16px 14px;white-space:pre-wrap;word-break:break-word}
+.ln{display:block;padding:1px 0}
+.log{color:${c.fg}}.info{color:${c.info}}.warn{color:${c.warn}}.error{color:${c.error}}.muted{color:${c.muted}}.result{color:${c.result}}
+table.rs{border-collapse:collapse;margin:0 0 6px;white-space:nowrap;font-variant-numeric:tabular-nums}
+table.rs th,table.rs td{padding:4px 16px 4px 0;text-align:left;border-bottom:1px solid ${c.rule}}
+table.rs th{color:${c.head};font-weight:500}
+table.rs tr:last-child td{border-bottom:0}
+table.rs td.n{text-align:right;color:${c.num}}
+table.rs td.null{color:${c.muted};font-style:italic}
+</style>`;
+}
 
 /** Self-contained dark terminal that executes JS/TS or Python and streams output. */
 function consoleDoc(
   rawCode: string,
-  engine: "js" | "python" | "unsupported",
+  engine: "js" | "python" | "sql" | "unsupported",
   lang: string,
   label: string | undefined,
-  profile: SandboxProfile
+  profile: SandboxProfile,
+  appearance?: ConsoleAppearance
 ): string {
   // Python keeps its source verbatim; JS/TS get module syntax stripped so the
   // classic-script eval doesn't choke on imports/exports.
-  const code = engine === "python" ? rawCode : stripImports(rawCode).replace(/^[ \t]*export\s+(default\s+)?/gm, "");
+  const code = engine === "python" || engine === "sql" ? rawCode : stripImports(rawCode).replace(/^[ \t]*export\s+(default\s+)?/gm, "");
   const runtimeLabel = JSON.stringify(label ?? lang);
   const boot =
     engine === "unsupported"
@@ -607,6 +788,45 @@ function consoleDoc(
   line('Browser execution is not available for '+${runtimeLabel}+' artifacts yet.','warn');
   line('The source is loaded and the Code tab can copy or download it for a local compiler/runtime.','muted');
   status('done','Ready');`
+      : engine === "sql"
+      ? `
+  status('loading','Loading SQLite…');
+  ${appearance?.inline ? "" : `line(${JSON.stringify(HR_SAMPLE_NOTE)},'muted');`}
+  var s=document.createElement('script'); s.src='${SQLJS_INDEX}sql-wasm.js';
+  s.onload=function(){
+    initSqlJs({locateFile:function(f){return '${SQLJS_INDEX}'+f;}}).then(function(SQL){
+      var db=new SQL.Database();
+      db.exec(${JSON.stringify(HR_SAMPLE_SQL)});
+      // A few Oracle functions courses lean on, so their queries run as written.
+      db.create_function('NVL',function(a,b){return a===null?b:a;});
+      db.create_function('NVL2',function(a,b,c){return a===null?c:b;});
+      db.create_function('INITCAP',function(t){return t===null?null:String(t).toLowerCase().replace(/(^|[^a-z])([a-z])/g,function(m,p,c){return p+c.toUpperCase();});});
+      status('running','Running');
+      var started=performance.now();
+      var results;
+      try{ results=db.exec(raw); }
+      catch(e){ printErr(e&&e.message?e.message:String(e)); line('SQLite in the browser: Oracle-only syntax (CONNECT BY, ROWNUM, sequences, PL/SQL) does not run here.','muted'); status('error','Error'); return; }
+      if(results.length===0){ var ch=db.getRowsModified(); line(ch>0?(ch+' row'+(ch===1?'':'s')+' changed.'):'Done. No rows returned.','muted'); }
+      results.forEach(function(r){
+        var t=document.createElement('table'); t.className='rs';
+        var h=document.createElement('tr');
+        r.columns.forEach(function(c){var th=document.createElement('th');th.textContent=c.toUpperCase();h.appendChild(th);});
+        t.appendChild(h);
+        r.values.forEach(function(row){
+          var tr=document.createElement('tr');
+          row.forEach(function(v){var td=document.createElement('td');if(v===null){td.textContent='(null)';td.className='null';}else{td.textContent=String(v);if(typeof v==='number')td.className='n';}tr.appendChild(td);});
+          t.appendChild(tr);
+        });
+        term.appendChild(t);
+        line(r.values.length+' row'+(r.values.length===1?'':'s')+' selected.','muted');
+        try{ parent.postMessage({type:'juno:console',level:'log',text:r.columns.join('\\t')+'\\n'+r.values.map(function(v){return v.join('\\t');}).join('\\n')},'*'); }catch(e){}
+      });
+      line('Ran in '+Math.max(1,Math.round(performance.now()-started))+' ms.','muted');
+      status('done','Done');
+    }).catch(function(e){printErr(e);status('error','Error');});
+  };
+  s.onerror=function(){printErr('Couldn’t load SQLite (offline?).');status('error','Error');};
+  document.head.appendChild(s);`
       : engine === "python"
       ? `
   status('loading','Loading Python…');
@@ -686,7 +906,7 @@ function consoleDoc(
       : `run(body);`
   }`;
 
-  return `<!doctype html><html><head><meta charset="utf-8"/>${sandboxPolicyMeta(profile)}${SANDBOX_SHIM}${TERMINAL_STYLE}${
+  return `<!doctype html><html><head><meta charset="utf-8"/>${sandboxPolicyMeta(profile)}${SANDBOX_SHIM}${appearance?.inline ? inlineConsoleStyle(appearance.theme) : TERMINAL_STYLE}${
     lang === "typescript" ? `<script src="${BABEL_CDN}"></script>` : ""
   }</head>
 <body><div id="wrap"><div id="bar"><span id="dot"></span><span id="label">${escapeHtml(label ?? lang)}</span><span id="st" style="margin-left:auto"></span></div><div id="term"></div></div>
@@ -751,6 +971,7 @@ function consoleDoc(
   }
   ['log','info','warn','error'].forEach(function(k){var o=console[k]?console[k].bind(console):function(){};console[k]=function(){var a=Array.prototype.map.call(arguments,function(x){return typeof x==='string'?x:fmt(x);}).join(' ');line(a,k);o.apply(null,arguments);};});
   window.addEventListener('unhandledrejection',function(e){printErr(e.reason);});
+  ${appearance?.inline ? `try{var lastH=0;new ResizeObserver(function(){var h=Math.ceil(document.getElementById('wrap').getBoundingClientRect().height);if(h!==lastH){lastH=h;parent.postMessage({type:'${CONSOLE_SIZE_MESSAGE}',height:h},'*');}}).observe(document.getElementById('wrap'));}catch(e){}` : ""}
   ${boot}
 })();
 </${"script"}></body></html>`;
@@ -850,7 +1071,8 @@ export function buildSandboxDoc(
   type: ArtifactType,
   content: string,
   language?: string | null,
-  profile: SandboxProfile = "private"
+  profile: SandboxProfile = "private",
+  appearance?: ConsoleAppearance
 ): string {
   const rt = runtimeFor(type, language);
   // Before the static branch too: its fallback sets the source in a <pre>,
@@ -864,7 +1086,7 @@ export function buildSandboxDoc(
       htmlDoc(`<pre style="padding:16px;white-space:pre-wrap;font:13px/1.6 ui-monospace,monospace">${escapeHtml(content)}</pre>`)
     );
   }
-  if (rt.mode === "console" && rt.engine) return consoleDoc(content, rt.engine, rt.lang, rt.label, profile);
+  if (rt.mode === "console" && rt.engine) return consoleDoc(content, rt.engine, rt.lang, rt.label, profile, appearance);
   switch (rt.lang) {
     case "tsx":
     case "jsx":
@@ -911,6 +1133,8 @@ export function SandboxFrame({
   onInspectExit,
   onConsole,
   onStatus,
+  consoleAppearance,
+  onConsoleSize,
   className,
   artifactId,
   version,
@@ -931,11 +1155,20 @@ export function SandboxFrame({
   /** Console/stdout lines forwarded from the sandbox. */
   onConsole?: (entry: ConsoleEntry) => void;
   onStatus?: (status: RunStatus, detail?: string) => void;
+  /** A console run drawn inline under a chat code block (``ConsoleAppearance``). */
+  consoleAppearance?: ConsoleAppearance;
+  /** The inline console's content height, as the document reports it. */
+  onConsoleSize?: (height: number) => void;
   className?: string;
 }) {
   const iframeRef = React.useRef<HTMLIFrameElement>(null);
   const profile = useSandboxProfile();
-  const doc = React.useMemo(() => buildSandboxDoc(type, content, language, profile), [type, content, language, profile]);
+  const appearanceKey = consoleAppearance ? `${consoleAppearance.inline}:${consoleAppearance.theme}` : "";
+  const doc = React.useMemo(
+    () => buildSandboxDoc(type, content, language, profile, consoleAppearance),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by value, not identity
+    [type, content, language, profile, appearanceKey]
+  );
 
   const postInspect = React.useCallback((on: boolean) => {
     iframeRef.current?.contentWindow?.postMessage({ type: "juno:inspect", on }, "*");
@@ -985,6 +1218,9 @@ export function SandboxFrame({
           level: level === "info" || level === "warn" || level === "error" ? level : "log",
           text: typeof data.text === "string" ? data.text : String(data.text),
         });
+      } else if (data.type === CONSOLE_SIZE_MESSAGE && onConsoleSize) {
+        const height = typeof data.height === "number" && Number.isFinite(data.height) ? data.height : 0;
+        if (height > 0) onConsoleSize(height);
       } else if (data.type === "juno:status" && onStatus) {
         const s = data.status;
         onStatus(
@@ -995,7 +1231,7 @@ export function SandboxFrame({
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [onElementSelected, onInspectExit, onConsole, onStatus]);
+  }, [onElementSelected, onInspectExit, onConsole, onStatus, onConsoleSize]);
 
   const isDark = mode === "console";
 

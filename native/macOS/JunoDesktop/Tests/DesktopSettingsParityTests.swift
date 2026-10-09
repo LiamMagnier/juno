@@ -203,7 +203,7 @@ import Testing
         #expect(DesktopPlanMeters.sessionSentence(resetsAt: now.addingTimeInterval(-1), now: now) == "Resetting now.")
         #expect(DesktopPlanMeters.weekSentence(resetsAt: nil, now: now) == "A rolling 7-day window.")
         #expect(DesktopSpendCeilingRow.sourceNote("user") == "Set by you")
-        #expect(DesktopSpendCeilingRow.sourceNote("personal-default") == "Juno's default for accounts without a plan budget")
+        #expect(DesktopSpendCeilingRow.sourceNote("personal-default") == "Alevr's default for accounts without a plan budget")
         #expect(DesktopSpendCeilingRow.sourceNote(nil) == "Set by your plan")
     }
 
@@ -346,7 +346,7 @@ import Testing
         #expect("Ask for important actions".desktopMenuTitle == "Ask for Important Actions")
         #expect("Allow what I’ve approved".desktopMenuTitle == "Allow What I’ve Approved")
         #expect("Match my message".desktopMenuTitle == "Match My Message")
-        #expect("Juno’s own models only".desktopMenuTitle == "Juno’s Own Models Only")
+        #expect("Alevr’s own models only".desktopMenuTitle == "Alevr’s Own Models Only")
         #expect("The lab I chat with".desktopMenuTitle == "The Lab I Chat With")
     }
 }

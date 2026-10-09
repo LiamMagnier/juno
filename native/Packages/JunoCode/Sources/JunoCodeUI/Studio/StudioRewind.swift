@@ -384,8 +384,8 @@ struct StudioRewindPanel: View {
                     .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
                 Text(
                     paths.count == 1
-                        ? "A file was edited outside Juno"
-                        : "\(paths.count) files were edited outside Juno"
+                        ? "A file was edited outside Alevr"
+                        : "\(paths.count) files were edited outside Alevr"
                 )
                 .font(Studio.Font.labelEmphasis)
                 .foregroundStyle(Studio.Ink.primary)

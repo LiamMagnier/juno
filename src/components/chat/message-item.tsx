@@ -37,19 +37,6 @@ import { receiptLine, type RoutingReceipt } from "@/lib/router/receipt";
 import { ArtifactInlineCard } from "@/components/chat/artifact-inline-card";
 import { AttachmentTile, MessageAttachments } from "@/components/chat/attachment-tile";
 import { PRODUCT_NAME } from "@/lib/brand/names";
-/**
- * Split: the learning blocks are 112 kB of source (StepLab plus five block
- * types) and they render for one part kind that most answers never produce.
- * The branch below is already a ternary on `part.type`, so the chunk is
- * fetched by the first message that actually contains one.
- */
-const VisualLearningBlockRenderer = nextDynamic(
-  () =>
-    import("@/components/chat/learning/visual-learning-renderer").then(
-      (m) => m.VisualLearningBlockRenderer,
-    ),
-  { ssr: false },
-);
 import { ActivityTimeline } from "@/components/chat/activity-timeline";
 import { codeLiveCopy } from "@/components/code/code-activity";
 import { writtenPaths } from "@/lib/chat/tool-receipt";
@@ -1381,13 +1368,7 @@ export const MessageItem = React.memo(function MessageItem({
                     />
                   );
                 })()
-              ) : (
-                <VisualLearningBlockRenderer
-                  key={part.parsed.blockId}
-                  parsed={part.parsed}
-                  messageStreaming={message.streaming}
-                />
-              )
+              ) : null
             )}
             </div>
             </LiveUIHostProvider>

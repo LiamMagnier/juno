@@ -38,7 +38,7 @@ struct DesktopAssistantsScreen: View {
             JunoPageHeader(
                 "Specialists you can reuse",
                 caption: "Assistants",
-                lede: "Focused Juno personalities with their own instructions, starter prompts and model preference."
+                lede: "Focused Alevr personalities with their own instructions, starter prompts and model preference."
             ) {
                 Button { editing = DesktopAssistantEditing(assistant: nil) } label: {
                     Label("New assistant", icon: .plus, size: 13)
@@ -85,7 +85,7 @@ struct DesktopAssistantsScreen: View {
         case .failed:
             JunoEmptyState(
                 title: "Assistants are unavailable",
-                message: "Juno could not read your assistant library. Nothing was deleted; retry the request.",
+                message: "Alevr could not read your assistant library. Nothing was deleted; retry the request.",
                 icon: .error,
                 actionLabel: "Try again",
                 action: { Task { await model.reload() } },
@@ -219,7 +219,7 @@ private struct DesktopAssistantTile: View {
                             // Room for the hover actions beside the name only;
                             // the description takes the tile's full width.
                             .padding(.trailing, 92)
-                            Text(assistant.description.isEmpty ? "Custom Juno assistant" : assistant.description)
+                            Text(assistant.description.isEmpty ? "Custom Alevr assistant" : assistant.description)
                                 .junoType(.caption)
                                 .foregroundStyle(Color.junoSecondaryInk)
                                 .lineLimit(2)
@@ -366,7 +366,7 @@ struct DesktopAssistantEditor: View {
                     Text(assistant == nil ? "Create assistant" : "Edit assistant")
                         .junoType(.heading)
                         .accessibilityAddTraits(.isHeader)
-                    Text("Give Juno a reusable role, operating instructions, starter prompts and a preferred model.")
+                    Text("Give Alevr a reusable role, operating instructions, starter prompts and a preferred model.")
                         .junoType(.ui)
                         .foregroundStyle(Color.junoSecondaryInk)
                 }

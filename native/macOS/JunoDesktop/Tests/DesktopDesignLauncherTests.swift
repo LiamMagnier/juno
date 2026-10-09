@@ -83,8 +83,8 @@ struct DesktopDesignLauncherTests {
     /// that exist.
     @Test
     func designIsNoLongerANavigationRow() {
-        #expect(DesktopDestination.sidebarCases == [.library, .projects, .artifacts, .agents])
-        #expect(DesktopDestination.moreCases == [.assistants, .skills, .automations])
+        #expect(DesktopDestination.sidebarCases == [.projects, .library, .connections])
+        #expect(DesktopDestination.moreCases == [])
         #expect(DesktopDestination(rawValue: "settings") == nil)
         #expect(DesktopDestination(rawValue: "usage") == nil)
         #expect(DesktopDestination(rawValue: "tasks") == nil)

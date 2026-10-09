@@ -407,7 +407,7 @@ actor DesktopWorkRunHost: WorkRunHosting {
             )
             return result
         } catch let error as WorkToolError {
-            let message = error.errorDescription ?? "Juno could not do that."
+            let message = error.errorDescription ?? "Alevr could not do that."
             if case .denied = error {
                 await emit(
                     request.runID, "tool_denied",
@@ -767,7 +767,7 @@ actor DesktopWorkRunHost: WorkRunHosting {
         for request: WorkRunRequest, bindings: [ToolBinding]
     ) -> String {
         var lines = [
-            "You are Juno, working on somebody's own Mac on a task they asked for.",
+            "You are Alevr, working on somebody's own Mac on a task they asked for.",
             "You can only reach what they have shared with you. Nothing else on this Mac exists to you.",
         ]
         if request.grants.isEmpty {
@@ -864,7 +864,7 @@ enum DesktopWorkRunError: Error, LocalizedError, Equatable {
         case .noGoal:
             "That task arrived without anything to do, so this Mac did not start it."
         case .nothingGranted:
-            "Nothing has been shared with Juno Work on this Mac yet, so there is nothing a task can use."
+            "Nothing has been shared with Alevr Work on this Mac yet, so there is nothing a task can use."
         case .notLive:
             "That task is not running on this Mac."
         }

@@ -37,7 +37,7 @@ struct ChatWorkStageBTests {
         let lines = ChatWorkOutcome.lines(run: run(cost: 96_120, ran: 131), plan: plan, performed: performed).map(\.text)
         #expect(lines == [
             "Finished 1 of 3 planned steps, and stopped on “Normalise prices”.",
-            "One action changed something outside Juno. It is listed in Details.",
+            "One action changed something outside Alevr. It is listed in Details.",
             "Ran for 2m 11s and spent $0.10.",
         ])
     }
