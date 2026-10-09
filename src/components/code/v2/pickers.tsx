@@ -168,7 +168,7 @@ export function ModelPicker({
 
   return (
     <ComposerPopover open={open} onClose={onClose} width={620} align={align} offset={offset} label={title} anchorRef={anchorRef}>
-      <div className="cv2-picker" onKeyDown={onKey} style={{ maxHeight: 460 }}>
+      <div className="cv2-picker" onKeyDown={onKey}>
         <div className="cv2-rail" ref={railRef} role="tablist" aria-label="Providers" aria-orientation="vertical">
           {subs.map((e) => (
             <button
@@ -294,12 +294,12 @@ export function ModelPicker({
               )}
               <span className="cv2-grow" />
               {tier && (
-                <>
+                <span className="cv2-row" style={{ gap: 8 }}>
                   <span>Context</span>
                   <button type="button" className="cv2-btn" onClick={onOpenTier} aria-haspopup="dialog">
                     {formatTokens(tier.tokens)} <Glyph name="chevron-down" size={12} />
                   </button>
-                </>
+                </span>
               )}
             </div>
           )}

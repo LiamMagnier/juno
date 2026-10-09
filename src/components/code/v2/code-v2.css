@@ -331,7 +331,7 @@ button.cv2-step:hover .verb { text-decoration: underline; text-decoration-color:
 @keyframes cv2-draw { from { stroke-dashoffset: 24; } }
 
 /* Model picker */
-.cv2-picker { display: flex; min-height: 0; flex: 1; }
+.cv2-picker { display: flex; min-height: 0; flex: 1; max-height: 460px; }
 .cv2-rail { position: relative; width: var(--rail-w); flex: none; border-right: 1px solid hsl(var(--border)); background: hsl(var(--muted)); display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 0; }
 .cv2-ri { position: relative; width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; color: hsl(var(--muted-foreground)); transition: background-color var(--dur-fast) var(--cv2-ease), color var(--dur-fast) var(--cv2-ease); }
 .cv2-ri:hover { background: hsl(var(--accent)); color: hsl(var(--foreground)); }
@@ -506,7 +506,7 @@ button.cv2-step:hover .verb { text-decoration: underline; text-decoration-color:
   @keyframes cv2-sheet-up { from { transform: translateY(100%); } to { transform: none; } }
   .cv2-pop-grab { display: block; width: 36px; height: 5px; border-radius: 3px; background: hsl(var(--border)); margin: 8px auto 2px; flex: none; }
   .cv2-pop-scrim { display: block; position: fixed; inset: 0; background: hsl(var(--scrim)); z-index: 39; animation: cv2-fade var(--dur-mid) var(--cv2-ease) both; }
-  .cv2-picker { flex-direction: column; }
+  .cv2-picker { flex-direction: column; max-height: none; }
   .cv2-pop-foot { flex-wrap: wrap; row-gap: 8px; }
   .cv2-rail { width: auto; flex-direction: row; justify-content: flex-start; border-right: 0; border-bottom: 1px solid hsl(var(--border)); padding: 6px 10px; overflow-x: auto; }
   .cv2-rail-bar, .cv2-rail-sep { display: none; }
