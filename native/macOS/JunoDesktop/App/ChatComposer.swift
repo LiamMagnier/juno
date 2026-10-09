@@ -1788,6 +1788,7 @@ struct ChatComposer: View {
                 set: { thinkingStopID = $0 ?? "" }
             ),
             fastMode: $fastMode,
+            proMode: $proMode,
             favorites: Set(memorySettings?.settings?.favoriteModels ?? []),
             toggleFavorite: memorySettings.map { store in
                 { id in

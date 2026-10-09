@@ -82,7 +82,6 @@ struct CodeV2ComposerLeading: View {
     var setup: ((String, CodeV2.ProviderSetupAction) -> Void)?
 
     private var instance: CodeV2.ProviderInstance? { directory.instance(model.selection.instanceId) }
-    private var providerModel: CodeV2.ProviderModel? { instance?.models?.first { $0.id == model.selection.model } }
     private var modes: [CodeV2.RuntimeMode] {
         let allowed = instance?.capabilities?.approvals ?? []
         return allowed.isEmpty ? CodeV2.RuntimeMode.allCases : allowed
@@ -140,15 +139,11 @@ struct CodeV2ComposerLeading: View {
                 .contentShape(.rect)
         }
         // The keyboard paths stay where the controls went: ⇧⌘A cycles the
-        // permission, ⇧⌘E the effort.
+        // permission. ⇧⌘E opens the model control's effort panel.
         Color.clear.frame(width: 0, height: 0)
             .background {
                 Button("") { model.cycleMode(allowed: modes) }
                     .keyboardShortcut("a", modifiers: [.command, .shift])
-                    .hidden()
-                    .contentShape(.rect)
-                Button("") { model.cycleEffort(levels: providerModel?.effortLevels ?? []) }
-                    .keyboardShortcut("e", modifiers: [.command, .shift])
                     .hidden()
                     .contentShape(.rect)
             }

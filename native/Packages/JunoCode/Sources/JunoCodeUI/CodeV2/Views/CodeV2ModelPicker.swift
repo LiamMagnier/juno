@@ -6,9 +6,11 @@ import JunoCodeCore
 import JunoDesignSystem
 
 /// The composer's model trigger (TARGET §7.1): the lab's mark, the model's
-/// short name in ink and its effort in muted ink, one control. Opens the
-/// picker (⇧⌘M). With nothing connected it reads `Connect` and opens
-/// Settings › Connections.
+/// short name in ink and its effort in muted ink, one control. Slider-first,
+/// as Chat's: a model with a choice of effort opens on the shared effort panel
+/// (``JunoModelPickerControl``), whose model name leads to this picker; ⇧⌘M
+/// opens the picker directly and ⇧⌘E the panel. With nothing connected it
+/// reads `Connect` and opens Settings › Connections.
 struct CodeV2ModelControl: View {
     let directory: CodeV2ProviderDirectory
     @Binding var selection: CodeV2.ModelSelection
@@ -19,54 +21,155 @@ struct CodeV2ModelControl: View {
     var setup: ((String, CodeV2.ProviderSetupAction) -> Void)?
     var choose: ((String, CodeV2.ProviderModel) -> Void)?
 
-    @State private var isOpen = false
+    @State private var stage: JunoModelPickerStage?
+
+    /// The catalogue's fixed frame: AppKit cannot negotiate a popover whose
+    /// content measures itself, so the control states it.
+    static let catalogSize = CGSize(width: 380, height: 440)
 
     private var instance: CodeV2.ProviderInstance? { directory.instance(selection.instanceId) }
     private var model: CodeV2.ProviderModel? { instance?.models?.first { $0.id == selection.model } }
     private var isConnected: Bool { instance?.status == .ready || instance?.status == .limited }
 
+    /// The selected model's effort levels as the shared panel's stops, its
+    /// default effort as the reset target.
+    static func ladder(for model: CodeV2.ProviderModel?, name: String) -> JunoThinkingLadder {
+        let levels = model?.effortLevels ?? []
+        return JunoThinkingLadder(
+            stops: levels.map {
+                JunoThinkingStop(id: $0.rawValue, label: $0.title, accessibilityLabel: "Effort \($0.title.lowercased())")
+            },
+            modelName: name,
+            fastModeRateMultiplier: model?.supportsFast == true ? 2 : nil,
+            defaultStopID: model?.defaultEffort?.rawValue
+        )
+    }
+
+    private var name: String { model?.label ?? CodeV2Formatting.modelName(selection.model) }
+    private var ladder: JunoThinkingLadder { Self.ladder(for: model, name: name) }
+
+    private var stopID: Binding<String?> {
+        Binding(
+            get: { (selection.effort ?? model?.defaultEffort)?.rawValue },
+            set: { id in
+                guard let id, let level = CodeV2.EffortLevel(rawValue: id) else { return }
+                selection.effort = level
+            }
+        )
+    }
+
+    private var fastMode: Binding<Bool>? {
+        guard model?.supportsFast == true else { return nil }
+        return Binding(get: { selection.fast == true }, set: { selection.fast = $0 })
+    }
+
     var body: some View {
-        Button {
-            if isConnected || openConnections == nil { isOpen.toggle() } else { openConnections?() }
-        } label: {
-            HStack(spacing: JunoSpace.tight + 2) {
-                if isConnected {
-                    CodeV2Mark(id: CodeV2Marks.markID(model: selection.model, instanceId: selection.instanceId), size: 14)
-                    Text(CodeV2ModelNames.short(model?.label ?? CodeV2Formatting.modelName(selection.model)))
-                        .foregroundStyle(Studio.Ink.primary)
-                        .lineLimit(1)
-                    if let effort = selection.effort {
-                        Text(effort.title).foregroundStyle(Studio.Ink.secondary).lineLimit(1)
-                            .contentTransition(.numericText())
-                    }
-                } else {
+        if isConnected || openConnections == nil {
+            picker
+        } else {
+            Button {
+                openConnections?()
+            } label: {
+                CodeV2ModelControlLabel(isOpen: false) {
                     Text("Connect").foregroundStyle(Studio.Ink.primary)
                 }
-                JunoIconView(.chevronDown, size: 10).foregroundStyle(Studio.Ink.tertiary)
             }
+            .buttonStyle(.plain)
+            .fixedSize()
+            .disabled(!isEnabled)
+            .help("Connect a subscription or add a key")
+            .accessibilityLabel("Model")
+            .accessibilityValue("Connect")
+            .accessibilityIdentifier("juno.code.v2.model")
         }
-        .buttonStyle(CodeV2FooterButtonStyle(isOpen: isOpen)).contentShape(.rect)
-        .fixedSize()
-        .disabled(!isEnabled)
-        .keyboardShortcut("m", modifiers: [.command, .shift])
-        .help("Model and effort (⇧⌘M)")
-        .accessibilityLabel("Model")
-        .accessibilityValue([model?.label ?? selection.model, selection.effort?.title].compactMap { $0 }.joined(separator: ", "))
-        .accessibilityIdentifier("juno.code.v2.model")
-        .popover(isPresented: $isOpen, arrowEdge: .top) {
+    }
+
+    private var picker: some View {
+        JunoModelPickerControl(
+            stage: $stage,
+            ladder: ladder,
+            stopID: stopID,
+            fastMode: fastMode,
+            modelName: name,
+            catalogSize: Self.catalogSize,
+            arrowEdge: .top,
+            isEnabled: isEnabled,
+            accessibilityValue: [name, selection.effort?.title].compactMap { $0 }.joined(separator: ", "),
+            accessibilityID: "juno.code.v2.model",
+            help: "Model and effort (⇧⌘M, ⇧⌘E)"
+        ) { open in
+            CodeV2ModelControlLabel(isOpen: open) {
+                CodeV2Mark(id: CodeV2Marks.markID(model: selection.model, instanceId: selection.instanceId), size: 14)
+                Text(CodeV2ModelNames.short(name))
+                    .foregroundStyle(Studio.Ink.primary)
+                    .lineLimit(1)
+                if let effort = selection.effort {
+                    Text(effort.title).foregroundStyle(Studio.Ink.secondary).lineLimit(1)
+                        .contentTransition(.numericText())
+                }
+            }
+        } catalog: { close in
             CodeV2ModelPicker(
                 directory: directory,
                 selection: $selection,
                 lean: $lean,
                 threadTokens: threadTokens,
-                openConnections: openConnections.map { open in { isOpen = false; open() } },
+                openConnections: openConnections.map { open in { close(); open() } },
                 setup: setup,
                 choose: { instance, model in
-                    if let choose { choose(instance, model) }
-                    isOpen = false
+                    if let choose { choose(instance, model) } else {
+                        selection.model = model.id
+                        selection.instanceId = instance
+                    }
+                    close()
                 }
             )
         }
+        .background {
+            // The two shortcuts, as hidden buttons so they work wherever the
+            // composer has focus: ⇧⌘M the models, ⇧⌘E the effort.
+            Group {
+                Button("Model") { stage = .catalog }
+                    .keyboardShortcut("m", modifiers: [.command, .shift])
+                    .contentShape(.rect)
+                Button("Effort") { if ladder.isAdjustable { stage = .effort } }
+                    .keyboardShortcut("e", modifiers: [.command, .shift])
+                    .contentShape(.rect)
+            }
+            .opacity(0)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+            .disabled(!isEnabled)
+        }
+    }
+}
+
+/// The trigger's face, in the footer controls' grammar
+/// (``CodeV2FooterButtonStyle``): secondary ink at rest, the hover tone under
+/// the pointer and while open.
+struct CodeV2ModelControlLabel<Content: View>: View {
+    let isOpen: Bool
+    @ViewBuilder let content: () -> Content
+
+    @State private var hovering = false
+    @Environment(\.isEnabled) private var isEnabled
+
+    var body: some View {
+        HStack(spacing: JunoSpace.tight + 2) {
+            content()
+            JunoIconView(.chevronDown, size: 10).foregroundStyle(Studio.Ink.tertiary)
+        }
+        .studioType(.text)
+        .foregroundStyle(!isEnabled ? Studio.Ink.tertiary : (isOpen || hovering ? Studio.Ink.primary : Studio.Ink.secondary))
+        .padding(.horizontal, JunoSpace.snug)
+        .frame(minWidth: 28, minHeight: Studio.Metrics.control)
+        .background(
+            RoundedRectangle(cornerRadius: Studio.Radius.control, style: .continuous)
+                .fill(isOpen || hovering ? Studio.Surface.hover : Color.clear)
+        )
+        .contentShape(RoundedRectangle(cornerRadius: Studio.Radius.control, style: .continuous))
+        .onHover { hovering = $0 }
+        .animation(JunoMotion.fast, value: hovering)
     }
 }
 
@@ -123,8 +226,8 @@ enum CodeV2PickerCopy {
 
 /// The picker (TARGET §8.1): a 44pt rail of the connected sources, a search
 /// field, two-line rows (name over where it runs and what it costs), and a
-/// two-row footer: effort, then the context window with the plan's usage.
-/// 380 wide, at most 440 tall.
+/// footer with the context window and the plan's usage. Effort and Fast live
+/// on the effort panel the chip opens first. 380 × 440 in the composer.
 struct CodeV2ModelPicker: View {
     let directory: CodeV2ProviderDirectory
     @Binding var selection: CodeV2.ModelSelection
@@ -135,6 +238,9 @@ struct CodeV2ModelPicker: View {
     var choose: ((String, CodeV2.ProviderModel) -> Void)?
     /// The team popover reuses the picker for one role: no footer there.
     var showsFooter = true
+
+    /// The list's height inside ``CodeV2ModelControl/catalogSize``.
+    static let listHeight: CGFloat = CodeV2ModelControl.catalogSize.height - 40 - 39
 
     @State private var focusedInstance: String?
     @State private var query = ""
@@ -163,7 +269,12 @@ struct CodeV2ModelPicker: View {
                     .padding(.horizontal, JunoSpace.tight + 2)
                     .padding(.bottom, JunoSpace.tight + 2)
                 }
-                .frame(maxHeight: 300)
+                // A fixed list height in the composer, so the catalogue fills
+                // the control's fixed 380 × 440 frame: search 40, footer 39.
+                .frame(
+                    minHeight: showsFooter ? Self.listHeight : nil,
+                    maxHeight: showsFooter ? Self.listHeight : 300
+                )
                 if showsFooter {
                     Rectangle().fill(Studio.Surface.hairline).frame(height: 1)
                     footer
@@ -324,23 +435,6 @@ struct CodeV2ModelPicker: View {
 
     private var footer: some View {
         VStack(spacing: 0) {
-            let levels = selectedModel?.effortLevels ?? []
-            if !levels.isEmpty {
-                HStack(spacing: JunoSpace.snug) {
-                    Text("Effort").studioType(.small).foregroundStyle(Studio.Ink.secondary)
-                    Spacer(minLength: JunoSpace.snug)
-                    Picker("Effort", selection: Binding(get: { selection.effort ?? levels.first! }, set: { selection.effort = $0 })) {
-                        ForEach(levels, id: \.self) { Text($0.title).tag($0) }
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .controlSize(.small)
-                    .frame(maxWidth: 250)
-                }
-                .padding(.horizontal, JunoSpace.cozy)
-                .frame(height: 38)
-                Rectangle().fill(Studio.Surface.hairline).frame(height: 1).padding(.horizontal, JunoSpace.cozy)
-            }
             HStack(spacing: JunoSpace.snug) {
                 Text("Context").studioType(.small).foregroundStyle(Studio.Ink.secondary)
                 if let tiers = selectedModel?.contextTiers, !tiers.isEmpty {
@@ -362,13 +456,6 @@ struct CodeV2ModelPicker: View {
                         }
                     }
                         .contentShape(.rect)
-                }
-                if selectedModel?.supportsFast == true {
-                    Toggle("Fast", isOn: Binding(get: { selection.fast == true }, set: { selection.fast = $0 }))
-                        .toggleStyle(.checkbox)
-                        .studioType(.small)
-                        .foregroundStyle(Studio.Ink.secondary)
-                        .help("About twice the speed at twice the price")
                 }
                 Spacer(minLength: JunoSpace.snug)
                 if let instance = selectedInstance, let usage = CodeV2PickerCopy.usage(instance) {

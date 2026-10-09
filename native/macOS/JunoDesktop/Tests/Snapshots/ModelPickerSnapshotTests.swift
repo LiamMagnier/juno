@@ -67,6 +67,39 @@ struct ModelPickerSnapshotTests {
         }
     }
 
+    /// Pro, under the track, for a model whose ladder has the mode (the
+    /// GPT-5.6 line, as the web's `supportsProMode`): the name over the one
+    /// line that says it spends more, and a switch; off and on. A model
+    /// without the mode draws no row (the panels above).
+    @Test
+    func proSitsUnderTheTrackWhereTheModelHasIt() async throws {
+        let sol = Self.model("openai:gpt-5.6-sol")
+        let ladder = JunoThinkingLadder(
+            stops: sol.thinking.stops,
+            modelName: sol.displayName,
+            fastModeRateMultiplier: sol.thinking.fastModeRateMultiplier,
+            supportsProMode: true,
+            defaultStopID: sol.thinking.defaultStopID
+        )
+        #expect(JunoEffortPanel.showsPro(ladder: ladder, proMode: .constant(false)))
+        #expect(!JunoEffortPanel.showsPro(ladder: sol.thinking, proMode: .constant(false)))
+        #expect(!JunoEffortPanel.showsPro(ladder: ladder, proMode: nil))
+        let height = JunoEffortPanelMetrics.height(showsPro: true)
+        for (name, on) in [("effort-panel-pro-off", false), ("effort-panel-pro-on", true)] {
+            try await render(name: name, width: JunoEffortPanelMetrics.width) {
+                JunoEffortPanel(
+                    ladder: ladder,
+                    stopID: .constant("high"),
+                    modelName: sol.displayName,
+                    fastMode: .constant(false),
+                    proMode: .constant(on),
+                    openModels: {}
+                )
+                .frame(width: JunoEffortPanelMetrics.width, height: height)
+            }
+        }
+    }
+
     /// Stage two, reached from the panel's model name: the catalogue opens on
     /// Opus 5.5, its row lit and Anthropic's section in view.
     @Test

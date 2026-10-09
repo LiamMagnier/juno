@@ -55,7 +55,8 @@ struct JunoMobileThinkingDialButton: View {
   }
 }
 
-/// The dial, open: a track with one detent per level and a ring knob.
+/// The dial, open: a track with one detent per level and a ring knob, and,
+/// for a model with a Pro mode, the Pro switch under it.
 ///
 /// The knob follows the finger continuously and snaps to the nearest detent
 /// with the control spring when it lands; each detent it crosses ticks the
@@ -64,6 +65,8 @@ struct JunoMobileThinkingDialButton: View {
 struct JunoMobileThinkingDialSlider: View {
   let scale: NativeThinkingScale
   @Binding var effort: NativeReasoningEffort?
+  /// Pro, the composer's `tools.proMode`; drawn only where the model has it.
+  var proMode: Binding<Bool>?
   /// Called when the reader is done — the composer folds the row back.
   let close: () -> Void
 
@@ -76,6 +79,27 @@ struct JunoMobileThinkingDialSlider: View {
   private var count: Int { max(scale.stops.count, 1) }
 
   var body: some View {
+    VStack(spacing: JunoSpace.tight) {
+      dial
+      if scale.supportsProMode, let proMode {
+        JunoMobileProRow(isOn: proMode)
+          .onChange(of: proMode.wrappedValue) { _, _ in
+            tick.fire()
+            idle += 1
+          }
+      }
+    }
+    .junoHaptic(JunoMobileHaptic.selection, trigger: tick)
+    .task(id: idle) {
+      // Folds back a moment after the last touch, as ChatGPT's does.
+      guard idle > 0 else { return }
+      try? await Task.sleep(for: .milliseconds(900))
+      guard !Task.isCancelled else { return }
+      close()
+    }
+  }
+
+  private var dial: some View {
     GeometryReader { proxy in
       let inset: CGFloat = 26
       let usable = max(proxy.size.width - inset * 2, 1)
@@ -116,14 +140,6 @@ struct JunoMobileThinkingDialSlider: View {
       )
     }
     .frame(height: 52)
-    .junoHaptic(JunoMobileHaptic.selection, trigger: tick)
-    .task(id: idle) {
-      // Folds back a moment after the last touch, as ChatGPT's does.
-      guard idle > 0 else { return }
-      try? await Task.sleep(for: .milliseconds(900))
-      guard !Task.isCancelled else { return }
-      close()
-    }
     .accessibilityElement()
     .accessibilityLabel("Thinking")
     .accessibilityValue(scale.stop(at: index)?.label ?? "")
@@ -142,6 +158,31 @@ struct JunoMobileThinkingDialSlider: View {
     guard clamped != index, let stop = scale.stop(at: clamped) else { return }
     tick.fire()
     effort = stop.effort
+  }
+}
+
+/// Pro under the dial: the name over the one line that says it spends more,
+/// and a switch. The web's words (`PRO_MODE_HELP`, ``JunoProMode``).
+struct JunoMobileProRow: View {
+  @Binding var isOn: Bool
+
+  var body: some View {
+    Toggle(isOn: $isOn) {
+      VStack(alignment: .leading, spacing: 0) {
+        Text(JunoProMode.title)
+          .junoType(JunoType.ui.weight(.medium))
+          .foregroundStyle(Color.junoForeground)
+        Text(JunoProMode.help)
+          .junoType(.caption)
+          .foregroundStyle(Color.junoSecondaryInk)
+          .fixedSize(horizontal: false, vertical: true)
+      }
+    }
+    .toggleStyle(.switch)
+    .tint(Color.junoForeground)
+    .padding(.horizontal, JunoSpace.cozy)
+    .frame(minHeight: 44)
+    .accessibilityIdentifier("juno.mobile.thinking-pro")
   }
 }
 

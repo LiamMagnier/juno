@@ -22,6 +22,8 @@ public enum CodeV2Gallery {
         case dockBestOfN = "dock-best-of-n"
         case modelPickerSubscription = "model-picker-subscription"
         case modelPickerAlevr = "model-picker-alevr"
+        case modelEffortSubscription = "model-effort-subscription"
+        case modelEffortAlevr = "model-effort-alevr"
         case contextTiersAlevr = "context-tiers-alevr"
         case contextTiersSubscription = "context-tiers-subscription"
         case orchestrateLeadWorkers = "orchestrate-lead-workers"
@@ -39,6 +41,7 @@ public enum CodeV2Gallery {
                 CGSize(width: 1512, height: 982)
             case .dockBestOfN: CGSize(width: 480, height: 420)
             case .modelPickerSubscription, .modelPickerAlevr: CGSize(width: 460, height: 520)
+            case .modelEffortSubscription, .modelEffortAlevr: CGSize(width: 380, height: 220)
             case .contextTiersAlevr, .contextTiersSubscription: CGSize(width: 440, height: 300)
             case .orchestrateLeadWorkers, .orchestrateBestOfN: CGSize(width: 460, height: 300)
             case .contextCard: CGSize(width: 340, height: 220)
@@ -128,7 +131,26 @@ public enum CodeV2Gallery {
             return AnyView(CodeV2EnvDockView(session: CodeV2EnvSession(preview: snapshot), dock: dock, bestOfN: CodeV2Fixtures.bestOfNCandidates))
         case .modelPickerSubscription, .modelPickerAlevr:
             let selection = surface == .modelPickerAlevr ? CodeV2Fixtures.alevrSelection : CodeV2Fixtures.claudeSelection
-            return popover(CodeV2ModelPicker(directory: directory, selection: .constant(selection), threadTokens: 184_000, openConnections: {}))
+            return popover(
+                CodeV2ModelPicker(directory: directory, selection: .constant(selection), threadTokens: 184_000, openConnections: {})
+                    .frame(width: CodeV2ModelControl.catalogSize.width, height: CodeV2ModelControl.catalogSize.height)
+            )
+        case .modelEffortSubscription, .modelEffortAlevr:
+            // The chip's first stage: the shared effort panel over the
+            // selected model's effort levels; its name leads to the picker.
+            let selection = surface == .modelEffortAlevr ? CodeV2Fixtures.alevrSelection : CodeV2Fixtures.claudeSelection
+            let model = directory.instance(selection.instanceId)?.models?.first { $0.id == selection.model }
+            let name = model?.label ?? selection.model
+            return popover(
+                JunoEffortPanel(
+                    ladder: CodeV2ModelControl.ladder(for: model, name: name),
+                    stopID: .constant(selection.effort?.rawValue),
+                    modelName: name,
+                    fastMode: model?.supportsFast == true ? .constant(false) : nil,
+                    openModels: {}
+                )
+                .frame(width: JunoEffortPanelMetrics.width, height: JunoEffortPanelMetrics.height)
+            )
         case .contextTiersAlevr:
             return popover(CodeV2TierSelector(
                 instance: CodeV2Fixtures.alevr, model: CodeV2Fixtures.gpt,

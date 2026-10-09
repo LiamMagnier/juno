@@ -38,6 +38,14 @@ public enum JunoEffortPanelMetrics {
     public static let knobInset: CGFloat = (trackHeight - knob) / 2
     /// The panel's height: inset, header, gap, track, inset.
     public static let height: CGFloat = inset + headerHeight + trackGap + trackHeight + inset
+    /// The Pro row under the track: a hairline, the gap, then the name over
+    /// its one line of explanation beside a switch (the web's `mt-3 pt-3`).
+    public static let proRowHeight: CGFloat = trackGap * 2 + 36
+    /// The panel's height with or without the Pro row, for callers that
+    /// state the popover's frame.
+    public static func height(showsPro: Bool) -> CGFloat {
+        showsPro ? height + proRowHeight : height
+    }
 
     /// Where stop `index` of `count` sits along a track `width` wide: the
     /// knob's centre, 18pt in from either end (the web's `panelStop`).
@@ -219,16 +227,25 @@ public struct JunoEffortSlider: View {
     }
 }
 
+/// Pro, in the web's words (reasoning-slider.tsx `PRO_MODE_HELP`): said once,
+/// under the switch, wherever the switch is drawn.
+public enum JunoProMode {
+    public static let title = "Pro"
+    public static let help = "The model's deeper reasoning mode. Slower and costs more."
+}
+
 /// The chip's first stage: the rung named large with the model under it (press
 /// it to change model), Flash on the left, reset on the right, and the slider.
 ///
-/// `openModels` is the door to the catalogue; `fastMode` is optional so a
-/// product without the concept (Code) passes nothing and gets no Flash button.
+/// `openModels` is the door to the catalogue; `fastMode` and `proMode` are
+/// optional so a product without the concept passes nothing and gets no
+/// control. Pro is drawn only where the ladder says the model has it.
 public struct JunoEffortPanel: View {
     private let ladder: JunoThinkingLadder
     @Binding private var stopID: String?
     private let modelName: String
     private let fastMode: Binding<Bool>?
+    private let proMode: Binding<Bool>?
     private let openModels: (() -> Void)?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -239,13 +256,22 @@ public struct JunoEffortPanel: View {
         stopID: Binding<String?>,
         modelName: String,
         fastMode: Binding<Bool>? = nil,
+        proMode: Binding<Bool>? = nil,
         openModels: (() -> Void)? = nil
     ) {
         self.ladder = ladder
         _stopID = stopID
         self.modelName = modelName
         self.fastMode = fastMode
+        self.proMode = proMode
         self.openModels = openModels
+    }
+
+    /// Whether the panel draws the Pro row: a binding was passed and the model
+    /// has the mode. Callers size the popover with
+    /// ``JunoEffortPanelMetrics/height(showsPro:)``.
+    public static func showsPro(ladder: JunoThinkingLadder, proMode: Binding<Bool>?) -> Bool {
+        proMode != nil && ladder.supportsProMode
     }
 
     private var current: JunoThinkingStop? { ladder.stop(id: stopID) ?? ladder.stops.first }
@@ -260,6 +286,9 @@ public struct JunoEffortPanel: View {
             header
                 .frame(height: JunoEffortPanelMetrics.headerHeight)
             JunoEffortSlider(ladder: ladder, stopID: $stopID, focusOnAppear: true)
+            if Self.showsPro(ladder: ladder, proMode: proMode), let proMode {
+                JunoEffortProRow(isOn: proMode)
+            }
         }
         .padding(JunoEffortPanelMetrics.inset)
         .frame(width: JunoEffortPanelMetrics.width, alignment: .top)
@@ -304,6 +333,44 @@ public struct JunoEffortPanel: View {
             .help("Reset to the model's default")
             .accessibilityLabel("Reset to the model's default")
             .accessibilityIdentifier("juno.effort-panel.reset")
+        }
+    }
+}
+
+/// Pro under the track: a hairline, the name over the one line that says it
+/// spends more, and a switch. A separate axis from the rung (Pro composes with
+/// whichever stop is chosen), so a switch rather than another stop.
+private struct JunoEffortProRow: View {
+    @Binding var isOn: Bool
+    @Environment(\.isEnabled) private var isEnabled
+
+    var body: some View {
+        VStack(spacing: JunoEffortPanelMetrics.trackGap) {
+            Rectangle()
+                .fill(Color.junoHairline)
+                .frame(height: 1)
+            HStack(spacing: JunoSpace.cozy) {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(JunoProMode.title)
+                        .junoType(JunoType.ui.weight(.medium))
+                        .foregroundStyle(Color.junoForeground)
+                    Text(JunoProMode.help)
+                        .junoType(.caption)
+                        .foregroundStyle(Color.junoSecondaryInk)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.9)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                Toggle(JunoProMode.title, isOn: $isOn)
+                    .toggleStyle(.switch)
+                    .labelsHidden()
+                    .controlSize(.small)
+                    .tint(Color.junoForeground)
+                    .disabled(!isEnabled)
+                    .accessibilityHint(JunoProMode.help)
+                    .accessibilityIdentifier("juno.effort-panel.pro")
+            }
+            .frame(height: 36 - 1)
         }
     }
 }

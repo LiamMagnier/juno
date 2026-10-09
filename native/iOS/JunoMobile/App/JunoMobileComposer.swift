@@ -383,6 +383,7 @@ struct JunoMobileComposer: View {
               JunoMobileThinkingDialSlider(
                 scale: thinkingScale,
                 effort: $reasoningEffort,
+                proMode: $tools.proMode,
                 close: closeThinking
               )
               .padding(.horizontal, JunoSpace.tight)

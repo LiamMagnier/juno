@@ -13,7 +13,7 @@ import SwiftUI
 /// Both stages are ``JunoModelPickerControl`` from the design system, the same
 /// control the Code Studio composer mounts, so the two products cannot drift.
 /// What stays here is Chat's: the catalog's loading and failure states, the
-/// account's favorites, and Flash.
+/// account's favorites, Flash and Pro.
 struct ComposerModelChip: View {
     /// The selected model as the catalog describes it; nil while the catalog is
     /// loading, failed, or does not list the id (Auto before the catalog lands).
@@ -26,6 +26,8 @@ struct ComposerModelChip: View {
     /// The selected stop on `scale`, by `NativeThinkingStop.id`.
     @Binding var stopID: String?
     @Binding var fastMode: Bool
+    /// Pro: drawn in the effort panel only for a model whose scale has it.
+    @Binding var proMode: Bool
     /// The account's starred models, and how to star one; nil where there is
     /// no settings store (the preview world), which hides Favorites.
     let favorites: Set<String>
@@ -56,6 +58,7 @@ struct ComposerModelChip: View {
                 ladder: ladder,
                 stopID: $stopID,
                 fastMode: $fastMode,
+                proMode: $proMode,
                 favorites: favorites,
                 toggleFavorite: toggleFavorite,
                 fallbackName: name,

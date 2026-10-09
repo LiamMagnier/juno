@@ -49,6 +49,7 @@ public struct JunoModelPickerControl<Label: View, Catalog: View>: View {
     private let ladder: JunoThinkingLadder
     @Binding private var stopID: String?
     private let fastMode: Binding<Bool>?
+    private let proMode: Binding<Bool>?
     private let modelName: String
     private let modality: JunoModelModality
     private let catalogSize: CGSize
@@ -65,6 +66,7 @@ public struct JunoModelPickerControl<Label: View, Catalog: View>: View {
         ladder: JunoThinkingLadder,
         stopID: Binding<String?>,
         fastMode: Binding<Bool>? = nil,
+        proMode: Binding<Bool>? = nil,
         modelName: String,
         modality: JunoModelModality = .chat,
         catalogSize: CGSize,
@@ -80,6 +82,7 @@ public struct JunoModelPickerControl<Label: View, Catalog: View>: View {
         self.ladder = ladder
         _stopID = stopID
         self.fastMode = fastMode
+        self.proMode = proMode
         self.modelName = modelName
         self.modality = modality
         self.catalogSize = catalogSize
@@ -121,10 +124,16 @@ public struct JunoModelPickerControl<Label: View, Catalog: View>: View {
                     stopID: $stopID,
                     modelName: modelName,
                     fastMode: fastMode,
+                    proMode: proMode,
                     // Swapping the item closes the panel and opens the catalogue.
                     openModels: { stage = .catalog }
                 )
-                .frame(width: JunoEffortPanelMetrics.width, height: JunoEffortPanelMetrics.height)
+                .frame(
+                    width: JunoEffortPanelMetrics.width,
+                    height: JunoEffortPanelMetrics.height(
+                        showsPro: JunoEffortPanel.showsPro(ladder: ladder, proMode: proMode)
+                    )
+                )
             case .catalog:
                 catalog { stage = nil }
                     .frame(width: catalogSize.width, height: catalogSize.height)
@@ -224,6 +233,7 @@ public struct JunoModelPicker: View {
     private let ladder: JunoThinkingLadder?
     @Binding private var stopID: String?
     private let fastMode: Binding<Bool>?
+    private let proMode: Binding<Bool>?
     private let favorites: Set<String>
     private let toggleFavorite: ((String) -> Void)?
     private let select: (JunoModelDescriptor) -> Void
@@ -241,6 +251,8 @@ public struct JunoModelPicker: View {
     ///     selected model; nil takes the descriptor's own.
     ///   - stopID: the selected stop's id on that ladder.
     ///   - fastMode: Flash, or nil where the product has no such mode.
+    ///   - proMode: Pro, or nil where the product has no such mode; drawn only
+    ///     for a model whose ladder supports it.
     ///   - fallbackName: what the chip reads before the catalogue has
     ///     described the selected model.
     ///   - stage: an outside handle on what is open, for shortcuts.
@@ -250,6 +262,7 @@ public struct JunoModelPicker: View {
         ladder: JunoThinkingLadder? = nil,
         stopID: Binding<String?>,
         fastMode: Binding<Bool>? = nil,
+        proMode: Binding<Bool>? = nil,
         favorites: Set<String> = [],
         toggleFavorite: ((String) -> Void)? = nil,
         fallbackName: String = "Choose model",
@@ -265,6 +278,7 @@ public struct JunoModelPicker: View {
         self.ladder = ladder
         _stopID = stopID
         self.fastMode = fastMode
+        self.proMode = proMode
         self.favorites = favorites
         self.toggleFavorite = toggleFavorite
         self.fallbackName = fallbackName
@@ -298,6 +312,7 @@ public struct JunoModelPicker: View {
             ladder: ladder,
             stopID: $stopID,
             fastMode: fastMode,
+            proMode: proMode,
             modelName: name,
             modality: selected?.modality ?? .chat,
             catalogSize: fittedMetrics.size,
