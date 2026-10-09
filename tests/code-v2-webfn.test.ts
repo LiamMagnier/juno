@@ -160,10 +160,11 @@ test("runtime lane commands are relayed by the hub and reach the Mac as typed", 
   };
   const pending = runtimeRequest(client as never, "checkpoint.applyPatch", { sessionId: "s1", patch: "x", reverse: true });
   const { commands } = await link.pull(0);
-  assert.equal(commands[0].type, "checkpoint.applyPatch");
-  assert.deepEqual(commands[0].params, { sessionId: "s1", patch: "x", reverse: true });
-  link.push({ responses: [{ type: "response", id: commands[0].id, ok: true, result: { applied: true, files: ["src/a.ts"] } }] });
-  assert.equal(((await pending) as { ok: boolean }).ok, true);
+  const cmd = commands[0] as unknown as { id: string; type: string; params: unknown };
+  assert.equal(cmd.type, "checkpoint.applyPatch");
+  assert.deepEqual(cmd.params, { sessionId: "s1", patch: "x", reverse: true });
+  link.push({ responses: [{ type: "response", id: cmd.id, ok: true, result: { applied: true, files: ["src/a.ts"] } }] });
+  assert.equal(((await pending) as unknown as { ok: boolean }).ok, true);
   for (const type of ["turn.schedule", "turn.unschedule", "provider.install", "provider.auth"]) {
     const r = link.rpc({ id: "c2", type, params: {} } as unknown as ClientCommand);
     const { commands: next } = await link.pull(0);
