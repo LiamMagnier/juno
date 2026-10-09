@@ -56,8 +56,8 @@ public enum CodeV2ComposerLogic {
     }
 
     public static func placeholder(isRunning: Bool, hasProvider: Bool = true) -> String {
-        guard hasProvider else { return "Connect a provider to start" }
-        return isRunning ? "Queue a follow-up, or ⌘↵ to steer" : "Ask for a change, @ to mention a file, / for commands"
+        guard hasProvider else { return "Connect a subscription or add a key to start" }
+        return isRunning ? "Queue a follow-up. ⌘↩ to steer now" : "Ask for a change. @ for files, / for commands"
     }
 }
 

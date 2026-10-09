@@ -411,7 +411,7 @@ public struct CodeV2BestOfNCompare: View {
                 Spacer()
                 if let index = candidates.firstIndex(where: { $0.id == selected }) {
                     Button("Keep \(letter(index))") { keep(candidates[index].id) }
-                        .buttonStyle(.junoProminent)
+                        .buttonStyle(CodeV2InkButtonStyle())
                         .disabled(!candidates[index].isFinished)
                 }
             }

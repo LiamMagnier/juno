@@ -214,7 +214,7 @@ public struct CodeV2ChangesPane: View {
             } else {
                 ScrollViewReader { proxy in
                     ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
+                        VStack(alignment: .leading, spacing: 0) {
                             ForEach(files) { file in
                                 Section {
                                     if !folded.contains(file.path) {

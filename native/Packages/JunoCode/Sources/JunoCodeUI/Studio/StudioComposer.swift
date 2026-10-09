@@ -335,9 +335,10 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
         } else {
             Button(action: submit) {
                 JunoIconView(.send, size: 14, weight: .bold)
-                    .foregroundStyle(canSend ? Studio.Surface.canvas : Studio.Ink.tertiary)
+                    .foregroundStyle(Studio.Surface.canvas)
                     .frame(width: Studio.Metrics.sendButton, height: Studio.Metrics.sendButton)
-                    .background(Circle().fill(canSend ? Studio.Ink.primary : Studio.Surface.muted))
+                    .background(Circle().fill(Studio.Ink.primary))
+                    .opacity(canSend ? 1 : 0.3)
                     .contentShape(Circle())
                     .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint), value: canSend)
             }

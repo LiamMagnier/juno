@@ -247,11 +247,9 @@ struct DesktopCodeWorkspace: View {
         switch selection.wrappedValue {
         case .session:
             guard let controller else { return "" }
-            var parts: [String] = []
-            if controller.context != nil { parts.append(controller.workspaceDisplayName) }
-            if let branch = controller.gitStatus?.branch ?? controller.session.gitBranch { parts.append(branch) }
-            if controller.session.executionRootPath != nil { parts.append("worktree") }
-            return parts.joined(separator: " · ")
+            // The project only: the branch and worktree live in the strip
+            // under the composer (code-v4 TARGET §2).
+            return controller.context != nil ? controller.workspaceDisplayName : ""
         case .task:
             return selectedTask.map { [$0.whereItRuns, $0.baseRef].compactMap { $0 }.joined(separator: " · ") } ?? ""
         case .remote:
@@ -536,6 +534,13 @@ struct DesktopCodeWorkspace: View {
                 pendingPrompt = nil
                 pendingEnvironment = nil
             },
+            v2: CodeV2StudioContext(
+                composer: v2Composer,
+                directory: v2Directory,
+                handoff: { _ in },
+                openConnections: openConnections,
+                setup: { id, action in Task { await envHub.openSetup(for: id, action: action) } }
+            ),
             selectProject: { id in selection.wrappedValue = id.map { .repository($0) } ?? .draft },
             addProject: { isChoosingRepository = true },
             startLocal: start,
@@ -553,7 +558,11 @@ struct DesktopCodeWorkspace: View {
                 directory: v2Directory,
                 dock: envDock,
                 openConnections: openConnections,
-                setup: { id, action in Task { await envHub.openSetup(for: id, action: action) } }
+                setup: { id, action in Task { await envHub.openSetup(for: id, action: action) } },
+                place: CodeV2SessionPlace(
+                    project: controller.workspaceDisplayName,
+                    branch: controller.gitStatus?.branch ?? controller.session.gitBranch
+                )
             )
         } else {
             alevrSession(controller)
@@ -618,14 +627,6 @@ struct DesktopCodeWorkspace: View {
             DesktopProductSwitch(product: $product)
         }
 
-        ToolbarItem(placement: .navigation) {
-            if let controller {
-                DesktopCodeRunClock(controller: controller)
-            } else {
-                Color.clear.frame(width: 1, height: 1)
-            }
-        }
-
         // Chat's rule: New session sits in the toolbar only while the sidebar,
         // and its own New session row, is hidden. Never both at once.
         ToolbarItem(placement: .navigation) {
@@ -637,54 +638,45 @@ struct DesktopCodeWorkspace: View {
         }
         .hidden(columnVisibility != .detailOnly)
 
-        // The side panel's two tabs as labelled toggles: a word and a mark
-        // each, the Changes one carrying the session's diff so the toolbar
-        // says what there is to review before it is opened. The chosen panel
-        // wears the solid cut of its mark ("fill means on"), never a colour.
+        // Two panel toggles and More (code-v4 TARGET §2, §13): the terminal
+        // and the right panel, each an icon in the web set, solid while open.
+        // Changes, Files, Agents and Screen are the panel's own tabs.
         ToolbarItemGroup(placement: .primaryAction) {
-            Button { togglePanel(.changes) } label: {
-                DesktopCodeToolbarLabel(
-                    title: "Changes",
-                    icon: .diff,
-                    isOn: isPanelOn(.changes),
-                    stat: changeTotals
-                )
+            Button { togglePanel(.terminal) } label: {
+                Label { Text("Terminal") } icon: { JunoSymbol(.terminal, weight: isPanelOn(.terminal) ? .fill : .regular) }
+            }
+            .disabled(controller?.context == nil)
+            .help("Terminal (⌥⌘C)")
+            .accessibilityIdentifier("juno.code.terminal.toggle")
+
+            Button { toggleRightPanel() } label: {
+                Label { Text("Panel") } icon: { JunoSymbol(.panelRight, weight: panelPresentation.wrappedValue ? .fill : .regular) }
             }
             .disabled(controller == nil)
-            .help("Review the changes in this session (⌥⌘R)")
-            .accessibilityLabel("Changes")
+            .help("Changes, files, agents and screen (⌥⌘R)")
+            .accessibilityLabel("Panel")
             .accessibilityValue(changeTotals.map { "\($0.added) lines added, \($0.removed) removed" } ?? "No changes")
             .accessibilityIdentifier("juno.code.review.toggle")
 
-            Button { togglePanel(.terminal) } label: {
-                DesktopCodeToolbarLabel(title: "Terminal", icon: .terminal, isOn: isPanelOn(.terminal))
-            }
-            .disabled(controller?.context == nil)
-            .help("Show the session's terminal (⌥⌘C)")
-            .accessibilityLabel("Terminal")
-            .accessibilityIdentifier("juno.code.terminal.toggle")
-
-            Button { envDock.toggle(.agents) } label: {
-                DesktopCodeToolbarLabel(title: "Agents", icon: .agents, isOn: envDock.isOpen && envDock.tab == .agents)
-            }
-            .disabled(envBinding == nil)
-            .keyboardShortcut("g", modifiers: [.command, .shift])
-            .help("Show the thread's agents (⇧⌘G)")
-            .accessibilityLabel("Agents")
-            .accessibilityIdentifier("juno.code.agents.toggle")
+            Button { envDock.toggle(.agents) } label: { EmptyView() }
+                .keyboardShortcut("g", modifiers: [.command, .shift])
+                .disabled(envBinding == nil)
+                .hidden()
+                .accessibilityHidden(true)
         }
 
         ToolbarItem(placement: .primaryAction) {
             Menu {
+                Button("Create Pull Request…") { isCreatingPullRequest = true }
+                    .disabled(controller?.pullRequestUnavailableReason != nil)
+                Button("Pull Requests") { selection.wrappedValue = .pulls }
+                Button("Open File…") { isOpeningQuickly = true }
+                    .disabled(controller?.context == nil)
+                Divider()
                 Button("Preview", action: openPreview)
                     .disabled(controller?.context == nil)
                 Button("Run in Simulator", action: openSimulator)
                     .disabled(targetRepository == nil)
-                Button("Open File…") { isOpeningQuickly = true }
-                    .disabled(controller?.context == nil)
-                Divider()
-                Button("Create Pull Request…") { isCreatingPullRequest = true }
-                    .disabled(controller?.pullRequestUnavailableReason != nil)
                 Button("Compact Context") {
                     Task { await controller?.compactConversation() }
                 }
@@ -721,7 +713,7 @@ struct DesktopCodeWorkspace: View {
             } label: {
                 Label { Text("More") } icon: { JunoSymbol(.more) }
             }
-            .help("Preview, pull request, screen control and session actions")
+            .help("Pull requests, preview, computer use and session actions")
             .accessibilityIdentifier("juno.code.more")
         }
     }
@@ -920,6 +912,16 @@ struct DesktopCodeWorkspace: View {
         }
     }
 
+    /// The right panel as a whole: closed, it opens on its last tab.
+    private func toggleRightPanel() {
+        guard controller != nil else { return }
+        if envBinding != nil {
+            envDock.isOpen.toggle()
+            return
+        }
+        panelVisible.toggle()
+    }
+
     private func openSettings() {
         openWindow(id: JunoDesktopWindow.codeSettingsID)
     }
@@ -1043,6 +1045,12 @@ struct DesktopCodeWorkspace: View {
             }
             for attachment in draft.attachments {
                 created.attach(attachment)
+            }
+            if draft.handsOff {
+                // A subscription was chosen on the new-session screen: the
+                // vendor's own agent takes the first message.
+                handOff(created, text: draft.prompt)
+                return
             }
             created.composerText = draft.prompt
             await created.send()

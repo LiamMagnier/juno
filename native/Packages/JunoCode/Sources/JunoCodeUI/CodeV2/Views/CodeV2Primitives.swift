@@ -215,7 +215,9 @@ struct CodeV2OutlineButtonStyle: ButtonStyle {
     }
 }
 
-/// The one ink action on a surface ("Allow once", "Commit…").
+/// The one ink action on a surface ("Allow once", "Switch to Alevr",
+/// "Keep A"): the send button's ink, never coral, at the system's regular
+/// control height so it sits level with `.bordered` beside it.
 struct CodeV2InkButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
 
@@ -224,9 +226,9 @@ struct CodeV2InkButtonStyle: ButtonStyle {
             .font(Studio.Font.label)
             .foregroundStyle(isEnabled ? Studio.Surface.canvas : Studio.Ink.tertiary)
             .padding(.horizontal, JunoSpace.cozy)
-            .frame(minWidth: 28, minHeight: Studio.Metrics.control)
+            .frame(minWidth: 28, minHeight: 24)
             .background(
-                RoundedRectangle(cornerRadius: Studio.Radius.control, style: .continuous)
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
                     .fill(isEnabled ? Studio.Ink.primary : Studio.Surface.muted)
             )
             .opacity(configuration.isPressed ? 0.85 : 1)
@@ -248,27 +250,5 @@ struct CodeV2SectionHeading: View {
             .padding(.horizontal, JunoSpace.cozy)
             .padding(.top, JunoSpace.snug)
             .padding(.bottom, JunoSpace.tight)
-    }
-}
-
-/// A 3pt meter: ink fill on a hairline track (plan windows, the context
-/// card). Never coloured by itself; the caller passes the signal only past
-/// the warning line.
-struct CodeV2Meter: View {
-    let fraction: Double
-    var tint: Color = Studio.Ink.primary
-    var width: CGFloat? = nil
-
-    var body: some View {
-        GeometryReader { proxy in
-            ZStack(alignment: .leading) {
-                Capsule().strokeBorder(Studio.Surface.hairline, lineWidth: 1)
-                Capsule().fill(tint)
-                    .frame(width: max(3, proxy.size.width * min(1, max(0, fraction))))
-            }
-        }
-        .frame(width: width, height: 3)
-        .accessibilityElement()
-        .accessibilityValue("\(Int((fraction * 100).rounded())) percent")
     }
 }

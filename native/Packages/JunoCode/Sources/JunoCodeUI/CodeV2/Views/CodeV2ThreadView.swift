@@ -55,7 +55,9 @@ public struct CodeV2ThreadView: View {
                     turn: turn,
                     items: items,
                     isExpanded: Binding(
-                        get: { !turn.canFold || expanded.contains(turn.id) },
+                        // A turn that ended without an answer (stopped, paused at a
+                        // limit) shows its work: there is nothing else to read.
+                        get: { !turn.canFold || turn.answer == nil || expanded.contains(turn.id) },
                         set: { open in if open { expanded.insert(turn.id) } else { expanded.remove(turn.id) } }
                     ),
                     selectedAgent: selectedAgent,

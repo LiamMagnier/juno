@@ -113,7 +113,7 @@ enum CodeV2PickerCopy {
         guard let window = instance.limits?.first, let used = window.usedPct else {
             return instance.account?.plan.map { CodeV2ProviderDirectory.planName($0) + " plan" }
         }
-        var text = "\(Int(used.rounded()))% of \(window.label.lowercased()) window"
+        var text = "\(Int(used.rounded()))% used"
         if let resets = window.resetsAt.flatMap({ CodeV2Formatting.clockTime(iso: $0, timeZone: .current) }) {
             text += ", resets \(resets)"
         }

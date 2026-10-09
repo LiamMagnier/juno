@@ -427,32 +427,19 @@ enum DesktopCodeDraftReadiness {
 
 // MARK: - The column
 
-/// The Code window's navigation column, in **Chat's grammar** (premium pass,
-/// rule 1 of `docs/design/premium-pass/BRIEF.md`).
+/// The Code window's navigation column (code-v4 TARGET §3): a list of work,
+/// not navigation.
 ///
-/// The column used to speak a dialect of its own: a search field pinned over
-/// the list, a system-blue "New session" glyph, a blue "Open a project…" row,
-/// red and coral status dots, system section headers and a footer that was a
-/// different component from Chat's. Switching products changed the furniture
-/// as well as the contents. Now both columns are built from the same parts:
+/// Search (with New session beside it) and the projects filter, then one row
+/// per session: its title, the project after it in muted ink, its age, and in
+/// the trailing slot a coral spinner while it works or a raised hand when it
+/// needs you. Sessions that need you come first, then the working ones, then
+/// the rest by recency; no section headers. Archived sessions fold at the end.
+/// Pull requests and Artifacts moved to the projects menu, the command palette
+/// and the toolbar's More menu; Customize is the footer's gear.
 ///
-/// - a headerless block of action and destination rows (monochrome 16pt mark
-///   and label, the selected row lifting to foreground ink) — New session,
-///   Search, then the web's Code destinations (`JunoShellCodeSidebar`):
-///   Pull requests, Artifacts and Customize, and a More menu;
-/// - ``DesktopSidebarHeading`` for every section: Needs you, Projects,
-///   Without a project, Removed projects, Cloud, Other computers;
-/// - titles on the nav glyphs' column and one trailing mark per row in the
-///   shared ``DesktopSidebarTrailingSlot`` — a live spinner in sidebar ink, the
-///   needs-you dot (the one accent in the column) or a failed run's cross;
-/// - ``DesktopAccountFooter``, the same footer Chat pins, whose gear opens
-///   Code's settings while Code is on screen.
-///
-/// Search is a row, as in Chat. Pressed, it becomes the filter field in place
-/// and stays one while it holds text; emptied and left, it is a row again.
-///
-/// The navigation model — what a selection is, how it survives a relaunch —
-/// is `DesktopCodeNavigationState` above.
+/// The navigation model (what a selection is, how it survives a relaunch) is
+/// `DesktopCodeNavigationState` above.
 struct DesktopCodeSidebar: View {
     @Bindable var workbench: WorkbenchModel
     let code: NativeCodeModel
@@ -474,6 +461,8 @@ struct DesktopCodeSidebar: View {
     @State private var projectPendingRemoval: WorkspaceRecord?
     @State private var hoveringProjectsHeader = false
     @State private var showsArchived = false
+    @State private var projectFilter: WorkspaceID?
+    private let clock = Date()
 
     private var runs: [DesktopCodeRun] {
         DesktopCodeRunBuilder.runs(
@@ -493,61 +482,37 @@ struct DesktopCodeSidebar: View {
 
     var body: some View {
         let all = runs
-        // Local sessions wait in the Runs list; what is left here is the
-        // cloud's and other computers'.
-        let waiting = DesktopCodeNavigationState.filtered(all, by: .needsYou).filter {
-            if case .session = $0.item { return false } else { return true }
-        }
-        let runSections = isSearching ? [] : workbench.runSections
-        let local = all.filter { if case .session = $0.item { return true } else { return false } }
-        let conversations = sorted(local.filter { $0.workspaceID == nil })
-        // Sessions of a project removed from Juno. They stay in the history,
-        // as the removal promises; listed nowhere else, they had vanished
-        // from the column.
-        let knownProjects = Set(workbench.workspaces.map(\.id))
-        let removedProjects = sorted(local.filter { run in
-            run.workspaceID.map { !knownProjects.contains($0) } ?? false
+        let known = Dictionary(workbench.workspaces.map { ($0.id, $0.descriptor.displayName) }, uniquingKeysWith: { first, _ in first })
+        let work = ordered(all.filter { run in
+            guard let projectFilter else { return true }
+            return run.workspaceID == projectFilter
         })
-        let elsewhere = sorted(all.filter { if case .task = $0.item { return true } else { return false } })
+        let archived = workbench.filteredArchivedSessions
 
         return List(selection: $selection) {
-            Section { navigationBlock }
-
-            // Runs (CODE_AGENT_SPEC §5.1): every session with a run, grouped
-            // by what it needs, each answered in its row. The heading carries
-            // the count in words; no dots, no badges.
-            ForEach(runSections) { section in
-                Section {
-                    ForEach(section.entries) { entry in
-                        StudioRunRow(entry: entry) { answer in
-                            // Bound to the approval this row showed.
-                            await workbench.answer(answer, shown: entry)
-                        }
-                        .padding(.leading, JunoSidebarMetrics.titleLeading)
-                        .junoSidebarRowSelection(selection == .session(entry.sessionID))
-                        .tag(DesktopCodeSidebarItem.session(entry.sessionID))
-                        .contextMenu { runMenu(entry.sessionID) }
-                    }
-                } header: {
-                    // The group's word alone, as Chat's folds are; the one
-                    // that waits on the reader says how many, in words.
-                    HStack(spacing: JunoSpace.snug) {
-                        DesktopSidebarHeading(section.group.title)
-                        Spacer(minLength: 0)
-                        if section.group == .needsYou {
-                            Text("\(section.entries.count) waiting")
-                                .foregroundStyle(Color.junoAccentInk)
-                                .monospacedDigit()
-                        }
-                    }
+            Section {
+                CodeSidebarHeader(
+                    projectTitle: projectFilter.flatMap { known[$0] } ?? "All projects",
+                    search: {
+                        searchOpen = true
+                        searchFocused = true
+                    },
+                    newSession: { newSession(projectFilter) }
+                ) {
+                    projectMenu
                 }
-            }
-
-            if !waiting.isEmpty {
-                Section {
-                    ForEach(waiting) { row($0) }
-                } header: {
-                    DesktopSidebarHeading(JunoShellCodeSidebar.Heading.needsYou.label)
+                .selectionDisabled()
+                .listRowInsets(EdgeInsets(top: 0, leading: 4, bottom: 0, trailing: 4))
+                if searchOpen || isSearching {
+                    DesktopSidebarSearchField(
+                        text: $workbench.sessionSearchText,
+                        prompt: "Search sessions",
+                        isFocused: $searchFocused
+                    )
+                    .selectionDisabled()
+                    .onChange(of: searchFocused) { _, focused in
+                        if !focused, !isSearching { searchOpen = false }
+                    }
                 }
             }
 
@@ -567,64 +532,29 @@ struct DesktopCodeSidebar: View {
                     .buttonStyle(.plain)
                     .help(JunoShortcutRegistry.help("Open a project", .codeOpenFolder))
                     .selectionDisabled()
+                    .accessibilityIdentifier("juno.code.add-project")
                 }
-                ForEach(workbench.workspaces) { record in
-                    project(record, runs: sorted(local.filter { $0.workspaceID == record.id }))
+                ForEach(work) { run in row(run, project: run.workspaceID.flatMap { known[$0] }) }
+                if work.isEmpty, isSearching {
+                    Text("No matches")
+                        .foregroundStyle(Color.junoSecondaryInk)
+                        .padding(.leading, JunoSidebarMetrics.titleLeading)
+                        .selectionDisabled()
                 }
-            } header: {
-                projectsHeader
-            }
-
-            if !conversations.isEmpty {
-                Section {
-                    ForEach(conversations) { row($0) }
-                } header: {
-                    DesktopSidebarHeading("Without a project")
-                }
-            }
-
-            if !removedProjects.isEmpty {
-                Section {
-                    ForEach(removedProjects) { row($0) }
-                } header: {
-                    DesktopSidebarHeading("Removed projects")
-                }
-            }
-
-            if !elsewhere.isEmpty {
-                Section {
-                    ForEach(elsewhere) { row($0) }
-                } header: {
-                    DesktopSidebarHeading("Cloud")
-                }
-            }
-
-            // Archived sessions (§5.17): out of the way, never out of reach.
-            // Folded under their heading, the count in words; a search shows
-            // the ones it matches.
-            let archived = workbench.filteredArchivedSessions
-            if !archived.isEmpty {
-                Section {
+                if !archived.isEmpty {
+                    CodeSidebarFold(title: "Archived", count: archived.count, isOpen: $showsArchived)
+                        .selectionDisabled()
+                        .help(showsArchived ? "Hide archived sessions" : "Show archived sessions")
                     if showsArchived || isSearching {
-                        ForEach(archivedRuns(archived)) { row($0) }
+                        ForEach(archivedRuns(archived)) { run in row(run, project: run.workspaceID.flatMap { known[$0] }) }
                     }
-                } header: {
-                    Button {
-                        showsArchived.toggle()
-                    } label: {
-                        DesktopSidebarHeading("Archived")
-                            .contentShape(.rect)
-                    }
-                    .buttonStyle(.plain)
-                    .help(showsArchived ? "Hide archived sessions" : "Show archived sessions")
-                    .accessibilityValue(showsArchived || isSearching ? "Shown" : "Hidden")
                 }
             }
 
             if !code.devices.isEmpty, !remote.sessions.isEmpty {
                 Section {
                     ForEach(remote.sessions.filter(matchesSearch)) { summary in
-                        row(DesktopCodeRunBuilder.run(for: summary))
+                        row(DesktopCodeRunBuilder.run(for: summary), project: summary.workspaceName)
                     }
                 } header: {
                     HStack(spacing: JunoSpace.tight) {
@@ -632,7 +562,7 @@ struct DesktopCodeSidebar: View {
                         Spacer(minLength: 0)
                         Picker("Computer", selection: $remoteDeviceID) {
                             ForEach(code.devices) { device in
-                                Text(device.online ? device.name : "\(device.name) · offline").tag(device.id)
+                                Text(device.online ? device.name : "\(device.name), offline").tag(device.id)
                             }
                         }
                         .pickerStyle(.menu)
@@ -649,7 +579,7 @@ struct DesktopCodeSidebar: View {
         }
         .junoSidebarScrollEdge()
         .confirmationDialog(
-            "Remove “\(projectPendingRemoval?.descriptor.displayName ?? "")” from Alevr?",
+            "Remove \u{201C}\(projectPendingRemoval?.descriptor.displayName ?? "")\u{201D} from Alevr?",
             isPresented: Binding(
                 get: { projectPendingRemoval != nil },
                 set: { if !$0 { projectPendingRemoval = nil } }
@@ -660,6 +590,7 @@ struct DesktopCodeSidebar: View {
                 // A thread left on screen would have no row to return to and
                 // no folder to act in once the project is gone.
                 if isInProject(selection, record.id) { selection = .draft }
+                if projectFilter == record.id { projectFilter = nil }
                 Task { await workbench.removeWorkspace(id: record.id) }
             }
         } message: { _ in
@@ -675,176 +606,62 @@ struct DesktopCodeSidebar: View {
         }
     }
 
-    // MARK: Navigation block
-
-    /// New session, Search, the destinations and More — Chat's block, with
-    /// Code's words (`JunoShellCodeSidebar`).
+    /// The projects filter's menu: which project's work to list, opening and
+    /// removing projects, and the destinations that left the column.
     @ViewBuilder
-    private var navigationBlock: some View {
-        // Tagged, unlike Chat's New chat: in Code the new-session screen is a
-        // destination the reader can leave and come back to with a draft in it.
-        navLabel(JunoShellCodeSidebar.Action.new.label, icon: JunoShellCodeSidebar.Action.new.icon, selected: selection == .draft)
-            .junoSidebarRowSelection(selection == .draft)
-            .tag(DesktopCodeSidebarItem.draft)
-            .help(JunoShortcutRegistry.help(JunoShellCodeSidebar.Action.new.label, .newChat))
-            .accessibilityIdentifier("juno.code.new-conversation")
-
-        if searchOpen || isSearching {
-            DesktopSidebarSearchField(
-                text: $workbench.sessionSearchText,
-                prompt: "Search sessions",
-                isFocused: $searchFocused
-            )
-            .selectionDisabled()
-            .onChange(of: searchFocused) { _, focused in
-                if !focused, !isSearching { searchOpen = false }
-            }
-        } else {
-            Button {
-                searchOpen = true
-                searchFocused = true
-            } label: {
-                navLabel(JunoShellCodeSidebar.Action.search.label, icon: JunoShellCodeSidebar.Action.search.icon, selected: false)
-            }
-            .buttonStyle(.plain)
-            .help("Search sessions")
-            .accessibilityIdentifier("juno.code.sidebar.search")
-        }
-
-        navLabel(JunoShellDestination.pulls.label, icon: JunoShellDestination.pulls.icon, selected: selection == .pulls)
-            .junoSidebarRowSelection(selection == .pulls)
-            .tag(DesktopCodeSidebarItem.pulls)
-            .accessibilityIdentifier("juno.code.sidebar.pulls")
-
-        // Artifacts live in Chat's page stack; the row opens them there, as
-        // the web's Code column does.
+    private var projectMenu: some View {
         Button {
-            DesktopPageRouter.shared.open(.artifacts)
+            projectFilter = nil
         } label: {
-            navLabel(JunoShellDestination.artifacts.label, icon: JunoShellDestination.artifacts.icon, selected: false)
+            if projectFilter == nil { Label("All Projects", image: JunoIcon.check.assetName) } else { Text("All Projects") }
         }
-        .buttonStyle(.plain)
-        .help("Open Artifacts in Chat")
-        .accessibilityIdentifier("juno.code.sidebar.artifacts")
-
-        Button(action: openSettings) {
-            navLabel(JunoShellDestination.customize.label, icon: JunoShellDestination.customize.icon, selected: false)
-        }
-        .buttonStyle(.plain)
-        .help("Permissions, agents, hooks and tools for Code")
-        .accessibilityIdentifier("juno.code.sidebar.customize")
-
-        Menu {
-            Button(action: openRepository) {
-                Label("Open Project…", image: JunoIcon.folderPlus.assetName)
-            }
-            ForEach(JunoShellCodeSidebar.More.items, id: \.destination) { item in
-                Button {
-                    DesktopSettingsRouter.open(.connectors)
-                } label: {
-                    Label(item.destination.title, image: item.destination.icon.assetName)
+        ForEach(workbench.workspaces) { record in
+            Button {
+                projectFilter = record.id
+            } label: {
+                if projectFilter == record.id {
+                    Label(record.descriptor.displayName, image: JunoIcon.check.assetName)
+                } else {
+                    Text(record.descriptor.displayName)
                 }
             }
-        } label: {
-            navLabel(JunoShellCodeSidebar.More.label, icon: JunoShellCodeSidebar.More.archivedIcon, selected: false)
         }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
-        .menuIndicator(.hidden)
-        .accessibilityLabel(JunoShellCodeSidebar.More.label)
-        .accessibilityIdentifier("juno.code.sidebar.more")
-    }
-
-    /// One nav row's face: the mark and the words in one ink, which lifts to
-    /// the foreground on the selected row. Chat's recipe, stated on the mark
-    /// too because a `.sidebar` list resolves a `Label`'s icon against the
-    /// system accent otherwise.
-    private func navLabel(_ title: String, icon: JunoIcon, selected: Bool) -> some View {
-        let ink = selected ? Color.junoForeground : Color.junoSidebarInk
-        // The web's glyphs (the contract's), one weight down the column.
-        return Label {
-            Text(title)
-        } icon: {
-            JunoSymbol(icon, weight: selected ? .fill : .regular)
-                .foregroundStyle(ink)
-        }
-        .foregroundStyle(ink)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .contentShape(.rect)
-    }
-
-    /// "Projects", with Open a project beside it, revealed on hover the way
-    /// Chat's "Pinned projects" reveals New project. Always reachable by the
-    /// keyboard and VoiceOver.
-    private var projectsHeader: some View {
-        HStack(spacing: JunoSpace.tight) {
-            DesktopSidebarHeading("Projects")
-            Spacer(minLength: 0)
-            Button(action: openRepository) {
-                JunoIconView(.plus, size: 12)
-                    .foregroundStyle(Color.junoSidebarInk)
-                    .frame(width: 28, height: 28)
-                    .contentShape(.rect)
-            }
-            .buttonStyle(.borderless)
-            .opacity(hoveringProjectsHeader || workbench.workspaces.isEmpty ? 1 : 0)
-            .help(JunoShortcutRegistry.help("Open a project", .codeOpenFolder))
-            .accessibilityLabel("Open a project")
+        Divider()
+        Button("Open Project…", action: openRepository)
             .accessibilityIdentifier("juno.code.add-project")
+        if let projectFilter, let record = workbench.workspaces.first(where: { $0.id == projectFilter }) {
+            Button("New Session in \(record.descriptor.displayName)") { newSession(record.id) }
+            Button("Reveal in Finder") {
+                NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: record.descriptor.localPathHint)])
+            }
+            Button("Remove from Alevr…", role: .destructive) { projectPendingRemoval = record }
         }
-        .onHover { hoveringProjectsHeader = $0 }
-        .animation(JunoMotion.fast, value: hoveringProjectsHeader)
+        Divider()
+        Button("Pull Requests") { selection = .pulls }
+        Button("Artifacts") { DesktopPageRouter.shared.open(.artifacts) }
+        ForEach(JunoShellCodeSidebar.More.items, id: \.destination) { item in
+            Button(item.destination.title) { DesktopSettingsRouter.open(.connectors) }
+        }
     }
 
     // MARK: Rows
 
-    @ViewBuilder
-    private func project(_ record: WorkspaceRecord, runs: [DesktopCodeRun]) -> some View {
-        let selected = selection == .repository(record.id)
-        let ink = selected ? Color.junoForeground : Color.junoSidebarInk
-        DisclosureGroup(isExpanded: Binding(
-            get: { !collapsed.contains(record.id) || isSearching },
-            set: { open in if open { collapsed.remove(record.id) } else { collapsed.insert(record.id) } }
-        )) {
-            ForEach(runs) { row($0) }
-            if runs.isEmpty {
-                Text(isSearching ? "No matches" : "No sessions yet")
-                    .junoFont(size: 12, relativeTo: .footnote)
-                    .foregroundStyle(Color.junoSecondaryInk)
-                    .padding(.leading, JunoSidebarMetrics.titleLeading)
-                    .selectionDisabled()
-            }
-        } label: {
-            Label {
-                Text(record.descriptor.displayName)
-                    .lineLimit(1)
-            } icon: {
-                JunoSymbol(.projects, weight: selected ? .fill : .regular)
-                    .foregroundStyle(ink)
-            }
-            .foregroundStyle(ink)
-            .junoSidebarRowSelection(selected)
-            .tag(DesktopCodeSidebarItem.repository(record.id))
-            .help((record.descriptor.localPathHint as NSString).abbreviatingWithTildeInPath)
-            .accessibilityIdentifier("juno.code.project.\(record.id.value)")
-            .contextMenu {
-                Button("New Session") { newSession(record.id) }
-                Button("Reveal in Finder") {
-                    NSWorkspace.shared.activateFileViewerSelecting([
-                        URL(fileURLWithPath: record.descriptor.localPathHint),
-                    ])
-                }
-                Divider()
-                Button("Remove from Alevr…", role: .destructive) { projectPendingRemoval = record }
-            }
+    private func row(_ run: DesktopCodeRun, project: String?) -> some View {
+        DesktopCodeSessionRow(run: run, project: projectFilter == nil ? project : nil, now: clock) {
+            archive(run)
         }
+        .junoSidebarRowSelection(selection == run.item)
+        .tag(run.item)
+        .contextMenu { menu(for: run) }
     }
 
-    private func row(_ run: DesktopCodeRun) -> some View {
-        DesktopCodeSessionRow(run: run)
-            .junoSidebarRowSelection(selection == run.item)
-            .tag(run.item)
-            .contextMenu { menu(for: run) }
+    private func archive(_ run: DesktopCodeRun) {
+        guard case .session(let id) = run.item, !workbench.isArchived(id) else { return }
+        Task {
+            if case .done = await workbench.archive(id), selection == .session(id) {
+                selection = nil
+            }
+        }
     }
 
     /// Archived sessions as sidebar rows, newest first.
@@ -858,6 +675,20 @@ struct DesktopCodeSidebar: View {
             tasks: [],
             query: workbench.sessionSearchText
         ))
+    }
+
+    /// Needs you, then working, then the rest by recency.
+    private func ordered(_ runs: [DesktopCodeRun]) -> [DesktopCodeRun] {
+        func rank(_ run: DesktopCodeRun) -> Int {
+            switch StudioStatus(run.status) {
+            case .needsYou: 0
+            case .working: 1
+            default: 2
+            }
+        }
+        return runs.sorted { a, b in
+            rank(a) == rank(b) ? a.updatedAt > b.updatedAt : rank(a) < rank(b)
+        }
     }
 
     /// A Runs row's menu: open it, fork it, archive it.
@@ -1007,40 +838,34 @@ struct DesktopCodeSidebar: View {
     }
 }
 
-/// One session in the column, in Chat's row grammar: its title on the nav
-/// glyphs' column and at most one trailing mark — a spinner in sidebar ink
-/// while it works, the needs-you dot (the column's one accent), a cross when
-/// it failed. Where it runs and how long ago it moved are the row's help and
-/// part of what VoiceOver reads, not a second line on every row.
+/// One session in the column: ``CodeSidebarSessionRow`` from the Code
+/// package, so the window and its snapshots draw the same row.
 struct DesktopCodeSessionRow: View {
     let run: DesktopCodeRun
+    var project: String?
+    var now = Date()
+    var archive: (() -> Void)?
 
-    private var status: StudioStatus { StudioStatus(run.status) }
-
-    var body: some View {
-        HStack(spacing: JunoSpace.tight) {
-            Text(run.title)
-                .lineLimit(1)
-                .truncationMode(.tail)
-            Spacer(minLength: JunoSpace.hairline)
-            DesktopSidebarTrailingSlot { mark }
+    private var state: CodeSidebarSession.State {
+        switch StudioStatus(run.status) {
+        case .idle: .idle
+        case .working: .working
+        case .needsYou: .needsYou
+        case .failed: .failed
         }
-        .padding(.leading, JunoSidebarMetrics.titleLeading)
-        .junoSidebarRowInk()
-        .help("\(run.title)\n\(run.caption)")
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(run.title), \(status == .idle ? run.caption : status.label)")
     }
 
-    private var mark: some View {
-        DesktopSidebarStatusMark(tone: {
-            switch status {
-            case .idle: .neutral
-            case .working: .live
-            case .needsYou: .attention
-            case .failed: .bad
-            }
-        }())
+    var body: some View {
+        CodeSidebarSessionRow(
+            session: CodeSidebarSession(
+                id: "\(run.item)", title: run.title, project: project,
+                updatedAt: run.updatedAt, state: state
+            ),
+            now: now,
+            archive: archive
+        )
+        .junoSidebarRowInk()
+        .help("\(run.title)\n\(run.caption)")
     }
 }
 

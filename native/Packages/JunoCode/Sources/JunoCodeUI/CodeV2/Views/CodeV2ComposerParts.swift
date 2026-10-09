@@ -413,7 +413,7 @@ struct CodeV2ApprovalTakeover: View {
             }
             if options.contains(.accept) {
                 Button(request.action == .fileChange ? "Allow" : "Allow Once") { respond(.accept) }
-                    .buttonStyle(.junoProminent)
+                    .buttonStyle(CodeV2InkButtonStyle())
                     .keyboardShortcut(.defaultAction)
                     .help("Allow once (↩)")
             }
@@ -524,7 +524,7 @@ struct CodeV2QuestionTakeover: View {
                 }
                 answer(answers)
             }
-            .buttonStyle(.junoProminent)
+            .buttonStyle(CodeV2InkButtonStyle())
             .keyboardShortcut(.defaultAction)
         }
     }
@@ -570,7 +570,7 @@ struct CodeV2LimitedNotice: View {
             }
             if let switchModel {
                 Button("Switch to Alevr", action: switchModel)
-                    .buttonStyle(.junoProminent)
+                    .buttonStyle(CodeV2InkButtonStyle())
                     .keyboardShortcut(.defaultAction)
             }
         }

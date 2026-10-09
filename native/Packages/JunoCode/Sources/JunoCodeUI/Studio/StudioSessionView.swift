@@ -142,9 +142,9 @@ public struct StudioSessionView: View {
         if isRunning {
             return controller.activeInstructionKind == .steer
                 ? "Steer Alevr while it works"
-                : "Queue a follow-up for when it finishes"
+                : "Queue a follow-up. ⌘↩ to steer now"
         }
-        return controller.events.isEmpty ? "Describe the change you want" : "Ask for a follow-up"
+        return "Ask for a change. @ for files, / for commands"
     }
 
     public var body: some View {
