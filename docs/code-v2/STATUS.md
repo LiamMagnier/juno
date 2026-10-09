@@ -142,3 +142,17 @@ See the result object of this run for exact commands; summary:
   the catalogue.
 - Owner questions in DESIGN.md §11 (coral value, auto-deleting losing Best-of-N
   worktrees, Antigravity visibility).
+
+## Adversarial review (2026-10-09)
+
+Fixed on code/v2:
+
+- Device link: a remote could attach to a session in an unshared folder by naming its id next to a shared cwd. The Mac now checks the existing session's folder, links only after a successful open, filters `session.list` to shared folders and resolves symlinks.
+- Env server: a hub replay (`session.open` with a placeholder cwd of `/`) could create a session for an unknown id. `afterSequence` now only re-attaches, and the hub always sends it.
+- Budget: the routing budget was not enforced for subagents spawned through the Alevr MCP. `spawn_subagent` now refuses once the turn's children spent it, interrupts running children when it is crossed, and caps running children at 6.
+- Approvals: `approval.respond` accepts only a decision the request offered, so "allow once" cannot become "allow for the session". ACP read-only declines every non-read kind.
+- Checkpoints: after a restore, the next turn reuses the ordinal and overwrites its ref. An older checkpoint item could then restore or diff the newer turn's files. A superseded checkpoint is now refused.
+- Secrets: the env server bearer is removed from the process environment after it is read, so child processes cannot inherit it. Repo `worktree-setup` scripts run without ALEVR_/JUNO_ variables, and `server.json` no longer holds the token.
+- UI: Antigravity is listed as held instead of missing (web and Mac). Orchestrate role buttons share one column. Mac diff fills use the Code spec's quiet washes in dark. The computer-use fixtures show drawn frames. OpenCode uses the terminal glyph. The model rows on a subscription show its largest window.
+
+Screens: the web /dev/code-v2 gallery (13 states × light/dark × desktop/mobile) and the Mac CodeV2Gallery (13 surfaces × light/dark, rendered inside JunoDesktop so the icons load).
