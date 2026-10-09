@@ -68,7 +68,7 @@ test("plain text and the outline keep the steps and the question, never the answ
   const doc = model([{ type: "interactive", view }]);
   const text = documentPlainText(doc);
   assert.match(text, /How Oracle runs a SELECT/);
-  assert.match(text, /1\. FROM — Opens the table\./);
+  assert.match(text, /1\. FROM: Opens the table\./);
   assert.match(text, /Q1\. Which clause runs first\?/);
   assert.doesNotMatch(text, /FROM opens the table before anything else/);
   assert.match(outlineDocument(doc), /INTERACTIVE "How Oracle runs a SELECT"/);

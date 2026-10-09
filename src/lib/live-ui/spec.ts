@@ -28,6 +28,7 @@ export const SPEC_LIMITS = {
   links: 40,
   stops: 25,
   checklist: 40,
+  hints: 5,
   options: 12,
   steps: 12,
   questions: 10,
@@ -129,6 +130,22 @@ export type LiveComponent =
   | (Base & { type: "stops"; title?: string; stops: { name: string; time?: string; note?: string; query: string }[] })
   | (Base & { type: "checklist"; id: string; title?: string; items: { label: string; note?: string }[] })
   | (Base & { type: "button"; label: string; prompt?: string; copy?: string })
+  /**
+   * An exercise the reader answers in the view (ChatGPT's practice cards): a
+   * statement, a box to write in (a code editor when `language` is set),
+   * hints revealed one at a time, and a send that posts the answer as the
+   * user's next message. It never carries a solution.
+   */
+  | (Base & {
+      type: "exercise";
+      id: string;
+      title: string;
+      tag?: string;
+      prompt: string;
+      placeholder?: string;
+      language?: string;
+      hints: string[];
+    })
   /** A leaf that has not finished arriving. */
   | (Base & { type: "pending" });
 
@@ -168,6 +185,9 @@ const TYPE_ALIASES: Record<string, string> = {
   parts: "explorer",
   diagram: "explorer",
   todo: "checklist",
+  practice: "exercise",
+  question: "exercise",
+  answer: "exercise",
   action: "button",
   stack: "section",
   group: "section",
@@ -624,6 +644,23 @@ function component(
       const idRaw = typeof raw.id === "string" ? raw.id.trim() : "";
       const id = IDENT.test(idRaw) ? idRaw : `checklist_${key.replace(/\./g, "_")}`;
       return { key, type, id, title: str(raw.title), items };
+    }
+    case "exercise": {
+      const title = str(raw.title ?? raw.label, 200);
+      const prompt = str(raw.prompt ?? raw.question ?? raw.text, SPEC_LIMITS.text);
+      if (!title || !prompt) return null;
+      const list = Array.isArray(raw.hints) ? raw.hints : raw.hint !== undefined ? [raw.hint] : [];
+      const hints: string[] = [];
+      for (const h of list) {
+        if (hints.length >= SPEC_LIMITS.hints) break;
+        const hint = str(h, 600);
+        if (hint) hints.push(hint);
+      }
+      const languageRaw = str(raw.language ?? raw.lang, 20)?.toLowerCase();
+      const language = languageRaw && /^[a-z0-9+#-]+$/.test(languageRaw) ? languageRaw : undefined;
+      const idRaw = typeof raw.id === "string" ? raw.id.trim() : "";
+      const id = IDENT.test(idRaw) ? idRaw : `exercise_${key.replace(/\./g, "_")}`;
+      return { key, type, id, title, tag: str(raw.tag ?? raw.kind, 40), prompt, placeholder: str(raw.placeholder, 200), language, hints };
     }
     case "button": {
       const label = str(raw.label);

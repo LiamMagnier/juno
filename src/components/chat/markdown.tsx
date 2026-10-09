@@ -45,6 +45,7 @@ import { allowedImageKeys, imageDecision } from "@/lib/web/image-policy";
 import type { ClientSource } from "@/types/chat";
 import { fenceMatchesWrittenFile } from "@/lib/chat/tool-receipt";
 import { isLiveUIFence } from "@/lib/live-ui/fence";
+import { CodeRunButton, CodeRunOutput, useCodeRun } from "@/components/chat/code-run";
 import { isLegacyVisualFence, legacyVisualSource } from "@/lib/live-ui/legacy/convert";
 
 export const MARKDOWN_COPY = {
@@ -303,6 +304,8 @@ function CodeBlock({ children, node }: { children: React.ReactNode; node?: { chi
   const meta = node?.children?.find((c) => c.tagName === "code")?.data?.meta ?? undefined;
   const filename = fenceFilename(meta);
   const written = React.useContext(WrittenFilesContext);
+  // Run the block where it stands (code-run.tsx); never while it is still arriving.
+  const runner = useCodeRun(lang);
   const lowerLang = lang.toLowerCase();
   if (
     !streaming &&
@@ -354,9 +357,10 @@ function CodeBlock({ children, node }: { children: React.ReactNode; node?: { chi
     );
   }
 
-  return (
+  const runnable = !streaming && !isMermaid && runner.target !== null && raw.trim().length > 0;
+  const block = (
     <AicssCodeBlock
-      className="my-4"
+      className={runnable && runner.open ? "m-0 rounded-none" : "my-4"}
       label={lang}
       filename={filename}
       code={raw}
@@ -374,9 +378,22 @@ function CodeBlock({ children, node }: { children: React.ReactNode; node?: { chi
           <span className="px-2 py-1 text-caption text-muted-foreground">
             Diagram renders when complete
           </span>
+        ) : runnable && runner.target ? (
+          <>
+            <CodeRunButton label={runner.target.label} onRun={runner.run} />
+            <CodeCopyButton code={raw} />
+          </>
         ) : undefined
       }
     />
+  );
+  if (!runnable || !runner.open || !runner.target) return block;
+  // One surface: the block, a hairline, then its output (code-run-output.tsx).
+  return (
+    <div className="my-4 overflow-hidden rounded-menu bg-secondary">
+      {block}
+      <CodeRunOutput target={runner.target} code={raw} nonce={runner.nonce} onClose={runner.close} />
+    </div>
   );
 }
 

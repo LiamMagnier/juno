@@ -57,6 +57,14 @@ export interface SystemPromptOptions {
 }
 
 /**
+ * Code blocks the web runs in place (src/components/chat/code-run.tsx; owner,
+ * 2026-10-09). Installed apps have no Run button yet, so markdown-only clients
+ * drop it with the semantic types (MARKDOWN_ONLY_ARTIFACTS).
+ */
+export const CODE_RUN_RULE = `# Runnable code
+Code blocks in the chat have a Run button: JavaScript, TypeScript, Python and SQL run in the reader's browser (SQL on SQLite, seeded with a sample of Oracle's HR schema: employees, departments, jobs, regions, dual); C, C++, Java, Go, Rust, Ruby, PHP, Lua, Perl and Bash run in a sandbox with no network. Always tag a fence with its language, and when an example is meant to be tried, make it complete and print its result (a main function, a final print or SELECT) so Run shows something.`;
+
+/**
  * The DOCUMENT artifact's Live UI block (owner, 2026-10-09: artifacts must
  * work with Live UI). Taught only when the client draws Live UI, and dropped
  * with the rest of the semantic types for installed apps.
@@ -88,13 +96,14 @@ You can put an interactive view inside a reply: a fenced \`\`\`live-ui block hol
 - Plans someone follows: a schedule, a recipe's timing, a trip (stops), a study or learning programme (timeline or checklist).
 - Numbers the reader will want to change: budgets, savings, splits, unit conversions (sliders with a metric or chart).
 Length is not a reason to skip a view: in a long reply with several parts (an inventory, then a lesson), put the view in the part that teaches or plans. Write plain prose only when a simple text answer is genuinely best: facts, definitions, quick answers, opinions, advice, chit-chat. Never use a view for BUILD requests (they want the code itself, or an artifact). Never decorate: one view per job, at most two or three in a long lesson, never one that repeats the prose. The prose still carries the answer, so the reply stands without the view.
-Practice: when the user wants to practise or asked you to wait for their answer, never reveal that exercise's solution, in prose or in a view. Pose the exercise in prose and let them answer in chat; a quiz may only check a different, simpler point, and its explanation appears only after they choose.
+Practice: when the user wants to practise, give each exercise as an exercise component (they write their answer in it and send it to you for correction; set language for code, add hints that nudge without giving the answer). Never reveal an exercise's solution, in prose, in hints or in a view, until they have answered; a quiz may only check a different, simpler point. When their answer arrives, correct it: what is right, what is wrong and why, then the corrected version.
 Views also work inside artifacts: a \`\`\`live-ui fence in a MARKDOWN artifact, or an "interactive" block (its "view" is this same JSON) in a DOCUMENT.
 
 Shape, keys in this order: {"title","currency"?,"data"?,"let"?,"ui"}. data holds constant lists and objects; let holds named formulas; ui is a list of components, each {"type":...}:
 - Teach: steps (steps:[{title, summary, notice: what to look at, detail?, ui?: components drawn for that step}], takeaway), quiz (questions:[{question, options, answer: index of the right option, explanation, hint?}]), callout (tone insight|tip|warning|note, title?, text, more?), timeline (items:[{label, detail?, time?}]), explorer (parts:[{id,label,summary,detail,facts:[{label,value}],at:[x,y] on a 0-100 field}], links:[[id,id]]).
 - Inputs (id, label, value): slider (min, max, step), number, stepper (min, max), select (options), toggle, date ("YYYY-MM-DD"), input.
 - Outputs: metric (label, value; emphasis:true on the headline figure), text ({{expr}} and **bold**), progress (value, max), chart (kind line|area|bar; x:{from,to,step,var} with series:[{label,y}], or rows + xKey + series), table (rows, columns:[{label,value}] where value sees the row's fields; rowHeader:true makes the first column row labels; highlight: a column index), checklist (id, items), stops (stops:[{name,time,note}]), button (label, prompt sent as the user's next message).
+- Practice: exercise (title, tag? e.g. "SQL" or "Reflection", prompt: the statement, **bold** and \`code\` allowed, placeholder?, language? e.g. "sql" for a code editor, hints?: up to 5, revealed one at a time).
 - Layout: row, grid (columns 2-4), section (title), each with children.
 - format: number | integer | currency | percent | compact; percent values are fractions (0.12 is 12%). unit adds a suffix.
 Expressions: numbers, 'strings', names (inputs, let, data, row fields), + - * / % ^, comparisons, && || !, c ? a : b, list.field plucks a column, list arithmetic is element-wise. Functions: sum avg min max count round(x,d) floor ceil abs sqrt pow exp ln clamp if range(a,b,step) pmt(rate,n,pv) fv(rate,n,payment,pv) normpdf normcdf days addDays fmt(x,'currency'). Nothing else exists: no code, no URLs.
@@ -287,6 +296,7 @@ You write the content; the USER picks the download format. Never say you attache
   // Interactive views: the one interactive-answer system, for clients that
   // draw them (the web, native builds declaring `live_ui`). Never on voice.
   if (opts.liveUi && !opts.voiceMode) parts.push(LIVE_UI_SECTION);
+  if (!opts.voiceMode) parts.push(CODE_RUN_RULE);
 
   if (opts.memoryEnabled) {
     parts.push(
@@ -364,6 +374,7 @@ If you ran code or a script this turn, say what it found, never the code, a comm
  * Applied as exact substitutions so the web prompt itself never changes.
  */
 const MARKDOWN_ONLY_ARTIFACTS: ReadonlyArray<readonly [string, string]> = [
+  [`\n\n${CODE_RUN_RULE}`, ""],
   [`\n${DOCUMENT_INTERACTIVE_RULE}`, ""],
   // Installed apps draw Live UI in the transcript, not yet inside artifacts.
   [

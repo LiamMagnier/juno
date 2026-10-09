@@ -191,8 +191,16 @@
      * keyword 4.57, plain 14.82) was always fine — these two were the whole
      * failure.
      */
-    --code-string: 152 56% 30%;
-    --code-number: 32 80% 34%;
+    /* Code tokens follow VS Code's Light+ (owner, 2026-10-09: "coloured like
+       Visual Studio Code"), each at reading contrast on the light code ground. */
+    --code-keyword: 232 80% 45%;
+    --code-control: 290 80% 40%;
+    --code-type: 193 60% 34%;
+    --code-function: 40 52% 31%;
+    --code-variable: 232 85% 30%;
+    --code-string: 0 70% 38%;
+    --code-number: 157 80% 27%;
+    --code-comment: 120 60% 28%;
     --ultra: 258 90% 66%;
     --ultra-from: 252 100% 68%;
     --ultra-to: 271 91% 65%;
@@ -630,8 +638,15 @@
     --agent-sage: 105 20% 57%;
     --agent-ink: 30 14% 11%;
     --agent-mark: 45 12% 90%;
-    --code-string: 152 50% 56%;
-    --code-number: 38 90% 60%;
+    /* VS Code's Dark+. */
+    --code-keyword: 207 61% 62%;
+    --code-control: 300 38% 70%;
+    --code-type: 168 53% 55%;
+    --code-function: 60 42% 76%;
+    --code-variable: 201 98% 80%;
+    --code-string: 17 47% 66%;
+    --code-number: 99 28% 73%;
+    --code-comment: 102 29% 52%;
     --ultra: 258 92% 74%;
     --ultra-from: 252 100% 76%;
     --ultra-to: 271 93% 73%;
@@ -3560,19 +3575,18 @@
  * file that spends twenty lines above explaining why every AIcss literal had to
  * become one. Values are unchanged; only their reachability is. */
 .hljs { color: hsl(var(--foreground)); background: transparent; }
-.hljs-comment, .hljs-quote { color: hsl(var(--muted-foreground)); font-style: italic; }
-/* --primary-ink, not --primary: a keyword is TEXT at 12px, and the fill tone only
-   reaches ~3.7:1 as dark-mode type. The ink ramp exists for this and every other
-   reading context; see the textColor block in tailwind.config.ts. */
-.hljs-keyword, .hljs-selector-tag, .hljs-built_in, .hljs-name, .hljs-tag { color: hsl(var(--primary-ink)); }
-.hljs-string, .hljs-title, .hljs-section, .hljs-attribute, .hljs-literal, .hljs-template-tag, .hljs-template-variable, .hljs-type, .hljs-addition { color: hsl(var(--code-string)); }
-.hljs-number, .hljs-symbol, .hljs-bullet, .hljs-meta, .hljs-link { color: hsl(var(--code-number)); }
-/* Function and class NAMES are identifiers the reader is scanning for, not
-   literals: they were painted in the string green (`.hljs-title` above), so a
-   declaration and the string it returned were the same colour. Foreground ink
-   at a medium weight marks them without spending a fourth hue. */
-.hljs-title.function_, .hljs-title.class_, .hljs-title.class_.inherited__ { color: hsl(var(--foreground)); font-weight: 500; }
-.hljs-regexp { color: hsl(var(--code-number)); }
+/* The palette is VS Code's (Light+ / Dark+), through tokens declared in both
+   theme blocks. Keywords used to take --primary-ink, which the default coral
+   accent sets to the foreground, so SQL, Python and JS keywords came out in
+   plain black and only numbers were coloured (owner, 2026-10-09). */
+.hljs-comment, .hljs-quote { color: hsl(var(--code-comment)); font-style: italic; }
+.hljs-keyword, .hljs-selector-tag, .hljs-literal, .hljs-tag, .hljs-name, .hljs-meta .hljs-keyword { color: hsl(var(--code-keyword)); }
+.hljs-built_in, .hljs-type, .hljs-title.class_, .hljs-title.class_.inherited__ { color: hsl(var(--code-type)); }
+.hljs-title, .hljs-title.function_, .hljs-section { color: hsl(var(--code-function)); }
+.hljs-attr, .hljs-attribute, .hljs-variable, .hljs-template-variable, .hljs-params, .hljs-property, .hljs-selector-attr, .hljs-selector-class, .hljs-selector-id { color: hsl(var(--code-variable)); }
+.hljs-string, .hljs-template-tag, .hljs-addition, .hljs-char.escape_ { color: hsl(var(--code-string)); }
+.hljs-number, .hljs-symbol, .hljs-bullet, .hljs-link { color: hsl(var(--code-number)); }
+.hljs-meta, .hljs-doctag, .hljs-regexp { color: hsl(var(--code-control)); }
 .hljs-deletion { color: hsl(var(--destructive-ink)); }
 .hljs-emphasis { font-style: italic; }
 .hljs-strong { font-weight: 600; }

@@ -58,7 +58,8 @@ test("the model decides on its own, with judgement, and the examples cover expla
 });
 
 test("a practice turn never leaks the exercise's solution", () => {
-  assert.match(LIVE_UI_SECTION, /never reveal that exercise's solution, in prose or in a view/);
+  assert.match(LIVE_UI_SECTION, /give each exercise as an exercise component/);
+  assert.match(LIVE_UI_SECTION, /Never reveal an exercise's solution, in prose, in hints or in a view, until they have answered/);
   assert.match(LIVE_UI_SECTION, /a quiz may only check a different, simpler point/);
 });
 

@@ -29,6 +29,22 @@ ENV DEBIAN_FRONTEND=noninteractive \
 # Node 22, the binary only: no npm or npx, so nothing can be fetched or installed.
 COPY --from=node /usr/local/bin/node /usr/local/bin/node
 
+# Compilers and interpreters for running a chat code block in any language
+# (src/lib/exec/snippets.ts; owner, 2026-10-09). Installed at build time from
+# Debian bookworm's archive; apt's lists are removed afterwards and the
+# container has no network and no root, so nothing more can be installed at
+# run time. Each program is written, compiled and run under the per-run /tmp.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      gcc g++ libc6-dev make \
+      default-jdk-headless \
+      golang-go \
+      rustc \
+      ruby \
+      php-cli \
+      lua5.4 \
+ && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
+
 COPY requirements.txt /opt/juno/requirements.txt
 RUN python -m pip install --only-binary=:all: --no-deps --no-compile -r /opt/juno/requirements.txt \
  && python -m pip check \
@@ -42,6 +58,8 @@ RUN python -m pip install --only-binary=:all: --no-deps --no-compile -r /opt/jun
 COPY manifest.py /opt/juno/manifest.py
 RUN chmod 0444 /opt/juno/manifest.py /opt/juno/requirements.txt \
  && node --version && bash --version | head -1 \
+ && gcc --version | head -1 && g++ --version | head -1 && java -version 2>&1 | head -1 \
+ && go version && rustc --version && ruby --version && php --version | head -1 && lua5.4 -v && perl -v | sed -n 2p \
  && python -c "import pandas, numpy, scipy, matplotlib, seaborn, openpyxl, xlsxwriter, docx, pptx, pypdf, pdfplumber, PIL, reportlab"
 
 # Matplotlib and friends write caches under HOME; the root is read-only, so HOME

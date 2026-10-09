@@ -1,8 +1,9 @@
 "use client";
 
 import * as React from "react";
-import { ArrowLeft, ArrowRight, Check, Eye, Info, Plus, RotateCcw, Star, Target, TriangleAlert, X } from "@/components/ui/icons";
+import { ArrowLeft, ArrowRight, Check, Eye, Info, Play, Plus, RotateCcw, Star, Target, TriangleAlert, X } from "@/components/ui/icons";
 import type { LiveCalloutTone, LiveComponent } from "@/lib/live-ui/spec";
+import { CodeRunOutput, useCodeRun } from "@/components/chat/code-run";
 import { cn } from "@/lib/utils";
 
 /*
@@ -492,5 +493,148 @@ export function LiveTimeline({ timeline, interp }: { timeline: Timeline; interp:
         })}
       </ol>
     </div>
+  );
+}
+
+// ── Exercise ────────────────────────────────────────────────────────────────
+
+/** The exercise card's buttons: 32px, the controls' 8px corners, one line. */
+const exerciseButton =
+  "inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-control px-3 text-ui transition-colors duration-fast ease-out-soft motion-reduce:transition-none disabled:pointer-events-none disabled:opacity-35";
+
+type Exercise = Extract<LiveComponent, { type: "exercise" }>;
+
+/** `**bold**` and `` `code` `` in an exercise statement; everything else literal. */
+function Statement({ text }: { text: string }) {
+  const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g);
+  return (
+    <p className="min-w-0 whitespace-pre-line text-body leading-relaxed text-foreground/90">
+      {parts.map((p, i) =>
+        p.startsWith("**") && p.endsWith("**") && p.length > 4 ? (
+          <strong key={i} className="font-medium text-foreground">
+            {p.slice(2, -2)}
+          </strong>
+        ) : p.startsWith("`") && p.endsWith("`") && p.length > 2 ? (
+          <code key={i} className="rounded-sm bg-foreground/[0.06] px-1 font-mono text-[0.9em]">
+            {p.slice(1, -1)}
+          </code>
+        ) : (
+          <React.Fragment key={i}>{p}</React.Fragment>
+        ),
+      )}
+    </p>
+  );
+}
+
+/**
+ * A practice card, as ChatGPT draws them: the exercise, a box to answer in (a
+ * monospace editor when the exercise names a language), hints one at a time,
+ * and Send, which posts the answer as the user's next message so the model
+ * corrects it in the conversation. The view never holds the solution.
+ */
+export function LiveExercise({ exercise, interp, onPrompt }: { exercise: Exercise; interp: Interp; onPrompt?: (text: string) => void }) {
+  const [answer, setAnswer] = React.useState("");
+  const [shown, setShown] = React.useState(0);
+  const [sent, setSent] = React.useState(false);
+  const code = Boolean(exercise.language);
+  const title = interp(exercise.title);
+  // Try the answer before sending it: the same Run as a chat code block.
+  const runner = useCodeRun(exercise.language ?? "");
+  const runnable = runner.target !== null;
+  const canSend = Boolean(onPrompt) && answer.trim().length > 0 && !sent;
+
+  const send = () => {
+    if (!canSend) return;
+    const body = code ? `\`\`\`${exercise.language}\n${answer.trim()}\n\`\`\`` : answer.trim();
+    onPrompt?.(`**${title}**\n\n${body}`);
+    setSent(true);
+  };
+
+  return (
+    <section aria-label={title} className="flex min-w-0 flex-col gap-3 rounded-menu border border-border p-4 sm:p-5">
+      <div className="flex items-baseline justify-between gap-4">
+        <p className="min-w-0 text-body font-medium text-foreground">{title}</p>
+        {exercise.tag ? <span className="shrink-0 text-caption text-muted-foreground">{interp(exercise.tag)}</span> : null}
+      </div>
+      <Statement text={interp(exercise.prompt)} />
+      {/* The answer and its output share one surface, as a code block and its output do. */}
+      <div className="overflow-hidden rounded-field bg-secondary">
+        <textarea
+          value={answer}
+          onChange={(e) => setAnswer(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+              e.preventDefault();
+              send();
+            }
+          }}
+          readOnly={sent}
+          rows={code ? 5 : 3}
+          spellCheck={!code}
+          aria-label={`Your answer to ${title}`}
+          placeholder={exercise.placeholder ?? (code ? "-- Your query" : "Your answer")}
+          className={cn(
+            "block min-h-[5.5rem] w-full resize-y border-0 bg-transparent px-4 py-3 text-ui leading-relaxed text-foreground outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/30",
+            code && "font-mono",
+            sent && "text-muted-foreground",
+          )}
+        />
+        {runnable && runner.open && runner.target ? (
+          <CodeRunOutput target={runner.target} code={answer} nonce={runner.nonce} onClose={runner.close} />
+        ) : null}
+      </div>
+      {shown > 0 ? (
+        <ol className="flex flex-col gap-1.5" aria-live="polite">
+          {exercise.hints.slice(0, shown).map((hint, i) => (
+            <li key={i} className="grid grid-cols-[1.25rem_minmax(0,1fr)] items-baseline gap-2 text-ui text-muted-foreground">
+              <Info aria-hidden className="size-3.5 translate-y-0.5" />
+              <span>
+                {exercise.hints.length > 1 ? <span className="text-foreground/80">Hint {i + 1}. </span> : null}
+                {interp(hint)}
+              </span>
+            </li>
+          ))}
+        </ol>
+      ) : null}
+      <div className="flex flex-wrap items-center gap-1.5">
+        {shown < exercise.hints.length && !sent ? (
+          <button type="button" onClick={() => setShown((n) => n + 1)} className={cn(exerciseButton, "-ml-2.5 text-muted-foreground hover:bg-accent hover:text-foreground")}>
+            <Eye aria-hidden className="size-3.5" />
+            {shown === 0 ? "Show a hint" : "Another hint"}
+          </button>
+        ) : null}
+        <span className="ml-auto flex items-center gap-1.5">
+          {sent ? (
+            <span className="inline-flex h-8 items-center gap-1.5 text-ui text-muted-foreground" aria-live="polite">
+              <Check aria-hidden className="size-3.5" />
+              Sent for correction
+            </span>
+          ) : (
+            <>
+              {runnable ? (
+                <button
+                  type="button"
+                  onClick={runner.run}
+                  disabled={!answer.trim()}
+                  className={cn(exerciseButton, "border border-border text-foreground hover:bg-accent")}
+                >
+                  <Play aria-hidden className="size-3.5" />
+                  Run
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={send}
+                disabled={!canSend}
+                title={onPrompt ? undefined : "Available in a conversation"}
+                className={cn(exerciseButton, "bg-foreground text-background hover:bg-foreground/90")}
+              >
+                Send answer
+              </button>
+            </>
+          )}
+        </span>
+      </div>
+    </section>
   );
 }

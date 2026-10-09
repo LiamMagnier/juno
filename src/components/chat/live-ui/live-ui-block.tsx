@@ -9,7 +9,7 @@ import { parseLiveUI, type LiveComponent, type LiveInput, type LiveSpec } from "
 import { LiveInputControl, formatInputValue } from "@/components/chat/live-ui/live-ui-controls";
 import { LiveChart } from "@/components/chat/live-ui/live-ui-chart";
 import { LiveChecklist, LiveExplorer, LiveStops } from "@/components/chat/live-ui/live-ui-parts";
-import { LiveCallout, LiveQuiz, LiveSteps, LiveTimeline } from "@/components/chat/live-ui/live-ui-learning";
+import { LiveCallout, LiveExercise, LiveQuiz, LiveSteps, LiveTimeline } from "@/components/chat/live-ui/live-ui-learning";
 import { useLiveUIHost } from "@/components/chat/live-ui/host";
 import { useLiveState, type LiveState } from "@/components/chat/live-ui/use-live-state";
 import { cn } from "@/lib/utils";
@@ -226,6 +226,8 @@ const LiveNode = React.memo(function LiveNode({ component: c, ...props }: Render
       );
     case "quiz":
       return <LiveQuiz quiz={c} interp={(t) => interpolate(t, scope)} />;
+    case "exercise":
+      return <LiveExercise exercise={c} interp={(t) => interpolate(t, scope)} onPrompt={onPrompt} />;
     case "callout":
       return <LiveCallout callout={c} interp={(t) => interpolate(t, scope)} />;
     case "timeline":

@@ -46,3 +46,67 @@ export const MERMAID_REPLY = [
   "  S-->>C: Finished",
   "```",
 ].join("\n");
+
+/**
+ * A practice turn on the web: an exercise card the reader answers in (with Run
+ * for SQL) and code blocks that run in place, in the browser (SQL, Python) and
+ * in the sandbox (C). Web only, so it is not in the shared contract samples.
+ */
+export const PRACTICE_REPLY = [
+  "Voici la requête de l'exemple : clique sur **Run** pour l'exécuter sur l'échantillon HR.",
+  "",
+  "```sql",
+  "SELECT e.employee_id",
+  "      ,e.last_name",
+  "      ,e.salary",
+  "FROM   employees e",
+  "WHERE  e.department_id = 90",
+  "ORDER BY e.salary DESC;",
+  "```",
+  "",
+  "À toi de jouer :",
+  "",
+  "```live-ui",
+  JSON.stringify({
+    title: "Chapitre 1 : pratique",
+    ui: [
+      {
+        type: "exercise",
+        title: "Exercice 1 : le département informatique",
+        tag: "SQL",
+        prompt: "Affiche l'identifiant, le nom, le prénom et le salaire des employés du département informatique (`department_id = 60`), du salaire le plus élevé au plus bas.",
+        language: "sql",
+        placeholder: "SELECT …",
+        hints: ["Toutes les colonnes demandées sont dans la table EMPLOYEES.", "Le tri décroissant s'écrit avec DESC après la colonne."],
+      },
+      {
+        type: "exercise",
+        title: "Exercice 2 : réflexion",
+        tag: "Réflexion",
+        prompt: "**Pourquoi la table EMPLOYEES ne suffit-elle pas à retrouver le département informatique à partir de son nom ?**",
+        placeholder: "Je pense qu'il faut…",
+        hints: ["Où est stocké le nom d'un département ?"],
+      },
+    ],
+  }),
+  "```",
+  "",
+  "Le même calcul en Python et en C :",
+  "",
+  "```python",
+  "salaires = [9000, 6000, 4800, 4800, 4200]",
+  "print(f\"Moyenne IT : {sum(salaires) / len(salaires):.0f}\")",
+  "```",
+  "",
+  "```c",
+  "#include <stdio.h>",
+  "",
+  "int main(void) {",
+  "    int salaires[] = {9000, 6000, 4800, 4800, 4200};",
+  "    int total = 0;",
+  "    for (int i = 0; i < 5; i++) total += salaires[i];",
+  "    printf(\"Moyenne IT : %d\\n\", total / 5);",
+  "    return 0;",
+  "}",
+  "```",
+].join("\n");

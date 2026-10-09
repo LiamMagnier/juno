@@ -32,7 +32,7 @@ function walk(list: readonly LiveComponent[], out: string[]): void {
       case "steps":
         if (c.title) out.push(c.title);
         c.steps.forEach((step, index) => {
-          out.push(`${index + 1}. ${step.title}${step.summary ? ` — ${step.summary}` : ""}`);
+          out.push(`${index + 1}. ${step.title}${step.summary ? `: ${step.summary}` : ""}`);
           if (step.notice) out.push(`   ${step.notice}`);
           walk(step.ui, out);
         });
@@ -41,7 +41,7 @@ function walk(list: readonly LiveComponent[], out: string[]): void {
       case "timeline":
         if (c.title) out.push(c.title);
         for (const item of c.items) {
-          out.push(`${item.time ? `${item.time} · ` : ""}${item.label}${item.detail ? ` — ${item.detail}` : ""}`);
+          out.push(`${item.time ? `${item.time} · ` : ""}${item.label}${item.detail ? `: ${item.detail}` : ""}`);
         }
         break;
       case "quiz":
@@ -53,18 +53,21 @@ function walk(list: readonly LiveComponent[], out: string[]): void {
         break;
       case "explorer":
         if (c.title) out.push(c.title);
-        for (const part of c.parts) out.push(`${part.label}${part.summary ? ` — ${part.summary}` : ""}`);
+        for (const part of c.parts) out.push(`${part.label}${part.summary ? `: ${part.summary}` : ""}`);
         break;
       case "callout":
         out.push(c.title ? `${c.title}: ${c.text}` : c.text);
         break;
       case "checklist":
         if (c.title) out.push(c.title);
-        for (const item of c.items) out.push(`☐ ${item.label}${item.note ? ` — ${item.note}` : ""}`);
+        for (const item of c.items) out.push(`☐ ${item.label}${item.note ? `: ${item.note}` : ""}`);
         break;
       case "stops":
         if (c.title) out.push(c.title);
-        for (const stop of c.stops) out.push(`${stop.time ? `${stop.time} · ` : ""}${stop.name}${stop.note ? ` — ${stop.note}` : ""}`);
+        for (const stop of c.stops) out.push(`${stop.time ? `${stop.time} · ` : ""}${stop.name}${stop.note ? `: ${stop.note}` : ""}`);
+        break;
+      case "exercise":
+        out.push(`${c.title}${c.tag ? ` (${c.tag})` : ""}`, c.prompt.replace(/\*\*/g, ""));
         break;
       case "text":
         if (!c.text.includes("{{")) out.push(c.text.replace(/\*\*/g, ""));

@@ -4,7 +4,7 @@ import * as React from "react";
 import { Markdown } from "@/components/chat/markdown";
 import { LiveUIHostProvider } from "@/components/chat/live-ui/host";
 import { splitMessageContent } from "@/lib/message-content";
-import { LEGACY_REPLY, LIVE_UI_SAMPLES, MERMAID_REPLY, type LiveUISample } from "./samples";
+import { LEGACY_REPLY, LIVE_UI_SAMPLES, MERMAID_REPLY, PRACTICE_REPLY, type LiveUISample } from "./samples";
 
 function Reply({ sample }: { sample: LiveUISample }) {
   return (
@@ -30,6 +30,15 @@ function LegacyReply() {
       <LiveUIHostProvider value={{ messageId: "dev-legacy" }}>
         <Markdown content={text} />
       </LiveUIHostProvider>
+    </section>
+  );
+}
+
+function PracticeReply() {
+  return (
+    <section className="flex flex-col gap-4" id="practice" data-sample="practice">
+      <h2 className="font-mono text-caption font-semibold text-muted-foreground">Practice · exercise cards and runnable code</h2>
+      <Markdown content={PRACTICE_REPLY} />
     </section>
   );
 }
@@ -120,6 +129,7 @@ export function LiveUIGallery() {
         ))}
         <LegacyReply />
         <MermaidReply />
+        <PracticeReply />
         <StreamingReplay sample={LIVE_UI_SAMPLES[0]} />
       </main>
     </LiveUIHostProvider>
