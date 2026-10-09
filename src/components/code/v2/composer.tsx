@@ -523,7 +523,7 @@ export const Composer = React.forwardRef<
     );
   }
   const showFoot = !pending.length && !(plan && !revising) && model.state !== "limited";
-  const deviceName = model.device ? "This Mac" : "Cloud";
+  const deviceName = model.device ? "This Mac" : "Set up your Mac";
 
   return (
     <div className="cv2-cstack">
@@ -688,7 +688,7 @@ export const Composer = React.forwardRef<
         )}
         <span className="cv2-grow" />
         <button type="button" className="s" aria-haspopup="menu" aria-expanded={popover === "device"} onClick={() => toggle("device")}>
-          <Glyph name={model.device ? "laptop" : "cloud"} size={12} />
+          <Glyph name="laptop" size={12} />
           {deviceName}
           {model.offline ? <span className="lbl-long">, offline</span> : null}
           <Glyph name="chevron-down" size={12} />
@@ -714,13 +714,6 @@ export const Composer = React.forwardRef<
       {model.offline && (
         <div className="cv2-under">
           <span>Reconnect to run on {model.device?.name ?? "your Mac"}. Messages send when it is back.</span>
-        </div>
-      )}
-      {!connected && !model.offline && (
-        <div className="cv2-under">
-          <button type="button" className="cv2-link" onClick={actions.openConnections}>
-            Open Connections
-          </button>
         </div>
       )}
     </div>
