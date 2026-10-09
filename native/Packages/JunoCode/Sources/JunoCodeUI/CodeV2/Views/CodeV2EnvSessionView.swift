@@ -69,13 +69,50 @@ public struct CodeV2EnvSessionView: View {
     }
 
     public var body: some View {
+        Group {
+            if snapshot.items.isEmpty {
+                newSession
+            } else {
+                thread
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Studio.Surface.canvas)
+        .task(id: session.sessionId) {
+            focused = true
+            if session.state.cursor == nil { await session.open() }
+        }
+        .onChange(of: session.sessionId, initial: true) { old, new in
+            if old != new { CodeV2ConnectedApprovals.shared.hiding(session: old) }
+            CodeV2ConnectedApprovals.shared.showing(session: new)
+        }
+        .onDisappear { CodeV2ConnectedApprovals.shared.hiding(session: session.sessionId) }
+    }
+
+    /// A thread with no turns yet (TARGET §4): the question at about 38% of
+    /// the canvas, the composer under it, nothing else.
+    private var newSession: some View {
+        GeometryReader { proxy in
+            VStack(spacing: JunoSpace.section) {
+                Text("What should we build in \(Text((snapshot.cwd as NSString).lastPathComponent).underline(pattern: .dot, color: Studio.Ink.tertiary))?")
+                    .studioType(.display)
+                    .foregroundStyle(Studio.Ink.primary)
+                    .lineLimit(1)
+                    .accessibilityAddTraits(.isHeader)
+                composerView
+            }
+            .frame(maxWidth: Studio.Metrics.measure)
+            .padding(.horizontal, Studio.Metrics.gutter)
+            .frame(maxWidth: .infinity)
+            .padding(.top, max(JunoSpace.region, proxy.size.height * 0.38 - 60))
+        }
+    }
+
+    private var thread: some View {
         VStack(spacing: 0) {
             ScrollViewReader { proxy in
                 ScrollView {
                     VStack(spacing: 0) {
-                        if snapshot.items.isEmpty {
-                            emptyState
-                        }
                         CodeV2ThreadView(
                             items: snapshot.items,
                             activeTurnId: snapshot.activeTurnId,
@@ -85,8 +122,7 @@ public struct CodeV2EnvSessionView: View {
                         )
                         if let message = session.lastError {
                             HStack(spacing: JunoSpace.snug) {
-                                JunoIconView(.circleX, size: 16).foregroundStyle(Studio.Ink.danger)
-                                Text(message).font(Studio.Font.label).foregroundStyle(Studio.Ink.primary)
+                                Text(message).studioType(.text).foregroundStyle(Studio.Ink.danger)
                                 Spacer()
                             }
                             .frame(maxWidth: Studio.Metrics.measure)
@@ -111,24 +147,6 @@ public struct CodeV2EnvSessionView: View {
                 .frame(maxWidth: .infinity)
                 .animation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion), value: pending.map(\.id))
         }
-        .background(Studio.Surface.canvas)
-        .task(id: session.sessionId) {
-            focused = true
-            if session.state.cursor == nil { await session.open() }
-        }
-        .onChange(of: session.sessionId, initial: true) { old, new in
-            if old != new { CodeV2ConnectedApprovals.shared.hiding(session: old) }
-            CodeV2ConnectedApprovals.shared.showing(session: new)
-        }
-        .onDisappear { CodeV2ConnectedApprovals.shared.hiding(session: session.sessionId) }
-    }
-
-    private var emptyState: some View {
-        Text("What should we build in \(Text((snapshot.cwd as NSString).lastPathComponent).underline(pattern: .dot, color: Studio.Ink.tertiary))?")
-            .studioType(.display)
-            .foregroundStyle(Studio.Ink.primary)
-            .frame(maxWidth: Studio.Metrics.measure)
-            .padding(.top, 180)
     }
 
     private var actions: CodeV2ThreadActions {

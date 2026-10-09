@@ -19,33 +19,31 @@ struct StudioUserMessage<Action: View>: View {
     @State private var hovering = false
 
     var body: some View {
-        VStack(alignment: .trailing, spacing: JunoSpace.hairline) {
+        VStack(alignment: .trailing, spacing: JunoSpace.tight) {
             Text(text)
                 .studioReadingFont()
                 .foregroundStyle(Studio.Ink.primary)
-                .lineSpacing(3)
+                .lineSpacing(4)
                 .textSelection(.enabled)
-                .padding(.horizontal, JunoSpace.cozy + 2)
-                .padding(.vertical, JunoSpace.snug + 1)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
                 .background(
-                    RoundedRectangle(cornerRadius: Studio.Radius.card + 4, style: .continuous)
-                        .fill(Studio.Surface.muted)
+                    RoundedRectangle(cornerRadius: Studio.Radius.bubble, style: .continuous)
+                        .fill(Studio.Surface.bubble)
                 )
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel("You: \(text)")
-                .overlay(alignment: .leading) {
-                    action(hovering)
-                        .alignmentGuide(.leading) { $0[.trailing] + JunoSpace.tight }
-                }
                 // A reader's message is a turn marker, not a column: capped
                 // so a long prompt does not read as the agent's reply.
-                .frame(maxWidth: Studio.Metrics.measure * 0.78, alignment: .trailing)
-            if let caption {
-                Text(caption)
-                    .font(Studio.Font.meta)
-                    .foregroundStyle(Studio.Ink.tertiary)
-                    .padding(.trailing, JunoSpace.snug)
+                .frame(maxWidth: Studio.Metrics.measure * 0.82, alignment: .trailing)
+            HStack(spacing: JunoSpace.snug) {
+                if let caption {
+                    Text(caption).studioType(.small).foregroundStyle(Studio.Ink.secondary)
+                }
+                action(hovering)
             }
+            .frame(minHeight: 18)
+            .opacity(caption != nil || hovering ? 1 : 0)
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
         .padding(.leading, 64)
@@ -69,8 +67,8 @@ struct StudioAssistantMessage: View {
     var body: some View {
         JunoMarkdownText(text, streaming: streaming)
             .studioReadingFont()
-            .foregroundStyle(Studio.Ink.primary)
-            .lineSpacing(3)
+            .foregroundStyle(Studio.Ink.prose)
+            .lineSpacing(4)
             .textSelection(.enabled)
             .frame(maxWidth: .infinity, alignment: .leading)
     }

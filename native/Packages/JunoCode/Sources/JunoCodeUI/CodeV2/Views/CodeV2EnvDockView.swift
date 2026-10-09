@@ -55,6 +55,13 @@ public struct CodeV2EnvDockView: View {
         }
     }
 
+    /// The run's Alevr spend against its budget, said once, in the Agents
+    /// header.
+    private var spend: (spent: Double, limit: Double)? {
+        guard let limit = snapshot.routing?.budget?.maxUsd else { return nil }
+        return (snapshot.usage?.costUsd ?? 0, limit)
+    }
+
     private var tabs: [CodeV2DockTab] {
         CodeV2DockTabs.visible(
             hasTerminal: terminal != nil, hasWorkspace: workspace != nil, hasFrames: !frames.isEmpty
@@ -69,7 +76,17 @@ public struct CodeV2EnvDockView: View {
         CodeV2Dock(
             tab: $dock.tab, tabs: tabs,
             counts: [.changes: session.threadDiff.count, .agents: nodes.count],
-            close: close
+            close: close,
+            headerAction: { tab in
+                guard tab == .screen, frames.contains(where: { $0.status == .running || $0.status == .pending }) else { return nil }
+                return AnyView(
+                    Button("Stop") { Task { await session.interrupt() } }
+                        .buttonStyle(.bordered).controlSize(.small)
+                        .keyboardShortcut(.cancelAction)
+                        .help("Stop using the computer (Esc)")
+                        .padding(.trailing, JunoSpace.tight)
+                )
+            }
         ) { tab in
             switch tab {
             case .changes:
@@ -85,7 +102,7 @@ public struct CodeV2EnvDockView: View {
                 if snapshot.routing?.preset == .bestOfN, !bestOfN.isEmpty {
                     AnyView(CodeV2BestOfNCompare(candidates: bestOfN, keep: { keepCandidate?($0) }))
                 } else {
-                    AnyView(CodeV2AgentsPane(nodes: nodes, selected: $dock.selectedAgent))
+                    AnyView(CodeV2AgentsPane(nodes: nodes, selected: $dock.selectedAgent, spend: spend))
                 }
             case .terminal:
                 if let terminal {
@@ -111,10 +128,7 @@ public struct CodeV2EnvDockView: View {
                         .foregroundStyle(Studio.Ink.secondary).padding(JunoSpace.regular))
                 }
             case .screen:
-                AnyView(CodeV2ScreenPane(
-                    actions: frames, selected: $dock.selectedFrame,
-                    stop: { Task { await session.interrupt() } }
-                ))
+                AnyView(CodeV2ScreenPane(actions: frames, selected: $dock.selectedFrame))
             }
         }
     }
