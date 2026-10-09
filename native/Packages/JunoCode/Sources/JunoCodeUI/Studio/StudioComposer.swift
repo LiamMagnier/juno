@@ -692,8 +692,12 @@ private struct StudioModeShortcut: ViewModifier {
     }
 }
 
-/// The model and thinking depth, as one chip opening the same selector Chat
-/// uses — one model picker across the whole app.
+/// The model and its thinking depth, as one chip: the same two-stage control
+/// Chat mounts (the website's model-selector.tsx). A model with thinking
+/// levels opens on the effort panel first; its name there opens the full
+/// catalogue. Everything else opens the catalogue straight away.
+///
+/// ⇧⌘M opens the catalogue and ⇧⌘E the effort panel directly.
 struct StudioModelChip: View {
     let models: [ModelOption]
     let modelID: String
@@ -702,8 +706,7 @@ struct StudioModelChip: View {
     let selectEffort: (ReasoningEffort?) -> Void
     var isEnabled = true
 
-    @State private var modelPresented = false
-    @State private var effortPresented = false
+    @State private var stage: JunoModelPickerStage?
 
     private var selected: ModelOption? { models.first { $0.modelID == modelID } }
 
@@ -721,6 +724,8 @@ struct StudioModelChip: View {
             .joined(separator: " ")
     }
 
+    /// The ladder Code can actually send for this model, which is not always
+    /// the catalog's (see ``ModelOption/thinkingLadder``).
     private var ladder: JunoThinkingLadder {
         selected?.thinkingLadder ?? .code(efforts: ModelOption.contractReasoningEfforts)
     }
@@ -740,55 +745,31 @@ struct StudioModelChip: View {
     }
 
     var body: some View {
-        HStack(spacing: 0) {
-            Button { modelPresented = true } label: {
-                StudioChipLabel(title: name, showsChevron: false)
+        JunoModelPicker(
+            models: models.map(\.descriptor),
+            selectedModelID: modelID,
+            ladder: ladder,
+            stopID: stopID,
+            fallbackName: name,
+            isEnabled: isEnabled,
+            accessibilityID: "juno.code.composer.model",
+            stage: $stage,
+            select: { selectModel($0.id) }
+        )
+        .background {
+            // The two shortcuts, as hidden buttons so they work wherever the
+            // composer has focus.
+            Group {
+                Button("Model") { stage = .catalog }
+                    .keyboardShortcut("m", modifiers: [.command, .shift])
+                Button("Thinking depth") { if ladder.isAdjustable { stage = .effort } }
+                    .keyboardShortcut("e", modifiers: [.command, .shift])
             }
-            .buttonStyle(.plain)
+            .opacity(0)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
             .disabled(!isEnabled || models.isEmpty)
-            .help("Model (⇧⌘M)")
-            .keyboardShortcut("m", modifiers: [.command, .shift])
-            .accessibilityLabel("Model")
-            .accessibilityValue(name)
-            .accessibilityIdentifier("juno.code.composer.model")
-            .popover(isPresented: $modelPresented, arrowEdge: .bottom) {
-                JunoModelSelector(
-                    models: models.map(\.descriptor),
-                    selectedModelID: modelID,
-                    metrics: .standard,
-                    select: { model in
-                        modelPresented = false
-                        selectModel(model.id)
-                    }
-                )
-                .frame(
-                    width: JunoModelSelectorMetrics.standard.width,
-                    height: JunoModelSelectorMetrics.standard.height
-                )
-            }.contentShape(.rect)
-
-            if ladder.isAdjustable {
-                Button { effortPresented = true } label: {
-                    StudioChipLabel(
-                        title: ladder.isAutomatic ? "Auto" : ladder.label(for: stopID.wrappedValue),
-                        showsChevron: true
-                    )
-                }
-                .buttonStyle(.plain)
-                .disabled(!isEnabled)
-                .help("Thinking depth (⇧⌘E)")
-                .keyboardShortcut("e", modifiers: [.command, .shift])
-                .accessibilityLabel("Thinking")
-                .popover(isPresented: $effortPresented, arrowEdge: .bottom) {
-                    JunoThinkingPanel(ladder: ladder, stopID: stopID)
-                        .frame(
-                            width: JunoThinkingMetrics.width,
-                            height: JunoThinkingMetrics.height(caption: ladder.caption != nil, modeToggles: false)
-                        )
-                }.contentShape(.rect)
-            }
         }
-        .fixedSize()
     }
 }
 

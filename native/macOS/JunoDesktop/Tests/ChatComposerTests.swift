@@ -242,21 +242,20 @@ struct ChatComposerTests {
         #expect(!claude.isJunoAuto)
     }
 
-    /// Stage one's frame is stated before the panel exists (crash rule 2): the
-    /// row band alone for Auto and for a model with nothing to set, the band
-    /// plus the rule and the panel otherwise.
+    /// The chip opens what the website's opens (model-selector.tsx): the
+    /// effort panel first for a model with thinking levels, the catalogue
+    /// straight away for Auto and for a model with nothing to set. The reset
+    /// lands on the model's own default stop.
     @Test
-    func stageOneStatesItsHeightFromTheScale() {
+    func theChipOpensTheEffortPanelOnlyForAModelWithLevels() {
         let auto = model("juno:auto", provider: "juno", automatic: true)
         let tiered = model("openai:gpt", provider: "openai", efforts: [.low, .medium, .high])
 
-        #expect(JunoThinkingPopover.height(for: nil) == 0)
-        #expect(JunoThinkingPopover.height(for: NativeThinkingScale(model: auto)) == 0)
-        #expect(ComposerModelChip.settingsHeight(for: NativeThinkingScale(model: auto)) == ComposerModelChip.settingsRowBand)
-
-        let scale = NativeThinkingScale(model: tiered)
-        #expect(JunoThinkingPopover.height(for: scale) == JunoThinkingMetrics.height)
-        #expect(ComposerModelChip.settingsHeight(for: scale) == ComposerModelChip.settingsRowBand + 1 + JunoThinkingMetrics.height)
+        #expect(JunoModelPickerStage.first(for: NativeThinkingScale(model: auto).junoLadder) == .catalog)
+        let ladder = NativeThinkingScale(model: tiered).junoLadder
+        #expect(JunoModelPickerStage.first(for: ladder) == .effort)
+        #expect(ladder.defaultStopID == NativeThinkingScale(model: tiered).defaultStop?.id)
+        #expect(JunoEffortPanelMetrics.height == 116)
     }
 
     // MARK: - The dock
