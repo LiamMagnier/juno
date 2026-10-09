@@ -189,6 +189,7 @@ struct LiveExerciseView: View {
                         Text(shown == 0 ? "Show a hint" : "Another hint")
                     }
                     .font(.callout)
+                    .contentShape(Capsule())
                 }
                 .buttonStyle(.borderless)
                 .foregroundStyle(Color.junoSecondaryInk)
@@ -212,6 +213,7 @@ struct LiveExerciseView: View {
                 Button(action: send) {
                     Text("Send answer")
                         .junoFont(size: 12, relativeTo: .footnote, weight: .medium)
+                        .contentShape(Capsule())
                 }
                 .buttonStyle(.glassProminent)
                 .buttonBorderShape(.capsule)

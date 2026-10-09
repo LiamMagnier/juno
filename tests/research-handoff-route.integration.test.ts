@@ -108,7 +108,7 @@ if (!DB_URL) {
       .filter((line) => line.startsWith("data: "))
       .map((line) => JSON.parse(line.slice("data: ".length)) as Frame);
 
-  const APP_FEATURES = ["timeline", "resume", "research_background", "suggest_research", "citations", "live_ui"];
+  const APP_FEATURES = ["timeline", "resume", "research_background", "suggest_research", "citations", "live_ui", "live_ui_exercise", "code_run"];
 
   async function post(body: Record<string, unknown>) {
     const route = await import("@/app/api/chat/route");

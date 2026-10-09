@@ -203,11 +203,11 @@ public struct JunoCodeRunOutput: View {
                 .contentTransition(.opacity)
                 .accessibilityLabel("Run state: \(status.word)")
             HStack(spacing: 0) {
-                Button { again += 1 } label: { JunoIconView(.rotateCcw, size: 14) }
+                Button { again += 1 } label: { JunoIconView(.rotateCcw, size: 14).contentShape(Circle()) }
                     .buttonStyle(JunoProseIconButtonStyle())
                     .help("Run again")
                     .accessibilityLabel("Run again")
-                Button(action: onClose) { JunoIconView(.close, size: 14) }
+                Button(action: onClose) { JunoIconView(.close, size: 14).contentShape(Circle()) }
                     .buttonStyle(JunoProseIconButtonStyle())
                     .help("Close the output")
                     .accessibilityLabel("Close the output")
@@ -456,6 +456,7 @@ public struct JunoCodeRunButton: View {
                 Text(label)
             }
             .junoFont(size: 12, relativeTo: .footnote, weight: .medium)
+            .contentShape(Capsule())
         }
         .buttonStyle(.glass)
         .buttonBorderShape(.capsule)

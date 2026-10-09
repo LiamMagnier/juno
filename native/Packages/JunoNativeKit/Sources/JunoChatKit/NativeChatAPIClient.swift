@@ -2045,9 +2045,13 @@ private struct GenerationRequestWire: Encodable {
 
 /// What the Mac tells `/api/chat` it renders (Tool calls & research SPEC
 /// §2.2): the typed timeline, resume frames, background research with its
-/// hand-off, the "Research this" suggestion, and numbered citations.
+/// hand-off, the "Research this" suggestion, numbered citations, Live UI with
+/// its exercise card, and Run on code blocks (``JunoCodeRunOutput``).
 public enum NativeChatClientFeatures {
-    public static let declared = ["timeline", "resume", "research_background", "suggest_research", "citations", "live_ui"]
+    public static let declared = [
+        "timeline", "resume", "research_background", "suggest_research", "citations", "live_ui",
+        "live_ui_exercise", "code_run",
+    ]
 
     /// The IANA zone, e.g. "Europe/Paris".
     public static var timeZone: String? {

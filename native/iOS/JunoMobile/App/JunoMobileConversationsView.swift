@@ -203,6 +203,14 @@ struct JunoMobileChatDetailScreen: View {
       imageLoader = NativeChatImageLoader(sender: requestSender, accountID: accountID)
     }
     .onDisappear { readAloud?.stop() }
+    // Run on a code block or an exercise answer: the web's console document,
+    // run on the phone (``JunoCodeRunOutput``).
+    .environment(\.junoCodeRunner, codeRunner)
+  }
+
+  private var codeRunner: JunoCodeRunner? {
+    guard let requestSender, let accountID else { return nil }
+    return NativeCodeConsoleClient(sender: requestSender).runner(for: accountID)
   }
 }
 
@@ -521,6 +529,16 @@ private struct JunoMobileConversationDetail: View {
   @State private var sourceFavicons = NativeSourceFavicons()
   @State private var sharing = false
   @State private var shareError: String?
+
+  /// Sends an exercise's answer as the next turn, on the conversation's model.
+  private func sendLiveUIAnswer(_ text: String) {
+    _ = model.sendMessage(
+      conversationID: conversation.id,
+      prompt: text,
+      modelID: selectedModelID.isEmpty ? conversation.model : selectedModelID,
+      reasoningEffort: reasoningEffort
+    )
+  }
 
   /// Creates the link, then hands it to the system sheet.
   ///
@@ -1021,7 +1039,12 @@ private struct JunoMobileConversationDetail: View {
       )
       // A Live UI view's prompt button puts its prompt in the composer, as a
       // follow-up chip does (docs/design/LIVE_UI.md).
-      .environment(\.junoLiveUIHost, JunoLiveUIHost(onPrompt: { prompt = $0 }))
+      // An exercise's Send answer sends straight away, as on the web: the
+      // answer is the reader's next turn, corrected in the conversation.
+      .environment(
+        \.junoLiveUIHost,
+        JunoLiveUIHost(onPrompt: { prompt = $0 }, onSend: { sendLiveUIAnswer($0) })
+      )
       .padding(.horizontal, JunoSpace.regular)
       .padding(.vertical, JunoSpace.section)
       .frame(maxWidth: 768)

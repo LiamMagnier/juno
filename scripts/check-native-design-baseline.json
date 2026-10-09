@@ -1,8 +1,8 @@
 {
   "glass": {
-    "total": 20,
+    "total": 23,
     "modules": {
-      "JunoNativeKit (shared)": 1,
+      "JunoNativeKit (shared)": 4,
       "JunoCode (shared)": 2,
       "JunoDesktop (macOS)": 6,
       "JunoMobile (iOS)": 11
@@ -11,6 +11,9 @@
       "native/Packages/JunoCode/Sources/JunoCodeUI/Studio/StudioGoalRow.swift": 1,
       "native/Packages/JunoCode/Sources/JunoCodeUI/Studio/StudioScreenControl.swift": 1,
       "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeChatApprovalView.swift": 1,
+      "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/JunoCodeRun.swift": 1,
+      "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/LiveUI/JunoLiveUIExercise.swift": 1,
+      "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/LiveUI/JunoLiveUIParts.swift": 1,
       "native/iOS/JunoMobile/App/JunoMobileCodeView.swift": 2,
       "native/iOS/JunoMobile/App/JunoMobileDictation.swift": 2,
       "native/iOS/JunoMobile/App/JunoMobileTasksView.swift": 1,

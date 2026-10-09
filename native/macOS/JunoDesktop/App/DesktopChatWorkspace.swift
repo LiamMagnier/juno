@@ -2414,6 +2414,12 @@ struct DesktopConversationView: View {
                     \.junoLiveUIHost,
                     JunoLiveUIHost(onPrompt: { text in composerRequest = ChatComposerRequest(kind: .send(text)) })
                 )
+                // Run on a code block or an exercise answer: the web's console
+                // document, run on this Mac (``JunoCodeRunOutput``).
+                .environment(
+                    \.junoCodeRunner,
+                    configuration.requestSender.map { NativeCodeConsoleClient(sender: $0).runner(for: session.profile.id) }
+                )
                 // In an agent's thread its replies speak as the agent.
                 .environment(
                     \.desktopAgentThread,
