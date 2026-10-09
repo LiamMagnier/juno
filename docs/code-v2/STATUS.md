@@ -96,7 +96,7 @@ paired Mac) shows each one with Install / Sign in buttons that run these:
 | Grok | `grok` CLI | `grok login` |
 | DeepSeek Harness | `npm install -g @deepseek-ai/dsh` | per its CLI |
 | OpenCode | `curl -fsSL https://opencode.ai/install \| bash` | `opencode auth login` |
-| Antigravity | on **legal hold**, hidden until PROVIDERS-LEGAL.md clears it | — |
+| Antigravity | Connections › Install (Alevr downloads Google's official runtime, pinned size and SHA-256) | Connections › Sign in: Google's page in the browser; from another device, paste the address it ends on |
 | Your own API keys (BYOK) | a key per lab | Settings › Connections › API keys (tested with the lab before it is saved) |
 
 After signing in, the provider probe (Refresh) turns the instance ready; usage
@@ -123,23 +123,20 @@ See the result object of this run for exact commands; summary:
   bundled env server in the running app; `/code/[id]` against a real account
   and Mac through the device link; computer use with Screen Recording and
   Accessibility granted.
-- **Ship the bundle in release builds**: `release-macos.sh` should run
-  `npm run env-server:bundle:mac` before archiving (not wired yet). The app
-  still needs the user's own `node` on PATH.
-- **Hub storage**: the device-link hub is in one backend process's memory
-  (fine for the current single pm2 fork); a shared store is needed before
-  running several backend processes.
-- **Web**: install `@xterm/xterm` for the Terminal tab; apply a rejected hunk on
-  the Mac from the live route; "resume at reset" needs a scheduling API; the
-  Code sidebar is ready but the app shell still renders its own.
+- **Web**: install `@xterm/xterm` for the Terminal tab; the Code sidebar is
+  ready but the app shell still renders its own. The runtime APIs below
+  (applyPatch, schedules, managed install/sign-in) have client functions but
+  no visuals yet: that is the UI rework's job.
+- **Antigravity**: a real Google sign-in and a real download of Google's 111 MB
+  release on this Mac (the tests use a fake runtime and a local archive).
 - **Mac**: Terminal/Files/Preview dock tabs for env-server threads;
   connected-agent approvals use NSAlert until they get a Studio card;
   Orchestrate selections on other providers (subscriptions, BYOK) inherit the
   parent's model in the Swift engine (no resolver yet); the overlay window has
   no snapshot test.
-- **Release**: re-check every item in PROVIDERS-LEGAL.md; Codex ChatGPT token
-  sharing stays disabled; Antigravity stays hidden. OpenRouter BYOK is not in
-  the catalogue.
+- **Release**: re-check every item in PROVIDERS-LEGAL.md (including the
+  Antigravity terms risk); Codex ChatGPT token sharing stays disabled.
+  OpenRouter BYOK is not in the catalogue.
 - Owner questions in DESIGN.md §11 (coral value, auto-deleting losing Best-of-N
   worktrees, Antigravity visibility).
 
@@ -156,3 +153,17 @@ Fixed on code/v2:
 - UI: Antigravity is listed as held instead of missing (web and Mac). Orchestrate role buttons share one column. Mac diff fills use the Code spec's quiet washes in dark. The computer-use fixtures show drawn frames. OpenCode uses the terminal glyph. The model rows on a subscription show its largest window.
 
 Screens: the web /dev/code-v2 gallery (13 states × light/dark × desktop/mobile) and the Mac CodeV2Gallery (13 surfaces × light/dark, rendered inside JunoDesktop so the icons load).
+
+## Runtime lane (code-v3/runtime, 2026-10-09)
+
+Owner request (2026-10-09): "enable antigravity and finish the remaining items". Branch `code-v3/runtime` from `code/v2` c453c8e7. Not pushed, merged or deployed.
+
+- **Antigravity enabled** (owner decision, 2026-10-09). The legal hold is lifted in the env server presets and registry. Alevr installs Google's official ACP runtime from `dl.google.com` (pinned size and SHA-256, exact two-file archive, identity checked with `initialize` before activation), signs it in with Google through the runtime's own `127.0.0.1` callback with a paste-the-address fallback for other devices, keeps one private profile per instance (`GEMINI_HOME`, file token storage), strips ambient `GEMINI_API_KEY` / Google credentials, probes with `initialize` only and declares its capabilities honestly. New commands `provider.install` and `provider.auth`; instances carry `install` and `auth` state. Web and Mac Connections data list it as a normal provider (no flag) and route Install / Sign in to those commands. Terms risk that remains: PROVIDERS-LEGAL.md "Antigravity".
+- **Rollback scoped to the session**: `checkpoint.rollback` restores only files this session's own turns changed after the checkpoint (consecutive checkpoint diffs plus its file_change items), inside its folder. A file changed again after the session's last turn (another session, the user) is left alone and named in the notice.
+- **Stale snapshots never apply**: `classifyEvent` (all TS copies) and the Swift `classify` treat a `session.snapshot` older than the cursor as a duplicate; `scripts/check-code-v2-contracts.mjs` asserts the rule in both languages.
+- **Resume at reset**: `turn.schedule` / `turn.unschedule`, persisted in the session log (`session.scheduled`, `SessionSnapshot.scheduledResume`) and `schedules.json`, re-armed after a restart, superseded by any new turn. Client functions: web `EnvClient.scheduleResume` / `cancelScheduledResume`, Mac `EnvServerConnection.turnSchedule` / `CodeV2EnvSession.scheduleResume`.
+- **Rejected hunks on the Mac**: `checkpoint.applyPatch` (forward or `reverse`, `checkOnly`), all or nothing, paths confined to the session's folder (no `..`, no `.git`, no symlink writes), refused while a turn runs. The Mac dock's Reject now goes through it (it also fixes a subfolder session, whose diff paths are repository-relative); web `EnvClient.applyPatch` takes `rejectedPatch(...)`.
+- **Device-link hub on Postgres** behind the same interface (`ALEVR_LINK_STORE=postgres`), memory by default. See DEVICE-LINK.md.
+- **Release ships the env server**: `native/Scripts/release-macos.sh` typechecks, tests and bundles it, checks the bundle runs and that the exported app carries it; the JunoDesktop pre-build phase builds it for non-Debug configurations. The app checks the user's Node (22.18 or later) and says plainly in Connections when it is missing or too old.
+- **Computer bridge bound to the env server**: the Mac bridge checks each connection's peer with `getpeereid` and `LOCAL_PEERPID` and answers only env servers the app launched (`EnvServerHub.onLaunch`), so a shell command that read `bridge.token` is refused; the env server reads the token only from a private regular file, never through a symlink.
+- **Fixed on the way**: a provider runtime that finished starting after its session closed (a restart racing a resumed turn) was adopted and leaked; it is now stopped.

@@ -40,9 +40,20 @@ The client is generic. Each preset runs the vendor's own binary:
 | Grok | `grok agent stdio` | xAI's terms for third-party clients of the Grok CLI and for subscription vs `XAI_API_KEY` use. |
 | DeepSeek Harness | `dsh --profile acp` | The harness license (MIT at the time of the audit) and DeepSeek API terms (API key only). |
 | OpenCode | `opencode acp` | OpenCode license (MIT) and the terms of whichever upstream provider the user signs it into. OpenCode can itself sign into other vendors' subscriptions, and those vendors' terms apply. |
-| **Antigravity** | `antigravity-acp` (Google's official ACP runtime from the ACP registry) | **On legal hold.** It is off by default (`legalHold` in `providers/presets.ts`) and needs `enabled: true` in `~/.alevr/env/instances.json` or `ALEVR_ENABLE_LEGAL_HOLD=1`. Alevr does not download it. The setup step opens the registry entry and asks the user to check its SHA-256. Before lifting the hold, confirm that Google's Antigravity terms allow a third-party app to run the runtime with the user's Google sign-in, and that redistribution or auto-install is not allowed (we don't do either). |
+| **Antigravity** | Google's official `antigravity-acp` runtime (`agy_acp_server.par` + `localharness_external`) | **Enabled by the owner on 2026-10-09** (the legal hold is lifted; see "Antigravity" below for what Alevr now does and the terms risk that remains). |
 
-For every ACP preset, probes call `initialize` only. Sign-in runs in the vendor's own CLI.
+For every ACP preset, probes call `initialize` only. Sign-in runs in the vendor's own CLI, except Antigravity, whose own runtime runs Google's sign-in (below).
+
+### Antigravity (enabled 2026-10-09)
+
+The owner decided on 2026-10-09 to enable Antigravity as a normal provider, accepting the open terms question below. The code (`runner/env-server/src/providers/antigravity/`) follows T3 Code's approach (MIT):
+
+- **Install.** `provider.install` downloads Google's release archive for this Mac from `dl.google.com`, at the URL the ACP registry lists, and refuses it unless its decoded size and SHA-256 match the release pinned in `release.ts` (registry commit dc55a349, recorded 2026-10-05). The zip must hold exactly the runtime and its harness at their pinned sizes; the extracted runtime must identify itself as `antigravity-acp` with Google sign-in and logout before `active.json` commits it. It lives in `~/.alevr/env/runtimes/antigravity-acp/<platform>-<arch>/`. A runtime the user installed by hand (on PATH, with `localharness_external` next to it) is used too. Alevr does not redistribute the runtime: every Mac downloads it from Google.
+- **Sign-in.** `provider.auth start` runs the runtime's own `authenticate` with `oauth-personal`. The runtime listens on `127.0.0.1:<port>`; Alevr shows Google's authorization page (it suppresses the runtime's own browser launch with a one-line `BROWSER` helper and accepts only `https://accounts.google.com/o/oauth2/v2/auth` with a `127.0.0.1` redirect). A browser on the Mac finishes on the loopback directly. From another device the user pastes the address the page ended on (`provider.auth complete`); it is checked against this flow (same origin and path, one state, one code, Google as issuer) and forwarded once, without proxies or redirects. Flows expire after 5 minutes.
+- **Credentials.** Each instance has its own profile (`GEMINI_HOME=~/.alevr/env/providers/antigravity/<sha256(instance id)>`, file token storage via `AGY_ACP_FORCE_FILE_STORAGE=1`), so a second Google account is a second instance. Alevr never reads, copies or sends the token file; it only checks that one exists. `GEMINI_API_KEY`, `GOOGLE_API_KEY`, `GOOGLE_APPLICATION_CREDENTIALS`, `GOOGLE_CLOUD_*`, gcloud project variables and the runtime's own control variables are stripped from the user's shell and from instance overrides. Sign-out uses the runtime's own `logout`.
+- **Probes and capabilities.** A probe calls `initialize` and stats the token file; it never authenticates or opens a session. Declared honestly: resume yes; steering, fork, conversation rollback (the runtime cannot rewind) and Alevr's plan mode no; images no (Alevr's ACP client sends text and file paths); Alevr's MCP (subagents) yes.
+
+**Terms risk that remains.** Nothing here was confirmed with Google. Re-check before public release: (1) that Google's Antigravity terms and plan rules allow a third-party desktop app to run the official ACP runtime with the user's personal Google sign-in; (2) that downloading the runtime from Google's CDN on the user's behalf (not redistributing it) is acceptable; (3) Google's trademark rules for the "Antigravity" name and the Google mark in Connections. If any answer is no, set `legalHold` on the preset again (the mechanism is still in `presets.ts` and `registry.isEnabled`).
 
 ### Alevr engine and BYOK: `alevr`, `byok`
 
@@ -59,7 +70,7 @@ The env server serves an MCP endpoint on 127.0.0.1 with a per-session scoped bea
 ## Release checklist
 
 1. Re-read the current terms for each row above, record the date and URL next to it in this file, and get sign-off.
-2. Keep Antigravity on legal hold and Codex Path B disabled unless step 1 says otherwise.
+2. Keep Codex Path B disabled unless step 1 says otherwise. Antigravity is enabled by the owner's decision of 2026-10-09; put it back on legal hold if step 1 finds its terms forbid this use.
 3. Check vendor trademark use in labels, icons and marketing: "Claude", "Codex", "ChatGPT", "Gemini", "Grok", "DeepSeek", "OpenCode" and "Antigravity".
 4. Confirm the licenses of bundled dependencies (`@anthropic-ai/claude-agent-sdk`, `ws`, `zod`, optional `node-pty`) for the Mac bundle.
-5. Re-run `runner/env-server` tests. `presets: honest names…` guards the labels and the legal hold.
+5. Re-run `runner/env-server` tests. `presets: honest names…` guards the labels and Antigravity's empty env passthrough; `test/antigravity.test.ts` guards the install checks, the sign-in flow and the stripped credentials.

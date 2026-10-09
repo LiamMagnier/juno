@@ -165,9 +165,10 @@ for (const backend of backends) {
 }
 
 test("the routes use memory unless ALEVR_LINK_STORE=postgres", () => {
-  assert.equal(linkStoreKind({}), "memory");
-  assert.equal(linkStoreKind({ ALEVR_LINK_STORE: "postgres" }), "postgres");
-  assert.ok(linkHub({}) instanceof EnvLinkHub);
-  assert.ok(linkHub({ ALEVR_LINK_STORE: "postgres" }) instanceof PgLinkHub);
+  const env = (vars: Record<string, string>) => vars as unknown as NodeJS.ProcessEnv;
+  assert.equal(linkStoreKind(env({})), "memory");
+  assert.equal(linkStoreKind(env({ ALEVR_LINK_STORE: "postgres" })), "postgres");
+  assert.ok(linkHub(env({})) instanceof EnvLinkHub);
+  assert.ok(linkHub(env({ ALEVR_LINK_STORE: "postgres" })) instanceof PgLinkHub);
   assert.ok(new DeviceLink());
 });

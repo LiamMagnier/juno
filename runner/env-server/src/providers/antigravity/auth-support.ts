@@ -138,7 +138,7 @@ export function runtimeEnv(profile: AntigravityProfile, harnessPath: string, ove
 export async function verifyBrowserHelper(profile: AntigravityProfile, nodePath = process.execPath): Promise<void> {
   const probe = "https://example.invalid/alevr-antigravity-browser-check";
   const output = await new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve) => {
-    const child = spawn(nodePath, ["-e", browserHelperSource, "--", probe], { env: { PATH: process.env.PATH ?? "", ELECTRON_RUN_AS_NODE: "1" }, stdio: ["ignore", "pipe", "pipe"], shell: false });
+    const child = spawn(nodePath, ["-e", browserHelperSource, "--", probe], { env: { PATH: process.env.PATH ?? "", ELECTRON_RUN_AS_NODE: "1" } as unknown as NodeJS.ProcessEnv, stdio: ["ignore", "pipe", "pipe"], shell: false });
     let stdout = "";
     let stderr = "";
     const timer = setTimeout(() => child.kill("SIGKILL"), 5000);

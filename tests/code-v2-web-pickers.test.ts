@@ -170,7 +170,7 @@ test("every glyph the v2 libraries name exists in the web icon set", () => {
 });
 
 test("a managed runtime (Antigravity) installs and signs in through the env server, not a terminal", () => {
-  const base = { id: "acp:antigravity", kind: "acp", label: "Antigravity", acpCommand: ["antigravity-acp"] } as const;
+  const base = { id: "acp:antigravity", kind: "acp" as const, label: "Antigravity", acpCommand: ["antigravity-acp"] };
   const missing = { ...base, status: "not-installed", install: { phase: "idle", version: "1.3.0" } } as ProviderInstance;
   assert.equal(isManagedRuntime(missing), true);
   assert.deepEqual(managedSetup(missing, "install"), { type: "provider.install", params: { instanceId: "acp:antigravity", action: "start" } });
