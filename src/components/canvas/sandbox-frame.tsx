@@ -757,10 +757,10 @@ function inlineConsoleStyle(theme: "light" | "dark"): string {
 html,body{margin:0;background:transparent;color:${c.fg}}
 #wrap{font:12.5px/1.65 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
 #bar{display:none}
-#term{padding:12px 16px 14px;white-space:pre-wrap;word-break:break-word}
+#term{padding:8px 16px 14px;white-space:pre-wrap;word-break:break-word}
 .ln{display:block;padding:1px 0}
 .log{color:${c.fg}}.info{color:${c.info}}.warn{color:${c.warn}}.error{color:${c.error}}.muted{color:${c.muted}}.result{color:${c.result}}
-table.rs{border-collapse:collapse;margin:4px 0 6px;white-space:nowrap;font-variant-numeric:tabular-nums}
+table.rs{border-collapse:collapse;margin:0 0 6px;white-space:nowrap;font-variant-numeric:tabular-nums}
 table.rs th,table.rs td{padding:4px 16px 4px 0;text-align:left;border-bottom:1px solid ${c.rule}}
 table.rs th{color:${c.head};font-weight:500}
 table.rs tr:last-child td{border-bottom:0}
