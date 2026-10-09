@@ -85,9 +85,9 @@ public extension EnvironmentValues {
     @Entry var junoCodeRunner: JunoCodeRunner? = nil
     @Entry var junoCodeRunStills: JunoCodeRunStills? = nil
     #if DEBUG
-    /// Runnable code blocks open with their output, for the snapshot and
-    /// preview harnesses' screenshots of a run.
-    @Entry var junoCodeRunOpensBlocks = false
+    /// Runnable code blocks in these languages open with their output, for the
+    /// snapshot and preview harnesses' screenshots of a run.
+    @Entry var junoCodeRunOpensBlocks: Set<String> = []
     #endif
 }
 
@@ -150,9 +150,9 @@ public struct JunoCodeRunOutput: View {
                 .frame(height: 1)
             header(status: still?.status ?? (failure == nil ? status : .error))
             if let still {
+                // At its own size from the left edge, as the console lays out:
+                // the still is wider than any block, and the right is cut.
                 Image(decorative: still.image, scale: still.scale)
-                    .resizable()
-                    .scaledToFit()
                     .frame(maxWidth: .infinity, alignment: .topLeading)
                     .frame(height: min(Self.maximumHeight, CGFloat(still.image.height) / still.scale), alignment: .topLeading)
                     .clipped()

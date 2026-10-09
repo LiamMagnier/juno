@@ -176,7 +176,7 @@ struct LiveExerciseView: View {
                     (exercise.hints.count > 1
                         ? Text("Hint \(i + 1). ").foregroundColor(Color.junoForeground.opacity(0.8))
                         : Text(""))
-                        + Text(interp(hint)).foregroundColor(Color.junoSecondaryInk)
+                        + Text(Self.statement(interp(hint))).foregroundColor(Color.junoSecondaryInk)
                 }
                 .font(.callout)
                 .fixedSize(horizontal: false, vertical: true)

@@ -10,14 +10,13 @@ import UIKit
 #if DEBUG
   import JunoPreviewSupport
 
-  /// `--juno-preview-practice typed|run|sent`: the practice conversation's
-  /// first exercise in that state, and with `run` every block's output open
-  /// (``PreviewPracticeFixtures``).
+  /// `--juno-preview-practice <state>`: the practice conversation's exercise
+  /// in that state, or a block with its output open (``PreviewPracticeFixtures``).
   private struct JunoMobilePracticePreview: ViewModifier {
     func body(content: Content) -> some View {
       content
         .environment(\.junoLiveUIExerciseSeeds, PreviewPracticeFixtures.seeds(for: PreviewPracticeFixtures.state))
-        .environment(\.junoCodeRunOpensBlocks, PreviewPracticeFixtures.state == "run")
+        .environment(\.junoCodeRunOpensBlocks, PreviewPracticeFixtures.openBlocks)
     }
   }
 #endif

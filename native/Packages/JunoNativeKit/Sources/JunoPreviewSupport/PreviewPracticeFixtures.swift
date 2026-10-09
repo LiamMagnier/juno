@@ -13,8 +13,9 @@ import JunoSync
 /// Open it with `--juno-preview-conversation conv-practice`. Run answers with
 /// the web's own console documents, generated from
 /// src/lib/sandbox/console-doc.ts by scripts/generate-console-fixtures.ts, so the preview runs exactly what the
-/// route would return (``PreviewConsoleDocs``). `--juno-preview-practice typed|run|sent` sets the first
-/// exercise's state for a screenshot; `run` also opens every block's output.
+/// route would return (``PreviewConsoleDocs``). `--juno-preview-practice empty|typed|run|sent` shows the
+/// exercise card alone, its first exercise in that state; `code` shows the
+/// runnable blocks alone, and `sql` / `python` with that block's output open.
 public enum PreviewPracticeFixtures {
     public static let conversationID = "conv-practice"
 
@@ -26,13 +27,17 @@ public enum PreviewPracticeFixtures {
     {"title":"Pratique SQL","ui":[{"type":"exercise","id":"ex_dept60","title":"Exercice 1","tag":"SQL","prompt":"Affiche le **nom** et le **salaire** des employés du département `60`.","language":"sql","placeholder":"-- Ta requête","hints":["La table s’appelle `employees`.","Filtre avec `WHERE department_id = 60`."]},{"type":"exercise","id":"ex_alias","title":"Exercice 2","tag":"Cours","prompt":"Explique en une phrase à quoi sert un **alias** de colonne.","hints":["Pense au mot-clé `AS`."]}]}
     """#
 
-    public static let answer = """
+    /// The exercise card, as the reply that poses it.
+    public static let exerciseAnswer = """
     Voici deux exercices sur le schéma HR. Lance ta requête avec Run avant de l’envoyer : je la corrige ensuite.
 
     ```live-ui
     \(liveUI)
     ```
+    """
 
+    /// The runnable blocks, as a reply that shows them.
+    public static let codeAnswer = """
     Pour rappel, la requête du cours, triée par salaire :
 
     ```sql
@@ -45,6 +50,16 @@ public enum PreviewPracticeFixtures {
     \(pythonSample)
     ```
     """
+
+    /// The whole lesson; a screenshot state shows the part it is about, since
+    /// one reply holding both is taller than a phone.
+    public static var answer: String {
+        switch state {
+        case "code", "sql", "python": codeAnswer
+        case "typed", "run", "sent", "empty": exerciseAnswer
+        default: exerciseAnswer + "\n\n" + codeAnswer
+        }
+    }
 
     static func records(_ a: StorageAccountID) -> [StoredRecord] {
         let iso = PreviewFixtures.iso
@@ -90,11 +105,20 @@ public enum PreviewPracticeFixtures {
 
     // MARK: Screenshot states
 
-    /// `--juno-preview-practice typed|run|sent`.
+    /// `--juno-preview-practice empty|typed|run|sent|code|sql|python`.
     public static var state: String? {
         let arguments = CommandLine.arguments
         guard let index = arguments.firstIndex(of: "--juno-preview-practice"), index + 1 < arguments.count else { return nil }
         return arguments[index + 1]
+    }
+
+    /// The runnable blocks that open their output, for ``state``.
+    public static var openBlocks: Set<String> {
+        switch state {
+        case "sql": ["sql"]
+        case "python": ["python"]
+        default: []
+        }
     }
 
     /// The first exercise's state for ``state``.

@@ -231,6 +231,7 @@
 		E9A0FE9C7FC697E66F368AF4 /* ComposerModelChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3E16891F7E491EB85E9FE8D /* ComposerModelChip.swift */; };
 		EAD7217374A9798E7AC1D63C /* DesktopScreenPresence.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F4A1EE60E2138D3DFF69F09 /* DesktopScreenPresence.swift */; };
 		EB8621B27559C85125EF55F2 /* DesktopSearchPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5B553BFA9DE401FD05F2D98 /* DesktopSearchPanel.swift */; };
+		ECDBE2A0E5317038B6914BF3 /* PracticeSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 185A7FAA9DF4BDF4502A8160 /* PracticeSnapshotTests.swift */; };
 		EECA061ECF7B53BDB8266F4D /* DesktopHostPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2EFB8984FA997DDF53805FB8 /* DesktopHostPage.swift */; };
 		EFA69F6076E6748752E50D81 /* DesktopScreenshotCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1993A9494C8380785278132D /* DesktopScreenshotCapture.swift */; };
 		F0415B5D42956526FE49F11E /* JunoWorkAutomation in Frameworks */ = {isa = PBXBuildFile; productRef = EFDF48E1D7E6735BFAC0AD07 /* JunoWorkAutomation */; };
@@ -295,6 +296,7 @@
 		173680B695930DC0611EDE9B /* Newsreader24pt-SemiBold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Newsreader24pt-SemiBold.ttf"; sourceTree = "<group>"; };
 		174DB040C281452E1895D66E /* PageSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PageSnapshotTests.swift; sourceTree = "<group>"; };
 		179D49011A1D7BB1781AB506 /* MessageMenuModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageMenuModelTests.swift; sourceTree = "<group>"; };
+		185A7FAA9DF4BDF4502A8160 /* PracticeSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PracticeSnapshotTests.swift; sourceTree = "<group>"; };
 		193D0F9EDDD2279429B85E6F /* JunoDesktop-Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "JunoDesktop-Debug.xcconfig"; sourceTree = "<group>"; };
 		1993A9494C8380785278132D /* DesktopScreenshotCapture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopScreenshotCapture.swift; sourceTree = "<group>"; };
 		19CF5E09C6BDD5EE6D5B99C4 /* DesktopSidebarChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopSidebarChrome.swift; sourceTree = "<group>"; };
@@ -587,6 +589,7 @@
 				174DB040C281452E1895D66E /* PageSnapshotTests.swift */,
 				5508A3BE9A5A4779ACEF0329 /* PageSnapshotTestsC.swift */,
 				4ED2FBB798AB98CCA730E5D0 /* PageSnapshotTestsStageB.swift */,
+				185A7FAA9DF4BDF4502A8160 /* PracticeSnapshotTests.swift */,
 				F3AF184D16505B367C9001D7 /* PremiumSnapshotTests.swift */,
 				0EE1E0953DB557168BCCD800 /* ResearchStageBSnapshotTests.swift */,
 				EFF3752CD70FDA49FAE186AD /* RunSnapshotFixtures.swift */,
@@ -1256,6 +1259,7 @@
 				7EDDC887F1D224D078A61F35 /* PageSnapshotTests.swift in Sources */,
 				78853E1CC3EE35CB44F05DDD /* PageSnapshotTestsC.swift in Sources */,
 				E3F77953F849D2BC2E6905DA /* PageSnapshotTestsStageB.swift in Sources */,
+				ECDBE2A0E5317038B6914BF3 /* PracticeSnapshotTests.swift in Sources */,
 				F798C292566A414A9E5B32CF /* PremiumSnapshotTests.swift in Sources */,
 				97D45F2C30A89033B81F70D6 /* QuitAndLifecycleTests.swift in Sources */,
 				2F2EC426C9EE411A510255D0 /* ResearchStageBSnapshotTests.swift in Sources */,

@@ -143,7 +143,7 @@ public struct JunoProseCodeBlock: View {
 
     private func openForSnapshot() {
         #if DEBUG
-        if opensBlocks, runTarget != nil, !outputOpen {
+        if let runTarget, opensBlocks.contains(runTarget.language), !outputOpen {
             outputOpen = true
             runToken = 1
         }
