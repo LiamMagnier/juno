@@ -104,7 +104,7 @@ struct CodeV2OrchestratePicker: View {
                     HStack {
                         VStack(alignment: .leading, spacing: 1) {
                             Text("Candidates").font(Studio.Font.label)
-                            Text("Each runs in its own worktree. You pick one; the others are deleted.")
+                            Text("The same model several times, or different ones side by side.")
                                 .font(Studio.Font.meta).foregroundStyle(Studio.Ink.secondary)
                         }
                         Spacer()
