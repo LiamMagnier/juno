@@ -22,8 +22,9 @@ import SwiftUI
 /// `.borderedProminent` underneath — the press, the metrics, the disabled and
 /// inactive-window states and `.defaultAction`'s Return are all AppKit's.
 ///
-/// One per surface (§0.4). It is opaque: glass is chrome (§0.1), so this is
-/// never `.glassProminent`.
+/// One per surface (§0.4). On the Mac it is `.glassProminent` in the accent
+/// (round 3: the owner asked for Liquid Glass controls throughout); the phone
+/// keeps the opaque `.borderedProminent`.
 public struct JunoProminentButtonStyle: PrimitiveButtonStyle {
     public init() {}
 
@@ -36,10 +37,17 @@ private struct JunoProminentButton: View {
     let configuration: PrimitiveButtonStyleConfiguration
 
     var body: some View {
+        #if os(macOS)
+        // Mac round 3 (owner, 2026-10-09): the primary action is the system's
+        // tinted Liquid Glass, with an opaque stand-in under Reduce
+        // Transparency and offscreen (JunoGlassControls.swift).
+        JunoGlassButton(configuration: configuration, prominent: true)
+        #else
         Button(configuration)
             .buttonStyle(.borderedProminent)
             .tint(Color.junoAccent)
             .contentShape(.rect)
+        #endif
     }
 }
 
@@ -58,7 +66,11 @@ public extension View {
     /// style is applied here, where the accent is fixed with it, rather than
     /// at call sites that would inherit the system blue.
     func junoProminentMenu() -> some View {
+        #if os(macOS)
+        junoGlassMenu(.capsule, prominent: true)
+        #else
         buttonStyle(.borderedProminent)
             .tint(Color.junoAccent)
+        #endif
     }
 }

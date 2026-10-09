@@ -60,6 +60,9 @@ enum TranscriptSnapshotRenderer {
             .environment(\.colorScheme, isDark ? .dark : .light)
             .environment(\.controlActiveState, .key)
             .environment(\.locale, Locale(identifier: "en_US"))
+            // Liquid Glass is the window server's to draw; offscreen, every
+            // glass control draws its opaque stand-in instead (round 3).
+            .environment(\.junoSnapshotOpaqueGlass, true)
             .transaction { $0.disablesAnimations = true }
 
         let host = NSHostingView(rootView: root)

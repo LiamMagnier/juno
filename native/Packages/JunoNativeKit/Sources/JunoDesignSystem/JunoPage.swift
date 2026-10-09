@@ -262,8 +262,14 @@ public struct JunoPageHeader<Actions: View>: View {
     }
 
     private var actionRow: some View {
-        HStack(spacing: JunoSpace.close) {
-            actions
+        // One glass container for the header's actions, as Calendar's top
+        // bar groups its capsules: the glass buttons sample together and
+        // blend where they near each other instead of reading as separate
+        // slabs (round 3).
+        GlassEffectContainer(spacing: JunoSpace.close) {
+            HStack(spacing: JunoSpace.close) {
+                actions
+            }
         }
         .fixedSize()
     }
@@ -485,7 +491,9 @@ public struct JunoPageSearchField: View {
         // The system search field's shape (round 2): a filled capsule with
         // no edge at rest, the focus ring only while typing — what the
         // sidebar's `.searchable` field and Finder's toolbar search draw.
-        .background(Capsule(style: .continuous).fill(Color.junoSecondary))
+        // Round 3: the field sits on the same glass capsule as the page's
+        // other controls, so the row reads as one family.
+        .modifier(JunoGlassSegmentTrack())
         .overlay(
             Capsule(style: .continuous)
                 .strokeBorder(Color.junoRing, lineWidth: isFocused ? 2 : 0)
@@ -535,16 +543,30 @@ public struct JunoPageMenu<Value: Hashable>: View {
     }
 
     public var body: some View {
-        // AppKit's own pull-down (round 2): the system draws the bezel, the
-        // chevrons and the menu, at the window's control metric.
-        Picker(accessibilityLabel, selection: $selection) {
-            ForEach(options) { option in
-                Text(option.menuTitle).tag(option.value)
+        // Round 3: a glass trigger — the current choice and the up-down
+        // chevrons — over the system's menu with an inline picker. AppKit's
+        // white pop-up bezel was the slab the owner retired.
+        Menu {
+            Picker(accessibilityLabel, selection: $selection) {
+                ForEach(options) { option in
+                    Text(option.menuTitle).tag(option.value)
+                }
             }
+            .pickerStyle(.inline)
+            .labelsHidden()
+        } label: {
+            HStack(spacing: 6) {
+                Text(current)
+                    .junoType(JunoType.ui.weight(.medium))
+                    .lineLimit(1)
+                JunoIconView(.chevronsUpDown, size: 12)
+                    .foregroundStyle(Color.junoSecondaryInk)
+                    .accessibilityHidden(true)
+            }
+            .foregroundStyle(Color.junoForeground)
+            .contentShape(Capsule())
         }
-        .pickerStyle(.menu)
-        .labelsHidden()
-        .fixedSize()
+        .junoGlassMenu()
         .accessibilityLabel(accessibilityLabel)
         .accessibilityValue(current)
     }
