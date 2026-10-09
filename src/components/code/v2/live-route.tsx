@@ -44,7 +44,6 @@ export interface CodeV2RouteProps {
     codeWorkspaceKey?: string | null;
   };
   initialMessages: ClientMessage[];
-  userName?: string;
 }
 
 function readJson<T>(key: string): T | null {
@@ -63,7 +62,7 @@ function writeJson(key: string, value: unknown) {
   }
 }
 
-export function CodeV2Route({ conversation, initialMessages, userName }: CodeV2RouteProps) {
+export function CodeV2Route({ conversation, initialMessages }: CodeV2RouteProps) {
   const router = useRouter();
   const { conversations, updateConversation } = useApp();
   const meta = useCodeTaskMeta(conversation.id);
@@ -368,7 +367,6 @@ export function CodeV2Route({ conversation, initialMessages, userName }: CodeV2R
     <CodeWorkspace
       model={model}
       sidebar={false}
-      userName={userName}
       byok={byok}
       firstRun={!instances.some((i) => i.kind !== "alevr" && (i.status === "ready" || i.status === "limited")) && !keys.length && session.messages.length === 0}
       onProbe={env.ready ? env.probe : undefined}

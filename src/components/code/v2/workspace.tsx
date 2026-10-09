@@ -19,7 +19,7 @@ import { ConnectionsPanel, type ConnectionsProps } from "./connections";
 import { Dock, type DockFocus } from "./dock";
 import { cycleEffort, cycleRuntimeMode, findInstance } from "./model-info";
 import { ComposerPopover, Glyph, Kbd, MenuList, useIsMac, type MenuEntry } from "./primitives";
-import { ThreadSidebar } from "./sidebar";
+import { CodeWorkList } from "@/components/app/code-work-list";
 import { SettingsContent, SettingsSidebar, type SettingsPane } from "./settings";
 import { Thread, ThreadSkeleton, type DockRequest } from "./thread";
 import type { WorkspaceModel, WorkspaceUiState } from "./types";
@@ -59,7 +59,6 @@ export interface CodeWorkspaceProps {
   ui?: WorkspaceUiState;
   /** Hide the Code sidebar (the app shell draws its own). */
   sidebar?: boolean;
-  userName?: string;
   byok?: ByokClient;
   onProbe?: (instanceId: string) => Promise<ProviderInstance | void>;
   onSetup?: (instance: ProviderInstance, action: "install" | "login") => Promise<void | string> | void | string;
@@ -165,7 +164,7 @@ function Shortcuts({ onClose }: { onClose: () => void }) {
   );
 }
 
-export function CodeWorkspace({ model, ui = {}, sidebar = true, userName, byok, onProbe, onSetup, onManaged, firstRun, loading, resolveScreenshot, className }: CodeWorkspaceProps) {
+export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, onSetup, onManaged, firstRun, loading, resolveScreenshot, className }: CodeWorkspaceProps) {
   const mac = useIsMac();
   const [dock, dispatch] = React.useReducer(dockReducer, undefined, () => {
     const s = initialDockState(readStored(WIDTH_KEY, Number) ?? undefined);
@@ -476,15 +475,11 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, userName, byok, 
       data-composer-focus={composerFocus ? "true" : undefined}
     >
       {sidebar && sideOpen && (
-        <ThreadSidebar
-          threads={model.threads ?? []}
-          activeId={model.thread.id}
-          userName={userName}
-          onOpen={(id) => model.actions.openThread?.(id)}
-          onNew={() => model.actions.newThread?.()}
-          onSearch={() => setPalette(true)}
-          onSettings={() => setSettings("general")}
-        />
+        <nav className="cv2-side" aria-label="Code sessions">
+          <div className="cv2-side-scroll" style={{ paddingTop: 12 }}>
+            <CodeWorkList threads={model.threads ?? []} activeId={model.thread.id} onOpen={(id) => model.actions.openThread?.(id)} />
+          </div>
+        </nav>
       )}
       <main className={cn("cv2-main", dock.open && dock.expanded && "expanded")} aria-label={model.thread.title}>
         <div className="cv2-left">

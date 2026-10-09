@@ -8,7 +8,6 @@ import { toast } from "sonner";
 import {
   Archive,
   ArchiveRestore,
-  ChevronDown,
   ChevronRight,
   ChevronsUpDown,
   Pin,
@@ -55,11 +54,11 @@ import { ScrollFade } from "@/components/ui/scroll-fade";
 import { useApp } from "@/components/app/app-provider";
 import { ProductSwitch, type ProductSurface } from "@/components/app/product-switch";
 import { ShareDialog } from "@/components/share/share-dialog";
-import { useCodeRuns } from "@/components/code/use-code-runs";
+import { CodeShellList } from "@/components/app/code-work-list";
+import { LIST_ROW_TRANSITION, Section, Disclosure, listRowClass } from "@/components/app/sidebar-section";
 import { useWorkRunsByConversation } from "@/components/work/inbox/use-needs-you-count";
 import { StatusDot, statusLabel, statusSentence, statusTone } from "@/components/work/work-vocabulary";
-import { RUN_STATE_META, isBlockedOnYou, runState } from "@/lib/code-runs";
-import { codeRunTone, newestPerConversation, workRunIsOpen, type StatusTone } from "@/lib/conversation-status";
+import { workRunIsOpen, type StatusTone } from "@/lib/conversation-status";
 import { PLANS } from "@/lib/plans";
 import { spring, staggerDelay, transition } from "@/lib/motion";
 import { intentPrefetch } from "@/lib/intent-prefetch";
@@ -629,41 +628,18 @@ export function AppSidebar({
   /* ── What is running behind these rows ───────────────────────────────── */
 
   /*
-   * One poll per product, and only the one this column is showing.
+   * Chat's runs, polled only while this column is Chat's. The Code column's
+   * list (`CodeShellList`) reads its own runs, so a Code column asks for
+   * nothing here.
    *
-   * Hooks cannot be called conditionally, so both are mounted and the inactive
-   * one is told not to fetch. That is not a trick to get around the rule: a
-   * Chat column has nothing to say about Code runs and vice versa, so a poll
-   * for the other product is a request whose answer is discarded.
+   * A Chat row only lights up while its run is still the reader's business:
+   * a finished task leaves the conversation a conversation, and a permanent
+   * green tick on every chat that ever delegated something is decoration.
    */
   const workRuns = useWorkRunsByConversation({ enabled: !isCode });
-  const { runs: codeRuns, reachableFor } = useCodeRuns({ enabled: isCode, perConversation: true });
 
-  /*
-   * The two products' runs, reduced to the same three facts per conversation.
-   *
-   * A Chat row only lights up while its run is still the reader's business —
-   * a finished task leaves the conversation a conversation, and a permanent
-   * green tick on every chat that ever delegated something is decoration. A
-   * Code row always carries its state, because in that product the row IS the
-   * session and "finished, nothing to review" is the answer somebody opened
-   * the panel for.
-   */
   const rowSignals = React.useMemo(() => {
     const signals = new Map<string, RowSignal>();
-    if (isCode) {
-      const newest = newestPerConversation(
-        codeRuns,
-        (run) => run.conversationId,
-        (run) => run.createdAt,
-      );
-      for (const [conversationId, run] of newest) {
-        const state = runState(run, reachableFor(run));
-        const meta = RUN_STATE_META[state];
-        signals.set(conversationId, { tone: codeRunTone(state), label: meta.label, meaning: meta.meaning });
-      }
-      return signals;
-    }
     for (const [conversationId, session] of workRuns.byConversation) {
       if (!workRunIsOpen(session.status, session.needsAttention)) continue;
       signals.set(conversationId, {
@@ -673,22 +649,10 @@ export function AppSidebar({
       });
     }
     return signals;
-  }, [isCode, codeRuns, reachableFor, workRuns.byConversation]);
+  }, [workRuns.byConversation]);
 
   /** The conversations whose newest run has stopped for a person. */
-  const needsYouIds = React.useMemo(() => {
-    if (!isCode) return workRuns.needsYou;
-    const ids = new Set<string>();
-    const newest = newestPerConversation(
-      codeRuns,
-      (run) => run.conversationId,
-      (run) => run.createdAt,
-    );
-    for (const [conversationId, run] of newest) {
-      if (isBlockedOnYou(run, reachableFor(run))) ids.add(conversationId);
-    }
-    return ids;
-  }, [isCode, codeRuns, reachableFor, workRuns.needsYou]);
+  const needsYouIds = workRuns.needsYou;
 
   /* ── Lists ───────────────────────────────────────────────────────────── */
 
@@ -698,8 +662,8 @@ export function AppSidebar({
    * session had no row anywhere in the shell.
    */
   const live = React.useMemo(
-    () => conversations.filter((c) => !c.archivedAt && (c.kind === "code") === isCode),
-    [conversations, isCode]
+    () => conversations.filter((c) => !c.archivedAt && c.kind !== "code"),
+    [conversations]
   );
   /*
    * Needs you takes precedence over Pinned, and over the date folds.
@@ -719,36 +683,34 @@ export function AppSidebar({
   const attention = React.useMemo<AttentionItem[]>(() => {
     const items: AttentionItem[] = [];
     const covered = new Set<string>();
-    if (!isCode) {
-      for (const agent of agents) {
-        if (agent.state !== "waiting") continue;
-        const conversationId = agent.task?.conversationId ?? agent.conversationId ?? null;
-        if (conversationId) covered.add(conversationId);
-        items.push({
-          key: `agent:${agent.id}`,
-          href: conversationId ? `/chat/${conversationId}` : `/agents/${agent.id}`,
-          who: agent.name,
-          ask: askWords(agent.task?.status),
-          what: agent.task?.title?.trim() || agent.role || "a task",
-          agent,
-          conversationId,
-        });
-      }
+    for (const agent of agents) {
+      if (agent.state !== "waiting") continue;
+      const conversationId = agent.task?.conversationId ?? agent.conversationId ?? null;
+      if (conversationId) covered.add(conversationId);
+      items.push({
+        key: `agent:${agent.id}`,
+        href: conversationId ? `/chat/${conversationId}` : `/agents/${agent.id}`,
+        who: agent.name,
+        ask: askWords(agent.task?.status),
+        what: agent.task?.title?.trim() || agent.role || "a task",
+        agent,
+        conversationId,
+      });
     }
     for (const c of needsYouRows) {
       if (covered.has(c.id)) continue;
       items.push({
         key: c.id,
         href: `/chat/${c.id}`,
-        who: isCode ? BRAND.code.title : PRODUCT_NAME,
-        ask: isCode ? (rowSignals.get(c.id)?.label ?? AGENT_STATE_NAMES.needsAnswer) : askWords(workRuns.byConversation.get(c.id)?.status),
+        who: PRODUCT_NAME,
+        ask: askWords(workRuns.byConversation.get(c.id)?.status),
         what: c.title || (c.kind === "code" ? "Untitled session" : "New chat"),
         conversation: c,
         conversationId: c.id,
       });
     }
     return items;
-  }, [agents, isCode, needsYouRows, rowSignals, workRuns.byConversation]);
+  }, [agents, needsYouRows, workRuns.byConversation]);
   const pinned = React.useMemo(() => live.filter((c) => c.pinned && !needsYouIds.has(c.id)), [live, needsYouIds]);
   // Project chats stay in Recents as well as under their project, because a
   // project is a workspace rather than a filing.
@@ -1172,9 +1134,8 @@ export function AppSidebar({
         </div>
 
         {/* ── Destinations ─────────────────────────────────────────────── */}
-        {/* Chat: Library · Projects · Artifacts. Code: Artifacts · Customize ·
-            Pull requests. Then More for the rest. The rail keeps the same
-            order icon-only; More opens the same flyout. */}
+        {/* Chat: Projects · Library · Customize. Code: Customize, the one way
+            to /code/customize. The rail keeps the same order icon-only. */}
         {/* `min-h-0 flex-1 overflow-y-auto` on the rail: collapsed, the list
             scroller below renders nothing, all thirteen rail rows sit in
             non-scrolling blocks, and the shell's `<aside>` is `overflow-hidden`
@@ -1302,6 +1263,10 @@ export function AppSidebar({
                       ))}
                     </div>
                   </div>
+                ) : isCode ? (
+                  /* Code's list of work, in this column's recipes (see
+                     code-work-list.tsx): the same headings, rows and fills. */
+                  <CodeShellList onNavigate={() => setSidebarOpen(false)} />
                 ) : (
                   <>
                     {/* NEEDS YOU — above everything, and only when there is
@@ -1349,7 +1314,7 @@ export function AppSidebar({
                         shipped face, its name and its state in words on the
                         right, in the third ink. Ready says nothing, and the
                         ask is coloured once, in Needs you. */}
-                    {!isCode && !needsYouOnly && (
+                    {!needsYouOnly && (
                       <section className="group/section mt-5 first:mt-0" aria-label={`${BRAND.orbit.label}, ${BRAND.orbit.description.toLowerCase()}`}>
                         <div className="flex items-center">
                           <Link
@@ -1395,14 +1360,14 @@ export function AppSidebar({
                       </section>
                     )}
 
-                    {projectsError && !isCode && !needsYouOnly && (
+                    {projectsError && !needsYouOnly && (
                       <InlineErrorRow message="Couldn’t load your projects." onRetry={loadProjects} />
                     )}
 
                     {/* Projects are Chat's filing, not Code's: a Code session
                         belongs to a repository or a workspace, which is a fact
                         about where it RUNS and is already on the session. */}
-                    {!isCode && !needsYouOnly && sidebarProjects.length > 0 && (
+                    {!needsYouOnly && sidebarProjects.length > 0 && (
                       // "Pinned projects", because that is what `sidebarProjects`
                       // is — the starred subset — and because the nav row ~40px
                       // above this heading already says "Projects" and already
@@ -1455,10 +1420,9 @@ export function AppSidebar({
                       // "Pinned chats", for the reason the section above is
                       // "Pinned projects": the same word at the same rung one
                       // section apart, naming two kinds of thing, reads as one
-                      // list cut in half rather than two lists. In Code the
-                      // noun is "sessions", because that is what the rows are.
+                      // list cut in half rather than two lists.
                       <Section
-                        label={isCode ? "Pinned sessions" : "Pinned chats"}
+                        label="Pinned chats"
                         isCollapsed={sectionCollapsed.pinned}
                         onToggleCollapse={() => toggleSection("pinned")}
                       >
@@ -1504,10 +1468,7 @@ export function AppSidebar({
                       </Section>
                     ) : (
                       live.length === 0 &&
-                      // Projects are not drawn in the Code column, so a starred
-                      // project must not suppress the one sentence that says a
-                      // person has no sessions yet.
-                      (isCode || sidebarProjects.length === 0) && (
+                      sidebarProjects.length === 0 && (
                         /* LEFT, on the column's own text edge, and not
                            centred. It was the only centred text in this
                            panel — every heading, fold and title above it
@@ -1518,7 +1479,7 @@ export function AppSidebar({
                            down an empty list rather than under the thing it
                            is about. */
                         <p className="px-2 pb-2 pt-3 text-ui text-muted-foreground" aria-live="polite">
-                          {isCode ? "No sessions yet." : "No conversations yet."}
+                          No conversations yet.
                           <br />
                           Start one above.
                         </p>
@@ -2115,33 +2076,6 @@ function navRowClass(collapsed: boolean, active: boolean) {
   );
 }
 
-/**
- * Selection for the rows that are NOT the travelling fill: conversations,
- * projects, a project's own chats.
- *
- * They keep a CSS fill that cuts rather than travels, and that is deliberate.
- * The four navigation rows are a fixed, always-mounted ladder eight pixels
- * apart, so a fill sliding between them reads as one object moving. This list
- * is a scroller: the row you leave can be four hundred pixels up the column or
- * unmounted entirely, and a fill flying that far — or vanishing mid-flight
- * because its origin scrolled out of the well — is a projectile, not a
- * correction. Same recipe, same fill, no travel.
- */
-function listRowClass(active: boolean) {
-  return active
-    ? "sidebar-row-selected text-foreground"
-    : "text-sidebar-foreground hover:bg-sidebar-hover hover:text-foreground";
-}
-
-/**
- * What a list row animates: its fill and its ink, on the `fast` rung (120ms).
- * This is a property changing on a row the pointer has just left or landed
- * on, and the two rows do it at once: the one you left gives its fill up over
- * exactly the window the one you chose takes it on, so the state crosses
- * rather than blinking.
- */
-const LIST_ROW_TRANSITION =
-  "transition-[background-color,color] duration-fast ease-out-soft motion-reduce:transition-none";
 
 function InlineErrorRow({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
@@ -2210,92 +2144,6 @@ function SectionAction({
   );
 }
 
-function Section({
-  label,
-  children,
-  isCollapsed,
-  onToggleCollapse,
-  action,
-}: {
-  label: string;
-  children: React.ReactNode;
-  isCollapsed: boolean;
-  onToggleCollapse: () => void;
-  action?: React.ReactNode;
-}) {
-  return (
-    // `mt-5` ABOVE the heading that owns the break, so the first section sits
-    // on the scroller's own `pt-5` and every later one is separated from the
-    // list it follows by the same 20px.
-    <div className="group/section mt-5 first:mt-0">
-      <div className="flex items-center">
-        <button
-          type="button"
-          onClick={onToggleCollapse}
-          aria-expanded={!isCollapsed}
-          /* `px-2`: 16px from the panel edge, measured at 15.2 in the
-             reference, and NOT the 46px the nav labels sit at.
-             THE COLUMN HAS TWO TEXT EDGES ON PURPOSE. 46px is where a label
-             lands when a glyph precedes it, and every destination has one.
-             A section heading has no glyph and neither do the conversation
-             rows under it, so both sit at 16: the heading on the same edge as
-             the list it heads, which is the alignment that actually matters.
-
-             A plain button, not `Pressable kind="row"`: a heading is a label
-             on the list, and the row press tone (`active:bg-selected`, a page
-             fill) and hover fill made it flash like one more row. Only its
-             ink answers the pointer. */
-          className="group/heading flex h-7 min-w-0 flex-1 select-none items-center gap-1 rounded-control px-2 text-left text-label text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground motion-reduce:transition-none coarse:h-11"
-        >
-          {/* ONE SECTION VOICE: sentence-case sans at the `label` rung (12px,
-              weight 500), muted, two steps under the 14px rows. Quiet enough
-              to be a label ON the list rather than an object beside it, which
-              is how the reference sets them. */}
-          <span className="shell-annot min-w-0 truncate">{label}</span>
-          {/* The chevron appears with the pointer or focus, and stays while
-              the section is folded, because folded is a state the reader has
-              to be able to see. `ease-in-out` on the `base` rung: both ends of
-              the turn are on screen, and the rows under it unfold over the
-              same 220ms. */}
-          <ChevronDown
-            aria-hidden
-            className={cn(
-              "size-3 shrink-0 transition-[opacity,transform] duration-base ease-in-out motion-reduce:transition-none",
-              isCollapsed
-                ? "-rotate-90"
-                : "opacity-0 group-hover/section:opacity-100 group-focus-visible/heading:opacity-100 coarse:opacity-100"
-            )}
-          />
-        </button>
-        {action != null && <span className="flex shrink-0 items-center">{action}</span>}
-      </div>
-      <Disclosure open={!isCollapsed}>
-        <div className="pt-1">{children}</div>
-      </Disclosure>
-    </div>
-  );
-}
-
-/** The panel's one fold: a grid-rows sweep so rows never pop. */
-function Disclosure({ open, children }: { open: boolean; children: React.ReactNode }) {
-  return (
-    <div
-      className={cn(
-        "grid transition-[grid-template-rows,visibility] duration-base ease-out-soft motion-reduce:transition-none",
-        open ? "visible grid-rows-[1fr]" : "invisible grid-rows-[0fr]"
-      )}
-    >
-      <div
-        className={cn(
-          "min-h-0 overflow-hidden transition-opacity duration-base ease-out-soft motion-reduce:transition-none",
-          !open && "opacity-0"
-        )}
-      >
-        {children}
-      </div>
-    </div>
-  );
-}
 
 /** Inline rename field for a chat row. */
 function InlineNameInput({

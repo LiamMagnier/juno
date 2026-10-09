@@ -2,7 +2,10 @@
 
 import * as React from "react";
 import { AppProvider, useApp } from "@/components/app/app-provider";
-import { AppShell } from "@/components/app/app-shell";
+import { AppShell, DRAWER_CLASS } from "@/components/app/app-shell";
+import type { ProductSurface } from "@/components/app/product-switch";
+import { Sheet, SheetContent } from "@/components/ui/sheet";
+import { publishThreadState } from "@/lib/code-v2/shell-threads";
 import { AppSidebar } from "@/components/app/app-sidebar";
 import type { AppBootstrap } from "@/types/app";
 import type { ClientConversation } from "@/types/chat";
@@ -55,10 +58,14 @@ const CONVERSATIONS: ClientConversation[] = [
   conversation("c-9", "Birthday dinner menu for eight, one vegetarian", 120),
   conversation("c-10", "Compare three standing desks under 600 euros", 200),
   conversation("c-11", "Figure out why the build is slow on CI", 260),
-  conversation("k-1", "Fix flaky auth test in the API package", 2, { kind: "code" }),
-  conversation("k-2", "Add pagination to the artifacts list", 9, { kind: "code", pinned: true }),
-  conversation("k-3", "Upgrade Prisma and regenerate the client", 30, { kind: "code" }),
-  conversation("k-4", "Port the settings modal to the new tokens", 72, { kind: "code" }),
+  conversation("k-1", "Fix flaky auth test in the API package", 2, { kind: "code", codeWorkspaceName: "alevr-api" }),
+  conversation("k-2", "Add pagination to the artifacts list", 9, { kind: "code", pinned: true, codeWorkspaceName: "alevr-web" }),
+  conversation("k-3", "Upgrade Prisma and regenerate the client", 30, { kind: "code", codeWorkspaceName: "alevr-api" }),
+  conversation("k-4", "Port the settings modal to the new tokens", 50, { kind: "code", codeWorkspaceName: "alevr-web" }),
+  conversation("k-5", "Move checkout totals to the server", 5, { kind: "code", codeWorkspaceName: "shop" }),
+  conversation("k-6", "Cart total regression suite", 0.5, { kind: "code", codeWorkspaceName: "shop" }),
+  conversation("k-7", "Upgrade to React 20", 120, { kind: "code", codeWorkspaceName: "alevr-web" }),
+  conversation("k-8", "Drop the legacy billing webhook", 200, { kind: "code", codeWorkspaceName: "alevr-api" }),
 ];
 
 /** A hundred older chats for `?many=1`: more than two pages of Recent, so the
@@ -248,6 +255,16 @@ function installFixtureFetch(): () => void {
   };
 }
 
+/** What the open Code workspaces say right now: one working, one asking. */
+function publishCodeStates(): () => void {
+  publishThreadState("k-6", { state: "running" });
+  publishThreadState("k-1", { state: "waiting", waitingFor: "wants to run a command" });
+  return () => {
+    publishThreadState("k-6", null);
+    publishThreadState("k-1", null);
+  };
+}
+
 /** Selects one conversation, so the list shows the selected fill. */
 function SelectConversation({ id }: { id: string }) {
   const { setActiveConversationId } = useApp();
@@ -289,11 +306,14 @@ export function ShellFixture({
   nearCap,
   many,
   shell,
+  drawer,
   width,
 }: {
   nearCap: boolean;
   many: boolean;
   shell: boolean;
+  /** Mounts the phone drawer, open, holding this product's column. */
+  drawer?: ProductSurface;
   /** The expanded frames' width, 288 unless `?w=` asks for another. */
   width: number;
 }) {
@@ -302,8 +322,12 @@ export function ShellFixture({
 
   React.useEffect(() => {
     const restore = installFixtureFetch();
+    const unpublish = publishCodeStates();
     setReady(true);
-    return restore;
+    return () => {
+      restore();
+      unpublish();
+    };
   }, []);
 
   const data = React.useMemo(() => bootstrap(nearCap, many), [nearCap, many]);
@@ -323,22 +347,48 @@ export function ShellFixture({
     );
   }
 
+  if (drawer) {
+    // The phone drawer as the shell opens it: the same Sheet and re-based
+    // tokens, for either product's column, so the two can be compared.
+    return (
+      <AppProvider bootstrap={data}>
+        <SelectConversation id={drawer === "code" ? "k-2" : "c-active"} />
+        <main className="min-h-dvh bg-background" />
+        <Sheet open onOpenChange={() => undefined}>
+          <SheetContent className={DRAWER_CLASS} title="Conversations">
+            <AppSidebar product={drawer} />
+          </SheetContent>
+        </Sheet>
+      </AppProvider>
+    );
+  }
+
+  // Chat and Code side by side, each in its own provider so each column has
+  // its own open conversation (and so its own selected row).
   return (
-    <AppProvider bootstrap={data}>
-      <SelectConversation id="c-active" />
-      <main className="min-h-dvh bg-background p-6">
-        <div className="flex flex-wrap items-start gap-8">
+    <main className="min-h-dvh bg-background p-6">
+      <div className="flex flex-wrap items-start gap-8">
+        <AppProvider bootstrap={data}>
+          <SelectConversation id="c-active" />
           <Frame label={`Chat, expanded (${width})`} width={collapsed ? 52 : width} open={width}>
             <AppSidebar product="chat" collapsed={collapsed} onToggleCollapse={() => setCollapsed((v) => !v)} />
           </Frame>
-          <Frame label="Rail (52)" width={52}>
-            <AppSidebar product="chat" collapsed onToggleCollapse={() => undefined} />
-          </Frame>
+        </AppProvider>
+        <AppProvider bootstrap={data}>
+          <SelectConversation id="k-2" />
           <Frame label={`Code, expanded (${width})`} width={width}>
             <AppSidebar product="code" onToggleCollapse={() => undefined} />
           </Frame>
-        </div>
-      </main>
-    </AppProvider>
+        </AppProvider>
+        <AppProvider bootstrap={data}>
+          <Frame label="Chat rail (52)" width={52}>
+            <AppSidebar product="chat" collapsed onToggleCollapse={() => undefined} />
+          </Frame>
+          <Frame label="Code rail (52)" width={52}>
+            <AppSidebar product="code" collapsed onToggleCollapse={() => undefined} />
+          </Frame>
+        </AppProvider>
+      </div>
+    </main>
   );
 }

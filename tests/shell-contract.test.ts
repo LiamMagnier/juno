@@ -90,6 +90,7 @@ function sourceFile(path: string): ts.SourceFile {
 }
 
 const SIDEBAR = sourceFile("src/components/app/app-sidebar.tsx");
+const CODE_WORK_LIST_TEXT = readFileSync(new URL("../src/components/app/code-work-list.tsx", import.meta.url), "utf8");
 const MOTION_ICONS = sourceFile("src/components/app/sidebar-motion-icon.tsx");
 const COMPOSER = sourceFile("src/components/chat/composer.tsx");
 const PLUS_MENU = sourceFile("src/components/chat/composer-plus-menu.tsx");
@@ -420,6 +421,20 @@ test("the list's section headings are the contract's, in order, per product", ()
     const drawn = headings
       .filter((heading) => productsFor(heading.node, APP_SIDEBAR).includes(product))
       .map((heading) => heading.label[product]);
+    if (product === "code") {
+      // The web's Code column draws Code's list of work in this list's place
+      // (code-work-list.tsx: needs you, working, recency, Settled, with an
+      // All projects filter), in the same recipes. The contract's Code
+      // sections stay the native shells' shape.
+      assert.deepEqual(drawn, [], "code draws none of Chat's sections");
+      assert.ok(
+        elements(APP_SIDEBAR, "CodeShellList").some((node) => productsFor(node, APP_SIDEBAR).join() === "code"),
+        "code's list is the work list",
+      );
+      assert.match(CODE_WORK_LIST_TEXT, /"All projects"/);
+      assert.match(CODE_WORK_LIST_TEXT, /<Section label=\{`Settled/);
+      continue;
+    }
     assert.deepEqual(
       drawn,
       CONTRACT.sidebar[product].sections.map((section) => section.label),
@@ -441,7 +456,10 @@ test("the empty list says the contract's two lines", () => {
       lines.push(perProduct(child.expression, "the empty list"));
     }
   }
+  // Code's empty line belongs to its work list, which says it per project.
+  assert.match(CODE_WORK_LIST_TEXT, /No sessions\{project \? ` in \$\{project\}` : ""\} yet\./);
   for (const product of PRODUCT_IDS) {
+    if (product === "code") continue;
     assert.deepEqual(
       lines.map((line) => line[product]),
       CONTRACT.sidebar[product].empty,

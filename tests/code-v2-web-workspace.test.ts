@@ -142,7 +142,7 @@ const PILL = /\b(badge|pill|status-dot|rounded-full bg-(green|red|yellow|emerald
 for (const s of STATES) {
   test(`renders the ${s.id} state without pills, with at most two weights`, () => {
     const f = fixture(s.id);
-    const html = renderToStaticMarkup(React.createElement(CodeWorkspace, { model: f.model, ui: f.ui, userName: "Maya Okafor" }));
+    const html = renderToStaticMarkup(React.createElement(CodeWorkspace, { model: f.model, ui: f.ui }));
     if (!f.ui?.settings) assert.ok(html.includes(f.model.thread.title));
     assert.doesNotMatch(html, PILL);
     assert.doesNotMatch(html, /font-weight:\s*[6-9]00/);
@@ -201,9 +201,15 @@ test("the sidebar is a list of work: needs you first, then working, project and 
   const f = fixture("streaming");
   const html = renderToStaticMarkup(React.createElement(CodeWorkspace, { model: f.model, ui: {} }));
   const side = html.slice(html.indexOf('class="cv2-side"'), html.indexOf("</nav>"));
-  const order = [...side.matchAll(/class="t cv2-trunc">([^<]+)</g)].map((m) => m[1]);
+  const order = [...side.matchAll(/truncate text-nav[^"]*">([^<]+)</g)].map((m) => m[1]);
   assert.deepEqual(order.slice(0, 2), ["Cart total regression suite", "Move checkout totals to the server"]);
-  assert.match(side, /Settled \(3\)/);
+  assert.match(side, /All projects/);
+  assert.match(side, /Settled · 3/);
+  assert.match(side, /aria-expanded="false"[^>]*>(?:(?!<\/button>).)*Settled/, "Settled is a folded Section heading");
+  // The Chat column's recipes, not a second sidebar's.
+  assert.match(side, /sidebar-row-selected/);
+  assert.match(side, /shell-annot/);
+  assert.doesNotMatch(side, /cv2-th|cv2-settled|cv2-filter|cv2-switch|cv2-avatar/);
   assert.match(side, /#7723/);
   assert.match(side, /alevr\/server-totals/);
   assert.doesNotMatch(side, /Upgrade to React 20/, "settled sessions stay folded");
