@@ -208,7 +208,7 @@ struct DesktopInlineArtifactCard: View {
         if let open {
             Button(action: open) {
                 identity
-                    .padding(6)
+                    .padding(JunoSpace.tight)
                     .background(
                         RoundedRectangle(cornerRadius: JunoRadius.field, style: .continuous)
                             .fill(Color.junoHover.opacity(identityHovered ? 0.4 : 0))
@@ -253,7 +253,7 @@ struct DesktopInlineArtifactCard: View {
                     isUpdated: card.isUpdated && !card.isStreaming,
                     status: status
                 )
-                .padding(.top, 2)
+                .padding(.top, JunoSpace.micro)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -298,7 +298,7 @@ struct DesktopInlineArtifactCard: View {
                         .accessibilityHidden(true)
                 }
                 Button(action: open) {
-                    HStack(spacing: 6) {
+                    HStack(spacing: JunoSpace.tight) {
                         JunoIconView(.panelRight, size: 14)
                         Text("Open")
                     }
@@ -367,7 +367,7 @@ struct DesktopInlineArtifactCard: View {
                 // The run signature's tool pattern, small, in the muted ink
                 // (SPEC §7.13) — the matrix and its coral dot are gone.
                 JunoRunSignature(phase: .tool, size: .small)
-                VStack(spacing: 2) {
+                VStack(spacing: JunoSpace.micro) {
                     Text("Writing artifact")
                         .junoType(.heading)
                         .foregroundStyle(Color.junoForeground)
@@ -476,7 +476,7 @@ struct InlineArtifactMeta: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: JunoSpace.tight) {
             Text(label)
                 .foregroundStyle(Color.junoSecondaryInk)
                 .lineLimit(1)
@@ -576,7 +576,7 @@ struct InlineArtifactOpenStyle: ButtonStyle {
             configuration.label
                 .junoFont(size: 11, relativeTo: .caption2, weight: .medium)
                 .foregroundStyle(hovered ? Color.junoForeground : Color.junoSecondaryInk)
-                .padding(.horizontal, 10)
+                .padding(.horizontal, JunoSpace.close)
                 .frame(minHeight: 28)
                 .background(
                     RoundedRectangle(cornerRadius: JunoRadius.control, style: .continuous)
@@ -612,7 +612,7 @@ struct InlineArtifactConsole: View {
             .padding(.vertical, JunoSpace.snug)
             Rectangle().fill(Color.junoBorder.opacity(0.6)).frame(height: 1).accessibilityHidden(true)
             ScrollView {
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: JunoSpace.micro) {
                     if entries.isEmpty {
                         Text("No console output yet.")
                             .junoFont(size: 11, relativeTo: .caption2)

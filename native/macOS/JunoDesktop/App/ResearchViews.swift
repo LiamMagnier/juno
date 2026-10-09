@@ -158,7 +158,7 @@ struct DesktopResearchPlanCard: View {
             Button {
                 withAnimation(JunoMotion.reduced(JunoMotion.base, when: reduceMotion)) { opened = true }
             } label: {
-                HStack(spacing: 10) {
+                HStack(spacing: JunoSpace.close) {
                     JunoRunSignature(phase: .waiting)
                     Text(NativeRunPhraseLine([NativeRunPhrase("Plan ready"), NativeRunPhrase("Review")]).text)
                         .junoFont(size: 13, relativeTo: .callout, weight: .medium)
@@ -277,7 +277,7 @@ struct DesktopResearchClarifyCard: View {
             Button {
                 withAnimation(JunoMotion.reduced(JunoMotion.base, when: reduceMotion)) { opened = true }
             } label: {
-                HStack(spacing: 10) {
+                HStack(spacing: JunoSpace.close) {
                     JunoRunSignature(phase: .waiting)
                     Text(run.phaseLine.text)
                         .junoFont(size: 13, relativeTo: .callout, weight: .medium)
@@ -694,7 +694,7 @@ struct DesktopResearchPanel: View {
     }
 
     private func fact(_ name: String, _ value: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: JunoSpace.micro) {
             Text(name)
                 .junoFont(size: 12, relativeTo: .footnote, weight: .medium)
                 .foregroundStyle(Color.junoSecondaryInk)

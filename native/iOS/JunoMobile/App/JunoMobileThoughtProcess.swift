@@ -153,7 +153,7 @@ struct JunoMobileThoughtProcessRow: View {
     /// the trace. No dot, no second line, no card.
     private var restingStrip: some View {
         Button { showingPanel = true } label: {
-            HStack(spacing: 4) {
+            HStack(spacing: JunoSpace.hairline) {
                 Text(clock.duration.map { "Thought for \(JunoMobileRunCopy.span($0))" } ?? "Thought process")
                     .font(.subheadline)
                     .monospacedDigit()
@@ -303,7 +303,7 @@ private struct JunoMobileThoughtProcessPanel: View {
     private var summary: some View {
         JunoCard(padding: JunoSpace.regular) {
             HStack(alignment: .top, spacing: JunoSpace.regular) {
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: JunoSpace.micro) {
                     Text("Run summary")
                         .font(JunoType.ui.weight(.medium).font())
                         .kerning(0.13)

@@ -626,7 +626,7 @@ struct DesktopWorkHostTile: View {
                 } label: {
                     Text("Stop serving Alevr Work now")
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 1)
+                        .padding(.vertical, JunoSpace.micro)
                 }
                 .accessibilityIdentifier("juno.desktop.settings.work-host-kill")
             }
@@ -661,7 +661,7 @@ struct DesktopWorkHostTile: View {
             } label: {
                 Text("Revoke this Mac")
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 1)
+                    .padding(.vertical, JunoSpace.micro)
             }
             .accessibilityIdentifier("juno.desktop.settings.work-host-revoke")
         }

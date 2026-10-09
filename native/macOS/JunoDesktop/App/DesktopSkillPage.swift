@@ -774,7 +774,7 @@ private struct DesktopSkillUsageOption: View {
         Button(action: select) {
             HStack(alignment: .top, spacing: JunoSpace.cozy) {
                 JunoRadioMark(isOn: isSelected)
-                    .padding(.top, 1)
+                    .padding(.top, JunoSpace.micro)
                 VStack(alignment: .leading, spacing: JunoSpace.micro) {
                     Text(title)
                         .junoType(JunoType.ui.weight(.medium))

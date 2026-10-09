@@ -92,7 +92,7 @@ struct JunoMobileSearchView: View {
                     server?.retry()
                 }
                 .contentShape(.rect)
-                .buttonStyle(.bordered)
+                .modifier(JunoMobileWorkspaceActionStyle())
             }
         } else if localGroups.isEmpty, serverGroups.isEmpty, model.phase != .idle {
             ContentUnavailableView {
@@ -235,7 +235,7 @@ struct JunoMobileSearchView: View {
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: JunoSpace.micro) {
                 HStack(alignment: .firstTextBaseline, spacing: JunoSpace.cozy) {
                     Text(title)
                         .font(.body)

@@ -32,7 +32,8 @@ struct JunoMobileTasksView: View {
                     Text(model.lastErrorDescription ?? String(localized: "tasks.retry"))
                 } actions: {
                     Button("Retry") { Task { await model.refresh() } }
-                        .buttonStyle(.bordered)
+                        .modifier(JunoMobileWorkspaceActionStyle())
+                        .controlSize(.large)
                         .contentShape(.rect)
                 }
             case .ready:
@@ -185,9 +186,9 @@ private struct JunoMobileTaskRow: View {
     let onOpenResults: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: JunoSpace.cozy) {
             Button(action: onEdit) {
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: JunoSpace.micro) {
                     Text(task.name)
                         .foregroundStyle(task.enabled ? Color.primary : Color.secondary)
                         .lineLimit(1)
@@ -220,7 +221,7 @@ private struct JunoMobileTaskRow: View {
                     )
                 )
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, JunoSpace.micro)
         .swipeActions(edge: .trailing) {
             Button("Delete", role: .destructive) { onDelete() }
                 .disabled(!editable)

@@ -244,7 +244,7 @@ struct FileTile: View {
                 .clipShape(FilePage.shape)
                 .overlay { FilePage.shape.strokeBorder(Color.junoBorder.opacity(0.7), lineWidth: 1) }
                 .junoRaisedShadow()
-                .padding(.top, 12)
+                .padding(.top, JunoSpace.cozy)
                 .offset(y: lit && !reduceMotion ? -2 : 0)
                 .animation(JunoMotion.reduced(JunoMotion.base, when: reduceMotion), value: lit)
         }
@@ -255,7 +255,7 @@ struct FileTile: View {
     /// Its name without the extension, and what it is: "Excel workbook ·
     /// 88 KB". The size is a count, so its digits are tabular.
     private var caption: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: JunoSpace.micro) {
             Text(attachment.stem)
                 .junoFont(size: 11, relativeTo: .caption, weight: .medium)
                 .foregroundStyle(Color.junoForeground)
@@ -329,7 +329,7 @@ struct FilePage: View {
                     // runs off the sheet, it does not end in an ellipsis.
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(width: proxy.size.width - 20, alignment: .topLeading)
-                    .padding([.top, .leading, .trailing], 10)
+                    .padding([.top, .leading, .trailing], JunoSpace.close)
                     .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
                     .clipped()
                     // A fragment of a longer file dissolves rather than
@@ -890,7 +890,7 @@ struct MediaPillButtonStyle: ButtonStyle {
             configuration.label
                 .junoFont(size: 11, relativeTo: .caption, weight: .medium)
                 .foregroundStyle(hovered ? Color.junoForeground : Color.junoForeground.opacity(0.8))
-                .padding(.horizontal, 10)
+                .padding(.horizontal, JunoSpace.close)
                 .frame(height: 28)
                 .background(Self.plate.fill(hovered ? Color.junoHover : Color.junoSecondary))
                 .overlay(Self.plate.strokeBorder(Color.junoBorder.opacity(hovered ? 1 : 0.6), lineWidth: 1))

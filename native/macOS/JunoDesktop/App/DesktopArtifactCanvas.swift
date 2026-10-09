@@ -765,7 +765,7 @@ struct DesktopArtifactCanvas: View {
     /// and Close — compact, because the artifact is the event.
     private var header: some View {
         HStack(spacing: JunoSpace.tight) {
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: JunoSpace.micro) {
                 Text(artifact.title)
                     .junoFont(size: 13, relativeTo: .callout, weight: .semibold)
                     .foregroundStyle(Color.junoForeground)
@@ -819,7 +819,7 @@ struct DesktopArtifactCanvas: View {
             Rectangle()
                 .fill(Color.junoHairline)
                 .frame(width: 1, height: 20)
-                .padding(.horizontal, 1)
+                .padding(.horizontal, JunoSpace.micro)
                 .accessibilityHidden(true)
 
             Button(action: close) {
@@ -884,7 +884,7 @@ struct DesktopArtifactCanvas: View {
                 Text(canEdit ? "Design" : "Design · Read only")
                     .junoFont(size: 12, relativeTo: .body, weight: .medium)
                     .foregroundStyle(Color.junoMutedForeground)
-                    .padding(.horizontal, 10)
+                    .padding(.horizontal, JunoSpace.close)
                     .frame(height: 28)
             } else if options.count > 1 {
                 JunoSegmented(
@@ -897,7 +897,7 @@ struct DesktopArtifactCanvas: View {
                 Text("Code")
                     .junoFont(size: 12, relativeTo: .body, weight: .medium)
                     .foregroundStyle(Color.junoMutedForeground)
-                    .padding(.horizontal, 10)
+                    .padding(.horizontal, JunoSpace.close)
                     .frame(height: 28)
             }
 

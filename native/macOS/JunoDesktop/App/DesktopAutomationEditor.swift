@@ -684,7 +684,7 @@ private struct DesktopAutomationRadioRow: View {
         Button(action: select) {
             HStack(alignment: .top, spacing: JunoSpace.close) {
                 JunoRadioMark(isOn: isSelected)
-                    .padding(.top, 1)
+                    .padding(.top, JunoSpace.micro)
                 VStack(alignment: .leading, spacing: JunoSpace.micro) {
                     Text(option.label)
                         .junoType(JunoType.ui.weight(.medium))

@@ -17,7 +17,7 @@ struct DesktopLibraryPicker: View {
 
     @State private var previews = NativeFilePreviewLoader()
 
-    private let columns = [GridItem(.adaptive(minimum: 132, maximum: 190), spacing: 14)]
+    private let columns = [GridItem(.adaptive(minimum: 132, maximum: 190), spacing: JunoSpace.comfy)]
 
     private func card(_ item: NativeLibraryItem) -> some View {
         let file = NativeFilePreviewRequest(item)
@@ -44,7 +44,7 @@ struct DesktopLibraryPicker: View {
             .overlay(alignment: .topTrailing) {
                 JunoIconView(selected ? .circleCheck : .circle, size: 16)
                     .foregroundStyle(selected ? Color.junoAccent : Color.white)
-                    .padding(8)
+                    .padding(JunoSpace.snug)
                     .shadow(color: .black.opacity(selected ? 0 : 0.25), radius: 2)
             }
             .contentShape(.rect)
@@ -63,7 +63,7 @@ struct DesktopLibraryPicker: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                VStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: JunoSpace.hairline) {
                     Text("Attach from Library")
                         .font(.title2.weight(.semibold))
                     Text("Choose files already shared with Alevr.")
@@ -86,7 +86,7 @@ struct DesktopLibraryPicker: View {
                     accessibilityLabel: "Filter"
                 )
             }
-            .padding(18)
+            .padding(JunoSpace.ample)
             .background(.bar)
             .overlay(alignment: .bottom) { Divider() }
 
@@ -102,12 +102,12 @@ struct DesktopLibraryPicker: View {
                     )
                 } else {
                     ScrollView {
-                        LazyVGrid(columns: columns, spacing: 14) {
+                        LazyVGrid(columns: columns, spacing: JunoSpace.comfy) {
                             ForEach(model.visibleItems) { item in
                                 card(item)
                             }
                         }
-                        .padding(18)
+                        .padding(JunoSpace.ample)
                     }
                 }
             }
@@ -143,7 +143,7 @@ struct DesktopLibraryPicker: View {
                 .buttonStyle(.junoProminent)
                 .disabled(model.selection.isEmpty || model.isAttaching)
             }
-            .padding(16)
+            .padding(JunoSpace.regular)
             .background(.bar)
             .overlay(alignment: .top) { Divider() }
         }

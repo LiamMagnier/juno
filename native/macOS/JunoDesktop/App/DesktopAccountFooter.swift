@@ -64,7 +64,7 @@ struct DesktopAccountFooter: View {
                 )
             }
 
-            HStack(spacing: 2) {
+            HStack(spacing: JunoSpace.micro) {
                 accountButton
                 Spacer(minLength: 0)
                 DesktopFooterSyncMark(
@@ -599,7 +599,7 @@ struct DesktopAccountPopover: View {
                 .accessibilityIdentifier("juno.desktop.account-menu.sign-out")
             Spacer(minLength: 0)
         }
-        .padding(12)
+        .padding(JunoSpace.cozy)
         .frame(width: Self.width, height: rows.height, alignment: .top)
         .accessibilityIdentifier("juno.desktop.account-menu")
     }
@@ -612,7 +612,7 @@ struct DesktopAccountPopover: View {
     private var header: some View {
         HStack(spacing: JunoSpace.cozy) {
             JunoAvatar(imageData: avatarData, imageURL: imageURL, name: name, size: 32)
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: JunoSpace.micro) {
                 HStack(spacing: JunoSpace.snug) {
                     Text(name)
                         .junoFont(size: 13, relativeTo: .callout, weight: .medium)
@@ -626,7 +626,7 @@ struct DesktopAccountPopover: View {
                             .junoFont(size: 11, relativeTo: .caption2, weight: .medium)
                             .foregroundStyle(Color.junoSecondaryInk)
                             .padding(.horizontal, JunoSpace.snug)
-                            .padding(.vertical, 2)
+                            .padding(.vertical, JunoSpace.micro)
                             .background(Capsule().fill(Color.junoGlassFill))
                             .fixedSize()
                     }

@@ -225,7 +225,7 @@ private struct DesktopAssistantTile: View {
                                 .lineLimit(2)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
-                        .padding(.top, 2)
+                        .padding(.top, JunoSpace.micro)
                         Spacer(minLength: 0)
                     }
                     Spacer(minLength: 0)

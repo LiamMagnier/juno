@@ -249,7 +249,7 @@ struct JunoMobileIncognitoChat: View {
     /// ChatGPT's temporary-chat page: one title, one line under it, centred
     /// on an otherwise empty page.
     private var greeting: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: JunoSpace.tight) {
             Text("Private chat")
                 .junoFont(size: 17, relativeTo: .headline, weight: .semibold)
                 .foregroundStyle(Color.junoForeground)
@@ -304,7 +304,7 @@ struct JunoMobileIncognitoChat: View {
                     .textFieldStyle(.plain)
                     .focused($composerFocused)
                     .padding(.horizontal, JunoSpace.regular)
-                    .padding(.top, 14)
+                    .padding(.top, JunoSpace.comfy)
                     .padding(.bottom, JunoSpace.tight)
                     .accessibilityIdentifier("juno.mobile.incognito-composer")
 
@@ -384,7 +384,7 @@ struct JunoIncognitoToggleLabel: View {
     var showsTitle: Bool
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: JunoSpace.tight) {
             JunoGhostMark(active: false, size: 20)
             if showsTitle {
                 Text("Incognito")

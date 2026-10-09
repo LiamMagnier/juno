@@ -98,7 +98,7 @@ struct InlineDesignPreviewBody: View {
                 .foregroundStyle(Color.junoForeground)
             if let open {
                 Button(action: open) {
-                    HStack(spacing: 6) {
+                    HStack(spacing: JunoSpace.tight) {
                         JunoIconView(.panelRight, size: 14)
                         Text("Open")
                     }

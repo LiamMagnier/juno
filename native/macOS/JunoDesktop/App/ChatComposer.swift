@@ -1497,7 +1497,7 @@ struct ChatComposer: View {
             HStack(alignment: .top, spacing: JunoSpace.tight) {
                 if !marks.isEmpty {
                     armedMarks
-                        .padding(.top, 1)
+                        .padding(.top, JunoSpace.micro)
                 }
                 draftField
             }
@@ -1972,7 +1972,7 @@ struct ChatComposer: View {
     private var collapsedDraftCard: some View {
         VStack(alignment: .leading, spacing: JunoSpace.snug) {
             HStack(alignment: .top, spacing: JunoSpace.snug) {
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: JunoSpace.micro) {
                     Text("Large paste ready to send")
                         .junoType(JunoType.ui.weight(.medium))
                         .foregroundStyle(Color.junoForeground)

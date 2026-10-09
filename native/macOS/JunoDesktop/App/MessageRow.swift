@@ -249,7 +249,7 @@ struct DesktopMessageRow: View {
                 .frame(maxWidth: measure * 0.85, alignment: .trailing)
             }
             if !editing, isUnsent {
-                unsentRow.padding(.top, 6)
+                unsentRow.padding(.top, JunoSpace.tight)
             }
             if !editing, !isVoice, !shown.isPending {
                 userActions.padding(.top, JunoSpace.hairline)
@@ -512,7 +512,7 @@ struct DesktopMessageRow: View {
         Text(draft.isEmpty ? " " : draft + (draft.hasSuffix("\n") ? " " : ""))
             .junoType(.reading)
             .fixedSize(horizontal: false, vertical: true)
-            .padding(.horizontal, 5)
+            .padding(.horizontal, JunoSpace.hairline)
             .frame(maxWidth: .infinity, alignment: .leading)
             .frame(maxHeight: Self.editorMaximumHeight, alignment: .top)
             .hidden()
@@ -667,7 +667,7 @@ struct DesktopMessageRow: View {
             // As on the web, a turn that errored gets no row: its only action
             // is Try again, on the error itself.
             if !isVoice, !shown.isPending, shown.errorDescription == nil {
-                replyActions.padding(.top, 6)
+                replyActions.padding(.top, JunoSpace.tight)
             }
         }
         .accessibilityElement(children: .contain)

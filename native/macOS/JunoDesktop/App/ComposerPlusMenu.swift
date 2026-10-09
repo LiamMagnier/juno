@@ -517,7 +517,7 @@ struct ComposerArmedMarkView<MenuContent: View>: View {
                 }
                 .padding(.leading, JunoSpace.tight)
                 .padding(.trailing, hovered ? 2 : JunoSpace.tight)
-                .padding(.vertical, 3)
+                .padding(.vertical, JunoSpace.hairline)
                 .contentShape(.rect)
             }
             .menuStyle(.button)
@@ -530,9 +530,9 @@ struct ComposerArmedMarkView<MenuContent: View>: View {
                 Button(action: disarm) {
                     JunoIconView(.close, size: 9, weight: .bold)
                         .foregroundStyle(Color.junoSecondaryInk)
-                        .padding(.leading, 2)
-                        .padding(.trailing, 5)
-                        .padding(.vertical, 6)
+                        .padding(.leading, JunoSpace.micro)
+                        .padding(.trailing, JunoSpace.hairline)
+                        .padding(.vertical, JunoSpace.tight)
                         .contentShape(.rect)
                 }
                 .buttonStyle(.plain)

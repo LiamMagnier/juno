@@ -152,6 +152,7 @@ struct JunoMobileWorkView: View {
         } actions: {
             Button("Retry") { Task { await model.refresh() } }
                 .buttonStyle(.borderedProminent)
+                .controlSize(.large)
             .contentShape(.rect)
         }
     }
@@ -159,9 +160,9 @@ struct JunoMobileWorkView: View {
     @ViewBuilder
     private var content: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 10) {
+            LazyVStack(alignment: .leading, spacing: JunoSpace.close) {
                 JunoPageSubtitle("Things you have handed Alevr to go and do.")
-                    .padding(.top, 6)
+                    .padding(.top, JunoSpace.tight)
 
                 if let error = model.lastErrorDescription {
                     JunoInlineError(message: error) { Task { await model.refresh() } }
@@ -182,8 +183,8 @@ struct JunoMobileWorkView: View {
                     }
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 28)
+            .padding(.horizontal, JunoSpace.regular)
+            .padding(.bottom, JunoSpace.wide)
         }
         .accessibilityIdentifier("juno.mobile.work.list")
     }
@@ -216,7 +217,7 @@ struct JunoMobileWorkView: View {
 
     private var empty: some View {
         JunoCard {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: JunoSpace.close) {
                 Text("No tasks yet").junoEmptyTitle()
                 Text(
                     "A task is something you hand to Alevr to go and do — sort a folder, pull a report together, work through an inbox. It runs on one of your Macs or in the cloud, and tells you here what it did."
@@ -228,7 +229,7 @@ struct JunoMobileWorkView: View {
                 }
                 .junoProminentAction()
                 .controlSize(.large)
-                .padding(.top, 2)
+                .padding(.top, JunoSpace.micro)
                 .contentShape(.rect)
             }
         }
@@ -279,7 +280,7 @@ private struct JunoMobileWorkHostCard: View {
 
     var body: some View {
         JunoCard(padding: 14) {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: JunoSpace.close) {
                 Text("Your Macs")
                     .font(.system(.footnote, design: .default, weight: .semibold))
                     .junoSecondaryInk()
@@ -303,11 +304,11 @@ private struct JunoMobileWorkHostCard: View {
 
     private func row(_ host: WorkHostSummary) -> some View {
         let style = JunoMobileWorkHostStyle.of(host)
-        return HStack(alignment: .top, spacing: 10) {
+        return HStack(alignment: .top, spacing: JunoSpace.close) {
             JunoIconView(junoWorkIcon(style.symbol), size: 15)
                 .foregroundStyle(style.tint)
                 .frame(width: 20)
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: JunoSpace.micro) {
                 Text(host.displayName)
                     .junoFont(size: 15, relativeTo: .body, weight: .medium)
                     .lineLimit(1)
@@ -354,8 +355,8 @@ private struct JunoMobileWorkSessionCard: View {
     var body: some View {
         Button(action: open) {
             JunoCard(padding: 14) {
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(alignment: .top, spacing: 8) {
+                VStack(alignment: .leading, spacing: JunoSpace.tight) {
+                    HStack(alignment: .top, spacing: JunoSpace.snug) {
                         if session.pinned {
                             JunoIconView(.pin, size: 12)
                                 .foregroundStyle(Color.junoAccent)
@@ -533,7 +534,7 @@ private struct JunoMobileWorkThread: View {
     @ViewBuilder
     private func thread(_ session: WorkSessionSummary) -> some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 16) {
+            LazyVStack(alignment: .leading, spacing: JunoSpace.regular) {
                 header(session)
                 // Both cards act on the model's *open* task, so they are drawn
                 // only while that is this one.
@@ -586,8 +587,8 @@ private struct JunoMobileWorkThread: View {
                 budget
                 activity
             }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 28)
+            .padding(.horizontal, JunoSpace.regular)
+            .padding(.bottom, JunoSpace.wide)
         }
     }
 
@@ -622,15 +623,15 @@ private struct JunoMobileWorkThread: View {
     @ViewBuilder
     private func header(_ session: WorkSessionSummary) -> some View {
         let style = JunoMobileWorkStatusStyle.of(model.displayStatus(of: session))
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
+        VStack(alignment: .leading, spacing: JunoSpace.snug) {
+            HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
                 Text(session.title)
                     .font(.title2.weight(.semibold))
                     .accessibilityAddTraits(.isHeader)
                 Spacer(minLength: 6)
                 JunoMobileWorkStatusWord(label: style.label, tint: style.tint)
             }
-            .padding(.top, 6)
+            .padding(.top, JunoSpace.tight)
 
             Text(session.goal)
                 .font(.callout)
@@ -658,13 +659,13 @@ private struct JunoMobileWorkThread: View {
     @ViewBuilder
     private var degradations: some View {
         if let notes = run?.degradation, !notes.isEmpty {
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: JunoSpace.tight) {
                 // Keyed by position, not by `kind`. One run can degrade twice
                 // the same way — two connectors unavailable, two capabilities
                 // missing — and a duplicate `ForEach` id silently drops every
                 // note after the first.
                 ForEach(Array(notes.enumerated()), id: \.offset) { _, note in
-                    HStack(alignment: .top, spacing: 8) {
+                    HStack(alignment: .top, spacing: JunoSpace.snug) {
                         JunoIconView(.error, size: 14)
                             .foregroundStyle(Color.junoCaution)
                         Text(note.explanation)
@@ -674,7 +675,7 @@ private struct JunoMobileWorkThread: View {
                     }
                 }
             }
-            .padding(12)
+            .padding(JunoSpace.cozy)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
@@ -805,14 +806,14 @@ private struct JunoMobileWorkThread: View {
     private func currentAction(_ session: WorkSessionSummary) -> some View {
         if let action = JunoMobileWorkLog.currentAction(in: events) {
             let live = model.isRunning(session)
-            HStack(alignment: .top, spacing: 10) {
+            HStack(alignment: .top, spacing: JunoSpace.close) {
                 if live {
                     ProgressView().controlSize(.small)
                 } else {
                     JunoIconView(.refresh, size: 14)
                         .junoSecondaryInk()
                 }
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: JunoSpace.micro) {
                     Text(action.title)
                         .junoFont(size: 15, relativeTo: .body, weight: .medium)
                         .fixedSize(horizontal: false, vertical: true)
@@ -831,7 +832,7 @@ private struct JunoMobileWorkThread: View {
                 }
                 Spacer(minLength: 0)
             }
-            .padding(14)
+            .padding(JunoSpace.comfy)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
@@ -852,7 +853,7 @@ private struct JunoMobileWorkThread: View {
                 )
             } else {
                 ForEach(steps) { step in
-                    HStack(alignment: .top, spacing: 10) {
+                    HStack(alignment: .top, spacing: JunoSpace.close) {
                         JunoIconView(junoWorkIcon(step.symbol), size: 14)
                             .foregroundStyle(step.tint)
                             .frame(width: 18)
@@ -885,11 +886,11 @@ private struct JunoMobileWorkThread: View {
                 )
             } else {
                 ForEach(references) { reference in
-                    HStack(alignment: .top, spacing: 10) {
+                    HStack(alignment: .top, spacing: JunoSpace.close) {
                         JunoIconView(reference.direction == .read ? .external : .file, size: 14)
                             .foregroundStyle(Color.junoMutedForeground)
                             .frame(width: 18)
-                        VStack(alignment: .leading, spacing: 2) {
+                        VStack(alignment: .leading, spacing: JunoSpace.micro) {
                             Text(reference.label)
                                 .font(.callout)
                                 .lineLimit(1)
@@ -929,7 +930,7 @@ private struct JunoMobileWorkThread: View {
                 )
             } else {
                 ForEach(produced) { artifact in
-                    HStack(alignment: .center, spacing: 10) {
+                    HStack(alignment: .center, spacing: JunoSpace.close) {
                         // A glyph, not the bare file extension in a 34pt slot —
                         // the same change the Mac's list needed. A column of
                         // "xlsx" / "docx" reads as a directory listing; this
@@ -937,7 +938,7 @@ private struct JunoMobileWorkThread: View {
                         JunoIconView(junoWorkIcon(JunoWorkVocabulary.artifactSymbol(artifact.kind)), size: 15)
                             .foregroundStyle(Color.junoAccent)
                             .frame(width: 22, alignment: .center)
-                        VStack(alignment: .leading, spacing: 1) {
+                        VStack(alignment: .leading, spacing: JunoSpace.micro) {
                             Text(artifact.title)
                                 .font(.callout)
                                 .lineLimit(1)
@@ -1007,11 +1008,11 @@ private struct JunoMobileWorkThread: View {
                 )
             } else {
                 ForEach(entries) { entry in
-                    HStack(alignment: .top, spacing: 10) {
+                    HStack(alignment: .top, spacing: JunoSpace.close) {
                         JunoIconView(junoWorkIcon(entry.symbol), size: 13)
                             .foregroundStyle(entry.tint)
                             .frame(width: 18)
-                        VStack(alignment: .leading, spacing: 2) {
+                        VStack(alignment: .leading, spacing: JunoSpace.micro) {
                             Text(entry.title)
                                 .font(.callout)
                                 .foregroundStyle(entry.tint)
@@ -1061,12 +1062,12 @@ private struct JunoMobileWorkApprovalCard: View {
 
     var body: some View {
         JunoCard {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: JunoSpace.comfy) {
                 // Risk, what is being asked for, and when the window closes —
                 // one line, in prose, above the sentence they qualify. All three
                 // were 11pt monospaced captions before, and the middle one was
                 // the raw tool token (`apply_changes`) printed verbatim.
-                HStack(spacing: 6) {
+                HStack(spacing: JunoSpace.tight) {
                     JunoIconView(
                         risk?.alwaysRequiresApproval == true ? .error : .permission,
                         size: 12
@@ -1114,7 +1115,7 @@ private struct JunoMobileWorkApprovalCard: View {
                 // Now: one accented primary for the narrow grant, a neutral
                 // bordered control for the standing one, and a refusal that is
                 // full-width, unmistakable and quiet.
-                VStack(spacing: 8) {
+                VStack(spacing: JunoSpace.snug) {
                     Button { decide(.allowed) } label: {
                         Text("Allow once")
                             .fontWeight(.semibold)
@@ -1125,7 +1126,7 @@ private struct JunoMobileWorkApprovalCard: View {
                     .accessibilityIdentifier("juno.mobile.work.approval.allow")
                     .contentShape(.rect)
 
-                    HStack(spacing: 8) {
+                    HStack(spacing: JunoSpace.snug) {
                         if approval.allowsStandingGrant {
                             Button { decide(.allowedAlways) } label: {
                                 Text("work.approval.allow-always")
@@ -1180,7 +1181,7 @@ private struct JunoMobileWorkQuestionCard: View {
 
     var body: some View {
         JunoCard {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: JunoSpace.cozy) {
                 Label {
                     Text(question.text)
                         .font(.callout)
@@ -1257,14 +1258,14 @@ private struct JunoMobileWorkAnswerSheet: View {
     }
 
     private func field(_ question: WorkQuestionPrompt) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: JunoSpace.comfy) {
             Text(question.text)
                 .font(.callout)
                 .fixedSize(horizontal: false, vertical: true)
 
             TextField("Your answer", text: $draft, axis: .vertical)
                 .lineLimit(3...8)
-                .padding(12)
+                .padding(JunoSpace.cozy)
                 .background(
                     RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
                         .fill(Color.junoMuted)
@@ -1274,7 +1275,7 @@ private struct JunoMobileWorkAnswerSheet: View {
 
             Spacer(minLength: 0)
         }
-        .padding(16)
+        .padding(JunoSpace.regular)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -1371,7 +1372,7 @@ private struct JunoMobileWorkThreadComposerCard: View {
 
     var body: some View {
         JunoCard {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: JunoSpace.cozy) {
                 Label {
                     Text(sentence)
                         .font(.callout)
@@ -1398,7 +1399,7 @@ private struct JunoMobileWorkThreadComposerCard: View {
                 .contentShape(.rect)
 
                 if let outcome = model.lastInstructionOutcome {
-                    HStack(alignment: .top, spacing: 8) {
+                    HStack(alignment: .top, spacing: JunoSpace.snug) {
                         JunoIconView(outcome.delivered ? .check : .error, size: 14)
                             .foregroundStyle(outcome.delivered ? Color.secondary : Color.junoCaution)
                         Text(outcome.explanation)
@@ -1513,7 +1514,7 @@ private struct JunoMobileWorkThreadComposerSheet: View {
     }
 
     private var field: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: JunoSpace.comfy) {
             Text(lead)
                 .font(.callout)
                 .junoSecondaryInk()
@@ -1521,7 +1522,7 @@ private struct JunoMobileWorkThreadComposerSheet: View {
 
             TextField(placeholder, text: $draft, axis: .vertical)
                 .lineLimit(3...8)
-                .padding(12)
+                .padding(JunoSpace.cozy)
                 .background(
                     RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
                         .fill(Color.junoMuted)
@@ -1531,7 +1532,7 @@ private struct JunoMobileWorkThreadComposerSheet: View {
 
             Spacer(minLength: 0)
         }
-        .padding(16)
+        .padding(JunoSpace.regular)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -1690,7 +1691,7 @@ private struct JunoMobileWorkSection<Content: View>: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: JunoSpace.snug) {
             Text(title)
                 .font(.system(.footnote, design: .default, weight: .semibold))
                 .junoSecondaryInk()

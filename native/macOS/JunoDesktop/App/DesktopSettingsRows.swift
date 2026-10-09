@@ -364,7 +364,7 @@ extension View {
         textFieldStyle(.plain)
             .junoFont(size: 13, relativeTo: .callout)
             .padding(.horizontal, JunoSpace.snug)
-            .padding(.vertical, 5)
+            .padding(.vertical, JunoSpace.hairline)
             .frame(minHeight: 28)
             .background(fill, in: RoundedRectangle(cornerRadius: JunoRadius.field, style: .continuous))
             .overlay(

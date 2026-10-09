@@ -132,7 +132,7 @@ struct JunoMobileSkillsView: View {
       JunoMobileSkillDetailView(skillID: skill.id, model: model)
     } label: {
       HStack(alignment: .firstTextBaseline, spacing: JunoSpace.cozy) {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: JunoSpace.micro) {
           Text(skill.name)
             .foregroundStyle(skill.enabled ? Color.primary : Color.junoSecondaryInk)
           Text(verbatim: "/\(skill.slug)")
@@ -410,7 +410,7 @@ struct JunoMobileSkillImportView: View {
           get: { chosen.contains(skill.path) },
           set: { on in if on { chosen.insert(skill.path) } else { chosen.remove(skill.path) } }
         )) {
-          VStack(alignment: .leading, spacing: 2) {
+          VStack(alignment: .leading, spacing: JunoSpace.micro) {
             Text(skill.name)
             Text(skill.installed ? "Installed" : (skill.description.isEmpty ? skill.path : skill.description))
               .font(.footnote)
@@ -433,7 +433,7 @@ struct JunoMobileSkillImportView: View {
     if !preview.problems.isEmpty {
       Section("Couldn’t read") {
         ForEach(preview.problems, id: \.path) { problem in
-          VStack(alignment: .leading, spacing: 2) {
+          VStack(alignment: .leading, spacing: JunoSpace.micro) {
             Text(problem.path).font(.footnote.monospaced())
             Text(problem.message).font(.footnote).foregroundStyle(Color.junoSecondaryInk)
           }

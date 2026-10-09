@@ -249,7 +249,7 @@ struct DesktopSharePopover: View {
                 .frame(maxHeight: .infinity, alignment: .top)
                 .transition(.opacity)
         }
-        .padding(12)
+        .padding(JunoSpace.cozy)
         .frame(
             width: Self.size(for: state.phase).width,
             height: Self.size(for: state.phase).height,

@@ -76,7 +76,7 @@ struct JunoMobileDictation: View {
     /// reader can see which part of the sentence is still being revised.
     private var preview: some View {
         VStack(alignment: .leading, spacing: JunoSpace.tight) {
-            HStack(spacing: 6) {
+            HStack(spacing: JunoSpace.tight) {
                 Circle()
                     .fill(Color.junoAccent)
                     .frame(width: 7, height: 7)

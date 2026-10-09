@@ -106,7 +106,8 @@ struct JunoMobileSettingsView: View {
           Text(model.lastErrorDescription ?? "Try again.")
         } actions: {
           Button("Retry") { Task { await model.refresh() } }
-            .buttonStyle(.bordered)
+            .modifier(JunoMobileWorkspaceActionStyle())
+            .controlSize(.large)
             .contentShape(.rect)
         }
       default:
@@ -268,14 +269,14 @@ struct JunoMobileSettingsView: View {
   /// The account at the head of the sheet: face, name, address, centred, on
   /// the grouped background — identity, not a row to tap.
   private func profileHeader(_ session: NativeAuthenticatedSession) -> some View {
-    VStack(spacing: 10) {
+    VStack(spacing: JunoSpace.close) {
       JunoAvatar(
         imageData: avatarData,
         imageURL: session.profile.imageURL,
         name: session.profile.name ?? session.profile.email,
         size: 64
       )
-      VStack(spacing: 2) {
+      VStack(spacing: JunoSpace.micro) {
         Text(session.profile.name ?? session.profile.email)
           .font(.title3.weight(.semibold))
           .foregroundStyle(Color.primary)
@@ -434,14 +435,14 @@ struct JunoMobileSettingsView: View {
     Form {
       if let session {
         Section {
-          HStack(spacing: 14) {
+          HStack(spacing: JunoSpace.comfy) {
             JunoAvatar(
               imageData: avatarData,
               imageURL: session.profile.imageURL,
               name: session.profile.name ?? session.profile.email,
               size: 64
             )
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: JunoSpace.micro) {
               Text(session.profile.name ?? session.profile.email)
                 .font(.title3.weight(.semibold))
                 .lineLimit(1)
@@ -453,7 +454,7 @@ struct JunoMobileSettingsView: View {
               }
             }
           }
-          .padding(.vertical, 4)
+          .padding(.vertical, JunoSpace.hairline)
           .accessibilityElement(children: .combine)
         }
       }
@@ -619,7 +620,7 @@ struct JunoMobileSettingsView: View {
       } header: {
         Text("Background work")
       } footer: {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: JunoSpace.tight) {
           Text(settings.backgroundProviderMode.explanation)
           if settings.backgroundProviderMode.permitsCrossProvider {
             Label("settings.background-provider.crosses", icon: .triangleAlert, size: 13)
@@ -1106,8 +1107,8 @@ private struct JunoMobileSettingsPreferences: View {
     select: @escaping () -> Void
   ) -> some View {
     Button(action: select) {
-      HStack(spacing: 12) {
-        VStack(alignment: .leading, spacing: 2) {
+      HStack(spacing: JunoSpace.cozy) {
+        VStack(alignment: .leading, spacing: JunoSpace.micro) {
           Text(title).foregroundStyle(Color.primary)
           Text(detail)
             .font(.subheadline)
@@ -1139,7 +1140,7 @@ private struct JunoMobileSettingsPreferences: View {
       .lineLimit(5...14)
       .accessibilityLabel("Custom instructions")
       .accessibilityIdentifier("juno.mobile.settings-instructions")
-      HStack(spacing: 16) {
+      HStack(spacing: JunoSpace.regular) {
         Text("^[\(instructionsDraft.count) character](inflect: true)")
           .font(.footnote)
           .foregroundStyle(.secondary)
@@ -1194,7 +1195,7 @@ struct JunoMobileAccentGrid: View {
   @State private var haptic = JunoMobileHapticTrigger()
 
   var body: some View {
-    LazyVGrid(columns: [GridItem(.adaptive(minimum: 56), spacing: 8)], spacing: 12) {
+    LazyVGrid(columns: [GridItem(.adaptive(minimum: 56), spacing: JunoSpace.snug)], spacing: JunoSpace.cozy) {
       ForEach(JunoAccent.allCases) { accent in
         let chosen = accent.rawValue == JunoAccent(setting: selection).rawValue
         Button {
@@ -1203,11 +1204,11 @@ struct JunoMobileAccentGrid: View {
             selection = accent.rawValue
           }
         } label: {
-          VStack(spacing: 6) {
+          VStack(spacing: JunoSpace.tight) {
             Circle()
               .fill(accent.color)
               .frame(width: 30, height: 30)
-              .padding(3)
+              .padding(JunoSpace.hairline)
               .overlay {
                 Circle()
                   .strokeBorder(Color.primary.opacity(0.35), lineWidth: 2)
@@ -1228,7 +1229,7 @@ struct JunoMobileAccentGrid: View {
         .accessibilityIdentifier("juno.mobile.accent-\(accent.rawValue)")
       }
     }
-    .padding(.vertical, 4)
+    .padding(.vertical, JunoSpace.hairline)
     .opacity(disabled ? 0.5 : 1)
     .junoHaptic(JunoMobileHaptic.selection, trigger: haptic)
     .accessibilityElement(children: .contain)

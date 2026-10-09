@@ -38,7 +38,7 @@ struct JunoMobileSignInView: View {
     .background {
       ZStack {
         Color.junoCanvas
-        JunoDotGrid(spacing: 26)
+        JunoDotGrid(spacing: JunoSpace.section)
           .opacity(0.45)
       }
       .ignoresSafeArea()
@@ -205,7 +205,7 @@ private struct JunoMobileWelcome: View {
         .junoMobileRise(delay: 0.35, distance: 14)
 
         HStack(spacing: JunoSpace.section) {
-          HStack(spacing: 6) {
+          HStack(spacing: JunoSpace.tight) {
             ForEach(pages) { item in
               Capsule()
                 .fill(item.id == page ? Color.junoForeground : Color.junoForeground.opacity(0.18))

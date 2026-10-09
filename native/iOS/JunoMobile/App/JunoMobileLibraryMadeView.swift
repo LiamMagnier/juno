@@ -118,7 +118,7 @@ struct JunoMobileLibraryMadeView: View {
             JunoIconView(Self.icon(for: item), size: 20)
                 .foregroundStyle(.secondary)
                 .frame(width: 32)
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: JunoSpace.micro) {
                 Text(item.title.isEmpty ? "Untitled" : item.title)
                     .font(.body)
                     .foregroundStyle(.primary)

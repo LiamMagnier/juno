@@ -717,7 +717,7 @@ struct DesktopVoiceCallSettings: View {
             controller.switchProvider(provider)
         } label: {
             HStack(spacing: JunoSpace.snug) {
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: JunoSpace.micro) {
                     // The model is the name, as on the web: it is what answers.
                     Text(provider == controller.provider ? provider.modelName(at: controller.reasoningEffort) : provider.modelName)
                         .junoType(JunoType.ui.weight(.medium))
@@ -734,7 +734,7 @@ struct DesktopVoiceCallSettings: View {
                 }
             }
             .padding(.horizontal, JunoSpace.snug)
-            .padding(.vertical, 6)
+            .padding(.vertical, JunoSpace.tight)
             .frame(minHeight: 28)
             .background(
                 RoundedRectangle(cornerRadius: JunoRadius.control, style: .continuous)

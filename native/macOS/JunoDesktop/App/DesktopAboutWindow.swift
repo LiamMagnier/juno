@@ -233,7 +233,7 @@ struct DesktopAcknowledgements: View {
                 .foregroundStyle(Color.junoForeground)
                 .accessibilityAddTraits(.isHeader)
             ForEach(Self.entries, id: \.name) { entry in
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: JunoSpace.micro) {
                     Text(entry.name)
                         .junoType(JunoType.label.weight(.medium))
                         .foregroundStyle(Color.junoForeground)

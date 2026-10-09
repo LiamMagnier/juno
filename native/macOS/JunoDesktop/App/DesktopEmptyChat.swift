@@ -216,7 +216,7 @@ private struct ChatGreetingBody: View {
     /// The private chat says what is different in one sentence, as the
     /// iPhone and ChatGPT's temporary chat do; the page is otherwise the same.
     private var privateHeader: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: JunoSpace.tight) {
             Text("Private chat")
                 .junoFont(size: 17, relativeTo: .headline, weight: .semibold)
                 .foregroundStyle(Color.junoForeground)

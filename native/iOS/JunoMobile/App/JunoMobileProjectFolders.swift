@@ -75,7 +75,7 @@ struct JunoMobileProjectFolderSection: View {
                 .foregroundStyle(.secondary)
                 .frame(width: 32)
                 .accessibilityHidden(true)
-              VStack(alignment: .leading, spacing: 2) {
+              VStack(alignment: .leading, spacing: JunoSpace.micro) {
                 Text(folder.name)
                   .font(.body)
                   .foregroundStyle(.primary)

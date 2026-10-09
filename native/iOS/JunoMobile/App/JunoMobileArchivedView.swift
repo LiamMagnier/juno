@@ -45,7 +45,7 @@ struct JunoMobileArchivedView: View {
             Button {
               openConversation(conversation.id)
             } label: {
-              VStack(alignment: .leading, spacing: 2) {
+              VStack(alignment: .leading, spacing: JunoSpace.micro) {
                 Text(conversation.title)
                   .foregroundStyle(.primary)
                   .lineLimit(2)

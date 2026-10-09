@@ -30,7 +30,7 @@ struct JunoMobileAttachmentChips: View {
     private func chip(_ attachment: NativeComposerAttachment) -> some View {
         HStack(spacing: JunoSpace.snug) {
             thumbnail(attachment)
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: JunoSpace.micro) {
                 Text(attachment.fileName)
                     .font(.caption.weight(.medium))
                     .lineLimit(1)

@@ -729,7 +729,7 @@ struct MessageVersionPager: View {
                 .accessibilityValue("\(index + 1) of \(total)")
             arrow(.chevronRight, label: "Next version", enabled: canGoForward) { step(1) }
         }
-        .padding(.trailing, 4)
+        .padding(.trailing, JunoSpace.hairline)
     }
 
     private func arrow(

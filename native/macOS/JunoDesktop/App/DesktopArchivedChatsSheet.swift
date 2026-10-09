@@ -143,7 +143,7 @@ struct DesktopArchivedChatsSheet: View {
     private var list: some View {
         switch load {
         case .loading:
-            VStack(spacing: 2) {
+            VStack(spacing: JunoSpace.micro) {
                 ForEach(0..<4, id: \.self) { _ in
                     JunoSkeleton(height: 48, cornerRadius: JunoRadius.control)
                 }
@@ -158,7 +158,7 @@ struct DesktopArchivedChatsSheet: View {
                 JunoEmptyState(title: "Nothing archived.", icon: .archive, size: .panel)
             } else {
                 ScrollView {
-                    VStack(spacing: 2) {
+                    VStack(spacing: JunoSpace.micro) {
                         ForEach(visible, id: \.id) { conversation in
                             DesktopArchivedChatRow(
                                 conversation: conversation,
@@ -233,7 +233,7 @@ private struct DesktopArchivedChatRow: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: JunoSpace.snug) {
                 Button(action: open) {
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: JunoSpace.micro) {
                         Text(conversation.title.isEmpty ? "New chat" : conversation.title)
                             .junoFont(size: 13, relativeTo: .callout, weight: .medium)
                             .foregroundStyle(Color.junoForeground)

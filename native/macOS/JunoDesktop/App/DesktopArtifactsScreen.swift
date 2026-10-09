@@ -328,7 +328,7 @@ struct DesktopArtifactsScreen: View {
         let isHovered = hovered == artifact.id
         return HStack(spacing: JunoSpace.cozy) {
             DesktopArtifactInset(artifact: artifact, hovering: isHovered)
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: JunoSpace.micro) {
                 Text(artifact.title.isEmpty ? "Untitled artifact" : artifact.title)
                     .junoType(.ui)
                     .fontWeight(.medium)
@@ -392,7 +392,7 @@ struct DesktopArtifactsScreen: View {
                 .aspectRatio(4 / 3, contentMode: .fit)
                 .clipShape(RoundedRectangle(cornerRadius: JunoRadius.card - JunoSpace.snug, style: .continuous))
             HStack(alignment: .top, spacing: JunoSpace.tight) {
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: JunoSpace.micro) {
                     Text(artifact.title.isEmpty ? "Untitled artifact" : artifact.title)
                         .junoType(.ui)
                         .fontWeight(.medium)
@@ -649,7 +649,7 @@ struct DesktopDesignPresetButton: View {
     var body: some View {
         Button(action: start) {
             HStack(spacing: JunoSpace.cozy) {
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: JunoSpace.micro) {
                     HStack(spacing: JunoSpace.tight) {
                         ZStack {
                             JunoIconView(.plus, size: 13)

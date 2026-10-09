@@ -64,7 +64,7 @@ struct JunoMobileLibraryView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private let columns = Array(
-        repeating: GridItem(.flexible(), spacing: 4),
+        repeating: GridItem(.flexible(), spacing: JunoSpace.hairline),
         count: 3
     )
 
@@ -231,7 +231,7 @@ struct JunoMobileLibraryView: View {
                 if madeModel != nil, filter == .all, searchText.isEmpty {
                     NavigationLink(value: JunoLibraryMadeRoute()) {
                         Label {
-                            VStack(alignment: .leading, spacing: 2) {
+                            VStack(alignment: .leading, spacing: JunoSpace.micro) {
                                 Text("Made by Alevr")
                                     .font(.body)
                                 Text("Pages, documents, spreadsheets and decks")
@@ -251,7 +251,7 @@ struct JunoMobileLibraryView: View {
                     Button(action: openArtifacts) {
                         HStack {
                             Label {
-                                VStack(alignment: .leading, spacing: 2) {
+                                VStack(alignment: .leading, spacing: JunoSpace.micro) {
                                     Text("Artifacts")
                                         .font(.body)
                                     Text("Code, pages and diagrams from your chats")
@@ -506,7 +506,7 @@ struct JunoMobileLibraryView: View {
 
     /// One hit: where it came from, then what it says.
     private func passageRow(_ passage: NativeDocumentPassage) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: JunoSpace.micro) {
             Text(passage.locator)
                 .font(.footnote)
                 .foregroundStyle(.secondary)
@@ -644,7 +644,7 @@ private struct JunoLibraryDocumentRow: View {
                     .foregroundStyle(.secondary)
                     .frame(width: 32)
                     .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: JunoSpace.micro) {
                     Text(file.fileName)
                         .font(.body)
                         .foregroundStyle(.primary)

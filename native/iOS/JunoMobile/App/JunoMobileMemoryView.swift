@@ -113,14 +113,14 @@ struct JunoMobileMemoryView: View {
     private var summarySection: some View {
         Section {
             if model.isRefreshingSummary, model.summary == nil {
-                HStack(spacing: 10) {
+                HStack(spacing: JunoSpace.close) {
                     ProgressView()
                     Text("Consolidating what Alevr has learned…")
                         .foregroundStyle(.secondary)
                 }
             } else if let summary = model.summary, !summary.content.isEmpty {
                 ForEach(JunoMemorySummarySection.parse(summary.content)) { section in
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: JunoSpace.hairline) {
                         if let title = section.title {
                             Text(title)
                                 .font(.subheadline.weight(.semibold))
@@ -129,7 +129,7 @@ struct JunoMobileMemoryView: View {
                         JunoMarkdownText(section.body)
                             .textSelection(.enabled)
                     }
-                    .padding(.vertical, 4)
+                    .padding(.vertical, JunoSpace.hairline)
                 }
             } else {
                 Text(
@@ -216,13 +216,13 @@ struct JunoMobileMemoryView: View {
                             Text(project.count == 1 ? "1 memory" : "\(project.count) memories")
                         }
                         if page?.clearingProjectID == project.id {
-                            ProgressView().padding(.leading, 8)
+                            ProgressView().padding(.leading, JunoSpace.snug)
                         } else {
                             Button("Clear", role: .destructive) { clearingProject = project }
                                 .buttonStyle(.borderless)
                                 .disabled(page?.clearingProjectID != nil)
                                 .accessibilityLabel("Clear \(project.label) memory")
-                                .padding(.leading, 8)
+                                .padding(.leading, JunoSpace.snug)
                                 .frame(minWidth: 44, minHeight: 44)
                                 .contentShape(.rect)
                         }
@@ -265,7 +265,7 @@ struct JunoMobileMemoryView: View {
             }
 
             if model.isErasing {
-                HStack(spacing: 10) {
+                HStack(spacing: JunoSpace.close) {
                     ProgressView()
                     Text("Erasing memory…").foregroundStyle(.secondary)
                 }
@@ -417,7 +417,7 @@ private struct JunoMobileMemoryFactsView: View {
             editContent = memory.content
             editMemoryID = memory.id
         } label: {
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: JunoSpace.hairline) {
                 Text(memory.content)
                     .foregroundStyle(Color.primary)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -438,7 +438,7 @@ private struct JunoMobileMemoryFactsView: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            .padding(.vertical, 2)
+            .padding(.vertical, JunoSpace.micro)
             .contentShape(.rect)
         }
         .disabled(model.isMutating || model.isErasing)
@@ -593,7 +593,7 @@ private struct JunoMobileSuggestedSkills: View {
     }
 
     private func row(_ candidate: NativeSkillCandidate) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: JunoSpace.hairline) {
             Text(candidate.title)
                 .font(.body.weight(.semibold))
             Text(candidate.detailLine())
@@ -606,9 +606,9 @@ private struct JunoMobileSuggestedSkills: View {
                     .lineLimit(2)
             }
             actions(candidate)
-                .padding(.top, 4)
+                .padding(.top, JunoSpace.hairline)
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, JunoSpace.hairline)
     }
 
     @ViewBuilder
@@ -619,7 +619,7 @@ private struct JunoMobileSuggestedSkills: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         } else {
-            HStack(spacing: 16) {
+            HStack(spacing: JunoSpace.regular) {
                 Button {
                     Task { post(await page.decide(candidate, .accept)) }
                 } label: {
@@ -629,7 +629,7 @@ private struct JunoMobileSuggestedSkills: View {
                         Text("Add as skill")
                     }
                 }
-                .buttonStyle(.bordered)
+                .modifier(JunoMobileWorkspaceActionStyle())
                 .disabled(busy)
                 .accessibilityIdentifier("juno.mobile.memory-skill-accept")
                 .contentShape(.rect)

@@ -330,7 +330,7 @@ struct JunoMobileVoiceFullScreen: View {
             .junoFont(size: 11, relativeTo: .caption2, weight: .semibold)
             .foregroundStyle(line.role == .assistant ? Color.junoAccent : Color.junoMutedForeground)
             .frame(width: 34, alignment: .leading)
-            .padding(.top, 2)
+            .padding(.top, JunoSpace.micro)
           Text(line.text)
             .junoFont(size: 15, relativeTo: .body)
             .foregroundStyle(line.final ? Color.junoForeground : Color.junoMutedForeground)

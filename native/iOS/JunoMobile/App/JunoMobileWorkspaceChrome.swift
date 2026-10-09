@@ -42,7 +42,7 @@ struct JunoMobileSegmented<Value: Hashable>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: JunoSpace.micro) {
             ForEach(options) { option in
                 let selected = option.value == selection
                 Button {
@@ -282,10 +282,9 @@ struct JunoMobileWorkspaceSection<Content: View>: View {
                         }
                         .foregroundStyle(Color.primary)
                         .padding(.horizontal, JunoSpace.snug)
-                        .frame(minHeight: 32)
+                        .frame(minHeight: JunoLayout.Control.compactHeight)
                     }
                     .modifier(JunoMobileWorkspaceActionStyle())
-                    .controlSize(.small)
                     .frame(minWidth: 44, minHeight: 44)
                     .contentShape(.rect)
                 }

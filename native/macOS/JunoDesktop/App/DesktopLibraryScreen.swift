@@ -496,7 +496,7 @@ struct DesktopLibraryScreen: View {
         return HStack(spacing: JunoSpace.cozy) {
             DesktopLibraryInset(item: item, state: previewState(item), onSelection: selected)
                 .task(id: item.id) { await loadPreview(item) }
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: JunoSpace.micro) {
                 Text(item.fileName)
                     .junoType(.ui)
                     .fontWeight(.medium)
@@ -656,7 +656,7 @@ struct DesktopLibraryScreen: View {
                 .accessibilityLabel(selected ? "Deselect \(item.fileName)" : "Select \(item.fileName)")
             }
             HStack(alignment: .top, spacing: JunoSpace.tight) {
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: JunoSpace.micro) {
                     Text(item.fileName)
                         .junoType(.ui)
                         .fontWeight(.medium)
@@ -1650,7 +1650,7 @@ struct DesktopLibraryVersionsList: View {
 
     private func row(_ version: NativeLibraryVersion) -> some View {
         HStack(spacing: JunoSpace.cozy) {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: JunoSpace.micro) {
                 Text("Version \(version.version)")
                     .junoType(.ui)
                     .fontWeight(.medium)

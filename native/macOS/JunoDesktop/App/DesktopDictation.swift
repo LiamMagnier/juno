@@ -33,7 +33,7 @@ struct DesktopDictation: View {
     }
 
     var body: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: JunoSpace.close) {
             if let startFailure {
                 unavailable(startFailure)
             } else {
@@ -66,8 +66,8 @@ struct DesktopDictation: View {
     }
 
     private var transcriptPreview: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
+        VStack(alignment: .leading, spacing: JunoSpace.tight) {
+            HStack(spacing: JunoSpace.tight) {
                 Circle()
                     .fill(Color.junoAccent)
                     .frame(width: 7, height: 7)
@@ -77,16 +77,16 @@ struct DesktopDictation: View {
                     .foregroundStyle(Color.junoAccent)
                     .textCase(.uppercase)
             }
-            .padding(.horizontal, 14)
-            .padding(.top, 10)
+            .padding(.horizontal, JunoSpace.comfy)
+            .padding(.top, JunoSpace.close)
 
             ScrollView {
                 Text(previewText)
                     .junoFont(size: 14, relativeTo: .body)
                     .lineSpacing(3)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 14)
-                    .padding(.bottom, 10)
+                    .padding(.horizontal, JunoSpace.comfy)
+                    .padding(.bottom, JunoSpace.close)
             }
             .frame(maxHeight: 100)
         }
@@ -124,7 +124,7 @@ struct DesktopDictation: View {
     }
 
     private var capsule: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: JunoSpace.cozy) {
             circleButton(
                 icon: .close,
                 label: "Cancel dictation",
@@ -152,7 +152,7 @@ struct DesktopDictation: View {
             .disabled(transcript.isEmpty)
             .opacity(transcript.isEmpty ? 0.42 : 1)
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, JunoSpace.cozy)
         .frame(height: 60)
         .background(JunoGlassBackground(cornerRadius: 30))
         .overlay {
@@ -197,7 +197,7 @@ struct DesktopDictation: View {
     }
 
     private func unavailable(_ message: String) -> some View {
-        HStack(spacing: 12) {
+        HStack(spacing: JunoSpace.cozy) {
             JunoIconView(.micOff, size: 16)
                 .foregroundStyle(Color.junoMutedForeground)
             Text(message)
@@ -211,8 +211,8 @@ struct DesktopDictation: View {
                 action: onCancel
             )
         }
-        .padding(.leading, 18)
-        .padding(.trailing, 12)
+        .padding(.leading, JunoSpace.ample)
+        .padding(.trailing, JunoSpace.cozy)
         .frame(height: 60)
         .background(JunoGlassBackground(cornerRadius: 30))
         .accessibilityIdentifier("juno.desktop.dictation-unavailable")

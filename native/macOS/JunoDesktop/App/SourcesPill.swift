@@ -155,7 +155,7 @@ struct SourceFaviconStack: View {
             HStack(spacing: -overlap) {
                 ForEach(Array(items.enumerated()), id: \.offset) { index, source in
                     SourceFavicon(url: source.url, size: size)
-                        .padding(1.5)
+                        .padding(JunoSpace.micro)
                         .background(Circle().fill(ring))
                         .zIndex(Double(items.count - index))
                 }
@@ -212,7 +212,7 @@ struct DesktopMessageSources: View {
             .accessibilityIdentifier("juno.desktop.chat.sources")
 
             if expanded {
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: JunoSpace.micro) {
                     ForEach(Array(sources.enumerated()), id: \.offset) { index, source in
                         SourceRow(source: source, number: index + 1)
                     }
@@ -240,7 +240,7 @@ struct DesktopMessageSources: View {
                 .foregroundStyle(Color.junoSecondaryInk)
                 .rotationEffect(.degrees(expanded ? 180 : 0))
         }
-        .padding(.leading, 5)
+        .padding(.leading, JunoSpace.hairline)
         .padding(.trailing, JunoSpace.cozy)
         .frame(height: 32)
         .background(Capsule().fill(expanded || hovered ? Color.junoHover : Color.junoCard))

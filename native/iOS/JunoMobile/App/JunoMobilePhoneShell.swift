@@ -259,7 +259,7 @@ struct JunoMobileProductSwitch: View {
       haptic.fire()
       selection = target
     }
-    .padding(.horizontal, 12)
+    .padding(.horizontal, JunoSpace.cozy)
     .frame(minHeight: 44)
     .contentShape(Capsule())
     // The bar's glass capsule, as the system draws for its own controls.

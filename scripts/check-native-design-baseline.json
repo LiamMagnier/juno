@@ -1,11 +1,11 @@
 {
   "glass": {
-    "total": 23,
+    "total": 20,
     "modules": {
       "JunoNativeKit (shared)": 4,
       "JunoCode (shared)": 2,
       "JunoDesktop (macOS)": 6,
-      "JunoMobile (iOS)": 11
+      "JunoMobile (iOS)": 8
     },
     "files": {
       "native/Packages/JunoCode/Sources/JunoCodeUI/Studio/StudioGoalRow.swift": 1,
@@ -14,11 +14,10 @@
       "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/JunoCodeRun.swift": 1,
       "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/LiveUI/JunoLiveUIExercise.swift": 1,
       "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/LiveUI/JunoLiveUIParts.swift": 1,
-      "native/iOS/JunoMobile/App/JunoMobileCodeView.swift": 2,
+      "native/iOS/JunoMobile/App/JunoMobileAttachmentMenu.swift": 1,
       "native/iOS/JunoMobile/App/JunoMobileDictation.swift": 2,
-      "native/iOS/JunoMobile/App/JunoMobileTasksView.swift": 1,
+      "native/iOS/JunoMobile/App/JunoMobilePhoneShell.swift": 1,
       "native/iOS/JunoMobile/App/JunoMobileWorkView.swift": 4,
-      "native/iOS/JunoMobile/App/JunoMobileWorkspaceViews.swift": 2,
       "native/macOS/JunoDesktop/App/DesktopCodeWorkspace.swift": 2,
       "native/macOS/JunoDesktop/App/DesktopDictation.swift": 2,
       "native/macOS/JunoDesktop/App/DesktopScreenPresence.swift": 1,
@@ -40,18 +39,33 @@
     "files": {}
   },
   "prominent": {
-    "total": 7,
+    "total": 1,
     "modules": {
-      "JunoNativeKit (shared)": 1,
-      "JunoCode (shared)": 5,
-      "JunoDesktop (macOS)": 1
+      "JunoNativeKit (shared)": 1
     },
     "files": {
-      "native/Packages/JunoCode/Sources/JunoCodeUI/Views/Remote/CodeRemoteTaskDetailView.swift": 2,
-      "native/Packages/JunoCode/Sources/JunoCodeUI/Views/Review/CreatePullRequestSheet.swift": 2,
-      "native/Packages/JunoCode/Sources/JunoCodeUI/Views/Review/WorkspaceDocumentEditor.swift": 1,
-      "native/Packages/JunoNativeKit/Sources/JunoCodeKit/NativePullsView.swift": 1,
-      "native/macOS/JunoDesktop/App/DesktopCodeWorkspace.swift": 1
+      "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/JunoGlassControls.swift": 1
+    }
+  },
+  "spacing": {
+    "total": 17,
+    "modules": {
+      "JunoDesktop (macOS)": 13,
+      "JunoMobile (iOS)": 4
+    },
+    "files": {
+      "native/iOS/JunoMobile/App/JunoMobileOnboarding.swift": 3,
+      "native/iOS/JunoMobile/App/JunoMobilePlans.swift": 1,
+      "native/macOS/JunoDesktop/App/ActivityPanel.swift": 2,
+      "native/macOS/JunoDesktop/App/ActivityRow.swift": 1,
+      "native/macOS/JunoDesktop/App/DesktopAssistantsScreen.swift": 1,
+      "native/macOS/JunoDesktop/App/DesktopCodeWorkspace.swift": 1,
+      "native/macOS/JunoDesktop/App/DesktopCustomizeScreen.swift": 1,
+      "native/macOS/JunoDesktop/App/DesktopSettingsGeneralPane.swift": 1,
+      "native/macOS/JunoDesktop/App/InlineArtifactCard.swift": 1,
+      "native/macOS/JunoDesktop/App/MessageActions.swift": 1,
+      "native/macOS/JunoDesktop/App/MessageRow.swift": 1,
+      "native/macOS/JunoDesktop/App/TranscriptAttachments.swift": 3
     }
   },
   "symbols": {

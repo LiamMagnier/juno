@@ -1403,7 +1403,7 @@ private struct DesktopCodeRemoteCanvas: View {
                 .frame(width: 28, height: 28)
                 .background(Color.junoAccent.opacity(0.12), in: Circle())
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: JunoSpace.hairline) {
                 HStack(spacing: JunoSpace.snug) {
                     Text(summary.title)
                         .junoRowLabel()
@@ -1420,7 +1420,7 @@ private struct DesktopCodeRemoteCanvas: View {
                     .junoCaption()
                     .foregroundStyle(status.tint)
                     .padding(.horizontal, JunoSpace.snug)
-                    .padding(.vertical, 3)
+                    .padding(.vertical, JunoSpace.hairline)
                     .background(Capsule(style: .continuous).fill(status.tint.opacity(0.13)))
                     .contentTransition(.numericText())
                     // The run finishing is the second rewarded moment.
@@ -1563,7 +1563,7 @@ private struct DesktopCodeRemoteCanvas: View {
                 .frame(width: 24, height: 24)
                 .background(presentation.tint.opacity(0.12), in: Circle())
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: JunoSpace.hairline) {
                 HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
                     Text(presentation.title)
                         .junoRowLabel()

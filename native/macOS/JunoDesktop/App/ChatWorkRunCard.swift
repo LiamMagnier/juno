@@ -806,7 +806,7 @@ struct ChatWorkCurrentAction: View {
     var body: some View {
         HStack(alignment: .top, spacing: JunoSpace.close) {
             JunoRunSignature(phase: action.kind == .tool ? .tool : .thinking, loops: loops)
-                .padding(.top, 1)
+                .padding(.top, JunoSpace.micro)
             VStack(alignment: .leading, spacing: JunoSpace.micro) {
                 Text(title)
                     .junoFont(size: 13, relativeTo: .callout, weight: .medium)
@@ -1241,7 +1241,7 @@ struct ChatWorkQuestionCard: View {
             .lineLimit(1...4)
             .onSubmit(send)
             .padding(.horizontal, JunoSpace.snug + 2)
-            .padding(.vertical, 5)
+            .padding(.vertical, JunoSpace.hairline)
             .frame(minHeight: 28)
             .background(Color.junoSecondary, in: RoundedRectangle(cornerRadius: JunoRadius.control, style: .continuous))
             .overlay(

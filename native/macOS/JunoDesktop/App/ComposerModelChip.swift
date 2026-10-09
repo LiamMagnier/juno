@@ -181,7 +181,7 @@ struct ComposerModelChip: View {
         } label: {
             HStack(spacing: JunoSpace.close) {
                 mark(size: 20)
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: JunoSpace.micro) {
                     Text(name)
                         .junoType(JunoType.ui.weight(.medium))
                         .foregroundStyle(Color.junoForeground)

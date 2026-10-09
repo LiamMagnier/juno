@@ -508,7 +508,7 @@ struct DesktopSkillUpdateSheet: View {
                     : "\(check.removed.count) installed skills are no longer in the repository. They stay installed here.")
                     .junoType(.caption)
                     .foregroundStyle(Color.junoSecondaryInk)
-                    .padding(.leading, 24)
+                    .padding(.leading, JunoSpace.section)
             }
             Spacer()
             HStack {

@@ -823,7 +823,7 @@ struct DesktopProjectTasks: View {
                 JunoPageSearchField(text: $query, prompt: "Search work…")
                 DesktopProjectRowList(items: matching) { task in
                     HStack(spacing: JunoSpace.cozy) {
-                        VStack(alignment: .leading, spacing: 2) {
+                        VStack(alignment: .leading, spacing: JunoSpace.micro) {
                             Text(task.title.isEmpty ? task.goal : task.title)
                                 .junoType(.ui)
                                 .fontWeight(.medium)
@@ -1012,7 +1012,7 @@ struct DesktopProjectSources: View {
                         .fill(Color.junoSecondary)
                 )
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: JunoSpace.micro) {
                 Text(file.fileName)
                     .junoType(.ui)
                     .fontWeight(.medium)
@@ -1042,7 +1042,7 @@ struct DesktopProjectSources: View {
                         .fill(Color.junoSecondary)
                 )
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: JunoSpace.micro) {
                 Text(artifact.title.isEmpty ? "Untitled artifact" : artifact.title)
                     .junoType(.ui)
                     .fontWeight(.medium)

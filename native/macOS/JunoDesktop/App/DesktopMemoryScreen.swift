@@ -524,7 +524,7 @@ struct DesktopMemoryPage: View {
                     .contentShape(.rect)
             }
             .buttonStyle(DesktopUnderlineLinkStyle())
-            .padding(.leading, 22)
+            .padding(.leading, JunoSpace.section)
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Your memory data")
         }

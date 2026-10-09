@@ -45,7 +45,7 @@ struct DesktopPanelShell<Tab: Hashable, Actions: View, Content: View>: View {
                 Rectangle()
                     .fill(Color.junoHairline)
                     .frame(width: 1, height: 20)
-                    .padding(.horizontal, 1)
+                    .padding(.horizontal, JunoSpace.micro)
                     .accessibilityHidden(true)
                 Button(action: close) {
                     JunoIconView(.close, size: 14)
@@ -271,7 +271,7 @@ struct DesktopActivityPanel: View {
                         if live, !running, id == lastReasoning {
                             // The panel's live item owns the loop while it is open.
                             JunoRunSignature(phase: .thinking, loops: true, size: .small)
-                                .padding(.top, 6)
+                                .padding(.top, JunoSpace.tight)
                         }
                     }
                 case .commentary(_, let text, _):
@@ -324,7 +324,7 @@ struct DesktopActivityPanel: View {
             }
             if let context = contextLine(facts) { fact("Context", context) }
             if !facts.toolsOffered.isEmpty {
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: JunoSpace.micro) {
                     Button {
                         withAnimation(JunoMotion.reduced(JunoMotion.base, when: reduceMotion)) { showsTools.toggle() }
                     } label: {
@@ -353,7 +353,7 @@ struct DesktopActivityPanel: View {
                 }
             }
             if !facts.connectorsReady.isEmpty || !facts.connectorsFailed.isEmpty || facts.connectors != nil {
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: JunoSpace.micro) {
                     factName("Connectors")
                     ForEach(facts.connectorsReady, id: \.id) { connector in
                         connectorRow(connector.label, state: "Connected", warning: false)
@@ -466,7 +466,7 @@ struct DesktopActivityPanel: View {
     }
 
     private func fact(_ name: String, _ value: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: JunoSpace.micro) {
             factName(name)
             Text(value)
                 .junoFont(size: 13, relativeTo: .callout)
@@ -624,7 +624,7 @@ struct DesktopToolCallDetail: View {
             if expanded {
                 VStack(alignment: .leading, spacing: JunoSpace.cozy) {
                     if call.status.isTerminal, call.status != .succeeded {
-                        VStack(alignment: .leading, spacing: 2) {
+                        VStack(alignment: .leading, spacing: JunoSpace.micro) {
                             // The row already says it when its line is the
                             // failure phrase ("Couldn't open nature.com").
                             if !NativeToolPresentation.phrase(call).hasSuffix(NativeToolPresentation.failurePhrase(call).text) {
@@ -684,7 +684,7 @@ struct DesktopToolCallDetail: View {
     @ViewBuilder
     private var result: some View {
         if call.tool == "web_fetch", let web = call.web, call.status == .succeeded {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: JunoSpace.micro) {
                 if let final = web.finalURL, let url = URL(string: final) {
                     SourceRow(source: NativeChatSource(title: SourceHost.name(url), url: url, snippet: ""), number: 1)
                 }
@@ -698,7 +698,7 @@ struct DesktopToolCallDetail: View {
                 }
             }
         } else if let results = call.web?.results, !results.isEmpty {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: JunoSpace.micro) {
                 ForEach(Array(results.enumerated()), id: \.offset) { index, result in
                     if let url = URL(string: result.url) {
                         SourceRow(source: NativeChatSource(title: result.title, url: url, snippet: ""), number: result.n ?? index + 1)

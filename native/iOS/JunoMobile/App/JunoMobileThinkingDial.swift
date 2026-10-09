@@ -222,7 +222,7 @@ struct JunoMobileComposerToken: View {
 
   var body: some View {
     Button(action: remove) {
-      HStack(spacing: 5) {
+      HStack(spacing: JunoSpace.hairline) {
         JunoIconView(icon, size: 14)
         Text(title)
           .junoFont(size: 15, relativeTo: .subheadline)

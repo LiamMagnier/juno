@@ -82,7 +82,7 @@ struct JunoMobileVoiceSettingsView: View {
             update(NativeSettingsPatch(voiceID: .some(voice.id)))
           } label: {
             HStack(spacing: JunoSpace.cozy) {
-              VStack(alignment: .leading, spacing: 2) {
+              VStack(alignment: .leading, spacing: JunoSpace.micro) {
                 Text(voice.label)
                   .junoRowLabel()
                   .foregroundStyle(.primary)
@@ -158,7 +158,7 @@ struct JunoMobileVoiceSettingsView: View {
           .accessibilityIdentifier("juno.mobile.voice-effort-setting")
         }
         Toggle(isOn: $background) {
-          VStack(alignment: .leading, spacing: 2) {
+          VStack(alignment: .leading, spacing: JunoSpace.micro) {
             Text("Background conversations")
             Text("Keep talking when you leave the app or lock the screen.")
               .font(.subheadline)
@@ -167,7 +167,7 @@ struct JunoMobileVoiceSettingsView: View {
         }
         .accessibilityIdentifier("juno.mobile.voice-background")
         Toggle(isOn: $pushToTalk) {
-          VStack(alignment: .leading, spacing: 2) {
+          VStack(alignment: .leading, spacing: JunoSpace.micro) {
             Text("Push to talk")
             Text("Hold the orb to speak, release to send. Off, Alevr listens continuously.")
               .font(.subheadline)
@@ -176,7 +176,7 @@ struct JunoMobileVoiceSettingsView: View {
         }
         .accessibilityIdentifier("juno.mobile.voice-push-to-talk")
         Toggle(isOn: $speakerDefault) {
-          VStack(alignment: .leading, spacing: 2) {
+          VStack(alignment: .leading, spacing: JunoSpace.micro) {
             Text("Start on speaker")
             Text("Off, a call starts in the earpiece like a phone call.")
               .font(.subheadline)
@@ -184,7 +184,7 @@ struct JunoMobileVoiceSettingsView: View {
           }
         }
         Toggle(isOn: $voiceSounds) {
-          VStack(alignment: .leading, spacing: 2) {
+          VStack(alignment: .leading, spacing: JunoSpace.micro) {
             Text("Voice sounds")
             Text("A soft chime when a call can hear you, and another when it ends. Silent when your iPhone is.")
               .font(.subheadline)
@@ -240,7 +240,7 @@ struct JunoMobileNotificationSettingsView: View {
     Form {
       Section {
         HStack(spacing: JunoSpace.cozy) {
-          VStack(alignment: .leading, spacing: 2) {
+          VStack(alignment: .leading, spacing: JunoSpace.micro) {
             Text("Notifications on this iPhone")
             Text(statusLine)
               .font(.subheadline)
@@ -252,14 +252,14 @@ struct JunoMobileNotificationSettingsView: View {
           // asked, so it offers the real question too.
           case .notDetermined?, .provisional?:
             Button("Allow") { Task { await requestPermission() } }
-              .buttonStyle(.bordered)
+              .modifier(JunoMobileWorkspaceActionStyle())
                     .accessibilityIdentifier("juno.mobile.notifications-allow")
           case .denied?:
             Button("Open Settings") {
               guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
               openURL(url)
             }
-            .buttonStyle(.bordered)
+            .modifier(JunoMobileWorkspaceActionStyle())
           case .authorized?, .ephemeral?:
             Text("On")
               .foregroundStyle(.secondary)
@@ -274,7 +274,7 @@ struct JunoMobileNotificationSettingsView: View {
 
       Section {
         Toggle(isOn: $pushes.preferences.needsYou) {
-          VStack(alignment: .leading, spacing: 2) {
+          VStack(alignment: .leading, spacing: JunoSpace.micro) {
             Text("When something needs you")
             Text("An approval or a question a task is waiting on.")
               .font(.subheadline)
@@ -284,7 +284,7 @@ struct JunoMobileNotificationSettingsView: View {
         .disabled(!isAuthorized)
         .accessibilityIdentifier("juno.mobile.notifications-needs-you")
         Toggle(isOn: $pushes.preferences.updates) {
-          VStack(alignment: .leading, spacing: 2) {
+          VStack(alignment: .leading, spacing: JunoSpace.micro) {
             Text("Updates")
             Text("A task finished, an agent has ideas, or one agent handed work to another.")
               .font(.subheadline)
@@ -301,7 +301,7 @@ struct JunoMobileNotificationSettingsView: View {
 
       Section("Code") {
         Toggle(isOn: $notifyApprovals) {
-          VStack(alignment: .leading, spacing: 2) {
+          VStack(alignment: .leading, spacing: JunoSpace.micro) {
             Text("Approvals")
             Text("When a session on your Mac is waiting for a yes.")
               .font(.subheadline)
@@ -311,7 +311,7 @@ struct JunoMobileNotificationSettingsView: View {
         .disabled(!isAuthorized)
         .accessibilityIdentifier("juno.mobile.notifications-approvals")
         Toggle(isOn: $notifyCompletions) {
-          VStack(alignment: .leading, spacing: 2) {
+          VStack(alignment: .leading, spacing: JunoSpace.micro) {
             Text("Completions")
             Text("When a session you started from here finishes.")
               .font(.subheadline)
@@ -324,7 +324,7 @@ struct JunoMobileNotificationSettingsView: View {
       if let settings {
         Section {
           Toggle(isOn: binding(settings, \.emailBudgetAlerts) { NativeSettingsPatch(emailBudgetAlerts: $0) }) {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: JunoSpace.micro) {
               Text("Budget alerts")
               Text("Email me at 80% of my monthly budget.")
                 .font(.subheadline)
@@ -334,7 +334,7 @@ struct JunoMobileNotificationSettingsView: View {
             .disabled(disabled)
           .accessibilityIdentifier("juno.mobile.settings-budget-alerts")
           Toggle(isOn: binding(settings, \.emailWeeklyDigest) { NativeSettingsPatch(emailWeeklyDigest: $0) }) {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: JunoSpace.micro) {
               Text("Weekly digest")
               Text("Usage recap every Monday.")
                 .font(.subheadline)
@@ -443,7 +443,7 @@ struct JunoMobileCodeSettingsView: View {
 
       Section {
         Toggle(isOn: $notifyApprovals) {
-          VStack(alignment: .leading, spacing: 2) {
+          VStack(alignment: .leading, spacing: JunoSpace.micro) {
             Text("Notify me for approvals")
             Text("A local notification when a session is waiting on you while Alevr is in the background.")
               .font(.subheadline)

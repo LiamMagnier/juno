@@ -254,7 +254,7 @@ struct DesktopProjectFolderTile: View {
             .padding(.top, JunoSpace.snug)
             .padding(.bottom, JunoSpace.tight)
         }
-        .padding(4)
+        .padding(JunoSpace.hairline)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)

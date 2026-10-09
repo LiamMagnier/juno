@@ -79,7 +79,7 @@ struct ArtifactHistorySheet: View {
         List {
             ForEach(history.entries) { entry in
                 HStack(spacing: JunoSpace.cozy) {
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: JunoSpace.micro) {
                         Text(entry.version == artifact.currentVersion ? "Version \(entry.version) — Current" : "Version \(entry.version)")
                             .junoType(.ui)
                             .monospacedDigit()
@@ -232,7 +232,7 @@ struct DesktopRecentlyDeletedArtifactsSheet: View {
                     .foregroundStyle(Color.junoSecondaryInk)
                     .frame(width: 28)
                     .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: JunoSpace.micro) {
                     Text(item.title.isEmpty ? "Untitled artifact" : item.title)
                         .junoType(.ui)
                         .lineLimit(1)

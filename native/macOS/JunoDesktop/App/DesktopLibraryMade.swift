@@ -98,7 +98,7 @@ struct DesktopLibraryMadeList: View {
                     RoundedRectangle(cornerRadius: JunoRadius.control, style: .continuous)
                         .fill(Color.junoSecondary)
                 )
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: JunoSpace.micro) {
                 Text(item.title.isEmpty ? "Untitled" : item.title)
                     .junoType(.ui)
                     .foregroundStyle(Color.junoForeground)

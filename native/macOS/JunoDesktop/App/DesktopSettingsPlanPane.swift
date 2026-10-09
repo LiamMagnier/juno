@@ -436,7 +436,7 @@ struct DesktopUsageHistory: View {
         let busiestIndex = (busiest?.element.requests ?? 0) > 0 ? busiest?.offset : nil
         return VStack(alignment: .leading, spacing: JunoSpace.cozy) {
             summary(breakdown, days: days)
-            HStack(alignment: .bottom, spacing: 3) {
+            HStack(alignment: .bottom, spacing: JunoSpace.hairline) {
                 ForEach(Array(days.enumerated()), id: \.offset) { index, day in
                     let isActive = active == index
                     let isBusiest = active == nil && busiestIndex == index

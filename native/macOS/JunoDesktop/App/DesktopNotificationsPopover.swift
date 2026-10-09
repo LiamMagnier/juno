@@ -294,7 +294,7 @@ struct DesktopNotificationRowView: View {
                 if notification.isUnread {
                     DesktopUnreadDot(pressing: notification.isPressing)
                         // Centred on the title's line.
-                        .padding(.top, 6)
+                        .padding(.top, JunoSpace.tight)
                 }
             }
             .padding(.vertical, JunoSpace.snug)

@@ -35,7 +35,7 @@ struct JunoMobileLibraryPicker: View {
     @Environment(\.dismiss) private var dismiss
     @State private var previews = NativeFilePreviewLoader()
 
-    private let columns = Array(repeating: GridItem(.flexible(), spacing: 3), count: 3)
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: JunoSpace.hairline), count: 3)
 
     var body: some View {
         NavigationStack {
@@ -80,7 +80,8 @@ struct JunoMobileLibraryPicker: View {
                 if model.lastErrorDescription != nil {
                     Button("action.retry") { Task { await model.refresh() } }
                         .contentShape(.rect)
-                        .buttonStyle(.bordered)
+                        .modifier(JunoMobileWorkspaceActionStyle())
+                        .controlSize(.large)
                 }
             }
         } else {
@@ -123,7 +124,7 @@ struct JunoMobileLibraryPicker: View {
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, JunoSpace.regular)
 
-                LazyVGrid(columns: columns, spacing: 3) {
+                LazyVGrid(columns: columns, spacing: JunoSpace.hairline) {
                     ForEach(model.visibleItems) { item in
                         card(item)
                     }
@@ -164,7 +165,7 @@ struct JunoMobileLibraryPicker: View {
                             .font(.title3)
                             .symbolRenderingMode(.palette)
                             .foregroundStyle(.white, .tint)
-                            .padding(6)
+                            .padding(JunoSpace.tight)
                     }
                 }
                 .contentShape(.rect)
@@ -192,7 +193,7 @@ struct JunoMobileLibraryPicker: View {
         case .loading:
             EmptyView()
         case .unavailable:
-            VStack(spacing: 6) {
+            VStack(spacing: JunoSpace.tight) {
                 JunoSymbol(file.isImage ? JunoIcon.image : JunoIcon.file)
                     .font(.title2)
                     .foregroundStyle(.secondary)
@@ -203,7 +204,7 @@ struct JunoMobileLibraryPicker: View {
                     .multilineTextAlignment(.center)
                     .truncationMode(.middle)
             }
-            .padding(8)
+            .padding(JunoSpace.snug)
         }
     }
 

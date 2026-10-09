@@ -177,7 +177,7 @@ struct JunoMobileComposerActions: View {
             menuRow(String(localized: "More"), icon: .ellipsis) { moreRows }
                 .accessibilityIdentifier("juno.mobile.composer-tools")
         }
-        .padding(.vertical, 10)
+        .padding(.vertical, JunoSpace.close)
         .frame(width: 264)
         // Real Liquid Glass, the system's own material: no fill under it and
         // no shadow of ours — what is behind shows through, as in ChatGPT.
@@ -212,7 +212,7 @@ struct JunoMobileComposerActions: View {
             }
             action()
         } label: {
-            HStack(spacing: 14) {
+            HStack(spacing: JunoSpace.comfy) {
                 // Each glyph on a small round ground, as ChatGPT's "+" rows
                 // are drawn — the glass popover's one texture.
                 JunoIconView(icon, size: 20)
@@ -234,7 +234,7 @@ struct JunoMobileComposerActions: View {
                 }
             }
             .foregroundStyle(Color.junoForeground)
-            .padding(.horizontal, 18)
+            .padding(.horizontal, JunoSpace.ample)
             .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
             .contentShape(Rectangle())
             .animation(JunoMotion.reduced(JunoMotion.chatControl, when: reduceMotion, tier: .tint), value: checked)
@@ -253,7 +253,7 @@ struct JunoMobileComposerActions: View {
         Menu {
             content()
         } label: {
-            HStack(spacing: 14) {
+            HStack(spacing: JunoSpace.comfy) {
                 // Each glyph on a small round ground, as ChatGPT's "+" rows
                 // are drawn — the glass popover's one texture.
                 JunoIconView(icon, size: 20)
@@ -266,7 +266,7 @@ struct JunoMobileComposerActions: View {
                     .foregroundStyle(Color.junoSecondaryInk)
             }
             .foregroundStyle(Color.junoForeground)
-            .padding(.horizontal, 18)
+            .padding(.horizontal, JunoSpace.ample)
             .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
             .contentShape(Rectangle())
         }

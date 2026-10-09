@@ -95,7 +95,7 @@ struct DesktopOnboardingSheet: View {
         .frame(width: 480, height: 440)
         // The web's onboarding ground: the faint paper dot grid.
         .background {
-            JunoDotGrid(spacing: 26)
+            JunoDotGrid(spacing: JunoSpace.section)
                 .opacity(0.4)
                 .accessibilityHidden(true)
         }

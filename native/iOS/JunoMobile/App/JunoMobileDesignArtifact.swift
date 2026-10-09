@@ -183,7 +183,7 @@ struct JunoMobileDesignArtifactBody: View {
             JunoIconView(junoDesignIcon(row.glyph), size: 12)
                 .junoMetaInk()
                 .frame(width: 16)
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: JunoSpace.micro) {
                 Text(row.name)
                     .font(.body)
                     .lineLimit(1)

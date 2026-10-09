@@ -124,7 +124,7 @@ struct DesktopWorkTag: View {
             .lineLimit(1)
             .fixedSize()
             .padding(.horizontal, JunoSpace.tight)
-            .padding(.vertical, 2)
+            .padding(.vertical, JunoSpace.micro)
             .background(Capsule().fill(Color.junoSecondary))
             .overlay(Capsule().strokeBorder(Color.junoBorder.opacity(0.7), lineWidth: 1))
     }

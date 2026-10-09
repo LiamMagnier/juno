@@ -48,7 +48,7 @@ struct JunoMobileAccountSecurityView: View {
           .disabled(status == nil)
           .accessibilityIdentifier("juno.mobile.security.two-step")
         } label: {
-          VStack(alignment: .leading, spacing: 2) {
+          VStack(alignment: .leading, spacing: JunoSpace.micro) {
             Text("Two-step verification")
             Text(twoStepDetail)
               .font(.footnote)
@@ -207,7 +207,7 @@ struct JunoMobileTwoStepSetupView: View {
           if let url = URL(string: enrolment.otpauthURL) {
             Link("Open in Authenticator App", destination: url)
           }
-          VStack(alignment: .leading, spacing: 4) {
+          VStack(alignment: .leading, spacing: JunoSpace.hairline) {
             Text("No camera? Enter this key instead:")
               .font(.footnote)
               .foregroundStyle(Color.junoSecondaryInk)

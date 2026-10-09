@@ -379,7 +379,7 @@ struct DesktopTranscript: View {
                     position.scrollTo(edge: .bottom)
                 }
             }
-            .padding(.bottom, 12)
+            .padding(.bottom, JunoSpace.cozy)
             .animation(JunoMotion.reduced(JunoMotion.base, when: reduceMotion, tier: .tint), value: !atBottom && !follows)
         }
         .onChange(of: model.selectedMessages, initial: true) { previous, current in

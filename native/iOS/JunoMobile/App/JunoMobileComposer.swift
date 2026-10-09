@@ -447,7 +447,7 @@ struct JunoMobileComposer: View {
                 .textFieldStyle(.plain)
                 .focused(composerFocused)
                 .padding(.horizontal, JunoSpace.regular)
-                .padding(.top, 14)
+                .padding(.top, JunoSpace.comfy)
                 .padding(.bottom, JunoSpace.tight)
                 .accessibilityIdentifier("juno.mobile.chat-composer")
 
@@ -489,7 +489,7 @@ struct JunoMobileComposer: View {
                     .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
                       plusPanelFrame = $0
                     }
-                    .padding(.bottom, 8)
+                    .padding(.bottom, JunoSpace.snug)
                     .fixedSize()
                     .transition(
                       reduceMotion || plusMorphing
@@ -697,7 +697,7 @@ struct JunoMobileComposer: View {
   private var collapsedDraftCard: some View {
     VStack(alignment: .leading, spacing: JunoSpace.snug) {
       HStack(alignment: .top, spacing: JunoSpace.snug) {
-        VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: JunoSpace.hairline) {
           Text("Long message ready to send")
             .junoFont(size: 14, relativeTo: .subheadline, weight: .medium)
           Text(
@@ -1069,7 +1069,7 @@ struct JunoMobileComposer: View {
         guard let conversation else { return }
         model.retryLastMessage(conversationID: conversation.id)
       }
-      .buttonStyle(.bordered)
+      .modifier(JunoMobileWorkspaceActionStyle())
       .accessibilityIdentifier("juno.mobile.chat-retry")
       .contentShape(.rect)
     }
@@ -1519,7 +1519,7 @@ struct JunoMobileVoiceWave: View {
         : context.date.timeIntervalSinceReferenceDate
           .truncatingRemainder(dividingBy: Self.cycle) / Self.cycle
 
-      HStack(alignment: .center, spacing: 1.5) {
+      HStack(alignment: .center, spacing: JunoSpace.micro) {
         ForEach(Array(Self.heights.enumerated()), id: \.offset) { index, height in
           Capsule(style: .continuous)
             .frame(width: 1.5, height: height * scale(index, phase: phase))

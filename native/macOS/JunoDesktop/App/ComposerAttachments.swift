@@ -151,7 +151,7 @@ private struct ComposerAttachmentTile: View {
                 .frame(width: ComposerAttachmentMetrics.cardHeight, height: ComposerAttachmentMetrics.cardHeight)
                 .background(Color.junoSecondary)
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: JunoSpace.micro) {
                 Text(attachment.fileName)
                     .junoType(.label)
                     .foregroundStyle(Color.junoForeground)

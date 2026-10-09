@@ -308,7 +308,7 @@ struct DesktopRunLine: View {
         let facts = settled ? Array(summary.phrases.dropFirst()) : liveFacts
         let label = settled ? (summary.phrases.first?.text ?? "Done") : (shownLine.isEmpty ? liveLine.text : shownLine.text)
         let warnings = view.counts.failedTools + view.counts.warnings
-        return HStack(spacing: 10) {
+        return HStack(spacing: JunoSpace.close) {
             JunoRunSignature(phase: glyphPhase, calm: calm, loops: ownsLoop && !settled)
             HStack(spacing: JunoSpace.tight) {
                 if settled {
@@ -515,7 +515,7 @@ struct DesktopRunTimeline: View {
                     Button {
                         openPanel?(call.callID)
                     } label: {
-                        VStack(alignment: .leading, spacing: 2) {
+                        VStack(alignment: .leading, spacing: JunoSpace.micro) {
                             DesktopRunStepRow(item: item, compact: false)
                             if let receipt = DesktopApprovalReceipt.words(for: call) {
                                 Text(receipt)

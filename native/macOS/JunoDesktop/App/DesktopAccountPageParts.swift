@@ -264,7 +264,7 @@ struct DesktopRowToken: View {
         .junoType(JunoType.caption.weight(.medium))
         .foregroundStyle(isWarning ? Color.junoWarningInk : Color.junoSecondaryInk)
         .padding(.horizontal, JunoSpace.tight)
-        .padding(.vertical, 1)
+        .padding(.vertical, JunoSpace.micro)
         .background(
             Capsule(style: .continuous)
                 .fill(isWarning ? Color.junoWarning.opacity(0.15) : Color.junoSecondary)

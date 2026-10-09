@@ -88,7 +88,7 @@ struct ResearchReportWindow: View {
     /// window and Close — the website's glyphs, 28pt targets.
     private func panelHeader(_ report: NativeResearchReport?, panel: ResearchReportPanelChrome) -> some View {
         HStack(spacing: JunoSpace.tight) {
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: JunoSpace.micro) {
                 Text(report?.title ?? "Research report")
                     .junoFont(size: 13, relativeTo: .callout, weight: .semibold)
                     .foregroundStyle(Color.junoForeground)

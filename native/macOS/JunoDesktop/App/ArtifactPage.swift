@@ -173,7 +173,7 @@ struct ArtifactPage: View {
     private func designEditor(_ artifact: NativeArtifact) -> some View {
         VStack(spacing: 0) {
             HStack(spacing: JunoSpace.snug) {
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: JunoSpace.micro) {
                     Text(artifact.title.isEmpty ? "Untitled design" : artifact.title)
                         .junoType(.ui)
                         .fontWeight(.semibold)

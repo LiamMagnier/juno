@@ -230,7 +230,7 @@ struct JunoMobilePlansView: View {
       selected = plan.tier
     } label: {
       HStack(alignment: .center, spacing: JunoSpace.cozy) {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: JunoSpace.micro) {
           Text(plan.name)
             .font(.body.weight(.semibold))
             .foregroundStyle(Color.junoForeground)
@@ -241,10 +241,10 @@ struct JunoMobilePlansView: View {
             .font(.footnote)
             .foregroundStyle(Color.junoSecondaryInk)
             .fixedSize(horizontal: false, vertical: true)
-            .padding(.top, 2)
+            .padding(.top, JunoSpace.micro)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        VStack(alignment: .trailing, spacing: 2) {
+        VStack(alignment: .trailing, spacing: JunoSpace.micro) {
           Text(priceText(plan))
             .font(.title3.weight(.semibold))
             .monospacedDigit()

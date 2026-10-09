@@ -73,7 +73,7 @@ struct JunoMobileUsageView: View {
                 }
             } else if isLoading {
                 Section {
-                    HStack(spacing: 10) {
+                    HStack(spacing: JunoSpace.close) {
                         ProgressView()
                         Text("Reading your usage…").foregroundStyle(.secondary)
                     }
@@ -125,7 +125,7 @@ struct JunoMobileUsageView: View {
     }
 
     private func meter(_ title: LocalizedStringKey, _ window: NativeUsagePlan.Window) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: JunoSpace.tight) {
             LabeledContent(title) {
                 Text(window.fraction.formatted(.percent.precision(.fractionLength(0))))
                     .monospacedDigit()
@@ -140,7 +140,7 @@ struct JunoMobileUsageView: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, JunoSpace.micro)
         .accessibilityElement(children: .combine)
     }
 
@@ -168,7 +168,7 @@ struct JunoMobileUsageView: View {
         if !rows.isEmpty {
             Section("By surface") {
                 ForEach(rows) { row in
-                    VStack(alignment: .leading, spacing: 6) {
+                    VStack(alignment: .leading, spacing: JunoSpace.tight) {
                         LabeledContent {
                             Text(NativeUsageFormat.tokens(row.totalTokens)).monospacedDigit()
                         } label: {
@@ -177,7 +177,7 @@ struct JunoMobileUsageView: View {
                         ProgressView(value: Double(row.totalTokens) / Double(largest))
                             .tint(Color.secondary)
                     }
-                    .padding(.vertical, 2)
+                    .padding(.vertical, JunoSpace.micro)
                     .accessibilityElement(children: .combine)
                     .accessibilityLabel(
                         "\(row.displayName): \(NativeUsageFormat.tokens(row.totalTokens)) tokens over \(row.requests) requests"

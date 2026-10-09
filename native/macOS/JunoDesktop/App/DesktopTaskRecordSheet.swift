@@ -242,7 +242,7 @@ struct DesktopTaskRecordView: View {
                     RoundedRectangle(cornerRadius: JunoRadius.micro, style: .continuous)
                         .fill(Color.junoMuted)
                         .frame(width: 280, height: 14)
-                        .padding(.vertical, 4)
+                        .padding(.vertical, JunoSpace.hairline)
                         .accessibilityLabel("Loading this task")
                 }
                 if let status = content.status {

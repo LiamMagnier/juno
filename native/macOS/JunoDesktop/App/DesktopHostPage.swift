@@ -566,7 +566,7 @@ struct DesktopHostChips: View {
                     .foregroundStyle(item.available ? Color.junoSecondaryInk : Color.junoWarningInk)
                     .lineLimit(1)
                     .padding(.horizontal, JunoSpace.snug)
-                    .padding(.vertical, 3)
+                    .padding(.vertical, JunoSpace.hairline)
                     .background(
                         Capsule().fill(item.available ? Color.junoSecondary : Color.junoWarning.opacity(0.1))
                     )

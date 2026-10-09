@@ -185,7 +185,7 @@ struct JunoMobileRoutineRow: View {
 
   var body: some View {
     HStack(spacing: JunoSpace.cozy) {
-      VStack(alignment: .leading, spacing: 2) {
+      VStack(alignment: .leading, spacing: JunoSpace.micro) {
         Text(schedule.name)
           .foregroundStyle(schedule.enabled ? Color.primary : Color.junoSecondaryInk)
           .lineLimit(1)

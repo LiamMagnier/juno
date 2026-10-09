@@ -833,7 +833,7 @@ private struct DesktopSearchPanelHeader: View {
             .foregroundStyle(Color.junoSecondaryInk)
             .frame(height: DesktopSearchPanelMetrics.headerLine, alignment: .leading)
             .padding(.top, isFirst ? 4 : 24)
-            .padding(.bottom, 4)
+            .padding(.bottom, JunoSpace.hairline)
             .padding(.horizontal, JunoSpace.snug)
             .frame(maxWidth: .infinity, alignment: .leading)
             .modifier(DesktopPanelArrival(index: index))
@@ -860,7 +860,7 @@ private struct DesktopSearchPanelRowView: View {
                 .frame(width: 20, height: 20)
                 .padding(.top, row.hasSnippet ? 1 : 0)
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: JunoSpace.micro) {
                 DesktopMarkedText(text: row.label, marks: row.labelMarks)
                     .junoType(.body)
                     .foregroundStyle(Color.junoForeground)
@@ -1053,7 +1053,7 @@ private struct DesktopSearchPanelSkeleton: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        VStack(spacing: 3) {
+        VStack(spacing: JunoSpace.hairline) {
             ForEach(0..<5, id: \.self) { _ in
                 JunoRadius.concentric(minimum: JunoRadius.field)
                     .fill(Color.junoGlassFill)
