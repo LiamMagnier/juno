@@ -163,7 +163,7 @@ struct DesktopBillingExtrasSections: View {
                     }
                 }
                 DesktopSettingRow(title: "Rewards", description: referrals.rewardsSentence) {
-                    (Text("\(referrals.rewarded) ") + Text("of \(referrals.maxRewards)").foregroundStyle(.secondary))
+                    Text("\(Text("\(referrals.rewarded) "))\(Text("of \(referrals.maxRewards)").foregroundStyle(.secondary))")
                         .monospacedDigit()
                 }
             } header: {

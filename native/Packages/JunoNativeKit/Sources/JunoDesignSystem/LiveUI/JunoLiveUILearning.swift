@@ -254,8 +254,7 @@ struct LiveStepsView: View {
             if let notice = step.notice {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     JunoIconView(.eye, size: 13).foregroundStyle(Color.junoSecondaryInk)
-                    (Text("Notice ").fontWeight(.medium).foregroundColor(.junoForeground)
-                        + Text(interp(notice)).foregroundColor(.junoSecondaryInk))
+                    Text("\(Text("Notice ").fontWeight(.medium).foregroundColor(.junoForeground))\(Text(interp(notice)).foregroundColor(.junoSecondaryInk))")
                         .font(.subheadline)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -344,7 +343,7 @@ struct LiveQuizView: View {
                 Text(interp(title)).font(.system(.subheadline, weight: .medium)).junoInk()
             }
             HStack(alignment: .firstTextBaseline, spacing: 10) {
-                (Text("\(score)").foregroundColor(.junoForeground) + Text("/\(total)").foregroundColor(.junoSecondaryInk))
+                Text("\(Text("\(score)").foregroundColor(.junoForeground))\(Text("/\(total)").foregroundColor(.junoSecondaryInk))")
                     .font(JunoSerif.font(size: 34, relativeTo: .largeTitle))
                     .monospacedDigit()
                 Text(score == total ? "All correct." : score == 0 ? "Worth another look." : "Correct answers.")
@@ -421,8 +420,7 @@ struct LiveQuizView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     Rectangle().fill(Color.junoHairline).frame(height: 1)
                     let why = q.options[chosen].explanation ?? q.explanation ?? (right ? "" : "The answer is \(q.options[q.answer].label).")
-                    (Text(right ? "Correct. " : "Not quite. ").fontWeight(.medium).foregroundColor(right ? .junoSuccessInk : .junoDestructiveInk)
-                        + Text(interp(why)).foregroundColor(Color.junoForeground.opacity(0.85)))
+                    Text("\(Text(right ? "Correct. " : "Not quite. ").fontWeight(.medium).foregroundColor(right ? .junoSuccessInk : .junoDestructiveInk))\(Text(interp(why)).foregroundColor(Color.junoForeground.opacity(0.85)))")
                         .font(.subheadline)
                         .fixedSize(horizontal: false, vertical: true)
                     HStack {

@@ -342,17 +342,16 @@ struct JunoCodeRunWebView {
             }
         }
 
-        nonisolated func userContentController(_: WKUserContentController, didReceive message: WKScriptMessage) {
+        // WKScriptMessageHandler is main-actor isolated in the iOS 26 / macOS 26
+        // SDKs, as this coordinator is, so the message is read where it lives.
+        func userContentController(_: WKUserContentController, didReceive message: WKScriptMessage) {
             guard message.frameInfo.isMainFrame, let body = message.body as? [String: Any] else { return }
             let type = body["type"] as? String
             let height = (body["height"] as? NSNumber)?.doubleValue ?? 0
-            let status = body["status"] as? String
-            MainActor.assumeIsolated {
-                if type == "juno:console-size", height > 0 {
-                    onHeight(CGFloat(height))
-                } else if type == "juno:status", let status, let value = JunoCodeRunStatus(rawValue: status) {
-                    onStatus(value)
-                }
+            if type == "juno:console-size", height > 0 {
+                onHeight(CGFloat(height))
+            } else if type == "juno:status", let status = body["status"] as? String, let value = JunoCodeRunStatus(rawValue: status) {
+                onStatus(value)
             }
         }
 
