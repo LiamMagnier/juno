@@ -54,7 +54,7 @@ class FakeBridge implements ComputerBridge {
 
 const sessions: Record<string, { title: string }> = { s1: { title: "Fix the build" }, s2: { title: "Other thread" } };
 const resolve = (scope: ComputerMcpScope) =>
-  sessions[scope.sessionId] ? { id: "ignored", title: sessions[scope.sessionId].title, runtimeMode: "supervised" as const } : undefined;
+  sessions[scope.sessionId] ? { id: "ignored", title: sessions[scope.sessionId].title, runtimeMode: "ask" as const } : undefined;
 
 test("registers one shared computer_use tool, visible only to sessions the resolver knows", async () => {
   const mcp = new FakeMcp();
@@ -108,7 +108,7 @@ test("calls go to the bridge under the scoped session id, emit items per session
   assert.equal(result.isError, undefined);
   assert.equal(result.content[0].type, "text");
   assert.equal(result.content[1]?.type, "image");
-  const call = bridge.sent[0] as Extract<ComputerBridgeRequest, { type: "computer.call" }>;
+  const call = bridge.sent[0] as ComputerBridgeRequest;
   assert.equal(call.type, "computer.call");
   assert.equal(call.sessionId, "s1");
   assert.equal(call.callId, "c1");
