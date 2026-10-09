@@ -95,10 +95,14 @@ async function main(): Promise<void> {
     ...(self ? { mcpBridge: { command: process.execPath, args: [...process.execArgv, self, "mcp-stdio"] } } : {}),
   });
   const handshake = { alevrEnv: 1, port: server.port, token: server.token, pid: process.pid, protocol: CODE_V2_PROTOCOL, dataDir };
-  // Local discovery for dev tools: owner-only file, removed on exit.
+  // Local discovery for dev tools: owner-only file, removed on exit. It never holds the
+  // bearer: an agent's shell command runs as the same user and could read it, then answer
+  // its own approvals over the socket. The token travels only on stdout to the launcher.
   const discovery = path.join(dataDir, "server.json");
   try {
-    fs.writeFileSync(discovery, JSON.stringify(handshake), { mode: 0o600 });
+    const publicHandshake: Partial<typeof handshake> = { ...handshake };
+    delete publicHandshake.token;
+    fs.writeFileSync(discovery, JSON.stringify(publicHandshake), { mode: 0o600 });
   } catch {
     /* read-only data dir */
   }
