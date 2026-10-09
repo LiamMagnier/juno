@@ -394,6 +394,10 @@ public struct CodeV2BestOfNCompare: View {
 extension CodeV2.ComputerAction {
     /// "Click 'Save'", "Type 'cart total'", "Open Safari".
     var caption: String {
+        if let summary = summary?.trimmingCharacters(in: .whitespacesAndNewlines), !summary.isEmpty,
+           status != .running, status != .pending {
+            return summary
+        }
         let target = self.target.map { "‘\($0)’" }
         switch action {
         case .screenshot: return "Look" + (target.map { " at \($0)" } ?? "")
@@ -408,6 +412,9 @@ extension CodeV2.ComputerAction {
         case .wait: return "Wait"
         case .openApp: return "Open " + (self.target ?? "an app")
         case .zoom: return "Zoom in"
+        case .axFind: return "Find " + (target ?? "a control")
+        case .axPress: return "Press " + (target ?? "a control")
+        case .menu: return "Choose " + (target ?? "a menu item")
         }
     }
 }

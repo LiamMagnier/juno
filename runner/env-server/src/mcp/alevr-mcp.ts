@@ -25,8 +25,11 @@ export interface McpScope {
   depth: number;
 }
 
+/** MCP content blocks a tool may return (computer use returns screenshots). */
+export type McpContentBlock = { type: "text"; text: string } | { type: "image"; data: string; mimeType: string };
+
 export interface McpToolResult {
-  content: { type: "text"; text: string }[];
+  content: McpContentBlock[];
   isError?: boolean;
   structuredContent?: Record<string, unknown>;
 }

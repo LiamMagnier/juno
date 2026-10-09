@@ -94,6 +94,8 @@ export class SessionManager {
   readonly #o: SessionManagerOptions;
   /** Listeners for "a session finished a turn" (subagents). */
   #turnEnded = new Set<(sessionId: string, outcome: TurnOutcome) => void>();
+  /** Listeners for "a session was closed" (per-session tool state, e.g. computer use). */
+  #closed = new Set<(sessionId: string) => void | Promise<void>>();
 
   constructor(options: SessionManagerOptions) {
     this.#o = options;
@@ -104,6 +106,11 @@ export class SessionManager {
 
   get registry(): ProviderRegistry {
     return this.#o.registry;
+  }
+
+  onSessionClosed(listener: (sessionId: string) => void | Promise<void>): () => void {
+    this.#closed.add(listener);
+    return () => this.#closed.delete(listener);
   }
 
   onTurnEnded(listener: (sessionId: string, outcome: TurnOutcome) => void): () => void {
@@ -360,6 +367,7 @@ export class SessionManager {
     live.providerInstanceId = undefined;
     this.#o.mcp.revokeSession(sessionId);
     live.mcpToken = undefined;
+    await Promise.all([...this.#closed].map((l) => Promise.resolve(l(sessionId)).catch(() => undefined)));
   }
 
   async shutdown(): Promise<void> {

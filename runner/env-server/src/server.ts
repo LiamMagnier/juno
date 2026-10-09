@@ -38,6 +38,10 @@ import { AlevrEngineAdapter, type AlevrEngine } from "./providers/alevr.js";
 import { SessionManager, WireError } from "./sessions/session-manager.js";
 import { AlevrMcpServer } from "./mcp/alevr-mcp.js";
 import { registerSubagentTools } from "./mcp/subagent-tools.js";
+import { registerComputerUseOnAlevrMcp, type ComputerMcpScope } from "./mcp/computer-mcp-hook.js";
+import { createUnixSocketBridge, DEFAULT_BRIDGE_SOCKET_PATH, type ComputerBridge } from "./mcp/computer-bridge.js";
+import type { ComputerToolSession } from "./mcp/computer-tools.js";
+import type { DesktopLock } from "./mcp/desktop-lock.js";
 import { TerminalManager } from "./terminal/terminals.js";
 import { describeError, newToken, nowIso, stderrLogger, type Logger } from "./util.js";
 
@@ -65,6 +69,21 @@ export interface EnvServerOptions {
   adapters?: ProviderAdapter[];
   /** Probe every installed instance after start (default true). */
   probeOnStart?: boolean;
+  /**
+   * `computer_use` on the Alevr MCP server (SPEC §3.12), executed by the Mac
+   * app's computer bridge. Default: on, through the bridge's Unix socket, and
+   * offered to a session only while that socket exists (the Mac app is
+   * running its bridge). `false` (or ALEVR_COMPUTER_USE=0) turns it off.
+   */
+  computerUse?: false | ComputerUseConfig;
+}
+
+export interface ComputerUseConfig {
+  bridge?: ComputerBridge;
+  /** Whether the Mac app's bridge is up (default: its socket exists). */
+  available?: () => boolean;
+  /** The desktop lock shared with the Mac app (default: the app's lock file). */
+  lock?: DesktopLock;
 }
 
 export interface EnvServer {
@@ -124,6 +143,8 @@ export async function startEnvServer(options: EnvServerOptions = {}): Promise<En
     ...(options.coalesceMs !== undefined ? { coalesceMs: options.coalesceMs } : {}),
   });
   const removeSubagentTools = registerSubagentTools(mcp, sessions);
+  const computer = computerUseEnabled(options) ? registerComputerUse(mcp, sessions, options.computerUse || {}) : undefined;
+  const removeComputerClose = computer ? sessions.onSessionClosed((id) => computer.disposeSession(id)) : undefined;
   const terminals = new TerminalManager(
     {
       output: (terminalId, data) => broadcast({ type: "terminal.output", terminalId, data }),
@@ -199,14 +220,57 @@ export async function startEnvServer(options: EnvServerOptions = {}): Promise<En
     secrets,
     close: async () => {
       removeSubagentTools();
+      removeComputerClose?.();
       for (const c of connections) c.dispose();
       for (const ws of wss.clients) ws.terminate();
       terminals.closeAll();
       await sessions.shutdown();
+      await computer?.dispose();
       await new Promise<void>((resolve) => wss.close(() => resolve()));
       await new Promise<void>((resolve) => server.close(() => resolve()));
     },
   };
+}
+
+function computerUseEnabled(options: EnvServerOptions): boolean {
+  if (options.computerUse === false) return false;
+  return process.env.ALEVR_COMPUTER_USE !== "0";
+}
+
+/** The session behind an MCP scope, as computer use needs it; undefined hides the tool. */
+export function computerSessionFor(sessions: SessionManager, scope: ComputerMcpScope): ComputerToolSession | undefined {
+  if (!sessions.has(scope.sessionId)) return undefined;
+  let meta;
+  try {
+    meta = sessions.log(scope.sessionId).meta;
+  } catch {
+    return undefined;
+  }
+  const model = `${meta.selection.instanceId} ${meta.selection.model}`.toLowerCase();
+  return {
+    id: scope.sessionId,
+    title: meta.title ?? "Alevr Code",
+    runtimeMode: meta.runtimeMode,
+    // Gemini-family models point in 0-999 on each axis.
+    coordinateSpace: model.includes("gemini") ? "normalized_1000" : "pixels",
+    images: true,
+  };
+}
+
+function registerComputerUse(mcp: AlevrMcpServer, sessions: SessionManager, config: ComputerUseConfig) {
+  const available = config.available ?? (() => fs.existsSync(DEFAULT_BRIDGE_SOCKET_PATH));
+  return registerComputerUseOnAlevrMcp(mcp, {
+    bridge: config.bridge ?? createUnixSocketBridge(),
+    ...(config.lock ? { lock: config.lock } : {}),
+    session: (scope) => (available() ? computerSessionFor(sessions, scope) : undefined),
+    onItem: (sessionId, item) => {
+      try {
+        sessions.upsertItem(sessionId, item);
+      } catch {
+        /* the session closed mid-call */
+      }
+    },
+  });
 }
 
 function hostOk(req: IncomingMessage, port: number): boolean {
