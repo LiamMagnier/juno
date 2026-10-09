@@ -31,7 +31,6 @@ export default async function CodeSessionPage({ params }: { params: Promise<{ id
         codeWorkspaceKey: c.codeWorkspaceKey ?? null,
       }}
       initialMessages={thread.messages}
-      userName={user.name ?? undefined}
     />
   );
 }

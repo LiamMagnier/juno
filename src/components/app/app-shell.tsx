@@ -6,7 +6,6 @@ import { AnimatePresence, MotionConfig, motion } from "framer-motion";
 import { Menu, MessageSquarePlus } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { AppSidebar } from "@/components/app/app-sidebar";
-import nextDynamic from "next/dynamic";
 import { productOf } from "@/components/app/product-switch";
 import { AnimatedTitle } from "@/components/app/animated-title";
 import { SidebarMotionIcon } from "@/components/app/sidebar-motion-icon";
@@ -23,8 +22,9 @@ import { duration, transition } from "@/lib/motion";
 import { titleForPath } from "@/lib/route-title";
 import { cn } from "@/lib/utils";
 
-/** The Code v2 column, split out so Chat routes never load it (or its stylesheet). */
-const CodeShellSidebar = nextDynamic(() => import("@/components/code/v2/shell-sidebar").then((m) => m.CodeShellSidebar));
+/** The phone drawer's sheet, with the sidebar rungs re-based for its ground (see the note at its use). */
+export const DRAWER_CLASS =
+  "p-0 dark:[--sidebar-accent:48_5%_24%] dark:[--sidebar-border:48_5%_22%] dark:[--sidebar-hover:48_5%_21%] dark:[--sidebar-selected:48_6%_24%] md:hidden";
 
 const COLLAPSE_KEY = "juno:sidebar-collapsed";
 const WIDTH_KEY = "juno:sidebar:width";
@@ -560,12 +560,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             } as React.CSSProperties
           }
         >
-          {/* Code routes wear the Code v2 column (sections, FLIP); its rail is the shared one. */}
-          {product === "code" && shown ? (
-            <CodeShellSidebar onCollapse={toggleCollapse} />
-          ) : (
-            <AppSidebar collapsed={!shown} onToggleCollapse={toggleCollapse} product={product} />
-          )}
+          {/* One column for both products: Code routes swap only the list
+              inside it (code-work-list.tsx), never the chrome around it. */}
+          <AppSidebar collapsed={!shown} onToggleCollapse={toggleCollapse} product={product} />
           {shown && (
             <div
               role="separator"
@@ -625,11 +622,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             `--sidebar-accent` keeps its own re-basing for the same reason it
             always had one: the product switch's track draws with it directly. */}
         <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
-          <SheetContent
-            className="p-0 dark:[--sidebar-accent:48_5%_24%] dark:[--sidebar-border:48_5%_22%] dark:[--sidebar-hover:48_5%_21%] dark:[--sidebar-selected:48_6%_24%] md:hidden"
-            title="Conversations"
-          >
-            {product === "code" ? <CodeShellSidebar onNavigate={() => setSidebarOpen(false)} /> : <AppSidebar product={product} />}
+          <SheetContent className={DRAWER_CLASS} title="Conversations">
+            <AppSidebar product={product} />
           </SheetContent>
         </Sheet>
 

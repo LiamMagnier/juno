@@ -167,6 +167,10 @@
      * `npm run design:tokens`, so the Mac and the iPhone draw the same face.
      */
     --agent-coral: 15 62% 64%;
+    /* Code's one signal colour (working, needs you): global, because the
+       shell's sidebar draws it on every route, not only inside Code. */
+    --signal: 14 64% 46%;
+    --signal-ink: 14 64% 42%;
     --agent-juniper: 152 36% 56%;
     --agent-teal: 184 46% 54%;
     --agent-violet: 249 64% 72%;
@@ -631,6 +635,8 @@
        charcoal; the ink stays the same near-black, which is what keeps the eyes
        legible on every tone. */
     --agent-coral: 15 56% 62%;
+    --signal: 16 76% 64%;
+    --signal-ink: 16 80% 70%;
     --agent-juniper: 152 32% 54%;
     --agent-teal: 184 40% 52%;
     --agent-violet: 249 56% 70%;
