@@ -98,6 +98,8 @@ export function composeTurnSystem({
     // Interactive views: the web always renders them; a native build only
     // when it says so (shipped builds would show raw JSON).
     liveUi: legacyChatClientForOrigin(input) === "web" || (input.clientFeatures?.includes("live_ui") ?? false),
+    liveUiExercise: legacyChatClientForOrigin(input) === "web" || (input.clientFeatures?.includes("live_ui_exercise") ?? false),
+    codeRun: legacyChatClientForOrigin(input) === "web" || (input.clientFeatures?.includes("code_run") ?? false),
     codeSandbox: isExecConfigured(),
   });
   const baseSystem = baseSystemSections.variable

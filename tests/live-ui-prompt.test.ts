@@ -125,3 +125,17 @@ test("every gallery sample (shared with the native snapshots) is a valid view", 
 test("native builds opt in with the live_ui client feature", () => {
   assert.deepEqual(lenientClientFeatures(["timeline", "live_ui", "nope"]), ["timeline", "live_ui"]);
 });
+
+test("a client without the exercise card gets exercises in prose, and no Run rule without code_run", () => {
+  const native = buildSystemPromptSections({ ...base, liveUi: true, liveUiExercise: false, codeRun: false }).stable;
+  assert.ok(native.includes("pose each exercise in prose"));
+  assert.ok(!native.includes("exercise component"));
+  assert.ok(!native.includes("- Practice: exercise ("));
+  assert.ok(!native.includes("# Runnable code"));
+  const web = buildSystemPromptSections({ ...base, liveUi: true, liveUiExercise: true, codeRun: true }).stable;
+  assert.ok(web.includes("exercise component") && web.includes("- Practice: exercise (") && web.includes("# Runnable code"));
+});
+
+test("native builds opt in to the exercise card and Run with their own client features", () => {
+  assert.deepEqual(lenientClientFeatures(["live_ui", "live_ui_exercise", "code_run"]), ["live_ui", "live_ui_exercise", "code_run"]);
+});

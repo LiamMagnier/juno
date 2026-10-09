@@ -59,6 +59,14 @@ export interface SystemPromptOptions {
    * too (CODE_RUN_SANDBOX_LINE). Server-wide, so the cached head stays shared.
    */
   codeSandbox?: boolean;
+  /**
+   * The client draws the Live UI `exercise` card (the web; native builds that
+   * declare `live_ui_exercise`). Without it the practice rule asks for the
+   * exercise in prose, because an older app shows only the card's title.
+   */
+  liveUiExercise?: boolean;
+  /** The client shows Run on code blocks (the web; native builds with `code_run`). */
+  codeRun?: boolean;
 }
 
 /**
@@ -126,6 +134,16 @@ Write the view's text in the user's language. A diagram with branches or loops (
 \`\`\`live-ui
 {"title":"Savings over time","let":{"balance":"fv(rate / 12, years * 12, monthly, 0)"},"ui":[{"type":"grid","columns":3,"children":[{"type":"slider","id":"monthly","label":"Monthly","min":0,"max":2000,"step":50,"value":500,"format":"currency"},{"type":"slider","id":"rate","label":"Return","min":0,"max":0.1,"step":0.005,"value":0.05,"format":"percent"},{"type":"slider","id":"years","label":"Years","min":1,"max":40,"step":1,"value":20}]},{"type":"metric","label":"Balance after {{years}} years","value":"balance","format":"currency","emphasis":true},{"type":"chart","kind":"area","x":{"from":0,"to":"years","step":1,"var":"y"},"series":[{"label":"Balance","y":"fv(rate / 12, y * 12, monthly, 0)"}],"format":"currency"}]}
 \`\`\``;
+
+/** The practice rule and component line for clients without the exercise card. */
+const LIVE_UI_PRACTICE_CARD = LIVE_UI_SECTION.slice(LIVE_UI_SECTION.indexOf("Practice: when the user wants to practise"), LIVE_UI_SECTION.indexOf("\n", LIVE_UI_SECTION.indexOf("Practice: when the user wants to practise")));
+const LIVE_UI_PRACTICE_PROSE = "Practice: when the user wants to practise or asked you to wait for their answer, pose each exercise in prose and let them answer in chat. Never reveal an exercise's solution, in prose or in a view, until they have answered; a quiz may only check a different, simpler point. When their answer arrives, correct it: what is right, what is wrong and why, then the corrected version.";
+const LIVE_UI_EXERCISE_LINE = LIVE_UI_SECTION.slice(LIVE_UI_SECTION.indexOf("\n- Practice: exercise ("), LIVE_UI_SECTION.indexOf("\n", LIVE_UI_SECTION.indexOf("\n- Practice: exercise (") + 1));
+
+/** The Live UI section for a client that cannot draw the exercise card. */
+export function liveUiSectionWithoutExercise(): string {
+  return LIVE_UI_SECTION.replace(LIVE_UI_PRACTICE_CARD, LIVE_UI_PRACTICE_PROSE).replace(LIVE_UI_EXERCISE_LINE, "");
+}
 
 /**
  * When to hand a request to a background task, and how to talk about it after.
@@ -303,8 +321,8 @@ You write the content; the USER picks the download format. Never say you attache
 
   // Interactive views: the one interactive-answer system, for clients that
   // draw them (the web, native builds declaring `live_ui`). Never on voice.
-  if (opts.liveUi && !opts.voiceMode) parts.push(LIVE_UI_SECTION);
-  if (!opts.voiceMode) parts.push(opts.codeSandbox ? `${CODE_RUN_RULE}\n${CODE_RUN_SANDBOX_LINE}` : CODE_RUN_RULE);
+  if (opts.liveUi && !opts.voiceMode) parts.push(opts.liveUiExercise === false ? liveUiSectionWithoutExercise() : LIVE_UI_SECTION);
+  if (!opts.voiceMode && opts.codeRun !== false) parts.push(opts.codeSandbox ? `${CODE_RUN_RULE}\n${CODE_RUN_SANDBOX_LINE}` : CODE_RUN_RULE);
 
   if (opts.memoryEnabled) {
     parts.push(
