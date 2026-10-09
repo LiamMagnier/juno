@@ -70,6 +70,7 @@ const METERED: Record<string, string> = {
   "src/lib/research/agents/lead.ts": "research run reservation + recordSpend(research)",
   "src/lib/research/agents/worker.ts": "research run reservation + recordSpend(research)",
   "src/lib/research/tools.ts": "research run reservation + recordSpend(research) + search fees",
+  "src/lib/code-v2/byok.ts": "USER KEY: the user's own API key (BYOK) to the lab's public endpoint; the lab bills the user, Alevr spends nothing (no ApiSpend by design, rate-limited in /api/agent)",
   "src/lib/model-capability.ts": "OPERATOR: admin-triggered capability probes, no user",
   "src/lib/model-capability-probe.ts": "OPERATOR: probe request builder",
   "src/lib/provider-health.ts": "OPERATOR: one tiny completion per lab per health window",

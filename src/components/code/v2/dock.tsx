@@ -486,7 +486,7 @@ function PreviewPane({ model }: { model: WorkspaceModel }) {
       </form>
       <div className="cv2-preview-frame">
         {shown ? (
-          <iframe key={nonce} title="Preview" src={shown} style={narrow ? { maxWidth: 390 } : undefined} sandbox="allow-scripts allow-forms allow-same-origin" />
+          <iframe key={nonce} title="Preview" src={shown} style={narrow ? { maxWidth: 390 } : undefined} sandbox="allow-scripts allow-forms" />
         ) : (
           <div className="cv2-dock-empty">Start the dev server, then open its address here.</div>
         )}

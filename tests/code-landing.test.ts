@@ -230,28 +230,29 @@ test("the stated sandbox network and runtime are the workflow's", () => {
 });
 
 test("the files a run reads at start are the agent core's memory files", () => {
-  const agent = read("runner/agent-core/src/agent.ts");
-  const declared = /const MEMORY_FILES = \[([^\]]+)\]/.exec(agent);
-  assert.ok(declared, "agent.ts no longer declares MEMORY_FILES");
+  const chain = read("runner/agent-core/src/harness/instructions.ts");
+  const declared = /export const INSTRUCTION_FILE_NAMES = \[([^\]]+)\]/.exec(chain);
+  assert.ok(declared, "instructions.ts no longer declares INSTRUCTION_FILE_NAMES");
   const names = [...declared[1].matchAll(/['"]([^'"]+)['"]/g)].map((m) => m[1]);
   assert.deepEqual(names, [...AGENT_MEMORY_FILES]);
+  assert.match(read("runner/agent-core/src/agent.ts"), /loadInstructionChain\(/, "agent.ts no longer reads the instruction chain");
 });
 
-test("the memory sentence promises precedence, because the loop stops at the first hit", () => {
+test("the memory sentence promises the chain, because the runner reads every file it finds", () => {
   /*
-   * The names and their order were already pinned above, and that was not
-   * enough: the card said a run reads all three while `buildSystemPrompt`
-   * reads exactly one, so a repository with both AGENTS.md and CLAUDE.md was
-   * told its CLAUDE.md applied when nothing had opened it. Both halves of that
-   * are asserted here — the loop still breaks, and the sentence still says so
-   * — because either one drifting on its own puts the lie back.
+   * The card once said a run reads all three while the runner read exactly
+   * one; the runner now reads a chain (root down to the working folder, every
+   * file, the more specific last). Both halves are pinned so either drifting
+   * on its own puts a false promise back on the card.
    */
-  const agent = read("runner/agent-core/src/agent.ts");
-  const loop = /for \(const name of MEMORY_FILES\) \{([\s\S]*?)\n  \}/.exec(agent);
-  assert.ok(loop, "agent.ts no longer loops MEMORY_FILES");
-  assert.match(loop[1], /\bbreak;/, "the loop reads every memory file it finds — the sentence says it reads one");
+  const chain = read("runner/agent-core/src/harness/instructions.ts");
+  const loader = /export function loadInstructionChain[\s\S]*?\n}\n/.exec(chain);
+  assert.ok(loader, "instructions.ts no longer has loadInstructionChain");
+  assert.doesNotMatch(loader[0], /\bbreak;/, "the loader stops at the first file again — the sentence says it reads each one");
+  assert.match(loader[0], /for \(const name of INSTRUCTION_FILE_NAMES\)/);
 
-  assert.match(AGENT_MEMORY_SENTENCE, /the first of/, "the sentence must state precedence, not a list");
+  assert.match(AGENT_MEMORY_SENTENCE, /reads each/, "the sentence must say every file applies");
+  assert.match(AGENT_MEMORY_SENTENCE, /root down/, "the sentence must say the order");
   for (const name of AGENT_MEMORY_FILES) {
     assert.ok(AGENT_MEMORY_SENTENCE.includes(name), `the sentence no longer names ${name}`);
   }

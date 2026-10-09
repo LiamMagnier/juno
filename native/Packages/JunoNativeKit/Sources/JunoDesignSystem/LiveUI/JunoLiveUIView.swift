@@ -586,7 +586,7 @@ struct LiveMetricView: View {
                     .foregroundStyle(Color.junoSecondaryInk)
             }
             Text(context.text(value, metric.format, unit: metric.unit, mode: .metric))
-                .font(.system(size: metric.emphasis ? 34 : 22, weight: .medium))
+                .junoFont(size: metric.emphasis ? 34 : 22, relativeTo: metric.emphasis ? .largeTitle : .title2, weight: .medium)
                 .monospacedDigit()
                 .junoInk()
                 .contentTransition(.numericText())

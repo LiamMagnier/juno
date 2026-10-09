@@ -405,7 +405,8 @@ struct LiveExplorerView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous))
+        // A card of facts is content: opaque, never glass (glass gate, §0.1).
+        .junoCard(cornerRadius: JunoRadius.card)
         .id(part.id)
         .transition(.opacity)
         .accessibilityElement(children: .combine)

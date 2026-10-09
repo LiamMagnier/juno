@@ -182,7 +182,9 @@ struct ComputerActionOverlayView: View {
         .padding(.horizontal, JunoSpace.cozy)
         .padding(.vertical, JunoSpace.snug)
         .fixedSize(horizontal: false, vertical: true)
-        .junoGlass(in: RoundedRectangle(cornerRadius: JunoRadius.control, style: .continuous))
+        // Opaque, not glass: this label is read over whatever app is on screen,
+        // and text through a blur has no fixed contrast (glass gate, §0.1).
+        .junoCard(cornerRadius: JunoRadius.control)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Alevr: \(mark.label)")
     }
