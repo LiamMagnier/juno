@@ -78,3 +78,20 @@ test("an exercise parses with its hints and language, needs a title and a statem
   assert.ok(!("solution" in first));
   assert.deepEqual(liveUISummaryLines(spec!).slice(0, 2), ["Exercice 1 (SQL)", "Affiche les employés du département 60."]);
 });
+
+test("the native apps' console document is the web's inline one, for browser languages only", async () => {
+  const { codeBlockConsoleDoc } = await import("@/lib/sandbox/console-doc");
+  const sql = codeBlockConsoleDoc("PLSQL", "SELECT 1 FROM dual;", "dark");
+  assert.ok(sql);
+  assert.equal(sql!.language, "sql");
+  assert.match(sql!.html, /sql-wasm\.js/);
+  assert.match(sql!.html, /juno:console-size/, "inline: the height is posted");
+  assert.match(sql!.html, /color-scheme:dark/);
+  assert.match(sql!.html, /Content-Security-Policy/);
+  const py = codeBlockConsoleDoc("py", "print('</script>')", "light");
+  assert.ok(py && /pyodide\.js/.test(py.html));
+  assert.ok(!py!.html.includes("print('</script>')"), "the source cannot close its script tag");
+  assert.equal(codeBlockConsoleDoc("ts", "const a: number = 1", "light")?.label, "TypeScript");
+  assert.equal(codeBlockConsoleDoc("c", "int main(){}", "light"), null);
+  assert.equal(codeBlockConsoleDoc("mermaid", "graph TD", "light"), null);
+});
