@@ -20,6 +20,14 @@ import { DETAIL_LEVELS, DETAIL_LEVEL_LABELS, type DetailLevel } from "@/lib/code
 import { ConnectionsPanel, type ConnectionsProps } from "./connections";
 import { EFFORT_LABELS, RUNTIME_MODES, effectiveEffort, modelLabel } from "./model-info";
 import { DrawCheck, Glyph, Kbd, useIsMac } from "./primitives";
+import {
+  GENERATION_KINDS,
+  GENERATION_KIND_LABELS,
+  GENERATION_MODELS_COPY,
+  generationModelOptions,
+  generationOptionLabel,
+  useGenerationModels,
+} from "@/lib/code-v2/generation-models";
 
 export type SettingsPane = "general" | "connections" | "orchestration" | "permissions" | "keyboard";
 
@@ -53,10 +61,11 @@ export function SettingsSidebar({ pane, onPane, onBack }: { pane: SettingsPane; 
   );
 }
 
-function Group({ title, children }: { title?: string; children: React.ReactNode }) {
+function Group({ title, note, children }: { title?: string; note?: string; children: React.ReactNode }) {
   return (
     <section style={{ marginTop: 24 }}>
       {title && <h2 className="cv2-msect" style={{ padding: "0 2px 8px", height: "auto", margin: 0, fontWeight: 400 }}>{title}</h2>}
+      {note && <p className="cv2-note" style={{ margin: "-4px 2px 10px" }}>{note}</p>}
       <div className="cv2-set-card">{children}</div>
     </section>
   );
@@ -79,6 +88,34 @@ function Row({ title, sub, control, onClick, checked }: { title: React.ReactNode
     </button>
   ) : (
     <div className="cv2-set-row">{body}</div>
+  );
+}
+
+/** One select per media type: the model Code uses when a run has to make an image, a video or music. */
+export function GenerationModelsGroup() {
+  const [chosen, setChosen] = useGenerationModels();
+  const options = React.useMemo(() => Object.fromEntries(GENERATION_KINDS.map((k) => [k, generationModelOptions(k)])), []);
+  return (
+    <Group title={GENERATION_MODELS_COPY.title} note={GENERATION_MODELS_COPY.description}>
+      {GENERATION_KINDS.filter((k) => options[k].length > 0).map((k) => (
+        <Row
+          key={k}
+          title={GENERATION_KIND_LABELS[k]}
+          control={
+            <span className="cv2-select">
+              <select aria-label={`${GENERATION_KIND_LABELS[k]} model`} value={chosen[k] ?? ""} onChange={(e) => setChosen(k, e.target.value)}>
+                {options[k].map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {generationOptionLabel(m)}
+                  </option>
+                ))}
+              </select>
+              <Glyph name="chevron-down" size={12} className="chev" />
+            </span>
+          }
+        />
+      ))}
+    </Group>
   );
 }
 
@@ -119,11 +156,14 @@ export function SettingsContent({
         <h1 className="cv2-sr">{title}</h1>
         {pane === "connections" && <ConnectionsPanel {...connections} embedded />}
         {pane === "general" && (
-          <Group title="Work log">
-            {DETAIL_LEVELS.map((d) => (
-              <Row key={d} title={DETAIL_LEVEL_LABELS[d].label} sub={DETAIL_LEVEL_LABELS[d].description} checked={d === detail} onClick={() => onDetail(d)} />
-            ))}
-          </Group>
+          <>
+            <Group title="Work log">
+              {DETAIL_LEVELS.map((d) => (
+                <Row key={d} title={DETAIL_LEVEL_LABELS[d].label} sub={DETAIL_LEVEL_LABELS[d].description} checked={d === detail} onClick={() => onDetail(d)} />
+              ))}
+            </Group>
+            <GenerationModelsGroup />
+          </>
         )}
         {pane === "orchestration" && (
           <>

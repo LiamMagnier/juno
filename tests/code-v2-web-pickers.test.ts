@@ -148,6 +148,10 @@ test("every glyph the v2 libraries name exists in the web icon set", () => {
     "error-circle",
     "key",
     "terminal",
+    // The model picker's Subscriptions and OpenRouter tiles, the settings select's chevron.
+    "card",
+    "globe",
+    "chevron-down",
   ];
   const at = "2026-10-08T10:00:00.000Z";
   const samples = [

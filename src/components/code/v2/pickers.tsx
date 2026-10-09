@@ -7,9 +7,12 @@
  * (ModelPickerContent / ModelListRow / ModelPickerSidebar: a 44 px provider
  * rail, a search field and two-line rows of model and source).
  *
- * - The model picker (380 wide): the rail lists only connected sources
- *   (Alevr, each subscription, your keys) and "+"; rows read "Claude Opus 5.5"
- *   over "Your Claude plan · 1M" or "Alevr · $5 / $25 · 1M". In a team run, tabs
+ * - The model picker (380 wide): the rail lists the AI labs (as the web chat
+ *   catalogue does), a hairline, one Subscriptions tile, then "+". A lab lists
+ *   its models under "Alevr" ("$5 / $25 · 1M") and "Your <Lab> key" ("Your
+ *   key · 200K"); Subscriptions lists each connected plan ("Included in your
+ *   plan · 1M"). Only models that write code are listed: image, video and
+ *   music models are chosen in Settings (picker-catalogue.ts). In a team run, tabs
  *   along the top pick whose model you are choosing: Lead, Workers, Reviewer,
  *   Explorer. The chip opens on the effort panel first (the chat's EffortPanel:
  *   the rung, Flash, reset, the model under it), and the model's name there
@@ -35,10 +38,23 @@ import {
   withRoleModel,
   type RoleSlot,
 } from "@/lib/code-v2/orchestrate";
-import { cycleInstance, displayName, isConnected, pickerModels, railEntries, searchAllModels, type FeatureFlags } from "@/lib/code-v2/providers-view";
+import { displayName, type FeatureFlags } from "@/lib/code-v2/providers-view";
+import {
+  CONNECT_SUBSCRIPTION,
+  SUBSCRIPTIONS_TITLE,
+  cycleTab,
+  defaultTab,
+  labTiles,
+  searchCatalogue,
+  tabGroups,
+  tabKey,
+  type PickerGroup,
+  type PickerTab,
+} from "@/lib/code-v2/picker-catalogue";
 import { formatRate, formatReset, formatTokens, formatUsd, gaugeView, tierRows, tightestWindow, type TierRow } from "@/lib/code-v2/tier-view";
 import { EFFORT_LABELS, currentTier, defaultSelection, effectiveEffort, effortLevelsOf, findInstance, findModel, modelLabel, ratesFor, shortLabel, tiersOf } from "./model-info";
-import { ComposerPopover, DrawCheck, Glyph, InstanceMark, ModelMark, Segmented, useIsMac } from "./primitives";
+import { ComposerPopover, DrawCheck, Glyph, ModelMark, Segmented, useIsMac } from "./primitives";
+import { ProviderLogo } from "@/components/brand/provider-logo";
 import { EffortPanelContext, ReasoningSlider } from "@/components/chat/reasoning-slider";
 import type { ReasoningEffort } from "@/types/chat";
 
@@ -255,7 +271,7 @@ export function ModelPicker({
   offset?: number;
 }) {
   const mac = useIsMac();
-  const entries = React.useMemo(() => railEntries(instances, flags).filter((e) => e.group !== "installed"), [instances, flags]);
+  const labs = React.useMemo(() => labTiles(instances), [instances]);
   const tabs = onRouting ? roleTabs(routing) : [];
   const [tab, setTab] = React.useState<RoleTab>(initialTab);
   const editing = routing && tabs.length ? roleSelection(routing, tab, selection) : selection;
@@ -263,7 +279,7 @@ export function ModelPicker({
   const effortStage = !tabs.length && levels.length >= 2 && !!findModel(instances, editing);
   const firstView = initialView === "effort" && !effortStage ? "models" : initialView;
   const [view, setView] = React.useState<"effort" | "models" | "context">(firstView);
-  const [active, setActive] = React.useState(editing.instanceId);
+  const [rail, setRail] = React.useState<PickerTab>(() => defaultTab(instances, editing));
   const [query, setQuery] = React.useState("");
   const [hi, setHi] = React.useState(0);
   React.useEffect(() => {
@@ -274,20 +290,25 @@ export function ModelPicker({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reset on open only
   }, [open, initialTab, initialView]);
-  React.useEffect(() => setActive(editing.instanceId), [editing.instanceId, tab]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- follow the selection (and the role tab), not every instances refresh
+  React.useEffect(() => setRail(defaultTab(instances, editing)), [editing.instanceId, editing.model, tab, open]);
 
   const commit = (sel: ModelSelection) => {
     if (routing && onRouting && tabs.length && tab !== "lead") onRouting(withRoleModel(routing, slotOf(tab), sel));
     else onSelect(sel);
   };
-  const instance = findInstance(instances, active) ?? entries[0]?.instance;
   const searching = query.trim().length > 0;
-  const usable = instance ? isConnected(instance) || instance.kind === "alevr" : false;
-  const rows: { instance: ProviderInstance; id: string; label: string }[] = searching
-    ? searchAllModels(entries.map((e) => e.instance), query).map((r) => ({ instance: r.instance, id: r.model.id, label: r.model.label }))
-    : usable && instance
-      ? pickerModels(instance).map((m) => ({ instance, id: m.id, label: m.label }))
-      : [];
+  const groups: PickerGroup[] = React.useMemo(
+    () => (searching ? searchCatalogue(instances, query, flags) : tabGroups(instances, rail, flags)),
+    [searching, instances, query, flags, rail],
+  );
+  const rows = groups.flatMap((g) => g.rows).map((r) => ({ instance: r.instance, id: r.model.id, label: r.model.label, line: r.line }));
+  const connectRow = !searching && rail.type === "subscriptions" && rows.length === 0;
+  const pickRail = (t: PickerTab) => (setRail(t), setQuery(""), setHi(0));
+  const selectedIndex = rows.findIndex((r) => r.instance.id === editing.instanceId && r.id === editing.model);
+  // Opening on the selection's tab lights its row, so Enter keeps it and arrows start from it.
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- only when the tab or the open state changes
+  React.useEffect(() => setHi(Math.max(0, selectedIndex)), [tabKey(rail), open]);
   const choose = (inst: ProviderInstance, modelId: string) => {
     const m = inst.models?.find((x) => x.id === modelId);
     const keepEffort = editing.effort && m?.effortLevels?.includes(editing.effort) ? editing.effort : m?.defaultEffort;
@@ -298,7 +319,7 @@ export function ModelPicker({
     const modKey = mac ? e.metaKey : e.ctrlKey;
     if (modKey && e.shiftKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
       e.preventDefault();
-      setActive(cycleInstance(entries, active, e.key === "ArrowDown" ? 1 : -1));
+      setRail(cycleTab(instances, rail, e.key === "ArrowDown" ? 1 : -1));
       setHi(0);
       return;
     }
@@ -306,6 +327,9 @@ export function ModelPicker({
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
       setHi((h) => Math.max(0, Math.min(rows.length - 1, h + (e.key === "ArrowDown" ? 1 : -1))));
+    } else if (e.key === "Enter" && connectRow) {
+      e.preventDefault();
+      onConnect?.();
     } else if (e.key === "Enter" && rows[hi]) {
       e.preventDefault();
       choose(rows[hi].instance, rows[hi].id);
@@ -317,8 +341,6 @@ export function ModelPicker({
   const tier = currentTier(instances, editing);
   const selInstance = findInstance(instances, editing.instanceId);
   const usage = usageLine(selInstance);
-  const subs = entries.filter((e) => e.group !== "byok");
-  const keys = entries.filter((e) => e.group === "byok");
 
   return (
     <ComposerPopover open={open} onClose={onClose} width={380} align={align} offset={offset} label={title} anchorRef={anchorRef}>
@@ -369,22 +391,27 @@ export function ModelPicker({
           </>
         ) : (
           <>
-            <div className="cv2-picker" style={{ maxHeight: 300 }}>
-              <div className="cv2-rail" role="tablist" aria-label="Sources" aria-orientation="vertical">
-                {subs.map((e) => (
-                  <button key={e.instance.id} type="button" role="tab" aria-selected={!searching && e.instance.id === active} className="cv2-ri" title={e.tooltip} aria-label={displayName(e.instance)} onClick={() => (setActive(e.instance.id), setQuery(""), setHi(0))}>
-                    <InstanceMark instance={e.instance} size={16} />
-                  </button>
-                ))}
-                {keys.length > 0 && <span className="cv2-rail-sep" aria-hidden />}
-                {keys.map((e) => (
-                  <button key={e.instance.id} type="button" role="tab" aria-selected={!searching && e.instance.id === active} className="cv2-ri" title={e.tooltip} aria-label={displayName(e.instance)} onClick={() => (setActive(e.instance.id), setQuery(""), setHi(0))}>
-                    <Glyph name="key" />
-                  </button>
-                ))}
+            <div className="cv2-picker" style={{ maxHeight: 320 }}>
+              <div className="cv2-rail cv2-rail-split" role="tablist" aria-label="AI labs and subscriptions" aria-orientation="vertical">
+                <div className="cv2-rail-labs">
+                {labs.map((l) => {
+                  const t: PickerTab = { type: "lab", lab: l.lab };
+                  return (
+                    <button key={l.lab} type="button" role="tab" aria-selected={!searching && tabKey(rail) === tabKey(t)} className="cv2-ri" title={l.name} aria-label={l.name} onClick={() => pickRail(t)}>
+                      {l.lab === "openrouter" ? <Glyph name="globe" /> : <ProviderLogo provider={l.lab} className="shrink-0" />}
+                    </button>
+                  );
+                })}
+                </div>
+                <div className="cv2-rail-foot">
+                {labs.length > 0 && <span className="cv2-rail-sep" aria-hidden />}
+                <button type="button" role="tab" aria-selected={!searching && rail.type === "subscriptions"} className="cv2-ri" title={SUBSCRIPTIONS_TITLE} aria-label={SUBSCRIPTIONS_TITLE} onClick={() => pickRail({ type: "subscriptions" })}>
+                  <Glyph name="card" />
+                </button>
                 <button type="button" className="cv2-ri" title="Connect a subscription or add a key" aria-label="Connect a subscription or add a key" onClick={onConnect}>
                   <Glyph name="plus" />
                 </button>
+                </div>
               </div>
               <div className="cv2-picker-main">
                 <label className="cv2-pop-search">
@@ -392,31 +419,48 @@ export function ModelPicker({
                   <input autoFocus placeholder="Search models" value={query} onChange={(e) => (setQuery(e.target.value), setHi(0))} aria-label="Search models" />
                 </label>
                 <div className="cv2-pop-body">
-                  {!searching && instance && !usable ? (
-                    <div className="cv2-picker-fix">
-                      <span>{instance.status === "not-installed" ? `${displayName(instance)} is not installed on your Mac.` : `Sign in to ${displayName(instance)} on your Mac to use it here.`}</span>
-                      <button type="button" className="cv2-btn" onClick={onConnect}>
-                        Open Connections
+                  <div key={searching ? "q" : tabKey(rail)} className="cv2-picker-list" role="listbox" aria-label={searching ? "Models" : rail.type === "subscriptions" ? SUBSCRIPTIONS_TITLE : labs.find((l) => rail.type === "lab" && l.lab === rail.lab)?.name ?? "Models"}>
+                    {connectRow ? (
+                      <button type="button" role="option" aria-selected={false} className="cv2-mrow" data-active onClick={onConnect}>
+                        <span className="cv2-mrow-mark" aria-hidden>
+                          <Glyph name="plus" size={14} />
+                        </span>
+                        <span className="cv2-grow">
+                          <span className="nm cv2-trunc">{CONNECT_SUBSCRIPTION.title}</span>
+                          <span className="l2 cv2-trunc">{CONNECT_SUBSCRIPTION.sub}</span>
+                        </span>
                       </button>
-                    </div>
-                  ) : (
-                    <div key={searching ? "q" : instance?.id} className="cv2-picker-list" role="listbox" aria-label="Models">
-                      {rows.length === 0 && <div className="cv2-mute" style={{ padding: "8px 14px" }}>No models match.</div>}
-                      {rows.map((r, i) => {
-                        const sel = r.instance.id === editing.instanceId && r.id === editing.model;
-                        return (
-                          <button key={`${r.instance.id}:${r.id}`} type="button" role="option" aria-selected={sel} className="cv2-mrow" data-active={i === hi} onMouseEnter={() => setHi(i)} onClick={() => choose(r.instance, r.id)}>
-                            <ModelMark modelId={r.id} instance={r.instance} />
-                            <span className="cv2-grow">
-                              <span className="nm cv2-trunc">{r.label}</span>
-                              <span className="l2 cv2-trunc">{modelSourceLine(r.instance, r.id)}</span>
-                            </span>
-                            <span className="ck">{sel ? <DrawCheck /> : null}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
+                    ) : rows.length === 0 ? (
+                      <div className="cv2-mute" style={{ padding: "8px 14px" }}>No models match.</div>
+                    ) : (
+                      (() => {
+                        let i = -1;
+                        return groups.map((g) => (
+                          <div key={g.id} role="group" aria-label={g.title}>
+                            <div className="cv2-pgroup" aria-hidden>
+                              <span className="t">{g.title}</span>
+                              {g.subscription && usageLine(g.subscription) && <span className="u cv2-trunc">{usageLine(g.subscription)}</span>}
+                            </div>
+                            {g.rows.map((r) => {
+                              i += 1;
+                              const idx = i;
+                              const sel = r.instance.id === editing.instanceId && r.model.id === editing.model;
+                              return (
+                                <button key={`${r.instance.id}:${r.model.id}`} type="button" role="option" aria-selected={sel} className="cv2-mrow" data-active={idx === hi} onMouseEnter={() => setHi(idx)} onClick={() => choose(r.instance, r.model.id)}>
+                                  <ModelMark modelId={r.model.id} instance={r.instance} />
+                                  <span className="cv2-grow">
+                                    <span className="nm cv2-trunc">{r.model.label}</span>
+                                    <span className="l2 cv2-trunc cv2-tnum">{r.line}</span>
+                                  </span>
+                                  <span className="ck">{sel ? <DrawCheck /> : null}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        ));
+                      })()
+                    )}
+                  </div>
                 </div>
               </div>
             </div>

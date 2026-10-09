@@ -414,6 +414,23 @@ export const STATES: GalleryState[] = [
     ui: { popover: "catalog" },
   },
   {
+    id: "model-catalog-lab",
+    label: "Model picker (a lab)",
+    model: base({ items: workedTurn(), selection: { instanceId: "alevr", model: "anthropic:claude-opus-5-5", effort: "high" }, usage: USAGE_ALEVR }),
+    ui: { popover: "catalog" },
+  },
+  {
+    id: "model-catalog-no-plans",
+    label: "Model picker (no subscriptions)",
+    model: base({
+      items: workedTurn(),
+      selection: { instanceId: "alevr", model: "openai:gpt-6.1-sol", effort: "high" },
+      usage: USAGE_ALEVR,
+      instances: INSTANCES.map((i) => (i.kind === "claude-agent" || i.kind === "codex" || i.kind === "acp" ? { ...i, status: "signed-out" as const } : i)),
+    }),
+    ui: { popover: "catalog" },
+  },
+  {
     id: "tiers",
     label: "Context window (Alevr)",
     model: base({ items: workedTurn(), selection: { instanceId: "alevr", model: "openai:gpt-6.1-sol", effort: "high" }, usage: USAGE_ALEVR }),
@@ -459,6 +476,12 @@ export const STATES: GalleryState[] = [
     label: "Settings: Connections",
     model: base({ items: workedTurn() }),
     ui: { settings: "connections", alevrPlan: { name: "Plus plan", spentUsd: 12.4, capUsd: 40 } },
+  },
+  {
+    id: "settings-general",
+    label: "Settings: General",
+    model: base({ items: workedTurn() }),
+    ui: { settings: "general" },
   },
   {
     id: "settings-orchestration",

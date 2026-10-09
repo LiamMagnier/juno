@@ -353,6 +353,10 @@ button.cv2-wl:hover .verb { color: hsl(var(--foreground)); }
 .cv2-ri { width: 32px; height: 32px; flex: none; border-radius: 8px; display: grid; place-items: center; color: hsl(var(--muted-foreground)); transition: background-color var(--dur-fast, 120ms) var(--cv2-ease), color var(--dur-fast, 120ms) var(--cv2-ease); }
 .cv2-ri:hover { background: hsl(var(--accent)); color: hsl(var(--foreground)); }
 .cv2-ri[aria-selected="true"] { background: hsl(var(--selected)); color: hsl(var(--foreground)); }
+/* The lab tiles scroll; Subscriptions and "+" stay in view at the rail's foot. */
+.cv2-rail.cv2-rail-split { overflow: hidden; padding: 0; gap: 0; }
+.cv2-rail-labs { flex: 1; min-height: 0; width: 100%; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 0 4px; overflow-y: auto; scrollbar-width: none; mask-image: linear-gradient(to bottom, #000 calc(100% - 14px), transparent); }
+.cv2-rail-foot { flex: none; width: 100%; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 0 0 6px; }
 .cv2-rail-sep { width: 20px; height: 1px; background: hsl(var(--border)); margin: 4px 0; flex: none; }
 .cv2-picker-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .cv2-picker-list { animation: cv2-fade 120ms var(--cv2-ease) both; }
@@ -361,6 +365,12 @@ button.cv2-wl:hover .verb { color: hsl(var(--foreground)); }
 .cv2-mrow .nm { display: block; color: hsl(var(--foreground)); }
 .cv2-mrow .l2 { display: block; font-size: 12px; line-height: 16px; color: hsl(var(--muted-foreground)); }
 .cv2-mrow .ck { width: 16px; flex: none; margin-left: auto; color: hsl(var(--foreground)); }
+/* A picker group's heading (the web chat catalogue's section label): the source, and a plan's usage on the right. */
+.cv2-pgroup { display: flex; align-items: baseline; gap: 8px; padding: 10px 14px 4px; font-size: 12px; line-height: 16px; color: hsl(var(--muted-foreground)); }
+.cv2-picker-list > [role="group"]:first-child .cv2-pgroup { padding-top: 4px; }
+.cv2-pgroup .t { flex: none; font-weight: 500; }
+.cv2-pgroup .u { margin-left: auto; min-width: 0; font-variant-numeric: tabular-nums; color: hsl(var(--muted-foreground) / 0.8); }
+.cv2-mrow-mark { width: 18px; height: 18px; flex: none; border-radius: 6px; display: grid; place-items: center; color: hsl(var(--muted-foreground)); box-shadow: inset 0 0 0 1px hsl(var(--border)); }
 .cv2-picker-fix { padding: 14px 14px; display: flex; flex-direction: column; gap: 10px; align-items: flex-start; color: hsl(var(--muted-foreground)); }
 .cv2-roles { display: flex; gap: 2px; padding: 6px 6px 0; flex: none; }
 .cv2-roles button { height: 28px; padding: 0 10px; border-radius: 8px; color: hsl(var(--muted-foreground)); white-space: nowrap; transition: background-color var(--dur-fast, 120ms), color var(--dur-fast, 120ms); }
@@ -515,6 +525,13 @@ button.cv2-wl:hover .verb { color: hsl(var(--foreground)); }
 .cv2-nav[aria-current="page"] { background: hsl(var(--sidebar-selected)); }
 .cv2-set-card { border: 1px solid hsl(var(--border)); border-radius: 14px; background: hsl(var(--card)); overflow: hidden; }
 .dark .cv2-set-card { background: hsl(var(--card) / 0.6); border-color: hsl(0 0% 100% / 0.07); }
+/* A settings select: the native control for keyboard and screen readers, drawn like the composer's controls. */
+.cv2-select { position: relative; display: inline-flex; align-items: center; flex: none; max-width: 60%; }
+.cv2-select select { appearance: none; -webkit-appearance: none; height: 30px; width: 280px; max-width: 100%; padding: 0 28px 0 10px; border: 0; border-radius: 8px; background: hsl(var(--background)); box-shadow: inset 0 0 0 1px hsl(var(--border)); font: inherit; font-size: 13px; color: hsl(var(--foreground)); text-overflow: ellipsis; cursor: pointer; transition: box-shadow var(--dur-fast, 120ms) var(--cv2-ease), background-color var(--dur-fast, 120ms) var(--cv2-ease); }
+.cv2-select select:hover { background: hsl(var(--accent)); }
+.cv2-select select:focus-visible { outline: none; box-shadow: inset 0 0 0 1px hsl(var(--foreground) / 0.5), 0 0 0 3px hsl(var(--ring) / 0.25); }
+.dark .cv2-select select { background: hsl(0 0% 100% / 0.04); box-shadow: inset 0 0 0 1px hsl(0 0% 100% / 0.1); }
+.cv2-select .chev { position: absolute; right: 9px; pointer-events: none; color: hsl(var(--muted-foreground)); }
 .cv2-set-row { display: flex; align-items: center; gap: 16px; width: 100%; min-height: 52px; padding: 10px 16px; text-align: left; }
 .cv2-set-row + .cv2-set-row { border-top: 1px solid hsl(var(--border) / 0.7); }
 .dark .cv2-set-row + .cv2-set-row { border-top-color: hsl(0 0% 100% / 0.05); }
@@ -575,6 +592,9 @@ button.cv2-set-row:hover { background: hsl(var(--accent) / 0.6); }
   .cv2-picker { flex-direction: column; }
   .cv2-rail { width: auto; flex-direction: row; border-right: 0; border-bottom: 1px solid hsl(var(--border)); padding: 6px 10px; overflow-x: auto; }
   .cv2-rail-sep { width: 1px; height: 20px; margin: 0 4px; }
+  .cv2-rail-labs, .cv2-rail-foot { flex-direction: row; width: auto; padding: 0; }
+  .cv2-rail-labs { overflow-x: auto; overflow-y: visible; mask-image: none; }
+  .cv2-rail.cv2-rail-split { padding: 6px 10px; }
   .cv2-role { grid-template-columns: 70px minmax(0, 1fr) 16px; }
   .cv2-role .rs { display: none; }
   .cv2-page { padding: 20px 16px; }
