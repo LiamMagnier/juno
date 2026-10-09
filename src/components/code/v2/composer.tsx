@@ -592,13 +592,15 @@ export const Composer = React.forwardRef<
             </button>
             <button type="button" className="cv2-ctl" aria-expanded={popover === "mode"} aria-haspopup="menu" onClick={() => setPopover(popover === "mode" ? null : "mode")}>
               <Glyph name={model.interactionMode === "plan" ? "plan" : runtime.glyph} />
-              <span className="cv2-trunc">{model.interactionMode === "plan" ? `Plan · ${runtime.label}` : runtime.label}</span>
-              <Glyph name="chevron-down" size={12} />
+              <span className="cv2-trunc cv2-ctl-lbl">{model.interactionMode === "plan" ? `Plan · ${runtime.label}` : runtime.label}</span>
+              <Glyph name="chevron-down" size={12} className="cv2-ctl-chev" />
             </button>
             <button type="button" className="cv2-ctl" aria-expanded={popover === "orchestrate"} aria-haspopup="dialog" onClick={() => setPopover(popover === "orchestrate" ? null : "orchestrate")}>
               <Glyph name="workflow" />
-              <Roll k={orchestrateLabel(model.routing)}>{orchestrateLabel(model.routing)}</Roll>
-              <Glyph name="chevron-down" size={12} />
+              <span className="cv2-ctl-lbl">
+                <Roll k={orchestrateLabel(model.routing)}>{orchestrateLabel(model.routing)}</Roll>
+              </span>
+              <Glyph name="chevron-down" size={12} className="cv2-ctl-chev" />
             </button>
             <span className="cv2-grow" />
             <button
@@ -625,7 +627,7 @@ export const Composer = React.forwardRef<
                     {tierDelta}
                   </span>
                 )}
-                <Glyph name="chevron-down" size={12} />
+                <Glyph name="chevron-down" size={12} className="cv2-ctl-chev" />
               </button>
             )}
             <ContextGauge usage={model.usage} planLabel={planLabel} onCompact={actions.compact} />

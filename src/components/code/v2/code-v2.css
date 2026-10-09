@@ -494,6 +494,10 @@ button.cv2-step:hover .verb { text-decoration: underline; text-decoration-color:
   .cv2-scroll { padding: 18px 16px 12px; }
   .cv2-cwrap { padding: 8px 10px 14px; }
   .cv2-composer { padding: 10px 10px 8px 14px; }
+  .cv2-cfoot { gap: 2px; }
+  .cv2-cfoot .cv2-ctl { flex-shrink: 0; padding: 0 6px; }
+  .cv2-cfoot .cv2-ctl-lbl, .cv2-cfoot .cv2-ctl-chev { display: none; }
+  .cv2-cfoot .cv2-ctl .v { max-width: 84px !important; }
   .cv2-you { max-width: 88%; }
   .cv2-dock { width: 100vw !important; }
   .cv2-kbd { display: none; }
