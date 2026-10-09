@@ -14,7 +14,7 @@ export function vendorEnv(
   configVar: "CLAUDE_CONFIG_DIR" | "CODEX_HOME" | undefined,
   base: NodeJS.ProcessEnv = process.env,
 ): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = {};
+  const env = {} as NodeJS.ProcessEnv;
   for (const [k, v] of Object.entries(base)) {
     if (v === undefined) continue;
     if (k.startsWith("ALEVR_") || k.startsWith("JUNO_")) continue;

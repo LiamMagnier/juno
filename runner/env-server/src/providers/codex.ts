@@ -252,7 +252,7 @@ class CodexSession implements ProviderSession {
   readonly #logger: Logger;
 
   constructor(
-    private readonly instance: ProviderInstance,
+    instance: ProviderInstance,
     private readonly options: OpenSessionOptions,
     private readonly clientVersion?: string,
   ) {

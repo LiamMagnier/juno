@@ -28,7 +28,7 @@ interface GitResult {
   code: number;
 }
 
-export function git(cwd: string, args: string[], env: NodeJS.ProcessEnv = {}, input?: string): Promise<GitResult> {
+export function git(cwd: string, args: string[], env: Record<string, string> = {}, input?: string): Promise<GitResult> {
   return new Promise((resolve) => {
     const child = execFile(
       "git",
@@ -56,7 +56,7 @@ export function git(cwd: string, args: string[], env: NodeJS.ProcessEnv = {}, in
   });
 }
 
-async function gitOk(cwd: string, args: string[], env?: NodeJS.ProcessEnv): Promise<string> {
+async function gitOk(cwd: string, args: string[], env?: Record<string, string>): Promise<string> {
   const r = await git(cwd, args, env);
   if (r.code !== 0) throw new Error(`git ${args[0]} failed: ${r.stderr.trim() || r.stdout.trim()}`);
   return r.stdout;

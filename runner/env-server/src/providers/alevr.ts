@@ -222,7 +222,7 @@ class EngineBackedSession implements ProviderSession {
   constructor(
     private readonly engine: AlevrEngine,
     private readonly instance: ProviderInstance,
-    private readonly options: OpenSessionOptions,
+    options: OpenSessionOptions,
     private readonly secrets: EnvSecrets,
   ) {
     this.#logger = options.logger;

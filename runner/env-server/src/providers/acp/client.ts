@@ -461,7 +461,7 @@ export class AcpClient {
     try {
       child = spawn(launch.command, [...launch.args], {
         cwd: this.options.cwd,
-        env,
+        env: env as NodeJS.ProcessEnv,
         stdio: ['pipe', 'pipe', 'pipe'],
         // No shell, ever. The argument array is the whole interface.
         shell: false,
