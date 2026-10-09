@@ -97,8 +97,10 @@ test("the native apps' console document is the web's inline one, for browser lan
 });
 
 test("the native harnesses' console fixtures are the documents the route builds today", async () => {
-  const { consoleFixtures } = await import("../scripts/generate-console-fixtures");
+  const { consoleFixtures, consoleFixturesSwift } = await import("../scripts/generate-console-fixtures");
   const { readFileSync } = await import("node:fs");
   const committed = JSON.parse(readFileSync("contracts/code-run/console-fixtures.json", "utf8"));
   assert.deepEqual(committed, consoleFixtures(), "regenerate: npx tsx scripts/generate-console-fixtures.ts");
+  const swift = readFileSync("native/Packages/JunoNativeKit/Sources/JunoPreviewSupport/Generated/PreviewConsoleDocs.swift", "utf8");
+  assert.equal(swift, consoleFixturesSwift(), "regenerate: npx tsx scripts/generate-console-fixtures.ts");
 });

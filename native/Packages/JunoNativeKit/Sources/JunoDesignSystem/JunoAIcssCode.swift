@@ -15,27 +15,66 @@ import SwiftUI
 public struct JunoAIcssCodeBlock: View {
     private let label: String
     private let source: String
+    private let language: String?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.junoCodeRunner) private var runner
+    #if DEBUG
+    @Environment(\.junoCodeRunOpensBlocks) private var opensBlocks
+    #endif
 
     @State private var didCopy = false
+    /// Run, as the web has it (code-run.tsx): the output opens under the
+    /// code, and every Run bumps the token so the same code runs afresh.
+    @State private var runToken = 0
+    @State private var outputOpen = false
 
     /// - Parameters:
     ///   - label: a filename when one is known, else the language.
-    public init(label: String, source: String) {
+    ///   - language: the fence's language, for colour and Run.
+    public init(label: String, source: String, language: String? = nil) {
         self.label = label
         self.source = source
+        self.language = language
     }
 
-    private var lines: [String] {
-        source.hasSuffix("\n")
-            ? String(source.dropLast()).components(separatedBy: "\n")
-            : source.components(separatedBy: "\n")
+    private var listing: String {
+        source.hasSuffix("\n") ? String(source.dropLast()) : source
+    }
+
+    /// The listing coloured as one run (a string or comment may span lines),
+    /// then cut at its line breaks.
+    private var lines: [AttributedString] {
+        let coloured = JunoSyntaxHighlighter.highlighted(listing, language: language)
+        var out: [AttributedString] = []
+        var start = coloured.startIndex
+        var index = coloured.startIndex
+        while index < coloured.endIndex {
+            if coloured.characters[index] == "\n" {
+                out.append(AttributedString(coloured[start..<index]))
+                start = coloured.index(afterCharacter: index)
+            }
+            index = coloured.index(afterCharacter: index)
+        }
+        out.append(AttributedString(coloured[start..<coloured.endIndex]))
+        return out
+    }
+
+    private var runTarget: JunoCodeRunTarget? {
+        runner == nil ? nil : JunoCodeRunTarget.target(for: language)
     }
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             JunoAIcssBlockHeader(icon: .code, label: label) {
+                if let runTarget {
+                    JunoCodeRunButton {
+                        outputOpen = true
+                        runToken += 1
+                    }
+                    .help("Run this \(runTarget.label) here")
+                    .accessibilityLabel("Run \(runTarget.label)")
+                }
                 Button {
                     JunoPasteboard.copy(source)
                     withAnimation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion)) { didCopy = true }
@@ -67,7 +106,7 @@ public struct JunoAIcssCodeBlock: View {
                 ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
                     HStack(spacing: 0) {
                         JunoAIcssLineNumber(index + 1)
-                        Text(line.isEmpty ? " " : line)
+                        Text(line.characters.isEmpty ? AttributedString(" ") : line)
                             .junoFont(size: 12.5, relativeTo: .footnote, design: .monospaced)
                             .foregroundStyle(Color.junoForeground)
                             .textSelection(.enabled)
@@ -78,6 +117,20 @@ public struct JunoAIcssCodeBlock: View {
                     }
                 }
             }
+
+            if outputOpen, let runTarget {
+                JunoCodeRunOutput(target: runTarget, code: listing, runToken: runToken) {
+                    outputOpen = false
+                }
+            }
+        }
+        .onAppear {
+            #if DEBUG
+            if opensBlocks, runTarget != nil, !outputOpen {
+                outputOpen = true
+                runToken = 1
+            }
+            #endif
         }
         .background(Color.junoSurface)
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))

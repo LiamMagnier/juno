@@ -290,6 +290,14 @@ struct JunoCodeRunWebView {
     ]
     """#
 
+    /// The phone lays a page without a viewport out 980px wide and shrinks
+    /// it; the console is set at the device's width, as a browser tab sets it.
+    static func fitted(_ html: String) -> String {
+        let meta = #"<meta name="viewport" content="width=device-width, initial-scale=1">"#
+        guard !html.contains("name=\"viewport\""), let head = html.range(of: "<head>") else { return html }
+        return html.replacingCharacters(in: head, with: "<head>" + meta)
+    }
+
     @MainActor private static var compiled: WKContentRuleList?
 
     @MainActor
@@ -330,7 +338,7 @@ struct JunoCodeRunWebView {
                     return
                 }
                 guard !Task.isCancelled else { return }
-                webView?.loadHTMLString(html, baseURL: nil)
+                webView?.loadHTMLString(JunoCodeRunWebView.fitted(html), baseURL: nil)
             }
         }
 
@@ -455,7 +463,7 @@ public struct JunoCodeRunButton: View {
     }
 
     public var body: some View {
-        Button(action: action) {
+        let button = Button(action: action) {
             HStack(spacing: 5) {
                 JunoIconView(.play, size: 12)
                 Text(label)
@@ -463,8 +471,13 @@ public struct JunoCodeRunButton: View {
             .junoFont(size: 12, relativeTo: .footnote, weight: .medium)
             .contentShape(Capsule())
         }
-        .buttonStyle(.glass)
-        .buttonBorderShape(.capsule)
         .controlSize(.small)
+        #if os(macOS)
+        // The Mac's glass controls (JunoGlassControls.swift), with their
+        // opaque stand-in offscreen and under Reduce Transparency.
+        button.buttonStyle(.junoGlass)
+        #else
+        button.buttonStyle(.glass).buttonBorderShape(.capsule)
+        #endif
     }
 }

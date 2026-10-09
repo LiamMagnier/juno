@@ -531,7 +531,8 @@ struct JunoCodeBlock: View {
     var body: some View {
         JunoAIcssCodeBlock(
             label: language?.isEmpty == false ? language! : "code",
-            source: source
+            source: source,
+            language: language
         )
     }
 }

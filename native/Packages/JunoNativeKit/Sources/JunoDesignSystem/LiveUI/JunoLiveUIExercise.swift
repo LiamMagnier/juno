@@ -219,19 +219,26 @@ struct LiveExerciseView: View {
                         .disabled(trimmed.isEmpty)
                         .help("Run your answer here")
                 }
-                Button(action: send) {
-                    Text("Send answer")
-                        .junoFont(size: 12, relativeTo: .footnote, weight: .medium)
-                        .contentShape(Capsule())
-                }
-                .buttonStyle(.glassProminent)
-                .buttonBorderShape(.capsule)
-                .controlSize(.small)
-                .tint(Color.junoForeground)
+                sendButton
                 .disabled(!canSend)
                 .help(context.onSend == nil ? "Available in a conversation" : "Send your answer for correction (⌘↩)")
             }
         }
+    }
+
+    /// The card's one primary action, in the Juno accent.
+    private var sendButton: some View {
+        let button = Button(action: send) {
+            Text("Send answer")
+                .junoFont(size: 12, relativeTo: .footnote, weight: .medium)
+                .contentShape(Capsule())
+        }
+        .controlSize(.small)
+        #if os(macOS)
+        return button.buttonStyle(.junoProminent)
+        #else
+        return button.buttonStyle(.glassProminent).buttonBorderShape(.capsule).tint(Color.junoAccent)
+        #endif
     }
 
     // MARK: The statement

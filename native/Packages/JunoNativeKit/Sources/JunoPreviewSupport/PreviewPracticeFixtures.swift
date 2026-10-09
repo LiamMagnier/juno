@@ -11,10 +11,9 @@ import JunoSync
 /// on the website").
 ///
 /// Open it with `--juno-preview-conversation conv-practice`. Run answers with
-/// the web's own console documents, read from
-/// `contracts/code-run/console-fixtures.json` (generated from
-/// src/lib/sandbox/console-doc.ts), so the preview runs exactly what the
-/// route would return. `--juno-preview-practice typed|run|sent` sets the first
+/// the web's own console documents, generated from
+/// src/lib/sandbox/console-doc.ts by scripts/generate-console-fixtures.ts, so the preview runs exactly what the
+/// route would return (``PreviewConsoleDocs``). `--juno-preview-practice typed|run|sent` sets the first
 /// exercise's state for a screenshot; `run` also opens every block's output.
 public enum PreviewPracticeFixtures {
     public static let conversationID = "conv-practice"
@@ -70,36 +69,11 @@ public enum PreviewPracticeFixtures {
 
     // MARK: The console route
 
-    struct ConsoleDoc: Decodable {
-        let language: String
-        let theme: String
-        let code: String
-        let html: String
-    }
-
-    private struct ConsoleFile: Decodable { let docs: [ConsoleDoc] }
-
-    /// The repository's fixtures, read from beside this source (DEBUG only: the
-    /// Mac, and a simulator, read the checkout).
-    static let consoleDocs: [ConsoleDoc] = {
-        let url = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent() // JunoPreviewSupport
-            .deletingLastPathComponent() // Sources
-            .deletingLastPathComponent() // JunoNativeKit
-            .deletingLastPathComponent() // Packages
-            .deletingLastPathComponent() // native
-            .appendingPathComponent("contracts/code-run/console-fixtures.json")
-        guard let data = try? Data(contentsOf: url),
-            let file = try? JSONDecoder().decode(ConsoleFile.self, from: data)
-        else { return [] }
-        return file.docs
-    }()
-
     /// The web's console document for a block, when the fixtures hold it.
     public static func consoleDocument(language: String, code: String, dark: Bool) -> String? {
         let theme = dark ? "dark" : "light"
         let wanted = code.trimmingCharacters(in: .whitespacesAndNewlines)
-        return consoleDocs.first {
+        return PreviewConsoleDocs.all.first {
             $0.language == language && $0.theme == theme && $0.code.trimmingCharacters(in: .whitespacesAndNewlines) == wanted
         }?.html
     }
