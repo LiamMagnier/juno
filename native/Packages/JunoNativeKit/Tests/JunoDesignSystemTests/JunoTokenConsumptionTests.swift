@@ -371,7 +371,10 @@ final class JunoTokenConsumptionTests: XCTestCase {
         let sidebar = "Not painted on the Mac (§8.1): the sidebar is system glass; hover and edge are junoGlassHover / junoSelectedEdge."
         let perSurfaceInk = "The web's ink for one ground; the apps draw junoForeground on every ground."
         let canvas = "Design canvas chrome, drawn by the web editor bundle the Mac hosts (Resources/DesignEditor)."
+        let signal = "The web Code sidebar's working / needs-you ink; the Mac draws that state in Code's own Studio.Signal coral (StudioTheme.swift)."
         return [
+            "JunoGeneratedColors.signal": signal,
+            "JunoGeneratedColors.signalInk": signal,
             "JunoGeneratedColors.accentForeground": perSurfaceInk,
             "JunoGeneratedColors.cardForeground": perSurfaceInk,
             "JunoGeneratedColors.popoverForeground": perSurfaceInk,
