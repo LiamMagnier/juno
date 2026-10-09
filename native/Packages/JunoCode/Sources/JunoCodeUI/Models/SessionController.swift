@@ -291,6 +291,12 @@ public final class SessionController {
         /// Code v2: the composer's role routing for sub-agents (models per
         /// role, budget). Baked into the delegate tools, so a change rebuilds.
         let roleRouting: CodeV2.RoleRouting?
+        /// Which provider instances routed children can run on (BYOK keys,
+        /// subscriptions through the env server); see ``CodeV2SubagentProviders``.
+        let subagentProviders: String?
+        /// The composer's context tier or Lean window, when it is smaller
+        /// than the model's own: the session compacts against it.
+        let contextWindowOverride: Int?
         /// nil means send no thinking parameter — see
         /// ``ModelOption/takesThinkingParameter``.
         let reasoningEffort: ReasoningEffort?
@@ -419,6 +425,10 @@ public final class SessionController {
     /// Code v2 (Orchestrate): which model each sub-agent role runs on and the
     /// run's budget. Nil is solo: children inherit the session's model.
     public private(set) var roleRouting: CodeV2.RoleRouting?
+    /// Code v2: where routed children on other provider instances run.
+    @ObservationIgnored public private(set) var subagentProviders: CodeV2SubagentProviders?
+    /// Code v2: the composer's context tier or Lean window (nil: the model's).
+    public private(set) var contextWindowOverride: Int?
     /// Code v2 `auto`: a model reviewer decides the approvals the ladder would
     /// ask about (never destructive or screen actions; it fails closed).
     public private(set) var autoReviewEnabled = false
@@ -782,6 +792,8 @@ public final class SessionController {
             behavior: session.configuration.behavior,
             modelID: session.configuration.modelID,
             roleRouting: roleRouting,
+            subagentProviders: subagentProviders?.fingerprint,
+            contextWindowOverride: contextWindowOverride,
             reasoningEffort: live.modelTakesThinkingParameter(session.configuration.modelID)
                 ? session.configuration.reasoningEffort
                 : nil,
@@ -856,7 +868,9 @@ public final class SessionController {
         // Code v2 Orchestrate: per-role models and one budget shared by every
         // child of this orchestrator (reset as each turn starts). Selections
         // this engine cannot serve inherit the parent's model, with a note.
-        let subagentRouting: SubagentRouting? = contract.roleRouting.map { SubagentRouting(routing: $0) }
+        let subagentRouting: SubagentRouting? = contract.roleRouting.map {
+            SubagentRouting(routing: $0, resolver: subagentProviders?.resolver)
+        }
         let budget = RunBudgetLedger.make(for: contract.roleRouting)
         runBudget = budget
         await applyAutoReview(live)
@@ -1243,7 +1257,10 @@ public final class SessionController {
             // With auto-compaction off the byte ceiling still stands behind it;
             // only the early, window-relative trigger is switched off.
             contextWindowTokens: settings.autoCompact
-                ? live.modelContextWindowTokens(contract.modelID)
+                ? Self.effectiveContextWindow(
+                    model: live.modelContextWindowTokens(contract.modelID),
+                    override: contract.contextWindowOverride
+                )
                 : nil,
             contextCompactionTriggerFraction: settings.compactThreshold,
             systemPrompt: systemPrompt,
@@ -2492,6 +2509,18 @@ public final class SessionController {
     /// Applied when the next turn starts (the delegate tools are rebuilt).
     public func setRoleRouting(_ routing: CodeV2.RoleRouting?) {
         roleRouting = routing
+    }
+
+    /// Code v2 Orchestrate on other instances: how routed children reach a
+    /// BYOK key or a subscription. Applied when the next turn starts.
+    public func setSubagentProviders(_ providers: CodeV2SubagentProviders?) {
+        subagentProviders = providers
+    }
+
+    /// Code v2 context tier / Lean: the window the session compacts against
+    /// (nil for the model's own). Applied when the next turn starts.
+    public func setContextWindowOverride(_ tokens: Int?) {
+        contextWindowOverride = tokens
     }
 
     /// Code v2 `auto`: turns the model reviewer on or off, live.
@@ -4190,7 +4219,18 @@ public final class SessionController {
     /// the manifest publishes one. The header's meter is drawn from this and
     /// ``contextTokens`` and from nothing estimated.
     public var contextWindowTokens: Int? {
-        live?.modelContextWindowTokens(session.configuration.modelID)
+        Self.effectiveContextWindow(
+            model: live?.modelContextWindowTokens(session.configuration.modelID),
+            override: contextWindowOverride
+        )
+    }
+
+    /// The window the session compacts against: the composer's smaller tier
+    /// or Lean window when one is set, never more than the model offers.
+    nonisolated static func effectiveContextWindow(model: Int?, override: Int?) -> Int? {
+        guard let override, override > 0 else { return model }
+        guard let model else { return override }
+        return min(model, override)
     }
 
     // MARK: - Compaction

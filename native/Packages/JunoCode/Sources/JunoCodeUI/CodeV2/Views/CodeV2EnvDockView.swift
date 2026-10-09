@@ -13,20 +13,29 @@ public struct CodeV2EnvDockView: View {
     var bestOfN: [CodeV2BestOfNCandidate] = []
     var keepCandidate: ((String) -> Void)?
     var close: (() -> Void)?
+    /// Files and Preview: the Studio session that holds the thread's place.
+    var workspace: CodeV2DockWorkspace?
+    /// Previews and snapshots: a terminal that never starts a shell.
+    var previewTerminal: CodeV2EnvTerminal?
 
     @Environment(\.codeV2Now) private var pinnedNow
 
     public init(
         session: CodeV2EnvSession, dock: CodeV2DockController,
         bestOfN: [CodeV2BestOfNCandidate] = [], keepCandidate: ((String) -> Void)? = nil,
-        close: (() -> Void)? = nil
+        close: (() -> Void)? = nil, workspace: CodeV2DockWorkspace? = nil,
+        previewTerminal: CodeV2EnvTerminal? = nil
     ) {
         self.session = session
         self.dock = dock
         self.bestOfN = bestOfN
         self.keepCandidate = keepCandidate
         self.close = close
+        self.workspace = workspace
+        self.previewTerminal = previewTerminal
     }
+
+    private var terminal: CodeV2EnvTerminal? { previewTerminal ?? session.terminal }
 
     private var snapshot: CodeV2.SessionSnapshot { session.snapshot }
 
@@ -47,7 +56,9 @@ public struct CodeV2EnvDockView: View {
     }
 
     private var tabs: [CodeV2DockTab] {
-        frames.isEmpty ? [.changes, .agents] : [.changes, .agents, .screen]
+        CodeV2DockTabs.visible(
+            hasTerminal: terminal != nil, hasWorkspace: workspace != nil, hasFrames: !frames.isEmpty
+        )
     }
 
     private var files: [CodeV2DiffFile] {
@@ -76,6 +87,29 @@ public struct CodeV2EnvDockView: View {
                 } else {
                     AnyView(CodeV2AgentsPane(nodes: nodes, selected: $dock.selectedAgent))
                 }
+            case .terminal:
+                if let terminal {
+                    AnyView(CodeV2TerminalPane(terminal: terminal, autoOpen: previewTerminal == nil))
+                } else {
+                    AnyView(EmptyView())
+                }
+            case .files:
+                if let workspace {
+                    AnyView(CodeV2FilesPane(controller: workspace.controller))
+                } else {
+                    AnyView(EmptyView())
+                }
+            case .preview:
+                if let workspace, let target = dock.previewTarget(for: workspace) {
+                    AnyView(CodePreviewDock(
+                        target: target, lease: workspace.controller.previewLease,
+                        close: { dock.tab = .changes },
+                        openInWindow: { workspace.openPreviewWindow(target) }
+                    ))
+                } else {
+                    AnyView(Text("Open a folder to preview it.").font(Studio.Font.meta)
+                        .foregroundStyle(Studio.Ink.secondary).padding(JunoSpace.regular))
+                }
             case .screen:
                 AnyView(CodeV2ScreenPane(
                     actions: frames, selected: $dock.selectedFrame,
@@ -86,6 +120,7 @@ public struct CodeV2EnvDockView: View {
     }
 
     private func reload() async {
+        guard dock.tab == .changes else { return }
         let latest = snapshot.items.last { if case .checkpoint = $0 { true } else { false } }
         if dock.scope == .turn, case let .checkpoint(checkpoint)? = latest {
             await session.loadDiff(checkpointId: checkpoint.checkpointId)

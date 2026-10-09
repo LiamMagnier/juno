@@ -51,12 +51,15 @@ public struct StudioSessionView: View {
         }
     }
 
-    /// The v2 controls' choices, applied to the Alevr engine.
+    /// The v2 controls' choices, applied to the Swift engine: Alevr models
+    /// and BYOK keys alike (the env server runs subscriptions). Model, effort,
+    /// permission, the context tier or Lean window, Orchestrate's roles and
+    /// budget, where roles on other instances run, and the `auto` reviewer.
     private func syncV2(_ composer: CodeV2ComposerModel) {
-        guard composer.engine == .alevr, composer.selection.instanceId == "alevr" else { return }
+        guard composer.engine == .alevr, let modelID = CodeV2EngineMapping.engineModelID(for: composer.selection) else { return }
         let configuration = controller.session.configuration
-        if configuration.modelID != composer.selection.model {
-            Task { await controller.setModelID(composer.selection.model) }
+        if configuration.modelID != modelID {
+            Task { await controller.setModelID(modelID) }
         }
         let effort = CodeV2EngineMapping.effort(composer.selection.effort)
         if configuration.reasoningEffort != effort {
@@ -66,9 +69,17 @@ public struct StudioSessionView: View {
         if configuration.permissionMode != permission {
             Task { await controller.setPermissionMode(permission) }
         }
+        let window = CodeV2EngineMapping.contextWindow(for: composer.selection, lean: composer.lean)
+        if controller.contextWindowOverride != window {
+            controller.setContextWindowOverride(window)
+        }
         // Orchestrate (roles, budget) and the `auto` reviewer reach the engine too.
         if controller.roleRouting != composer.routing {
             controller.setRoleRouting(composer.routing)
+        }
+        let providers = v2?.subagentProviders?()
+        if controller.subagentProviders?.fingerprint != providers?.fingerprint {
+            controller.setSubagentProviders(providers)
         }
         let autoReview = composer.runtimeMode == .auto
         if controller.autoReviewEnabled != autoReview {
@@ -273,6 +284,8 @@ public struct StudioSessionView: View {
                     .onChange(of: v2.composer.selection) { _, _ in syncV2(v2.composer) }
                     .onChange(of: v2.composer.runtimeMode) { _, _ in syncV2(v2.composer) }
                     .onChange(of: v2.composer.routing) { _, _ in syncV2(v2.composer) }
+                    .onChange(of: v2.composer.lean) { _, _ in syncV2(v2.composer) }
+                    .onChange(of: v2.directory.instances) { _, _ in syncV2(v2.composer) }
                     .onAppear { syncV2(v2.composer) }
             } else {
             StudioModeChip(mode: mode, select: select, isEnabled: !isBusy)

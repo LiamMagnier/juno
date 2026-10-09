@@ -39,6 +39,10 @@ public struct CodeV2EnvSessionView: View {
     private var snapshot: CodeV2.SessionSnapshot { session.snapshot }
     private var instance: CodeV2.ProviderInstance? { directory.instance(snapshot.selection.instanceId) }
     private var pending: [CodeV2.TurnItem] { session.pendingRequests }
+    /// Computer use through the bridge, asked for this thread's session.
+    private var connected: [CodeV2ConnectedApprovals.Pending] {
+        CodeV2ConnectedApprovals.shared.pending(forSession: session.sessionId)
+    }
     private var isRunning: Bool { session.isRunning }
     private var canSteer: Bool { instance?.capabilities?.steering ?? false }
 
@@ -119,6 +123,11 @@ public struct CodeV2EnvSessionView: View {
             focused = true
             if session.state.cursor == nil { await session.open() }
         }
+        .onChange(of: session.sessionId, initial: true) { old, new in
+            if old != new { CodeV2ConnectedApprovals.shared.hiding(session: old) }
+            CodeV2ConnectedApprovals.shared.showing(session: new)
+        }
+        .onDisappear { CodeV2ConnectedApprovals.shared.hiding(session: session.sessionId) }
     }
 
     private var emptyState: some View {
@@ -147,6 +156,11 @@ public struct CodeV2EnvSessionView: View {
     // MARK: Composer
 
     private var takeover: AnyView? {
+        if let first = connected.first {
+            return AnyView(CodeV2ConnectedApprovalView(item: first, position: (1, connected.count + pending.count)) { decision in
+                CodeV2ConnectedApprovals.shared.respond(first.id, decision)
+            })
+        }
         guard !pending.isEmpty else {
             if snapshot.state == .limited, let instance {
                 let resumeDate = snapshot.resumeAt.flatMap(CodeV2Dates.parse)
@@ -214,7 +228,7 @@ public struct CodeV2EnvSessionView: View {
             steer: canSteer ? { steer() } : nil,
             stopOnDoubleEscape: true,
             takeover: takeover,
-            takeoverNeedsYou: !pending.isEmpty
+            takeoverNeedsYou: !pending.isEmpty || !connected.isEmpty
         ) {
             CodeV2ComposerLeading(model: composer, directory: directory, isEnabled: enabled)
         } trailing: {
@@ -266,8 +280,19 @@ public final class CodeV2DockController {
     public var scope: CodeV2ChangesPane.Scope = .thread
     public var decisions = CodeV2HunkDecisions()
     public var failure: String?
+    /// Dock › Preview's target, made once per workspace so the preview keeps
+    /// its identity (and its server lease) while the tab is switched.
+    @ObservationIgnored private var previewTargets: [String: CodePreviewTarget] = [:]
 
     public init() {}
+
+    func previewTarget(for workspace: CodeV2DockWorkspace) -> CodePreviewTarget? {
+        let key = workspace.controller.sessionID.value
+        if let target = previewTargets[key] { return target }
+        guard let target = workspace.previewTarget else { return nil }
+        previewTargets[key] = target
+        return target
+    }
 
     public func show(_ tab: CodeV2DockTab, path: String? = nil) {
         self.tab = tab

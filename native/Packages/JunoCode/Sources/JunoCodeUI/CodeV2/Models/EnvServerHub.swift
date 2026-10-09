@@ -36,6 +36,9 @@ public final class EnvServerHub {
     @ObservationIgnored private var eventTask: Task<Void, Never>?
     @ObservationIgnored private var startTask: Task<Void, Never>?
     @ObservationIgnored private var sessions: [String: WeakSession] = [:]
+    @ObservationIgnored private var terminals: [String: WeakTerminal] = [:]
+    /// Dock › Terminal: one shell per env-server thread, kept for the app's life.
+    @ObservationIgnored private var threadTerminals: [ObjectIdentifier: CodeV2EnvTerminal] = [:]
     @ObservationIgnored private var relaySinks: [UUID: @MainActor (CodeV2.ServerEventEnvelope) -> Void] = [:]
 
     public static let shared = EnvServerHub()
@@ -149,6 +152,12 @@ public final class EnvServerHub {
         if let sessionId = envelope.sessionId, let session = sessions[sessionId]?.value {
             session.receive(envelope)
         }
+        switch envelope.event {
+        case let .terminalOutput(terminalId, _), let .terminalExited(terminalId, _):
+            terminals[terminalId]?.value?.receive(envelope.event)
+        default:
+            break
+        }
         for sink in relaySinks.values { sink(envelope) }
     }
 
@@ -227,6 +236,25 @@ public final class EnvServerHub {
         sessions[id] = WeakSession(value: session)
     }
 
+    // MARK: Terminals
+
+    /// The thread's Dock › Terminal shell (not opened until the tab shows).
+    public func terminal(for session: CodeV2EnvSession) -> CodeV2EnvTerminal {
+        let key = ObjectIdentifier(session)
+        if let existing = threadTerminals[key] { return existing }
+        let terminal = CodeV2EnvTerminal(hub: self, cwd: session.cwd)
+        threadTerminals[key] = terminal
+        return terminal
+    }
+
+    func register(_ terminal: CodeV2EnvTerminal, as id: String) {
+        terminals[id] = WeakTerminal(value: terminal)
+    }
+
+    func unregisterTerminal(_ id: String) {
+        terminals[id] = nil
+    }
+
     // MARK: Device link
 
     /// Forwards every env-server event to `sink` (the device relay that lets
@@ -245,5 +273,9 @@ public final class EnvServerHub {
 
     private struct WeakSession {
         weak var value: CodeV2EnvSession?
+    }
+
+    private struct WeakTerminal {
+        weak var value: CodeV2EnvTerminal?
     }
 }

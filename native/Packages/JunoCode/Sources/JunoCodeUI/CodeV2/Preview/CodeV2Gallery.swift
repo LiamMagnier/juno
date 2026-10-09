@@ -2,6 +2,7 @@ import SwiftUI
 import JunoCodeCore
 import JunoCodeLocal
 import JunoDesignSystem
+import JunoScreenControl
 
 /// Every Code v2 surface on fixture data, by name — the Mac's equivalent of
 /// the web's `/dev/code-v2` gallery. The package's snapshot tests and the
@@ -23,6 +24,9 @@ public enum CodeV2Gallery {
         case orchestrateBestOfN = "orchestrate-best-of-n"
         case contextCard = "context-card"
         case settingsConnections = "settings-connections"
+        case dockTerminal = "dock-terminal"
+        case computerOverlay = "computer-overlay"
+        case connectedApproval = "connected-approval"
 
         public var size: CGSize {
             switch self {
@@ -37,6 +41,9 @@ public enum CodeV2Gallery {
             case .orchestrateBestOfN: CGSize(width: 680, height: 560)
             case .contextCard: CGSize(width: 340, height: 220)
             case .settingsConnections: CGSize(width: 760, height: 1180)
+            case .dockTerminal: CGSize(width: 520, height: 420)
+            case .computerOverlay: CGSize(width: 960, height: 600)
+            case .connectedApproval: CGSize(width: 820, height: 360)
             }
         }
     }
@@ -118,7 +125,55 @@ public enum CodeV2Gallery {
                               lastUsedAt: nil, isValid: true, location: .account),
             ])
             return AnyView(CodeV2ConnectionsView(hub: hub, keys: keys, alevrPlanLine: "Plus plan. $12.40 of $40 used this month."))
+        case .dockTerminal:
+            let session = CodeV2EnvSession(preview: CodeV2Fixtures.workingSnapshot)
+            let dock = CodeV2DockController()
+            dock.show(.terminal)
+            return AnyView(CodeV2EnvDockView(
+                session: session, dock: dock,
+                previewTerminal: CodeV2EnvTerminal(preview: session.cwd, output: terminalOutput)
+            ))
+        case .computerOverlay:
+            return overlay(screen: surface.size)
+        case .connectedApproval:
+            let approvals = CodeV2ConnectedApprovals()
+            let request = StudioComputerBridgeApprover.request(
+                sessionID: "preview", summary: "Use apps on this Mac",
+                justification: "For ‘Fix the flaky upload test’. Alevr shows every step on screen, asks before anything it can't undo, and Esc stops it.",
+                options: [.acceptForSession, .decline]
+            )
+            approvals.preview(CodeV2ConnectedApprovals.Pending(id: UUID(), sessionID: nil, request: request, crop: nil))
+            return AnyView(ZStack(alignment: .top) {
+                Studio.Surface.canvas
+                CodeV2ConnectedApprovalCard(approvals: approvals)
+            })
         }
+    }
+
+    /// Dock › Terminal with a finished `npm test` run (colours stripped).
+    static let terminalOutput = "\u{1B}[1m$ \u{1B}[0mnpm test\r\n\r\n> alevr@1.0.0 test\r\n> vitest run\r\n\r\n"
+        + " \u{1B}[32m✓\u{1B}[39m tests/code-v2-env-link.test.ts \u{1B}[2m(24 tests)\u{1B}[22m 812ms\r\n"
+        + " \u{1B}[32m✓\u{1B}[39m tests/code-v2-routing.test.ts \u{1B}[2m(18 tests)\u{1B}[22m 140ms\r\n\r\n"
+        + " Test Files  \u{1B}[32m2 passed\u{1B}[39m (2)\r\n      Tests  \u{1B}[32m42 passed\u{1B}[39m (42)\r\n"
+        + "Progress 10%\rProgress 100%\r\n$ "
+
+    /// The computer-use overlay as its panel draws it over the screen.
+    static func overlay(screen: CGSize) -> AnyView {
+        let model = ComputerActionOverlayModel(feed: ComputerActionFeed(), linger: .seconds(3_600), mainDisplayHeight: { screen.height })
+        model.apply(ComputerActionCue(
+            sessionID: "preview", label: "Click the “Save” button in TextEdit",
+            point: ScreenPoint(x: 540, y: 250), appName: "TextEdit", phase: .acting
+        ))
+        return AnyView(ZStack(alignment: .topLeading) {
+            // A stand-in for whatever app is on screen under the panel.
+            LinearGradient(colors: [Color(white: 0.93), Color(white: 0.86)], startPoint: .top, endPoint: .bottom)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.white)
+                .shadow(color: .black.opacity(0.18), radius: 18, y: 8)
+                .frame(width: 520, height: 340)
+                .offset(x: 220, y: 90)
+            ComputerActionOverlayView(model: model, screenFrame: CGRect(origin: .zero, size: screen))
+        })
     }
 
     private static func window<Center: View, Dock: View>(_ center: Center, dock: Dock) -> AnyView {

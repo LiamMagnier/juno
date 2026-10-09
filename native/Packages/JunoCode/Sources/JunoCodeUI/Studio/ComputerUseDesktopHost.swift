@@ -18,15 +18,18 @@ public final class ComputerUseDesktopHost {
     private var overlay: ComputerActionOverlayWindow?
     private var bridge: ComputerBridgeServer?
 
-    public func install() {
+    /// - Parameter summon: brings a window forward when a connected agent
+    ///   asks for something and no window can show the card.
+    public func install(summon: (@MainActor () -> Void)? = nil) {
         guard overlay == nil else { return }
+        CodeV2ConnectedApprovals.shared.summon = summon
         let window = ComputerActionOverlayWindow(model: .shared)
         overlay = window
         window.start()
 
         let executor = ComputerBridgeExecutor(
             service: ScreenControlService.shared,
-            approver: DesktopComputerBridgeApprover(),
+            approver: StudioComputerBridgeApprover(),
             permissions: { ComputerUsePermissionProbe.system.read() }
         )
         let server = ComputerBridgeServer(handler: executor)
@@ -42,6 +45,7 @@ public final class ComputerUseDesktopHost {
 
     /// On quit: no stale socket or token is left for an env server to find.
     public func uninstall() {
+        CodeV2ConnectedApprovals.shared.declineAll()
         bridge?.stop()
         bridge = nil
         overlay?.stop()
@@ -100,7 +104,7 @@ final class ComputerActionOverlayWindow {
         panel.orderFrontRegardless()
     }
 
-    private static func makePanel() -> NSPanel {
+    static func makePanel() -> NSPanel {
         let panel = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
         panel.level = .screenSaver
         panel.isOpaque = false
@@ -209,50 +213,6 @@ struct ComputerActionOverlayView: View {
 
 // MARK: - The reader's say for connected agents
 
-/// Asks the reader, at the Mac, before a connected agent uses apps, before
-/// each app is granted, and before each input the session's mode does not
-/// allow outright. A plain system alert for now; the Studio approval card
-/// takes these over when connected-agent sessions get their own thread.
-final class DesktopComputerBridgeApprover: ComputerBridgeApproving, Sendable {
-    func allowAgent(sessionID: String, title: String) async -> Bool {
-        await MainActor.run {
-            NSApplication.shared.activate()
-            let alert = NSAlert()
-            alert.messageText = "Let a connected agent use apps on this Mac?"
-            alert.informativeText = "For ‘\(title)’. Alevr shows every step on screen, asks before anything it can't undo, and Esc stops it."
-            alert.addButton(withTitle: "Allow for This Session")
-            alert.addButton(withTitle: "Don't Allow")
-            return alert.runModal() == .alertFirstButtonReturn
-        }
-    }
-
-    func approve(_ detail: ScreenApprovalDetail, summary: String, sessionID: String) async -> Bool {
-        await MainActor.run {
-            NSApplication.shared.activate()
-            let alert = NSAlert()
-            switch detail {
-            case let .grants(proposal):
-                alert.messageText = proposal.summary + "?"
-                alert.informativeText = "A connected agent asked for this. You can take it back at any time from Settings › Screen control."
-                alert.addButton(withTitle: "Allow")
-            case let .action(prepared):
-                alert.messageText = prepared.summary + "?"
-                alert.informativeText = prepared.floor == nil
-                    ? "A connected agent wants to do this now."
-                    : "This can send, buy, delete or sign in, so Alevr always asks."
-                if let crop = prepared.crop, let image = NSImage(data: crop) {
-                    let view = NSImageView(image: image)
-                    view.imageScaling = .scaleProportionallyDown
-                    view.frame = NSRect(x: 0, y: 0, width: 320, height: 200)
-                    alert.accessoryView = view
-                }
-                alert.addButton(withTitle: "Allow")
-            case .takeover:
-                alert.messageText = summary
-                alert.addButton(withTitle: "Allow")
-            }
-            alert.addButton(withTitle: "Don't Allow")
-            return alert.runModal() == .alertFirstButtonReturn
-        }
-    }
-}
+// Connected agents' requests are Studio approval cards
+// (`StudioComputerBridgeApprover`, `CodeV2ConnectedApprovals`): in the
+// thread's composer when it is on screen, else one card over the window.

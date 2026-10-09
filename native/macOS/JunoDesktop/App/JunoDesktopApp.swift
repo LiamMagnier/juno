@@ -160,7 +160,10 @@ private final class JunoDesktopAppDelegate: NSObject, NSApplicationDelegate, UNU
             DesktopScreenPresence.shared.install()
             // Computer use for every model (Code v2 SPEC §3.12): the action
             // overlay, and the bridge connected agents reach the Mac through.
-            ComputerUseDesktopHost.shared.install()
+            ComputerUseDesktopHost.shared.install(summon: {
+                NSApplication.shared.activate()
+                Self.presentMainWindowIfWithheld()
+            })
             // After the monitor, which claims the same slot when it installs.
             UNUserNotificationCenter.current().delegate = self
             // Every launch, as Apple asks: the token can change, and asking

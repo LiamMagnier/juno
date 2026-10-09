@@ -96,6 +96,31 @@ public enum CodeV2EngineMapping {
         effort.flatMap { CodeV2.EffortLevel(rawValue: $0.rawValue) }
     }
 
+    /// The model id the Swift engine runs for a selection it serves: Alevr's
+    /// own id, or a BYOK lab's model in canonical `lab:model` form (the
+    /// backend proxy then bills the user's key). Nil for a subscription,
+    /// which the env server runs.
+    public static func engineModelID(for selection: CodeV2.ModelSelection) -> String? {
+        guard !selection.model.isEmpty else { return nil }
+        switch CodeV2.instanceKind(of: selection.instanceId) {
+        case .alevr?:
+            return selection.model
+        case .byok?:
+            guard let lab = selection.instanceId.split(separator: ":").last.flatMap({ CodeV2.ByokProvider(rawValue: String($0)) }) else {
+                return nil
+            }
+            return CodeV2SubagentProviders.canonical(selection.model, lab: lab)
+        default:
+            return nil
+        }
+    }
+
+    /// The window the session compacts against: Lean's, or the chosen tier.
+    public static func contextWindow(for selection: CodeV2.ModelSelection, lean: Bool) -> Int? {
+        if lean { return CodeV2ContextMath.leanWindow }
+        return selection.contextTokens
+    }
+
     /// The Alevr selection for a session's current model.
     public static func selection(modelID: String, effort: ReasoningEffort?, contextTokens: Int?) -> CodeV2.ModelSelection {
         CodeV2.ModelSelection(instanceId: "alevr", model: modelID, effort: level(effort), contextTokens: contextTokens)
@@ -113,18 +138,23 @@ public struct CodeV2StudioContext {
     public let handoff: (String) -> Void
     public var openConnections: (() -> Void)?
     public var setup: ((String, CodeV2.ProviderSetupAction) -> Void)?
+    /// How Orchestrate's roles on other instances run (BYOK keys,
+    /// subscriptions through the env server); nil serves Alevr roles only.
+    public var subagentProviders: (() -> CodeV2SubagentProviders?)?
 
     public init(
         composer: CodeV2ComposerModel,
         directory: CodeV2ProviderDirectory,
         handoff: @escaping (String) -> Void,
         openConnections: (() -> Void)? = nil,
-        setup: ((String, CodeV2.ProviderSetupAction) -> Void)? = nil
+        setup: ((String, CodeV2.ProviderSetupAction) -> Void)? = nil,
+        subagentProviders: (() -> CodeV2SubagentProviders?)? = nil
     ) {
         self.composer = composer
         self.directory = directory
         self.handoff = handoff
         self.openConnections = openConnections
         self.setup = setup
+        self.subagentProviders = subagentProviders
     }
 }
