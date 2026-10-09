@@ -169,7 +169,7 @@ public struct CodeV2ConnectionsView: View {
             Form {
                 Section {
                     LabeledContent("Status") {
-                        Text(Self.status(instance))
+                        Text(instance.status == .ready ? "Connected" : (instance.status == .limited ? "Limit reached" : Self.status(instance)))
                             .foregroundStyle(instance.status == .signedOut && instance.statusMessage != nil ? Studio.Ink.danger : Studio.Ink.secondary)
                     }
                     if let email = instance.account?.email { LabeledContent("Account", value: email) }

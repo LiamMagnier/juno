@@ -106,25 +106,23 @@ struct CodeV2TierRow: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
-                VStack(alignment: .leading, spacing: 1) {
-                    HStack(spacing: JunoSpace.tight + 2) {
-                        Text(choice.name).foregroundStyle(Studio.Ink.primary)
-                        Text(CodeV2ContextMath.label(tokens: choice.windowTokens)).foregroundStyle(Studio.Ink.secondary)
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(alignment: .firstTextBaseline, spacing: JunoSpace.tight + 2) {
+                    Text(choice.name).foregroundStyle(Studio.Ink.primary)
+                    Text(CodeV2ContextMath.label(tokens: choice.windowTokens)).foregroundStyle(Studio.Ink.secondary)
+                    Spacer(minLength: JunoSpace.snug)
+                    if billsInDollars, let estimate = choice.nextTurnEstimate {
+                        Text("\(CodeV2ContextMath.estimate(estimate)) next turn")
+                            .studioType(.small).foregroundStyle(Studio.Ink.secondary)
                     }
-                    .studioType(.text)
-                    .monospacedDigit()
-                    Text(secondLine)
-                        .studioType(.small).monospacedDigit().foregroundStyle(Studio.Ink.secondary).lineLimit(1)
+                    JunoIconView(.check, size: 13)
+                        .foregroundStyle(Studio.Ink.primary)
+                        .opacity(isChosen ? 1 : 0)
                 }
-                Spacer(minLength: JunoSpace.snug)
-                if billsInDollars, let estimate = choice.nextTurnEstimate {
-                    Text("\(CodeV2ContextMath.estimate(estimate)) next turn")
-                        .studioType(.small).monospacedDigit().foregroundStyle(Studio.Ink.secondary)
-                }
-                JunoIconView(.check, size: 13)
-                    .foregroundStyle(Studio.Ink.primary)
-                    .opacity(isChosen ? 1 : 0)
+                .studioType(.text)
+                .monospacedDigit()
+                Text(secondLine)
+                    .studioType(.small).monospacedDigit().foregroundStyle(Studio.Ink.secondary).lineLimit(1)
             }
             .padding(.horizontal, JunoSpace.snug)
             .frame(height: 44)

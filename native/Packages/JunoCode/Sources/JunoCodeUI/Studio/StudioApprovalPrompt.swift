@@ -29,7 +29,7 @@ struct StudioApprovalPrompt: View {
         if let request {
             card(request)
                 .id(request.id)
-                .transition(.junoInline)
+                .transition(.opacity)
                 .task(id: request.id) {
                     // Take the keyboard only from an empty composer: a reader
                     // mid-sentence who presses Return is sending their message,
@@ -49,58 +49,34 @@ struct StudioApprovalPrompt: View {
 
     private func card(_ request: ApprovalRequest) -> some View {
         let copy = StudioApprovalCopy(request)
-        return VStack(alignment: .leading, spacing: JunoSpace.cozy) {
-            HStack(alignment: .center, spacing: JunoSpace.snug) {
-                // What kind of thing is asking, in the one colour that means
-                // "needs you" — the mark's tile, never the card's edge alone.
-                JunoIconView(copy.icon, size: 14)
-                    .foregroundStyle(Studio.Ink.accent)
-                    .frame(width: 28, height: 28)
-                    .background(
-                        RoundedRectangle(cornerRadius: JunoRadius.control, style: .continuous)
-                            .fill(Studio.Ink.accent.opacity(0.12))
-                    )
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(copy.question)
-                        .font(Studio.Font.labelEmphasis)
-                        .foregroundStyle(Studio.Ink.primary)
-                    Text("Alevr is waiting for you before it continues.")
-                        .font(Studio.Font.meta)
-                        .foregroundStyle(Studio.Ink.tertiary)
-                }
+        return VStack(alignment: .leading, spacing: JunoSpace.snug + 2) {
+            // The composer takeover (code-v4 TARGET §7.4): the question in
+            // the signal ink, the count, the exact thing in a mono well.
+            HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
+                Text(copy.question)
+                    .studioType(.textMedium)
+                    .foregroundStyle(Studio.Signal.ink)
+                    .lineLimit(2)
                 Spacer()
                 if controller.pendingApprovals.count > 1 {
                     Text("1 of \(controller.pendingApprovals.count)")
-                        .font(Studio.Font.metaDigits)
+                        .studioType(.small).monospacedDigit()
                         .foregroundStyle(Studio.Ink.secondary)
-                        .padding(.horizontal, JunoSpace.snug)
-                        .frame(height: 22)
-                        .background(Capsule().fill(Studio.Surface.muted))
                 }
             }
 
-            HStack(alignment: .firstTextBaseline, spacing: JunoSpace.tight) {
-                if copy.isCommand {
-                    Text("$").foregroundStyle(Studio.Ink.tertiary)
-                }
-                Text(copy.subject)
-                    .foregroundStyle(Studio.Ink.primary)
-                    .textSelection(.enabled)
-                    .lineLimit(6)
-            }
-            .font(Studio.Font.mono)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, JunoSpace.cozy)
-            .padding(.vertical, JunoSpace.snug + 2)
-            .background(
-                RoundedRectangle(cornerRadius: Studio.Radius.card, style: .continuous)
-                    .fill(Studio.Surface.muted)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: Studio.Radius.card, style: .continuous)
-                    .strokeBorder(Studio.Surface.hairline)
-            )
+            Text(copy.subject)
+                .studioType(.code)
+                .foregroundStyle(Studio.Ink.primary)
+                .textSelection(.enabled)
+                .lineLimit(3)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, JunoSpace.cozy)
+                .padding(.vertical, JunoSpace.snug)
+                .background(
+                    RoundedRectangle(cornerRadius: Studio.Radius.control, style: .continuous)
+                        .fill(Studio.Surface.muted)
+                )
 
             // A screen tool's card shows what it will hit: the marked crop,
             // the app and element, or the grant sheet (Lane C).
@@ -112,8 +88,8 @@ struct StudioApprovalPrompt: View {
                 Text(Self.isFileTool(request.toolName)
                     ? "This changes what Alevr itself may do in this project, so Alevr always asks."
                     : "This reaches outside the project, so Alevr always asks.")
-                    .font(Studio.Font.meta)
-                    .foregroundStyle(Studio.Ink.danger)
+                    .studioType(.small)
+                    .foregroundStyle(Studio.Ink.secondary)
             }
 
             if showsRedirect {
@@ -142,17 +118,18 @@ struct StudioApprovalPrompt: View {
                 } label: {
                     Text(showsRedirect && !redirect.isEmpty ? "Decline and send" : "Decline")
                 }
-                .buttonStyle(StudioQuietButtonStyle())
+                .buttonStyle(.borderless)
                 .accessibilityIdentifier("juno.code.approval.deny")
 
                 if !showsRedirect {
-                    Button("Say what to do instead") {
+                    Button("Redirect") {
                         withAnimation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion)) {
                             showsRedirect = true
                         }
                         redirectFocused = true
                     }
-                    .buttonStyle(StudioQuietButtonStyle(tint: Studio.Ink.tertiary))
+                    .buttonStyle(.borderless)
+                    .help("Decline and say what to do instead")
                 }
 
                 Spacer(minLength: JunoSpace.snug)
@@ -161,17 +138,9 @@ struct StudioApprovalPrompt: View {
                     Button {
                         Task { await controller.approveAlways(request.id) }
                     } label: {
-                        HStack(spacing: JunoSpace.hairline + 1) {
-                            Text("Always allow")
-                            Text(rule.description)
-                                .font(Studio.Font.monoSmall)
-                                .foregroundStyle(Studio.Ink.secondary)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                                .frame(maxWidth: 180)
-                        }
+                        Text("Always Allow")
                     }
-                    .buttonStyle(StudioSecondaryButtonStyle())
+                    .buttonStyle(.bordered)
                     .accessibilityIdentifier("juno.code.approval.always")
                     // Said where it goes, because for screen input that is
                     // every project, not this one: no project file may allow it.
@@ -185,24 +154,17 @@ struct StudioApprovalPrompt: View {
                 Button {
                     Task { await controller.approve(request.id) }
                 } label: {
-                    HStack(spacing: JunoSpace.tight) {
-                        Text("Allow")
-                        Text("↩").foregroundStyle(Studio.Surface.canvas.opacity(0.6))
-                    }
+                    Text("Allow Once")
                 }
-                .buttonStyle(StudioPrimaryButtonStyle())
+                .buttonStyle(CodeV2InkButtonStyle())
                 .help("Allow once (↩)")
                 .accessibilityIdentifier("juno.code.approval.approve")
             }
         }
-        .padding(JunoSpace.regular)
-        // The raised rung, edged in the accent at low strength: the one card
-        // in the thread that is waiting on the reader.
-        .junoLiftedSurface(cornerRadius: Studio.Radius.composer)
-        .overlay(
-            RoundedRectangle(cornerRadius: Studio.Radius.composer, style: .continuous)
-                .strokeBorder(Studio.Ink.accent.opacity(0.5), lineWidth: 1)
-        )
+        .padding(.horizontal, JunoSpace.regular)
+        .padding(.top, JunoSpace.cozy + 2)
+        .padding(.bottom, JunoSpace.cozy)
+        // Drawn inside the composer's shell, which holds the 1pt signal edge.
         .focusable()
         .focusEffectDisabled()
         .focused($focused)

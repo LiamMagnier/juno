@@ -158,7 +158,6 @@ public struct StudioSessionView: View {
             VStack(spacing: JunoSpace.snug) {
                 // Resume, the session's worktree, its CI (Lane E).
                 StudioShipBar(controller: controller)
-                StudioApprovalPrompt(controller: controller)
                 StudioQuestionPrompt(controller: controller)
                 StudioPlanApprovalPrompt(controller: controller)
                 // The verify recipe card (CODE_AGENT_SPEC §1.8). Lane B.
@@ -297,6 +296,8 @@ public struct StudioSessionView: View {
                 Task { await controller.send() }
             } : nil,
             stopOnDoubleEscape: isRunning,
+            // An approval takes over the composer body (code-v4 TARGET §7.4).
+            takeover: controller.pendingApprovals.isEmpty ? nil : AnyView(StudioApprovalPrompt(controller: controller)),
             plusMenu: v2.map { v2 in
                 AnyView(CodeV2PlusMenuItems(model: v2.composer, directory: v2.directory, computerUse: computerUseBinding))
             },

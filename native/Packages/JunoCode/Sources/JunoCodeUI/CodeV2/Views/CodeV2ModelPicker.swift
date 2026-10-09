@@ -172,6 +172,7 @@ struct CodeV2ModelPicker: View {
         }
         .frame(width: 380)
         .frame(maxHeight: 440)
+        .clipped()
         .fixedSize(horizontal: false, vertical: true)
         .onKeyPress(.upArrow, phases: .down) { press in
             guard press.modifiers.contains(.command), press.modifiers.contains(.shift) else { return .ignored }
@@ -316,13 +317,7 @@ struct CodeV2ModelPicker: View {
                     .pickerStyle(.segmented)
                     .labelsHidden()
                     .controlSize(.small)
-                    .fixedSize()
-                    if selectedModel?.supportsFast == true {
-                        Toggle("Fast", isOn: Binding(get: { selection.fast == true }, set: { selection.fast = $0 }))
-                            .toggleStyle(.checkbox)
-                            .studioType(.small)
-                            .help("Fast: about twice the speed at twice the price")
-                    }
+                    .frame(maxWidth: 250)
                 }
                 .padding(.horizontal, JunoSpace.cozy)
                 .frame(height: 38)
@@ -348,6 +343,13 @@ struct CodeV2ModelPicker: View {
                             )
                         }
                     }
+                }
+                if selectedModel?.supportsFast == true {
+                    Toggle("Fast", isOn: Binding(get: { selection.fast == true }, set: { selection.fast = $0 }))
+                        .toggleStyle(.checkbox)
+                        .studioType(.small)
+                        .foregroundStyle(Studio.Ink.secondary)
+                        .help("About twice the speed at twice the price")
                 }
                 Spacer(minLength: JunoSpace.snug)
                 if let instance = selectedInstance, let usage = CodeV2PickerCopy.usage(instance) {
