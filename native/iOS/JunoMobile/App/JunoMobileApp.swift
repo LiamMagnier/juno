@@ -135,6 +135,7 @@ struct JunoMobileApp: App {
                 // rendered in the requested scheme rather than inheriting the
                 // fixture account's stored preference.
                 .junoPreviewAppearance()
+                .buttonBorderShape(.capsule)
             } else {
                 rootView
             }
@@ -158,7 +159,14 @@ struct JunoMobileApp: App {
         }
     }
 
+    /// Every bordered and glass button in the app is a capsule — the iOS 26
+    /// Calendar's controls (owner, Oct 9). Set once here so it reaches sheets
+    /// and covers too; icon-only buttons ask for `.circle` where they stand.
     private var rootView: some View {
+        rootShell.buttonBorderShape(.capsule)
+    }
+
+    private var rootShell: some View {
         JunoMobileRootView(
             authModel: authModel,
             syncModel: syncModel,

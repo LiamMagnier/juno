@@ -307,7 +307,7 @@ struct JunoMobileWorkspaceSection<Content: View>: View {
 /// bordered control as the older-system fallback.
 struct JunoMobileWorkspaceActionStyle: ViewModifier {
     func body(content: Content) -> some View {
-        content.buttonStyle(.glass)
+        content.buttonStyle(.glass).buttonBorderShape(.capsule)
     }
 }
 

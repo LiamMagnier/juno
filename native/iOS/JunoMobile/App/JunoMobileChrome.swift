@@ -394,6 +394,6 @@ extension View {
 /// today and drifts from the platform the moment the platform moves.
 struct JunoGlassButtonStyle: ViewModifier {
     func body(content: Content) -> some View {
-        content.buttonStyle(.glass)
+        content.buttonStyle(.glass).buttonBorderShape(.capsule)
     }
 }
