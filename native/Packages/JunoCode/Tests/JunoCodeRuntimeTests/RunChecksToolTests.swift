@@ -294,7 +294,7 @@ final class RunChecksToolTests: XCTestCase {
             executor: executor, git: GitService(executor: executor), tests: TestRunnerService(access: access, executor: executor)
         )
         let names = await ToolRegistry.providedTools(by: [provider], for: context).map(\.name)
-        XCTAssertEqual(names, ["run_checks", "await_subagents", "inspect_subagent", "cancel_subagent"])
+        XCTAssertEqual(names, ["run_checks", "await_subagents", "inspect_subagent", "cancel_subagent", "message_subagent"])
         let opened = await ledgers.existing(for: session.id)
         XCTAssertNotNil(opened, "the session's ledger is open for the command tools")
     }

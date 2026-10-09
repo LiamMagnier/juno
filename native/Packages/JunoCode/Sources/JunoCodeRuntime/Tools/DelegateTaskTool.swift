@@ -62,6 +62,21 @@ public struct DelegateTaskTool: CodeTool {
     /// Where children started with `background: true` are kept until the
     /// parent awaits, inspects or cancels them.
     private let background: BackgroundSubagents
+    /// The session's role routing: which model, effort and context tier each
+    /// role runs on, and how another provider instance becomes a client. Nil
+    /// keeps every child on the parent's model unless the call names one.
+    private let routing: SubagentRouting?
+    /// The run's hard token and cost budget, shared by every child. Nil
+    /// enforces none.
+    private let budget: RunBudgetLedger?
+    /// How many children of one call run at once (1…``maximumConfigurableConcurrent``).
+    public let concurrency: Int
+    /// How many tasks one call may ask for: at least ``maximumPerCall``, and
+    /// never fewer than may run at once.
+    public var perCallLimit: Int { max(Self.maximumPerCall, concurrency) }
+    /// Hands out worker ordinals, so successive children of a session go
+    /// round the routing's workers rather than all landing on the first.
+    private let ordinals = SubagentOrdinals()
 
     /// How many steps a read-only child takes at most: enough for a real
     /// investigation, short enough to give the turn back.
@@ -104,6 +119,9 @@ public struct DelegateTaskTool: CodeTool {
     /// `maxPerTurn` 4).
     public static let maximumConcurrent = 3
     public static let maximumPerCall = 4
+    /// The most a host may raise ``concurrency`` to (the cloud runner's
+    /// default, SPEC §3.3).
+    public static let maximumConfigurableConcurrent = 6
 
     public init(
         model: any AgentModelClient,
@@ -122,8 +140,16 @@ public struct DelegateTaskTool: CodeTool {
         lifecycleHooks: (any AgentLifecycleHooks)? = nil,
         agents: (any SubagentDefinitionResolving)? = nil,
         parentStepLimit: Int = 200,
-        background: BackgroundSubagents = .shared
+        background: BackgroundSubagents = .shared,
+        routing: SubagentRouting? = nil,
+        budget: RunBudgetLedger? = nil,
+        concurrency: Int = DelegateTaskTool.maximumConcurrent
     ) {
+        self.routing = routing
+        // A budget the routing carries is enforced even when the host did not
+        // build a ledger of its own.
+        self.budget = budget ?? RunBudgetLedger.make(for: routing?.routing)
+        self.concurrency = min(max(1, concurrency), Self.maximumConfigurableConcurrent)
         self.model = model
         self.registry = registry
         self.store = store
@@ -144,15 +170,15 @@ public struct DelegateTaskTool: CodeTool {
     }
 
     public let name = "delegate_task"
-    public let description = """
+    public var description: String { """
        Delegate bounded, inspectable work to sub-agents. Read-only investigation is \
        the default; an implementation task may request `workspace_write` only when \
        the host can provide an isolated Git worktree. The parent checkout is never \
        used for delegated writes. \
         Each task may choose a model and thinking depth; omitted values inherit \
         the parent session. \
-       Pass `tasks` with up to \(DelegateTaskTool.maximumPerCall) genuinely independent \
-       investigations to run them concurrently (\(DelegateTaskTool.maximumConcurrent) at a \
+       Pass `tasks` with up to \(perCallLimit) genuinely independent \
+       investigations to run them concurrently (\(concurrency) at a \
        time) and get every answer back in one call; pass `task` for a single one. Each \
        sub-agent starts with a fresh context, so its instruction must be self-contained, \
        and it cannot delegate further. \
@@ -162,8 +188,9 @@ public struct DelegateTaskTool: CodeTool {
         An agent can narrow what the task may do, never widen it. With \
         `background: true` the call returns task ids at once; collect the \
         results later with await_subagents, look at one with \
-        inspect_subagent, or stop one with cancel_subagent.
-       """
+        inspect_subagent, steer one with message_subagent, or stop one \
+        with cancel_subagent.
+       """ }
 
     public var inputSchema: JSONValue {
         let taskSchema: JSONValue = [
@@ -235,7 +262,7 @@ public struct DelegateTaskTool: CodeTool {
     /// like any other: an Ask-before-changes session is asked, a read-only one
     /// refuses. Investigation stays a read.
     public func assessRisk(input: JSONValue) -> ActionRisk {
-        let specs = (try? Self.specs(from: input, toolCallID: "")) ?? []
+        let specs = (try? Self.specs(from: input, toolCallID: "", maximumPerCall: perCallLimit)) ?? []
         // A built-in agent's narrowing is known here; a custom agent's is
         // applied when the task starts, so a request for writes is assessed
         // as one until then.
@@ -246,7 +273,7 @@ public struct DelegateTaskTool: CodeTool {
     }
 
     public func summary(input: JSONValue) -> String {
-        let specs = (try? Self.specs(from: input, toolCallID: "")) ?? []
+        let specs = (try? Self.specs(from: input, toolCallID: "", maximumPerCall: perCallLimit)) ?? []
         switch specs.count {
         case 0: return "Delegate: task"
         case 1: return "Delegate: \(specs[0].title)"
@@ -278,7 +305,11 @@ public struct DelegateTaskTool: CodeTool {
         var agent: SubagentDefinition? = nil
     }
 
-    static func specs(from input: JSONValue, toolCallID: String) throws -> [Spec] {
+    static func specs(
+        from input: JSONValue,
+        toolCallID: String,
+        maximumPerCall: Int = DelegateTaskTool.maximumPerCall
+    ) throws -> [Spec] {
         var raw: [JSONValue] = []
         if let array = input["tasks"]?.arrayValue, !array.isEmpty {
             raw = array
@@ -342,7 +373,7 @@ public struct DelegateTaskTool: CodeTool {
     }
 
     public func execute(input: JSONValue, context: ToolContext) async throws -> ToolResult {
-        var specs = try Self.specs(from: input, toolCallID: context.toolCallID)
+        var specs = try Self.specs(from: input, toolCallID: context.toolCallID, maximumPerCall: perCallLimit)
         let parentSessionID = context.sessionID
         let deadline = ContinuousClock.now.advanced(by: Self.budget)
 
@@ -418,7 +449,7 @@ public struct DelegateTaskTool: CodeTool {
                     )
                 }
             }
-            for _ in 0..<min(Self.maximumConcurrent, specs.count) { start() }
+            for _ in 0..<min(concurrency, specs.count) { start() }
             while let outcome = await group.next() {
                 results.append(outcome)
                 start()
@@ -488,10 +519,25 @@ public struct DelegateTaskTool: CodeTool {
         parentSessionID: CodeSessionID,
         deadline: ContinuousClock.Instant
     ) async -> Outcome {
-        let childModelID = spec.modelID ?? spec.agent?.model ?? modelID
-        let childReasoningEffort = spec.reasoningEffort ?? reasoningEffort
         // An agent narrows the mode, never widens it.
         let mode = spec.agent?.effectiveMode(requested: spec.mode) ?? spec.mode
+        let route = await self.route(for: spec)
+        let childModelID = route.modelID
+        let childReasoningEffort = route.reasoningEffort
+        // The run's budget is checked before anything is opened: a child the
+        // budget cannot pay for does not get a session or a worktree.
+        if let reason = await budget?.exhaustedReason {
+            let message = "Not started: \(reason)."
+            await publish(
+                spec,
+                toolCallID: toolCallID,
+                parentSessionID: parentSessionID,
+                status: .failed,
+                completedAt: Date(),
+                error: message
+            )
+            return Outcome(index: index, title: spec.title, status: .failed, answer: message)
+        }
         await publish(
             spec,
             toolCallID: toolCallID,
@@ -620,7 +666,7 @@ public struct DelegateTaskTool: CodeTool {
         let childRegistry = spec.agent?.narrowing(environment.registry) ?? environment.registry
         let orchestrator = AgentOrchestrator(
             sessionID: child.id,
-            model: model,
+            model: route.client,
             registry: childRegistry,
             permissions: permissions,
             store: store,
@@ -630,6 +676,10 @@ public struct DelegateTaskTool: CodeTool {
                     parentStepLimit: parentStepLimit,
                     agentMaximum: spec.agent?.maxSteps
                 ),
+                // The routed context tier is the child's window, so it
+                // compacts against what it was given rather than the
+                // parent's (larger) one.
+                contextWindowTokens: route.contextTokens,
                 systemPrompt: """
                 \(parentSystemPrompt)
 
@@ -656,6 +706,34 @@ public struct DelegateTaskTool: CodeTool {
             permissions: permissions,
             orchestrator: orchestrator
         )
+        // A background child can be steered by its parent (message_subagent):
+        // the message joins its run at the next step boundary, as a steer
+        // from the reader does.
+        if spec.background {
+            await background.attachMessenger(id: spec.agentID, parentSessionID: parentSessionID) { text in
+                (try? await orchestrator.steer(prompt: text)) != nil
+            }
+        }
+        // Every call the child makes is charged to the run's budget as it is
+        // reported; the call that crosses the line stops the child.
+        let budgetStop = BudgetStopFlag()
+        if let budget {
+            let tier = route.tier
+            let billable = route.billable
+            await orchestrator.observeCallUsage { usage in
+                budgetStop.track {
+                    let exhausted = await budget.charge(
+                        inputTokens: usage.inputTokens ?? 0,
+                        outputTokens: usage.outputTokens ?? 0,
+                        cacheReadTokens: usage.cacheReadTokens ?? 0,
+                        tier: tier,
+                        billable: billable
+                    )
+                    if exhausted, budgetStop.trip() { await orchestrator.stop() }
+                }
+            }
+            if await budget.exhaustedReason != nil, budgetStop.trip() { await orchestrator.stop() }
+        }
         let approvalRelay = relayApprovalState(
             of: permissions,
             spec,
@@ -699,12 +777,18 @@ public struct DelegateTaskTool: CodeTool {
                 // stop the run that exists now. Cancelling a background child
                 // straight after starting it is exactly that case.
                 if Task.isCancelled { await orchestrator.stop() }
+                // Another child may have spent the budget while this one was
+                // opening: stop at once rather than run a step it cannot pay for.
+                if await budget?.exhaustedReason != nil { await orchestrator.stop() }
                 let watchdog = Task {
                     try? await Task.sleep(until: deadline, clock: .continuous)
                     await orchestrator.stop()
                 }
                 await orchestrator.awaitCompletion()
                 watchdog.cancel()
+                // Every charge this child made has landed before the next
+                // child asks the ledger whether it may start.
+                await budgetStop.settle()
             } onCancel: {
                 // Detached because `onCancel` is synchronous and the actor hop
                 // is not; the orchestrator's own `stop()` denies pending
@@ -759,7 +843,7 @@ public struct DelegateTaskTool: CodeTool {
             }
             return nil
         }.first ?? "The sub-agent completed without a written result."
-        let answer = [recordedAnswer, finalizationError]
+        let finishedAnswer = [recordedAnswer, finalizationError]
             .compactMap { $0 }
             .joined(separator: "\n\n")
         // The child's own record decides the outcome, rather than this call
@@ -767,7 +851,14 @@ public struct DelegateTaskTool: CodeTool {
         // cap and a transport failure all end here.
         let childStatus = (try? await store.session(id: child.id).status) ?? .completed
         let childOutcomeStatus = Self.status(of: childStatus)
-        let status = finalizationError == nil ? childOutcomeStatus : .failed
+        var status = finalizationError == nil ? childOutcomeStatus : .failed
+        var budgetError: String?
+        if budgetStop.tripped, status != .completed, let reason = await budget?.exhaustedReason {
+            // Stopped by the budget, not by the reader: said as what it is.
+            status = .failed
+            budgetError = "Stopped: \(reason)."
+        }
+        let answer = [finishedAnswer, budgetError].compactMap { $0 }.joined(separator: "\n\n")
         let tokens = childUsage.total
         await publish(
             spec,
@@ -780,9 +871,28 @@ public struct DelegateTaskTool: CodeTool {
             inputTokens: tokens.requests > 0 ? tokens.inputTokens : nil,
             outputTokens: tokens.requests > 0 ? tokens.outputTokens : nil,
             summary: answer,
-            error: finalizationError ?? (status == .completed ? nil : lastError(in: events))
+            error: finalizationError ?? budgetError ?? (status == .completed ? nil : lastError(in: events))
         )
         return Outcome(index: index, title: spec.title, status: status, answer: answer)
+    }
+
+    // MARK: - Routing
+
+    /// Where one task runs: the call's own model, the agent's, the session's
+    /// routing for the task's role, then the parent.
+    func route(for spec: Spec) async -> SubagentRoute {
+        let role = SubagentRouting.contractRole(agentName: spec.agent?.name ?? spec.agentName, role: spec.role)
+        let ordinal = role == .worker || role == .explorer ? await ordinals.next() : 0
+        let routing = self.routing ?? SubagentRouting(routing: nil)
+        return routing.route(
+            requestedModelID: spec.modelID ?? spec.agent?.model,
+            requestedEffort: spec.reasoningEffort,
+            role: role,
+            ordinal: ordinal,
+            parentClient: model,
+            parentModelID: modelID,
+            parentEffort: reasoningEffort
+        )
     }
 
     // MARK: - Publishing
@@ -900,5 +1010,49 @@ public struct DelegateTaskTool: CodeTool {
             if case let .errorOccurred(error) = event.payload { return error.message }
             return nil
         }.first
+    }
+}
+
+/// Hands out ordinals for round-robin worker routing.
+actor SubagentOrdinals {
+    private var value = 0
+
+    func next() -> Int {
+        defer { value += 1 }
+        return value
+    }
+}
+
+/// Set once, by whichever path first stops a child for its budget, and
+/// holding the charges still on their way to the ledger.
+final class BudgetStopFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _tripped = false
+    private var charges: [Task<Void, Never>] = []
+
+    var tripped: Bool { lock.withLock { _tripped } }
+
+    /// True for the first caller only.
+    func trip() -> Bool {
+        lock.withLock {
+            guard !_tripped else { return false }
+            _tripped = true
+            return true
+        }
+    }
+
+    /// Runs one charge, kept so ``settle()`` can wait for it.
+    func track(_ work: @escaping @Sendable () async -> Void) {
+        let task = Task { await work() }
+        lock.withLock { charges.append(task) }
+    }
+
+    /// Waits for every charge started so far.
+    func settle() async {
+        let pending = lock.withLock { () -> [Task<Void, Never>] in
+            defer { charges.removeAll() }
+            return charges
+        }
+        for task in pending { await task.value }
     }
 }

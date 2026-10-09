@@ -136,6 +136,7 @@ export function toolKindFor(name: string): AgentToolKind {
     case "await_subagents":
     case "inspect_subagent":
     case "cancel_subagent":
+    case "message_subagent":
     case "update_goal":
     case "update_plan":
       return "think";
