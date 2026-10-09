@@ -113,7 +113,9 @@ See the result object of this run for exact commands; summary:
 - eslint on every changed TS/JS path: clean.
 - runner/agent-core: 255/255. runner/env-server: typecheck clean, 34/34 tests.
 - `native:design:check` (all 6 gates), `native:contract:check`, `native:icons:check`: pass.
-- Swift JunoCode, JunoDesktop: see the run's result.
+- Root `npm test`: 6,627 tests, 0 failures.
+- Swift JunoCode (`swift test`, all targets): Runtime 638, UI 379 (45 skipped), Local 428, Core 258, Bridge 200, Simulator 54; 0 failures.
+- JunoDesktop `xcodebuild test -only-testing:JunoDesktopTests`: builds; 450 tests, 19 issues, all in shell/sidebar/icon/shortcut tests whose sources this branch does not touch (DesktopShellContract, DesktopDestination sidebar/more cases, DesktopIconCatalog geometry, JunoShortcutRegistry view menu): inherited from the trunk base, not fixed here.
 
 ## Left to do
 
