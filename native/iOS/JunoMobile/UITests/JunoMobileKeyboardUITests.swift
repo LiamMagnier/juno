@@ -41,8 +41,10 @@ final class JunoMobileKeyboardUITests: XCTestCase {
       app.buttons["juno.mobile.incognito"].waitForExistence(timeout: 10),
       "Shift-Command-N did not open incognito. On screen:\n\(app.debugDescription)"
     )
+    // The not-saved promise is the private chat's intro (round 2 folded the
+    // separate note into it).
     XCTAssertTrue(
-      app.descendants(matching: .any)["juno.mobile.incognito-note"].firstMatch.exists,
+      app.descendants(matching: .any)["juno.mobile.incognito-intro"].firstMatch.exists,
       "Incognito opened without its not-saved note."
     )
   }

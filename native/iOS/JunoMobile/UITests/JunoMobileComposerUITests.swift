@@ -26,14 +26,17 @@ final class JunoMobileComposerUITests: XCTestCase {
         app.buttons["juno.mobile.chat-thinking"]
     }
 
-    /// The custom-drawn slider is an adjustable accessibility element, and the
-    /// element TYPE that maps to varies; match on the identifier alone.
+    /// The open dial: tapping the gauge turns the composer's control row into
+    /// a track with one detent per level (ChatGPT's "thinking speed"). It is
+    /// one adjustable accessibility element whose value is the level's name,
+    /// and the element TYPE that maps to varies; match on the identifier alone.
     private func thinkingSlider(_ app: XCUIApplication) -> XCUIElement {
-        app.descendants(matching: .any)["juno.thinking-slider"].firstMatch
+        app.descendants(matching: .any)["juno.mobile.thinking-dial"].firstMatch
     }
 
-    /// Waits for the chip to settle on a level. The accessibility value is
-    /// verbose for VoiceOver ("High. Available levels: …"), so match the prefix.
+    /// Waits for the chip to settle on a level. The value is the level's name
+    /// ("Instant", "Medium", "Max"); matched on a prefix so a longer VoiceOver
+    /// form would still read.
     private func waitForChipValue(
         _ chip: XCUIElement,
         prefix: String,
@@ -81,8 +84,7 @@ final class JunoMobileComposerUITests: XCTestCase {
 
         let chip = thinkingChip(app)
         require(chip, app)
-        // The chip's value is deliberately verbose for VoiceOver
-        // ("Instant. Available levels: …"); assert on the level it leads with.
+        // The gauge's value is the level it points at.
         XCTAssertEqual((chip.value as? String)?.prefix(7), "Instant")
 
         chip.tap()
@@ -97,9 +99,13 @@ final class JunoMobileComposerUITests: XCTestCase {
                     withNormalizedOffset: CGVector(dx: 0.99, dy: 0.5)
                 )
             )
-        XCTAssertEqual(slider.value as? String, "Thinking max")
+        // The open dial folds back into the gauge a moment after the finger
+        // lifts, so the level is read where it lands: on the gauge.
+        waitForChipValue(chip, prefix: "Max")
 
         // And back to the shallowest.
+        chip.tap()
+        require(slider, app, timeout: 5)
         slider.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5))
             .press(
                 forDuration: 0.05,
@@ -107,7 +113,7 @@ final class JunoMobileComposerUITests: XCTestCase {
                     withNormalizedOffset: CGVector(dx: 0.01, dy: 0.5)
                 )
             )
-        XCTAssertEqual(slider.value as? String, "Instant, no thinking")
+        waitForChipValue(chip, prefix: "Instant")
     }
 
     @MainActor
@@ -127,7 +133,7 @@ final class JunoMobileComposerUITests: XCTestCase {
         // Mid-track on a seven-stop ladder is Medium — a tap, not a drag, which
         // a UIKit slider would have ignored entirely.
         slider.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-        XCTAssertEqual(slider.value as? String, "Thinking medium")
+        waitForChipValue(chip, prefix: "Medium")
     }
 
     @MainActor
@@ -145,10 +151,10 @@ final class JunoMobileComposerUITests: XCTestCase {
         require(slider, app, timeout: 5)
         slider.coordinate(withNormalizedOffset: CGVector(dx: 0.99, dy: 0.5)).tap()
 
-        // Dismiss the popover and confirm the composer chip followed.
-        app.tap()
+        // The dial folds itself back into the gauge after the touch; the
+        // gauge it folds into must point at the level the dial was left on.
         XCTAssertTrue(chip.waitForExistence(timeout: 5))
-        XCTAssertEqual((chip.value as? String)?.prefix(3), "Max")
+        waitForChipValue(chip, prefix: "Max")
     }
 
     @MainActor
@@ -165,10 +171,15 @@ final class JunoMobileComposerUITests: XCTestCase {
         let slider = thinkingSlider(app)
         require(slider, app)
 
+        // The two ends of the track are the only two levels: on and off.
         slider.coordinate(withNormalizedOffset: CGVector(dx: 0.99, dy: 0.5)).tap()
-        XCTAssertEqual(slider.value as? String, "Thinking on")
+        let chip = thinkingChip(app)
+        waitForChipValue(chip, prefix: "Thinking")
+
+        chip.tap()
+        require(slider, app, timeout: 5)
         slider.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.5)).tap()
-        XCTAssertEqual(slider.value as? String, "Instant, no thinking")
+        waitForChipValue(chip, prefix: "Instant")
     }
 
     @MainActor
@@ -180,8 +191,10 @@ final class JunoMobileComposerUITests: XCTestCase {
         require(chip, app)
         XCTAssertEqual(chip.value as? String, "Chosen automatically for each message")
 
+        // With nothing to dial, the gauge offers the model instead.
         chip.tap()
-        XCTAssertFalse(thinkingSlider(app).waitForExistence(timeout: 2))
+        require(app.descendants(matching: .any)["juno.mobile.model-list"].firstMatch, app, timeout: 5)
+        XCTAssertFalse(thinkingSlider(app).exists)
     }
 
     /// The whole capsule opens the picker, not just the word printed on it.
@@ -265,8 +278,20 @@ final class JunoMobileComposerUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["From your library"].firstMatch.exists)
     }
 
-    /// The Tools submenu — the website's second group, which this app did not
-    /// have at all.
+    /// "More" — the panel's last row, a native menu with the standing
+    /// preferences (canvas, memory, the project, Flash/Pro where the model has
+    /// them). The research and web-search switches sit on the panel itself.
+    @MainActor
+    private func openMore(_ app: XCUIApplication) {
+        let more = app.descendants(matching: .any)["juno.mobile.composer-tools"].firstMatch
+        XCTAssertTrue(
+            more.waitForExistence(timeout: 5),
+            "No More row in the + panel. On screen:\n\(app.debugDescription)"
+        )
+        hittable(more).tap()
+    }
+
+    /// The website's tools, which this app did not have at all.
     ///
     /// Deep research especially: the flag was already plumbed the whole way
     /// through `NativeChatGenerationRequest` and the retry context, and there was
@@ -274,21 +299,9 @@ final class JunoMobileComposerUITests: XCTestCase {
     /// this ships a feature nobody can reach, which is exactly the state this
     /// test exists to prevent.
     ///
-    /// Matched on a prefix because the row states its own count — "Tools · 3"
-    /// with web search, canvas and memory on, which is the harness's resting
-    /// state.
-    @MainActor
-    private func openTools(_ app: XCUIApplication) {
-        let tools = app.descendants(matching: .any)
-            .matching(NSPredicate(format: "label BEGINSWITH %@", "Tools"))
-            .firstMatch
-        XCTAssertTrue(
-            tools.waitForExistence(timeout: 5),
-            "No Tools row in the menu. On screen:\n\(app.debugDescription)"
-        )
-        hittable(tools).tap()
-    }
-
+    /// Since the glass "+" panel (round 2), Deep research and Web search are
+    /// rows of the panel itself — ChatGPT's grouping — and the rarely-touched
+    /// switches (Create a canvas, Canvas & artifacts, Memory) are under More.
     @MainActor
     func testThePlusMenuOffersTheWebsitesTools() {
         let app = launch([])
@@ -297,11 +310,11 @@ final class JunoMobileComposerUITests: XCTestCase {
         require(plus, app)
         plus.tap()
 
-        XCTAssertTrue(app.descendants(matching: .any)["Create a canvas"].firstMatch.exists)
-        openTools(app)
-
         _ = requireMenuRow(app, "Deep research")
         XCTAssertTrue(app.descendants(matching: .any)["Web search"].firstMatch.exists)
+
+        openMore(app)
+        _ = requireMenuRow(app, "Create a canvas")
         XCTAssertTrue(app.descendants(matching: .any)["Canvas & artifacts"].firstMatch.exists)
         XCTAssertTrue(app.descendants(matching: .any)["Memory"].firstMatch.exists)
     }
@@ -309,11 +322,10 @@ final class JunoMobileComposerUITests: XCTestCase {
     /// Arming research marks the "+" itself.
     ///
     /// The dot is the only thing on screen that says the next message will cost a
-    /// multi-minute research run, because the menu that set it is closed by then —
-    /// and now that the switches live one level down, it is the only thing saying
-    /// so at the top level either. Asserted through the accessibility label rather
-    /// than by pixel: the label is what a VoiceOver reader gets, and if it is
-    /// right the dot is drawn.
+    /// multi-minute research run, because the panel that set it is closed by
+    /// then. Asserted through the accessibility label rather than by pixel: the
+    /// label is what a VoiceOver reader gets, and if it is right the dot is
+    /// drawn.
     @MainActor
     func testArmingDeepResearchMarksThePlusButton() {
         let app = launch([])
@@ -323,7 +335,6 @@ final class JunoMobileComposerUITests: XCTestCase {
         XCTAssertEqual(plus.label, "Add")
 
         plus.tap()
-        openTools(app)
         requireMenuRow(app, "Deep research").tap()
 
         let armed = expectation(
@@ -385,9 +396,12 @@ final class JunoMobileComposerUITests: XCTestCase {
     /// leading edge is what stopped it competing with the menu, and this is what
     /// proves the swipe still works.
     ///
-    /// Asserts on the plate going inert rather than on a sidebar row appearing:
-    /// the drawer is always in the hierarchy, behind the plate, so "the drawer
-    /// exists" says nothing about whether it opened.
+    /// Asserts on the conversation card moving rather than on a sidebar row
+    /// appearing: the drawer is always in the hierarchy, behind the card, so
+    /// "the drawer exists" says nothing about whether it opened. The card is
+    /// pushed, not covered — ChatGPT's drawer keeps a fifth of it in view as
+    /// the way back — so the composer's "+" travels with it to the trailing
+    /// side rather than leaving the screen.
     @MainActor
     func testSwipingFromTheLeadingEdgeStillOpensTheDrawer() {
         let app = launch([])
@@ -395,6 +409,8 @@ final class JunoMobileComposerUITests: XCTestCase {
         let plus = app.buttons["juno.mobile.chat-plus"]
         require(plus, app)
         XCTAssertTrue(plus.isHittable, "The composer is not reachable to begin with.")
+        let startX = plus.frame.minX
+        let width = app.windows.firstMatch.frame.width
 
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.004, dy: 0.5))
             .press(
@@ -403,7 +419,11 @@ final class JunoMobileComposerUITests: XCTestCase {
             )
 
         let revealed = expectation(
-            for: NSPredicate(format: "isHittable == false"), evaluatedWith: plus
+            for: NSPredicate { element, _ in
+                guard let element = element as? XCUIElement else { return false }
+                return element.frame.minX > startX + width * 0.5
+            },
+            evaluatedWith: plus
         )
         XCTAssertEqual(
             XCTWaiter().wait(for: [revealed], timeout: 5),
@@ -528,11 +548,19 @@ final class JunoMobileComposerUITests: XCTestCase {
         XCTAssertGreaterThanOrEqual(action.frame.height, 32, "Primary action hit area collapsed to the glyph")
     }
 
+    /// A model that cannot think has nothing to dial. The gauge stays in the
+    /// row — the composer lost its model chip, so the gauge is the composer's
+    /// one model control — and a tap on it offers the model list instead of a
+    /// slider.
     @MainActor
-    func testANonReasoningModelHidesTheThinkingControl() {
+    func testANonReasoningModelsDialOffersTheModelInsteadOfASlider() {
         let app = launch(["--juno-preview-model", "google:gemini-3-flash"])
 
-        require(app.buttons["juno.mobile.chat-model"], app)
-        XCTAssertFalse(thinkingChip(app).exists)
+        let chip = thinkingChip(app)
+        require(chip, app)
+        chip.tap()
+
+        require(app.descendants(matching: .any)["juno.mobile.model-list"].firstMatch, app, timeout: 5)
+        XCTAssertFalse(thinkingSlider(app).exists, "A model without levels offered a thinking slider.")
     }
 }
