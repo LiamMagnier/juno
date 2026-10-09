@@ -45,6 +45,7 @@
     "native:design:menus": "node scripts/check-native-menus.mjs",
     "native:design:sficons": "node scripts/check-native-sficons.mjs",
     "native:design:symbols": "node scripts/check-native-symbols.mjs",
+    "native:design:spacing": "node scripts/check-native-spacing.mjs",
     "native:snapshots:transcript": "bash scripts/native-snapshots.sh",
     "native:sync:check": "node scripts/check-native-sync.mjs",
     "native:parity:label": "node scripts/check-native-parity-label.mjs",

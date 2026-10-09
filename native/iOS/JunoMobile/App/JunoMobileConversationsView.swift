@@ -1323,10 +1323,15 @@ private struct JunoMobileConversationDetail: View {
     // inspector beside it, the website's right-side panel: resizable, the
     // thread keeping its place. On the phone the same content is a sheet.
     thread
+      .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { barWidth = $0 }
       .inspector(isPresented: inspectorShown) {
         inspectorContent
           .inspectorColumnWidth(min: 360, ideal: 460, max: 640)
       }
+      // Outside the inspector, so the iPad's bar carries the title and New
+      // chat over the thread column: declared inside it, iPadOS drew the
+      // detail's bar empty (spacing pass).
+      .toolbar { conversationToolbar }
   }
 
   @ViewBuilder
@@ -1413,8 +1418,6 @@ private struct JunoMobileConversationDetail: View {
         composerFocused = true
       }
       .navigationBarTitleDisplayMode(.inline)
-      .toolbar { conversationToolbar }
-      .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { barWidth = $0 }
       .junoTranscriptFind(
         find, messages: messages, signature: streamSignature,
         follows: $follows, scrollPosition: $scrollPosition
