@@ -361,7 +361,7 @@ button.cv2-step:hover .verb { text-decoration: underline; text-decoration-color:
 .cv2-stepper button { width: 24px; height: 24px; border-radius: 6px; display: grid; place-items: center; color: hsl(var(--muted-foreground)); }
 .cv2-stepper button:hover { background: hsl(var(--accent)); color: hsl(var(--foreground)); }
 .cv2-stepper .n { min-width: 18px; text-align: center; font-variant-numeric: tabular-nums; }
-.cv2-modelbtn { min-width: 196px; max-width: 280px; display: grid; grid-template-columns: 16px minmax(0, 1fr) 12px; align-items: center; column-gap: 8px; padding: 4px 10px; border-radius: 9px; box-shadow: inset 0 0 0 1px hsl(var(--border)); text-align: left; background: hsl(var(--card)); }
+.cv2-modelbtn { width: 288px; display: grid; grid-template-columns: 16px minmax(0, 1fr) 12px; align-items: center; column-gap: 8px; padding: 4px 10px; border-radius: 9px; box-shadow: inset 0 0 0 1px hsl(var(--border)); text-align: left; background: hsl(var(--card)); }
 .cv2-modelbtn:hover { background: hsl(var(--accent)); }
 .cv2-modelbtn .l2 { font-size: 12px; line-height: 16px; color: hsl(var(--muted-foreground)); }
 .cv2-budget { width: 76px; height: 30px; border-radius: 8px; box-shadow: inset 0 0 0 1px hsl(var(--border)); background: hsl(var(--card)); border: 0; padding: 0 10px; font: inherit; color: hsl(var(--foreground)); font-variant-numeric: tabular-nums; }

@@ -54,6 +54,9 @@ export interface ConnectionsProps {
   onClose?: () => void;
 }
 
+/** What a held runtime's row says instead of a status or an action. */
+const HELD_SENTENCE = "Not available yet. It turns on once Google confirms other apps may run it with your sign-in.";
+
 /** Subscriptions shown before a device reports anything (all rows disabled). */
 const PLACEHOLDER_SUBSCRIPTIONS: ProviderInstance[] = [
   { id: "claude-agent:default", kind: "claude-agent", label: "Claude", status: "unknown" },
@@ -91,12 +94,15 @@ function Meter({ label, pct, resetsAt }: { label: string; pct?: number; resetsAt
 function SubscriptionRow({
   instance,
   disabled,
+  held = false,
   onProbe,
   onSetup,
   onDisconnect,
 }: {
   instance: ProviderInstance;
   disabled: boolean;
+  /** Listed but not offered yet (a runtime waiting on its vendor-terms check). */
+  held?: boolean;
   onProbe?: ConnectionsProps["onProbe"];
   onSetup?: ConnectionsProps["onSetup"];
   onDisconnect?: ConnectionsProps["onDisconnect"];
@@ -132,7 +138,11 @@ function SubscriptionRow({
       setBusy(null);
     }
   };
-  const sentence = disabled ? "Connect your Mac to check this." : connectionSentence(instance);
+  const sentence = held
+    ? HELD_SENTENCE
+    : disabled
+      ? "Connect your Mac to check this."
+      : connectionSentence(instance);
   return (
     <div className="cv2-li" aria-disabled={disabled || undefined}>
       <span className="cv2-tile">
@@ -141,11 +151,11 @@ function SubscriptionRow({
       <div style={{ minWidth: 0 }}>
         <div className="nm">{displayName(instance)}</div>
         <div className={cn("ds", expired && "cv2-sig")} data-checking={busy === "probe"} key={sentence}>
-          {expired ? "Sign-in expired. " : ""}
+          {expired && !/expired/i.test(sentence) ? "Sign-in expired. " : ""}
           {sentence}
           {note && !sentence.includes(note) ? ` ${note}` : ""}
         </div>
-        {!disabled && instance.limits?.length ? (
+        {!disabled && !held && instance.limits?.length ? (
           <div className="ds2">
             {instance.limits.map((w) => (
               <Meter key={w.id} label={w.label} pct={w.usedPct} resetsAt={w.resetsAt} />
@@ -154,10 +164,10 @@ function SubscriptionRow({
         ) : null}
         {error && <div className="ds cv2-del">{error}</div>}
         {setupLine && <div className="ds">{setupLine}</div>}
-        {!disabled && instance.checkedAt && <div className="ds" style={{ fontSize: 12 }}>Checked {ago(instance.checkedAt)}.</div>}
+        {!disabled && !held && instance.checkedAt && <div className="ds" style={{ fontSize: 12 }}>Checked {ago(instance.checkedAt)}.</div>}
       </div>
       <div style={{ position: "relative" }}>
-        {disabled ? (
+        {held ? null : disabled ? (
           <button type="button" className="cv2-btn" disabled>
             {CONNECTION_ACTION_LABELS[action === "manage" ? "re-check" : action]}
           </button>
@@ -344,7 +354,10 @@ export function ConnectionsPanel(props: ConnectionsProps) {
 
   const online = !!device?.online;
   const reported = instances.filter((i) => isSubscriptionKind(i.kind));
-  const subs = (online && reported.length ? reported : PLACEHOLDER_SUBSCRIPTIONS).filter((i) => isInstanceVisible(i, flags));
+  const listed = online && reported.length ? reported : PLACEHOLDER_SUBSCRIPTIONS;
+  const subs = listed.filter((i) => isInstanceVisible(i, flags));
+  // Runtimes behind a terms check (Antigravity) are listed, honestly, rather than missing.
+  const held = PLACEHOLDER_SUBSCRIPTIONS.filter((p) => !isInstanceVisible(p, flags)).map((p) => listed.find((i) => i.id === p.id) ?? p);
   const setKey = (provider: ByokProvider, r: ByokKeyRecord | null) => setKeys((ks) => [...ks.filter((k) => k.provider !== provider), ...(r ? [r] : [])]);
 
   const content = (
@@ -390,6 +403,9 @@ export function ConnectionsPanel(props: ConnectionsProps) {
         <div className="cv2-list">
           {subs.map((i) => (
             <SubscriptionRow key={i.id} instance={i} disabled={!online} onProbe={props.onProbe} onSetup={props.onSetup} onDisconnect={props.onDisconnect} />
+          ))}
+          {held.map((i) => (
+            <SubscriptionRow key={i.id} instance={i} disabled held />
           ))}
         </div>
       </section>

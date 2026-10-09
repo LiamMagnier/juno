@@ -61,7 +61,7 @@ export function runWorktreeSetup(worktree: string, timeoutMs = 10 * 60_000): Pro
 
 /** The user's environment minus anything Alevr set for itself (a repo script is not trusted with it). */
 export function scriptEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = {};
+  const env = {} as NodeJS.ProcessEnv;
   for (const [k, v] of Object.entries(base)) {
     if (v === undefined || k.startsWith("ALEVR_") || k.startsWith("JUNO_")) continue;
     env[k] = v;

@@ -26,6 +26,9 @@ public struct CodeV2ConnectionsView: View {
         self.antigravityEnabled = antigravityEnabled
     }
 
+    /// What the Antigravity row says while it is on legal hold (docs/code-v2/PROVIDERS-LEGAL.md).
+    static let heldSentence = "Not available yet. It turns on once Google confirms other apps may run it with your sign-in."
+
     private var subscriptions: [CodeV2.ProviderInstance] {
         CodeV2ProviderDirectory.build(
             alevr: CodeV2AlevrCatalog.instance(from: []),
@@ -61,6 +64,20 @@ public struct CodeV2ConnectionsView: View {
                         setup: { action in Task { await hub.openSetup(for: instance.id, action: action) } },
                         recheck: { Task { await hub.probe(instance.id) } }
                     )
+                }
+                if !antigravityEnabled {
+                    // Listed, honestly, rather than missing while its terms check is open.
+                    HStack(spacing: JunoSpace.cozy) {
+                        CodeV2MarkTile(id: "google", name: "Antigravity", dimmed: true)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Antigravity").font(Studio.Font.labelEmphasis).foregroundStyle(Studio.Ink.secondary)
+                            Text(Self.heldSentence)
+                                .font(Studio.Font.meta).foregroundStyle(Studio.Ink.tertiary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer()
+                    }
+                    .padding(.vertical, JunoSpace.tight)
                 }
                 if let error = hub.lastError {
                     Text(error).font(Studio.Font.meta).foregroundStyle(Studio.Ink.danger)

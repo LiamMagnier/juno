@@ -179,13 +179,16 @@ test("the streaming state glows, offers Stop and lists the queued follow-up with
   assert.match(html, /Changed 3 files/);
 });
 
-test("Connections names subscriptions by the owner's rules and keeps Antigravity hidden behind its flag", () => {
+test("Connections names subscriptions by the owner's rules and lists Antigravity as held behind its flag", () => {
   const html = renderToStaticMarkup(React.createElement(ConnectionsPanel, { instances: INSTANCES, device: DEVICE }));
   assert.match(html, /Claude \(your subscription\)/);
   assert.match(html, /ChatGPT \(Codex\)/);
   assert.match(html, /Sign in again/);
   assert.match(html, /Install/);
-  assert.doesNotMatch(html, /Antigravity/);
+  // Listed honestly while its terms check is open: no action, no status, a plain sentence.
+  assert.match(html, /Antigravity<\/div><div class="ds"[^>]*>Not available yet\./);
+  const enabled = renderToStaticMarkup(React.createElement(ConnectionsPanel, { instances: INSTANCES, device: DEVICE, flags: { "providers.antigravity": true } }));
+  assert.doesNotMatch(enabled, /Not available yet/);
   assert.doesNotMatch(html, /Claude Code/);
   const offline = renderToStaticMarkup(React.createElement(ConnectionsPanel, { instances: [], device: null }));
   assert.match(offline, /Download for Mac/);
