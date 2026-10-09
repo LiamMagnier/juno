@@ -514,6 +514,11 @@ export function TierPopover({
   );
 }
 
+/** "Claude, ChatGPT and DeepSeek Harness". */
+export function listWords(words: readonly string[]): string {
+  return words.length <= 1 ? (words[0] ?? "") : `${words.slice(0, -1).join(", ")} and ${words[words.length - 1]}`;
+}
+
 // ── Orchestrate (⌘⇧O) ──────────────────────────────────────────────────────
 
 function Stepper({ value, min, max, onChange, label }: { value: number; min: number; max: number; onChange: (n: number) => void; label: string }) {
@@ -746,7 +751,7 @@ export function OrchestratePopover({
         </div>
         {(est.subscriptionRoles || est.byokRoles) && (
           <div style={{ fontSize: 12, lineHeight: "16px" }}>
-            {est.subscriptionRoles && `Subscription roles count against your ${subNames.join(" and ")} ${subNames.length > 1 ? "plans" : "plan"}, not this budget. `}
+            {est.subscriptionRoles && `Subscription roles count against your ${listWords(subNames)} ${subNames.length > 1 ? "plans" : "plan"}, not this budget. `}
             {est.byokRoles && "Roles on your own keys are billed by the lab."}
           </div>
         )}

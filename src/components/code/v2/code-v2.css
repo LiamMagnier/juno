@@ -53,8 +53,10 @@
   font-feature-settings: "cv11", "ss01";
   -webkit-font-smoothing: antialiased;
 }
-.cv2 button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+.cv2 button { font: inherit; border: 0; cursor: pointer; }
+:where(.cv2) button { background: none; color: inherit; }
 .cv2 button:disabled { cursor: default; }
+.cv2 button:not(.cv2-send):disabled { opacity: 0.5; }
 .cv2 a { color: inherit; text-decoration: none; }
 .cv2-only-overlay { display: none; }
 .cv2 :focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; border-radius: 8px; }
@@ -143,7 +145,7 @@
 
 /* ── Thread ──────────────────────────────────────────────────────────── */
 .cv2-scroll { position: relative; flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 28px 32px 24px; overflow-anchor: auto; scrollbar-gutter: stable; }
-.cv2-col { max-width: var(--thread-measure); margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+.cv2-col { width: 100%; max-width: var(--thread-measure); margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
 .cv2-empty { flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: stretch; padding: 0 32px 18vh; }
 .cv2-empty .where { color: hsl(var(--muted-foreground)); margin: 0 auto 12px; max-width: var(--thread-measure); width: 100%; padding-left: 4px; }
 .cv2-you { align-self: flex-end; max-width: 82%; background: hsl(var(--user-bubble)); border-radius: 18px; padding: 10px 14px; font-size: 14px; line-height: 22px; white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -313,6 +315,7 @@ button.cv2-step:hover .verb { text-decoration: underline; text-decoration-color:
 .cv2-pop-grab { display: none; }
 .cv2-pop-search { display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 14px; border-bottom: 1px solid hsl(var(--border)); color: hsl(var(--faint-foreground)); flex: none; }
 .cv2-pop-search input { flex: 1; min-width: 0; border: 0; outline: none; background: transparent; font: inherit; font-size: 13.5px; color: hsl(var(--foreground)); }
+.cv2-pop-search input:focus-visible { outline: none; }
 .cv2-pop-search input::placeholder { color: hsl(var(--faint-foreground)); }
 .cv2-pop-sect { height: 28px; display: flex; align-items: flex-end; padding: 0 14px 4px; font-size: 12px; font-weight: 500; color: hsl(var(--muted-foreground)); flex: none; }
 .cv2-pop-head { display: flex; align-items: center; gap: 10px; padding: 14px 16px 6px; flex: none; }
@@ -380,6 +383,7 @@ button.cv2-step:hover .verb { text-decoration: underline; text-decoration-color:
 .cv2-tab[aria-selected="true"] { color: hsl(var(--foreground)); }
 .cv2-tab .fill { position: absolute; inset: 0; border-radius: 8px; background: hsl(var(--selected)); z-index: -1; }
 .cv2-tab > * { position: relative; }
+.cv2-tabs.compact .cv2-tab:not([aria-selected="true"]) .lbl { display: none; }
 .cv2-tab .n { color: hsl(var(--muted-foreground)); font-variant-numeric: tabular-nums; }
 .cv2-dockbar { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 14px; border-bottom: 1px solid hsl(var(--border)); flex: none; }
 .cv2-dockscroll { flex: 1; overflow: auto; min-height: 0; }
@@ -499,9 +503,13 @@ button.cv2-step:hover .verb { text-decoration: underline; text-decoration-color:
   .cv2-pop-grab { display: block; width: 36px; height: 5px; border-radius: 3px; background: hsl(var(--border)); margin: 8px auto 2px; flex: none; }
   .cv2-pop-scrim { display: block; position: fixed; inset: 0; background: hsl(var(--scrim)); z-index: 39; animation: cv2-fade var(--dur-mid) var(--cv2-ease) both; }
   .cv2-picker { flex-direction: column; }
+  .cv2-pop-foot { flex-wrap: wrap; row-gap: 8px; }
   .cv2-rail { width: auto; flex-direction: row; justify-content: flex-start; border-right: 0; border-bottom: 1px solid hsl(var(--border)); padding: 6px 10px; overflow-x: auto; }
   .cv2-rail-bar, .cv2-rail-sep { display: none; }
-  .cv2-role { grid-template-columns: minmax(0, 1fr); }
+  .cv2-role { grid-template-columns: minmax(0, 1fr); row-gap: 8px; }
+  .cv2-role > span:empty { display: none; }
+  .cv2-pop-foot .cv2-row { flex-wrap: wrap; row-gap: 6px; }
+  .cv2-pop-foot .cv2-row > span { white-space: nowrap; }
   .cv2-modelbtn { min-width: 0; max-width: none; width: 100%; }
   .cv2-page { padding: 20px 16px; }
   .cv2-li { grid-template-columns: 32px minmax(0, 1fr); row-gap: 10px; }

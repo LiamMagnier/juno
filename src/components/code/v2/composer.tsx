@@ -77,7 +77,7 @@ function ApprovalTakeover({
   const [answers, setAnswers] = React.useState<Record<string, string[]>>({});
   const [other, setOther] = React.useState("");
   React.useEffect(() => {
-    primary.current?.focus({ preventScroll: true });
+    primary.current?.focus({ preventScroll: true, focusVisible: false } as FocusOptions);
     setAnswers({});
     setOther("");
   }, [req?.id]);
@@ -440,7 +440,8 @@ export const Composer = React.forwardRef<
   const traits = traitsLabel(instances, selection);
   const runtime = runtimeModeInfo(model.runtimeMode);
   const tightest = tightestWindow(instance?.limits);
-  const glow = needs ? "needs" : running && !model.offline ? "working" : "";
+  const planWaiting = model.items.some((i) => i.kind === "plan" && i.awaitingApproval);
+  const glow = needs || planWaiting ? "needs" : running && !model.offline ? "working" : "";
   const todo = [...model.items].reverse().find((i) => i.kind === "todo_list");
   const liveTodo = running && todo && todo.kind === "todo_list" ? todo : null;
   const threadTokens = model.usage?.contextTokens ?? 0;
@@ -600,7 +601,6 @@ export const Composer = React.forwardRef<
               <Glyph name="chevron-down" size={12} />
             </button>
             <span className="cv2-grow" />
-            {model.offline && <span className="cv2-offline cv2-trunc">Offline. Sends when {model.device?.name ?? "your Mac"} is back.</span>}
             <button
               type="button"
               className="cv2-ctl"
@@ -715,7 +715,8 @@ export const Composer = React.forwardRef<
         )}
         {escArmed !== null && running && <div className="cv2-esc-hint">Press Esc again to stop</div>}
       </div>
-      {instance && !needs && tightest && (instance.kind === "claude-agent" || instance.kind === "codex" || instance.kind === "acp") && model.state !== "limited" && (
+      {model.offline && <div className="cv2-offline">Offline. Sends when {model.device?.name ?? "your Mac"} is back.</div>}
+      {instance && !needs && !model.offline && tightest && (instance.status === "ready" || instance.status === "limited") && (instance.kind === "claude-agent" || instance.kind === "codex" || instance.kind === "acp") && model.state !== "limited" && (
         <div className="cv2-offline cv2-row cv2-wide" style={{ gap: 6 }}>
           <InstanceMark instance={instance} size={12} />
           <span className="cv2-tnum">

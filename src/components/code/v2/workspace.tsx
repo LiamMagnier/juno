@@ -7,7 +7,6 @@
  * the CodeTask path; the /dev/code-v2 gallery from fixtures), so every state
  * can be shown and tested without a backend.
  */
-import "./code-v2.css";
 import * as React from "react";
 import type { DockTab } from "@/lib/code-v2/dock";
 import { DOCK_TAB_GLYPHS, DOCK_TAB_LABELS, dockReducer, initialDockState } from "@/lib/code-v2/dock";

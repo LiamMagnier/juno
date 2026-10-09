@@ -178,12 +178,12 @@ function workedTurn(): TurnItem[] {
     { id: "r1", turnId: "turn1", kind: "reasoning", text: "The drift is an ordering problem: the browser applies the coupon before tax, the payment intent applies it after. Fix the order in one place and make the client read it.", streaming: false, summary: true, createdAt: at(12, 3) },
     { id: "s1", turnId: "turn1", kind: "search", callId: "c1", query: "src/cart/selectors.ts", scope: "files", status: "completed", createdAt: at(12, 10) },
     { id: "s2", turnId: "turn1", kind: "search", callId: "c2", query: "cartTotal", scope: "content", matches: 11, status: "completed", createdAt: at(12, 14) },
-    { id: "f1", turnId: "turn1", kind: "file_change", callId: "c3", status: "completed", createdAt: at(11), changes: [{ path: "src/server/cart/total.ts", change: "modify", diff: DIFF_TOTAL, additions: 84, deletions: 6 }] },
-    { id: "f2", turnId: "turn1", kind: "file_change", callId: "c4", status: "completed", createdAt: at(10), changes: [{ path: "src/cart/useCartTotal.ts", change: "modify", diff: DIFF_HOOK, additions: 22, deletions: 18 }] },
-    { id: "f3", turnId: "turn1", kind: "file_change", callId: "c5", status: "completed", createdAt: at(9), changes: [{ path: "src/server/cart/total.server.test.ts", change: "add", diff: DIFF_TEST, additions: 12, deletions: 0 }] },
+    { id: "f1", turnId: "turn1", kind: "file_change", callId: "c3", status: "completed", createdAt: at(11), changes: [{ path: "src/server/cart/total.ts", change: "modify", diff: DIFF_TOTAL, additions: 7, deletions: 3 }] },
+    { id: "f2", turnId: "turn1", kind: "file_change", callId: "c4", status: "completed", createdAt: at(10), changes: [{ path: "src/cart/useCartTotal.ts", change: "modify", diff: DIFF_HOOK, additions: 3, deletions: 1 }] },
+    { id: "f3", turnId: "turn1", kind: "file_change", callId: "c5", status: "completed", createdAt: at(9), changes: [{ path: "src/server/cart/total.server.test.ts", change: "add", diff: DIFF_TEST, additions: 6, deletions: 0 }] },
     { id: "x1", turnId: "turn1", kind: "command_execution", callId: "c6", command: "pnpm test --filter cart", output: "✓ cart/total.server.test.ts (9)\n✓ cart/useCartTotal.test.tsx (6)\nTests 15 passed", exitCode: 0, durationMs: 21_000, status: "completed", createdAt: at(8, 30) },
     { id: "a1", turnId: "turn1", kind: "assistant_message", text: "The browser total and the charged total came from two different sums: `selectCartTotal` applied the coupon before tax, the payment intent applied it after. I moved the sum into `/api/cart/total` and the cart now reads it from there.", streaming: false, createdAt: at(8) },
-    { id: "k1", turnId: "turn1", kind: "checkpoint", checkpointId: "cp1", turnOrdinal: 1, filesChanged: 3, additions: 118, deletions: 24, createdAt: at(8) },
+    { id: "k1", turnId: "turn1", kind: "checkpoint", checkpointId: "cp1", turnOrdinal: 1, filesChanged: 3, additions: 16, deletions: 4, createdAt: at(8) },
   ];
 }
 

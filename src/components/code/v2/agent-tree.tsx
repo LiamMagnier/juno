@@ -83,7 +83,7 @@ function Kid({ item, instances, selected, onSelect, delay }: { item: SubagentIte
       <span className="b">
         <span className="name block cv2-trunc" style={{ display: "inline" }}>{item.title ?? item.task ?? label}</span>
         <span className="cv2-row cv2-mute" style={{ gap: 6 }}>
-          <span>{label}</span>
+          <span style={{ flex: "none", whiteSpace: "nowrap" }}>{label}</span>
           <span aria-hidden>·</span>
           <ModelMark modelId={item.model.model} instance={instance} />
           <span className="cv2-trunc">
@@ -178,11 +178,12 @@ export function BestOfN({
             <div className="ch">
               <ModelMark modelId={item.model.model} instance={instance} />
               <span className="cv2-m cv2-trunc">{item.label ?? `Candidate ${String.fromCharCode(65 + i)}`}</span>
-              <span className="cv2-mute cv2-trunc" style={{ marginLeft: "auto" }}>
-                {modelLabelFor(item.model.model, instances, item.model.instanceId)}
-              </span>
             </div>
             <div className="cb">
+              <div className="cv2-mute cv2-trunc">
+                {modelLabelFor(item.model.model, instances, item.model.instanceId)}
+                {instance && instance.kind !== "alevr" ? ` · ${displayName(instance)}` : ""}
+              </div>
               <div className="cv2-row cv2-mute cv2-tnum" style={{ gap: 10 }}>
                 {item.status === "running" ? <Spinner /> : item.status === "failed" ? <Glyph name="error-circle" className="cv2-del" /> : <Glyph name="check" className="cv2-add" />}
                 <span>{item.elapsedMs !== undefined ? formatDuration(item.elapsedMs) : "…"}</span>

@@ -777,15 +777,15 @@ export function Dock({
           }
         }}
       />
-      <div className="cv2-tabs" role="tablist" aria-label="Dock tabs">
+      <div className={cn("cv2-tabs", tabs.length > 4 && width < 560 && !dock.expanded && "compact")} role="tablist" aria-label="Dock tabs">
         <button type="button" className="cv2-iconbtn cv2-only-narrow" aria-label="Close the dock" onClick={() => dispatch({ type: "close" })}>
           <Glyph name="close" />
         </button>
         {tabs.map((t) => (
-          <button key={t} type="button" role="tab" aria-selected={dock.tab === t} className="cv2-tab" onClick={() => dispatch({ type: "open", tab: t, threadId: model.thread.id })}>
+          <button key={t} type="button" role="tab" aria-selected={dock.tab === t} className="cv2-tab" title={DOCK_TAB_LABELS[t]} aria-label={DOCK_TAB_LABELS[t]} onClick={() => dispatch({ type: "open", tab: t, threadId: model.thread.id })}>
             {dock.tab === t && <motion.span layoutId="dock-tab" className="fill" transition={reduce ? { duration: 0 } : { type: "spring", stiffness: 420, damping: 40 }} />}
             <Glyph name={DOCK_TAB_GLYPHS[t]} size={14} />
-            <span>{DOCK_TAB_LABELS[t]}</span>
+            <span className="lbl">{DOCK_TAB_LABELS[t]}</span>
             {counts[t] ? <span className="n">{counts[t]}</span> : null}
           </button>
         ))}

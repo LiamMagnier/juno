@@ -135,7 +135,7 @@ function LiveState({ id, reduced, onLog }: { id: string; reduced: boolean; onLog
   return (
     <CodeWorkspace
       model={{ ...model, actions }}
-      ui={{ ...fixture.ui, reducedMotion: reduced }}
+      ui={{ ...fixture.ui, ...(typeof window !== "undefined" && window.innerWidth <= 760 ? { dockOpen: false } : {}), reducedMotion: reduced }}
       userName="Maya Okafor"
       firstRun={false}
       onProbe={async () => undefined}
