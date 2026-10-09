@@ -138,7 +138,9 @@ export class GitCheckpoints {
     const r = await git(root, ["for-each-ref", "--format=%(refname)", `${CHECKPOINT_REF_ROOT}/${safeRefSegment(threadId)}/turn/`]);
     return r.stdout
       .split("\n")
-      .map((l) => Number(l.trim().split("/").pop()))
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .map((l) => Number(l.split("/").pop()))
       .filter((n) => Number.isInteger(n))
       .sort((a, b) => a - b);
   }

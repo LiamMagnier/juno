@@ -188,13 +188,13 @@ export function fakeClaudeQuery(record: { options?: unknown[]; prompts?: string[
       if (/bash/.test(text)) {
         out.push({ type: "assistant", message: { content: [{ type: "tool_use", id: "tu1", name: "Bash", input: { command: "ls -la", description: "List files" } }] }, parent_tool_use_id: null, uuid: "a-tool", session_id });
         const r = await options.canUseTool!("Bash", { command: "ls -la" }, { signal: new AbortController().signal, suggestions: [{ type: "addRules", rules: [{ toolName: "Bash", ruleContent: "ls:*" }], behavior: "allow", destination: "session" }], toolUseID: "tu1" } as never);
-        const allowed = r.behavior === "allow";
+        const allowed = r?.behavior === "allow";
         out.push({ type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "tu1", content: allowed ? "README.md\nsrc" : "The user declined this action.", is_error: !allowed }] }, parent_tool_use_id: null, session_id });
         if ((r as { interrupt?: boolean }).interrupt) interrupted = true;
       }
       if (/plan/.test(text)) {
         const r = await options.canUseTool!("ExitPlanMode", { plan: "1. Read the code\n2. Fix the bug" }, { signal: new AbortController().signal, toolUseID: "tu-plan" } as never);
-        out.push({ type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "tu-plan", content: r.behavior === "deny" ? r.message : "ok", is_error: r.behavior === "deny" }] }, parent_tool_use_id: null, session_id });
+        out.push({ type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "tu-plan", content: r?.behavior === "deny" ? (r as { message: string }).message : "ok", is_error: r?.behavior === "deny" }] }, parent_tool_use_id: null, session_id });
       }
       if (/ask/.test(text)) {
         const r = await options.canUseTool!("AskUserQuestion", { questions: [{ question: "Which browser?", header: "browser", options: [{ label: "WebKit" }, { label: "Chromium" }] }] }, { signal: new AbortController().signal, toolUseID: "tu-ask" } as never);
