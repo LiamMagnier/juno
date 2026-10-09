@@ -1,0 +1,17 @@
+export { startEnvServer, dispatchCommand, defaultDataDir, type EnvServer, type EnvServerOptions } from "./server.js";
+export { SessionManager, WireError, stricterMode } from "./sessions/session-manager.js";
+export { SessionLog, DELTA_COALESCE_MS, type SessionMeta } from "./protocol/session-log.js";
+export { applySessionEvent } from "./protocol/reducer.js";
+export { ProviderRegistry, type InstanceConfig } from "./providers/registry.js";
+export type { ProviderAdapter, ProviderSession, TurnSink, TurnRequest, TurnResult, ProbeResult, McpEndpoint } from "./providers/types.js";
+export { ClaudeAgentAdapter, type ClaudeQueryFn } from "./providers/claude-agent.js";
+export { CodexAdapter, CODEX_CHATGPT_TOKEN_SHARING } from "./providers/codex.js";
+export { AcpAdapter } from "./providers/acp.js";
+export { AlevrEngineAdapter, type AlevrEngine } from "./providers/alevr.js";
+export { classifyUsageLimit, parseResetFromText } from "./providers/limits.js";
+export { ACP_PRESETS, defaultInstances } from "./providers/presets.js";
+export { GitCheckpoints, checkpointRef, CHECKPOINT_REF_ROOT } from "./git/checkpoints.js";
+export { createWorktree, removeWorktree } from "./git/worktrees.js";
+export { AlevrMcpServer, MCP_SERVER_NAME, type McpToolDefinition, type McpScope, type McpToolResult } from "./mcp/alevr-mcp.js";
+export { TerminalManager } from "./terminal/terminals.js";
+export * as codeV2 from "./contracts/code-v2.js";

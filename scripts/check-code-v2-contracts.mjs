@@ -28,6 +28,8 @@ import Ajv from "ajv";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SOURCE = join(root, "src/lib/code-v2/contracts.ts");
 const RUNNER_COPY = join(root, "runner/agent-core/src/contracts/code-v2.ts");
+// The env server (runner/env-server) builds standalone too and carries its own byte-identical copy.
+const ENV_SERVER_COPY = join(root, "runner/env-server/src/contracts/code-v2.ts");
 const SCHEMA = join(root, "contracts/code/alevr-code-v2.schema.json");
 const FIXTURES = join(root, "contracts/code/fixtures");
 const SWIFT = join(root, "native/Packages/JunoCode/Sources/JunoCodeCore/CodeV2Contracts.swift");
@@ -89,6 +91,7 @@ function buildSchema() {
     TurnOutcome: en(C.TURN_OUTCOME_VALUES),
     WireErrorCode: en(C.WIRE_ERROR_CODE_VALUES),
     ByokProvider: en(C.BYOK_PROVIDER_VALUES),
+    ProviderSetupAction: en(C.PROVIDER_SETUP_ACTION_VALUES),
 
     UsageWindow: obj({ id: nonEmpty, label: nonEmpty }, { usedPct: { type: "number", minimum: 0, maximum: 100 }, resetsAt: iso }),
     ProviderAccount: obj({}, { email: str, plan: str, tokenSource: str }),
@@ -293,6 +296,14 @@ function buildSchema() {
     { inputTokens: int, outputTokens: int },
     { cachedInputTokens: int, contextTokens: int, contextWindow: int, costUsd: num },
   );
+  definitions.ProviderSetupStep = obj(
+    { action: ref("ProviderSetupAction"), command: nonEmpty, label: nonEmpty },
+    { note: str, url: str },
+  );
+  definitions.SessionSummary = obj(
+    { id: nonEmpty, cwd: nonEmpty, state: ref("SessionState"), selection: ref("ModelSelection"), updatedAt: iso, lastSequence: int },
+    { title: str, parentSessionId: nonEmpty },
+  );
   definitions.QueuedInput = obj({ id: nonEmpty, input: ref("UserInput"), queuedAt: iso });
   definitions.SessionSnapshot = obj(
     {
@@ -305,13 +316,23 @@ function buildSchema() {
       items: arr(ref("TurnItem")),
       queue: arr(ref("QueuedInput")),
     },
-    { title: str, routing: ref("RoleRouting"), activeTurnId: str, resumeAt: iso, usage: ref("SessionUsage") },
+    {
+      title: str,
+      routing: ref("RoleRouting"),
+      activeTurnId: str,
+      resumeAt: iso,
+      usage: ref("SessionUsage"),
+      worktree: obj({ path: nonEmpty, branch: nonEmpty, repoRoot: nonEmpty }),
+    },
   );
 
   // Client commands.
   const sid = { sessionId: nonEmpty };
   const params = {
-    "session.open": obj({ cwd: nonEmpty }, { sessionId: nonEmpty, selection: ref("ModelSelection"), afterSequence: int }),
+    "session.open": obj(
+      { cwd: nonEmpty },
+      { sessionId: nonEmpty, selection: ref("ModelSelection"), afterSequence: int, worktree: bool },
+    ),
     "turn.start": obj(
       {
         ...sid,
@@ -339,6 +360,27 @@ function buildSchema() {
     "terminal.write": obj({ terminalId: nonEmpty, data: str }),
     "terminal.resize": obj({ terminalId: nonEmpty, cols: { type: "integer", minimum: 1 }, rows: { type: "integer", minimum: 1 } }),
     "terminal.close": obj({ terminalId: nonEmpty }),
+    "checkpoint.diff": obj(sid, { checkpointId: nonEmpty }),
+    "provider.setup": obj({ instanceId: nonEmpty, action: ref("ProviderSetupAction") }),
+    "session.list": obj({}, { cwd: nonEmpty, query: str, limit: { type: "integer", minimum: 1 } }),
+    "session.close": obj(sid),
+    "env.configure": obj(
+      {},
+      {
+        backend: obj(
+          { baseUrl: nonEmpty, authorization: nonEmpty },
+          {
+            models: arr(
+              obj(
+                { provider: nonEmpty, kind: en(["anthropic", "openai"]), model: nonEmpty, label: nonEmpty, available: bool },
+                { providerName: str, contextWindow: int, api: en(["chat", "responses"]) },
+              ),
+            ),
+          },
+        ),
+        byok: arr(obj({ provider: nonEmpty, apiKey: nonEmpty }, { baseUrl: str })),
+      },
+    ),
   };
   for (const t of C.CLIENT_COMMAND_TYPE_VALUES) if (!params[t]) throw new Error(`no params schema for ${t}`);
   definitions.ClientCommand = {
@@ -409,6 +451,13 @@ if (write) {
 } else {
   const copy = await readFile(RUNNER_COPY, "utf8").catch(() => null);
   if (copy !== source) fail(`${RUNNER_COPY} differs from ${SOURCE} (run with --write)`);
+}
+if (write) {
+  await mkdir(dirname(ENV_SERVER_COPY), { recursive: true });
+  await writeFile(ENV_SERVER_COPY, source);
+} else {
+  const copy = await readFile(ENV_SERVER_COPY, "utf8").catch(() => null);
+  if (copy !== source) fail(`${ENV_SERVER_COPY} differs from ${SOURCE} (run with --write)`);
 }
 
 // 2. Schema.

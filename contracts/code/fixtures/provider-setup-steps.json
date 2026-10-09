@@ -1,0 +1,8 @@
+{
+  "$def": "ProviderSetupStep",
+  "cases": [
+    { "action": "install", "command": "curl -fsSL https://claude.ai/install.sh | bash", "label": "Install Claude", "url": "https://docs.claude.com/en/docs/claude-code/setup" },
+    { "action": "login", "command": "claude auth login", "label": "Sign in to Claude", "note": "Signs in your own claude CLI. Alevr never sees the credential." },
+    { "action": "login", "command": "CODEX_HOME='/Users/me/.codex-work' codex login", "label": "Sign in to Codex" }
+  ]
+}
