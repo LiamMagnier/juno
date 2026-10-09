@@ -122,11 +122,15 @@ struct JunoMobilePushDrawer<Sidebar: View, Content: View>: View {
           .frame(width: proxy.size.width, height: proxy.size.height)
           .overlay {
             // The dim and the tap-to-close catcher, one layer.
+            // allowsHitTesting LAST: placed before contentShape/onTapGesture it
+            // only disabled the colour, and the tap gesture, shaped to the whole
+            // card, kept catching every touch with the drawer closed, so
+            // nothing in the conversation responded.
             Color.black
               .opacity((colorScheme == .dark ? 0.30 : 0.04) * progress)
-              .allowsHitTesting(isOpen)
               .contentShape(.rect)
               .onTapGesture { setOpen(false) }
+              .allowsHitTesting(isOpen)
               .accessibilityHidden(true)
           }
           // ChatGPT's card: the screen's own corner radius and a soft shadow
