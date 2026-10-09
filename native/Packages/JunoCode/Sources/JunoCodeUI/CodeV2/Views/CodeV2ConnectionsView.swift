@@ -47,7 +47,9 @@ public struct CodeV2ConnectionsView: View {
                     Text("Starting Alevr's local environment…").font(Studio.Font.meta).foregroundStyle(Studio.Ink.secondary)
                 }
             }
-            .padding(.horizontal, JunoSpace.roomy)
+            // On the grouped form's own leading edge (its inset plus a
+            // section's), so the title lines up with the section headings.
+            .padding(.horizontal, 38)
             .padding(.top, JunoSpace.roomy)
         Form {
             Section("Subscriptions") {

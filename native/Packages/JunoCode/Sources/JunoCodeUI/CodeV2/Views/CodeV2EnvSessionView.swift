@@ -15,6 +15,8 @@ public struct CodeV2EnvSessionView: View {
     var setup: ((String, CodeV2.ProviderSetupAction) -> Void)?
 
     @State private var pendingIndex = 0
+    /// "Resume at reset" was chosen: the task that sends "Continue." then.
+    @State private var resumeTask: Task<Void, Never>?
     @FocusState private var focused: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -147,10 +149,12 @@ public struct CodeV2EnvSessionView: View {
     private var takeover: AnyView? {
         guard !pending.isEmpty else {
             if snapshot.state == .limited, let instance {
+                let resumeDate = snapshot.resumeAt.flatMap(CodeV2Dates.parse)
                 return AnyView(CodeV2LimitedNotice(
-                    sentence: CodeV2ProviderDirectory.limitedSentence(instance, resumeAt: snapshot.resumeAt),
-                    resumeAtReset: nil,
-                    switchModel: openConnections
+                    sentence: CodeV2ProviderDirectory.limitedSentence(instance, resumeAt: snapshot.resumeAt)
+                        + (resumeTask == nil ? "" : " Alevr will continue then."),
+                    resumeAtReset: resumeDate == nil || resumeTask != nil ? nil : { scheduleResume(at: resumeDate!) },
+                    switchModel: { switchToAlevr() }
                 ))
             }
             return nil
@@ -174,6 +178,27 @@ public struct CodeV2EnvSessionView: View {
         }
     }
 
+    /// Sends "Continue." once the plan window resets (DESIGN §6).
+    private func scheduleResume(at date: Date) {
+        resumeTask = Task {
+            let wait = max(0, date.timeIntervalSinceNow) + 5
+            try? await Task.sleep(for: .seconds(wait))
+            guard !Task.isCancelled else { return }
+            await session.send(
+                "Continue.", selection: composer.selection, routing: composer.routing,
+                runtimeMode: composer.runtimeMode, interactionMode: composer.interactionMode
+            )
+            resumeTask = nil
+        }
+    }
+
+    /// Switch model from Limited: the first Alevr coding model the directory
+    /// lists, so the thread can carry on on Alevr's plan.
+    private func switchToAlevr() {
+        guard let alevr = directory.instance("alevr"), let model = alevr.models?.first else { return }
+        composer.choose(instanceId: "alevr", model: model)
+    }
+
     private var composerView: some View {
         let enabled = !isRunning
         return StudioComposer(
@@ -188,7 +213,8 @@ public struct CodeV2EnvSessionView: View {
             beam: snapshot.state == .running ? .line : nil,
             steer: canSteer ? { steer() } : nil,
             stopOnDoubleEscape: true,
-            takeover: takeover
+            takeover: takeover,
+            takeoverNeedsYou: !pending.isEmpty
         ) {
             CodeV2ComposerLeading(model: composer, directory: directory, isEnabled: enabled)
         } trailing: {

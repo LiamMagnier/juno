@@ -175,7 +175,7 @@ struct CodeV2AgentChildRow: View {
             Text("\(Text("Waiting for you:").foregroundStyle(Studio.Signal.ink))\(Text(rest).foregroundStyle(Studio.Ink.secondary))")
                 .font(Studio.Font.meta)
         } else if node.status == .running {
-            JunoShimmerText(line)
+            JunoShimmerText(line, font: Studio.Font.meta)
                 .font(Studio.Font.meta)
                 .foregroundStyle(Studio.Ink.secondary)
                 .lineLimit(1)
@@ -373,7 +373,7 @@ public struct CodeV2BestOfNCompare: View {
             } else {
                 HStack(spacing: JunoSpace.tight) {
                     CodeV2StateGlyph(state: .running, size: 14)
-                    JunoShimmerText(candidate.summary).font(Studio.Font.meta).foregroundStyle(Studio.Ink.secondary)
+                    JunoShimmerText(candidate.summary, font: Studio.Font.meta).foregroundStyle(Studio.Ink.secondary)
                 }
             }
             Spacer(minLength: JunoSpace.snug)

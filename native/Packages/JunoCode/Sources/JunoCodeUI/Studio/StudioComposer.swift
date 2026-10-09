@@ -66,6 +66,9 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
     /// question takeover (DESIGN §5.14). The shell, its position and its
     /// glow stay; the edge holds coral instead of travelling.
     var takeover: AnyView? = nil
+    /// The takeover is waiting on the reader (an approval, a question):
+    /// hold the coral edge. A Limited notice is not, and stays neutral.
+    var takeoverNeedsYou = true
     @ViewBuilder var leading: () -> Leading
     @ViewBuilder var trailing: () -> Trailing
 
@@ -157,7 +160,7 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
         )
         // Needs you: the edge holds, brighter, and does not travel.
         .overlay {
-            if takeover != nil {
+            if takeover != nil, takeoverNeedsYou {
                 RoundedRectangle(cornerRadius: Studio.Radius.composer, style: .continuous)
                     .strokeBorder(Studio.Signal.edge.opacity(0.7), lineWidth: 1.5)
                     .allowsHitTesting(false)
