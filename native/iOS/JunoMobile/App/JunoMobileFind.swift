@@ -13,58 +13,79 @@ struct JunoMobileFindBar: View {
   @FocusState private var focused: Bool
 
   var body: some View {
-    HStack(spacing: JunoSpace.snug) {
-      JunoSymbol(.search)
-        .foregroundStyle(Color.junoSecondaryInk)
-        .accessibilityHidden(true)
-      TextField("Find in conversation", text: $model.query)
-        .textFieldStyle(.plain)
-        .autocorrectionDisabled()
-        .textInputAutocapitalization(.never)
-        .submitLabel(.search)
-        .focused($focused)
-        .onSubmit {
-          model.next()
-          focused = true
+    // The drawer's search grammar: the field and its steppers in one glass
+    // capsule, the × beside it in a glass circle, both 44pt on one centre
+    // line, on the page's 16pt edges. It used to be a `.bar` material strip
+    // with a divider and a "Done" word (docs/native/spacing-pass/AUDIT.md X4).
+    GlassEffectContainer(spacing: JunoLayout.Control.gap) {
+      HStack(spacing: JunoLayout.Control.gap) {
+        HStack(spacing: JunoSpace.snug) {
+          JunoSymbol(.search)
+            .foregroundStyle(Color.junoSecondaryInk)
+            .accessibilityHidden(true)
+          TextField("Find in conversation", text: $model.query)
+            .textFieldStyle(.plain)
+            .autocorrectionDisabled()
+            .textInputAutocapitalization(.never)
+            .submitLabel(.search)
+            .focused($focused)
+            .onSubmit {
+              model.next()
+              focused = true
+            }
+            .accessibilityIdentifier("juno.mobile.find-field")
+          if !model.status.isEmpty {
+            Text(model.status)
+              .font(.footnote)
+              .monospacedDigit()
+              .foregroundStyle(Color.junoSecondaryInk)
+              .lineLimit(1)
+              .fixedSize()
+              .accessibilityIdentifier("juno.mobile.find-status")
+          }
+          HStack(spacing: 0) {
+            Button {
+              model.previous()
+            } label: {
+              JunoSymbol(.chevronUp)
+                .frame(width: JunoLayout.Bar.button - JunoSpace.cozy, height: JunoLayout.Bar.button)
+                .contentShape(.rect)
+            }
+            .disabled(model.matches.isEmpty)
+            .accessibilityLabel("Previous match")
+            Button {
+              model.next()
+            } label: {
+              JunoSymbol(.chevronDown)
+                .frame(width: JunoLayout.Bar.button - JunoSpace.cozy, height: JunoLayout.Bar.button)
+                .contentShape(.rect)
+            }
+            .disabled(model.matches.isEmpty)
+            .accessibilityLabel("Next match")
+          }
         }
-        .accessibilityIdentifier("juno.mobile.find-field")
-      if !model.status.isEmpty {
-        Text(model.status)
-          .font(.footnote)
-          .monospacedDigit()
-          .foregroundStyle(Color.junoSecondaryInk)
-          .lineLimit(1)
-          .fixedSize()
-          .accessibilityIdentifier("juno.mobile.find-status")
-      }
-      Button {
-        model.previous()
-      } label: {
-        JunoSymbol(.chevronUp)
-          .frame(minWidth: 44, minHeight: 44)
-          .contentShape(.rect)
-      }
-      .disabled(model.matches.isEmpty)
-      .accessibilityLabel("Previous match")
-      Button {
-        model.next()
-      } label: {
-        JunoSymbol(.chevronDown)
-          .frame(minWidth: 44, minHeight: 44)
-          .contentShape(.rect)
-      }
-      .disabled(model.matches.isEmpty)
-      .accessibilityLabel("Next match")
-      Button("Done") { model.close() }
-        .frame(minHeight: 44)
-        .contentShape(.rect)
+        .padding(.leading, JunoSpace.comfy)
+        .padding(.trailing, JunoSpace.hairline)
+        .frame(height: JunoLayout.Control.height)
+        .glassEffect(.regular.interactive(), in: Capsule())
+
+        Button {
+          model.close()
+        } label: {
+          JunoIconView(.close, size: JunoLayout.Control.glyph)
+            .foregroundStyle(Color.primary)
+            .frame(width: JunoLayout.Control.height, height: JunoLayout.Control.height)
+            .contentShape(Circle())
+        }
+        .glassEffect(.regular.interactive(), in: Circle())
+        .accessibilityLabel("Done")
         .accessibilityIdentifier("juno.mobile.find-done")
+      }
     }
     .buttonStyle(.borderless)
-    .padding(.leading, JunoSpace.regular)
-    .padding(.trailing, JunoSpace.snug)
-    .background(.bar)
-    .overlay(alignment: .bottom) { Divider() }
+    .tint(Color.primary)
+    .padding(.horizontal, JunoLayout.Page.gutter)
+    .padding(.vertical, JunoSpace.snug)
     .onAppear { focused = true }
   }
 }

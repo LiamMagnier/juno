@@ -463,8 +463,9 @@ public struct JunoCodeRunButton: View {
     }
 
     public var body: some View {
+        #if os(macOS)
         let button = Button(action: action) {
-            HStack(spacing: 5) {
+            HStack(spacing: JunoSpace.tight) {
                 JunoIconView(.play, size: 12)
                 Text(label)
             }
@@ -472,12 +473,23 @@ public struct JunoCodeRunButton: View {
             .contentShape(Capsule())
         }
         .controlSize(.small)
-        #if os(macOS)
         // The Mac's glass controls (JunoGlassControls.swift), with their
         // opaque stand-in offscreen and under Reduce Transparency.
         button.buttonStyle(.junoGlass)
         #else
-        button.buttonStyle(.glass).buttonBorderShape(.capsule)
+        // The phone's compact control: 36pt tall on the card's action line,
+        // the same height as Send answer beside it.
+        Button(action: action) {
+            HStack(spacing: JunoLayout.Control.labelGap) {
+                JunoIconView(.play, size: JunoSpace.cozy)
+                Text(label)
+            }
+            .junoFont(size: 14, relativeTo: .subheadline, weight: .medium)
+            .frame(minHeight: JunoLayout.Control.compactHeight - JunoSpace.cozy)
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.glass)
+        .buttonBorderShape(.capsule)
         #endif
     }
 }

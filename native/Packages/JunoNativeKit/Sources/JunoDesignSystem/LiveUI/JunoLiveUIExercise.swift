@@ -188,17 +188,20 @@ struct LiveExerciseView: View {
     // MARK: Actions
 
     private var actions: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: JunoLayout.Control.gap) {
             if shown < exercise.hints.count && !sent {
                 Button {
                     withAnimation(JunoMotion.fast) { shown += 1 }
                 } label: {
-                    HStack(spacing: 6) {
+                    HStack(spacing: JunoLayout.Control.labelGap) {
                         JunoIconView(.eye, size: 13)
                         Text(shown == 0 ? "Show a hint" : "Another hint")
                     }
                     .font(.callout)
-                    .contentShape(Capsule())
+                    #if os(iOS)
+                    .frame(minHeight: JunoLayout.touchTarget)
+                    #endif
+                    .contentShape(.rect)
                 }
                 .buttonStyle(.borderless)
                 .foregroundStyle(Color.junoSecondaryInk)
@@ -241,11 +244,11 @@ struct LiveExerciseView: View {
         // own ink (white fails on the light accents).
         return Button(action: send) {
             Text("Send answer")
-                .junoFont(size: 12, relativeTo: .footnote, weight: .medium)
+                .junoFont(size: 14, relativeTo: .subheadline, weight: .medium)
                 .foregroundStyle(canSend ? Color.junoOnAccent : Color.junoSecondaryInk)
+                .frame(minHeight: JunoLayout.Control.compactHeight - JunoSpace.cozy)
                 .contentShape(Capsule())
         }
-        .controlSize(.small)
         .junoProminentAction()
         #endif
     }

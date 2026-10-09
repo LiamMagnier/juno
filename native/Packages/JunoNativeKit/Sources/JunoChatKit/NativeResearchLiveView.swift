@@ -513,12 +513,14 @@ public struct NativeResearchLiveView: View {
     private func controlButton(_ title: String, icon: JunoIcon?, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: JunoSpace.tight) {
-                if let icon { JunoIconView(icon, size: 12) }
+                if let icon { JunoIconView(icon, size: compact ? JunoSpace.comfy : JunoSpace.cozy) }
                 Text(title)
                     .lineLimit(1)
             }
             .junoFont(size: 13, relativeTo: .callout, weight: .medium)
-            .frame(minHeight: compact ? 32 : 24)
+            // The phone's compact control height (36, a 44pt target with the
+            // glass's own inset); the Mac's small control.
+            .frame(minHeight: compact ? JunoLayout.Control.compactHeight : JunoSpace.section)
             .contentShape(.rect)
         }
         .buttonStyle(.junoGlass)
