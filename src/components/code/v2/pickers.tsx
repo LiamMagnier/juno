@@ -578,6 +578,8 @@ export function ContextRing({ usage, onOpen, expanded }: { usage?: SessionUsage;
         <circle cx="8" cy="8" r={r} fill="none" stroke="currentColor" strokeOpacity="0.3" strokeWidth="1.5" />
         <circle cx="8" cy="8" r={r} fill="none" stroke="currentColor" strokeWidth="1.5" strokeDasharray={`${c * view.fraction} ${c}`} strokeLinecap="round" transform="rotate(-90 8 8)" />
       </svg>
+      {/* The number makes the ring read as a gauge, never as a spinner. */}
+      <span className="cv2-ring-n">{Math.round(view.fraction * 100)}%</span>
     </button>
   );
 }

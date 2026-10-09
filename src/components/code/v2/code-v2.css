@@ -28,7 +28,7 @@
   --diff-del: 3.2 71% 50% / 0.08;
   --diff-del-strong: 3.2 71% 50% / 0.2;
   --diff-del-edge: 3.2 71% 50% / 0.65;
-  --cv2-shadow-pop: 0 0 0 1px hsl(var(--shadow-ink) / 0.08), 0 2px 6px -2px hsl(var(--shadow-ink) / 0.08), 0 8px 20px -6px hsl(var(--shadow-ink) / 0.16), 0 24px 56px -16px hsl(var(--shadow-ink) / 0.26);
+  --cv2-shadow-pop: 0 0 0 1px hsl(var(--shadow-ink) / 0.08), 0 2px 6px -1px hsl(var(--shadow-ink) / 0.08), 0 8px 28px 0 hsl(var(--shadow-ink) / 0.12), 0 20px 48px -8px hsl(var(--shadow-ink) / 0.18);
   --cv2-pop-edge: transparent;
   --cv2-code-keyword: 229 50% 45%;
   --cv2-code-comment: 217 4% 52%;
@@ -319,7 +319,8 @@ button.cv2-wl:hover .verb { color: hsl(var(--foreground)); }
 .cv2-send[data-mode="stop"] { background: hsl(var(--foreground)); color: hsl(var(--background)); }
 .cv2-send[data-mode="stop"] .glyph { opacity: 0; transform: scale(0.6); }
 .cv2-send[data-mode="stop"] .stop { opacity: 1; transform: none; }
-.cv2-ring { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 8px; color: hsl(var(--muted-foreground)); }
+.cv2-ring { height: 28px; padding: 0 6px; display: inline-flex; align-items: center; gap: 5px; border-radius: 8px; color: hsl(var(--muted-foreground)); }
+.cv2-ring-n { font-size: 12px; font-variant-numeric: tabular-nums; }
 .cv2-ring:hover, .cv2-ring[aria-expanded="true"] { background: hsl(var(--accent)); }
 .cv2-esc-hint { position: absolute; left: 0; right: 0; bottom: -24px; text-align: center; font-size: 12px; line-height: 16px; color: hsl(var(--muted-foreground)); animation: cv2-fade var(--dur-fast, 120ms) var(--cv2-ease) both; }
 
