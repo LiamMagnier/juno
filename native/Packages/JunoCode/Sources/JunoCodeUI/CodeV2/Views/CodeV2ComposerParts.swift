@@ -1,167 +1,349 @@
+// Portions adapted from T3 Code, Copyright (c) 2026 T3 Tools Inc., MIT License
+// (the composer's quiet-at-rest anatomy, the context strip that hangs under
+// it, and the approval panel that takes over its body).
 import SwiftUI
 import JunoCodeCore
 import JunoDesignSystem
 
-// MARK: - Footer controls
+// MARK: - The + menu
 
-/// The runtime mode control: a lock glyph and "Auto-edit". The modes are
-/// sandbox × approval presets (SPEC §3.7); a runtime that declares fewer
-/// modes offers only those. ⇧⌘A cycles.
-struct CodeV2ModeControl: View {
-    @Binding var mode: CodeV2.RuntimeMode
-    @Binding var interaction: CodeV2.InteractionMode
-    var allowed: [CodeV2.RuntimeMode] = CodeV2.RuntimeMode.allCases
-    var supportsPlan = true
-    var isEnabled = true
+/// Everything that is not on the composer at rest (code-v4 TARGET §7.1):
+/// plan mode, the run's mode, permissions and computer use. Lives in the
+/// composer's `+` menu, after the attach items the composer owns.
+struct CodeV2PlusMenuItems: View {
+    @Bindable var model: CodeV2ComposerModel
+    let directory: CodeV2ProviderDirectory
+    var computerUse: Binding<Bool>?
 
-    private var modes: [CodeV2.RuntimeMode] { allowed.isEmpty ? CodeV2.RuntimeMode.allCases : allowed }
+    private var capabilities: CodeV2.ProviderCapabilities? { directory.instance(model.selection.instanceId)?.capabilities }
+    private var modes: [CodeV2.RuntimeMode] {
+        let allowed = capabilities?.approvals ?? []
+        return allowed.isEmpty ? CodeV2.RuntimeMode.allCases : allowed
+    }
 
     var body: some View {
-        Menu {
-            Picker("Permissions", selection: $mode) {
-                ForEach(modes, id: \.self) { option in
-                    Text("\(option.title)  ·  \(option.summary)").tag(option)
-                }
-            }
-            .pickerStyle(.inline)
-            if supportsPlan {
-                Divider()
-                Toggle("Plan first", isOn: Binding(get: { interaction == .plan }, set: { interaction = $0 ? .plan : .default }))
-            }
-        } label: {
-            HStack(spacing: JunoSpace.tight + 1) {
-                JunoIconView(mode == .full ? .lockOpen : .lock, size: 14)
-                Text(interaction == .plan ? "Plan · \(mode.title)" : mode.title).lineLimit(1)
-                JunoIconView(.chevronDown, size: 11)
+        if capabilities?.planMode ?? true {
+            Toggle("Plan Mode", isOn: Binding(
+                get: { model.interactionMode == .plan },
+                set: { model.interactionMode = $0 ? .plan : .default }
+            ))
+        }
+        Picker("Mode", selection: Binding(get: { model.roles.preset }, set: { setPreset($0) })) {
+            Text("Solo").tag(CodeV2.RolePreset.solo)
+            Text("Team").tag(CodeV2.RolePreset.leadWorkers)
+            Text("Best of N").tag(CodeV2.RolePreset.bestOfN)
+        }
+        .pickerStyle(.menu)
+        Picker("Permissions", selection: $model.runtimeMode) {
+            ForEach(modes, id: \.self) { mode in
+                Text(CodeV2PermissionCopy.title(mode)).tag(mode)
             }
         }
-        .menuStyle(.button)
-        .menuIndicator(.hidden)
-        .buttonStyle(CodeV2FooterButtonStyle()).contentShape(.rect)
-        .fixedSize()
-        .disabled(!isEnabled)
-        .help("Permissions: what the agent may do without asking (⇧⌘A)")
-        .accessibilityLabel("Permissions")
-        .accessibilityValue(mode.title)
-        .background {
-            Button("") {
-                let index = modes.firstIndex(of: mode) ?? -1
-                mode = modes[(index + 1) % modes.count]
-            }
-            .keyboardShortcut("a", modifiers: [.command, .shift])
-            .hidden()
+        .pickerStyle(.menu)
+        if let computerUse {
+            Toggle("Computer Use", isOn: computerUse)
+        }
+    }
+
+    private func setPreset(_ preset: CodeV2.RolePreset) {
+        model.roles.preset = preset
+        if preset == .bestOfN, model.roles.candidates.count < CodeV2RoleDraft.candidateRange.lowerBound {
+            model.roles.setCandidateCount(3)
         }
     }
 }
 
-/// Everything on the composer's footer that is Code v2's (DESIGN §5.6):
-/// mode and orchestrate on the left; model, traits and the context gauge on
-/// the right. Used by both engines, so a thread on Alevr and a thread on a
-/// subscription are driven from the same controls.
+/// Permission names as the menu and the composer say them.
+enum CodeV2PermissionCopy {
+    /// The default; shown nowhere at rest.
+    static let defaultMode: CodeV2.RuntimeMode = .autoEdit
+
+    static func title(_ mode: CodeV2.RuntimeMode) -> String {
+        switch mode {
+        case .ask: "Ask first"
+        default: mode.title
+        }
+    }
+}
+
+// MARK: - Leading: the model trigger and what is not on its default
+
+/// The composer's left side after `+` (TARGET §7.1): the model trigger (mark,
+/// model, effort), then only the controls whose setting is not the default:
+/// `Lead + 3`, `Best of 3`, `Plan`, the permission when it is not Auto-edit,
+/// `Computer` while computer use is on. Used by both engines.
 struct CodeV2ComposerLeading: View {
     @Bindable var model: CodeV2ComposerModel
     let directory: CodeV2ProviderDirectory
     var isEnabled = true
-
-    private var capabilities: CodeV2.ProviderCapabilities? { directory.instance(model.selection.instanceId)?.capabilities }
-
-    var body: some View {
-        CodeV2ModeControl(
-            mode: $model.runtimeMode,
-            interaction: $model.interactionMode,
-            allowed: capabilities?.approvals ?? CodeV2.RuntimeMode.allCases,
-            supportsPlan: capabilities?.planMode ?? true,
-            isEnabled: isEnabled
-        )
-        CodeV2OrchestrateControl(directory: directory, draft: $model.roles, isEnabled: isEnabled)
-    }
-}
-
-struct CodeV2ComposerTrailing: View {
-    @Bindable var model: CodeV2ComposerModel
-    let directory: CodeV2ProviderDirectory
-    var context: CodeV2ContextReading?
     var threadTokens: Int = 0
-    var isEnabled = true
-    var compact: (() -> Void)?
+    var computerUse: Binding<Bool>?
     var openConnections: (() -> Void)?
     var setup: ((String, CodeV2.ProviderSetupAction) -> Void)?
 
     private var instance: CodeV2.ProviderInstance? { directory.instance(model.selection.instanceId) }
     private var providerModel: CodeV2.ProviderModel? { instance?.models?.first { $0.id == model.selection.model } }
+    private var modes: [CodeV2.RuntimeMode] {
+        let allowed = instance?.capabilities?.approvals ?? []
+        return allowed.isEmpty ? CodeV2.RuntimeMode.allCases : allowed
+    }
 
     var body: some View {
         CodeV2ModelControl(
-            directory: directory, selection: $model.selection, threadTokens: threadTokens, isEnabled: isEnabled,
+            directory: directory, selection: $model.selection, lean: $model.lean,
+            threadTokens: threadTokens, isEnabled: isEnabled,
             openConnections: openConnections, setup: setup,
             choose: { id, choice in model.choose(instanceId: id, model: choice) }
         )
-        CodeV2TraitsControl(
-            instance: instance, model: providerModel, selection: $model.selection, lean: $model.lean,
-            threadTokens: threadTokens, isEnabled: isEnabled
-        )
-        if let context {
+        if model.roles.preset != .solo {
+            CodeV2OrchestrateControl(directory: directory, draft: $model.roles, isEnabled: isEnabled)
+        }
+        if model.interactionMode == .plan {
+            Menu {
+                Button("Turn Off Plan Mode") { model.interactionMode = .default }
+            } label: {
+                CodeV2TextControlLabel(title: "Plan")
+            }
+            .menuStyle(.button).menuIndicator(.hidden)
+            .buttonStyle(CodeV2FooterButtonStyle()).fixedSize()
+            .help("Plan first, then build when you approve")
+            .accessibilityLabel("Plan mode")
+        }
+        if model.runtimeMode != CodeV2PermissionCopy.defaultMode {
+            Menu {
+                Picker("Permissions", selection: $model.runtimeMode) {
+                    ForEach(modes, id: \.self) { Text(CodeV2PermissionCopy.title($0)).tag($0) }
+                }
+                .pickerStyle(.inline)
+            } label: {
+                CodeV2TextControlLabel(title: CodeV2PermissionCopy.title(model.runtimeMode), icon: .shield)
+            }
+            .menuStyle(.button).menuIndicator(.hidden)
+            .buttonStyle(CodeV2FooterButtonStyle()).fixedSize()
+            .disabled(!isEnabled)
+            .help(model.runtimeMode.summary)
+            .accessibilityLabel("Permissions")
+            .accessibilityValue(model.runtimeMode.title)
+        }
+        if let computerUse, computerUse.wrappedValue {
+            Menu {
+                Button("Turn Off Computer Use") { computerUse.wrappedValue = false }
+            } label: {
+                CodeV2TextControlLabel(title: "Computer")
+            }
+            .menuStyle(.button).menuIndicator(.hidden)
+            .buttonStyle(CodeV2FooterButtonStyle()).fixedSize()
+            .help("Alevr may use apps on this Mac. Esc stops it.")
+            .accessibilityLabel("Computer use")
+        }
+        // The keyboard paths stay where the controls went: ⇧⌘A cycles the
+        // permission, ⇧⌘E the effort.
+        Color.clear.frame(width: 0, height: 0)
+            .background {
+                Button("") { model.cycleMode(allowed: modes) }
+                    .keyboardShortcut("a", modifiers: [.command, .shift])
+                    .hidden()
+                Button("") { model.cycleEffort(levels: providerModel?.effortLevels ?? []) }
+                    .keyboardShortcut("e", modifiers: [.command, .shift])
+                    .hidden()
+            }
+            .accessibilityHidden(true)
+    }
+}
+
+/// A text control's face: an optional glyph, the words, a small chevron.
+struct CodeV2TextControlLabel: View {
+    let title: String
+    var detail: String?
+    var icon: JunoIcon?
+
+    var body: some View {
+        HStack(spacing: JunoSpace.tight + 1) {
+            if let icon { JunoIconView(icon, size: 14) }
+            Text(title).lineLimit(1)
+            if let detail {
+                Text(detail).foregroundStyle(Studio.Ink.secondary).lineLimit(1)
+            }
+            JunoIconView(.chevronDown, size: 10).foregroundStyle(Studio.Ink.tertiary)
+        }
+    }
+}
+
+// MARK: - Trailing: context ring, queued follow-ups
+
+/// The composer's right side before the mic and send: the context ring once
+/// the thread has used more than 60% of its window, and `Queued (n)` while
+/// follow-ups wait (TARGET §7.1, §7.3).
+struct CodeV2ComposerTrailing: View {
+    var context: CodeV2ContextReading?
+    var compact: (() -> Void)?
+    var queue: [CodeV2.QueuedInput] = []
+    var editQueued: ((CodeV2.QueuedInput) -> Void)?
+    var steerQueued: ((CodeV2.QueuedInput) -> Void)?
+    var removeQueued: ((CodeV2.QueuedInput) -> Void)?
+
+    var body: some View {
+        if !queue.isEmpty {
+            CodeV2QueuedMenu(queue: queue, edit: editQueued, steer: steerQueued, remove: removeQueued)
+        }
+        if let context, context.fraction > 0.6 {
             CodeV2ContextGauge(reading: context, compact: compact)
         }
     }
 }
 
-// MARK: - Queue dock
-
-/// Above the composer while follow-ups wait (DESIGN §5.5): up to three rows,
-/// each with Edit and "Steer now ⌘↵", then "+2 more".
-struct CodeV2QueueDock: View {
+/// `Queued (2) ⌄`: the follow-ups that wait for the run, each with Edit,
+/// Steer now and Remove. Replaces the bar that used to sit above the composer.
+struct CodeV2QueuedMenu: View {
     let queue: [CodeV2.QueuedInput]
-    var edit: (CodeV2.QueuedInput) -> Void = { _ in }
+    var edit: ((CodeV2.QueuedInput) -> Void)?
     var steer: ((CodeV2.QueuedInput) -> Void)?
+    var remove: ((CodeV2.QueuedInput) -> Void)?
 
     var body: some View {
-        let model = CodeV2QueueDockModel(items: queue)
-        VStack(spacing: 0) {
-            ForEach(model.visible) { item in
-                HStack(spacing: JunoSpace.snug) {
-                    JunoIconView(.cornerDownRight, size: 14).foregroundStyle(Studio.Ink.secondary)
-                    Text(item.input.text).font(Studio.Font.label).foregroundStyle(Studio.Ink.primary).lineLimit(1)
-                    Spacer(minLength: JunoSpace.snug)
-                    Button { edit(item) } label: { JunoIconView(.pencil, size: 13) }
-                        .buttonStyle(StudioIconButtonStyle()).contentShape(.rect)
-                        .help("Edit (⌥↑ for the last one)")
-                        .accessibilityLabel("Edit queued message")
-                    if let steer {
-                        Button { steer(item) } label: {
-                            HStack(spacing: JunoSpace.tight) { Text("Steer now"); CodeV2Keycap(keys: "⌘↵") }
-                        }
-                        .buttonStyle(CodeV2OutlineButtonStyle(compact: true)).contentShape(.rect)
-                    }
+        Menu {
+            ForEach(queue, id: \.id) { item in
+                Menu(item.input.text) {
+                    if let steer { Button("Steer Now") { steer(item) } }
+                    if let edit { Button("Edit") { edit(item) } }
+                    if let remove { Button("Remove", role: .destructive) { remove(item) } }
                 }
-                .padding(.horizontal, JunoSpace.snug)
-                .frame(minHeight: 32)
             }
-            if let more = model.overflowLabel {
-                Text(more).font(Studio.Font.meta).foregroundStyle(Studio.Ink.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, JunoSpace.snug).frame(height: 24)
-            }
+        } label: {
+            CodeV2TextControlLabel(title: "Queued (\(queue.count))")
         }
-        .padding(4)
-        .background(RoundedRectangle(cornerRadius: Studio.Radius.menu, style: .continuous).fill(Studio.Surface.muted))
-        .overlay(RoundedRectangle(cornerRadius: Studio.Radius.menu, style: .continuous).strokeBorder(Studio.Surface.hairline))
-        .accessibilityElement(children: .contain)
+        .menuStyle(.button).menuIndicator(.hidden)
+        .buttonStyle(CodeV2FooterButtonStyle()).fixedSize()
+        .help("Follow-ups that send when the run finishes. ⌘↩ steers now.")
         .accessibilityLabel("Queued follow-ups")
+        .accessibilityValue("\(queue.count)")
+    }
+}
+
+// MARK: - Context strip
+
+/// Where a session runs: its project, branch and machine, and what choosing
+/// each one again does. Shown in the strip under the composer.
+public struct CodeV2SessionPlace {
+    public var project: String
+    public var branch: String?
+    public var machine: String
+    public var pullRequest: Int?
+    public var projectMenu: [(String, () -> Void)]
+    public var branchMenu: [(String, () -> Void)]
+    public var machineMenu: [(String, () -> Void)]
+
+    public init(
+        project: String, branch: String? = nil, machine: String = "This Mac", pullRequest: Int? = nil,
+        projectMenu: [(String, () -> Void)] = [], branchMenu: [(String, () -> Void)] = [],
+        machineMenu: [(String, () -> Void)] = []
+    ) {
+        self.project = project
+        self.branch = branch
+        self.machine = machine
+        self.pullRequest = pullRequest
+        self.projectMenu = projectMenu
+        self.branchMenu = branchMenu
+        self.machineMenu = machineMenu
+    }
+}
+
+/// Where the session runs, hanging under the composer like a drawer (TARGET
+/// §7.1): project and branch at the left, the machine at the right, all 12pt
+/// muted. Inset 22 from the composer's sides so it reads as part of it.
+public struct CodeV2ContextStrip: View {
+    public struct Item: Identifiable {
+        public var id: String { title }
+        public var title: String
+        public var icon: JunoIcon?
+        public var menu: [(String, () -> Void)]
+
+        public init(title: String, icon: JunoIcon? = nil, menu: [(String, () -> Void)] = []) {
+            self.title = title
+            self.icon = icon
+            self.menu = menu
+        }
+    }
+
+    let leading: [Item]
+    let trailing: [Item]
+
+    public init(leading: [Item], trailing: [Item] = []) {
+        self.leading = leading
+        self.trailing = trailing
+    }
+
+    public init(place: CodeV2SessionPlace) {
+        var leading = [Item(title: place.project, icon: .projects, menu: place.projectMenu)]
+        if let branch = place.branch { leading.append(Item(title: branch, icon: .branch, menu: place.branchMenu)) }
+        var trailing: [Item] = []
+        if let pr = place.pullRequest { trailing.append(Item(title: "#\(pr)", icon: .pulls)) }
+        trailing.append(Item(title: place.machine, icon: .device, menu: place.machineMenu))
+        self.init(leading: leading, trailing: trailing)
+    }
+
+    public var body: some View {
+        HStack(spacing: JunoSpace.tight) {
+            ForEach(leading) { item in control(item) }
+            Spacer(minLength: JunoSpace.snug)
+            ForEach(trailing) { item in control(item) }
+        }
+        .padding(.horizontal, JunoSpace.snug)
+        .frame(height: 32)
+        .background(
+            UnevenRoundedRectangle(
+                cornerRadii: .init(topLeading: 0, bottomLeading: 16, bottomTrailing: 16, topTrailing: 0),
+                style: .continuous
+            )
+            .fill(Studio.Surface.muted)
+        )
+        .overlay(
+            UnevenRoundedRectangle(
+                cornerRadii: .init(topLeading: 0, bottomLeading: 16, bottomTrailing: 16, topTrailing: 0),
+                style: .continuous
+            )
+            .strokeBorder(Studio.Surface.hairline)
+            .mask(Rectangle().padding(.top, 1))
+        )
+        .padding(.horizontal, 22)
+    }
+
+    @ViewBuilder
+    private func control(_ item: Item) -> some View {
+        let label = HStack(spacing: JunoSpace.tight) {
+            if let icon = item.icon { JunoIconView(icon, size: 12) }
+            Text(item.title).lineLimit(1).truncationMode(.middle)
+            if !item.menu.isEmpty { JunoIconView(.chevronDown, size: 9) }
+        }
+        .studioType(.small)
+        .foregroundStyle(Studio.Ink.secondary)
+        if item.menu.isEmpty {
+            label.padding(.horizontal, JunoSpace.tight)
+        } else {
+            Menu {
+                ForEach(Array(item.menu.enumerated()), id: \.offset) { _, entry in
+                    Button(entry.0, action: entry.1)
+                }
+            } label: { label }
+                .menuStyle(.button).menuIndicator(.hidden)
+                .buttonStyle(CodeV2FooterButtonStyle(compact: true)).fixedSize()
+        }
     }
 }
 
 // MARK: - Takeover
 
-/// The approval or question that has taken over the composer (DESIGN
-/// §5.14): who wants what, the payload in a mono well, the model's reason,
-/// and Deny · Allow for this session · Allow once.
+/// An approval that has taken over the composer (TARGET §7.4): who wants
+/// what in the signal ink, `1 of 2`, the command in a mono well, the reason
+/// on one line, and Deny · Allow for session · Allow once as stock buttons.
 struct CodeV2ApprovalTakeover: View {
     let request: CodeV2.ApprovalRequest
     var position: (index: Int, count: Int) = (1, 1)
     var respond: (CodeV2.ApprovalDecision) -> Void
     var showDiff: (() -> Void)?
     var move: ((Int) -> Void)?
+
+    @State private var showsReason = false
 
     private var who: String { request.detail ?? "The agent" }
 
@@ -178,150 +360,219 @@ struct CodeV2ApprovalTakeover: View {
     private var options: [CodeV2.ApprovalDecision] { request.options ?? [.accept, .acceptForSession, .decline] }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: JunoSpace.cozy) {
-            HStack(spacing: JunoSpace.snug) {
-                JunoIconView(.hand, size: 18).foregroundStyle(Studio.Signal.edge)
-                Text(headline).font(Studio.Font.labelEmphasis)
-                Spacer()
-                if position.count > 1 || position.index > 0 {
-                    Text("\(position.index) of \(position.count)").font(Studio.Font.metaDigits).foregroundStyle(Studio.Ink.secondary)
-                }
-            }
-            if request.action == .command || request.action == .tool || request.action == .computer {
+        CodeV2TakeoverPanel(
+            title: headline,
+            counter: position.count > 1 ? "\(position.index) of \(position.count)" : nil,
+            needsYou: true
+        ) {
+            if request.action == .fileChange {
                 Text(request.summary)
-                    .font(Studio.Font.mono)
+                    .studioType(.text)
                     .foregroundStyle(Studio.Ink.primary)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, JunoSpace.cozy)
-                    .padding(.vertical, JunoSpace.snug)
-                    .background(RoundedRectangle(cornerRadius: Studio.Radius.field, style: .continuous).fill(Studio.Surface.muted))
-                    .overlay(RoundedRectangle(cornerRadius: Studio.Radius.field, style: .continuous).strokeBorder(Studio.Surface.hairline))
+                    .lineLimit(2)
             } else {
-                HStack {
-                    Text(request.summary).font(Studio.Font.mono).lineLimit(2)
-                    Spacer()
-                    if let showDiff { Button("Show diff", action: showDiff).buttonStyle(StudioQuietButtonStyle()) }
-                }
+                CodeV2CommandWell(text: request.summary)
             }
             if let reason = request.justification {
-                Text(reason).font(Studio.Font.meta).foregroundStyle(Studio.Ink.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                HStack(alignment: .firstTextBaseline, spacing: JunoSpace.tight) {
+                    Text(reason)
+                        .studioType(.small)
+                        .foregroundStyle(Studio.Ink.secondary)
+                        .lineLimit(showsReason ? nil : 1)
+                        .fixedSize(horizontal: false, vertical: showsReason)
+                    if !showsReason {
+                        Button("More") { showsReason = true }
+                            .buttonStyle(.link)
+                            .studioType(.small)
+                    }
+                }
             }
-            HStack(spacing: JunoSpace.snug) {
-                if options.contains(.decline) {
-                    Button { respond(.decline) } label: {
-                        HStack(spacing: JunoSpace.tight) { Text("Deny"); CodeV2Keycap(keys: "Esc") }
-                    }
-                    .buttonStyle(StudioQuietButtonStyle()).contentShape(.rect)
+        } actions: {
+            if options.contains(.cancel) {
+                Menu {
+                    Button("Deny and Stop") { respond(.cancel) }
+                } label: { JunoIconView(.ellipsis, size: 14) }
+                    .menuStyle(.button).menuIndicator(.hidden)
+                    .buttonStyle(StudioIconButtonStyle()).fixedSize()
+                    .help("More").accessibilityLabel("More")
+            }
+            Spacer(minLength: 0)
+            if options.contains(.decline) {
+                Button("Deny") { respond(.decline) }
+                    .buttonStyle(.borderless)
                     .keyboardShortcut(.cancelAction)
-                }
-                if options.contains(.cancel) {
-                    Menu {
-                        Button("Deny and stop") { respond(.cancel) }
-                    } label: { JunoIconView(.ellipsis, size: 14) }
-                        .menuStyle(.button).menuIndicator(.hidden).buttonStyle(StudioIconButtonStyle()).fixedSize()
-                        .help("More").accessibilityLabel("More").contentShape(.rect)
-                }
-                Spacer()
-                if options.contains(.acceptForSession) {
-                    Button { respond(.acceptForSession) } label: {
-                        HStack(spacing: JunoSpace.tight) { Text("Allow for this session"); CodeV2Keycap(keys: "⇧⌘↵") }
-                    }
-                    .buttonStyle(CodeV2OutlineButtonStyle()).contentShape(.rect)
+                    .help("Deny (Esc)")
+            }
+            if request.action == .fileChange, let showDiff {
+                Button("Review", action: showDiff).buttonStyle(.bordered)
+            } else if options.contains(.acceptForSession) {
+                Button("Allow for Session") { respond(.acceptForSession) }
+                    .buttonStyle(.bordered)
                     .keyboardShortcut(.return, modifiers: [.command, .shift])
-                }
-                if options.contains(.accept) {
-                    Button { respond(.accept) } label: {
-                        HStack(spacing: JunoSpace.tight) { Text("Allow once"); Text("↵").foregroundStyle(Studio.Surface.canvas.opacity(0.7)) }
-                    }
-                    .buttonStyle(CodeV2InkButtonStyle()).contentShape(.rect)
+                    .help("Allow for this session (⇧⌘↩)")
+            }
+            if options.contains(.accept) {
+                Button(request.action == .fileChange ? "Allow" : "Allow Once") { respond(.accept) }
+                    .buttonStyle(.junoProminent)
                     .keyboardShortcut(.defaultAction)
-                }
+                    .help("Allow once (↩)")
             }
         }
-        .padding(JunoSpace.regular)
         .onKeyPress(.leftArrow) { move?(-1); return move == nil ? .ignored : .handled }
         .onKeyPress(.rightArrow) { move?(1); return move == nil ? .ignored : .handled }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel(headline)
     }
 }
 
-/// A question that has taken over the composer: the prompt and its options
-/// as a list, like an approval.
+/// The takeover's shape, shared by approvals, questions, plan approval and
+/// the Limited notice: a 14/500 title (signal ink only when it needs you),
+/// an optional counter, the body, and a row of stock buttons.
+struct CodeV2TakeoverPanel<Content: View, Actions: View>: View {
+    let title: String
+    var counter: String?
+    var needsYou: Bool
+    @ViewBuilder var content: () -> Content
+    @ViewBuilder var actions: () -> Actions
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.snug + 2) {
+            HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
+                Text(title)
+                    .studioType(.textMedium)
+                    .foregroundStyle(needsYou ? Studio.Signal.ink : Studio.Ink.primary)
+                    .lineLimit(2)
+                Spacer(minLength: JunoSpace.snug)
+                if let counter {
+                    Text(counter).studioType(.small).monospacedDigit().foregroundStyle(Studio.Ink.secondary)
+                }
+            }
+            content()
+            HStack(spacing: JunoSpace.snug) {
+                actions()
+            }
+            .controlSize(.regular)
+        }
+        .padding(.horizontal, JunoSpace.regular)
+        .padding(.top, JunoSpace.cozy + 2)
+        .padding(.bottom, JunoSpace.cozy)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(title)
+    }
+}
+
+/// A command in a quiet well: 12.5 mono, at most three lines.
+struct CodeV2CommandWell: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .studioType(.code)
+            .foregroundStyle(Studio.Ink.primary)
+            .lineLimit(3)
+            .textSelection(.enabled)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, JunoSpace.cozy)
+            .padding(.vertical, JunoSpace.snug)
+            .background(RoundedRectangle(cornerRadius: Studio.Radius.control, style: .continuous).fill(Studio.Surface.muted))
+    }
+}
+
+/// A question from the agent: the question is the title, its options are
+/// buttons, and a free answer is typed in place.
 struct CodeV2QuestionTakeover: View {
     let request: CodeV2.UserInputRequest
     var answer: ([String: [String]]) -> Void
     @State private var chosen: [String: Set<String>] = [:]
     @State private var typed: [String: String] = [:]
 
+    private var title: String {
+        request.questions.count == 1 ? request.questions[0].prompt : "The agent has \(request.questions.count) questions"
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: JunoSpace.cozy) {
-            HStack(spacing: JunoSpace.snug) {
-                JunoIconView(.hand, size: 18).foregroundStyle(Studio.Signal.edge)
-                Text("The agent has a question").font(Studio.Font.labelEmphasis)
-            }
+        CodeV2TakeoverPanel(title: title, needsYou: true) {
             ForEach(request.questions, id: \.id) { question in
                 VStack(alignment: .leading, spacing: JunoSpace.tight) {
-                    Text(question.prompt).studioReadingFont()
+                    if request.questions.count > 1 {
+                        Text(question.prompt).studioType(.text).foregroundStyle(Studio.Ink.primary)
+                    }
                     if let options = question.options, !options.isEmpty {
-                        ForEach(options, id: \.self) { option in
-                            let on = chosen[question.id, default: []].contains(option)
-                            Button {
-                                var set = question.multiSelect == true ? chosen[question.id, default: []] : []
-                                if on { set.remove(option) } else { set.insert(option) }
-                                chosen[question.id] = set
-                            } label: {
-                                HStack(spacing: JunoSpace.snug) {
-                                    JunoRadioMark(isOn: on).frame(width: 16, height: 16)
-                                    Text(option).font(Studio.Font.label)
-                                    Spacer()
+                        HStack(spacing: JunoSpace.snug) {
+                            ForEach(options, id: \.self) { option in
+                                let on = chosen[question.id, default: []].contains(option)
+                                Button(option) {
+                                    var set = question.multiSelect == true ? chosen[question.id, default: []] : []
+                                    if on { set.remove(option) } else { set.insert(option) }
+                                    chosen[question.id] = set
                                 }
-                                .frame(minHeight: 28).contentShape(.rect)
+                                .buttonStyle(CodeV2ChoiceButtonStyle(isOn: on))
                             }
-                            .buttonStyle(.plain)
                         }
                     } else {
                         TextField("Your answer", text: Binding(get: { typed[question.id] ?? "" }, set: { typed[question.id] = $0 }))
-                            .textFieldStyle(.roundedBorder)
+                            .textFieldStyle(.plain)
+                            .studioType(.text)
                     }
                 }
             }
-            HStack {
-                Spacer()
-                Button("Answer") {
-                    var answers: [String: [String]] = [:]
-                    for question in request.questions {
-                        if let text = typed[question.id], !text.isEmpty { answers[question.id] = [text] }
-                        else { answers[question.id] = Array(chosen[question.id, default: []]) }
-                    }
-                    answer(answers)
+        } actions: {
+            Spacer(minLength: 0)
+            Button("Answer") {
+                var answers: [String: [String]] = [:]
+                for question in request.questions {
+                    if let text = typed[question.id], !text.isEmpty { answers[question.id] = [text] }
+                    else { answers[question.id] = Array(chosen[question.id, default: []]) }
                 }
-                .buttonStyle(CodeV2InkButtonStyle()).contentShape(.rect)
-                .keyboardShortcut(.defaultAction)
+                answer(answers)
             }
+            .buttonStyle(.junoProminent)
+            .keyboardShortcut(.defaultAction)
         }
-        .padding(JunoSpace.regular)
     }
 }
 
-/// The Limited state (DESIGN §6): the plan's limit in words, Resume at
-/// reset, Switch model. The glow is off.
+/// An option in a question: a hairline button that fills when chosen.
+struct CodeV2ChoiceButtonStyle: ButtonStyle {
+    var isOn: Bool
+    @State private var hovering = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .studioType(.text)
+            .foregroundStyle(Studio.Ink.primary)
+            .padding(.horizontal, JunoSpace.cozy)
+            .frame(minHeight: 28)
+            .background(
+                RoundedRectangle(cornerRadius: Studio.Radius.control, style: .continuous)
+                    .fill(isOn ? Studio.Surface.selected : (hovering || configuration.isPressed ? Studio.Surface.hover : Color.clear))
+            )
+            .overlay(RoundedRectangle(cornerRadius: Studio.Radius.control, style: .continuous).strokeBorder(Studio.Surface.hairline))
+            .contentShape(.rect)
+            .onHover { hovering = $0 }
+    }
+}
+
+/// The Limited state (TARGET §12): the plan's limit in the foreground ink,
+/// not coral, with Switch to Alevr and Wait.
 struct CodeV2LimitedNotice: View {
     let sentence: String
     var resumeAtReset: (() -> Void)?
     var switchModel: (() -> Void)?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: JunoSpace.cozy) {
-            Text(sentence).studioReadingFont().foregroundStyle(Studio.Ink.secondary)
-            HStack(spacing: JunoSpace.snug) {
-                Spacer()
-                if let switchModel { Button("Switch model", action: switchModel).buttonStyle(CodeV2OutlineButtonStyle()) }
-                if let resumeAtReset { Button("Resume at reset", action: resumeAtReset).buttonStyle(CodeV2InkButtonStyle()) }
+        CodeV2TakeoverPanel(title: sentence, needsYou: false) {
+            EmptyView()
+        } actions: {
+            Spacer(minLength: 0)
+            if let resumeAtReset {
+                Button("Wait", action: resumeAtReset)
+                    .buttonStyle(.bordered)
+                    .help("Continue when the plan window resets")
+            }
+            if let switchModel {
+                Button("Switch to Alevr", action: switchModel)
+                    .buttonStyle(.junoProminent)
+                    .keyboardShortcut(.defaultAction)
             }
         }
-        .padding(JunoSpace.regular)
     }
 }

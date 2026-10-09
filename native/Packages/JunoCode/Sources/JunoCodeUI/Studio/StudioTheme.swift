@@ -142,6 +142,54 @@ public extension View {
     }
 }
 
+/// The Code type scale (code-v4 TARGET §1.2): five sizes, two weights.
+/// 24 for the empty-state question, 14 for prose, rows, titles and the
+/// work log, 12 for controls, metadata and counts, 12.5 mono for code and
+/// commands only. Weights are 400 and 500; nothing else.
+public enum StudioType {
+    case display, text, textMedium, small, smallMedium, code
+
+    var size: CGFloat {
+        switch self {
+        case .display: 24
+        case .text, .textMedium: 14
+        case .small, .smallMedium: 12
+        case .code: 12.5
+        }
+    }
+
+    var weight: SwiftUI.Font.Weight {
+        switch self {
+        case .display, .textMedium, .smallMedium: .medium
+        default: .regular
+        }
+    }
+
+    var style: SwiftUI.Font.TextStyle {
+        switch self {
+        case .display: .title
+        case .text, .textMedium: .body
+        case .small, .smallMedium, .code: .callout
+        }
+    }
+}
+
+public extension View {
+    /// One rung of ``StudioType``, scaling with the reader's text size.
+    func studioType(_ rung: StudioType) -> some View {
+        junoFont(
+            size: rung.size, relativeTo: rung.style, weight: rung.weight,
+            design: rung == .code ? .monospaced : .default
+        )
+    }
+}
+
+extension Studio.Ink {
+    /// `--prose`: the assistant's text at 88% of the foreground, a step
+    /// softer than titles and the reader's own words.
+    static let prose = Color.junoForeground.opacity(0.88)
+}
+
 extension View {
     /// A hairline rule under or beside a region.
     func studioHairline(_ edge: Edge = .bottom) -> some View {

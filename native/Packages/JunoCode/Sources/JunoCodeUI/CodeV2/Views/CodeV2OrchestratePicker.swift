@@ -2,8 +2,8 @@ import SwiftUI
 import JunoCodeCore
 import JunoDesignSystem
 
-/// The composer's Orchestrate control: "Solo", "Lead + 3", "Best of 3".
-/// Opens the role picker (⇧⌘O).
+/// `Lead + 3 ⌄` / `Best of 3 ⌄`: on the composer only while the run is not
+/// solo (TARGET §8.3). Opens the team popover (⇧⌘O).
 struct CodeV2OrchestrateControl: View {
     let directory: CodeV2ProviderDirectory
     @Binding var draft: CodeV2RoleDraft
@@ -13,17 +13,15 @@ struct CodeV2OrchestrateControl: View {
 
     var body: some View {
         Button { isOpen.toggle() } label: {
-            HStack(spacing: JunoSpace.tight + 1) {
-                JunoIconView(.workflow, size: 14)
-                Text(draft.label).lineLimit(1).contentTransition(.numericText())
-                JunoIconView(.chevronDown, size: 11)
-            }
+            CodeV2TextControlLabel(title: draft.label)
+                .contentTransition(.numericText())
         }
         .buttonStyle(CodeV2FooterButtonStyle(isOpen: isOpen)).contentShape(.rect)
+        .fixedSize()
         .disabled(!isEnabled)
         .keyboardShortcut("o", modifiers: [.command, .shift])
-        .help("Orchestrate: who leads, who works, who reviews (⇧⌘O)")
-        .accessibilityLabel("Orchestrate")
+        .help("Who leads, who works, who reviews (⇧⌘O)")
+        .accessibilityLabel("Team")
         .accessibilityValue(draft.label)
         .accessibilityIdentifier("juno.code.v2.orchestrate")
         .popover(isPresented: $isOpen, arrowEdge: .top) {
@@ -32,14 +30,19 @@ struct CodeV2OrchestrateControl: View {
     }
 }
 
-/// The role picker (DESIGN §5.11): a preset, one sentence on what it means,
-/// a row per role with its own model, and the run's hard budget with an
-/// honest estimate.
+/// The team popover (TARGET §8.3): one line per role, each pushing the model
+/// picker in place; a one-line budget footer. Best of N lists its candidates
+/// the same way. Role explanations live in Settings, not here.
 struct CodeV2OrchestratePicker: View {
     let directory: CodeV2ProviderDirectory
     @Binding var draft: CodeV2RoleDraft
-    @State private var showsUtility = false
-    @State private var budgetText = ""
+
+    private enum Role: Hashable {
+        case lead, workers, reviewer, explorer, candidate(Int)
+    }
+
+    @State private var editing: Role?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private func tier(_ selection: CodeV2.ModelSelection) -> CodeV2.ContextTier? {
         directory.instance(selection.instanceId)?.models?.first { $0.id == selection.model }?.contextTiers
@@ -54,150 +57,239 @@ struct CodeV2OrchestratePicker: View {
         CodeV2RunEstimate.dollars(for: draft, rate: tier, billsInDollars: billsInDollars)
     }
 
-    private var subscriptionNote: String? {
-        let vendors = draft.allSelections.filter { !billsInDollars($0) }
-            .compactMap { directory.instance($0.instanceId) }
-            .map(CodeV2ProviderDirectory.vendorName)
-        return CodeV2RunEstimate.subscriptionNote(vendorNames: vendors)
+    var body: some View {
+        Group {
+            if let editing {
+                rolePicker(editing)
+            } else {
+                overview
+            }
+        }
+        .frame(width: 380)
+        .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: editing)
     }
 
-    var body: some View {
+    // MARK: Overview
+
+    private var overview: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text("Orchestrate").font(Studio.Font.labelEmphasis)
-                Spacer()
-                JunoSegmented(
-                    options: [
-                        JunoSegmentedOption(CodeV2.RolePreset.solo, "Solo"),
-                        JunoSegmentedOption(CodeV2.RolePreset.leadWorkers, "Lead + workers"),
-                        JunoSegmentedOption(CodeV2.RolePreset.bestOfN, "Best of N"),
-                    ],
-                    selection: $draft.preset,
-                    accessibilityLabel: "Preset",
-                    size: .compact
-                )
-                .fixedSize()
-            }
-            .padding(.horizontal, JunoSpace.cozy)
-            .padding(.top, JunoSpace.cozy)
-
-            Text(draft.explanation)
-                .font(Studio.Font.meta).foregroundStyle(Studio.Ink.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.horizontal, JunoSpace.cozy)
-                .padding(.top, JunoSpace.snug)
-                .padding(.bottom, JunoSpace.cozy)
-
-            Divider().overlay(Studio.Surface.hairline)
-
             VStack(spacing: 0) {
                 switch draft.preset {
-                case .solo:
-                    roleRow("Lead", duty: "Plans and does the work", selection: $draft.lead)
-                case .leadWorkers:
-                    roleRow("Lead", duty: "Plans, delegates and merges", selection: $draft.lead)
-                    roleRow("Workers", duty: "Each takes one part of the plan", selection: $draft.worker,
-                            stepper: (value: draft.workerCount, range: CodeV2RoleDraft.workerRange, set: { draft.setWorkers($0) }))
-                    optionalRow("Reviewer", duty: "Reads every diff before you do", selection: $draft.reviewer)
-                    optionalRow("Explorer", duty: "Maps the code before work starts", selection: $draft.explorer)
+                case .solo, .leadWorkers:
+                    roleRow("Lead", selection: draft.lead) { editing = .lead }
+                    roleRow("Workers", selection: draft.worker, count: draft.workerCount) { editing = .workers }
+                    roleRow("Reviewer", selection: draft.reviewer) { editing = .reviewer }
+                    roleRow("Explorer", selection: draft.explorer) { editing = .explorer }
                 case .bestOfN:
-                    HStack {
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text("Candidates").font(Studio.Font.label)
-                            Text("The same model several times, or different ones side by side.")
-                                .font(Studio.Font.meta).foregroundStyle(Studio.Ink.secondary)
-                        }
-                        Spacer()
-                        CodeV2Stepper(value: draft.candidates.count, range: CodeV2RoleDraft.candidateRange) { draft.setCandidateCount($0) }
-                    }
-                    .padding(.horizontal, JunoSpace.cozy)
-                    .frame(minHeight: 52)
                     ForEach(draft.candidates.indices, id: \.self) { index in
-                        roleRow("Candidate \(index + 1)", duty: nil, selection: $draft.candidates[index])
+                        roleRow(String(UnicodeScalar(UInt8(65 + index))), selection: draft.candidates[index]) {
+                            editing = .candidate(index)
+                        }
+                    }
+                    if draft.candidates.count < CodeV2RoleDraft.candidateRange.upperBound {
+                        Button { draft.setCandidateCount(draft.candidates.count + 1) } label: {
+                            HStack(spacing: JunoSpace.snug) {
+                                JunoIconView(.plus, size: 13)
+                                Text("Add candidate")
+                                Spacer(minLength: 0)
+                            }
+                            .studioType(.text)
+                            .foregroundStyle(Studio.Ink.secondary)
+                            .padding(.horizontal, JunoSpace.snug)
+                            .frame(height: 32)
+                            .contentShape(.rect)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
-                DisclosureGroup(isExpanded: $showsUtility) {
-                    optionalRow("Titles and compaction", duty: "Small jobs that keep the thread tidy", selection: $draft.utility)
-                } label: {
-                    Text("Titles and compaction").font(Studio.Font.label).foregroundStyle(Studio.Ink.secondary)
-                }
-                .padding(.horizontal, JunoSpace.cozy)
-                .padding(.vertical, JunoSpace.snug)
             }
+            .padding(JunoSpace.tight + 2)
+            Rectangle().fill(Studio.Surface.hairline).frame(height: 1)
+            footer
+        }
+    }
 
-            Divider().overlay(Studio.Surface.hairline)
+    private func roleRow(_ role: String, selection: CodeV2.ModelSelection?, count: Int? = nil, open: @escaping () -> Void) -> some View {
+        CodeV2RoleRow(
+            role: role,
+            model: selection.map { modelLine($0, count: count) },
+            source: selection.map(sourceLine),
+            stepper: count.map { value in
+                (value: value, range: CodeV2RoleDraft.workerRange, set: { draft.setWorkers($0) })
+            },
+            open: open
+        )
+    }
 
-            VStack(alignment: .leading, spacing: JunoSpace.tight) {
+    private func modelLine(_ selection: CodeV2.ModelSelection, count: Int?) -> String {
+        let model = directory.instance(selection.instanceId)?.models?.first { $0.id == selection.model }
+        let name = model?.label ?? CodeV2Formatting.modelName(selection.model)
+        let effort = selection.effort.map { " · " + $0.title } ?? ""
+        return (count.map { "\($0) × " } ?? "") + name + effort
+    }
+
+    private func sourceLine(_ selection: CodeV2.ModelSelection) -> String {
+        guard let instance = directory.instance(selection.instanceId) else { return "" }
+        switch instance.kind {
+        case .alevr:
+            if let tier = tier(selection), tier.inputPerMTok > 0 {
+                return CodeV2ContextMath.dollars(tier.inputPerMTok).replacingOccurrences(of: ".00", with: "")
+                    + " / " + CodeV2ContextMath.dollars(tier.outputPerMTok).replacingOccurrences(of: ".00", with: "")
+            }
+            return "Alevr"
+        case .byok: return "Your key"
+        case .claudeAgent: return "Your plan"
+        default: return CodeV2ProviderDirectory.vendorName(instance)
+        }
+    }
+
+    private var footer: some View {
+        HStack(spacing: JunoSpace.snug) {
+            Menu {
+                ForEach([1.0, 2, 4, 8, 16], id: \.self) { value in
+                    Button(CodeV2ContextMath.dollars(value)) { draft.budgetUsd = value }
+                }
+                Divider()
+                Button("No Limit") { draft.budgetUsd = nil }
+            } label: {
+                CodeV2TextControlLabel(
+                    title: draft.budgetUsd.map { "Stop at \(CodeV2ContextMath.dollars($0)) of Alevr spend" } ?? "No spend limit"
+                )
+            }
+            .menuStyle(.button).menuIndicator(.hidden)
+            .buttonStyle(CodeV2FooterButtonStyle(compact: true)).fixedSize()
+            .help("A hard stop for the run's Alevr spend. Subscriptions count against their own plans.")
+            Spacer(minLength: 0)
+            Text("\(CodeV2ContextMath.estimate(estimate)) a run")
+                .studioType(.small).monospacedDigit().foregroundStyle(Studio.Ink.secondary)
+        }
+        .padding(.horizontal, JunoSpace.snug)
+        .frame(height: 40)
+    }
+
+    // MARK: A role's model
+
+    private func rolePicker(_ role: Role) -> some View {
+        VStack(spacing: 0) {
+            HStack(spacing: JunoSpace.snug) {
+                Button { editing = nil } label: {
+                    HStack(spacing: JunoSpace.tight) {
+                        JunoIconView(.chevronLeft, size: 12)
+                        Text(title(role))
+                    }
+                    .studioType(.textMedium)
+                    .foregroundStyle(Studio.Ink.primary)
+                    .frame(minHeight: 28)
+                    .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Back to the team")
+                Spacer(minLength: 0)
+                if removable(role) {
+                    Button("Remove") { set(role, nil); editing = nil }
+                        .buttonStyle(StudioQuietButtonStyle())
+                }
+            }
+            .padding(.horizontal, JunoSpace.cozy)
+            .frame(height: 40)
+            Rectangle().fill(Studio.Surface.hairline).frame(height: 1)
+            CodeV2ModelPicker(
+                directory: directory,
+                selection: Binding(get: { current(role) ?? draft.lead }, set: { set(role, $0) }),
+                choose: { id, model in
+                    let previous = current(role)
+                    let effort = previous?.effort.flatMap { (model.effortLevels ?? []).contains($0) ? $0 : nil } ?? model.defaultEffort
+                    set(role, CodeV2.ModelSelection(
+                        instanceId: id, model: model.id, effort: effort,
+                        contextTokens: model.contextTiers.flatMap { CodeV2ContextMath.sorted($0).first?.tokens }
+                    ))
+                    editing = nil
+                },
+                showsFooter: false
+            )
+        }
+    }
+
+    private func title(_ role: Role) -> String {
+        switch role {
+        case .lead: "Lead"
+        case .workers: "Workers"
+        case .reviewer: "Reviewer"
+        case .explorer: "Explorer"
+        case .candidate(let index): "Candidate \(String(UnicodeScalar(UInt8(65 + index))))"
+        }
+    }
+
+    private func removable(_ role: Role) -> Bool {
+        switch role {
+        case .reviewer: draft.reviewer != nil
+        case .explorer: draft.explorer != nil
+        case .candidate: draft.candidates.count > CodeV2RoleDraft.candidateRange.lowerBound
+        default: false
+        }
+    }
+
+    private func current(_ role: Role) -> CodeV2.ModelSelection? {
+        switch role {
+        case .lead: draft.lead
+        case .workers: draft.worker
+        case .reviewer: draft.reviewer
+        case .explorer: draft.explorer
+        case .candidate(let index): draft.candidates.indices.contains(index) ? draft.candidates[index] : nil
+        }
+    }
+
+    private func set(_ role: Role, _ selection: CodeV2.ModelSelection?) {
+        switch role {
+        case .lead: if let selection { draft.setLead(selection) }
+        case .workers: if let selection { draft.worker = selection }
+        case .reviewer: draft.reviewer = selection
+        case .explorer: draft.explorer = selection
+        case .candidate(let index):
+            if let selection { draft.candidates[index] = selection } else { draft.candidates.remove(at: index) }
+        }
+    }
+}
+
+/// One role on one line: the role in muted ink, its model in ink, where it
+/// runs or what it costs, and a chevron. Workers show a stepper on hover.
+struct CodeV2RoleRow: View {
+    let role: String
+    let model: String?
+    let source: String?
+    var stepper: (value: Int, range: ClosedRange<Int>, set: (Int) -> Void)?
+    let open: () -> Void
+
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(spacing: JunoSpace.snug) {
+            Button(action: open) {
                 HStack(spacing: JunoSpace.snug) {
-                    Text("Stop at").font(Studio.Font.label)
-                    TextField("$4.00", text: $budgetText)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(width: 72)
-                        .monospacedDigit()
-                        .onSubmit(commitBudget)
-                        .accessibilityLabel("Budget per run in dollars")
-                    Text("of Alevr spend per run").font(Studio.Font.label)
-                    Spacer()
-                    Text(CodeV2ContextMath.estimate(estimate) + " a run · estimate")
-                        .font(Studio.Font.metaDigits).foregroundStyle(Studio.Ink.secondary)
+                    Text(role).foregroundStyle(Studio.Ink.secondary).frame(width: 72, alignment: .leading)
+                    Text(model ?? "Add").foregroundStyle(model == nil ? Studio.Ink.secondary : Studio.Ink.primary).lineLimit(1)
+                    Spacer(minLength: JunoSpace.tight)
                 }
-                if let subscriptionNote {
-                    Text(subscriptionNote).font(Studio.Font.meta).foregroundStyle(Studio.Ink.secondary)
-                }
+                .studioType(.text)
+                .contentShape(.rect)
             }
-            .padding(JunoSpace.cozy)
-        }
-        .frame(width: 600)
-        .background(Studio.Surface.popover)
-        .onAppear { budgetText = draft.budgetUsd.map { String(format: "$%.2f", $0) } ?? "" }
-        .onDisappear(perform: commitBudget)
-    }
-
-    private func commitBudget() {
-        let digits = budgetText.replacingOccurrences(of: "$", with: "").trimmingCharacters(in: .whitespaces)
-        draft.budgetUsd = digits.isEmpty ? nil : Double(digits).map { max(0, $0) } ?? draft.budgetUsd
-    }
-
-    private func roleRow(
-        _ name: String, duty: String?, selection: Binding<CodeV2.ModelSelection>,
-        stepper: (value: Int, range: ClosedRange<Int>, set: (Int) -> Void)? = nil
-    ) -> some View {
-        HStack(spacing: JunoSpace.cozy) {
-            VStack(alignment: .leading, spacing: 1) {
-                Text(name).font(Studio.Font.label)
-                if let duty { Text(duty).font(Studio.Font.meta).foregroundStyle(Studio.Ink.secondary) }
-            }
-            Spacer()
-            if let stepper {
+            .buttonStyle(.plain)
+            if let stepper, hovering {
                 CodeV2Stepper(value: stepper.value, range: stepper.range, set: stepper.set)
+            } else if let source {
+                Text(source).studioType(.small).monospacedDigit().foregroundStyle(Studio.Ink.secondary).lineLimit(1)
             }
-            CodeV2RoleModelButton(directory: directory, selection: selection)
+            JunoIconView(.chevronRight, size: 11).foregroundStyle(Studio.Ink.tertiary)
         }
-        .padding(.horizontal, JunoSpace.cozy)
-        .frame(minHeight: 52)
-    }
-
-    private func optionalRow(_ name: String, duty: String, selection: Binding<CodeV2.ModelSelection?>) -> some View {
-        Group {
-            if selection.wrappedValue != nil {
-                roleRow(name, duty: duty, selection: Binding(
-                    get: { selection.wrappedValue ?? draft.lead },
-                    set: { selection.wrappedValue = $0 }
-                ))
-            } else {
-                HStack {
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(name).font(Studio.Font.label)
-                        Text(duty).font(Studio.Font.meta).foregroundStyle(Studio.Ink.secondary)
-                    }
-                    Spacer()
-                    Button("Add") { selection.wrappedValue = draft.lead }
-                        .buttonStyle(CodeV2OutlineButtonStyle(compact: true)).contentShape(.rect)
-                }
-                .padding(.horizontal, JunoSpace.cozy)
-                .frame(minHeight: 52)
-            }
-        }
+        .padding(.horizontal, JunoSpace.snug)
+        .frame(height: 32)
+        .background(
+            RoundedRectangle(cornerRadius: Studio.Radius.control, style: .continuous)
+                .fill(hovering ? Studio.Surface.hover : Color.clear)
+        )
+        .onHover { hovering = $0 }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(role), \(model ?? "none")")
     }
 }
 
@@ -209,70 +301,12 @@ struct CodeV2Stepper: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            Button { set(value - 1) } label: { JunoIconView(.minus, size: 12).frame(width: 28, height: 28).contentShape(.rect) }
+            Button { set(value - 1) } label: { JunoIconView(.minus, size: 11).frame(width: 28, height: 28).contentShape(.rect) }
                 .buttonStyle(.plain).disabled(value <= range.lowerBound).accessibilityLabel("Fewer")
-            Text("\(value)").font(Studio.Font.labelDigits).frame(minWidth: 18)
-            Button { set(value + 1) } label: { JunoIconView(.plus, size: 12).frame(width: 28, height: 28).contentShape(.rect) }
+            Text("\(value)").studioType(.small).monospacedDigit().frame(minWidth: 14)
+            Button { set(value + 1) } label: { JunoIconView(.plus, size: 11).frame(width: 28, height: 28).contentShape(.rect) }
                 .buttonStyle(.plain).disabled(value >= range.upperBound).accessibilityLabel("More")
         }
         .foregroundStyle(Studio.Ink.secondary)
-        .overlay(RoundedRectangle(cornerRadius: Studio.Radius.control, style: .continuous).strokeBorder(Studio.Surface.hairline))
-    }
-}
-
-/// A role's model (196 wide): mark, "Claude Opus 5.5 · High" over where it
-/// runs and what it costs. Opens the same model picker.
-struct CodeV2RoleModelButton: View {
-    let directory: CodeV2ProviderDirectory
-    @Binding var selection: CodeV2.ModelSelection
-    @State private var isOpen = false
-
-    private var instance: CodeV2.ProviderInstance? { directory.instance(selection.instanceId) }
-    private var model: CodeV2.ProviderModel? { instance?.models?.first { $0.id == selection.model } }
-
-    private var subline: String {
-        guard let instance else { return "" }
-        switch instance.kind {
-        case .alevr, .byok:
-            let where_ = instance.kind == .alevr ? "Alevr" : instance.label
-            if let tier = model?.contextTiers.flatMap({ CodeV2ContextMath.sorted($0).first }), tier.inputPerMTok > 0 {
-                return "\(where_) · \(CodeV2ContextMath.dollars(tier.inputPerMTok)) / \(CodeV2ContextMath.dollars(tier.outputPerMTok))"
-            }
-            return where_
-        case .claudeAgent: return "Your subscription"
-        default: return instance.label
-        }
-    }
-
-    var body: some View {
-        Button { isOpen.toggle() } label: {
-            HStack(spacing: JunoSpace.snug) {
-                CodeV2Mark(id: CodeV2Marks.markID(model: selection.model, instanceId: selection.instanceId), size: 16)
-                VStack(alignment: .leading, spacing: 0) {
-                    Text([model?.label ?? CodeV2Formatting.modelName(selection.model), selection.effort?.title]
-                        .compactMap { $0 }.joined(separator: " · "))
-                        .font(Studio.Font.label).foregroundStyle(Studio.Ink.primary).lineLimit(1)
-                    Text(subline).font(Studio.Font.meta).foregroundStyle(Studio.Ink.secondary).lineLimit(1)
-                }
-                Spacer(minLength: 0)
-                JunoIconView(.chevronsUpDown, size: 11).foregroundStyle(Studio.Ink.tertiary)
-            }
-            .padding(.horizontal, JunoSpace.snug)
-            .frame(width: 236, height: 42)
-            .background(RoundedRectangle(cornerRadius: Studio.Radius.field, style: .continuous).fill(Studio.Surface.raised))
-            .overlay(RoundedRectangle(cornerRadius: Studio.Radius.field, style: .continuous).strokeBorder(Studio.Surface.hairline))
-            .contentShape(.rect)
-        }
-        .buttonStyle(.plain)
-        .popover(isPresented: $isOpen, arrowEdge: .trailing) {
-            CodeV2ModelPicker(directory: directory, selection: $selection, choose: { id, model in
-                let effort = selection.effort.flatMap { (model.effortLevels ?? []).contains($0) ? $0 : nil } ?? model.defaultEffort
-                selection = CodeV2.ModelSelection(
-                    instanceId: id, model: model.id, effort: effort,
-                    contextTokens: model.contextTiers.flatMap { CodeV2ContextMath.sorted($0).first?.tokens }
-                )
-                isOpen = false
-            })
-        }
     }
 }

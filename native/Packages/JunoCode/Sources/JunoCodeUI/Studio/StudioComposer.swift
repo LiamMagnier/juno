@@ -51,24 +51,24 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
     /// new-session screen. Separated from the field by a hairline. Nil in a
     /// thread, where the place is fixed and the title bar says it.
     var header: AnyView? = nil
-    /// The border beam over the shell (premium pass): `.pulse` on an empty
-    /// new-session composer until the first keystroke, `.line` while a run
-    /// works. Nil draws none.
-    var beam: JunoBorderBeamStyle? = nil
-    /// The beam's colour: Code's fixed signal coral (DESIGN §3.2), never the
-    /// account accent — the glow means "working", not "brand".
-    var beamTint: Color = Studio.Signal.edge
     /// ⌘↩ while a run works: steer it (Code v2 §5.6). Nil keeps ⌘↩ as send.
     var steer: (() -> Void)? = nil
     /// Esc twice within 600 ms while a run works stops it (DESIGN §8).
     var stopOnDoubleEscape: Bool = false
     /// Replaces the field and the control row in place: the approval or
-    /// question takeover (DESIGN §5.14). The shell, its position and its
-    /// glow stay; the edge holds coral instead of travelling.
+    /// question takeover (TARGET §7.4). The shell and its position stay; the
+    /// 1pt edge turns signal while it needs the reader. Nothing glows.
     var takeover: AnyView? = nil
     /// The takeover is waiting on the reader (an approval, a question):
     /// hold the coral edge. A Limited notice is not, and stays neutral.
     var takeoverNeedsYou = true
+    /// Extra items for the `+` menu after the attach items: plan mode, the
+    /// run's mode, permissions, computer use (code-v4 TARGET §7.1).
+    var plusMenu: AnyView? = nil
+    /// The drawer that hangs under the shell: project, branch, where it runs.
+    var contextStrip: AnyView? = nil
+    /// Lines the prompt reserves at rest: 2 in a thread, 3 on a new session.
+    var minimumLines = 2
     @ViewBuilder var leading: () -> Leading
     @ViewBuilder var trailing: () -> Trailing
 
@@ -121,6 +121,15 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            shell
+            if let contextStrip, takeover == nil {
+                contextStrip.transition(.opacity)
+            }
+        }
+    }
+
+    private var shell: some View {
+        VStack(spacing: 0) {
             if let header {
                 header
                     .padding(.horizontal, JunoSpace.snug)
@@ -152,17 +161,11 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
                     .allowsHitTesting(false)
             }
         }
-        .junoBorderBeam(
-            cornerRadius: Studio.Radius.composer,
-            style: beam ?? .line,
-            isActive: beam != nil && !isDropTargeted && takeover == nil,
-            tint: beamTint
-        )
-        // Needs you: the edge holds, brighter, and does not travel.
+        // Needs you: the 1pt edge in the signal ink. No ring, no glow.
         .overlay {
             if takeover != nil, takeoverNeedsYou {
                 RoundedRectangle(cornerRadius: Studio.Radius.composer, style: .continuous)
-                    .strokeBorder(Studio.Signal.edge.opacity(0.7), lineWidth: 1.5)
+                    .strokeBorder(Studio.Signal.edge, lineWidth: 1)
                     .allowsHitTesting(false)
             }
         }
@@ -194,7 +197,7 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
         let field = TextField(placeholder, text: $text, axis: .vertical)
             .textFieldStyle(.plain)
             .studioReadingFont()
-            .lineLimit(1...12)
+            .lineLimit(minimumLines...12)
             .padding(.horizontal, JunoSpace.regular)
             .padding(.top, JunoSpace.cozy + 2)
             .padding(.bottom, JunoSpace.snug)
@@ -270,16 +273,22 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
 
     private var controlRow: some View {
         HStack(spacing: JunoSpace.hairline) {
-            if addAttachment != nil {
+            if addAttachment != nil || plusMenu != nil {
                 Menu {
-                    Button("Add Images or PDFs…") { isChoosingImage = true }
-                    Button("Paste Image") {
-                        StudioPasteboard.attachments().forEach { addAttachment?($0) }
+                    if addAttachment != nil {
+                        Button("Attach Files…") { isChoosingImage = true }
+                        Button("Paste Image") {
+                            StudioPasteboard.attachments().forEach { addAttachment?($0) }
+                        }
                     }
                     if searchFiles != nil {
-                        Button("Mention a File or Folder") { text += text.isEmpty || text.hasSuffix(" ") ? "@" : " @" }
+                        Button("Mention a File") { text += text.isEmpty || text.hasSuffix(" ") ? "@" : " @" }
                     }
-                    Button("Commands") { if text.isEmpty { text = "/" } }
+                    Button("Commands and Skills") { if text.isEmpty { text = "/" } }
+                    if let plusMenu {
+                        Divider()
+                        plusMenu
+                    }
                 } label: {
                     JunoIconView(.plus, size: 15)
                 }
@@ -287,7 +296,7 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
                 .menuIndicator(.hidden)
                 .buttonStyle(StudioIconButtonStyle())
                 .fixedSize()
-                .help("Add images, files or commands")
+                .help("Attach, mention, plan mode, permissions and more")
                 .accessibilityLabel("Add").contentShape(.rect)
             }
             leading()

@@ -34,6 +34,28 @@ public struct StudioSessionView: View {
         self.v2 = v2
     }
 
+    /// Computer use as the `+` menu's toggle and the composer's `Computer`.
+    private var computerUseBinding: Binding<Bool>? {
+        guard controller.computerUseUnavailableReason == nil || controller.computerUseActive else { return nil }
+        return Binding(
+            get: { controller.computerUseActive },
+            set: { on in
+                Task {
+                    if on { await controller.startComputerUse() } else { await controller.stopComputerUse() }
+                }
+            }
+        )
+    }
+
+    /// Project, branch and machine for the strip under the composer.
+    private var place: CodeV2SessionPlace? {
+        guard controller.context != nil else { return nil }
+        return CodeV2SessionPlace(
+            project: controller.workspaceDisplayName,
+            branch: controller.gitStatus?.branch ?? controller.session.gitBranch
+        )
+    }
+
     /// A subscription is chosen: the next send hands the thread over.
     private var handsOff: Bool {
         guard let v2 else { return false }
@@ -270,17 +292,22 @@ public struct StudioSessionView: View {
             stop: { Task { await controller.stop() } },
             rewind: openRewindPicker,
             focus: $composerFocused,
-            // The beam travels the composer's edge while the run works — the
-            // one live effect on the surface (brief: Border beam, `line`).
-            beam: isBusy ? .line : nil,
             steer: isRunning ? {
                 controller.activeInstructionKind = .steer
                 Task { await controller.send() }
             } : nil,
-            stopOnDoubleEscape: isRunning
+            stopOnDoubleEscape: isRunning,
+            plusMenu: v2.map { v2 in
+                AnyView(CodeV2PlusMenuItems(model: v2.composer, directory: v2.directory, computerUse: computerUseBinding))
+            },
+            contextStrip: place.map { AnyView(CodeV2ContextStrip(place: $0)) }
         ) {
             if let v2 {
-                CodeV2ComposerLeading(model: v2.composer, directory: v2.directory, isEnabled: !isBusy)
+                CodeV2ComposerLeading(
+                    model: v2.composer, directory: v2.directory, isEnabled: !isBusy,
+                    threadTokens: controller.contextTokens ?? 0, computerUse: computerUseBinding,
+                    openConnections: v2.openConnections, setup: v2.setup
+                )
                     .onChange(of: v2.composer.selection) { _, _ in syncV2(v2.composer) }
                     .onChange(of: v2.composer.runtimeMode) { _, _ in syncV2(v2.composer) }
                     .onChange(of: v2.composer.routing) { _, _ in syncV2(v2.composer) }
@@ -309,11 +336,8 @@ public struct StudioSessionView: View {
         } trailing: {
             if let v2 {
                 CodeV2ComposerTrailing(
-                    model: v2.composer, directory: v2.directory,
                     context: preferences.showContextMeter ? v2Context : nil,
-                    threadTokens: controller.contextTokens ?? 0, isEnabled: !isBusy,
-                    compact: { Task { await controller.compactConversation() } },
-                    openConnections: v2.openConnections, setup: v2.setup
+                    compact: { Task { await controller.compactConversation() } }
                 )
             } else if preferences.showContextMeter,
                let used = controller.contextTokens,

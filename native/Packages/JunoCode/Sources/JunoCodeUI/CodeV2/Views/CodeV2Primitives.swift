@@ -165,22 +165,23 @@ struct CodeV2DiffCounts: View {
 
 // MARK: - Buttons
 
-/// The composer footer's text control (DESIGN §5.6): no fill at rest, the
-/// hover fill on hover, the hover fill and full ink while its popover is
-/// open. Never a chip.
+/// The composer's text control (TARGET §7.1): no fill at rest, the hover
+/// fill on hover and while its menu or popover is open. 14pt in the
+/// composer, 12pt in the context strip and footers (`compact`). Never a chip.
 struct CodeV2FooterButtonStyle: ButtonStyle {
     var isOpen = false
+    var compact = false
     @Environment(\.isEnabled) private var isEnabled
     @State private var hovering = false
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(Studio.Font.label)
+            .studioType(compact ? .small : .text)
             .foregroundStyle(
                 !isEnabled ? Studio.Ink.tertiary : (isOpen || hovering ? Studio.Ink.primary : Studio.Ink.secondary)
             )
-            .padding(.horizontal, JunoSpace.snug)
-            .frame(minWidth: 28, minHeight: Studio.Metrics.control)
+            .padding(.horizontal, compact ? JunoSpace.tight + 2 : JunoSpace.snug)
+            .frame(minWidth: 28, minHeight: compact ? 28 : Studio.Metrics.control)
             .background(
                 RoundedRectangle(cornerRadius: Studio.Radius.control, style: .continuous)
                     .fill(configuration.isPressed || isOpen || hovering ? Studio.Surface.hover : Color.clear)

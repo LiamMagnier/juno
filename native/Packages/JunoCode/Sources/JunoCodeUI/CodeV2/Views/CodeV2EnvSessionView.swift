@@ -13,6 +13,8 @@ public struct CodeV2EnvSessionView: View {
     var dock: CodeV2DockController?
     var openConnections: (() -> Void)?
     var setup: ((String, CodeV2.ProviderSetupAction) -> Void)?
+    /// Where the thread runs, for the strip under the composer.
+    var place: CodeV2SessionPlace?
 
     @State private var pendingIndex = 0
     /// "Resume at reset" was chosen: the task that sends "Continue." then.
@@ -26,7 +28,8 @@ public struct CodeV2EnvSessionView: View {
         directory: CodeV2ProviderDirectory,
         dock: CodeV2DockController? = nil,
         openConnections: (() -> Void)? = nil,
-        setup: ((String, CodeV2.ProviderSetupAction) -> Void)? = nil
+        setup: ((String, CodeV2.ProviderSetupAction) -> Void)? = nil,
+        place: CodeV2SessionPlace? = nil
     ) {
         self.session = session
         self.composer = composer
@@ -34,6 +37,7 @@ public struct CodeV2EnvSessionView: View {
         self.dock = dock
         self.openConnections = openConnections
         self.setup = setup
+        self.place = place
     }
 
     private var snapshot: CodeV2.SessionSnapshot { session.snapshot }
@@ -100,23 +104,12 @@ public struct CodeV2EnvSessionView: View {
                 }
                 .onAppear { proxy.scrollTo("end", anchor: .bottom) }
             }
-            VStack(spacing: JunoSpace.snug) {
-                if !snapshot.queue.isEmpty, pending.isEmpty {
-                    CodeV2QueueDock(
-                        queue: snapshot.queue,
-                        edit: { item in composer.draft = item.input.text; focused = true },
-                        steer: canSteer ? { item in Task { await session.steer(item.input.text) } } : nil
-                    )
-                    .transition(.opacity)
-                }
-                composerView
-            }
-            .frame(maxWidth: Studio.Metrics.measure)
-            .padding(.horizontal, Studio.Metrics.gutter)
-            .padding(.bottom, JunoSpace.regular)
-            .frame(maxWidth: .infinity)
-            .animation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion), value: snapshot.queue.map(\.id))
-            .animation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion), value: pending.map(\.id))
+            composerView
+                .frame(maxWidth: Studio.Metrics.measure)
+                .padding(.horizontal, Studio.Metrics.gutter)
+                .padding(.bottom, JunoSpace.regular)
+                .frame(maxWidth: .infinity)
+                .animation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion), value: pending.map(\.id))
         }
         .background(Studio.Surface.canvas)
         .task(id: session.sessionId) {
@@ -131,13 +124,11 @@ public struct CodeV2EnvSessionView: View {
     }
 
     private var emptyState: some View {
-        VStack(alignment: .leading, spacing: JunoSpace.tight) {
-            Text((snapshot.cwd as NSString).lastPathComponent).font(Studio.Font.title)
-            Text("Runs \(instance?.label ?? "your agent") on this Mac. Your sign-in, billing and limits stay with the vendor.")
-                .font(Studio.Font.meta).foregroundStyle(Studio.Ink.secondary)
-        }
-        .frame(maxWidth: Studio.Metrics.measure, alignment: .leading)
-        .padding(.top, 120)
+        Text("What should we build in \(Text((snapshot.cwd as NSString).lastPathComponent).underline(pattern: .dot, color: Studio.Ink.tertiary))?")
+            .studioType(.display)
+            .foregroundStyle(Studio.Ink.primary)
+            .frame(maxWidth: Studio.Metrics.measure)
+            .padding(.top, 180)
     }
 
     private var actions: CodeV2ThreadActions {
@@ -215,27 +206,35 @@ public struct CodeV2EnvSessionView: View {
 
     private var composerView: some View {
         let enabled = !isRunning
+        let hasProvider = instance?.status == .ready || instance?.status == .limited
         return StudioComposer(
             text: $composer.draft,
-            placeholder: CodeV2ComposerLogic.placeholder(isRunning: isRunning, hasProvider: instance?.status == .ready || instance?.status == .limited),
+            placeholder: CodeV2ComposerLogic.placeholder(isRunning: isRunning, hasProvider: hasProvider),
             slashCommands: CodeV2EnvSessionView.commands,
             canSend: !composer.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && snapshot.state != .limited,
             isRunning: isRunning,
             send: send,
             stop: { Task { await session.interrupt() } },
             focus: $focused,
-            beam: snapshot.state == .running ? .line : nil,
             steer: canSteer ? { steer() } : nil,
             stopOnDoubleEscape: true,
             takeover: takeover,
-            takeoverNeedsYou: !pending.isEmpty || !connected.isEmpty
+            takeoverNeedsYou: !pending.isEmpty || !connected.isEmpty,
+            plusMenu: AnyView(CodeV2PlusMenuItems(model: composer, directory: directory)),
+            contextStrip: place.map { AnyView(CodeV2ContextStrip(place: $0)) },
+            minimumLines: snapshot.items.isEmpty ? 3 : 2
         ) {
-            CodeV2ComposerLeading(model: composer, directory: directory, isEnabled: enabled)
+            CodeV2ComposerLeading(
+                model: composer, directory: directory, isEnabled: enabled,
+                threadTokens: snapshot.usage?.contextTokens ?? 0,
+                openConnections: openConnections, setup: setup
+            )
         } trailing: {
             CodeV2ComposerTrailing(
-                model: composer, directory: directory, context: context,
-                threadTokens: snapshot.usage?.contextTokens ?? 0, isEnabled: enabled,
-                openConnections: openConnections, setup: setup
+                context: context,
+                queue: snapshot.queue,
+                editQueued: { item in composer.draft = item.input.text; focused = true },
+                steerQueued: canSteer ? { item in Task { await session.steer(item.input.text) } } : nil
             )
         }
     }
