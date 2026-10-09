@@ -36,34 +36,7 @@ struct JunoMobileResearchReportView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                // Deep Field's orbits, settled, above the title: the finished
-                // run's mark, as the web's report keeps its field.
-                JunoDeepFieldDots(targets: [], animate: false)
-                    .frame(height: 112)
-                    .frame(maxWidth: 680)
-                    .opacity(0.9)
-                    .padding(.top, JunoSpace.tight)
-                    .accessibilityHidden(true)
-                NativeResearchReportArticle(report: report, audit: audit, compact: true, tracksScroll: true)
-                    .padding(.horizontal, JunoSpace.roomy)
-                    .padding(.top, JunoSpace.regular)
-                    .padding(.bottom, JunoSpace.vast)
-                    .frame(maxWidth: 680)
-                    .frame(maxWidth: .infinity)
-            }
-            .scrollPosition(id: $reading, anchor: .top)
-            .background(Color.junoCanvas)
-            .navigationTitle(reading == nil ? "" : report.title)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar { if !docked { toolbar } }
-            .toolbar(docked ? .hidden : .automatic, for: .navigationBar)
-            .safeAreaInset(edge: .top, spacing: 0) {
-                if docked { dockedHeader }
-            }
-            .animation(JunoMotion.reduced(JunoMotion.base, when: reduceMotion, tier: .tint), value: reading == nil)
-        }
+        page
         .task {
             if let messageID = report.messageID, let loadAudit { audit = await loadAudit(messageID) }
         }
@@ -78,6 +51,53 @@ struct JunoMobileResearchReportView: View {
           }
         #endif
         .accessibilityIdentifier("juno.mobile.research-report")
+    }
+
+    /// In the inspector there is no navigation bar to draw into, and a
+    /// NavigationStack there still reserves one; so the docked reader is the
+    /// bare page under its own bar of glass circles.
+    @ViewBuilder
+    private var page: some View {
+        if docked {
+            // The inspector reserves a navigation bar's height above its
+            // content but draws none (the thread hides its own), so the page
+            // takes the whole column and sets its own top: the window's inset,
+            // then a bar of glass circles with the soft scroll edge under it.
+            article
+                .scrollEdgeEffectStyle(.hard, for: .top)
+                .safeAreaBar(edge: .top, spacing: 0) {
+                    dockedHeader.padding(.top, JunoScreenInsets.top)
+                }
+                .ignoresSafeArea(.container, edges: .top)
+        } else {
+            NavigationStack {
+                article.toolbar { toolbar }
+            }
+        }
+    }
+
+    private var article: some View {
+        ScrollView {
+            // Deep Field's orbits, settled, above the title: the finished
+            // run's mark, as the web's report keeps its field.
+            JunoDeepFieldDots(targets: [], animate: false)
+                .frame(height: 112)
+                .frame(maxWidth: 680)
+                .opacity(0.9)
+                .padding(.top, JunoSpace.tight)
+                .accessibilityHidden(true)
+            NativeResearchReportArticle(report: report, audit: audit, compact: true, tracksScroll: true)
+                .padding(.horizontal, JunoSpace.roomy)
+                .padding(.top, JunoSpace.regular)
+                .padding(.bottom, JunoSpace.vast)
+                .frame(maxWidth: 680)
+                .frame(maxWidth: .infinity)
+        }
+        .scrollPosition(id: $reading, anchor: .top)
+        .background(Color.junoCanvas)
+        .navigationTitle(reading == nil ? "" : report.title)
+        .navigationBarTitleDisplayMode(.inline)
+        .animation(JunoMotion.reduced(JunoMotion.base, when: reduceMotion, tier: .tint), value: reading == nil)
     }
 
     @ToolbarContentBuilder

@@ -26,6 +26,17 @@ enum JunoScreenInsets {
             .first { $0.isKeyWindow }?
             .safeAreaInsets.bottom ?? 0
     }
+
+    /// The window's top inset — the status bar, or the windowed iPad's title
+    /// strip — for a surface that has to set its own top edge.
+    @MainActor
+    static var top: CGFloat {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+            .first { $0.isKeyWindow }?
+            .safeAreaInsets.top ?? 0
+    }
 }
 
 struct JunoFloatingPanelMetrics: Equatable, Sendable {
