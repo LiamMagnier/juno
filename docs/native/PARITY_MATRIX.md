@@ -129,7 +129,7 @@ POST /api/chat's body and frames are classified field by field in the chat wire 
 | `/api/chat/stream/active` | GET | Native | JunoChatKit |  |
 | `/api/code/console` | POST | Native | JunoChatKit | The console document a chat code block or a Live UI exercise answer runs in (JavaScript, TypeScript, Python, SQL), built from the web's own builder; the apps load it in a WKWebView for Run. |
 | `/api/code/run` | GET, POST | Planned |  | Run a chat code block or a Live UI exercise answer in the hosted sandbox (C, C++, Java, Go, Rust, Ruby, PHP, Lua, Perl, Bash); the web's Run button. The apps have no Run button yet. |
-| `/api/generate` | POST | Native | JunoChatKit |  |
+| `/api/generate` | POST | Native | JunoChatKit, JunoCodeBridge |  |
 | `/api/models` | GET | Web only |  | The web's model list. The apps read /api/v1/models; the Electron client (native/desktop-electron) still reads this one. |
 | `/api/v1/models` | GET | Native | JunoChatKit |  |
 
@@ -198,7 +198,7 @@ The Mac's ⌘K panel searches chats, messages, projects, files and artifacts on 
 | `/api/attachments/[id]/thumbnail` | GET | Native | JunoChatKit |  |
 | `/api/attachments/[id]/versions` | GET, POST | Native | JunoChatKit |  |
 | `/api/attachments/[id]/versions/[version]/restore` | POST | Native | JunoChatKit |  |
-| `/api/files/[...key]` | GET | Native | JunoChatKit, JunoSync |  |
+| `/api/files/[...key]` | GET | Native | JunoChatKit, JunoCodeBridge, JunoSync |  |
 | `/api/files/sandbox/[...key]` | GET | Web only |  | Files the web's in-browser Python sandbox writes. |
 | `/api/knowledge/documents` | GET | Planned |  | Which documents became citable, and the document inspector; a Library detail on the Mac (fact-check errata, Web). |
 | `/api/knowledge/documents/[id]` | GET | Planned |  | As /api/knowledge/documents. |
