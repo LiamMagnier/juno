@@ -59,6 +59,11 @@ struct CodeV2Mark: View {
             if id == "key" {
                 JunoIconView(.key, size: size)
                     .foregroundStyle(Studio.Ink.secondary)
+            } else if id == "opencode" {
+                // No vendor mark in the set: the terminal glyph, as on the web,
+                // rather than a lettered placeholder.
+                JunoIconView(.terminal, size: size)
+                    .foregroundStyle(Studio.Ink.primary)
             } else {
                 JunoProviderMark(providerID: id, providerName: name.isEmpty ? id : name, size: size)
             }

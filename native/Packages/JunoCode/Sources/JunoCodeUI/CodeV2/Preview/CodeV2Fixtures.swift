@@ -174,14 +174,14 @@ public enum CodeV2Fixtures {
                 .reasoning(.init(id: "r1", turnId: "t1", createdAt: at(2), text: "The selector and the payment intent disagree on coupon order.", summary: true)),
                 .search(.init(id: "s1", turnId: "t1", createdAt: at(16), callId: "s1", query: "cartTotal", scope: .content, matches: 11, status: .completed)),
                 .fileChange(.init(id: "f1", turnId: "t1", createdAt: at(60), callId: "f1", changes: [
-                    .init(path: "src/server/cart/total.ts", change: .modify, additions: 84, deletions: 6),
+                    .init(path: "src/server/cart/total.ts", change: .modify, additions: 5, deletions: 2),
                 ], status: .completed)),
                 .fileChange(.init(id: "f2", turnId: "t1", createdAt: at(120), callId: "f2", changes: [
-                    .init(path: "src/cart/useCartTotal.ts", change: .modify, additions: 22, deletions: 18),
-                    .init(path: "src/server/cart/total.server.test.ts", change: .add, additions: 12, deletions: 0),
+                    .init(path: "src/cart/useCartTotal.ts", change: .modify, additions: 1, deletions: 1),
+                    .init(path: "src/server/cart/total.server.test.ts", change: .add, additions: 4, deletions: 0),
                 ], status: .completed)),
                 .assistantMessage(.init(id: "a1", turnId: "t1", createdAt: at(252), text: "The browser total and the charged total come from two different sums: `selectCartTotal` applies the coupon before tax, the payment intent applies it after. I moved the sum into `/api/cart/total` and the cart now reads it from there.")),
-                .checkpoint(.init(id: "k1", turnId: "t1", createdAt: at(253), checkpointId: "cp1", turnOrdinal: 1, filesChanged: 3, additions: 118, deletions: 24)),
+                .checkpoint(.init(id: "k1", turnId: "t1", createdAt: at(253), checkpointId: "cp1", turnOrdinal: 1, filesChanged: 3, additions: 10, deletions: 3)),
                 .userMessage(.init(id: "u2", turnId: "t2", createdAt: at(300), text: "Run the cart suite before you call it done.")),
                 .reasoning(.init(id: "r2", turnId: "t2", createdAt: at(301), text: "Typecheck first, then the cart tests.", summary: true)),
                 .commandExecution(.init(id: "c1", turnId: "t2", createdAt: at(307), callId: "c1", command: "pnpm typecheck", exitCode: 0, durationMs: 18_000, status: .completed)),
@@ -250,10 +250,10 @@ public enum CodeV2Fixtures {
             selection: claudeSelection, state: .running, activeTurnId: "t1",
             items: [
                 .userMessage(.init(id: "u1", turnId: "t1", createdAt: at(0), text: "Open the checkout in Safari and check the receipt shows the server total.")),
-                .computerAction(.init(id: "ca1", turnId: "t1", createdAt: at(4), callId: "ca1", action: .openApp, target: "Safari", status: .completed)),
-                .computerAction(.init(id: "ca2", turnId: "t1", createdAt: at(9), callId: "ca2", action: .click, target: "Checkout", status: .completed)),
-                .computerAction(.init(id: "ca3", turnId: "t1", createdAt: at(15), callId: "ca3", action: .type, target: "cart total", status: .completed)),
-                .computerAction(.init(id: "ca4", turnId: "t1", createdAt: at(22), callId: "ca4", action: .screenshot, target: "Receipt", status: .running)),
+                .computerAction(.init(id: "ca1", turnId: "t1", createdAt: at(4), callId: "ca1", action: .openApp, target: "Safari", screenshotRef: CodeV2FixtureFrames.path(.blank), status: .completed)),
+                .computerAction(.init(id: "ca2", turnId: "t1", createdAt: at(9), callId: "ca2", action: .click, target: "Checkout", screenshotRef: CodeV2FixtureFrames.path(.cart), status: .completed)),
+                .computerAction(.init(id: "ca3", turnId: "t1", createdAt: at(15), callId: "ca3", action: .type, target: "SPRING10", screenshotRef: CodeV2FixtureFrames.path(.typed), status: .completed)),
+                .computerAction(.init(id: "ca4", turnId: "t1", createdAt: at(22), callId: "ca4", action: .screenshot, target: "Receipt", screenshotRef: CodeV2FixtureFrames.path(.receipt), status: .running)),
             ]
         )
     }
@@ -261,7 +261,7 @@ public enum CodeV2Fixtures {
     public static var bestOfNCandidates: [CodeV2BestOfNCandidate] {
         [
             CodeV2BestOfNCandidate(id: "c1", selection: claudeSelection, instanceLabel: "Your subscription", elapsedSeconds: 252,
-                                   costUsd: nil, additions: 118, deletions: 24, testsLine: "15 of 15 tests pass",
+                                   costUsd: nil, additions: 10, deletions: 3, testsLine: "15 of 15 tests pass",
                                    summary: "Moves the sum server-side; client uses a query.", isFinished: true),
             CodeV2BestOfNCandidate(id: "c2", selection: codexSelection, instanceLabel: "ChatGPT (Codex)", elapsedSeconds: 198,
                                    costUsd: nil, additions: 96, deletions: 30, testsLine: "14 of 15 tests pass",
