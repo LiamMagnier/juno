@@ -70,9 +70,7 @@ struct JunoMobileArtifactHistory: View {
             .navigationTitle("Version history")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done", action: done).contentShape(.rect)
-                }
+                JunoMobileSheetClose(label: "Done", action: done)
             }
             .confirmationDialog(
                 "Restore version \(restoring ?? 0)?",
@@ -120,7 +118,7 @@ struct JunoMobileArtifactHistory: View {
                         show(entry.version)
                         done()
                     } label: {
-                        VStack(alignment: .leading, spacing: 2) {
+                        VStack(alignment: .leading, spacing: JunoSpace.micro) {
                             Text(entry.version == artifact.currentVersion
                                  ? "Version \(entry.version) — Current" : "Version \(entry.version)")
                                 .foregroundStyle(.primary)
@@ -220,9 +218,7 @@ struct JunoMobileRecentlyDeletedArtifacts: View {
             .navigationTitle("Recently Deleted")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done", action: done).contentShape(.rect)
-                }
+                JunoMobileSheetClose(label: "Done", action: done)
             }
         }
         .task {
@@ -245,7 +241,7 @@ struct JunoMobileRecentlyDeletedArtifacts: View {
             Section {
                 ForEach(trash.items) { item in
                     HStack(spacing: JunoSpace.cozy) {
-                        VStack(alignment: .leading, spacing: 2) {
+                        VStack(alignment: .leading, spacing: JunoSpace.micro) {
                             Text(item.title.isEmpty ? "Untitled artifact" : item.title)
                                 .font(.body)
                                 .lineLimit(1)

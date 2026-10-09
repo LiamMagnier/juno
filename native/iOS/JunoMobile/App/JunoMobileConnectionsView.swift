@@ -40,7 +40,8 @@ struct JunoMobileConnectionsView: View {
                     Text(model.lastErrorDescription ?? String(localized: "connections.retry"))
                 } actions: {
                     Button("Retry") { Task { await model.refresh() } }
-                        .buttonStyle(.bordered)
+                        .modifier(JunoMobileWorkspaceActionStyle())
+                        .controlSize(.large)
                         .contentShape(.rect)
                 }
             case .ready:
@@ -203,7 +204,7 @@ struct JunoMobileConnectionsView: View {
             Button {
                 appDetail = model.makeAppDetailModel(for: connector)
             } label: {
-                HStack(spacing: 12) {
+                HStack(spacing: JunoSpace.cozy) {
                     rowLabel(connector)
                     JunoIconView(.chevronRight, size: 13)
                         .foregroundStyle(.tertiary)
@@ -216,15 +217,14 @@ struct JunoMobileConnectionsView: View {
             .accessibilityLabel("\(connector.label) details")
             .accessibilityIdentifier("juno.mobile.connections-details.\(connector.id)")
         } else {
-            HStack(spacing: 12) {
+            HStack(spacing: JunoSpace.cozy) {
                 rowLabel(connector)
                 if connector.canConnect {
                     Button("connections.connect") {
                         connectURL = connectURL(for: connector)
                     }
-                    .buttonStyle(.bordered)
+                    .modifier(JunoMobileWorkspaceActionStyle())
                     .buttonBorderShape(.capsule)
-                    .controlSize(.small)
                     .accessibilityLabel(
                         Text(String(format: String(localized: "connections.connect.label"), connector.label))
                     )
@@ -243,9 +243,9 @@ struct JunoMobileConnectionsView: View {
     }
 
     private func rowLabel(_ connector: NativeConnector) -> some View {
-        HStack(spacing: 12) {
+        HStack(spacing: JunoSpace.cozy) {
             JunoMobileConnectorTile(connector: connector)
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: JunoSpace.micro) {
                 Text(connector.label)
                     .foregroundStyle(Color.primary)
                     .lineLimit(1)
@@ -388,9 +388,7 @@ struct JunoMobileAppDetailView: View {
             .navigationTitle(connector.label)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done", action: close)
-                }
+                JunoMobileSheetClose(label: "Done", action: close)
             }
         }
         .presentationDetents([.medium, .large])
@@ -422,7 +420,7 @@ struct JunoMobileAppDetailView: View {
             } else {
                 ForEach(grants) { grant in
                     HStack(spacing: JunoSpace.cozy) {
-                        VStack(alignment: .leading, spacing: 2) {
+                        VStack(alignment: .leading, spacing: JunoSpace.micro) {
                             Text(grant.action)
                             Text(grant.scopeLine)
                                 .font(.footnote)

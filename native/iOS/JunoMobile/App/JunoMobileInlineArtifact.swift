@@ -88,16 +88,12 @@ struct JunoMobileInlineArtifactView: View {
         .navigationTitle(reference.title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            JunoMobileSheetClose(label: "artifact.close", identifier: "juno.mobile.inline-artifact-close", action: close)
             ToolbarItem(placement: .topBarTrailing) {
                 ShareLink(item: reference.content) {
-                    Label("artifact.share-source", image: JunoIcon.share.assetName(.regular))
+                    JunoIconView(.share, size: JunoLayout.Control.glyph)
+                        .accessibilityLabel("artifact.share-source")
                 }
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                Button(action: close) {
-                    Label("artifact.close", image: JunoIcon.close.assetName(.regular))
-                }
-                .accessibilityIdentifier("juno.mobile.inline-artifact-close")
             }
         }
         .accessibilityIdentifier("juno.mobile.inline-artifact")

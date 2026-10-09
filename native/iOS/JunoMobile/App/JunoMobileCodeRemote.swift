@@ -44,12 +44,12 @@ struct JunoMobileCodeHostsStrip: View {
       }
       .accessibilityIdentifier("juno.mobile.code-pair")
     } label: {
-      HStack(spacing: 10) {
+      HStack(spacing: JunoSpace.close) {
         JunoIconView(currentIcon, size: 22)
           .foregroundStyle(.secondary)
           .frame(width: 28)
-        VStack(alignment: .leading, spacing: 1) {
-          HStack(spacing: 4) {
+        VStack(alignment: .leading, spacing: JunoSpace.micro) {
+          HStack(spacing: JunoSpace.hairline) {
             Text(currentName)
               .font(.headline)
               .foregroundStyle(.primary)
@@ -183,6 +183,7 @@ struct JunoMobileCodeRemoteSessionsList: View {
             if let newSession, host.online {
               Button("New session", action: newSession)
                 .buttonStyle(.borderedProminent)
+                .controlSize(.large)
                 .tint(Color.junoAccent)
             }
           }
@@ -232,15 +233,15 @@ struct JunoMobileCodeRemoteSessionRow: View {
   let session: CodeRemoteSessionSummary
 
   var body: some View {
-    HStack(alignment: .firstTextBaseline, spacing: 12) {
+    HStack(alignment: .firstTextBaseline, spacing: JunoSpace.cozy) {
       statusGlyph
         .frame(width: 22)
-      VStack(alignment: .leading, spacing: 3) {
+      VStack(alignment: .leading, spacing: JunoSpace.hairline) {
         Text(session.title)
           .font(.body)
           .foregroundStyle(.primary)
           .lineLimit(2)
-        HStack(spacing: 4) {
+        HStack(spacing: JunoSpace.hairline) {
           Text(statusWord)
             .foregroundStyle(statusTint)
           if let workspace = session.workspaceName {
@@ -262,7 +263,7 @@ struct JunoMobileCodeRemoteSessionRow: View {
         .monospacedDigit()
         .foregroundStyle(.secondary)
     }
-    .padding(.vertical, 4)
+    .padding(.vertical, JunoSpace.hairline)
     .contentShape(Rectangle())
     .accessibilityElement(children: .combine)
   }
@@ -413,7 +414,7 @@ struct JunoMobileCodeDevicesView: View {
       JunoIconView(host.platform == "windows" ? JunoIcon.monitor : JunoIcon.device, size: 17)
         .foregroundStyle(Color.junoAccent)
         .frame(width: 26)
-      VStack(alignment: .leading, spacing: 2) {
+      VStack(alignment: .leading, spacing: JunoSpace.micro) {
         Text(host.name).junoRowLabel()
         Text(host.online ? "Online now" : "Last seen \(host.lastSeenAt.formatted(.relative(presentation: .named)))")
           .junoCaption()
@@ -435,7 +436,7 @@ struct JunoMobileCodeDevicesView: View {
           .frame(width: 8, height: 8)
       }
     }
-    .padding(.vertical, 2)
+    .padding(.vertical, JunoSpace.micro)
   }
 
   private func step(_ number: Int, _ text: String) -> some View {
@@ -449,7 +450,7 @@ struct JunoMobileCodeDevicesView: View {
         .junoRowLabel()
         .fixedSize(horizontal: false, vertical: true)
     }
-    .padding(.vertical, 2)
+    .padding(.vertical, JunoSpace.micro)
   }
 }
 
@@ -851,7 +852,7 @@ struct JunoMobileCodeRemoteThreadView: View {
     Menu {
       items()
     } label: {
-      HStack(spacing: 3) {
+      HStack(spacing: JunoSpace.hairline) {
         Text(title)
           .lineLimit(1)
         JunoIconView(.chevronDown, size: 10)
@@ -964,7 +965,7 @@ struct JunoMobileCodeThreadItem: View {
     case .subagent(let agent):
       HStack(spacing: JunoSpace.snug) {
         JunoIconView(.user, size: 13).foregroundStyle(Color.junoAccent)
-        VStack(alignment: .leading, spacing: 1) {
+        VStack(alignment: .leading, spacing: JunoSpace.micro) {
           Text(agent.title).junoFont(size: 13, relativeTo: .footnote, weight: .medium)
           if let status = agent.status ?? agent.summary {
             Text(status).junoFont(size: 12, relativeTo: .caption).junoSecondaryInk()
@@ -1051,7 +1052,7 @@ struct JunoMobileCodeWorkLog: View {
                   .background(Color.junoTerminal, in: RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous))
               }
             }
-            .padding(.leading, 22)
+            .padding(.leading, JunoSpace.section)
             .padding(.bottom, JunoSpace.snug)
             .transition(.junoInline)
           }
@@ -1076,7 +1077,7 @@ struct JunoMobileCodeQueuedPrompt: View {
   var body: some View {
     HStack {
       Spacer(minLength: 24)
-      VStack(alignment: .trailing, spacing: 3) {
+      VStack(alignment: .trailing, spacing: JunoSpace.hairline) {
         Text(text)
           .junoFont(size: 15, relativeTo: .body)
           .padding(.horizontal, JunoSpace.regular)
@@ -1110,7 +1111,7 @@ struct JunoMobileCodeFileChangeRow: View {
           .truncationMode(.head)
         Spacer(minLength: 4)
         if let additions = change.additions, let deletions = change.deletions {
-          HStack(spacing: 4) {
+          HStack(spacing: JunoSpace.hairline) {
             Text("+\(additions)").foregroundStyle(Color.junoSuccess)
             Text("−\(deletions)").foregroundStyle(Color.junoDanger)
           }
@@ -1163,13 +1164,13 @@ struct JunoMobileCodeApprovalCard: View {
           .junoCaption()
           .lineLimit(4)
       }
-      HStack(spacing: 10) {
+      HStack(spacing: JunoSpace.close) {
         Button {
           decide(false)
         } label: {
           Text("code.approval.deny").fontWeight(.semibold).frame(maxWidth: .infinity)
         }
-        .buttonStyle(.bordered)
+        .modifier(JunoMobileWorkspaceActionStyle())
         .tint(Color.junoMutedForeground)
         .foregroundStyle(.primary)
         .controlSize(.large)
@@ -1240,7 +1241,7 @@ struct JunoMobileCodeTestsCard: View {
   }
 
   private func metric(_ label: String, _ value: Int, _ tint: Color) -> some View {
-    VStack(alignment: .leading, spacing: 1) {
+    VStack(alignment: .leading, spacing: JunoSpace.micro) {
       Text("\(value)")
         .junoFont(size: 17, relativeTo: .title3, weight: .semibold)
         .monospacedDigit()
@@ -1337,9 +1338,7 @@ struct JunoMobileDiffView: View {
     .navigationTitle(title)
     .navigationBarTitleDisplayMode(.inline)
     .toolbar {
-      ToolbarItem(placement: .topBarLeading) {
-        Button("Done") { dismiss() }
-      }
+      JunoMobileSheetClose(label: "Done") { dismiss() }
       if parsed.files.count > 1 {
         ToolbarItem(placement: .topBarTrailing) {
           Menu {
@@ -1354,7 +1353,7 @@ struct JunoMobileDiffView: View {
         }
       }
       ToolbarItem(placement: .topBarTrailing) {
-        HStack(spacing: 4) {
+        HStack(spacing: JunoSpace.hairline) {
           Text("+\(parsed.additions)").foregroundStyle(Color.junoSuccess)
           Text("−\(parsed.deletions)").foregroundStyle(Color.junoDanger)
         }
@@ -1408,7 +1407,7 @@ struct JunoMobileDiffView: View {
                 .frame(width: 36, alignment: .trailing)
               Text(line.newNumber.map(String.init) ?? "")
                 .frame(width: 36, alignment: .trailing)
-                .padding(.trailing, 6)
+                .padding(.trailing, JunoSpace.tight)
               Text(marker(line))
                 .frame(width: 12)
                 .foregroundStyle(tint(line))

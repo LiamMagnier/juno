@@ -298,9 +298,7 @@ struct JunoMobileModelSelectorView: View {
       .navigationTitle("Model")
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
-        ToolbarItem(placement: .confirmationAction) {
-          Button("Done") { dismiss() }
-        }
+        JunoMobileSheetClose(label: "Done") { dismiss() }
       }
       .searchable(
         text: $query,
@@ -320,7 +318,7 @@ struct JunoMobileModelSelectorView: View {
       onSelect(model)
     } label: {
       HStack(spacing: JunoSpace.cozy) {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: JunoSpace.micro) {
           Text(model.displayName)
             .font(.body)
             .foregroundStyle(.primary)
@@ -580,7 +578,7 @@ struct JunoMobileModelSelectorView: View {
         .listRowBackground(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(selected ? Color.junoSelectedFill : Color.clear)
-                .padding(.horizontal, 8)
+                .padding(.horizontal, JunoSpace.snug)
         )
         .listRowSeparator(.hidden)
         // The opening cascade, `min(i, 12) * 16ms` exactly as the web caps it:
@@ -776,9 +774,9 @@ private struct JunoMobileModelRowLabel: View {
             )
             // An optical baseline nudge against the two-line title beside it,
             // not a gap.
-            .padding(.top, 1)
+            .padding(.top, JunoSpace.micro)
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: JunoSpace.hairline) {
                 HStack(spacing: JunoSpace.tight) {
                     Text(model.displayName)
                         .font(.body.weight(selected ? .semibold : .medium))
@@ -823,7 +821,7 @@ private struct JunoMobileModelRowLabel: View {
                 .font(.title3)
                 .foregroundStyle(selected ? Color.junoAccent : Color.junoBorder)
                 .contentTransition(.symbolEffect(.replace))
-                .padding(.top, 1)
+                .padding(.top, JunoSpace.micro)
                 .accessibilityHidden(true)
         }
         .opacity(unavailabilityReason == nil ? 1 : 0.55)

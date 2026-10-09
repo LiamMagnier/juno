@@ -148,7 +148,7 @@ struct JunoSidebarPressStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .background(
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                RoundedRectangle(cornerRadius: JunoLayout.Row.fillRadius, style: .continuous)
                     .fill(configuration.isPressed ? Color.junoForeground.opacity(0.06) : .clear)
             )
     }
@@ -159,7 +159,7 @@ struct JunoSidebarPressStyle: ButtonStyle {
 /// Content surfaces stay opaque on purpose — glass behind running text is where
 /// legibility goes, and the material is reserved for chrome that floats.
 struct JunoCard<Content: View>: View {
-    var padding: CGFloat = 16
+    var padding: CGFloat = JunoLayout.Page.cardPadding
     @ViewBuilder var content: Content
 
     var body: some View {
@@ -304,7 +304,7 @@ struct JunoStatusPill: View {
     private var isGlyphWorthy: Bool { text.count > 1 }
 
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: JunoSpace.hairline) {
             if tone != .quiet, isGlyphWorthy {
                 JunoSymbol(tone == .danger ? JunoIcon.octagonX : JunoIcon.error)
                     .imageScale(.small)
@@ -396,4 +396,32 @@ struct JunoGlassButtonStyle: ViewModifier {
     func body(content: Content) -> some View {
         content.buttonStyle(.glass).buttonBorderShape(.capsule)
     }
+}
+
+// MARK: - Sheet close
+
+/// A sheet's close: the website's × in the bar's own 44pt glass circle, on
+/// the leading edge — iOS Calendar's grammar (× leading, the sheet's confirm
+/// trailing). Every sheet that only needs dismissing uses this, so the same
+/// gesture is never "Done" in one place, "×" in another and on a different
+/// side in a third (docs/native/spacing-pass/AUDIT.md X4).
+///
+/// A bare glyph on purpose: from iOS 26 the bar draws the Liquid Glass circle
+/// behind a toolbar item itself, and a glass circle of our own would stack a
+/// second ring inside it.
+struct JunoMobileSheetClose: ToolbarContent {
+  var label: LocalizedStringKey = "Close"
+  var identifier: String = "juno.mobile.sheet-close"
+  let action: () -> Void
+
+  var body: some ToolbarContent {
+    ToolbarItem(placement: .topBarLeading) {
+      Button(action: action) {
+        JunoIconView(.close, size: JunoLayout.Control.glyph)
+          .foregroundStyle(Color.primary)
+      }
+      .accessibilityLabel(label)
+      .accessibilityIdentifier(identifier)
+    }
+  }
 }

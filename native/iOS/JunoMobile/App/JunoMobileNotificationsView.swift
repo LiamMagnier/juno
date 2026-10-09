@@ -74,19 +74,17 @@ struct JunoMobileNotificationsView: View {
     .navigationTitle("Notifications")
     .navigationBarTitleDisplayMode(.inline)
     .toolbar {
+      JunoMobileSheetClose(label: "Done") { finish() }
       if let model, (model.count?.unreadCount ?? 0) > 0 || (model.items ?? []).contains(where: \.isUnread) {
-        ToolbarItem(placement: .topBarLeading) {
+        ToolbarItem(placement: .topBarTrailing) {
           Menu {
             Button { model.markAllRead() } label: { Label("Mark All as Read", icon: .circleCheck) }
               .accessibilityIdentifier("juno.mobile.notifications.mark-all")
           } label: {
-            JunoIconView(.ellipsis, size: 18)
+            JunoIconView(.ellipsis, size: JunoLayout.Control.glyph)
               .accessibilityLabel("More")
           }
         }
-      }
-      ToolbarItem(placement: .confirmationAction) {
-        Button("Done") { finish() }
       }
     }
     .onAppear { model?.load() }
@@ -193,7 +191,7 @@ struct JunoMobileNotificationRow: View {
       mark
         .frame(width: 28, height: 28)
         .accessibilityHidden(true)
-      VStack(alignment: .leading, spacing: 2) {
+      VStack(alignment: .leading, spacing: JunoSpace.micro) {
         Text(notification.title)
           .font(.body.weight(notification.isUnread ? .medium : .regular))
           .foregroundStyle(notification.isUnread ? Color.primary : Color.junoSecondaryInk)
@@ -218,11 +216,11 @@ struct JunoMobileNotificationRow: View {
       if notification.href != nil {
         JunoIconView(.chevronRight, size: 13)
           .foregroundStyle(Color.junoTertiaryInk)
-          .padding(.top, 4)
+          .padding(.top, JunoSpace.hairline)
           .accessibilityHidden(true)
       }
     }
-    .padding(.vertical, 4)
+    .padding(.vertical, JunoSpace.hairline)
     .contentShape(.rect)
     .accessibilityElement(children: .combine)
     .accessibilityLabel(Text(verbatim: (notification.isUnread ? "Unread: " : "") + notification.title))

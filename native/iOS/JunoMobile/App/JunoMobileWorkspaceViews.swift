@@ -61,7 +61,8 @@ struct JunoMobileProjectsView: View {
         } actions: {
           Button("Retry") { Task { await model.reload() } }
             .contentShape(.rect)
-            .buttonStyle(.bordered)
+            .modifier(JunoMobileWorkspaceActionStyle())
+            .controlSize(.large)
         }
       default:
         list
@@ -238,7 +239,8 @@ struct JunoMobileProjectsView: View {
     } actions: {
       Button("New Project") { showingCreate = true }
         .contentShape(.rect)
-        .buttonStyle(.bordered)
+        .modifier(JunoMobileWorkspaceActionStyle())
+        .controlSize(.large)
     }
   }
 
@@ -287,7 +289,7 @@ private struct JunoMobileProjectRow: View {
         .foregroundStyle(.secondary)
         .frame(width: 32)
         .accessibilityHidden(true)
-      VStack(alignment: .leading, spacing: 2) {
+      VStack(alignment: .leading, spacing: JunoSpace.micro) {
         Text(project.name)
           .font(.body)
           .foregroundStyle(.primary)
@@ -418,7 +420,7 @@ private struct JunoMobileProjectFileRow: View {
           .foregroundStyle(.secondary)
           .frame(width: 32)
           .accessibilityHidden(true)
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: JunoSpace.micro) {
           Text(file.fileName)
             .font(.body)
             .foregroundStyle(.primary)
@@ -515,7 +517,8 @@ struct JunoMobileArtifactsView: View {
         } actions: {
           Button("Retry") { Task { await model.reload() } }
             .contentShape(.rect)
-            .buttonStyle(.bordered)
+            .modifier(JunoMobileWorkspaceActionStyle())
+            .controlSize(.large)
         }
       default:
         content
@@ -612,7 +615,7 @@ struct JunoMobileArtifactsView: View {
           .foregroundStyle(.secondary)
           .frame(width: 32)
           .accessibilityHidden(true)
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: JunoSpace.micro) {
           Text(artifact.title)
             .font(.body)
             .foregroundStyle(.primary)
@@ -759,7 +762,7 @@ private struct JunoMobileProjectDetail: View {
       openConversation(conversation.id)
     } label: {
       HStack(spacing: JunoSpace.cozy) {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: JunoSpace.micro) {
           Text(conversation.title)
             .font(.body)
             .foregroundStyle(.primary)
@@ -837,10 +840,12 @@ private struct JunoMobileProjectDetail: View {
             )
           }
         } label: {
-          Label(
-            project.starred ? "Unpin project" : "Pin project",
-            image: (project.starred ? JunoIcon.pin : JunoIcon.pin).assetName(.regular)
-          )
+          // A glyph in the bar's 44pt circle, never a sentence in a capsule
+          // (docs/native/spacing-pass/AUDIT.md X5). A drawn view, not a
+          // `Label(_, image:)`: the bar bridges that to a bar item and shows
+          // its title when it cannot resolve the symbol set.
+          JunoIconView(project.starred ? .pinOff : .pin, size: JunoLayout.Control.glyph)
+            .accessibilityLabel(project.starred ? "Unpin project" : "Pin project")
         }
         .disabled(project.isPending || model.isMutating)
         .accessibilityIdentifier("juno.mobile.project-pin")
@@ -862,7 +867,8 @@ private struct JunoMobileProjectDetail: View {
           Divider()
           Button(role: .destructive) { deleteTarget = project } label: { Label("Delete", image: JunoIcon.trash.assetName(.regular)) }
         } label: {
-          Label("Project actions", image: JunoIcon.ellipsis.assetName(.regular))
+          JunoIconView(.ellipsis, size: JunoLayout.Control.glyph)
+            .accessibilityLabel("Project actions")
         }
         .disabled(project.isPending || model.isMutating)
         .accessibilityIdentifier("juno.mobile.project-menu")
@@ -1463,7 +1469,7 @@ struct JunoMobileArtifactDetail: View {
   private var canvasHeader: some View {
     VStack(alignment: .leading, spacing: JunoSpace.cozy) {
       HStack(alignment: .center, spacing: JunoSpace.cozy) {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: JunoSpace.micro) {
           Text(artifact.title)
             .font(.headline)
             .lineLimit(1)
@@ -1694,7 +1700,7 @@ struct JunoMobileArtifactDetail: View {
           let previous = artifact.versions.filter { $0.version < (selected?.version ?? 0) }.max { $0.version < $1.version }
           JunoMobileArtifactVersionDiff(previous: previous, selected: selected)
             .navigationTitle("Version changes")
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showingDiff = false }.contentShape(.rect) } }
+            .toolbar { JunoMobileSheetClose(label: "Done") { showingDiff = false } }
         }
       }
       .alert("Rename artifact", isPresented: $showingRename) {

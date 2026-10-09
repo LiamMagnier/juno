@@ -102,10 +102,11 @@ struct JunoMobileResearchReportView: View {
 
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
-        ToolbarItem(placement: .topBarLeading) {
-            Button("Done", action: close)
-                .accessibilityIdentifier("juno.mobile.research-report.done")
-        }
+        JunoMobileSheetClose(
+            label: "Close report",
+            identifier: "juno.mobile.research-report.done",
+            action: close
+        )
         ToolbarItemGroup(placement: .topBarTrailing) {
             contentsMenu
             shareMenu
@@ -311,7 +312,7 @@ struct JunoMobileResearchRunBlock: View {
                     .foregroundStyle(Color.junoWarningInk)
                     .accessibilityHidden(true)
             }
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: JunoSpace.micro) {
                 Text(run.phase == .failed ? (run.error ?? "Research couldn\u{2019}t finish") : "Research stopped before it wrote a report")
                     .foregroundStyle(run.phase == .failed ? Color.junoWarningInk : Color.junoSecondaryInk)
                 Text(run.displayTitle)

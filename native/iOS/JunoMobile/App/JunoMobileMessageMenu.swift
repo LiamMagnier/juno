@@ -94,17 +94,15 @@ struct JunoMobileSelectTextSheet: View {
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-          ToolbarItem(placement: .topBarLeading) {
+          JunoMobileSheetClose(label: "Done") { dismiss() }
+          ToolbarItem(placement: .topBarTrailing) {
             Button {
               UIPasteboard.general.string = text
               copyHaptic.fire()
             } label: {
-              JunoIconView(.copy, size: 15)
+              JunoIconView(.copy, size: JunoLayout.Control.glyph)
             }
             .accessibilityLabel("Copy all")
-          }
-          ToolbarItem(placement: .confirmationAction) {
-            Button("Done") { dismiss() }
           }
         }
     }
