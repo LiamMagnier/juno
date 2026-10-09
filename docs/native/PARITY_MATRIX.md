@@ -127,7 +127,7 @@ POST /api/chat's body and frames are classified field by field in the chat wire 
 | `/api/chat/receipt` | GET | Planned |  | Receipt refresh for a durable first submission, built for native recovery; the Swift apps append the turn first and have not adopted the durable pair (request.clientRequestId in the chat wire). |
 | `/api/chat/stream/[generationId]` | GET | Native | JunoChatKit |  |
 | `/api/chat/stream/active` | GET | Native | JunoChatKit |  |
-| `/api/code/run` | POST | Planned |  | Run a chat code block or a Live UI exercise answer in the hosted sandbox (C, C++, Java, Go, Rust, Ruby, PHP, Lua, Perl, Bash); the web's Run button. The apps have no Run button yet. |
+| `/api/code/run` | GET, POST | Planned |  | Run a chat code block or a Live UI exercise answer in the hosted sandbox (C, C++, Java, Go, Rust, Ruby, PHP, Lua, Perl, Bash); the web's Run button. The apps have no Run button yet. |
 | `/api/generate` | POST | Native | JunoChatKit |  |
 | `/api/models` | GET | Web only |  | The web's model list. The apps read /api/v1/models; the Electron client (native/desktop-electron) still reads this one. |
 | `/api/v1/models` | GET | Native | JunoChatKit |  |
