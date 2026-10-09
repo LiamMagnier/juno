@@ -423,14 +423,14 @@ public actor EnvServerSidecar {
                 // Give the ready line a head start before probing the port.
                 try? await Task.sleep(for: .milliseconds(300))
                 while clock.now < deadline {
-                    if await self.readyContinuation == nil { return }
+                    if self.readyContinuation == nil { return }
                     if Self.canConnect(port: port) {
-                        await self.resolveReady(port)
+                        self.resolveReady(port)
                         return
                     }
                     try? await Task.sleep(for: .milliseconds(200))
                 }
-                await self.resolveReady(nil)
+                self.resolveReady(nil)
             }
         }
     }

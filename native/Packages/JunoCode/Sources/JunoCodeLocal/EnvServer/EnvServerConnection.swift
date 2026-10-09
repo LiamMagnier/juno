@@ -172,11 +172,11 @@ public actor EnvServerConnection {
                 do {
                     try await self.transport.send(text)
                 } catch {
-                    await self.resolve(id, with: .failure(EnvServerConnectionError.closed))
+                    self.resolve(id, with: .failure(EnvServerConnectionError.closed))
                     return
                 }
                 try? await Task.sleep(for: timeout)
-                await self.resolve(id, with: .failure(EnvServerConnectionError.timedOut(type.rawValue)))
+                self.resolve(id, with: .failure(EnvServerConnectionError.timedOut(type.rawValue)))
             }
         }
         guard response.ok else {
