@@ -52,14 +52,22 @@
     }
   },
   "targets": {
-    "total": 172,
+    "total": 196,
     "modules": {
-      "JunoNativeKit (shared)": 35,
-      "JunoCode (shared)": 63,
+      "JunoNativeKit (shared)": 38,
+      "JunoCode (shared)": 84,
       "JunoDesktop (macOS)": 52,
       "JunoMobile (iOS)": 22
     },
     "files": {
+      "native/Packages/JunoCode/Sources/JunoCodeUI/CodeV2/Views/CodeV2Agents.swift": 4,
+      "native/Packages/JunoCode/Sources/JunoCodeUI/CodeV2/Views/CodeV2ComposerParts.swift": 5,
+      "native/Packages/JunoCode/Sources/JunoCodeUI/CodeV2/Views/CodeV2ContextGauge.swift": 1,
+      "native/Packages/JunoCode/Sources/JunoCodeUI/CodeV2/Views/CodeV2Dock.swift": 2,
+      "native/Packages/JunoCode/Sources/JunoCodeUI/CodeV2/Views/CodeV2ModelPicker.swift": 2,
+      "native/Packages/JunoCode/Sources/JunoCodeUI/CodeV2/Views/CodeV2OrchestratePicker.swift": 2,
+      "native/Packages/JunoCode/Sources/JunoCodeUI/CodeV2/Views/CodeV2ThreadView.swift": 3,
+      "native/Packages/JunoCode/Sources/JunoCodeUI/CodeV2/Views/CodeV2TierSelector.swift": 2,
       "native/Packages/JunoCode/Sources/JunoCodeUI/Studio/Settings/StudioSettingsView.swift": 2,
       "native/Packages/JunoCode/Sources/JunoCodeUI/Studio/StudioApprovalPrompt.swift": 4,
       "native/Packages/JunoCode/Sources/JunoCodeUI/Studio/StudioLanding.swift": 4,
@@ -90,6 +98,7 @@
       "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/JunoStepLabView.swift": 5,
       "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/JunoVoiceAura.swift": 1,
       "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/JunoVoiceOrb.swift": 1,
+      "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/LiveUI/JunoLiveUIView.swift": 3,
       "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/MermaidDiagramView.swift": 2,
       "native/iOS/JunoMobile/App/JunoMobileArchivedView.swift": 2,
       "native/iOS/JunoMobile/App/JunoMobileCodeRemote.swift": 5,

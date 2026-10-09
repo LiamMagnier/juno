@@ -92,7 +92,10 @@ public extension NativeChatModelOption {
             choosesThinkingAutomatically: choosesReasoningAutomatically,
             price: pricing.map {
                 JunoModelPrice(inputPerMillion: $0.inputPerMillion, outputPerMillion: $0.outputPerMillion)
-            }
+            },
+            contextTiers: contextTiers,
+            codeAgentic: codeAgentic,
+            codeRank: codeRank
         )
     }
 }

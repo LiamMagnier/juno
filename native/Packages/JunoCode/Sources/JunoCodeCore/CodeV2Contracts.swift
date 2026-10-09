@@ -106,6 +106,29 @@ public enum CodeV2 {
         public var effortLevels: [EffortLevel]
         public var images: Bool
         public var mcpInjection: Bool
+
+        public init(
+            steering: Bool = false, queue: Bool = false, interrupt: Bool = true, resume: Bool = false,
+            fork: Bool = false, rollback: Bool = false, planMode: Bool = false,
+            approvals: [CodeV2.RuntimeMode] = [], subagents: Bool = false, computerUse: Bool = false,
+            contextTiers: Bool = false, effortLevels: [CodeV2.EffortLevel] = [], images: Bool = false,
+            mcpInjection: Bool = false
+        ) {
+            self.steering = steering
+            self.queue = queue
+            self.interrupt = interrupt
+            self.resume = resume
+            self.fork = fork
+            self.rollback = rollback
+            self.planMode = planMode
+            self.approvals = approvals
+            self.subagents = subagents
+            self.computerUse = computerUse
+            self.contextTiers = contextTiers
+            self.effortLevels = effortLevels
+            self.images = images
+            self.mcpInjection = mcpInjection
+        }
     }
 
     public struct ContextTier: Codable, Sendable, Hashable {
@@ -153,6 +176,20 @@ public enum CodeV2 {
         public var defaultEffort: EffortLevel?
         public var supportsFast: Bool?
         public var isDefault: Bool?
+
+        public init(
+            id: String, label: String, contextTiers: [CodeV2.ContextTier]? = nil,
+            effortLevels: [CodeV2.EffortLevel]? = nil, defaultEffort: CodeV2.EffortLevel? = nil,
+            supportsFast: Bool? = nil, isDefault: Bool? = nil
+        ) {
+            self.id = id
+            self.label = label
+            self.contextTiers = contextTiers
+            self.effortLevels = effortLevels
+            self.defaultEffort = defaultEffort
+            self.supportsFast = supportsFast
+            self.isDefault = isDefault
+        }
     }
 
     public struct ProviderInstance: Codable, Sendable, Hashable, Identifiable {
@@ -172,6 +209,32 @@ public enum CodeV2 {
         public var capabilities: ProviderCapabilities?
         public var models: [ProviderModel]?
         public var checkedAt: String?
+
+        public init(
+            id: String, kind: CodeV2.ProviderKind, label: String, binaryPath: String? = nil,
+            configDir: String? = nil, env: [String: String]? = nil, launchArgs: [String]? = nil,
+            acpCommand: [String]? = nil, account: CodeV2.ProviderAccount? = nil,
+            status: CodeV2.ProviderStatus, statusMessage: String? = nil, version: String? = nil,
+            limits: [CodeV2.UsageWindow]? = nil, capabilities: CodeV2.ProviderCapabilities? = nil,
+            models: [CodeV2.ProviderModel]? = nil, checkedAt: String? = nil
+        ) {
+            self.id = id
+            self.kind = kind
+            self.label = label
+            self.binaryPath = binaryPath
+            self.configDir = configDir
+            self.env = env
+            self.launchArgs = launchArgs
+            self.acpCommand = acpCommand
+            self.account = account
+            self.status = status
+            self.statusMessage = statusMessage
+            self.version = version
+            self.limits = limits
+            self.capabilities = capabilities
+            self.models = models
+            self.checkedAt = checkedAt
+        }
     }
 
     // MARK: Model and role selection
@@ -348,6 +411,12 @@ public enum CodeV2 {
         public var name: String
         public var mediaType: String
         public var ref: String
+
+        public init(name: String, mediaType: String, ref: String) {
+            self.name = name
+            self.mediaType = mediaType
+            self.ref = ref
+        }
     }
 
     public struct UserInput: Codable, Sendable, Hashable {
@@ -364,17 +433,34 @@ public enum CodeV2 {
         public var input: Int
         public var output: Int
         public var cachedInput: Int?
+
+        public init(input: Int, output: Int, cachedInput: Int? = nil) {
+            self.input = input
+            self.output = output
+            self.cachedInput = cachedInput
+        }
     }
 
     public struct PlanStep: Codable, Sendable, Hashable {
         public var text: String
         public var status: StepStatus
+
+        public init(text: String, status: CodeV2.StepStatus) {
+            self.text = text
+            self.status = status
+        }
     }
 
     public struct TodoEntry: Codable, Sendable, Hashable {
         public var id: String?
         public var text: String
         public var status: StepStatus
+
+        public init(id: String? = nil, text: String, status: CodeV2.StepStatus) {
+            self.id = id
+            self.text = text
+            self.status = status
+        }
     }
 
     public struct UserInputQuestion: Codable, Sendable, Hashable {
@@ -382,6 +468,13 @@ public enum CodeV2 {
         public var prompt: String
         public var options: [String]?
         public var multiSelect: Bool?
+
+        public init(id: String, prompt: String, options: [String]? = nil, multiSelect: Bool? = nil) {
+            self.id = id
+            self.prompt = prompt
+            self.options = options
+            self.multiSelect = multiSelect
+        }
     }
 
     public struct FileChangeEntry: Codable, Sendable, Hashable {
@@ -392,11 +485,28 @@ public enum CodeV2 {
         public var diff: String?
         public var additions: Int?
         public var deletions: Int?
+
+        public init(
+            path: String, change: Change, previousPath: String? = nil, diff: String? = nil,
+            additions: Int? = nil, deletions: Int? = nil
+        ) {
+            self.path = path
+            self.change = change
+            self.previousPath = previousPath
+            self.diff = diff
+            self.additions = additions
+            self.deletions = deletions
+        }
     }
 
     public struct WebSearchResult: Codable, Sendable, Hashable {
         public var title: String
         public var url: String
+
+        public init(title: String, url: String) {
+            self.title = title
+            self.url = url
+        }
     }
 
     public struct UserMessage: Codable, Sendable, Hashable {
@@ -407,6 +517,18 @@ public enum CodeV2 {
         public var text: String
         public var attachments: [Attachment]?
         public var delivery: Delivery?
+
+        public init(
+            id: String, turnId: String? = nil, createdAt: String, text: String,
+            attachments: [CodeV2.Attachment]? = nil, delivery: Delivery? = nil
+        ) {
+            self.id = id
+            self.turnId = turnId
+            self.createdAt = createdAt
+            self.text = text
+            self.attachments = attachments
+            self.delivery = delivery
+        }
     }
 
     public struct AssistantMessage: Codable, Sendable, Hashable {
@@ -416,6 +538,15 @@ public enum CodeV2 {
         public var text: String
         public var streaming: Bool
         public var agentId: String?
+
+        public init(id: String, turnId: String? = nil, createdAt: String, text: String, streaming: Bool = false, agentId: String? = nil) {
+            self.id = id
+            self.turnId = turnId
+            self.createdAt = createdAt
+            self.text = text
+            self.streaming = streaming
+            self.agentId = agentId
+        }
     }
 
     public struct Reasoning: Codable, Sendable, Hashable {
@@ -425,6 +556,15 @@ public enum CodeV2 {
         public var text: String
         public var streaming: Bool
         public var summary: Bool?
+
+        public init(id: String, turnId: String? = nil, createdAt: String, text: String, streaming: Bool = false, summary: Bool? = nil) {
+            self.id = id
+            self.turnId = turnId
+            self.createdAt = createdAt
+            self.text = text
+            self.streaming = streaming
+            self.summary = summary
+        }
     }
 
     public struct Plan: Codable, Sendable, Hashable {
@@ -434,6 +574,18 @@ public enum CodeV2 {
         public var text: String
         public var steps: [PlanStep]?
         public var awaitingApproval: Bool?
+
+        public init(
+            id: String, turnId: String? = nil, createdAt: String, text: String,
+            steps: [CodeV2.PlanStep]? = nil, awaitingApproval: Bool? = nil
+        ) {
+            self.id = id
+            self.turnId = turnId
+            self.createdAt = createdAt
+            self.text = text
+            self.steps = steps
+            self.awaitingApproval = awaitingApproval
+        }
     }
 
     public struct TodoList: Codable, Sendable, Hashable {
@@ -441,6 +593,13 @@ public enum CodeV2 {
         public var turnId: String?
         public var createdAt: String
         public var todos: [TodoEntry]
+
+        public init(id: String, turnId: String? = nil, createdAt: String, todos: [CodeV2.TodoEntry]) {
+            self.id = id
+            self.turnId = turnId
+            self.createdAt = createdAt
+            self.todos = todos
+        }
     }
 
     public struct UserInputRequest: Codable, Sendable, Hashable {
@@ -452,6 +611,19 @@ public enum CodeV2 {
         public var questions: [UserInputQuestion]
         public var answers: [String: [String]]?
         public var status: Status
+
+        public init(
+            id: String, turnId: String? = nil, createdAt: String, requestId: String,
+            questions: [CodeV2.UserInputQuestion], answers: [String: [String]]? = nil, status: Status
+        ) {
+            self.id = id
+            self.turnId = turnId
+            self.createdAt = createdAt
+            self.requestId = requestId
+            self.questions = questions
+            self.answers = answers
+            self.status = status
+        }
     }
 
     public struct FileChange: Codable, Sendable, Hashable {
@@ -461,6 +633,18 @@ public enum CodeV2 {
         public var callId: String
         public var changes: [FileChangeEntry]
         public var status: ItemStatus
+
+        public init(
+            id: String, turnId: String? = nil, createdAt: String, callId: String,
+            changes: [CodeV2.FileChangeEntry], status: CodeV2.ItemStatus
+        ) {
+            self.id = id
+            self.turnId = turnId
+            self.createdAt = createdAt
+            self.callId = callId
+            self.changes = changes
+            self.status = status
+        }
     }
 
     public struct CommandExecution: Codable, Sendable, Hashable {
@@ -475,6 +659,24 @@ public enum CodeV2 {
         public var durationMs: Int?
         public var background: Bool?
         public var status: ItemStatus
+
+        public init(
+            id: String, turnId: String? = nil, createdAt: String, callId: String, command: String,
+            cwd: String? = nil, output: String? = nil, exitCode: Int? = nil, durationMs: Int? = nil,
+            background: Bool? = nil, status: CodeV2.ItemStatus
+        ) {
+            self.id = id
+            self.turnId = turnId
+            self.createdAt = createdAt
+            self.callId = callId
+            self.command = command
+            self.cwd = cwd
+            self.output = output
+            self.exitCode = exitCode
+            self.durationMs = durationMs
+            self.background = background
+            self.status = status
+        }
     }
 
     public struct Search: Codable, Sendable, Hashable {
@@ -487,6 +689,20 @@ public enum CodeV2 {
         public var scope: Scope?
         public var matches: Int?
         public var status: ItemStatus
+
+        public init(
+            id: String, turnId: String? = nil, createdAt: String, callId: String, query: String,
+            scope: Scope? = nil, matches: Int? = nil, status: CodeV2.ItemStatus
+        ) {
+            self.id = id
+            self.turnId = turnId
+            self.createdAt = createdAt
+            self.callId = callId
+            self.query = query
+            self.scope = scope
+            self.matches = matches
+            self.status = status
+        }
     }
 
     public struct WebSearch: Codable, Sendable, Hashable {
@@ -497,6 +713,19 @@ public enum CodeV2 {
         public var query: String
         public var results: [WebSearchResult]?
         public var status: ItemStatus
+
+        public init(
+            id: String, turnId: String? = nil, createdAt: String, callId: String, query: String,
+            results: [CodeV2.WebSearchResult]? = nil, status: CodeV2.ItemStatus
+        ) {
+            self.id = id
+            self.turnId = turnId
+            self.createdAt = createdAt
+            self.callId = callId
+            self.query = query
+            self.results = results
+            self.status = status
+        }
     }
 
     public struct ApprovalRequest: Codable, Sendable, Hashable {
@@ -518,6 +747,25 @@ public enum CodeV2 {
         public var options: [ApprovalDecision]?
         public var decision: ApprovalDecision?
         public var status: Status
+
+        public init(
+            id: String, turnId: String? = nil, createdAt: String, callId: String, requestId: String,
+            action: Action, summary: String, justification: String? = nil, detail: String? = nil,
+            options: [CodeV2.ApprovalDecision]? = nil, decision: CodeV2.ApprovalDecision? = nil, status: Status
+        ) {
+            self.id = id
+            self.turnId = turnId
+            self.createdAt = createdAt
+            self.callId = callId
+            self.requestId = requestId
+            self.action = action
+            self.summary = summary
+            self.justification = justification
+            self.detail = detail
+            self.options = options
+            self.decision = decision
+            self.status = status
+        }
     }
 
     public struct Checkpoint: Codable, Sendable, Hashable {
@@ -530,6 +778,21 @@ public enum CodeV2 {
         public var filesChanged: Int?
         public var additions: Int?
         public var deletions: Int?
+
+        public init(
+            id: String, turnId: String? = nil, createdAt: String, checkpointId: String, turnOrdinal: Int,
+            ref: String? = nil, filesChanged: Int? = nil, additions: Int? = nil, deletions: Int? = nil
+        ) {
+            self.id = id
+            self.turnId = turnId
+            self.createdAt = createdAt
+            self.checkpointId = checkpointId
+            self.turnOrdinal = turnOrdinal
+            self.ref = ref
+            self.filesChanged = filesChanged
+            self.additions = additions
+            self.deletions = deletions
+        }
     }
 
     public struct Interrupt: Codable, Sendable, Hashable {
@@ -540,6 +803,15 @@ public enum CodeV2 {
         public var reason: Reason
         public var message: String?
         public var resumeAt: String?
+
+        public init(id: String, turnId: String? = nil, createdAt: String, reason: Reason, message: String? = nil, resumeAt: String? = nil) {
+            self.id = id
+            self.turnId = turnId
+            self.createdAt = createdAt
+            self.reason = reason
+            self.message = message
+            self.resumeAt = resumeAt
+        }
     }
 
     public struct SystemNotice: Codable, Sendable, Hashable {
@@ -550,6 +822,15 @@ public enum CodeV2 {
         public var level: Level
         public var text: String
         public var code: String?
+
+        public init(id: String, turnId: String? = nil, createdAt: String, level: Level = .info, text: String, code: String? = nil) {
+            self.id = id
+            self.turnId = turnId
+            self.createdAt = createdAt
+            self.level = level
+            self.text = text
+            self.code = code
+        }
     }
 
     public struct ErrorNotice: Codable, Sendable, Hashable {
@@ -559,6 +840,15 @@ public enum CodeV2 {
         public var message: String
         public var code: String?
         public var retryable: Bool?
+
+        public init(id: String, turnId: String? = nil, createdAt: String, message: String, code: String? = nil, retryable: Bool? = nil) {
+            self.id = id
+            self.turnId = turnId
+            self.createdAt = createdAt
+            self.message = message
+            self.code = code
+            self.retryable = retryable
+        }
     }
 
     public struct Compaction: Codable, Sendable, Hashable {
@@ -570,6 +860,19 @@ public enum CodeV2 {
         public var afterTokens: Int
         public var strategy: Strategy?
         public var summary: String?
+
+        public init(
+            id: String, turnId: String? = nil, createdAt: String, beforeTokens: Int, afterTokens: Int,
+            strategy: Strategy? = nil, summary: String? = nil
+        ) {
+            self.id = id
+            self.turnId = turnId
+            self.createdAt = createdAt
+            self.beforeTokens = beforeTokens
+            self.afterTokens = afterTokens
+            self.strategy = strategy
+            self.summary = summary
+        }
     }
 
     public struct Handoff: Codable, Sendable, Hashable {
@@ -579,6 +882,15 @@ public enum CodeV2 {
         public var from: ModelSelection?
         public var to: ModelSelection
         public var reason: String?
+
+        public init(id: String, turnId: String? = nil, createdAt: String, from: CodeV2.ModelSelection? = nil, to: CodeV2.ModelSelection, reason: String? = nil) {
+            self.id = id
+            self.turnId = turnId
+            self.createdAt = createdAt
+            self.from = from
+            self.to = to
+            self.reason = reason
+        }
     }
 
     public struct Subagent: Codable, Sendable, Hashable {
@@ -592,6 +904,23 @@ public enum CodeV2 {
         public var task: String?
         public var closingText: String?
         public var tokens: TokenCount?
+
+        public init(
+            id: String, turnId: String? = nil, createdAt: String, agentId: String, role: CodeV2.AgentRole,
+            model: CodeV2.ModelSelection, status: CodeV2.SubagentStatus, task: String? = nil,
+            closingText: String? = nil, tokens: CodeV2.TokenCount? = nil
+        ) {
+            self.id = id
+            self.turnId = turnId
+            self.createdAt = createdAt
+            self.agentId = agentId
+            self.role = role
+            self.model = model
+            self.status = status
+            self.task = task
+            self.closingText = closingText
+            self.tokens = tokens
+        }
     }
 
     public struct ComputerAction: Codable, Sendable, Hashable {
@@ -1027,6 +1356,14 @@ public enum CodeV2 {
         public var label: String
         public var note: String?
         public var url: String?
+
+        public init(action: CodeV2.ProviderSetupAction, command: String, label: String, note: String? = nil, url: String? = nil) {
+            self.action = action
+            self.command = command
+            self.label = label
+            self.note = note
+            self.url = url
+        }
     }
 
     /// One row of `session.list`.
@@ -1039,6 +1376,20 @@ public enum CodeV2 {
         public var updatedAt: String
         public var lastSequence: Int
         public var parentSessionId: String?
+
+        public init(
+            id: String, cwd: String, title: String? = nil, state: CodeV2.SessionState,
+            selection: CodeV2.ModelSelection, updatedAt: String, lastSequence: Int, parentSessionId: String? = nil
+        ) {
+            self.id = id
+            self.cwd = cwd
+            self.title = title
+            self.state = state
+            self.selection = selection
+            self.updatedAt = updatedAt
+            self.lastSequence = lastSequence
+            self.parentSessionId = parentSessionId
+        }
     }
 
     // contract: SERVER_EVENT_TYPE_VALUES
@@ -1083,12 +1434,30 @@ public enum CodeV2 {
         public var contextTokens: Int?
         public var contextWindow: Int?
         public var costUsd: Double?
+
+        public init(
+            inputTokens: Int = 0, outputTokens: Int = 0, cachedInputTokens: Int? = nil,
+            contextTokens: Int? = nil, contextWindow: Int? = nil, costUsd: Double? = nil
+        ) {
+            self.inputTokens = inputTokens
+            self.outputTokens = outputTokens
+            self.cachedInputTokens = cachedInputTokens
+            self.contextTokens = contextTokens
+            self.contextWindow = contextWindow
+            self.costUsd = costUsd
+        }
     }
 
     public struct QueuedInput: Codable, Sendable, Hashable, Identifiable {
         public var id: String
         public var input: UserInput
         public var queuedAt: String
+
+        public init(id: String, input: CodeV2.UserInput, queuedAt: String) {
+            self.id = id
+            self.input = input
+            self.queuedAt = queuedAt
+        }
     }
 
     public struct SessionSnapshot: Codable, Sendable, Hashable {
@@ -1106,6 +1475,30 @@ public enum CodeV2 {
         public var queue: [QueuedInput]
         public var usage: SessionUsage?
         public var worktree: WorktreeInfo?
+
+        public init(
+            id: String, cwd: String, title: String? = nil, selection: CodeV2.ModelSelection,
+            routing: CodeV2.RoleRouting? = nil, runtimeMode: CodeV2.RuntimeMode = .ask,
+            interactionMode: CodeV2.InteractionMode = .default, state: CodeV2.SessionState = .idle,
+            activeTurnId: String? = nil, resumeAt: String? = nil, items: [CodeV2.TurnItem] = [],
+            queue: [CodeV2.QueuedInput] = [], usage: CodeV2.SessionUsage? = nil,
+            worktree: CodeV2.WorktreeInfo? = nil
+        ) {
+            self.id = id
+            self.cwd = cwd
+            self.title = title
+            self.selection = selection
+            self.routing = routing
+            self.runtimeMode = runtimeMode
+            self.interactionMode = interactionMode
+            self.state = state
+            self.activeTurnId = activeTurnId
+            self.resumeAt = resumeAt
+            self.items = items
+            self.queue = queue
+            self.usage = usage
+            self.worktree = worktree
+        }
     }
 
     /// A client → server command. `params` stays a JSON tree so one type can
@@ -1129,6 +1522,11 @@ public enum CodeV2 {
     public struct WireError: Codable, Sendable, Hashable {
         public var code: WireErrorCode
         public var message: String
+
+        public init(code: CodeV2.WireErrorCode, message: String) {
+            self.code = code
+            self.message = message
+        }
     }
 
     public struct ServerResponse: Codable, Sendable, Hashable {
@@ -1137,6 +1535,13 @@ public enum CodeV2 {
         public var ok: Bool
         public var result: JSONValue?
         public var error: WireError?
+
+        public init(id: String, ok: Bool, result: JSONValue? = nil, error: CodeV2.WireError? = nil) {
+            self.id = id
+            self.ok = ok
+            self.result = result
+            self.error = error
+        }
     }
 
     /// A server → client event, discriminated by `type`.
@@ -1279,6 +1684,14 @@ public enum CodeV2 {
         public var sequence: Int
         public var at: String
         public var event: ServerEvent
+
+        public init(stream: Stream = .session, sessionId: String?, sequence: Int, at: String, event: CodeV2.ServerEvent) {
+            self.stream = stream
+            self.sessionId = sessionId
+            self.sequence = sequence
+            self.at = at
+            self.event = event
+        }
     }
 
     /// Either half of a server → client message, discriminated by `type`.
