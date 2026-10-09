@@ -266,6 +266,46 @@ final class EnvServerTests: XCTestCase {
         XCTAssertEqual(reply.responses?.first?.ok, true)
     }
 
+    func testOnlyTerminalsOpenedThroughTheLinkAreRelayedOrDriven() async {
+        let forwarded = ForwardLog()
+        let link = EnvServerDeviceLink(
+            allowedRoots: { ["/Users/maya/code/shop"] },
+            allowsTerminal: { true },
+            forward: { type, _ in
+                forwarded.append(type)
+                return type == .terminalOpen ? .object(["terminalId": .string("t-remote")]) : .object([:])
+            }
+        )
+        func rpc(_ type: String, _ params: [String: JSONValue]) async -> CodeV2.ServerResponse? {
+            await link.handle(EnvLinkRequest(kind: .rpc, command: .init(id: "1", type: type, params: .object(params)))).responses?.first
+        }
+        // The Mac's own Dock › Terminal shell: never reachable from the web.
+        let write = await rpc("terminal.write", ["terminalId": .string("t-local"), "data": .string("cat ~/.ssh/id_ed25519\r")])
+        XCTAssertEqual(write?.error?.code, .badRequest)
+        let reattach = await rpc("terminal.open", [
+            "terminalId": .string("t-local"), "cwd": .string("/Users/maya/code/shop"), "cols": .number(80), "rows": .number(24),
+        ])
+        XCTAssertEqual(reattach?.error?.code, .badRequest, "re-attaching would repaint the local shell's scrollback")
+        XCTAssertEqual(forwarded.types, [])
+
+        let opened = await rpc("terminal.open", ["cwd": .string("/Users/maya/code/shop"), "cols": .number(80), "rows": .number(24)])
+        XCTAssertEqual(opened?.ok, true)
+        let typed = await rpc("terminal.write", ["terminalId": .string("t-remote"), "data": .string("ls\r")])
+        XCTAssertEqual(typed?.ok, true)
+
+        let global = { (sequence: Int, terminal: String) in
+            CodeV2.ServerEventEnvelope(stream: .global, sessionId: nil, sequence: sequence, at: "2026-10-09T10:00:00Z", event: .terminalOutput(terminalId: terminal, data: "x"))
+        }
+        await link.record(global(1, "t-local"))
+        await link.record(global(2, "t-remote"))
+        let reply = await link.handle(EnvLinkRequest(kind: .poll, cursors: [:], globalCursor: 0), longPoll: .zero)
+        XCTAssertEqual(reply.events?.map(\.sequence), [2])
+        let localShared = await link.shareable(global(3, "t-local"))
+        let remoteShared = await link.shareable(global(4, "t-remote"))
+        XCTAssertFalse(localShared)
+        XCTAssertTrue(remoteShared)
+    }
+
     func testPollReturnsEventsPastTheCursorsAndLongPolls() async {
         let link = makeLink(forwarded: ForwardLog())
         let event = { (session: String, sequence: Int) in
