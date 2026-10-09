@@ -27,3 +27,10 @@ All lanes branch from trunk `code/v2`, which is based on polish/research-next 49
 4. node_modules in these worktrees are symlinks to `.claude/worktrees/polish-oct8/node_modules`. If that worktree is removed, run `npm ci` in `code-v2`.
 5. Reference repos were cloned to the session scratchpad (`refs/t3code`, `refs/deepseek-harness`). Re-clone from GitHub if they're gone.
 6. Before public release, re-verify the provider terms in `docs/code-v2/PROVIDERS-LEGAL.md` (on `code-v2/env`): Claude via the user's CLI, the official Antigravity ACP runtime, and Codex token sharing, which stays stubbed.
+
+## Update 2026-10-09: resumed, then paused again
+
+The owner resumed the work ("resume this chat") and then paused it again ("stop & resume later"). Run `wf_96e60726-153` was stopped and each lane's WIP was committed. Branch tips:
+env ed135df6 · orchestrator 27a8ae12 · computer 5384ea71 · web 332b91d9 · mac de8fcf4c (models abea790e, design f7b66088 unchanged).
+
+**To resume:** relaunch `.claude/local-tools/code-v2/alevr-code-v2-resume.js` as a new Workflow run with `scriptPath` (its lane prompts already say "continue from your branch tip"). Its `DONE` path points at the session scratchpad. If that's gone, point it at `.claude/local-tools/code-v2/done-lanes.json`. Its `REFS` path also points at the scratchpad: re-clone t3code and deepseek-harness there if missing.
