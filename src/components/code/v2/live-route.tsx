@@ -18,7 +18,7 @@ import { useCodeTaskMeta, useDevicePresence } from "@/components/code/code-sessi
 import { useCodeSession } from "@/hooks/use-code-session";
 import { codeProviderModels } from "@/lib/code-v2/code-models";
 import { createByokClient, type ByokKeyRecord } from "@/lib/code-v2/byok-client";
-import type { ApprovalDecision, InteractionMode, ModelSelection, ProviderInstance, RoleRouting, RuntimeMode } from "@/lib/code-v2/contracts";
+import type { ApprovalDecision, InteractionMode, ModelSelection, ProviderInstance, ProviderModel, RoleRouting, RuntimeMode } from "@/lib/code-v2/contracts";
 import { legacyToItems, type LegacySessionInput } from "@/lib/code-v2/legacy-adapter";
 import { fallbackSetupCommand } from "@/lib/code-v2/providers-view";
 import { queueReducer, type QueueRow } from "@/lib/code-v2/composer";
@@ -95,10 +95,18 @@ export function CodeV2Route({ conversation, initialMessages, userName }: CodeV2R
     byok.list().then(setKeys).catch(() => undefined);
   }, [byok]);
 
+  // OpenRouter's models, once a key for it is stored.
+  const hasOpenRouter = keys.some((k) => k.provider === "openrouter" && !k.invalid);
+  const [openRouterModels, setOpenRouterModels] = React.useState<ProviderModel[]>([]);
+  React.useEffect(() => {
+    if (!hasOpenRouter) return;
+    byok.models("openrouter").then(setOpenRouterModels).catch(() => undefined);
+  }, [byok, hasOpenRouter]);
+
   const alevrModels = React.useMemo(() => codeProviderModels(), []);
   const instances = React.useMemo<ProviderInstance[]>(
-    () => buildInstances({ alevrModels, deviceInstances: env.instances, byokKeys: keys }),
-    [alevrModels, env.instances, keys],
+    () => buildInstances({ alevrModels, deviceInstances: env.instances, byokKeys: keys, openRouterModels }),
+    [alevrModels, env.instances, keys, openRouterModels],
   );
 
   const prefKey = `alevr.code.prefs.${conversation.id}`;

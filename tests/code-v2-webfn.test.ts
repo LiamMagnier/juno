@@ -20,6 +20,12 @@ import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ConnectionsPanel } from "@/components/code/v2/connections";
 import { DEVICE, INSTANCES } from "../src/app/dev/code-v2/fixtures";
+import { openRouterLab, openRouterPickerModels } from "@/lib/code-v2/openrouter";
+import { byokAuthHeaders, byokBaseUrl, isByokOnlyProvider, keyTestRequest } from "@/lib/code-v2/byok";
+import { chooseKeySource } from "@/lib/code-v2/agent-routing";
+import { buildInstances } from "@/lib/code-v2/workspace-instances";
+import { looksLikeKey } from "@/lib/code-v2/byok-client";
+import { modelLab } from "@/lib/code-v2/providers-view";
 
 // Some shared brand components use the classic JSX runtime (React in scope); tsx does not inject it.
 (globalThis as unknown as { React: typeof React }).React = React;
@@ -223,4 +229,44 @@ test("Connections: Antigravity mid sign-in offers the Google page and the paste-
   const older = renderToStaticMarkup(React.createElement(ConnectionsPanel, { instances: INSTANCES.filter((i) => i.id !== "acp:antigravity"), device: DEVICE }));
   assert.match(older, /Antigravity<\/div><div class="ds"[^>]*>Your Mac does not offer this yet\./);
   assert.doesNotMatch(older + html, /\u2014/, "no em-dashes in UI copy");
+});
+
+// ── OpenRouter on the user's own key ────────────────────────────────────────
+
+test("OpenRouter BYOK: its own endpoint, a key test that a bad key fails, attribution headers, never Alevr's key", () => {
+  assert.equal(isByokOnlyProvider("openrouter"), true);
+  assert.equal(isByokOnlyProvider("anthropic"), false);
+  assert.equal(byokBaseUrl("openrouter"), "https://openrouter.ai/api/v1");
+  assert.equal(keyTestRequest("openrouter", "sk-or-v1-abcdefghijklmnopqrstuvwxyz").url, "https://openrouter.ai/api/v1/key");
+  assert.deepEqual(byokAuthHeaders("openrouter", "k"), { authorization: "Bearer k", "http-referer": "https://alevr.com", "x-title": "Alevr" });
+  assert.equal(looksLikeKey("openrouter", "sk-or-v1-abcdefghijklmnopqrstuvwxyz"), true);
+  assert.deepEqual(chooseKeySource({ preference: "auto", provider: "openrouter", hasUserKey: true }), { ok: true, source: "byok", provider: "openrouter" });
+  const missing = chooseKeySource({ preference: "auto", provider: "openrouter", hasUserKey: false });
+  assert.equal(missing.ok, false);
+  assert.equal(!missing.ok && missing.status, 409);
+  const alevr = chooseKeySource({ preference: "alevr", provider: "openrouter", hasUserKey: true });
+  assert.equal(!alevr.ok && alevr.body.code, "BYOK_ONLY_PROVIDER");
+});
+
+test("OpenRouter models: tool-capable text models with prices, big labs first, wearing their lab's mark", () => {
+  const rows = [
+    { id: "acme/tiny", name: "Acme: Tiny", context_length: 32_000, pricing: { prompt: "0.0000001", completion: "0.0000002" }, supported_parameters: ["tools"] },
+    { id: "anthropic/claude-sonnet-4.5", name: "Anthropic: Claude Sonnet 4.5", context_length: 1_000_000, pricing: { prompt: "0.000003", completion: "0.000015", input_cache_read: "0.0000003" }, supported_parameters: ["tools", "reasoning"] },
+    { id: "openai/gpt-image", name: "OpenAI: Image", pricing: { prompt: "0.00001", completion: "0.00004" }, supported_parameters: ["tools"], architecture: { output_modalities: ["image"] } },
+    { id: "meta-llama/llama-5", name: "Meta: Llama 5", context_length: 128_000, pricing: { prompt: "0.0000002", completion: "0.0000006" } },
+    { id: "openrouter/auto", name: "Auto Router", pricing: { prompt: "-1", completion: "-1" }, supported_parameters: ["tools"] },
+  ];
+  const models = openRouterPickerModels(rows);
+  assert.deepEqual(models.map((m) => m.id), ["openrouter:anthropic/claude-sonnet-4.5", "openrouter:acme/tiny"]);
+  assert.equal(models[0].label, "Claude Sonnet 4.5");
+  assert.equal(models[0].isDefault, true);
+  assert.deepEqual(models[0].contextTiers, [{ tokens: 1_000_000, label: "1M", inputPerMTok: 3, outputPerMTok: 15, cachedInputPerMTok: 0.3 }]);
+  assert.equal(openRouterLab("x-ai/grok-5"), "xai");
+  assert.equal(openRouterLab("acme/tiny"), null);
+  assert.equal(modelLab("openrouter:anthropic/claude-sonnet-4.5"), "anthropic");
+  assert.equal(modelLab("openrouter:acme/tiny"), null);
+  const instances = buildInstances({ alevrModels: [], byokKeys: [{ provider: "openrouter", hint: "…abcd", addedAt: "2026-10-09T00:00:00Z" }], openRouterModels: models });
+  const or = instances.find((i) => i.id === "byok:openrouter");
+  assert.deepEqual(or?.models?.map((m) => m.id), models.map((m) => m.id));
+  assert.equal(or?.status, "ready");
 });

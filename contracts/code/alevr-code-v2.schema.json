@@ -232,7 +232,8 @@
         "openai",
         "google",
         "xai",
-        "deepseek"
+        "deepseek",
+        "openrouter"
       ]
     },
     "ProviderSetupAction": {

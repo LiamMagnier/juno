@@ -31,7 +31,7 @@ export const ALEVR_CAPABILITIES: ProviderCapabilities = {
   mcpInjection: true,
 };
 
-const BYOK_LAB: Record<string, string> = { anthropic: "anthropic", openai: "openai", google: "google", xai: "xai", deepseek: "deepseek" };
+const BYOK_LAB: Record<string, string> = { anthropic: "anthropic", openai: "openai", google: "google", xai: "xai", deepseek: "deepseek", openrouter: "openrouter" };
 
 export function buildInstances(input: {
   /** The catalogue's coding models (codeProviderModels()). */
@@ -41,6 +41,8 @@ export function buildInstances(input: {
   /** From the env server's provider.list; empty when no Mac is linked. */
   deviceInstances?: readonly ProviderInstance[];
   byokKeys?: readonly ByokKeyRecord[];
+  /** OpenRouter's models (GET /api/provider-keys/openrouter/models), for a stored OpenRouter key. */
+  openRouterModels?: readonly ProviderModel[];
 }): ProviderInstance[] {
   const out: ProviderInstance[] = [
     {
@@ -68,10 +70,11 @@ export function buildInstances(input: {
       id: byokInstanceId(p),
       kind: "byok",
       label: `${p} key`,
+      ...(p === "openrouter" && !input.openRouterModels?.length && !key.invalid ? { statusMessage: "Loading OpenRouter's models." } : {}),
       status: key.invalid ? "error" : "ready",
       statusMessage: key.invalid ? (key.detail ?? "The lab refused this key.") : undefined,
       capabilities: ALEVR_CAPABILITIES,
-      models: input.alevrModels.filter((m) => m.id.startsWith(`${lab}:`)),
+      models: p === "openrouter" ? [...(input.openRouterModels ?? [])] : input.alevrModels.filter((m) => m.id.startsWith(`${lab}:`)),
     });
   }
   return out;

@@ -30,6 +30,23 @@ export const BYOK_PROVIDER_INFO: Readonly<Record<ByokProvider, { label: string; 
   google: { label: "Google Gemini", docsUrl: PROVIDERS.google.docsUrl },
   xai: { label: "xAI", docsUrl: PROVIDERS.xai.docsUrl },
   deepseek: { label: "DeepSeek", docsUrl: PROVIDERS.deepseek.docsUrl },
+  openrouter: { label: "OpenRouter", docsUrl: "https://openrouter.ai/settings/keys" },
+};
+
+/**
+ * Labs that exist in Alevr only as the user's own key: no Alevr key, no plan
+ * billing, never an `alevr` route. OpenRouter fronts many labs' models behind
+ * one OpenAI-compatible endpoint, billed to the user's OpenRouter account.
+ */
+export const BYOK_ONLY_PROVIDERS: ReadonlySet<ByokProvider> = new Set<ByokProvider>(["openrouter"]);
+
+export function isByokOnlyProvider(provider: unknown): provider is ByokProvider {
+  return typeof provider === "string" && BYOK_ONLY_PROVIDERS.has(provider as ByokProvider);
+}
+
+/** What the agent proxy needs to know about a BYOK-only lab (wire kind and label), in place of a PROVIDERS entry. */
+export const BYOK_ONLY_DEFS: Readonly<Record<string, { label: string; kind: "openai" }>> = {
+  openrouter: { label: "OpenRouter", kind: "openai" },
 };
 
 export type KeyShapeResult = { ok: true; key: string } | { ok: false; error: string };
@@ -63,6 +80,7 @@ export function byokSealContext(userId: string, provider: ByokProvider): string 
 /** The lab's public API root a user's key is sent to (never an env override). */
 export function byokBaseUrl(provider: ByokProvider): string {
   if (provider === "anthropic") return "https://api.anthropic.com";
+  if (provider === "openrouter") return "https://openrouter.ai/api/v1";
   const base = PROVIDERS[provider].defaultBaseUrl;
   if (!base) throw new Error(`no public base URL for ${provider}`);
   return base.replace(/\/+$/, "");
@@ -70,16 +88,21 @@ export function byokBaseUrl(provider: ByokProvider): string {
 
 /** Auth headers for a request on the user's key. */
 export function byokAuthHeaders(provider: ByokProvider, key: string): Record<string, string> {
-  return provider === "anthropic" ? { "x-api-key": key, "anthropic-version": "2023-06-01" } : { authorization: `Bearer ${key}` };
+  if (provider === "anthropic") return { "x-api-key": key, "anthropic-version": "2023-06-01" };
+  // OpenRouter's app attribution headers: the requests show as Alevr's in the user's OpenRouter activity.
+  if (provider === "openrouter") return { authorization: `Bearer ${key}`, "http-referer": "https://alevr.com", "x-title": "Alevr" };
+  return { authorization: `Bearer ${key}` };
 }
 
 /**
  * The cheapest call that proves a key works: list models. It costs nothing on
  * every lab here, reads no conversation, and answers 401/403 for a bad key.
+ * OpenRouter lists models without a key, so its key is tested against `/key`
+ * (the key's own limits), which refuses a bad one.
  */
 export function keyTestRequest(provider: ByokProvider, key: string): { url: string; init: RequestInit } {
   const base = byokBaseUrl(provider);
-  const url = provider === "anthropic" ? `${base}/v1/models?limit=1` : `${base}/models`;
+  const url = provider === "anthropic" ? `${base}/v1/models?limit=1` : provider === "openrouter" ? `${base}/key` : `${base}/models`;
   return { url, init: { method: "GET", headers: byokAuthHeaders(provider, key) } };
 }
 

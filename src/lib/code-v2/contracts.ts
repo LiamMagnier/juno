@@ -158,7 +158,7 @@ export interface ProviderInstance {
  * provider instance with id `byok:<provider>` (see `byokInstanceId`); runs on
  * it are routed with the user's key and never billed as Alevr spend.
  */
-export const BYOK_PROVIDER_VALUES = ["anthropic", "openai", "google", "xai", "deepseek"] as const;
+export const BYOK_PROVIDER_VALUES = ["anthropic", "openai", "google", "xai", "deepseek", "openrouter"] as const;
 export type ByokProvider = (typeof BYOK_PROVIDER_VALUES)[number];
 
 export const isByokProvider = (v: unknown): v is ByokProvider =>

@@ -7,10 +7,11 @@
  *   POST   /api/provider-keys                   { provider, key } → { key }   (tested with the lab first)
  *   POST   /api/provider-keys/:provider/test    → { result, detail, key }
  *   DELETE /api/provider-keys/:provider         → { ok: true }
+ *   GET    /api/provider-keys/openrouter/models → { models: ProviderModel[] }  (BYOK-only labs)
  *
  * The secret is sent once and never comes back: records carry only a hint.
  */
-import { BYOK_PROVIDER_VALUES, isByokProvider, type ByokProvider } from "@/lib/code-v2/contracts";
+import { BYOK_PROVIDER_VALUES, isByokProvider, type ByokProvider, type ProviderModel } from "@/lib/code-v2/contracts";
 
 export interface ByokKeyRecord {
   provider: ByokProvider;
@@ -88,6 +89,13 @@ export function createByokClient(fetcher: FetchJson = (i, init) => fetch(i, init
       const body = (await res.json()) as { result?: string; detail?: string | null; key?: unknown };
       return { valid: body.result === "valid", detail: body.detail ?? null, key: record(body.key) };
     },
+    /** Models a BYOK-only lab offers (OpenRouter's list, in the picker's shape). */
+    async models(provider: ByokProvider): Promise<ProviderModel[]> {
+      const res = await fetcher(`${BASE}/${provider}/models`);
+      if (!res.ok) throw await errorOf(res, "Could not load the models.");
+      const body = (await res.json()) as { models?: unknown };
+      return Array.isArray(body.models) ? (body.models as ProviderModel[]).filter((m) => m && typeof m.id === "string" && typeof m.label === "string") : [];
+    },
     async remove(provider: ByokProvider): Promise<void> {
       const res = await fetcher(`${BASE}/${provider}`, { method: "DELETE" });
       if (!res.ok && res.status !== 404) throw await errorOf(res, "Could not remove the key.");
@@ -116,6 +124,8 @@ export function looksLikeKey(provider: ByokProvider, key: string): boolean {
       return k.startsWith("sk-");
     case "xai":
       return k.startsWith("xai-");
+    case "openrouter":
+      return k.startsWith("sk-or-");
     default:
       return true;
   }
@@ -127,6 +137,7 @@ export const BYOK_LABELS: Record<ByokProvider, string> = {
   google: "Google",
   xai: "xAI",
   deepseek: "DeepSeek",
+  openrouter: "OpenRouter",
 };
 
 export { BYOK_PROVIDER_VALUES };

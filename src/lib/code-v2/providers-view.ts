@@ -11,6 +11,7 @@
 import type { Provider } from "@/lib/providers";
 import { instanceKindOf, type ProviderInstance, type ProviderModel, type UsageWindow } from "@/lib/code-v2/contracts";
 import { formatReset } from "@/lib/code-v2/tier-view";
+import { openRouterLab } from "@/lib/code-v2/openrouter";
 
 /** ACP runtimes Alevr knows how to name, by the binary in `acpCommand[0]` or the instance id suffix. */
 export const ACP_RUNTIMES: Record<string, { name: string; lab: Provider | null; note?: string; flag?: string }> = {
@@ -101,6 +102,8 @@ export function instanceMark(instance: Pick<ProviderInstance, "id" | "kind" | "a
 /** The lab a model id belongs to ("anthropic:claude-opus-5-5" → anthropic; Codex ids → openai). */
 export function modelLab(modelId: string, instance?: Pick<ProviderInstance, "kind" | "id" | "acpCommand">): Provider | null {
   const colon = modelId.indexOf(":");
+  // OpenRouter models wear their own lab's mark ("openrouter:anthropic/…" → anthropic), or none.
+  if (colon > 0 && modelId.slice(0, colon) === "openrouter") return openRouterLab(modelId.slice(colon + 1));
   if (colon > 0) return modelId.slice(0, colon) as Provider;
   if (instance) {
     const m = instanceMark(instance);
