@@ -4,7 +4,7 @@
 // type, spacing). Regenerate with `npm run design:tokens`; `npm run design:tokens:check`
 // fails CI when this file no longer matches its sources.
 //
-// tokens-digest: b0dc72d689d998c5
+// tokens-digest: ad52564df1f49d6d
 //
 
 /** `--dur-*` in milliseconds. */
