@@ -259,7 +259,9 @@ export class DeviceLink {
     this.#queue.push({
       id: replayId,
       type: "session.open",
-      params: { sessionId, cwd: "/", ...(cursor >= 0 ? { afterSequence: cursor } : {}) },
+      // `afterSequence` is always set so the env server never creates a session for an unknown id
+      // (-1 falls back to a snapshot).
+      params: { sessionId, cwd: "/", afterSequence: Math.max(-1, Math.floor(cursor)) },
     });
     this.#hostWaiters.wake();
   }

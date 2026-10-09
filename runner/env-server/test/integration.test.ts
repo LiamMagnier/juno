@@ -350,6 +350,26 @@ test("mcp: a session spawns a Codex subagent, waits for it, and finds threads", 
   assert.equal(list.sessions.find((s) => s.id === agentId)?.parentSessionId, parent);
 });
 
+test("mcp: the routing budget is a hard stop for vendor subagents", async () => {
+  const { server, client } = await boot();
+  await client.command("provider.probe", { instanceId: "codex:default" });
+  const selection = { instanceId: "codex:default", model: "gpt-6.1-codex" };
+  const parent = await openSession(client, tempDir("cwd"), selection);
+  const routing = { preset: "lead-workers", orchestrator: selection, workers: [selection], budget: { maxTokens: 100 } };
+  const t = await client.command<{ turnId: string }>("turn.start", { sessionId: parent, input: { text: "hello parent" }, selection, routing, ...ask });
+  await client.turnCompleted(parent, t.turnId);
+
+  const token = server.mcp.issueToken({ sessionId: parent, depth: 0 });
+  const first = await mcpCall(server, token, "tools/call", { name: "spawn_subagent", arguments: { task: "one" } }, 1);
+  const agentId = (first.result?.structuredContent as { agentId?: string })?.agentId;
+  assert.ok(agentId, JSON.stringify(first));
+  await mcpCall(server, token, "tools/call", { name: "wait_subagent", arguments: { agentId } }, 2);
+  // The child used 1,280 tokens; the budget is 100, so a second child is refused.
+  const second = await mcpCall(server, token, "tools/call", { name: "spawn_subagent", arguments: { task: "two" } }, 3);
+  assert.equal(second.result?.isError, true);
+  assert.match(JSON.stringify(second.result), /token budget/);
+});
+
 // ── Persistence and reconnect ────────────────────────────────────────────────
 
 test("reconnect: afterSequence replays exactly the missed events; restart restores the log", async () => {
@@ -367,6 +387,11 @@ test("reconnect: afterSequence replays exactly the missed events; restart restor
   const replayed = late.sessionEvents(sid).map((e: ServerEventEnvelope) => e.sequence);
   assert.equal(replayed[0], 3);
   assert.deepEqual(replayed, [...new Set(replayed)].sort((a, b) => a - b), "in order, no duplicates");
+
+  // A re-attach never creates: an unknown id with afterSequence is not_found, and no session appears.
+  const before = (await late.command<{ sessions: { id: string }[] }>("session.list", {})).sessions.length;
+  await assert.rejects(late.command("session.open", { sessionId: "s_unknown", cwd: "/", afterSequence: -1 }), /No session/);
+  assert.equal((await late.command<{ sessions: { id: string }[] }>("session.list", {})).sessions.length, before);
 
   // A second server process on the same data dir sees the same snapshot.
   const again = await startEnvServer({ dataDir: server.dataDir, searchDirs: [], logger: silentLogger, probeOnStart: false });

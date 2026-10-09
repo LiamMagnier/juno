@@ -10,7 +10,7 @@
  * which is the parent's single settlement notice. Depth is 1: children do not
  * see these tools. A child's runtime mode is never wider than its parent's.
  */
-import type { AgentRole, ModelSelection, RuntimeMode, SubagentItem, SubagentStatus, TurnItem } from "../contracts/code-v2.js";
+import type { AgentRole, ModelSelection, RunBudget, RuntimeMode, SubagentItem, SubagentStatus, TurnItem } from "../contracts/code-v2.js";
 import { isRuntimeMode } from "../contracts/code-v2.js";
 import type { SessionManager } from "../sessions/session-manager.js";
 import { stricterMode } from "../sessions/session-manager.js";
@@ -18,6 +18,25 @@ import { text, type AlevrMcpServer, type McpScope, type McpToolResult } from "./
 import { newId, nowIso, truncateMiddle } from "../util.js";
 
 const topLevel = (scope: McpScope) => scope.depth === 0;
+
+/** Children of one thread running at once (the Alevr engine's ceiling, SPEC §3.3). */
+export const MAX_RUNNING_SUBAGENTS = 6;
+
+/** What a thread's children have spent so far, against the routing budget (SPEC §3.4). */
+export interface SubagentSpend {
+  tokens: number;
+  costUsd: number;
+}
+
+/** Why the budget refuses more work, or undefined while there is room. */
+export function budgetExhausted(spend: SubagentSpend, budget: RunBudget | undefined): string | undefined {
+  if (!budget) return undefined;
+  if (budget.maxTokens !== undefined && spend.tokens >= budget.maxTokens) {
+    return `the run's token budget (${budget.maxTokens.toLocaleString("en-US")} tokens) was reached`;
+  }
+  if (budget.maxUsd !== undefined && spend.costUsd >= budget.maxUsd) return `the run's cost budget ($${budget.maxUsd.toFixed(2)}) was reached`;
+  return undefined;
+}
 
 interface ChildRecord {
   parentId: string;
@@ -76,6 +95,32 @@ export function registerSubagentTools(mcp: AlevrMcpServer, sessions: SessionMana
     if (children.has(sessionId)) syncParent(sessionId);
   });
 
+  /** Tokens and dollars the children of `parentId` started in its turn `turnId` have used (one ledger per turn). */
+  const spendOf = (parentId: string, turnId: string | undefined): SubagentSpend => {
+    const spend: SubagentSpend = { tokens: 0, costUsd: 0 };
+    for (const [id, rec] of children) {
+      if (rec.parentId !== parentId || rec.turnId !== turnId || !sessions.has(id)) continue;
+      const usage = sessions.log(id).snapshot.usage;
+      if (!usage) continue;
+      spend.tokens += usage.inputTokens + usage.outputTokens;
+      spend.costUsd += usage.costUsd ?? 0;
+    }
+    return spend;
+  };
+
+  const runningChildren = (parentId: string): string[] =>
+    [...children.entries()].filter(([id, r]) => r.parentId === parentId && sessions.activeTurnId(id) !== undefined).map(([id]) => id);
+
+  /** Stops the thread's running children once the budget is spent (a hard stop, not a hint). */
+  const enforceBudget = (parentId: string, turnId: string | undefined) => {
+    if (!sessions.has(parentId)) return;
+    const reason = budgetExhausted(spendOf(parentId, turnId), sessions.log(parentId).meta.routing?.budget);
+    if (!reason) return;
+    for (const id of runningChildren(parentId)) {
+      if (children.get(id)?.turnId === turnId) void sessions.interrupt({ sessionId: id }).catch(() => undefined);
+    }
+  };
+
   const owned = (scope: McpScope, agentId: unknown): ChildRecord | undefined => {
     if (typeof agentId !== "string") return undefined;
     const rec = children.get(agentId);
@@ -106,6 +151,11 @@ export function registerSubagentTools(mcp: AlevrMcpServer, sessions: SessionMana
         if (!task) return text("A subagent needs a task.", true);
         const parent = sessions.log(scope.sessionId);
         const meta = parent.meta;
+        const spent = budgetExhausted(spendOf(scope.sessionId, sessions.activeTurnId(scope.sessionId)), meta.routing?.budget);
+        if (spent) return text(`No more subagents: ${spent}. Finish with what the subagents already returned.`, true);
+        if (runningChildren(scope.sessionId).length >= MAX_RUNNING_SUBAGENTS) {
+          return text(`${MAX_RUNNING_SUBAGENTS} subagents are already running. Wait for one (wait_subagent) before starting another.`, true);
+        }
         const role: AgentRole = args.role === "explorer" || args.role === "reviewer" ? args.role : "worker";
         const routed = role === "reviewer" ? meta.routing?.reviewer : role === "explorer" ? meta.routing?.explorer : meta.routing?.workers?.[0];
         const selection: ModelSelection = {
@@ -125,6 +175,15 @@ export function registerSubagentTools(mcp: AlevrMcpServer, sessions: SessionMana
         const itemId = newId("agent");
         const parentTurn = sessions.activeTurnId(scope.sessionId);
         children.set(child.id, { parentId: scope.sessionId, itemId, role, task, selection, ...(parentTurn ? { turnId: parentTurn } : {}) });
+        const parentId = scope.sessionId;
+        const unwatch = child.subscribe((envelope) => {
+          if (envelope.event.type === "usage.updated" || envelope.event.type === "turn.completed") enforceBudget(parentId, parentTurn);
+        });
+        const offClosed = sessions.onSessionClosed((id) => {
+          if (id !== child.id) return;
+          unwatch();
+          offClosed();
+        });
         try {
           sessions.startTurn({ sessionId: child.id, input: { text: task }, selection, runtimeMode, interactionMode: "default" });
         } catch (error) {

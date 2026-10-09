@@ -157,6 +157,9 @@ export class SessionManager {
 
   async open(params: ClientCommandParams["session.open"] & { parentSessionId?: string; runtimeMode?: RuntimeMode }): Promise<SessionLog> {
     if (params.sessionId && this.has(params.sessionId)) return this.#get(params.sessionId).log;
+    // `afterSequence` re-attaches to a session the client already follows; it never creates one
+    // (the device-link hub replays with a placeholder cwd).
+    if (params.afterSequence !== undefined) throw new WireError("not_found", `No session ${params.sessionId ?? ""}.`.trim());
     const id = params.sessionId ?? newId("s");
     if (!/^[A-Za-z0-9_.-]{1,128}$/.test(id)) throw new WireError("bad_request", "Invalid session id.");
     if (!params.cwd || !path.isAbsolute(params.cwd)) throw new WireError("bad_request", "cwd must be an absolute path.");

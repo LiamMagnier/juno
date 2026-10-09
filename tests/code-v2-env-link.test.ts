@@ -251,3 +251,12 @@ test("link end to end: the web opens a session on the Mac, runs a Codex turn, ap
   // Terminals stay on the Mac.
   await assert.rejects(call("terminal.open", { cwd: repo, cols: 80, rows: 24 }), (e: Error & { code?: string }) => e.code === "unsupported");
 });
+
+test("link: a replay always carries afterSequence, so the env server never creates a session for an unknown id", async () => {
+  const link = new DeviceLink();
+  await online(link);
+  await link.poll({ s_unknown: -1 }, -1, 0);
+  const { commands } = await link.pull(0);
+  assert.equal(commands.length, 1);
+  assert.deepEqual(commands[0].params, { sessionId: "s_unknown", cwd: "/", afterSequence: -1 });
+});

@@ -232,10 +232,11 @@ public actor EnvServerDeviceLink {
             return refuse(command.id, .badRequest, problem)
         }
         do {
-            let result = try await forward(type, params)
+            var result = try await forward(type, params)
             if type == .sessionOpen, case let .object(object)? = result, case let .string(id)? = object["sessionId"] {
                 linkedSessions.insert(id)
             }
+            if type == .sessionList { let roots = await allowedRoots(); result = Self.onlyShared(result, roots: roots) }
             return CodeV2.ServerResponse(id: command.id, ok: true, result: result)
         } catch let EnvServerConnectionError.server(code, message) {
             return refuse(command.id, code, message)
@@ -253,10 +254,22 @@ public actor EnvServerDeviceLink {
             // after a gap): the env server ignores `cwd` for an existing session.
             if type == .sessionOpen, case let .string(id)? = object["sessionId"], linkedSessions.contains(id) { return nil }
             guard case let .string(cwd)? = object["cwd"] else { return "A folder is required." }
-            guard Self.isInside(cwd, roots: await allowedRoots()) else {
+            let roots = await allowedRoots()
+            guard Self.isInside(cwd, roots: roots) else {
                 return "That folder is not shared with other devices. Share it from Alevr on your Mac first."
             }
-            if type == .sessionOpen, case let .string(id)? = object["sessionId"] { linkedSessions.insert(id) }
+            // The env server ignores `cwd` when the id names a session that
+            // already exists, so a remote could attach to a session in a folder
+            // that is not shared by naming its id next to a shared folder.
+            // An existing session must itself live in a shared folder.
+            if type == .sessionOpen, case let .string(id)? = object["sessionId"] {
+                guard let listed = try? await forward(.sessionList, .object([:])) else {
+                    return "Your Mac could not check that session."
+                }
+                if let existing = Self.sessionCwd(id, in: listed), !Self.isInside(existing, roots: roots) {
+                    return "That session is not in a folder shared with other devices."
+                }
+            }
             return nil
         case .sessionList:
             if case let .string(cwd)? = object["cwd"], !Self.isInside(cwd, roots: await allowedRoots()) {
@@ -272,11 +285,31 @@ public actor EnvServerDeviceLink {
         }
     }
 
-    /// Whether `path` is one of `roots` or inside one, after resolving `..`.
+    /// The cwd of session `id` in a `session.list` result, if it is listed.
+    static func sessionCwd(_ id: String, in listed: JSONValue?) -> String? {
+        guard case let .object(object)? = listed, case let .array(sessions)? = object["sessions"] else { return nil }
+        for case let .object(session) in sessions {
+            if case .string(id)? = session["id"], case let .string(cwd)? = session["cwd"] { return cwd }
+        }
+        return nil
+    }
+
+    /// A `session.list` result reduced to the sessions in shared folders.
+    static func onlyShared(_ listed: JSONValue?, roots: [String]) -> JSONValue? {
+        guard case var .object(object)? = listed, case let .array(sessions)? = object["sessions"] else { return listed }
+        object["sessions"] = .array(sessions.filter { entry in
+            guard case let .object(session) = entry, case let .string(cwd)? = session["cwd"] else { return false }
+            return isInside(cwd, roots: roots)
+        })
+        return .object(object)
+    }
+
+    /// Whether `path` is one of `roots` or inside one, after resolving `..`
+    /// and symbolic links (a link inside a shared folder may point outside it).
     public static func isInside(_ path: String, roots: [String]) -> Bool {
-        let target = URL(fileURLWithPath: path).standardizedFileURL.path
+        let target = URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath().path
         return roots.contains { root in
-            let base = URL(fileURLWithPath: root).standardizedFileURL.path
+            let base = URL(fileURLWithPath: root).standardizedFileURL.resolvingSymlinksInPath().path
             return target == base || target.hasPrefix(base.hasSuffix("/") ? base : base + "/")
         }
     }

@@ -223,6 +223,39 @@ final class EnvServerTests: XCTestCase {
         XCTAssertEqual(forwarded.types, [.sessionOpen, .turnStart])
     }
 
+    func testLinkRefusesAttachingToASessionOutsideSharedFolders() async {
+        let forwarded = ForwardLog()
+        let link = EnvServerDeviceLink(
+            allowedRoots: { ["/Users/maya/code/shop"] },
+            forward: { type, _ in
+                forwarded.append(type)
+                if type == .sessionList {
+                    return .object(["sessions": .array([
+                        .object(["id": .string("s-private"), "cwd": .string("/Users/maya/private")]),
+                        .object(["id": .string("s-shop"), "cwd": .string("/Users/maya/code/shop")]),
+                    ])])
+                }
+                if type == .sessionOpen { return .object(["sessionId": .string("s-shop")]) }
+                return .object([:])
+            }
+        )
+        func rpc(_ type: String, _ params: [String: JSONValue]) async -> CodeV2.ServerResponse? {
+            await link.handle(EnvLinkRequest(kind: .rpc, command: .init(id: "1", type: type, params: .object(params)))).responses?.first
+        }
+        let sneaky = await rpc("session.open", ["sessionId": .string("s-private"), "cwd": .string("/Users/maya/code/shop")])
+        XCTAssertEqual(sneaky?.error?.code, .badRequest)
+        let follow = await rpc("turn.start", ["sessionId": .string("s-private"), "input": .object(["text": .string("hi")])])
+        XCTAssertEqual(follow?.error?.code, .badRequest, "a refused open must not link the session")
+        XCTAssertFalse(forwarded.types.contains(.sessionOpen))
+
+        let fine = await rpc("session.open", ["sessionId": .string("s-shop"), "cwd": .string("/Users/maya/code/shop")])
+        XCTAssertEqual(fine?.ok, true)
+
+        let listed = await rpc("session.list", [:])
+        XCTAssertEqual(EnvServerDeviceLink.sessionCwd("s-private", in: listed?.result), nil, "unshared sessions are not listed")
+        XCTAssertEqual(EnvServerDeviceLink.sessionCwd("s-shop", in: listed?.result), "/Users/maya/code/shop")
+    }
+
     func testLinkAllowsTheTerminalOnlyWhenShared() async {
         let forwarded = ForwardLog()
         let link = makeLink(forwarded: forwarded, terminal: true)
