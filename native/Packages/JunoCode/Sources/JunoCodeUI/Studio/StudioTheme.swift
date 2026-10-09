@@ -95,6 +95,15 @@ public enum Studio {
         public static let delStrong = Color.studioHSL(light: (3.2, 0.71, 0.50), dark: (4.7, 0.77, 0.70), opacity: 0.20)
     }
 
+    /// Light syntax colour for diff and file lines, the web's `--cv2-code-*`
+    /// and `--code-string` / `--code-number` values.
+    public enum Code {
+        public static let keyword = Color.studioHSL(light: (229, 0.50, 0.45), dark: (229, 0.70, 0.76))
+        public static let comment = Color.studioHSL(light: (217, 0.04, 0.52), dark: (222, 0.04, 0.56))
+        public static let string = Color.studioHSL(light: (0, 0.70, 0.38), dark: (17, 0.47, 0.66))
+        public static let number = Color.studioHSL(light: (157, 0.80, 0.27), dark: (99, 0.28, 0.73))
+    }
+
     // MARK: Geometry
 
     /// DESIGN §3.1 radii: control 8, field 10, card 12, popover 12, menu 14,

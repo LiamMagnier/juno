@@ -50,7 +50,8 @@ public struct CodeSidebarSession: Identifiable, Hashable, Sendable {
     }
 }
 
-/// A session's row: the title in ink, the project after it in muted ink, and
+/// A session's row: the title in ink, the project after it in muted ink when
+/// the whole title fits beside it, and
 /// one trailing slot: the age at rest, a spinner while it works, a raised
 /// hand when it needs you, both in the signal coral. Hover trades the slot
 /// for Archive.
@@ -70,10 +71,23 @@ public struct CodeSidebarSessionRow: View {
 
     public var body: some View {
         HStack(spacing: JunoSpace.snug) {
-            Text("\(Text(session.title).foregroundStyle(Color.junoForeground).fontWeight(session.isUnread ? .medium : .regular))\(Text(session.project.map { "  " + $0 } ?? "").foregroundStyle(Studio.Ink.secondary))")
+            // The project rides along only when the whole title fits beside
+            // it; a long title wins the row and the project steps out, so a
+            // row never ends in a clipped "stor…".
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 6) {
+                    titleText
+                    if let project = session.project {
+                        Text(project).foregroundStyle(Studio.Ink.secondary)
+                    }
+                }
                 .lineLimit(1)
-                .truncationMode(.tail)
-            Spacer(minLength: JunoSpace.tight)
+                .fixedSize(horizontal: true, vertical: false)
+                titleText
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
             trailing
                 .frame(minWidth: 20, alignment: .trailing)
         }
@@ -82,6 +96,12 @@ public struct CodeSidebarSessionRow: View {
         .onHover { hovering = $0 }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityText)
+    }
+
+    private var titleText: some View {
+        Text(session.title)
+            .foregroundStyle(Color.junoForeground)
+            .fontWeight(session.isUnread ? .medium : .regular)
     }
 
     @ViewBuilder

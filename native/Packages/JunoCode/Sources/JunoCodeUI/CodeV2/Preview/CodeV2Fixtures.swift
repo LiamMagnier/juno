@@ -270,7 +270,7 @@ public enum CodeV2Fixtures {
         func ago(_ minutes: Double) -> Date { now.addingTimeInterval(-minutes * 60) }
         return CodeSidebarSession.ordered([
             CodeSidebarSession(id: "s1", title: "Move checkout totals to the server", project: "storefront", updatedAt: ago(1), state: .idle),
-            CodeSidebarSession(id: "s2", title: "Flaky upload test on CI", project: "storefront", updatedAt: ago(4), state: .working),
+            CodeSidebarSession(id: "s2", title: "Check the receipt in Safari", project: "storefront", updatedAt: ago(4), state: .working),
             CodeSidebarSession(id: "s3", title: "Regression suite for cart totals", project: "storefront", updatedAt: ago(7), state: .needsYou),
             CodeSidebarSession(id: "s4", title: "Dark mode for the receipt email", project: "mailer", updatedAt: ago(52), state: .idle, isUnread: true),
             CodeSidebarSession(id: "s5", title: "Bump Stripe SDK to v19", project: "storefront", updatedAt: ago(180), state: .idle),

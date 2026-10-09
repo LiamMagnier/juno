@@ -197,7 +197,16 @@ struct CodeV2ModelPicker: View {
 
     private var rail: some View {
         VStack(spacing: JunoSpace.tight) {
-            ForEach(connected, id: \.id) { item in railButton(item) }
+            // Subscriptions first, then your keys under a hairline, each
+            // key wearing a small key so a lab that appears twice (your plan
+            // and your key) never reads as a duplicate.
+            ForEach(connected.filter { $0.kind != .byok }, id: \.id) { item in railButton(item) }
+            let keyed = connected.filter { $0.kind == .byok }
+            if !keyed.isEmpty {
+                Rectangle().fill(Studio.Surface.hairline).frame(width: 20, height: 1)
+                    .padding(.vertical, 2)
+                ForEach(keyed, id: \.id) { item in railButton(item) }
+            }
             if let openConnections {
                 Button(action: openConnections) {
                     JunoIconView(.plus, size: 14)
@@ -224,6 +233,15 @@ struct CodeV2ModelPicker: View {
             withAnimation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion)) { focusedInstance = item.id }
         } label: {
             CodeV2Mark(id: CodeV2Marks.markID(instance: item), name: item.label, size: 16)
+                .overlay(alignment: .bottomTrailing) {
+                    if item.kind == .byok {
+                        JunoIconView(.key, size: 8)
+                            .foregroundStyle(Studio.Ink.secondary)
+                            .padding(1.5)
+                            .background(Circle().fill(Studio.Surface.popover))
+                            .offset(x: 5, y: 5)
+                    }
+                }
                 .frame(width: 32, height: 32)
                 .background(
                     RoundedRectangle(cornerRadius: Studio.Radius.control, style: .continuous)

@@ -330,6 +330,45 @@ struct CodeV2Hunk: View {
     }
 }
 
+/// Light syntax colour for a code line: comments, strings, numbers and
+/// keywords, the same four the web's diff paints (`codeTokens` in dock.tsx).
+enum CodeV2Syntax {
+    static let keywords: Set<String> = Set(
+        ("import export from const let var function return if else for while do switch case break continue new class "
+            + "extends async await try catch finally throw typeof instanceof in of as interface type enum implements public "
+            + "private protected readonly static void null undefined true false this super default yield func struct guard "
+            + "self nil some any where")
+            .split(separator: " ").map(String.init)
+    )
+
+    nonisolated(unsafe) private static let pattern = try! NSRegularExpression(
+        pattern: #"(//.*$|/\*.*?\*/|#.*$)|("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)|(\b\d[\d_.]*\b)|([A-Za-z_$][\w$]*)"#,
+        options: [.anchorsMatchLines]
+    )
+
+    static func highlight(_ text: String) -> AttributedString {
+        var out = AttributedString(text)
+        let ns = text as NSString
+        for match in pattern.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
+            let color: Color?
+            if match.range(at: 1).location != NSNotFound {
+                color = Studio.Code.comment
+            } else if match.range(at: 2).location != NSNotFound {
+                color = Studio.Code.string
+            } else if match.range(at: 3).location != NSNotFound {
+                color = Studio.Code.number
+            } else if match.range(at: 4).location != NSNotFound, keywords.contains(ns.substring(with: match.range(at: 4))) {
+                color = Studio.Code.keyword
+            } else {
+                color = nil
+            }
+            guard let color, let range = Range(match.range, in: text), let styled = Range(range, in: out) else { continue }
+            out[styled].foregroundColor = color
+        }
+        return out
+    }
+}
+
 struct CodeV2DiffLineRow: View {
     let line: DiffLine
     var wraps = false
@@ -360,7 +399,7 @@ struct CodeV2DiffLineRow: View {
             }
             .studioType(.small).monospacedDigit()
             .foregroundStyle(Studio.Ink.tertiary)
-            Text(line.text.isEmpty ? " " : line.text)
+            Text(line.text.isEmpty ? AttributedString(" ") : CodeV2Syntax.highlight(line.text))
                 .studioType(.code)
                 .foregroundStyle(Studio.Ink.primary)
                 .lineLimit(wraps ? nil : 1)

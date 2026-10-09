@@ -41,6 +41,15 @@ public struct CodeV2ConnectionsView: View {
 
     private var current: String { selection ?? subscriptions.first?.id ?? "alevr" }
 
+    /// Labs with a saved key, plus the one being added right now.
+    private var listedKeyProviders: [CodeV2.ByokProvider] {
+        CodeV2.ByokProvider.allCases.filter { keys.record(for: $0) != nil || current == "key:" + $0.rawValue }
+    }
+
+    private var unkeyedProviders: [CodeV2.ByokProvider] {
+        CodeV2.ByokProvider.allCases.filter { !listedKeyProviders.contains($0) }
+    }
+
     public var body: some View {
         HStack(spacing: 0) {
             list
@@ -70,13 +79,41 @@ public struct CodeV2ConnectionsView: View {
                     )
                 }
                 heading("Your API keys")
-                ForEach(CodeV2.ByokProvider.allCases, id: \.self) { provider in
+                // Only keys that exist get a row; the labs without one fold
+                // into a single Add a key (the web's list does the same), so
+                // the column is not a wall of "No key".
+                ForEach(listedKeyProviders, id: \.self) { provider in
                     let record = keys.record(for: provider)
                     sourceRow(
                         id: "key:" + provider.rawValue, mark: provider.markID, name: provider.labName,
                         status: record.map { $0.isValid ? "Key \($0.hint)" : "Key refused" } ?? "No key",
                         danger: record?.isValid == false, dimmed: record == nil
                     )
+                }
+                if !unkeyedProviders.isEmpty {
+                    Menu {
+                        ForEach(unkeyedProviders, id: \.self) { provider in
+                            Button(provider.labName) {
+                                selection = "key:" + provider.rawValue
+                                addingKey = true
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: JunoSpace.snug + 2) {
+                            JunoIconView(.plus, size: 13)
+                                .foregroundStyle(Studio.Ink.secondary)
+                                .frame(minWidth: 20)
+                            Text("Add a key").studioType(.text).foregroundStyle(Studio.Ink.secondary)
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.horizontal, JunoSpace.snug)
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        .contentShape(.rect)
+                    }
+                    .menuStyle(.button)
+                    .buttonStyle(.plain)
+                    .menuIndicator(.hidden)
+                    .help("Add an API key")
                 }
                 heading("Alevr")
                 sourceRow(id: "alevr", mark: "alevr", name: "Alevr", status: alevrPlanLine ?? "Your Alevr plan", danger: false, dimmed: false)

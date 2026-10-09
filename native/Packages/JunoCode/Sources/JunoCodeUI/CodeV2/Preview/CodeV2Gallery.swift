@@ -91,7 +91,7 @@ public enum CodeV2Gallery {
             let session = CodeV2EnvSession(preview: CodeV2Fixtures.multiAgentSnapshot)
             let dock = CodeV2DockController()
             dock.show(.agents)
-            return AnyView(CodeV2WindowPreview(title: "Move checkout totals to the server", subtitle: "storefront", selected: "s3", inspectorOpen: true) {
+            return AnyView(CodeV2WindowPreview(title: "Regression suite for cart totals", subtitle: "storefront", selected: "s3", inspectorOpen: true) {
                 CodeV2EnvSessionView(session: session, composer: composer(CodeV2Fixtures.claudeSelection, roles: CodeV2Fixtures.leadWorkers), directory: directory, dock: dock, place: place)
             } inspector: {
                 CodeV2EnvDockView(session: session, dock: dock, close: {})
@@ -225,7 +225,8 @@ public enum CodeV2Gallery {
             .background(Studio.Surface.popover)
             .clipShape(RoundedRectangle(cornerRadius: Studio.Radius.card, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: Studio.Radius.card, style: .continuous).strokeBorder(Studio.Surface.hairline))
-            .shadow(color: .black.opacity(0.12), radius: 24, y: 12)
+            .shadow(color: .black.opacity(0.08), radius: 2, y: 1)
+            .shadow(color: .black.opacity(0.18), radius: 28, y: 14)
     }
 
     /// A popover's content as the system draws it: the popover ground, the
