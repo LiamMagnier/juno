@@ -157,6 +157,9 @@ test("mode tables: Codex, Claude, ACP and the engine", () => {
   assert.equal(autoDecision("auto-edit", "edit"), "accept");
   assert.equal(autoDecision("auto-edit", "execute"), undefined);
   assert.equal(autoDecision("read-only", "edit"), "decline");
+  assert.equal(autoDecision("read-only", "other"), "decline", "read-only fails closed on unknown kinds");
+  assert.equal(autoDecision("read-only", undefined), "decline");
+  assert.equal(autoDecision("read-only", "read"), undefined);
   const opts = [{ optionId: "a", name: "Allow", kind: "allow_once" as const }, { optionId: "r", name: "No", kind: "reject_once" as const }];
   assert.equal(pickOption(opts, "acceptForSession")?.optionId, "a", "falls back to the same polarity");
   assert.equal(pickOption(opts, "decline")?.optionId, "r");
@@ -185,4 +188,10 @@ test("tool calls normalize to turn items", () => {
   assert.equal(acpEdit?.kind === "file_change" && acpEdit.changes[0].change, "add");
   const acpExec = acpToolItem({ toolCallId: "c", kind: "execute", status: "in_progress", rawInput: { command: ["ls", "-la"] } }, undefined, "i", "t", NOW.toISOString());
   assert.equal(acpExec?.kind === "command_execution" && acpExec.command, "ls -la");
+});
+
+test("worktree setup scripts never inherit Alevr's own variables (the env server bearer)", async () => {
+  const { scriptEnv } = await import("../src/git/worktrees.js");
+  const env = scriptEnv({ PATH: "/bin", HOME: "/Users/x", ALEVR_ENV_TOKEN: "secret", JUNO_X: "1" });
+  assert.deepEqual(env, { PATH: "/bin", HOME: "/Users/x" });
 });

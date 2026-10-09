@@ -41,7 +41,7 @@ export function runWorktreeSetup(worktree: string, timeoutMs = 10 * 60_000): Pro
   }
   return new Promise((resolve) => {
     let output = "";
-    const child = spawn(script, [], { cwd: worktree, shell: false, env: process.env });
+    const child = spawn(script, [], { cwd: worktree, shell: false, env: scriptEnv() });
     const take = (b: Buffer) => {
       output = (output + b.toString("utf8")).slice(-16_000);
     };
@@ -57,4 +57,14 @@ export function runWorktreeSetup(worktree: string, timeoutMs = 10 * 60_000): Pro
       resolve({ ran: true, ok: code === 0, output });
     });
   });
+}
+
+/** The user's environment minus anything Alevr set for itself (a repo script is not trusted with it). */
+export function scriptEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {};
+  for (const [k, v] of Object.entries(base)) {
+    if (v === undefined || k.startsWith("ALEVR_") || k.startsWith("JUNO_")) continue;
+    env[k] = v;
+  }
+  return env;
 }

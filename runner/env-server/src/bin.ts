@@ -81,10 +81,15 @@ async function main(): Promise<void> {
   const logger = stderrLogger(level);
   const dataDir = arg("--data-dir", argv) ?? process.env.ALEVR_ENV_DATA_DIR ?? defaultDataDir();
   const self = process.argv[1] ? path.resolve(process.argv[1]) : undefined;
+  // The bearer is read once and removed from this process's environment, so no child
+  // (a repo's worktree-setup script, a vendor CLI, a terminal, an agent's shell command)
+  // can inherit it and drive this server past its approvals.
+  const envToken = process.env.ALEVR_ENV_TOKEN;
+  delete process.env.ALEVR_ENV_TOKEN;
   const server = await startEnvServer({
     dataDir,
     port: Number(arg("--port", argv) ?? process.env.ALEVR_ENV_PORT ?? 0),
-    ...(process.env.ALEVR_ENV_TOKEN ? { token: process.env.ALEVR_ENV_TOKEN } : {}),
+    ...(envToken ? { token: envToken } : {}),
     logger,
     allowedOrigins: args("--allow-origin", argv),
     ...(self ? { mcpBridge: { command: process.execPath, args: [...process.execArgv, self, "mcp-stdio"] } } : {}),

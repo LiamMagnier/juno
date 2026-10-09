@@ -430,7 +430,9 @@ class AcpSession implements ProviderSession {
 export function autoDecision(mode: RuntimeMode, kind: string | undefined): ApprovalDecision | undefined {
   if (mode === "full") return "accept";
   if (mode === "auto-edit" && (kind === "edit" || kind === "read" || kind === "search" || kind === "think" || kind === "move")) return "accept";
-  if (mode === "read-only" && (kind === "edit" || kind === "delete" || kind === "move" || kind === "execute")) return "decline";
+  // Read-only fails closed: anything that is not plainly a read (an unknown kind, "other",
+  // an MCP tool that may write) is declined rather than offered to the user as a prompt.
+  if (mode === "read-only" && !(kind === "read" || kind === "search" || kind === "think" || kind === "fetch")) return "decline";
   return undefined;
 }
 

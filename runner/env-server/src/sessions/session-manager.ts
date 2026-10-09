@@ -316,7 +316,7 @@ export class SessionManager {
     // Fail closed: only a decision the request offered is accepted (a client cannot widen
     // "allow once" into "allow for the session").
     const item = live.log.snapshot.items.find((i) => i.id === pending.itemId);
-    const offered: readonly string[] = item?.kind === "approval_request" ? item.options : ["accept", "decline", "cancel"];
+    const offered: readonly string[] = (item?.kind === "approval_request" ? item.options : undefined) ?? ["accept", "decline", "cancel"];
     if (!offered.includes(params.decision)) throw new WireError("bad_request", `This request does not offer "${String(params.decision)}".`);
     this.#resolvePending(live, params.requestId, {
       decision: params.decision,
