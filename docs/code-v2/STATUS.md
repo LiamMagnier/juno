@@ -117,6 +117,82 @@ See the result object of this run for exact commands; summary:
 - Swift JunoCode (`swift test`, all targets): Runtime 638, UI 379 (45 skipped), Local 428, Core 258, Bridge 200, Simulator 54; 0 failures.
 - JunoDesktop `xcodebuild test -only-testing:JunoDesktopTests`: builds; 450 tests, 19 issues, all in shell/sidebar/icon/shortcut tests whose sources this branch does not touch (DesktopShellContract, DesktopDestination sidebar/more cases, DesktopIconCatalog geometry, JunoShortcutRegistry view menu): inherited from the trunk base, not fixed here.
 
+## Code v3 round (2026-10-09): finished and integrated
+
+Owner request (2026-10-09): "enable antigravity and finish the remaining
+items + rework completely the UI / UX design". This round merged the three
+functional lanes into `code/v2`, in order: `code-v3/runtime` afdde42d,
+`code-v3/macfn` 941a322e, `code-v3/webfn` 1f62202b. The design directions
+(`code-v3/dir-a`, `dir-b`, `dir-c`) are **not** merged; they wait for the
+owner's choice. Nothing is pushed or deployed.
+
+**Antigravity is enabled by the owner** (decision 2026-10-09). The legal hold is
+gone from the env server presets and registry, and from web and Mac
+Connections. Alevr installs Google's official runtime itself (pinned size and
+SHA-256), and signs in with Google through the runtime's 127.0.0.1 callback,
+with a paste-the-address fallback for another device. The terms risk that
+remains is in PROVIDERS-LEGAL.md.
+
+What this round finished:
+
+- Runtime: scoped rollback, stale snapshots never applied, resume at reset
+  (`turn.schedule` / `turn.unschedule`), `checkpoint.applyPatch` for rejected
+  hunks, an opt-in Postgres device-link hub, the release script ships and
+  checks the env server bundle, the Node 22.18 check, and a computer bridge
+  bound to the env servers the app launched. See "Runtime lane" below.
+- Mac: Terminal / Files / Preview dock tabs on env-server threads, Orchestrate
+  roles routed to Alevr, BYOK or subscription instances in the Swift engine,
+  connected-agent approvals as Studio cards (no NSAlert), the overlay test,
+  link-only terminals on the device link, and Antigravity install and sign-in.
+  See "Code v3: Mac functional lane" below.
+- Web: an xterm.js Terminal over the device link (gated by the Mac's "Share
+  this Mac's terminal" switch, off by default), Reject / Undo applying the
+  hunk on the Mac, resume at reset from the limited composer, the Code v2
+  sidebar in the app shell on every Code route, Antigravity install and
+  sign-in in Connections, and OpenRouter as a BYOK-only lab.
+
+Seams wired while merging:
+
+- The Mac's Antigravity setup (`EnvRuntimeSetup`) now uses the contract's own
+  `ProviderInstallState` / `ProviderAuthState` / actions (type aliases). The
+  macfn draft's duplicate `providerInstall` / `providerAuth` were removed, and
+  the hub also takes install and sign-in state from `ProviderInstance.install`
+  / `.auth`. The macfn UI was kept: progress, Cancel, paste field, open the
+  page again.
+- `src/lib/code-v2/runtime-lane.ts` is no longer a stub. It re-exports the
+  contract's types, and `runtimeRequest` is a plain `client.request`.
+- The Postgres link hub honours the terminal share switch like the memory
+  hub. This adds the `CodeLinkHost.terminalShared` column, in the same
+  unreleased migration. The five `CodeLink*` models are in `OWNER_COLUMN`.
+- `tests/computer-use-mcp.test.ts` now writes a well-formed bridge token. The
+  runtime lane's stricter token check refused the old one.
+- `@xterm/xterm` 6.0.0 and `@xterm/addon-fit` 0.11.0 are in this worktree's
+  `node_modules`, matching `package.json`.
+
+Gates on the merged tree (`446533e1`):
+
+- Root `npm run typecheck`: 0 errors. Root `npm test`: 6,651 tests, 6,540 pass,
+  111 skipped, 0 failures.
+- `tests/code-v2-*.test.ts`: 126 tests, 125 pass, 1 skipped.
+  `tests/code-v2-env-link-pg.test.ts` against a throwaway Postgres 17 with the
+  migration: 12 pass, 1 skipped (a memory-only case).
+- eslint on every changed TS/TSX/MJS path: 0 errors (only ignored-file warnings
+  on the runner copies). `npx prisma validate`: valid.
+- `node scripts/check-code-v2-contracts.mjs`: in sync (76 definitions, 9
+  fixture files, Swift mirror).
+- runner/agent-core: 255/255. runner/env-server: typecheck clean, 53/53.
+- `native:design:check`: all 6 gates hold. `native:contract:check` and
+  `native:icons:check`: pass.
+- Swift JunoCode `swift test`: Runtime 638, UI 396 (45 skipped), Local 433,
+  Core 263, Bridge 201, Simulator 54, with 0 failures.
+- JunoDesktop `xcodebuild build` (Debug): BUILD SUCCEEDED.
+- **JunoDesktopTests verdict**: 450 tests, 19 issues, and **no new failures**.
+  The 19 are the inherited shell, sidebar, icon and View-menu expectations,
+  the same list as on the trunk base 49a26fda (see the Mac lane section for
+  why). They need the shell owners' product call. The 4
+  WorkStageBSnapshotTests "drew nothing" issues only show with
+  `JUNO_SNAPSHOT_DIR` set, which this run did not set.
+
 ## Left to do
 
 - **Signed-in, real-hardware checks**: a real Claude/Codex hand-off through the
