@@ -286,8 +286,9 @@ private final class JunoDesktopAppDelegate: NSObject, NSApplicationDelegate, UNU
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        ComputerUseDesktopHost.shared.uninstall()
         MainActor.assumeIsolated {
+            // No stale bridge socket or token left for an env server to find.
+            ComputerUseDesktopHost.shared.uninstall()
             // Never swapped in under a run the reader chose to stop: it is
             // interrupted, and Resume needs the build that was running it.
             guard DesktopLifecycle.installsStagedUpdate(
