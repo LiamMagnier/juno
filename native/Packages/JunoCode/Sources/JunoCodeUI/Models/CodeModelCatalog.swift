@@ -60,11 +60,15 @@ public extension JunoThinkingLadder {
         efforts: [ReasoningEffort],
         modelName: String = ""
     ) -> JunoThinkingLadder {
-        JunoThinkingLadder(
-            stops: efforts
-                .sorted { $0.junoDepth < $1.junoDepth }
-                .map(\.junoStop),
-            modelName: modelName
+        let stops = efforts
+            .sorted { $0.junoDepth < $1.junoDepth }
+            .map(\.junoStop)
+        // Medium is the web's default for a ladder that publishes none
+        // (`caps()` in model-metrics.ts), so the panel's reset lands there.
+        return JunoThinkingLadder(
+            stops: stops,
+            modelName: modelName,
+            defaultStopID: stops.contains { $0.id == "medium" } ? "medium" : nil
         )
     }
 }

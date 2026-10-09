@@ -417,6 +417,8 @@ public enum JunoIcon: String, CaseIterable, Sendable {
     /// Settings (Phase 3 Stage C): the profile photo's camera badge and a
     /// pinned model's star.
     case camera, star
+    /// The effort panel's Flash: the web's `Zap` (its `bolt` drawing).
+    case zap
 
     /// The generated symbol this case wears, without a cut suffix: `ph.<name>`
     /// for Phosphor's drawings, `juno.<name>` for Juno's own.
@@ -648,6 +650,7 @@ public enum JunoIcon: String, CaseIterable, Sendable {
         case .mapTrifold: "ph.maptrifold"
         case .camera: "ph.camera"
         case .star: "ph.star"
+        case .zap: "ph.lightning"
         }
     }
 

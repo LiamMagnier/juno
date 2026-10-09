@@ -32,7 +32,8 @@ public extension NativeThinkingScale {
             modelName: modelName,
             caption: caption,
             fastModeRateMultiplier: fastModeRateMultiplier,
-            supportsProMode: supportsProMode
+            supportsProMode: supportsProMode,
+            defaultStopID: defaultStop?.id
         )
     }
 

@@ -163,6 +163,11 @@ public struct JunoThinkingLadder: Equatable, Sendable {
     /// it, so a model can run pro at Low. Making it a stop would also mean
     /// sending "pro" where the request expects a reasoning effort.
     public let supportsProMode: Bool
+    /// The model's own default stop: where the effort panel's reset returns
+    /// to (the web's `defaultReasoning`), and the stop the chip leaves
+    /// unnamed. Nil when the product published none, and then the panel has
+    /// no reset to offer.
+    public let defaultStopID: String?
 
     public init(
         stops: [JunoThinkingStop],
@@ -170,8 +175,10 @@ public struct JunoThinkingLadder: Equatable, Sendable {
         modelName: String = "",
         caption: String? = nil,
         fastModeRateMultiplier: Double? = nil,
-        supportsProMode: Bool = false
+        supportsProMode: Bool = false,
+        defaultStopID: String? = nil
     ) {
+        self.defaultStopID = defaultStopID.flatMap { id in stops.contains { $0.id == id } ? id : nil }
         self.stops = stops
         self.isAutomatic = isAutomatic
         self.modelName = modelName
