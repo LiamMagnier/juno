@@ -419,6 +419,7 @@ export class DeviceLinkTransport implements EnvTransport {
   private globalCursor = -1;
   private closed = false;
   private polling = false;
+  private global = false;
   private abort: AbortController | null = null;
   private failures = 0;
 
@@ -467,12 +468,25 @@ export class DeviceLinkTransport implements EnvTransport {
 
   setCursors(cursors: Record<string, number>): void {
     this.cursors = cursors;
-    if (!this.polling && Object.keys(cursors).length > 0) void this.poll();
+    if (!this.polling && this.wantsEvents()) void this.poll();
+  }
+
+  /**
+   * Keep polling the global stream (provider updates, terminal output) even
+   * with no session followed: a sign-in terminal from Connections has none.
+   */
+  followGlobal(): void {
+    this.global = true;
+    if (!this.polling) void this.poll();
+  }
+
+  private wantsEvents(): boolean {
+    return this.global || Object.keys(this.cursors).length > 0;
   }
 
   private async poll() {
     this.polling = true;
-    while (!this.closed && Object.keys(this.cursors).length > 0) {
+    while (!this.closed && this.wantsEvents()) {
       this.abort = new AbortController();
       try {
         const res = await this.fetcher(this.url, {

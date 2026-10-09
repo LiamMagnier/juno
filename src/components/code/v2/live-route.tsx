@@ -221,9 +221,9 @@ export function CodeV2Route({ conversation, initialMessages, userName }: CodeV2R
     resumeAtReset: undefined,
     openThread: (id) => router.push(`/code/${id}`),
     newThread: () => router.push("/code"),
-    terminalInput: (terminalId, data) => {
-      if (env.client) void env.client.request("terminal.write", { terminalId, data });
-    },
+    terminalInput: env.ready ? env.writeTerminal : undefined,
+    terminalResize: env.ready ? env.resizeTerminal : undefined,
+    closeTerminal: env.ready ? env.closeTerminal : undefined,
     openTerminal: env.ready ? (command) => void env.openTerminal(cwd, command) : undefined,
     renameThread: (title) => {
       updateConversation(conversation.id, { title });

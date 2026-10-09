@@ -27,6 +27,8 @@ export interface TerminalSession {
   /** Agent-run commands are read-only; the user's shell is writable. */
   readOnly: boolean;
   output: string;
+  /** Characters dropped from the front of `output` (see terminal-stream.ts). */
+  offset?: number;
   exited?: boolean;
 }
 
@@ -73,6 +75,8 @@ export interface WorkspaceActions {
   openThread?(id: string): void;
   newThread?(): void;
   terminalInput?(terminalId: string, data: string): void;
+  terminalResize?(terminalId: string, cols: number, rows: number): void;
+  closeTerminal?(terminalId: string): void;
   openTerminal?(command?: string): void;
   renameThread?(title: string): void;
 }

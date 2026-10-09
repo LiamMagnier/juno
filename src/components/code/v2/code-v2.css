@@ -419,7 +419,9 @@ button.cv2-step:hover .verb { text-decoration: underline; text-decoration-color:
 .cv2-k { color: hsl(var(--cv2-code-keyword)); } .cv2-s { color: hsl(var(--code-string)); } .cv2-n { color: hsl(var(--code-number)); } .cv2-c { color: hsl(var(--cv2-code-comment)); }
 
 /* Terminal */
-.cv2-term { font-family: var(--font-mono), ui-monospace, monospace; font-size: 12px; line-height: 19px; padding: 10px 14px 16px; color: hsl(var(--foreground)); white-space: pre-wrap; overflow-wrap: anywhere; }
+.cv2-term { flex: 1; min-height: 0; display: flex; padding: 10px 6px 6px 14px; color: hsl(var(--foreground)); }
+.cv2-xterm { flex: 1; min-width: 0; min-height: 0; }
+.cv2-xterm .xterm, .cv2-xterm .xterm-viewport { background: transparent !important; }
 .cv2-term .p { color: hsl(var(--muted-foreground)); }
 .cv2-term-input { display: flex; align-items: center; gap: 8px; border-top: 1px solid hsl(var(--border)); padding: 8px 14px; font-family: var(--font-mono), ui-monospace, monospace; font-size: 12px; }
 .cv2-term-input input { flex: 1; border: 0; outline: none; background: transparent; font: inherit; color: hsl(var(--foreground)); }

@@ -122,6 +122,13 @@ public actor EnvServerDeviceLink {
         self.forward = forward
     }
 
+    /// Whether the user shared this Mac's terminal with other devices. The
+    /// channel reports it on every pull so the hub relays `terminal.*` only
+    /// while it is on (this actor checks it again before running one).
+    public func sharesTerminal() async -> Bool {
+        await allowsTerminal()
+    }
+
     // MARK: Events
 
     /// Sends every event a remote may see to `sink` as it is recorded (the
@@ -324,7 +331,7 @@ public actor EnvServerDeviceLink {
 /// Drains the backend's device-link hub (`src/lib/code-v2/env-link-hub.ts`,
 /// docs/code-v2/DEVICE-LINK.md "Mac side") for this Mac:
 ///
-/// - `POST /api/code/v2/link/<deviceId>/host {kind:"pull", protocol, appVersion, waitMs}`
+/// - `POST /api/code/v2/link/<deviceId>/host {kind:"pull", protocol, appVersion, waitMs, terminal}`
 ///   long-polls the commands the web relayed (`{protocol, commands:[ClientCommand]}`);
 ///   the pull is also this Mac's heartbeat. Each command runs through
 ///   ``EnvServerDeviceLink/run(_:)`` (the same remote rules) on its own task.
@@ -413,6 +420,7 @@ public actor EnvServerDeviceLinkChannel {
         do {
             var body: [String: Any] = ["kind": "pull", "protocol": Self.protocolName, "waitMs": pullWaitMs]
             if let appVersion { body["appVersion"] = appVersion }
+            body["terminal"] = await link.sharesTerminal()
             let (status, data) = try await perform("POST", hostPath, try JSONSerialization.data(withJSONObject: body))
             if status == 404 || status == 409 {
                 stoppedReason = status == 404 ? "This Mac is no longer paired with your account." : "Update Alevr to keep using this Mac from the web."

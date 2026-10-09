@@ -36,6 +36,7 @@ import { displayName } from "@/lib/code-v2/providers-view";
 import { AgentTree, BestOfN, modelLabelFor } from "./agent-tree";
 import { Glyph, Kbd, ModelMark, Spinner, useIsMac } from "./primitives";
 import type { WorkspaceModel } from "./types";
+import { XtermView } from "./xterm-view";
 import { cn } from "@/lib/utils";
 
 export interface DockFocus {
@@ -268,10 +269,7 @@ function ChangesPane({
   );
 }
 
-// ── Terminal (stream view; xterm.js is not installed in this build) ─────────
-
-// eslint-disable-next-line no-control-regex
-const ANSI = /\u001b\[[0-9;?]*[ -/]*[@-~]/g;
+// ── Terminal (xterm.js; the user's shells are live, agent commands read-only) ─
 
 function TerminalPane({ model, focus }: { model: WorkspaceModel; focus: DockFocus }) {
   const commands = model.items.filter((i): i is Extract<TurnItem, { kind: "command_execution" }> => i.kind === "command_execution");
@@ -282,6 +280,7 @@ function TerminalPane({ model, focus }: { model: WorkspaceModel; focus: DockFocu
       title: c.command,
       readOnly: true,
       output: `$ ${c.command}\n${c.output ?? ""}${c.exitCode !== undefined ? `\n[exit ${c.exitCode}${c.durationMs ? ` · ${formatDuration(c.durationMs)}` : ""}]` : ""}`,
+      offset: 0,
       exited: c.status !== "running",
     }));
     return [...own, ...agent];
@@ -291,20 +290,30 @@ function TerminalPane({ model, focus }: { model: WorkspaceModel; focus: DockFocu
     if (focus.target) setActive(focus.target);
   }, [focus.target]);
   const current = sessions.find((s) => s.id === active) ?? sessions[0];
-  const [input, setInput] = React.useState("");
-  const scroll = React.useRef<HTMLDivElement>(null);
-  React.useLayoutEffect(() => {
-    if (scroll.current) scroll.current.scrollTop = scroll.current.scrollHeight;
-  }, [current?.output]);
   if (model.offline) return <div className="cv2-dock-empty">Offline. Terminals come back when {model.device?.name ?? "your Mac"} is back.</div>;
   return (
     <div className="cv2-dock-pane">
-      <div className="cv2-dockbar" style={{ gap: 4, overflowX: "auto" }}>
+      <div className="cv2-dockbar" style={{ gap: 4, overflowX: "auto" }} role="tablist" aria-label="Terminals">
         {sessions.map((s) => (
-          <button key={s.id} type="button" className={cn("cv2-btn sm", s.id === current?.id ? "" : "ghost")} title={s.title} onClick={() => setActive(s.id)} style={{ maxWidth: 200 }}>
-            <Glyph name={s.readOnly ? "terminal" : "keyboard"} size={14} />
-            <span className="cv2-trunc cv2-mono">{s.title}</span>
-          </button>
+          <span key={s.id} className="cv2-row" style={{ gap: 0 }}>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={s.id === current?.id}
+              className={cn("cv2-btn sm", s.id === current?.id ? "" : "ghost")}
+              title={s.title}
+              onClick={() => setActive(s.id)}
+              style={{ maxWidth: 200 }}
+            >
+              <Glyph name={s.readOnly ? "terminal" : "keyboard"} size={14} />
+              <span className="cv2-trunc cv2-mono">{s.title}</span>
+            </button>
+            {!s.readOnly && model.actions.closeTerminal && (
+              <button type="button" className="cv2-iconbtn" aria-label={`Close ${s.title}`} title="Close terminal" onClick={() => model.actions.closeTerminal?.(s.id)}>
+                <Glyph name="close" size={12} />
+              </button>
+            )}
+          </span>
         ))}
         <span className="cv2-grow" />
         {model.actions.openTerminal && (
@@ -317,23 +326,18 @@ function TerminalPane({ model, focus }: { model: WorkspaceModel; focus: DockFocu
         <div className="cv2-dock-empty">No terminal yet. Commands the agent runs show here, read-only.</div>
       ) : (
         <>
-          <div className="cv2-dockscroll" ref={scroll} role="log" aria-label={current.title}>
-            <div className="cv2-term">{current.output.replace(ANSI, "")}</div>
+          <div className="cv2-term">
+            <XtermView
+              terminalId={current.id}
+              buffer={{ output: current.output, offset: current.offset ?? 0 }}
+              readOnly={current.readOnly || !!current.exited || !model.actions.terminalInput}
+              label={current.title}
+              onInput={(data) => model.actions.terminalInput?.(current.id, data)}
+              onResize={current.readOnly ? undefined : (cols, rows) => model.actions.terminalResize?.(current.id, cols, rows)}
+            />
           </div>
-          {!current.readOnly && !current.exited && (
-            <form
-              className="cv2-term-input"
-              onSubmit={(e) => {
-                e.preventDefault();
-                model.actions.terminalInput?.(current.id, `${input}\n`);
-                setInput("");
-              }}
-            >
-              <span className="cv2-mute">$</span>
-              <input value={input} onChange={(e) => setInput(e.target.value)} aria-label="Terminal input" spellCheck={false} />
-            </form>
-          )}
           {current.readOnly && <div className="cv2-term-input cv2-mute">Run by the agent. Read-only.</div>}
+          {!current.readOnly && current.exited && <div className="cv2-term-input cv2-mute">This shell has exited.</div>}
         </>
       )}
     </div>

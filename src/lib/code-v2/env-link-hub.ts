@@ -60,14 +60,20 @@ export const LINK_RELAYED_COMMANDS: ReadonlySet<ClientCommandType> = new Set<Cli
   "provider.setup",
 ]);
 
-/** Never relayed: a remote shell, and secrets (the Mac supplies its own). */
-export const LINK_REFUSED_COMMANDS: ReadonlySet<ClientCommandType> = new Set<ClientCommandType>([
+/**
+ * A shell on the user's Mac. Relayed only while the Mac's latest pull says the
+ * user shared its terminal with other devices (`{kind:"pull", terminal:true}`);
+ * the Mac enforces the same switch again before running one.
+ */
+export const LINK_TERMINAL_COMMANDS: ReadonlySet<ClientCommandType> = new Set<ClientCommandType>([
   "terminal.open",
   "terminal.write",
   "terminal.resize",
   "terminal.close",
-  "env.configure",
 ]);
+
+/** Never relayed: secrets (the Mac supplies its own). */
+export const LINK_REFUSED_COMMANDS: ReadonlySet<ClientCommandType> = new Set<ClientCommandType>(["env.configure"]);
 
 export const LINK_LIMITS = {
   /** A Mac that has not pulled for this long is offline. */
@@ -106,7 +112,7 @@ export type LinkClientRequest =
   | { kind: "poll"; cursors: Record<string, number>; globalCursor?: number };
 
 export type LinkHostRequest =
-  | { kind: "pull"; protocol?: string; appVersion?: string; waitMs?: number }
+  | { kind: "pull"; protocol?: string; appVersion?: string; waitMs?: number; terminal?: boolean }
   | { kind: "push"; responses?: ServerResponse[]; events?: ServerEventEnvelope[] };
 
 export interface LinkHostPullReply {
@@ -165,6 +171,8 @@ export class DeviceLink {
   #hostWaiters = new Waiters();
   #clientWaiters = new Waiters();
   appVersion: string | undefined;
+  /** Whether the Mac's latest pull said its terminal is shared with other devices. */
+  terminalShared = false;
 
   constructor(private readonly clock: Clock = Date.now) {}
 
@@ -180,10 +188,14 @@ export class DeviceLink {
       responses: [{ type: "response", id: String(command?.id ?? ""), ok: false, error: { code, message } }],
     });
     if (!command || typeof command.id !== "string" || typeof command.type !== "string") return refuse("bad_request", "Malformed command.");
-    if (LINK_REFUSED_COMMANDS.has(command.type) || !LINK_RELAYED_COMMANDS.has(command.type)) {
-      return refuse("unsupported", command.type.startsWith("terminal.") ? "Terminals open on the Mac itself, not from the web." : "That action is only available in Alevr on your Mac.");
+    const terminal = LINK_TERMINAL_COMMANDS.has(command.type);
+    if (LINK_REFUSED_COMMANDS.has(command.type) || (!terminal && !LINK_RELAYED_COMMANDS.has(command.type))) {
+      return refuse("unsupported", "That action is only available in Alevr on your Mac.");
     }
     if (!this.online) return { offline: true, message: "Your Mac is offline. Open Alevr on it to continue." };
+    if (terminal && !this.terminalShared) {
+      return refuse("unsupported", "The terminal on your Mac is not shared. Turn on Share terminal in Alevr on your Mac, under Remote hosting.");
+    }
     if (this.#queue.length >= LINK_LIMITS.maxQueuedCommands) return refuse("not_ready", "Your Mac is busy. Try again in a moment.");
     const relayId = `link_${this.#nextId++}`;
     const response = await new Promise<ServerResponse>((resolve) => {
@@ -283,9 +295,10 @@ export class DeviceLink {
   // ── Mac side ──────────────────────────────────────────────────────────
 
   /** The Mac's long poll for work. Pulling is also its heartbeat. */
-  async pull(waitMs: number = LINK_LIMITS.hostPullWaitMs, signal?: AbortSignal, appVersion?: string): Promise<LinkHostPullReply> {
+  async pull(waitMs: number = LINK_LIMITS.hostPullWaitMs, signal?: AbortSignal, appVersion?: string, terminal = false): Promise<LinkHostPullReply> {
     this.#lastPullAt = this.clock();
     if (appVersion) this.appVersion = appVersion;
+    this.terminalShared = terminal === true;
     if (this.#queue.length === 0 && waitMs > 0 && !signal?.aborted) {
       await this.#hostWaiters.wait(Math.min(waitMs, LINK_LIMITS.hostPullWaitMs), signal);
       this.#lastPullAt = this.clock();
@@ -421,6 +434,7 @@ export function parseHostRequest(body: unknown): LinkHostRequest | null {
       ...(typeof body.protocol === "string" ? { protocol: body.protocol } : {}),
       ...(typeof body.appVersion === "string" ? { appVersion: body.appVersion.slice(0, 100) } : {}),
       ...(typeof body.waitMs === "number" && Number.isFinite(body.waitMs) ? { waitMs: Math.max(0, body.waitMs) } : {}),
+      ...(body.terminal === true ? { terminal: true } : {}),
     };
   }
   if (body.kind === "push") {

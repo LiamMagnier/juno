@@ -18,6 +18,7 @@ import {
   type TransportStatus,
 } from "@/lib/code-v2/env-client";
 import type { ClientCommandParams, ProviderInstance } from "@/lib/code-v2/contracts";
+import { appendTerminal } from "@/lib/code-v2/terminal-stream";
 import type { SessionView } from "@/lib/code-v2/session-store";
 import type { TerminalSession } from "./types";
 
@@ -33,6 +34,9 @@ export interface EnvLink {
   open(params: ClientCommandParams["session.open"]): Promise<string>;
   probe(instanceId: string): Promise<ProviderInstance | void>;
   openTerminal(cwd: string, command?: string, title?: string): Promise<string | void>;
+  writeTerminal(terminalId: string, data: string): void;
+  resizeTerminal(terminalId: string, cols: number, rows: number): void;
+  closeTerminal(terminalId: string): void;
 }
 
 function explicitEnvUrl(): string | null {
@@ -66,6 +70,8 @@ export function useEnvLink(device: { id: string; online: boolean } | null, initi
       return;
     }
     const transport = endpoint.kind === "socket" ? new WebSocketTransport(endpoint.url) : new DeviceLinkTransport(endpoint.deviceId);
+    // Provider updates and terminal output ride the global stream: follow it even before a session is open.
+    if (transport instanceof DeviceLinkTransport) transport.followGlobal();
     const c = new EnvClient(transport, { timeoutMs: endpoint.kind === "socket" ? 15_000 : 25_000 });
     let live = true;
     const offStatus = c.onStatus((s) => live && setStatus(s));
@@ -74,7 +80,7 @@ export function useEnvLink(device: { id: string; online: boolean } | null, initi
       const e = env.event;
       if (e.type === "provider.updated") setInstances((list) => [...list.filter((i) => i.id !== e.instance.id), e.instance]);
       else if (e.type === "terminal.output")
-        setTerminals((ts) => ts.map((t) => (t.id === e.terminalId ? { ...t, output: (t.output + e.data).slice(-200_000) } : t)));
+        setTerminals((ts) => ts.map((t) => (t.id === e.terminalId ? { ...t, ...appendTerminal({ output: t.output, offset: t.offset ?? 0 }, e.data) } : t)));
       else if (e.type === "terminal.exited") setTerminals((ts) => ts.map((t) => (t.id === e.terminalId ? { ...t, exited: true } : t)));
     });
     setClient(c);
@@ -131,11 +137,51 @@ export function useEnvLink(device: { id: string; online: boolean } | null, initi
     async (cwd: string, command?: string, title = "Shell") => {
       if (!client) throw new Error("Your Mac is not connected.");
       const { terminalId } = await client.request("terminal.open", { cwd, cols: 100, rows: 30, command });
-      setTerminals((ts) => [{ id: terminalId, title, readOnly: false, output: command ? `$ ${command}\n` : "" }, ...ts.filter((t) => t.id !== terminalId)]);
+      // The shell echoes a typed command itself; the screen starts empty.
+      setTerminals((ts) => [{ id: terminalId, title, readOnly: false, output: "", offset: 0 }, ...ts.filter((t) => t.id !== terminalId)]);
       return terminalId;
     },
     [client],
   );
 
-  return { ready, status, client, instances, terminals, view, sessionId, open, probe, openTerminal };
+  // Keystrokes are batched per frame: one relay round trip per burst, not per key.
+  const pendingInput = React.useRef(new Map<string, string>());
+  const inputTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const writeTerminal = React.useCallback(
+    (terminalId: string, data: string) => {
+      if (!client) return;
+      const map = pendingInput.current;
+      map.set(terminalId, (map.get(terminalId) ?? "") + data);
+      inputTimer.current ??= setTimeout(() => {
+        inputTimer.current = null;
+        const batch = [...map.entries()];
+        map.clear();
+        for (const [id, chunk] of batch) void client.request("terminal.write", { terminalId: id, data: chunk }).catch(() => undefined);
+      }, 16);
+    },
+    [client],
+  );
+
+  const lastSize = React.useRef(new Map<string, string>());
+  const resizeTerminal = React.useCallback(
+    (terminalId: string, cols: number, rows: number) => {
+      if (!client || !(cols > 0 && rows > 0)) return;
+      const key = `${cols}x${rows}`;
+      if (lastSize.current.get(terminalId) === key) return;
+      lastSize.current.set(terminalId, key);
+      void client.request("terminal.resize", { terminalId, cols, rows }).catch(() => undefined);
+    },
+    [client],
+  );
+
+  const closeTerminal = React.useCallback(
+    (terminalId: string) => {
+      setTerminals((ts) => ts.filter((t) => t.id !== terminalId));
+      lastSize.current.delete(terminalId);
+      if (client) void client.request("terminal.close", { terminalId }).catch(() => undefined);
+    },
+    [client],
+  );
+
+  return { ready, status, client, instances, terminals, view, sessionId, open, probe, openTerminal, writeTerminal, resizeTerminal, closeTerminal };
 }
