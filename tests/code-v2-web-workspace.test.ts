@@ -179,16 +179,21 @@ test("the streaming state glows, offers Stop and lists the queued follow-up with
   assert.match(html, /Changed 3 files/);
 });
 
-test("Connections names subscriptions by the owner's rules and lists Antigravity as held behind its flag", () => {
+test("Connections names subscriptions by the owner's rules and lists Antigravity as a normal provider", () => {
   const html = renderToStaticMarkup(React.createElement(ConnectionsPanel, { instances: INSTANCES, device: DEVICE }));
   assert.match(html, /Claude \(your subscription\)/);
   assert.match(html, /ChatGPT \(Codex\)/);
   assert.match(html, /Sign in again/);
   assert.match(html, /Install/);
-  // Listed honestly while its terms check is open: no action, no status, a plain sentence.
-  assert.match(html, /Antigravity<\/div><div class="ds"[^>]*>Not available yet\./);
-  const enabled = renderToStaticMarkup(React.createElement(ConnectionsPanel, { instances: INSTANCES, device: DEVICE, flags: { "providers.antigravity": true } }));
-  assert.doesNotMatch(enabled, /Not available yet/);
+  // Enabled by the owner on 2026-10-09: listed like every other runtime, never as held.
+  assert.doesNotMatch(html, /Not available yet/);
+  const withAntigravity = renderToStaticMarkup(
+    React.createElement(ConnectionsPanel, {
+      instances: [...INSTANCES, { id: "acp:antigravity", kind: "acp", label: "Antigravity", acpCommand: ["antigravity-acp"], status: "not-installed", install: { phase: "idle", version: "1.3.0" } }],
+      device: DEVICE,
+    }),
+  );
+  assert.match(withAntigravity, /Antigravity<\/div><div class="ds"[^>]*>Not installed\. Alevr downloads Google&#x27;s official runtime/);
   assert.doesNotMatch(html, /Claude Code/);
   const offline = renderToStaticMarkup(React.createElement(ConnectionsPanel, { instances: [], device: null }));
   assert.match(offline, /Download for Mac/);

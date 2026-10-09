@@ -58,6 +58,13 @@ export const LINK_RELAYED_COMMANDS: ReadonlySet<ClientCommandType> = new Set<Cli
   "provider.list",
   "provider.probe",
   "provider.setup",
+  // runtime lane: reject a hunk on the Mac, resume at reset, and a managed runtime's install and
+  // Google sign-in (the pasted-redirect fallback exists for exactly this remote case).
+  "checkpoint.applyPatch",
+  "turn.schedule",
+  "turn.unschedule",
+  "provider.install",
+  "provider.auth",
 ]);
 
 /** Never relayed: a remote shell, and secrets (the Mac supplies its own). */

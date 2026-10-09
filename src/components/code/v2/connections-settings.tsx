@@ -9,7 +9,7 @@ import "./code-v2.css";
 import * as React from "react";
 import { ConnectionsPanel } from "./connections";
 import { useEnvLink } from "./use-env-link";
-import { fallbackSetupCommand } from "@/lib/code-v2/providers-view";
+import { fallbackSetupCommand, managedSetup } from "@/lib/code-v2/providers-view";
 import type { DeviceInfo } from "./types";
 
 interface DeviceRow {
@@ -40,6 +40,16 @@ export function SubscriptionConnections() {
       device={device ? { ...device, online: device.online && env.ready } : null}
       onProbe={env.ready ? env.probe : undefined}
       onSetup={async (instance, action) => {
+        const managed = managedSetup(instance, action);
+        if (managed && env.client) {
+          // Antigravity: the Mac downloads Google's runtime, or starts Google sign-in, itself.
+          if (managed.type === "provider.install") {
+            await env.client.request("provider.install", managed.params);
+            return `Installing Google's runtime on ${device?.name ?? "your Mac"}. This row updates as it goes.`;
+          }
+          const auth = (await env.client.request("provider.auth", managed.params)).auth;
+          return auth.message ?? "Google sign-in started. The link appears here.";
+        }
         let command: string | null = null;
         try {
           command = (await env.client?.request("provider.setup", { instanceId: instance.id, action }))?.step?.command ?? null;

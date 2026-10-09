@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import type { ContextTier, ProviderInstance, RoleRouting } from "@/lib/code-v2/contracts";
 import { compactionThreshold, estimateDelta, formatTokens, gaugeView, rulerTicks, tierRows, wedgePath, windowLine } from "@/lib/code-v2/tier-view";
 import { budgetLine, budgetWarn, estimateRunUsd, orchestrateLabel, parseBudget, withCount, withPreset, withRoleModel } from "@/lib/code-v2/orchestrate";
-import { connectionAction, connectionSentence, cycleInstance, displayName, instanceMark, isInstanceVisible, railEntries, statusSentence } from "@/lib/code-v2/providers-view";
+import { connectionAction, connectionSentence, cycleInstance, displayName, instanceMark, isInstanceVisible, isManagedRuntime, managedProgress, managedSetup, railEntries, statusSentence } from "@/lib/code-v2/providers-view";
 import { createByokClient, looksLikeKey, maskKey } from "@/lib/code-v2/byok-client";
 import { DOCK_TAB_GLYPHS } from "@/lib/code-v2/dock";
 import { SLASH_COMMANDS } from "@/lib/code-v2/composer";
@@ -105,11 +105,10 @@ test("provider names, marks and rail order follow the owner rules", () => {
   assert.equal(displayName(instances[1]), "Grok");
   assert.equal(displayName(instances[0]), "Your Anthropic key");
   assert.deepEqual(instanceMark(instances[6]), { type: "lab", provider: "deepseek" });
-  assert.equal(isInstanceVisible(instances[2]), false, "Antigravity stays absent behind its flag");
-  assert.equal(isInstanceVisible(instances[2], { "providers.antigravity": true }), true);
+  assert.equal(isInstanceVisible(instances[2]), true, "Antigravity is a normal provider since 2026-10-09");
   const rail = railEntries(instances, {}, NOW);
-  assert.deepEqual(rail.map((e) => e.instance.id), ["alevr", "claude-agent:default", "acp:grok", "codex:default", "byok:anthropic"]);
-  assert.deepEqual(rail.map((e) => e.dim), [false, false, true, true, false]);
+  assert.deepEqual(rail.map((e) => e.instance.id), ["alevr", "acp:antigravity", "claude-agent:default", "acp:grok", "codex:default", "byok:anthropic"]);
+  assert.deepEqual(rail.map((e) => e.dim), [false, false, false, true, true, false]);
   assert.equal(cycleInstance(rail, "byok:anthropic", 1), "alevr");
   assert.equal(statusSentence(instances[3], NOW), "Runs your own claude on this Mac. Max plan, 5-hour window 38% used, resets 16:40.");
   assert.equal(connectionSentence(instances[3]), "Your own claude CLI, version 3.4.1. Signed in as maya@okafor.studio, Max plan.");
@@ -168,4 +167,18 @@ test("every glyph the v2 libraries name exists in the web icon set", () => {
   ];
   for (const s of samples) if (s) names.push(s.glyph);
   for (const n of names) assert.ok(known.has(n), `unknown glyph ${n}`);
+});
+
+test("a managed runtime (Antigravity) installs and signs in through the env server, not a terminal", () => {
+  const base = { id: "acp:antigravity", kind: "acp", label: "Antigravity", acpCommand: ["antigravity-acp"] } as const;
+  const missing = { ...base, status: "not-installed", install: { phase: "idle", version: "1.3.0" } } as ProviderInstance;
+  assert.equal(isManagedRuntime(missing), true);
+  assert.deepEqual(managedSetup(missing, "install"), { type: "provider.install", params: { instanceId: "acp:antigravity", action: "start" } });
+  assert.deepEqual(managedSetup(missing, "login"), { type: "provider.auth", params: { instanceId: "acp:antigravity", action: "start" } });
+  assert.equal(managedSetup({ ...base, status: "ready" } as ProviderInstance, "login"), null, "CLI runtimes keep their terminal step");
+  assert.equal(managedProgress({ install: { phase: "downloading", downloadedBytes: 50, totalBytes: 200 } }), "Downloading Google's runtime, 25%.");
+  assert.match(managedProgress({ auth: { phase: "waiting", authorizationUrl: "https://accounts.google.com/o/oauth2/v2/auth" } }) ?? "", /paste the address/);
+  assert.equal(managedProgress({ install: { phase: "succeeded" }, auth: { phase: "idle" } }), null);
+  assert.match(connectionSentence(missing), /downloads Google's official runtime/);
+  for (const text of [connectionSentence(missing), managedProgress({ auth: { phase: "waiting" } }) ?? ""]) assert.doesNotMatch(text, /\u2014/);
 });

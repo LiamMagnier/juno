@@ -20,7 +20,7 @@ import { codeProviderModels } from "@/lib/code-v2/code-models";
 import { createByokClient, type ByokKeyRecord } from "@/lib/code-v2/byok-client";
 import type { ApprovalDecision, InteractionMode, ModelSelection, ProviderInstance, RoleRouting, RuntimeMode } from "@/lib/code-v2/contracts";
 import { legacyToItems, type LegacySessionInput } from "@/lib/code-v2/legacy-adapter";
-import { fallbackSetupCommand } from "@/lib/code-v2/providers-view";
+import { fallbackSetupCommand, managedSetup } from "@/lib/code-v2/providers-view";
 import { queueReducer, type QueueRow } from "@/lib/code-v2/composer";
 import { routingAvoidsAlevrBilling } from "@/lib/code-v2/role-routing";
 import { sessionItems } from "@/lib/code-v2/session-store";
@@ -279,6 +279,12 @@ export function CodeV2Route({ conversation, initialMessages, userName }: CodeV2R
       firstRun={!instances.some((i) => i.kind !== "alevr" && (i.status === "ready" || i.status === "limited")) && !keys.length && session.messages.length === 0}
       onProbe={env.ready ? env.probe : undefined}
       onSetup={async (instance, action) => {
+        const managed = managedSetup(instance, action);
+        if (managed && env.client) {
+          if (managed.type === "provider.install") await env.client.request("provider.install", managed.params);
+          else await env.client.request("provider.auth", managed.params);
+          return;
+        }
         let command: string | null = null;
         if (env.client) {
           try {

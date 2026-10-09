@@ -18,8 +18,10 @@ export const ACP_RUNTIMES: Record<string, { name: string; lab: Provider | null; 
   grok: { name: "Grok", lab: "xai" },
   dsh: { name: "DeepSeek Harness", lab: "deepseek" },
   opencode: { name: "OpenCode", lab: null },
-  "antigravity-acp": { name: "Antigravity", lab: "google", flag: "providers.antigravity" },
-  antigravity: { name: "Antigravity", lab: "google", flag: "providers.antigravity" },
+  // Enabled by the owner on 2026-10-09: a normal provider, no flag. Alevr installs Google's runtime
+  // and signs it in with Google itself (provider.install / provider.auth), see `managedSetup`.
+  "antigravity-acp": { name: "Antigravity", lab: "google" },
+  antigravity: { name: "Antigravity", lab: "google" },
 };
 
 const BYOK_NAMES: Record<string, string> = {
@@ -43,7 +45,7 @@ export interface FeatureFlags {
   [flag: string]: boolean | undefined;
 }
 
-/** Whether an instance appears at all (Antigravity stays absent until its legal check clears). */
+/** Whether an instance appears at all (a runtime with a flag in ACP_RUNTIMES stays absent until the flag is on). */
 export function isInstanceVisible(instance: ProviderInstance, flags: FeatureFlags = {}): boolean {
   if (instance.kind !== "acp") return true;
   const key = acpRuntimeKey(instance);
@@ -203,7 +205,13 @@ export function connectionSentence(instance: ProviderInstance): string {
   const plan = planName(instance.account?.plan);
   const acpKey = instance.kind === "acp" ? acpRuntimeKey(instance) : null;
   const note = acpKey ? ACP_RUNTIMES[acpKey].note : undefined;
-  if (instance.status === "not-installed") return "Not installed. Alevr opens a terminal with the install command so you can read it first.";
+  const managed = managedProgress(instance);
+  if (managed) return managed;
+  if (instance.status === "not-installed") {
+    return isManagedRuntime(instance)
+      ? "Not installed. Alevr downloads Google's official runtime and checks it before first use."
+      : "Not installed. Alevr opens a terminal with the install command so you can read it first.";
+  }
   if (instance.status === "signed-out") return instance.statusMessage ?? "Installed, not signed in.";
   if (instance.status === "error") return instance.statusMessage ?? "Could not start.";
   const bin =
@@ -263,6 +271,40 @@ export function fallbackSetupCommand(instance: ProviderInstance, action: "instal
     if (key === "gemini") return action === "install" ? "npm install -g @google/gemini-cli" : null;
     if (key === "grok") return action === "login" ? "grok login" : null;
   }
+  return null;
+}
+
+/** A runtime Alevr installs and signs in itself (Antigravity): the env server reports `install`. */
+export function isManagedRuntime(instance: Pick<ProviderInstance, "install">): boolean {
+  return !!instance.install;
+}
+
+/** The command a Connections action sends for a managed runtime, instead of a terminal step. */
+export function managedSetup(
+  instance: ProviderInstance,
+  action: "install" | "login",
+): { type: "provider.install"; params: { instanceId: string; action: "start" } } | { type: "provider.auth"; params: { instanceId: string; action: "start" } } | null {
+  if (!isManagedRuntime(instance)) return null;
+  return action === "install"
+    ? { type: "provider.install", params: { instanceId: instance.id, action: "start" } }
+    : { type: "provider.auth", params: { instanceId: instance.id, action: "start" } };
+}
+
+/** One sentence for an install or sign-in in progress, or null when none is. */
+export function managedProgress(instance: Pick<ProviderInstance, "install" | "auth">): string | null {
+  const install = instance.install;
+  if (install && (install.phase === "downloading" || install.phase === "extracting" || install.phase === "verifying")) {
+    if (install.phase === "downloading" && install.totalBytes) {
+      const pct = Math.min(100, Math.floor(((install.downloadedBytes ?? 0) / install.totalBytes) * 100));
+      return `Downloading Google's runtime, ${pct}%.`;
+    }
+    return install.message ?? "Installing.";
+  }
+  if (install?.phase === "failed" && install.message) return install.message;
+  const auth = instance.auth;
+  if (auth?.phase === "waiting") return "Waiting for Google sign-in. On another device, paste the address the sign-in page ends on.";
+  if (auth?.phase === "starting" || auth?.phase === "verifying") return auth.message ?? "Signing in.";
+  if (auth?.phase === "failed" && auth.message) return auth.message;
   return null;
 }
 
