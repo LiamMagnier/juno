@@ -124,13 +124,13 @@ test("BYOK client: list tolerates missing routes, add validates, masks keys", as
   const client = createByokClient(async (url, init) => {
     calls.push(`${init?.method ?? "GET"} ${url}`);
     if (!init?.method) return { ok: false, status: 404, json: async () => ({}) };
-    if (init.method === "POST") return { ok: true, status: 200, json: async () => ({ key: { provider: "anthropic", hint: "sk-ant-…4f2a", addedAt: "2026-09-30T00:00:00Z" } }) };
+    if (init.method === "POST") return { ok: true, status: 200, json: async () => ({ key: { provider: "anthropic", label: "Anthropic", keyHint: "4f2a", status: "active", statusDetail: null, lastTestedAt: null, lastUsedAt: null, createdAt: "2026-09-30T00:00:00Z" } }) };
     return { ok: true, status: 200, json: async () => ({ ok: true }) };
   });
   assert.deepEqual(await client.list(), []);
-  assert.equal((await client.add("anthropic", " sk-ant-abc ")).hint, "sk-ant-…4f2a");
+  assert.equal((await client.add("anthropic", " sk-ant-abc ")).hint, "…4f2a");
   await client.remove("anthropic");
-  assert.deepEqual(calls, ["GET /api/code/v2/byok", "POST /api/code/v2/byok", "DELETE /api/code/v2/byok/anthropic"]);
+  assert.deepEqual(calls, ["GET /api/provider-keys", "POST /api/provider-keys", "DELETE /api/provider-keys/anthropic"]);
   await assert.rejects(client.add("openai", "  "), /Paste a key/);
   assert.equal(maskKey("sk-ant-api03-abcdefghijklmnop4f2a"), "sk-ant-…4f2a");
   assert.equal(looksLikeKey("anthropic", "sk-proj-0123456789012345678"), false);
