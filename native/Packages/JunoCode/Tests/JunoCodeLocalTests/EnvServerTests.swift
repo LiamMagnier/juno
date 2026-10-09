@@ -1,0 +1,349 @@
+import Foundation
+import XCTest
+import JunoCodeCore
+@testable import JunoCodeLocal
+
+/// The Mac's env-server plumbing (Code v2 SPEC §2, §6 "mac"): the sidecar's
+/// launch plan, the WebSocket client's request / event handling, the Terminal
+/// setup launcher, BYOK key shapes and the device link relay.
+final class EnvServerTests: XCTestCase {
+    // MARK: Sidecar
+
+    func testTokensAreLongAndURLSafe() {
+        let a = EnvServerLaunchPlanner.makeToken()
+        let b = EnvServerLaunchPlanner.makeToken()
+        XCTAssertEqual(a.count, 43)
+        XCTAssertNotEqual(a, b)
+        XCTAssertNil(a.rangeOfCharacter(from: CharacterSet(charactersIn: "+/=")))
+    }
+
+    func testFreePortIsALoopbackPort() throws {
+        let port = try XCTUnwrap(EnvServerLaunchPlanner.freePort())
+        XCTAssertTrue((1...65_535).contains(port))
+    }
+
+    func testLaunchPlanPassesOnlyIdentityAndToolchain() {
+        let entry = EnvServerEntry(url: URL(fileURLWithPath: "/repo/runner/env-server/src/main.ts"), kind: .typescript, packageRoot: URL(fileURLWithPath: "/repo/runner/env-server"))
+        let plan = EnvServerLaunchPlanner.plan(
+            entry: entry, node: URL(fileURLWithPath: "/opt/node/bin/node"), port: 4567, token: "tok",
+            dataDirectory: URL(fileURLWithPath: "/data"),
+            base: ["HOME": "/Users/maya", "AWS_SECRET_ACCESS_KEY": "nope", "OPENAI_API_KEY": "nope"],
+            path: "/usr/bin:/bin"
+        )
+        XCTAssertEqual(plan.arguments, ["--import", "tsx", "/repo/runner/env-server/src/main.ts", "--host", "127.0.0.1", "--port", "4567"])
+        XCTAssertEqual(plan.environment["ALEVR_ENV_TOKEN"], "tok")
+        XCTAssertEqual(plan.environment["HOME"], "/Users/maya")
+        XCTAssertEqual(plan.environment["PATH"], "/usr/bin:/bin")
+        XCTAssertNil(plan.environment["AWS_SECRET_ACCESS_KEY"])
+        XCTAssertNil(plan.environment["OPENAI_API_KEY"])
+        XCTAssertEqual(plan.webSocketURL.absoluteString, "ws://127.0.0.1:4567/")
+        XCTAssertEqual(plan.workingDirectory?.path, "/repo/runner/env-server")
+    }
+
+    func testEntryResolutionPrefersOverrideThenBundleThenCheckout() {
+        let files: Set<String> = [
+            "/override/main.mjs",
+            "/App.app/Contents/Resources/env-server/main.mjs",
+            "/repo/runner/env-server/src/main.ts",
+        ]
+        let exists: (String) -> Bool = { files.contains($0) }
+        let override = EnvServerEntry.resolve(
+            environment: ["ALEVR_ENV_SERVER_ENTRY": "/override/main.mjs"],
+            bundleResources: URL(fileURLWithPath: "/App.app/Contents/Resources"),
+            searchRoots: [], fileExists: exists
+        )
+        XCTAssertEqual(override?.url.path, "/override/main.mjs")
+        let bundled = EnvServerEntry.resolve(
+            environment: [:], bundleResources: URL(fileURLWithPath: "/App.app/Contents/Resources"),
+            searchRoots: [], fileExists: exists
+        )
+        XCTAssertEqual(bundled?.url.path, "/App.app/Contents/Resources/env-server/main.mjs")
+        let checkout = EnvServerEntry.resolve(
+            environment: [:], bundleResources: nil,
+            searchRoots: [URL(fileURLWithPath: "/repo/native/macOS/build/Debug")], fileExists: exists
+        )
+        XCTAssertEqual(checkout?.url.path, "/repo/runner/env-server/src/main.ts")
+        XCTAssertEqual(checkout?.kind, .typescript)
+        XCTAssertNil(EnvServerEntry.resolve(environment: [:], bundleResources: nil, searchRoots: [], fileExists: { _ in false }))
+    }
+
+    func testReadyLineAndRestartBackoff() {
+        XCTAssertEqual(EnvServerLaunchPlanner.readyPort(in: "ALEVR_ENV_READY {\"port\":51234}"), 51_234)
+        XCTAssertNil(EnvServerLaunchPlanner.readyPort(in: "listening on 51234"))
+        XCTAssertNil(EnvServerLaunchPlanner.readyPort(in: "ALEVR_ENV_READY {\"port\":0}"))
+        XCTAssertEqual(EnvServerLaunchPlanner.restartDelay(attempt: 1), 1)
+        XCTAssertEqual(EnvServerLaunchPlanner.restartDelay(attempt: 5), 16)
+        XCTAssertNil(EnvServerLaunchPlanner.restartDelay(attempt: 6))
+    }
+
+    // MARK: Connection
+
+    func testConnectionCorrelatesResponsesAndStreamsEvents() async throws {
+        let transport = ScriptedTransport()
+        let connection = EnvServerConnection(transport: transport, commandTimeout: .seconds(5))
+        await connection.start()
+        let events = await connection.events()
+
+        transport.onSend = { text in
+            let command = try JSONDecoder().decode(CodeV2.ClientCommand.self, from: Data(text.utf8))
+            XCTAssertEqual(command.type, .providerList)
+            transport.push("""
+                {"type":"event","stream":"global","sequence":1,"at":"2026-10-09T10:00:00Z","event":{"type":"provider.updated","instance":{"id":"codex:default","kind":"codex","label":"ChatGPT (Codex)","status":"signed-out"}}}
+                """)
+            transport.push("""
+                {"type":"response","id":"\(command.id)","ok":true,"result":{"instances":[{"id":"codex:default","kind":"codex","label":"ChatGPT (Codex)","status":"ready"}]}}
+                """)
+        }
+        let instances = try await connection.providerList()
+        XCTAssertEqual(instances.map(\.id), ["codex:default"])
+        var iterator = events.makeAsyncIterator()
+        let first = await iterator.next()
+        XCTAssertEqual(first?.stream, .global)
+
+        transport.onSend = { text in
+            let command = try JSONDecoder().decode(CodeV2.ClientCommand.self, from: Data(text.utf8))
+            transport.push("""
+                {"type":"response","id":"\(command.id)","ok":false,"error":{"code":"not_found","message":"No such session."}}
+                """)
+        }
+        do {
+            _ = try await connection.turnSteer(sessionId: "s", turnId: "t", input: CodeV2.UserInput(text: "x"))
+            XCTFail("expected an error")
+        } catch let EnvServerConnectionError.server(code, message) {
+            XCTAssertEqual(code, .notFound)
+            XCTAssertEqual(message, "No such session.")
+        }
+        await connection.close()
+    }
+
+    func testConnectionFailsPendingCommandsWhenTheSocketCloses() async {
+        let transport = ScriptedTransport()
+        let connection = EnvServerConnection(transport: transport, commandTimeout: .seconds(5))
+        transport.onSend = { _ in transport.finish() }
+        do {
+            _ = try await connection.providerList()
+            XCTFail("expected closed")
+        } catch {
+            XCTAssertEqual(error as? EnvServerConnectionError, .closed)
+        }
+    }
+
+    // MARK: Terminal launcher
+
+    func testTerminalScriptTypesTheCommandWithoutRunningIt() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("alevr-terminal-tests-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let opened = OpenedFiles()
+        let launcher = TerminalCommandLauncher(directory: directory, opener: { opened.append($0) })
+        let script = try launcher.open(command: "claude auth login", title: "Sign in to Claude", workingDirectory: "/tmp/it's")
+        XCTAssertEqual(opened.files, [script.commandFile])
+        XCTAssertTrue(FileManager.default.isExecutableFile(atPath: script.commandFile.path))
+        let zshrc = try String(contentsOf: script.zdotdir.appendingPathComponent(".zshrc"), encoding: .utf8)
+        XCTAssertTrue(zshrc.contains("print -z -- 'claude auth login'"))
+        XCTAssertFalse(script.commandFileContents.contains("claude auth login"), "the command is typed at the prompt, never run by the script")
+        XCTAssertTrue(script.commandFileContents.contains("cd '/tmp/it'\\''s'"))
+        XCTAssertEqual(TerminalCommandLauncher.shellQuote("a'b"), "'a'\\''b'")
+    }
+
+    // MARK: BYOK
+
+    func testKeyShapeChecksThePrefix() {
+        XCTAssertEqual(try ByokKeyShape.check("  sk-ant-api03-0123456789abcdef  ", for: .anthropic).get(), "sk-ant-api03-0123456789abcdef")
+        XCTAssertThrowsError(try ByokKeyShape.check("sk-proj-123", for: .anthropic).get())
+        XCTAssertThrowsError(try ByokKeyShape.check("", for: .openai).get())
+    }
+
+    func testAccountStoreMapsTheWebAPI() async throws {
+        let store = ByokAccountStore { method, path, body in
+            switch (method, path) {
+            case ("GET", "/api/provider-keys"):
+                return (200, Data(#"{"keys":[{"provider":"anthropic","keyHint":"sk-ant-…4f2a","status":"valid","createdAt":"2026-10-01T09:00:00Z"},{"provider":"mystery","keyHint":"x","status":"valid","createdAt":"2026-10-01T09:00:00Z"}]}"#.utf8))
+            case ("POST", "/api/provider-keys"):
+                let object = try JSONSerialization.jsonObject(with: body ?? Data()) as? [String: String]
+                XCTAssertEqual(object?["provider"], "openai")
+                return (422, Data(#"{"error":"OpenAI refused this key."}"#.utf8))
+            default:
+                return (500, Data())
+            }
+        }
+        let records = try await store.records()
+        XCTAssertEqual(records.map(\.provider), [.anthropic])
+        XCTAssertEqual(records.first?.location, .account)
+        do {
+            _ = try await store.save("sk-proj-0123456789abcdef0123", for: .openai)
+            XCTFail("expected a rejection")
+        } catch {
+            XCTAssertEqual(error as? ByokKeyStoreError, .rejected("OpenAI refused this key."))
+        }
+    }
+
+    // MARK: Device link
+
+    private func makeLink(forwarded: ForwardLog, terminal: Bool = false) -> EnvServerDeviceLink {
+        EnvServerDeviceLink(
+            allowedRoots: { ["/Users/maya/code/shop"] },
+            allowsTerminal: { terminal },
+            forward: { type, params in
+                forwarded.append(type)
+                if type == .sessionOpen { return .object(["sessionId": .string("s-new")]) }
+                if type == .turnStart { return .object(["turnId": .string("t1")]) }
+                return .object([:])
+            }
+        )
+    }
+
+    func testLinkRefusesLocalOnlyAndUnsharedWork() async {
+        let forwarded = ForwardLog()
+        let link = makeLink(forwarded: forwarded)
+        func rpc(_ type: String, _ params: [String: JSONValue]) async -> CodeV2.ServerResponse? {
+            await link.handle(EnvLinkRequest(kind: .rpc, command: .init(id: "1", type: type, params: .object(params)))).responses?.first
+        }
+        let configure = await rpc("env.configure", ["byok": .array([])])
+        XCTAssertEqual(configure?.ok, false)
+        XCTAssertEqual(configure?.error?.code, .unsupported)
+
+        let terminal = await rpc("terminal.open", ["cwd": .string("/Users/maya/code/shop"), "cols": .number(80), "rows": .number(24)])
+        XCTAssertEqual(terminal?.error?.code, .unsupported)
+
+        let outside = await rpc("session.open", ["cwd": .string("/Users/maya/code/shop/../secrets")])
+        XCTAssertEqual(outside?.error?.code, .badRequest)
+
+        let unopened = await rpc("turn.start", ["sessionId": .string("someone-else")])
+        XCTAssertEqual(unopened?.error?.code, .badRequest)
+        XCTAssertEqual(forwarded.types, [])
+
+        let opened = await rpc("session.open", ["cwd": .string("/Users/maya/code/shop/web")])
+        XCTAssertEqual(opened?.ok, true)
+        let started = await rpc("turn.start", ["sessionId": .string("s-new"), "input": .object(["text": .string("hi")])])
+        XCTAssertEqual(started?.ok, true)
+        XCTAssertEqual(forwarded.types, [.sessionOpen, .turnStart])
+    }
+
+    func testLinkAllowsTheTerminalOnlyWhenShared() async {
+        let forwarded = ForwardLog()
+        let link = makeLink(forwarded: forwarded, terminal: true)
+        let reply = await link.handle(EnvLinkRequest(kind: .rpc, command: .init(
+            id: "1", type: "terminal.open",
+            params: .object(["cwd": .string("/Users/maya/code/shop"), "cols": .number(80), "rows": .number(24)])
+        )))
+        XCTAssertEqual(reply.responses?.first?.ok, true)
+    }
+
+    func testPollReturnsEventsPastTheCursorsAndLongPolls() async {
+        let link = makeLink(forwarded: ForwardLog())
+        let event = { (session: String, sequence: Int) in
+            CodeV2.ServerEventEnvelope(sessionId: session, sequence: sequence, at: "2026-10-09T10:00:00Z", event: .sessionState(state: .running, resumeAt: nil, message: nil))
+        }
+        await link.record(event("s1", 1))
+        await link.record(event("s1", 2))
+        await link.record(event("s2", 1))
+        await link.record(CodeV2.ServerEventEnvelope(sessionId: "s1", sequence: 3, at: "2026-10-09T10:00:00Z", event: .terminalOutput(terminalId: "t", data: "secret")))
+
+        let reply = await link.handle(EnvLinkRequest(kind: .poll, cursors: ["s1": 1]), longPoll: .zero)
+        XCTAssertEqual(reply.events?.map(\.sequence), [2], "s2 is not followed; terminal output is not shared")
+
+        // Nothing new: the poll waits for the next event.
+        async let waited = link.handle(EnvLinkRequest(kind: .poll, cursors: ["s1": 2]), longPoll: .seconds(5))
+        try? await Task.sleep(for: .milliseconds(50))
+        await link.record(event("s1", 4))
+        let late = await waited
+        XCTAssertEqual(late.events?.map(\.sequence), [4])
+    }
+
+    func testOfflineMacSaysSo() async {
+        let link = EnvServerDeviceLink(isOnline: { false }, allowedRoots: { [] }, forward: { _, _ in nil })
+        let reply = await link.handle(EnvLinkRequest(kind: .poll, cursors: [:]), longPoll: .zero)
+        XCTAssertEqual(reply.offline, true)
+    }
+
+    func testPathContainment() {
+        XCTAssertTrue(EnvServerDeviceLink.isInside("/a/b", roots: ["/a/b"]))
+        XCTAssertTrue(EnvServerDeviceLink.isInside("/a/b/c", roots: ["/a/b/"]))
+        XCTAssertFalse(EnvServerDeviceLink.isInside("/a/bc", roots: ["/a/b"]))
+        XCTAssertFalse(EnvServerDeviceLink.isInside("/a/b/../c", roots: ["/a/b"]))
+    }
+
+    func testChannelPullsAnswersAndPostsReplies() async throws {
+        let posted = PostLog()
+        let link = makeLink(forwarded: ForwardLog())
+        let channel = EnvServerDeviceLinkChannel(deviceId: "mac-1", link: link) { method, path, body in
+            posted.append(path, body)
+            if path.hasSuffix("/pull") {
+                return (200, Data(#"{"requests":[{"requestId":"r1","request":{"kind":"rpc","command":{"id":"c1","type":"provider.list","params":{}}}}]}"#.utf8))
+            }
+            return (200, Data("{}".utf8))
+        }
+        let delay = await channel.pullOnce()
+        XCTAssertNil(delay)
+        for _ in 0..<50 where posted.paths.count < 2 { try await Task.sleep(for: .milliseconds(20)) }
+        XCTAssertEqual(posted.paths, ["/api/code/v2/link/device/pull", "/api/code/v2/link/device/reply"])
+        let reply = try XCTUnwrap(posted.bodies.last.flatMap { $0 })
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: reply) as? [String: Any])
+        XCTAssertEqual(object["requestId"] as? String, "r1")
+    }
+}
+
+// MARK: - Test doubles
+
+final class ScriptedTransport: EnvServerTransport, @unchecked Sendable {
+    private let lock = NSLock()
+    private var frames: [String?] = []
+    private var waiting: CheckedContinuation<String?, Error>?
+    var onSend: ((String) throws -> Void)?
+
+    func send(_ text: String) async throws {
+        try onSend?(text)
+    }
+
+    func push(_ frame: String?) {
+        lock.lock()
+        if let waiting {
+            self.waiting = nil
+            lock.unlock()
+            waiting.resume(returning: frame)
+            return
+        }
+        frames.append(frame)
+        lock.unlock()
+    }
+
+    func finish() { push(nil) }
+
+    func receive() async throws -> String? {
+        try await withCheckedThrowingContinuation { continuation in
+            lock.lock()
+            if !frames.isEmpty {
+                let frame = frames.removeFirst()
+                lock.unlock()
+                continuation.resume(returning: frame)
+                return
+            }
+            waiting = continuation
+            lock.unlock()
+        }
+    }
+
+    func close() async { finish() }
+}
+
+final class OpenedFiles: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: [URL] = []
+    func append(_ url: URL) { lock.withLock { stored.append(url) } }
+    var files: [URL] { lock.withLock { stored } }
+}
+
+final class ForwardLog: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: [CodeV2.ClientCommandType] = []
+    func append(_ type: CodeV2.ClientCommandType) { lock.withLock { stored.append(type) } }
+    var types: [CodeV2.ClientCommandType] { lock.withLock { stored } }
+}
+
+final class PostLog: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: [(String, Data?)] = []
+    func append(_ path: String, _ body: Data?) { lock.withLock { stored.append((path, body)) } }
+    var paths: [String] { lock.withLock { stored.map(\.0) } }
+    var bodies: [Data?] { lock.withLock { stored.map(\.1) } }
+}
