@@ -33,8 +33,9 @@ export function CodeUpgradeState({ plan, locale = "en" }: { plan: Plan; locale?:
             <Button asChild>
               <Link href="/upgrade">See plans</Link>
             </Button>
+            {/* Bring your own key opens Code without the plan (SPEC §2). */}
             <Button asChild variant="secondary">
-              <Link href="/chat">Back to chat</Link>
+              <Link href="/settings?section=connections">Use your own API key</Link>
             </Button>
           </>
         }

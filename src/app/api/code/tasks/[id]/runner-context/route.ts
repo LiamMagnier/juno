@@ -101,6 +101,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       status: true,
       model: true,
       reasoningEffort: true,
+      roleRouting: true,
       permissionMode: true,
       conversationId: true,
       createdAt: true,
@@ -428,6 +429,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       // How hard to think, when the agent's model supports it. Null means the
       // submitter expressed no preference.
       reasoningEffort: task.reasoningEffort,
+      // Alevr Code v2 role routing snapshotted on the task (validated at
+      // creation; cloud routing never names a local subscription). Null =
+      // single-model run on the first entry of `models`.
+      roleRouting: task.roleRouting ?? null,
       /*
        * How much the agent may do before it would have to ask, and the shape it
        * runs in. Both are resolved here rather than in the driver so there is
