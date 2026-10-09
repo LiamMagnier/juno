@@ -25,8 +25,9 @@ public enum JunoEffortPanelMetrics {
     public static let width: CGFloat = 296
     /// The panel's inset: the web's `p-3`.
     public static let inset: CGFloat = JunoSpace.cozy
-    /// The header row: the rung's name over the model's.
-    public static let headerHeight: CGFloat = 44
+    /// The header row: the rung's name over the model's, whose button keeps
+    /// the Mac's 28pt pointer target.
+    public static let headerHeight: CGFloat = 48
     /// The gap between the header and the track: `mt-3`.
     public static let trackGap: CGFloat = JunoSpace.cozy
     /// The track: `h-9`.
@@ -78,6 +79,10 @@ public struct JunoEffortSlider: View {
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.isEnabled) private var isEnabled
     @FocusState private var focused: Bool
+    /// Whether the keyboard has driven the slider since it took focus: the
+    /// focus edge is the web's `focus-visible`, drawn for the keyboard only,
+    /// so a panel that opens with the slider focused does not open ringed.
+    @State private var keyboardEngaged = false
 
     public init(ladder: JunoThinkingLadder, stopID: Binding<String?>, focusOnAppear: Bool = false) {
         self.ladder = ladder
@@ -97,7 +102,10 @@ public struct JunoEffortSlider: View {
                 .contentShape(Capsule())
                 .gesture(
                     DragGesture(minimumDistance: 0)
-                        .onChanged { commit(JunoEffortPanelMetrics.nearestStop(to: $0.location.x, count: count, width: width)) }
+                        .onChanged {
+                            keyboardEngaged = false
+                            commit(JunoEffortPanelMetrics.nearestStop(to: $0.location.x, count: count, width: width))
+                        }
                         .onEnded { commit(JunoEffortPanelMetrics.nearestStop(to: $0.location.x, count: count, width: width)) }
                 )
         }
@@ -109,7 +117,7 @@ public struct JunoEffortSlider: View {
             Capsule()
                 .strokeBorder(Color.junoForeground.opacity(0.2), lineWidth: 2)
                 .padding(-3)
-                .opacity(focused ? 1 : 0)
+                .opacity(focused && keyboardEngaged ? 1 : 0)
                 .allowsHitTesting(false)
         }
         .sensoryFeedback(.selection, trigger: index)
@@ -193,12 +201,14 @@ public struct JunoEffortSlider: View {
 
     private func step(_ delta: Int) -> KeyPress.Result {
         guard ladder.isAdjustable, isEnabled else { return .ignored }
+        keyboardEngaged = true
         commit(min(max(index + delta, 0), count - 1))
         return .handled
     }
 
     private func jump(to target: Int) -> KeyPress.Result {
         guard ladder.isAdjustable, isEnabled else { return .ignored }
+        keyboardEngaged = true
         commit(target)
         return .handled
     }
@@ -269,7 +279,7 @@ public struct JunoEffortPanel: View {
             }
             .frame(width: JunoEffortIconButton.side, height: JunoEffortIconButton.side)
 
-            VStack(spacing: JunoSpace.micro) {
+            VStack(spacing: 0) {
                 Text(current?.label ?? "")
                     .junoType(JunoType.body.weight(.medium))
                     .foregroundStyle(Color.junoForeground)
@@ -289,6 +299,7 @@ public struct JunoEffortPanel: View {
                 JunoIconView(.rotateCcw, size: 16)
             }
             .buttonStyle(JunoEffortIconButton(isOn: false))
+            .contentShape(Circle())
             .disabled(!canReset || !isEnabled)
             .help("Reset to the model's default")
             .accessibilityLabel("Reset to the model's default")
@@ -318,7 +329,7 @@ private struct JunoEffortModelButton: View {
             }
             .foregroundStyle(hovered ? Color.junoForeground : Color.junoSecondaryInk)
             .padding(.horizontal, JunoSpace.tight)
-            .frame(minHeight: 20)
+            .frame(minHeight: JunoLayout.pointerTarget)
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
@@ -347,6 +358,7 @@ private struct JunoEffortFlashButton: View {
             JunoIconView(.zap, size: 16)
         }
         .buttonStyle(JunoEffortIconButton(isOn: isOn))
+        .contentShape(Circle())
         .help("Flash: prefer faster generation, at \(detail)")
         .accessibilityLabel(isOn ? "Flash on: faster replies" : "Flash: faster replies")
         .accessibilityValue(detail)

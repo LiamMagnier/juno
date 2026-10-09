@@ -160,6 +160,7 @@ public struct JunoModelSelector: View {
             mark()
         }
         .buttonStyle(JunoCatalogTileStyle(active: active))
+        .contentShape(.rect)
         .help(count.map { "\(label) \($0)" } ?? label)
         .accessibilityLabel(label)
         .accessibilityValue(count.map { "\($0) models" } ?? "")
@@ -202,7 +203,8 @@ public struct JunoModelSelector: View {
                 } label: {
                     JunoIconView(.close, size: 12)
                 }
-                .buttonStyle(JunoCatalogTileStyle(active: false, side: 24))
+                .buttonStyle(JunoCatalogTileStyle(active: false, side: JunoSpace.section))
+                .contentShape(.rect)
                 .help("Clear search")
                 .accessibilityLabel("Clear search")
             }
@@ -328,7 +330,7 @@ public struct JunoModelSelector: View {
                             .foregroundStyle(Color.junoSecondaryInk)
                     }
                 }
-                .frame(width: 16)
+                .frame(width: JunoModelSelectorMetrics.trailingSlot)
             }
             .padding(.horizontal, JunoSpace.close)
             .frame(height: JunoModelSelectorMetrics.rowHeight)
@@ -564,8 +566,18 @@ struct JunoCatalogTileStyle: ButtonStyle {
                 .foregroundStyle(active || hovered ? Color.junoForeground : Color.junoSecondaryInk)
                 .frame(width: side, height: side)
                 .background {
-                    RoundedRectangle(cornerRadius: JunoRadius.control, style: .continuous)
-                        .fill(active ? Color.junoRowSelected : Color.junoGlassHover.opacity(hovered || configuration.isPressed ? 1 : 0))
+                    // Active is the web's `surface-key`: a raised key, the
+                    // card's fill on a hairline with the raised shadow, one
+                    // rung past the hover tone.
+                    let shape = RoundedRectangle(cornerRadius: JunoRadius.control, style: .continuous)
+                    if active {
+                        shape
+                            .fill(Color.junoCard)
+                            .overlay { shape.strokeBorder(Color.junoBorder, lineWidth: 0.5) }
+                            .shadow(color: Color.junoRaisedShadow, radius: 1, y: 0.5)
+                    } else {
+                        shape.fill(Color.junoGlassHover.opacity(hovered || configuration.isPressed ? 1 : 0))
+                    }
                 }
                 .contentShape(.rect)
                 .onHover { hovered = $0 }
@@ -629,6 +641,7 @@ private struct JunoCatalogEmptyBlock: View {
             if let action {
                 Button(action.0, action: action.1)
                     .buttonStyle(.junoGlass)
+                    .contentShape(Capsule())
                     .controlSize(.small)
                     .padding(.top, JunoSpace.tight)
             }
@@ -844,12 +857,14 @@ struct JunoModelDetailPanel: View {
                         Text(label).frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.junoGlass)
+                    .contentShape(Capsule())
                     .disabled(true)
                 } else {
                     Button(action: use) {
                         Text(label).frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.junoProminent)
+                    .contentShape(Capsule())
                 }
             }
             .controlSize(.large)
@@ -861,7 +876,8 @@ struct JunoModelDetailPanel: View {
                         .foregroundStyle(isStarred ? Color.junoAccent : Color.junoSecondaryInk)
                         .contentTransition(.opacity)
                 }
-                .buttonStyle(JunoCatalogTileStyle(active: false, side: 28))
+                .buttonStyle(JunoCatalogTileStyle(active: false, side: JunoLayout.pointerTarget))
+                .contentShape(.rect)
                 .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint), value: isStarred)
                 .help(isStarred ? "Remove from favorites" : "Add to favorites")
                 .accessibilityLabel(isStarred ? "Remove from favorites" : "Add to favorites")
@@ -905,6 +921,8 @@ public struct JunoModelSelectorMetrics: Equatable, Sendable {
 
     /// One model row: the web's `h-9`.
     public static let rowHeight: CGFloat = 36
+    /// The row's trailing slot, where the check or the lock sits: `w-4`.
+    public static let trailingSlot: CGFloat = JunoSpace.regular
 
     public init(
         railWidth: CGFloat,

@@ -255,7 +255,7 @@ struct ChatComposerTests {
         let ladder = NativeThinkingScale(model: tiered).junoLadder
         #expect(JunoModelPickerStage.first(for: ladder) == .effort)
         #expect(ladder.defaultStopID == NativeThinkingScale(model: tiered).defaultStop?.id)
-        #expect(JunoEffortPanelMetrics.height == 116)
+        #expect(JunoEffortPanelMetrics.height == 120)
     }
 
     // MARK: - The dock

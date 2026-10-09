@@ -101,6 +101,7 @@ public struct JunoModelPickerControl<Label: View, Catalog: View>: View {
             label(stage != nil)
         }
         .buttonStyle(.plain)
+        .contentShape(Capsule())
         .fixedSize()
         .disabled(!isEnabled)
         .help(help)
@@ -141,13 +142,22 @@ public struct JunoModelChipLabel: View {
     private let effort: String?
     private let isOpen: Bool
     private let isLoading: Bool
+    private let mark: Mark?
+
+    /// The lab's mark the chip leads with, in the third ink: the product's
+    /// own for Auto, the lab's for every other model (the web's `ModelMark`).
+    public enum Mark: Equatable, Sendable {
+        case product
+        case provider(id: String, name: String)
+    }
 
     @State private var hovered = false
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.isEnabled) private var isEnabled
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    public init(name: String, effort: String? = nil, isOpen: Bool, isLoading: Bool = false) {
+    public init(name: String, effort: String? = nil, mark: Mark? = nil, isOpen: Bool, isLoading: Bool = false) {
+        self.mark = mark
         self.name = name
         self.effort = effort
         self.isOpen = isOpen
@@ -166,6 +176,17 @@ public struct JunoModelChipLabel: View {
 
     public var body: some View {
         HStack(spacing: JunoSpace.tight) {
+            switch mark {
+            case .product:
+                JunoMark(size: 14)
+                    .foregroundStyle(Color.junoTertiaryInk)
+            case .provider(let id, let providerName):
+                JunoProviderMark(providerID: id, providerName: providerName, size: 14)
+                    .foregroundStyle(Color.junoTertiaryInk)
+                    .opacity(0.85)
+            case nil:
+                EmptyView()
+            }
             HStack(spacing: JunoSpace.tight) {
                 Text(name)
                     .foregroundStyle(hovered || isOpen ? Color.junoForeground : Color.junoSecondaryInk)
@@ -285,7 +306,7 @@ public struct JunoModelPicker: View {
             accessibilityValue: [isLoading ? "Loading" : name, effort].compactMap { $0 }.joined(separator: ", "),
             accessibilityID: accessibilityID
         ) { open in
-            JunoModelChipLabel(name: name, effort: effort, isOpen: open, isLoading: isLoading)
+            JunoModelChipLabel(name: name, effort: effort, mark: chipMark, isOpen: open, isLoading: isLoading)
         } catalog: { close in
             JunoModelSelector(
                 models: models,
@@ -299,6 +320,12 @@ public struct JunoModelPicker: View {
                 }
             )
         }
+    }
+
+    private var chipMark: JunoModelChipLabel.Mark? {
+        guard let selected else { return isLoading ? .product : nil }
+        if JunoModelSelectorCatalog.isAuto(selected) { return .product }
+        return .provider(id: selected.providerID, name: selected.providerName)
     }
 
     private var fittedMetrics: JunoModelSelectorMetrics {

@@ -762,8 +762,10 @@ struct StudioModelChip: View {
             Group {
                 Button("Model") { stage = .catalog }
                     .keyboardShortcut("m", modifiers: [.command, .shift])
+                    .contentShape(.rect)
                 Button("Thinking depth") { if ladder.isAdjustable { stage = .effort } }
                     .keyboardShortcut("e", modifiers: [.command, .shift])
+                    .contentShape(.rect)
             }
             .opacity(0)
             .allowsHitTesting(false)

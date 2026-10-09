@@ -107,6 +107,8 @@ public enum JunoModelSelectorCatalog {
     /// a row of its own, with its own cursor (the web's `rowKeyFor`).
     public enum Row: Identifiable, Equatable, Sendable {
         case model(JunoModelDescriptor, prefix: String)
+        /// `prefix` names the group, so two labs' "Image" headings are two
+        /// rows: a scroll target must be unique.
         case modality(JunoModelModality, count: Int, prefix: String)
 
         public var id: String {
@@ -156,7 +158,12 @@ public enum JunoModelSelectorCatalog {
     /// A group's rows with a modality heading each time the modality changes,
     /// but only when there is more than one to change between: a lab of four
     /// chat models has no "Text" over them (the web's `renderRows`).
-    static func rows(_ models: [JunoModelDescriptor], prefix: String, byModality: Bool) -> [Row] {
+    static func rows(
+        _ models: [JunoModelDescriptor],
+        prefix: String,
+        headingPrefix: String? = nil,
+        byModality: Bool
+    ) -> [Row] {
         let sorted = byModality ? sortedByModality(models) : models
         let kinds = Set(sorted.map(\.modality))
         guard byModality, kinds.count > 1 else {
@@ -167,7 +174,7 @@ public enum JunoModelSelectorCatalog {
         for model in sorted {
             if model.modality != last {
                 let count = sorted.filter { $0.modality == model.modality }.count
-                out.append(.modality(model.modality, count: count, prefix: prefix))
+                out.append(.modality(model.modality, count: count, prefix: headingPrefix ?? prefix))
             }
             last = model.modality
             out.append(.model(model, prefix: prefix))
@@ -264,8 +271,8 @@ public enum JunoModelSelectorCatalog {
                 label: lab.name,
                 showsLabel: labFilter == nil,
                 count: nil,
-                current: rows(mine.filter { !$0.isLegacy }, prefix: "", byModality: true),
-                legacy: rows(mine.filter(\.isLegacy), prefix: "legacy:", byModality: true)
+                current: rows(mine.filter { !$0.isLegacy }, prefix: "", headingPrefix: lab.id + "/", byModality: true),
+                legacy: rows(mine.filter(\.isLegacy), prefix: "legacy:", headingPrefix: lab.id + "/legacy:", byModality: true)
             ))
         }
         return out

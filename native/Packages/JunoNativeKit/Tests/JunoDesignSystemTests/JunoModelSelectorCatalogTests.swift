@@ -58,7 +58,8 @@ final class JunoModelSelectorCatalogTests: XCTestCase {
         let groups = JunoModelSelectorCatalog.groups(models: models, filter: .all, query: "")
         XCTAssertEqual(groups.map(\.id), ["anthropic"])
         XCTAssertEqual(groups[0].current.map(\.id), [
-            "modality:chat", "text", "modality:image", "image", "modality:video", "video", "modality:audio", "audio",
+            "anthropic/modality:chat", "text", "anthropic/modality:image", "image",
+            "anthropic/modality:video", "video", "anthropic/modality:audio", "audio",
         ])
         XCTAssertEqual(groups[0].legacy.map(\.id), ["legacy:older"])
         XCTAssertEqual(groups[0].legacyCount, 1)
@@ -120,7 +121,7 @@ final class JunoModelSelectorCatalogTests: XCTestCase {
             models: models, filter: .all, query: "", favorites: ["pic"], recents: []
         )
         XCTAssertEqual(JunoModelSelectorCatalog.selectedKey("pic", in: groups), "pic")
-        XCTAssertEqual(JunoModelSelectorCatalog.anchorKey(for: "pic", in: groups), "modality:image")
+        XCTAssertEqual(JunoModelSelectorCatalog.anchorKey(for: "pic", in: groups), "anthropic/modality:image")
         XCTAssertEqual(JunoModelSelectorCatalog.selectedKey("missing", in: groups), nil)
     }
 

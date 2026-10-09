@@ -46,6 +46,6 @@ final class JunoModelPickerTests: XCTestCase {
         XCTAssertEqual(JunoEffortPanelMetrics.nearestStop(to: 0, count: 6, width: width), 0)
         XCTAssertEqual(JunoEffortPanelMetrics.nearestStop(to: width, count: 6, width: width), 5)
         XCTAssertEqual(JunoEffortPanelMetrics.nearestStop(to: width / 2, count: 3, width: width), 1)
-        XCTAssertEqual(JunoEffortPanelMetrics.height, 12 + 44 + 12 + 36 + 12)
+        XCTAssertEqual(JunoEffortPanelMetrics.height, 12 + 48 + 12 + 36 + 12)
     }
 }
