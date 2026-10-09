@@ -104,7 +104,7 @@ final class PreviewSnapshotTests: XCTestCase {
 
     func testRenderPreviewBanners() async throws {
         let rows = VStack(spacing: 0) {
-            PreviewBannerRow(text: "Juno is using the preview.", actions: [("Stop", {})])
+            PreviewBannerRow(text: "Alevr is using the preview.", actions: [("Stop", {})])
             PreviewBannerRow(text: "The page asks: \"Delete project?\"", actions: [("Cancel", {}), ("OK", {})])
             PreviewBannerRow(
                 text: "The server tried to reach fonts.googleapis.com while offline. Let this project's server use the internet?",

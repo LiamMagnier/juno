@@ -22,13 +22,13 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 
 ## Summary
 
-317 routes: 202 native, 51 planned, 51 web only, 13 internal. 49 pages: on the Mac 36 native, 2 partial, 2 planned, 9 web only; on iOS 24 native, 8 partial, 8 planned, 9 web only.
+318 routes: 202 native, 52 planned, 51 web only, 13 internal. 49 pages: on the Mac 36 native, 2 partial, 2 planned, 9 web only; on iOS 24 native, 8 partial, 8 planned, 9 web only.
 
 | Feature | Pages (Mac) | Pages (iOS) | Routes native | Planned | Web only | Internal |
 |---|---|---|---|---|---|---|
 | [Sign-in and account security](#auth) | – | – | 16 | 3 | 6 | 0 |
 | [Sync and bootstrap](#sync) | – | – | 6 | 0 | 2 | 0 |
-| [Chat and streaming](#chat) | 2/2 | 2/2 | 12 | 2 | 1 | 0 |
+| [Chat and streaming](#chat) | 2/2 | 2/2 | 12 | 3 | 1 | 0 |
 | [Conversations, messages and sharing](#conversations) | – | – | 9 | 2 | 3 | 0 |
 | [Search and recents](#search) | – | – | 2 | 0 | 0 | 0 |
 | [Projects](#projects) | 2/2 | 2/2 | 2 | 1 | 0 | 0 |
@@ -127,6 +127,7 @@ POST /api/chat's body and frames are classified field by field in the chat wire 
 | `/api/chat/receipt` | GET | Planned |  | Receipt refresh for a durable first submission, built for native recovery; the Swift apps append the turn first and have not adopted the durable pair (request.clientRequestId in the chat wire). |
 | `/api/chat/stream/[generationId]` | GET | Native | JunoChatKit |  |
 | `/api/chat/stream/active` | GET | Native | JunoChatKit |  |
+| `/api/code/run` | GET, POST | Planned |  | Run a chat code block or a Live UI exercise answer in the hosted sandbox (C, C++, Java, Go, Rust, Ruby, PHP, Lua, Perl, Bash); the web's Run button. The apps have no Run button yet. |
 | `/api/generate` | POST | Native | JunoChatKit |  |
 | `/api/models` | GET | Web only |  | The web's model list. The apps read /api/v1/models; the Electron client (native/desktop-electron) still reads this one. |
 | `/api/v1/models` | GET | Native | JunoChatKit |  |

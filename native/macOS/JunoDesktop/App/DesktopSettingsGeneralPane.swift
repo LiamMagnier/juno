@@ -34,7 +34,7 @@ struct DesktopSettingsGeneralPane: View {
 
             Section {
                 DesktopSettingRow(
-                    title: "Juno for Mac",
+                    title: "Alevr for Mac",
                     description: updateStatus
                 ) {
                     if case .ready = updater.phase {
@@ -160,7 +160,7 @@ struct DesktopSettingsGeneralPane: View {
     private var updateStatus: String {
         let version = "Version \(JunoBuildInfo.current.displayVersion)."
         let status: String = switch updater.phase {
-        case .idle: "Juno checks for updates every ten minutes while it is open."
+        case .idle: "Alevr checks for updates every ten minutes while it is open."
         case .checking: "Checking for updates…"
         case .current: "Up to date."
         case .downloading(let version, let fraction):
@@ -169,7 +169,7 @@ struct DesktopSettingsGeneralPane: View {
             } else {
                 "Downloading \(version)…"
             }
-        case .ready(let version): "Juno \(version) is downloaded and verified."
+        case .ready(let version): "Alevr \(version) is downloaded and verified."
         case .failed(let message): message
         case .unsupported(let reason): reason
         }

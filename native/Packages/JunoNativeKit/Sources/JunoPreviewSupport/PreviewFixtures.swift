@@ -153,6 +153,10 @@ public enum PreviewFixtures {
             formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
             return formatter.string(from: now.addingTimeInterval(offset))
         })
+        // The Mac's capture chats on top of the iPhone's week: the Trattoria
+        // Moro bill splitter, the heat-pump research run that
+        // ``PreviewShowcaseServer`` serves, and conv-1's checklist and budget.
+        out += PreviewShowcaseConversation.extraRecords(a)
         return out
     }
 

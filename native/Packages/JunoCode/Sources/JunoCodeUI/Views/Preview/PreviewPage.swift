@@ -709,11 +709,11 @@ final class PreviewPageCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate
         // A page that kills its process on load (a memory bomb, a crash
         // loop) would otherwise be reloaded forever.
         guard terminations.count <= 3 else {
-            page?.diagnostics.recordEvent("The page's web process ended \(terminations.count) times in a minute; Juno stopped reloading it. Reload it when it is fixed.")
+            page?.diagnostics.recordEvent("The page's web process ended \(terminations.count) times in a minute; Alevr stopped reloading it. Reload it when it is fixed.")
             page?.didFailNavigation("The page's web process keeps ending.")
             return
         }
-        page?.diagnostics.recordEvent("The page's web process ended; Juno reloaded it.")
+        page?.diagnostics.recordEvent("The page's web process ended; Alevr reloaded it.")
         webView.reload()
     }
 

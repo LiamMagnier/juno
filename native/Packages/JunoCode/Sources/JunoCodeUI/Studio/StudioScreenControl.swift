@@ -13,8 +13,8 @@ extension ComputerUsePermission {
     /// for: pictures of the apps the reader grants, and input into them.
     var studioPurpose: String {
         switch self {
-        case .screenRecording: "Lets Juno see the windows of apps you grant."
-        case .accessibility: "Lets Juno read and use the apps you grant."
+        case .screenRecording: "Lets Alevr see the windows of apps you grant."
+        case .accessibility: "Lets Alevr read and use the apps you grant."
         }
     }
 
@@ -107,8 +107,8 @@ enum StudioScreenControlNotice: Equatable {
     /// The sentence, given the app in use when running.
     func message(app: String? = nil) -> String {
         switch self {
-        case .active: app.map { "Juno is using \($0)" } ?? "Juno can use the apps you grant"
-        case .paused: "You took over. Juno is waiting."
+        case .active: app.map { "Alevr is using \($0)" } ?? "Alevr can use the apps you grant"
+        case .paused: "You took over. Alevr is waiting."
         case let .needsPermission(missing):
             "Screen control needs \(StudioScreenControlText.list(missing))"
         case .trustLost: ComputerUsePermissionStatus.trustLostAdvice
@@ -214,7 +214,7 @@ struct StudioScreenControlRow: View {
     private var detail: String? {
         switch notice {
         case .active: "Press Esc anywhere to stop."
-        case .paused: "Resume when you are done; Juno takes a fresh look first."
+        case .paused: "Resume when you are done; Alevr takes a fresh look first."
         case .trustLost: "macOS ties the permission to each build, and this one was not added."
         default: nil
         }
@@ -280,7 +280,7 @@ struct StudioScreenControlRow: View {
         case .active:
             Button("Take over", action: takeOver)
                 .buttonStyle(StudioQuietButtonStyle())
-                .help("Pause Juno and use the Mac yourself")
+                .help("Pause Alevr and use the Mac yourself")
                 .accessibilityIdentifier("juno.code.computer-use.take-over").contentShape(.rect)
             Button("Stop", action: stop)
                 .buttonStyle(StudioSecondaryButtonStyle())
@@ -293,7 +293,7 @@ struct StudioScreenControlRow: View {
                 .accessibilityIdentifier("juno.code.computer-use.stop").contentShape(.rect)
             Button("Resume", action: resume)
                 .buttonStyle(StudioSecondaryButtonStyle())
-                .help("Let Juno carry on from a fresh look at the screen")
+                .help("Let Alevr carry on from a fresh look at the screen")
                 .accessibilityIdentifier("juno.code.computer-use.resume").contentShape(.rect)
         case .needsPermission, .trustLost:
             if let permission = notice.nextPermission {
@@ -304,7 +304,7 @@ struct StudioScreenControlRow: View {
                 .contentShape(Capsule())
                 .help(
                     permission == .screenRecording
-                        ? permission.studioOpenHelp + ". macOS may ask you to reopen Juno after you allow it."
+                        ? permission.studioOpenHelp + ". macOS may ask you to reopen Alevr after you allow it."
                         : permission.studioOpenHelp
                 )
                 .accessibilityLabel("Open \(permission.title) settings")
@@ -369,8 +369,8 @@ struct StudioScreenThumbnail: View {
             .contentShape(RoundedRectangle(cornerRadius: Studio.Radius.small, style: .continuous))
         }
         .buttonStyle(.plain)
-        .help("What Juno saw last")
-        .accessibilityLabel("What Juno saw last")
+        .help("What Alevr saw last")
+        .accessibilityLabel("What Alevr saw last")
         .accessibilityHint("Shows the screen capture larger")
         .accessibilityIdentifier("juno.code.computer-use.capture")
         .popover(isPresented: $presented, arrowEdge: .bottom) {
@@ -431,7 +431,7 @@ struct StudioCaptureDetail: View {
                     .strokeBorder(Studio.Surface.hairline)
             )
             .accessibilityLabel("Screen capture")
-            Text("What Juno saw. Kept in memory only, and gone when screen control stops.")
+            Text("What Alevr saw. Kept in memory only, and gone when screen control stops.")
                 .font(Studio.Font.meta)
                 .foregroundStyle(Studio.Ink.secondary)
                 .frame(width: Self.width, alignment: .leading)
@@ -490,7 +490,7 @@ struct StudioScreenControlSettings: View {
 
     var body: some View {
         Section {
-            Text("Lets Juno use the Mac apps you grant, one session at a time, when you choose Let Juno Use Apps from the More menu. Each app is granted for the session only: terminals and editors for clicks, browsers for looking, and never Juno itself, password managers or system prompts. Clicks, typing and keys ask first unless the session has Full access; sending, buying, deleting, signing in and changes in System Settings always ask. Press Esc anywhere to stop.")
+            Text("Lets Alevr use the Mac apps you grant, one session at a time, when you choose Let Alevr Use Apps from the More menu. Each app is granted for the session only: terminals and editors for clicks, browsers for looking, and never Alevr itself, password managers or system prompts. Clicks, typing and keys ask first unless the session has Full access; sending, buying, deleting, signing in and changes in System Settings always ask. Press Esc anywhere to stop.")
                 .font(Studio.Font.meta)
                 .foregroundStyle(Studio.Ink.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -507,7 +507,7 @@ struct StudioScreenControlSettings: View {
         } header: {
             Text("Screen control")
         } footer: {
-            Text("Available in sessions on this Mac, in a mode that can make changes, with a model that can see images. It stops when you press Stop or Esc, switch sessions or switch to Plan. macOS reports only whether Juno has each permission, and may ask you to reopen Juno after you allow Screen Recording.")
+            Text("Available in sessions on this Mac, in a mode that can make changes, with a model that can see images. It stops when you press Stop or Esc, switch sessions or switch to Plan. macOS reports only whether Alevr has each permission, and may ask you to reopen Alevr after you allow Screen Recording.")
         }
         // The window appearing and the app coming back to the front are the
         // two moments a grant can have changed: the reader was in System

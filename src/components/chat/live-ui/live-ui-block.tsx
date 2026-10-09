@@ -9,6 +9,7 @@ import { parseLiveUI, type LiveComponent, type LiveInput, type LiveSpec } from "
 import { LiveInputControl, formatInputValue } from "@/components/chat/live-ui/live-ui-controls";
 import { LiveChart } from "@/components/chat/live-ui/live-ui-chart";
 import { LiveChecklist, LiveExplorer, LiveStops } from "@/components/chat/live-ui/live-ui-parts";
+import { LiveCallout, LiveExercise, LiveQuiz, LiveSteps, LiveTimeline } from "@/components/chat/live-ui/live-ui-learning";
 import { useLiveUIHost } from "@/components/chat/live-ui/host";
 import { useLiveState, type LiveState } from "@/components/chat/live-ui/use-live-state";
 import { cn } from "@/lib/utils";
@@ -20,7 +21,7 @@ import { cn } from "@/lib/utils";
  * is stable across stream deltas, so the reader can drag a slider while the
  * rest of the view is still arriving and keep what they set.
  *
- * Chrome is the learning blocks' (block-shell.tsx): a figure set into the
+ * Chrome: a figure set into the
  * article between two hairlines, no card fill, no shadow. Inside, structure is
  * spacing and type — two weights, the value in the first ink, everything that
  * explains it in the second — and the accent appears twice at most: the
@@ -76,6 +77,7 @@ export function LiveUIBlock({ source, streaming = false }: { source: string; str
       aria-busy={live || undefined}
       data-live-ui=""
     >
+      {view.title || live || state.dirty ? (
       <header className="mb-5 flex min-h-8 items-center justify-between gap-3">
         {view.title ? (
           <h4 className="min-w-0 font-sans text-body font-medium leading-tight tracking-[-0.01em]">{view.title}</h4>
@@ -95,6 +97,7 @@ export function LiveUIBlock({ source, streaming = false }: { source: string; str
           </button>
         ) : null}
       </header>
+      ) : null}
       <div className="flex min-w-0 flex-col gap-6">
         {empty && live ? <PendingRows /> : null}
         <Components list={view.ui} scope={scope} spec={view} state={state} formatter={formatter} onPrompt={host.onPrompt} />
@@ -213,6 +216,22 @@ const LiveNode = React.memo(function LiveNode({ component: c, ...props }: Render
       return <LiveChecklist checklist={c} checked={state.checks[c.id] ?? []} onToggle={(i) => state.toggleCheck(c.id, i)} />;
     case "button":
       return <LiveButton button={c} scope={scope} onPrompt={onPrompt} />;
+    case "steps":
+      return (
+        <LiveSteps
+          steps={c}
+          interp={(t) => interpolate(t, scope)}
+          renderUI={(list) => <Components list={list} {...props} />}
+        />
+      );
+    case "quiz":
+      return <LiveQuiz quiz={c} interp={(t) => interpolate(t, scope)} />;
+    case "exercise":
+      return <LiveExercise exercise={c} interp={(t) => interpolate(t, scope)} onPrompt={onPrompt} />;
+    case "callout":
+      return <LiveCallout callout={c} interp={(t) => interpolate(t, scope)} />;
+    case "timeline":
+      return <LiveTimeline timeline={c} interp={(t) => interpolate(t, scope)} />;
     default:
       if (INPUT_TYPES.has(c.type)) {
         const input = c as LiveInput;
@@ -309,6 +328,8 @@ function LiveTable({
     return table.columns.map((col) => scope.evaluate(col.value, locals).value);
   });
   const numeric = table.columns.map((_, ci) => cells.every((r) => typeof r[ci] === "number" || r[ci] === null));
+  const lead = (ci: number) => table.rowHeader === true && ci === 0;
+  const hi = (ci: number) => table.highlight === ci;
   return (
     <div className="-mx-1 overflow-x-auto px-1">
       <table className="w-full min-w-0 border-collapse text-ui">
@@ -319,7 +340,11 @@ function LiveTable({
                 key={ci}
                 scope="col"
                 style={{ textAlign: numeric[ci] ? "right" : "left" }}
-                className={cn("border-b border-border/70 pb-2 font-normal text-muted-foreground", ci > 0 && "pl-4")}
+                className={cn(
+                  "border-b border-border/70 pb-2 align-bottom font-normal text-muted-foreground",
+                  ci > 0 && "pl-4",
+                  hi(ci) && "font-medium text-foreground",
+                )}
               >
                 {col.label}
               </th>
@@ -329,15 +354,30 @@ function LiveTable({
         <tbody>
           {cells.map((r, ri) => (
             <tr key={ri} className="border-b border-border/40 last:border-b-0">
-              {r.map((v, ci) => (
-                <td key={ci} style={{ textAlign: numeric[ci] ? "right" : "left" }} className={cn("py-2 align-baseline", numeric[ci] && "tabular-nums", ci > 0 && "pl-4")}>
-                  {typeof v === "number"
-                    ? formatInputValue(v, table.columns[ci].format, table.columns[ci].unit, formatter, currency)
-                    : v === null
-                      ? LIVE_NULL_TEXT
-                      : valueToString(v)}
-                </td>
-              ))}
+              {r.map((v, ci) => {
+                const Cell = lead(ci) ? "th" : "td";
+                return (
+                  <Cell
+                    key={ci}
+                    scope={lead(ci) ? "row" : undefined}
+                    style={{ textAlign: numeric[ci] ? "right" : "left" }}
+                    className={cn(
+                      "py-2.5 align-baseline",
+                      numeric[ci] && "tabular-nums",
+                      ci > 0 && "pl-4",
+                      lead(ci) && "pr-2 font-medium text-foreground",
+                      table.rowHeader && !lead(ci) && "leading-relaxed text-foreground/85",
+                      hi(ci) && "bg-foreground/[0.035] text-foreground",
+                    )}
+                  >
+                    {typeof v === "number"
+                      ? formatInputValue(v, table.columns[ci].format, table.columns[ci].unit, formatter, currency)
+                      : v === null
+                        ? LIVE_NULL_TEXT
+                        : valueToString(v)}
+                  </Cell>
+                );
+              })}
             </tr>
           ))}
         </tbody>

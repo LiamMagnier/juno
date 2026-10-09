@@ -68,7 +68,7 @@ struct CustomAgentDiscoveryTests {
         #expect(agents.map(\.name) == ["planner", "Reviewer"])
         let reviewer = agents.first { $0.name == "Reviewer" }
         #expect(reviewer?.source == .juno)
-        #expect(reviewer?.instructions == "Juno's reviewer.")
+        #expect(reviewer?.instructions == "Alevr's reviewer.")
 
         let options = AgentRoleOption.options(custom: agents)
         #expect(options.count == AgentRole.allCases.count + 2)

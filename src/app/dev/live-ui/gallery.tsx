@@ -3,7 +3,8 @@
 import * as React from "react";
 import { Markdown } from "@/components/chat/markdown";
 import { LiveUIHostProvider } from "@/components/chat/live-ui/host";
-import { LIVE_UI_SAMPLES, type LiveUISample } from "./samples";
+import { splitMessageContent } from "@/lib/message-content";
+import { LEGACY_REPLY, LIVE_UI_SAMPLES, MERMAID_REPLY, PRACTICE_REPLY, type LiveUISample } from "./samples";
 
 function Reply({ sample }: { sample: LiveUISample }) {
   return (
@@ -13,6 +14,40 @@ function Reply({ sample }: { sample: LiveUISample }) {
       <LiveUIHostProvider value={{ messageId: `dev-${sample.id}` }}>
         <Markdown content={sample.reply} />
       </LiveUIHostProvider>
+    </section>
+  );
+}
+
+/** A reply saved with the retired `:::` blocks, through the same parts → Markdown path the transcript uses. */
+function LegacyReply() {
+  const text = splitMessageContent(LEGACY_REPLY.reply)
+    .map((p) => (p.type === "text" ? p.text : ""))
+    .join("");
+  return (
+    <section className="flex flex-col gap-4" id="legacy" data-sample="legacy">
+      <h2 className="font-mono text-caption font-semibold text-muted-foreground">Saved before Live UI · old learning blocks, converted</h2>
+      <p className="ml-auto max-w-[80%] rounded-card bg-muted/60 px-4 py-2.5 text-body">{LEGACY_REPLY.prompt}</p>
+      <LiveUIHostProvider value={{ messageId: "dev-legacy" }}>
+        <Markdown content={text} />
+      </LiveUIHostProvider>
+    </section>
+  );
+}
+
+function PracticeReply() {
+  return (
+    <section className="flex flex-col gap-4" id="practice" data-sample="practice">
+      <h2 className="font-mono text-caption font-semibold text-muted-foreground">Practice · exercise cards and runnable code</h2>
+      <Markdown content={PRACTICE_REPLY} />
+    </section>
+  );
+}
+
+function MermaidReply() {
+  return (
+    <section className="flex flex-col gap-4" id="mermaid" data-sample="mermaid">
+      <h2 className="font-mono text-caption font-semibold text-muted-foreground">Mermaid, fitted and themed</h2>
+      <Markdown content={MERMAID_REPLY} />
     </section>
   );
 }
@@ -92,6 +127,9 @@ export function LiveUIGallery() {
         {LIVE_UI_SAMPLES.map((sample) => (
           <Reply key={sample.id} sample={sample} />
         ))}
+        <LegacyReply />
+        <MermaidReply />
+        <PracticeReply />
         <StreamingReplay sample={LIVE_UI_SAMPLES[0]} />
       </main>
     </LiveUIHostProvider>

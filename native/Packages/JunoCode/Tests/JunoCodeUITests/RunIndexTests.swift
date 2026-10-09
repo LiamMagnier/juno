@@ -193,7 +193,7 @@ final class RunIndexTests: XCTestCase {
         let interrupted = session(.failed, error: CodeSessionStore.interruptionMessage)
         let entry = RunIndex.entry(for: RunFacts(session: interrupted, project: "juno"), now: now)
         XCTAssertEqual(entry?.group, .interrupted)
-        XCTAssertEqual(entry?.sentence, "Juno quit while this was running")
+        XCTAssertEqual(entry?.sentence, "Alevr quit while this was running")
         XCTAssertEqual(entry?.actions, [.resume])
     }
 

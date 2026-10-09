@@ -44,9 +44,10 @@ import SwiftUI
 /// footer's name, plan word and gear without clipping; `maximum` stops the
 /// column from eating the reading canvas on the 820pt minimum window.
 public enum JunoSidebarMetrics {
-    public static let minimum: CGFloat = 224
-    public static let ideal: CGFloat = 304
-    public static let maximum: CGFloat = 336
+    // The web's numbers (round 2): 260 by default, as the web shell opens.
+    public static let minimum: CGFloat = 220
+    public static let ideal: CGFloat = 260
+    public static let maximum: CGFloat = 360
 }
 
 /// The inspector column's resize range. Narrower than the sidebar because it

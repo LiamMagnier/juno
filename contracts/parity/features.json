@@ -128,6 +128,10 @@
         },
         "/api/chat/stream/[generationId]": "native",
         "/api/chat/stream/active": "native",
+        "/api/code/run": {
+          "status": "planned",
+          "note": "Run a chat code block or a Live UI exercise answer in the hosted sandbox (C, C++, Java, Go, Rust, Ruby, PHP, Lua, Perl, Bash); the web's Run button. The apps have no Run button yet."
+        },
         "/api/generate": "native",
         "/api/models": {
           "status": "web-only",

@@ -164,7 +164,7 @@ struct DesktopDestinationView: View {
                     localHost: configuration.workHostModel
                 )
             } else {
-                unavailable("Permissions", "Juno Work is unavailable.")
+                unavailable("Permissions", "Alevr Work is unavailable.")
             }
         case .agent(let id):
             if let model = configuration.agentsModel {
@@ -305,7 +305,7 @@ struct DesktopDestinationView: View {
                     thisMac: configuration.workHostModel?.pairedHostID
                 )
             } else {
-                unavailable("Permissions", "Juno Work is unavailable.")
+                unavailable("Permissions", "Alevr Work is unavailable.")
             }
         case .connections:
             if let model = configuration.connectorModel {

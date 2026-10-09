@@ -421,7 +421,7 @@ struct WorkspaceAgentHooks: AgentLifecycleHooks, Sendable {
             let answer = await hooks.notify(
                 sessionID: sessionID,
                 kind: .idlePrompt,
-                message: "Juno is waiting for your input"
+                message: "Alevr is waiting for your input"
             )
             if !answer.notices.isEmpty {
                 await hooks.recordActivity(sessionID, answer.notices)

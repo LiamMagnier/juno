@@ -7,7 +7,7 @@ import { AicssGallery } from "./gallery";
  * Every block in every state it can actually be in, on the real tokens, so a
  * change to `.aicss-*` in globals.css can be checked in both themes without
  * driving a live model to reproduce a streaming state. Not linked from anywhere
- * and 404s outside development — same contract as /dev/learning.
+ * and 404s outside development — same contract as /dev/live-ui.
  */
 export default function AicssDevPage() {
   if (process.env.NODE_ENV === "production") notFound();

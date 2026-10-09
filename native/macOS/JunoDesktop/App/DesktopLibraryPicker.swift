@@ -66,7 +66,7 @@ struct DesktopLibraryPicker: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Attach from Library")
                         .font(.title2.weight(.semibold))
-                    Text("Choose files already shared with Juno.")
+                    Text("Choose files already shared with Alevr.")
                         .font(.callout)
                         .junoSecondaryInk()
                 }

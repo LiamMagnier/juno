@@ -272,7 +272,7 @@ final class DesktopNeedsYouSignals {
             guard status == .authorized || status == .provisional else { return }
             let content = UNMutableNotificationContent()
             content.title = sentence
-            content.body = "Open Juno to answer it."
+            content.body = "Open Alevr to answer it."
             content.sound = .default
             content.threadIdentifier = "juno-needs-you"
             if let conversationID {

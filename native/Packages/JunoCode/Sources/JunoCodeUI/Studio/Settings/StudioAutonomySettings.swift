@@ -29,7 +29,7 @@ struct StudioAutonomySettings: View {
         Section {
             StudioScopedToggle(
                 title: "Keep working until the work is checked",
-                detail: "Juno sends itself back while todos are open, a check fails or has not run since the last edit, or the diff is unread. Off: it reports and stops when the model does.",
+                detail: "Alevr sends itself back while todos are open, a check fails or has not run since the last edit, or the diff is unread. Off: it reports and stops when the model does.",
                 scope: scope,
                 value: overrides?.level.map { $0 == .standard },
                 inherited: resolved.level == .standard
@@ -74,7 +74,7 @@ struct StudioAutonomySettings: View {
         } header: {
             Text("Autonomy")
         } footer: {
-            Text("Autonomy never changes what Juno may do without asking: every action still goes through your permissions.")
+            Text("Autonomy never changes what Alevr may do without asking: every action still goes through your permissions.")
         }
 
         Section {
@@ -113,8 +113,8 @@ struct StudioAutonomySettings: View {
                 update { $0.goalBudget = Budget(minutes: goal.minutes, turns: turns, tokens: goal.tokens, costUSD: goal.costUSD) }
             }
             StudioScopedToggle(
-                title: "Resume interrupted goals when Juno opens",
-                detail: "Off: a goal Juno quit in the middle of waits for you to press Resume.",
+                title: "Resume interrupted goals when Alevr opens",
+                detail: "Off: a goal Alevr quit in the middle of waits for you to press Resume.",
                 scope: scope,
                 value: overrides?.resumeInterruptedGoalsOnLaunch,
                 inherited: resolved.resumeInterruptedGoalsOnLaunch
@@ -122,7 +122,7 @@ struct StudioAutonomySettings: View {
         } header: {
             Text("Budgets")
         } footer: {
-            Text("At a budget Juno writes where it got to and stops; Keep going adds the same budget again. A budget is never reported as done.")
+            Text("At a budget Alevr writes where it got to and stops; Keep going adds the same budget again. A budget is never reported as done.")
         }
     }
 

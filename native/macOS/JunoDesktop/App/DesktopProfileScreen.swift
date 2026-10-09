@@ -1,3 +1,4 @@
+import JunoDesignSystem
 import JunoAuth
 import JunoChatKit
 import Observation
@@ -30,7 +31,7 @@ struct DesktopProfileScreen: View {
                 .frame(maxWidth: 860)
                 .frame(maxWidth: .infinity)
             } else {
-                ContentUnavailableView("Profile unavailable", systemImage: "person.crop.circle", description: Text("Sign in again to see your activity."))
+                ContentUnavailableView { Label("Profile unavailable", image: JunoIcon.userCircle.assetName) } description: { Text("Sign in again to see your activity.") }
             }
         }
         .onAppear {

@@ -13,7 +13,7 @@ import { SettingsGallery } from "./gallery";
  *   /dev/settings?hosts=0                  Devices with no Mac paired
  *
  * Not linked from anywhere and 404s outside development, the same contract as
- * /dev/controls and /dev/learning.
+ * /dev/controls and /dev/live-ui.
  */
 export default function SettingsDevPage() {
   if (process.env.NODE_ENV === "production") notFound();

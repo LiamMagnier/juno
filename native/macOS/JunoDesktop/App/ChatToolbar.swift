@@ -56,7 +56,7 @@ struct ChatToolbar: ToolbarContent {
         }
 
         // The web rail's New chat, for when the sidebar — and its own New chat
-        // row — is hidden. Never both at once.
+        // row — is hidden. Never both at once, as on the web.
         ToolbarItem(placement: .navigation) {
             Button(action: newChat) {
                 Label { Text("New chat") } icon: { JunoSymbol(.new) }
@@ -137,13 +137,9 @@ private struct DesktopPrivateChatButton: View {
             Label {
                 Text("Private chat")
             } icon: {
-                ZStack {
-                    Image(systemName: "circle.dashed")
-                    if isPrivate {
-                        Image(systemName: "checkmark")
-                            .junoFont(size: 7, relativeTo: .body, weight: .bold)
-                    }
-                }
+                // The web's incognito glyph, filled while the chat is private
+                // ("fill means on").
+                JunoSymbol(.privateChat, weight: isPrivate ? .fill : .regular)
             }
             .contentShape(.rect)
         }

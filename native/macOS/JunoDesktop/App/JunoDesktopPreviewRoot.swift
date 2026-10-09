@@ -1,10 +1,12 @@
 #if DEBUG
+import AppKit
 import JunoAuth
 import JunoChatKit
 import JunoCodeKit
 import JunoCodeUI
 import JunoDesignSystem
 import JunoPreviewSupport
+import JunoSync
 import JunoWorkKit
 import SwiftUI
 
@@ -51,6 +53,8 @@ private struct JunoDesktopPreviewWorkspace: View {
     let configuration: JunoDesktopConfiguration
     let workbenchModel: WorkbenchModel
     @State private var product: DesktopProductMode
+    @Environment(\.openSettings) private var openSettings
+    @Environment(\.openWindow) private var openWindow
 
     init(world: PreviewWorld) {
         self.world = world
@@ -66,7 +70,7 @@ private struct JunoDesktopPreviewWorkspace: View {
         let remoteCodeModel = CodeRemoteBrowserModel(
             client: NativeCodeRemoteClient(sender: sender)
         )
-        configuration = JunoDesktopConfiguration(
+        var configuration = JunoDesktopConfiguration(
             authModel: NativeAuthModel(configurationErrorDescription: "UI Preview"),
             runtime: nil,
             localStore: nil,
@@ -115,6 +119,25 @@ private struct JunoDesktopPreviewWorkspace: View {
             pullsClient: NativeGitHubPullsClient(sender: sender),
             shareClient: NativeShareClient(sender: sender)
         )
+        // The pages' own models, on the same no-network sender, so Library,
+        // Orbit, Memory, Skills and Assistants show their real pages in the
+        // harness instead of "unavailable".
+        configuration.libraryPageModel = NativeLibraryPageModel(
+            client: NativeLibraryClient(sender: sender),
+            uploader: NativeAttachmentAPIClient(sender: sender)
+        )
+        configuration.agentsModel = NativeAgentsModel(
+            client: NativeAgentsClient(sender: sender),
+            workClient: NativeWorkClient(sender: sender, streamer: sender)
+        )
+        configuration.notificationsModel = NativeNotificationsModel(client: NativeNotificationsClient(sender: sender))
+        configuration.memoryPageModel = NativeMemoryPageModel(client: NativeMemoryClient(sender: sender))
+        configuration.skillLibraryModel = NativeSkillLibraryModel(client: NativeSkillsClient(sender: sender))
+        configuration.assistantsModel = NativeAssistantsModel(client: NativeAssistantsClient(sender: sender))
+        self.configuration = configuration
+        DesktopAppAppearance.apply(JunoPreviewEnvironment.appearance?.colorScheme)
+        DesktopPreviewSettingsWorld.shared.configuration = configuration
+        DesktopPreviewSettingsWorld.shared.session = world.session
         // Keep the desktop host on the same fixture selector as the package
         // preview. Without this, `--juno-code-preview-scenario` was accepted
         // by the fixtures but silently ignored by the real macOS shell, which
@@ -155,13 +178,42 @@ private struct JunoDesktopPreviewWorkspace: View {
             workbenchModel: workbenchModel,
             initialDestination: Self.requestedDestination
         )
+        .task {
+            // Started as the live root starts them, against the throwaway
+            // account, so the pages draw their content rather than loading.
+            let accountID = world.session.profile.id
+            configuration.libraryPageModel?.start(for: accountID)
+            configuration.memoryPageModel?.start(for: accountID)
+            configuration.assistantsModel?.start(for: accountID)
+            configuration.notificationsModel?.start(for: accountID)
+            await configuration.agentsModel?.start(for: accountID)
+            await configuration.skillLibraryModel?.start(for: accountID)
+        }
         .onAppear {
+            // No field holds the caret in a product shot: a focused field is
+            // where the system offers its own suggestions (a code from
+            // Messages, AutoFill), and those belong to the person at the Mac,
+            // never to a capture of this window.
+            for delay in [0.5, 1.5, 3.0, 5.0] {
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                    for window in NSApp.windows { window.makeFirstResponder(nil) }
+                }
+            }
+            if CommandLine.arguments.contains("--juno-preview-research-report") {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                    openWindow(id: JunoDesktopWindow.researchReportID, value: ResearchReportWindow.previewRunID)
+                }
+            }
             // Settings is a window of its own now, not a Chat destination, so
             // the harness's "settings" tab opens that window over Chat.
             if JunoPreviewEnvironment.initialDestination == "settings" {
                 let section = JunoPreviewEnvironment.initialSettingsRoute
                     .flatMap(DesktopSettingsSection.init(rawValue:)) ?? .general
-                DispatchQueue.main.async { DesktopSettingsRouter.open(section) }
+                // Through SwiftUI's own action, a beat after launch: the
+                // responder-chain selector has no key window to start from yet.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                    DesktopSettingsRouter.open(section, using: openSettings)
+                }
             }
         }
     }

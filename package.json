@@ -1,6 +1,6 @@
 {
   "name": "juno",
-  "version": "1.9.3",
+  "version": "1.10.1",
   "license": "Apache-2.0",
   "author": "Liam Magnier <liam.magnier25@icloud.com>",
   "homepage": "https://chat.liams.dev",
@@ -44,6 +44,7 @@
     "native:design:prominent": "node scripts/check-native-prominent.mjs",
     "native:design:menus": "node scripts/check-native-menus.mjs",
     "native:design:sficons": "node scripts/check-native-sficons.mjs",
+    "native:design:symbols": "node scripts/check-native-symbols.mjs",
     "native:snapshots:transcript": "bash scripts/native-snapshots.sh",
     "native:sync:check": "node scripts/check-native-sync.mjs",
     "native:parity:label": "node scripts/check-native-parity-label.mjs",

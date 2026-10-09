@@ -68,6 +68,29 @@ public struct JunoProseCodeBlock: View {
     }
 
     public var body: some View {
+        #if os(macOS)
+        // The Mac's listing (round 2): one quiet filled well, Xcode's and
+        // ChatGPT for Mac's — no card edge and no rule under the header, so
+        // the code is the only thing with a shape. Increase Contrast keeps
+        // the hairline edge.
+        VStack(alignment: .leading, spacing: 0) {
+            header
+            codeBody
+        }
+        .background(
+            RoundedRectangle(cornerRadius: JunoRadius.field, style: .continuous)
+                .fill(Color.junoSecondary)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: JunoRadius.field, style: .continuous))
+        .overlay {
+            if contrast == .increased {
+                RoundedRectangle(cornerRadius: JunoRadius.field, style: .continuous)
+                    .strokeBorder(Color.junoBorder, lineWidth: 1)
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(label == "code" ? "Code" : "\(label) code")
+        #else
         VStack(alignment: .leading, spacing: 0) {
             header
             Rectangle()
@@ -89,6 +112,7 @@ public struct JunoProseCodeBlock: View {
         )
         .accessibilityElement(children: .contain)
         .accessibilityLabel(label == "code" ? "Code" : "\(label) code")
+        #endif
     }
 
     private var header: some View {
@@ -296,15 +320,7 @@ public struct JunoProseTable: View {
         .scrollIndicators(.automatic)
         .frame(maxWidth: .infinity, alignment: .leading)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { available = $0 }
-        .background(
-            RoundedRectangle(cornerRadius: JunoRadius.field, style: .continuous)
-                .fill(Color.junoCard)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: JunoRadius.field, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: JunoRadius.field, style: .continuous)
-                .strokeBorder(Color.junoBorder.opacity(hairline), lineWidth: 1)
-        )
+        .modifier(JunoProseTableSurface(hairline: hairline))
     }
 
     private func grid(widths: [CGFloat]) -> some View {
@@ -317,11 +333,11 @@ public struct JunoProseTable: View {
                         // The whole row's height, so a header that wraps in
                         // one column leaves no gap in the fill of the others.
                         .frame(maxHeight: .infinity, alignment: .topLeading)
-                        .background(Color.junoSecondary)
+                        .background(Self.headerFill)
                 }
             }
             Rectangle()
-                .fill(Color.junoForeground.opacity(0.28))
+                .fill(Color.junoForeground.opacity(Self.headerRuleOpacity))
                 .frame(height: 1)
                 .gridCellUnsizedAxes(.horizontal)
             ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
@@ -342,6 +358,19 @@ public struct JunoProseTable: View {
         .accessibilityElement(children: .contain)
     }
 
+    #if os(macOS)
+    /// The Mac's table (round 2) is open, as Notes and ChatGPT for Mac draw
+    /// one: no card and no header band — the header is set apart by its ink
+    /// and a slightly firmer rule, the rows by hairlines.
+    static let headerFill = Color.clear
+    static let headerRuleOpacity = 0.16
+    static let headerInk = Color.junoSecondaryInk
+    #else
+    static let headerFill = Color.junoSecondary
+    static let headerRuleOpacity = 0.28
+    static let headerInk = Color.junoForeground
+    #endif
+
     private func cell(_ text: String, width: CGFloat?, isHeader: Bool) -> some View {
         JunoInlineText(text, baseSize: Self.textSize)
             .junoType(
@@ -349,7 +378,7 @@ public struct JunoProseTable: View {
                     ? JunoType(size: Self.textSize, weight: .medium, lineHeight: 1.5, textStyle: .callout)
                     : .ui
             )
-            .foregroundStyle(Color.junoForeground)
+            .foregroundStyle(isHeader ? Self.headerInk : Color.junoForeground)
             .textSelection(.enabled)
             .fixedSize(horizontal: false, vertical: true)
             .frame(
@@ -386,6 +415,30 @@ public struct JunoProseTable: View {
     /// them: the header's cells, then each row's.
     private var findCounts: JunoProseTableFindBases {
         JunoProseTableFindBases(header: header, rows: rows, columns: columnCount, query: find?.query, citations: citations)
+    }
+}
+
+/// The table's ground: the iPhone's card, or — on the Mac — nothing at all,
+/// with the first and last cells kept on the prose's own left edge.
+private struct JunoProseTableSurface: ViewModifier {
+    let hairline: Double
+
+    func body(content: Content) -> some View {
+        #if os(macOS)
+        content
+            .padding(.horizontal, -JunoProseTable.cellHorizontalPadding)
+        #else
+        content
+            .background(
+                RoundedRectangle(cornerRadius: JunoRadius.field, style: .continuous)
+                    .fill(Color.junoCard)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: JunoRadius.field, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: JunoRadius.field, style: .continuous)
+                    .strokeBorder(Color.junoBorder.opacity(hairline), lineWidth: 1)
+            )
+        #endif
     }
 }
 

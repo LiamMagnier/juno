@@ -120,7 +120,7 @@ final class PreviewVerifyLoopTests: XCTestCase {
             ]),
             permissions: PermissionCoordinator(sessionID: session.id, mode: .fullAccess),
             store: store,
-            configuration: AgentOrchestrator.Configuration(compactionSummary: nil, systemPrompt: "You are Juno Code."),
+            configuration: AgentOrchestrator.Configuration(compactionSummary: nil, systemPrompt: "You are Alevr Code."),
             modelID: "test-model",
             reasoningEffort: nil,
             completionGate: gate
@@ -250,7 +250,7 @@ final class PreviewVerifyLoopTests: XCTestCase {
         let tool = PreviewServerTool(services: services)
         XCTAssertEqual(tool.assessRisk(input: ["action": "start"]), .critical)
         let summary = tool.summary(input: ["action": "start"])
-        XCTAssertTrue(summary.contains("juno:static") || summary.contains("Juno's static server"), summary)
+        XCTAssertTrue(summary.contains("juno:static") || summary.contains("Alevr's static server"), summary)
         XCTAssertTrue(summary.contains("site"), summary)
         XCTAssertTrue(summary.contains("loopback only"), summary)
         XCTAssertTrue(summary.contains(".juno/launch.json"), summary)

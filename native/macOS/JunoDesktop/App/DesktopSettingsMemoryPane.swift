@@ -32,7 +32,7 @@ struct DesktopSettingsMemoryPane: View {
         Section {
             DesktopSettingToggleRow(
                 title: "Reference saved memories",
-                description: "Juno remembers lasting facts and preferences from your chats and uses them in later ones.",
+                description: "Alevr remembers lasting facts and preferences from your chats and uses them in later ones.",
                 status: context.saves.status("memoryEnabled"),
                 isOn: Binding(
                     get: { settings.memoryEnabled },
@@ -42,7 +42,7 @@ struct DesktopSettingsMemoryPane: View {
             )
             DesktopSettingToggleRow(
                 title: "Learn from past chats in the background",
-                description: "Between sessions, Juno reads older chats it hasn’t learned from yet, within your usage limits.",
+                description: "Between sessions, Alevr reads older chats it hasn’t learned from yet, within your usage limits.",
                 status: context.saves.status("memoryBackgroundLearning"),
                 isOn: Binding(
                     get: { settings.memoryBackgroundLearning ?? false },
@@ -56,7 +56,7 @@ struct DesktopSettingsMemoryPane: View {
             if let openMemory = links.openMemory {
                 DesktopSettingRow(
                     title: "Memories",
-                    description: "See what Juno remembers, change it or forget it."
+                    description: "See what Alevr remembers, change it or forget it."
                 ) {
                     DesktopOutlineButton(title: "Manage", action: openMemory)
                         .accessibilityIdentifier("juno.desktop.settings.memory-manage")
@@ -65,7 +65,7 @@ struct DesktopSettingsMemoryPane: View {
             if let learningModel = context.services.learningModel {
                 let waiting = learningModel.proposals.count
                 DesktopSettingRow(
-                    title: "What Juno noticed",
+                    title: "What Alevr noticed",
                     description: "Keep or discard details picked up in your chats. Nothing is saved until you keep it."
                 ) {
                     DesktopOutlineButton(title: waiting == 0 ? "Review" : "Review (\(waiting))") {
@@ -102,7 +102,7 @@ struct DesktopSettingsMemoryPane: View {
         } header: {
             DesktopSettingsGroupHeader(
                 title: "Sensitive subjects",
-                note: "Juno doesn’t learn these on its own. Anything you ask it to remember is always kept."
+                note: "Alevr doesn’t learn these on its own. Anything you ask it to remember is always kept."
             )
         }
 
@@ -222,7 +222,7 @@ enum DesktopBackgroundWork {
     static let options: [Option] = [
         Option(mode: .sameProvider, label: "The lab I chat with", description: "A chat’s background work goes to the lab that answered it."),
         Option(mode: .anyAllowedProvider, label: "Any configured lab", description: "Whichever lab on this server can do the job at the lowest cost."),
-        Option(mode: .localOnly, label: "Juno’s own models only", description: "Nothing goes to an outside lab. Some background work may not run."),
+        Option(mode: .localOnly, label: "Alevr’s own models only", description: "Nothing goes to an outside lab. Some background work may not run."),
     ]
 
     static let legacy = Option(

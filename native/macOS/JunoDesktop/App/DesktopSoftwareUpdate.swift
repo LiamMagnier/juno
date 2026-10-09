@@ -142,11 +142,11 @@ struct DesktopUpdatePanel: View {
         switch phase {
         case .idle: "Software Update"
         case .checking: "Checking for updates"
-        case .current: "Juno is up to date"
-        case .downloading(let version, _): "Downloading Juno \(version)"
-        case .ready(let version): "Juno \(version) is ready"
+        case .current: "Alevr is up to date"
+        case .downloading(let version, _): "Downloading Alevr \(version)"
+        case .ready(let version): "Alevr \(version) is ready"
         case .failed: "The update didn’t finish"
-        case .unsupported: "Juno can’t update itself here"
+        case .unsupported: "Alevr can’t update itself here"
         }
     }
 
@@ -176,7 +176,7 @@ struct DesktopUpdatePanel: View {
     private var detail: some View {
         switch phase {
         case .idle:
-            sentence("Juno checks for a newer version every ten minutes while it is open.")
+            sentence("Alevr checks for a newer version every ten minutes while it is open.")
         case .checking:
             JunoShimmerText("Asking the update server", font: JunoType.ui.font())
                 .padding(.top, JunoSpace.micro)
@@ -184,7 +184,7 @@ struct DesktopUpdatePanel: View {
         case .current(let checkedAt):
             sentence("This is the newest version. Checked \(checkedAt.formatted(date: .omitted, time: .shortened)).")
         case .downloading:
-            sentence("Keep working. Juno asks before it restarts.")
+            sentence("Keep working. Alevr asks before it restarts.")
         case .ready:
             sentence("Downloaded and verified. Restarting takes a few seconds, and it installs on its own the next time you quit.")
         case .failed(let message):

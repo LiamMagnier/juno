@@ -61,6 +61,7 @@ import {
 import JSZip from "jszip";
 import { SemanticError, decodeDataImage } from "@/lib/work/deliverables/semantic/shared";
 import {
+  interactiveSummary,
   normalizeDocument,
   parseInline,
   runsToMarkup,
@@ -364,6 +365,26 @@ function blockElements(
       return tableElements(block, commentIds, ctx);
     case "figure":
       return figureParagraphs(block, commentIds, ctx);
+    case "interactive": {
+      // Word cannot run a Live UI view: keep what a reader can study on paper
+      // (steps, questions, parts) in a note, titled, with where to use it live.
+      const { title, lines } = interactiveSummary(block);
+      const body = lines.flatMap((line, index) => [...(index ? [new TextRun({ break: 1 })] : []), new TextRun({ text: line })]);
+      return [
+        new Paragraph({
+          style: STYLE.callout.note,
+          children: anchorComments(
+            [
+              new TextRun({ text: title, bold: true }),
+              ...(body.length ? [new TextRun({ break: 1 }), ...body] : []),
+              new TextRun({ break: 1 }),
+              new TextRun({ text: block.caption ?? "Interactive view: open this document in Alevr to use it.", italics: true }),
+            ],
+            commentIds
+          ),
+        }),
+      ];
+    }
     case "pageBreak":
       return [new Paragraph({ children: anchorComments([new PageBreak()], commentIds) })];
   }

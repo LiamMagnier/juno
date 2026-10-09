@@ -72,7 +72,7 @@ public struct CodeSlashCommand: Identifiable, Equatable, Sendable {
         /// Whose command it is, before its name: "this project's /review".
         public var possessive: String {
             switch self {
-            case .builtIn: "Juno's"
+            case .builtIn: "Alevr's"
             case .workspace: "this project's"
             case .user: "your"
             case .claudeImport: "Claude Code's"
@@ -404,18 +404,18 @@ public struct CodeSlashCommandLibrary: Equatable, Sendable {
     ]
 
     static let verbs: [CodeSlashCommand] = [
-        verb(.goal, "Set a goal Juno keeps working toward until it is met", hint: "objective, or pause · resume · edit · clear"),
+        verb(.goal, "Set a goal Alevr keeps working toward until it is met", hint: "objective, or pause · resume · edit · clear"),
         verb(.verify, "Run this project's checks now", hint: "setup, or check ids"),
         verb(.review, "Review changes for correctness and risk", hint: "uncommitted · branch · last-turn · commit, --fix"),
         verb(.context, "See what fills the context window"),
         verb(.cost, "See this session's tokens and cost", aliases: ["usage"]),
         verb(.compact, "Summarise older turns to free up context", hint: "what to keep"),
         verb(.rewind, "Go back to before one of your messages"),
-        verb(.resume, "Open another session, or resume one Juno was interrupted in"),
+        verb(.resume, "Open another session, or resume one Alevr was interrupted in"),
         verb(.model, "Switch this session's model", hint: "model id"),
         verb(.initProject, "Scan the project and propose AGENTS.md, checks and a launch file"),
         verb(.memory, "Open your and the project's instruction files"),
-        verb(.permissions, "See and change what Juno may do without asking"),
+        verb(.permissions, "See and change what Alevr may do without asking"),
         verb(.agents, "See the built-in and custom agents"),
         verb(.mcp, "See MCP servers, their tools and their consent"),
         verb(.hooks, "See the hooks and when each last ran"),

@@ -82,11 +82,11 @@ public struct CodeTaskIntentRequest: Equatable, Sendable {
 
     /// Why the request cannot start, in words, or nil.
     public func problem(in records: [WorkspaceRecord]) -> String? {
-        guard !prompt.isEmpty || goal != nil else { return "Say what Juno should do." }
+        guard !prompt.isEmpty || goal != nil else { return "Say what Alevr should do." }
         guard project(in: records) != nil else {
-            if records.isEmpty { return "Add a project to Juno Code first." }
+            if records.isEmpty { return "Add a project to Alevr Code first." }
             if let projectName, !projectName.isEmpty { return "No project is called \(projectName)." }
-            return "Name the project: Juno Code has more than one."
+            return "Name the project: Alevr Code has more than one."
         }
         return nil
     }
@@ -123,7 +123,7 @@ public extension WorkbenchModel {
             ceiling: ceiling
         )
         guard let session = await createSession(workspaceID: record.id, configuration: configuration) else {
-            throw CodeTaskIntentError.cannotStart("Juno Code could not open \(record.descriptor.displayName).")
+            throw CodeTaskIntentError.cannotStart("Alevr Code could not open \(record.descriptor.displayName).")
         }
         let first = request.prompt.isEmpty ? (request.goal ?? "") : request.prompt
         let title = first.split(separator: "\n").first.map(String.init) ?? first

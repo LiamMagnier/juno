@@ -150,7 +150,7 @@ struct DesktopSettingsPlanPane: View {
     @ViewBuilder
     private func usageRows(_ plan: NativeUsagePlan) -> some View {
         if plan.budgetMicroUsd == nil {
-            DesktopSettingsNote(text: "Nothing is metering this account. A task Juno starts on its own still stops at a small backstop ceiling, so an unattended loop can’t run all night.")
+            DesktopSettingsNote(text: "Nothing is metering this account. A task Alevr starts on its own still stops at a small backstop ceiling, so an unattended loop can’t run all night.")
         } else if plan.isBrowseOnly {
             // No budget at all (a server from before Free's allowance): there
             // is nothing to meter, only the way out. Free with its small
@@ -340,7 +340,7 @@ struct DesktopSpendCeilingRow: View {
         var sentence = "\(Self.sourceNote(plan.spend.capSource))."
         if let month = plan.spend.budgetMicroUsd {
             let rate = (plan.spend.eurPerUsd ?? 1) > 0 ? (plan.spend.eurPerUsd ?? 1) : 1
-            sentence += " Juno stops at \(DesktopPlanMeters.eur(month / 1_000_000 * rate)) this period. Leave the field empty to use the default; the lower of the two applies."
+            sentence += " Alevr stops at \(DesktopPlanMeters.eur(month / 1_000_000 * rate)) this period. Leave the field empty to use the default; the lower of the two applies."
         }
         return sentence
     }
@@ -349,7 +349,7 @@ struct DesktopSpendCeilingRow: View {
     static func sourceNote(_ source: String?) -> String {
         switch source {
         case "user": "Set by you"
-        case "personal-default": "Juno's default for accounts without a plan budget"
+        case "personal-default": "Alevr's default for accounts without a plan budget"
         case "disabled": "Enforcement is switched off"
         default: "Set by your plan"
         }

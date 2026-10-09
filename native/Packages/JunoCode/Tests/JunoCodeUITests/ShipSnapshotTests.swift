@@ -62,7 +62,7 @@ final class ShipSnapshotTests: XCTestCase {
                 entry("Dark mode for the composer", .readyForReview, "Done · checked with `npm test` · 3 files"),
             ]),
             RunIndexSection(group: .interrupted, entries: [
-                entry("Upgrade the parser", .interrupted, "Juno quit while this was running", actions: [.resume]),
+                entry("Upgrade the parser", .interrupted, "Alevr quit while this was running", actions: [.resume]),
             ]),
             RunIndexSection(group: .failed, entries: [
                 entry("Rename the API", .failed, "Stopped with an error: the provider timed out", actions: [.retry]),

@@ -130,7 +130,7 @@ final class CompactionSurfaceTests: XCTestCase {
 
         XCTAssertEqual(
             controller.transientError,
-            "Juno is still working. Compaction happens between turns; try again once this one ends."
+            "Alevr is still working. Compaction happens between turns; try again once this one ends."
         )
         XCTAssertFalse(controller.events.contains { event in
             if case .compaction = event.payload { return true }

@@ -3,7 +3,7 @@
 import * as React from "react";
 import { SandboxFrame, type ConsoleEntry, type RunStatus } from "@/components/canvas/sandbox-frame";
 import { SandboxProfileProvider } from "@/components/canvas/sandbox-document-frame";
-import { MermaidBlock } from "@/components/chat/learning/mermaid-block";
+import { MermaidBlock } from "@/components/chat/mermaid-block";
 import { SharedArtifactViewer } from "@/components/share/shared-artifact-viewer";
 import type { ArtifactType } from "@/lib/message-content";
 

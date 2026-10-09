@@ -1108,7 +1108,7 @@ struct DesktopLibraryScreen: View {
         // memory and this screen adds no persistence, so quitting really does
         // empty it. A reader who expected these to survive a relaunch would
         // otherwise conclude the feature is broken.
-        .help("Indexed documents stay on this Mac, in memory only, and are cleared when you quit Juno or sign out.")
+        .help("Indexed documents stay on this Mac, in memory only, and are cleared when you quit Alevr or sign out.")
     }
 
     /// "2 documents · 143 passages", "Reading Contract.pdf…", or the OCR note.

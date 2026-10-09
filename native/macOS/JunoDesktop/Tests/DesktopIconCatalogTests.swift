@@ -65,9 +65,9 @@ struct DesktopIconCatalogTests {
         }
     }
 
-    /// The fixture: Phosphor's `Plus` at 100pt. The box is 16/14 of the point
-    /// size (114.3pt) and is the symbol's whole advance; the regular plus spans
-    /// 192 of the grid's 256 units, so its ink is three quarters of the box.
+    /// The fixture: the Alevr family's `Plus` at 100pt. The box is 16/14 of the point
+    /// size (114.3pt) and is the symbol's whole advance; the plus spans 178 of
+    /// the grid's 256 units (39 to 217), so its ink is about 70% of the box.
     /// If the template's metrics drift, every glyph in the app changes size
     /// with it, and this is where that shows.
     @Test
@@ -75,13 +75,13 @@ struct DesktopIconCatalogTests {
         let image = try #require(Self.symbol("ph.plus", pointSize: 100))
         #expect(abs(image.size.width - 100 * 16 / 14) <= 1, "advance is \(image.size.width)")
         let ink = try #require(Self.inkBounds(of: image))
-        let expected = 100.0 * 16 / 14 * 192 / 256
+        let expected = 100.0 * 16 / 14 * 178 / 256
         #expect(abs(ink.width - expected) <= 2, "ink is \(ink.width), expected \(expected)")
         #expect(abs(ink.height - expected) <= 2, "ink is \(ink.height), expected \(expected)")
     }
 
     /// `JunoIconView(size:)` maps the 256 grid onto `size`, as the web's `size`
-    /// prop does: a 16pt plus is 12pt of ink, centred in the box.
+    /// prop does: a 16pt plus is 11pt of ink (178 of 256), centred in the box.
     @Test
     func iconViewSetsTheGridToItsSize() throws {
         let renderer = ImageRenderer(content: JunoIconView(.plus, size: 16).foregroundStyle(.black))
@@ -89,8 +89,8 @@ struct DesktopIconCatalogTests {
         let cgImage = try #require(renderer.cgImage)
         let image = NSImage(cgImage: cgImage, size: NSSize(width: 16, height: 16))
         let ink = try #require(Self.inkBounds(of: image))
-        #expect(abs(ink.width - 12) <= 1, "ink is \(ink.width)pt wide")
-        #expect(abs(ink.height - 12) <= 1, "ink is \(ink.height)pt tall")
+        #expect(abs(ink.width - 16 * 178 / 256) <= 1, "ink is \(ink.width)pt wide")
+        #expect(abs(ink.height - 16 * 178 / 256) <= 1, "ink is \(ink.height)pt tall")
         #expect(abs(ink.midX - 8) <= 0.75, "ink is centred at x \(ink.midX)")
         #expect(abs(ink.midY - 8) <= 0.75, "ink is centred at y \(ink.midY)")
     }

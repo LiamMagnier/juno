@@ -100,6 +100,7 @@ const BLOCK_NOUN: Record<Block["type"], string> = {
   table: "a table",
   callout: "a callout",
   figure: "a figure",
+  interactive: "an interactive view",
   pageBreak: "a page break",
 };
 

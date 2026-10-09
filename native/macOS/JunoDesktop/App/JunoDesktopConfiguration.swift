@@ -650,9 +650,9 @@ private enum JunoDesktopConfigurationError: Error, LocalizedError {
     var errorDescription: String? {
         switch self {
         case .invalidBackendURL:
-            "The production Juno address is invalid."
+            "The production Alevr address is invalid."
         case .applicationSupportUnavailable:
-            "Juno cannot access Application Support on this Mac."
+            "Alevr cannot access Application Support on this Mac."
         }
     }
 }

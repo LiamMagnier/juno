@@ -59,10 +59,10 @@ struct CodeTaskIntentTests {
     @Test
     func problemsAreSaidInWords() {
         let records = [record("juno"), record("atlas")]
-        #expect(CodeTaskIntentRequest(projectName: "juno", prompt: "  ").problem(in: records) == "Say what Juno should do.")
+        #expect(CodeTaskIntentRequest(projectName: "juno", prompt: "  ").problem(in: records) == "Say what Alevr should do.")
         #expect(CodeTaskIntentRequest(projectName: "zed", prompt: "x").problem(in: records) == "No project is called zed.")
-        #expect(CodeTaskIntentRequest(projectName: nil, prompt: "x").problem(in: records) == "Name the project: Juno Code has more than one.")
-        #expect(CodeTaskIntentRequest(projectName: nil, prompt: "x").problem(in: []) == "Add a project to Juno Code first.")
+        #expect(CodeTaskIntentRequest(projectName: nil, prompt: "x").problem(in: records) == "Name the project: Alevr Code has more than one.")
+        #expect(CodeTaskIntentRequest(projectName: nil, prompt: "x").problem(in: []) == "Add a project to Alevr Code first.")
         #expect(CodeTaskIntentRequest(projectName: "juno", prompt: "", goal: "tests pass").problem(in: records) == nil)
         #expect(CodeTaskIntentRequest(projectName: "juno", prompt: "x", goal: "   ").goal == nil)
     }

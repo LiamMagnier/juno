@@ -52,35 +52,28 @@ struct DesktopNotificationsRow: View {
         }
     }
 
+    /// The web sidebar's row (round 2): the bell in the 20pt slot on the 16pt
+    /// edge, the 14pt label on the 46pt edge, and what is new said in words
+    /// at the end — never a dot (owner rule: no status dots).
     private var rowLabel: some View {
-        Label {
-            title
-        } icon: {
-            JunoSymbol(.notifications)
-                .foregroundStyle(Color.junoSidebarInk)
-        }
-        .foregroundStyle(Color.junoSidebarInk)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .contentShape(.rect)
-    }
-
-    private var title: some View {
-        HStack(spacing: JunoSpace.tight) {
+        HStack(spacing: DesktopSidebarMetrics.gap) {
+            JunoIconView(.notifications, size: DesktopSidebarMetrics.glyphSize)
+                .frame(width: DesktopSidebarMetrics.glyphSlot, height: DesktopSidebarMetrics.glyphSlot)
             Text(Self.label)
+                .junoFont(size: DesktopSidebarMetrics.labelSize, relativeTo: .body)
+                .lineLimit(1)
             Spacer(minLength: JunoSpace.hairline)
-            // The column's one trailing slot, so this dot shares a
-            // centre with every row's mark below it.
-            DesktopSidebarTrailingSlot {
-                unreadDot
+            if let detail = model.unreadDetail {
+                Text(detail)
+                    .junoFont(size: 12, relativeTo: .caption)
+                    .foregroundStyle(model.dotTone == .accent ? Color.junoAccentInk : Color.junoSecondaryInk)
+                    .lineLimit(1)
             }
         }
-    }
-
-    @ViewBuilder
-    private var unreadDot: some View {
-        if let tone = model.dotTone {
-            DesktopUnreadDot(pressing: tone == .accent)
-        }
+        .foregroundStyle(Color.junoSidebarInk)
+        .padding(.horizontal, DesktopSidebarMetrics.glyphEdge - DesktopSidebarMetrics.listOrigin)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(.rect)
     }
 
     private var helpText: String {
@@ -198,7 +191,7 @@ struct DesktopNotificationsPopover: View {
             if items.isEmpty {
                 JunoEmptyState(
                     title: "Nothing new",
-                    message: "Juno tells you here when a task finishes, needs you, or an agent has something to share.",
+                    message: "Alevr tells you here when a task finishes, needs you, or an agent has something to share.",
                     icon: .notifications,
                     size: .panel,
                     tone: .empty

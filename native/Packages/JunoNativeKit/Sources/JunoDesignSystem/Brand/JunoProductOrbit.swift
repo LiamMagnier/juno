@@ -134,11 +134,11 @@ public struct JunoProductOrbit: View {
             }
             .foregroundStyle(isActive && !isLocked ? Color.junoForeground : Color.junoTertiaryInk)
             .padding(.horizontal, 6)
-            .frame(height: 28)
+            .frame(minWidth: 44, minHeight: 28)
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .animation(.easeOut(duration: 0.2), value: isActive)
+        .animation(JunoMotion.fast, value: isActive)
         .accessibilityLabel(isLocked ? "\(product.label), upgrade required" : product.label)
         .accessibilityAddTraits(isActive ? .isSelected : [])
     }

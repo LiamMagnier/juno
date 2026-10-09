@@ -166,7 +166,7 @@ struct DesktopMemoryPage: View {
             }
             JunoPageHeader(
                 "Memory",
-                lede: "What Juno carries from one chat to the next. You can change or remove any of it."
+                lede: "What Alevr carries from one chat to the next. You can change or remove any of it."
             ) {
                 headerActions
             }
@@ -200,7 +200,7 @@ struct DesktopMemoryPage: View {
             Button("Export First") { export() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This permanently deletes everything Juno remembers, the summary and every project’s memory, and its edit history. It can’t be undone. Your chats stay as they are.")
+            Text("This permanently deletes everything Alevr remembers, the summary and every project’s memory, and its edit history. It can’t be undone. Your chats stay as they are.")
         }
         .confirmationDialog(
             clearing.map { "Clear \($0.name)?" } ?? "",
@@ -302,8 +302,8 @@ struct DesktopMemoryPage: View {
                 Task {
                     await settings.updateSettings(NativeSettingsPatch(memoryEnabled: on))
                     toast(.success(
-                        on ? "Memory is on. Juno will learn from your chats."
-                            : "Memory is off. Juno won’t use or save memories."
+                        on ? "Memory is on. Alevr will learn from your chats."
+                            : "Memory is off. Alevr won’t use or save memories."
                     ))
                 }
             }
@@ -317,7 +317,7 @@ struct DesktopMemoryPage: View {
         VStack(alignment: .leading, spacing: JunoSpace.regular) {
             if !enabled {
                 DesktopNoteBand(icon: .circlePause) {
-                    desktopLeadSentence("Memory is off.", "Juno isn’t using or saving memories. What’s here is kept.")
+                    desktopLeadSentence("Memory is off.", "Alevr isn’t using or saving memories. What’s here is kept.")
                 } action: {
                     Button("Turn on") {
                         Task { await settings.updateSettings(NativeSettingsPatch(memoryEnabled: true)) }
@@ -343,7 +343,7 @@ struct DesktopMemoryPage: View {
             if page.isBackfilling {
                 DesktopNoteBand(icon: .chats) {
                     VStack(alignment: .leading, spacing: JunoSpace.snug) {
-                        desktopLeadSentence("Reading your past chats.", "You can leave this page; Juno picks up where it left off.")
+                        desktopLeadSentence("Reading your past chats.", "You can leave this page; Alevr picks up where it left off.")
                         ProgressView(value: backfillProgress)
                             .progressViewStyle(.linear)
                             .tint(Color.junoAccent)
@@ -355,7 +355,7 @@ struct DesktopMemoryPage: View {
                 DesktopNoteBand(icon: .chats) {
                     desktopLeadSentence(
                         remaining == 1 ? "1 past chat hasn’t been read yet." : "\(remaining) past chats haven’t been read yet.",
-                        "Juno can learn from them now."
+                        "Alevr can learn from them now."
                     )
                 } action: {
                     Button("Learn from them") { learn() }
@@ -466,7 +466,7 @@ struct DesktopMemoryPage: View {
                 .fixedSize()
                 if let project = activeProject {
                     HStack(spacing: JunoSpace.tight) {
-                        Text("Only chats in this project use these memories, and they use nothing else Juno remembers.")
+                        Text("Only chats in this project use these memories, and they use nothing else Alevr remembers.")
                             .junoType(.caption)
                             .foregroundStyle(Color.junoSecondaryInk)
                             .fixedSize(horizontal: false, vertical: true)

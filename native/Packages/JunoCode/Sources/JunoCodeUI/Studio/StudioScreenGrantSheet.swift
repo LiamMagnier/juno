@@ -12,11 +12,11 @@ import JunoScreenControl
 enum StudioScreenApprovalCopy {
     static func question(toolName: String, summary _: String) -> String {
         switch toolName {
-        case ComputerUseToolName.apps: "Let Juno use these apps?"
-        case ComputerUseToolName.display: "Let Juno take over the screen?"
+        case ComputerUseToolName.apps: "Let Alevr use these apps?"
+        case ComputerUseToolName.display: "Let Alevr take over the screen?"
         case ComputerUseToolName.menu: "Choose this menu item?"
         case ComputerUseToolName.simulator: "Use the Simulator?"
-        default: "Let Juno do this?"
+        default: "Let Alevr do this?"
         }
     }
 }
@@ -76,7 +76,7 @@ struct StudioScreenActionCard: View {
                         RoundedRectangle(cornerRadius: Studio.Radius.row, style: .continuous)
                             .strokeBorder(Studio.Surface.hairline)
                     )
-                    .accessibilityLabel("The screen where Juno will act, with the spot ringed")
+                    .accessibilityLabel("The screen where Alevr will act, with the spot ringed")
             }
             Text(target)
                 .font(Studio.Font.meta)
@@ -114,7 +114,7 @@ struct StudioScreenGrantSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: JunoSpace.snug) {
             if let reason = proposal.reason, !reason.isEmpty {
-                Text("Juno says: “\(reason)”")
+                Text("Alevr says: “\(reason)”")
                     .font(Studio.Font.meta)
                     .foregroundStyle(Studio.Ink.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -122,7 +122,7 @@ struct StudioScreenGrantSheet: View {
             ForEach($offers) { $offer in
                 row($offer)
             }
-            Text("For this session only. Juno never controls itself, password managers or system prompts, and you can press Esc anywhere to stop.")
+            Text("For this session only. Alevr never controls itself, password managers or system prompts, and you can press Esc anywhere to stop.")
                 .font(Studio.Font.meta)
                 .foregroundStyle(Studio.Ink.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -181,7 +181,7 @@ struct StudioScreenTakeoverCard: View {
     let display: String
 
     var body: some View {
-        Text("Juno would use all of \(display) with the real pointer and keyboard. Every app it touches must still be granted, and its own windows stay out of the picture. Using your mouse or keyboard pauses it; Esc stops it.")
+        Text("Alevr would use all of \(display) with the real pointer and keyboard. Every app it touches must still be granted, and its own windows stay out of the picture. Using your mouse or keyboard pauses it; Esc stops it.")
             .font(Studio.Font.meta)
             .foregroundStyle(Studio.Ink.secondary)
             .fixedSize(horizontal: false, vertical: true)

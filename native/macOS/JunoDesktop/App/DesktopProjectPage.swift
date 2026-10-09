@@ -462,7 +462,7 @@ struct DesktopProjectChats: View {
             if chats.isEmpty {
                 JunoEmptyState(
                     title: "No chats in this project yet",
-                    message: "Start one above. Juno reads the project’s instructions and files first.",
+                    message: "Start one above. Alevr reads the project’s instructions and files first.",
                     icon: .chats,
                     size: .panel
                 )
@@ -634,7 +634,7 @@ struct DesktopProjectRail: View {
             }
             divider
             section("Memory", trailing: { EmptyView() }) {
-                Text("What Juno learns in this project’s chats stays here. Your other chats never see it.")
+                Text("What Alevr learns in this project’s chats stays here. Your other chats never see it.")
                     .junoType(.ui)
                     .foregroundStyle(Color.junoSecondaryInk)
                     .fixedSize(horizontal: false, vertical: true)
@@ -655,7 +655,7 @@ struct DesktopProjectRail: View {
     private var instructions: some View {
         let text = project.instructions.trimmingCharacters(in: .whitespacesAndNewlines)
         if text.isEmpty {
-            Text("A prompt Juno follows in every chat, task and code session filed here.")
+            Text("A prompt Alevr follows in every chat, task and code session filed here.")
                 .junoType(.ui)
                 .foregroundStyle(Color.junoSecondaryInk)
                 .fixedSize(horizontal: false, vertical: true)
@@ -683,7 +683,7 @@ struct DesktopProjectRail: View {
     @ViewBuilder
     private var sources: some View {
         if summary.sources.isEmpty {
-            Text("PDFs, documents and data Juno reads before answering here.")
+            Text("PDFs, documents and data Alevr reads before answering here.")
                 .junoType(.ui)
                 .foregroundStyle(Color.junoSecondaryInk)
                 .fixedSize(horizontal: false, vertical: true)
@@ -946,7 +946,7 @@ struct DesktopProjectSources: View {
                 if artifacts.isEmpty {
                     JunoEmptyState(
                         title: "No artifacts yet",
-                        message: "Artifacts Juno builds in this project’s chats will collect here.",
+                        message: "Artifacts Alevr builds in this project’s chats will collect here.",
                         icon: .artifacts,
                         size: .panel
                     )
@@ -1179,7 +1179,7 @@ struct DesktopProjectSettings: View {
     private var identityCard: some View {
         DesktopSettingsCard(
             title: "Identity and model",
-            detail: "What Juno is called here, and which model answers by default."
+            detail: "What Alevr is called here, and which model answers by default."
         ) {
             // The page's own field and menu, not the system's rounded box and
             // grey pop-up: one field and one menu recipe across every page.
@@ -1211,7 +1211,7 @@ struct DesktopProjectSettings: View {
     private var toolsCard: some View {
         DesktopSettingsCard(
             title: "Tools",
-            detail: "Narrow what Juno may reach for while answering here."
+            detail: "Narrow what Alevr may reach for while answering here."
         ) {
             Toggle("Restrict assistant tools", isOn: restrictionBinding)
                 .toggleStyle(.switch)
@@ -1226,7 +1226,7 @@ struct DesktopProjectSettings: View {
                 }
                 .padding(.leading, JunoSpace.regular)
             }
-            Text("Restrictions narrow what is available while Juno generates in this project. They do not disconnect anything.")
+            Text("Restrictions narrow what is available while Alevr generates in this project. They do not disconnect anything.")
                 .junoType(.caption)
                 .foregroundStyle(Color.junoSecondaryInk)
                 .fixedSize(horizontal: false, vertical: true)

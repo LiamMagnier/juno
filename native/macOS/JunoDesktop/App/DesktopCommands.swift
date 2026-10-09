@@ -338,7 +338,7 @@ struct JunoDesktopCommands: Commands {
         // About Juno is Juno's own window (premium pass), not the system's
         // standard panel: the painted plate, the display name, the build.
         CommandGroup(replacing: .appInfo) {
-            Button("About Juno") { openWindow(id: JunoDesktopWindow.aboutID) }
+            Button("About Alevr") { openWindow(id: JunoDesktopWindow.aboutID) }
                 .contentShape(.rect)
         }
         CommandGroup(after: .appInfo) {
@@ -408,7 +408,7 @@ struct JunoDesktopCommands: Commands {
         case .checking:
             Text("Checking for updates…")
         case .current:
-            Text("Juno \(JunoBuildInfo.current.version) is up to date")
+            Text("Alevr \(JunoBuildInfo.current.version) is up to date")
         case .downloading(let version, let fraction):
             if let fraction {
                 Text("Downloading \(version), \(Int((fraction * 100).rounded()))%")
@@ -416,7 +416,7 @@ struct JunoDesktopCommands: Commands {
                 Text("Downloading \(version)…")
             }
         case .ready(let version):
-            Text("Juno \(version) is ready to install")
+            Text("Alevr \(version) is ready to install")
         case .failed(let message):
             Text(message)
         case .unsupported(let reason):

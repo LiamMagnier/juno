@@ -677,7 +677,7 @@ const config: Config = {
           },
           to: { opacity: "1", transform: "scale(1) rotate(0deg)" },
         },
-        // Learning blocks (step-lab-block.tsx + quiz-block.tsx). One parametrized
+        // Live UI steps and quiz (live-ui-learning.tsx). One parametrized
         // keyframe covers both navigation directions: the caller sets --stage-dx
         // to 12px (forward) or -12px (back) on the keyed stage element.
         "stage-in": {
@@ -881,7 +881,7 @@ const config: Config = {
         "sheet-out": "sheet-out var(--dur-exit) var(--ease-in) both",
         "shimmer-text": "shimmer-text 2.2s linear infinite",
         "check-morph": "check-morph var(--dur-base) var(--ease-spring) both",
-        // Learning blocks: direction-aware step navigation (strong), one-shot
+        // Live UI steps/quiz: direction-aware step navigation (strong), one-shot
         // wrong-answer nudge (soft), one-shot SVG path draw (expo).
         "stage-in": "stage-in var(--dur-base) var(--ease-out-strong) both",
         nudge: "nudge var(--dur-base) var(--ease-out-soft)",

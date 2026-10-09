@@ -179,7 +179,7 @@ struct DesktopArtifactsScreen: View {
                 Button {
                     newChat()
                 } label: {
-                    Label("Ask Juno in a New Chat", icon: .chats)
+                    Label("Ask Alevr in a New Chat", icon: .chats)
                 }
             }
         } label: {
@@ -255,14 +255,14 @@ struct DesktopArtifactsScreen: View {
         } else if designsEmpty {
             JunoEmptyState(
                 title: "No designs yet",
-                message: "Pick a size above to start one, or ask Juno in any chat to design a screen.",
+                message: "Pick a size above to start one, or ask Alevr in any chat to design a screen.",
                 icon: .design,
                 size: .panel
             )
         } else if empty {
             JunoEmptyState(
                 title: "Nothing here yet",
-                message: "Ask Juno to build a page, component, document or diagram, or start a design from a blank frame. Each one collects here.",
+                message: "Ask Alevr to build a page, component, document or diagram, or start a design from a blank frame. Each one collects here.",
                 icon: .artifacts
             ) {
                 if let newChat {

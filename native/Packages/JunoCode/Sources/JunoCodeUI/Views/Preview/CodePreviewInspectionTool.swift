@@ -429,7 +429,7 @@ struct PreviewServerTool: CodeTool {
         switch outcome.result {
         case let .ready(ready, _):
             await MainActor.run { _ = services.openPage(key: outcome.snapshot.key, url: ready, configuration: nil) }
-            return ToolResult(content: "Using shell \(shellID)'s server at \(ready.absoluteString) as the preview \"\(outcome.snapshot.key.name)\". Juno did not start it and will not stop it; stop it with shell_kill.")
+            return ToolResult(content: "Using shell \(shellID)'s server at \(ready.absoluteString) as the preview \"\(outcome.snapshot.key.name)\". Alevr did not start it and will not stop it; stop it with shell_kill.")
         case let .failed(reason):
             return ToolResult(content: reason, isError: true)
         case .timedOut:
@@ -449,7 +449,7 @@ enum PreviewConfigurationDescription {
     static func commandText(_ configuration: ResolvedPreviewConfiguration) -> String {
         switch configuration.kind {
         case .attach(let url): return "attach to \(url.absoluteString)"
-        case .staticSite: return "Juno's static server for \(visible(configuration.workingDirectoryDisplay))"
+        case .staticSite: return "Alevr's static server for \(visible(configuration.workingDirectoryDisplay))"
         case .command: return visible(ShellWords.join(configuration.displayArgv))
         }
     }
@@ -484,7 +484,7 @@ enum PreviewConfigurationDescription {
         if let port = configuration.port {
             lines.append("port \(port)\(configuration.autoPort == true ? " or the next free one" : "")")
         } else if configuration.autoPort == true {
-            lines.append("a free port Juno picks")
+            lines.append("a free port Alevr picks")
         }
         lines.append(configuration.network == .internet ? "may use the internet" : "loopback only")
         lines.append("from \(configuration.source.displayName)")

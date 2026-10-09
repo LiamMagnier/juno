@@ -48,8 +48,8 @@ public final class ScreenControlModel {
     /// "Juno is using Safari" — the row's sentence.
     public var sentence: String? {
         guard isThisSessionActive, let holder = presence.holder else { return nil }
-        if presence.paused { return "You took over. Juno is waiting." }
-        let app = holder.appName.map { "Juno is using \($0)" } ?? "Juno can use the apps you grant"
+        if presence.paused { return "You took over. Alevr is waiting." }
+        let app = holder.appName.map { "Alevr is using \($0)" } ?? "Alevr can use the apps you grant"
         return presence.mode == .takeover ? app + " and has the whole screen" : app
     }
 

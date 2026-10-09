@@ -10,7 +10,7 @@ import SwiftUI
 /// a draft, and the reader finishes the sentence with the job.
 enum DesktopSkillCopy {
     static let createPrompt =
-        "Help me create a skill for Juno. Ask me anything you need, then write the SKILL.md with a name, a one-line description and step-by-step instructions. The job is: "
+        "Help me create a skill for Alevr. Ask me anything you need, then write the SKILL.md with a name, a one-line description and step-by-step instructions. The job is: "
 }
 
 /// **Skills** — instructions Juno follows for a specific job
@@ -48,7 +48,7 @@ struct DesktopSkillsScreen: View {
         JunoPage(measure: .reading) {
             JunoPageHeader(
                 "Skills",
-                lede: "Instructions Juno follows for a specific job. Type / in chat to use one."
+                lede: "Instructions Alevr follows for a specific job. Type / in chat to use one."
             ) {
                 addMenu
             }
@@ -96,7 +96,7 @@ struct DesktopSkillsScreen: View {
                 Label("Write a Skill", image: JunoIcon.edit.assetName)
             }
             Button { startDraft(DesktopSkillCopy.createPrompt) } label: {
-                Label("Create with Juno", image: JunoIcon.conversation.assetName)
+                Label("Create with Alevr", image: JunoIcon.conversation.assetName)
             }
         } label: {
             DesktopProminentMenuLabel(title: "Add", icon: .plus)
@@ -314,7 +314,7 @@ struct DesktopSkillsScreen: View {
         let count = source.skills.count
         return JunoConfirmation(
             title: "Remove \(source.label)?",
-            message: (count == 1 ? "Its skill is removed from Juno." : "Its \(count) skills are removed from Juno.")
+            message: (count == 1 ? "Its skill is removed from Alevr." : "Its \(count) skills are removed from Alevr.")
                 + " Chats that used them keep their history.",
             confirmTitle: "Remove"
         ) {
@@ -339,8 +339,8 @@ struct DesktopSkillsScreen: View {
         var notes: [String] = []
         if outcome.blocked > 0 {
             notes.append(outcome.blocked == 1
-                ? "One came in switched off because Juno’s safety check blocked it."
-                : "\(outcome.blocked) came in switched off because Juno’s safety check blocked them.")
+                ? "One came in switched off because Alevr’s safety check blocked it."
+                : "\(outcome.blocked) came in switched off because Alevr’s safety check blocked them.")
         }
         if let first = outcome.skipped.first, !first.message.isEmpty { notes.append(first.message) }
         if count > 0, let source = outcome.source, !source.enabled {

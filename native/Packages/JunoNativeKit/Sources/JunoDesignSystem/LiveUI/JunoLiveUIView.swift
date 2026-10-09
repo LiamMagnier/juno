@@ -104,6 +104,7 @@ public struct JunoLiveUIView: View {
         return VStack(alignment: .leading, spacing: 0) {
             Rectangle().fill(Color.junoHairline).frame(height: 1)
             VStack(alignment: .leading, spacing: 22) {
+                if spec.title != nil || spec.streaming || streaming || dirty {
                 HStack(alignment: .center, spacing: 12) {
                     if let title = spec.title {
                         Text(title)
@@ -119,13 +120,17 @@ public struct JunoLiveUIView: View {
                             touched = [:]
                             checks = [:]
                         } label: {
-                            Label("Reset", image: JunoIcon.rotateCcw.assetName(.regular))
-                                .font(.subheadline)
+                            HStack(spacing: 6) {
+                                JunoIconView(.rotateCcw, size: 13)
+                                Text("Reset")
+                            }
+                            .font(.subheadline)
                         }
                         .buttonStyle(.borderless)
                         .foregroundStyle(Color.junoSecondaryInk)
                         .transition(.opacity)
                     }
+                }
                 }
                 if spec.ui.isEmpty && (spec.streaming || streaming) {
                     VStack(alignment: .leading, spacing: 10) {
@@ -273,6 +278,14 @@ struct LiveNodeView: View {
             }
         case .button(let button):
             LiveButtonView(button: button, context: context)
+        case .steps(let steps):
+            LiveStepsView(steps: steps, context: context)
+        case .quiz(let quiz):
+            LiveQuizView(quiz: quiz, context: context)
+        case .callout(let callout):
+            LiveCalloutView(callout: callout, context: context)
+        case .timeline(let timeline):
+            LiveTimelineView(timeline: timeline, context: context)
         }
     }
 }
@@ -586,7 +599,7 @@ struct LiveMetricView: View {
                     .foregroundStyle(Color.junoSecondaryInk)
             }
             Text(context.text(value, metric.format, unit: metric.unit, mode: .metric))
-                .font(.system(size: metric.emphasis ? 34 : 22, weight: .medium))
+                .junoFont(size: metric.emphasis ? 34 : 22, relativeTo: metric.emphasis ? .largeTitle : .title2, weight: .medium)
                 .monospacedDigit()
                 .junoInk()
                 .contentTransition(.numericText())
@@ -664,8 +677,8 @@ struct LiveTableView: View {
                 GridRow {
                     ForEach(table.columns.indices, id: \.self) { ci in
                         Text(table.columns[ci].label)
-                            .font(.subheadline)
-                            .foregroundStyle(Color.junoSecondaryInk)
+                            .font(.system(.subheadline, weight: table.highlight == ci ? .medium : .regular))
+                            .foregroundStyle(table.highlight == ci ? Color.junoForeground : Color.junoSecondaryInk)
                             .gridColumnAlignment(numeric[ci] ? .trailing : .leading)
                             .padding(.bottom, 8)
                     }
@@ -674,13 +687,18 @@ struct LiveTableView: View {
                 ForEach(cells.indices, id: \.self) { ri in
                     GridRow {
                         ForEach(table.columns.indices, id: \.self) { ci in
+                            let lead = table.rowHeader && ci == 0
                             Text(context.text(cells[ri][ci], table.columns[ci].format, unit: table.columns[ci].unit))
-                                // The first column takes the slack, so the table spans the reply.
-                                .frame(maxWidth: ci == 0 ? .infinity : nil, alignment: .leading)
-                                .font(.subheadline)
+                                // The first column takes the slack, so the table spans the reply;
+                                // a comparison spreads its columns instead.
+                                .frame(maxWidth: (ci == 0 && !table.rowHeader) || (table.rowHeader && ci > 0) ? .infinity : nil, alignment: .leading)
+                                .font(.system(.subheadline, weight: lead ? .medium : .regular))
                                 .monospacedDigit()
-                                .junoInk()
+                                .foregroundStyle(lead || table.highlight == ci || !table.rowHeader ? Color.junoForeground : Color.junoForeground.opacity(0.85))
+                                .fixedSize(horizontal: false, vertical: true)
                                 .padding(.vertical, 8)
+                                .background(table.highlight == ci ? Color.junoForeground.opacity(0.035) : .clear)
+                                .accessibilityAddTraits(lead ? .isHeader : [])
                         }
                     }
                     if ri < cells.count - 1 {
@@ -714,7 +732,7 @@ struct LiveButtonView: View {
         } label: {
             HStack(spacing: 6) {
                 Text(copied ? "Copied" : button.label)
-                JunoIconView(prompt != nil ? .external : (copied ? .check : .copy), size: 13)
+                JunoIconView(prompt != nil ? .externalLink : (copied ? .check : .copy), size: 13)
                     .foregroundStyle(Color.junoSecondaryInk)
             }
             .font(.subheadline)

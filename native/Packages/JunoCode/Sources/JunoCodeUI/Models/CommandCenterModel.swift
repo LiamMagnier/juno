@@ -108,7 +108,7 @@ public final class CommandCenterModel {
         guard let action = command.action, isBusy else { return nil }
         switch action {
         case .compact, .rewind, .fork, .initProject, .review:
-            return "Available when Juno finishes"
+            return "Available when Alevr finishes"
         default:
             return nil
         }
@@ -142,7 +142,7 @@ public final class CommandCenterModel {
             return false
         case let .success(intent):
             if intent.needsIdleSession, host.commandSessionIsBusy {
-                host.commandNotice("/\(command.name) is available when Juno finishes.")
+                host.commandNotice("/\(command.name) is available when Alevr finishes.")
                 return false
             }
             Task { await SlashCommandHandlers.perform(intent, host: host, center: self, view: view) }
@@ -192,7 +192,7 @@ public final class CommandCenterModel {
             runs: 0
         )
         loops.append(loop)
-        host.commandNotice(loop.line + (loop.isPacedByJuno ? " (Juno's pace)." : "."))
+        host.commandNotice(loop.line + (loop.isPacedByJuno ? " (Alevr's pace)." : "."))
         loopTasks[loop.id] = Task { [weak self, weak host] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(pace))

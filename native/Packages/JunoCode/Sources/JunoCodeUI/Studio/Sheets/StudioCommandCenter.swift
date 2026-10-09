@@ -198,7 +198,7 @@ struct StudioContextSheet: View {
     var body: some View {
         StudioSheetFrame(
             title: "Context",
-            subtitle: "What the model reads on each turn, by part. Each part is Juno's estimate, scaled to the size the provider last reported.",
+            subtitle: "What the model reads on each turn, by part. Each part is Alevr's estimate, scaled to the size the provider last reported.",
             done: done
         ) {
             if let breakdown {
@@ -228,7 +228,7 @@ struct StudioContextBreakdownView: View {
             Section {
                 StudioSheetRow(
                     label: headline,
-                    note: breakdown.compactionThreshold.map { "Juno compacts at \(StudioFormat.tokens($0)) tokens." }
+                    note: breakdown.compactionThreshold.map { "Alevr compacts at \(StudioFormat.tokens($0)) tokens." }
                 )
             }
             Section("By part") {
@@ -410,7 +410,7 @@ struct StudioCommandGoalSheet: View {
     private var goal: SessionGoal? { controller.session.goal }
 
     var body: some View {
-        StudioSheetFrame(title: "Goal", subtitle: "What Juno works toward until it is met.", done: done) {
+        StudioSheetFrame(title: "Goal", subtitle: "What Alevr works toward until it is met.", done: done) {
             Form {
                 if let goal {
                     Section {
@@ -458,7 +458,7 @@ struct StudioCommandGoalSheet: View {
                     }
                 } else {
                     Section {
-                        Text("No goal. Type /goal and what you want done, and Juno keeps working until it is met.")
+                        Text("No goal. Type /goal and what you want done, and Alevr keeps working until it is met.")
                             .foregroundStyle(Studio.Ink.tertiary)
                     }
                 }
@@ -503,13 +503,13 @@ struct StudioVerifySheet: View {
     var body: some View {
         StudioSheetFrame(
             title: "Checks",
-            subtitle: "The checks Juno found in this project. Running one asks first, as any command does.",
+            subtitle: "The checks Alevr found in this project. Running one asks first, as any command does.",
             done: done
         ) {
             Form {
                 Section {
                     if controller.testSuggestions.isEmpty {
-                        Text("Juno found no checks here.").foregroundStyle(Studio.Ink.tertiary)
+                        Text("Alevr found no checks here.").foregroundStyle(Studio.Ink.tertiary)
                     }
                     ForEach(controller.testSuggestions) { suggestion in
                         HStack {
@@ -546,7 +546,7 @@ struct StudioResumeSheet: View {
     }
 
     var body: some View {
-        StudioSheetFrame(title: "Sessions", subtitle: "Open another session. One Juno was stopped in offers to resume it there.", done: done) {
+        StudioSheetFrame(title: "Sessions", subtitle: "Open another session. One Alevr was stopped in offers to resume it there.", done: done) {
             VStack(spacing: 0) {
                 TextField("Search sessions", text: $query)
                     .textFieldStyle(.roundedBorder)
@@ -602,13 +602,13 @@ struct StudioMemorySheet: View {
         [
             File(path: "~/.juno/JUNO.md", note: "Yours, in every project. Opens in your editor.", isYours: true),
             File(path: "AGENTS.md", note: "This project's instructions for any agent.", isYours: false),
-            File(path: "JUNO.md", note: "This project's instructions for Juno.", isYours: false),
-            File(path: "CLAUDE.md", note: "This project's instructions for Claude Code, read by Juno too.", isYours: false),
+            File(path: "JUNO.md", note: "This project's instructions for Alevr.", isYours: false),
+            File(path: "CLAUDE.md", note: "This project's instructions for Claude Code, read by Alevr too.", isYours: false),
         ]
     }
 
     var body: some View {
-        StudioSheetFrame(title: "Instruction files", subtitle: "What Juno reads before it works. They are context, never permissions.", done: done) {
+        StudioSheetFrame(title: "Instruction files", subtitle: "What Alevr reads before it works. They are context, never permissions.", done: done) {
             Form {
                 Section {
                     ForEach(files) { file in

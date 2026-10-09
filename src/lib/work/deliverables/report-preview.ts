@@ -110,7 +110,7 @@
  *   rewriting the span's own delimiters, and a code span whose text this
  *   previewer edited is a worse lie than a stray `$$` inside one.
  *
- *   A fence whose info string is `mermaid` or one of the `juno-visual` aliases
+ *   A fence whose info string is `mermaid`, `live-ui` or one of the old `juno-visual` aliases
  *   is rendered by the chat renderer as a diagram or a card rather than as
  *   code, where `renderBlocksHtml` would have shown a `<pre>`. That is the
  *   renderer the product uses for markdown everywhere; forcing it back to code

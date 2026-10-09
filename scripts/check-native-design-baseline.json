@@ -51,6 +51,17 @@
       "native/macOS/JunoDesktop/App/DesktopCodeWorkspace.swift": 1
     }
   },
+  "symbols": {
+    "total": 6,
+    "modules": {
+      "JunoNativeKit (shared)": 6
+    },
+    "files": {
+      "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeResearchLiveView.swift": 1,
+      "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/LiveUI/JunoLiveUIParts.swift": 3,
+      "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/LiveUI/JunoLiveUIView.swift": 2
+    }
+  },
   "targets": {
     "total": 172,
     "modules": {

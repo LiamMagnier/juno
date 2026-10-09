@@ -347,6 +347,14 @@ struct DesktopRunLine: View {
                         .lineLimit(1)
                 }
             }
+            // The disclosure chevron rides on the line's words — "Thought for
+            // 6s ›" — as ChatGPT for Mac and Finder's disclosure rows put it,
+            // not stranded at the far edge of the column.
+            if settled {
+                JunoIconView(.chevronRight, size: 10, weight: .bold)
+                    .foregroundStyle(hovered ? Color.junoForeground : Color.junoSecondaryInk)
+                    .rotationEffect(.degrees(expanded ? 90 : 0))
+            }
             if !message.sources.isEmpty {
                 SourceFaviconStack(sources: message.sources, size: 16, overlap: 4, ring: .junoCanvas, showsMore: true)
             }
@@ -356,12 +364,7 @@ struct DesktopRunLine: View {
                     .accessibilityHidden(true)
             }
             Spacer(minLength: JunoSpace.snug)
-            if settled {
-                JunoIconView(.chevronRight, size: 10, weight: .bold)
-                    .foregroundStyle(hovered ? Color.junoForeground : Color.junoSecondaryInk)
-                    .rotationEffect(.degrees(expanded ? 90 : 0))
-                    .padding(.trailing, expanded ? 36 : 0)
-            } else if elapsed >= NativeRunPacing.timerAfter {
+            if !settled, elapsed >= NativeRunPacing.timerAfter {
                 Text(NativeToolPresentation.clock(seconds: Int(elapsed)))
                     .junoFont(size: 12, relativeTo: .footnote, design: .monospaced)
                     .monospacedDigit()

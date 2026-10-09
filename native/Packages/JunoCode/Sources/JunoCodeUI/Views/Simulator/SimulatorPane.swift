@@ -60,7 +60,7 @@ public struct SimulatorPane: View {
 
             if model.isSharingFrameWithModel {
                 // Raised before the capture leaves the Mac, not after.
-                JunoIconLabel("Juno is looking", icon: .eyeOff)
+                JunoIconLabel("Alevr is looking", icon: .eyeOff)
                     .font(.caption2)
                     .foregroundStyle(Color.junoAccent)
                     .accessibilityIdentifier("juno.code.simulator-ai-viewing")
@@ -89,7 +89,7 @@ public struct SimulatorPane: View {
     private var controlOwnerBadge: some View {
         switch model.lease.owner {
         case .juno:
-            JunoIconLabel("Juno is controlling", icon: .work)
+            JunoIconLabel("Alevr is controlling", icon: .work)
                 .font(.caption2)
                 .foregroundStyle(Color.junoAccent)
         case .user:
@@ -167,7 +167,7 @@ public struct SimulatorPane: View {
             Button("Clean and Build", role: .destructive) { model.run(clean: true) }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This deletes Juno's build products for this project and rebuilds from scratch. Xcode's own derived data is not touched.")
+            Text("This deletes Alevr's build products for this project and rebuilds from scratch. Xcode's own derived data is not touched.")
         }
     }
 

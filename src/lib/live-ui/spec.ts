@@ -28,7 +28,12 @@ export const SPEC_LIMITS = {
   links: 40,
   stops: 25,
   checklist: 40,
+  hints: 5,
   options: 12,
+  steps: 12,
+  questions: 10,
+  quizOptions: 6,
+  timeline: 20,
   text: 2000,
   label: 120,
 } as const;
@@ -66,6 +71,27 @@ export interface LiveExplorerPart {
   at?: [number, number];
 }
 
+export interface LiveStep {
+  title: string;
+  summary?: string;
+  detail?: string;
+  /** One sentence on what to look at in this step. */
+  notice?: string;
+  /** The step's visual area: ordinary Live UI components. */
+  ui: LiveComponent[];
+}
+
+export interface LiveQuizQuestion {
+  question: string;
+  options: { label: string; explanation?: string }[];
+  /** Index of the right option. */
+  answer: number;
+  explanation?: string;
+  hint?: string;
+}
+
+export type LiveCalloutTone = "insight" | "tip" | "warning" | "note";
+
 export type LiveComponent =
   | (Base & { type: "row"; children: LiveComponent[]; pending: boolean })
   | (Base & { type: "grid"; columns: number; children: LiveComponent[]; pending: boolean })
@@ -87,11 +113,39 @@ export type LiveComponent =
       /** An x to mark with a rule (a cutoff, "today"); the readout rests there. */
       mark?: string;
     })
-  | (Base & { type: "table"; rows: string; columns: { label: string; value: string; format?: LiveFormat; unit?: string }[] })
+  | (Base & {
+      type: "table";
+      rows: string;
+      columns: { label: string; value: string; format?: LiveFormat; unit?: string }[];
+      /** The first column names each row (a comparison's aspect column). */
+      rowHeader?: boolean;
+      /** A column index to set apart (the recommended option). */
+      highlight?: number;
+    })
+  | (Base & { type: "steps"; title?: string; steps: LiveStep[]; takeaway?: string })
+  | (Base & { type: "quiz"; title?: string; questions: LiveQuizQuestion[] })
+  | (Base & { type: "callout"; tone: LiveCalloutTone; title?: string; text: string; more?: string })
+  | (Base & { type: "timeline"; title?: string; items: { label: string; detail?: string; time?: string }[] })
   | (Base & { type: "explorer"; title?: string; parts: LiveExplorerPart[]; links: [string, string][] })
   | (Base & { type: "stops"; title?: string; stops: { name: string; time?: string; note?: string; query: string }[] })
   | (Base & { type: "checklist"; id: string; title?: string; items: { label: string; note?: string }[] })
   | (Base & { type: "button"; label: string; prompt?: string; copy?: string })
+  /**
+   * An exercise the reader answers in the view (ChatGPT's practice cards): a
+   * statement, a box to write in (a code editor when `language` is set),
+   * hints revealed one at a time, and a send that posts the answer as the
+   * user's next message. It never carries a solution.
+   */
+  | (Base & {
+      type: "exercise";
+      id: string;
+      title: string;
+      tag?: string;
+      prompt: string;
+      placeholder?: string;
+      language?: string;
+      hints: string[];
+    })
   /** A leaf that has not finished arriving. */
   | (Base & { type: "pending" });
 
@@ -131,15 +185,27 @@ const TYPE_ALIASES: Record<string, string> = {
   parts: "explorer",
   diagram: "explorer",
   todo: "checklist",
+  practice: "exercise",
+  question: "exercise",
+  answer: "exercise",
   action: "button",
   stack: "section",
   group: "section",
   card: "section",
   columns: "row",
   bar: "progress",
+  walkthrough: "steps",
+  guide: "steps",
+  lesson: "steps",
+  "key-idea": "callout",
+  keyidea: "callout",
+  insight: "callout",
+  process: "timeline",
+  check: "quiz",
 };
 
 const LAYOUTS = new Set(["row", "grid", "section"]);
+const TONES = new Set(["insight", "tip", "warning", "note"]);
 
 function str(v: LiveJSON | undefined, max: number = SPEC_LIMITS.label): string | undefined {
   if (typeof v === "string") {
@@ -375,10 +441,125 @@ function component(
         if (columns.length >= SPEC_LIMITS.tableColumns) break;
         if (!isRecord(c)) continue;
         const value = expr(c.value ?? c.key);
-        if (value) columns.push({ label: str(c.label) ?? value, value, format: fmt(c.format), unit: str(c.unit, 16) });
+        // An empty label is a deliberate blank (a comparison's aspect column).
+        if (value) columns.push({ label: str(c.label) ?? (c.label === "" ? "" : value), value, format: fmt(c.format), unit: str(c.unit, 16) });
       }
       if (!rows || columns.length === 0) return null;
-      return { key, type, rows, columns };
+      const table: Extract<LiveComponent, { type: "table" }> = { key, type, rows, columns };
+      if (raw.rowHeader === true) table.rowHeader = true;
+      const hi = num(raw.highlight);
+      if (hi !== undefined && Number.isInteger(hi) && hi >= 0 && hi < columns.length) table.highlight = hi;
+      return table;
+    }
+    case "steps": {
+      if (depth >= SPEC_LIMITS.nesting) return null;
+      const list = Array.isArray(raw.steps) ? raw.steps : Array.isArray(raw.items) ? raw.items : [];
+      const steps: LiveStep[] = [];
+      list.forEach((s, index) => {
+        if (steps.length >= SPEC_LIMITS.steps || !isRecord(s)) return;
+        const title = str(s.title ?? s.label);
+        if (!title) return;
+        const kids = Array.isArray(s.ui) ? s.ui : Array.isArray(s.children) ? s.children : [];
+        const step: LiveStep = { title, ui: components(kids, `${key}.${index}`, depth + 1, open, counter) };
+        const summary = str(s.summary ?? s.text ?? s.body, SPEC_LIMITS.text);
+        const detail = str(s.detail, SPEC_LIMITS.text);
+        const notice = str(s.notice, 400);
+        if (summary) step.summary = summary;
+        if (detail) step.detail = detail;
+        if (notice) step.notice = notice;
+        steps.push(step);
+      });
+      if (steps.length === 0) return null;
+      const out: Extract<LiveComponent, { type: "steps" }> = { key, type, steps };
+      const title = str(raw.title);
+      const takeaway = str(raw.takeaway, 400);
+      if (title) out.title = title;
+      if (takeaway) out.takeaway = takeaway;
+      return out;
+    }
+    case "quiz": {
+      const list = Array.isArray(raw.questions) ? raw.questions : raw.question !== undefined ? [raw] : [];
+      const questions: LiveQuizQuestion[] = [];
+      for (const q of list) {
+        if (questions.length >= SPEC_LIMITS.questions) break;
+        if (!isRecord(q)) continue;
+        const question = str(q.question ?? q.q, 500);
+        const opts = Array.isArray(q.options) ? q.options : [];
+        const options: LiveQuizQuestion["options"] = [];
+        let flagged = -1;
+        for (const o of opts) {
+          if (options.length >= SPEC_LIMITS.quizOptions) break;
+          if (typeof o === "string" || typeof o === "number") {
+            const label = str(o, 300);
+            if (label) options.push({ label });
+          } else if (isRecord(o)) {
+            const label = str(o.label ?? o.text, 300);
+            if (!label) continue;
+            const option: { label: string; explanation?: string } = { label };
+            const why = str(o.explanation ?? o.why, 600);
+            if (why) option.explanation = why;
+            if (o.correct === true && flagged < 0) flagged = options.length;
+            options.push(option);
+          }
+        }
+        let answer = -1;
+        const a = q.answer;
+        if (typeof a === "number" && Number.isInteger(a) && a >= 0 && a < options.length) answer = a;
+        else if (typeof a === "string" && a.trim()) {
+          const want = a.trim().toLowerCase();
+          answer = options.findIndex((o) => o.label.toLowerCase() === want);
+        }
+        if (answer < 0) answer = flagged;
+        if (!question || options.length < 2 || answer < 0) continue;
+        const item: LiveQuizQuestion = { question, options, answer };
+        const explanation = str(q.explanation, 800);
+        const hint = str(q.hint, 400);
+        if (explanation) item.explanation = explanation;
+        if (hint) item.hint = hint;
+        questions.push(item);
+      }
+      if (questions.length === 0) return null;
+      const out: Extract<LiveComponent, { type: "quiz" }> = { key, type, questions };
+      const title = list === raw.questions ? str(raw.title) : undefined;
+      if (title) out.title = title;
+      return out;
+    }
+    case "callout": {
+      const text = str(raw.text ?? raw.content ?? raw.body, SPEC_LIMITS.text);
+      if (!text) return null;
+      const toneRaw = typeof raw.tone === "string" ? raw.tone.trim().toLowerCase() : "";
+      const tone = (TONES.has(toneRaw) ? toneRaw : TONES.has(typeRaw) ? typeRaw : "insight") as LiveCalloutTone;
+      const out: Extract<LiveComponent, { type: "callout" }> = { key, type, tone, text };
+      const title = str(raw.title);
+      const more = str(raw.more ?? raw.detail, SPEC_LIMITS.text);
+      if (title) out.title = title;
+      if (more) out.more = more;
+      return out;
+    }
+    case "timeline": {
+      const list = Array.isArray(raw.items) ? raw.items : Array.isArray(raw.steps) ? raw.steps : [];
+      const items: Extract<LiveComponent, { type: "timeline" }>["items"] = [];
+      for (const it of list) {
+        if (items.length >= SPEC_LIMITS.timeline) break;
+        if (typeof it === "string" && it.trim()) {
+          items.push({ label: it.trim().slice(0, 200) });
+          continue;
+        }
+        if (!isRecord(it)) continue;
+        const label = str(it.label ?? it.title ?? it.name, 200);
+        if (!label) continue;
+        const item: { label: string; detail?: string; time?: string } = { label };
+        const detail = str(it.detail ?? it.description ?? it.text, 600);
+        const time = str(it.time ?? it.when ?? it.date, 40);
+        if (detail) item.detail = detail;
+        if (time) item.time = time;
+        items.push(item);
+      }
+      if (items.length === 0) return null;
+      const out: Extract<LiveComponent, { type: "timeline" }> = { key, type, items };
+      const title = str(raw.title);
+      if (title) out.title = title;
+      return out;
     }
     case "explorer": {
       const partsRaw = Array.isArray(raw.parts) ? raw.parts : [];
@@ -463,6 +644,23 @@ function component(
       const idRaw = typeof raw.id === "string" ? raw.id.trim() : "";
       const id = IDENT.test(idRaw) ? idRaw : `checklist_${key.replace(/\./g, "_")}`;
       return { key, type, id, title: str(raw.title), items };
+    }
+    case "exercise": {
+      const title = str(raw.title ?? raw.label, 200);
+      const prompt = str(raw.prompt ?? raw.question ?? raw.text, SPEC_LIMITS.text);
+      if (!title || !prompt) return null;
+      const list = Array.isArray(raw.hints) ? raw.hints : raw.hint !== undefined ? [raw.hint] : [];
+      const hints: string[] = [];
+      for (const h of list) {
+        if (hints.length >= SPEC_LIMITS.hints) break;
+        const hint = str(h, 600);
+        if (hint) hints.push(hint);
+      }
+      const languageRaw = str(raw.language ?? raw.lang, 20)?.toLowerCase();
+      const language = languageRaw && /^[a-z0-9+#-]+$/.test(languageRaw) ? languageRaw : undefined;
+      const idRaw = typeof raw.id === "string" ? raw.id.trim() : "";
+      const id = IDENT.test(idRaw) ? idRaw : `exercise_${key.replace(/\./g, "_")}`;
+      return { key, type, id, title, tag: str(raw.tag ?? raw.kind, 40), prompt, placeholder: str(raw.placeholder, 200), language, hints };
     }
     case "button": {
       const label = str(raw.label);
@@ -571,6 +769,7 @@ export function liveInputs(ui: readonly LiveComponent[]): LiveInput[] {
   const walk = (list: readonly LiveComponent[]) => {
     for (const c of list) {
       if (c.type === "row" || c.type === "grid" || c.type === "section") walk(c.children);
+      else if (c.type === "steps") for (const s of c.steps) walk(s.ui);
       else if (["slider", "number", "stepper", "select", "toggle", "date", "input"].includes(c.type)) out.push(c as LiveInput);
     }
   };

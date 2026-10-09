@@ -75,7 +75,7 @@ struct DesktopProjectFoldersSection: View {
                     Button {
                         creating = true
                     } label: {
-                        Label("New folder", systemImage: "folder.badge.plus")
+                        Label("New folder", image: JunoIcon.folderPlus.assetName)
                     }
                     .buttonStyle(.borderless)
                     .foregroundStyle(Color.junoSecondaryInk)
@@ -119,7 +119,7 @@ struct DesktopProjectFoldersSection: View {
             push(.project(folder.id))
         } label: {
             HStack(spacing: JunoSpace.snug) {
-                Image(systemName: "folder")
+                Image(JunoIcon.projects.assetName)
                     .foregroundStyle(Color.junoSecondaryInk)
                     .frame(width: 20)
                     .accessibilityHidden(true)
@@ -134,7 +134,7 @@ struct DesktopProjectFoldersSection: View {
                         .lineLimit(1)
                 }
                 Spacer(minLength: JunoSpace.tight)
-                Image(systemName: "chevron.right")
+                Image(JunoIcon.chevronRight.assetName)
                     .foregroundStyle(Color.junoTertiaryInk)
                     .accessibilityHidden(true)
             }
@@ -326,7 +326,7 @@ struct DesktopMoveProjectSheet: View {
             choice = .some(destination.projectID)
         } label: {
             HStack(spacing: JunoSpace.snug) {
-                Image(systemName: destination.projectID == nil ? "tray" : "folder")
+                Image((destination.projectID == nil ? JunoIcon.box : JunoIcon.projects).assetName)
                     .foregroundStyle(Color.junoSecondaryInk)
                     .frame(width: 18)
                     .accessibilityHidden(true)
@@ -339,7 +339,7 @@ struct DesktopMoveProjectSheet: View {
                 } else if let refusal = destination.refusal {
                     Text(refusal.shortLabel).foregroundStyle(Color.junoSecondaryInk)
                 } else if chosen?.id == destination.id {
-                    Image(systemName: "checkmark")
+                    Image(JunoIcon.check.assetName)
                         .foregroundStyle(Color.junoForeground)
                         .accessibilityLabel("Selected")
                 }

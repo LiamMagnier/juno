@@ -84,8 +84,8 @@ struct DesktopMemorySummaryPanel: View {
                     .padding(.bottom, JunoSpace.snug)
                 } else {
                     Text(project == nil
-                        ? "Juno writes a short summary of what it knows once it has a few things to go on. Everything it remembers is listed below either way."
-                        : "Juno writes this from the chats in this project as you go. Only those chats read it, and they read nothing else Juno remembers about you.")
+                        ? "Alevr writes a short summary of what it knows once it has a few things to go on. Everything it remembers is listed below either way."
+                        : "Alevr writes this from the chats in this project as you go. Only those chats read it, and they read nothing else Alevr remembers about you.")
                         .junoType(.body)
                         .foregroundStyle(Color.junoSecondaryInk)
                         .fixedSize(horizontal: false, vertical: true)
@@ -142,7 +142,7 @@ struct DesktopMemorySummaryPanel: View {
             }
             .buttonStyle(.plain)
             .disabled(page.isRebuilding)
-            .help("Rewrite it from everything Juno remembers")
+            .help("Rewrite it from everything Alevr remembers")
             .accessibilityLabel(hasSummary ? "Rebuild the summary" : "Write the summary")
             Button(action: openActivity) {
                 HStack(spacing: JunoSpace.tight) {
@@ -200,7 +200,7 @@ struct DesktopMemoryPromptDock: View {
     @State private var isHovering = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private static let placeholder = "Tell Juno what to remember, change or forget"
+    private static let placeholder = "Tell Alevr what to remember, change or forget"
 
     private var drafting: Bool { page.draftingInstruction != nil }
 
@@ -478,13 +478,13 @@ struct DesktopMemoryWelcome: View {
                             .strokeBorder(Color.junoBorder, lineWidth: 1)
                     )
                     .accessibilityHidden(true)
-                Text("Juno hasn’t remembered anything yet")
+                Text("Alevr hasn’t remembered anything yet")
                     .junoType(.heading)
                     .foregroundStyle(Color.junoForeground)
                     .multilineTextAlignment(.center)
                     .accessibilityAddTraits(.isHeader)
                     .padding(.top, JunoSpace.regular)
-                Text("As you chat, Juno keeps the details worth carrying over, like your work, your preferences and how you like answers. You can also start it off yourself.")
+                Text("As you chat, Alevr keeps the details worth carrying over, like your work, your preferences and how you like answers. You can also start it off yourself.")
                     .junoType(.body)
                     .foregroundStyle(Color.junoSecondaryInk)
                     .multilineTextAlignment(.center)
@@ -492,7 +492,7 @@ struct DesktopMemoryWelcome: View {
                     .frame(maxWidth: 448)
                     .padding(.top, JunoSpace.tight)
                 HStack(spacing: JunoSpace.snug) {
-                    Button("Tell Juno something") {
+                    Button("Tell Alevr something") {
                         withAnimation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion)) {
                             composing = true
                         }

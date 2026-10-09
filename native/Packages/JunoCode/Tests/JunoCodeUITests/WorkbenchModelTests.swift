@@ -411,7 +411,7 @@ final class WorkbenchModelTests: XCTestCase {
         await workbench.removeWorkspace(id: workspace.id)
 
         let stopped = try await workbench.sessionStore.session(id: session.id)
-        XCTAssertFalse(stopped.status.isActive, "the run kept going in a folder Juno forgot")
+        XCTAssertFalse(stopped.status.isActive, "the run kept going in a folder Alevr forgot")
         XCTAssertTrue(workbench.sessions.contains { $0.id == session.id }, "the session stays in the history")
         XCTAssertNil(workbench.selectedSessionID)
         let reopened = await workbench.controller(for: session.id)
@@ -989,7 +989,7 @@ final class WorkbenchModelTests: XCTestCase {
             try await Task.sleep(nanoseconds: 20_000_000)
         }
 
-        let newer = "let x = 999 // written after Juno\n"
+        let newer = "let x = 999 // written after Alevr\n"
         try newer.write(
             to: workspaceURL.appendingPathComponent(path.value),
             atomically: true,

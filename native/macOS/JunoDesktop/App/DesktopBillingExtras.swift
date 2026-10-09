@@ -227,7 +227,7 @@ struct DesktopCancelSubscriptionSheet: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 if let error = model.cancellationError {
-                    Label(error, systemImage: "exclamationmark.triangle")
+                    Label(error, image: JunoIcon.warning.assetName)
                         .foregroundStyle(Color.junoDestructiveInk)
                 }
                 HStack(spacing: JunoSpace.snug) {

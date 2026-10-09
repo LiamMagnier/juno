@@ -15,8 +15,8 @@ import Testing
 /// draws is the contract's, and that the Mac's own additions are exactly the
 /// ones the register names.
 @Suite struct DesktopShellContractTests {
-    @Test func theContractIsVersionOneWithADigest() {
-        #expect(JunoShellContract.version == 1)
+    @Test func theContractIsVersionTwoWithADigest() {
+        #expect(JunoShellContract.version == 2)
         #expect(JunoShellContract.digest.count == 64)
     }
 
@@ -41,7 +41,8 @@ import Testing
     @Test func chatsRowsAreTheContractsWithNoneDropped() {
         #expect(DesktopDestination.sidebarCases.count == JunoShellChatSidebar.destinations.count)
         #expect(DesktopDestination.sidebarCases.compactMap(\.shell) == JunoShellChatSidebar.destinations)
-        #expect(DesktopDestination.sidebarCases == [.library, .projects, .artifacts, .agents])
+        // Contract v2 (the V3 shell): Projects, Library, Customize.
+        #expect(DesktopDestination.sidebarCases == [.projects, .library, .connections])
         #expect(DesktopDestination.sidebarCases.map(\.label) == JunoShellChatSidebar.destinations.map(\.label))
         #expect(DesktopDestination.sidebarCases.map(\.junoIcon) == JunoShellChatSidebar.destinations.map(\.icon))
     }
@@ -50,7 +51,9 @@ import Testing
         let items = JunoShellChatSidebar.More.items
         #expect(DesktopDestination.moreCases.count == items.count)
         #expect(DesktopDestination.moreCases.compactMap(\.shell) == items.map(\.destination))
-        #expect(DesktopDestination.moreCases == [.assistants, .skills, .automations])
+        // Contract v2 empties More: the archive is its only entry, in the
+        // account menu.
+        #expect(DesktopDestination.moreCases.isEmpty)
         #expect(JunoShellChatSidebar.More.archivedTitle == "Archived Chats")
         #expect(JunoShellChatSidebar.More.archivedIcon == .archive)
         // Every item is open to every plan today, as on the web.
@@ -60,12 +63,17 @@ import Testing
     @Test func everyWebDestinationHasAChatPageOrBelongsToCode() {
         for destination in JunoShellDestination.allCases {
             if let page = DesktopDestination(destination) {
-                #expect(page.shell == destination, "\(destination)")
-                #expect(page.label == destination.label, "\(destination)")
-                #expect(page.junoIcon == destination.icon, "\(destination)")
+                // Contract v2 has two names for the one Customize page:
+                // `connections` (/connections) and `accountCustomize`
+                // (/customize). The Mac page answers to the second.
+                let canonical: JunoShellDestination = destination == .connections ? .accountCustomize : destination
+                #expect(page.shell == canonical, "\(destination)")
+                #expect(page.label == canonical.label, "\(destination)")
+                #expect(page.junoIcon == canonical.icon, "\(destination)")
             } else {
-                // Only Code's own rows have no Chat page.
-                #expect(JunoShellCodeSidebar.destinations.contains(destination), "\(destination)")
+                // Only Code's own places have no Chat page: its Customize,
+                // and Pull requests, which v2 moved out of Code's rows.
+                #expect([.customize, .pulls].contains(destination), "\(destination)")
                 #expect(!JunoShellChatSidebar.destinations.contains(destination), "\(destination)")
             }
         }

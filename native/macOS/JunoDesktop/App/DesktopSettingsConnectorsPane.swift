@@ -13,7 +13,7 @@ struct DesktopSettingsConnectorsPane: View {
 
     /// The web's `POLICY_COPY`, in `ACTION_PERMISSION_POLICIES` order.
     static let policies: [(id: String, label: String, description: String)] = [
-        ("always_ask", "Ask every time", "Juno asks before every action in a connected app, including ones that only read."),
+        ("always_ask", "Ask every time", "Alevr asks before every action in a connected app, including ones that only read."),
         ("ask_for_any_change", "Ask before any change", "Reading runs on its own. Anything that writes, sends or deletes waits for you."),
         ("ask_for_important_actions", "Ask for important actions", "Reading and reversible changes (labels, archiving, renaming) run on their own. Anything that leaves your account, deletes, or can’t be classified waits for you."),
         ("allow_selected_low_risk", "Allow what I’ve approved", "Reading runs on its own, and so do the reversible actions you chose to always allow."),
@@ -27,7 +27,7 @@ struct DesktopSettingsConnectorsPane: View {
             } header: {
                 DesktopSettingsGroupHeader(
                     title: "Connected apps",
-                    note: "Turn one off to block everything Juno would do in it, reading included."
+                    note: "Turn one off to block everything Alevr would do in it, reading included."
                 ) {
                     if let openConnections = links.openConnections {
                         DesktopOutlineButton(title: "Browse Apps", action: openConnections)
@@ -40,7 +40,7 @@ struct DesktopSettingsConnectorsPane: View {
             } header: {
                 DesktopSettingsGroupHeader(
                     title: "Permissions",
-                    note: "Juno checks these before every action in a connected app, so a change applies to chats already open."
+                    note: "Alevr checks these before every action in a connected app, so a change applies to chats already open."
                 )
             }
         }
@@ -97,7 +97,7 @@ struct DesktopSettingsConnectorsPane: View {
                     // carries Browse Apps, and one intent gets one button.
                     DesktopSettingRow(
                         title: "No apps connected",
-                        description: "Connect GitHub, your calendar, mail or notes and Juno can work inside them."
+                        description: "Connect GitHub, your calendar, mail or notes and Alevr can work inside them."
                     )
                 } else {
                     ForEach(list) { row in
@@ -114,7 +114,7 @@ struct DesktopSettingsConnectorsPane: View {
         let blocked = settings.blockedConnectors?.contains(row.id) ?? false
         let description: String? = !row.connected
             ? "Not connected. Still blocked if you connect it again."
-            : blocked ? "Blocked. Juno can’t use this app." : row.account
+            : blocked ? "Blocked. Alevr can’t use this app." : row.account
         return LabeledContent {
             if let current = settings.blockedConnectors {
                 Toggle(row.label, isOn: Binding(
@@ -156,13 +156,13 @@ struct DesktopSettingsConnectorsPane: View {
             let lockdown = settings.lockdownMode == true
             let current = Self.policies.first { $0.id == policy }
             DesktopSettingRow(
-                title: "When Juno acts in an app",
+                title: "When Alevr acts in an app",
                 description: lockdown
                     ? "Lockdown is on, so every action is refused. This applies again when you turn it off."
                     : current?.description,
                 status: context.saves.status("policy")
             ) {
-                Picker("When Juno acts in an app", selection: Binding(
+                Picker("When Alevr acts in an app", selection: Binding(
                     get: { policy },
                     set: { value in
                         guard value != policy else { return }

@@ -668,7 +668,7 @@ struct DesktopNewProjectSheet: View {
             }
             creating = false
             guard let id else {
-                failure = model.lastErrorDescription ?? "Juno couldn’t create this project."
+                failure = model.lastErrorDescription ?? "Alevr couldn’t create this project."
                 return
             }
             dismiss()
@@ -695,7 +695,7 @@ struct DesktopNewProjectSheetBody: View {
                     .junoType(.heading)
                     .foregroundStyle(Color.junoForeground)
                     .accessibilityAddTraits(.isHeader)
-                Text("Name it, or leave it blank and Juno will name it from your first chat.")
+                Text("Name it, or leave it blank and Alevr will name it from your first chat.")
                     .junoType(.body)
                     .foregroundStyle(Color.junoSecondaryInk)
                     .fixedSize(horizontal: false, vertical: true)

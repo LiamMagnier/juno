@@ -1,22 +1,25 @@
 import SwiftUI
 
-/// A reply's text run, with its inline learning blocks drawn as blocks.
+/// A reply's text run, with any retired learning blocks drawn as Live UI.
 ///
-/// This is ``JunoMarkdownText`` plus one step: before rendering, the run is split
-/// on `:::learning-card`, `:::quiz`, `:::step-lab` and their siblings, and each
-/// one becomes a figure instead of four lines of literal YAML. Everything
-/// between them is still ordinary Markdown, rendered by the same view as before,
-/// so nothing about a reply *without* a lesson changes.
+/// This is ``JunoMarkdownText`` plus one step for history: replies saved before
+/// Live UI became the one interactive-answer system can carry the old
+/// `:::learning-card`, `:::quiz`, `:::step-lab` (and sibling) blocks. Before
+/// rendering, the run is split on them and each one is converted to a Live UI
+/// view (``JunoLiveUILegacy``) instead of showing as literal YAML. Models are no
+/// longer taught these blocks; new replies carry ```` ```live-ui ```` fences,
+/// which ``JunoMarkdownText`` draws itself. Everything else is ordinary
+/// Markdown, so a reply without an old block renders exactly as before.
 ///
 /// It is a separate view rather than a flag on ``JunoMarkdownText`` because only
 /// the chat transcript should do this. An artifact's Markdown preview, a Code
 /// session's transcript and the memory screen all render model text too, and a
 /// `:::quiz` appearing in a source file is source, not a lesson.
 public struct JunoLessonText: View {
-    /// A run of the reply: either prose or one lesson.
+    /// A run of the reply: prose, or one old block as its Live UI source.
     enum Segment: Sendable {
         case markdown(String)
-        case block(JunoLearningBlocks.Parsed)
+        case live(String)
     }
 
     private let segments: [Segment]
@@ -52,8 +55,9 @@ public struct JunoLessonText: View {
                     JunoMarkdownText(text, streaming: streaming && index == lastMarkdownIndex)
                         .environment(\.junoFindHighlight, find?.shifted(by: bases[safe: index] ?? 0))
                         .junoStreamRevealScope(isLast: index == segments.count - 1)
-                case .block(let parsed):
-                    JunoLearningBlockView(parsed: parsed, messageStreaming: streaming)
+                case .live(let source):
+                    // Legacy, history only: the old block as the view it maps to.
+                    JunoLiveUIView(source: source, streaming: false)
                         .junoStreamBlockReveal()
                 }
             }
@@ -104,7 +108,7 @@ public struct JunoLessonText: View {
         var cursor = 0
         for block in blocks {
             append(JunoLineScanner.substring(of: source, fromUTF16: cursor, toUTF16: block.start), to: &segments)
-            segments.append(.block(block))
+            segments.append(.live(JunoLiveUILegacy.source(for: block)))
             cursor = block.end
         }
         append(

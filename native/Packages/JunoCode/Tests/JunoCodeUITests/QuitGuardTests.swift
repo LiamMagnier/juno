@@ -27,7 +27,7 @@ final class QuitGuardTests: XCTestCase {
             QuitGuard.decision(activeRuns: 1),
             .ask(
                 message: "1 run is working. Quit and stop it?",
-                detail: "Juno can resume a stopped run when you open it again: it carries on from where it stopped."
+                detail: "Alevr can resume a stopped run when you open it again: it carries on from where it stopped."
             )
         )
         guard case let .ask(message, _) = QuitGuard.decision(activeRuns: 2) else {

@@ -380,10 +380,10 @@ final class DesktopSettingsContext {
             "Loading your account settings…"
         case .offline:
             DesktopStatusCopy(subject: "settings", singular: "setting")
-                .humanized(settingsModel.lastErrorDescription, fallback: "Your settings will appear once Juno reconnects.")
+                .humanized(settingsModel.lastErrorDescription, fallback: "Your settings will appear once Alevr reconnects.")
         case .failed:
             DesktopStatusCopy(subject: "settings", singular: "setting")
-                .humanized(settingsModel.lastErrorDescription, fallback: "Juno could not load your settings.")
+                .humanized(settingsModel.lastErrorDescription, fallback: "Alevr could not load your settings.")
         case .ready:
             "Account settings have not finished synchronizing."
         }

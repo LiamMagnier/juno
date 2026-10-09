@@ -176,7 +176,7 @@ final class StudioRunMonitorTests: XCTestCase {
         monitor.observeRuns([entry(.working)])
         monitor.observeRuns([entry(.needsYou, reason: .needsYou, approval: approval())])
         XCTAssertEqual(sink.posted.filter { $0.delay == nil }.map(\.category), [.needsApproval],
-                       "a different session waiting on the reader speaks even with Juno in front")
+                       "a different session waiting on the reader speaks even with Alevr in front")
         monitor.observeRuns([entry(.working)])
         monitor.observeRuns([entry(.readyForReview, reason: .doneChecked)])
         XCTAssertEqual(sink.posted.filter { $0.delay == nil }.map(\.category), [.needsApproval],
@@ -291,7 +291,7 @@ final class StudioRunMonitorTests: XCTestCase {
         )
         XCTAssertEqual(calls.list, ["open s1", "open s1"])
         await monitor.handle(actionIdentifier: CodeNotificationAction.allowOnce.rawValue, userInfo: stranger, text: nil)
-        XCTAssertEqual(calls.list, ["open s1", "open s1", "allow s1 a2"], "the banner Juno posted for it does")
+        XCTAssertEqual(calls.list, ["open s1", "open s1", "allow s1 a2"], "the banner Alevr posted for it does")
     }
 
     /// A screen card shows the frame with the target marked and keeps the

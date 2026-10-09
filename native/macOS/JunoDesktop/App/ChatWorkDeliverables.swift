@@ -347,7 +347,7 @@ enum ChatWorkFileSaving {
     /// the legacy window's words.
     static let unvalidatedTitle = "This artifact has not been validated"
     static let unvalidatedMessage =
-        "Juno verified the bytes but the export validator has not confirmed that this file opens. Save it only if you are ready to check it yourself."
+        "Alevr verified the bytes but the export validator has not confirmed that this file opens. Save it only if you are ready to check it yourself."
 
     @MainActor
     static func save(

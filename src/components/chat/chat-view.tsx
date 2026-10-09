@@ -76,7 +76,6 @@ import { ShareDialog } from "@/components/share/share-dialog";
 import { VoiceCallNotices, voiceCallParts } from "@/components/voice/realtime-voice";
 import { resolveModel, type ModelId } from "@/lib/models";
 import { AUTO_MODEL_ID, isAutoModelId } from "@/lib/auto-model";
-import { STEP_LAB_DEMO_MESSAGE } from "@/lib/step-lab-fixture";
 import { PLANS, cheapestPlanWith } from "@/lib/plans";
 import { stripMemoryTags } from "@/lib/message-content";
 import { speechForReply } from "@/lib/chat/tool-run-speech";
@@ -988,27 +987,6 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
     }
     applyFork(forkPayloadRef.current);
   }, [conversationId, applyFork]);
-
-  // "/learn-demo" appends the visual-learning fixture as a local assistant
-  // message — renders every block type without an API call.
-  React.useEffect(() => {
-    const handler = () => {
-      chat.setMessages((prev) => [
-        ...prev,
-        {
-          id: `learn-demo-${prev.length}`,
-          role: "ASSISTANT",
-          content: STEP_LAB_DEMO_MESSAGE,
-          createdAt: new Date().toISOString(),
-          attachments: [],
-        },
-      ]);
-    };
-    window.addEventListener("juno:learning-demo", handler);
-    return () => window.removeEventListener("juno:learning-demo", handler);
-    // chat.setMessages is a stable state setter.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   // Auto-send a prompt passed via the URL (used when starting a chat from a project).
   const autoSentRef = React.useRef(false);

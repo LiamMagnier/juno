@@ -47,19 +47,19 @@ enum DesktopWorkBlocker: Equatable, Sendable, CaseIterable {
     /// state.
     var sentence: String {
         switch self {
-        case .switchedOff: "Juno Work is switched off on this Mac."
-        case .signedOut: "Sign in to let Juno Work use this Mac."
+        case .switchedOff: "Alevr Work is switched off on this Mac."
+        case .signedOut: "Sign in to let Alevr Work use this Mac."
         case .pairing: "This Mac has not finished pairing with your account yet."
         case .nothingAllowed:
-            "Juno Work is on, but nothing has been allowed yet — grant a folder or turn on a capability."
-        case .starting: "Juno Work is starting on this Mac."
+            "Alevr Work is on, but nothing has been allowed yet — grant a folder or turn on a capability."
+        case .starting: "Alevr Work is starting on this Mac."
         }
     }
 
     /// The control that clears this, or nil when there is nothing to press.
     var actionTitle: String? {
         switch self {
-        case .switchedOff: "Turn On Juno Work"
+        case .switchedOff: "Turn On Alevr Work"
         case .nothingAllowed: "Share a Folder…"
         case .signedOut, .pairing, .starting: nil
         }
@@ -76,7 +76,7 @@ enum DesktopWorkBlocker: Equatable, Sendable, CaseIterable {
             "Tasks you start from your phone, the web or this window will be able to run here, "
                 + "using only what you allow. Nothing can run until you allow something below."
         case .nothingAllowed:
-            "Juno Work will be able to read the folder you choose and nothing outside it. "
+            "Alevr Work will be able to read the folder you choose and nothing outside it. "
                 + "Widen or take that back any time in Settings."
         case .signedOut, .pairing, .starting: nil
         }
@@ -726,7 +726,7 @@ final class DesktopWorkHostModel {
         guard shouldServe else {
             if let host = remoteHost {
                 remoteHost = nil
-                Task { await host.deactivate(reason: "Juno Work was switched off on this Mac.") }
+                Task { await host.deactivate(reason: "Alevr Work was switched off on this Mac.") }
             }
             // Said even when there was no host to stop. `start(for:)` leaves the
             // phase at `.announcing`, and a Mac that registers with Work switched

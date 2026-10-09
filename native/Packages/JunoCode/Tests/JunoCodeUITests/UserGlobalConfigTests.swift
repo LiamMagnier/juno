@@ -161,7 +161,7 @@ struct UserGlobalConfigTests {
         #expect(await targets.definition(named: "explorer")?.source == .builtIn, "nor the reader's own explorer")
         let scribe = await targets.definition(named: "scribe")
         #expect(scribe?.source == .custom(path: ".juno/agents/scribe.md"))
-        #expect(scribe?.tools == ["read_file", "grep"], "Claude Code tool names map to Juno's")
+        #expect(scribe?.tools == ["read_file", "grep"], "Claude Code tool names map to Alevr's")
         #expect(scribe?.prompt.contains("Write the docs.") == true)
         #expect(custom.first { $0.targetName == "reviewer" }?.isShadowedByBuiltIn == true)
         #expect(custom.first { $0.targetName == "explorer" }?.isShadowedByBuiltIn == true)

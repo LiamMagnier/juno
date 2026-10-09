@@ -154,6 +154,17 @@ final class LiveUIFixtureTests: XCTestCase {
             o["placed"] = ex.parts.allSatisfy { $0.at != nil }
             o["links"] = ex.links.count
         case .checklist(let cl): o["id"] = cl.id
+        case .steps(let st):
+            o["steps"] = st.steps.map { ["title": $0.title, "notice": $0.notice != nil, "children": $0.ui.map(summarize)] as [String: Any] }
+            o["takeaway"] = st.takeaway != nil
+        case .quiz(let q): o["answers"] = q.questions.map(\.answer)
+        case .callout(let c):
+            o["tone"] = c.tone.rawValue
+            o["more"] = c.more != nil
+        case .timeline(let t): o["items"] = t.items.count
+        case .table(let t):
+            if t.rowHeader { o["rowHeader"] = true }
+            if let h = t.highlight { o["highlight"] = h }
         default: break
         }
         return o

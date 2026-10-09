@@ -401,7 +401,7 @@ private struct EmptyStateSheet: View {
             HStack(alignment: .top, spacing: JunoSpace.section) {
                 JunoEmptyState(
                     title: "Your library is empty",
-                    message: "Files and images you share with Juno appear here automatically.",
+                    message: "Files and images you share with Alevr appear here automatically.",
                     icon: .library,
                     actionLabel: "Refresh",
                     action: {}
@@ -426,7 +426,7 @@ private struct EmptyStateSheet: View {
                 )
                 JunoEmptyState(
                     title: "Sources unavailable",
-                    message: "Juno couldn’t read this project’s sources.",
+                    message: "Alevr couldn’t read this project’s sources.",
                     icon: .triangleAlert,
                     size: .panel
                 )

@@ -301,7 +301,7 @@ struct DesktopResearchClarifyCard: View {
                 JunoIconView(.research, size: 16)
                     .foregroundStyle(Color.junoSecondaryInk)
                     .accessibilityHidden(true)
-                Text("Before Juno starts")
+                Text("Before Alevr starts")
                     .junoFont(size: 15, relativeTo: .body, weight: .semibold)
                     .foregroundStyle(Color.junoForeground)
                     .accessibilityAddTraits(.isHeader)
@@ -360,7 +360,7 @@ struct DesktopResearchClarifyCard: View {
                 .strokeBorder(Color.junoBorder.opacity(0.6), lineWidth: 1)
         )
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Before Juno starts")
+        .accessibilityLabel("Before Alevr starts")
         .accessibilityIdentifier("juno.chat.research-clarify")
     }
 

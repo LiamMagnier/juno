@@ -27,6 +27,13 @@ print(json.dumps({
         "python": platform.python_version(),
         "javascript": (version(["node", "--version"]) or "").lstrip("v") or None,
         "bash": version(["bash", "-c", "echo $BASH_VERSION"]),
+        # Toolchains for chat code blocks (src/lib/exec/snippets.ts), run through bash.
+        "c": version(["gcc", "-dumpfullversion"]),
+        "java": version(["sh", "-c", "java -version 2>&1 | head -1"]),
+        "go": version(["go", "env", "GOVERSION"]),
+        "rust": version(["rustc", "--version"]),
+        "ruby": version(["ruby", "-e", "print RUBY_VERSION"]),
+        "php": version(["php", "-r", "echo PHP_VERSION;"]),
     },
     "pythonPackages": [{"name": name, "version": value} for name, value in packages],
     "network": "none",

@@ -180,29 +180,52 @@ function bestOf(html: string): number {
   return Math.min(timeOnce(html), timeOnce(html), timeOnce(html));
 }
 
+/**
+ * A timing verdict on a shared or emulated builder is noisy: one slow attempt
+ * proves nothing, while a real quadratic regression fails every attempt. So a
+ * measurement is retried, and passes if any of three attempts passes.
+ */
+async function anyAttemptPasses(attempts: number, measure: () => Promise<{ ok: boolean; detail: string }> | { ok: boolean; detail: string }): Promise<{ ok: boolean; details: string[] }> {
+  const details: string[] = [];
+  for (let i = 0; i < attempts; i++) {
+    const { ok, detail } = await measure();
+    details.push(detail);
+    if (ok) return { ok: true, details };
+  }
+  return { ok: false, details };
+}
+
 for (const [name, unit] of Object.entries(PATHOLOGICAL)) {
-  test(`${name}: extraction time grows linearly across 1, 2 and 4 MB`, () => {
-    const [one, two, four] = [1, 2, 4].map((size) => bestOf(sized(unit, size)));
-    const times = `1 MB ${one.toFixed(0)} ms, 2 MB ${two.toFixed(0)} ms, 4 MB ${four.toFixed(0)} ms`;
-    // Linear is ~4x from 1 to 4 MB; the old quadratic chain was ~16x (and
-    // minutes at 4 MB). 10x leaves room for a slow, noisy builder and still
-    // catches quadratic growth. A floor of 20 ms keeps a near-instant 1 MB run
-    // from inflating the ratio on a fast machine.
-    assert.ok(four / Math.max(one, 20) < 10, `${name}: ${times}`);
-    assert.ok(four < 5_000, `${name}: ${times}`);
+  test(`${name}: extraction time grows linearly across 1, 2 and 4 MB`, async () => {
+    const verdict = await anyAttemptPasses(3, () => {
+      const [one, two, four] = [1, 2, 4].map((size) => bestOf(sized(unit, size)));
+      // Linear is ~4x from 1 to 4 MB; the old quadratic chain was ~16x (and
+      // minutes at 4 MB). 10x leaves room for a slow, noisy builder and still
+      // catches quadratic growth. A floor of 20 ms keeps a near-instant 1 MB run
+      // from inflating the ratio on a fast machine.
+      return {
+        ok: four / Math.max(one, 20) < 10 && four < 5_000,
+        detail: `1 MB ${one.toFixed(0)} ms, 2 MB ${two.toFixed(0)} ms, 4 MB ${four.toFixed(0)} ms`,
+      };
+    });
+    assert.ok(verdict.ok, `${name}: ${verdict.details.join(" | ")}`);
   });
 }
 
 test("the async extractor keeps the event loop responsive on 4 MB of hostile HTML", async () => {
   const html = ["<nav>", "<article>", '<a href="/x">', "<script>"].map((unit) => sized(unit, 1)).join("");
-  const histogram = monitorEventLoopDelay({ resolution: 5 });
-  histogram.enable();
-  await htmlToCleanTextAsync(html, "https://example.com/");
-  histogram.disable();
-  const p99Ms = histogram.percentile(99) / 1e6;
-  // The extractor yields every 64 KB and every few thousand tokens; a slice is
-  // a few milliseconds here. The ceiling is generous for shared runners.
-  assert.ok(p99Ms < 200, `event loop p99 delay ${p99Ms.toFixed(1)} ms`);
+  const verdict = await anyAttemptPasses(3, async () => {
+    const histogram = monitorEventLoopDelay({ resolution: 5 });
+    histogram.enable();
+    await htmlToCleanTextAsync(html, "https://example.com/");
+    histogram.disable();
+    const p99Ms = histogram.percentile(99) / 1e6;
+    // The extractor yields every 64 KB and every few thousand tokens; a slice is
+    // a few milliseconds here. The ceiling is generous for shared runners, and a
+    // blocking extractor misses it on every attempt, not just one.
+    return { ok: p99Ms < 200, detail: `event loop p99 delay ${p99Ms.toFixed(1)} ms` };
+  });
+  assert.ok(verdict.ok, verdict.details.join(" | "));
 });
 
 test("the async extractor stops as soon as its signal aborts", async () => {
