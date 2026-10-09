@@ -211,6 +211,11 @@ public enum CodeV2 {
     public struct RunBudget: Codable, Sendable, Hashable {
         public var maxTokens: Int?
         public var maxUsd: Double?
+
+        public init(maxTokens: Int? = nil, maxUsd: Double? = nil) {
+            self.maxTokens = maxTokens
+            self.maxUsd = maxUsd
+        }
     }
 
     public struct RoleRouting: Codable, Sendable, Hashable {
@@ -221,6 +226,24 @@ public enum CodeV2 {
         public var compaction: ModelSelection?
         public var preset: RolePreset
         public var budget: RunBudget?
+
+        public init(
+            orchestrator: ModelSelection,
+            workers: [ModelSelection]? = nil,
+            reviewer: ModelSelection? = nil,
+            explorer: ModelSelection? = nil,
+            compaction: ModelSelection? = nil,
+            preset: RolePreset = .solo,
+            budget: RunBudget? = nil
+        ) {
+            self.orchestrator = orchestrator
+            self.workers = workers
+            self.reviewer = reviewer
+            self.explorer = explorer
+            self.compaction = compaction
+            self.preset = preset
+            self.budget = budget
+        }
     }
 
     /// Short aliases a model or subagent may name. `CodeModelProviderResolver`

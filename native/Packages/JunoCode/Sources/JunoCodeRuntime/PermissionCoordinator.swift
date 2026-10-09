@@ -63,6 +63,12 @@ public actor PermissionCoordinator {
     /// only after this says yes at the moment of the call. Nil trusts the
     /// grants as set (tests, and sessions with no goal store).
     private var taskGrantCheck: (@Sendable (_ goalID: String) async -> Bool)?
+    /// The `auto` mode's model reviewer: when set, a call the ladder would
+    /// ask a person about is decided by it instead, failing closed. Nil asks
+    /// the person, as every mode always has.
+    private var autoReviewer: (any ToolCallReviewing)?
+    /// Told of every reviewer verdict, for the transcript.
+    private var reviewObserver: (@Sendable (AutoReviewRequest, AutoReviewOutcome) -> Void)?
 
     public enum ApprovalUpdate: Sendable {
         case requested(ApprovalRequest)
@@ -99,6 +105,49 @@ public actor PermissionCoordinator {
     /// the files say. What "Always allow" does before it is also written down.
     public func addAllowRule(_ rule: PermissionRule) {
         rules = rules.merging(PermissionRuleSet(allow: [rule]))
+    }
+
+    /// Puts calls that would ask to a model reviewer (the `auto` runtime
+    /// mode), or, with nil, back to the person.
+    public func setAutoReviewer(
+        _ reviewer: (any ToolCallReviewing)?,
+        observer: (@Sendable (AutoReviewRequest, AutoReviewOutcome) -> Void)? = nil
+    ) {
+        autoReviewer = reviewer
+        reviewObserver = observer
+    }
+
+    public var isAutoReviewing: Bool { autoReviewer != nil }
+
+    /// Applies a v2 runtime mode: its ladder, and the reviewer for `auto`.
+    /// `reviewer` is used only when the mode is `auto`.
+    public func setRuntimeMode(
+        _ runtimeMode: CodeV2.RuntimeMode,
+        reviewer: (any ToolCallReviewing)?,
+        observer: (@Sendable (AutoReviewRequest, AutoReviewOutcome) -> Void)? = nil
+    ) {
+        setMode(runtimeMode.permissionMode)
+        if runtimeMode.usesAutoReview, let reviewer {
+            setAutoReviewer(reviewer, observer: observer)
+        } else {
+            setAutoReviewer(nil)
+        }
+    }
+
+    /// Whether the reviewer may decide this call in place of the person. Never
+    /// a destructive action, a tool pinned to always asking, a call one of the
+    /// reader's rules or a hook says to ask about, or screen input.
+    static func reviewerMayDecide(
+        risk: ActionRisk,
+        approvalPolicy: ApprovalPolicy,
+        rule: PermissionRuleDecision?,
+        hook: AgentHookPermission?,
+        toolName: String
+    ) -> Bool {
+        guard risk != .destructive, approvalPolicy == .byRisk else { return false }
+        if rule != nil { return false }
+        if case .ask? = hook { return false }
+        return !ComputerUseToolName.input.contains(toolName)
     }
 
     public func setMode(_ newMode: PermissionMode) {
@@ -306,11 +355,12 @@ public actor PermissionCoordinator {
         // is still in force. Everything from the ruling to the request's
         // registration below runs without another.
         let granted = await grantConfirmed(toolName: toolName, subject: subject, risk: risk, approvalPolicy: approvalPolicy)
+        let rule = effectiveRule(toolName: toolName, subject: subject, granted: granted)
         let ruling = Self.ruling(
             mode: mode,
             risk: risk,
             approvalPolicy: approvalPolicy,
-            rule: effectiveRule(toolName: toolName, subject: subject, granted: granted),
+            rule: rule,
             hook: hookPermission,
             toolName: toolName
         )
@@ -320,6 +370,39 @@ public actor PermissionCoordinator {
         case let .deny(reason):
             return .denied(reason: reason)
         case .requireApproval:
+            if let reviewer = autoReviewer,
+               Self.reviewerMayDecide(
+                   risk: risk, approvalPolicy: approvalPolicy, rule: rule, hook: hookPermission, toolName: toolName
+               )
+            {
+                guard !Task.isCancelled else {
+                    return .denied(reason: "The run was stopped.")
+                }
+                let revision = authorityRevision
+                let request = AutoReviewRequest(
+                    sessionID: sessionID,
+                    toolName: toolName,
+                    summary: summary,
+                    risk: risk,
+                    subject: subject.map(Self.describe)
+                )
+                let outcome = await reviewer.review(request)
+                reviewObserver?(request, outcome)
+                // Fail closed on everything that is not a clear yes given
+                // under the authority that asked: a stop, a lowered mode, a
+                // reviewer switched off meanwhile.
+                guard !Task.isCancelled else { return .denied(reason: "The run was stopped.") }
+                guard revision == authorityRevision, autoReviewer != nil else {
+                    return .denied(reason: "The permission mode changed before the action ran.")
+                }
+                guard outcome.decision.allows else {
+                    let why = outcome.failure.map { "the reviewer could not decide: \($0)" }
+                        ?? outcome.decision.reason
+                        ?? "\(outcome.decision.risk.rawValue) risk"
+                    return .denied(reason: "The auto reviewer declined this action (\(why)).")
+                }
+                return .allowed
+            }
             // A stopped run asks nothing more. `stop()` cancels the run and then
             // denies what is pending, so a request raised after that denial —
             // by a call that was already on its way here — would wait for an
@@ -401,6 +484,15 @@ public actor PermissionCoordinator {
                     suggestedRule: request.suggestedRule
                 )
             )
+        }
+    }
+
+    private static func describe(_ subject: PermissionRuleSubject) -> String {
+        switch subject {
+        case let .command(line): "command: \(line)"
+        case let .path(path): "path: \(path)"
+        case let .paths(paths): "paths: \(paths.joined(separator: ", "))"
+        case let .domain(host): "domain: \(host)"
         }
     }
 

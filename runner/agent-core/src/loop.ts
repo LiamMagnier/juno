@@ -20,8 +20,17 @@ import {
   planCompaction,
   requestModelSummary,
   toolPairingIntact,
+  type CompactionInfo,
   type CompactionOptions,
 } from './compaction.js';
+import {
+  LAYER_TARGET_SHARE,
+  compactionTriggerTokens,
+  offloadImages,
+  protectedTailStart,
+  pruneToolResults,
+  recentStepsWithin,
+} from './harness/context.js';
 
 /**
  * How long the loop will listen to a stream that is saying nothing.
@@ -367,6 +376,139 @@ export function pruneOldMessageImages(messages: ChatMessage[], keepLast = 3): vo
   }
 }
 
+export interface CompactConversationInput {
+  provider: ProviderAdapter;
+  model: string;
+  system: string;
+  tools: ToolSpec[];
+  /** Mutated in place when anything is folded, pruned or offloaded. */
+  messages: ChatMessage[];
+  signal: AbortSignal;
+  options: CompactionOptions;
+  reason: 'threshold' | 'overflow' | 'manual';
+  /** The caller's best count of the context now (reported + estimated). */
+  tokensBefore?: number;
+}
+
+export interface CompactConversationResult {
+  outcome: 'compacted' | 'unchanged';
+  info?: CompactionInfo;
+  /** What a summary call cost, when one was made. */
+  usage?: Usage;
+}
+
+/**
+ * One compaction of `messages`, as the loop does it at its threshold and on an
+ * overflow, and as a person does it with `/compact`. Never throws for a model
+ * failure: the structural notes stand in for a summary that could not be had.
+ *
+ * Layered mode runs prune → offload → summarize and stops after the first
+ * layer that brings the context under its target; an overflow or a manual
+ * compaction always reaches the summary, because the person (or the provider)
+ * has said the conversation must get shorter now.
+ */
+export async function compactConversation(input: CompactConversationInput): Promise<CompactConversationResult> {
+  const { options, messages } = input;
+  const estimate = () => estimateTokens({ system: input.system, tools: input.tools, messages });
+  const tokensBefore = input.tokensBefore ?? estimate();
+  const window = Number.isFinite(options.contextWindow) && options.contextWindow > 0 ? options.contextWindow : null;
+  const report = (info: CompactionInfo): CompactConversationResult => {
+    options.onCompaction?.(info);
+    return { outcome: 'compacted', info, ...(info.usage ? { usage: info.usage } : {}) };
+  };
+
+  let keepRecentSteps = options.keepRecentSteps;
+  if (options.layered && window !== null) {
+    const protectedFrom = protectedTailStart(messages, window);
+    const target = compactionTriggerTokens(window, options.outputReserve) * LAYER_TARGET_SHARE;
+    const cheapLayersMayStop = input.reason === 'threshold';
+    const pruned = pruneToolResults(messages, protectedFrom);
+    if (pruned > 0 && cheapLayersMayStop && estimate() <= target) {
+      return report({
+        reason: input.reason,
+        summary: 'structural',
+        strategy: 'prune',
+        removedMessages: 0,
+        keptMessages: messages.length,
+        tokensBefore,
+        tokensAfter: estimate(),
+      });
+    }
+    const offloaded = offloadImages(messages, protectedFrom, options.offloadDir);
+    if ((pruned > 0 || offloaded > 0) && cheapLayersMayStop && estimate() <= target) {
+      return report({
+        reason: input.reason,
+        summary: 'structural',
+        strategy: 'offload',
+        removedMessages: 0,
+        keptMessages: messages.length,
+        tokensBefore,
+        tokensAfter: estimate(),
+      });
+    }
+    keepRecentSteps = options.keepRecentSteps ?? recentStepsWithin(messages, window);
+  }
+
+  const plan = planCompaction(messages, {
+    ...(keepRecentSteps === undefined ? {} : { keepRecentSteps }),
+    targetTokens: Math.floor((window ?? 0) * TARGET_AFTER_COMPACTION),
+    system: input.system,
+    tools: input.tools,
+  });
+  if (plan === null) return { outcome: 'unchanged' };
+  let memory = plan.structuralMemory;
+  let summary: 'model' | 'structural' = 'structural';
+  let failure: string | undefined;
+  let summaryUsage: Usage | undefined;
+  if (options.modelSummary !== false) {
+    const anchor = messages[0]!;
+    let attempt = await requestModelSummary({
+      provider: input.provider,
+      model: input.model,
+      plan,
+      signal: input.signal,
+      ...(options.summaryTimeoutMs === undefined ? {} : { timeoutMs: options.summaryTimeoutMs }),
+      ...(options.layered ? { replay: { system: input.system, tools: input.tools, anchor } } : {}),
+    });
+    summaryUsage = attempt.usage;
+    // A replayed request the model answered with a tool call (or without the
+    // tags) gets one more try the old way: the escaped transcript, no tools.
+    if (options.layered && attempt.summary === null && !input.signal.aborted) {
+      const retry = await requestModelSummary({
+        provider: input.provider,
+        model: input.model,
+        plan,
+        signal: input.signal,
+        ...(options.summaryTimeoutMs === undefined ? {} : { timeoutMs: options.summaryTimeoutMs }),
+      });
+      summaryUsage = addUsage(summaryUsage, retry.usage);
+      attempt = { ...retry, usage: summaryUsage };
+    }
+    if (attempt.summary !== null) {
+      memory = modelMemory(plan, attempt.summary);
+      summary = 'model';
+    } else if (attempt.failure !== null) {
+      failure = attempt.failure;
+    }
+  }
+  const next = compactedMessages(plan, memory);
+  // The cut is placed so this cannot fail; if it ever did, sending a call
+  // without its answer is the one outcome worse than not compacting.
+  if (!toolPairingIntact(next)) return { outcome: 'unchanged' };
+  messages.splice(0, messages.length, ...next);
+  return report({
+    reason: input.reason,
+    summary,
+    ...(options.layered ? { strategy: 'summarize' as const } : {}),
+    ...(failure === undefined ? {} : { failure }),
+    removedMessages: plan.folded.length,
+    keptMessages: plan.recent.length,
+    tokensBefore,
+    tokensAfter: estimate(),
+    ...(summaryUsage === undefined ? {} : { usage: summaryUsage }),
+  });
+}
+
 export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentLoopResult> {
   let usage: Usage = { inputTokens: 0, outputTokens: 0 };
   let stopReason = 'end_turn';
@@ -396,65 +538,36 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentLoopRes
       ? reported.tokens + estimateTokens({ messages: opts.messages.slice(reported.messageCount) })
       : estimateTokens({ system: systemText(), tools: opts.tools, messages: opts.messages });
 
-  /**
-   * Fold the older steps into a summary. `stop` when the summary call's cost
-   * ended the run (the budget sees it like any other request); `unchanged`
-   * when there is nothing it could cut.
-   */
   const compact = async (reason: 'threshold' | 'overflow'): Promise<'compacted' | 'unchanged' | 'stop'> => {
-    const options = opts.compaction;
-    if (!options) return 'unchanged';
-    const system = systemText();
-    const tokensBefore = contextTokens();
-    const plan = planCompaction(opts.messages, {
-      ...(options.keepRecentSteps === undefined ? {} : { keepRecentSteps: options.keepRecentSteps }),
-      targetTokens: Math.floor(options.contextWindow * TARGET_AFTER_COMPACTION),
-      system,
+    if (!opts.compaction) return 'unchanged';
+    const result = await compactConversation({
+      provider: opts.provider,
+      model: opts.model,
+      system: systemText(),
       tools: opts.tools,
+      messages: opts.messages,
+      signal: opts.signal,
+      options: opts.compaction,
+      reason,
+      tokensBefore: contextTokens(),
     });
-    if (plan === null) return 'unchanged';
-    let memory = plan.structuralMemory;
-    let summary: 'model' | 'structural' = 'structural';
-    let failure: string | undefined;
-    let summaryUsage: Usage | undefined;
-    if (options.modelSummary !== false) {
-      const attempt = await requestModelSummary({
-        provider: opts.provider,
-        model: opts.model,
-        plan,
-        signal: opts.signal,
-        ...(options.summaryTimeoutMs === undefined ? {} : { timeoutMs: options.summaryTimeoutMs }),
-      });
-      summaryUsage = attempt.usage;
-      if (attempt.summary !== null) {
-        memory = modelMemory(plan, attempt.summary);
-        summary = 'model';
-      } else if (attempt.failure !== null) {
-        failure = attempt.failure;
-      }
-    }
-    const next = compactedMessages(plan, memory);
-    // The cut is placed so this cannot fail; if it ever did, sending a call
-    // without its answer is the one outcome worse than not compacting.
-    if (!toolPairingIntact(next)) return 'unchanged';
-    opts.messages.splice(0, opts.messages.length, ...next);
+    if (result.outcome === 'unchanged') return 'unchanged';
     reported = null;
     opts.onMessagesChanged?.();
-    options.onCompaction?.({
-      reason,
-      summary,
-      ...(failure === undefined ? {} : { failure }),
-      removedMessages: plan.folded.length,
-      keptMessages: plan.recent.length,
-      tokensBefore,
-      tokensAfter: contextTokens(),
-      ...(summaryUsage === undefined ? {} : { usage: summaryUsage }),
-    });
-    if (summaryUsage && (summaryUsage.inputTokens > 0 || summaryUsage.outputTokens > 0)) {
-      usage = addUsage(usage, summaryUsage);
-      if (opts.onStep?.(summaryUsage) === 'stop') return 'stop';
+    if (result.usage && (result.usage.inputTokens > 0 || result.usage.outputTokens > 0)) {
+      usage = addUsage(usage, result.usage);
+      if (opts.onStep?.(result.usage) === 'stop') return 'stop';
     }
     return 'compacted';
+  };
+
+  /** Where the threshold check fires: the layered trigger, or the share of the window. */
+  const triggerTokens = (): number | null => {
+    if (compactionWindow === null) return null;
+    if (opts.compaction?.layered) {
+      return compactionTriggerTokens(compactionWindow, opts.compaction.outputReserve);
+    }
+    return compactionWindow * clampThreshold(opts.compaction?.threshold);
   };
 
   for (let step = 0; step < opts.maxSteps; step++) {
@@ -472,10 +585,8 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentLoopRes
       else opts.messages.push({ role: 'user', content: parts });
       opts.onMessagesChanged?.();
     }
-    if (
-      compactionWindow !== null &&
-      contextTokens() >= compactionWindow * clampThreshold(opts.compaction?.threshold)
-    ) {
+    const trigger = triggerTokens();
+    if (trigger !== null && contextTokens() >= trigger) {
       const outcome = await compact('threshold');
       if (outcome === 'stop') {
         stopReason = 'budget';
