@@ -784,8 +784,10 @@ struct StudioDiffLineRow: View {
 
     private var tint: Color {
         switch line?.kind {
-        case .added: Color.junoDiffAdded
-        case .removed: Color.junoDiffRemoved
+        // The Code design spec's --diff-add / --diff-del (Studio.Diff): a quiet
+        // wash in both appearances, where the shared fills read saturated in dark.
+        case .added: Studio.Diff.add
+        case .removed: Studio.Diff.del
         default: Color.clear
         }
     }

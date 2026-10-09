@@ -1,4 +1,5 @@
 import Foundation
+import JunoAPI
 import JunoAuth
 import JunoCodeBridge
 import JunoCodeCore
@@ -517,6 +518,25 @@ final class DesktopCodeHostModel {
 
     static let servesQueuedTasksKey = "juno.code.remote.servesQueuedTasks"
 
+    /// Whether the web may open a terminal on this Mac through the Code v2
+    /// device link (`terminal.*`). A second, separate consent under Remote
+    /// hosting: a shell is more than a session. Off by default, read per
+    /// command and reported on every pull, so switching it off is immediate.
+    var sharesTerminalRemotely: Bool {
+        get {
+            _ = terminalShareRevision  // observed, so the switch redraws
+            return defaults.bool(forKey: Self.sharesTerminalKey)
+        }
+        set {
+            defaults.set(newValue, forKey: Self.sharesTerminalKey)
+            terminalShareRevision += 1
+        }
+    }
+
+    private var terminalShareRevision = 0
+
+    static let sharesTerminalKey = "alevr.code.remote.sharesTerminal"
+
     /// The immediate kill switch. Stops serving and tells the relay in one step,
     /// so "off" means off now rather than off at the next heartbeat.
     func stopServingRemoteWork() {
@@ -576,6 +596,7 @@ final class DesktopCodeHostModel {
     private func syncRemoteHost(retracting: Bool = false) {
         let shouldServe = servesQueuedTasks && accountID != nil && deviceID != nil
         syncSessionUploads(shouldServe: shouldServe, retracting: retracting)
+        syncEnvLink(shouldServe: shouldServe)
         if shouldServe, remoteHost == nil {
             guard let accountID, let deviceID, let relay,
                 let executor = remoteExecutorProvider?()
@@ -611,6 +632,34 @@ final class DesktopCodeHostModel {
             queuedHost = nil
             Task { await host.deactivate() }
         }
+    }
+
+    /// Starts or stops the Code v2 device link with the same switch: the web
+    /// may drive this Mac's subscriptions only while Remote hosting is on, and
+    /// only in the folders this Mac shares.
+    private func syncEnvLink(shouldServe: Bool) {
+        guard shouldServe, let accountID, let deviceID, let linkSender else {
+            envLink.stop()
+            return
+        }
+        envLink.start(
+            deviceId: deviceID,
+            allowedRoots: { [weak self] in self?.workspaces.map(\.path) ?? [] },
+            allowsTerminal: { [weak self] in
+                guard let self else { return false }
+                return self.servesQueuedTasks && self.sharesTerminalRemotely
+            },
+            perform: { method, path, body in
+                let request = try NativeBearerRequest(
+                    path: path,
+                    method: method == "POST" ? .post : (method == "DELETE" ? .delete : .get),
+                    headers: try HTTPHeaders(["accept": "application/json", "content-type": "application/json"]),
+                    body: body
+                )
+                let response = try await linkSender.send(request, for: accountID)
+                return (response.statusCode, response.body)
+            }
+        )
     }
 
     /// Starts or stops the uploader to match the switch, exactly as the claim
@@ -701,6 +750,11 @@ final class DesktopCodeHostModel {
     /// build where hosting is unavailable.
     private let relay: (any CodeRemoteRelaying)?
     private let agentClient: NativeCodeAgentClient?
+    /// Authenticated requests for the Code v2 device link (the web driving
+    /// env-server sessions through this Mac). Nil where there is no session.
+    private let linkSender: (any NativeAuthenticatedRequestSending)?
+    /// The device link itself, alive only while hosting is on.
+    private let envLink = CodeV2DeviceLinkHost()
     private let defaults: UserDefaults
     /// Resolved once rather than per beat: `Host.current()` consults the system
     /// configuration store, and the beat runs on the main actor. A Mac renamed
@@ -723,8 +777,10 @@ final class DesktopCodeHostModel {
         relay: (any CodeRemoteRelaying)? = nil,
         agentClient: NativeCodeAgentClient? = nil,
         remoteClient: NativeCodeRemoteClient? = nil,
+        linkSender: (any NativeAuthenticatedRequestSending)? = nil,
         defaults: UserDefaults = .standard
     ) {
+        self.linkSender = linkSender
         self.client = client
         self.relay = relay
         self.agentClient = agentClient
@@ -968,6 +1024,7 @@ final class DesktopCodeHostModel {
         defaults.removeObject(forKey: Self.deviceIDKey)
         defaults.set(true, forKey: Self.revokedKey)
         defaults.set(false, forKey: Self.servesQueuedTasksKey)
+        defaults.set(false, forKey: Self.sharesTerminalKey)
         lastRegisteredAt = nil
         lastError = nil
         revokeError = nil

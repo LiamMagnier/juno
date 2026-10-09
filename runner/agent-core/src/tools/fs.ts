@@ -45,6 +45,25 @@ export function assertContainedPath(ctx: ToolContext, candidate: string): string
   return canonical;
 }
 
+/**
+ * The canonical path when `candidate` sits inside one of the context's
+ * read-only roots (the session's spill directory), else null. Only read_file
+ * consults this; nothing may write there through the tools.
+ */
+export function readOnlyRootPath(ctx: ToolContext, candidate: string): string | null {
+  for (const root of ctx.readOnlyRoots ?? []) {
+    try {
+      const realRoot = fs.realpathSync(root);
+      const real = fs.realpathSync(candidate);
+      const relative = path.relative(realRoot, real);
+      if (relative && !relative.startsWith('..') && !path.isAbsolute(relative)) return real;
+    } catch {
+      // Missing root or file: not readable through this door.
+    }
+  }
+  return null;
+}
+
 function safePattern(pattern: string): boolean {
   return !path.isAbsolute(pattern) && !pattern.split(/[\\/]+/).includes('..');
 }
@@ -71,7 +90,11 @@ export const readFileTool: ToolDefinition = {
     try {
       abs = assertContainedPath(ctx, resolve(ctx, String(input.path)));
     } catch (error) {
-      return { output: error instanceof Error ? error.message : String(error), isError: true };
+      const readable = readOnlyRootPath(ctx, resolve(ctx, String(input.path)));
+      if (readable === null) {
+        return { output: error instanceof Error ? error.message : String(error), isError: true };
+      }
+      abs = readable;
     }
     if (!fs.existsSync(abs)) return { output: `File not found: ${abs}`, isError: true };
     const stat = fs.statSync(abs);

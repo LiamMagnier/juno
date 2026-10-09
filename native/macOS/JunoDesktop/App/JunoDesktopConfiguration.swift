@@ -379,7 +379,10 @@ struct JunoDesktopConfiguration {
                     // claim loop's: revocation is device management, and the
                     // loop's seam stays a protocol so it remains testable
                     // against fakes.
-                    remoteClient: NativeCodeRemoteClient(sender: runtime, streamer: runtime)
+                    remoteClient: NativeCodeRemoteClient(sender: runtime, streamer: runtime),
+                    // The Code v2 device link: the web reaching this Mac's
+                    // subscriptions while Remote hosting is on.
+                    linkSender: runtime
                 ),
                 workModel: NativeWorkModel(
                     client: NativeWorkClient(sender: runtime, streamer: runtime)

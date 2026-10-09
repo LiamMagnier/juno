@@ -22,7 +22,11 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 
 ## Summary
 
+<<<<<<< HEAD
 319 routes: 203 native, 52 planned, 51 web only, 13 internal. 49 pages: on the Mac 36 native, 2 partial, 2 planned, 9 web only; on iOS 24 native, 8 partial, 8 planned, 9 web only.
+=======
+325 routes: 205 native, 52 planned, 55 web only, 13 internal. 50 pages: on the Mac 37 native, 2 partial, 2 planned, 9 web only; on iOS 24 native, 9 partial, 8 planned, 9 web only.
+>>>>>>> origin/main
 
 | Feature | Pages (Mac) | Pages (iOS) | Routes native | Planned | Web only | Internal |
 |---|---|---|---|---|---|---|
@@ -44,7 +48,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 | [Agents](#agents) | 4/4 | 4/4 | 18 | 8 | 1 | 0 |
 | [Research](#research) | 2/2 | 2/2 | 7 | 0 | 0 | 0 |
 | [Voice](#voice) | – | – | 4 | 0 | 3 | 0 |
-| [Juno Code](#code) | 2/4 (+2 partial) | 0/4 (+3 partial) | 15 | 13 | 3 | 0 |
+| [Juno Code](#code) | 3/5 (+2 partial) | 0/5 (+4 partial) | 18 | 13 | 7 | 0 |
 | [Settings, notifications and announcements](#settings) | 3/3 | 3/3 | 12 | 5 | 2 | 0 |
 | [Plans and billing](#billing) | 1/2 | 0/2 | 7 | 0 | 0 | 1 |
 | [Roadmap and Compare](#community) | 0/3 | 0/3 | 0 | 0 | 4 | 0 |
@@ -504,6 +508,7 @@ Owned by the Code rework (`docs/native/code-rework/`), which audits Code's parit
 | `/code/new` | Native | Partial | DesktopCodeWorkspace (New task) | As /code. |
 | `/code/pulls` | Partial | Partial | DesktopCodeWorkspace | Pull requests are listed through /api/code/github/pulls; the page itself is Code's. |
 | `/code/customize` | Partial | Planned | Code settings | Code's settings cover permissions, model, MCP, hooks, skills and agents; cloud environments are missing. |
+| `/code/[id]` | Native | Partial | DesktopCodeWorkspace (thread) | The phone supervises remote and cloud runs. |
 
 | Route | Methods | Status | Called from | Note |
 |---|---|---|---|---|
@@ -538,6 +543,13 @@ Owned by the Code rework (`docs/native/code-rework/`), which audits Code's parit
 | `/api/code/tasks/[id]/steer` | POST | Planned |  | Steer a running cloud task. |
 | `/api/code/workspaces` | GET, PUT | Planned |  | The app is meant to mirror its Code workspaces here so the web's Code tab lists them; native Code does not yet. |
 | `/api/v1/code/devices/[deviceId]` | DELETE | Native | JunoCodeKit |  |
+| `/api/code/routing/[conversationId]` | GET, PUT | Web only |  | Code v2 per-thread role routing (Orchestrate). The Mac keeps routing in its own session state and sends it with each run. |
+| `/api/code/v2/link/[deviceId]` | POST | Web only |  | The browser side of the Code v2 device link: the web drives the env server on the user's Mac through it. |
+| `/api/code/v2/link/[deviceId]/host` | POST | Native | JunoCodeLocal |  |
+| `/api/provider-keys` | GET, POST | Native | JunoCodeLocal |  |
+| `/api/provider-keys/[provider]` | DELETE | Native | JunoCodeLocal |  |
+| `/api/provider-keys/[provider]/test` | POST | Web only |  | The web tests a key before storing it; the Mac stores keys through POST /api/provider-keys, which tests them server side. |
+| `/api/provider-keys/[provider]/models` | GET | Web only |  | OpenRouter model list for a stored key, used by the web model picker. |
 
 <a id="settings"></a>
 

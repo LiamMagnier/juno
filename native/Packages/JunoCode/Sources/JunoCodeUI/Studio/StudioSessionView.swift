@@ -11,6 +11,9 @@ public struct StudioSessionView: View {
     let models: [ModelOption]
     let openReview: (String?) -> Void
     let beginDictation: (() -> Void)?
+    /// The Code v2 composer footer (model rail, traits, orchestrate, gauge)
+    /// and the hand-off to the env server. Nil keeps the classic chips.
+    let v2: CodeV2StudioContext?
 
     @State private var isRewindPickerPresented = false
     @FocusState private var composerFocused: Bool
@@ -21,12 +24,72 @@ public struct StudioSessionView: View {
         controller: SessionController,
         models: [ModelOption],
         openReview: @escaping (String?) -> Void,
-        beginDictation: (() -> Void)? = nil
+        beginDictation: (() -> Void)? = nil,
+        v2: CodeV2StudioContext? = nil
     ) {
         self.controller = controller
         self.models = models
         self.openReview = openReview
         self.beginDictation = beginDictation
+        self.v2 = v2
+    }
+
+    /// A subscription is chosen: the next send hands the thread over.
+    private var handsOff: Bool {
+        guard let v2 else { return false }
+        return v2.composer.engine == .envServer
+    }
+
+    private func sendOrHandOff() {
+        if handsOff, let v2 {
+            let text = controller.composerText.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { return }
+            controller.composerText = ""
+            v2.handoff(text)
+        } else {
+            Task { await controller.send() }
+        }
+    }
+
+    /// The v2 controls' choices, applied to the Swift engine: Alevr models
+    /// and BYOK keys alike (the env server runs subscriptions). Model, effort,
+    /// permission, the context tier or Lean window, Orchestrate's roles and
+    /// budget, where roles on other instances run, and the `auto` reviewer.
+    private func syncV2(_ composer: CodeV2ComposerModel) {
+        guard composer.engine == .alevr, let modelID = CodeV2EngineMapping.engineModelID(for: composer.selection) else { return }
+        let configuration = controller.session.configuration
+        if configuration.modelID != modelID {
+            Task { await controller.setModelID(modelID) }
+        }
+        let effort = CodeV2EngineMapping.effort(composer.selection.effort)
+        if configuration.reasoningEffort != effort {
+            Task { await controller.setReasoningEffort(effort) }
+        }
+        let permission = CodeV2EngineMapping.permission(for: composer.runtimeMode)
+        if configuration.permissionMode != permission {
+            Task { await controller.setPermissionMode(permission) }
+        }
+        let window = CodeV2EngineMapping.contextWindow(for: composer.selection, lean: composer.lean)
+        if controller.contextWindowOverride != window {
+            controller.setContextWindowOverride(window)
+        }
+        // Orchestrate (roles, budget) and the `auto` reviewer reach the engine too.
+        if controller.roleRouting != composer.routing {
+            controller.setRoleRouting(composer.routing)
+        }
+        let providers = v2?.subagentProviders?()
+        if controller.subagentProviders?.fingerprint != providers?.fingerprint {
+            controller.setSubagentProviders(providers)
+        }
+        let autoReview = composer.runtimeMode == .auto
+        if controller.autoReviewEnabled != autoReview {
+            Task { await controller.setAutoReview(autoReview) }
+        }
+    }
+
+    private var v2Context: CodeV2ContextReading? {
+        guard let used = controller.contextTokens, let window = controller.contextWindowTokens, window > 0 else { return nil }
+        return CodeV2ContextReading(usedTokens: used, maxTokens: window, costUsd: controller.sessionCostEstimate)
     }
 
     private var mode: StudioMode {
@@ -203,16 +266,31 @@ public struct StudioSessionView: View {
             canSend: canSend,
             isRunning: isBusy,
             isSending: controller.isSubmitting,
-            send: { Task { await controller.send() } },
+            send: sendOrHandOff,
             stop: { Task { await controller.stop() } },
             rewind: openRewindPicker,
             focus: $composerFocused,
             // The beam travels the composer's edge while the run works — the
             // one live effect on the surface (brief: Border beam, `line`).
-            beam: isBusy ? .line : nil
+            beam: isBusy ? .line : nil,
+            steer: isRunning ? {
+                controller.activeInstructionKind = .steer
+                Task { await controller.send() }
+            } : nil,
+            stopOnDoubleEscape: isRunning
         ) {
+            if let v2 {
+                CodeV2ComposerLeading(model: v2.composer, directory: v2.directory, isEnabled: !isBusy)
+                    .onChange(of: v2.composer.selection) { _, _ in syncV2(v2.composer) }
+                    .onChange(of: v2.composer.runtimeMode) { _, _ in syncV2(v2.composer) }
+                    .onChange(of: v2.composer.routing) { _, _ in syncV2(v2.composer) }
+                    .onChange(of: v2.composer.lean) { _, _ in syncV2(v2.composer) }
+                    .onChange(of: v2.directory.instances) { _, _ in syncV2(v2.composer) }
+                    .onAppear { syncV2(v2.composer) }
+            } else {
             StudioModeChip(mode: mode, select: select, isEnabled: !isBusy)
-            if isRunning {
+            }
+            if isRunning, v2 == nil {
                 Menu {
                     Picker("While Alevr works", selection: $controller.activeInstructionKind) {
                         Text("Steer the current run").tag(UserInstructionKind.steer)
@@ -229,7 +307,15 @@ public struct StudioSessionView: View {
                 .help("What your next message does while Alevr is working")
             }
         } trailing: {
-            if preferences.showContextMeter,
+            if let v2 {
+                CodeV2ComposerTrailing(
+                    model: v2.composer, directory: v2.directory,
+                    context: preferences.showContextMeter ? v2Context : nil,
+                    threadTokens: controller.contextTokens ?? 0, isEnabled: !isBusy,
+                    compact: { Task { await controller.compactConversation() } },
+                    openConnections: v2.openConnections, setup: v2.setup
+                )
+            } else if preferences.showContextMeter,
                let used = controller.contextTokens,
                let window = controller.contextWindowTokens,
                window > 0
@@ -242,6 +328,7 @@ public struct StudioSessionView: View {
                     openDetails: { controller.commands.present(.context) }
                 )
             }
+            if v2 == nil {
             StudioModelChip(
                 models: models,
                 modelID: controller.session.configuration.modelID,
@@ -250,6 +337,7 @@ public struct StudioSessionView: View {
                 selectEffort: { effort in Task { await controller.setReasoningEffort(effort) } },
                 isEnabled: !isBusy
             )
+            }
             if let beginDictation {
                 Button(action: beginDictation) { JunoIconView(.mic, size: 15) }
                     .buttonStyle(StudioIconButtonStyle())

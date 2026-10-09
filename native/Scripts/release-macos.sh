@@ -275,6 +275,27 @@ if [ -f runner/agent-core/package-lock.json ]; then
   npm test --prefix runner/agent-core >/dev/null
 fi
 if [ ! -d relay/node_modules ]; then npm ci --prefix relay; fi
+
+# Alevr Code's local env server ships inside the app as one bundled file
+# (Contents/Resources/env-server/alevr-env.mjs) that the sidecar runs with the
+# user's own node. Built and tested here, before the archive, so a release can
+# never ship without it or with a stale one. The bundle is gitignored, so the
+# clean-tree check below still holds.
+step "Env server bundle"
+if [ ! -d runner/env-server/node_modules ]; then npm ci --prefix runner/env-server >/dev/null; fi
+npm run typecheck --prefix runner/env-server >/dev/null || die "The env server does not typecheck."
+npm test --prefix runner/env-server >/dev/null || die "The env server tests failed."
+ENV_SERVER_BUNDLE="native/macOS/JunoDesktop/Resources/env-server/alevr-env.mjs"
+rm -f "$ENV_SERVER_BUNDLE"
+npm run env-server:bundle:mac >/dev/null || die "Could not bundle the env server (npm run env-server:bundle:mac)."
+[ -s "$ENV_SERVER_BUNDLE" ] || die "The env server bundle was not written to $ENV_SERVER_BUNDLE."
+ENV_SERVER_HELP="$(node "$ENV_SERVER_BUNDLE" --help 2>&1 || true)"
+case "$ENV_SERVER_HELP" in
+  *alevr-env*) ;;
+  *) die "The bundled env server does not start: $ENV_SERVER_HELP" ;;
+esac
+printf '  env server   %s (%s bytes)\n' "$ENV_SERVER_BUNDLE" "$(wc -c < "$ENV_SERVER_BUNDLE" | tr -d ' ')"
+
 step "Shared local gates"
 bash scripts/local-gates.sh
 
@@ -376,6 +397,10 @@ fi
 
 APP="$(find "$BUILD_DIR/export" -maxdepth 1 -type d -name '*.app' -print -quit)"
 [ -n "$APP" ] || die "The export produced no application bundle."
+# Subscriptions (Claude, Codex, Antigravity, ACP agents) start through the bundled
+# env server; an app without it can only use Alevr's own engine.
+cmp -s "$ENV_SERVER_BUNDLE" "$APP/Contents/Resources/env-server/alevr-env.mjs" \
+  || die "The exported app does not carry the env server bundle built above (Contents/Resources/env-server/alevr-env.mjs)."
 
 # ── Verify what was signed, before spending a notarization on it ───────────
 

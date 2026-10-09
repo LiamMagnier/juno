@@ -69,52 +69,12 @@ public struct CodeModelProviderResolver: Sendable {
     /// Pro/Codex snapshots speak Responses, and every other configured lab
     /// speaks OpenAI-compatible Chat Completions.
     public static let `default` = CodeModelProviderResolver { modelID in
-        let trimmed = modelID.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Short aliases ("sonnet", "max", "flash"…) resolve through the shared
+        // Code v2 table (contracts/code), so the Mac, the runner and the web
+        // cannot disagree on what "max" means.
+        let trimmed = CodeV2.resolveModelAlias(modelID)
         let lowered = trimmed.lowercased()
 
-        // Short aliases and tier names that subagents or callers might supply
-        if lowered == "max" {
-            return CodeModelRoute(
-                providerID: "qwen",
-                providerModelID: "qwen3.8-max",
-                wireProtocol: .openAIChat
-            )
-        }
-        if lowered == "pro" {
-            return CodeModelRoute(
-                providerID: "anthropic",
-                providerModelID: "claude-sonnet-5",
-                wireProtocol: .anthropicMessages
-            )
-        }
-        if lowered == "flash" || lowered == "fast" {
-            return CodeModelRoute(
-                providerID: "google",
-                providerModelID: "gemini-3.8-flash",
-                wireProtocol: .openAIChat
-            )
-        }
-        if lowered == "haiku" {
-            return CodeModelRoute(
-                providerID: "anthropic",
-                providerModelID: "claude-haiku-4-5",
-                wireProtocol: .anthropicMessages
-            )
-        }
-        if lowered == "sonnet" {
-            return CodeModelRoute(
-                providerID: "anthropic",
-                providerModelID: "claude-sonnet-5",
-                wireProtocol: .anthropicMessages
-            )
-        }
-        if lowered == "opus" {
-            return CodeModelRoute(
-                providerID: "anthropic",
-                providerModelID: "claude-opus-5-5",
-                wireProtocol: .anthropicMessages
-            )
-        }
         if lowered.hasPrefix("claude") {
             return CodeModelRoute(
                 providerID: "anthropic",
@@ -207,20 +167,49 @@ public struct BackendCodeModelClient: AgentModelClient {
     private let resolver: CodeModelProviderResolver
     private let maxTokens: Int
     private let timeouts: Timeouts
+    /// Code v2 routing headers sent with every call (`x-alevr-billing`,
+    /// `x-alevr-context-tokens`); empty for the session's own client.
+    private let routingHeaders: [String: String]
 
     public init(
         streamer: any NativeAuthenticatedByteStreaming,
         accountID: AccountID,
         resolver: CodeModelProviderResolver = .default,
         maxTokens: Int = BackendCodeModelClient.defaultMaxTokens,
-        timeouts: Timeouts = .production
+        timeouts: Timeouts = .production,
+        routingHeaders: [String: String] = [:]
     ) {
         self.streamer = streamer
         self.accountID = accountID
         self.resolver = resolver
         self.maxTokens = maxTokens
         self.timeouts = timeouts
+        self.routingHeaders = routingHeaders
     }
+
+    /// Whose key pays for a call through `/api/agent` (Code v2 BYOK).
+    public enum Billing: String, Sendable {
+        /// The user's own key when one is stored for the lab, Alevr's otherwise.
+        case auto
+        /// Alevr's key and the plan budget, even when the user stored a key.
+        case alevr
+        /// The user's stored key only; refused when there is none.
+        case byok
+    }
+
+    /// The same client, sending `billing` and the chosen context tier with
+    /// every call (`src/lib/code-v2/agent-routing.ts`).
+    public func routed(billing: Billing, contextTokens: Int?) -> BackendCodeModelClient {
+        var headers = ["x-alevr-billing": billing.rawValue]
+        if let contextTokens, contextTokens > 0 { headers["x-alevr-context-tokens"] = String(contextTokens) }
+        return BackendCodeModelClient(
+            streamer: streamer, accountID: accountID, resolver: resolver,
+            maxTokens: maxTokens, timeouts: timeouts, routingHeaders: headers
+        )
+    }
+
+    /// The routing headers this client sends (tests).
+    public var sentRoutingHeaders: [String: String] { routingHeaders }
 
     /// Anthropic reads the prefix up to the breakpoints this client marks;
     /// OpenAI caches any long prefix on its own. The other labs' caching, where
@@ -241,6 +230,7 @@ public struct BackendCodeModelClient: AgentModelClient {
             let maxTokens = request.maximumOutputTokens.map { max(1, min($0, self.maxTokens)) }
                 ?? self.maxTokens
             let timeouts = self.timeouts
+            let routingHeaders = self.routingHeaders
             let relay = Task {
                 do {
                     guard let route = resolver.route(for: request.modelID) else {
@@ -262,11 +252,11 @@ public struct BackendCodeModelClient: AgentModelClient {
                             ),
                             providerModelID: route.providerModelID
                         )
-                        var headers = [
+                        var headers = routingHeaders.merging([
                             "Accept": "text/event-stream",
                             "Content-Type": "application/json",
                             "anthropic-version": "2023-06-01",
-                        ]
+                        ]) { _, fixed in fixed }
                         // The proxy forwards this header to Anthropic as is.
                         let betas = AnthropicRequestBuilder.betas(for: body)
                         if !betas.isEmpty {
@@ -282,10 +272,10 @@ public struct BackendCodeModelClient: AgentModelClient {
                         bearer = try NativeBearerRequest(
                             path: "/api/agent/\(route.providerID)/chat/completions",
                             method: .post,
-                            headers: try HTTPHeaders([
+                            headers: try HTTPHeaders(routingHeaders.merging([
                                 "Accept": "text/event-stream",
                                 "Content-Type": "application/json",
-                            ]),
+                            ]) { _, fixed in fixed }),
                             body: try JSONEncoder().encode(
                                 ComputerToolWire.openAI(
                                     OpenAIChatRequestBuilder.body(
@@ -303,10 +293,10 @@ public struct BackendCodeModelClient: AgentModelClient {
                         bearer = try NativeBearerRequest(
                             path: "/api/agent/openai/responses",
                             method: .post,
-                            headers: try HTTPHeaders([
+                            headers: try HTTPHeaders(routingHeaders.merging([
                                 "Accept": "text/event-stream",
                                 "Content-Type": "application/json",
-                            ]),
+                            ]) { _, fixed in fixed }),
                             body: try JSONEncoder().encode(
                                 ComputerToolWire.openAI(
                                     OpenAIResponsesRequestBuilder.body(

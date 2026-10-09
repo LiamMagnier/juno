@@ -142,6 +142,8 @@ model User {
   researchReportRevisions     ResearchReportRevision[]
   actionApprovalGrants        ActionApprovalGrant[]
   secretCredentials           SecretCredential[]
+  providerKeys                UserProviderKey[]
+  providerKeyUsage            ProviderKeyUsage[]
   secretGrants                SecretGrant[]
   secretAccessEvents          SecretAccessEvent[]
   workSessions                WorkSession[]
@@ -624,6 +626,11 @@ model Conversation {
   title             String    @default("New chat")
   titleSource       String    @default("default")
   model             String    @default("claude-opus-4-8")
+  // Alevr Code v2: the thread's role routing (orchestrator, workers, reviewer,
+  // explorer, compaction, preset, budget), a contract `RoleRouting`
+  // (src/lib/code-v2/contracts.ts) validated by src/lib/code-v2/role-routing.ts.
+  // Null = the session's single model, as before. Only kind "code" uses it.
+  codeRouting       Json?
   // Which surface owns this conversation: "chat" (web + app chat) or "code"
   // (Juno Code sessions synced from the app).
   kind              String    @default("chat")
@@ -2069,6 +2076,11 @@ model CodeTask {
   // created before this column existed.
   model             String?
   reasoningEffort   String?
+  // Alevr Code v2 role routing this run was dispatched with (a validated
+  // contract `RoleRouting`), snapshotted from the request or the thread's
+  // Conversation.codeRouting at creation so a later edit never changes a run
+  // already in flight. Null = single-model run (`model` above).
+  roleRouting       Json?
   // The cloud environment this run executes in: egress, the variables its
   // shells carry, and the setup step that runs before the first model turn.
   // Null means the built-in shape every cloud run had before environments
@@ -5019,4 +5031,129 @@ model RoutingOutcome {
 
   @@index([modelId, taskClass, createdAt])
   @@index([createdAt])
+}
+
+/// Bring your own key (Alevr Code v2 SPEC §2): a user's own API key for one lab,
+/// used by the Alevr engine instead of the server's key. Runs on it are never
+/// billed as ApiSpend; their usage lands in ProviderKeyUsage for the user's own
+/// analytics. The key is sealed with encryptSecretBound under the context
+/// "alevr.byok.v1:<userId>:<provider>", so a row copied to another account (or
+/// provider) cannot be opened. Nothing ever returns the plaintext to a client:
+/// `keyHint` (last four characters) is all a list shows.
+model UserProviderKey {
+  id           String    @id @default(cuid())
+  userId       String
+  /// A BYOK_PROVIDER_VALUES entry: anthropic | openai | google | xai | deepseek.
+  provider     String
+  encryptedKey String    @db.Text
+  keyHint      String
+  /// active | invalid (the last test or call was refused by the lab).
+  status       String    @default("active")
+  /// Why the last test failed, in the lab's words, trimmed. Never the key.
+  statusDetail String?
+  lastTestedAt DateTime?
+  lastUsedAt   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, provider])
+}
+
+/// Per-day usage of a user's own key: what the Alevr Code engine sent on it,
+/// for the user's analytics only. Not a ledger: nothing here is charged, and
+/// budgets and usage windows never read it.
+model ProviderKeyUsage {
+  id              String   @id @default(cuid())
+  userId          String
+  provider        String
+  /// UTC day, "YYYY-MM-DD".
+  day             String
+  requests        Int      @default(0)
+  inputTokens     BigInt   @default(0)
+  outputTokens    BigInt   @default(0)
+  cachedTokens    BigInt   @default(0)
+  /// What the lab would bill at list price (pricing.ts), micro-USD. An estimate.
+  estCostMicroUsd BigInt   @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, provider, day])
+  @@index([userId, day])
+}
+
+// ----------------------------------------------------------------------------
+// Alevr Code v2 device link on Postgres (docs/code-v2/DEVICE-LINK.md). The hub
+// that relays the hosted web to the user's Mac, shared by every backend process
+// when ALEVR_LINK_STORE=postgres (src/lib/code-v2/env-link-store-pg.ts). All
+// rows are transient: commands and answers live seconds, event rings are
+// bounded per session, and the Mac's env server log stays the source of truth.
+// Written with raw SQL only; no relations so a deleted user's rows simply age out.
+// ----------------------------------------------------------------------------
+
+model CodeLinkHost {
+  userId     String
+  deviceId   String
+  lastPullAt DateTime
+  appVersion String?
+  /// Hub numbering of the device's global event stream.
+  globalSeq  Int      @default(0)
+  /// Whether the Mac's latest pull said the user shared its terminal.
+  terminalShared Boolean @default(false)
+
+  @@id([userId, deviceId])
+}
+
+model CodeLinkCommand {
+  id        BigInt    @id @default(autoincrement())
+  userId    String
+  deviceId  String
+  relayId   String    @unique
+  payload   Json
+  claimedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, deviceId, id])
+  @@index([createdAt])
+}
+
+model CodeLinkResponse {
+  relayId   String   @id
+  userId    String
+  deviceId  String
+  payload   Json
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+model CodeLinkEvent {
+  id        BigInt   @id @default(autoincrement())
+  userId    String
+  deviceId  String
+  /// "" for the global stream.
+  sessionId String
+  sequence  Int
+  eventType String
+  payload   Json
+  createdAt DateTime @default(now())
+
+  @@unique([userId, deviceId, sessionId, sequence, eventType])
+  @@index([userId, deviceId, sessionId, sequence])
+}
+
+model CodeLinkSession {
+  userId        String
+  deviceId      String
+  sessionId     String
+  /// The ring holds every event after this sequence (a finished replay).
+  floor         Int?
+  lastReplayAt  DateTime?
+  replayRelayId String?
+  replayCursor  Int?
+
+  @@id([userId, deviceId, sessionId])
 }

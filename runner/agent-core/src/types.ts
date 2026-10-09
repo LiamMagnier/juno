@@ -1,5 +1,7 @@
 /** Shared types for the Juno agent core. Every surface consumes these. */
 
+import type { ModelSelection, RuntimeMode } from './contracts/code-v2.js';
+
 export type PermissionMode = 'plan' | 'ask' | 'auto-edit' | 'full';
 
 export type RiskLevel = 'safe' | 'edit' | 'command' | 'sensitive';
@@ -74,6 +76,8 @@ export interface ApprovalRequest {
   agentId?: string;
   /** e.g. "builder · Implement auth API" — always show WHO is asking. */
   agentLabel?: string;
+  /** The model's one-line reason for the call (SPEC §3.7). */
+  justification?: string;
 }
 
 /** Events streamed from the agent loop to whichever surface is attached.
@@ -105,6 +109,8 @@ export type AgentEvent =
       durationMs: number;
       /** Process exit status, when the tool ran one — see ToolResult.exitCode. */
       exitCode?: number;
+      /** The command outlived its timeout and continues as this background job. */
+      backgroundJobId?: string;
       agentId?: string;
     }
   | { type: 'tool_denied'; callId: string; name: string; reason: string; agentId?: string }
@@ -119,8 +125,10 @@ export type AgentEvent =
    */
   | {
       type: 'context_compacted';
-      reason: 'threshold' | 'overflow';
+      reason: 'threshold' | 'overflow' | 'manual';
       summary: 'model' | 'structural';
+      /** Which layer brought the context down, in layered mode. */
+      strategy?: 'prune' | 'offload' | 'summarize';
       failure?: string;
       removedMessages: number;
       tokensBefore: number;
@@ -142,7 +150,66 @@ export type AgentEvent =
        *  engine knows: a plan limit and a tool crash want different words. */
       code?: string;
     }
-  | { type: 'subagent_update'; agent: SubagentSnapshot };
+  | { type: 'subagent_update'; agent: SubagentSnapshot }
+  /** Progress of a workflow tool run (harness/workflow.ts). */
+  | {
+      type: 'workflow_update';
+      workflowId: string;
+      callId: string;
+      name: string;
+      status: 'running' | 'completed' | 'failed' | 'budget';
+      progress?:
+        | { type: 'phase'; title: string }
+        | { type: 'log'; message: string }
+        | { type: 'agent_start'; seq: number; label: string; phase?: string }
+        | { type: 'agent_end'; seq: number; label: string; phase?: string; outcome: 'completed' | 'failed'; tokens: number };
+      budget?: { tokens: number; costUsd: number; maxTokens?: number; maxUsd?: number; exhausted: boolean; reason?: string };
+    }
+  /** A best-of-N run changed: candidates finished, compared, picked or discarded. */
+  | { type: 'best_of_n'; run: BestOfNSnapshot }
+  /** Text a person sent: started a turn, steered into the running one, or queued behind it. */
+  | { type: 'user_input'; id: string; text: string; delivery: 'send' | 'steer' | 'queue' }
+  /** The held-input lane changed (SPEC §3.6). */
+  | { type: 'queue_updated'; queue: { id: string; text: string; queuedAt: string }[] }
+  /** The auto mode's reviewer ruled on a call a person would otherwise have been asked about. */
+  | {
+      type: 'auto_review';
+      callId: string;
+      toolName: string;
+      risk: 'low' | 'medium' | 'high';
+      decision: 'allow' | 'deny';
+      reason?: string;
+      /** Set when the reviewer could not answer and the call was denied for that (fail-closed). */
+      failure?: string;
+      agentId?: string;
+    }
+  /** The session's runtime mode (sandbox × approval preset) changed. */
+  | { type: 'runtime_mode_changed'; mode: RuntimeMode }
+  /** A guard refused or annotated a call (read-before-edit, repeat-call). */
+  | { type: 'guard'; callId: string; name: string; guard: 'read_before_edit' | 'repeat_call'; message: string; agentId?: string };
+
+/** Structural mirror of subagents.ts BestOfNRun (loose here, like SubagentSnapshot). */
+export interface BestOfNSnapshot {
+  id: string;
+  title: string;
+  prompt: string;
+  status: string;
+  candidates: Array<{
+    agentId: string;
+    selection: ModelSelection;
+    model: string;
+    status: string;
+    summary?: string;
+    error?: string;
+    branch?: string;
+    filesChanged: string[];
+    additions: number;
+    deletions: number;
+    tokens: number;
+  }>;
+  review?: { recommended?: string; ranking: string[]; notes: string; model: string };
+  pickedAgentId?: string;
+}
 
 /** Structural mirror of subagents.ts SubagentPublicState (kept loose here so
  *  types.ts stays leaf-level; the manager emits the precisely typed value). */
@@ -166,6 +233,18 @@ export interface SubagentSnapshot {
   applied?: boolean;
   startedAt?: string;
   completedAt?: string;
+  /** Contract role (worker / reviewer / explorer). */
+  contractRole?: string;
+  /** The provider instance and model the child actually runs on. */
+  selection?: ModelSelection;
+  provider?: string;
+  source?: string;
+  mode?: string;
+  continuable?: boolean;
+  runs?: number;
+  task?: string;
+  structured?: unknown;
+  routeNote?: string;
 }
 
 export interface SessionMeta {
@@ -175,6 +254,8 @@ export interface SessionMeta {
   provider: string;
   model: string;
   mode: PermissionMode;
+  /** The Code v2 runtime mode, when the session was given one (read-only…full, incl. auto). */
+  runtimeMode?: RuntimeMode;
   createdAt: string;
   updatedAt: string;
   turnCount: number;

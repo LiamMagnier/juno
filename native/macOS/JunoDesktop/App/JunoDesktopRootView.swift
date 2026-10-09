@@ -62,6 +62,9 @@ struct JunoDesktopRootView: View {
 
     var body: some View {
         phaseContent
+            // A connected agent's computer-use request that no thread on
+            // screen holds: the Studio approval card, over Chat or Code.
+            .overlay(alignment: .top) { CodeV2ConnectedApprovalCard() }
             .preferredColorScheme(preferredColorScheme)
             // This Mac's text size (Phase 3, C5) and the first-run and Upgrade
             // sheets (C4, C6).

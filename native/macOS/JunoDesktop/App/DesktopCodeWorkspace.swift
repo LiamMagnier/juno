@@ -60,6 +60,16 @@ struct DesktopCodeWorkspace: View {
     @State private var voiceSession: DesktopVoiceSession?
     @State private var voiceUnavailable: String?
     @State private var registry = DesktopWorkbenchRegistry.shared
+    // Code v2: the composer's shared choices, the env server for
+    // subscriptions, which threads it runs, and its dock.
+    @State private var v2Composer = CodeV2ComposerModel(
+        selection: CodeV2.ModelSelection(instanceId: "alevr", model: ""),
+        defaultsKey: "juno.code.v2.composer"
+    )
+    @State private var envHub = EnvServerHub.shared
+    @State private var envBindings = CodeV2SessionBindings.shared
+    @State private var envDock = CodeV2DockController()
+    @State private var v2Keys = CodeV2KeysModel()
     @Environment(\.openWindow) private var openWindow
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -93,9 +103,93 @@ struct DesktopCodeWorkspace: View {
 
     private var panelPresentation: Binding<Bool> {
         Binding(
-            get: { panelVisible && controller != nil && selectedSessionID != nil },
-            set: { panelVisible = $0 }
+            get: {
+                if envBinding != nil { return envDock.isOpen }
+                return panelVisible && controller != nil && selectedSessionID != nil
+            },
+            set: { open in
+                if envBinding != nil { envDock.isOpen = open } else { panelVisible = open }
+            }
         )
+    }
+
+    /// Every place a model can run: Alevr, the subscriptions the env server
+    /// reports, and the user's own keys.
+    private var v2Directory: CodeV2ProviderDirectory {
+        CodeV2ProviderDirectory.build(
+            alevr: CodeV2AlevrCatalog.instance(from: workbenchModel.availableModels),
+            envInstances: envHub.instances,
+            byokKeys: v2Keys.providers,
+            antigravityEnabled: true
+        )
+    }
+
+    /// The selected thread's env-server binding, when a subscription runs it.
+    private var envBinding: CodeV2SessionBindings.Binding? {
+        selectedSessionID.flatMap { envBindings.binding(for: $0.value) }
+    }
+
+    private func envSession(_ binding: CodeV2SessionBindings.Binding) -> CodeV2EnvSession {
+        envHub.session(id: binding.envSessionId, cwd: binding.cwd, selection: binding.selection)
+    }
+
+    /// Orchestrate on the Alevr engine: roles on Alevr models and BYOK keys
+    /// go through the backend proxy with their own billing and tier, roles on
+    /// a subscription run as env-server turns in the thread's folder.
+    private func subagentProviders(for controller: SessionController) -> CodeV2SubagentProviders {
+        let instances: [CodeV2.ProviderInstance] = v2Directory.instances
+        let backend = CodeV2SubagentProviders.backendFactory(from: workbenchModel.dependencies.modelClient)
+        let env = CodeV2SubagentProviders.envConnector(envHub)
+        return CodeV2SubagentProviders(
+            instances: instances,
+            backend: backend,
+            env: env,
+            cwd: controller.context?.access.rootURL.path,
+            runtimeMode: v2Composer.runtimeMode,
+            approvals: CodeV2ConnectedApprovalSink.shared
+        )
+    }
+
+    private func openConnections() {
+        StudioSettingsRouter.shared.requested = .connections
+        openSettings()
+    }
+
+    /// Hands the selected thread to the env server: a subscription was chosen
+    /// in its composer. The thread keeps its place in the sidebar; from here
+    /// on the vendor's own agent runs it.
+    private func handOff(_ controller: SessionController, text: String) {
+        guard let cwd = controller.context?.access.rootURL.path else { return }
+        let binding = CodeV2SessionBindings.Binding(
+            envSessionId: "draft-" + UUID().uuidString.lowercased(),
+            cwd: cwd,
+            selection: v2Composer.selection
+        )
+        envBindings.bind(controller.sessionID.value, to: binding)
+        let session = envSession(binding)
+        Task {
+            await session.open()
+            if session.sessionId != binding.envSessionId {
+                var opened = binding
+                opened.envSessionId = session.sessionId
+                envBindings.bind(controller.sessionID.value, to: opened)
+            }
+            await session.send(
+                text, selection: v2Composer.selection, routing: v2Composer.routing,
+                runtimeMode: v2Composer.runtimeMode, interactionMode: v2Composer.interactionMode
+            )
+        }
+    }
+
+    private func adoptV2Selection(from controller: SessionController) {
+        guard envBindings.binding(for: controller.sessionID.value) == nil else { return }
+        let configuration = controller.session.configuration
+        v2Composer.selection = CodeV2EngineMapping.selection(
+            modelID: configuration.modelID,
+            effort: configuration.reasoningEffort,
+            contextTokens: controller.contextWindowTokens
+        )
+        v2Composer.runtimeMode = CodeV2EngineMapping.runtimeMode(for: configuration.permissionMode)
     }
 
     private var selectedSessionID: CodeSessionID? {
@@ -197,7 +291,12 @@ struct DesktopCodeWorkspace: View {
         }
         .inspector(isPresented: panelPresentation) {
             Group {
-                if let controller {
+                if let binding = envBinding {
+                    CodeV2EnvDockView(
+                        session: envSession(binding), dock: envDock, close: { envDock.isOpen = false },
+                        workspace: controller.map { CodeV2DockWorkspace(controller: $0, openPreviewWindow: openPreviewWindow) }
+                    )
+                } else if let controller {
                     StudioSidePanel(
                         controller: controller,
                         tab: panelTab,
@@ -267,6 +366,12 @@ struct DesktopCodeWorkspace: View {
             Text(voiceUnavailable ?? "Alevr could not start voice mode.")
         }
         .task { await bootstrap() }
+        // The env server lists the subscriptions the model picker's rail
+        // shows; started with the Code window, never by the Chat window.
+        .task {
+            envHub.start()
+            await v2Keys.reload()
+        }
         .task(id: selectedSessionID) { await resolveController() }
         .task(id: selectedTask?.id) { followSelectedTask() }
         .task(id: remoteDeviceID) { await loadRemoteSessions() }
@@ -439,7 +544,23 @@ struct DesktopCodeWorkspace: View {
         .junoVoiceColumn(voiceColumn)
     }
 
+    @ViewBuilder
     private func session(_ controller: SessionController) -> some View {
+        if let binding = envBindings.binding(for: controller.sessionID.value) {
+            CodeV2EnvSessionView(
+                session: envSession(binding),
+                composer: v2Composer,
+                directory: v2Directory,
+                dock: envDock,
+                openConnections: openConnections,
+                setup: { id, action in Task { await envHub.openSetup(for: id, action: action) } }
+            )
+        } else {
+            alevrSession(controller)
+        }
+    }
+
+    private func alevrSession(_ controller: SessionController) -> some View {
         StudioSessionView(
             controller: controller,
             models: workbenchModel.availableModels,
@@ -450,8 +571,17 @@ struct DesktopCodeWorkspace: View {
             },
             beginDictation: JunoSpeechService.isSupported
                 ? { withAnimation(JunoMotion.fast) { isDictating = true } }
-                : nil
+                : nil,
+            v2: CodeV2StudioContext(
+                composer: v2Composer,
+                directory: v2Directory,
+                handoff: { text in handOff(controller, text: text) },
+                openConnections: openConnections,
+                setup: { id, action in Task { await envHub.openSetup(for: id, action: action) } },
+                subagentProviders: { subagentProviders(for: controller) }
+            )
         )
+        .task(id: controller.sessionID) { adoptV2Selection(from: controller) }
         .junoVoiceColumn(voiceColumn)
         .overlay(alignment: .bottom) {
             if isDictating {
@@ -533,6 +663,15 @@ struct DesktopCodeWorkspace: View {
             .help("Show the session's terminal (⌥⌘C)")
             .accessibilityLabel("Terminal")
             .accessibilityIdentifier("juno.code.terminal.toggle")
+
+            Button { envDock.toggle(.agents) } label: {
+                DesktopCodeToolbarLabel(title: "Agents", icon: .agents, isOn: envDock.isOpen && envDock.tab == .agents)
+            }
+            .disabled(envBinding == nil)
+            .keyboardShortcut("g", modifiers: [.command, .shift])
+            .help("Show the thread's agents (⇧⌘G)")
+            .accessibilityLabel("Agents")
+            .accessibilityIdentifier("juno.code.agents.toggle")
         }
 
         ToolbarItem(placement: .primaryAction) {
@@ -588,7 +727,10 @@ struct DesktopCodeWorkspace: View {
     }
 
     private func isPanelOn(_ tab: StudioPanelTab) -> Bool {
-        panelPresentation.wrappedValue && panelTab.wrappedValue == tab
+        if envBinding != nil {
+            return envDock.isOpen && envDock.tab == (tab == .changes ? .changes : .terminal)
+        }
+        return panelPresentation.wrappedValue && panelTab.wrappedValue == tab
     }
 
     /// The session's diff, summed, or nil while nothing has changed.
@@ -764,6 +906,12 @@ struct DesktopCodeWorkspace: View {
 
     private func togglePanel(_ tab: StudioPanelTab) {
         guard controller != nil else { return }
+        if envBinding != nil {
+            // A subscription thread's dock: Changes, and a shell in the
+            // thread's folder run by the env server.
+            envDock.toggle(tab == .changes ? .changes : .terminal)
+            return
+        }
         if panelVisible, panelTab.wrappedValue == tab {
             panelVisible = false
         } else {
@@ -798,6 +946,10 @@ struct DesktopCodeWorkspace: View {
     }
 
     private func openPreview() {
+        if envBinding != nil, controller?.context != nil {
+            envDock.toggle(.preview)
+            return
+        }
         guard let root = controller?.context?.access.rootURL else { return }
         if previewTarget != nil {
             previewTarget = nil

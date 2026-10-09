@@ -40,6 +40,9 @@ const intentionalFixtures = new Set([
   // Fake keys Alevr Search must refuse: in a search query, and in a URL it would otherwise cache.
   "tests/alevr-search-adversarial.test.ts|GitHub token",
   "tests/alevr-search-retrieve.test.ts|OpenAI secret",
+  // Fake BYOK keys (abcdef…) that Code's key format checks and routing must accept.
+  "tests/code-v2-byok-routing.test.ts|OpenAI secret",
+  "tests/code-v2-webfn.test.ts|OpenAI secret",
 ]);
 
 const findings = [];

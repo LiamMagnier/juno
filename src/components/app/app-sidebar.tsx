@@ -1089,6 +1089,7 @@ export function AppSidebar({
               <ProductSwitch
                 active={product}
                 plan={quota.plan}
+                codeOpen={features.codeOpen}
                 onNavigate={() => setSidebarOpen(false)}
               />
             </motion.div>
@@ -1118,6 +1119,7 @@ export function AppSidebar({
                 collapsed
                 active={product}
                 plan={quota.plan}
+                codeOpen={features.codeOpen}
                 onNavigate={() => setSidebarOpen(false)}
               />
             </motion.div>

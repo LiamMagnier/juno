@@ -1,0 +1,86 @@
+{
+  "$def": "ProviderInstance",
+  "cases": [
+    {
+      "id": "alevr",
+      "kind": "alevr",
+      "label": "Alevr",
+      "status": "ready",
+      "capabilities": {
+        "steering": true, "queue": true, "interrupt": true, "resume": true, "fork": true, "rollback": true,
+        "planMode": true, "approvals": ["read-only", "ask", "auto-edit", "auto", "full"], "subagents": true,
+        "computerUse": true, "contextTiers": true, "effortLevels": ["low", "medium", "high", "xhigh", "max"],
+        "images": true, "mcpInjection": false
+      },
+      "models": [
+        {
+          "id": "openai:gpt-6.1-sol",
+          "label": "GPT-6.1 Sol",
+          "isDefault": true,
+          "effortLevels": ["low", "medium", "high", "xhigh"],
+          "defaultEffort": "medium",
+          "contextTiers": [
+            { "tokens": 272000, "label": "272K", "inputPerMTok": 2, "outputPerMTok": 10, "cachedInputPerMTok": 0.1 },
+            { "tokens": 1050000, "label": "1M", "inputPerMTok": 4, "outputPerMTok": 10, "cachedInputPerMTok": 0.2, "note": "2× input above 272K" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "claude-agent:default",
+      "kind": "claude-agent",
+      "label": "Claude (your subscription)",
+      "binaryPath": "/Users/me/.local/bin/claude",
+      "configDir": "/Users/me/.claude",
+      "status": "ready",
+      "version": "2.4.1",
+      "account": { "email": "me@example.com", "plan": "max", "tokenSource": "claude.ai" },
+      "limits": [
+        { "id": "five_hour", "label": "5-hour", "usedPct": 42, "resetsAt": "2026-10-08T23:00:00Z" },
+        { "id": "seven_day", "label": "Weekly", "usedPct": 18, "resetsAt": "2026-10-13T09:00:00Z" }
+      ],
+      "capabilities": {
+        "steering": true, "queue": true, "interrupt": true, "resume": true, "fork": true, "rollback": false,
+        "planMode": true, "approvals": ["ask", "auto-edit", "auto", "full"], "subagents": true,
+        "computerUse": false, "contextTiers": false, "effortLevels": ["low", "medium", "high", "xhigh", "max"],
+        "images": true, "mcpInjection": true
+      },
+      "checkedAt": "2026-10-08T20:00:00Z"
+    },
+    {
+      "id": "codex:default",
+      "kind": "codex",
+      "label": "Codex (your ChatGPT plan)",
+      "binaryPath": "/opt/homebrew/bin/codex",
+      "launchArgs": ["app-server"],
+      "status": "limited",
+      "statusMessage": "Weekly limit reached",
+      "account": { "email": "me@example.com", "plan": "plus", "tokenSource": "chatgpt" },
+      "limits": [{ "id": "primary", "label": "Weekly", "usedPct": 100, "resetsAt": "2026-10-10T00:00:00Z" }]
+    },
+    {
+      "id": "acp:gemini",
+      "kind": "acp",
+      "label": "Gemini CLI",
+      "acpCommand": ["gemini", "--experimental-acp"],
+      "env": { "GOOGLE_CLOUD_PROJECT": "my-project" },
+      "status": "signed-out",
+      "statusMessage": "Sign in with an API key, Vertex or Enterprise account"
+    },
+    {
+      "id": "acp:antigravity",
+      "kind": "acp",
+      "label": "Antigravity",
+      "acpCommand": ["antigravity-acp"],
+      "status": "not-installed"
+    },
+    {
+      "id": "byok:anthropic",
+      "kind": "byok",
+      "label": "Anthropic key",
+      "status": "error",
+      "statusMessage": "The key was rejected (401)"
+    },
+    { "id": "acp:dsh", "kind": "acp", "label": "DeepSeek Harness", "acpCommand": ["dsh", "--profile", "acp"], "status": "unknown" }
+  ]
+}

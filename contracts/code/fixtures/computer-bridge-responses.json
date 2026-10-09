@@ -1,0 +1,16 @@
+{
+  "$def": "ComputerBridgeResponse",
+  "cases": [
+    { "id": "r1", "ok": true, "text": "Screen control is ready.", "missingPermissions": [] },
+    { "id": "r1", "ok": false, "text": "Alevr needs Screen Recording. Open System Settings › Privacy & Security › Screen Recording and turn Alevr on.",
+      "missingPermissions": ["screen_recording"], "endsTurn": true },
+    { "id": "r2", "ok": true, "text": "Looked at Pages.\nframe 1456×816 · scale 0.500 · display 1 · app Pages",
+      "image": { "mediaType": "image/jpeg", "data": "/9j/4AAQSkZJRgABAQ==" },
+      "item": { "id": "ca_toolu_01", "kind": "computer_action", "createdAt": "2026-10-08T20:01:00Z", "callId": "toolu_01", "action": "screenshot",
+        "status": "completed", "app": "Pages", "summary": "Looked at Pages.", "screenshotRef": "alevr-shot://claude:thread-7/toolu_01.jpg",
+        "frameSize": { "width": 1456, "height": 816 } } },
+    { "id": "r3", "ok": false, "text": "Alevr is using TextEdit for ‘Fix the export sheet’. Try again when it finishes.",
+      "holder": { "holderId": "mac:session-4", "kind": "code_session", "title": "Fix the export sheet", "pid": 4120, "app": "TextEdit",
+        "acquiredAt": "2026-10-08T20:00:00Z", "heartbeatAt": "2026-10-08T20:00:58Z" } }
+  ]
+}

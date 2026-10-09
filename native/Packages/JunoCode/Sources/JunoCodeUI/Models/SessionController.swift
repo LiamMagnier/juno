@@ -288,6 +288,15 @@ public final class SessionController {
     private struct TurnContract: Equatable {
         let behavior: AgentBehavior
         let modelID: String
+        /// Code v2: the composer's role routing for sub-agents (models per
+        /// role, budget). Baked into the delegate tools, so a change rebuilds.
+        let roleRouting: CodeV2.RoleRouting?
+        /// Which provider instances routed children can run on (BYOK keys,
+        /// subscriptions through the env server); see ``CodeV2SubagentProviders``.
+        let subagentProviders: String?
+        /// The composer's context tier or Lean window, when it is smaller
+        /// than the model's own: the session compacts against it.
+        let contextWindowOverride: Int?
         /// nil means send no thinking parameter — see
         /// ``ModelOption/takesThinkingParameter``.
         let reasoningEffort: ReasoningEffort?
@@ -412,6 +421,19 @@ public final class SessionController {
 
     public let sessionID: CodeSessionID
     let live: Live?
+
+    /// Code v2 (Orchestrate): which model each sub-agent role runs on and the
+    /// run's budget. Nil is solo: children inherit the session's model.
+    public private(set) var roleRouting: CodeV2.RoleRouting?
+    /// Code v2: where routed children on other provider instances run.
+    @ObservationIgnored public private(set) var subagentProviders: CodeV2SubagentProviders?
+    /// Code v2: the composer's context tier or Lean window (nil: the model's).
+    public private(set) var contextWindowOverride: Int?
+    /// Code v2 `auto`: a model reviewer decides the approvals the ladder would
+    /// ask about (never destructive or screen actions; it fails closed).
+    public private(set) var autoReviewEnabled = false
+    /// The current orchestrator's shared sub-agent budget, reset per turn.
+    private var runBudget: RunBudgetLedger?
 
     /// The opened workspace, or `nil` in the preview harness. Views must not
     /// reach through this; use the surface accessors below so preview mode
@@ -769,6 +791,9 @@ public final class SessionController {
         let contract = TurnContract(
             behavior: session.configuration.behavior,
             modelID: session.configuration.modelID,
+            roleRouting: roleRouting,
+            subagentProviders: subagentProviders?.fingerprint,
+            contextWindowOverride: contextWindowOverride,
             reasoningEffort: live.modelTakesThinkingParameter(session.configuration.modelID)
                 ? session.configuration.reasoningEffort
                 : nil,
@@ -840,6 +865,15 @@ public final class SessionController {
             store: live.store,
             includeGoal: false
         )
+        // Code v2 Orchestrate: per-role models and one budget shared by every
+        // child of this orchestrator (reset as each turn starts). Selections
+        // this engine cannot serve inherit the parent's model, with a note.
+        let subagentRouting: SubagentRouting? = contract.roleRouting.map {
+            SubagentRouting(routing: $0, resolver: subagentProviders?.resolver)
+        }
+        let budget = RunBudgetLedger.make(for: contract.roleRouting)
+        runBudget = budget
+        await applyAutoReview(live)
         // Hooks run in Code only. Plan and Ask promise that nothing executes,
         // and a hook is a command.
         let lifecycleHooks = contract.behavior == .code
@@ -878,7 +912,9 @@ public final class SessionController {
                     parentRules: { [permissions = live.permissions] in
                         await permissions.permissionRules
                     },
-                    lifecycleHooks: lifecycleHooks
+                    lifecycleHooks: lifecycleHooks,
+                    routing: subagentRouting,
+                    budget: budget
                 )
             )
             : nil
@@ -1058,7 +1094,10 @@ public final class SessionController {
                 // built-ins, then the session's custom agents (Lane F's
                 // discovery); a custom agent never takes a built-in's name.
                 agents: subagentTargets,
-                parentStepLimit: settings.maxTurns
+                parentStepLimit: settings.maxTurns,
+                routing: subagentRouting,
+                budget: budget,
+                concurrency: Self.subagentConcurrency(for: contract.roleRouting)
             ))
         } else if contract.behavior == .survey {
             // Survey is read-only by construction, but it is not merely Ask
@@ -1088,7 +1127,10 @@ public final class SessionController {
                     fallbackResolver: settings.modelFallback ? live.fallbackResolver : nil,
                     parentRules: { [permissions = live.permissions] in
                         await permissions.permissionRules
-                    }
+                    },
+                    routing: subagentRouting,
+                    budget: budget,
+                    concurrency: Self.subagentConcurrency(for: contract.roleRouting)
                 )
             )
         }
@@ -1215,7 +1257,10 @@ public final class SessionController {
             // With auto-compaction off the byte ceiling still stands behind it;
             // only the early, window-relative trigger is switched off.
             contextWindowTokens: settings.autoCompact
-                ? live.modelContextWindowTokens(contract.modelID)
+                ? Self.effectiveContextWindow(
+                    model: live.modelContextWindowTokens(contract.modelID),
+                    override: contract.contextWindowOverride
+                )
                 : nil,
             contextCompactionTriggerFraction: settings.compactThreshold,
             systemPrompt: systemPrompt,
@@ -1718,7 +1763,10 @@ public final class SessionController {
                 )
             )
         )
-        try await currentOrchestrator(live).submit(
+        let orchestrator = await currentOrchestrator(live)
+        // Each turn is its own run for the Orchestrate budget.
+        await runBudget?.reset()
+        try await orchestrator.submit(
             prompt: prompt, modelPrompt: modelPrompt, images: images, accepted: accepted
         )
         runStartedAt = Date()
@@ -2455,6 +2503,62 @@ public final class SessionController {
         } catch {
             transientError = "The plan was approved, but implementing it could not start: \(error.localizedDescription)"
         }
+    }
+
+    /// Code v2 Orchestrate: the role routing the next turn's sub-agents use.
+    /// Applied when the next turn starts (the delegate tools are rebuilt).
+    public func setRoleRouting(_ routing: CodeV2.RoleRouting?) {
+        roleRouting = routing
+    }
+
+    /// Code v2 Orchestrate on other instances: how routed children reach a
+    /// BYOK key or a subscription. Applied when the next turn starts.
+    public func setSubagentProviders(_ providers: CodeV2SubagentProviders?) {
+        subagentProviders = providers
+    }
+
+    /// Code v2 context tier / Lean: the window the session compacts against
+    /// (nil for the model's own). Applied when the next turn starts.
+    public func setContextWindowOverride(_ tokens: Int?) {
+        contextWindowOverride = tokens
+    }
+
+    /// Code v2 `auto`: turns the model reviewer on or off, live.
+    public func setAutoReview(_ enabled: Bool) async {
+        guard autoReviewEnabled != enabled else { return }
+        autoReviewEnabled = enabled
+        if let live { await applyAutoReview(live) }
+    }
+
+    /// The reviewer runs on the routing's reviewer model when this engine
+    /// serves it (an Alevr selection), otherwise on the session's model.
+    private func applyAutoReview(_ live: Live) async {
+        guard autoReviewEnabled, session.configuration.behavior == .code else {
+            await live.permissions.setAutoReviewer(nil)
+            return
+        }
+        await live.permissions.setAutoReviewer(
+            AutoReviewer(
+                model: live.modelClient,
+                modelID: Self.autoReviewerModelID(routing: roleRouting, sessionModelID: session.configuration.modelID),
+                store: live.store
+            )
+        )
+    }
+
+    /// The reviewer's model: the routing's reviewer when it is an Alevr selection.
+    nonisolated static func autoReviewerModelID(routing: CodeV2.RoleRouting?, sessionModelID: String) -> String {
+        if let reviewer = routing?.reviewer, reviewer.instanceId == "alevr", !reviewer.model.isEmpty {
+            return reviewer.model
+        }
+        return sessionModelID
+    }
+
+    /// How many children run at once: one per worker the routing names, at
+    /// least the default and at most the engine's ceiling.
+    nonisolated static func subagentConcurrency(for routing: CodeV2.RoleRouting?) -> Int {
+        let workers = routing?.preset == .solo ? 0 : (routing?.workers?.count ?? 0)
+        return min(DelegateTaskTool.maximumConfigurableConcurrent, max(DelegateTaskTool.maximumConcurrent, workers))
     }
 
     public func setPermissionMode(_ mode: PermissionMode) async {
@@ -4115,7 +4219,18 @@ public final class SessionController {
     /// the manifest publishes one. The header's meter is drawn from this and
     /// ``contextTokens`` and from nothing estimated.
     public var contextWindowTokens: Int? {
-        live?.modelContextWindowTokens(session.configuration.modelID)
+        Self.effectiveContextWindow(
+            model: live?.modelContextWindowTokens(session.configuration.modelID),
+            override: contextWindowOverride
+        )
+    }
+
+    /// The window the session compacts against: the composer's smaller tier
+    /// or Lean window when one is set, never more than the model offers.
+    nonisolated static func effectiveContextWindow(model: Int?, override: Int?) -> Int? {
+        guard let override, override > 0 else { return model }
+        guard let model else { return override }
+        return min(model, override)
     }
 
     // MARK: - Compaction

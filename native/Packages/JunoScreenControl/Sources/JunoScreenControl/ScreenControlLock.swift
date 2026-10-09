@@ -7,6 +7,18 @@ public struct ScreenControlHolder: Hashable, Codable, Sendable {
         case codeSession
         /// A Juno Work task.
         case workTask
+        /// A subscription agent (Claude, Codex, an ACP agent) driving the Mac
+        /// through the env server's Alevr MCP server (Code v2 SPEC §3.12).
+        case connectedAgent
+
+        /// The cross-process record's kind.
+        var fileKind: DesktopLockFile.Record.Kind {
+            switch self {
+            case .codeSession: .codeSession
+            case .workTask: .workTask
+            case .connectedAgent: .envServer
+            }
+        }
     }
 
     /// Stable per claimant: a session id or a Work run id.
@@ -29,7 +41,11 @@ public struct ScreenControlHolder: Hashable, Codable, Sendable {
         let what = appName.map { "Juno is using \($0)" } ?? "Juno is already using apps"
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
-            return what + (kind == .workTask ? " for a Work task" : " in another session")
+            switch kind {
+            case .workTask: return what + " for a Work task"
+            case .connectedAgent: return what + " for a connected agent"
+            case .codeSession: return what + " in another session"
+            }
         }
         return "\(what) for ‘\(trimmed)’"
     }
@@ -74,8 +90,18 @@ public actor ScreenControlLock {
     private var generation: UInt64 = 0
     private var stopListeners: [UUID: @Sendable (ScreenControlStopReason) -> Void] = [:]
     private var holderListeners: [UUID: @Sendable (ScreenControlHolder?) -> Void] = [:]
+    /// The cross-process record other processes (the env server, another
+    /// copy of the app) check before they touch the pointer. Nil in tests
+    /// and wherever only this process drives the screen.
+    private let file: DesktopLockFile?
+    private var heartbeatTask: Task<Void, Never>?
+    private var lastFileHolder: String?
+    private let heartbeatInterval: Duration
 
-    public init() {}
+    public init(file: DesktopLockFile? = nil, heartbeatInterval: Duration = .seconds(5)) {
+        self.file = file
+        self.heartbeatInterval = heartbeatInterval
+    }
 
     public var currentHolder: ScreenControlHolder? { holder }
 
@@ -84,6 +110,16 @@ public actor ScreenControlLock {
     public func claim(_ claimant: ScreenControlHolder) throws -> ScreenControlClaim {
         if let holder, holder.id != claimant.id {
             throw ScreenControlError.lockHeld(holder: holder.sentence)
+        }
+        if let file {
+            switch file.acquire(holderID: claimant.id, kind: claimant.kind.fileKind, title: claimant.title, app: claimant.appName ?? holder?.appName) {
+            case .acquired:
+                break
+            case let .held(by: record):
+                throw ScreenControlError.lockHeld(holder: record.sentence)
+            case .contended:
+                throw ScreenControlError.lockHeld(holder: "Another session is taking the desktop right now")
+            }
         }
         if holder == nil { generation &+= 1 }
         var next = claimant
@@ -151,7 +187,36 @@ public actor ScreenControlLock {
         holderListeners[id] = nil
     }
 
+    /// Keeps the file's heartbeat fresh while someone here holds the lock,
+    /// and lets the file go when nobody does.
+    private func syncFile(previous: String?) {
+        guard let file else { return }
+        if let previous, previous != holder?.id { file.release(holderID: previous) }
+        if let holder {
+            file.heartbeat(holderID: holder.id, app: holder.appName)
+            guard heartbeatTask == nil else { return }
+            let interval = heartbeatInterval
+            heartbeatTask = Task { [weak self] in
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: interval)
+                    guard !Task.isCancelled else { return }
+                    await self?.beat()
+                }
+            }
+        } else {
+            heartbeatTask?.cancel()
+            heartbeatTask = nil
+        }
+    }
+
+    private func beat() {
+        guard let file, let holder else { return }
+        file.heartbeat(holderID: holder.id, app: holder.appName)
+    }
+
     private func notifyHolder() {
+        syncFile(previous: lastFileHolder)
+        lastFileHolder = holder?.id
         let snapshot = holder
         for listener in holderListeners.values { listener(snapshot) }
     }

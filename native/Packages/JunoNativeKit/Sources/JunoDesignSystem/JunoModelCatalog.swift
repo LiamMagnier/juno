@@ -297,6 +297,14 @@ public struct JunoModelDescriptor: Identifiable, Equatable, Sendable {
     /// True only for a router that picks its own thinking depth. Earns the
     /// "SMART" badge in the catalog row.
     public let choosesThinkingAutomatically: Bool
+    /// Selectable context windows with their prices, smallest first; the first
+    /// is the default (Alevr Code v2 SPEC §4). Empty when the manifest predates
+    /// tiers, and then ``contextWindowTokens`` is the only window.
+    public let contextTiers: [JunoModelContextTier]
+    /// Alevr Code: the model can drive an agent loop, and its place in the
+    /// curated "best for coding" order (nil = unranked).
+    public let codeAgentic: Bool?
+    public let codeRank: Int?
 
     public init(
         id: String,
@@ -319,8 +327,14 @@ public struct JunoModelDescriptor: Identifiable, Equatable, Sendable {
         deprecationNote: String? = nil,
         retiresOn: String? = nil,
         choosesThinkingAutomatically: Bool = false,
-        price: JunoModelPrice? = nil
+        price: JunoModelPrice? = nil,
+        contextTiers: [JunoModelContextTier] = [],
+        codeAgentic: Bool? = nil,
+        codeRank: Int? = nil
     ) {
+        self.contextTiers = contextTiers
+        self.codeAgentic = codeAgentic
+        self.codeRank = codeRank
         self.id = id
         self.providerID = providerID
         self.providerName = providerName
@@ -359,6 +373,31 @@ public struct JunoModelDescriptor: Identifiable, Equatable, Sendable {
             || providerName.localizedCaseInsensitiveContains(needle)
             || id.localizedCaseInsensitiveContains(needle)
             || (summary?.localizedCaseInsensitiveContains(needle) ?? false)
+    }
+}
+
+/// One selectable context window and the rate it bills at (USD per million
+/// tokens), as the model manifest publishes it (`contextTiers`).
+public struct JunoModelContextTier: Equatable, Sendable, Codable {
+    public let tokens: Int
+    public let label: String
+    public let inputPerMTok: Double
+    public let outputPerMTok: Double
+    public let cachedInputPerMTok: Double?
+    public let note: String?
+    public let unverified: Bool?
+
+    public init(
+        tokens: Int, label: String, inputPerMTok: Double, outputPerMTok: Double,
+        cachedInputPerMTok: Double? = nil, note: String? = nil, unverified: Bool? = nil
+    ) {
+        self.tokens = tokens
+        self.label = label
+        self.inputPerMTok = inputPerMTok
+        self.outputPerMTok = outputPerMTok
+        self.cachedInputPerMTok = cachedInputPerMTok
+        self.note = note
+        self.unverified = unverified
     }
 }
 

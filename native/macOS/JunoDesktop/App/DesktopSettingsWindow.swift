@@ -547,6 +547,25 @@ struct DesktopCodeRemoteHostTile: View {
                     .junoCaption()
                     .fixedSize(horizontal: false, vertical: true)
 
+                    Toggle(
+                        isOn: Binding(
+                            get: { host.sharesTerminalRemotely },
+                            set: { host.sharesTerminalRemotely = $0 }
+                        )
+                    ) {
+                        VStack(alignment: .leading, spacing: JunoSpace.hairline) {
+                            Text("Share this Mac's terminal")
+                                .junoRowLabel()
+                            Text("Lets the web open a shell here, inside the folders you shared.")
+                                .junoCaption()
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .toggleStyle(.switch)
+                    .tint(Color.junoAccent)
+                    .accessibilityIdentifier("juno.desktop.settings.remote-host-terminal")
+
                     if let problem = host.remoteSyncProblem {
                         Text("Your phone is not getting updates: \(problem)")
                             .junoCaption()

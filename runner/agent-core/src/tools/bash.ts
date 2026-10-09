@@ -16,7 +16,7 @@ const MAX_TIMEOUT_MS = 600_000;
  * shell, including whatever CI put there. Failing closed costs a broken PATH at
  * worst; failing open costs a credential.
  */
-const MINIMAL_ENV: NodeJS.ProcessEnv = {
+export const MINIMAL_ENV: NodeJS.ProcessEnv = {
   PATH: '/usr/local/bin:/usr/bin:/bin',
   HOME: process.env.HOME ?? '/tmp',
   LANG: 'C.UTF-8',

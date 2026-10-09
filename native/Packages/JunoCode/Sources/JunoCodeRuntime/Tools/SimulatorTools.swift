@@ -16,19 +16,47 @@ public struct ScreenToolProvider: CodeToolProvider {
         // that can see, before any grant exists (CU-15): until then each call
         // answers with what the reader has to do. A route whose coordinate
         // convention is not verified gets none (§3.4).
-        if context.supportsVision,
-           screen.computerUseEnabled || context.computerUseActive,
+        //
+        // Every model gets computer use (Code v2 SPEC §3.12): Anthropic and
+        // OpenAI routes that can see keep the toolset vocabulary; every other
+        // route, and every model that cannot see, gets the portable
+        // `computer_use` tool — flat x/y in the convention the frame header
+        // states, and accessibility targeting that needs no picture at all.
+        if screen.computerUseEnabled || context.computerUseActive,
            let computer = screen.computer,
            let budget = screen.imageBudget
         {
-            tools.append(ComputerTool(computer: computer, permissions: context.permissions, budget: budget, tracker: screen.turnTracker))
-            tools.append(ComputerBatchTool(computer: computer, permissions: context.permissions, budget: budget, tracker: screen.turnTracker))
-            tools.append(ComputerAppsTool(computer: computer, permissions: context.permissions, budget: budget))
-            tools.append(ComputerAccessibilityTool(computer: computer, budget: budget))
-            tools.append(ComputerMenuTool(computer: computer, permissions: context.permissions, budget: budget))
-            tools.append(ComputerDisplayTool(computer: computer, permissions: context.permissions))
-            if let reader = screen.editorReader {
-                tools.append(InspectEditorBufferTool(reader: reader, computer: computer, workspaceRoot: context.workspaceRoot))
+            let wire = screen.wire ?? .functionTool
+            let recorder = screen.actionRecorder
+            if context.supportsVision, wire != .portable {
+                tools.append(ComputerTool(computer: computer, permissions: context.permissions, budget: budget, tracker: screen.turnTracker, recorder: recorder))
+                tools.append(ComputerBatchTool(computer: computer, permissions: context.permissions, budget: budget, tracker: screen.turnTracker, recorder: recorder))
+                tools.append(ComputerAppsTool(computer: computer, permissions: context.permissions, budget: budget))
+                tools.append(ComputerAccessibilityTool(computer: computer, budget: budget))
+                tools.append(ComputerMenuTool(computer: computer, permissions: context.permissions, budget: budget))
+                tools.append(ComputerDisplayTool(computer: computer, permissions: context.permissions))
+                if let reader = screen.editorReader {
+                    tools.append(InspectEditorBufferTool(reader: reader, computer: computer, workspaceRoot: context.workspaceRoot))
+                }
+            } else {
+                // A blind model's frames are captured for the timeline but
+                // never sent: its route may refuse images outright.
+                let portableBudget = wire == .portable ? budget : (budget.coordinates == .normalized1000 ? .portableNormalized : .portable)
+                tools.append(PortableComputerTool(
+                    computer: computer,
+                    permissions: context.permissions,
+                    budget: portableBudget,
+                    seesImages: context.supportsVision,
+                    tracker: screen.turnTracker,
+                    recorder: recorder,
+                    frames: screen.frameMemory ?? PortableFrameMemory()
+                ))
+                var apps = ComputerAppsTool(computer: computer, permissions: context.permissions, budget: portableBudget)
+                apps.sendsImages = context.supportsVision
+                tools.append(apps)
+                if context.supportsVision {
+                    tools.append(ComputerDisplayTool(computer: computer, permissions: context.permissions))
+                }
             }
         }
         if let simulator = screen.simulator, SimulatorTool.isRelevant(workspaceRoot: context.workspaceRoot) {

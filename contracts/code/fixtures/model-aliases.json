@@ -1,0 +1,16 @@
+{
+  "$def": "ModelSelection",
+  "aliases": {
+    "opus": "anthropic:claude-opus-5-5",
+    "max": "anthropic:claude-opus-5-5",
+    "sonnet": "anthropic:claude-sonnet-5-5",
+    "pro": "anthropic:claude-sonnet-5-5",
+    "haiku": "anthropic:claude-haiku-4-5",
+    "flash": "google:gemini-3.8-flash",
+    "fast": "google:gemini-3.8-flash"
+  },
+  "cases": [
+    { "instanceId": "alevr", "model": "sonnet" },
+    { "instanceId": "alevr", "model": "max", "effort": "max" }
+  ]
+}

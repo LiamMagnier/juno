@@ -539,6 +539,8 @@ struct StudioScreenControlSettings: View {
         } footer: {
             Text("You can lower what an app may be granted or deny it. Nothing here can raise an app above its kind's limit, and nothing here grants an app: that is a question in each session.")
         }
+
+        StudioConnectedAgentsSettings()
     }
 
     /// Bundle ids the reader denied or lowered, sorted.
@@ -613,5 +615,76 @@ struct StudioScreenControlSettings: View {
     private func refresh() {
         permissions = probe.read()
         preferences = preferencesStore.load()
+    }
+}
+
+/// Computer use for connected agents (Code v2 SPEC §3.12): Claude through
+/// your own `claude`, Codex, Gemini CLI and the other agents Alevr runs reach
+/// this Mac through Alevr's `computer_use` tool. Off until you turn it on;
+/// each agent asks once per session, each app is granted in the session, and
+/// the allowlist only spares cards in Auto-edit and Auto — never the floor.
+struct StudioConnectedAgentsSettings: View {
+    var url: URL = ComputerUseBridgeSettings.defaultURL
+
+    @State private var settings = ComputerUseBridgeSettings()
+    @State private var newApp = ""
+    @State private var saveFailed = false
+
+    var body: some View {
+        Section {
+            Toggle("Let connected agents use apps", isOn: Binding(
+                get: { settings.connectedAgentsEnabled },
+                set: { settings.connectedAgentsEnabled = $0; save() }
+            ))
+            .accessibilityIdentifier("alevr.code.settings.connected-agents.toggle")
+            if settings.connectedAgentsEnabled {
+                ForEach(settings.allowlist.sorted(), id: \.self) { bundleID in
+                    HStack {
+                        Text(bundleID).font(Studio.Font.mono)
+                        Spacer()
+                        Button("Remove") {
+                            settings.allowlist.remove(bundleID)
+                            save()
+                        }
+                        .contentShape(.rect)
+                    }
+                }
+                HStack(spacing: JunoSpace.cozy) {
+                    TextField("Bundle id, like com.apple.TextEdit", text: $newApp)
+                        .textFieldStyle(.roundedBorder)
+                        .onSubmit(add)
+                    Button("Allow without asking", action: add)
+                        .disabled(newApp.trimmingCharacters(in: .whitespaces).isEmpty)
+                        .accessibilityIdentifier("alevr.code.settings.connected-agents.allow")
+                }
+            }
+            if saveFailed {
+                Text("Alevr could not save this setting.")
+                    .font(Studio.Font.meta)
+                    .foregroundStyle(Studio.Ink.primary)
+            }
+        } header: {
+            Text("Connected agents")
+        } footer: {
+            Text("Agents you connect to Alevr Code, like Claude (your subscription) or Codex, can use Mac apps through Alevr: each asks you once per session, each app is granted in that session, and every step shows on screen with Esc to stop. Apps listed here run clicks and typing without a card in Auto-edit and Auto; sending, buying, deleting and signing in always ask.")
+        }
+        .onAppear { settings = ComputerUseBridgeSettings.load(from: url) }
+    }
+
+    private func add() {
+        let id = newApp.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !id.isEmpty else { return }
+        settings.allowlist.insert(id)
+        newApp = ""
+        save()
+    }
+
+    private func save() {
+        do {
+            try settings.save(to: url)
+            saveFailed = false
+        } catch {
+            saveFailed = true
+        }
     }
 }

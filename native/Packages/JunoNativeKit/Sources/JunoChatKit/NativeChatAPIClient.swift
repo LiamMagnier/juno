@@ -2,6 +2,7 @@ import Foundation
 import JunoAPI
 import JunoAuth
 import JunoCore
+import JunoDesignSystem
 import JunoSync
 
 public enum NativeReasoningEffort: String, CaseIterable, Codable, Identifiable,
@@ -101,6 +102,12 @@ public struct NativeChatModelOption: Identifiable, Equatable, Sendable {
     /// "YYYY-MM", or nil when the lab never published one.
     public let released: String?
     public let contextWindowTokens: Int?
+    /// Selectable context windows, smallest first (Code v2). Empty from an
+    /// older server.
+    public let contextTiers: [JunoModelContextTier]
+    /// Alevr Code's agentic flag and "best for coding" rank; nil from an older server.
+    public let codeAgentic: Bool?
+    public let codeRank: Int?
     public let pricing: NativeModelPricing?
     public let grades: NativeModelGrades?
     public let supportedReasoningEfforts: [NativeReasoningEffort]
@@ -196,8 +203,14 @@ public struct NativeChatModelOption: Identifiable, Equatable, Sendable {
         supportsAttachments: Bool = false,
         imageEditSupport: NativeImageEditSupport = .none,
         deprecationNote: String? = nil,
-        retiresOn: String? = nil
+        retiresOn: String? = nil,
+        contextTiers: [JunoModelContextTier] = [],
+        codeAgentic: Bool? = nil,
+        codeRank: Int? = nil
     ) {
+        self.contextTiers = contextTiers
+        self.codeAgentic = codeAgentic
+        self.codeRank = codeRank
         self.id = id
         self.providerID = providerID
         self.providerName = providerName
@@ -1082,7 +1095,15 @@ public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
                 imageEditSupport: model.capabilities.imageEdit
                     .flatMap(NativeImageEditSupport.init(rawValue:)) ?? .none,
                 deprecationNote: nonEmpty(model.deprecationNote, maximum: 400),
-                retiresOn: nonEmpty(model.retiresOn, maximum: 10)
+                retiresOn: nonEmpty(model.retiresOn, maximum: 10),
+                // Tiers with a non-positive window or a negative rate are
+                // dropped rather than trusted: a price the picker prints must
+                // be one the server could have meant.
+                contextTiers: (model.contextTiers ?? [])
+                    .filter { $0.tokens > 0 && $0.inputPerMTok >= 0 && $0.outputPerMTok >= 0 }
+                    .sorted { $0.tokens < $1.tokens },
+                codeAgentic: model.code?.agentic,
+                codeRank: model.code?.rank
             )
         }
         return NativeChatModelCatalog(
@@ -1933,6 +1954,10 @@ private struct ModelCatalogWire: Decodable {
         let minimumPlan: String
         let requiredPlan: String?
         let contextWindowTokens: Int?
+        /// Code v2: null for Auto and media models, absent from older servers.
+        let contextTiers: [JunoModelContextTier]?
+        struct Code: Decodable { let agentic: Bool; let rank: Int? }
+        let code: Code?
         let pricing: Pricing?
         let metrics: Metrics?
         let supportedReasoningEfforts: [String]

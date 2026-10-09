@@ -89,6 +89,7 @@ jobs:
         run: |
           npm ci --prefix runner/agent-core
           npm run build --prefix runner/agent-core
+          npm ci --prefix runner/env-server
 
       # `npm run typecheck`, not a bare `npx tsc --noEmit`: V8 sizes its default
       # old-space from the host, which on a GitHub runner lands near 2 GB, and
@@ -213,6 +214,7 @@ jobs:
         run: |
           npm ci --prefix runner/agent-core
           npm run build --prefix runner/agent-core
+          npm ci --prefix runner/env-server
       - name: Unit tests, shard ${{ matrix.shard }} of 4
         env:
           PYTHONDONTWRITEBYTECODE: "1"
@@ -626,6 +628,7 @@ jobs:
         run: |
           npm ci --prefix runner/agent-core
           npm run build --prefix runner/agent-core
+          npm ci --prefix runner/env-server
 
       - name: Build app
         run: npm run build

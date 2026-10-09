@@ -98,6 +98,10 @@ public actor AgentOrchestrator {
         /// (CODE_AGENT_SPEC §1). Nil keeps none of it: the stop check alone
         /// decides, and the step limit (`maximumIterations`) is still soft.
         public var autonomy: AutonomyConfiguration?
+        /// When the same call with the same arguments, made that many times
+        /// in a row, earns a reminder on its result (SPEC §3.10). Empty turns
+        /// the guard off.
+        public var repeatCallThresholds: [Int]
 
         public init(
             maximumIterations: Int = 200,
@@ -115,8 +119,10 @@ public actor AgentOrchestrator {
             retryPolicy: ModelRetryPolicy = .standard,
             retrySleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
             retryJitter: @escaping @Sendable () -> Double = { Double.random(in: 0..<1) },
-            autonomy: AutonomyConfiguration? = nil
+            autonomy: AutonomyConfiguration? = nil,
+            repeatCallThresholds: [Int] = RepeatCallGuard.defaultThresholds
         ) {
+            self.repeatCallThresholds = repeatCallThresholds
             self.compactionSummary = compactionSummary
             self.maximumIterations = maximumIterations
             self.maximumToolResultBytes = maximumToolResultBytes
@@ -179,6 +185,8 @@ public actor AgentOrchestrator {
     /// where the model is priced, cost.
     private var runTokens = 0
     private var runCost: Double?
+    /// Counts identical consecutive tool calls; see ``RepeatCallGuard``.
+    private var repeatGuard: RepeatCallGuard
 
     private var conversation: [ModelMessage] = []
     private var runTask: Task<Void, Never>?
@@ -322,6 +330,7 @@ public actor AgentOrchestrator {
         self.verificationEngine = VerificationEngine(store: store)
         self.completionGate = completionGate
         self.ledger = configuration.autonomy?.ledger ?? RunLedgerRecorder(sessionID: sessionID, store: store)
+        self.repeatGuard = RepeatCallGuard(thresholds: configuration.repeatCallThresholds)
     }
 
     /// The run ledger, for the stop check's readers and tests.
@@ -1699,7 +1708,11 @@ public actor AgentOrchestrator {
                         )
                     }
                 }
-                let bounded = boundedToolResult(execution)
+                var bounded = boundedToolResult(execution)
+                // In call order, so "in a row" means what the model did.
+                if let reminder = repeatGuard.observe(toolName: execution.toolName, input: execution.input) {
+                    bounded += "\n\n" + reminder
+                }
                 if execution.images.isEmpty {
                     conversation.append(
                         .toolResult(id: execution.callID, content: bounded, isError: execution.isError)

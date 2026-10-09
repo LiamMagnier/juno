@@ -46,6 +46,8 @@ relay/dist
 
 # vendored agent core for the Cloud Code runner (built in CI)
 runner/agent-core/node_modules
+runner/env-server/node_modules
+runner/env-server/dist
 runner/agent-core/dist
 
 # Juno Desktop (Electron). Self-contained sub-workspace with its own lockfile,
@@ -141,3 +143,6 @@ __pycache__/
 # Ephemeral server-rendered QA previews.
 /public/_review-*.html
 /public/_review*.css
+
+# Alevr Code env server bundle for the Mac app (npm run env-server:bundle:mac)
+native/macOS/JunoDesktop/Resources/env-server/alevr-env.mjs

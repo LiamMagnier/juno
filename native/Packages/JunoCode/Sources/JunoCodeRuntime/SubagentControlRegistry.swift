@@ -136,6 +136,19 @@ public actor BackgroundSubagents {
         var answer: String?
         let startedAt: Date
         var finishedAt: Date?
+        /// Steers the running child: the text joins its run at the next step
+        /// boundary. Attached once the child's run exists.
+        var messenger: (@Sendable (String) async -> Bool)?
+    }
+
+    /// What became of a message to a child.
+    public enum MessageOutcome: Equatable, Sendable {
+        case delivered
+        case unknown
+        case finished(SubagentStatus)
+        /// The child exists but has not started its run yet.
+        case notReady
+        case refused
     }
 
     private var entries: [String: Entry] = [:]
@@ -222,8 +235,29 @@ public actor BackgroundSubagents {
         }
     }
 
+    /// Lets the parent steer the child `id` from now on.
+    public func attachMessenger(
+        id: String,
+        parentSessionID: CodeSessionID,
+        messenger: @escaping @Sendable (String) async -> Bool
+    ) {
+        guard var entry = entries[id], entry.parentSessionID == parentSessionID else { return }
+        entry.messenger = messenger
+        entries[id] = entry
+    }
+
+    /// Sends `text` to a running child of the parent, which reads it at its
+    /// next step boundary (a steer, not a new task).
+    public func send(_ text: String, to id: String, parentSessionID: CodeSessionID) async -> MessageOutcome {
+        guard let entry = entries[id], entry.parentSessionID == parentSessionID else { return .unknown }
+        if entry.finishedAt != nil { return .finished(entry.status) }
+        guard let messenger = entry.messenger else { return .notReady }
+        return await messenger(text) ? .delivered : .refused
+    }
+
     private func finish(id: String, status: SubagentStatus, answer: String) {
         guard var entry = entries[id] else { return }
+        entry.messenger = nil
         entry.status = entry.status == .cancelled ? .cancelled : status
         entry.answer = answer
         entry.finishedAt = Date()
@@ -340,6 +374,7 @@ public enum SubagentControlTools {
             AwaitSubagentsTool(background: background),
             InspectSubagentTool(background: background),
             CancelSubagentTool(background: background),
+            MessageSubagentTool(background: background),
         ]
     }
 
@@ -453,5 +488,60 @@ public struct CancelSubagentTool: CodeTool {
             return ToolResult(content: "No background sub-agent \(id) in this session.", isError: true)
         }
         return ToolResult(content: "Stopped sub-agent \(id).")
+    }
+}
+
+/// `message_subagent {id, message}`: steer a running background child.
+public struct MessageSubagentTool: CodeTool {
+    private let background: BackgroundSubagents
+    public static let maximumMessageCharacters = 8_000
+
+    public init(background: BackgroundSubagents = .shared) {
+        self.background = background
+    }
+
+    public let name = "message_subagent"
+    public let description = """
+        Send a message to one running background sub-agent: a correction, a \
+        narrower scope, or new information. It reads the message at its next \
+        step and carries on with it; it does not start a new task. A finished \
+        sub-agent cannot be messaged — delegate a new task instead.
+        """
+    public var inputSchema: JSONValue {
+        [
+            "type": "object",
+            "properties": [
+                "id": ["type": "string"],
+                "message": ["type": "string"],
+            ],
+            "required": ["id", "message"],
+        ]
+    }
+
+    public func assessRisk(input _: JSONValue) -> ActionRisk { .read }
+    public func summary(input: JSONValue) -> String { "Message sub-agent \(input["id"]?.stringValue ?? "")" }
+
+    public func execute(input: JSONValue, context: ToolContext) async throws -> ToolResult {
+        let id = input["id"]?.stringValue ?? ""
+        let message = (input["message"]?.stringValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !message.isEmpty else {
+            throw ToolError.invalidInput(message: "message is required.")
+        }
+        let text = String(message.prefix(Self.maximumMessageCharacters))
+        switch await background.send("Message from the agent that delegated this task:\n\(text)", to: id, parentSessionID: context.sessionID) {
+        case .delivered:
+            return ToolResult(content: "Sent to sub-agent \(id); it reads it at its next step.")
+        case .unknown:
+            return ToolResult(content: "No background sub-agent \(id) in this session.", isError: true)
+        case let .finished(status):
+            return ToolResult(
+                content: "Sub-agent \(id) has already finished (\(status.rawValue)); read its result with inspect_subagent.",
+                isError: true
+            )
+        case .notReady:
+            return ToolResult(content: "Sub-agent \(id) is still starting; try again in a moment.", isError: true)
+        case .refused:
+            return ToolResult(content: "Sub-agent \(id) could not take the message (its run is ending).", isError: true)
+        }
     }
 }

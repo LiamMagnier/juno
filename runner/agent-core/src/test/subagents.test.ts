@@ -113,7 +113,8 @@ function makeSession(
     provider,
     cwd,
     mode: opts.mode ?? 'full',
-    subagents: opts.subagents,
+    // Children write without reading in these scripts; the guard has its own tests.
+    subagents: { readBeforeEdit: false, ...opts.subagents },
     callbacks: {
       onEvent: (e) => events.push(e),
       requestApproval: async (req): Promise<ApprovalDecision> => {
@@ -182,7 +183,7 @@ test('root delegates read-only children with isolated contexts and aggregates re
   delete process.env.JUNO_HOME;
 });
 
-test('children cannot nest delegation, and per-turn caps hold', async () => {
+test('children cannot nest delegation, and per-turn caps hold (default 8)', async () => {
   process.env.JUNO_HOME = tmpdir();
   const cwd = gitRepo();
   let sawNestedRejection = false;
@@ -226,7 +227,7 @@ test('children cannot nest delegation, and per-turn caps hold', async () => {
     if (isChildRequest(req)) return [{ type: 'text_delta', text: 'x' }, done('end_turn')];
     if (rootCall === 0) {
       return delegateCall(
-        [1, 2, 3, 4, 5].map((i) => ({ title: `T${i}`, prompt: 'p', role: 'explorer' })),
+        [1, 2, 3, 4, 5, 6, 7, 8, 9].map((i) => ({ title: `T${i}`, prompt: 'p', role: 'explorer' })),
       );
     }
     return [{ type: 'text_delta', text: 'done' }, done('end_turn')];
@@ -234,7 +235,7 @@ test('children cannot nest delegation, and per-turn caps hold', async () => {
   const second = makeSession(provider2, cwd);
   await second.session.prompt('too many');
   const transcript = JSON.stringify(second.session.store.loadMessages());
-  assert.ok(transcript.includes('at most 4'));
+  assert.ok(transcript.includes('at most 8'));
   assert.equal(second.session.subagents!.states().length, 0);
   delete process.env.JUNO_HOME;
 });

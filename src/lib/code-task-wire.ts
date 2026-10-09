@@ -103,6 +103,11 @@ export function serializeTask(task: CodeTask, opts: SerializeTaskOptions = {}) {
     // no thinking parameter, which is what every such run got before.
     model: task.model,
     reasoningEffort: task.reasoningEffort,
+    // Alevr Code v2 role routing (a validated contract RoleRouting) snapshotted
+    // at creation: orchestrator, workers, reviewer, explorer, compaction, each
+    // a {instanceId, model, effort, contextTokens, fast}. Null = single-model
+    // run on `model`. Hosts that predate v2 ignore it and run `model`.
+    roleRouting: task.roleRouting ?? null,
     // What this cloud run was dispatched with: the environment (egress,
     // variables, setup script) and how much the agent may do before it would
     // have to ask. Both null on a device task and on anything created before

@@ -10,6 +10,8 @@ import { providerSearchServed } from "@/lib/provider-routing";
 import { PROVIDERS } from "@/lib/providers";
 import { decideModelCapability, type ModelCapabilityEvidence } from "@/lib/model-capability-policy";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { tiersFor } from "@/lib/code-v2/context-tiers";
+import { codeRank, isCodeAgentModel } from "@/lib/code-v2/code-models";
 
 /**
  * `canUseModel` re-looks-the-model-up in the global registry. Here the manifest
@@ -165,6 +167,16 @@ export function nativeModelCatalog(
         output: [model.modality === "chat" ? "text" : model.modality],
       },
       contextWindowTokens: auto ? null : metrics.contextTokens,
+      // Selectable context windows with their $/MTok (Code v2 SPEC §4),
+      // smallest first; the first is the default and equals
+      // contextWindowTokens' cheapest band. Derived from pricing.ts, so a
+      // lab's long-context surcharge arrives as a second, pricier tier. Null
+      // for Auto and for media models, which have no window to pick.
+      contextTiers: auto || model.modality !== "chat" ? null : tiersFor(model),
+      // Alevr Code: whether the model can drive an agent loop and its place in
+      // the curated "best for coding" order (null = unranked; sort those after
+      // the ranked ones by intelligence). The Code picker filters on `agentic`.
+      code: auto ? null : { agentic: isCodeAgentModel(model), rank: codeRank(model) },
       pricing: auto
         ? null
         : {

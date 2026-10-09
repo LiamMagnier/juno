@@ -141,8 +141,11 @@ export function productOf(
 /** A surface the plan does not include is SHOWN, never hidden — a missing
  *  segment reads as a missing feature. It renders at reduced ink with a
  *  sparkle in place of its product mark and routes to `/upgrade`. */
-function isLocked(product: Product, plan: PlanId | undefined): boolean {
+function isLocked(product: Product, plan: PlanId | undefined, codeOpen = false): boolean {
   if (!plan) return false;
+  // Code also opens for people who bring their own inference (a stored API
+  // key or a paired Mac with their subscriptions; Alevr Code v2 SPEC §2).
+  if (product.id === "code" && codeOpen) return false;
   return planRank(plan) < planRank(product.minPlan);
 }
 
@@ -161,12 +164,15 @@ export function ProductSwitch({
   collapsed = false,
   active,
   plan,
+  codeOpen = false,
   onNavigate,
 }: {
   collapsed?: boolean;
   active: ProductSurface;
   /** The signed-in account's plan, from `useApp().quota`. */
   plan?: PlanId;
+  /** Code is open below its plan (BYOK or a paired Mac), from `useApp().features.codeOpen`. */
+  codeOpen?: boolean;
   onNavigate?: () => void;
 }) {
   const reduceMotion = useReducedMotion() ?? false;
@@ -197,7 +203,7 @@ export function ProductSwitch({
               key={product.id}
               product={product}
               active={product.id === active}
-              locked={isLocked(product, plan)}
+              locked={isLocked(product, plan, codeOpen)}
               thumbId={thumbId}
               thumbTransition={thumbTransition}
               onNavigate={onNavigate}

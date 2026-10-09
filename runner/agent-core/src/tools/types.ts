@@ -19,6 +19,12 @@ export interface ToolContext {
   callId?: string;
   /** The turn's signal: Stop or the run's ceiling. Set by the Work session. */
   signal?: AbortSignal;
+  /**
+   * Directories outside the workspace that read_file may still read — the
+   * session's spill directory, where oversized tool outputs are saved whole.
+   * Never writable.
+   */
+  readOnlyRoots?: string[];
 }
 
 export interface ToolResult {
@@ -40,6 +46,8 @@ export interface ToolResult {
    * pruned to the last 3 before each provider request, and scrubbed on checkpoint.
    */
   images?: ReadonlyArray<{ mediaType: 'image/jpeg' | 'image/png'; data: string }>;
+  /** The command outlived its timeout and keeps running as a background job. */
+  background?: { jobId: string };
 }
 
 export interface ToolDefinition {

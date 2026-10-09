@@ -49,6 +49,7 @@ function row(overrides: Partial<CodeTask>): CodeTask {
     prNumber: null,
     model: null,
     reasoningEffort: null,
+    roleRouting: null,
     environmentId: null,
     permissionMode: null,
     runnerClaimedAt: null,
@@ -68,6 +69,21 @@ export function taskWireFixtures(): Record<string, unknown> {
     // The web composer's model picker and thinking slider, on a Mac run.
     deviceTaskWithModel: serializeTask(
       row({ model: "claude-sonnet-5", reasoningEffort: "high" }),
+    ),
+    // Alevr Code v2 role routing: the orchestrator on the user's own Claude
+    // subscription, a worker on Alevr's engine. `model` mirrors nothing here
+    // (the orchestrator is not an Alevr-engine model), so a pre-v2 host falls
+    // back as for "no preference".
+    deviceTaskWithRouting: serializeTask(
+      row({
+        id: "task-routed",
+        roleRouting: {
+          preset: "lead-workers",
+          orchestrator: { instanceId: "claude-agent:default", model: "claude-opus-5-5", effort: "high" },
+          workers: [{ instanceId: "alevr", model: "openai:gpt-6.1-sol", effort: "medium", contextTokens: 272000 }],
+          budget: { maxUsd: 5 },
+        },
+      }),
     ),
     // No preference: the host keeps its own first-available fallback.
     deviceTaskWithoutPreferences: serializeTask(row({ id: "task-plain", origin: "phone" })),
