@@ -126,6 +126,11 @@ test("codex: approval, file change, checkpoint and per-turn diff", async () => {
   assert.equal(restoredFiles, 2);
   assert.equal(fs.existsSync(path.join(repo, "notes.md")), false);
   assert.equal(fs.readFileSync(path.join(repo, "README.md"), "utf8"), "hello\n");
+  // The next turn takes ordinal 1 again; the old turn-1 checkpoint is superseded, not silently reused.
+  const again = await client.command<{ turnId: string }>("turn.start", { sessionId: sid, input: { text: "write other.md" }, selection: { instanceId: "codex:default", model: "gpt-6.1-codex" }, ...ask });
+  await client.turnCompleted(sid, again.turnId);
+  await assert.rejects(client.command("checkpoint.rollback", { sessionId: sid, checkpointId: cp.checkpointId }), /replaced/);
+  await assert.rejects(client.command("checkpoint.diff", { sessionId: sid, checkpointId: cp.checkpointId }), /replaced/);
   assert.deepEqual(client.gaps, [], "no sequence gaps on the wire");
 });
 
@@ -216,6 +221,7 @@ test("claude: tool approval, plan capture, questions, steer and interrupt", asyn
   const approval = await pendingApproval(client, sid);
   assert.match(approval.summary, /ls -la/);
   assert.ok(approval.options?.includes("acceptForSession"), "SDK suggestions offer 'for this session'");
+  await assert.rejects(client.command("approval.respond", { sessionId: sid, requestId: approval.requestId, decision: "always" }), /does not offer/);
   await client.command("approval.respond", { sessionId: sid, requestId: approval.requestId, decision: "decline" });
   assert.equal((await client.turnCompleted(sid, t1.turnId)).outcome, "completed");
   const turnOptions = record.options.at(-1) as Record<string, unknown>;

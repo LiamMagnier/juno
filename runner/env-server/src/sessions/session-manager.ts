@@ -311,7 +311,13 @@ export class SessionManager {
 
   respond(params: ClientCommandParams["approval.respond"]): void {
     const live = this.#get(params.sessionId);
-    if (!live.pending.has(params.requestId)) throw new WireError("not_found", "That request is no longer waiting.");
+    const pending = live.pending.get(params.requestId);
+    if (!pending) throw new WireError("not_found", "That request is no longer waiting.");
+    // Fail closed: only a decision the request offered is accepted (a client cannot widen
+    // "allow once" into "allow for the session").
+    const item = live.log.snapshot.items.find((i) => i.id === pending.itemId);
+    const offered: readonly string[] = item?.kind === "approval_request" ? item.options : ["accept", "decline", "cancel"];
+    if (!offered.includes(params.decision)) throw new WireError("bad_request", `This request does not offer "${String(params.decision)}".`);
     this.#resolvePending(live, params.requestId, {
       decision: params.decision,
       ...(params.updatedInput ? { updatedInput: params.updatedInput } : {}),
@@ -322,7 +328,7 @@ export class SessionManager {
   async rollback(params: ClientCommandParams["checkpoint.rollback"]): Promise<ClientCommandResults["checkpoint.rollback"]> {
     const live = this.#get(params.sessionId);
     if (live.active) throw new WireError("conflict", "Stop the running turn before restoring a checkpoint.");
-    const item = live.log.snapshot.items.find((i): i is CheckpointItem => i.kind === "checkpoint" && i.checkpointId === params.checkpointId);
+    const item = this.#checkpointItem(live, params.checkpointId);
     const ordinal = item?.turnOrdinal ?? (params.checkpointId === "cp_0" ? 0 : undefined);
     if (ordinal === undefined) throw new WireError("not_found", "No such checkpoint.");
     const cwd = live.log.meta.cwd;
@@ -353,12 +359,26 @@ export class SessionManager {
       if (!base) return { diff: "", files: [] };
       return this.checkpoints.diff(cwd, base, "worktree");
     }
-    const item = live.log.snapshot.items.find((i): i is CheckpointItem => i.kind === "checkpoint" && i.checkpointId === params.checkpointId);
+    const item = this.#checkpointItem(live, params.checkpointId);
     if (!item) throw new WireError("not_found", "No such checkpoint.");
     const to = await this.checkpoints.resolve(cwd, id, item.turnOrdinal);
     const from = item.turnOrdinal > 0 ? await this.checkpoints.resolve(cwd, id, item.turnOrdinal - 1) : undefined;
     if (!to || !from) return { diff: "", files: [] };
     return this.checkpoints.diff(cwd, from, to);
+  }
+
+  /**
+   * The checkpoint item for an id, refusing one that a later turn replaced: refs are keyed by
+   * turn ordinal, so after a restore to turn k the next turn k+1 overwrites the old k+1 ref and
+   * the old item would silently restore (or diff) the new turn's files.
+   */
+  #checkpointItem(live: LiveSession, checkpointId: string): CheckpointItem | undefined {
+    const checkpoints = live.log.snapshot.items.filter((i): i is CheckpointItem => i.kind === "checkpoint");
+    const item = checkpoints.find((i) => i.checkpointId === checkpointId);
+    if (!item) return undefined;
+    const newest = checkpoints.filter((i) => i.turnOrdinal === item.turnOrdinal).at(-1);
+    if (newest && newest !== item) throw new WireError("conflict", "That checkpoint was replaced after an earlier restore.");
+    return item;
   }
 
   async close(sessionId: string): Promise<void> {
