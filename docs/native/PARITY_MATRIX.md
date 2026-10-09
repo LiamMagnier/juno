@@ -22,11 +22,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 
 ## Summary
 
-<<<<<<< HEAD
-319 routes: 203 native, 52 planned, 51 web only, 13 internal. 49 pages: on the Mac 36 native, 2 partial, 2 planned, 9 web only; on iOS 24 native, 8 partial, 8 planned, 9 web only.
-=======
-325 routes: 205 native, 52 planned, 55 web only, 13 internal. 50 pages: on the Mac 37 native, 2 partial, 2 planned, 9 web only; on iOS 24 native, 9 partial, 8 planned, 9 web only.
->>>>>>> origin/main
+326 routes: 206 native, 52 planned, 55 web only, 13 internal. 50 pages: on the Mac 37 native, 2 partial, 2 planned, 9 web only; on iOS 24 native, 9 partial, 8 planned, 9 web only.
 
 | Feature | Pages (Mac) | Pages (iOS) | Routes native | Planned | Web only | Internal |
 |---|---|---|---|---|---|---|
