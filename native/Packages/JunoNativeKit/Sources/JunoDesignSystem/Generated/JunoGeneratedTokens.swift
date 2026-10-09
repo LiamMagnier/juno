@@ -4,7 +4,7 @@
 // type, spacing). Regenerate with `npm run design:tokens`; `npm run design:tokens:check`
 // fails CI when this file no longer matches its sources.
 //
-// tokens-digest: ad52564df1f49d6d
+// tokens-digest: 0c2a652ea76b32d1
 //
 
 import CoreGraphics
@@ -368,6 +368,18 @@ public enum JunoGeneratedColors {
     public static let sidebarSelectedBorder = JunoGeneratedPair(
         light: JunoColorToken(unchecked: 0.8157, 0.8235, 0.8353),
         dark: JunoColorToken(unchecked: 0.2157, 0.2196, 0.2353)
+    )
+
+    /// `--signal`
+    public static let signal = JunoGeneratedPair(
+        light: JunoColorToken(unchecked: 0.7544, 0.303, 0.1656),
+        dark: JunoColorToken(unchecked: 0.9136, 0.5123, 0.3664)
+    )
+
+    /// `--signal-ink`
+    public static let signalInk = JunoGeneratedPair(
+        light: JunoColorToken(unchecked: 0.6888, 0.2766, 0.1512),
+        dark: JunoColorToken(unchecked: 0.94, 0.588, 0.46)
     )
 
     /// `--source`
