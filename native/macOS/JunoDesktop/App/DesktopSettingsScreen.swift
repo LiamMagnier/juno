@@ -25,6 +25,22 @@ struct DesktopSettingsScreen: View {
     let context: DesktopSettingsContext
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            DesktopSettingsPaneHeader(section: section)
+            pane
+        }
+        // One readable measure, centred: rows never stretch to a wide
+        // window's full width, so a label and its control stay in one glance.
+        .frame(maxWidth: DesktopSettingsMetrics.paneMeasure)
+        .frame(maxWidth: .infinity)
+        // A conflict, or a save queued behind the network, in the Settings
+        // window's toast host (§7.7).
+        .junoToastStatus(id: "settings.status", context.statusKey) { _ in context.statusToast }
+        .accessibilityIdentifier("juno.desktop.settings")
+    }
+
+    @ViewBuilder
+    private var pane: some View {
         Group {
             switch section {
             case .general: DesktopSettingsGeneralPane(context: context)
@@ -45,10 +61,35 @@ struct DesktopSettingsScreen: View {
                 )
             }
         }
-        // A conflict, or a save queued behind the network, in the Settings
-        // window's toast host (§7.7).
-        .junoToastStatus(id: "settings.status", context.statusKey) { _ in context.statusToast }
-        .accessibilityIdentifier("juno.desktop.settings")
+    }
+}
+
+/// The pane's opening: the section's tile at hero size, its name, and one
+/// sentence on what it holds — System Settings' pane header, so the reader
+/// knows where they are before the first row.
+struct DesktopSettingsPaneHeader: View {
+    let section: DesktopSettingsSection
+
+    var body: some View {
+        HStack(alignment: .center, spacing: JunoSpace.cozy) {
+            DesktopSettingsSectionTile(icon: section.icon, selected: true, size: 40)
+            VStack(alignment: .leading, spacing: JunoSpace.hairline) {
+                Text(section.label)
+                    .junoType(.title)
+                    .foregroundStyle(Color.junoForeground)
+                    .accessibilityAddTraits(.isHeader)
+                Text(section.summary)
+                    .junoType(.ui)
+                    .foregroundStyle(Color.junoSecondaryInk)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, JunoSpace.section)
+        .padding(.top, JunoSpace.roomy)
+        .padding(.bottom, JunoSpace.tight)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("juno.desktop.settings.pane-header")
     }
 }
 
@@ -418,8 +459,10 @@ enum DesktopSettingsMetrics {
     static let railWidth: CGFloat = 220
     static let railMaximum: CGFloat = 260
     /// The ⌘, window: opens at 820 × 600, never smaller than 680 × 480 (§C1).
-    static let windowMinimum = CGSize(width: 680, height: 480)
-    static let windowIdeal = CGSize(width: 820, height: 600)
+    static let windowMinimum = CGSize(width: 720, height: 520)
+    static let windowIdeal = CGSize(width: 900, height: 660)
+    /// The pane's readable measure: header and rows never run wider.
+    static let paneMeasure: CGFloat = 720
     /// The signed-in account's photo in Account.
     static let avatarSize: CGFloat = 56
     /// A presented surface's size. Explicit: a sheet that negotiates its own
