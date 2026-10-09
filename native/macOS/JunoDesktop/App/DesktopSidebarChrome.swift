@@ -11,32 +11,42 @@ import SwiftUI
 /// edge. Fills sit 8pt in from the panel, radius 8: hover one rung off the
 /// panel, selection one rung past it, neither with an edge.
 enum DesktopSidebarMetrics {
-    static let minimumWidth: CGFloat = 220
-    static let idealWidth: CGFloat = 260
-    static let maximumWidth: CGFloat = 360
+    static let minimumWidth: CGFloat = JunoSidebarMetrics.minimum
+    static let idealWidth: CGFloat = JunoSidebarMetrics.ideal
+    static let maximumWidth: CGFloat = JunoSidebarMetrics.maximum
 
-    static let rowHeight: CGFloat = 32
-    static let headingHeight: CGFloat = 28
+    static let rowHeight: CGFloat = JunoLayout.Row.compactHeight
+    static let headingHeight: CGFloat = JunoLayout.Row.headingHeight
     /// The space above a section heading, between one group and the next.
-    static let headingGap: CGFloat = 8
-    static let glyphSlot: CGFloat = 20
-    static let glyphSize: CGFloat = 16
-    static let gap: CGFloat = 10
-    static let radius: CGFloat = 8
+    static let headingGap: CGFloat = JunoSpace.snug
+    static let glyphSlot: CGFloat = JunoLayout.Row.glyphSlot
+    static let glyphSize: CGFloat = JunoLayout.Row.glyph
+    static let gap: CGFloat = JunoLayout.Row.glyphGap
+    static let radius: CGFloat = JunoLayout.Row.compactFillRadius
     /// The fill's distance from the panel's edge.
-    static let fillInset: CGFloat = 8
+    static let fillInset: CGFloat = JunoLayout.Row.fillInset
     /// Where every glyph, and every glyph-less text, starts.
-    static let glyphEdge: CGFloat = 16
+    static let glyphEdge: CGFloat = JunoLayout.Row.edge
     /// Where every label after a glyph starts: 16 + 20 + 10.
     static var labelEdge: CGFloat { glyphEdge + glyphSlot + gap }
     /// Where a row's own content starts inside the panel once the list's row
     /// insets are zeroed: the source list keeps this much margin of its own,
     /// measured in the window capture (Tahoe's sidebar, standard metrics).
-    static let listOrigin: CGFloat = 16
+    static let listOrigin: CGFloat = JunoSpace.regular
 
     static let labelSize: CGFloat = 14
-    static let headingSize: CGFloat = 12
-    static let accountHeight: CGFloat = 48
+    /// The web's `.shell-annot`: mono 11px, tracked 0.02em.
+    static let headingSize: CGFloat = 11
+    static let headingTracking: CGFloat = headingSize * 0.02
+    static let accountHeight: CGFloat = JunoSpace.vast
+
+    /// A title or an agent's face starts on the nav glyphs' column. The list
+    /// insets a plain row's content about 6pt less than a `Label`'s icon.
+    static let titleLeading: CGFloat = JunoSpace.tight
+    /// The trailing slot: the kebab, a status mark, the pin, an unread or
+    /// needs-you mark and a pending spinner share one 20pt box, so every mark
+    /// down the column sits on one centre.
+    static let trailingSlot: CGFloat = JunoLayout.Row.trailingSlot
 }
 
 /// The glyph gesture a destination makes under the pointer (the web's
@@ -195,7 +205,7 @@ struct DesktopSidebarHeadingRow<Trailing: View>: View {
             // The web's label rung for headings: mono, as `/dev/shell` sets it.
             Text(title)
                 .junoFont(size: DesktopSidebarMetrics.headingSize, relativeTo: .caption, design: .monospaced)
-                .tracking(0.6)
+                .tracking(DesktopSidebarMetrics.headingTracking)
                 .foregroundStyle(hovered && action != nil ? Color.junoForeground : Color.junoSecondaryInk)
                 .lineLimit(1)
                 .accessibilityAddTraits(.isHeader)

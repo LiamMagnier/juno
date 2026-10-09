@@ -753,17 +753,10 @@ struct DesktopSidebarHeading: View {
 
 // MARK: - Trailing slot
 
-/// The sidebar's column metrics (§2.3): where a row's words start, and the
-/// one box every trailing mark is centred in.
-enum JunoSidebarMetrics {
-    /// A title or an agent's face starts on the nav glyphs' column. The list
-    /// insets a plain row's content about 6pt less than a `Label`'s icon.
-    static let titleLeading: CGFloat = 6
-    /// The trailing slot: the kebab, a status dot, the pin, an unread or
-    /// needs-you dot and a pending spinner share one 20pt box, so every mark
-    /// down the column sits on one centre.
-    static let trailingSlot: CGFloat = 20
-}
+// The sidebar's title offset and trailing slot live on `DesktopSidebarMetrics`
+// (DesktopSidebarChrome.swift). This file used to declare a second enum named
+// `JunoSidebarMetrics`, which shadowed the design system's own column-width
+// enum of the same name inside the app.
 
 /// A run's state in a sidebar row's trailing slot, as a **mark, never a dot**
 /// (owner directive, premium pass): a quiet spinner in sidebar ink while it
@@ -823,7 +816,7 @@ struct DesktopSidebarTrailingSlot<Content: View>: View {
 
     var body: some View {
         content
-            .frame(width: JunoSidebarMetrics.trailingSlot, height: JunoSidebarMetrics.trailingSlot)
+            .frame(width: DesktopSidebarMetrics.trailingSlot, height: DesktopSidebarMetrics.trailingSlot)
     }
 }
 
@@ -910,7 +903,7 @@ private struct DesktopConversationRow: View {
                 // A 20pt face in the trailing slot, its hit area widened to
                 // the 28pt pointer target around it.
                 JunoIconView(.more, size: 16)
-                    .frame(width: JunoSidebarMetrics.trailingSlot, height: JunoSidebarMetrics.trailingSlot)
+                    .frame(width: DesktopSidebarMetrics.trailingSlot, height: DesktopSidebarMetrics.trailingSlot)
                     .contentShape(Rectangle().inset(by: -4))
             }
             .menuStyle(.button)

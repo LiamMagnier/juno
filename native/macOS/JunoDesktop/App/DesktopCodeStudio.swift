@@ -523,7 +523,7 @@ struct DesktopCodeSidebar: View {
                             // Bound to the approval this row showed.
                             await workbench.answer(answer, shown: entry)
                         }
-                        .padding(.leading, JunoSidebarMetrics.titleLeading)
+                        .padding(.leading, DesktopSidebarMetrics.titleLeading)
                         .junoSidebarRowSelection(selection == .session(entry.sessionID))
                         .tag(DesktopCodeSidebarItem.session(entry.sessionID))
                         .contextMenu { runMenu(entry.sessionID) }
@@ -811,7 +811,7 @@ struct DesktopCodeSidebar: View {
                 Text(isSearching ? "No matches" : "No sessions yet")
                     .junoFont(size: 12, relativeTo: .footnote)
                     .foregroundStyle(Color.junoSecondaryInk)
-                    .padding(.leading, JunoSidebarMetrics.titleLeading)
+                    .padding(.leading, DesktopSidebarMetrics.titleLeading)
                     .selectionDisabled()
             }
         } label: {
@@ -1025,7 +1025,7 @@ struct DesktopCodeSessionRow: View {
             Spacer(minLength: JunoSpace.hairline)
             DesktopSidebarTrailingSlot { mark }
         }
-        .padding(.leading, JunoSidebarMetrics.titleLeading)
+        .padding(.leading, DesktopSidebarMetrics.titleLeading)
         .junoSidebarRowInk()
         .help("\(run.title)\n\(run.caption)")
         .accessibilityElement(children: .combine)
