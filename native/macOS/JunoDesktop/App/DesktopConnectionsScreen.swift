@@ -162,8 +162,8 @@ struct DesktopConnectionsScreen: View {
             // it is the control that filters to them (the web removed its
             // badge for that reason).
             JunoPageHeader(
-                "Connections",
-                lede: "Link an app so Alevr can work with your repositories, designs, docs, and workspace tools."
+                "Apps",
+                lede: "The services Alevr can work in. You decide what each one may do."
             ) {
                 Button {
                     editingMCP = nil
@@ -182,12 +182,9 @@ struct DesktopConnectionsScreen: View {
                 }
                 .keyboardShortcut("r", modifiers: .command)
                 .accessibilityIdentifier("connections.refresh")
-                // Bring your own: the page's one header action, beside the
-                // quiet refresh — the web's "Add MCP server".
-                DesktopOutlineButton(title: "Add MCP Server", icon: .plus) { addServer() }
-                    .disabled(model.phase != .ready)
-                    .help("Add a remote MCP server by its address")
-                    .accessibilityIdentifier("connections.add-server")
+                // No second "Add MCP Server" here (round 3): it repeated the
+                // prominent button's words beside it. A custom server is added
+                // from the directory's own Add tile, as on the web.
             }
         } controls: {
             if model.phase == .ready {
@@ -320,8 +317,8 @@ struct DesktopConnectionsScreen: View {
             } label: {
                 Text("Category")
             }
-            .pickerStyle(.menu)
-            .fixedSize()
+            .labelsHidden()
+            .junoGlassMenuPicker(current: model.categories.first { $0.id == model.selectedCategory }?.label ?? "All categories")
             .accessibilityLabel("Filter by category")
             .accessibilityIdentifier("connections.category")
         }
@@ -439,7 +436,7 @@ struct DesktopConnectionsScreen: View {
                 .disabled(model.isMutating)
                 Spacer()
                 Button("Manage") { editingMCP = connector; showsMCP = true }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.junoGlass)
                     .contentShape(.rect)
             }
         } else {
@@ -593,7 +590,7 @@ struct DesktopConnectionsScreen: View {
                 .lineLimit(1)
                 .frame(maxWidth: .infinity)
         }
-        .buttonStyle(.bordered)
+        .buttonStyle(.junoGlass)
         .contentShape(.rect)
         // Neutral, as the web's secondary tile buttons are: the column's
         // accent tint would turn Connect and Disconnect coral (§0.4).
@@ -619,7 +616,7 @@ struct DesktopConnectionsScreen: View {
                         Text("Load more apps")
                     }
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.junoGlass)
                 .disabled(model.isLoadingCatalog)
                 .accessibilityLabel("Load more apps")
                 .accessibilityIdentifier("connections.load-more")
@@ -1357,7 +1354,7 @@ struct DesktopAppDetailSheet: View {
                                 Text("Ask First")
                             }
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.junoGlass)
                         .tint(nil)
                         .controlSize(.small)
                         .disabled(detail.revokingID != nil)

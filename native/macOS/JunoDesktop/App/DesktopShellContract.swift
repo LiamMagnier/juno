@@ -70,7 +70,7 @@ extension DesktopDestination {
         case .skills: .skills
         case .automations: .automations
         case .connections: .accountCustomize
-        case .chat, .search, .design, .memory, .permissions, .profile: nil
+        case .chat, .search, .design, .memory, .permissions, .profile, .instructions: nil
         }
     }
 }

@@ -144,6 +144,7 @@ enum StageBPageFixtures {
         "memory-narrow",
         "connections",
         "connections-empty-connected",
+        "customize-instructions",
         "skills-list",
         "skills-empty",
         "skills-no-results",
@@ -223,13 +224,30 @@ enum StageBPageFixtures {
                 name: name,
                 width: pageWidth,
                 view: {
-                    AnyView(DesktopConnectionsScreen(model: world.world.connectorModel).frame(height: 760).junoAccentTint())
+                    AnyView(
+                        DesktopCustomizeFrame(destination: .constant(.connections)) {
+                            DesktopConnectionsScreen(model: world.world.connectorModel)
+                        }
+                        .frame(height: 820)
+                        .junoAccentTint()
+                    )
                 },
                 prepare: {
                     world.world.connectorModel.showsConnectedOnly = false
                     await world.world.connectorModel.refresh()
                 }
             )
+        case "customize-instructions":
+            let context = SettingsSnapshotFixtures.makeContext(world: world)
+            return FinalFixture(name: name, width: pageWidth, view: {
+                AnyView(
+                    DesktopCustomizeFrame(destination: .constant(.instructions)) {
+                        DesktopInstructionsScreen(context: context)
+                    }
+                    .frame(height: 760)
+                    .junoAccentTint()
+                )
+            })
         case "connections-empty-connected":
             let model = NativeConnectorModel(client: NativeConnectorClient(sender: UnconnectedSender()))
             return FinalFixture(
@@ -245,10 +263,12 @@ enum StageBPageFixtures {
         case "skills-list":
             return FinalFixture(name: name, width: pageWidth, view: {
                 AnyView(
-                    NavigationStack {
-                        DesktopSkillsScreen(model: pages.skills, startDraft: { _ in }, initialOpenSources: ["+src-anthropics"])
+                    DesktopCustomizeFrame(destination: .constant(.skills)) {
+                        NavigationStack {
+                            DesktopSkillsScreen(model: pages.skills, startDraft: { _ in }, initialOpenSources: ["+src-anthropics"])
+                        }
                     }
-                    .frame(height: 1060)
+                    .frame(height: 1120)
                     .junoAccentTint()
                 )
             })

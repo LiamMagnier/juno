@@ -45,8 +45,16 @@ import { bracedRegions, enclosingTypeName, gate, lineAt, swiftSources } from "./
 // the modifiers and containers themselves. Exempting them is not a loophole,
 // because every one of their callers is still scanned — and the callers are
 // where a glass surface is actually decided.
+//
+// `JunoGlassControls.swift` joined in Mac round 3 (2026-10-09), on the owner's
+// own instruction: every button, segmented selector, menu trigger and search
+// field on the Mac is a native Liquid Glass capsule. Pages reach that glass
+// only through the controls (`.junoGlass`, `.junoProminent`, `JunoSegmented`,
+// `.junoGlassMenu`, `JunoPageSearchField`), never a `.glassEffect` of their
+// own — content surfaces stay opaque, and checks 1–4 still hold every caller.
 const EXEMPT = new Set([
   "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/JunoMaterials.swift",
+  "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/JunoGlassControls.swift",
   "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/JunoDesktopChrome.swift",
   "native/iOS/JunoMobile/App/JunoMobileChrome.swift",
 ]);

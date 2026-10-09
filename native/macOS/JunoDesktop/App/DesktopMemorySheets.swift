@@ -140,7 +140,7 @@ struct DesktopMemoryEditHistory: View {
                         .disabled(busy)
                         .contentShape(.rect)
                     Button("Apply Change") { Task { post(await page.accept(edit)) } }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.junoGlass)
                         .disabled(busy)
                         .contentShape(.rect)
                 case .rejected:
@@ -450,7 +450,7 @@ struct DesktopMemoryImportSheet: View {
                 } label: {
                     Label(verbatim: copied ? "Copied" : "Copy Prompt", icon: copied ? .check : .copy)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.junoGlass)
                 .tint(nil)
                 .contentShape(.rect)
             }

@@ -43,6 +43,11 @@ enum DesktopNavigationState {
             return openProjectID.map(DesktopSidebarItem.project) ?? .destination(.projects)
         case .agents:
             return selectedAgentID.map(DesktopSidebarItem.agent) ?? .destination(.agents)
+        case _ where destination.isCustomize:
+            // Every Customize tab lights the one Customize row (the web's
+            // `startsWith` check on /customize, /skills, /automations,
+            // /memory), which is the Apps destination.
+            return .destination(.connections)
         default:
             return .destination(destination)
         }

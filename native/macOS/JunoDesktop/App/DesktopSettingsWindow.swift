@@ -101,6 +101,27 @@ enum DesktopSettingsSection: String, CaseIterable, Identifiable {
     /// answers; what it knows and reaches; your data, account and plan; then
     /// Code. Flattened, it is `allCases` exactly (a test holds it), so
     /// grouping changes the rail's rhythm and never its order.
+    /// What each rail group is, said quietly above it (round 3): the
+    /// sections read as three places, not eleven loose rows.
+    static let railGroupTitles: [String] = ["Alevr", "Intelligence", "Account", "Developer"]
+
+    /// One sentence under the pane's name, saying what the section holds.
+    var summary: String {
+        switch self {
+        case .general: "Appearance, text size, and this Mac’s copy of Alevr."
+        case .personalization: "What Alevr calls you, and how it answers."
+        case .memory: "What Alevr remembers between chats, and what it may learn."
+        case .models: "The model Alevr starts with, and the ones you keep close."
+        case .connectors: "The apps Alevr works in, and when it asks before acting."
+        case .devices: "This Mac, the other Macs Alevr can reach, and their permissions."
+        case .voice: "How Alevr sounds when it reads aloud, and how you dictate."
+        case .data: "Export, import, shared links, and clearing your history."
+        case .account: "Your profile, sign-in, security, and notifications."
+        case .billing: "Your plan, what you have used, and your spending ceiling."
+        case .code: "Alevr Code’s own settings, and remote sessions on this Mac."
+        }
+    }
+
     static let railGroups: [[DesktopSettingsSection]] = [
         [.general, .personalization],
         [.memory, .models, .connectors, .devices, .voice],
@@ -350,6 +371,10 @@ struct DesktopSettingsSidebar: View {
                     ForEach(group) { section in
                         row(section)
                     }
+                } header: {
+                    if let title = Self.title(for: group) {
+                        Text(title)
+                    }
                 }
             }
         }
@@ -370,6 +395,16 @@ struct DesktopSettingsSidebar: View {
         )
         .accessibilityLabel("Settings sections")
         .accessibilityIdentifier("juno.desktop.settings.rail")
+    }
+
+    /// A group's title, found by its first section so a search that hides
+    /// part of a group keeps the group's name.
+    static func title(for group: [DesktopSettingsSection]) -> String? {
+        guard let first = group.first,
+              let index = DesktopSettingsSection.railGroups.firstIndex(where: { $0.contains(first) }),
+              DesktopSettingsSection.railGroupTitles.indices.contains(index)
+        else { return nil }
+        return DesktopSettingsSection.railGroupTitles[index]
     }
 
     private func row(_ section: DesktopSettingsSection) -> some View {
@@ -394,24 +429,23 @@ struct DesktopSettingsSidebar: View {
     }
 }
 
-/// A section's mark in its tile: the web's glyph at 13pt on a small rounded
-/// square, monochrome at rest. The selected section's glyph is the one
-/// accent-coloured thing in the rail (brief rule 1), on the card tone so it
-/// reads against the selection fill.
+/// A section's mark in its tile: the web's glyph at 13pt in a small circle,
+/// monochrome at rest. The selected section's tile fills with the accent —
+/// the one accent-coloured thing in the rail (brief rule 1) — its glyph in
+/// the on-accent ink, as System Settings lights the pane you are in.
 struct DesktopSettingsSectionTile: View {
     let icon: JunoIcon
     let selected: Bool
+    var size: CGFloat = DesktopSettingsSectionTile.size
 
-    static let size: CGFloat = 22
-    static let radius: CGFloat = 6
+    static let size: CGFloat = 24
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: Self.radius, style: .continuous)
-        JunoIconView(icon, size: 13)
-            .foregroundStyle(selected ? Color.junoAccentInk : Color.junoSidebarForeground)
-            .frame(width: Self.size, height: Self.size)
-            .background(selected ? Color.junoCard : Color.junoSecondary, in: shape)
-            .overlay(shape.strokeBorder(Color.junoBorder.opacity(selected ? 0.9 : 0.6), lineWidth: 0.5))
+        JunoIconView(icon, size: size * 0.55)
+            .foregroundStyle(selected ? Color.junoOnAccent : Color.junoSidebarForeground)
+            .frame(width: size, height: size)
+            .background(selected ? Color.junoAccent : Color.junoSecondary, in: Circle())
+            .overlay(Circle().strokeBorder(Color.junoBorder.opacity(selected ? 0 : 0.6), lineWidth: 0.5))
             .accessibilityHidden(true)
     }
 }

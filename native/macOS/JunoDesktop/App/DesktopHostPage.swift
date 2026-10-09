@@ -106,7 +106,7 @@ struct DesktopHostPage: View {
                             Text("Restore access")
                         }
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.junoGlass)
                     .tint(nil)
                     .disabled(busy)
                 } else {
@@ -115,7 +115,7 @@ struct DesktopHostPage: View {
                     } label: {
                         Label("Revoke", icon: .shieldOff)
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.junoGlass)
                     .tint(Color.junoDestructive)
                     .disabled(busy)
                     .accessibilityIdentifier("juno.desktop.host.revoke")
@@ -182,7 +182,7 @@ struct DesktopHostPage: View {
                     } label: {
                         Label("Retry", icon: .refresh)
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.junoGlass)
                     .tint(nil)
                     .controlSize(.small)
                     .fixedSize()

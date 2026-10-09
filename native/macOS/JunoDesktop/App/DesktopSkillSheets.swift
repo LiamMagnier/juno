@@ -464,7 +464,7 @@ struct DesktopSkillUpdateSheet: View {
                             Text(failure)
                         } action: {
                             Button("Try Again") { Task { await run() } }
-                                .buttonStyle(.bordered)
+                                .buttonStyle(.junoGlass)
                                 .tint(nil)
                                 .controlSize(.small)
                                 .contentShape(.rect)

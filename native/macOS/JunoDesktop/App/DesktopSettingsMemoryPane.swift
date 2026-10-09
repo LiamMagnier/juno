@@ -154,9 +154,7 @@ struct DesktopSettingsMemoryPane: View {
                 }
             }
             .labelsHidden()
-            .pickerStyle(.menu)
-            .tint(nil)
-            .fixedSize()
+            .junoGlassMenuPicker(current: options.first { $0.mode == current }?.label.desktopMenuTitle ?? "")
             .accessibilityIdentifier("juno.desktop.settings.background-provider")
         }
     }

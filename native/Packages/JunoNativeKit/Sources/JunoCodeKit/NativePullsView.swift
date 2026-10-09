@@ -48,7 +48,7 @@ public struct NativePullsView: View {
                 } actions: {
                     if let openConnections {
                         Button("Open Connections", action: openConnections)
-                            .buttonStyle(.borderedProminent)
+                            .buttonStyle(.junoProminent)
                             .contentShape(.rect)
                             .frame(minHeight: 44)
                     }
@@ -60,7 +60,7 @@ public struct NativePullsView: View {
                     Text(message)
                 } actions: {
                     Button("Try again") { Task { await load() } }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.junoGlass)
                         .contentShape(.rect)
                         .frame(minHeight: 44)
                 }

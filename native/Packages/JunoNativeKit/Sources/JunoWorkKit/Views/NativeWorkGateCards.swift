@@ -141,7 +141,7 @@ public struct NativeWorkApprovalCard: View {
                 .junoInk()
                 .frame(maxWidth: buttonWidth)
         }
-        .buttonStyle(.bordered)
+        .buttonStyle(.junoGlass)
         .keyboardShortcut(.cancelAction)
         .frame(minHeight: 44)
         .contentShape(.rect)
@@ -173,7 +173,7 @@ public struct NativeWorkApprovalCard: View {
                 .junoInk()
                 .frame(maxWidth: buttonWidth)
         }
-        .buttonStyle(.bordered)
+        .buttonStyle(.junoGlass)
         .frame(minHeight: 44)
         .contentShape(.rect)
         .accessibilityIdentifier("juno.work.gate.allow-always")

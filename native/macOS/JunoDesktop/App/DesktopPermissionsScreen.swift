@@ -206,7 +206,13 @@ struct DesktopWorkHostRow: View {
                         DesktopWorkTag("This Mac")
                     }
                     if !revoked, !host.enabled {
-                        DesktopWorkTag("Work off")
+                        // A state, said in words beside the name — never a
+                        // pill (owner rule).
+                        Text("Work off")
+                            .junoType(.caption)
+                            .foregroundStyle(Color.junoSecondaryInk)
+                            .lineLimit(1)
+                            .fixedSize()
                     }
                 }
                 Text(sentence)

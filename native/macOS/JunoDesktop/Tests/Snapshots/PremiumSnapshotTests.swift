@@ -548,6 +548,7 @@ enum PremiumRenderer {
         }
         .environment(\.colorScheme, isDark ? .dark : .light)
         .environment(\.controlActiveState, .key)
+        .environment(\.junoSnapshotOpaqueGlass, true)
         .transaction { $0.disablesAnimations = true }
 
         let host = NSHostingView(rootView: root)

@@ -248,7 +248,7 @@ struct DesktopRecentlyDeletedArtifactsSheet: View {
                         .foregroundStyle(Color.junoSecondaryInk)
                 } else {
                     Button("Restore") { restore(item, in: trash) }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.junoGlass)
                         .tint(nil)
                         .contentShape(.rect)
                 }

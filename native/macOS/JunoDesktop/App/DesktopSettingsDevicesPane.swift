@@ -143,7 +143,7 @@ struct DesktopWorkHostSheet: View {
             HStack {
                 Spacer()
                 Button("Done") { dismiss() }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.junoGlass)
                     .tint(nil)
                     .keyboardShortcut(.cancelAction)
                     .contentShape(.rect)

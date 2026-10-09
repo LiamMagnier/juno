@@ -328,13 +328,13 @@ struct DesktopUpgradeSheet: View {
             HStack(spacing: JunoSpace.snug) {
                 if current.isPaid {
                     Button("Manage Billing") { model.manage() }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.junoGlass)
                         .tint(nil)
                         .contentShape(.rect)
                 }
                 Spacer()
                 Button("Done", action: done)
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.junoGlass)
                     .tint(nil)
                     .keyboardShortcut(.cancelAction)
                     .contentShape(.rect)
@@ -496,7 +496,7 @@ struct DesktopUpgradeSheet: View {
             Button {} label: {
                 Text("Current Plan").frame(maxWidth: .infinity)
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.junoGlass)
             .tint(nil)
             .disabled(true)
             .contentShape(.rect)
@@ -513,7 +513,7 @@ struct DesktopUpgradeSheet: View {
                 Button { model.checkout(plan) } label: {
                     Text(label).frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.junoGlass)
                 .tint(nil)
                 .disabled(model.redirecting != nil)
                 .contentShape(.rect)
@@ -524,7 +524,7 @@ struct DesktopUpgradeSheet: View {
             Button { model.manage(planID: plan.id) } label: {
                 Text("Switch").frame(maxWidth: .infinity)
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.junoGlass)
             .tint(nil)
             .contentShape(.rect)
         }

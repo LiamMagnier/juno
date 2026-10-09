@@ -50,6 +50,9 @@ struct DesktopDestinationView: View {
     @State private var welcomedAgentID: String?
     /// The Artifacts page's Share… (seam 7), one per window like the chat's.
     @State private var artifactShare = DesktopShareState()
+    /// How deep the open Customize tab's stack is: its tab row shows only
+    /// over the tab's root page.
+    @State private var customizeDepth = 0
 
     var body: some View {
         // One identity per destination, so a change of page is a real
@@ -58,7 +61,7 @@ struct DesktopDestinationView: View {
         // gives every page a fresh stack: leaving a page forgets what was
         // pushed on it.
         routed
-            .id(destination)
+            .id(destination.pageIdentity)
             .transition(.junoPage)
             .animation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion), value: destination)
             // The window's open agent — a sidebar row, a notification, an
@@ -74,7 +77,10 @@ struct DesktopDestinationView: View {
                 }
             }
             // A destination's stack starts empty; so does what it last said.
-            .onChange(of: destination) { _, _ in agentsPath = [] }
+            .onChange(of: destination) { _, _ in
+                agentsPath = []
+                customizeDepth = 0
+            }
     }
 
     /// The chat route as it is; every page inside a `NavigationStack` of its
@@ -100,6 +106,25 @@ struct DesktopDestinationView: View {
                 pathChanged: agentsPathChanged
             )
             .id(agentsStackGeneration)
+        } else if destination.isCustomize {
+            DesktopCustomizeFrame(destination: $destination, showsTabs: customizeDepth == 0) {
+                DesktopPageStack(
+                    destination: destination,
+                    router: .shared,
+                    root: { page },
+                    page: { route in routePage(route) },
+                    pathChanged: { customizeDepth = $0.count }
+                )
+                .id(destination)
+            }
+        } else if destination == .projects {
+            DesktopPageStack(
+                destination: destination,
+                router: .shared,
+                root: { page },
+                page: { route in routePage(route) },
+                pathChanged: projectsPathChanged
+            )
         } else {
             DesktopPageStack(destination: destination, router: .shared) {
                 page
@@ -107,6 +132,19 @@ struct DesktopDestinationView: View {
                 routePage(route)
             }
         }
+    }
+
+    /// A pinned project's sidebar row reads as selected while its page is
+    /// anywhere on the Projects stack — a folder opened on top of it keeps it
+    /// lit — and hands the highlight back once the page is popped.
+    ///
+    /// This used to be the project page's `onDisappear`, which also fires when
+    /// a folder is *pushed over* the page: the sidebar's selection then moved
+    /// mid-push, and the window's selection binding wrote the Projects
+    /// destination back while the stack was still pushing the folder.
+    private func projectsPathChanged(_ path: [DesktopPageRoute]) {
+        guard let id = requestedProjectID, !path.contains(.project(id)) else { return }
+        requestedProjectID = nil
     }
 
     private static func isAgentPage(_ route: DesktopPageRoute) -> Bool {
@@ -332,6 +370,8 @@ struct DesktopDestinationView: View {
             } else {
                 unavailable("Memory", "The synchronized settings store is unavailable.")
             }
+        case .instructions:
+            DesktopInstructionsRoute(configuration: configuration, profile: session.profile)
         case .profile:
             DesktopProfileScreen(configuration: configuration, session: session, startChat: { destination = .chat })
         case .skills:
@@ -446,11 +486,6 @@ struct DesktopDestinationView: View {
                 startConversation: { prompt in startConversation(in: id, prompt: prompt) },
                 openMemory: configuration.memorySettingsModel == nil ? nil : { destination = .memory }
             )
-            // A pinned project's sidebar row reads as selected while its page
-            // is up, and hands the highlight back when it is left.
-            .onDisappear {
-                if requestedProjectID == id { requestedProjectID = nil }
-            }
         } else {
             unavailable("Project", "The synchronized project store is unavailable.")
         }

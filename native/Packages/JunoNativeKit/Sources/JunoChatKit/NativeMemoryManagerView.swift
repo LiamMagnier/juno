@@ -150,7 +150,7 @@ public struct NativeMemoryManagerView<Repository: AccountScopedRepository>: View
                             onDecideProposal(candidate, false)
                         }
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.junoGlass)
                     .padding(.top, JunoSpace.hairline)
                 }
                 .padding(.vertical, JunoSpace.hairline)

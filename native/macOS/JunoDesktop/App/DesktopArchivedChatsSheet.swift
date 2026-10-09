@@ -126,7 +126,7 @@ struct DesktopArchivedChatsSheet: View {
             HStack {
                 Spacer()
                 Button("Done", action: done)
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.junoGlass)
                     .tint(nil)
                     .keyboardShortcut(.cancelAction)
                     .contentShape(.rect)

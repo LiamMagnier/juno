@@ -479,19 +479,17 @@ struct LiveInputView: View {
             VStack(alignment: .leading, spacing: 8) {
                 FieldHead(label: input.label)
                 if input.segmented {
-                    Picker(input.label, selection: binding) {
-                        ForEach(input.options.indices, id: \.self) { Text(input.options[$0].label).tag($0) }
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .fixedSize()
+                    JunoSegmented(
+                        options: input.options.indices.map { JunoSegmentedOption($0, input.options[$0].label) },
+                        selection: binding,
+                        accessibilityLabel: input.label
+                    )
                 } else {
                     Picker(input.label, selection: binding) {
                         ForEach(input.options.indices, id: \.self) { Text(input.options[$0].label).tag($0) }
                     }
-                    .pickerStyle(.menu)
                     .labelsHidden()
-                    .fixedSize()
+                    .junoGlassMenuPicker(current: input.options.indices.contains(index) ? input.options[index].label : "")
                 }
             }
         case .toggle:
@@ -750,7 +748,7 @@ struct LiveButtonView: View {
             }
             .font(.subheadline)
         }
-        .buttonStyle(.bordered)
+        .buttonStyle(.junoGlass)
         .disabled(prompt != nil && context.onPrompt == nil)
         .help(prompt ?? button.label)
     }

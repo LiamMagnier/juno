@@ -262,6 +262,18 @@ struct DesktopChatWorkspace: View {
                 )
             },
             set: { item in
+                // The list writing back the row it already shows changes
+                // nothing. Several pages light one row — every Customize tab
+                // lights Customize — and an echo of that row must not send a
+                // reader on Skills back to Apps.
+                if let item, item == DesktopNavigationState.selection(
+                    destination: currentDestination,
+                    selectedConversationID: model.selectedConversationID,
+                    openProjectID: openPinnedProjectID,
+                    selectedAgentID: selectedAgentID
+                ), currentDestination.isCustomize {
+                    return
+                }
                 // Only a pinned project's row deep-links into a project; every
                 // other selection opens its destination's root.
                 if case .project(let id) = item {

@@ -503,7 +503,7 @@ struct DesktopMemoryWelcome: View {
                     Button(action: importMemory) {
                         Label("Import from ChatGPT or Claude", icon: .upload)
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.junoGlass)
                     .tint(nil)
                     .disabled(!enabled)
                     .contentShape(.rect)
@@ -519,7 +519,7 @@ struct DesktopMemoryWelcome: View {
                                 JunoIconView(.chats, size: 14)
                             }
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.junoGlass)
                         .tint(nil)
                         .disabled(!enabled || page.isBackfilling)
                         .contentShape(.rect)
@@ -646,7 +646,7 @@ struct DesktopMemorySkillCandidates: View {
                         Text("Add as skill")
                     }
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.junoGlass)
                 .tint(nil)
                 .controlSize(.small)
                 .disabled(busy)

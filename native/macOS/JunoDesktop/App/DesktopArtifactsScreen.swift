@@ -200,7 +200,7 @@ struct DesktopArtifactsScreen: View {
         if header {
             menu.junoProminentMenu()
         } else {
-            menu.buttonStyle(.bordered).tint(nil)
+            menu.buttonStyle(.junoGlass).tint(nil)
         }
     }
 

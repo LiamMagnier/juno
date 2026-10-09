@@ -165,9 +165,7 @@ private struct DesktopSettingsPersonalizationSections: View {
                 }
             }
             .labelsHidden()
-            .pickerStyle(.menu)
-            .tint(nil)
-            .fixedSize()
+            .junoGlassMenuPicker(current: DesktopPersonalities.all.first { $0.id == active }?.label ?? "")
             .accessibilityIdentifier("juno.desktop.settings.personality")
         }
     }
@@ -194,9 +192,7 @@ private struct DesktopSettingsPersonalizationSections: View {
                 }
             }
             .labelsHidden()
-            .pickerStyle(.menu)
-            .tint(nil)
-            .fixedSize()
+            .junoGlassMenuPicker(current: options.first { $0.value == settings.responseLanguage }?.label.desktopMenuTitle ?? settings.responseLanguage)
             .accessibilityIdentifier("juno.desktop.settings.response-language")
         }
     }

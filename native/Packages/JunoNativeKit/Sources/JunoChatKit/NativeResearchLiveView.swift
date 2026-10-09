@@ -521,7 +521,7 @@ public struct NativeResearchLiveView: View {
             .frame(minHeight: compact ? 32 : 24)
             .contentShape(.rect)
         }
-        .buttonStyle(.bordered)
+        .buttonStyle(.junoGlass)
         #if os(macOS)
         .controlSize(.small)
         #endif

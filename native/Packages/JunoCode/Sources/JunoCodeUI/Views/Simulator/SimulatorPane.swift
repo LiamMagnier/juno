@@ -283,12 +283,16 @@ public struct SimulatorPane: View {
 
     private var transcript: some View {
         VStack(spacing: 0) {
-            Picker("", selection: $model.transcriptTab) {
-                Text("Build").tag(SimulatorPaneModel.TranscriptTab.build)
-                Text("Logs").tag(SimulatorPaneModel.TranscriptTab.logs)
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
+            JunoSegmented(
+                options: [
+                    .init(SimulatorPaneModel.TranscriptTab.build, "Build"),
+                    .init(SimulatorPaneModel.TranscriptTab.logs, "Logs"),
+                ],
+                selection: $model.transcriptTab,
+                accessibilityLabel: "Transcript",
+                fills: true,
+                size: .compact
+            )
             .padding(.horizontal, JunoSpace.cozy)
             .padding(.vertical, JunoSpace.tight)
 

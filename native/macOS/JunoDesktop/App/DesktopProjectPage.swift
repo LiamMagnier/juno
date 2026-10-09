@@ -97,7 +97,7 @@ struct DesktopProjectPage: View {
                 } label: {
                     Label("Instructions", icon: .compose)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.junoGlass)
                 .tint(nil)
                 .contentShape(.rect)
                 Button {
@@ -105,10 +105,11 @@ struct DesktopProjectPage: View {
                 } label: {
                     JunoIconView(.pin, size: 16, isOn: project.starred)
                         .foregroundStyle(project.starred ? Color.junoForeground : Color.junoSecondaryInk)
-                        .frame(width: 28, height: 28)
+                        .frame(width: 18, height: 18)
                         .contentShape(.rect)
                 }
-                .buttonStyle(.borderless)
+                .junoGlassIconButton()
+                .frame(minWidth: 28, minHeight: 28)
                 .help(project.starred ? "Unpin project" : "Pin project")
                 .accessibilityLabel(project.starred ? "Unpin project" : "Pin project")
                 headerMore(project, summary)
@@ -197,14 +198,11 @@ struct DesktopProjectPage: View {
         } label: {
             JunoIconView(.ellipsis, size: 16)
                 .foregroundStyle(Color.junoForeground)
-                .frame(width: 28, height: 28)
+                .frame(width: 18, height: 18)
                 .contentShape(.rect)
         }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .frame(width: 28, height: 28)
+        .junoGlassMenu(.circle)
+        .frame(minWidth: 28, minHeight: 28)
         .help("More project actions")
         .accessibilityLabel("More project actions")
     }
@@ -220,6 +218,8 @@ struct DesktopProjectPage: View {
             columns {
                 VStack(alignment: .leading, spacing: JunoSpace.section) {
                     DesktopProjectAskField(projectName: project.name, send: startConversation)
+                    // The web's order: the folders inside, then the chats.
+                    DesktopProjectFoldersSection(projectID: projectID, model: model, fileAccess: fileAccess)
                     DesktopProjectChats(
                         chats: chats,
                         projects: model.projects,
@@ -227,7 +227,6 @@ struct DesktopProjectPage: View {
                         conversationModel: conversationModel,
                         open: openConversation
                     )
-                    DesktopProjectFoldersSection(projectID: projectID, model: model)
                     let inherited = model.inherited(for: projectID)
                     if !inherited.isEmpty {
                         DesktopProjectInheritedSection(inherited: inherited)
@@ -641,7 +640,7 @@ struct DesktopProjectRail: View {
                 if let openMemory {
                     Button("Manage memory", action: openMemory)
                         .contentShape(.rect)
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.junoGlass)
                         .tint(nil)
                         .padding(.top, JunoSpace.tight)
                 }
@@ -1159,7 +1158,7 @@ struct DesktopProjectSettings: View {
                 Spacer(minLength: 0)
                 Button("Full editor", action: openFullEditor)
                     .contentShape(.rect)
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.junoGlass)
                     .tint(nil)
                 Button("Save") { Task { await saveInstructions() } }
                     .contentShape(.rect)

@@ -120,7 +120,7 @@ struct DesktopAddServerSheet: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 Button("Cancel", role: .cancel, action: close)
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.junoGlass)
                     .tint(nil)
                     .keyboardShortcut(.cancelAction)
                     .contentShape(.rect)
@@ -199,13 +199,13 @@ struct DesktopAddServerSheet: View {
                         JunoIconView(.arrowLeft, size: 13)
                     }
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.junoGlass)
                 .tint(nil)
                 .disabled(draft.isCreating)
                 .contentShape(.rect)
                 Spacer(minLength: 0)
                 Button("Cancel", role: .cancel, action: close)
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.junoGlass)
                     .tint(nil)
                     .keyboardShortcut(.cancelAction)
                     .disabled(draft.isCreating)
@@ -319,7 +319,7 @@ struct DesktopManageServerSheet: View {
                 HStack {
                     Spacer()
                     Button("Close", action: close)
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.junoGlass)
                         .tint(nil)
                         .keyboardShortcut(.cancelAction)
                 }
@@ -625,7 +625,7 @@ struct DesktopManageServerSheet: View {
                         .foregroundStyle(Color.junoForeground)
                     Spacer(minLength: 0)
                     Button("Keep") { confirmingRemove = false }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.junoGlass)
                         .tint(nil)
                         .keyboardShortcut(.cancelAction)
                         .disabled(editor.isRemoving)
@@ -661,7 +661,7 @@ struct DesktopManageServerSheet: View {
                     }
                     Spacer(minLength: 0)
                     Button("Done", action: close)
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.junoGlass)
                         .tint(nil)
                         .keyboardShortcut(connector.connected ? .defaultAction : .cancelAction)
                 }

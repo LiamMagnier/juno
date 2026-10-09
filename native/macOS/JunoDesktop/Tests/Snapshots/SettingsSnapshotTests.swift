@@ -395,11 +395,17 @@ struct DesktopSettingsSnapshotRail: View {
             .foregroundStyle(Color.junoTertiaryInk)
             .padding(.horizontal, JunoSpace.snug)
             .frame(height: 28)
-            .background(Color.junoInput, in: RoundedRectangle(cornerRadius: JunoRadius.control, style: .continuous))
+            // macOS 26 draws the sidebar's search field as a capsule.
+            .background(Color.junoSecondary, in: Capsule(style: .continuous))
             .padding(.bottom, JunoSpace.snug)
             ForEach(Array(DesktopSettingsSection.railGroups.enumerated()), id: \.offset) { index, group in
-                if index > 0 {
-                    Spacer().frame(height: JunoSpace.tight)
+                if let title = DesktopSettingsSidebar.title(for: group) {
+                    Text(title)
+                        .junoType(JunoType.caption.weight(.semibold))
+                        .foregroundStyle(Color.junoTertiaryInk)
+                        .padding(.horizontal, JunoSpace.tight)
+                        .padding(.top, index > 0 ? JunoSpace.cozy : JunoSpace.tight)
+                        .padding(.bottom, JunoSpace.micro)
                 }
                 ForEach(group) { section in
                     let selected = section == selection

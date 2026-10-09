@@ -58,6 +58,9 @@ public enum JunoSegmentedMetrics {
     /// inline artifact's Preview / Code): the pointer rung, 11pt labels.
     public static let compactTrackHeight: CGFloat = 28
     public static let compactSegmentPadding: CGFloat = JunoSpace.snug
+    /// The glass track's inset around its lens, and the gap between segments.
+    public static let glassInset: CGFloat = 3
+    public static let glassGap: CGFloat = 2
 }
 
 /// How large a ``JunoSegmented`` is drawn: a page's 32pt control, or the
@@ -71,6 +74,8 @@ public enum JunoSegmentedSize: Sendable {
     }
 
     var segmentHeight: CGFloat { trackHeight - JunoSegmentedMetrics.inset * 2 }
+
+    var glassSegmentHeight: CGFloat { trackHeight - JunoSegmentedMetrics.glassInset * 2 }
 
     var segmentPadding: CGFloat {
         self == .compact ? JunoSegmentedMetrics.compactSegmentPadding : JunoSegmentedMetrics.segmentPadding
@@ -137,43 +142,54 @@ public struct JunoSegmented<Value: Hashable>: View {
 
     public var body: some View {
         #if os(macOS)
-        if options.allSatisfy({ ($0.badge ?? 0) == 0 }) {
-            nativeControl
-        } else {
-            drawnControl
-        }
+        glassControl
         #else
         drawnControl
         #endif
     }
 
     #if os(macOS)
-    /// The Mac's own segmented control (round 2): AppKit's, drawn and
-    /// animated by the system, at the system's metrics — what Finder, Mail
-    /// and Notes put in a page's filter row. Counts are the page's to say
-    /// beside it; a segment only names itself. The drawn track below stays
-    /// for the one case the system control cannot carry, a waiting badge.
-    private var nativeControl: some View {
-        Picker(accessibilityLabel, selection: Binding(get: { selection }, set: { select($0) })) {
+    /// The Mac's control (round 3): the segments on one capsule of Liquid
+    /// Glass, the selection a soft ink lens that slides between them on the
+    /// standard spring — the toolbar's own vocabulary, brought into the page.
+    /// The owner retired AppKit's white segmented slab here. Counts and
+    /// waiting badges ride inside their segment as on the web.
+    private var glassControl: some View {
+        JunoEqualWidthRow(spacing: JunoSegmentedMetrics.glassGap, fills: fills).callAsFunction {
             ForEach(options) { option in
-                Group {
-                    if let icon = option.icon {
-                        Label { Text(option.title) } icon: { Image(icon.assetName) }
-                    } else {
-                        Text(option.title)
-                    }
-                }
-                .tag(option.value)
+                JunoSegmentButton(
+                    option: option,
+                    isSelected: option.value == selection,
+                    thumb: thumb,
+                    size: size,
+                    glass: true,
+                    select: { select(option.value) }
+                )
                 .accessibilityIdentifier(optionAccessibilityIdentifier?(option.value) ?? "")
             }
         }
-        .pickerStyle(.segmented)
-        .labelsHidden()
-        .controlSize(size == .compact ? .small : .regular)
+        .padding(JunoSegmentedMetrics.glassInset)
+        .frame(height: size.trackHeight)
+        .modifier(JunoGlassSegmentTrack())
         .fixedSize(horizontal: !fills, vertical: true)
+        .accessibilityElement(children: .contain)
         .accessibilityLabel(accessibilityLabel)
+        .accessibilityAdjustableAction { direction in adjust(direction) }
     }
     #endif
+
+    private func adjust(_ direction: AccessibilityAdjustmentDirection) {
+        let enabled = options.filter { !$0.isDisabled }
+        guard let index = enabled.firstIndex(where: { $0.value == selection }) else { return }
+        let next: Int
+        switch direction {
+        case .increment: next = index + 1
+        case .decrement: next = index - 1
+        @unknown default: return
+        }
+        guard enabled.indices.contains(next) else { return }
+        select(enabled[next].value)
+    }
 
     private var drawnControl: some View {
         JunoEqualWidthRow(spacing: JunoSegmentedMetrics.inset, fills: fills).callAsFunction {
@@ -231,6 +247,8 @@ private struct JunoSegmentButton<Value: Hashable>: View {
     let isSelected: Bool
     let thumb: Namespace.ID
     var size: JunoSegmentedSize = .regular
+    /// Drawn inside the Mac's glass track: a capsule lens, not the raised key.
+    var glass = false
     let select: () -> Void
 
     @State private var isHovering = false
@@ -278,9 +296,17 @@ private struct JunoSegmentButton<Value: Hashable>: View {
             .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint), value: ink)
             .padding(.horizontal, size.segmentPadding)
             .frame(maxWidth: .infinity)
-            .frame(height: size.segmentHeight)
+            .frame(height: glass ? size.glassSegmentHeight : size.segmentHeight)
             .background {
-                if isSelected {
+                if glass {
+                    if isSelected {
+                        JunoGlassSegmentLens()
+                            .matchedGeometryEffect(id: "thumb", in: thumb)
+                    } else if isHovering, !option.isDisabled {
+                        Capsule(style: .continuous)
+                            .fill(Color.junoForeground.opacity(0.045))
+                    }
+                } else if isSelected {
                     JunoSegmentThumb()
                         .matchedGeometryEffect(id: "thumb", in: thumb)
                 } else if isHovering, !option.isDisabled {
@@ -290,7 +316,7 @@ private struct JunoSegmentButton<Value: Hashable>: View {
                         .fill(Color.junoHover.opacity(0.6))
                 }
             }
-            .contentShape(.rect(cornerRadius: JunoSegmentedMetrics.thumbRadius))
+            .contentShape(glass ? AnyShape(Capsule()) : AnyShape(.rect(cornerRadius: JunoSegmentedMetrics.thumbRadius)))
         }
         .buttonStyle(JunoSegmentPressStyle())
         .contentShape(.rect(cornerRadius: JunoSegmentedMetrics.thumbRadius))
@@ -306,6 +332,20 @@ private struct JunoSegmentButton<Value: Hashable>: View {
         if let count = option.count { name += ", \(count)" }
         if let badge = option.badge, badge > 0 { name += ", \(badge) waiting on you" }
         return name
+    }
+}
+
+/// The lens that marks the selected segment in the glass track: a capsule of
+/// ink at low strength, with a hairline rim — a darker lens on light glass, a
+/// brighter one on dark. Never the accent: a selection is not an accent place.
+private struct JunoGlassSegmentLens: View {
+    var body: some View {
+        Capsule(style: .continuous)
+            .fill(Color.junoForeground.opacity(0.085))
+            .overlay {
+                Capsule(style: .continuous)
+                    .strokeBorder(Color.junoForeground.opacity(0.06), lineWidth: 0.5)
+            }
     }
 }
 

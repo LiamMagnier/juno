@@ -109,7 +109,7 @@ struct DesktopSettingsModelsPane: View {
                 .frame(width: 208)
                 .contentShape(.rect)
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.junoGlass)
             .tint(nil)
             .disabled(context.modelCatalog.isEmpty)
             .accessibilityLabel("Default model")
@@ -157,9 +157,7 @@ struct DesktopSettingsModelsPane: View {
                 }
             }
             .labelsHidden()
-            .pickerStyle(.menu)
-            .tint(nil)
-            .fixedSize()
+            .junoGlassMenuPicker(current: current.label)
             .accessibilityIdentifier("juno.desktop.settings.auto-preference")
         }
     }
@@ -183,9 +181,7 @@ struct DesktopSettingsModelsPane: View {
                 }
             }
             .labelsHidden()
-            .pickerStyle(.menu)
-            .tint(nil)
-            .fixedSize()
+            .junoGlassMenuPicker(current: current.label)
             .accessibilityIdentifier("juno.desktop.settings.auto-data-boundary")
         }
     }
@@ -261,7 +257,7 @@ struct DesktopSettingsModelsPane: View {
         }
         .menuStyle(.button)
         .menuIndicator(.hidden)
-        .buttonStyle(.bordered)
+        .buttonStyle(.junoGlass)
         .tint(nil)
         .fixedSize()
         .disabled(addable(settings).isEmpty)

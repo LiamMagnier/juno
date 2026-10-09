@@ -619,7 +619,9 @@ struct ComposerControlStyle: ButtonStyle {
             configuration.label
                 .opacity(isEnabled ? 1 : 0.5)
                 .background {
-                    JunoRadius.concentric()
+                    // A capsule (round 3): a control is never a rounded
+                    // rectangle on the Mac, the composer's included.
+                    Capsule(style: .continuous)
                         .fill(Color.junoGlassHover)
                         .opacity(hovered && isEnabled ? 1 : 0)
                 }
@@ -1958,7 +1960,7 @@ struct ChatComposer: View {
                 Label("Attach as file", icon: .files, size: 14)
                     .contentShape(.rect)
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.junoGlass)
             .accessibilityIdentifier("juno.desktop.chat.attach-draft")
         }
         .transition(.opacity)
@@ -2017,7 +2019,7 @@ struct ChatComposer: View {
                 }
                 Spacer(minLength: 0)
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.junoGlass)
         }
         .padding(JunoSpace.cozy)
         .frame(maxWidth: .infinity, alignment: .leading)

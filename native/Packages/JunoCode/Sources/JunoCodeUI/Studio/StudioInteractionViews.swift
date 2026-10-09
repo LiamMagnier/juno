@@ -405,9 +405,8 @@ struct StudioPlanApprovalPrompt: View {
                         Text(choice.title).tag(choice)
                     }
                 }
-                .pickerStyle(.menu)
                 .labelsHidden()
-                .fixedSize()
+                .junoGlassMenuPicker(current: mode.title)
                 .accessibilityLabel("Permission level for implementing the plan")
                 .accessibilityIdentifier("juno.code.plan.level")
                 Button("Approve") {

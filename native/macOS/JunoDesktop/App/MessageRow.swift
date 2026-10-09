@@ -396,7 +396,7 @@ struct DesktopMessageRow: View {
                         JunoIconView(.refresh, size: 14)
                     }
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.junoGlass)
                 .controlSize(.small)
                 // The web's outline: neutral, never the column's coral tint.
                 .tint(nil)
@@ -1058,12 +1058,13 @@ struct MessageGhostButtonStyle: ButtonStyle {
                 .foregroundStyle(lit ? Color.junoForeground : Color.junoSecondaryInk)
                 .padding(.horizontal, horizontalPadding)
                 .frame(minHeight: 28)
+                // A capsule, as every control on the Mac is (round 3).
                 .background(
-                    RoundedRectangle(cornerRadius: JunoRadius.control, style: .continuous)
+                    Capsule(style: .continuous)
                         .fill(Color.junoHover)
                         .opacity(lit ? 1 : 0)
                 )
-                .contentShape(RoundedRectangle(cornerRadius: JunoRadius.control, style: .continuous))
+                .contentShape(Capsule(style: .continuous))
                 .opacity(isEnabled ? 1 : 0.5)
                 .scaleEffect(
                     configuration.isPressed ? JunoMotion.scaleFrom(0.97, reduceMotion: reduceMotion) : 1

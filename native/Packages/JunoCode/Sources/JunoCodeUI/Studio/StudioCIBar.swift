@@ -266,12 +266,14 @@ struct StudioBringBackSheet: View {
             Text("Each step runs only when you choose it.")
                 .font(Studio.Font.meta)
                 .foregroundStyle(Studio.Ink.secondary)
-            Picker("How", selection: $method) {
-                Text("Merge").tag(WorktreeBringBackMethod.merge)
-                Text("Cherry-pick").tag(WorktreeBringBackMethod.cherryPick)
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
+            JunoSegmented(
+                options: [
+                    .init(WorktreeBringBackMethod.merge, "Merge"),
+                    .init(WorktreeBringBackMethod.cherryPick, "Cherry-pick"),
+                ],
+                selection: $method,
+                accessibilityLabel: "How"
+            )
             if steps.isEmpty {
                 Text("Nothing to bring back: the worktree has no changes.")
                     .font(Studio.Font.meta)

@@ -67,6 +67,7 @@ enum PageFixtures {
         "projects-new-sheet",
         "project-overview",
         "project-overview-narrow",
+        "project-folder",
         "project-sources",
         "project-settings",
         "artifacts-list",
@@ -188,7 +189,11 @@ enum PageFixtures {
                 )
             })
         case "project-overview":
-            return page(name, height: 760) { projectPage(world, tab: .overview) }
+            return page(name, height: 1_000) { projectPage(world, tab: .overview) }
+        case "project-folder":
+            // A folder's own page: breadcrumbs, the folder inside it, and
+            // what it inherits from the project above.
+            return page(name, height: 900) { projectPage(world, tab: .overview, id: "proj-1-obs") }
         case "project-overview-narrow":
             return page(name, width: narrowWidth, height: 1_180) { projectPage(world, tab: .overview) }
         case "project-sources":
@@ -268,9 +273,9 @@ enum PageFixtures {
     // MARK: Projects and artifacts
 
     @MainActor
-    static func projectPage(_ world: SnapshotPreviewWorld, tab: DesktopProjectTab) -> some View {
+    static func projectPage(_ world: SnapshotPreviewWorld, tab: DesktopProjectTab, id: String = "proj-1") -> some View {
         DesktopProjectPage(
-            projectID: "proj-1",
+            projectID: id,
             model: world.world.projectModel,
             conversationModel: world.world.conversationModel,
             workspaceModel: world.world.projectWorkspaceModel,

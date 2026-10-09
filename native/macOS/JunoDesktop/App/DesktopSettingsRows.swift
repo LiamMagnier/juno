@@ -326,7 +326,7 @@ struct DesktopOutlineButton: View {
             .foregroundStyle(destructive ? Color.junoDestructiveInk : Color.junoForeground)
             .opacity(isEnabled ? 1 : 0.4)
         }
-        .buttonStyle(.bordered)
+        .buttonStyle(.junoGlass)
         .tint(nil)
         .contentShape(.rect)
     }

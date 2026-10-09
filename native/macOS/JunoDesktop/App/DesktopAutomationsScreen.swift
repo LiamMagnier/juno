@@ -41,8 +41,8 @@ struct DesktopAutomationsScreen: View {
     var body: some View {
         JunoPage(measure: .wide) {
             JunoPageHeader(
-                "Automations",
-                lede: "Let a task start itself — at a time you choose or when something changes — with every run attached to the same task so context compounds."
+                "Routines",
+                lede: "Tasks that start themselves, on a schedule or when something changes."
             ) {
                 // Withheld while the page is loading, failed or empty: the
                 // empty state carries it then, as the web's does.
@@ -257,9 +257,9 @@ struct DesktopAutomationRow<Actions: View>: View {
                                 .junoType(JunoType.ui.weight(.medium))
                                 .foregroundStyle(Color.junoForeground)
                                 .lineLimit(1)
-                            if !schedule.enabled {
-                                DesktopWorkTag("Paused")
-                            }
+                            // No "Paused" pill (owner rule: no status pills):
+                            // the Paused section and the line under the name
+                            // already say it in words.
                             if let repository = schedule.codeRepository {
                                 DesktopWorkTag(repository)
                             }

@@ -101,10 +101,7 @@ struct DesktopSkillsScreen: View {
         } label: {
             DesktopProminentMenuLabel(title: "Add", icon: .plus)
         }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
-        .menuIndicator(.hidden)
-        .fixedSize()
+        .junoProminentMenu()
         .help("Add a skill")
         .accessibilityLabel("Add")
         .accessibilityIdentifier("juno.desktop.skills.add")
@@ -126,7 +123,7 @@ struct DesktopSkillsScreen: View {
                 Text(failure)
             } action: {
                 Button("Retry") { Task { await model.refresh() } }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.junoGlass)
                     .tint(nil)
                     .controlSize(.small)
                     .contentShape(.rect)
@@ -150,7 +147,7 @@ struct DesktopSkillsScreen: View {
                     Button { importing = DesktopSkillImportRequest(source: nil) } label: {
                         Label("Import from GitHub", icon: .github, size: 13)
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.junoGlass)
                     .tint(nil)
                     .contentShape(.rect)
                 }
@@ -217,15 +214,13 @@ struct DesktopSkillsScreen: View {
         }
         .padding(.horizontal, JunoSpace.comfy)
         .frame(height: 40)
-        .background(
-            RoundedRectangle(cornerRadius: JunoRadius.field, style: .continuous)
-                .fill(Color.junoSecondary.opacity(0.6))
-        )
+        // A glass capsule, as every field and control is on the Mac (round 3).
+        .junoGlassCapsule()
         .overlay(
-            RoundedRectangle(cornerRadius: JunoRadius.field, style: .continuous)
-                .strokeBorder(searchFocused ? Color.junoRing : Color.junoInput, lineWidth: 1)
+            Capsule(style: .continuous)
+                .strokeBorder(Color.junoRing, lineWidth: searchFocused ? 2 : 0)
         )
-        .contentShape(.rect(cornerRadius: JunoRadius.field))
+        .contentShape(Capsule(style: .continuous))
         .onTapGesture { searchFocused = true }
     }
 
@@ -265,7 +260,7 @@ struct DesktopSkillsScreen: View {
                     }
                         .contentShape(.rect)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.junoGlass)
                 .tint(nil)
                 DesktopPopularSources { repository in
                     importing = DesktopSkillImportRequest(source: repository)

@@ -601,7 +601,7 @@ struct ChatWorkSaveSkillButton: View {
             .frame(maxWidth: .infinity, minHeight: 28)
             .contentShape(.rect)
         }
-        .buttonStyle(.bordered)
+        .buttonStyle(.junoGlass)
         .tint(nil)
         .accessibilityIdentifier("juno.chat.work-card.save-skill")
     }
@@ -681,7 +681,7 @@ struct ChatWorkLocalBlockerTile: View {
         } label: {
             Text("Open System Settings").frame(minHeight: 28).contentShape(.rect)
         }
-        .buttonStyle(.bordered)
+        .buttonStyle(.junoGlass)
         .tint(nil)
         .fixedSize()
     }
@@ -776,7 +776,7 @@ struct ChatWorkStopButton: View {
             .frame(minHeight: 28)
             .contentShape(.rect)
         }
-        .buttonStyle(.bordered)
+        .buttonStyle(.junoGlass)
         .tint(nil)
         .disabled(stopping)
         .help("Stop the task")
@@ -1192,7 +1192,7 @@ struct ChatWorkQuestionCard: View {
                     .frame(minHeight: 28)
                     .contentShape(.rect)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.junoGlass)
                 .tint(nil)
                 .help("Reply in the message box below")
                 .accessibilityLabel("Reply in the message box below")
@@ -1263,7 +1263,7 @@ struct ChatWorkQuestionCard: View {
             if replyIsProminent {
                 button.buttonStyle(.junoProminent)
             } else {
-                button.buttonStyle(.bordered).tint(nil)
+                button.buttonStyle(.junoGlass).tint(nil)
             }
         }
     }

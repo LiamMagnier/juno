@@ -71,10 +71,9 @@ struct DesktopRowMenuButton<Items: View>: View {
                 .foregroundStyle(isHovering ? Color.junoForeground : Color.junoSecondaryInk)
                 .frame(width: 28, height: 28)
                 .background(
-                    RoundedRectangle(cornerRadius: JunoRadius.control, style: .continuous)
-                        .fill(isHovering ? Color.junoHover : Color.clear)
+                    Circle().fill(isHovering ? Color.junoHover : Color.clear)
                 )
-                .contentShape(.rect(cornerRadius: JunoRadius.control))
+                .contentShape(Circle())
         }
         .menuStyle(.button)
         .buttonStyle(.plain)
@@ -103,10 +102,9 @@ struct DesktopQuietIconButton: View {
                 .foregroundStyle(isHovering ? Color.junoForeground : Color.junoSecondaryInk)
                 .frame(width: 28, height: 28)
                 .background(
-                    RoundedRectangle(cornerRadius: JunoRadius.control, style: .continuous)
-                        .fill(isHovering ? Color.junoHover : Color.clear)
+                    Circle().fill(isHovering ? Color.junoHover : Color.clear)
                 )
-                .contentShape(.rect(cornerRadius: JunoRadius.control))
+                .contentShape(Circle())
         }
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
@@ -335,18 +333,11 @@ struct DesktopProminentMenuLabel: View {
                 .opacity(0.8)
         }
         .junoType(JunoType.ui.weight(.medium))
+        // The capsule is the menu's own: `.junoProminentMenu()` draws it in
+        // tinted glass (round 3), so the label carries only the words.
         .foregroundStyle(Color.junoOnAccent)
-        .padding(.horizontal, JunoSpace.cozy)
-        .frame(height: 24)
-        .background(
-            RoundedRectangle(cornerRadius: JunoRadius.xs, style: .continuous)
-                .fill(Color.junoAccent)
-                .brightness(isHovering ? -0.04 : 0)
-        )
         .opacity(isEnabled ? 1 : 0.5)
-        .frame(minHeight: 28)
-        .contentShape(.rect)
-        .onHover { isHovering = $0 }
+        .contentShape(Capsule())
     }
 }
 

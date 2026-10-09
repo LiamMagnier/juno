@@ -188,7 +188,7 @@ public struct CodeRemoteTaskDetailView: View {
                         Button("Approve") {
                             respondToApproval(approve: true)
                         }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.junoProminent)
                         .tint(Color.junoAccent)
                         .disabled(approvalActionInFlight)
                         if approvalActionInFlight {
@@ -228,7 +228,7 @@ public struct CodeRemoteTaskDetailView: View {
                         Button(followUpInFlight ? "Starting…" : "Send follow-up") {
                             sendFollowUp()
                         }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.junoProminent)
                         .tint(Color.junoAccent)
                         .disabled(
                             followUpInFlight
