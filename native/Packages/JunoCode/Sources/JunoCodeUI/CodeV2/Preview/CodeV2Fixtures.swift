@@ -235,6 +235,52 @@ public enum CodeV2Fixtures {
         )
     }
 
+    /// The same session once the second turn has settled: both turns fold,
+    /// the composer is at rest.
+    public static var settledSnapshot: CodeV2.SessionSnapshot {
+        var snapshot = workingSnapshot
+        snapshot.state = .idle
+        snapshot.activeTurnId = nil
+        snapshot.queue = []
+        snapshot.items.removeLast()
+        snapshot.items += [
+            .commandExecution(.init(id: "c2", turnId: "t2", createdAt: at(359), callId: "c2", command: "pnpm test --filter cart",
+                                    output: "✓ cart/total.server.test.ts (9)\n✓ cart/useCartTotal.test.tsx (6)\n✓ cart/checkout.e2e.test.ts (4)",
+                                    exitCode: 0, durationMs: 41_000, status: .completed)),
+            .fileChange(.init(id: "f3", turnId: "t2", createdAt: at(402), callId: "f3", changes: [
+                .init(path: "README.md", change: .modify, additions: 6, deletions: 1),
+            ], status: .completed)),
+            .assistantMessage(.init(id: "a2", turnId: "t2", createdAt: at(431), text: "Typecheck is clean and the cart suite passes: 19 tests across the server total, the hook and the checkout flow. I also noted in the README that the total now comes from `/api/cart/total`, so the browser never sums prices itself.")),
+            .checkpoint(.init(id: "k2", turnId: "t2", createdAt: at(432), checkpointId: "cp2", turnOrdinal: 2, filesChanged: 1, additions: 6, deletions: 1)),
+        ]
+        snapshot.usage = CodeV2.SessionUsage(inputTokens: 196_000, outputTokens: 11_200, cachedInputTokens: 140_000, contextTokens: 196_000, contextWindow: 1_000_000)
+        return snapshot
+    }
+
+    /// A new session: no turns yet.
+    public static var newSnapshot: CodeV2.SessionSnapshot {
+        CodeV2.SessionSnapshot(
+            id: "env-0", cwd: "/Users/maya/code/storefront", title: nil,
+            selection: claudeSelection, state: .idle, items: []
+        )
+    }
+
+    /// The sidebar's list of work, around the storefront session.
+    public static var sidebarSessions: [CodeSidebarSession] {
+        func ago(_ minutes: Double) -> Date { now.addingTimeInterval(-minutes * 60) }
+        return CodeSidebarSession.ordered([
+            CodeSidebarSession(id: "s1", title: "Move checkout totals to the server", project: "storefront", updatedAt: ago(1), state: .idle),
+            CodeSidebarSession(id: "s2", title: "Check the receipt in Safari", project: "storefront", updatedAt: ago(4), state: .working),
+            CodeSidebarSession(id: "s3", title: "Regression suite for cart totals", project: "storefront", updatedAt: ago(7), state: .needsYou),
+            CodeSidebarSession(id: "s4", title: "Dark mode for the receipt email", project: "mailer", updatedAt: ago(52), state: .idle, isUnread: true),
+            CodeSidebarSession(id: "s5", title: "Bump Stripe SDK to v19", project: "storefront", updatedAt: ago(180), state: .idle),
+            CodeSidebarSession(id: "s6", title: "Why does the sitemap skip /gift-cards", project: "storefront", updatedAt: ago(600), state: .idle),
+            CodeSidebarSession(id: "s7", title: "Rate limit the coupon endpoint", project: "api", updatedAt: ago(1_500), state: .idle),
+            CodeSidebarSession(id: "s8", title: "Explain the order state machine", project: "api", updatedAt: ago(2_900), state: .idle),
+            CodeSidebarSession(id: "s9", title: "Port the admin table to the new grid", project: "admin", updatedAt: ago(6_000), state: .idle),
+        ])
+    }
+
     /// A Claude plan limit hit mid-run.
     public static var limitedSnapshot: CodeV2.SessionSnapshot {
         var snapshot = workingSnapshot

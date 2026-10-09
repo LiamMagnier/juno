@@ -95,6 +95,15 @@ public enum Studio {
         public static let delStrong = Color.studioHSL(light: (3.2, 0.71, 0.50), dark: (4.7, 0.77, 0.70), opacity: 0.20)
     }
 
+    /// Light syntax colour for diff and file lines, the web's `--cv2-code-*`
+    /// and `--code-string` / `--code-number` values.
+    public enum Code {
+        public static let keyword = Color.studioHSL(light: (229, 0.50, 0.45), dark: (229, 0.70, 0.76))
+        public static let comment = Color.studioHSL(light: (217, 0.04, 0.52), dark: (222, 0.04, 0.56))
+        public static let string = Color.studioHSL(light: (0, 0.70, 0.38), dark: (17, 0.47, 0.66))
+        public static let number = Color.studioHSL(light: (157, 0.80, 0.27), dark: (99, 0.28, 0.73))
+    }
+
     // MARK: Geometry
 
     /// DESIGN §3.1 radii: control 8, field 10, card 12, popover 12, menu 14,
@@ -140,6 +149,54 @@ public extension View {
     func studioReadingFont() -> some View {
         junoFont(size: 14, relativeTo: .body)
     }
+}
+
+/// The Code type scale (code-v4 TARGET §1.2): five sizes, two weights.
+/// 24 for the empty-state question, 14 for prose, rows, titles and the
+/// work log, 12 for controls, metadata and counts, 12.5 mono for code and
+/// commands only. Weights are 400 and 500; nothing else.
+public enum StudioType {
+    case display, text, textMedium, small, smallMedium, code
+
+    var size: CGFloat {
+        switch self {
+        case .display: 24
+        case .text, .textMedium: 14
+        case .small, .smallMedium: 12
+        case .code: 12.5
+        }
+    }
+
+    var weight: SwiftUI.Font.Weight {
+        switch self {
+        case .display, .textMedium, .smallMedium: .medium
+        default: .regular
+        }
+    }
+
+    var style: SwiftUI.Font.TextStyle {
+        switch self {
+        case .display: .title
+        case .text, .textMedium: .body
+        case .small, .smallMedium, .code: .callout
+        }
+    }
+}
+
+public extension View {
+    /// One rung of ``StudioType``, scaling with the reader's text size.
+    func studioType(_ rung: StudioType) -> some View {
+        junoFont(
+            size: rung.size, relativeTo: rung.style, weight: rung.weight,
+            design: rung == .code ? .monospaced : .default
+        )
+    }
+}
+
+extension Studio.Ink {
+    /// `--prose`: the assistant's text at 88% of the foreground, a step
+    /// softer than titles and the reader's own words.
+    static let prose = Color.junoForeground.opacity(0.88)
 }
 
 extension View {

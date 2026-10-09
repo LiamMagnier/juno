@@ -19,33 +19,31 @@ struct StudioUserMessage<Action: View>: View {
     @State private var hovering = false
 
     var body: some View {
-        VStack(alignment: .trailing, spacing: JunoSpace.hairline) {
+        VStack(alignment: .trailing, spacing: JunoSpace.tight) {
             Text(text)
                 .studioReadingFont()
                 .foregroundStyle(Studio.Ink.primary)
-                .lineSpacing(3)
+                .lineSpacing(4)
                 .textSelection(.enabled)
-                .padding(.horizontal, JunoSpace.cozy + 2)
-                .padding(.vertical, JunoSpace.snug + 1)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
                 .background(
-                    RoundedRectangle(cornerRadius: Studio.Radius.card + 4, style: .continuous)
-                        .fill(Studio.Surface.muted)
+                    RoundedRectangle(cornerRadius: Studio.Radius.bubble, style: .continuous)
+                        .fill(Studio.Surface.bubble)
                 )
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel("You: \(text)")
-                .overlay(alignment: .leading) {
-                    action(hovering)
-                        .alignmentGuide(.leading) { $0[.trailing] + JunoSpace.tight }
-                }
                 // A reader's message is a turn marker, not a column: capped
                 // so a long prompt does not read as the agent's reply.
-                .frame(maxWidth: Studio.Metrics.measure * 0.78, alignment: .trailing)
-            if let caption {
-                Text(caption)
-                    .font(Studio.Font.meta)
-                    .foregroundStyle(Studio.Ink.tertiary)
-                    .padding(.trailing, JunoSpace.snug)
+                .frame(maxWidth: Studio.Metrics.measure * 0.82, alignment: .trailing)
+            HStack(spacing: JunoSpace.snug) {
+                if let caption {
+                    Text(caption).studioType(.small).foregroundStyle(Studio.Ink.secondary)
+                }
+                action(hovering)
             }
+            .frame(minHeight: 18)
+            .opacity(caption != nil || hovering ? 1 : 0)
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
         .padding(.leading, 64)
@@ -69,8 +67,8 @@ struct StudioAssistantMessage: View {
     var body: some View {
         JunoMarkdownText(text, streaming: streaming)
             .studioReadingFont()
-            .foregroundStyle(Studio.Ink.primary)
-            .lineSpacing(3)
+            .foregroundStyle(Studio.Ink.prose)
+            .lineSpacing(4)
             .textSelection(.enabled)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -149,10 +147,10 @@ struct StudioActivityRow: View {
         VStack(alignment: .leading, spacing: 2) {
             StudioDisclosureRow(isExpanded: $isExpanded, canExpand: group.hasDetail) {
                 if isRunning {
-                    JunoShimmerText(group.title, font: Studio.Font.label, active: true)
+                    CodeV2ShineText(text: group.title, rung: .text)
                 } else {
                     Text(group.title)
-                        .font(Studio.Font.label)
+                        .studioType(.text)
                         .foregroundStyle(Studio.Ink.secondary)
                 }
             } trailing: {
@@ -160,19 +158,18 @@ struct StudioActivityRow: View {
                     if group.linesAdded > 0 || group.linesRemoved > 0 {
                         StudioDiffStat(added: group.linesAdded, removed: group.linesRemoved)
                     }
-                    if let seconds = group.durationSeconds, seconds >= 1 {
+                    if isRunning, let seconds = group.durationSeconds, seconds >= 1 {
                         Text(StudioFormat.duration(seconds))
-                            .font(Studio.Font.metaDigits)
-                            .foregroundStyle(Studio.Ink.tertiary)
+                            .studioType(.small).monospacedDigit()
+                            .foregroundStyle(Studio.Ink.secondary)
                     }
                 }
             } detail: {
                 VStack(alignment: .leading, spacing: 2) {
                     ForEach(reasoning.indices, id: \.self) { index in
                         Text(reasoning[index])
-                            .font(Studio.Font.meta)
-                            .foregroundStyle(Studio.Ink.tertiary)
-                            .italic()
+                            .studioType(.small)
+                            .foregroundStyle(Studio.Ink.secondary)
                             .padding(.vertical, 2)
                     }
                     ForEach(group.toolCallRecords) { record in
@@ -215,13 +212,15 @@ struct StudioToolLine: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: JunoSpace.hairline) {
-            HStack(alignment: .firstTextBaseline, spacing: JunoSpace.tight) {
-                statusMark
-                    .frame(width: 12, height: 12)
-                    .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
+            HStack(alignment: .firstTextBaseline, spacing: JunoSpace.tight + 2) {
+                if record.status != .succeeded {
+                    statusMark
+                        .frame(width: 12, height: 12)
+                        .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
+                }
                 Text(parts.verb)
-                    .font(Studio.Font.meta)
-                    .foregroundStyle(Studio.Ink.secondary)
+                    .studioType(.textMedium)
+                    .foregroundStyle(record.status == .failed ? Studio.Ink.danger : Studio.Ink.secondary)
                 if !parts.object.isEmpty {
                     objectLabel
                 }
@@ -229,24 +228,19 @@ struct StudioToolLine: View {
                 if hasOutput {
                     Button(showsOutput ? "Hide output" : "Output") { showsOutput.toggle() }
                         .buttonStyle(StudioQuietButtonStyle())
-                        .font(Studio.Font.meta).contentShape(.rect)
-                }
-                if let duration = record.durationSeconds, duration >= 1 {
-                    Text(StudioFormat.duration(duration))
-                        .font(Studio.Font.metaDigits)
-                        .foregroundStyle(Studio.Ink.tertiary)
+                        .contentShape(.rect)
                 }
             }
-            .frame(minHeight: 20)
+            .frame(minHeight: Studio.Metrics.rowHeight)
 
             if record.status == .failed || record.status == .denied,
                let result = record.resultSummary, !result.isEmpty
             {
                 Text(result)
-                    .font(Studio.Font.meta)
-                    .foregroundStyle(record.status == .failed ? Studio.Ink.danger : Studio.Ink.tertiary)
+                    .studioType(.small)
+                    .foregroundStyle(record.status == .failed ? Studio.Ink.danger : Studio.Ink.secondary)
                     .lineLimit(3)
-                    .padding(.leading, 18)
+                    .padding(.leading, 22)
             }
             if showsOutput || (record.status == .failed && hasOutput) {
                 StudioOutputWell(
@@ -254,7 +248,7 @@ struct StudioToolLine: View {
                     command: isCommand ? parts.object : nil,
                     limit: showsOutput ? 12 : 6
                 )
-                .padding(.leading, 18)
+                .padding(.leading, 22)
                 .padding(.top, 2)
                 .transition(.opacity)
             }
@@ -263,11 +257,20 @@ struct StudioToolLine: View {
 
     @ViewBuilder
     private var objectLabel: some View {
-        let label = Text(parts.object)
-            .font(Studio.Font.mono)
-            .foregroundStyle(Studio.Ink.primary.opacity(0.85))
-            .lineLimit(1)
-            .truncationMode(.middle)
+        // A command is the only mono; a path reads as its file name in ink,
+        // the full path in the tooltip (code-v4 TARGET §6).
+        let isPath = isEdit || (!isCommand && parts.object.contains("/") && !parts.object.contains(" "))
+        let label = Group {
+            if isCommand {
+                Text(parts.object).studioType(.code).foregroundStyle(Studio.Ink.secondary)
+            } else {
+                Text(isPath ? (parts.object as NSString).lastPathComponent : parts.object)
+                    .studioType(.text).foregroundStyle(Studio.Ink.primary)
+            }
+        }
+        .lineLimit(1)
+        .truncationMode(.middle)
+        .help(parts.object)
         if isEdit, record.status == .succeeded {
             Button { openFile(parts.object) } label: { label }
                 .buttonStyle(.plain)
@@ -476,12 +479,12 @@ struct StudioPlanCard: View {
         VStack(alignment: .leading, spacing: JunoSpace.snug) {
             HStack {
                 Text("Plan")
-                    .font(Studio.Font.labelEmphasis)
-                    .foregroundStyle(Studio.Ink.primary)
-                Spacer()
+                    .studioType(.textMedium)
+                    .foregroundStyle(Studio.Ink.secondary)
                 Text("\(done) of \(goal.steps.count)")
-                    .font(Studio.Font.metaDigits)
-                    .foregroundStyle(Studio.Ink.tertiary)
+                    .studioType(.small).monospacedDigit()
+                    .foregroundStyle(Studio.Ink.secondary)
+                Spacer()
             }
             VStack(alignment: .leading, spacing: JunoSpace.tight) {
                 ForEach(goal.steps) { step in
@@ -490,33 +493,30 @@ struct StudioPlanCard: View {
                             .frame(width: 12, height: 12)
                             .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
                         Text(step.title)
-                            .font(Studio.Font.label)
+                            .studioType(.text)
                             .foregroundStyle(
-                                step.status == .completed ? Studio.Ink.tertiary : Studio.Ink.primary
+                                step.status == .completed ? Studio.Ink.secondary : Studio.Ink.prose
                             )
                             .strikethrough(step.status == .completed, color: Studio.Ink.tertiary)
                     }
                 }
             }
         }
-        .padding(JunoSpace.cozy)
-        .background(
-            RoundedRectangle(cornerRadius: Studio.Radius.card, style: .continuous)
-                .strokeBorder(Studio.Surface.hairline)
-        )
     }
 
+    /// Plain circles, no frame (code-v4 TARGET §5): the plan is prose and a
+    /// checklist; approving it happens in the composer.
     @ViewBuilder
     private func stepMark(_ status: GoalStepStatus) -> some View {
         switch status {
         case .completed:
-            JunoIconView(.squareCheck, size: 12).foregroundStyle(Studio.Ink.tertiary)
+            JunoIconView(.circleCheck, size: 13).foregroundStyle(Studio.Ink.secondary)
         case .inProgress:
-            StudioSpinner(color: Studio.Ink.accent, lineWidth: 1.25).frame(width: 10, height: 10)
+            StudioSpinner(color: Studio.Ink.secondary, lineWidth: 1.25).frame(width: 10, height: 10)
         case .blocked:
-            JunoIconView(.circleSlash, size: 12).foregroundStyle(Studio.Ink.danger)
+            JunoIconView(.circleSlash, size: 13).foregroundStyle(Studio.Ink.danger)
         case .pending:
-            JunoIconView(.square, size: 12).foregroundStyle(Studio.Ink.tertiary)
+            JunoIconView(.circle, size: 13).foregroundStyle(Studio.Ink.secondary)
         }
     }
 }
@@ -826,22 +826,20 @@ struct StudioChangesCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: JunoSpace.snug) {
-                JunoIconView(.fileDiff, size: 13)
-                    .foregroundStyle(Studio.Ink.secondary)
                 Text("Changed \(StudioFormat.plural(fileCount, "file"))")
-                    .font(Studio.Font.labelEmphasis)
+                    .studioType(.textMedium)
                     .foregroundStyle(Studio.Ink.primary)
-                StudioDiffStat(added: added, removed: removed)
-                StudioDiffBar(added: added, removed: removed)
+                CodeV2DiffCounts(additions: added, deletions: removed)
                 Spacer(minLength: JunoSpace.snug)
                 Button("Review", action: openReview)
-                    .buttonStyle(StudioSecondaryButtonStyle())
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
                     .help("Open the changes beside the thread (⌥⌘R)")
                     .accessibilityIdentifier("juno.code.transcript.review").contentShape(.rect)
             }
-            .padding(.leading, JunoSpace.cozy)
-            .padding(.trailing, JunoSpace.snug)
-            .padding(.vertical, JunoSpace.snug)
+            .padding(.leading, JunoSpace.cozy + 2)
+            .padding(.trailing, JunoSpace.cozy)
+            .frame(height: 44)
 
             if !changes.isEmpty {
                 VStack(spacing: 0) {
@@ -861,7 +859,7 @@ struct StudioChangesCard: View {
                         .buttonStyle(.plain).frame(minWidth: 44, minHeight: 44)
                     }
                 }
-                .studioHairline(.top)
+                .padding(.bottom, JunoSpace.tight + 2)
             }
         }
         .background(
@@ -894,23 +892,22 @@ struct StudioChangeLine: View {
     var body: some View {
         Button(action: open) {
             HStack(spacing: JunoSpace.snug) {
-                StudioChangeKindBadge(kind: change.kind)
                 Text(name)
-                    .font(Studio.Font.mono)
+                    .studioType(.text)
                     .foregroundStyle(Studio.Ink.primary)
                     .lineLimit(1)
                     .layoutPriority(1)
                 if !folder.isEmpty {
                     Text(folder)
-                        .font(Studio.Font.meta)
-                        .foregroundStyle(Studio.Ink.tertiary)
+                        .studioType(.small)
+                        .foregroundStyle(Studio.Ink.secondary)
                         .lineLimit(1)
                         .truncationMode(.head)
                 }
                 Spacer(minLength: JunoSpace.snug)
-                StudioDiffStat(added: change.linesAdded, removed: change.linesRemoved)
+                CodeV2DiffCounts(additions: change.linesAdded, deletions: change.linesRemoved)
             }
-            .padding(.horizontal, JunoSpace.cozy)
+            .padding(.horizontal, JunoSpace.cozy + 2)
             .frame(height: 30)
             .background(hovering ? Studio.Surface.hover : Color.clear)
             .contentShape(.rect)

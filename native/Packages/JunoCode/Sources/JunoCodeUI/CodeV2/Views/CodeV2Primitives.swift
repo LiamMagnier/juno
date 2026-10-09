@@ -165,22 +165,23 @@ struct CodeV2DiffCounts: View {
 
 // MARK: - Buttons
 
-/// The composer footer's text control (DESIGN §5.6): no fill at rest, the
-/// hover fill on hover, the hover fill and full ink while its popover is
-/// open. Never a chip.
+/// The composer's text control (TARGET §7.1): no fill at rest, the hover
+/// fill on hover and while its menu or popover is open. 14pt in the
+/// composer, 12pt in the context strip and footers (`compact`). Never a chip.
 struct CodeV2FooterButtonStyle: ButtonStyle {
     var isOpen = false
+    var compact = false
     @Environment(\.isEnabled) private var isEnabled
     @State private var hovering = false
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(Studio.Font.label)
+            .studioType(compact ? .small : .text)
             .foregroundStyle(
                 !isEnabled ? Studio.Ink.tertiary : (isOpen || hovering ? Studio.Ink.primary : Studio.Ink.secondary)
             )
-            .padding(.horizontal, JunoSpace.snug)
-            .frame(minWidth: 28, minHeight: Studio.Metrics.control)
+            .padding(.horizontal, compact ? JunoSpace.tight + 2 : JunoSpace.snug)
+            .frame(minWidth: 28, minHeight: compact ? 28 : Studio.Metrics.control)
             .background(
                 RoundedRectangle(cornerRadius: Studio.Radius.control, style: .continuous)
                     .fill(configuration.isPressed || isOpen || hovering ? Studio.Surface.hover : Color.clear)
@@ -214,7 +215,9 @@ struct CodeV2OutlineButtonStyle: ButtonStyle {
     }
 }
 
-/// The one ink action on a surface ("Allow once", "Commit…").
+/// The one ink action on a surface ("Allow once", "Switch to Alevr",
+/// "Keep A"): the send button's ink, never coral, at the system's regular
+/// control height so it sits level with `.bordered` beside it.
 struct CodeV2InkButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
 
@@ -223,9 +226,9 @@ struct CodeV2InkButtonStyle: ButtonStyle {
             .font(Studio.Font.label)
             .foregroundStyle(isEnabled ? Studio.Surface.canvas : Studio.Ink.tertiary)
             .padding(.horizontal, JunoSpace.cozy)
-            .frame(minWidth: 28, minHeight: Studio.Metrics.control)
+            .frame(minWidth: 28, minHeight: 24)
             .background(
-                RoundedRectangle(cornerRadius: Studio.Radius.control, style: .continuous)
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
                     .fill(isEnabled ? Studio.Ink.primary : Studio.Surface.muted)
             )
             .opacity(configuration.isPressed ? 0.85 : 1)
@@ -250,24 +253,23 @@ struct CodeV2SectionHeading: View {
     }
 }
 
-/// A 3pt meter: ink fill on a hairline track (plan windows, the context
-/// card). Never coloured by itself; the caller passes the signal only past
-/// the warning line.
-struct CodeV2Meter: View {
-    let fraction: Double
-    var tint: Color = Studio.Ink.primary
-    var width: CGFloat? = nil
+/// A 1pt hairline that fills its width: the fold lines.
+struct CodeV2Rule: View {
+    var body: some View {
+        Rectangle().fill(Studio.Surface.hairline).frame(height: 1)
+    }
+}
+
+/// A row's face at a fixed height: the label, padded, filling the row.
+struct CodeV2RowFace<Content: View>: View {
+    var height: CGFloat
+    var horizontal: CGFloat = JunoSpace.snug
+    @ViewBuilder var content: () -> Content
 
     var body: some View {
-        GeometryReader { proxy in
-            ZStack(alignment: .leading) {
-                Capsule().strokeBorder(Studio.Surface.hairline, lineWidth: 1)
-                Capsule().fill(tint)
-                    .frame(width: max(3, proxy.size.width * min(1, max(0, fraction))))
-            }
-        }
-        .frame(width: width, height: 3)
-        .accessibilityElement()
-        .accessibilityValue("\(Int((fraction * 100).rounded())) percent")
+        content()
+            .padding(.horizontal, horizontal)
+            .frame(height: height)
+            .contentShape(.rect)
     }
 }

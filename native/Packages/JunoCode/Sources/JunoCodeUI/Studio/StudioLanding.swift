@@ -13,6 +13,9 @@ public struct StudioDraft: Equatable {
     public let isolatedWorktree: Bool
     public let attachments: [CodeAttachment]
     public let fileReferences: [WorkspacePath]
+    /// A subscription was chosen in the composer: the host starts the
+    /// session and hands its first message to the env server.
+    public var handsOff = false
 
     public var configuration: AgentConfiguration {
         AgentConfiguration(
@@ -58,6 +61,9 @@ public struct StudioLanding: View {
     /// value left behind showed up again in some later, unrelated landing,
     /// and a second hand-off of the same text changed nothing to observe.
     let adoptedInitialPrompt: (() -> Void)?
+    /// The Code v2 composer (model trigger, + menu, team). Nil keeps the
+    /// classic chips.
+    let v2: CodeV2StudioContext?
 
     @State private var prompt: String
     @State private var environment: CodeEnvironmentChoice
@@ -84,6 +90,7 @@ public struct StudioLanding: View {
         initialPrompt: String? = nil,
         initialEnvironment: CodeEnvironmentChoice? = nil,
         adoptedInitialPrompt: (() -> Void)? = nil,
+        v2: CodeV2StudioContext? = nil,
         selectProject: @escaping (WorkspaceID?) -> Void,
         addProject: @escaping () -> Void,
         startLocal: @escaping (StudioDraft) -> Void,
@@ -96,6 +103,7 @@ public struct StudioLanding: View {
         self.initialPrompt = initialPrompt
         self.initialEnvironment = initialEnvironment
         self.adoptedInitialPrompt = adoptedInitialPrompt
+        self.v2 = v2
         self.selectProject = selectProject
         self.addProject = addProject
         self.startLocal = startLocal
@@ -144,74 +152,23 @@ public struct StudioLanding: View {
             && !modelID.isEmpty
     }
 
-    @State private var columnWidth: CGFloat = 720
-    @Environment(\.junoTextScale) private var textScale
-
     public var body: some View {
-        VStack(spacing: 0) {
-            Spacer(minLength: JunoSpace.region)
+        GeometryReader { proxy in
             VStack(spacing: JunoSpace.section) {
                 greetingView
-
                 VStack(spacing: JunoSpace.snug) {
-                    StudioComposer(
-                        text: $prompt,
-                        placeholder: isRemote ? "Describe the task" : "Describe the change you want",
-                        attachments: attachments,
-                        addAttachment: isRemote ? nil : { attachments.append($0) },
-                        removeAttachment: { id in attachments.removeAll { $0.id == id } },
-                        slashCommands: CodeSlashCommandLibrary.builtIn.excludingActions(),
-                        searchFiles: fileSearch,
-                        chooseFile: { entry in
-                            if !entry.isDirectory, !fileReferences.contains(entry.path) {
-                                fileReferences.append(entry.path)
-                            }
-                        },
-                        runCommand: { command, _ in
-                            if let behavior = command.behavior {
-                                mode = StudioMode(behavior: behavior, permission: mode.permission)
-                            }
-                            return true
-                        },
-                        canSend: canSend,
-                        send: send,
-                        focus: $focused,
-                        fieldIdentifier: "juno.code.launch-prompt",
-                        header: AnyView(placeRow),
-                        // The waiting composer breathes until the first
-                        // keystroke, then goes still (brief: pulse-outside,
-                        // low strength, only until typing starts).
-                        beam: trimmed.isEmpty && attachments.isEmpty ? .pulse : nil
-                    ) {
-                        StudioModeChip(mode: mode, select: { mode = $0 }, isEnabled: !isRemote)
-                    } trailing: {
-                        StudioModelChip(
-                            models: workbench.availableModels,
-                            modelID: modelID,
-                            effort: effort,
-                            selectModel: { id in
-                                modelID = id
-                                if let model = workbench.availableModels.first(where: { $0.modelID == id }),
-                                   let refitted = model.refittingEffort(effort)
-                                {
-                                    effort = refitted
-                                }
-                            },
-                            selectEffort: { effort = $0 },
-                            isEnabled: !isRemote
-                        )
-                    }
+                    composer
                     footnote
                 }
             }
-            .frame(maxWidth: 720)
+            .frame(maxWidth: Studio.Metrics.measure)
             .padding(.horizontal, Studio.Metrics.gutter)
-            Spacer(minLength: JunoSpace.region)
-            Spacer(minLength: JunoSpace.region)
+            .frame(maxWidth: .infinity)
+            // The question sits at about 38% of the canvas (TARGET §4).
+            .padding(.top, max(JunoSpace.region, proxy.size.height * 0.38 - 60))
+            .frame(maxHeight: .infinity, alignment: .top)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Studio.Surface.canvas)
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { columnWidth = $0 }
         .onAppear {
             focused = true
             // Seeded at init; the host can let go of it now.
@@ -238,27 +195,104 @@ public struct StudioLanding: View {
         }
     }
 
-    /// The headline in Chat's voice (round 2): one quiet line in the display
-    /// face at Chat's size — "What should we build?" — with no italic name in
-    /// it. The project is named once, in the place row under the field, where
-    /// it can also be changed.
+    private var composer: some View {
+        StudioComposer(
+            text: $prompt,
+            placeholder: isRemote ? "Describe the task" : "Ask for a change. @ for files, / for commands",
+            attachments: attachments,
+            addAttachment: isRemote ? nil : { attachments.append($0) },
+            removeAttachment: { id in attachments.removeAll { $0.id == id } },
+            slashCommands: CodeSlashCommandLibrary.builtIn.excludingActions(),
+            searchFiles: fileSearch,
+            chooseFile: { entry in
+                if !entry.isDirectory, !fileReferences.contains(entry.path) {
+                    fileReferences.append(entry.path)
+                }
+            },
+            runCommand: { command, _ in
+                if let behavior = command.behavior {
+                    mode = StudioMode(behavior: behavior, permission: mode.permission)
+                }
+                return true
+            },
+            canSend: canSend,
+            send: send,
+            focus: $focused,
+            fieldIdentifier: "juno.code.launch-prompt",
+            plusMenu: v2.map { AnyView(CodeV2PlusMenuItems(model: $0.composer, directory: $0.directory)) },
+            contextStrip: AnyView(placeStrip),
+            minimumLines: 3
+        ) {
+            if let v2 {
+                CodeV2ComposerLeading(
+                    model: v2.composer, directory: v2.directory, isEnabled: !isRemote,
+                    openConnections: v2.openConnections, setup: v2.setup
+                )
+            } else {
+                StudioModelChip(
+                    models: workbench.availableModels,
+                    modelID: modelID,
+                    effort: effort,
+                    selectModel: { id in
+                        modelID = id
+                        if let model = workbench.availableModels.first(where: { $0.modelID == id }),
+                           let refitted = model.refittingEffort(effort)
+                        {
+                            effort = refitted
+                        }
+                    },
+                    selectEffort: { effort = $0 },
+                    isEnabled: !isRemote
+                )
+                if mode != .autoEdit {
+                    StudioModeChip(mode: mode, select: { mode = $0 }, isEnabled: !isRemote)
+                }
+            }
+        } trailing: {
+            EmptyView()
+        }
+    }
+
+    /// The question in the display rung (TARGET §4): "What should we build in
+    /// storefront?", the project's name dotted-underlined and a menu to change
+    /// it. Without a project, "What should we build?".
     private var greetingView: some View {
-        Text("What should we build?")
-            .junoType(.display(size: 30))
-            .foregroundStyle(Studio.Ink.primary)
-            .multilineTextAlignment(.center)
-            .lineLimit(2)
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity)
-            .accessibilityAddTraits(.isHeader)
-            .accessibilityIdentifier("juno.code.greeting")
+        Group {
+            if let project, environment.isLocal {
+                HStack(spacing: 0) {
+                    Text("What should we build in ")
+                    Menu {
+                        projectMenuItems
+                    } label: {
+                        Text(project.descriptor.displayName)
+                            .underline(pattern: .dot, color: Studio.Ink.tertiary)
+                    }
+                    .menuStyle(.button)
+                    .menuIndicator(.hidden)
+                    .buttonStyle(.plain)
+                    .fixedSize()
+                    .help("Choose the project")
+                        .contentShape(.rect)
+                    Text("?")
+                }
+            } else {
+                Text("What should we build?")
+            }
+        }
+        .studioType(.display)
+        .foregroundStyle(Studio.Ink.primary)
+        .lineLimit(1)
+        .frame(maxWidth: .infinity)
+        .accessibilityAddTraits(.isHeader)
+        .accessibilityIdentifier("juno.code.greeting")
     }
 
     // MARK: Place
 
-    /// Where the session runs: the project, the environment, the branch.
-    private var placeRow: some View {
-        HStack(spacing: JunoSpace.hairline) {
+    /// Where the session runs, under the composer: the project (or repository
+    /// or computer) and branch at the left, where it runs at the right.
+    private var placeStrip: some View {
+        HStack(spacing: JunoSpace.tight) {
             switch environment {
             case .local, .worktree:
                 projectMenu
@@ -267,36 +301,65 @@ public struct StudioLanding: View {
             case .device:
                 deviceMenu
             }
-            environmentMenu
             if environment.isLocal, let branch {
-                StudioChipLabel(title: branch, icon: .branch, showsChevron: false)
-                    .help(environment == .worktree ? "A new worktree branches from \(branch)" : "The branch this session works on")
+                HStack(spacing: JunoSpace.tight) {
+                    JunoIconView(.branch, size: 12)
+                    Text(branch).lineLimit(1).truncationMode(.middle)
+                }
+                .studioType(.small)
+                .foregroundStyle(Studio.Ink.secondary)
+                .padding(.horizontal, JunoSpace.tight + 2)
+                .help(environment == .worktree ? "A new worktree branches from \(branch)" : "The branch this session works on")
             }
-            Spacer(minLength: 0)
+            Spacer(minLength: JunoSpace.snug)
+            environmentMenu
         }
+        .padding(.horizontal, JunoSpace.snug)
+        .frame(height: 32)
+        .background(
+            UnevenRoundedRectangle(
+                cornerRadii: .init(topLeading: 0, bottomLeading: 16, bottomTrailing: 16, topTrailing: 0),
+                style: .continuous
+            )
+            .fill(Studio.Surface.muted)
+        )
+        .overlay(
+            UnevenRoundedRectangle(
+                cornerRadii: .init(topLeading: 0, bottomLeading: 16, bottomTrailing: 16, topTrailing: 0),
+                style: .continuous
+            )
+            .strokeBorder(Studio.Surface.hairline)
+            .mask(Rectangle().padding(.top, 1))
+        )
+        .padding(.horizontal, 22)
+    }
+
+    @ViewBuilder
+    private var projectMenuItems: some View {
+        ForEach(workbench.workspaces) { record in
+            Button {
+                selectProject(record.id)
+            } label: {
+                if record.id == project?.id {
+                    Label(record.descriptor.displayName, image: JunoIcon.check.assetName)
+                } else {
+                    Text(record.descriptor.displayName)
+                }
+            }
+                .contentShape(.rect)
+        }
+        if !workbench.workspaces.isEmpty { Divider() }
+        Button("No Project") { selectProject(nil) }
+            .contentShape(.rect)
+        Button("Open Folder…", action: addProject)
+            .contentShape(.rect)
     }
 
     private var projectMenu: some View {
         Menu {
-            ForEach(workbench.workspaces) { record in
-                Button {
-                    selectProject(record.id)
-                } label: {
-                    if record.id == project?.id {
-                        Label(record.descriptor.displayName, image: JunoIcon.check.assetName)
-                    } else {
-                        Text(record.descriptor.displayName)
-                    }
-                }
-            }
-            if !workbench.workspaces.isEmpty { Divider() }
-            Button("No Project") { selectProject(nil) }
-            Button("Open Folder…", action: addProject)
+            projectMenuItems
         } label: {
-            StudioChipLabel(
-                title: project?.descriptor.displayName ?? "No project",
-                icon: project == nil ? .folderPlus : .projects
-            )
+            StudioStripLabel(title: project?.descriptor.displayName ?? "Choose project", icon: project == nil ? .folderPlus : .projects)
         }
         .menuStyle(.button)
         .menuIndicator(.hidden)
@@ -304,6 +367,7 @@ public struct StudioLanding: View {
         .fixedSize()
         .help("The folder Alevr works in (⌘O to open another)")
         .accessibilityIdentifier("juno.code.launch-project")
+            .contentShape(.rect)
     }
 
     private var environmentMenu: some View {
@@ -328,7 +392,7 @@ public struct StudioLanding: View {
                 }
             }
         } label: {
-            StudioChipLabel(title: environment.label, icon: environmentIcon)
+            StudioStripLabel(title: environment == .local ? "This Mac" : environment.label, icon: environmentIcon)
         }
         .menuStyle(.button)
         .menuIndicator(.hidden)
@@ -336,6 +400,7 @@ public struct StudioLanding: View {
         .fixedSize()
         .help(environment.detail)
         .accessibilityIdentifier("juno.code.launch-target")
+            .contentShape(.rect)
     }
 
     private var environmentIcon: JunoIcon {
@@ -363,12 +428,13 @@ public struct StudioLanding: View {
                     Text("GitHub is not connected")
                 }
             } label: {
-                StudioChipLabel(title: code.selectedRepository?.fullName ?? "Choose repository", icon: .branch)
+                StudioStripLabel(title: code.selectedRepository?.fullName ?? "Choose repository", icon: .branch)
             }
             .menuStyle(.button)
             .menuIndicator(.hidden)
             .buttonStyle(.plain)
             .fixedSize()
+                .contentShape(.rect)
         }
     }
 
@@ -387,7 +453,7 @@ public struct StudioLanding: View {
                     }
                 }
             } label: {
-                StudioChipLabel(
+                StudioStripLabel(
                     title: [code.selectedDevice?.name, code.selectedWorkspace?.name]
                         .compactMap { $0 }
                         .joined(separator: " · ")
@@ -399,31 +465,29 @@ public struct StudioLanding: View {
             .menuIndicator(.hidden)
             .buttonStyle(.plain)
             .fixedSize()
+                .contentShape(.rect)
         }
     }
 
+    /// One line under the composer, only when there is something to say:
+    /// starting, or why Send is off. Never a status line at rest.
     @ViewBuilder
     private var footnote: some View {
         let message = remoteError ?? (canSend || trimmed.isEmpty ? nil : blockingReason)
             ?? (environment == .worktree ? blockingReason : nil)
-        HStack(spacing: JunoSpace.tight) {
-            Spacer(minLength: 0)
-            if isStarting || isSubmittingRemote {
-                StudioSpinner().frame(width: 10, height: 10)
-                Text("Starting…").font(Studio.Font.meta).foregroundStyle(Studio.Ink.tertiary)
-            } else if let message {
-                Text(message)
-                    .font(Studio.Font.meta)
-                    .foregroundStyle(remoteError == nil ? Studio.Ink.tertiary : Studio.Ink.danger)
-            } else {
-                Text(mode.detail)
-                    .font(Studio.Font.meta)
-                    .foregroundStyle(Studio.Ink.tertiary)
+        if isStarting || isSubmittingRemote || message != nil {
+            HStack(spacing: JunoSpace.tight) {
+                if isStarting || isSubmittingRemote {
+                    StudioSpinner().frame(width: 10, height: 10)
+                    Text("Starting").studioType(.small).foregroundStyle(Studio.Ink.secondary)
+                } else if let message {
+                    Text(message)
+                        .studioType(.small)
+                        .foregroundStyle(remoteError == nil ? Studio.Ink.secondary : Studio.Ink.danger)
+                }
             }
-            Spacer(minLength: 0)
+            .frame(minHeight: 18)
         }
-        .padding(.horizontal, JunoSpace.cozy)
-        .frame(minHeight: 18)
     }
 
     // MARK: Actions
@@ -470,18 +534,34 @@ public struct StudioLanding: View {
         guard canSend else { return }
         switch environment {
         case .local, .worktree:
-            startLocal(
-                StudioDraft(
-                    workspaceID: project?.id,
-                    prompt: trimmed,
-                    mode: mode,
-                    modelID: modelID,
-                    reasoningEffort: effort,
-                    isolatedWorktree: environment == .worktree && project?.descriptor.isGitRepository == true,
-                    attachments: attachments,
-                    fileReferences: fileReferences
-                )
+            var chosenMode = mode
+            var chosenModel = modelID
+            var chosenEffort = effort
+            var handsOff = false
+            if let v2 {
+                let composer = v2.composer
+                chosenMode = composer.interactionMode == .plan
+                    ? .plan
+                    : StudioMode(behavior: .code, permission: CodeV2EngineMapping.permission(for: composer.runtimeMode))
+                if composer.engine == .alevr, let id = CodeV2EngineMapping.engineModelID(for: composer.selection) {
+                    chosenModel = id
+                    chosenEffort = CodeV2EngineMapping.effort(composer.selection.effort)
+                } else if composer.engine == .envServer {
+                    handsOff = true
+                }
+            }
+            var draft = StudioDraft(
+                workspaceID: project?.id,
+                prompt: trimmed,
+                mode: chosenMode,
+                modelID: chosenModel,
+                reasoningEffort: chosenEffort,
+                isolatedWorktree: environment == .worktree && project?.descriptor.isGitRepository == true,
+                attachments: attachments,
+                fileReferences: fileReferences
             )
+            draft.handsOff = handsOff
+            startLocal(draft)
         case .cloud, .device:
             guard let code, !isSubmittingRemote else { return }
             isSubmittingRemote = true
@@ -501,4 +581,24 @@ public struct StudioLanding: View {
 
 private extension String {
     var nonEmpty: String? { isEmpty ? nil : self }
+}
+
+/// A control's face in the strip under the composer: glyph, words,
+/// chevron, all 12pt muted.
+struct StudioStripLabel: View {
+    let title: String
+    var icon: JunoIcon?
+
+    var body: some View {
+        HStack(spacing: JunoSpace.tight) {
+            if let icon { JunoIconView(icon, size: 12) }
+            Text(title).lineLimit(1).truncationMode(.middle)
+            JunoIconView(.chevronDown, size: 9)
+        }
+        .studioType(.small)
+        .foregroundStyle(Studio.Ink.secondary)
+        .padding(.horizontal, JunoSpace.tight + 2)
+        .frame(minHeight: 28)
+        .contentShape(.rect)
+    }
 }
