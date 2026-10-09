@@ -28,6 +28,10 @@ import { isDefaultCodeSessionTitle } from "@/lib/title-ownership";
 import { MAX_ATTACHMENTS } from "@/lib/uploads";
 import { isUsableGitRef, MAX_REF_LENGTH } from "@/lib/code-branches";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { catalogModel } from "@/lib/code-v2/code-models";
+import { activeByokProviders } from "@/lib/code-v2/byok-store";
+import { legacyModelFor, routingAvoidsAlevrBilling, validateRoleRouting } from "@/lib/code-v2/role-routing";
+import type { RoleRouting } from "@/lib/code-v2/contracts";
 
 export const runtime = "nodejs";
 
@@ -109,6 +113,10 @@ const postSchema = z.object({
   // Null for the same reason as `environmentId`: after a Plan run, "Auto" has
   // to be expressible as something other than silence.
   permissionMode: z.enum(CODE_PERMISSION_MODES).nullable().optional(),
+  // Alevr Code v2 role routing (a contract RoleRouting), validated by
+  // src/lib/code-v2/role-routing.ts below. Absent = the thread's stored
+  // routing (Conversation.codeRouting), if any; null = single-model run.
+  routing: z.unknown().optional(),
 }).refine(
   (v) => (v.prompt?.trim().length ?? 0) > 0 || (v.attachmentIds?.length ?? 0) > 0,
   { message: "prompt_or_attachments_required", path: ["prompt"] },
@@ -225,18 +233,51 @@ export async function POST(req: Request) {
   const { user, error } = await requireUser();
   if (!user) return error;
 
+  const parsed = postSchema.safeParse(await req.json().catch(() => null));
+  if (!parsed.success) return NextResponse.json({ error: "Invalid input" }, { status: 400 });
+
+  /*
+   * Role routing: the request's, or else the thread's stored one. Validated
+   * against the catalogue and the user's keys now, then snapshotted onto the
+   * task so editing the thread's routing never changes a run in flight.
+   */
+  let roleRouting: RoleRouting | null = null;
+  {
+    let rawRouting: unknown = parsed.data.routing;
+    if (rawRouting === undefined && parsed.data.conversationId) {
+      const stored = await prisma.conversation.findFirst({
+        where: { id: parsed.data.conversationId, userId: user.id, kind: "code" },
+        select: { codeRouting: true },
+      });
+      rawRouting = stored?.codeRouting ?? null;
+    }
+    if (rawRouting !== undefined && rawRouting !== null) {
+      const checked = validateRoleRouting(rawRouting, {
+        resolve: catalogModel,
+        byokProviders: await activeByokProviders(user.id),
+        target: parsed.data.target === "cloud" ? "cloud" : "device",
+      });
+      if (!checked.ok) {
+        return NextResponse.json(
+          { error: "This run's model routing can't run.", code: "ROUTING_INVALID", errors: checked.errors },
+          { status: 400 },
+        );
+      }
+      roleRouting = checked.routing;
+    }
+  }
+
   // Code is a Pro feature. Every model call a run makes is already refused at
   // the /api/agent proxy for a plan without it, but the task was still created
   // and a cloud runner dispatched for it, only to fail on its first request.
-  if (!PLANS[await getUserPlan(user.id)].code) {
+  // A run whose every role is the user's own key or own subscription is not
+  // paid for by the plan, so the plan does not gate it (SPEC §2).
+  if (!PLANS[await getUserPlan(user.id)].code && !routingAvoidsAlevrBilling(roleRouting)) {
     return NextResponse.json(
       { error: "Code is included from the Pro plan.", code: "PLAN_REQUIRED" },
       { status: 402 },
     );
   }
-
-  const parsed = postSchema.safeParse(await req.json().catch(() => null));
-  if (!parsed.success) return NextResponse.json({ error: "Invalid input" }, { status: 400 });
 
   const {
     deviceId,
@@ -254,11 +295,15 @@ export async function POST(req: Request) {
     target,
     repo,
     baseRef,
-    model,
+    model: requestedModel,
     reasoningEffort,
     environmentId,
     permissionMode,
   } = parsed.data;
+  // A pre-v2 host reads only `model`: give it the orchestrator's catalogue
+  // model when the request named routing but no model.
+  const model = requestedModel ?? (roleRouting ? legacyModelFor(roleRouting) ?? undefined : undefined);
+  const roleRoutingJson = roleRouting ? (roleRouting as unknown as Prisma.InputJsonValue) : Prisma.DbNull;
   const isCloud = target === "cloud";
   /*
    * A CONTROL THAT IMPLIES SOMETHING THE RUNTIME CANNOT DO IS A DEFECT.
@@ -546,6 +591,7 @@ export async function POST(req: Request) {
             // created before these columns existed.
             environmentId: inheritedEnvironmentId,
             permissionMode: inheritedPermissionMode,
+            roleRouting: roleRoutingJson,
           },
         });
       });
@@ -705,6 +751,7 @@ export async function POST(req: Request) {
           idempotencyKey: idempotencyKey ?? null,
           model: model ?? null,
           reasoningEffort: reasoningEffort ?? null,
+          roleRouting: roleRoutingJson,
         },
       });
     } catch (err) {

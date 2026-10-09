@@ -22,6 +22,22 @@ import {
   upstreamTimeoutsFor,
   usageMeterFor,
 } from "@/lib/agent-proxy";
+import { resolveModel } from "@/lib/models";
+import { byokAuthHeaders, byokBaseUrl } from "@/lib/code-v2/byok";
+import { catalogModel } from "@/lib/code-v2/code-models";
+import { markProviderKeyRejected, recordByokUsage, resolveProviderKey } from "@/lib/code-v2/byok-store";
+import {
+  BILLING_HEADER,
+  CONTEXT_TIER_HEADER,
+  KEY_SOURCE_HEADER,
+  byokUsageFromMeter,
+  checkRequestedTier,
+  chooseKeySource,
+  parseBillingPreference,
+  parseContextTierHeader,
+  tierScaledRates,
+} from "@/lib/code-v2/agent-routing";
+import { isByokProvider } from "@/lib/code-v2/contracts";
 
 // Streaming needs the Node runtime. There is deliberately no `maxDuration`:
 // it is a Vercel-only directive that `next start` ignores (the chat route says
@@ -77,6 +93,17 @@ function isAllowedPath(kind: "anthropic" | "openai", provider: Provider, forward
  *
  * Voice never comes through here: the relay speaks to its providers directly
  * and reports through `/api/voice/spend`.
+ *
+ * BRING YOUR OWN KEY and CONTEXT TIERS (Alevr Code v2, src/lib/code-v2/
+ * agent-routing.ts). When the user stored a working key for the provider (and
+ * the caller did not send `x-alevr-billing: alevr`), the call is forwarded on
+ * THEIR key to the lab's public endpoint, skips the plan gate, the budget and
+ * the windows, and is recorded in ProviderKeyUsage instead of ApiSpend: Alevr
+ * pays nothing for it, so there is nothing to meter against the plan. This is
+ * not the caller-chosen "skip billing" signal warned about above — a call can
+ * only skip ApiSpend by being sent on a key the user owns and pays for. An
+ * `x-alevr-context-tokens` header names the context tier the run chose; it is
+ * validated against the catalogue and the prompt must fit it.
  */
 export async function POST(
   req: NextRequest,
@@ -103,6 +130,25 @@ export async function POST(
   }
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  const { path } = await ctx.params;
+  const [providerRaw, ...rest] = path ?? [];
+  const provider = providerRaw as Provider;
+  if (!provider || !(provider in PROVIDERS)) {
+    return NextResponse.json({ error: "Unknown provider." }, { status: 400 });
+  }
+
+  // Whose key pays: the user's own (BYOK) when they stored a working one for
+  // this lab, Alevr's otherwise (see the header comment).
+  const preference = parseBillingPreference(req.headers.get(BILLING_HEADER));
+  if (!preference) {
+    return NextResponse.json({ error: `${BILLING_HEADER} must be auto, alevr or byok.` }, { status: 400 });
+  }
+  const userKey =
+    preference !== "alevr" && isByokProvider(provider) ? await resolveProviderKey(user.id, provider) : null;
+  const keySource = chooseKeySource({ preference, provider, hasUserKey: userKey !== null });
+  if (!keySource.ok) return NextResponse.json(keySource.body, { status: keySource.status });
+  const byok = keySource.source === "byok" && userKey !== null;
+
   // This proxy carries real provider spend (Juno Code agent loops, and Work
   // runs hosted on a Mac), so it obeys the same plan budget as /api/chat — otherwise
   // app usage would be unlimited and invisible to plan limits. The generous
@@ -110,8 +156,8 @@ export async function POST(
   const plan = await getUserPlan(user.id);
   // Code and agents are Pro-and-up features (PLANS[plan].code / .agents). Free
   // and Lite carry a chat budget sized for chat; an agent loop would spend a
-  // Lite month in one task.
-  if (!PLANS[plan].code && !PLANS[plan].agents) {
+  // Lite month in one task. A call on the user's own key spends none of it.
+  if (!byok && !PLANS[plan].code && !PLANS[plan].agents) {
     return NextResponse.json(
       { error: "Code and agents are included from the Pro plan.", code: "PLAN_REQUIRED" },
       { status: 402 },
@@ -124,6 +170,8 @@ export async function POST(
     if (!rl.success) {
       return NextResponse.json({ error: "Rate limit exceeded. Try again shortly." }, { status: 429 });
     }
+  }
+  if (plan !== "OWNER" && !byok) {
     const budget = await checkBudget(user.id, plan);
     if (!budget.allowed) {
       return NextResponse.json(
@@ -163,20 +211,13 @@ export async function POST(
     remainingMicroUsd = remains.length ? Math.min(...remains) : null;
   }
 
-  const { path } = await ctx.params;
-  const [providerRaw, ...rest] = path ?? [];
-  const provider = providerRaw as Provider;
-  if (!provider || !(provider in PROVIDERS)) {
-    return NextResponse.json({ error: "Unknown provider." }, { status: 400 });
-  }
-
   const def = PROVIDERS[provider];
   const forwardPath = rest.join("/");
   if (!isAllowedPath(def.kind, provider, forwardPath)) {
     return NextResponse.json({ error: "Endpoint not allowed." }, { status: 403 });
   }
 
-  const key = providerApiKey(provider);
+  const key = byok ? userKey : providerApiKey(provider);
   if (!key) {
     return NextResponse.json(
       { error: `${def.label} isn't configured on the server.` },
@@ -184,7 +225,11 @@ export async function POST(
     );
   }
 
-  const base = def.kind === "anthropic" ? ANTHROPIC_BASE : providerBaseUrl(provider);
+  // A user's key only ever goes to the lab's public endpoint, never to this
+  // deployment's *_BASE_URL override (byokBaseUrl).
+  const base = byok && isByokProvider(provider)
+    ? byokBaseUrl(provider)
+    : def.kind === "anthropic" ? ANTHROPIC_BASE : providerBaseUrl(provider);
   if (!base) return NextResponse.json({ error: "No base URL for provider." }, { status: 502 });
   const target = `${base.replace(/\/+$/, "")}/${forwardPath}`;
 
@@ -214,15 +259,25 @@ export async function POST(
   const checked = inspectAgentRequest(wire, bodyResult.body);
   if (!checked.ok) return NextResponse.json({ error: checked.error }, { status: 400 });
   const request = checked.request;
+  // The context tier the run chose, when it chose one: offered by this model
+  // (catalogue), and the prompt must fit it.
+  const tierModel = catalogModel(`${provider}:${request.model}`);
+  const tierDecision = checkRequestedTier({
+    model: tierModel,
+    requested: parseContextTierHeader(req.headers.get(CONTEXT_TIER_HEADER)),
+    promptChars: request.promptChars ?? 0,
+  });
+  if (!tierDecision.ok) return NextResponse.json(tierDecision.body, { status: tierDecision.status });
   // One request must not be able to spend far past what is left: its output
-  // allowance is lowered to what the remainder buys at this model's rates
-  // (never below 2,048 tokens, so the overshoot is bounded and small).
-  const rates = modelRatesMicroUsdPerToken(`${provider}:${request.model}`);
+  // allowance is lowered to what the remainder buys at this model's rates —
+  // the chosen tier's, when it is a surcharged one — (never below 2,048
+  // tokens, so the overshoot is bounded and small). BYOK has no remainder.
+  const rates = tierScaledRates(modelRatesMicroUsdPerToken(`${provider}:${request.model}`), tierDecision);
   request.body = capOutputTokens(
     wire,
     request.body,
     affordableOutputTokens({
-      remainingMicroUsd,
+      remainingMicroUsd: byok ? null : remainingMicroUsd,
       promptChars: request.promptChars,
       inputMicroUsdPerToken: rates.input,
       outputMicroUsdPerToken: rates.output,
@@ -231,7 +286,14 @@ export async function POST(
     provider === "openai" ? "max_completion_tokens" : "max_tokens",
   );
   const headers: Record<string, string> = { "content-type": "application/json" };
-  if (def.kind === "anthropic") {
+  if (byok && isByokProvider(provider)) {
+    Object.assign(headers, byokAuthHeaders(provider, key));
+    if (def.kind === "anthropic") {
+      headers["anthropic-version"] = req.headers.get("anthropic-version") ?? "2023-06-01";
+      const beta = req.headers.get("anthropic-beta");
+      if (beta) headers["anthropic-beta"] = beta;
+    }
+  } else if (def.kind === "anthropic") {
     headers["x-api-key"] = key;
     headers["anthropic-version"] = req.headers.get("anthropic-version") ?? "2023-06-01";
     const beta = req.headers.get("anthropic-beta");
@@ -264,6 +326,12 @@ export async function POST(
   // Stream the provider response back to the app untouched, with its media
   // type and any `retry-after` it asked for.
   const respHeaders = relayedResponseHeaders(upstream.headers);
+  respHeaders.set(KEY_SOURCE_HEADER, byok ? "byok" : "alevr");
+  // The lab refused the user's key mid-run: stop routing to it until they
+  // re-test or replace it in Settings.
+  if (byok && isByokProvider(provider) && (upstream.status === 401 || upstream.status === 403)) {
+    void markProviderKeyRejected(user.id, provider, `The provider answered ${upstream.status} during a run.`);
+  }
 
   // A bodyless upstream response has no stream to clear the deadlines from, so
   // disarm them here — otherwise the timers and the `req.signal` listener stay
@@ -307,6 +375,13 @@ export async function POST(
         log("[agent-proxy] no usage reported; billing the character floor", { provider, outcome });
       } else if (outcome !== "completed") {
         console.info("[agent-proxy] billing a stream that did not complete", { provider, outcome });
+      }
+      if (byok && isByokProvider(provider)) {
+        // The user's own key: their analytics, never Alevr's ledger.
+        void recordByokUsage(userId, provider, byokUsageFromMeter(resolveModel(spendModel), provider, metered.usage)).catch(
+          () => undefined,
+        );
+        return;
       }
       // Not awaited: the ledger write happens after the client has its last
       // byte, never in front of it. `recordSpend` catches its own failures.

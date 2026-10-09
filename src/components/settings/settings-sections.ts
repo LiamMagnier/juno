@@ -1,4 +1,4 @@
-import { Bell, Keyboard, Sparkles, Sun, type IconComponent } from "@/components/ui/icons";
+import { Bell, Keyboard, KeyRound, Sparkles, Sun, type IconComponent } from "@/components/ui/icons";
 import { CodeIcons, SettingsIcons } from "@/lib/app-icons";
 import { FEATURE_NAMES } from "@/lib/brand/names";
 
@@ -45,6 +45,9 @@ export const WEB_SETTINGS_SECTIONS = [
   { id: "notifications", label: "Notifications", icon: Bell },
   { id: "capabilities", label: "Capabilities", icon: Sparkles },
   { id: "keyboard", label: "Keyboard", icon: Keyboard },
+  // Alevr Code v2: your own API keys (BYOK). Web-only until the Mac's
+  // Connections settings (code-v2 mac lane) land in the shell contract.
+  { id: "connections", label: "Connections", icon: KeyRound },
 ] as const satisfies readonly { id: string; label: string; icon: IconComponent }[];
 
 type SharedSectionId = (typeof SETTINGS_SECTIONS)[number]["id"];
@@ -58,7 +61,7 @@ export type SettingsSectionMeta = { id: SettingsSectionId; label: string; icon: 
  */
 export const SETTINGS_GROUPS: { label: string; ids: SettingsSectionId[] }[] = [
   { label: "Personal", ids: ["general", "appearance", "notifications", "personalization", "keyboard"] },
-  { label: "Assistant", ids: ["capabilities", "memory", "models", "connectors", "voice", "devices"] },
+  { label: "Assistant", ids: ["capabilities", "memory", "models", "connectors", "connections", "voice", "devices"] },
   { label: "Account", ids: ["account", "data", "billing"] },
 ];
 
@@ -73,6 +76,7 @@ export const SETTINGS_KEYWORDS: Record<SettingsSectionId, string> = {
   memory: "memory remember saved memories sensitive learn background",
   models: "model default favourite favorite fast mode pinned",
   connectors: "apps connectors integrations mcp permissions github google",
+  connections: "api key keys byok own key anthropic openai gemini xai grok deepseek subscription code",
   voice: "voice read aloud speech dictation tts",
   devices: "devices mac computer host permissions code",
   account: "profile picture name username handle email password security two-step sign out delete account sessions",
