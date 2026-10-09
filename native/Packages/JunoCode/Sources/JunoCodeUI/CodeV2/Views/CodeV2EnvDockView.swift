@@ -98,7 +98,17 @@ public struct CodeV2EnvDockView: View {
         let directory = URL(fileURLWithPath: session.cwd)
         Task {
             do {
-                try await applier.apply(decision == .accepted ? .accept : .reject, hunk: hunk, path: file.path, in: directory)
+                if decision == .rejected {
+                    // Through the env server: it reverses the hunk in the session's own
+                    // folder (paths are repository-relative, the cwd may be a subfolder),
+                    // all or nothing, and the same path works for a remote session.
+                    guard await session.rejectHunk(hunk, path: file.path) else {
+                        dock.failure = session.lastError ?? "That change no longer applies."
+                        return
+                    }
+                } else {
+                    try await applier.apply(.accept, hunk: hunk, path: file.path, in: directory)
+                }
                 dock.decisions.set(decision, for: hunk)
                 dock.failure = nil
             } catch {

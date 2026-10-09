@@ -221,6 +221,14 @@ public extension EnvServerConnection {
         public let files: [CodeV2.FileChangeEntry]
     }
     struct SessionsResult: Decodable, Sendable { public let sessions: [CodeV2.SessionSummary] }
+    struct ApplyPatchResult: Decodable, Sendable {
+        public let applied: Bool
+        public let files: [String]
+    }
+    struct ScheduleResult: Decodable, Sendable { public let schedule: CodeV2.ScheduledResume }
+    struct UnscheduleResult: Decodable, Sendable { public let cancelled: Bool }
+    struct InstallResult: Decodable, Sendable { public let install: CodeV2.ProviderInstallState }
+    struct AuthResult: Decodable, Sendable { public let auth: CodeV2.ProviderAuthState }
     struct TerminalResult: Decodable, Sendable { public let terminalId: String }
 
     func providerList() async throws -> [CodeV2.ProviderInstance] {
@@ -303,6 +311,46 @@ public extension EnvServerConnection {
     func checkpointDiff(sessionId: String, checkpointId: String?) async throws -> DiffResult {
         struct P: Encodable { let sessionId: String; let checkpointId: String? }
         return try await request(.checkpointDiff, params: P(sessionId: sessionId, checkpointId: checkpointId), as: DiffResult.self)
+    }
+
+    /// Applies a unified diff (or its reverse: a rejected hunk) in the
+    /// session's own folder, all or nothing. Paths are repository-relative.
+    func checkpointApplyPatch(sessionId: String, patch: String, reverse: Bool = false, checkOnly: Bool = false) async throws -> ApplyPatchResult {
+        struct P: Encodable { let sessionId: String; let patch: String; let reverse: Bool?; let checkOnly: Bool? }
+        return try await request(
+            .checkpointApplyPatch,
+            params: P(sessionId: sessionId, patch: patch, reverse: reverse ? true : nil, checkOnly: checkOnly ? true : nil),
+            as: ApplyPatchResult.self
+        )
+    }
+
+    /// Resume at reset: the env server starts `input` (default: a "continue"
+    /// message) at `at` (default: the session's own reset time).
+    func turnSchedule(sessionId: String, at: String? = nil, input: CodeV2.UserInput? = nil) async throws -> CodeV2.ScheduledResume {
+        struct P: Encodable { let sessionId: String; let at: String?; let input: CodeV2.UserInput? }
+        return try await request(.turnSchedule, params: P(sessionId: sessionId, at: at, input: input), as: ScheduleResult.self).schedule
+    }
+
+    func turnUnschedule(sessionId: String, scheduleId: String? = nil) async throws -> Bool {
+        struct P: Encodable { let sessionId: String; let scheduleId: String? }
+        return try await request(.turnUnschedule, params: P(sessionId: sessionId, scheduleId: scheduleId), as: UnscheduleResult.self).cancelled
+    }
+
+    /// A managed runtime (Antigravity): download Google's release, cancel it, or remove it.
+    func providerInstall(_ instanceId: String, action: CodeV2.ProviderInstallAction, operationId: String? = nil) async throws -> CodeV2.ProviderInstallState {
+        struct P: Encodable { let instanceId: String; let action: CodeV2.ProviderInstallAction; let operationId: String? }
+        return try await request(.providerInstall, params: P(instanceId: instanceId, action: action, operationId: operationId), as: InstallResult.self).install
+    }
+
+    /// Google sign-in for a managed runtime: start, complete with a pasted
+    /// redirect address, cancel, or sign out.
+    func providerAuth(
+        _ instanceId: String, action: CodeV2.ProviderAuthAction, flowId: String? = nil, callbackUrl: String? = nil
+    ) async throws -> CodeV2.ProviderAuthState {
+        struct P: Encodable { let instanceId: String; let action: CodeV2.ProviderAuthAction; let flowId: String?; let callbackUrl: String? }
+        return try await request(
+            .providerAuth, params: P(instanceId: instanceId, action: action, flowId: flowId, callbackUrl: callbackUrl), as: AuthResult.self
+        ).auth
     }
 
     func sessionList(cwd: String? = nil, query: String? = nil, limit: Int? = nil) async throws -> [CodeV2.SessionSummary] {

@@ -353,6 +353,32 @@ final class EnvServerTests: XCTestCase {
         let stranger = await link.run(.init(id: "2", type: "session.open", params: .object(["sessionId": .string("other"), "cwd": .string("/")])))
         XCTAssertEqual(stranger.error?.code, .badRequest)
     }
+
+    // MARK: Node requirement (release: the app runs the bundle with the user's node)
+
+    func testNodeOlderThanTheServerNeedsIsReportedPlainly() {
+        XCTAssertTrue(EnvServerLaunchPlanner.isSupportedNode("v22.18.0"))
+        XCTAssertTrue(EnvServerLaunchPlanner.isSupportedNode("v24.1.0"))
+        XCTAssertFalse(EnvServerLaunchPlanner.isSupportedNode("v22.17.1"))
+        XCTAssertFalse(EnvServerLaunchPlanner.isSupportedNode("v20.11.0"))
+        XCTAssertFalse(EnvServerLaunchPlanner.isSupportedNode("garbage"))
+
+        let versions = ["/old/node": "v20.11.0", "/new/node": "v24.2.0"]
+        let executable: (String) -> Bool = { versions[$0] != nil }
+        let found = EnvServerLaunchPlanner.locateNode(path: "/old:/new", isExecutable: executable, version: { versions[$0] })
+        XCTAssertEqual(try? found.get(), URL(fileURLWithPath: "/new/node"), "a newer node later on PATH wins")
+
+        let onlyOld = EnvServerLaunchPlanner.locateNode(path: "/old", isExecutable: executable, version: { versions[$0] })
+        guard case let .failure(error) = onlyOld else { return XCTFail("old node accepted") }
+        XCTAssertEqual(error, .nodeTooOld(version: "v20.11.0", path: "/old/node"))
+        let sentence = error.errorDescription ?? ""
+        XCTAssertTrue(sentence.contains("22.18"))
+        XCTAssertTrue(sentence.contains("/old/node is v20.11.0"))
+        XCTAssertFalse(sentence.contains("\u{2014}"), "no em-dashes in UI copy")
+
+        let none = EnvServerLaunchPlanner.locateNode(path: "/nowhere", isExecutable: { _ in false }, version: { _ in nil })
+        guard case .failure(.nodeNotFound) = none else { return XCTFail("expected nodeNotFound") }
+    }
 }
 
 extension EnvServerTests {

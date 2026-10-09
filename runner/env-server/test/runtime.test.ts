@@ -212,3 +212,23 @@ test("schedule: survives an env server restart", async () => {
 test("git is available for these tests", () => {
   assert.match(execFileSync("git", ["--version"], { encoding: "utf8" }), /git version/);
 });
+
+test("computer bridge token: only a private regular file of this user is read, never a symlink", async () => {
+  const { readBridgeToken } = await import("../src/mcp/computer-bridge.js");
+  const dir = tempDir("bridge");
+  fs.chmodSync(dir, 0o700);
+  const file = path.join(dir, "bridge.token");
+  fs.writeFileSync(file, "a".repeat(64), { mode: 0o600 });
+  assert.equal(readBridgeToken(file), "a".repeat(64));
+  fs.chmodSync(file, 0o644);
+  assert.throws(() => readBridgeToken(file), /not private/);
+  fs.chmodSync(file, 0o600);
+  const link = path.join(dir, "link.token");
+  fs.symlinkSync(file, link);
+  assert.throws(() => readBridgeToken(link));
+  fs.chmodSync(dir, 0o755);
+  assert.throws(() => readBridgeToken(file), /folder is not private/);
+  fs.chmodSync(dir, 0o700);
+  fs.writeFileSync(file, "short\n", { mode: 0o600 });
+  assert.throws(() => readBridgeToken(file), /malformed/);
+});

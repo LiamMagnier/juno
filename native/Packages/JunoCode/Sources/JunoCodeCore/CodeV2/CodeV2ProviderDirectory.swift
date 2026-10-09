@@ -18,12 +18,13 @@ public struct CodeV2ProviderDirectory: Equatable, Sendable {
 
     /// Assembles the directory. Env-server instances replace the known
     /// placeholders with the same id; unknown ones are appended. Antigravity is
-    /// absent unless `antigravityEnabled` (legal gate, DESIGN §5.13).
+    /// a normal provider since the owner enabled it on 2026-10-09
+    /// (PROVIDERS-LEGAL.md); `antigravityEnabled: false` still hides it.
     public static func build(
         alevr: CodeV2.ProviderInstance,
         envInstances: [CodeV2.ProviderInstance]?,
         byokKeys: Set<CodeV2.ByokProvider> = [],
-        antigravityEnabled: Bool = false
+        antigravityEnabled: Bool = true
     ) -> CodeV2ProviderDirectory {
         var result: [CodeV2.ProviderInstance] = [alevr]
         let reported = envInstances ?? []
@@ -296,6 +297,9 @@ public enum CodeV2KnownSubscription: String, CaseIterable, Sendable {
         }
     }
 
+    /// Installed and signed in by the env server (provider.install / provider.auth).
+    public var isManagedRuntime: Bool { self == .antigravity }
+
     /// A short note shown on the Connections row whatever the state.
     public var note: String? {
         switch self {
@@ -340,7 +344,9 @@ public enum CodeV2KnownSubscription: String, CaseIterable, Sendable {
     public func placeholder(envServerRunning: Bool) -> CodeV2.ProviderInstance {
         CodeV2.ProviderInstance(
             id: instanceId, kind: kind, label: displayName, acpCommand: acpCommand,
-            status: envServerRunning ? .unknown : .notInstalled
+            status: envServerRunning ? .unknown : .notInstalled,
+            // Antigravity is installed and signed in by the env server itself, not a terminal.
+            install: isManagedRuntime ? CodeV2.ProviderInstallState(phase: .idle) : nil
         )
     }
 

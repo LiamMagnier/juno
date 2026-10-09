@@ -91,6 +91,8 @@ public actor EnvServerDeviceLink {
         .sessionOpen, .turnStart, .turnSteer, .turnQueue, .turnInterrupt, .approvalRespond,
         .checkpointRollback, .checkpointDiff, .providerList, .providerProbe, .providerSetup,
         .sessionList, .sessionClose,
+        // Runtime lane: reject a hunk, resume at reset, a managed runtime's install and sign-in.
+        .checkpointApplyPatch, .turnSchedule, .turnUnschedule, .providerInstall, .providerAuth,
     ]
     public static let terminalCommands: Set<CodeV2.ClientCommandType> = [
         .terminalOpen, .terminalWrite, .terminalResize, .terminalClose,
@@ -277,7 +279,7 @@ public actor EnvServerDeviceLink {
             }
             return nil
         case .turnStart, .turnSteer, .turnQueue, .turnInterrupt, .approvalRespond, .checkpointRollback,
-             .checkpointDiff, .sessionClose:
+             .checkpointDiff, .sessionClose, .checkpointApplyPatch, .turnSchedule, .turnUnschedule:
             guard case let .string(id)? = object["sessionId"] else { return "A session is required." }
             return linkedSessions.contains(id) ? nil : "Open the session first."
         default:

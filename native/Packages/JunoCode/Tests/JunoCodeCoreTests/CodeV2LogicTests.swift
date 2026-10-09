@@ -204,7 +204,12 @@ final class CodeV2LogicTests: XCTestCase {
             limits: [CodeV2.UsageWindow(id: "5h", label: "5-hour", usedPct: 38)]
         )
         let directory = CodeV2ProviderDirectory.build(alevr: alevr, envInstances: [claude], byokKeys: [.anthropic])
-        XCTAssertFalse(directory.instances.contains { $0.id == "acp:antigravity" })
+        // Antigravity is a normal provider since 2026-10-09; the gate can still hide it.
+        XCTAssertTrue(directory.instances.contains { $0.id == "acp:antigravity" })
+        XCTAssertFalse(
+            CodeV2ProviderDirectory.build(alevr: alevr, envInstances: [claude], antigravityEnabled: false)
+                .instances.contains { $0.id == "acp:antigravity" }
+        )
         let rail = directory.rail.map(\.id)
         XCTAssertEqual(rail.first, "alevr")
         XCTAssertEqual(rail[1], "claude-agent:default")

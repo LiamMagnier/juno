@@ -162,6 +162,32 @@ public final class CodeV2EnvSession {
         }
     }
 
+    /// Rejects one hunk of a checkpoint diff: the env server reverses it in
+    /// the session's own folder, all or nothing (`checkpoint.applyPatch`).
+    /// Returns false (with `lastError` set) when it no longer applies.
+    @discardableResult
+    public func rejectHunk(_ hunk: DiffHunk, path: String) async -> Bool {
+        await perform { connection in
+            _ = try await connection.checkpointApplyPatch(
+                sessionId: self.sessionId, patch: CodeV2UnifiedDiff.patch(for: hunk, path: path), reverse: true
+            )
+        }
+        return lastError == nil
+    }
+
+    /// Resume at reset: start again by itself when the usage window resets.
+    public func scheduleResume(at: String? = nil, input: CodeV2.UserInput? = nil) async {
+        await perform { connection in
+            _ = try await connection.turnSchedule(sessionId: self.sessionId, at: at, input: input)
+        }
+    }
+
+    public func cancelScheduledResume() async {
+        await perform { connection in
+            _ = try await connection.turnUnschedule(sessionId: self.sessionId, scheduleId: self.snapshot.scheduledResume?.id)
+        }
+    }
+
     /// Loads Changes: the whole thread (`checkpointId` nil) or one turn.
     public func loadDiff(checkpointId: String?) async {
         await perform { connection in

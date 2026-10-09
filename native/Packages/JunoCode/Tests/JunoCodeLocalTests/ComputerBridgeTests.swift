@@ -229,6 +229,7 @@ final class ComputerBridgeTests: XCTestCase {
         let server = ComputerBridgeServer(directory: directory.appendingPathComponent("b"), handler: Echo())
         try server.start()
         defer { server.stop() }
+        server.allowPeer(getpid())
         let token = try String(contentsOf: server.tokenURL, encoding: .utf8)
         XCTAssertEqual(token.count, 64)
         let attributes = try FileManager.default.attributesOfItem(atPath: server.tokenURL.path)
@@ -248,6 +249,41 @@ final class ComputerBridgeTests: XCTestCase {
         server.stop()
         XCTAssertFalse(FileManager.default.fileExists(atPath: server.tokenURL.path), "a stopped bridge leaves no token behind")
         XCTAssertFalse(FileManager.default.fileExists(atPath: server.socketURL.path))
+    }
+
+    func testAPeerTheAppDidNotLaunchIsRefusedEvenWithTheToken() throws {
+        let server = ComputerBridgeServer(directory: directory.appendingPathComponent("p"), handler: Echo())
+        try server.start()
+        defer { server.stop() }
+        let token = try String(contentsOf: server.tokenURL, encoding: .utf8)
+        let call = #"{"id":"7","type":"computer.call","token":"\#(token)","sessionId":"s1","args":{"action":"screenshot"}}"#
+        // Not registered: the right token is not enough.
+        var lines = try roundTrip(server.socketURL, lines: [call])
+        var response = try JSONDecoder().decode(CodeV2.ComputerBridgeResponse.self, from: Data(lines[0].utf8))
+        XCTAssertEqual(response.id, "7")
+        XCTAssertFalse(response.ok)
+        XCTAssertEqual(response.endsTurn, true)
+        XCTAssertTrue(response.text.contains("Only the local environment Alevr started"))
+        // Registered (this test process stands in for the env server): answered.
+        server.allowPeer(getpid())
+        lines = try roundTrip(server.socketURL, lines: [call])
+        response = try JSONDecoder().decode(CodeV2.ComputerBridgeResponse.self, from: Data(lines[0].utf8))
+        XCTAssertTrue(response.ok)
+        server.revokePeer(getpid())
+        lines = try roundTrip(server.socketURL, lines: [call])
+        response = try JSONDecoder().decode(CodeV2.ComputerBridgeResponse.self, from: Data(lines[0].utf8))
+        XCTAssertFalse(response.ok)
+    }
+
+    func testAnUnboundBridgeStillRequiresThisUser() throws {
+        let server = ComputerBridgeServer(directory: directory.appendingPathComponent("u"), handler: Echo(), bindToRegisteredPeers: false)
+        try server.start()
+        defer { server.stop() }
+        let token = try String(contentsOf: server.tokenURL, encoding: .utf8)
+        let call = #"{"id":"8","type":"computer.status","token":"\#(token)","sessionId":"s1"}"#
+        let lines = try roundTrip(server.socketURL, lines: [call])
+        XCTAssertEqual(lines.count, 1)
+        XCTAssertNotNil(try? JSONDecoder().decode(CodeV2.ComputerBridgeResponse.self, from: Data(lines[0].utf8)))
     }
 
     // MARK: Screenshot store

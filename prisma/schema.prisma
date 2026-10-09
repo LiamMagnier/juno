@@ -5084,3 +5084,74 @@ model ProviderKeyUsage {
   @@unique([userId, provider, day])
   @@index([userId, day])
 }
+
+// ----------------------------------------------------------------------------
+// Alevr Code v2 device link on Postgres (docs/code-v2/DEVICE-LINK.md). The hub
+// that relays the hosted web to the user's Mac, shared by every backend process
+// when ALEVR_LINK_STORE=postgres (src/lib/code-v2/env-link-store-pg.ts). All
+// rows are transient: commands and answers live seconds, event rings are
+// bounded per session, and the Mac's env server log stays the source of truth.
+// Written with raw SQL only; no relations so a deleted user's rows simply age out.
+// ----------------------------------------------------------------------------
+
+model CodeLinkHost {
+  userId     String
+  deviceId   String
+  lastPullAt DateTime
+  appVersion String?
+  /// Hub numbering of the device's global event stream.
+  globalSeq  Int      @default(0)
+
+  @@id([userId, deviceId])
+}
+
+model CodeLinkCommand {
+  id        BigInt    @id @default(autoincrement())
+  userId    String
+  deviceId  String
+  relayId   String    @unique
+  payload   Json
+  claimedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, deviceId, id])
+  @@index([createdAt])
+}
+
+model CodeLinkResponse {
+  relayId   String   @id
+  userId    String
+  deviceId  String
+  payload   Json
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+model CodeLinkEvent {
+  id        BigInt   @id @default(autoincrement())
+  userId    String
+  deviceId  String
+  /// "" for the global stream.
+  sessionId String
+  sequence  Int
+  eventType String
+  payload   Json
+  createdAt DateTime @default(now())
+
+  @@unique([userId, deviceId, sessionId, sequence, eventType])
+  @@index([userId, deviceId, sessionId, sequence])
+}
+
+model CodeLinkSession {
+  userId        String
+  deviceId      String
+  sessionId     String
+  /// The ring holds every event after this sequence (a finished replay).
+  floor         Int?
+  lastReplayAt  DateTime?
+  replayRelayId String?
+  replayCursor  Int?
+
+  @@id([userId, deviceId, sessionId])
+}

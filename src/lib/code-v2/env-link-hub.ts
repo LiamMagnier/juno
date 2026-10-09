@@ -122,6 +122,23 @@ export interface LinkHostPullReply {
   commands: ClientCommand[];
 }
 
+/**
+ * One user's link to one device, as the routes use it. `DeviceLink` keeps it in
+ * this process's memory; `PgDeviceLink` (env-link-store-pg.ts) in Postgres, so
+ * several backend processes can share it.
+ */
+export interface LinkEndpoint {
+  rpc(command: ClientCommand): Promise<LinkReply>;
+  poll(cursors: Record<string, number>, globalCursor?: number, waitMs?: number, signal?: AbortSignal): Promise<LinkReply>;
+  pull(waitMs?: number, signal?: AbortSignal, appVersion?: string): Promise<LinkHostPullReply>;
+  push(input: { responses?: ServerResponse[]; events?: ServerEventEnvelope[] }): { accepted: number } | Promise<{ accepted: number }>;
+}
+
+export interface LinkHub {
+  link(userId: string, deviceId: string): LinkEndpoint;
+  isOnline(userId: string, deviceId: string): boolean | Promise<boolean>;
+}
+
 type Clock = () => number;
 
 interface PendingRpc {
@@ -159,7 +176,7 @@ class Waiters {
 }
 
 /** One user's link to one device. */
-export class DeviceLink {
+export class DeviceLink implements LinkEndpoint {
   #queue: ClientCommand[] = [];
   #pending = new Map<string, PendingRpc>();
   /** Replay opens in flight: relay id → the session and cursor they replay from. */
@@ -369,7 +386,7 @@ export class DeviceLink {
 }
 
 /** All device links of this backend process, keyed by user and device. */
-export class EnvLinkHub {
+export class EnvLinkHub implements LinkHub {
   #links = new Map<string, DeviceLink>();
   constructor(private readonly clock: Clock = Date.now) {}
 
@@ -391,7 +408,7 @@ export class EnvLinkHub {
 
 const HUB_KEY = Symbol.for("alevr.code-v2.env-link-hub");
 
-/** The process-wide hub (survives Next.js dev hot reloads). */
+/** The process-wide in-memory hub (survives Next.js dev hot reloads). Routes use `linkHub()` (env-link-select.ts). */
 export function envLinkHub(): EnvLinkHub {
   const g = globalThis as unknown as Record<symbol, EnvLinkHub | undefined>;
   g[HUB_KEY] ??= new EnvLinkHub();

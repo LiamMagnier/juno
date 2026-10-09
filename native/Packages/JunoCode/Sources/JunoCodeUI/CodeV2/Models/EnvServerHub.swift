@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(AppKit)
+import AppKit
+#endif
 import JunoCodeCore
 import JunoCodeLocal
 import Observation
@@ -39,6 +42,10 @@ public final class EnvServerHub {
     @ObservationIgnored private var relaySinks: [UUID: @MainActor (CodeV2.ServerEventEnvelope) -> Void] = [:]
 
     public static let shared = EnvServerHub()
+
+    /// Told about every env server this app launches (the computer bridge
+    /// binds to its pid). Set once by the app shell.
+    @ObservationIgnored public static var onLaunch: (@MainActor (EnvServerLaunch) -> Void)?
 
     public init(
         sidecar: EnvServerSidecar = EnvServerSidecar(),
@@ -82,6 +89,7 @@ public final class EnvServerHub {
             defer { self.startTask = nil }
             do {
                 let launch = try await self.sidecar.start()
+                Self.onLaunch?(launch)
                 let connection = EnvServerConnection(transport: self.makeTransport(launch))
                 self.adopt(connection)
                 await self.refreshProviders()
@@ -153,6 +161,7 @@ public final class EnvServerHub {
     }
 
     private func apply(_ instance: CodeV2.ProviderInstance) {
+        followSignIn(instance)
         var list = instances ?? []
         if let index = list.firstIndex(where: { $0.id == instance.id }) {
             list[index] = instance
@@ -202,6 +211,12 @@ public final class EnvServerHub {
     public func openSetup(for instanceId: String, action: CodeV2.ProviderSetupAction) async {
         openingSetup.insert(instanceId)
         defer { openingSetup.remove(instanceId) }
+        // A managed runtime (Antigravity) installs and signs in through the env
+        // server itself: no terminal, Google's page opens in the browser.
+        if instances?.first(where: { $0.id == instanceId })?.install != nil {
+            if action == .install { await installRuntime(instanceId) } else { await signIn(instanceId) }
+            return
+        }
         guard let step = await setupStep(for: instanceId, action: action) else {
             lastError = "There is nothing to \(action == .install ? "install" : "sign in to") for this connection."
             return
@@ -211,6 +226,83 @@ public final class EnvServerHub {
         } catch {
             lastError = "Alevr could not open Terminal: \(error.localizedDescription)"
         }
+    }
+
+    // MARK: Managed runtimes (Antigravity)
+
+    /// Flows this Mac started: their Google page opens here once, when the
+    /// runtime reports it (a flow started from the web shows its link there).
+    @ObservationIgnored private var flowsStartedHere: Set<String> = []
+    @ObservationIgnored private var openedFlows: Set<String> = []
+    /// Opens Google's sign-in page; the default browser in the app.
+    @ObservationIgnored public var openURL: @MainActor (URL) -> Void = { url in
+        #if canImport(AppKit)
+        NSWorkspace.shared.open(url)
+        #endif
+    }
+
+    public func installRuntime(_ instanceId: String, action: CodeV2.ProviderInstallAction = .start) async {
+        do {
+            let connection = try await ready()
+            _ = try await connection.providerInstall(instanceId, action: action, operationId: instances?.first { $0.id == instanceId }?.install?.operationId)
+            lastError = nil
+        } catch {
+            lastError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    public func signIn(_ instanceId: String) async {
+        do {
+            let connection = try await ready()
+            let state = try await connection.providerAuth(instanceId, action: .start)
+            if let flow = state.flowId { flowsStartedHere.insert(flow) }
+            lastError = nil
+        } catch {
+            lastError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    /// The address Google's page ended on, pasted when the browser could not reach this Mac's loopback.
+    public func completeSignIn(_ instanceId: String, callbackURL: String) async {
+        do {
+            let connection = try await ready()
+            let flow = instances?.first { $0.id == instanceId }?.auth?.flowId
+            _ = try await connection.providerAuth(instanceId, action: .complete, flowId: flow, callbackUrl: callbackURL)
+            lastError = nil
+        } catch {
+            lastError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    public func cancelSignIn(_ instanceId: String) async {
+        do {
+            let connection = try await ready()
+            let flow = instances?.first { $0.id == instanceId }?.auth?.flowId
+            _ = try await connection.providerAuth(instanceId, action: .cancel, flowId: flow)
+        } catch {
+            lastError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    public func signOut(_ instanceId: String) async {
+        do {
+            let connection = try await ready()
+            _ = try await connection.providerAuth(instanceId, action: .logout)
+            lastError = nil
+        } catch {
+            lastError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    /// Opens the Google page of a flow this Mac started, once.
+    private func followSignIn(_ instance: CodeV2.ProviderInstance) {
+        guard let auth = instance.auth, auth.phase == .waiting, let flow = auth.flowId,
+              flowsStartedHere.contains(flow), !openedFlows.contains(flow),
+              let raw = auth.authorizationUrl, let url = URL(string: raw),
+              url.scheme == "https", url.host == "accounts.google.com"
+        else { return }
+        openedFlows.insert(flow)
+        openURL(url)
     }
 
     // MARK: Sessions

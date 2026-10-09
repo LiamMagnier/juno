@@ -29,10 +29,20 @@ public final class ComputerUseDesktopHost {
             approver: DesktopComputerBridgeApprover(),
             permissions: { ComputerUsePermissionProbe.system.read() }
         )
-        let server = ComputerBridgeServer(handler: executor)
+        // Bound to the env server this app launched: another process of this
+        // user (an agent's shell command that read bridge.token) is refused.
+        // A debug build may let a hand-started `npm run dev` env server in.
+        var anyPeer = false
+        #if DEBUG
+        anyPeer = ProcessInfo.processInfo.environment["ALEVR_COMPUTER_BRIDGE_ANY_PEER"] == "1"
+        #endif
+        let server = ComputerBridgeServer(handler: executor, bindToRegisteredPeers: !anyPeer)
         do {
             try server.start()
             bridge = server
+            EnvServerHub.onLaunch = { [weak server] launch in
+                if let pid = launch.pid { server?.allowPeer(pid) }
+            }
         } catch {
             // Without the bridge connected agents get "open the Alevr app"
             // from the env server; the app's own sessions are unaffected.
@@ -42,6 +52,7 @@ public final class ComputerUseDesktopHost {
 
     /// On quit: no stale socket or token is left for an env server to find.
     public func uninstall() {
+        EnvServerHub.onLaunch = nil
         bridge?.stop()
         bridge = nil
         overlay?.stop()

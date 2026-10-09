@@ -22,6 +22,13 @@ public protocol ComputerBridgeHandling: Sendable {
 /// line out, and a fresh random token in `bridge.token` (0600) on every
 /// start that each request must carry: only this user's processes can read
 /// it, and a stale env server from before a restart is refused.
+///
+/// The token alone is not enough: any process of this user can read the file,
+/// including a shell command an agent runs. So every connection is also
+/// checked by the kernel's view of its peer (`getpeereid`, `LOCAL_PEERPID`):
+/// it must be this user, and, with `bindToRegisteredPeers` (the app's
+/// setting), one of the env server processes this app launched
+/// (``allowPeer(_:)``). Anything else gets a refusal on every line.
 public final class ComputerBridgeServer: @unchecked Sendable {
     public let directory: URL
     public var socketURL: URL { directory.appendingPathComponent("bridge.sock") }
@@ -32,10 +39,45 @@ public final class ComputerBridgeServer: @unchecked Sendable {
     private var listener: Int32 = -1
     private var token = ""
     private var running = false
+    private let bindToRegisteredPeers: Bool
+    private var allowedPeers: Set<pid_t> = []
 
-    public init(directory: URL = DesktopLockFile.defaultDirectory, handler: any ComputerBridgeHandling) {
+    public init(directory: URL = DesktopLockFile.defaultDirectory, handler: any ComputerBridgeHandling, bindToRegisteredPeers: Bool = true) {
         self.directory = directory
         self.handler = handler
+        self.bindToRegisteredPeers = bindToRegisteredPeers
+    }
+
+    /// Lets the env server with this pid in (the sidecar the app launched).
+    public func allowPeer(_ pid: pid_t) {
+        lock.lock()
+        allowedPeers.insert(pid)
+        lock.unlock()
+    }
+
+    public func revokePeer(_ pid: pid_t) {
+        lock.lock()
+        allowedPeers.remove(pid)
+        lock.unlock()
+    }
+
+    /// Why a connection's peer may not use the bridge, or nil when it may.
+    func peerProblem(_ client: Int32) -> String? {
+        var uid: uid_t = 0
+        var gid: gid_t = 0
+        guard getpeereid(client, &uid, &gid) == 0, uid == getuid() else {
+            return "Only this Mac user's Alevr can use the computer bridge."
+        }
+        guard bindToRegisteredPeers else { return nil }
+        var pid: pid_t = 0
+        var length = socklen_t(MemoryLayout<pid_t>.size)
+        guard getsockopt(client, SOL_LOCAL, LOCAL_PEERPID, &pid, &length) == 0, pid > 0 else {
+            return "The computer bridge could not identify the caller."
+        }
+        lock.lock()
+        let allowed = allowedPeers.contains(pid)
+        lock.unlock()
+        return allowed ? nil : "Only the local environment Alevr started can use the computer bridge."
     }
 
     deinit { stop() }
@@ -140,6 +182,7 @@ public final class ComputerBridgeServer: @unchecked Sendable {
     /// One connection: requests in order, each answered before the next is read.
     private func serve(_ client: Int32) {
         defer { close(client) }
+        let refusal = peerProblem(client)
         var buffer = Data()
         var chunk = [UInt8](repeating: 0, count: 64 * 1024)
         while true {
@@ -151,7 +194,7 @@ public final class ComputerBridgeServer: @unchecked Sendable {
                 let line = buffer[buffer.startIndex..<newline]
                 buffer.removeSubrange(buffer.startIndex...newline)
                 guard !line.allSatisfy({ $0 == 0x20 || $0 == 0x0D }) else { continue }
-                let response = answer(Data(line))
+                let response = refusal.map { Self.refuse(Data(line), text: $0) } ?? answer(Data(line))
                 guard var data = try? JSONEncoder().encode(response) else { return }
                 data.append(0x0A)
                 let written = data.withUnsafeBytes { raw -> Int in
@@ -194,6 +237,12 @@ public final class ComputerBridgeServer: @unchecked Sendable {
         }
         semaphore.wait()
         return box.value ?? CodeV2.ComputerBridgeResponse(id: request.id, ok: false, text: "The screen action did not finish.")
+    }
+
+    /// A refusal for one request line, answering its id when it has one.
+    static func refuse(_ line: Data, text: String) -> CodeV2.ComputerBridgeResponse {
+        let id = (try? JSONSerialization.jsonObject(with: line) as? [String: Any])?["id"] as? String ?? "?"
+        return CodeV2.ComputerBridgeResponse(id: id, ok: false, text: text, endsTurn: true)
     }
 
     private final class ResponseBox: @unchecked Sendable {

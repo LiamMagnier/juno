@@ -879,6 +879,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 0D9755825C1FC0E1FB9C9505 /* Build configuration list for PBXNativeTarget "JunoDesktop" */;
 			buildPhases = (
+				AF6E2F2B128B8CEE45727C5B /* Env server bundle */,
 				04017C63B7649F2FB51C6017 /* Sources */,
 				048F5724C744EEF22E73BA1E /* Resources */,
 				C03FC8860F06379350963EE1 /* Frameworks */,
@@ -1025,6 +1026,28 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		AF6E2F2B128B8CEE45727C5B /* Env server bundle */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Env server bundle";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "set -euo pipefail\nBUNDLE=\"$SRCROOT/Resources/env-server/alevr-env.mjs\"\nif [ -s \"$BUNDLE\" ]; then exit 0; fi\nif [ \"$CONFIGURATION\" = \"Debug\" ]; then\n  echo \"warning: No env server bundle; a Debug build runs runner/env-server from the repo. Run npm run env-server:bundle:mac to test the shipped one.\"\n  exit 0\nfi\nexport PATH=\"/opt/homebrew/bin:/usr/local/bin:$HOME/.volta/bin:$PATH\"\nif ! command -v npm >/dev/null 2>&1; then\n  echo \"error: $CONFIGURATION builds must carry the env server bundle. Run npm run env-server:bundle:mac from the repository root.\"\n  exit 1\nfi\ncd \"$SRCROOT/../../..\"\nnpm run env-server:bundle:mac\n[ -s \"$BUNDLE\" ] || { echo \"error: npm run env-server:bundle:mac did not write $BUNDLE\"; exit 1; }\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		04017C63B7649F2FB51C6017 /* Sources */ = {

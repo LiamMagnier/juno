@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/code-remote";
 import { offlineReply, parseLinkRequest } from "@/lib/code-v2/device-link";
-import { envLinkHub } from "@/lib/code-v2/env-link-hub";
+import { linkHub } from "@/lib/code-v2/env-link-select";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -35,7 +35,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ deviceI
   const parsed = parseLinkRequest(body);
   if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: parsed.status });
 
-  const link = envLinkHub().link(user.id, device.id);
+  const link = linkHub().link(user.id, device.id);
   const request = parsed.request;
   const reply = request.kind === "rpc" ? await link.rpc(request.command) : await link.poll(request.cursors, request.globalCursor, undefined, req.signal);
   return NextResponse.json(reply.offline ? { ...reply, ...offlineReply(device.name) } : reply, { headers: { "Cache-Control": "no-store" } });

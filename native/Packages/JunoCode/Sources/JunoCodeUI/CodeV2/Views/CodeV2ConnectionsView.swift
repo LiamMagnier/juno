@@ -14,12 +14,12 @@ public struct CodeV2ConnectionsView: View {
     let hub: EnvServerHub
     let keys: CodeV2KeysModel
     var alevrPlanLine: String?
-    var antigravityEnabled = false
+    var antigravityEnabled = true
 
     @State private var addingKey: CodeV2.ByokProvider?
     @State private var keyDraft = ""
 
-    public init(hub: EnvServerHub, keys: CodeV2KeysModel, alevrPlanLine: String? = nil, antigravityEnabled: Bool = false) {
+    public init(hub: EnvServerHub, keys: CodeV2KeysModel, alevrPlanLine: String? = nil, antigravityEnabled: Bool = true) {
         self.hub = hub
         self.keys = keys
         self.alevrPlanLine = alevrPlanLine

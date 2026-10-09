@@ -36,6 +36,9 @@ public struct EnvServerLaunch: Equatable, Sendable {
     public var host: String
     public var port: Int
     public var token: String
+    /// The env server's process id once it runs (the computer bridge only
+    /// answers this process).
+    public var pid: Int32?
 
     public var webSocketURL: URL { URL(string: "ws://\(host):\(port)/")! }
 }
@@ -114,6 +117,8 @@ public struct EnvServerEntry: Equatable, Sendable {
 public enum EnvServerSidecarError: Error, Equatable, LocalizedError, Sendable {
     case entryNotFound
     case nodeNotFound
+    /// A `node` was found, but older than the env server needs.
+    case nodeTooOld(version: String, path: String)
     case launchFailed(String)
     case notReady
     case exited(Int32)
@@ -121,7 +126,10 @@ public enum EnvServerSidecarError: Error, Equatable, LocalizedError, Sendable {
     public var errorDescription: String? {
         switch self {
         case .entryNotFound: "Alevr could not find its local environment server in this build."
-        case .nodeNotFound: "Alevr needs Node.js to start subscriptions on this Mac. Install Node 20 or later."
+        case .nodeNotFound:
+            "Alevr needs Node.js \(EnvServerLaunchPlanner.minimumNodeText) or later to start subscriptions on this Mac. Install it from nodejs.org or with Homebrew (brew install node), then Re-check."
+        case let .nodeTooOld(version, path):
+            "Alevr needs Node.js \(EnvServerLaunchPlanner.minimumNodeText) or later to start subscriptions on this Mac, and \(path) is \(version). Update Node from nodejs.org or with Homebrew (brew upgrade node), then Re-check."
         case let .launchFailed(reason): "The local environment server did not start: \(reason)"
         case .notReady: "The local environment server started but did not answer."
         case let .exited(code): "The local environment server stopped (exit \(code))."
@@ -167,15 +175,66 @@ public enum EnvServerLaunchPlanner {
     }
 
     /// The first `node` on the sanitised toolchain PATH.
+    /// The oldest Node the env server runs on (`engines` in runner/env-server/package.json).
+    public static let minimumNode = (major: 22, minor: 18)
+    public static var minimumNodeText: String { "\(minimumNode.major).\(minimumNode.minor)" }
+
+    /// The first `node` on the toolchain PATH that is new enough.
     public static func findNode(
         path: String = ToolchainEnvironment.resolvedPATH(),
-        isExecutable: (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) }
+        isExecutable: (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) },
+        version: (String) -> String? = { nodeVersion(at: $0) }
     ) -> URL? {
+        try? locateNode(path: path, isExecutable: isExecutable, version: version).get()
+    }
+
+    /// A new-enough `node`, or why there is none (missing, or only older ones).
+    public static func locateNode(
+        path: String = ToolchainEnvironment.resolvedPATH(),
+        isExecutable: (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) },
+        version: (String) -> String? = { nodeVersion(at: $0) }
+    ) -> Result<URL, EnvServerSidecarError> {
+        var tooOld: EnvServerSidecarError?
         for directory in path.split(separator: ":") {
             let candidate = "\(directory)/node"
-            if isExecutable(candidate) { return URL(fileURLWithPath: candidate) }
+            guard isExecutable(candidate) else { continue }
+            guard let found = version(candidate) else { continue }
+            if isSupportedNode(found) { return .success(URL(fileURLWithPath: candidate)) }
+            tooOld = tooOld ?? .nodeTooOld(version: found, path: candidate)
         }
-        return nil
+        return .failure(tooOld ?? .nodeNotFound)
+    }
+
+    /// "v22.18.0" (or "22.18") meets ``minimumNode``.
+    public static func isSupportedNode(_ version: String) -> Bool {
+        let parts = version.trimmingCharacters(in: .whitespacesAndNewlines)
+            .drop { $0 == "v" }
+            .split(separator: ".")
+            .compactMap { Int($0.prefix { $0.isNumber }) }
+        guard parts.count >= 2 else { return false }
+        return (parts[0], parts[1]) >= (minimumNode.major, minimumNode.minor)
+    }
+
+    /// `node --version`, with a 3 s limit; nil when it does not answer.
+    public static func nodeVersion(at path: String) -> String? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: path)
+        process.arguments = ["--version"]
+        process.environment = ["PATH": "/usr/bin:/bin"]
+        let output = Pipe()
+        process.standardOutput = output
+        process.standardError = FileHandle.nullDevice
+        process.standardInput = FileHandle.nullDevice
+        do { try process.run() } catch { return nil }
+        let deadline = Date().addingTimeInterval(3)
+        while process.isRunning, Date() < deadline { usleep(20_000) }
+        if process.isRunning {
+            process.terminate()
+            return nil
+        }
+        let data = output.fileHandleForReading.readDataToEndOfFile()
+        let text = String(decoding: data.prefix(64), as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? nil : text
     }
 
     /// The environment the server runs with: the user's identity and a
@@ -279,17 +338,20 @@ public actor EnvServerSidecar {
 
     private let resolveEntry: @Sendable () -> EnvServerEntry?
     private let resolveNode: @Sendable () -> URL?
+    private let diagnoseNode: @Sendable () -> Result<URL, EnvServerSidecarError>
     private let dataDirectory: URL
     private let readinessTimeout: Duration
 
     public init(
         resolveEntry: @escaping @Sendable () -> EnvServerEntry? = { EnvServerEntry.resolve() },
         resolveNode: @escaping @Sendable () -> URL? = { EnvServerLaunchPlanner.findNode() },
+        diagnoseNode: @escaping @Sendable () -> Result<URL, EnvServerSidecarError> = { EnvServerLaunchPlanner.locateNode() },
         dataDirectory: URL = EnvServerLaunchPlanner.defaultDataDirectory(),
         readinessTimeout: Duration = .seconds(20)
     ) {
         self.resolveEntry = resolveEntry
         self.resolveNode = resolveNode
+        self.diagnoseNode = diagnoseNode
         self.dataDirectory = dataDirectory
         self.readinessTimeout = readinessTimeout
     }
@@ -351,8 +413,11 @@ public actor EnvServerSidecar {
             throw EnvServerSidecarError.entryNotFound
         }
         guard let node = resolveNode() else {
-            set(.failed(.nodeNotFound))
-            throw EnvServerSidecarError.nodeNotFound
+            // Say which: no Node at all, or only one older than the server needs.
+            let problem: EnvServerSidecarError
+            if case let .failure(error) = diagnoseNode() { problem = error } else { problem = .nodeNotFound }
+            set(.failed(problem))
+            throw problem
         }
         try? FileManager.default.createDirectory(at: dataDirectory, withIntermediateDirectories: true)
         guard let port = EnvServerLaunchPlanner.freePort() else {
@@ -401,6 +466,7 @@ public actor EnvServerSidecar {
             throw EnvServerSidecarError.notReady
         }
         plan.port = readyPort
+        plan.pid = process.processIdentifier
         launch = plan
         restartAttempt = 0
         set(.running(plan))

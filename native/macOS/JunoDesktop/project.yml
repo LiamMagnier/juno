@@ -144,6 +144,29 @@ targets:
       # them itself.
       - package: JunoWork
         product: JunoWorkAutomation
+    # Alevr Code's env server bundle must be in every non-Debug build: the
+    # sidecar runs Contents/Resources/env-server/alevr-env.mjs with the user's
+    # node. Built here when missing (release-macos.sh builds it first anyway).
+    preBuildScripts:
+      - name: Env server bundle
+        basedOnDependencyAnalysis: false
+        shell: /bin/bash
+        script: |
+          set -euo pipefail
+          BUNDLE="$SRCROOT/Resources/env-server/alevr-env.mjs"
+          if [ -s "$BUNDLE" ]; then exit 0; fi
+          if [ "$CONFIGURATION" = "Debug" ]; then
+            echo "warning: No env server bundle; a Debug build runs runner/env-server from the repo. Run npm run env-server:bundle:mac to test the shipped one."
+            exit 0
+          fi
+          export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/.volta/bin:$PATH"
+          if ! command -v npm >/dev/null 2>&1; then
+            echo "error: $CONFIGURATION builds must carry the env server bundle. Run npm run env-server:bundle:mac from the repository root."
+            exit 1
+          fi
+          cd "$SRCROOT/../../.."
+          npm run env-server:bundle:mac
+          [ -s "$BUNDLE" ] || { echo "error: npm run env-server:bundle:mac did not write $BUNDLE"; exit 1; }
     configFiles:
       Debug: ../../Config/JunoDesktop-Debug.xcconfig
       Stable: ../../Config/JunoDesktop-Stable.xcconfig

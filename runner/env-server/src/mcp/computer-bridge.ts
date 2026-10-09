@@ -6,9 +6,13 @@
  * `ComputerBridgeRequest` on a Unix socket the app listens on
  * (`ComputerBridgeServer.swift`), one `ComputerBridgeResponse` line back.
  * The socket and the token file sit in a 0700 directory, and every request
- * carries the token, so another user on the Mac cannot drive it.
+ * carries the token, so another user on the Mac cannot drive it. The app
+ * also checks the connecting process itself (kernel peer pid): it answers only
+ * the env server it launched, so a shell command that read the token is still
+ * refused. Here the token is read only from a regular file this user owns
+ * that nobody else can read, never through a symlink.
  */
-import { readFileSync } from "node:fs";
+import { closeSync, fstatSync, lstatSync, openSync, readSync, constants } from "node:fs";
 import { createConnection } from "node:net";
 import { join } from "node:path";
 
@@ -39,13 +43,40 @@ export interface UnixSocketBridgeOptions {
   timeoutMs?: number;
 }
 
+/**
+ * Reads the bridge token, refusing anything but a small regular file owned by
+ * this user with no group/other permissions (and its folder likewise), opened
+ * without following a symlink so it cannot be swapped between check and read.
+ */
+export function readBridgeToken(tokenPath: string): string {
+  const uid = process.getuid?.();
+  const dir = lstatSync(join(tokenPath, ".."));
+  if (!dir.isDirectory() || (uid !== undefined && dir.uid !== uid) || (dir.mode & 0o077) !== 0) {
+    throw new ComputerBridgeUnavailable("The computer bridge folder is not private to this user.");
+  }
+  const fd = openSync(tokenPath, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+  try {
+    const st = fstatSync(fd);
+    if (!st.isFile() || (uid !== undefined && st.uid !== uid) || (st.mode & 0o077) !== 0 || st.size > 256) {
+      throw new ComputerBridgeUnavailable("The computer bridge token file is not private to this user.");
+    }
+    const buffer = Buffer.alloc(st.size);
+    const n = readSync(fd, buffer, 0, st.size, 0);
+    const token = buffer.subarray(0, n).toString("utf8").trim();
+    if (!/^[A-Za-z0-9]{16,128}$/.test(token)) throw new ComputerBridgeUnavailable("The computer bridge token is malformed.");
+    return token;
+  } finally {
+    closeSync(fd);
+  }
+}
+
 let sequence = 0;
 const nextId = () => `cb_${process.pid}_${++sequence}`;
 
 export function createUnixSocketBridge(options: UnixSocketBridgeOptions = {}): ComputerBridge {
   const socketPath = options.socketPath ?? DEFAULT_BRIDGE_SOCKET_PATH;
   const tokenPath = options.tokenPath ?? DEFAULT_BRIDGE_TOKEN_PATH;
-  const readToken = options.readToken ?? (() => readFileSync(tokenPath, "utf8").trim());
+  const readToken = options.readToken ?? (() => readBridgeToken(tokenPath));
   const timeoutMs = options.timeoutMs ?? 11 * 60_000;
 
   return {
@@ -53,8 +84,8 @@ export function createUnixSocketBridge(options: UnixSocketBridgeOptions = {}): C
       let token: string;
       try {
         token = readToken();
-      } catch {
-        return Promise.reject(new ComputerBridgeUnavailable());
+      } catch (error) {
+        return Promise.reject(error instanceof ComputerBridgeUnavailable ? error : new ComputerBridgeUnavailable());
       }
       const request: ComputerBridgeRequest = { ...partial, id: nextId(), token };
       return new Promise<ComputerBridgeResponse>((resolve, reject) => {
