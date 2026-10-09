@@ -39,36 +39,28 @@ Both routes authenticate as the signed-in Alevr user (`requireUser`: the web ses
 
 `terminal.*`, because it is a shell on the user's Mac, and `env.configure`, because it carries secrets and the Mac supplies its own. The hub refuses them with `unsupported`. The allow-list is `LINK_RELAYED_COMMANDS`: session open/list/close, turn start/steer/queue/interrupt, approval.respond, checkpoint diff/rollback, provider list/probe/setup. The **Mac must enforce the same list** (defence in depth). `provider.setup` only returns the command to type, and the web shows it with "run this on your Mac".
 
-## Mac side: the hook for the Mac lane
+## Mac side (implemented)
 
-The `DesktopCodeHostModel` (`native/macOS/JunoDesktop/App/DesktopCodeHost.swift`) already pairs the Mac (`POST /api/code/devices`) and long-polls v1 commands. Add a **v2 relay loop** next to it. It runs only while all of these hold:
+`EnvServerDeviceLinkChannel` (`native/Packages/JunoCode/Sources/JunoCodeLocal/EnvServer/EnvServerDeviceLink.swift`) drains the hub for this Mac, and `CodeV2DeviceLinkHost` wires it to the app's `EnvServerHub`. `DesktopCodeHostModel.syncEnvLink` starts it only while **Remote hosting** is on (off by default; the same switch that lets a phone drive this Mac), the user is signed in and the Mac is paired; turning Remote off stops it.
 
-1. The user is signed in and the device is paired (the same gates as v1 hosting).
-2. The env server sidecar is running (`EnvServerSidecar`) and the Mac holds its launch token.
-3. The user turned on **"Use this Mac from Alevr on the web"** in Settings › Code. It is off by default, and the copy should say that the web can start and approve agent turns on this Mac.
-
-The loop:
+The loop, as built:
 
 ```text
-open a dedicated EnvServerConnection (WebSocket, Bearer <launch token>), separate from the UI's own
 loop:
   reply = POST /api/code/v2/link/<deviceId>/host {kind:"pull", protocol:"alevr-code-v2", appVersion, waitMs:25000}
-          (the request itself is the heartbeat; keep a 30 s client timeout; on 404 the pairing is gone → stop)
-  for command in reply.commands (in order):
-      if command.type not in LINK_RELAYED_COMMANDS → answer {type:"response", id, ok:false, error:{code:"unsupported", …}}
-      else send it unchanged on the relay WebSocket (keep its id: the hub maps it back)
-on every message from the relay WebSocket (responses AND events, in arrival order):
-  append to an outbox; flush it within ~50 ms:
-      POST …/host {kind:"push", responses:[…], events:[…]}   (≤1000 items per push; split larger batches)
-on relay WebSocket close: reconnect with backoff; nothing else to do (see "Replays")
+          (the pull is the heartbeat; 404 = unpaired and 409 = other protocol both stop the loop; other errors back off 1, 2, 4… 15 s)
+  for command in reply.commands: run it on its own task through EnvServerDeviceLink.run(command)
+      - the same allow-list as the hub; terminal.* only when the user shared the terminal; env.configure never
+      - session.open / terminal.open only inside a folder this Mac shares with Remote
+      - turn/approval/checkpoint/close only for sessions opened through the link
+      - a session already followed may be re-opened (the hub's replay open carries cwd "/")
+      → its response goes to the outbox
+every env-server event arrives through one ordered stream (EnvServerHub relay sink → AsyncStream → link.record):
+  provider.updated, and events of sessions opened through the link (terminal output only when shared) → outbox
+outbox: flushed ~50 ms after the first item, in arrival order, ≤1000 items per POST …/host {kind:"push", responses, events}
 ```
 
-Rules:
-
-- **Order matters.** Push events and responses in the order the env server sent them. When the hub replays a session, it relies on the env server sending replayed events *before* the `session.open` response, and the env server does.
-- **Forward everything** the relay connection receives. That connection only gets events for the sessions the web opened through it, plus the global stream.
-- Back off (1, 2, 4… max 15 s) on network errors. A `409` on pull means the protocol does not match. Log it and stop until the app updates.
-- Never forward the launch token, BYOK keys or the backend authorization. They exist only between the Mac app and its env server.
+The relay uses the app's shared env-server connection (`EnvServerHub`), so the launch token, BYOK keys and the backend authorization never leave the Mac.
 
 ### Replays: why a backend restart loses nothing
 

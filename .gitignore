@@ -143,3 +143,6 @@ __pycache__/
 # Ephemeral server-rendered QA previews.
 /public/_review-*.html
 /public/_review*.css
+
+# Alevr Code env server bundle for the Mac app (npm run env-server:bundle:mac)
+native/macOS/JunoDesktop/Resources/env-server/alevr-env.mjs

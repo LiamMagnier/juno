@@ -12,17 +12,20 @@ import Security
 ///
 /// **Launch contract** (documented for the env lane in
 /// `docs/code-v2/ENV-SIDECAR.md`):
-/// - `node <entry> --host 127.0.0.1 --port <n>`, where `<entry>` is the bundled
-///   `Resources/env-server/main.mjs` or, in development, the repo's
-///   `runner/env-server/dist/main.js` (or `src/main.ts` through `tsx`).
+/// - `node <entry> --host 127.0.0.1 --port <n> --data-dir <dir> --parent-pid <app>`,
+///   where `<entry>` is the bundled `Resources/env-server/alevr-env.mjs`
+///   (`npm run env-server:bundle:mac`) or, in development, the repo's
+///   `runner/env-server/dist/alevr-env.mjs`, `dist/bin.js` (or `src/bin.ts`
+///   through `tsx`).
 /// - Environment: `ALEVR_ENV_TOKEN` (the bearer token, never on the command
 ///   line where `ps` shows it), `ALEVR_ENV_HOST`, `ALEVR_ENV_PORT`,
 ///   `ALEVR_ENV_DATA_DIR`, `ALEVR_CLIENT=mac`, plus a sanitised `PATH` that
 ///   finds the vendor CLIs. `HOME` is the user's own: vendor CLIs keep their
 ///   credentials in the login Keychain and their config under it.
-/// - Readiness: the server prints one line `ALEVR_ENV_READY {"port":n}` on
-///   stdout once it listens. Without it, the Mac treats a successful TCP
-///   connect to the port as ready.
+/// - Readiness: the server prints one JSON line on stdout once it listens,
+///   `{"alevrEnv":1,"port":n,…}` (runner/env-server/src/bin.ts; the older
+///   `ALEVR_ENV_READY {"port":n}` form is accepted too). Without it, the Mac
+///   treats a successful TCP connect to the port as ready.
 /// - Clients connect to `ws://127.0.0.1:<port>/` with
 ///   `Authorization: Bearer <token>`.
 public struct EnvServerLaunch: Equatable, Sendable {
@@ -53,9 +56,9 @@ public struct EnvServerEntry: Equatable, Sendable {
 
     /// Resolves the entry, first match wins:
     /// 1. `ALEVR_ENV_SERVER_ENTRY` (a path to a .js/.mjs/.ts file),
-    /// 2. the app bundle's `Resources/env-server/main.mjs` (or `dist/main.js`),
+    /// 2. the app bundle's `Resources/env-server/alevr-env.mjs`,
     /// 3. a repo checkout found by walking up from `searchRoots`
-    ///    (`runner/env-server/dist/main.js`, then `src/main.ts`).
+    ///    (`runner/env-server/dist/alevr-env.mjs`, `dist/bin.js`, then `src/bin.ts`).
     public static func resolve(
         environment: [String: String] = ProcessInfo.processInfo.environment,
         bundleResources: URL? = Bundle.main.resourceURL,
@@ -67,7 +70,7 @@ public struct EnvServerEntry: Equatable, Sendable {
             return EnvServerEntry(url: url, kind: url.pathExtension == "ts" ? .typescript : .javascript, packageRoot: packageRoot(of: url))
         }
         if let resources = bundleResources {
-            for relative in ["env-server/main.mjs", "env-server/dist/main.js", "env-server/main.js"] {
+            for relative in ["env-server/alevr-env.mjs", "env-server/main.mjs", "env-server/dist/bin.js"] {
                 let url = resources.appendingPathComponent(relative)
                 if fileExists(url.path) {
                     return EnvServerEntry(url: url, kind: .javascript, packageRoot: resources.appendingPathComponent("env-server"))
@@ -78,7 +81,8 @@ public struct EnvServerEntry: Equatable, Sendable {
             var directory = root.standardizedFileURL
             for _ in 0..<12 {
                 let package = directory.appendingPathComponent("runner/env-server")
-                for (relative, kind) in [("dist/main.js", Kind.javascript), ("dist/index.js", .javascript), ("src/main.ts", .typescript), ("src/index.ts", .typescript)] {
+                // The server's entry is bin (index is the library barrel and starts nothing).
+                for (relative, kind) in [("dist/alevr-env.mjs", Kind.javascript), ("dist/bin.js", .javascript), ("src/bin.ts", .typescript)] {
                     let url = package.appendingPathComponent(relative)
                     if fileExists(url.path) { return EnvServerEntry(url: url, kind: kind, packageRoot: package) }
                 }
@@ -198,12 +202,15 @@ public enum EnvServerLaunchPlanner {
     public static func plan(
         entry: EnvServerEntry, node: URL, port: Int, token: String, dataDirectory: URL,
         host: String = "127.0.0.1",
+        parentPID: Int32? = nil,
         base: [String: String] = ProcessInfo.processInfo.environment,
         path: String = ToolchainEnvironment.resolvedPATH()
     ) -> EnvServerLaunch {
         var arguments: [String] = []
         if entry.kind == .typescript { arguments += ["--import", "tsx"] }
-        arguments += [entry.url.path, "--host", host, "--port", String(port)]
+        arguments += [entry.url.path, "--host", host, "--port", String(port), "--data-dir", dataDirectory.path]
+        // The server exits when the app does, even if it is killed outright.
+        if let parentPID { arguments += ["--parent-pid", String(parentPID)] }
         return EnvServerLaunch(
             executable: node,
             arguments: arguments,
@@ -215,13 +222,24 @@ public enum EnvServerLaunchPlanner {
         )
     }
 
-    /// The port in a ready line, or nil when the line is not one.
+    /// The port in a ready line, or nil when the line is not one: the
+    /// server's handshake `{"alevrEnv":1,"port":n,…}`, or `ALEVR_ENV_READY {"port":n}`.
     public static func readyPort(in line: String) -> Int? {
         let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.hasPrefix(readyPrefix) else { return nil }
-        let json = trimmed.dropFirst(readyPrefix.count).trimmingCharacters(in: .whitespaces)
+        let json: Substring
+        let handshake: Bool
+        if trimmed.hasPrefix(readyPrefix) {
+            json = trimmed.dropFirst(readyPrefix.count).drop { $0 == " " }
+            handshake = false
+        } else if trimmed.hasPrefix("{") {
+            json = Substring(trimmed)
+            handshake = true
+        } else {
+            return nil
+        }
         guard let data = json.data(using: .utf8),
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              !handshake || (object["alevrEnv"] as? Int) == 1,
               let port = object["port"] as? Int, (1...65_535).contains(port)
         else { return nil }
         return port
@@ -342,7 +360,8 @@ public actor EnvServerSidecar {
             throw EnvServerSidecarError.launchFailed("no free port")
         }
         var plan = EnvServerLaunchPlanner.plan(
-            entry: entry, node: node, port: port, token: EnvServerLaunchPlanner.makeToken(), dataDirectory: dataDirectory
+            entry: entry, node: node, port: port, token: EnvServerLaunchPlanner.makeToken(), dataDirectory: dataDirectory,
+            parentPID: ProcessInfo.processInfo.processIdentifier
         )
 
         let process = Process()

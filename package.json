@@ -64,6 +64,7 @@
     "agent:protocol:check": "node scripts/generate-agent-protocol.mjs --check && tsx scripts/fold-agent-fixtures.ts --check",
     "code-v2:contracts": "node scripts/check-code-v2-contracts.mjs --write",
     "code-v2:contracts:check": "node scripts/check-code-v2-contracts.mjs",
+    "env-server:bundle:mac": "npm --prefix runner/env-server run bundle:mac && mkdir -p native/macOS/JunoDesktop/Resources/env-server && cp runner/env-server/dist/alevr-env.mjs native/macOS/JunoDesktop/Resources/env-server/alevr-env.mjs",
     "code:task-wire": "tsx scripts/generate-code-task-wire-fixtures.ts",
     "code:task-wire:check": "tsx scripts/generate-code-task-wire-fixtures.ts --check",
     "shell:contract:generate": "node scripts/generate-shell-contract.mjs",

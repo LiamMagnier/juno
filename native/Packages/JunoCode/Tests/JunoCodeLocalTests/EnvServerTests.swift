@@ -23,14 +23,14 @@ final class EnvServerTests: XCTestCase {
     }
 
     func testLaunchPlanPassesOnlyIdentityAndToolchain() {
-        let entry = EnvServerEntry(url: URL(fileURLWithPath: "/repo/runner/env-server/src/main.ts"), kind: .typescript, packageRoot: URL(fileURLWithPath: "/repo/runner/env-server"))
+        let entry = EnvServerEntry(url: URL(fileURLWithPath: "/repo/runner/env-server/src/bin.ts"), kind: .typescript, packageRoot: URL(fileURLWithPath: "/repo/runner/env-server"))
         let plan = EnvServerLaunchPlanner.plan(
             entry: entry, node: URL(fileURLWithPath: "/opt/node/bin/node"), port: 4567, token: "tok",
             dataDirectory: URL(fileURLWithPath: "/data"),
             base: ["HOME": "/Users/maya", "AWS_SECRET_ACCESS_KEY": "nope", "OPENAI_API_KEY": "nope"],
             path: "/usr/bin:/bin"
         )
-        XCTAssertEqual(plan.arguments, ["--import", "tsx", "/repo/runner/env-server/src/main.ts", "--host", "127.0.0.1", "--port", "4567"])
+        XCTAssertEqual(plan.arguments, ["--import", "tsx", "/repo/runner/env-server/src/bin.ts", "--host", "127.0.0.1", "--port", "4567", "--data-dir", "/data"])
         XCTAssertEqual(plan.environment["ALEVR_ENV_TOKEN"], "tok")
         XCTAssertEqual(plan.environment["HOME"], "/Users/maya")
         XCTAssertEqual(plan.environment["PATH"], "/usr/bin:/bin")
@@ -43,8 +43,9 @@ final class EnvServerTests: XCTestCase {
     func testEntryResolutionPrefersOverrideThenBundleThenCheckout() {
         let files: Set<String> = [
             "/override/main.mjs",
-            "/App.app/Contents/Resources/env-server/main.mjs",
-            "/repo/runner/env-server/src/main.ts",
+            "/App.app/Contents/Resources/env-server/alevr-env.mjs",
+            "/repo/runner/env-server/src/bin.ts",
+            "/repo/runner/env-server/src/index.ts",
         ]
         let exists: (String) -> Bool = { files.contains($0) }
         let override = EnvServerEntry.resolve(
@@ -57,12 +58,12 @@ final class EnvServerTests: XCTestCase {
             environment: [:], bundleResources: URL(fileURLWithPath: "/App.app/Contents/Resources"),
             searchRoots: [], fileExists: exists
         )
-        XCTAssertEqual(bundled?.url.path, "/App.app/Contents/Resources/env-server/main.mjs")
+        XCTAssertEqual(bundled?.url.path, "/App.app/Contents/Resources/env-server/alevr-env.mjs")
         let checkout = EnvServerEntry.resolve(
             environment: [:], bundleResources: nil,
             searchRoots: [URL(fileURLWithPath: "/repo/native/macOS/build/Debug")], fileExists: exists
         )
-        XCTAssertEqual(checkout?.url.path, "/repo/runner/env-server/src/main.ts")
+        XCTAssertEqual(checkout?.url.path, "/repo/runner/env-server/src/bin.ts", "bin starts the server; index is only the library")
         XCTAssertEqual(checkout?.kind, .typescript)
         XCTAssertNil(EnvServerEntry.resolve(environment: [:], bundleResources: nil, searchRoots: [], fileExists: { _ in false }))
     }
@@ -71,6 +72,9 @@ final class EnvServerTests: XCTestCase {
         XCTAssertEqual(EnvServerLaunchPlanner.readyPort(in: "ALEVR_ENV_READY {\"port\":51234}"), 51_234)
         XCTAssertNil(EnvServerLaunchPlanner.readyPort(in: "listening on 51234"))
         XCTAssertNil(EnvServerLaunchPlanner.readyPort(in: "ALEVR_ENV_READY {\"port\":0}"))
+        // The handshake line runner/env-server/src/bin.ts prints.
+        XCTAssertEqual(EnvServerLaunchPlanner.readyPort(in: #"{"alevrEnv":1,"port":53001,"token":"t","pid":42}"#), 53_001)
+        XCTAssertNil(EnvServerLaunchPlanner.readyPort(in: #"{"port":53001}"#), "only the env server's own handshake")
         XCTAssertEqual(EnvServerLaunchPlanner.restartDelay(attempt: 1), 1)
         XCTAssertEqual(EnvServerLaunchPlanner.restartDelay(attempt: 5), 16)
         XCTAssertNil(EnvServerLaunchPlanner.restartDelay(attempt: 6))

@@ -3,6 +3,8 @@
  * alevr-env — the Alevr Code local environment server.
  *
  *   alevr-env [--port N] [--data-dir DIR] [--allow-origin URL]… [--parent-pid PID] [--log debug|info|warn]
+ *       (the Mac app also passes --host 127.0.0.1, which is the only host it binds;
+ *       ALEVR_ENV_PORT / ALEVR_ENV_DATA_DIR / ALEVR_ENV_TOKEN stand in for the flags)
  *       Starts the server and prints ONE JSON line on stdout once it listens:
  *       {"alevrEnv":1,"port":…,"token":"…","pid":…,"protocol":{…}}
  *       The Mac app reads that line (sidecar handshake); everything else goes
@@ -77,7 +79,7 @@ async function main(): Promise<void> {
   }
   const level = (arg("--log", argv) ?? process.env.ALEVR_ENV_LOG ?? "info") as "debug" | "info" | "warn" | "error";
   const logger = stderrLogger(level);
-  const dataDir = arg("--data-dir", argv) ?? defaultDataDir();
+  const dataDir = arg("--data-dir", argv) ?? process.env.ALEVR_ENV_DATA_DIR ?? defaultDataDir();
   const self = process.argv[1] ? path.resolve(process.argv[1]) : undefined;
   const server = await startEnvServer({
     dataDir,
