@@ -129,17 +129,25 @@ See the result object of this run for exact commands; summary:
 - **Hub storage**: the device-link hub is in one backend process's memory
   (fine for the current single pm2 fork); a shared store is needed before
   running several backend processes.
-- **Web**: install `@xterm/xterm` for the Terminal tab; apply a rejected hunk on
-  the Mac from the live route; "resume at reset" needs a scheduling API; the
-  Code sidebar is ready but the app shell still renders its own.
+- **Web** (lane `code-v3/webfn`, done against the runtime lane's contract; see
+  `src/lib/code-v2/runtime-lane.ts`, a typed stub to fold into contracts.ts
+  when `code-v3/runtime` merges): xterm.js Terminal over the device link (the
+  Mac's new "Share this Mac's terminal" switch gates it), Reject applies the
+  reverse patch on the Mac (`checkpoint.applyPatch`), Resume at reset
+  schedules on the Mac (`turn.schedule`), the app shell wears the Code v2
+  sidebar on every Code route, Antigravity is on in Connections with a
+  managed install and a Google sign-in (loopback on the Mac, paste-the-address
+  fallback), and OpenRouter is a BYOK-only lab (key test, model list, the
+  /api/agent BYOK path). The Mac must add the five runtime-lane commands to
+  `EnvServerDeviceLink.remoteCommands` once the Swift contract has them.
 - **Mac**: Terminal/Files/Preview dock tabs for env-server threads;
   connected-agent approvals use NSAlert until they get a Studio card;
   Orchestrate selections on other providers (subscriptions, BYOK) inherit the
   parent's model in the Swift engine (no resolver yet); the overlay window has
   no snapshot test.
 - **Release**: re-check every item in PROVIDERS-LEGAL.md; Codex ChatGPT token
-  sharing stays disabled; Antigravity stays hidden. OpenRouter BYOK is not in
-  the catalogue.
+  sharing stays disabled. Antigravity is on (owner, 2026-10-09) and OpenRouter
+  BYOK is in; both still need their terms checked before a public release.
 - Owner questions in DESIGN.md §11 (coral value, auto-deleting losing Best-of-N
   worktrees, Antigravity visibility).
 

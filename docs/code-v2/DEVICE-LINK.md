@@ -37,7 +37,9 @@ Both routes authenticate as the signed-in Alevr user (`requireUser`: the web ses
 
 ### What the web may NOT relay
 
-`terminal.*`, because it is a shell on the user's Mac, and `env.configure`, because it carries secrets and the Mac supplies its own. The hub refuses them with `unsupported`. The allow-list is `LINK_RELAYED_COMMANDS`: session open/list/close, turn start/steer/queue/interrupt, approval.respond, checkpoint diff/rollback, provider list/probe/setup. The **Mac must enforce the same list** (defence in depth). `provider.setup` only returns the command to type, and the web shows it with "run this on your Mac".
+`env.configure`, because it carries secrets and the Mac supplies its own: the hub always refuses it with `unsupported`. `terminal.*` (a shell on the user's Mac) is relayed **only while the Mac's latest pull says `terminal: true`**, which it does only when the user turned on **Share this Mac's terminal** under Remote hosting (off by default; `LINK_TERMINAL_COMMANDS`). The allow-list is `LINK_RELAYED_COMMANDS`: session open/list/close, turn start/steer/queue/interrupt, approval.respond, checkpoint diff/rollback, provider list/probe/setup, plus the runtime lane's `checkpoint.applyPatch` (reject a hunk), `turn.schedule` / `turn.unschedule` (resume at reset), `provider.install` and `provider.auth` (Antigravity). The **Mac must enforce the same list** (defence in depth). `provider.setup` only returns the command to type, and the web shows it with "run this on your Mac".
+
+Terminal output and `provider.updated` ride the global stream; the browser's `DeviceLinkTransport.followGlobal()` keeps polling it with no session open (a sign-in terminal from Connections has none). The Terminal tab is xterm.js: keystrokes are batched per frame into `terminal.write`, the fit addon sends `terminal.resize`.
 
 ## Mac side (implemented)
 
@@ -47,7 +49,7 @@ The loop, as built:
 
 ```text
 loop:
-  reply = POST /api/code/v2/link/<deviceId>/host {kind:"pull", protocol:"alevr-code-v2", appVersion, waitMs:25000}
+  reply = POST /api/code/v2/link/<deviceId>/host {kind:"pull", protocol:"alevr-code-v2", appVersion, waitMs:25000, terminal}
           (the pull is the heartbeat; 404 = unpaired and 409 = other protocol both stop the loop; other errors back off 1, 2, 4… 15 s)
   for command in reply.commands: run it on its own task through EnvServerDeviceLink.run(command)
       - the same allow-list as the hub; terminal.* only when the user shared the terminal; env.configure never
