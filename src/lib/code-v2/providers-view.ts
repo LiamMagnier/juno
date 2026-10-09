@@ -18,8 +18,9 @@ export const ACP_RUNTIMES: Record<string, { name: string; lab: Provider | null; 
   grok: { name: "Grok", lab: "xai" },
   dsh: { name: "DeepSeek Harness", lab: "deepseek" },
   opencode: { name: "OpenCode", lab: null },
-  "antigravity-acp": { name: "Antigravity", lab: "google", flag: "providers.antigravity" },
-  antigravity: { name: "Antigravity", lab: "google", flag: "providers.antigravity" },
+  // On since 2026-10-09 (owner: "enable antigravity"); PROVIDERS-LEGAL.md still lists the terms to re-check before release.
+  "antigravity-acp": { name: "Antigravity", lab: "google" },
+  antigravity: { name: "Antigravity", lab: "google" },
 };
 
 const BYOK_NAMES: Record<string, string> = {
@@ -43,7 +44,7 @@ export interface FeatureFlags {
   [flag: string]: boolean | undefined;
 }
 
-/** Whether an instance appears at all (Antigravity stays absent until its legal check clears). */
+/** Whether an instance appears at all (a runtime with a `flag` stays absent until that flag is on). */
 export function isInstanceVisible(instance: ProviderInstance, flags: FeatureFlags = {}): boolean {
   if (instance.kind !== "acp") return true;
   const key = acpRuntimeKey(instance);

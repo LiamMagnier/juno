@@ -105,11 +105,12 @@ test("provider names, marks and rail order follow the owner rules", () => {
   assert.equal(displayName(instances[1]), "Grok");
   assert.equal(displayName(instances[0]), "Your Anthropic key");
   assert.deepEqual(instanceMark(instances[6]), { type: "lab", provider: "deepseek" });
-  assert.equal(isInstanceVisible(instances[2]), false, "Antigravity stays absent behind its flag");
-  assert.equal(isInstanceVisible(instances[2], { "providers.antigravity": true }), true);
+  assert.equal(isInstanceVisible(instances[2]), true, "Antigravity is on (owner, 2026-10-09)");
+  assert.equal(displayName(instances[2]), "Antigravity");
+  assert.deepEqual(instanceMark(instances[2]), { type: "lab", provider: "google" });
   const rail = railEntries(instances, {}, NOW);
-  assert.deepEqual(rail.map((e) => e.instance.id), ["alevr", "claude-agent:default", "acp:grok", "codex:default", "byok:anthropic"]);
-  assert.deepEqual(rail.map((e) => e.dim), [false, false, true, true, false]);
+  assert.deepEqual(rail.map((e) => e.instance.id), ["alevr", "acp:antigravity", "claude-agent:default", "acp:grok", "codex:default", "byok:anthropic"]);
+  assert.deepEqual(rail.map((e) => e.dim), [false, false, false, true, true, false]);
   assert.equal(cycleInstance(rail, "byok:anthropic", 1), "alevr");
   assert.equal(statusSentence(instances[3], NOW), "Runs your own claude on this Mac. Max plan, 5-hour window 38% used, resets 16:40.");
   assert.equal(connectionSentence(instances[3]), "Your own claude CLI, version 3.4.1. Signed in as maya@okafor.studio, Max plan.");

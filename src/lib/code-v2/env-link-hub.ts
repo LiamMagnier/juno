@@ -29,9 +29,10 @@
  * would need a shared store behind the same `EnvLinkHub` surface.
  *
  * Security: the relay is a remote control for the user's Mac, so it carries a
- * strict allow-list. Terminals (a shell) and env.configure (secrets) are never
- * relayed; the Mac also refuses them on its side and only serves the relay
- * when the user turned "Use this Mac from Alevr on the web" on.
+ * strict allow-list. env.configure (secrets) is never relayed; terminals (a
+ * shell) only while the Mac reports that the user shared its terminal. The
+ * Mac enforces both again on its side and only serves the relay when the user
+ * turned Remote hosting on.
  *
  * No Next.js imports: the routes are thin wrappers and this is unit-tested.
  */
@@ -42,6 +43,7 @@ import {
   type ServerEventEnvelope,
   type ServerResponse,
 } from "./contracts";
+import { RUNTIME_LANE_COMMAND_TYPES } from "./runtime-lane";
 
 /** Commands the hosted web may send to a Mac. Everything else is refused at the hub. */
 export const LINK_RELAYED_COMMANDS: ReadonlySet<ClientCommandType> = new Set<ClientCommandType>([
@@ -58,6 +60,8 @@ export const LINK_RELAYED_COMMANDS: ReadonlySet<ClientCommandType> = new Set<Cli
   "provider.list",
   "provider.probe",
   "provider.setup",
+  // runtime lane: reject / re-apply a hunk, resume at reset, Antigravity install and sign-in.
+  ...RUNTIME_LANE_COMMAND_TYPES,
 ]);
 
 /**

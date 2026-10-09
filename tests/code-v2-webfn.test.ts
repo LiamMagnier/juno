@@ -11,6 +11,18 @@ import { appendTerminal, cssColorFromToken, terminalDelta } from "@/lib/code-v2/
 import { DeviceLinkTransport, type FetchLike } from "@/lib/code-v2/env-client";
 import { publishThreadState, shellThreads, subscribeThreadStates, threadStateFromRun, threadStatesSnapshot } from "@/lib/code-v2/shell-threads";
 import { threadSections } from "@/lib/code-v2/thread-sections";
+import { hunkPatch, parseUnifiedDiff } from "@/lib/code-v2/diff";
+import { checkPastedRedirect, isManaged, managedStep, safeAuthorizationUrl } from "@/lib/code-v2/managed-runtime";
+import { managedCall, runtimeRequest } from "@/lib/code-v2/runtime-lane";
+import { DeviceLink } from "@/lib/code-v2/env-link-hub";
+import type { ClientCommand, ProviderInstance } from "@/lib/code-v2/contracts";
+import * as React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { ConnectionsPanel } from "@/components/code/v2/connections";
+import { DEVICE, INSTANCES } from "../src/app/dev/code-v2/fixtures";
+
+// Some shared brand components use the classic JSX runtime (React in scope); tsx does not inject it.
+(globalThis as unknown as { React: typeof React }).React = React;
 
 test("terminal stream: appends, trims the front and counts what it dropped", () => {
   let buf = { output: "", offset: 0 };
@@ -102,4 +114,113 @@ test("shell threads: run states map to row states; the live store notifies only 
   assert.equal(calls, 2);
   assert.equal(snap.get("x")?.state, "running");
   assert.equal(threadStatesSnapshot().has("x"), false);
+});
+
+// ── Hunk reject on the Mac ──────────────────────────────────────────────────
+
+const TWO_HUNKS = `diff --git a/src/a.ts b/src/a.ts
+--- a/src/a.ts
++++ b/src/a.ts
+@@ -1,3 +1,3 @@
+ one
+-two
++TWO
+ three
+@@ -10,2 +10,3 @@ function f()
+ ten
++ten and a half
+ eleven
+`;
+
+test("hunk patch: one hunk's forward patch, which the Mac applies in reverse to reject it", () => {
+  const [file] = parseUnifiedDiff(TWO_HUNKS);
+  const second = file.hunks[1].id;
+  const patch = hunkPatch(file, [second]);
+  assert.equal(
+    patch,
+    ["diff --git a/src/a.ts b/src/a.ts", "--- a/src/a.ts", "+++ b/src/a.ts", "@@ -10,2 +10,3 @@ function f()", " ten", "+ten and a half", " eleven", ""].join("\n"),
+  );
+  assert.equal(hunkPatch(file, ["nope"]), "");
+  const [added] = parseUnifiedDiff("--- /dev/null\n+++ b/new.md\n@@ -0,0 +1 @@\n+hello\n");
+  const addPatch = hunkPatch({ ...added, change: "add" }, [added.hunks[0].id]);
+  assert.match(addPatch, /new file mode 100644\n--- \/dev\/null\n\+\+\+ b\/new\.md/);
+});
+
+test("runtime lane commands are relayed by the hub and reach the Mac as typed", async () => {
+  const link = new DeviceLink();
+  await link.pull(0);
+  const client = {
+    request: (type: string, params: unknown) => link.rpc({ id: "c1", type, params } as unknown as ClientCommand).then((r) => r.responses?.[0]),
+  };
+  const pending = runtimeRequest(client as never, "checkpoint.applyPatch", { sessionId: "s1", patch: "x", reverse: true });
+  const { commands } = await link.pull(0);
+  assert.equal(commands[0].type, "checkpoint.applyPatch");
+  assert.deepEqual(commands[0].params, { sessionId: "s1", patch: "x", reverse: true });
+  link.push({ responses: [{ type: "response", id: commands[0].id, ok: true, result: { applied: true, files: ["src/a.ts"] } }] });
+  assert.equal(((await pending) as { ok: boolean }).ok, true);
+  for (const type of ["turn.schedule", "turn.unschedule", "provider.install", "provider.auth"]) {
+    const r = link.rpc({ id: "c2", type, params: {} } as unknown as ClientCommand);
+    const { commands: next } = await link.pull(0);
+    assert.equal(next[0].type, type, type);
+    link.push({ responses: [{ type: "response", id: next[0].id, ok: true, result: {} }] });
+    await r;
+  }
+});
+
+test("managed calls pick the command and drop empty fields", async () => {
+  const calls: [string, unknown][] = [];
+  const client = { request: async (type: string, params: unknown) => (calls.push([type, params]), type === "provider.auth" ? { auth: { phase: "waiting" } } : { install: { phase: "downloading" } }) };
+  assert.deepEqual(await managedCall(client as never, "acp:antigravity", { type: "auth", action: "start" }), { auth: { phase: "waiting" } });
+  await managedCall(client as never, "acp:antigravity", { type: "auth", action: "complete", flowId: "f1", callbackUrl: "http://localhost:51121/cb?code=x" });
+  assert.deepEqual(await managedCall(client as never, "acp:antigravity", { type: "install", action: "start" }), { install: { phase: "downloading" } });
+  assert.deepEqual(calls, [
+    ["provider.auth", { instanceId: "acp:antigravity", action: "start" }],
+    ["provider.auth", { instanceId: "acp:antigravity", action: "complete", flowId: "f1", callbackUrl: "http://localhost:51121/cb?code=x" }],
+    ["provider.install", { instanceId: "acp:antigravity", action: "start" }],
+  ]);
+});
+
+// ── Antigravity: managed install and sign-in ────────────────────────────────
+
+const AG: ProviderInstance = { id: "acp:antigravity", kind: "acp", label: "Antigravity", status: "signed-out", acpCommand: ["antigravity-acp"] };
+
+test("managed runtime: install progress, then a Google sign-in that waits on the loopback", () => {
+  assert.equal(isManaged(AG), false, "an older env server: the terminal setup applies");
+  const notInstalled = { ...AG, status: "not-installed", install: { phase: "idle", version: "1.2.0" } } as ProviderInstance;
+  assert.equal(isManaged(notInstalled), true);
+  assert.deepEqual(managedStep(notInstalled), { kind: "install", busy: false, pct: undefined, sentence: "Not installed. Alevr downloads the vendor's own release (1.2.0) and checks it before it runs.", operationId: undefined });
+  const downloading = managedStep(notInstalled, { install: { phase: "downloading", operationId: "op1", downloadedBytes: 25_000_000, totalBytes: 100_000_000 } });
+  assert.equal(downloading?.kind, "install");
+  assert.equal(downloading?.busy, true);
+  assert.equal(downloading?.kind === "install" && downloading.pct, 25);
+  const waiting = managedStep({ ...AG, auth: { phase: "waiting", flowId: "f1", authorizationUrl: "https://accounts.google.com/o?x=1", method: "Google account" } } as ProviderInstance);
+  assert.equal(waiting?.kind, "sign-in");
+  assert.equal(waiting?.kind === "sign-in" && waiting.waiting, true);
+  assert.equal(waiting?.sentence, "Sign in with your Google account to finish.");
+  const ready = managedStep({ ...AG, status: "ready", auth: { phase: "idle" } } as ProviderInstance);
+  assert.equal(ready, null, "signed in: the row is an ordinary subscription again");
+});
+
+test("managed runtime: only https sign-in pages open, and only loopback redirects with an answer are sent to the Mac", () => {
+  assert.equal(safeAuthorizationUrl("https://accounts.google.com/o?x=1"), "https://accounts.google.com/o?x=1");
+  assert.equal(safeAuthorizationUrl("javascript:alert(1)"), null);
+  assert.equal(safeAuthorizationUrl("http://accounts.google.com"), null);
+  assert.deepEqual(checkPastedRedirect(" http://localhost:51121/oauth-callback?code=4/abc&state=s "), { ok: true, url: "http://localhost:51121/oauth-callback?code=4/abc&state=s" });
+  assert.equal(checkPastedRedirect("http://127.0.0.1:8080/cb?error=access_denied").ok, true);
+  assert.equal(checkPastedRedirect("https://evil.example/cb?code=1").ok, false);
+  assert.equal(checkPastedRedirect("http://localhost/cb?code=1").ok, false, "a loopback redirect always has a port");
+  assert.equal(checkPastedRedirect("http://localhost:5000/cb").ok, false);
+  assert.equal(checkPastedRedirect("not a url").ok, false);
+});
+
+test("Connections: Antigravity mid sign-in offers the Google page and the paste-back path; an older Mac says to update", () => {
+  const html = renderToStaticMarkup(React.createElement(ConnectionsPanel, { instances: INSTANCES, device: DEVICE, onManaged: async () => ({}) }));
+  assert.match(html, /Antigravity/);
+  assert.match(html, /Sign in with your Google account to finish\./);
+  assert.match(html, /href="https:\/\/accounts\.google\.com\/o\/oauth2\/v2\/auth\?client_id=example"[^>]*target="_blank" rel="noopener noreferrer"/);
+  assert.match(html, /Not on your Mac\?/);
+  assert.match(html, />Cancel</);
+  const older = renderToStaticMarkup(React.createElement(ConnectionsPanel, { instances: INSTANCES.filter((i) => i.id !== "acp:antigravity"), device: DEVICE }));
+  assert.match(older, /Antigravity<\/div><div class="ds"[^>]*>Your Mac does not offer this yet\./);
+  assert.doesNotMatch(older + html, /\u2014/, "no em-dashes in UI copy");
 });

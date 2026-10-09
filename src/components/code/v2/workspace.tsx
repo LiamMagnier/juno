@@ -14,7 +14,7 @@ import { COMMAND_TITLES, DEFAULT_KEYBINDINGS, bindingFor, resolveKeybinding, typ
 import { escPress } from "@/lib/code-v2/composer";
 import { DETAIL_LEVEL_LABELS, nextDetailLevel, type DetailLevel } from "@/lib/code-v2/turns";
 import { Composer, pendingRequests, type ComposerHandle, type PopoverName } from "./composer";
-import { ConnectionsPanel } from "./connections";
+import { ConnectionsPanel, type ConnectionsProps } from "./connections";
 import { Dock, visibleTabs, type DockFocus } from "./dock";
 import { cycleEffort, cycleRuntimeMode, findInstance } from "./model-info";
 import { Glyph, Kbd, useIsMac } from "./primitives";
@@ -54,6 +54,8 @@ export interface CodeWorkspaceProps {
   /** Connections sheet hooks (probe / setup through the env server). */
   onProbe?: (instanceId: string) => Promise<ProviderInstance | void>;
   onSetup?: (instance: ProviderInstance, action: "install" | "login") => Promise<void | string> | void | string;
+  /** Managed install / sign-in on the Mac (Antigravity); see ConnectionsProps.onManaged. */
+  onManaged?: ConnectionsProps["onManaged"];
   /** Open the Connections sheet on first run (no connected provider and never dismissed). */
   firstRun?: boolean;
   resolveScreenshot?: (ref: string) => string | null;
@@ -148,7 +150,7 @@ function Shortcuts({ onClose }: { onClose: () => void }) {
   );
 }
 
-export function CodeWorkspace({ model, ui = {}, sidebar = true, userName, byok, onProbe, onSetup, firstRun, resolveScreenshot, className }: CodeWorkspaceProps) {
+export function CodeWorkspace({ model, ui = {}, sidebar = true, userName, byok, onProbe, onSetup, onManaged, firstRun, resolveScreenshot, className }: CodeWorkspaceProps) {
   const mac = useIsMac();
   const [dock, dispatch] = React.useReducer(dockReducer, undefined, () => {
     const s = initialDockState(readStored(WIDTH_KEY, Number) ?? undefined);
@@ -500,6 +502,7 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, userName, byok, 
           byok={byok}
           keys={model.byokKeys}
           onProbe={onProbe}
+          onManaged={onManaged}
           onSetup={async (instance, action) => {
             await onSetup?.(instance, action);
             setConnections(false);

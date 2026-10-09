@@ -8,11 +8,10 @@
  * device link); the fit addon keeps cols/rows in step with the pane and
  * reports them through `onResize` (`terminal.resize`).
  *
- * xterm is loaded on mount, so the module stays out of the server bundle and
- * the gallery's first paint.
+ * xterm and its stylesheet are loaded on mount, so they stay out of the
+ * server bundle, the gallery's first paint and the unit tests' renders.
  */
 import * as React from "react";
-import "@xterm/xterm/css/xterm.css";
 import type { Terminal } from "@xterm/xterm";
 import type { FitAddon } from "@xterm/addon-fit";
 import { cssColorFromToken, terminalDelta, type TerminalBuffer } from "@/lib/code-v2/terminal-stream";
@@ -62,7 +61,7 @@ export function XtermView({ terminalId, buffer, readOnly, label, onInput, onResi
     let observer: ResizeObserver | null = null;
     const offs: { dispose(): void }[] = [];
     void (async () => {
-      const [{ Terminal }, { FitAddon }] = await Promise.all([import("@xterm/xterm"), import("@xterm/addon-fit")]);
+      const [{ Terminal }, { FitAddon }] = await Promise.all([import("@xterm/xterm"), import("@xterm/addon-fit"), import("@xterm/xterm/css/xterm.css")]);
       const el = host.current;
       if (disposed || !el) return;
       const mono = getComputedStyle(document.body).getPropertyValue("--font-mono").trim();

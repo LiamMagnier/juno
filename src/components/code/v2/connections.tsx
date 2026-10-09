@@ -16,6 +16,7 @@ import { BYOK_PROVIDER_VALUES, type ByokProvider, type ProviderInstance } from "
 import { BYOK_LABELS, ByokError, looksLikeKey, maskKey, type ByokClient, type ByokKeyRecord } from "@/lib/code-v2/byok-client";
 import {
   ACP_RUNTIMES,
+  acpRuntimeKey,
   CONNECTION_ACTION_LABELS,
   connectionAction,
   connectionSentence,
@@ -26,6 +27,8 @@ import {
   type FeatureFlags,
 } from "@/lib/code-v2/providers-view";
 import { formatReset } from "@/lib/code-v2/tier-view";
+import { checkPastedRedirect, managedStep, safeAuthorizationUrl, type ManagedStep } from "@/lib/code-v2/managed-runtime";
+import type { ProviderAuthAction, ProviderAuthState, ProviderInstallAction, ProviderInstallState } from "@/lib/code-v2/runtime-lane";
 import { Glyph, InstanceMark, Spinner } from "./primitives";
 import type { DeviceInfo } from "./types";
 import { cn } from "@/lib/utils";
@@ -45,6 +48,12 @@ export interface ConnectionsProps {
   /** Resolves with a sentence to show under the row ("typed into a terminal on …"). */
   onSetup?: (instance: ProviderInstance, action: "install" | "login") => Promise<void | string> | void | string;
   onDisconnect?: (instanceId: string) => void;
+  /**
+   * Runtimes the env server installs and signs in itself (Antigravity):
+   * `provider.install` / `provider.auth` on the Mac. Resolves with the state
+   * the Mac returned; progress then arrives as provider updates.
+   */
+  onManaged?: (instanceId: string, op: ManagedOp) => Promise<{ install?: ProviderInstallState; auth?: ProviderAuthState }>;
   /** First-run sheet: a close button and no outer page padding. */
   sheet?: boolean;
   /** Inside Settings: no page title or padding (the pane has its own). */
@@ -54,8 +63,12 @@ export interface ConnectionsProps {
   onClose?: () => void;
 }
 
-/** What a held runtime's row says instead of a status or an action. */
-const HELD_SENTENCE = "Not available yet. It turns on once Google confirms other apps may run it with your sign-in.";
+export type ManagedOp =
+  | { type: "install"; action: ProviderInstallAction; operationId?: string }
+  | { type: "auth"; action: ProviderAuthAction; flowId?: string; callbackUrl?: string };
+
+/** What a row says when the Mac's Alevr does not offer that runtime yet (an older env server). */
+const UNOFFERED_SENTENCE = "Your Mac does not offer this yet. Update Alevr on your Mac to add it.";
 
 /** Subscriptions shown before a device reports anything (all rows disabled). */
 const PLACEHOLDER_SUBSCRIPTIONS: ProviderInstance[] = [
@@ -65,7 +78,7 @@ const PLACEHOLDER_SUBSCRIPTIONS: ProviderInstance[] = [
   { id: "acp:grok", kind: "acp", label: "Grok", status: "unknown", acpCommand: ["grok"] },
   { id: "acp:dsh", kind: "acp", label: "DeepSeek Harness", status: "unknown", acpCommand: ["dsh"] },
   { id: "acp:opencode", kind: "acp", label: "OpenCode", status: "unknown", acpCommand: ["opencode"] },
-  { id: "acp:antigravity", kind: "acp", label: "Antigravity", status: "unknown", acpCommand: ["antigravity"] },
+  { id: "acp:antigravity", kind: "acp", label: "Antigravity", status: "unknown", acpCommand: ["antigravity-acp"] },
 ];
 
 function ago(iso?: string): string {
@@ -98,16 +111,35 @@ function SubscriptionRow({
   onProbe,
   onSetup,
   onDisconnect,
+  onManaged,
 }: {
   instance: ProviderInstance;
   disabled: boolean;
-  /** Listed but not offered yet (a runtime waiting on its vendor-terms check). */
+  /** Listed but not offered by the Mac (its Alevr predates the runtime). */
   held?: boolean;
   onProbe?: ConnectionsProps["onProbe"];
   onSetup?: ConnectionsProps["onSetup"];
   onDisconnect?: ConnectionsProps["onDisconnect"];
+  onManaged?: ConnectionsProps["onManaged"];
 }) {
-  const [busy, setBusy] = React.useState<null | "probe" | "setup">(null);
+  const [busy, setBusy] = React.useState<null | "probe" | "setup" | "managed">(null);
+  const [seen, setSeen] = React.useState<{ install?: ProviderInstallState; auth?: ProviderAuthState }>({});
+  // A status change (installed, signed in) ends whatever this row started.
+  React.useEffect(() => setSeen({}), [instance.status]);
+  const step = !disabled && !held && onManaged ? managedStep(instance, seen) : null;
+  const managed = async (op: ManagedOp) => {
+    if (!onManaged) return;
+    setBusy("managed");
+    setError(null);
+    try {
+      const r = await onManaged(instance.id, op);
+      setSeen((s) => ({ ...s, ...r }));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Your Mac did not answer.");
+    } finally {
+      setBusy(null);
+    }
+  };
   const [menu, setMenu] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [setupLine, setSetupLine] = React.useState<string | null>(null);
@@ -139,10 +171,12 @@ function SubscriptionRow({
     }
   };
   const sentence = held
-    ? HELD_SENTENCE
+    ? UNOFFERED_SENTENCE
     : disabled
       ? "Connect your Mac to check this."
-      : connectionSentence(instance);
+      : step
+        ? step.sentence
+        : connectionSentence(instance);
   return (
     <div className="cv2-li" aria-disabled={disabled || undefined}>
       <span className="cv2-tile">
@@ -162,12 +196,44 @@ function SubscriptionRow({
             ))}
           </div>
         ) : null}
+        {step?.kind === "install" && step.busy && step.pct !== undefined && (
+          <div className="ds2">
+            <Meter label="Downloaded" pct={step.pct} />
+          </div>
+        )}
+        {step?.kind === "sign-in" && step.waiting && (
+          <SignInFinish step={step} busy={busy === "managed"} onComplete={(url) => managed({ type: "auth", action: "complete", flowId: step.flowId, callbackUrl: url })} />
+        )}
         {error && <div className="ds cv2-del">{error}</div>}
         {setupLine && <div className="ds">{setupLine}</div>}
         {!disabled && !held && instance.checkedAt && <div className="ds" style={{ fontSize: 12 }}>Checked {ago(instance.checkedAt)}.</div>}
       </div>
       <div style={{ position: "relative" }}>
-        {held ? null : disabled ? (
+        {step ? (
+          step.busy ? (
+            <button
+              type="button"
+              className="cv2-btn"
+              disabled={busy !== null}
+              onClick={() =>
+                managed(step.kind === "install" ? { type: "install", action: "cancel", operationId: step.operationId } : { type: "auth", action: "cancel", flowId: step.flowId })
+              }
+            >
+              {busy === "managed" ? <Spinner size={14} /> : null}
+              Cancel
+            </button>
+          ) : (
+            <button
+              type="button"
+              className={cn("cv2-btn", expired && "ink")}
+              disabled={busy !== null}
+              onClick={() => managed(step.kind === "install" ? { type: "install", action: "start" } : { type: "auth", action: "start" })}
+            >
+              {busy === "managed" ? <Spinner size={14} /> : <Glyph name={step.kind === "install" ? "download" : "person-add"} size={14} />}
+              {step.kind === "install" ? "Install" : expired ? "Sign in again" : "Sign in"}
+            </button>
+          )
+        ) : held ? null : disabled ? (
           <button type="button" className="cv2-btn" disabled>
             {CONNECTION_ACTION_LABELS[action === "manage" ? "re-check" : action]}
           </button>
@@ -204,6 +270,65 @@ function SubscriptionRow({
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * While a managed sign-in waits: the vendor's page opens in a new tab. On the
+ * Mac itself the browser lands back on the Mac's loopback and the row turns
+ * signed in by itself. Anywhere else, the reader pastes the address the
+ * browser ended on and the Mac finishes it.
+ */
+function SignInFinish({ step, busy, onComplete }: { step: Extract<ManagedStep, { kind: "sign-in" }>; busy: boolean; onComplete: (url: string) => void }) {
+  const [pasting, setPasting] = React.useState(false);
+  const [value, setValue] = React.useState("");
+  const [problem, setProblem] = React.useState<string | null>(null);
+  const href = safeAuthorizationUrl(step.authorizationUrl);
+  return (
+    <div className="ds2" style={{ display: "grid", gap: 8 }}>
+      <div className="cv2-row" style={{ gap: 8, flexWrap: "wrap" }}>
+        {href && (
+          <a className="cv2-btn ink" href={href} target="_blank" rel="noopener noreferrer">
+            <Glyph name="external" size={14} />
+            Open the {step.method} sign-in
+          </a>
+        )}
+        {!pasting && (
+          <button type="button" className="cv2-btn ghost" onClick={() => setPasting(true)}>
+            Not on your Mac?
+          </button>
+        )}
+      </div>
+      {pasting && (
+        <form
+          className="cv2-keyfield"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const r = checkPastedRedirect(value);
+            if (!r.ok) return setProblem(r.message);
+            setProblem(null);
+            onComplete(r.url);
+          }}
+        >
+          <input
+            autoFocus
+            type="url"
+            autoComplete="off"
+            spellCheck={false}
+            placeholder="http://localhost:…"
+            aria-label="Address your browser ended on after signing in"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+          />
+          <button type="submit" className="cv2-btn ink" disabled={!value.trim() || busy}>
+            {busy ? <Spinner size={14} /> : null}
+            Finish
+          </button>
+        </form>
+      )}
+      {pasting && !problem && <div className="ds">After signing in, your browser shows a page that cannot load. Copy its address and paste it here.</div>}
+      {problem && <div className="ds cv2-del">{problem}</div>}
     </div>
   );
 }
@@ -356,8 +481,9 @@ export function ConnectionsPanel(props: ConnectionsProps) {
   const reported = instances.filter((i) => isSubscriptionKind(i.kind));
   const listed = online && reported.length ? reported : PLACEHOLDER_SUBSCRIPTIONS;
   const subs = listed.filter((i) => isInstanceVisible(i, flags));
-  // Runtimes behind a terms check (Antigravity) are listed, honestly, rather than missing.
-  const held = PLACEHOLDER_SUBSCRIPTIONS.filter((p) => !isInstanceVisible(p, flags)).map((p) => listed.find((i) => i.id === p.id) ?? p);
+  // Runtimes the Mac does not report (Antigravity on an older Alevr) are listed, honestly, rather than missing.
+  const runtimeOf = (i: ProviderInstance) => (i.kind === "acp" ? (acpRuntimeKey(i) ?? i.id) : i.kind);
+  const held = listed === reported ? PLACEHOLDER_SUBSCRIPTIONS.filter((p) => isInstanceVisible(p, flags) && !reported.some((i) => runtimeOf(i) === runtimeOf(p))) : [];
   const setKey = (provider: ByokProvider, r: ByokKeyRecord | null) => setKeys((ks) => [...ks.filter((k) => k.provider !== provider), ...(r ? [r] : [])]);
 
   const content = (
@@ -402,7 +528,7 @@ export function ConnectionsPanel(props: ConnectionsProps) {
         </h2>
         <div className="cv2-list">
           {subs.map((i) => (
-            <SubscriptionRow key={i.id} instance={i} disabled={!online} onProbe={props.onProbe} onSetup={props.onSetup} onDisconnect={props.onDisconnect} />
+            <SubscriptionRow key={i.id} instance={i} disabled={!online} onProbe={props.onProbe} onSetup={props.onSetup} onDisconnect={props.onDisconnect} onManaged={props.onManaged} />
           ))}
           {held.map((i) => (
             <SubscriptionRow key={i.id} instance={i} disabled held />

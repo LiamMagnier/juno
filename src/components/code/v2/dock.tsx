@@ -124,19 +124,24 @@ function ChangesPane({
 
   const decide = React.useCallback(
     (file: DiffFile, hunkId: string, d: HunkDecision | null) => {
-      setLocal((l) => {
-        const n = { ...l };
-        if (d) n[hunkId] = d;
-        else delete n[hunkId];
-        return n;
-      });
-      model.actions.decideHunk?.(file.path, hunkId, d);
+      const before = local[hunkId];
+      const set = (value: HunkDecision | undefined) =>
+        setLocal((l) => {
+          const n = { ...l };
+          if (value) n[hunkId] = value;
+          else delete n[hunkId];
+          return n;
+        });
+      set(d ?? undefined);
+      const applied = model.actions.decideHunk?.(file.path, hunkId, d, file);
+      // The host could not apply it (the file moved on, the Mac is gone): take the decision back.
+      if (applied instanceof Promise) void applied.then((ok) => ok === false && set(before));
       if (d === "rejected") {
         setUndo(hunkId);
         setTimeout(() => setUndo((u) => (u === hunkId ? null : u)), 6000);
       }
     },
-    [model.actions],
+    [model.actions, local],
   );
 
   // ] [ A R and ⌥⌘D while Changes has focus (DESIGN §8).

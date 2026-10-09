@@ -10,6 +10,7 @@ import * as React from "react";
 import { ConnectionsPanel } from "./connections";
 import { useEnvLink } from "./use-env-link";
 import { fallbackSetupCommand } from "@/lib/code-v2/providers-view";
+import { managedCall } from "@/lib/code-v2/runtime-lane";
 import type { DeviceInfo } from "./types";
 
 interface DeviceRow {
@@ -39,6 +40,14 @@ export function SubscriptionConnections() {
       instances={env.instances}
       device={device ? { ...device, online: device.online && env.ready } : null}
       onProbe={env.ready ? env.probe : undefined}
+      onManaged={
+        env.ready && env.client
+          ? (instanceId, op) => {
+              if (!env.client) throw new Error("Your Mac is not connected.");
+              return managedCall(env.client, instanceId, op);
+            }
+          : undefined
+      }
       onSetup={async (instance, action) => {
         let command: string | null = null;
         try {

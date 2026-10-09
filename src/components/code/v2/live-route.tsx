@@ -27,6 +27,9 @@ import { sessionItems } from "@/lib/code-v2/session-store";
 import type { ThreadSummary } from "@/lib/code-v2/thread-sections";
 import { buildInstances, reconcileSelection } from "@/lib/code-v2/workspace-instances";
 import { publishThreadState } from "@/lib/code-v2/shell-threads";
+import { hunkPatch, type HunkDecision } from "@/lib/code-v2/diff";
+import { managedCall, runtimeRequest, type ScheduledResume } from "@/lib/code-v2/runtime-lane";
+import { toast } from "sonner";
 import type { ClientMessage } from "@/types/chat";
 import { useEnvLink } from "./use-env-link";
 import type { WorkspaceModel } from "./types";
@@ -143,6 +146,22 @@ export function CodeV2Route({ conversation, initialMessages, userName }: CodeV2R
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.isBusy, useEnv]);
 
+  // Hunk decisions survive the dock remounting (and a reload): rejected hunks were reverted on the Mac.
+  const hunkKey = `alevr.code.hunks.${conversation.id}`;
+  const [hunkDecisions, setHunkDecisions] = React.useState<Record<string, HunkDecision>>(() =>
+    typeof window === "undefined" ? {} : (readJson<Record<string, HunkDecision>>(hunkKey) ?? {}),
+  );
+  React.useEffect(() => writeJson(hunkKey, hunkDecisions), [hunkKey, hunkDecisions]);
+
+  // Resume at reset: the env server's own schedule once the runtime lane's session view carries it,
+  // else what this page scheduled. Only meaningful while the session is limited.
+  const [localSchedule, setLocalSchedule] = React.useState<ScheduledResume | null>(null);
+  const viewSchedule = useEnv && env.view ? (env.view as { scheduledResume?: ScheduledResume }).scheduledResume : undefined;
+  const scheduled = state === "limited" ? (viewSchedule ?? localSchedule) : null;
+  React.useEffect(() => {
+    if (state !== "limited") setLocalSchedule(null);
+  }, [state]);
+
   const cwd = conversation.codeWorkspacePath ?? "";
   const runtimeMode = prefs.runtimeMode ?? "auto-edit";
   const interactionMode = prefs.interactionMode ?? "default";
@@ -219,7 +238,65 @@ export function CodeV2Route({ conversation, initialMessages, userName }: CodeV2R
       if (useEnv && env.client && env.view) void env.client.request("approval.respond", { sessionId: env.view.id, requestId: planId, decision: approve ? "accept" : "decline" });
       else void session.respondToInput({ type: "plan.decide", requestId: planId, decision: approve ? "approve" : "reject" });
     },
-    resumeAtReset: undefined,
+    decideHunk:
+      useEnv && env.client && env.view
+        ? async (_path, hunkId, decision, file) => {
+            const client = env.client;
+            const sessionId = env.view?.id;
+            const before = hunkDecisions[hunkId];
+            const commit = () =>
+              setHunkDecisions((d) => {
+                const n = { ...d };
+                if (decision) n[hunkId] = decision;
+                else delete n[hunkId];
+                return n;
+              });
+            // Accepting is the default state of a change the agent already wrote: nothing to apply.
+            const revert = decision === "rejected" && before !== "rejected";
+            const reapply = decision !== "rejected" && before === "rejected";
+            if (!revert && !reapply) {
+              commit();
+              return true;
+            }
+            const patch = file ? hunkPatch(file, [hunkId]) : "";
+            if (!client || !sessionId || !patch) return false;
+            try {
+              await runtimeRequest(client, "checkpoint.applyPatch", { sessionId, patch, reverse: revert });
+              commit();
+              return true;
+            } catch (e) {
+              toast.error(e instanceof Error ? e.message : revert ? "Could not undo that change on your Mac." : "Could not put that change back.");
+              return false;
+            }
+          }
+        : undefined,
+    resumeAtReset:
+      useEnv && env.client && env.view
+        ? async (at) => {
+            const client = env.client;
+            const sessionId = env.view?.id;
+            if (!client || !sessionId) return;
+            try {
+              const { schedule } = await runtimeRequest(client, "turn.schedule", { sessionId, ...(env.view?.resumeAt ? {} : at ? { at } : {}) });
+              setLocalSchedule(schedule);
+            } catch (e) {
+              toast.error(e instanceof Error ? e.message : "Could not schedule the next turn on your Mac.");
+            }
+          }
+        : undefined,
+    cancelResume:
+      useEnv && env.client && env.view && scheduled
+        ? () => {
+            const client = env.client;
+            const sessionId = env.view?.id;
+            if (!client || !sessionId) return;
+            const id = scheduled.id;
+            setLocalSchedule(null);
+            void runtimeRequest(client, "turn.unschedule", { sessionId, scheduleId: id }).catch((e) =>
+              toast.error(e instanceof Error ? e.message : "Could not cancel. Alevr may still continue at the reset."),
+            );
+          }
+        : undefined,
     openThread: (id) => router.push(`/code/${id}`),
     newThread: () => router.push("/code"),
     terminalInput: env.ready ? env.writeTerminal : undefined,
@@ -260,6 +337,8 @@ export function CodeV2Route({ conversation, initialMessages, userName }: CodeV2R
     items,
     state,
     resumeAt: env.view?.resumeAt,
+    scheduledResume: scheduled ? { id: scheduled.id, at: scheduled.at } : null,
+    hunkDecisions,
     stateMessage: env.view?.stateMessage,
     usage: usage ?? (routingAvoidsAlevrBilling(effectiveRouting) ? { inputTokens: 0, outputTokens: 0, billing: "subscription" } : undefined),
     queue,
@@ -285,6 +364,14 @@ export function CodeV2Route({ conversation, initialMessages, userName }: CodeV2R
       byok={byok}
       firstRun={!instances.some((i) => i.kind !== "alevr" && (i.status === "ready" || i.status === "limited")) && !keys.length && session.messages.length === 0}
       onProbe={env.ready ? env.probe : undefined}
+      onManaged={
+        env.ready && env.client
+          ? (instanceId, op) => {
+              if (!env.client) throw new Error("Your Mac is not connected.");
+              return managedCall(env.client, instanceId, op);
+            }
+          : undefined
+      }
       onSetup={async (instance, action) => {
         let command: string | null = null;
         if (env.client) {
