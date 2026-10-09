@@ -244,6 +244,10 @@ struct CodeV2ModelPicker: View {
     var choose: ((String, CodeV2.ProviderModel) -> Void)?
     /// The team popover reuses the picker for one role: no footer there.
     var showsFooter = true
+    /// Where the rail opens, when not the selection's own place (the gallery).
+    var initialPlace: CodeV2ModelCatalogue.Place?
+    /// A search already typed (the gallery).
+    var initialQuery = ""
 
     /// The list's height inside ``CodeV2ModelControl/catalogSize``.
     static let listHeight: CGFloat = CodeV2ModelControl.catalogSize.height - 40 - 39
@@ -286,6 +290,10 @@ struct CodeV2ModelPicker: View {
         .frame(maxHeight: 440)
         .clipped()
         .fixedSize(horizontal: false, vertical: true)
+        .onAppear {
+            if focusedPlace == nil, let initialPlace { focusedPlace = initialPlace }
+            if query.isEmpty, !initialQuery.isEmpty { query = initialQuery }
+        }
         .onKeyPress(.upArrow, phases: .down) { press in
             guard press.modifiers.contains(.command), press.modifiers.contains(.shift) else { return .ignored }
             step(-1)

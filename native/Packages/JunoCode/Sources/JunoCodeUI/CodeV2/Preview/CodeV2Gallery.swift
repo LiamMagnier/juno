@@ -22,6 +22,10 @@ public enum CodeV2Gallery {
         case dockBestOfN = "dock-best-of-n"
         case modelPickerSubscription = "model-picker-subscription"
         case modelPickerAlevr = "model-picker-alevr"
+        case modelPickerLab = "model-picker-lab"
+        case modelPickerSubscriptionsEmpty = "model-picker-subscriptions-empty"
+        case modelPickerSearch = "model-picker-search"
+        case settingsGenerationModels = "settings-generation-models"
         case modelEffortSubscription = "model-effort-subscription"
         case modelEffortAlevr = "model-effort-alevr"
         case contextTiersAlevr = "context-tiers-alevr"
@@ -40,7 +44,9 @@ public enum CodeV2Gallery {
                  .windowComputer, .windowLimited, .windowModelPicker:
                 CGSize(width: 1512, height: 982)
             case .dockBestOfN: CGSize(width: 480, height: 420)
-            case .modelPickerSubscription, .modelPickerAlevr: CGSize(width: 460, height: 520)
+            case .modelPickerSubscription, .modelPickerAlevr, .modelPickerLab,
+                 .modelPickerSubscriptionsEmpty, .modelPickerSearch: CGSize(width: 460, height: 520)
+            case .settingsGenerationModels: CGSize(width: 640, height: 300)
             case .modelEffortSubscription, .modelEffortAlevr: CGSize(width: 380, height: 220)
             case .contextTiersAlevr, .contextTiersSubscription: CGSize(width: 440, height: 300)
             case .orchestrateLeadWorkers, .orchestrateBestOfN: CGSize(width: 460, height: 300)
@@ -135,6 +141,36 @@ public enum CodeV2Gallery {
                 CodeV2ModelPicker(directory: directory, selection: .constant(selection), threadTokens: 184_000, openConnections: {})
                     .frame(width: CodeV2ModelControl.catalogSize.width, height: CodeV2ModelControl.catalogSize.height)
             )
+        case .modelPickerLab:
+            // Anthropic: Alevr's models, then the same lab on your own key.
+            return popover(
+                CodeV2ModelPicker(directory: directory, selection: .constant(CodeV2Fixtures.opusSelection), threadTokens: 184_000, openConnections: {})
+                    .frame(width: CodeV2ModelControl.catalogSize.width, height: CodeV2ModelControl.catalogSize.height)
+            )
+        case .modelPickerSubscriptionsEmpty:
+            return popover(
+                CodeV2ModelPicker(
+                    directory: CodeV2Fixtures.directoryWithoutSubscriptions,
+                    selection: .constant(CodeV2Fixtures.alevrSelection), threadTokens: 184_000, openConnections: {},
+                    initialPlace: .subscriptions
+                )
+                .frame(width: CodeV2ModelControl.catalogSize.width, height: CodeV2ModelControl.catalogSize.height)
+            )
+        case .modelPickerSearch:
+            return popover(
+                CodeV2ModelPicker(
+                    directory: directory, selection: .constant(CodeV2Fixtures.claudeSelection), threadTokens: 184_000,
+                    openConnections: {}, initialQuery: "opus"
+                )
+                .frame(width: CodeV2ModelControl.catalogSize.width, height: CodeV2ModelControl.catalogSize.height)
+            )
+        case .settingsGenerationModels:
+            let defaults = UserDefaults(suiteName: "juno.code.gallery.generation") ?? .standard
+            defaults.removePersistentDomain(forName: "juno.code.gallery.generation")
+            return AnyView(Form {
+                StudioGenerationModelsSettings(models: CodeV2Fixtures.generationModels, defaults: defaults)
+            }
+            .formStyle(.grouped))
         case .modelEffortSubscription, .modelEffortAlevr:
             // The chip's first stage: the shared effort panel over the
             // selected model's effort levels; its name leads to the picker.

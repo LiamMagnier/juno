@@ -1,5 +1,6 @@
 import Foundation
 import JunoCodeCore
+import JunoDesignSystem
 
 /// Real-looking content for the Code v2 surfaces: the product shots, the
 /// offscreen snapshot tests and SwiftUI previews. One story across all of
@@ -39,10 +40,32 @@ public enum CodeV2Fixtures {
         effortLevels: [.low, .high]
     )
 
+    static func alevrModel(_ id: String, _ label: String, window: Int, input: Double, output: Double, efforts: [CodeV2.EffortLevel] = [.low, .medium, .high]) -> CodeV2.ProviderModel {
+        CodeV2.ProviderModel(
+            id: id, label: label,
+            contextTiers: [CodeV2.ContextTier(tokens: window, label: CodeV2ContextMath.label(tokens: window), inputPerMTok: input, outputPerMTok: output)],
+            effortLevels: efforts
+        )
+    }
+
+    /// More of the catalogue, so the picker's labs read as they do on an
+    /// account: several labs, more than one model in the big ones.
+    public static let catalogueExtras: [CodeV2.ProviderModel] = [
+        alevrModel("anthropic:claude-sonnet-5-5", "Claude Sonnet 5.5", window: 1_000_000, input: 3, output: 15, efforts: [.low, .medium, .high, .max]),
+        alevrModel("anthropic:claude-haiku-4-5", "Claude Haiku 4.5", window: 200_000, input: 1, output: 5),
+        alevrModel("openai:gpt-6-astra", "GPT-6 Astra", window: 400_000, input: 1.25, output: 10, efforts: [.low, .medium, .high, .xhigh]),
+        alevrModel("openai:gpt-5.4-mini", "GPT-5.4 mini", window: 400_000, input: 0.25, output: 2),
+        alevrModel("zhipu:glm-5.3", "GLM-5.3", window: 200_000, input: 0.6, output: 2.2),
+        alevrModel("moonshot:kimi-k3", "Kimi K3", window: 256_000, input: 0.6, output: 2.5),
+        alevrModel("google:gemini-3.8-flash", "Gemini 3.8 Flash", window: 1_000_000, input: 0.3, output: 2.5),
+        alevrModel("xai:grok-4.7", "Grok 4.7", window: 2_000_000, input: 3, output: 15),
+        alevrModel("qwen:qwen3.8-max", "Qwen3.8 Max", window: 262_000, input: 1.2, output: 6),
+    ]
+
     public static let alevr = CodeV2.ProviderInstance(
         id: "alevr", kind: .alevr, label: "Alevr", account: CodeV2.ProviderAccount(plan: "Plus"),
         status: .ready, capabilities: CodeV2KnownSubscription.alevrEngineCapabilities,
-        models: [opusAlevr, gpt, flash]
+        models: [opusAlevr, gpt, flash] + catalogueExtras
     )
 
     static let claudeTier = [CodeV2.ContextTier(tokens: 1_000_000, label: "1M", inputPerMTok: 0, outputPerMTok: 0)]
@@ -115,11 +138,45 @@ public enum CodeV2Fixtures {
         )
     }
 
+    /// No subscription connected: Subscriptions offers one Connect row.
+    public static var directoryWithoutSubscriptions: CodeV2ProviderDirectory {
+        CodeV2ProviderDirectory.build(
+            alevr: alevr,
+            envInstances: [gemini, grok, deepseekHarness, opencode],
+            byokKeys: []
+        )
+    }
+
+    /// The account's media models, for Settings › Generation models.
+    public static var generationModels: [ModelOption] {
+        func media(_ id: String, _ lab: String, _ labName: String, _ name: String, _ modality: JunoModelModality, _ released: String, legacy: Bool = false) -> ModelOption {
+            ModelOption(catalog: JunoModelDescriptor(
+                id: "\(lab):\(id)", providerID: lab, providerName: labName, displayName: name,
+                modality: modality, isLegacy: legacy, released: released
+            ))
+        }
+        return [
+            media("gpt-image-2.5-sunburst", "openai", "OpenAI · GPT", "GPT Image 2.5 Sunburst", .image, "2026-09"),
+            media("gpt-image-2.5-flare", "openai", "OpenAI · GPT", "GPT Image 2.5 Flare", .image, "2026-09"),
+            media("gpt-image-2", "openai", "OpenAI · GPT", "GPT Image 2", .image, "2026-05", legacy: true),
+            media("gemini-3-pro-image", "google", "Google · Gemini", "Nano Banana Pro", .image, "2025-11"),
+            media("gemini-3.1-flash-image", "google", "Google · Gemini", "Nano Banana 2", .image, "2026-04"),
+            media("grok-imagine-image-2.0", "xai", "SpaceXAI · Grok", "Grok Imagine 2.0", .image, "2026-08"),
+            media("gemini-omni-1.1-flash", "google", "Google · Gemini", "Gemini Omni Flash", .video, "2026-08"),
+            media("grok-imagine-video-1.5", "xai", "SpaceXAI · Grok", "Grok Imagine Video 1.5", .video, "2026-06"),
+            media("dreamina-seedance-2-5-260628", "seedance", "ByteDance · Seedance", "Seedance 2.5", .video, "2026-07"),
+            media("MiniMax-H3", "minimax", "MiniMax", "MiniMax H3", .video, "2026-09"),
+            media("lyria-3.5", "google", "Google · Gemini", "Lyria 3.5", .audio, "2026-09"),
+            media("lyria-3-clip-preview", "google", "Google · Gemini", "Lyria 3 Clip", .audio, "2026-03"),
+        ]
+    }
+
     // MARK: Selections
 
     public static let alevrSelection = CodeV2.ModelSelection(instanceId: "alevr", model: gpt.id, effort: .high, contextTokens: 1_000_000)
     public static let claudeSelection = CodeV2.ModelSelection(instanceId: claude.id, model: "claude-opus-5-5", effort: .high, contextTokens: 1_000_000)
     public static let codexSelection = CodeV2.ModelSelection(instanceId: codex.id, model: "gpt-6.1-codex", effort: .high, contextTokens: 272_000)
+    public static let opusSelection = CodeV2.ModelSelection(instanceId: "alevr", model: opusAlevr.id, effort: .high, contextTokens: 200_000)
     public static let flashSelection = CodeV2.ModelSelection(instanceId: "alevr", model: flash.id, effort: .low, contextTokens: 128_000)
 
     public static var leadWorkers: CodeV2RoleDraft {
