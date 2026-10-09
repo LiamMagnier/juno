@@ -1,10 +1,38 @@
-# iOS round-2 rework: status (paused 2026-10-08)
+# iOS round-2 rework: status (updated 2026-10-09)
 
 Branch `polish/ios-rework` (worktree `.claude/worktrees/ios-rework-oct8`, off
 `polish/research-next`). Nothing is pushed, merged into another branch or deployed.
 Scratchpad = `/private/tmp/claude-501/-Users-liammagnier-Developer-project-juno/74d560d2-7351-4778-9997-a591a90f2db9/scratchpad`.
 
-## Done
+## 2026-10-09 resume
+
+| Item | Notes |
+| --- | --- |
+| Merged origin/main (19b20f459) | Mac 1.10.x, Live UI triggers, runnable code, token colours. Conflicts: both icon gates kept (`sficons` hard zero for iOS + Kit, `symbols` for the Mac — 8 gates now); drawer header keeps round 2 (orbit, in-drawer search); the showcase keeps the iPhone week and adds the Mac's capture chats (`PreviewShowcaseConversation.extraRecords`); Live UI parts take main's web icons; the research question row draws the web glyph on both platforms (main's SF fallback removed). Mac app builds. |
+| "+" → Photos/Camera morph | Choosing Camera or Photos in the glass panel: the panel fades in place and the floating panel opens out of its frame (`JunoPanelMorph`, coordinator `morphOrigin`). From elsewhere the panel still rises from below. `--juno-preview-plus --juno-preview-picker photos` plays it; frames + video in `ios-final/motion/`. |
+| Orbit in the harness | Preview path now creates `NativeAgentsModel`; main's `PreviewShowcaseServer` serves `/api/agents`. Iris/Theo/Nora roster draws. |
+| Capsule controls (owner, Oct 9: "rounded like the iPhone Calendar app") | `.buttonBorderShape(.capsule)` at the app root (real and preview, reaches sheets); `junoProminentAction`, `JunoGlassButtonStyle`, `JunoMobileWorkspaceActionStyle` name it. Icon-only controls use `.circle`. Cards/panels keep their radii. |
+| iPad docked report | The report in the inspector had no Done/Contents/Share (no navigation bar draws there). Now its own bar: close, Contents, Share as equal 44pt glass circles, hard scroll edge under them, no NavigationStack when docked. |
+| Landscape captures | iPadOS 26 windowing refuses `requestGeometryUpdate` and simctl cannot rotate, so `--juno-preview-landscape` lays the app out on a landscape canvas turned a quarter (rotate the PNG back with `sips -r -90`). Known artifact of this canvas only: the sidebar's top rows show a scroll-edge blur (absent in portrait). |
+| Showcase memory | Reads as Maya's (was "Liam … building Juno"). |
+
+Screenshots (final): `.claude/handoff/polish-oct8/ios-final/` — 43 iPhone shots × light/dark,
+`ipad/` (14 landscape + 1 portrait), `compare/` (ChatGPT side-by-sides, 14), `motion/` (plus → Photos).
+
+Tests: iOS unit 97 / 0 failures / 2 skipped; `npm run native:design:check` all 8 gates hold
+(symbols and targets ceilings locked lower after the merge); Mac Debug build succeeds.
+
+### Remaining
+
+- Orbit's page shows both an inline "Agents" nav title and the large serif "Agents" header — drop one.
+- Code shows "4 waiting" / "Needs you" as coloured words (not pills) — confirm the owner is fine with tinted status text.
+- The morph is checked frame by frame in the simulator; check it on a device (photo grid load time changes how it reads).
+- Sidebar scroll-edge blur in landscape: verify on a real rotated iPad (believed to be the capture canvas only).
+- `testDrawerSearchAndSidebarButtonShareSizeAndCentreLine` (UI test) still not run.
+- Report metadata lines still monospaced; brand/LiveUI lanes' own gate debt — unchanged.
+- Nothing pushed or merged; branch `polish/ios-rework` is ready for review.
+
+## Done (through 2026-10-08)
 
 | Item | Notes |
 | --- | --- |
@@ -20,7 +48,7 @@ Scratchpad = `/private/tmp/claude-501/-Users-liammagnier-Developer-project-juno/
 | iPad right panels | Artifact and research report open in the system `.inspector` beside the thread (resizable); phone keeps sheets. |
 | "Juno" → "Alevr" | All user-facing Swift literals on iOS + string catalog values (88) and English values for Juno-named keys (25); "+ menu Connectors" reads Apps. |
 
-## In progress / not verified
+## Was in progress on 2026-10-08 (now done above unless listed under Remaining)
 
 - Final full capture set after the last drawer fix: `redesign2/ios/*.png` (86 files, light+dark) was captured BEFORE the drawer-card/button fix and the orbit glass capsule — re-run `scratchpad/r2/capall.sh $S/redesign2/ios light|dark` and the iPad lines in `capipad.sh` to refresh. The post-fix drawer captures are in `scratchpad/r2/v14/` (closed/mid/open, light+dark, button and corner zooms).
 - Side-by-sides vs ChatGPT and contact sheets: script ready (`scratchpad/r2/sbs.sh`, `sheet5.swift`), not yet run on the final set.
