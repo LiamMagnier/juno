@@ -126,6 +126,9 @@
 
 /* ── Sidebar ─────────────────────────────────────────────────────────── */
 .cv2-side { background: hsl(var(--sidebar)); border-right: 1px solid hsl(var(--border)); display: flex; flex-direction: column; padding: 10px 8px 8px; gap: 2px; min-width: 0; min-height: 0; overflow: hidden; }
+/* In the app shell's aside (shell-sidebar.tsx): the shell owns the frame and its edge. */
+.cv2-shell-side { display: flex; flex-direction: column; height: 100%; min-height: 0; background: transparent; }
+.cv2-shell-side > .cv2-side { flex: 1; border-right: 0; background: transparent; }
 .cv2-side-top { display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 8px; margin-bottom: 6px; }
 .cv2-switch { display: flex; gap: 2px; padding: 2px; border-radius: 10px; background: hsl(var(--sidebar-hover)); margin-left: auto; }
 .cv2-switch span { height: 26px; padding: 0 10px; display: flex; align-items: center; gap: 6px; border-radius: 8px; color: hsl(var(--muted-foreground)); }

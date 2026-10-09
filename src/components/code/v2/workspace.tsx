@@ -219,7 +219,9 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, userName, byok, 
           a.newThread?.();
           return true;
         case "sidebar.toggle":
-          setSideOpen((s) => !s);
+          // Inside the app shell, the shell's column is the Code sidebar.
+          if (!sidebar) window.dispatchEvent(new CustomEvent("juno:toggle-sidebar"));
+          else setSideOpen((s) => !s);
           return true;
         case "dock.terminal":
           toggleDock("terminal");

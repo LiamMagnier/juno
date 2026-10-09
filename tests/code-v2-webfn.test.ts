@@ -9,6 +9,8 @@ import { test } from "node:test";
 
 import { appendTerminal, cssColorFromToken, terminalDelta } from "@/lib/code-v2/terminal-stream";
 import { DeviceLinkTransport, type FetchLike } from "@/lib/code-v2/env-client";
+import { publishThreadState, shellThreads, subscribeThreadStates, threadStateFromRun, threadStatesSnapshot } from "@/lib/code-v2/shell-threads";
+import { threadSections } from "@/lib/code-v2/thread-sections";
 
 test("terminal stream: appends, trims the front and counts what it dropped", () => {
   let buf = { output: "", offset: 0 };
@@ -54,4 +56,50 @@ test("DeviceLinkTransport.followGlobal polls the global stream with no session o
   assert.deepEqual(bodies[0].cursors, {});
   assert.equal(bodies[1].globalCursor, 3, "the next poll continues after the last global event");
   assert.equal(seen.length, 1);
+});
+
+// ── The app shell's Code column ─────────────────────────────────────────────
+
+
+test("shell threads: Code sessions only, live state over the run, project sections with Needs you first", () => {
+  const conversations = [
+    { id: "a", title: "Fix login", kind: "code", codeWorkspaceName: "shop", lastMessageAt: "2026-10-09T10:00:00Z" },
+    { id: "b", title: "", kind: "code", codeWorkspaceName: "shop", lastMessageAt: "2026-10-09T11:00:00Z" },
+    { id: "c", title: "Chat", kind: "chat", lastMessageAt: "2026-10-09T12:00:00Z" },
+    { id: "d", title: "Old", kind: "code", archivedAt: "2026-10-01T00:00:00Z", lastMessageAt: "2026-10-01T00:00:00Z" },
+    { id: "e", title: "Docs", kind: "code", codeWorkspaceName: null, lastMessageAt: "2026-10-08T00:00:00Z", pinned: true },
+  ];
+  const runs = new Map([
+    ["a", "running" as const],
+    ["b", "waiting" as const],
+  ]);
+  const live = new Map([["a", { state: "waiting" as const, waitingFor: "wants to run a command" }]]);
+  const threads = shellThreads(conversations, runs, live);
+  assert.deepEqual(threads.map((t) => t.id), ["a", "b", "e"]);
+  assert.equal(threads[0].state, "waiting", "the open workspace's live state wins");
+  assert.equal(threads[0].waitingFor, "wants to run a command");
+  assert.equal(threads[1].title, "Untitled session");
+  assert.equal(threads[2].project, "Not in a project");
+  const sections = threadSections(threads);
+  assert.deepEqual(sections.map((s) => s.title), ["Needs you", "Pinned", "shop"]);
+});
+
+test("shell threads: run states map to row states; the live store notifies only on change", () => {
+  assert.equal(threadStateFromRun("needs-approval", false), "waiting");
+  assert.equal(threadStateFromRun("review", true), "waiting");
+  assert.equal(threadStateFromRun("working", false), "running");
+  assert.equal(threadStateFromRun("queued", false), "running");
+  assert.equal(threadStateFromRun("failed", false), "error");
+  assert.equal(threadStateFromRun("finished", false), "idle");
+  let calls = 0;
+  const off = subscribeThreadStates(() => calls++);
+  publishThreadState("x", { state: "running" });
+  publishThreadState("x", { state: "running" });
+  const snap = threadStatesSnapshot();
+  publishThreadState("x", null);
+  publishThreadState("x", null);
+  off();
+  assert.equal(calls, 2);
+  assert.equal(snap.get("x")?.state, "running");
+  assert.equal(threadStatesSnapshot().has("x"), false);
 });

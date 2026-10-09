@@ -26,6 +26,7 @@ import { routingAvoidsAlevrBilling } from "@/lib/code-v2/role-routing";
 import { sessionItems } from "@/lib/code-v2/session-store";
 import type { ThreadSummary } from "@/lib/code-v2/thread-sections";
 import { buildInstances, reconcileSelection } from "@/lib/code-v2/workspace-instances";
+import { publishThreadState } from "@/lib/code-v2/shell-threads";
 import type { ClientMessage } from "@/types/chat";
 import { useEnvLink } from "./use-env-link";
 import type { WorkspaceModel } from "./types";
@@ -240,6 +241,12 @@ export function CodeV2Route({ conversation, initialMessages, userName }: CodeV2R
       state: c.id === conversation.id ? (state === "waiting" ? "waiting" : state === "running" ? "running" : state === "limited" ? "limited" : "idle") : "idle",
       updatedAt: (c as { lastMessageAt?: string }).lastMessageAt ?? new Date(0).toISOString(),
     }));
+
+  // The shell's Code column shows this thread's live state (the env server has no CodeTask behind it).
+  React.useEffect(() => {
+    publishThreadState(conversation.id, { state });
+  }, [conversation.id, state]);
+  React.useEffect(() => () => publishThreadState(conversation.id, null), [conversation.id]);
 
   const usage = useEnv && env.view?.usage ? env.view.usage : undefined;
   const model: WorkspaceModel = {
