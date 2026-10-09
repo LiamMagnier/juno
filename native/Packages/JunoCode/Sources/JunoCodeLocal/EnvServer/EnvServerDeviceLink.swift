@@ -105,6 +105,8 @@ public actor EnvServerDeviceLink {
     private var waiters: [UUID: CheckedContinuation<Void, Never>] = [:]
     /// Sessions opened through the link: a remote may only drive these.
     private var linkedSessions: Set<String> = []
+    /// Where shareable events go as they arrive (the relay channel's outbox).
+    private var outbound: (@Sendable (CodeV2.ServerEventEnvelope) async -> Void)?
 
     public init(
         bufferLimit: Int = 4_000,
@@ -122,15 +124,36 @@ public actor EnvServerDeviceLink {
 
     // MARK: Events
 
+    /// Sends every event a remote may see to `sink` as it is recorded (the
+    /// relay channel pushes them to the backend hub). Nil stops it.
+    public func setOutbound(_ sink: (@Sendable (CodeV2.ServerEventEnvelope) async -> Void)?) {
+        outbound = sink
+    }
+
     /// Records an env-server event for remote readers.
-    public func record(_ envelope: CodeV2.ServerEventEnvelope) {
-        // Terminal output only leaves when a remote terminal is allowed; the
-        // poll filters it, but there is no reason to hold it either.
+    public func record(_ envelope: CodeV2.ServerEventEnvelope) async {
         buffer.append(envelope)
         if buffer.count > bufferLimit { buffer.removeFirst(buffer.count - bufferLimit) }
         let waiting = waiters
         waiters.removeAll()
         for continuation in waiting.values { continuation.resume() }
+        if let outbound, await shareable(envelope) { await outbound(envelope) }
+    }
+
+    /// Whether a remote may see this event at all: the provider stream, and
+    /// sessions opened through the link (terminal output only when shared).
+    func shareable(_ envelope: CodeV2.ServerEventEnvelope) async -> Bool {
+        switch envelope.stream {
+        case .global:
+            if case .providerUpdated = envelope.event { return true }
+            return false
+        case .session:
+            guard let sessionId = envelope.sessionId, linkedSessions.contains(sessionId) else { return false }
+            switch envelope.event {
+            case .terminalOutput, .terminalExited: return await allowsTerminal()
+            default: return true
+            }
+        }
     }
 
     func pending(cursors: [String: Int], globalCursor: Int, terminal: Bool) -> [CodeV2.ServerEventEnvelope] {
@@ -226,6 +249,9 @@ public actor EnvServerDeviceLink {
         guard case let .object(object) = params else { return "The command's parameters were not an object." }
         switch type {
         case .sessionOpen, .terminalOpen:
+            // Re-opening a session the link already follows (the hub's replay
+            // after a gap): the env server ignores `cwd` for an existing session.
+            if type == .sessionOpen, case let .string(id)? = object["sessionId"], linkedSessions.contains(id) { return nil }
             guard case let .string(cwd)? = object["cwd"] else { return "A folder is required." }
             guard Self.isInside(cwd, roots: await allowedRoots()) else {
                 return "That folder is not shared with other devices. Share it from Alevr on your Mac first."
@@ -262,88 +288,158 @@ public actor EnvServerDeviceLink {
 
 // MARK: - Channel to the relay
 
-/// Pulls link requests the backend queued for this Mac and posts the replies.
+/// Drains the backend's device-link hub (`src/lib/code-v2/env-link-hub.ts`,
+/// docs/code-v2/DEVICE-LINK.md "Mac side") for this Mac:
 ///
-/// The backend half (`/api/code/v2/link/device/*`) belongs to the web lane;
-/// the wire is: `POST pull {deviceId}` → `{requests: [{requestId, request}]}`
-/// (long-polled server side), then `POST reply {deviceId, requestId, reply}`.
-/// Each request is answered on its own task so one long poll never holds up a
-/// command.
+/// - `POST /api/code/v2/link/<deviceId>/host {kind:"pull", protocol, appVersion, waitMs}`
+///   long-polls the commands the web relayed (`{protocol, commands:[ClientCommand]}`);
+///   the pull is also this Mac's heartbeat. Each command runs through
+///   ``EnvServerDeviceLink/run(_:)`` (the same remote rules) on its own task.
+/// - `POST …/host {kind:"push", responses, events}` hands back the env
+///   server's responses and the events a remote may see, in arrival order,
+///   flushed every ~50 ms (≤ 1,000 items per push).
+///
+/// A 404 means the pairing is gone and a 409 that the protocol differs: both
+/// stop the loop until it is started again.
 public actor EnvServerDeviceLinkChannel {
     public typealias Perform = @Sendable (_ method: String, _ path: String, _ body: Data?) async throws -> (Int, Data)
 
     struct Pulled: Decodable {
-        struct Entry: Decodable {
-            let requestId: String
-            let request: EnvLinkRequest
-        }
-        let requests: [Entry]
+        let commands: [EnvLinkRequest.Command]
     }
+
+    enum Outgoing {
+        case response(CodeV2.ServerResponse)
+        case event(CodeV2.ServerEventEnvelope)
+    }
+
+    public static let protocolName = "alevr-code-v2"
+    static let maxPushItems = 1_000
 
     private let deviceId: String
     private let link: EnvServerDeviceLink
     private let perform: Perform
+    private let appVersion: String?
+    private let pullWaitMs: Int
+    private let flushDelay: Duration
     private var loop: Task<Void, Never>?
     private var failures = 0
+    private var outbox: [Outgoing] = []
+    private var flushing: Task<Void, Never>?
+    /// Set when the backend says this Mac can no longer serve (unpaired, or another protocol).
+    public private(set) var stoppedReason: String?
 
-    public init(deviceId: String, link: EnvServerDeviceLink, perform: @escaping Perform) {
+    public init(
+        deviceId: String,
+        link: EnvServerDeviceLink,
+        appVersion: String? = nil,
+        pullWaitMs: Int = 25_000,
+        flushDelay: Duration = .milliseconds(50),
+        perform: @escaping Perform
+    ) {
         self.deviceId = deviceId
         self.link = link
+        self.appVersion = appVersion
+        self.pullWaitMs = pullWaitMs
+        self.flushDelay = flushDelay
         self.perform = perform
+    }
+
+    var hostPath: String {
+        let id = deviceId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn: "/"))) ?? deviceId
+        return "/api/code/v2/link/\(id)/host"
     }
 
     public var isRunning: Bool { loop != nil }
 
-    public func start() {
+    public func start() async {
         guard loop == nil else { return }
+        stoppedReason = nil
+        await link.setOutbound { [weak self] envelope in
+            await self?.enqueue(.event(envelope))
+        }
         loop = Task { [weak self] in
             while !Task.isCancelled {
                 guard let self else { return }
-                let delay = await self.pullOnce()
-                if let delay { try? await Task.sleep(for: delay) }
+                guard let delay = await self.pullOnce() else { continue }
+                if await self.stoppedReason != nil { return }
+                try? await Task.sleep(for: delay)
             }
         }
     }
 
-    public func stop() {
+    public func stop() async {
         loop?.cancel()
         loop = nil
+        await link.setOutbound(nil)
     }
 
     /// One pull. Returns how long to wait before the next (nil: at once).
     @discardableResult
     public func pullOnce() async -> Duration? {
         do {
-            let body = try JSONSerialization.data(withJSONObject: ["deviceId": deviceId])
-            let (status, data) = try await perform("POST", "/api/code/v2/link/device/pull", body)
-            guard (200..<300).contains(status) else {
-                return backoff(status == 404 ? 60 : nil)
+            var body: [String: Any] = ["kind": "pull", "protocol": Self.protocolName, "waitMs": pullWaitMs]
+            if let appVersion { body["appVersion"] = appVersion }
+            let (status, data) = try await perform("POST", hostPath, try JSONSerialization.data(withJSONObject: body))
+            if status == 404 || status == 409 {
+                stoppedReason = status == 404 ? "This Mac is no longer paired with your account." : "Update Alevr to keep using this Mac from the web."
+                loop?.cancel()
+                loop = nil
+                return .seconds(60)
             }
+            guard (200..<300).contains(status) else { return backoff() }
             failures = 0
             let pulled = try JSONDecoder().decode(Pulled.self, from: data)
-            for entry in pulled.requests {
-                Task { await self.answer(entry.requestId, entry.request) }
+            for command in pulled.commands {
+                Task { await self.answer(command) }
             }
-            return pulled.requests.isEmpty ? .milliseconds(250) : nil
+            return nil
         } catch {
-            return backoff(nil)
+            return backoff()
         }
     }
 
-    private func backoff(_ fixed: Int?) -> Duration {
+    private func backoff() -> Duration {
         failures += 1
-        if let fixed { return .seconds(fixed) }
-        return .seconds(min(30, 1 << min(failures, 5)))
+        return .seconds(min(15, 1 << min(failures - 1, 4)))
     }
 
-    func answer(_ requestId: String, _ request: EnvLinkRequest) async {
-        let reply = await link.handle(request)
-        struct Wire: Encodable {
-            let deviceId: String
-            let requestId: String
-            let reply: EnvLinkReply
+    func answer(_ command: EnvLinkRequest.Command) async {
+        let response = await link.run(command)
+        enqueue(.response(response))
+    }
+
+    func enqueue(_ item: Outgoing) {
+        outbox.append(item)
+        guard flushing == nil else { return }
+        let delay = flushDelay
+        flushing = Task { [weak self] in
+            try? await Task.sleep(for: delay)
+            await self?.flush()
         }
-        guard let body = try? JSONEncoder().encode(Wire(deviceId: deviceId, requestId: requestId, reply: reply)) else { return }
-        _ = try? await perform("POST", "/api/code/v2/link/device/reply", body)
+    }
+
+    /// Pushes everything queued, in order, in batches the hub accepts.
+    public func flush() async {
+        flushing = nil
+        while !outbox.isEmpty {
+            let batch = outbox.prefix(Self.maxPushItems)
+            outbox.removeFirst(batch.count)
+            var responses: [CodeV2.ServerResponse] = []
+            var events: [CodeV2.ServerEventEnvelope] = []
+            for item in batch {
+                switch item {
+                case let .response(response): responses.append(response)
+                case let .event(event): events.append(event)
+                }
+            }
+            struct Push: Encodable {
+                let kind = "push"
+                let responses: [CodeV2.ServerResponse]
+                let events: [CodeV2.ServerEventEnvelope]
+            }
+            guard let body = try? JSONEncoder().encode(Push(responses: responses, events: events)) else { continue }
+            _ = try? await perform("POST", hostPath, body)
+        }
     }
 }

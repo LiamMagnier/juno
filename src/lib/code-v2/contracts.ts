@@ -451,6 +451,11 @@ export interface ApprovalRequestItem extends TurnItemBase {
   options?: ApprovalDecision[];
   decision?: ApprovalDecision;
   status: "pending" | "resolved" | "expired";
+  // web lane (additive, DESIGN §5.14): who is asking, for the takeover header.
+  /** The subagent that asked; absent when the lead (orchestrator) asked. */
+  agentId?: string;
+  /** How the takeover names the asker ("Worker 3"). */
+  agentLabel?: string;
 }
 export interface CheckpointItem extends TurnItemBase {
   kind: "checkpoint";
@@ -505,6 +510,20 @@ export interface SubagentItem extends TurnItemBase {
   /** The child's final message, delivered to the parent once as its settlement notice. */
   closingText?: string;
   tokens?: TokenCount;
+  // web lane (additive, DESIGN §5.12): what the agent tree and the Agents dock show.
+  /** Short task title the lead gave it ("Server route for the total"). */
+  title?: string;
+  /** How the tree names it ("Worker 2", "Explorer", "Candidate B"). */
+  label?: string;
+  /** Its current activity in a sentence, while running or waiting. */
+  liveLine?: string;
+  elapsedMs?: number;
+  /** Alevr / BYOK spend; absent for subscription instances. */
+  costUsd?: number;
+  /** The worktree branch it writes to (Best of N candidates, writing workers). */
+  worktreeBranch?: string;
+  /** Best of N: the candidate's result summary. */
+  candidate?: { additions?: number; deletions?: number; filesChanged?: number; testsLine?: string; kept?: boolean };
 }
 export interface ComputerActionItem extends TurnItemBase {
   kind: "computer_action";
@@ -685,6 +704,11 @@ export interface SessionUsage {
   contextWindow?: number;
   /** Absent for subscription providers. */
   costUsd?: number;
+  // web lane (additive, DESIGN §5.7): the context gauge.
+  /** Token count at which the engine compacts (SPEC §3.5 trigger). */
+  autoCompactAt?: number;
+  /** Who bills this session's tokens: Alevr, the user's own key, or a subscription plan. */
+  billing?: "alevr" | "byok" | "subscription";
 }
 
 export interface QueuedInput {

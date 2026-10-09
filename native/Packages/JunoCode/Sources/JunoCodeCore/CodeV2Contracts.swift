@@ -747,11 +747,14 @@ public enum CodeV2 {
         public var options: [ApprovalDecision]?
         public var decision: ApprovalDecision?
         public var status: Status
+        public var agentId: String?
+        public var agentLabel: String?
 
         public init(
             id: String, turnId: String? = nil, createdAt: String, callId: String, requestId: String,
             action: Action, summary: String, justification: String? = nil, detail: String? = nil,
-            options: [CodeV2.ApprovalDecision]? = nil, decision: CodeV2.ApprovalDecision? = nil, status: Status
+            options: [CodeV2.ApprovalDecision]? = nil, decision: CodeV2.ApprovalDecision? = nil, status: Status,
+            agentId: String? = nil, agentLabel: String? = nil
         ) {
             self.id = id
             self.turnId = turnId
@@ -765,6 +768,8 @@ public enum CodeV2 {
             self.options = options
             self.decision = decision
             self.status = status
+            self.agentId = agentId
+            self.agentLabel = agentLabel
         }
     }
 
@@ -904,11 +909,37 @@ public enum CodeV2 {
         public var task: String?
         public var closingText: String?
         public var tokens: TokenCount?
+        // web lane (additive): agent tree / Agents dock fields.
+        public var title: String?
+        public var label: String?
+        public var liveLine: String?
+        public var elapsedMs: Double?
+        public var costUsd: Double?
+        public var worktreeBranch: String?
+        public var candidate: Candidate?
+
+        public struct Candidate: Codable, Sendable, Hashable {
+            public var additions: Int?
+            public var deletions: Int?
+            public var filesChanged: Int?
+            public var testsLine: String?
+            public var kept: Bool?
+
+            public init(additions: Int? = nil, deletions: Int? = nil, filesChanged: Int? = nil, testsLine: String? = nil, kept: Bool? = nil) {
+                self.additions = additions
+                self.deletions = deletions
+                self.filesChanged = filesChanged
+                self.testsLine = testsLine
+                self.kept = kept
+            }
+        }
 
         public init(
             id: String, turnId: String? = nil, createdAt: String, agentId: String, role: CodeV2.AgentRole,
             model: CodeV2.ModelSelection, status: CodeV2.SubagentStatus, task: String? = nil,
-            closingText: String? = nil, tokens: CodeV2.TokenCount? = nil
+            closingText: String? = nil, tokens: CodeV2.TokenCount? = nil,
+            title: String? = nil, label: String? = nil, liveLine: String? = nil, elapsedMs: Double? = nil,
+            costUsd: Double? = nil, worktreeBranch: String? = nil, candidate: Candidate? = nil
         ) {
             self.id = id
             self.turnId = turnId
@@ -920,6 +951,13 @@ public enum CodeV2 {
             self.task = task
             self.closingText = closingText
             self.tokens = tokens
+            self.title = title
+            self.label = label
+            self.liveLine = liveLine
+            self.elapsedMs = elapsedMs
+            self.costUsd = costUsd
+            self.worktreeBranch = worktreeBranch
+            self.candidate = candidate
         }
     }
 
@@ -1434,10 +1472,14 @@ public enum CodeV2 {
         public var contextTokens: Int?
         public var contextWindow: Int?
         public var costUsd: Double?
+        // web lane (additive): context gauge.
+        public var autoCompactAt: Int?
+        public var billing: String?
 
         public init(
             inputTokens: Int = 0, outputTokens: Int = 0, cachedInputTokens: Int? = nil,
-            contextTokens: Int? = nil, contextWindow: Int? = nil, costUsd: Double? = nil
+            contextTokens: Int? = nil, contextWindow: Int? = nil, costUsd: Double? = nil,
+            autoCompactAt: Int? = nil, billing: String? = nil
         ) {
             self.inputTokens = inputTokens
             self.outputTokens = outputTokens
@@ -1445,6 +1487,8 @@ public enum CodeV2 {
             self.contextTokens = contextTokens
             self.contextWindow = contextWindow
             self.costUsd = costUsd
+            self.autoCompactAt = autoCompactAt
+            self.billing = billing
         }
     }
 

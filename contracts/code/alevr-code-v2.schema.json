@@ -1220,6 +1220,12 @@
         },
         "decision": {
           "$ref": "#/definitions/ApprovalDecision"
+        },
+        "agentId": {
+          "type": "string"
+        },
+        "agentLabel": {
+          "type": "string"
         }
       },
       "required": [

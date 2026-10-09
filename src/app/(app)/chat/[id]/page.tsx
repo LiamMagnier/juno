@@ -1,5 +1,5 @@
 import nextDynamic from "next/dynamic";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { requireUser } from "@/lib/session";
 import { getConversationThread } from "@/lib/queries";
 import { ChatView } from "@/components/chat/chat-view";
@@ -30,11 +30,11 @@ export default async function ConversationPage({
   params: Promise<{ id: string }>;
   // `m` is global search landing on the message it matched (see
   // src/lib/search/engine.ts); `artifact` is the library's canvas deep link.
-  searchParams: Promise<{ artifact?: string; m?: string; researchRun?: string; q?: string }>;
+  searchParams: Promise<{ artifact?: string; m?: string; researchRun?: string; q?: string; surface?: string }>;
 }) {
   const user = await requireUser();
   const { id } = await params;
-  const { artifact, m, researchRun, q } = await searchParams;
+  const { artifact, m, researchRun, q, surface } = await searchParams;
   const thread = await getConversationThread(user.id, id);
   if (!thread) notFound();
 
@@ -50,6 +50,11 @@ export default async function ConversationPage({
   // conditions read the same two columns and must stay inverses.
   const codeSessionHasTarget =
     !!thread.conversation.codeWorkspacePath || !!thread.conversation.codeWorkspaceKey;
+  // Alevr Code v2: code sessions live at /code/[id] (the v2 workspace). The
+  // old surface stays reachable with ?surface=legacy while v2 rolls out.
+  if (thread.conversation.kind === "code" && codeSessionHasTarget && surface !== "legacy") {
+    redirect(`/code/${id}`);
+  }
   if (thread.conversation.kind === "code" && codeSessionHasTarget) {
     // `thread.artifacts` is loaded for every conversation this route renders,
     // code or not — handing it to both surfaces is what stops the code one

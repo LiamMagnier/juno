@@ -263,23 +263,58 @@ final class EnvServerTests: XCTestCase {
         XCTAssertFalse(EnvServerDeviceLink.isInside("/a/b/../c", roots: ["/a/b"]))
     }
 
-    func testChannelPullsAnswersAndPostsReplies() async throws {
+    func testChannelPullsFromTheHubAndPushesResponsesAndEventsInOrder() async throws {
         let posted = PostLog()
         let link = makeLink(forwarded: ForwardLog())
-        let channel = EnvServerDeviceLinkChannel(deviceId: "mac-1", link: link) { method, path, body in
+        let channel = EnvServerDeviceLinkChannel(deviceId: "mac-1", link: link, appVersion: "1.11.0", flushDelay: .milliseconds(10)) { _, path, body in
             posted.append(path, body)
-            if path.hasSuffix("/pull") {
-                return (200, Data(#"{"requests":[{"requestId":"r1","request":{"kind":"rpc","command":{"id":"c1","type":"provider.list","params":{}}}}]}"#.utf8))
+            let kind = body.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }?["kind"] as? String
+            if kind == "pull" {
+                return (200, Data(#"{"protocol":{"name":"alevr-code-v2","version":"1.0"},"commands":[{"id":"link_1","type":"session.open","params":{"cwd":"/Users/maya/code/shop"}},{"id":"link_2","type":"env.configure","params":{}}]}"#.utf8))
             }
-            return (200, Data("{}".utf8))
+            return (200, Data(#"{"accepted":1}"#.utf8))
         }
+        // Pulls are driven by hand; `start()` would install this same hook and loop.
+        await link.setOutbound { envelope in await channel.enqueue(.event(envelope)) }
         let delay = await channel.pullOnce()
         XCTAssertNil(delay)
-        for _ in 0..<50 where posted.paths.count < 2 { try await Task.sleep(for: .milliseconds(20)) }
-        XCTAssertEqual(posted.paths, ["/api/code/v2/link/device/pull", "/api/code/v2/link/device/reply"])
-        let reply = try XCTUnwrap(posted.bodies.last.flatMap { $0 })
-        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: reply) as? [String: Any])
-        XCTAssertEqual(object["requestId"] as? String, "r1")
+        for _ in 0..<100 where posted.paths.count < 2 { try await Task.sleep(for: .milliseconds(20)) }
+        // A session the link opened: its events go out; another session's do not.
+        await link.record(CodeV2.ServerEventEnvelope(sessionId: "s-new", sequence: 1, at: "2026-10-09T10:00:00Z", event: .sessionState(state: .running, resumeAt: nil, message: nil)))
+        await link.record(CodeV2.ServerEventEnvelope(sessionId: "elsewhere", sequence: 1, at: "2026-10-09T10:00:00Z", event: .sessionState(state: .running, resumeAt: nil, message: nil)))
+        for _ in 0..<100 where posted.paths.count < 3 { try await Task.sleep(for: .milliseconds(20)) }
+
+        XCTAssertTrue(posted.paths.allSatisfy { $0 == "/api/code/v2/link/mac-1/host" })
+        let bodies = posted.bodies.compactMap { $0 }.compactMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+        XCTAssertEqual(bodies.first?["kind"] as? String, "pull")
+        XCTAssertEqual(bodies.first?["protocol"] as? String, "alevr-code-v2")
+        XCTAssertEqual(bodies.first?["appVersion"] as? String, "1.11.0")
+        let pushes = bodies.filter { $0["kind"] as? String == "push" }
+        let responses = pushes.flatMap { ($0["responses"] as? [[String: Any]]) ?? [] }
+        XCTAssertEqual(Set(responses.compactMap { $0["id"] as? String }), ["link_1", "link_2"])
+        let refused = responses.first { $0["id"] as? String == "link_2" }
+        XCTAssertEqual(refused?["ok"] as? Bool, false, "env.configure never runs from the web")
+        let events = pushes.flatMap { ($0["events"] as? [[String: Any]]) ?? [] }
+        XCTAssertEqual(events.compactMap { $0["sessionId"] as? String }, ["s-new"])
+    }
+
+    func testChannelStopsWhenThePairingIsGone() async {
+        let link = makeLink(forwarded: ForwardLog())
+        let channel = EnvServerDeviceLinkChannel(deviceId: "mac-1", link: link) { _, _, _ in (404, Data()) }
+        _ = await channel.pullOnce()
+        let reason = await channel.stoppedReason
+        XCTAssertNotNil(reason)
+    }
+
+    func testLinkReopensAFollowedSessionForAReplay() async {
+        let forwarded = ForwardLog()
+        let link = makeLink(forwarded: forwarded)
+        _ = await link.run(.init(id: "1", type: "session.open", params: .object(["cwd": .string("/Users/maya/code/shop")])))
+        // The hub's synthetic replay open carries cwd "/", which is outside every shared folder.
+        let replay = await link.run(.init(id: "replay_1", type: "session.open", params: .object(["sessionId": .string("s-new"), "cwd": .string("/"), "afterSequence": .number(3)])))
+        XCTAssertEqual(replay.ok, true)
+        let stranger = await link.run(.init(id: "2", type: "session.open", params: .object(["sessionId": .string("other"), "cwd": .string("/")])))
+        XCTAssertEqual(stranger.error?.code, .badRequest)
     }
 }
 

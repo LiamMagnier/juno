@@ -199,7 +199,7 @@ function buildSchema() {
         summary: nonEmpty,
         status: en(["pending", "resolved", "expired"]),
       },
-      { justification: str, detail: str, options: arr(ref("ApprovalDecision")), decision: ref("ApprovalDecision") },
+      { justification: str, detail: str, options: arr(ref("ApprovalDecision")), decision: ref("ApprovalDecision"), agentId: str, agentLabel: str },
     ),
     CheckpointItem: itemSchema(
       "checkpoint",
