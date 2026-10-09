@@ -19,6 +19,9 @@ const config = [
       "prisma/migrations/**",
       "relay/node_modules/**",
       "relay/dist/**",
+      // The env server bundled for the Mac app by `npm run env-server:bundle:mac`
+      // (release-macos.sh builds it before the gates run): generated, not source.
+      "native/macOS/JunoDesktop/Resources/env-server/**",
       "deploy/**",
       // Transient agent worktrees and the vendored Cloud Code runner (its own
       // build/lint story lives in CI) are not part of the app's lint surface.
