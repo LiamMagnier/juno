@@ -95,3 +95,10 @@ test("the native apps' console document is the web's inline one, for browser lan
   assert.equal(codeBlockConsoleDoc("c", "int main(){}", "light"), null);
   assert.equal(codeBlockConsoleDoc("mermaid", "graph TD", "light"), null);
 });
+
+test("the native harnesses' console fixtures are the documents the route builds today", async () => {
+  const { consoleFixtures } = await import("../scripts/generate-console-fixtures");
+  const { readFileSync } = await import("node:fs");
+  const committed = JSON.parse(readFileSync("contracts/code-run/console-fixtures.json", "utf8"));
+  assert.deepEqual(committed, consoleFixtures(), "regenerate: npx tsx scripts/generate-console-fixtures.ts");
+});
