@@ -60,7 +60,7 @@ public enum JunoEffortPanelMetrics {
 
     /// The header's side columns: the speed control and the Pro capsule on
     /// the left, reset on the right, one width so the rung stays centred.
-    public static let sideColumn: CGFloat = 76
+    public static let sideColumn: CGFloat = 80
 
     /// Where stop `index` of `count` sits along a track `width` wide: the
     /// knob's centre, 18pt in from either end (the web's `panelStop`).
@@ -381,7 +381,7 @@ public struct JunoEffortPanel: View {
 
     private var header: some View {
         HStack(spacing: JunoSpace.snug) {
-            HStack(spacing: JunoSpace.micro) {
+            HStack(spacing: JunoSpace.tight) {
                 if showsFlash || showsUltra {
                     JunoEffortSpeedButton(
                         tier: speedTier,
@@ -393,7 +393,7 @@ public struct JunoEffortPanel: View {
                     JunoEffortProCapsule(isOn: proMode)
                 }
             }
-            .frame(width: JunoEffortPanelMetrics.sideColumn, alignment: .leading)
+            .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
 
             VStack(spacing: 0) {
                 Text(current?.label ?? "")
@@ -407,7 +407,10 @@ public struct JunoEffortPanel: View {
                     JunoEffortModelButton(name: modelName, action: openModels)
                 }
             }
-            .frame(maxWidth: .infinity)
+            // Sized to the rung and the model name; the side groups share
+            // what is left, so the name is not cut for the controls' sake.
+            .fixedSize(horizontal: true, vertical: false)
+            .layoutPriority(1)
 
             Button {
                 if let defaultStopID = ladder.defaultStopID { stopID = defaultStopID }
@@ -416,7 +419,7 @@ public struct JunoEffortPanel: View {
             }
             .buttonStyle(JunoEffortIconButton(isOn: false))
             .contentShape(Circle())
-            .frame(width: JunoEffortPanelMetrics.sideColumn, alignment: .trailing)
+            .frame(minWidth: 0, maxWidth: .infinity, alignment: .trailing)
             .disabled(!canReset || !isEnabled)
             .help("Reset to the model's default")
             .accessibilityLabel("Reset to the model's default")
@@ -444,7 +447,8 @@ public struct JunoEffortProCapsule: View {
                 .junoType(.caption.weight(.medium))
                 .foregroundStyle(isOn ? Color.junoCanvas : (hovered ? Color.junoForeground : Color.junoSecondaryInk))
                 .padding(.horizontal, JunoSpace.snug)
-                .frame(height: 24)
+                // The bolt's height, so a filled bolt and a filled Pro read as one pair.
+                .frame(height: JunoEffortIconButton.side)
                 .background {
                     Capsule(style: .continuous).fill(isOn ? Color.junoForeground : Color.junoGlassHover.opacity(hovered ? 1 : 0))
                 }
@@ -499,7 +503,7 @@ private struct JunoEffortModelButton: View {
     }
 }
 
-/// The speed control: the web's bolt, muted when off and ink when on; for
+/// The speed control: the web's bolt, muted when off and filled ink when on; for
 /// Ultra fast the same bolt twice, overlapped 3pt, the second springing in
 /// (held still under Reduce Motion). Each press moves one tier.
 public struct JunoEffortSpeedButton: View {
@@ -528,7 +532,9 @@ public struct JunoEffortSpeedButton: View {
                 value: tier
             )
         }
-        .buttonStyle(JunoEffortIconButton(isOn: false, tinted: tier != .off))
+        // On: the inverted ink pair the Pro capsule wears, for Fast and Ultra
+        // alike (the bolt count tells them apart); off, a quiet glyph.
+        .buttonStyle(JunoEffortIconButton(isOn: tier != .off))
         .contentShape(Circle())
         .help(tier.label(multiplier: multiplier))
         .accessibilityLabel(tier.label(multiplier: multiplier))

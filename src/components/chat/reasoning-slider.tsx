@@ -441,7 +441,7 @@ function EffortPanel({
       {/* One line: the speed control and Pro on the left, the rung and its
           model in the middle, reset on the right. The side columns share a
           width so the rung stays centred whichever controls the model has. */}
-      <div className="grid grid-cols-[4.75rem_minmax(0,1fr)_4.75rem] items-center gap-2">
+      <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2">
         <div className="flex items-center gap-1">
           {showsSpeed ? (
             <Tooltip>
@@ -452,7 +452,13 @@ function EffortPanel({
                   aria-pressed={speedTier !== "off"}
                   disabled={disabled}
                   onClick={cycleSpeed}
-                  className={cn(iconButton, speedTier !== "off" && "text-foreground hover:text-foreground")}
+                  className={cn(
+                    iconButton,
+                    // On (Fast or Ultra fast): the same filled ink circle as
+                    // the Pro capsule, glyph inverted; the bolt count tells
+                    // the two apart. Off stays a quiet unfilled glyph.
+                    speedTier !== "off" && "bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground",
+                  )}
                 >
                   <SpeedGlyph tier={speedTier} />
                 </button>
@@ -472,7 +478,7 @@ function EffortPanel({
                   className={cn(
                     // A capsule beside the bolt, in the same group: filled ink
                     // when on, a hairline when off.
-                    "pressable inline-flex h-6 items-center rounded-full border px-2 text-caption font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-35 coarse:h-9 motion-reduce:active:scale-100",
+                    "pressable inline-flex h-8 items-center rounded-full border px-2.5 text-caption font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-35 coarse:h-9 motion-reduce:active:scale-100",
                     proMode
                       ? "border-primary bg-primary text-primary-foreground"
                       : "border-border text-muted-foreground hover:bg-accent hover:text-foreground",
