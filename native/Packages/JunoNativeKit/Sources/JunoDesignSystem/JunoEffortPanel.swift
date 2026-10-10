@@ -47,8 +47,20 @@ public enum JunoEffortPanelMetrics {
     /// The panel's height with or without the Pro row, for callers that
     /// state the popover's frame.
     public static func height(showsPro: Bool) -> CGFloat {
-        showsPro ? height + proRowHeight : height
+        height
     }
+
+    /// The panel's height with any of the switch rows under the track (Ultra
+    /// fast and Pro are the same row shape, stacked).
+    /// Speed and Pro now sit on the header line, so neither adds height; kept
+    /// so callers that state the popover's frame need not change.
+    public static func height(showsPro: Bool, showsUltraFast: Bool) -> CGFloat {
+        height
+    }
+
+    /// The header's side columns: the speed control and the Pro capsule on
+    /// the left, reset on the right, one width so the rung stays centred.
+    public static let sideColumn: CGFloat = 76
 
     /// Where stop `index` of `count` sits along a track `width` wide: the
     /// knob's centre, 18pt in from either end (the web's `panelStop`).
@@ -237,6 +249,45 @@ public enum JunoProMode {
     public static let help = "The model's deeper reasoning mode. Slower and costs more."
 }
 
+/// Ultra fast, in the web's words (reasoning-slider.tsx `ultraFastHelp`):
+/// OpenAI's Ultrafast service tier, captioned with the premium it costs.
+public enum JunoUltraFastMode {
+    public static let title = "Ultra fast"
+    public static func help(multiplier: Double?) -> String {
+        guard let multiplier else { return "OpenAI's fastest tier, at a premium." }
+        return "OpenAI's fastest tier, at \(rate(multiplier))x the standard price."
+    }
+
+    static func rate(_ multiplier: Double) -> String {
+        multiplier.rounded() == multiplier ? String(Int(multiplier)) : String(format: "%.2g", multiplier)
+    }
+}
+
+/// The effort panel's speed control: Off, the lab's fast tier, or OpenAI's
+/// Ultrafast, one press at a time (the web's `SpeedTier`).
+public enum JunoSpeedTier: Equatable, Sendable {
+    case off, fast, ultra
+
+    /// Off → Fast → Ultra fast → Off, skipping a tier the model lacks.
+    public func next(hasFast: Bool, hasUltra: Bool) -> JunoSpeedTier {
+        var order: [JunoSpeedTier] = [.off]
+        if hasFast { order.append(.fast) }
+        if hasUltra { order.append(.ultra) }
+        let at = order.firstIndex(of: self) ?? 0
+        return order[(at + 1) % order.count]
+    }
+
+    /// The tooltip and accessible label: "Ultra fast · 6× standard price".
+    public func label(multiplier: Double?) -> String {
+        let price = multiplier.map { " · \(JunoUltraFastMode.rate($0))× standard price" } ?? ""
+        switch self {
+        case .off: return "Standard speed"
+        case .fast: return "Fast\(price)"
+        case .ultra: return "Ultra fast\(price)"
+        }
+    }
+}
+
 /// The chip's first stage: the rung named large with the model under it (press
 /// it to change model), Flash on the left, reset on the right, and the slider.
 ///
@@ -248,6 +299,7 @@ public struct JunoEffortPanel: View {
     @Binding private var stopID: String?
     private let modelName: String
     private let fastMode: Binding<Bool>?
+    private let ultraFast: Binding<Bool>?
     private let proMode: Binding<Bool>?
     private let openModels: (() -> Void)?
 
@@ -259,6 +311,7 @@ public struct JunoEffortPanel: View {
         stopID: Binding<String?>,
         modelName: String,
         fastMode: Binding<Bool>? = nil,
+        ultraFast: Binding<Bool>? = nil,
         proMode: Binding<Bool>? = nil,
         openModels: (() -> Void)? = nil
     ) {
@@ -266,8 +319,15 @@ public struct JunoEffortPanel: View {
         _stopID = stopID
         self.modelName = modelName
         self.fastMode = fastMode
+        self.ultraFast = ultraFast
         self.proMode = proMode
         self.openModels = openModels
+    }
+
+    /// Whether the panel draws the Ultra fast row: a binding was passed and
+    /// the model is on OpenAI's Ultrafast tier.
+    public static func showsUltraFast(ladder: JunoThinkingLadder, ultraFast: Binding<Bool>?) -> Bool {
+        ultraFast != nil && ladder.supportsUltraFastMode
     }
 
     /// Whether the panel draws the Pro row: a binding was passed and the model
@@ -279,6 +339,28 @@ public struct JunoEffortPanel: View {
 
     private var current: JunoThinkingStop? { ladder.stop(id: stopID) ?? ladder.stops.first }
     private var showsFlash: Bool { fastMode != nil && ladder.supportsFastMode }
+    private var showsUltra: Bool { Self.showsUltraFast(ladder: ladder, ultraFast: ultraFast) }
+
+    private var speedTier: JunoSpeedTier {
+        if showsUltra, ultraFast?.wrappedValue == true { return .ultra }
+        if showsFlash, fastMode?.wrappedValue == true { return .fast }
+        return .off
+    }
+
+    private func cycleSpeed() {
+        let current = speedTier
+        switch current.next(hasFast: showsFlash, hasUltra: showsUltra) {
+        case .fast:
+            fastMode?.wrappedValue = true
+            ultraFast?.wrappedValue = false
+        case .ultra:
+            ultraFast?.wrappedValue = true
+            fastMode?.wrappedValue = false
+        case .off:
+            fastMode?.wrappedValue = false
+            ultraFast?.wrappedValue = false
+        }
+    }
     private var canReset: Bool {
         guard let defaultStopID = ladder.defaultStopID else { return false }
         return current?.id != defaultStopID
@@ -289,9 +371,6 @@ public struct JunoEffortPanel: View {
             header
                 .frame(height: JunoEffortPanelMetrics.headerHeight)
             JunoEffortSlider(ladder: ladder, stopID: $stopID, focusOnAppear: true)
-            if Self.showsPro(ladder: ladder, proMode: proMode), let proMode {
-                JunoEffortProRow(isOn: proMode)
-            }
         }
         .padding(JunoEffortPanelMetrics.inset)
         .frame(width: JunoEffortPanelMetrics.width, alignment: .top)
@@ -302,14 +381,19 @@ public struct JunoEffortPanel: View {
 
     private var header: some View {
         HStack(spacing: JunoSpace.snug) {
-            Group {
-                if showsFlash, let fastMode {
-                    JunoEffortFlashButton(isOn: fastMode, multiplier: ladder.fastModeRateMultiplier)
-                } else {
-                    Color.clear
+            HStack(spacing: JunoSpace.micro) {
+                if showsFlash || showsUltra {
+                    JunoEffortSpeedButton(
+                        tier: speedTier,
+                        multiplier: speedTier == .ultra ? ladder.ultraFastRateMultiplier : ladder.fastModeRateMultiplier,
+                        action: cycleSpeed
+                    )
+                }
+                if Self.showsPro(ladder: ladder, proMode: proMode), let proMode {
+                    JunoEffortProCapsule(isOn: proMode)
                 }
             }
-            .frame(width: JunoEffortIconButton.side, height: JunoEffortIconButton.side)
+            .frame(width: JunoEffortPanelMetrics.sideColumn, alignment: .leading)
 
             VStack(spacing: 0) {
                 Text(current?.label ?? "")
@@ -332,6 +416,7 @@ public struct JunoEffortPanel: View {
             }
             .buttonStyle(JunoEffortIconButton(isOn: false))
             .contentShape(Circle())
+            .frame(width: JunoEffortPanelMetrics.sideColumn, alignment: .trailing)
             .disabled(!canReset || !isEnabled)
             .help("Reset to the model's default")
             .accessibilityLabel("Reset to the model's default")
@@ -340,41 +425,43 @@ public struct JunoEffortPanel: View {
     }
 }
 
-/// Pro under the track: a hairline, the name over the one line that says it
-/// spends more, and a switch. A separate axis from the rung (Pro composes with
-/// whichever stop is chosen), so a switch rather than another stop.
-private struct JunoEffortProRow: View {
+/// Pro beside the speed control: a compact capsule, a hairline when off and
+/// the filled ink pair when on (the iOS Calendar segment). A separate axis
+/// from the rung, so a toggle rather than another stop.
+public struct JunoEffortProCapsule: View {
     @Binding var isOn: Bool
+    @State private var hovered = false
     @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    var body: some View {
-        VStack(spacing: JunoEffortPanelMetrics.trackGap) {
-            Rectangle()
-                .fill(Color.junoHairline)
-                .frame(height: 1)
-            HStack(spacing: JunoSpace.cozy) {
-                VStack(alignment: .leading, spacing: 0) {
-                    Text(JunoProMode.title)
-                        .junoType(JunoType.ui.weight(.medium))
-                        .foregroundStyle(Color.junoForeground)
-                    Text(JunoProMode.help)
-                        .junoType(.caption)
-                        .foregroundStyle(Color.junoSecondaryInk)
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
+    public init(isOn: Binding<Bool>) { _isOn = isOn }
+
+    public var body: some View {
+        Button {
+            isOn.toggle()
+        } label: {
+            Text(JunoProMode.title)
+                .junoType(.caption.weight(.medium))
+                .foregroundStyle(isOn ? Color.junoCanvas : (hovered ? Color.junoForeground : Color.junoSecondaryInk))
+                .padding(.horizontal, JunoSpace.snug)
+                .frame(height: 24)
+                .background {
+                    Capsule(style: .continuous).fill(isOn ? Color.junoForeground : Color.junoGlassHover.opacity(hovered ? 1 : 0))
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                Toggle(JunoProMode.title, isOn: $isOn)
-                    .toggleStyle(.switch)
-                    .labelsHidden()
-                    .controlSize(.small)
-                    .tint(Color.junoForeground)
-                    .disabled(!isEnabled)
-                    .accessibilityHint(JunoProMode.help)
-                    .accessibilityIdentifier("juno.effort-panel.pro")
-            }
-            .frame(height: JunoEffortPanelMetrics.proRowContentHeight)
+                .overlay {
+                    Capsule(style: .continuous).strokeBorder(isOn ? Color.clear : Color.junoHairline, lineWidth: 1)
+                }
+                .contentShape(Capsule(style: .continuous))
         }
+        .buttonStyle(.plain)
+        .opacity(isEnabled ? 1 : 0.35)
+        .onHover { hovered = $0 }
+        .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint), value: isOn)
+        .help(JunoProMode.help)
+        .accessibilityLabel(isOn ? "Pro on: deeper reasoning" : "Pro: deeper reasoning")
+        .accessibilityHint(JunoProMode.help)
+        .accessibilityAddTraits(isOn ? [.isButton, .isSelected] : .isButton)
+        .accessibilityIdentifier("juno.effort-panel.pro")
     }
 }
 
@@ -412,27 +499,41 @@ private struct JunoEffortModelButton: View {
     }
 }
 
-/// Flash: the web's bolt in a 32pt circle; on, the inverted ink pair.
-private struct JunoEffortFlashButton: View {
-    @Binding var isOn: Bool
+/// The speed control: the web's bolt, muted when off and ink when on; for
+/// Ultra fast the same bolt twice, overlapped 3pt, the second springing in
+/// (held still under Reduce Motion). Each press moves one tier.
+public struct JunoEffortSpeedButton: View {
+    let tier: JunoSpeedTier
     let multiplier: Double?
+    let action: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private var detail: String {
-        multiplier.map { "\(JunoThinkingPanel.rate($0))x rate" } ?? "premium rate"
+    public init(tier: JunoSpeedTier, multiplier: Double?, action: @escaping () -> Void) {
+        self.tier = tier
+        self.multiplier = multiplier
+        self.action = action
     }
 
-    var body: some View {
-        Button {
-            isOn.toggle()
-        } label: {
-            JunoIconView(.zap, size: 16)
+    public var body: some View {
+        Button(action: action) {
+            ZStack {
+                JunoIconView(.zap, size: 16)
+                    .offset(x: tier == .ultra ? -2 : 0)
+                JunoIconView(.zap, size: 16)
+                    .offset(x: tier == .ultra ? 3 : 0)
+                    .opacity(tier == .ultra ? 1 : 0)
+            }
+            .animation(
+                reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.62),
+                value: tier
+            )
         }
-        .buttonStyle(JunoEffortIconButton(isOn: isOn))
+        .buttonStyle(JunoEffortIconButton(isOn: false, tinted: tier != .off))
         .contentShape(Circle())
-        .help("Flash: prefer faster generation, at \(detail)")
-        .accessibilityLabel(isOn ? "Flash on: faster replies" : "Flash: faster replies")
-        .accessibilityValue(detail)
-        .accessibilityAddTraits(isOn ? [.isButton, .isSelected] : .isButton)
+        .help(tier.label(multiplier: multiplier))
+        .accessibilityLabel(tier.label(multiplier: multiplier))
+        .accessibilityHint("Changes the serving speed")
+        .accessibilityAddTraits(tier != .off ? [.isButton, .isSelected] : .isButton)
         .accessibilityIdentifier("juno.effort-panel.flash")
     }
 }
@@ -442,21 +543,24 @@ private struct JunoEffortFlashButton: View {
 struct JunoEffortIconButton: ButtonStyle {
     static let side: CGFloat = 32
     let isOn: Bool
+    /// On through tint alone: full ink, no fill (the speed control).
+    var tinted: Bool = false
 
     func makeBody(configuration: Configuration) -> some View {
-        Face(configuration: configuration, isOn: isOn)
+        Face(configuration: configuration, isOn: isOn, tinted: tinted)
     }
 
     private struct Face: View {
         let configuration: Configuration
         let isOn: Bool
+        let tinted: Bool
         @State private var hovered = false
         @Environment(\.isEnabled) private var isEnabled
         @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
         var body: some View {
             configuration.label
-                .foregroundStyle(isOn ? Color.junoCanvas : (hovered ? Color.junoForeground : Color.junoSecondaryInk))
+                .foregroundStyle(isOn ? Color.junoCanvas : (hovered || tinted ? Color.junoForeground : Color.junoSecondaryInk))
                 .frame(width: JunoEffortIconButton.side, height: JunoEffortIconButton.side)
                 .background {
                     Circle().fill(
@@ -470,6 +574,7 @@ struct JunoEffortIconButton: ButtonStyle {
                 .onHover { hovered = $0 }
                 .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint), value: hovered)
                 .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint), value: isOn)
+                .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint), value: tinted)
         }
     }
 }
