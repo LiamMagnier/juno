@@ -1,4 +1,5 @@
 import "server-only";
+import type { FastMode } from "@/lib/pricing";
 import { spendKindFilter, type SpendScope } from "@/lib/research/spend-windows";
 import { cache } from "react";
 import { Prisma } from "@prisma/client";
@@ -159,6 +160,10 @@ export function mediaRequestCost(modelId: string, kind: "image" | "video" | "aud
   }
   if (id.includes("gpt-image")) return 40_000;
   if (id.includes("pro-image")) return 60_000;
+  // Nano Banana 2.1: $30 per 1M image tokens, "equivalent to $0.0336 per 1K
+  // image" (ai.google.dev/gemini-api/docs/pricing, 2026-10-10); mediaCostFactor
+  // scales from 1K, the default.
+  if (id.includes("nano-banana-2.1")) return 33_600;
   if (id.includes("lite")) return 10_000;
   if (id.includes("grok-imagine-image-2.0")) return 40_000;
   // docs.x.ai/developers/models: quality $0.05, fast $0.02 an image.
@@ -201,7 +206,7 @@ export interface RecordSpendInput {
   completionChars?: number;
   /** Streamed reasoning text length — floors thinking-heavy turns without usage. */
   reasoningChars?: number;
-  fastMode?: boolean;
+  fastMode?: FastMode;
   /**
    * Precomputed request cost in USD (cache-aware, per-provider, tool fees).
    * Combined with a recompute from tokens so a too-low estimate can't underbill

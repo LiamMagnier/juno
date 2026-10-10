@@ -23,6 +23,7 @@
  * 2026-01-12) or `x_search` (not attached in this rework, O-25).
  */
 
+import { serviceTierFor } from "@/lib/pricing";
 import type OpenAI from "openai";
 
 import { normalizeFinishReason } from "@/lib/finish-reason";
@@ -268,7 +269,8 @@ function buildResponsesRequest(
     // Official OpenAI prompt caching (key + GPT-5.6 options / retention).
     Object.assign(params, openAIPromptCacheRequestFields(model, req.cacheKey));
     // Priority processing; the route gates fastMode to eligible models.
-    if (req.fastMode) params.service_tier = "priority";
+    const tier = serviceTierFor(req.fastMode);
+    if (tier) params.service_tier = tier;
   }
   return params;
 }

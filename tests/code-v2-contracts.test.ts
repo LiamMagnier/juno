@@ -92,7 +92,12 @@ test("model aliases point at models that exist and are current", () => {
   for (const [alias, id] of Object.entries(CODE_MODEL_ALIASES)) {
     const info = MODELS[id];
     assert.ok(info, `${alias} → ${id} is not in src/lib/models.ts`);
-    assert.equal(info.status, "current", `${alias} → ${id} is ${info.status}`);
+    // Served and not retiring. "haiku" still names Haiku 4.5, which Anthropic
+    // moved to legacy when Haiku 5.5 shipped (2026-10-07); repointing the
+    // alias is the Code product's call, because its Mac thinking wire
+    // (CodeThinkingWire) still treats every Haiku as budget_tokens and Haiku
+    // 5.5 rejects that with a 400.
+    assert.ok(info.status === "current" || (info.status === "legacy" && !info.retiresOn), `${alias} → ${id} is ${info.status}`);
   }
   assert.equal(resolveModelAlias(" Sonnet "), "anthropic:claude-sonnet-5-5");
   assert.equal(resolveModelAlias("max"), "anthropic:claude-opus-5-5");

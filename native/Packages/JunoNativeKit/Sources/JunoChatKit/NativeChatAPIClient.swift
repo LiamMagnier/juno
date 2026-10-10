@@ -133,6 +133,11 @@ public struct NativeChatModelOption: Identifiable, Equatable, Sendable {
     /// tokens. A client holding only a Bool cannot tell the user which premium
     /// they just agreed to.
     public let fastModeRateMultiplier: Double?
+    /// What OpenAI's Ultrafast service tier multiplies this model's rates by
+    /// (`ultraFastMode` in the manifest), or nil when it is not served on it.
+    /// A separate key from `fastMode`, so a server or build that predates it
+    /// changes nothing.
+    public let ultraFastRateMultiplier: Double?
 
     public let supportsStreaming: Bool
     public let supportsVision: Bool
@@ -156,6 +161,9 @@ public struct NativeChatModelOption: Identifiable, Equatable, Sendable {
 
     /// Whether the provider offers a premium serving tier for this model.
     public var supportsFastMode: Bool { fastModeRateMultiplier != nil }
+
+    /// Whether the model can be served on OpenAI's Ultrafast tier.
+    public var supportsUltraFastMode: Bool { ultraFastRateMultiplier != nil }
 
     public var isAvailable: Bool {
         availability == "available" && supportsStreaming
@@ -196,6 +204,7 @@ public struct NativeChatModelOption: Identifiable, Equatable, Sendable {
         choosesReasoningAutomatically: Bool = false,
         supportsProMode: Bool = false,
         fastModeRateMultiplier: Double? = nil,
+        ultraFastRateMultiplier: Double? = nil,
         supportsStreaming: Bool,
         supportsVision: Bool = false,
         supportsWebSearch: Bool = false,
@@ -235,6 +244,7 @@ public struct NativeChatModelOption: Identifiable, Equatable, Sendable {
         self.choosesReasoningAutomatically = choosesReasoningAutomatically
         self.supportsProMode = supportsProMode
         self.fastModeRateMultiplier = fastModeRateMultiplier
+        self.ultraFastRateMultiplier = ultraFastRateMultiplier
         self.supportsStreaming = supportsStreaming
         self.supportsVision = supportsVision
         self.supportsWebSearch = supportsWebSearch
@@ -770,6 +780,10 @@ public struct NativeChatGenerationRequest: Equatable, Sendable {
     /// rate). Like `webSearch` this is a request, not an instruction: the route
     /// re-checks the model actually has a faster tier and ignores it otherwise.
     public let fastMode: Bool
+    /// OpenAI's Ultrafast tier for this turn (6x on GPT-6.1 Sol / GPT-6
+    /// Astra). A request like `fastMode`: the route serves it only where the
+    /// model has it, and it takes precedence over `fastMode`.
+    public let ultraFast: Bool
     /// GPT-5.6 pro execution for this turn — the same rate, spent on more
     /// tokens. Independent of `reasoningEffort`: a turn can be pro at Low.
     public let proMode: Bool
@@ -818,6 +832,7 @@ public struct NativeChatGenerationRequest: Equatable, Sendable {
         canvasEnabled: Bool? = nil,
         connectors: [String] = [],
         fastMode: Bool = false,
+        ultraFast: Bool = false,
         proMode: Bool = false,
         regenerateInstruction: String? = nil,
         workHandoff: Bool = false,
@@ -836,6 +851,7 @@ public struct NativeChatGenerationRequest: Equatable, Sendable {
         self.canvasEnabled = canvasEnabled
         self.connectors = connectors
         self.fastMode = fastMode
+        self.ultraFast = ultraFast
         self.proMode = proMode
         self.regenerateInstruction = Self.normalizedInstruction(regenerateInstruction)
     }
@@ -882,6 +898,7 @@ public struct NativeChatPrivateGenerationRequest: Equatable, Sendable {
     /// different — the same toggle, in the same composer, billing differently
     /// depending on whether the chat happened to be private.
     public let fastMode: Bool
+    public let ultraFast: Bool
     public let proMode: Bool
 
     public init(
@@ -890,6 +907,7 @@ public struct NativeChatPrivateGenerationRequest: Equatable, Sendable {
         generationID: String,
         history: [NativeChatPrivateTurn],
         fastMode: Bool = false,
+        ultraFast: Bool = false,
         proMode: Bool = false
     ) {
         self.modelID = modelID
@@ -897,6 +915,7 @@ public struct NativeChatPrivateGenerationRequest: Equatable, Sendable {
         self.generationID = generationID
         self.history = history
         self.fastMode = fastMode
+        self.ultraFast = ultraFast
         self.proMode = proMode
     }
 }
@@ -1084,6 +1103,7 @@ public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
                 // on that being true forever.
                 supportsProMode: automatic ? false : (model.reasoning.supportsProMode ?? false),
                 fastModeRateMultiplier: automatic ? nil : model.fastMode?.rateMultiplier,
+                ultraFastRateMultiplier: automatic ? nil : model.ultraFastMode?.rateMultiplier,
                 supportsStreaming: model.capabilities.streaming,
                 supportsVision: model.capabilities.vision ?? false,
                 supportsWebSearch: model.capabilities.webSearch ?? false,
@@ -1253,6 +1273,7 @@ public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
             privateMode: true,
             privateHistory: request.history,
             fastMode: request.fastMode ? true : nil,
+            ultraFast: request.ultraFast ? true : nil,
             proMode: request.proMode ? true : nil,
             clientFeatures: NativeChatClientFeatures.declared,
             timeZone: NativeChatClientFeatures.timeZone,
@@ -1290,6 +1311,7 @@ public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
             canvasEnabled: request.canvasEnabled,
             connectors: request.connectors.isEmpty ? nil : request.connectors,
             fastMode: request.fastMode ? true : nil,
+            ultraFast: request.ultraFast ? true : nil,
             proMode: request.proMode ? true : nil,
             regenerateInstruction: request.regenerateInstruction,
             workHandoff: request.workHandoff ? true : nil,
@@ -1967,6 +1989,8 @@ private struct ModelCatalogWire: Decodable {
         /// for the Auto router, so nesting would make "no pricing" have to mean
         /// "no fast mode" — true today only by coincidence.
         let fastMode: FastMode?
+        /// OpenAI's Ultrafast tier, same shape as `fastMode`; absent from older servers.
+        let ultraFastMode: FastMode?
         let deprecationNote: String?
         let retiresOn: String?
     }
@@ -2048,6 +2072,7 @@ private struct GenerationRequestWire: Encodable {
     let canvasEnabled: Bool?
     let connectors: [String]?
     let fastMode: Bool?
+    let ultraFast: Bool?
     let proMode: Bool?
     /// Omitted when nil, like the flags above: the route only reads it on a
     /// regenerate, and a plain turn's body stays byte-identical.
@@ -2104,6 +2129,7 @@ private struct PrivateGenerationRequestWire: Encodable {
     /// reason: the server reads both flags on this path too, so leaving them out
     /// would make the identical toggle behave differently in incognito.
     let fastMode: Bool?
+    let ultraFast: Bool?
     let proMode: Bool?
     /// As on the saved branch: always sent, stripped by an older server.
     let clientFeatures: [String]

@@ -100,6 +100,56 @@ struct ModelPickerSnapshotTests {
         }
     }
 
+    /// Speed and Pro on the header line (owner, 2026-10-10): the bolt cycles
+    /// Off, Fast (one bolt) and Ultra fast (two, overlapped) on GPT-6.1 Sol,
+    /// whose Ultrafast tier is 6x per OpenAI's pricing page; Pro is a capsule
+    /// beside it on a model that has the mode. No rows under the track.
+    @Test
+    func speedAndProSitOnTheHeaderLine() async throws {
+        let sol = Self.model("openai:gpt-6.1-sol")
+        #expect(sol.thinking.ultraFastRateMultiplier == 6)
+        #expect(JunoEffortPanel.showsUltraFast(ladder: sol.thinking, ultraFast: .constant(false)))
+        #expect(!JunoEffortPanel.showsUltraFast(ladder: Self.model(Self.opus).thinking, ultraFast: .constant(false)))
+        #expect(JunoSpeedTier.off.next(hasFast: true, hasUltra: true) == .fast)
+        #expect(JunoSpeedTier.fast.next(hasFast: true, hasUltra: true) == .ultra)
+        #expect(JunoSpeedTier.ultra.next(hasFast: true, hasUltra: true) == .off)
+        #expect(JunoSpeedTier.fast.next(hasFast: true, hasUltra: false) == .off)
+        #expect(JunoSpeedTier.ultra.label(multiplier: 6) == "Ultra fast · 6× standard price")
+        #expect(JunoEffortPanelMetrics.height(showsPro: true, showsUltraFast: true) == JunoEffortPanelMetrics.height)
+        for (name, fast, ultra) in [("speed-off", false, false), ("speed-fast", true, false), ("speed-ultra", false, true)] {
+            try await render(name: "effort-panel-\(name)", width: JunoEffortPanelMetrics.width) {
+                JunoEffortPanel(
+                    ladder: sol.thinking,
+                    stopID: .constant("medium"),
+                    modelName: sol.displayName,
+                    fastMode: .constant(fast),
+                    ultraFast: .constant(ultra),
+                    openModels: {}
+                )
+                .frame(width: JunoEffortPanelMetrics.width, height: JunoEffortPanelMetrics.height)
+            }
+        }
+        let sol56 = Self.model("openai:gpt-5.6-sol")
+        let pro = JunoThinkingLadder(
+            stops: sol56.thinking.stops,
+            modelName: sol56.displayName,
+            fastModeRateMultiplier: sol56.thinking.fastModeRateMultiplier,
+            supportsProMode: true,
+            defaultStopID: sol56.thinking.defaultStopID
+        )
+        try await render(name: "effort-panel-pro-on-fast", width: JunoEffortPanelMetrics.width) {
+            JunoEffortPanel(
+                ladder: pro,
+                stopID: .constant("medium"),
+                modelName: sol56.displayName,
+                fastMode: .constant(true),
+                proMode: .constant(true),
+                openModels: {}
+            )
+            .frame(width: JunoEffortPanelMetrics.width, height: JunoEffortPanelMetrics.height)
+        }
+    }
+
     /// Stage two, reached from the panel's model name: the catalogue opens on
     /// Opus 5.5, its row lit and Anthropic's section in view.
     @Test

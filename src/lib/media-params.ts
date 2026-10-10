@@ -944,6 +944,9 @@ const ENTRIES: MediaCapabilities[] = [
   gptImage("openai:gpt-image-1-mini", "1"),
   gptImage("openai:gpt-image-1", "1"),
   geminiImage("google:gemini-3-pro-image", GEMINI_ASPECTS_10, ["1K", "2K", "4K"]),
+  // Nano Banana 2.1: "1K, 2K, and 4K output resolutions (default 1K)" and the
+  // wide 1:4 / 4:1 / 1:8 / 8:1 ratios (its model page, 2026-10-10).
+  geminiImage("google:gemini-nano-banana-2.1", GEMINI_ASPECTS_14, ["1K", "2K", "4K"]),
   geminiImage("google:gemini-3.1-flash-image", GEMINI_ASPECTS_14, ["0.5K", "1K", "2K", "4K"]),
   // "Gemini 3.1 Flash Lite image model only supports 1K images."
   geminiImage("google:gemini-3.1-flash-lite-image", GEMINI_ASPECTS_10, ["1K"]),

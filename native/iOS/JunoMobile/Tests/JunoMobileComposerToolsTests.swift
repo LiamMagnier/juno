@@ -89,6 +89,26 @@ final class JunoMobileComposerToolsTests: XCTestCase {
         XCTAssertEqual(sent.connectors, ["github"])
     }
 
+    /// Ultra fast and Flash are two premiums for one thing: arming one
+    /// disarms the other, both survive a send like the other preferences, and
+    /// either lights the `+`.
+    func testUltraFastAndFlashAreExclusiveAndSticky() {
+        let tools = JunoMobileComposerTools(defaults: defaults)
+        XCTAssertFalse(tools.ultraFast, "a 6x premium is never on by default")
+        tools.fastMode = true
+        tools.ultraFast = true
+        XCTAssertFalse(tools.fastMode)
+        XCTAssertTrue(tools.isArmed)
+        let sent = tools.consumeForSend()
+        XCTAssertTrue(sent.ultraFast)
+        XCTAssertFalse(sent.fastMode)
+        XCTAssertTrue(tools.ultraFast, "a preference, not a one-shot")
+        tools.fastMode = true
+        XCTAssertFalse(tools.ultraFast)
+        XCTAssertTrue(JunoMobileComposerTools(defaults: defaults).fastMode)
+        XCTAssertFalse(JunoMobileComposerTools(defaults: defaults).ultraFast)
+    }
+
     // MARK: - Connectors
 
     func testConnectorsToggleOnAndOff() {

@@ -34,6 +34,7 @@ final class JunoMobileComposerTools {
         static let webSearch = "juno.mobile.composer.web-search"
         static let canvas = "juno.mobile.composer.canvas"
         static let fastMode = "juno.mobile.composer.fast-mode"
+        static let ultraFast = "juno.mobile.composer.ultra-fast"
         static let proMode = "juno.mobile.composer.pro-mode"
     }
 
@@ -64,7 +65,20 @@ final class JunoMobileComposerTools {
     /// what make it safe: it never turns itself on, and `isArmed` lights the `+`
     /// while it is on, so a 2.5x rate is never running unannounced.
     var fastMode: Bool {
-        didSet { defaults.set(fastMode, forKey: Key.fastMode) }
+        didSet {
+            defaults.set(fastMode, forKey: Key.fastMode)
+            if fastMode, ultraFast { ultraFast = false }
+        }
+    }
+
+    /// OpenAI's Ultrafast tier (GPT-6.1 Sol, GPT-6 Astra; 6x the standard
+    /// rate). Sticky and OFF like Flash, and exclusive with it: turning one on
+    /// turns the other off, so a turn never asks for two premiums.
+    var ultraFast: Bool {
+        didSet {
+            defaults.set(ultraFast, forKey: Key.ultraFast)
+            if ultraFast, fastMode { fastMode = false }
+        }
     }
 
     /// Sticky for the same reason, and cheaper to leave on: pro spends more
@@ -92,6 +106,7 @@ final class JunoMobileComposerTools {
         // the pattern with `?? true` would switch a premium rate on for every
         // reader on first launch.
         fastMode = defaults.bool(forKey: Key.fastMode)
+        ultraFast = defaults.bool(forKey: Key.ultraFast) && !defaults.bool(forKey: Key.fastMode)
         proMode = defaults.bool(forKey: Key.proMode)
     }
 
@@ -104,7 +119,7 @@ final class JunoMobileComposerTools {
     /// this message can reach outside Juno.
     /// Flash and Pro join the list for exactly the stated reason: each changes
     /// what the next message costs, which is the surprise this dot exists for.
-    var isArmed: Bool { deepResearch || !connectors.isEmpty || fastMode || proMode }
+    var isArmed: Bool { deepResearch || !connectors.isEmpty || fastMode || ultraFast || proMode }
 
     var canAddConnector: Bool { connectors.count < Self.connectorLimit }
 
@@ -140,6 +155,7 @@ final class JunoMobileComposerTools {
             canvas: canvas,
             connectors: connectors,
             fastMode: fastMode,
+            ultraFast: ultraFast,
             proMode: proMode
         )
         // Only deepResearch is cleared. Flash and Pro are preferences, not
@@ -155,6 +171,7 @@ final class JunoMobileComposerTools {
         let canvas: Bool
         let connectors: [String]
         let fastMode: Bool
+        let ultraFast: Bool
         let proMode: Bool
     }
 }

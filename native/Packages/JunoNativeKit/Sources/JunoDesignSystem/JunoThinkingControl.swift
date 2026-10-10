@@ -190,9 +190,10 @@ public struct JunoThinkingPanel: View {
     @Binding private var stopID: String?
     private let width: CGFloat
     private let fastMode: Binding<Bool>?
+    private let ultraFast: Binding<Bool>?
     private let proMode: Binding<Bool>?
 
-    /// `fastMode` and `proMode` are optional BINDINGS rather than plain flags so
+    /// `fastMode`, `ultraFast` and `proMode` are optional BINDINGS rather than plain flags so
     /// that a product which does not have the concept passes nothing and gets no
     /// toggles. Juno Code shares this panel and has neither; a non-optional
     /// parameter would have put two Chat-only controls in Code's composer.
@@ -201,21 +202,24 @@ public struct JunoThinkingPanel: View {
         stopID: Binding<String?>,
         width: CGFloat = JunoThinkingMetrics.width,
         fastMode: Binding<Bool>? = nil,
+        ultraFast: Binding<Bool>? = nil,
         proMode: Binding<Bool>? = nil
     ) {
         self.ladder = ladder
         _stopID = stopID
         self.width = width
         self.fastMode = fastMode
+        self.ultraFast = ultraFast
         self.proMode = proMode
     }
 
     private var showsFast: Bool { fastMode != nil && ladder.supportsFastMode }
+    private var showsUltraFast: Bool { ultraFast != nil && ladder.supportsUltraFastMode }
     private var showsPro: Bool { proMode != nil && ladder.supportsProMode }
 
     /// Whether this panel draws the mode row at all — read by callers that must
     /// state their own popover height. See ``JunoThinkingMetrics``.
-    public var showsModeToggles: Bool { showsFast || showsPro }
+    public var showsModeToggles: Bool { showsFast || showsUltraFast || showsPro }
 
     public var body: some View {
         VStack(alignment: .leading, spacing: JunoSpace.snug) {
@@ -238,6 +242,16 @@ public struct JunoThinkingPanel: View {
                             "\(JunoThinkingPanel.rate($0))x rate"
                         } ?? "Premium rate",
                         accessibilityName: "Flash mode"
+                    )
+                }
+                if showsUltraFast, let ultraFast {
+                    JunoModeToggle(
+                        isOn: ultraFast,
+                        title: "Ultra",
+                        detail: ladder.ultraFastRateMultiplier.map {
+                            "\(JunoThinkingPanel.rate($0))x rate"
+                        } ?? "Premium rate",
+                        accessibilityName: "Ultra fast mode"
                     )
                 }
                 if showsPro, let proMode {

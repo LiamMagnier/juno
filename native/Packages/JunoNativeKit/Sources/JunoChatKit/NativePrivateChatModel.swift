@@ -125,6 +125,7 @@ public final class NativePrivateChatModel {
         modelID: String,
         reasoningEffort: NativeReasoningEffort?,
         fastMode: Bool = false,
+        ultraFast: Bool = false,
         proMode: Bool = false
     ) {
         let content = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -149,6 +150,7 @@ public final class NativePrivateChatModel {
             generationID: UUID().uuidString.lowercased(),
             history: Array(history),
             fastMode: fastMode,
+            ultraFast: ultraFast,
             proMode: proMode
         )
 

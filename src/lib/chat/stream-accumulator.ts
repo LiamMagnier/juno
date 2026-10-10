@@ -13,6 +13,7 @@
  * come back in the same order the branches produced them, and the caller does
  * exactly what it did before with each one.
  */
+import type { FastMode } from "@/lib/pricing";
 import type { TextSegment } from "@/lib/chat/answer-split";
 import { SourceRegistry } from "@/lib/chat/source-registry";
 import { appendReasoningDelta, emptyReasoning, type ReasoningState } from "@/lib/reasoning-parts";
@@ -111,7 +112,8 @@ export class GenerationAccumulator {
    * Which speed actually served. Starts at what was requested and is refined
    * from the usage stream, because a fast adapter may fall back to standard.
    */
-  servedFast: boolean;
+  /** The tier the turn was served on (pricing.ts FastMode): what billing charges. */
+  servedFast: FastMode;
   writingStarted = false;
   /**
    * The turn's text as runs within model steps, in stream order (SPEC §2.8).
@@ -144,7 +146,7 @@ export class GenerationAccumulator {
    */
   readonly sourceRegistry: SourceRegistry;
 
-  constructor(options: { requestedFastMode?: boolean; sources?: SourceRegistry } = {}) {
+  constructor(options: { requestedFastMode?: FastMode; sources?: SourceRegistry } = {}) {
     this.servedFast = options.requestedFastMode ?? false;
     this.sourceRegistry = options.sources ?? new SourceRegistry();
   }

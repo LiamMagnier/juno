@@ -1,3 +1,4 @@
+import type { FastMode } from "@/lib/pricing";
 import { estimateGenerationCostUsd } from "@/lib/pricing";
 import { totalInputTokens } from "@/lib/usage-merge";
 import { formatUsd } from "@/lib/utils";
@@ -61,7 +62,7 @@ export interface GenerationUsage {
 export function buildUsage(
   model: ModelInfo,
   raw: RawGenerationUsage,
-  fastMode = false
+  fastMode: FastMode = false
 ): GenerationUsage {
   const billed = estimateGenerationCostUsd(model, {
     // For Anthropic, raw.input is FRESH only; cache is separate. The estimator

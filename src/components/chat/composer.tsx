@@ -96,7 +96,7 @@ import {
   clampReasoningEffort,
   supportsProMode,
 } from "@/lib/model-metrics";
-import { supportsFastMode } from "@/lib/pricing";
+import { fastModeMultiplier, supportsFastMode, ultraFastMultiplier } from "@/lib/pricing";
 import { PROVIDERS } from "@/lib/providers";
 import { alevrToolsUsable } from "@/lib/search/alevr/policy";
 import { PLANS, cheapestPlanWith } from "@/lib/plans";
@@ -242,6 +242,10 @@ interface ComposerProps {
    *  renders for models that support it (supportsFastMode). */
   fastMode?: boolean;
   onToggleFastMode?: (v: boolean) => void;
+  /** OpenAI's Ultrafast tier — the switch only renders for models on it
+   *  (supportsUltraFastMode: GPT-6.1 Sol, GPT-6 Astra). */
+  ultraFast?: boolean;
+  onToggleUltraFast?: (v: boolean) => void;
   /** GPT-5.6 pro execution — the toggle only renders for models that support it
    *  (supportsProMode). */
   proMode?: boolean;
@@ -519,6 +523,8 @@ function ComposerImpl({
   onReasoningChange,
   fastMode = false,
   onToggleFastMode,
+  ultraFast = false,
+  onToggleUltraFast,
   proMode = false,
   onToggleProMode,
   connectorsEnabled = [],
@@ -552,6 +558,11 @@ function ComposerImpl({
   // actually support it — see supportsFastMode(). The toggle hides otherwise.
   const canFastMode = React.useMemo(
     () => !isAuto && !!resolved && supportsFastMode(resolved),
+    [isAuto, resolved],
+  );
+  // Ultrafast: OpenAI's fastest tier, on the models its pricing table lists.
+  const ultraFastRate = React.useMemo(
+    () => (!isAuto && resolved ? ultraFastMultiplier(resolved) : null),
     [isAuto, resolved],
   );
   // Pro execution is a separate axis from effort and exists on the GPT-5.6 line
@@ -1306,10 +1317,14 @@ function ComposerImpl({
         value={clampReasoningEffort(resolved, reasoningEffort)}
         onChange={onReasoningChange}
         disabled={controlsLocked}
-        fastMode={fastMode}
+        fastMode={fastMode && !(ultraFast && ultraFastRate != null)}
+        fastModeMultiplier={resolved ? fastModeMultiplier(resolved) ?? undefined : undefined}
         onFastModeChange={
           canFastMode && onToggleFastMode ? onToggleFastMode : undefined
         }
+        ultraFast={ultraFast && ultraFastRate != null}
+        ultraFastMultiplier={ultraFastRate ?? undefined}
+        onUltraFastChange={ultraFastRate != null && onToggleUltraFast ? onToggleUltraFast : undefined}
         proMode={proMode}
         onProModeChange={
           canProMode && onToggleProMode ? toggleProMode : undefined
