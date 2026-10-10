@@ -321,6 +321,7 @@ public struct BackendCodeModelClient: AgentModelClient {
                                         wire: .openAIResponses
                                     ),
                                     providerID: route.providerID,
+                                    providerModelID: route.providerModelID,
                                     key: PromptCacheWire.key(for: request)
                                 )
                             )
