@@ -118,6 +118,10 @@
           "note": "Whether to ask a clarifying question before a turn runs; the Mac's composer has no pre-flight questions yet (request.preflightClarification in the chat wire)."
         },
         "/api/chat/follow-ups": "native",
+        "/api/chat/local-tools/[callId]": {
+          "status": "native",
+          "note": "The Mac answers a chat turn's local folder tool call here (NativeLocalFolderWire); the waiting turn reads it from an in-memory wait, so it needs a single backend instance."
+        },
         "/api/mentions": {
           "status": "native",
           "note": "The composer's @ lookup for typed context tokens (agents, files, projects, apps with their connection and approval state, skills, chats, artifacts). Both apps' composers call it and send the chosen tokens as request.context."
