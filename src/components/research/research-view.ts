@@ -416,6 +416,7 @@ export function stoppedEarlyReason(events: readonly Pick<ResearchEventDTO, "kind
  *   chosen, all stages   "Running on Claude Opus 4.5"
  *   chosen, no tools     "Running on GPT-5 Pro · Search by Claude Haiku 4.5 · GPT-5 Pro has no tool calling"
  *   Auto, two models     "Led by Claude Opus 4.5 · Researchers on Claude Haiku 4.5"
+ *   chosen, refused      "Gemini 3.5 Flash-Lite isn't available on your plan · Led by Claude Fable 5.1 · Researchers on …"
  *
  * The writer is named only when it is not the lead (a chat that streamed the
  * report through its own model).
@@ -437,6 +438,13 @@ export function modelsLine(models: ResearchRunView["models"], done: boolean): Ph
   } else {
     line.push({ parts: [{ phrase: M.ledBy }, label(models.lead.label)] });
     line.push({ parts: [{ phrase: M.researchersOn }, label(worker.label)] });
+  }
+  // The person picked a model that could not lead: say so first, so the
+  // models that follow read as the stand-in they are, never as their choice.
+  const refused = models.chosenRefused;
+  if (refused && !models.chosen && refused.model.id !== models.lead.id) {
+    const why = refused.reason === "plan" ? M.chosenNotOnPlan : refused.reason === "not_configured" ? M.chosenNotConfigured : M.chosenUnavailable;
+    line.unshift({ parts: [label(refused.model.label), { phrase: why }] });
   }
   if (models.writer && models.writer.id !== models.lead.id) {
     line.push({ parts: [{ phrase: RESEARCH_COPY.report.writtenBy }, label(models.writer.label)] });

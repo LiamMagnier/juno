@@ -74,6 +74,11 @@ export interface ResearchEnvelope {
   workerNote?: ResearchWorkerNote;
   /** True when the lead is the model the person picked in the composer. */
   chosen?: boolean;
+  /**
+   * The model the person picked, and why it could not lead this run. Set
+   * only then: the run went on the Auto pair and the views say so.
+   */
+  chosenRefused?: { model: string; reason: ResearchChosenRefusal };
   /** Per-token rates of the run's own models, for the engine's reservations. */
   rates?: { lead: ResearchModelRatesLite; worker: ResearchModelRatesLite };
   limitedBy: "scope" | "plan" | "month" | "window";
@@ -84,6 +89,13 @@ export interface ResearchEnvelope {
 
 /** Why the researchers run on a model other than the chosen lead. */
 export type ResearchWorkerNote = "no_tools" | "responses_api";
+
+/**
+ * Why the model the person chose cannot lead a run: their plan cannot use
+ * it, its provider is not configured on this deployment, or it is not a chat
+ * model that can run at all (coming soon).
+ */
+export type ResearchChosenRefusal = "plan" | "not_configured" | "unavailable";
 
 /** Micro-USD per token, as `ResearchModelRates` in the engine. */
 export interface ResearchModelRatesLite {
@@ -113,6 +125,8 @@ export interface ResearchRunModels {
   writer: ResearchModelLabel | null;
   /** The lead is the model the person picked. */
   chosen: boolean;
+  /** The model the person picked and why it could not lead; null when none was refused. */
+  chosenRefused?: { model: ResearchModelLabel; reason: ResearchChosenRefusal } | null;
 }
 
 /**

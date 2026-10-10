@@ -776,7 +776,7 @@ export async function sizeResearchRun(input: {
     eurPerUsd: eurPerUsd(),
     leadModel: lead.id,
     stepDown: stepDown && stepDownRates && stepDown.id !== lead.id ? { leadModel: stepDown.id, rates: stepDownRates } : null,
-    models: { workerModel: models.worker?.id ?? null, workerNote: models.workerNote, chosen: models.chosen },
+    models: { workerModel: models.worker?.id ?? null, workerNote: models.workerNote, chosen: models.chosen, chosenRefused: models.refused ?? null },
   });
 }
 

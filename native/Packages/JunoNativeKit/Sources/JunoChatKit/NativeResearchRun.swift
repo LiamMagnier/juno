@@ -342,9 +342,27 @@ public struct NativeResearchRun: Equatable, Sendable, Identifiable {
     /// The models line, worded as the web's `modelsLine` (research-view.ts).
     public static func modelsLine(
         lead: String?, leadID: String?, worker: String?, workerID: String?,
-        workerNote: String?, chosen: Bool, done: Bool
+        workerNote: String?, chosen: Bool, done: Bool,
+        refusedModel: String? = nil, refusedModelID: String? = nil, refusedReason: String? = nil
     ) -> String? {
         guard let lead else { return nil }
+        let line = runningLine(lead: lead, leadID: leadID, worker: worker, workerID: workerID,
+                               workerNote: workerNote, chosen: chosen, done: done)
+        // The model the person picked could not lead: said first, never a silent swap.
+        guard !chosen, let refusedModel, refusedModelID != leadID else { return line }
+        let why: String
+        switch refusedReason {
+        case "plan": why = "isn't available on your plan"
+        case "not_configured": why = "isn't available right now"
+        default: why = "can't run research"
+        }
+        return "\(refusedModel) \(why) \u{00B7} \(line)"
+    }
+
+    private static func runningLine(
+        lead: String, leadID: String?, worker: String?, workerID: String?,
+        workerNote: String?, chosen: Bool, done: Bool
+    ) -> String {
         let running = "\(done ? "Ran on" : "Running on") \(lead)"
         guard let worker, let workerID, workerID != leadID else { return running }
         if chosen {
@@ -1040,6 +1058,12 @@ private struct ResearchRunEnvelopeWire: Decodable {
             let workerNote: String?
             let writer: Lead?
             let chosen: Bool?
+            /// The model the person picked when it could not lead, and why.
+            let chosenRefused: ChosenRefused?
+        }
+        struct ChosenRefused: Decodable {
+            let model: Lead?
+            let reason: String?
         }
         struct Finding: Decodable {
             let id: String
@@ -1243,7 +1267,10 @@ private struct ResearchRunEnvelopeWire: Decodable {
                 workerID: run.models?.worker?.id,
                 workerNote: run.models?.workerNote,
                 chosen: run.models?.chosen ?? false,
-                done: NativeResearchRun.isTerminalState(run.state)
+                done: NativeResearchRun.isTerminalState(run.state),
+                refusedModel: run.models?.chosenRefused?.model?.label,
+                refusedModelID: run.models?.chosenRefused?.model?.id,
+                refusedReason: run.models?.chosenRefused?.reason
             ),
             findings: (run.latestFindings?.elements ?? []).prefix(5).map {
                 NativeResearchRun.Finding(

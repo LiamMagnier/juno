@@ -4,6 +4,7 @@ import { getCurrentUser } from "@/lib/session";
 import { getUserPlan } from "@/lib/usage";
 import { rateLimit } from "@/lib/rate-limit";
 import { isWebSearchConfigured } from "@/lib/web-search";
+import { isAutoModelId } from "@/lib/auto-model";
 import {
   conversationContextFor,
   driveResearchInBackground,
@@ -112,6 +113,8 @@ export async function POST(req: Request) {
     timeZone,
     locale,
     language: validLocale(parsed.data.language) ?? facts.responseLanguage,
+    // The composer's model leads the run (§9.5.1), as on the chat's paths.
+    preferredModel: isAutoModelId(parsed.data.preferredModel) ? null : parsed.data.preferredModel ?? null,
   });
   driveResearchInBackground({ runId: run.id, userId: user.id });
 

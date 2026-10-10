@@ -580,7 +580,7 @@ export function createResearchEngine(deps: ResearchDeps): ResearchEngine {
       return leave(await store.loadRun(runId, userId));
     },
 
-    async decidePlan({ runId, userId, decision, steps, queries, constraints, pinnedSources, questions, answers, sources }) {
+    async decidePlan({ runId, userId, decision, steps, queries, constraints, pinnedSources, questions, answers, sources, preferredModel }) {
       const run = await store.loadRun(runId, userId);
       if (!run) return { ok: false, state: "", reason: "not_found" };
       if (run.state !== "awaiting_plan_confirmation") {
@@ -597,7 +597,13 @@ export function createResearchEngine(deps: ResearchDeps): ResearchEngine {
           ? { ok: true, state: "cancelled" }
           : { ok: false, state: run.state, reason: "already_finished" };
       }
-      const current = parsePlan(run.plan);
+      // The model chosen when the person decides is the one that leads
+      // (§9.5.1): it is persisted on the plan, so sizing at confirm, the
+      // planner on a revise and every later stage read the same choice. No
+      // model (Auto, an older client) keeps the one recorded at start.
+      const chosenNow = preferredModel?.trim().slice(0, 120);
+      const recorded = parsePlan(run.plan);
+      const current = chosenNow ? { ...recorded, preferredLead: chosenNow } : recorded;
       const now = deps.now();
 
       /*
