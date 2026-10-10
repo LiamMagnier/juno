@@ -83,7 +83,7 @@ struct JunoMobileProjectDetail: View {
   var body: some View {
     GeometryReader { proxy in
       ScrollView {
-        VStack(alignment: .leading, spacing: JunoSpace.region) {
+        VStack(alignment: .leading, spacing: JunoSpace.wide) {
           header
           status
           JunoMobileProjectFolderSection(
@@ -421,9 +421,8 @@ struct JunoMobileProjectDetail: View {
           } label: {
             JunoMobileCapsuleLabel(String(localized: "Add file"), icon: .plus)
           }
-          .junoMobileCapsuleAction()
+          .junoMobileCapsuleAction(.regular)
           .contentShape(Capsule())
-          .controlSize(.regular)
           .disabled(project.isPending || model.isPerformingFileAction)
         }
       }
@@ -484,9 +483,8 @@ struct JunoMobileProjectDetail: View {
           } label: {
             JunoMobileCapsuleLabel(String(localized: "Edit"), icon: .pencil)
           }
-          .junoMobileCapsuleAction()
+          .junoMobileCapsuleAction(.regular)
           .contentShape(Capsule())
-          .controlSize(.regular)
           .disabled(project.isPending)
         }
       }
@@ -535,9 +533,8 @@ struct JunoMobileProjectDetail: View {
               icon: assistantConfiguration == nil ? .sparkles : .pencil
             )
           }
-          .junoMobileCapsuleAction()
+          .junoMobileCapsuleAction(.regular)
           .contentShape(Capsule())
-          .controlSize(.regular)
           .disabled(project.isPending)
           .accessibilityIdentifier("juno.mobile.project-assistant")
         }
@@ -712,17 +709,15 @@ struct JunoMobileProjectInvitation: View {
           } label: {
             JunoMobileCapsuleLabel(actionTitle, icon: actionIcon)
           }
-          .junoMobileCapsuleAction()
+          .junoMobileCapsuleAction(.regular)
           .contentShape(Capsule())
-          .controlSize(.regular)
           .padding(.leading, JunoSpace.expanse + JunoSpace.cozy)
         } else if let action {
           Button(action: action) {
             JunoMobileCapsuleLabel(actionTitle, icon: actionIcon)
           }
-          .junoMobileCapsuleAction()
+          .junoMobileCapsuleAction(.regular)
           .contentShape(Capsule())
-          .controlSize(.regular)
           .padding(.leading, JunoSpace.expanse + JunoSpace.cozy)
         }
       }

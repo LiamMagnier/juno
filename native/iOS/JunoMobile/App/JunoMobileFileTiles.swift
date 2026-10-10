@@ -27,17 +27,21 @@ struct JunoMobileFilePreviewSurface: View {
       Color.junoSecondary
       switch state {
       case .ready(let image):
-        Image(decorative: image, scale: 1)
-          .resizable()
-          .scaledToFill()
-          // A photo is recognised by its middle; a document by its first
-          // lines. Cropping a page to its centre shows a paragraph from nowhere.
-          .frame(
-            maxWidth: .infinity,
-            maxHeight: .infinity,
-            alignment: request.isImage ? .center : .top
-          )
-          .transition(.opacity)
+        // Sized explicitly to the box, then aligned: a photo is recognised by
+        // its middle, a document by its first lines — cropping a page to its
+        // centre shows a paragraph from nowhere.
+        GeometryReader { proxy in
+          Image(decorative: image, scale: 1)
+            .resizable()
+            .scaledToFill()
+            .frame(
+              width: proxy.size.width,
+              height: proxy.size.height,
+              alignment: request.isImage ? .center : .top
+            )
+            .clipped()
+        }
+        .transition(.opacity)
       case .loading:
         EmptyView()
       case .unavailable:
@@ -72,8 +76,11 @@ struct JunoMobileFileTile: View {
   var body: some View {
     let inner = RoundedRectangle(cornerRadius: JunoRadius.card - JunoSpace.hairline, style: .continuous)
     VStack(alignment: .leading, spacing: 0) {
-      JunoMobileFilePreviewSurface(request: request, state: state)
+      // The frame is set by a clear 4:3 box and the picture laid over it, so
+      // a tall photo filling its tile can never make the tile taller.
+      Color.clear
         .aspectRatio(4 / 3, contentMode: .fit)
+        .overlay { JunoMobileFilePreviewSurface(request: request, state: state) }
         .clipShape(inner)
         .overlay(inner.strokeBorder(Color.junoHairline, lineWidth: 0.5))
       VStack(alignment: .leading, spacing: JunoSpace.micro) {

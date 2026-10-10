@@ -89,9 +89,8 @@ struct JunoMobileProjectFolderSection: View {
             Button(action: create) {
               JunoMobileCapsuleLabel(String(localized: "New folder"), icon: .folderPlus)
             }
-            .junoMobileCapsuleAction()
+            .junoMobileCapsuleAction(.regular)
             .contentShape(Capsule())
-            .controlSize(.regular)
             .disabled(project.isPending || model.isMutating)
           }
         }

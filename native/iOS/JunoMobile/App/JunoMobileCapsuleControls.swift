@@ -107,10 +107,10 @@ enum JunoMobileCapsuleMetrics {
 
 extension View {
   /// A secondary action as a glass capsule (Recently deleted, New folder…).
-  func junoMobileCapsuleAction() -> some View {
+  func junoMobileCapsuleAction(_ size: ControlSize = .large) -> some View {
     buttonStyle(.glass)
       .buttonBorderShape(.capsule)
-      .controlSize(.large)
+      .controlSize(size)
   }
 
   /// The surface's one primary action, accent-tinted glass (Upload, New chat,

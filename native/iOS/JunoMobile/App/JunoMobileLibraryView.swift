@@ -182,14 +182,24 @@ struct JunoMobileLibraryView: View {
         // `--juno-preview-library-open <id>`: the file's QuickLook preview,
         // opened as a tap would open it.
         if let index = CommandLine.arguments.firstIndex(of: "--juno-preview-library-open"),
-          index + 1 < CommandLine.arguments.count,
-          let file = model.libraryFiles.first(where: { $0.id == CommandLine.arguments[index + 1] })
+          index + 1 < CommandLine.arguments.count
         {
-          try? await Task.sleep(for: .milliseconds(1_200))
-          open(file)
+          let id = CommandLine.arguments[index + 1]
+          // The synced files land a moment after the screen does.
+          for _ in 0..<40 {
+            if let file = model.libraryFiles.first(where: { $0.id == id }) {
+              try? await Task.sleep(for: .milliseconds(600))
+              open(file)
+              break
+            }
+            try? await Task.sleep(for: .milliseconds(250))
+          }
         }
-        if CommandLine.arguments.contains("--juno-preview-library-list") {
-          storedPresentation = Presentation.list.rawValue
+        // The harness states the view every launch, so one capture's List
+        // does not leak into the next one's Grid.
+        if CommandLine.arguments.contains("--juno-ui-preview") {
+          storedPresentation = CommandLine.arguments.contains("--juno-preview-library-list")
+            ? Presentation.list.rawValue : Presentation.grid.rawValue
         }
         if let index = CommandLine.arguments.firstIndex(of: "--juno-preview-library-filter"),
           index + 1 < CommandLine.arguments.count,
@@ -244,17 +254,19 @@ struct JunoMobileLibraryView: View {
           if showsShelves {
             shelves
           }
-          if !model.libraryFiles.isEmpty || !(uploader?.uploads.isEmpty ?? true) {
-            controls
-          }
           documentIndexSection
-          uploadsInFlight(width: width)
-          if files.isEmpty {
-            empty
-          } else if presentation == .grid {
-            grid(width: width)
-          } else {
-            list
+          VStack(alignment: .leading, spacing: JunoSpace.cozy) {
+            if !model.libraryFiles.isEmpty || !(uploader?.uploads.isEmpty ?? true) {
+              controls
+            }
+            uploadsInFlight(width: width)
+            if files.isEmpty {
+              empty
+            } else if presentation == .grid {
+              grid(width: width)
+            } else {
+              list
+            }
           }
         }
         .padding(.horizontal, JunoLayout.Page.gutter)
@@ -590,9 +602,8 @@ struct JunoMobileLibraryView: View {
         .lineLimit(2)
       Spacer(minLength: 0)
       Button("Retry") { Task { await model.reload() } }
-        .junoMobileCapsuleAction()
+        .junoMobileCapsuleAction(.small)
         .contentShape(Capsule())
-        .controlSize(.small)
     }
     .padding(JunoSpace.cozy)
     .background(
@@ -1011,9 +1022,8 @@ struct JunoMobileLibraryDeletedView: View {
       } label: {
         JunoMobileCapsuleLabel(String(localized: "Restore"), icon: .restore)
       }
-      .junoMobileCapsuleAction()
+      .junoMobileCapsuleAction(.small)
       .contentShape(Capsule())
-      .controlSize(.small)
       .accessibilityLabel("Restore \(item.fileName)")
     }
     .padding(.horizontal, JunoSpace.cozy)

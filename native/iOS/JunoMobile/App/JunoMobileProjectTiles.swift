@@ -248,28 +248,35 @@ struct JunoMobileCoverDrawing {
 
   func draw(in context: inout GraphicsContext, size: CGSize) {
     let unit = size.height
-    let pitch: CGFloat = 5
+    let pitch: CGFloat = 6
     let ink = Color.junoForeground
-    // The matrix: every dot faint, the dots on an orbit firm.
+    // The matrix: a faint field of dots the orbits sit on.
     var y = pitch / 2
     while y < size.height {
       var x = pitch / 2
       while x < size.width {
-        var strength: CGFloat = 0.07
-        for ring in rings {
-          let dx = x - ring.cx * size.width
-          let dy = y - ring.cy * unit
-          let distance = abs((dx * dx + dy * dy).squareRoot() - ring.r * unit)
-          // Half a pitch either side of the orbit: every column the circle
-          // crosses lights one dot, so it reads as an unbroken dotted line.
-          if distance <= pitch / 2 { strength = max(strength, 0.5); break }
-          if distance <= pitch { strength = max(strength, 0.16) }
-        }
-        let dot = CGRect(x: x - 0.9, y: y - 0.9, width: 1.8, height: 1.8)
-        context.fill(Path(ellipseIn: dot), with: .color(ink.opacity(strength)))
+        context.fill(Path(ellipseIn: CGRect(x: x - 0.7, y: y - 0.7, width: 1.4, height: 1.4)), with: .color(ink.opacity(0.07)))
         x += pitch
       }
       y += pitch
+    }
+    // Each orbit as its own dotted circle, dots spaced evenly along its arc
+    // so a ring stays round at any size (a grid-quantised ring reads as a
+    // rounded square on a small tile). Inner rings are firmer than outer.
+    for (index, ring) in rings.enumerated() {
+      let center = CGPoint(x: ring.cx * size.width, y: ring.cy * unit)
+      let radius = ring.r * unit
+      let count = max(12, Int((2 * .pi * radius) / 3.4))
+      let strength = 0.34 + 0.14 * Double(index) / Double(max(rings.count - 1, 1))
+      for step in 0..<count {
+        let angle = CGFloat(step) / CGFloat(count) * .pi * 2
+        let point = CGPoint(x: center.x + cos(angle) * radius, y: center.y + sin(angle) * radius)
+        guard point.x > -2, point.x < size.width + 2, point.y > -2, point.y < size.height + 2 else { continue }
+        context.fill(
+          Path(ellipseIn: CGRect(x: point.x - 0.9, y: point.y - 0.9, width: 1.8, height: 1.8)),
+          with: .color(ink.opacity(strength))
+        )
+      }
     }
     // One spoke per folder, from the inner ring out past the outer one.
     guard let outer = rings.first, let inner = rings.last else { return }
