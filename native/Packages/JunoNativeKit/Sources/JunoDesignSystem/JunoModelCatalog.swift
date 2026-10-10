@@ -156,6 +156,10 @@ public struct JunoThinkingLadder: Equatable, Sendable {
     /// when it has no faster tier. The number rather than a flag, so the toggle
     /// can name the premium it is asking the reader to accept.
     public let fastModeRateMultiplier: Double?
+    /// What OpenAI's Ultrafast service tier multiplies this model's rates by
+    /// (6 on GPT-6.1 Sol and GPT-6 Astra), or nil when it is not served on it.
+    /// A second premium beside Flash, never at the same time as it.
+    public let ultraFastRateMultiplier: Double?
     /// Whether this model offers a deeper "pro" execution of the same request.
     ///
     /// Carried beside the ladder rather than added to it, because it is not a
@@ -175,6 +179,7 @@ public struct JunoThinkingLadder: Equatable, Sendable {
         modelName: String = "",
         caption: String? = nil,
         fastModeRateMultiplier: Double? = nil,
+        ultraFastRateMultiplier: Double? = nil,
         supportsProMode: Bool = false,
         defaultStopID: String? = nil
     ) {
@@ -184,11 +189,15 @@ public struct JunoThinkingLadder: Equatable, Sendable {
         self.modelName = modelName
         self.caption = caption
         self.fastModeRateMultiplier = fastModeRateMultiplier
+        self.ultraFastRateMultiplier = ultraFastRateMultiplier
         self.supportsProMode = supportsProMode
     }
 
     /// Whether this model has a premium serving tier.
     public var supportsFastMode: Bool { fastModeRateMultiplier != nil }
+
+    /// Whether this model can be served on OpenAI's Ultrafast tier.
+    public var supportsUltraFastMode: Bool { ultraFastRateMultiplier != nil }
 
     /// A model that exposes no thinking control at all.
     public static let unavailable = JunoThinkingLadder(stops: [])

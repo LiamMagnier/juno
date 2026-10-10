@@ -108,6 +108,30 @@ final class NativeFastAndProModeTests: XCTestCase {
         XCTAssertEqual(body["reasoningEffort"] as? String, "low")
     }
 
+    /// Ultra fast travels as its own key, true or absent, on both branches:
+    /// the route maps it to `service_tier: "ultrafast"` only where the model
+    /// has it.
+    func testUltraFastTravelsAsItsOwnKey() async throws {
+        let streamer = ModeStreamer(responses: [streamResponse(minimalStream)])
+        let client = NativeChatAPIClient(sender: ModeSender(), streamer: streamer)
+        let stream = try await client.generationEvents(
+            NativeChatGenerationRequest(
+                conversationID: "conv_12345678",
+                modelID: "openai:gpt-6.1-sol",
+                reasoningEffort: nil,
+                generationID: "juno-native-generation-1",
+                ultraFast: true
+            ),
+            for: accountID
+        )
+        for try await _ in stream {}
+        let body = try await firstBody(of: streamer)
+        XCTAssertEqual(body["ultraFast"] as? Bool, true)
+        XCTAssertNil(body["fastMode"])
+        let plain = try await sentBody(fastMode: false, proMode: false)
+        XCTAssertNil(plain["ultraFast"], "an ordinary turn's body is unchanged")
+    }
+
     // MARK: - Harness
 
     private func sentBody(

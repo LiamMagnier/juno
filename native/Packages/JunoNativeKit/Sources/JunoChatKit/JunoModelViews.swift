@@ -32,6 +32,7 @@ public extension NativeThinkingScale {
             modelName: modelName,
             caption: caption,
             fastModeRateMultiplier: fastModeRateMultiplier,
+            ultraFastRateMultiplier: ultraFastRateMultiplier,
             supportsProMode: supportsProMode,
             defaultStopID: defaultStop?.id
         )
@@ -139,9 +140,10 @@ public struct JunoThinkingPopover: View {
     @Binding private var effort: NativeReasoningEffort?
     private let width: CGFloat
     private let fastMode: Binding<Bool>?
+    private let ultraFast: Binding<Bool>?
     private let proMode: Binding<Bool>?
 
-    /// The two mode bindings default to nil so every existing call site keeps
+    /// The mode bindings default to nil so every existing call site keeps
     /// compiling and keeps rendering exactly what it did — a surface that has no
     /// state for these toggles must not be given them.
     public init(
@@ -149,12 +151,14 @@ public struct JunoThinkingPopover: View {
         effort: Binding<NativeReasoningEffort?>,
         width: CGFloat,
         fastMode: Binding<Bool>? = nil,
+        ultraFast: Binding<Bool>? = nil,
         proMode: Binding<Bool>? = nil
     ) {
         self.scale = scale
         _effort = effort
         self.width = width
         self.fastMode = fastMode
+        self.ultraFast = ultraFast
         self.proMode = proMode
     }
 
@@ -162,6 +166,7 @@ public struct JunoThinkingPopover: View {
     /// state the matching fixed height. iOS self-sizes and can ignore it.
     public var showsModeToggles: Bool {
         (fastMode != nil && scale.fastModeRateMultiplier != nil)
+            || (ultraFast != nil && scale.ultraFastRateMultiplier != nil)
             || (proMode != nil && scale.supportsProMode)
     }
 
@@ -187,6 +192,7 @@ public struct JunoThinkingPopover: View {
             stopID: scale.junoStopIDBinding(for: $effort),
             width: width,
             fastMode: fastMode,
+            ultraFast: ultraFast,
             proMode: proMode
         )
     }

@@ -4,7 +4,7 @@ import { chatSearchAvailable } from "@/lib/web/search";
 import type { Plan } from "@prisma/client";
 import { PLANS } from "@/lib/plans";
 import { isWebSearchConfigured } from "@/lib/web-search";
-import { supportsFastMode } from "@/lib/pricing";
+import { resolveFastMode } from "@/lib/pricing";
 import { supportsProMode } from "@/lib/model-metrics";
 import { workspacePermits, type WorkspaceConfig } from "@/lib/projects/workspace-config";
 import type { ModelInfo } from "@/lib/models";
@@ -49,7 +49,7 @@ export function resolveCapabilities({
   });
   const useWebSearch = searchPlan.native;
   const useAlevrSearch = searchPlan.alevr;
-  const useFastMode = !!input.fastMode && supportsFastMode(modelInfo);
+  const useFastMode = resolveFastMode(modelInfo, input);
   const useProMode = !!input.proMode && supportsProMode(modelInfo);
 
   // Canvas is the model's decision, not the user's: no Juno web client sends

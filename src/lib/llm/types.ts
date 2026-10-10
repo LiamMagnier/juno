@@ -1,3 +1,4 @@
+import type { FastMode } from "@/lib/pricing";
 /**
  * The one request shape every provider adapter takes (SPEC §5.0).
  *
@@ -34,7 +35,8 @@ export interface AdapterRequest {
   loop: LoopController;
   dynamicContext?: string;
   cacheKey?: string;
-  fastMode?: boolean;
+  /** Serving tier (pricing.ts FastMode): true = fast/priority, "ultrafast" = OpenAI Ultrafast. */
+  fastMode?: FastMode;
   proMode?: boolean;
   requestContext?: { requestId?: string | null; generationId?: string | null; conversationId?: string | null };
   /** Structured output for a tool-less call (the research planner, SPEC §9.5). Mapped per adapter:

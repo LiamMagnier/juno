@@ -1640,6 +1640,8 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         /// dropped Pro would answer with less thought than they asked for.
         let fastMode: Bool
         let proMode: Bool
+        /// OpenAI's Ultrafast tier, carried like Flash for the same reason.
+        var ultraFast: Bool = false
         /// The skill armed for this turn, carried through retries for the
         /// reason the tool flags are: a retry is the request the reader made.
         var skillSlug: String? = nil
@@ -2264,6 +2266,8 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         // and the programmatic code-conversation start — keep compiling and keep
         // sending exactly the body they sent before.
         fastMode: Bool = false,
+        // OpenAI's Ultrafast tier (GPT-6.1 Sol / GPT-6 Astra); defaulted like Flash.
+        ultraFast: Bool = false,
         proMode: Bool = false,
         // The files `attachmentIDs` names, as the reader's turn should show
         // them while it is on its way. Defaulted for the same call sites.
@@ -2284,6 +2288,7 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
             canvasEnabled: canvasEnabled,
             connectors: connectors,
             fastMode: fastMode,
+            ultraFast: ultraFast,
             proMode: proMode,
             branchPlacement: nil,
             attachments: attachments,
@@ -2308,6 +2313,7 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         canvasEnabled: Bool?,
         connectors: [String],
         fastMode: Bool,
+        ultraFast: Bool = false,
         proMode: Bool,
         branchPlacement: BranchPlacement?,
         attachments: [NativeChatAttachment] = [],
@@ -2376,6 +2382,7 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
             connectors: permitted.connectorIDs,
             fastMode: fastMode,
             proMode: proMode,
+            ultraFast: ultraFast,
             skillSlug: skillSlug,
             contextTokens: Array(contextTokens.prefix(16)),
             branchPlacement: branchPlacement,
@@ -2644,6 +2651,7 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
             canvasEnabled: context.canvasEnabled,
             connectors: context.connectors,
             fastMode: context.fastMode,
+            ultraFast: context.ultraFast,
             proMode: context.proMode
         )
     }
@@ -2761,6 +2769,7 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
                         canvasEnabled: context.canvasEnabled,
                         connectors: context.connectors,
                         fastMode: context.fastMode,
+                        ultraFast: context.ultraFast,
                         proMode: context.proMode,
                         regenerateInstruction: context.regenerateInstruction,
                         workHandoff: claimsWorkHandoff,

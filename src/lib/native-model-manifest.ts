@@ -5,7 +5,7 @@ import { getModelMetrics, reasoningCaps, supportsProMode } from "@/lib/model-met
 import { toolCapabilitiesFor } from "@/lib/model-tools";
 import { imageEditSupport, isSupersededModel, type ModelInfo } from "@/lib/models";
 import { modelRequiredPlan, planRank } from "@/lib/plans";
-import { fastModeMultiplier, supportsFastMode } from "@/lib/pricing";
+import { fastModeMultiplier, supportsFastMode, ultraFastMultiplier } from "@/lib/pricing";
 import { providerSearchServed } from "@/lib/provider-routing";
 import { PROVIDERS } from "@/lib/providers";
 import { decideModelCapability, type ModelCapabilityEvidence } from "@/lib/model-capability-policy";
@@ -256,6 +256,18 @@ export function nativeModelCatalog(
         auto || !supportsFastMode(model)
           ? null
           : { rateMultiplier: fastModeMultiplier(model) ?? 1 },
+      /**
+       * OpenAI's Ultrafast service tier (`service_tier: "ultrafast"`, Responses
+       * API) — GPT-6.1 Sol and GPT-6 Astra, at 6x standard — or null.
+       *
+       * Its own key rather than a second value of `fastMode`, so a shipped
+       * client that only knows `fastMode` keeps reading exactly what it read
+       * before. A client that knows this key offers a third choice, sends
+       * `ultraFast: true` on /api/chat, and names the multiplier it agreed to.
+       * The multiplier is read from OpenAI's Ultrafast pricing table by
+       * models:sync, never inferred. Null for Auto, for the reason above.
+       */
+      ultraFastMode: auto || ultraFastMultiplier(model) == null ? null : { rateMultiplier: ultraFastMultiplier(model)! },
       deprecationNote: model.deprecationNote ?? null,
       // The day the provider stops serving it, "YYYY-MM-DD", so a client can
       // say "Available until 23 Oct 2026" instead of parsing it back out of the

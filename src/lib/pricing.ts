@@ -419,6 +419,17 @@ export function supportsUltraFastMode(model: ModelInfo): boolean {
   return ultraFastMultiplier(model) !== null;
 }
 
+/**
+ * The serving tier a request gets: Ultrafast only where the model is on
+ * OpenAI's Ultrafast table, Fast only where it has a fast tier, else standard.
+ * An Ultrafast request on a model without it does NOT fall back to Fast: the
+ * reader agreed to a specific premium, not to whichever one is available.
+ */
+export function resolveFastMode(model: ModelInfo, req: { fastMode?: boolean; ultraFast?: boolean }): FastMode {
+  if (req.ultraFast) return supportsUltraFastMode(model) ? "ultrafast" : false;
+  return !!req.fastMode && supportsFastMode(model);
+}
+
 /** Input / output rate multiples for a request's serving tier. */
 function speedMultipliers(model: ModelInfo, fastMode: FastMode): { input: number; output: number } {
   if (!fastMode) return { input: 1, output: 1 };

@@ -1,4 +1,5 @@
 import "server-only";
+import type { FastMode } from "@/lib/pricing";
 import { spendKindFilter, type SpendScope } from "@/lib/research/spend-windows";
 import { cache } from "react";
 import { Prisma } from "@prisma/client";
@@ -201,7 +202,7 @@ export interface RecordSpendInput {
   completionChars?: number;
   /** Streamed reasoning text length — floors thinking-heavy turns without usage. */
   reasoningChars?: number;
-  fastMode?: boolean;
+  fastMode?: FastMode;
   /**
    * Precomputed request cost in USD (cache-aware, per-provider, tool fees).
    * Combined with a recompute from tokens so a too-low estimate can't underbill

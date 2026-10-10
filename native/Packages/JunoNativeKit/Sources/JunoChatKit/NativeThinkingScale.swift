@@ -118,6 +118,9 @@ public struct NativeThinkingScale: Equatable, Sendable {
     /// hard the model works — and neither is ever a stop, because every stop
     /// maps back to a `reasoningEffort` the chat route accepts.
     public let fastModeRateMultiplier: Double?
+    /// OpenAI's Ultrafast tier (6x on GPT-6.1 Sol / GPT-6 Astra), the same
+    /// kind of axis as Flash and never on at the same time as it.
+    public let ultraFastRateMultiplier: Double?
     public let supportsProMode: Bool
 
     public init(model: NativeChatModelOption) {
@@ -125,6 +128,7 @@ public struct NativeThinkingScale: Equatable, Sendable {
         declaredDefault = model.defaultReasoningEffort
         isAutomatic = model.choosesReasoningAutomatically
         fastModeRateMultiplier = model.fastModeRateMultiplier
+        ultraFastRateMultiplier = model.ultraFastRateMultiplier
         supportsProMode = model.supportsProMode
         if model.choosesReasoningAutomatically || !model.supportsReasoning {
             stops = []
