@@ -536,6 +536,16 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
                     "What should we build?"
                   )}
                 </h1>
+                {model.pairingRequired && (
+                  <div className="cv2-col">
+                    <div className="cv2-notice" role="status">
+                      This browser cannot control {model.pairingRequired.deviceName} yet.{" "}
+                      <a href="/pair" className="underline underline-offset-4">
+                        Pair this browser
+                      </a>
+                    </div>
+                  </div>
+                )}
                 <div className="cv2-col">{composerNode}</div>
                 <div className="spacer-bottom" />
               </div>
@@ -555,6 +565,7 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
                   onUndoTurn={model.actions.rollback ? (turn) => turn.checkpoint && model.actions.rollback?.(turn.checkpoint.checkpointId) : undefined}
                   starting={model.starting}
                   offline={model.offline}
+                  pairingRequired={model.pairingRequired}
                   resolveScreenshot={resolveScreenshot}
                 />
                 {!(dock.open && dock.expanded) && (

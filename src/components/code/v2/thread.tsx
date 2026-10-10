@@ -65,6 +65,8 @@ export interface ThreadProps {
   /** Shown before the first event of a starting session. */
   starting?: string | null;
   offline?: boolean;
+  /** This browser cannot drive the Mac until it is paired (docs/code-v2/REMOTE-CONTROL.md). */
+  pairingRequired?: { deviceName: string } | null;
   resolveScreenshot?: (ref: string) => string | null;
 }
 
@@ -679,6 +681,14 @@ export function Thread(props: ThreadProps) {
           <TurnView key={turn.id} turn={turn} props={props} now={now} unfolded={unfolded[turn.id]} onToggle={(open) => setUnfolded((u) => ({ ...u, [turn.id]: open }))} revert={reverts[i]} />
         ))}
         {props.offline && live && <div className="cv2-notice" style={{ marginTop: 16 }}>Paused while offline</div>}
+        {props.pairingRequired && (
+          <div className="cv2-notice" role="status" style={{ marginTop: 16 }}>
+            This browser cannot control {props.pairingRequired.deviceName} yet.{" "}
+            <a href="/pair" className="underline underline-offset-4">
+              Pair this browser
+            </a>
+          </div>
+        )}
       </div>
       <TurnRail turns={turns} onJump={jump} current={current} />
     </div>

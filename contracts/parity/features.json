@@ -76,6 +76,18 @@
           "status": "web-only",
           "note": "The web's own wake-up stream; the apps listen on /api/v1/changes/stream."
         },
+        "/api/sync/threads": {
+          "status": "native",
+          "note": "Per-thread draft, composer settings, unread and needs-you, long-polled by the apps and the web (docs/code-v2/REMOTE-CONTROL.md §Sync)."
+        },
+        "/api/sync/threads/[key]": {
+          "status": "native",
+          "note": "One thread's shared state, written debounced by every composer."
+        },
+        "/api/sync/handoff": {
+          "status": "native",
+          "note": "Continue on iPhone / Mac: the open thread pushed to the other app as a notification that opens it."
+        },
         "/api/v1/bootstrap": "native",
         "/api/v1/changes": "native",
         "/api/v1/changes/stream": "native",
@@ -953,8 +965,36 @@
           "note": "Code v2 per-thread role routing (Orchestrate). The Mac keeps routing in its own session state and sends it with each run."
         },
         "/api/code/v2/link/[deviceId]": {
-          "status": "web-only",
-          "note": "The browser side of the Code v2 device link: the web drives the env server on the user's Mac through it."
+          "status": "native",
+          "note": "The controller side of the Code v2 device link: the web and the iPhone's remote (JunoCodeRemote) drive the env server on a paired Mac through it. Needs a live remote-control pair (docs/code-v2/REMOTE-CONTROL.md)."
+        },
+        "/api/code/pairing": {
+          "status": "native",
+          "note": "A Mac's pairing offer for its \"Control this Mac remotely\" sheet: a QR token (phone) or a URL plus code (browser)."
+        },
+        "/api/code/pairing/offers/[offerId]": {
+          "status": "native",
+          "note": "The Mac's sheet polls its offer: pending, approved, denied or expired."
+        },
+        "/api/code/pairing/inspect": {
+          "status": "native",
+          "note": "The approve screen's summary of a scanned (iPhone) or typed (web /pair) offer."
+        },
+        "/api/code/pairing/approve": {
+          "status": "native",
+          "note": "Approve on the iPhone, or in the browser at /pair."
+        },
+        "/api/code/pairing/deny": {
+          "status": "native",
+          "note": "Deny on the iPhone, or in the browser at /pair."
+        },
+        "/api/code/pairing/pairs": {
+          "status": "native",
+          "note": "The Mac's paired devices (?deviceId=), or the Macs this iPhone may control."
+        },
+        "/api/code/pairing/pairs/[pairId]": {
+          "status": "native",
+          "note": "Remove a paired device on the Mac."
         },
         "/api/code/v2/link/[deviceId]/host": {
           "status": "native",

@@ -124,6 +124,8 @@ export interface WorkspaceModel {
   starting?: string | null;
   /** Shown when the web cannot reach the device. */
   offline?: boolean;
+  /** This browser holds no remote-control pair with the Mac (docs/code-v2/REMOTE-CONTROL.md). */
+  pairingRequired?: { deviceName: string } | null;
   /** Read-only child thread (a subagent opened in full view). */
   child?: { label: string; model: string; parentTitle: string } | null;
   /** skills lane: the Skills chip and `/name` (absent: no Skills chip). */

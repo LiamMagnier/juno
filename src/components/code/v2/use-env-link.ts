@@ -27,6 +27,8 @@ export interface EnvLink {
   /** The probe has settled (answered or failed) for the current Mac. */
   probed: boolean;
   status: TransportStatus | "none";
+  /** This browser holds no remote-control pair with the Mac: the server's words (docs/code-v2/REMOTE-CONTROL.md). */
+  pairingRequired: string | null;
   client: EnvClient | null;
   instances: ProviderInstance[];
   terminals: TerminalSession[];
@@ -58,6 +60,7 @@ export function useEnvLink(device: { id: string; online: boolean } | null, initi
   const [ready, setReady] = React.useState(false);
   const [probed, setProbed] = React.useState(false);
   const [status, setStatus] = React.useState<TransportStatus | "none">("none");
+  const [pairingRequired, setPairingRequired] = React.useState<string | null>(null);
   const [instances, setInstances] = React.useState<ProviderInstance[]>([]);
   const [terminals, setTerminals] = React.useState<TerminalSession[]>([]);
   const [view, setView] = React.useState<SessionView | null>(null);
@@ -98,6 +101,7 @@ export function useEnvLink(device: { id: string; online: boolean } | null, initi
         if (!live) return;
         setReady(false);
         setProbed(true);
+        if (transport instanceof DeviceLinkTransport) setPairingRequired(transport.pairingRequired);
       });
     return () => {
       live = false;
@@ -109,6 +113,7 @@ export function useEnvLink(device: { id: string; online: boolean } | null, initi
       setClient(null);
       setReady(false);
       setProbed(false);
+      setPairingRequired(null);
     };
   }, [deviceId, online]);
 
@@ -192,5 +197,5 @@ export function useEnvLink(device: { id: string; online: boolean } | null, initi
     [client],
   );
 
-  return { ready, probed, status, client, instances, terminals, view, sessionId, open, probe, openTerminal, writeTerminal, resizeTerminal, closeTerminal };
+  return { ready, probed, status, pairingRequired, client, instances, terminals, view, sessionId, open, probe, openTerminal, writeTerminal, resizeTerminal, closeTerminal };
 }
