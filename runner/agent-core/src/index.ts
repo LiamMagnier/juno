@@ -96,3 +96,13 @@ export {
 } from './protocol-legacy.js';
 // Alevr Code v2 shared contracts (byte copy of src/lib/code-v2/contracts.ts).
 export * as codeV2 from './contracts/code-v2.js';
+// skills lane: SKILL.md discovery (shared with the env server) and the cloud run's skills.
+export * from './skills/skill-files.js';
+export {
+  cloudSkillsNotice,
+  readCloudSkillRequest,
+  resolveCloudSkills,
+  type CloudAccountSkill,
+  type CloudSkillRequest,
+  type CloudSkills,
+} from './skills/cloud.js';

@@ -32,6 +32,8 @@ export interface EnvLink {
   terminals: TerminalSession[];
   view: SessionView | null;
   sessionId: string | null;
+  /** Bumped by each `skills.updated`: skills changed on the Mac, so a shown list re-reads. */
+  skillsRevision: number;
   /** Open (or resume) the session; resolves with its id. */
   open(params: ClientCommandParams["session.open"]): Promise<string>;
   probe(instanceId: string): Promise<ProviderInstance | void>;
@@ -62,6 +64,7 @@ export function useEnvLink(device: { id: string; online: boolean } | null, initi
   const [terminals, setTerminals] = React.useState<TerminalSession[]>([]);
   const [view, setView] = React.useState<SessionView | null>(null);
   const [sessionId, setSessionId] = React.useState<string | null>(initialSessionId);
+  const [skillsRevision, setSkillsRevision] = React.useState(0);
   const sub = React.useRef<SessionSubscription | null>(null);
   const deviceId = device?.id ?? null;
   const online = !!device?.online;
@@ -85,6 +88,7 @@ export function useEnvLink(device: { id: string; online: boolean } | null, initi
       else if (e.type === "terminal.output")
         setTerminals((ts) => ts.map((t) => (t.id === e.terminalId ? { ...t, ...appendTerminal({ output: t.output, offset: t.offset ?? 0 }, e.data) } : t)));
       else if (e.type === "terminal.exited") setTerminals((ts) => ts.map((t) => (t.id === e.terminalId ? { ...t, exited: true } : t)));
+      else if (e.type === "skills.updated") setSkillsRevision((n) => n + 1);
     });
     setClient(c);
     c.listProviders()
@@ -192,5 +196,5 @@ export function useEnvLink(device: { id: string; online: boolean } | null, initi
     [client],
   );
 
-  return { ready, probed, status, client, instances, terminals, view, sessionId, open, probe, openTerminal, writeTerminal, resizeTerminal, closeTerminal };
+  return { ready, probed, status, client, instances, terminals, view, sessionId, skillsRevision, open, probe, openTerminal, writeTerminal, resizeTerminal, closeTerminal };
 }

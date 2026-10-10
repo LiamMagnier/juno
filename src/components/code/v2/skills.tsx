@@ -139,7 +139,11 @@ export function SkillsPanel({ skills, onClose, initialQuery = "" }: { skills: Co
     ) : list.length === 0 ? (
       <div className="cv2-skill-empty col">
         <span className="t">No skills yet</span>
-        <span>Add a folder with a SKILL.md to ~/.claude/skills on your Mac, or write one in Alevr.</span>
+        <span>
+          {skills.localKind === "repo"
+            ? "Add a folder with a SKILL.md to .claude/skills in this repository, or write one in Alevr."
+            : "Add a folder with a SKILL.md to ~/.claude/skills on your Mac, or write one in Alevr."}
+        </span>
       </div>
     ) : searching && visible.length === 0 ? (
       <div className="cv2-skill-empty">No skill matches “{query.trim()}”</div>
@@ -166,7 +170,11 @@ export function SkillsPanel({ skills, onClose, initialQuery = "" }: { skills: Co
       <div className="cv2-pop-body cv2-skills-list" role="listbox" aria-label="Skills" aria-multiselectable ref={listRef}>
         {body}
       </div>
-      {skills.macUnavailable && <div className="cv2-pop-foot cv2-skill-warn">Your Mac’s skills appear when it is online.</div>}
+      {skills.macUnavailable && (
+        <div className="cv2-pop-foot cv2-skill-warn">
+          {skills.localKind === "repo" ? "Couldn’t read this repository’s skills from GitHub." : "Your Mac’s skills appear when it is online."}
+        </div>
+      )}
       <div className="cv2-pop-foot">
         <Link href={skills.manageHref} className="cv2-link" onClick={onClose}>
           Manage skills…

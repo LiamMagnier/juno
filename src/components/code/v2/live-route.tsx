@@ -18,7 +18,7 @@ import { useCodeTaskMeta, useDevicePresence } from "@/components/code/code-sessi
 import { useCodeSession } from "@/hooks/use-code-session";
 import { codeProviderModels } from "@/lib/code-v2/code-models";
 import { createByokClient, type ByokKeyRecord } from "@/lib/code-v2/byok-client";
-import type { ApprovalDecision, InteractionMode, ModelSelection, ProviderInstance, ProviderModel, RoleRouting, RuntimeMode } from "@/lib/code-v2/contracts";
+import type { ApprovalDecision, InteractionMode, ModelSelection, ProviderInstance, ProviderModel, RoleRouting, RuntimeMode, SkillActivation } from "@/lib/code-v2/contracts";
 import { legacyToItems, type LegacySessionInput } from "@/lib/code-v2/legacy-adapter";
 import { fallbackSetupCommand, managedSetup } from "@/lib/code-v2/providers-view";
 import { queueReducer, type QueueRow } from "@/lib/code-v2/composer";
@@ -32,13 +32,16 @@ import { managedCall, runtimeRequest, type ScheduledResume } from "@/lib/code-v2
 import { toast } from "sonner";
 import type { ClientMessage } from "@/types/chat";
 import { useEnvLink } from "./use-env-link";
-import { useCodeSkills } from "./use-code-skills";
+import { readRepoSkills, useCodeSkills } from "./use-code-skills";
 import type { WorkspaceModel } from "./types";
 import { CodeWorkspace } from "./workspace";
 import { initialModePair, projectModeKey, type ProjectModeDefault } from "@/lib/code-v2/composer-mode";
 import { createFirstPromptHandoff, firstPromptNeedsSkills } from "@/lib/code-v2/first-prompt";
 import { skillsStorageKey } from "@/lib/code-v2/skills";
 import { clearPendingCodePrompt, peekPendingCodePrompt } from "@/lib/code-session-handoff";
+
+/** A thread with no skills chosen, as one stable value. */
+const NO_SKILLS: SkillActivation[] = [];
 
 export interface CodeV2RouteProps {
   conversation: {
@@ -186,7 +189,9 @@ export function CodeV2Route({ conversation, initialMessages }: CodeV2RouteProps)
   async function sendLegacy(text: string) {
     const choice = { model: selection.instanceId === "alevr" ? selection.model : null, reasoningEffort: selection.effort ?? null };
     if (meta.isCloud && meta.repoOwner && meta.repoName) {
-      return session.send(text, { mode: "cloud", repo: { owner: meta.repoOwner, name: meta.repoName }, baseRef: meta.baseRef, workspaceName: conversation.codeWorkspaceName }, [], choice);
+      // Skills lane: the thread's account skills and the repository's own, for the runner.
+      const cloudSkills = skills.takeCloud();
+      return session.send(text, { mode: "cloud", repo: { owner: meta.repoOwner, name: meta.repoName }, baseRef: meta.baseRef, workspaceName: conversation.codeWorkspaceName }, [], { ...choice, ...(cloudSkills ? { skills: cloudSkills } : {}) });
     }
     if (!presence.device || !cwd) return { accepted: false };
     return session.send(text, { deviceId: presence.device.id, workspacePath: cwd, workspaceName: conversation.codeWorkspaceName, workspaceKey: conversation.codeWorkspaceKey }, [], choice);
@@ -202,14 +207,26 @@ export function CodeV2Route({ conversation, initialMessages }: CodeV2RouteProps)
   // the Mac's and the project's (skills.list over the device link).
   const envClient = useEnv ? env.client : null;
   const envSessionId = env.view?.id ?? env.sessionId ?? null;
-  const listLocal = React.useMemo(
-    () =>
-      envClient
-        ? async () => (await envClient.request("skills.list", envSessionId ? { sessionId: envSessionId } : cwd ? { cwd } : {})).skills
-        : null,
-    [envClient, envSessionId, cwd],
-  );
-  const skills = useCodeSkills({ threadKey: conversation.id, snapshotSkills: env.view?.skills, listLocal });
+  // A cloud thread lists its repository's own skills (what the runner reads from its clone).
+  const cloudRepo = meta.isCloud && meta.repoOwner && meta.repoName ? { owner: meta.repoOwner, name: meta.repoName } : null;
+  const cloudRepoKey = cloudRepo ? `${cloudRepo.owner}/${cloudRepo.name}` : null;
+  const cloudRef = meta.branch ?? meta.baseRef ?? null;
+  const listLocal = React.useMemo(() => {
+    if (envClient) return async () => (await envClient.request("skills.list", envSessionId ? { sessionId: envSessionId } : cwd ? { cwd } : {})).skills;
+    if (cloudRepoKey) {
+      const [owner, name] = cloudRepoKey.split("/") as [string, string];
+      return () => readRepoSkills({ owner, name }, cloudRef);
+    }
+    return null;
+  }, [envClient, envSessionId, cwd, cloudRepoKey, cloudRef]);
+  // Live selection: the env server's record of this thread's skills, set from any device.
+  const liveView = useEnv && env.client && env.view ? env.view : null;
+  const remoteSkills = React.useMemo(() => {
+    if (!liveView || !envClient) return null;
+    const sessionId = liveView.id;
+    return { skills: liveView.skills ?? NO_SKILLS, select: (next: SkillActivation[]) => envClient.request("skills.select", { sessionId, skills: next }) };
+  }, [liveView, envClient]);
+  const skills = useCodeSkills({ threadKey: conversation.id, snapshotSkills: env.view?.skills, listLocal, remote: remoteSkills, listRevision: env.skillsRevision, localKind: envClient ? "mac" : cloudRepoKey ? "repo" : undefined });
 
   const persistRouting = (r: RoleRouting) => {
     setRoutingState(r);

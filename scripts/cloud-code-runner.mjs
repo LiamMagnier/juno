@@ -61,7 +61,10 @@ import {
   AgentProtocolProjector,
   AgentSession,
   LegacyTaskDowncast,
+  cloudSkillsNotice,
   createProxyProvider,
+  readCloudSkillRequest,
+  resolveCloudSkills,
   protocolMode,
   unattendedApprovalAnswer,
 } from "../runner/agent-core/dist/index.js";
@@ -754,6 +757,10 @@ async function main() {
    * would then be silently enforcing.
    */
   const permissionMode = CLOUD_PERMISSION_MODES.has(ctx.permissionMode) ? ctx.permissionMode : "full";
+  // Skills lane: the account skills chosen in the composer (their instructions,
+  // read from the library by runner-context) and the names of the repository's
+  // own skills, read from the clone below by the env server's rules.
+  const skillRequest = readCloudSkillRequest(ctx.skills);
   const environment = readEnvironment(ctx.environment);
   /*
    * The submitter's variables are secrets: they are sealed at rest under the
@@ -1107,10 +1114,36 @@ async function main() {
     await runSetupScript(environment.setupScript, { cwd: workdir, env: agentEnv, sink });
   }
 
+  /*
+   * SKILLS, the way a run on the Mac carries them. The account's come with
+   * their instructions; the repository's are found in the clone's
+   * `.alevr/skills`, `.juno/skills` and `.claude/skills` (no home folders: a
+   * runner has none of the reader's) and read from there. Both go into the
+   * engine's system prompt, so every model call of the run is under them. A
+   * failure to read them is a notice, never a failed run.
+   */
+  let skillAppendix = "";
+  if (skillRequest.account?.length || skillRequest.project?.length) {
+    try {
+      const skills = await resolveCloudSkills(workdir, skillRequest);
+      skillAppendix = skills.text;
+      const notice = cloudSkillsNotice(skills);
+      if (notice) {
+        sink.hostEvent({ type: "item.notice", itemId: protocol.projector.itemId("notice"), source: "host", text: notice });
+      }
+      log(`skills: ${skills.applied.map((s) => `${s.source}:${s.name}`).join(", ") || "none"}${skills.missing.length ? ` (missing ${skills.missing.join(", ")})` : ""}`);
+    } catch (err) {
+      log(`skills could not be read: ${redact(String(err?.message ?? err))}`);
+      sink.hostEvent({ type: "item.notice", itemId: protocol.projector.itemId("notice"), source: "host", text: "This run's skills could not be read, so it runs without them." });
+    }
+  }
+
   const session = AgentSession.create({
     provider,
     cwd: workdir,
     model: chosen.model,
+    // The chosen skills (above): in the system prompt, as on the Mac.
+    ...(skillAppendix ? { systemAppendix: skillAppendix } : {}),
     // What the submitter chose, resolved server-side. `full` was hardcoded here
     // for the life of Cloud Code — the engine already had four modes and this
     // one line decided that none of them could ever be picked. The engine still

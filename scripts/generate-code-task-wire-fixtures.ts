@@ -52,6 +52,7 @@ function row(overrides: Partial<CodeTask>): CodeTask {
     roleRouting: null,
     environmentId: null,
     permissionMode: null,
+    skills: null,
     runnerClaimedAt: null,
     scheduleId: null,
     createdAt: at,

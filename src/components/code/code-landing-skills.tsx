@@ -2,10 +2,13 @@
 
 /**
  * The /code landing's Skills chip (skills lane): the same selector a thread's
- * composer opens, for the run about to start on a Mac. The account's skills
- * always; the Mac's own once the chosen project's Mac answers `skills.list`
- * over the device link. What is chosen here becomes the new thread's
- * selection (`seedThreadSkills`); a `/name` armed here rides the first message.
+ * composer opens, for the run about to start. The account's skills always;
+ * for a run on a Mac, the Mac's own once the chosen project's Mac answers
+ * `skills.list` over the device link; for a cloud run, the chosen
+ * repository's own (`.alevr/skills`, `.juno/skills`, `.claude/skills` on
+ * GitHub, what the runner reads from its clone). What is chosen here becomes
+ * the new thread's selection (`seedThreadSkills`); a `/name` armed here
+ * rides the first message (a cloud run's go with its task, `takeCloud`).
  */
 import * as React from "react";
 import "@/components/code/v2/code-v2.css";
@@ -14,7 +17,7 @@ import { composerChipClass } from "@/components/ui/composer-shell";
 import { Icon } from "@/components/ui/juno-icons";
 import { useDevicePresence } from "@/components/code/code-session-meta";
 import { SkillsPanel } from "@/components/code/v2/skills";
-import { useCodeSkills, type CodeSkillsState } from "@/components/code/v2/use-code-skills";
+import { readRepoSkills, useCodeSkills, type CodeSkillsState } from "@/components/code/v2/use-code-skills";
 import type { LocalSkillSummary } from "@/lib/code-v2/contracts";
 import { skillsChipLabel, skillsStorageKey } from "@/lib/code-v2/skills";
 import { cn } from "@/lib/utils";
@@ -33,13 +36,29 @@ async function listMacSkills(deviceId: string, cwd: string | null): Promise<Loca
   return first.result?.skills ?? [];
 }
 
-/** The landing's skills, for the project chosen on the Mac. */
-export function useLandingSkills(workspace: { key?: string | null; name: string; path: string } | null): CodeSkillsState {
+/**
+ * The landing's skills: for the project chosen on the Mac (`workspace`), or
+ * for the repository a cloud run starts from (`cloud`, at `ref` when one is
+ * chosen, else its default branch).
+ */
+export function useLandingSkills(
+  workspace: { key?: string | null; name: string; path: string } | null,
+  cloud: { owner: string; name: string; ref?: string | null } | null = null,
+): CodeSkillsState {
   const { presence } = useDevicePresence(workspace?.key ?? null, workspace?.name ?? null, !!workspace);
   const deviceId = presence.state === "online" ? (presence.device?.id ?? null) : null;
   const path = workspace?.path ?? null;
-  const listLocal = React.useMemo(() => (deviceId ? () => listMacSkills(deviceId, path) : null), [deviceId, path]);
-  return useCodeSkills({ threadKey: null, listLocal });
+  const repoKey = cloud ? `${cloud.owner}/${cloud.name}` : null;
+  const ref = cloud?.ref || null;
+  const listLocal = React.useMemo(() => {
+    if (deviceId) return () => listMacSkills(deviceId, path);
+    if (repoKey) {
+      const [owner, name] = repoKey.split("/") as [string, string];
+      return () => readRepoSkills({ owner, name }, ref);
+    }
+    return null;
+  }, [deviceId, path, repoKey, ref]);
+  return useCodeSkills({ threadKey: null, listLocal, localKind: repoKey && !deviceId ? "repo" : "mac" });
 }
 
 /**

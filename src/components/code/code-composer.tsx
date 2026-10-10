@@ -305,10 +305,14 @@ export function CodeComposer({
 
   // —— Workspace / Repository Selection ——
   const [selectedWorkspace, setSelectedWorkspace] = React.useState<Workspace | null>(null);
-  // Skills lane: the run on a Mac starts under the skills chosen here.
-  const landingSkills = useLandingSkills(target === "device" ? selectedWorkspace : null);
   const [selectedRepo, setSelectedRepo] = React.useState<CloudRepo | null>(null);
   const [baseRef, setBaseRef] = React.useState("");
+  // Skills lane: the run starts under the skills chosen here: the account's,
+  // and the Mac's and project's (a run on a Mac) or the repository's (a cloud run).
+  const landingSkills = useLandingSkills(
+    target === "device" ? selectedWorkspace : null,
+    target === "cloud" && selectedRepo ? { owner: selectedRepo.owner, name: selectedRepo.name, ref: baseRef || null } : null,
+  );
 
   /*
    * —— Turning `?repositories=owner/name` into a picked repository ——
@@ -519,6 +523,10 @@ export function CodeComposer({
       }
       const conversationId = cloudConversationId.current;
       const attachmentIds = attachments.map((a) => a.id);
+      // The thread keeps the landing's selection (its composer shows it); a
+      // `/name` armed here is this first run's only.
+      seedThreadSkills(landingSkills, conversationId, text);
+      const cloudSkills = landingSkills.takeCloud();
       const titleFallback =
         text.slice(0, 60) ||
         (attachments.length === 1 ? "1 attachment" : `${attachments.length} attachments`);
@@ -539,6 +547,8 @@ export function CodeComposer({
           reasoningEffort: reasoningEffort ?? undefined,
           // And its mode, as far as a cloud sandbox can enforce one.
           permissionMode: cloudPermissionMode(mode) ?? undefined,
+          // And its skills: account ones by id, the repository's by name.
+          skills: cloudSkills,
         }),
       });
 
@@ -600,7 +610,7 @@ export function CodeComposer({
       }
       return false;
     },
-    [clear, discardOrphanCloudSession, mode, model, reasoningEffort, router, upsertConversation],
+    [clear, discardOrphanCloudSession, landingSkills, mode, model, reasoningEffort, router, upsertConversation],
   );
 
   const submit = React.useCallback(
@@ -810,7 +820,7 @@ export function CodeComposer({
                 disabled={submitting}
               />
               <span className="ml-auto flex min-w-0 gap-1">
-                {target === "device" && <LandingSkillsChip skills={landingSkills} disabled={submitting} />}
+                <LandingSkillsChip skills={landingSkills} disabled={submitting} />
                 <ModeChip target={target} mode={mode} onChange={chooseMode} disabled={submitting} />
               </span>
             </div>

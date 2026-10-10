@@ -12,7 +12,9 @@
  *      that schema, and every `kind`/`type` in them must be a known value.
  *   1b. runner/env-server/src/skills/skill-files.ts must be byte-identical to
  *      runner/agent-core/src/skills/skill-files.ts (the SKILL.md layer the
- *      Mac's env server and the cloud runner share; agent-core is the source).
+ *      Mac's env server and the cloud runner share; agent-core is the source),
+ *      and its pure half skill-parse.ts must be byte-identical in agent-core,
+ *      the env server and src/lib/code-v2 (the web reads a repo's skills).
  *   4. Every Swift enum in CodeV2Contracts.swift marked
  *      `// contract: <VALUE_ARRAY>` must list exactly those raw values, and
  *      the Swift alias table must equal CODE_MODEL_ALIASES.
@@ -39,6 +41,8 @@ const SWIFT = join(root, "native/Packages/JunoCode/Sources/JunoCodeCore/CodeV2Co
 // skills lane: SKILL.md discovery and rendering, shared by the env server and the cloud runner.
 const SKILL_FILES = join(root, "runner/agent-core/src/skills/skill-files.ts");
 const SKILL_FILES_COPY = join(root, "runner/env-server/src/skills/skill-files.ts");
+const SKILL_PARSE = join(root, "runner/agent-core/src/skills/skill-parse.ts");
+const SKILL_PARSE_COPIES = [join(root, "runner/env-server/src/skills/skill-parse.ts"), join(root, "src/lib/code-v2/skill-parse.ts")];
 
 const write = process.argv.includes("--write");
 // Imported through a temporary .mts copy so Node treats it as an ES module
@@ -555,6 +559,17 @@ else if (write) await writeFile(SKILL_FILES_COPY, skillFiles);
 else {
   const copy = await readFile(SKILL_FILES_COPY, "utf8").catch(() => null);
   if (copy !== skillFiles) fail(`${SKILL_FILES_COPY} differs from ${SKILL_FILES} (run with --write)`);
+}
+const skillParse = await readFile(SKILL_PARSE, "utf8").catch(() => null);
+if (skillParse === null) fail(`${SKILL_PARSE} is missing`);
+else {
+  for (const target of SKILL_PARSE_COPIES) {
+    if (write) await writeFile(target, skillParse);
+    else {
+      const copy = await readFile(target, "utf8").catch(() => null);
+      if (copy !== skillParse) fail(`${target} differs from ${SKILL_PARSE} (run with --write)`);
+    }
+  }
 }
 
 // 2. Schema.

@@ -17,9 +17,13 @@ import {
   parseHostRequest,
 } from "@/lib/code-v2/env-link-hub";
 import type { ClientCommand, ServerEventEnvelope, ServerMessage, ServerResponse } from "@/lib/code-v2/contracts";
+import { applyEnvelopes, emptySessionView } from "@/lib/code-v2/session-store";
 import { startEnvServer, type EnvServer } from "../runner/env-server/src/server";
+import { SkillCatalog } from "../runner/env-server/src/skills/discovery";
 import { silentLogger } from "../runner/env-server/src/util";
-import { fakeBinDir, tempDir, initRepo } from "../runner/env-server/test/helpers";
+import { TestClient, fakeBinDir, tempDir, initRepo } from "../runner/env-server/test/helpers";
+import fs from "node:fs";
+import path from "node:path";
 
 const ev = (sessionId: string, sequence: number, type = "item.delta"): ServerEventEnvelope =>
   ({ type: "event", stream: "session", sessionId, sequence, at: new Date().toISOString(), event: type === "session.snapshot" ? { type, snapshotSequence: sequence, session: {} } : { type: "queue.updated", queue: [] } }) as unknown as ServerEventEnvelope;
@@ -187,7 +191,7 @@ function startForwarder(link: DeviceLink, server: EnvServer): () => void {
     else outbox.events.push(msg);
     flushTimer ??= setTimeout(flush, 10);
   });
-  const allowed = new Set(["session.open", "session.list", "session.close", "turn.start", "turn.steer", "turn.queue", "turn.interrupt", "approval.respond", "checkpoint.diff", "checkpoint.rollback", "provider.list", "provider.probe", "provider.setup"]);
+  const allowed = new Set(["session.open", "session.list", "session.close", "turn.start", "turn.steer", "turn.queue", "turn.interrupt", "approval.respond", "checkpoint.diff", "checkpoint.rollback", "provider.list", "provider.probe", "provider.setup", "skills.list", "skills.select"]);
   void (async () => {
     await new Promise((r) => ws.addEventListener("open", r, { once: true }));
     while (!stopped) {
@@ -288,4 +292,102 @@ test("link: a replay always carries afterSequence, so the env server never creat
   const { commands } = await link.pull(0);
   assert.equal(commands.length, 1);
   assert.deepEqual(commands[0].params, { sessionId: "s_unknown", cwd: "/", afterSequence: -1 });
+});
+
+// ── Skills lane: live selection and live listings over the link ──────────
+
+test("link: skills.select is relayed; session.skills and skills.updated reach the browser", async () => {
+  const link = new DeviceLink();
+  await online(link);
+  assert.ok(LINK_RELAYED_COMMANDS.has("skills.select"));
+  const reply = link.rpc({ id: "k1", type: "skills.select", params: { sessionId: "s1", skills: [] } });
+  const { commands } = await link.pull(0);
+  assert.equal(commands[0]?.type, "skills.select");
+  link.push({ responses: [{ type: "response", id: commands[0]!.id, ok: true, result: { skills: [] } }] });
+  assert.equal((await reply).responses?.[0]?.ok, true);
+
+  const skills = [{ name: "tidy", source: "account", title: "Tidy", instructions: "T" }];
+  link.push({
+    events: [
+      { type: "event", stream: "session", sessionId: "s1", sequence: 3, at: "", event: { type: "session.skills", skills } },
+      { type: "event", stream: "global", sequence: 40, at: "", event: { type: "skills.updated", cwd: "/repo" } },
+    ] as unknown as ServerEventEnvelope[],
+  });
+  const out = await link.poll({ s1: 2 }, -1, 0);
+  assert.deepEqual(out.events?.map((e) => e.event.type).sort(), ["session.skills", "skills.updated"]);
+  assert.ok(out.events?.some((e) => e.event.type === "skills.updated" && e.stream === "global"));
+  const session = out.events!.filter((e) => e.stream === "session");
+  const view = applyEnvelopes({ ...emptySessionView("s1", { instanceId: "alevr", model: "m" }), cursor: 2 }, session).view;
+  assert.deepEqual(view.skills, skills, "the browser's view applies the other device's selection");
+  const cleared = applyEnvelopes(view, [{ type: "event", stream: "session", sessionId: "s1", sequence: 4, at: "", event: { type: "session.skills", skills: [] } }]).view;
+  assert.equal(cleared.skills, undefined);
+});
+
+test("link end to end: a selection made on the Mac shows in the browser live, one made in the browser on the Mac, and a SKILL.md edit reaches both", async () => {
+  const home = tempDir("link-home");
+  const skillDir = path.join(home, ".claude", "skills", "design-taste-frontend");
+  fs.mkdirSync(skillDir, { recursive: true });
+  const skillFile = path.join(skillDir, "SKILL.md");
+  fs.writeFileSync(skillFile, "---\nname: design-taste-frontend\ndescription: Anti-slop.\n---\nBODY\n");
+  const catalog = new SkillCatalog({ home, maxAgeMs: 10 * 60_000 });
+  const server = await startEnvServer({ dataDir: tempDir("link-skills"), searchDirs: [fakeBinDir()], logger: silentLogger, probeOnStart: false, coalesceMs: 5, skills: catalog });
+  servers.push(server);
+  stops.push(() => catalog.close());
+  const hub = new EnvLinkHub();
+  const link = hub.link("user-1", "mac-skills");
+  stops.push(startForwarder(link, server));
+  await link.pull(0);
+  // The Mac's own composer: a direct client of its env server.
+  const mac = await TestClient.connect(server.url, server.token);
+  stops.push(() => mac.close());
+
+  let n = 0;
+  const call = async <T,>(type: ClientCommand["type"], params: Record<string, unknown>): Promise<T> => {
+    const reply = await link.rpc({ id: `k${++n}`, type, params } as ClientCommand);
+    const res = reply.responses?.[0];
+    assert.ok(res, JSON.stringify(reply));
+    if (!res.ok) throw Object.assign(new Error(res.error.message), { code: res.error.code });
+    return res.result as T;
+  };
+  await call("provider.probe", { instanceId: "codex:default" });
+  const repo = initRepo();
+  const { sessionId } = await call<{ sessionId: string }>("session.open", { cwd: repo, selection: { instanceId: "codex:default", model: "gpt-6.1-codex" } });
+  await mac.command("session.open", { sessionId, cwd: repo });
+  await mac.waitFor(() => mac.snapshots.get(sessionId), 4000, "mac snapshot");
+
+  let view = emptySessionView(sessionId, { instanceId: "codex:default", model: "gpt-6.1-codex" });
+  let globalCursor = -1;
+  const globals: ServerEventEnvelope[] = [];
+  const pollUntil = async (pred: () => boolean, label: string, ms = 1000) => {
+    const deadline = Date.now() + ms;
+    while (!pred()) {
+      if (Date.now() > deadline) throw new Error(`timed out within ${ms} ms: ${label}`);
+      const r = await link.poll({ [sessionId]: view.cursor ?? -1 }, globalCursor, 200);
+      for (const e of r.events ?? []) {
+        if (e.stream !== "global") continue;
+        globalCursor = Math.max(globalCursor, e.sequence);
+        globals.push(e);
+      }
+      view = applyEnvelopes(view, (r.events ?? []).filter((e) => e.stream === "session")).view;
+    }
+  };
+  await pollUntil(() => view.cursor !== null, "the browser's snapshot", 5000);
+
+  // 1. Chosen on the Mac: the browser applies it within a second.
+  await mac.command("skills.select", { sessionId, skills: [{ name: "design-taste-frontend", source: "user" }] });
+  await pollUntil(() => view.skills?.[0]?.name === "design-taste-frontend", "the Mac's choice in the browser");
+
+  // 2. Changed in the browser: the Mac's snapshot follows.
+  await call("skills.select", { sessionId, skills: [{ name: "tidy", source: "account", instructions: "TIDY" }] });
+  await mac.waitFor(() => mac.snapshot(sessionId).skills?.[0]?.name === "tidy" || undefined, 1000, "the browser's choice on the Mac");
+  await pollUntil(() => view.skills?.[0]?.name === "tidy", "echoed back to the browser");
+
+  // 3. An edit on disk: both hear skills.updated within a second.
+  await call("skills.list", {});
+  const before = globals.length;
+  fs.writeFileSync(skillFile, "---\nname: design-taste-frontend\ndescription: Edited.\n---\nBODY\n");
+  await pollUntil(() => globals.slice(before).some((e) => e.event.type === "skills.updated"), "skills.updated in the browser");
+  await mac.waitFor(() => mac.events.find((e) => e.event.type === "skills.updated"), 1000, "skills.updated on the Mac");
+  const listed = await call<{ skills: { name: string; description: string }[] }>("skills.list", {});
+  assert.equal(listed.skills.find((s) => s.name === "design-taste-frontend")?.description, "Edited.");
 });

@@ -32,6 +32,7 @@ import { catalogModel } from "@/lib/code-v2/code-models";
 import { activeByokProviders } from "@/lib/code-v2/byok-store";
 import { legacyModelFor, routingAvoidsAlevrBilling, validateRoleRouting } from "@/lib/code-v2/role-routing";
 import type { RoleRouting } from "@/lib/code-v2/contracts";
+import { cloudSkillRefsSchema, dedupeRefs, readCloudSkillRefs, type CloudSkillRef } from "@/lib/code-v2/cloud-skills";
 
 export const runtime = "nodejs";
 
@@ -117,6 +118,11 @@ const postSchema = z.object({
   // src/lib/code-v2/role-routing.ts below. Absent = the thread's stored
   // routing (Conversation.codeRouting), if any; null = single-model run.
   routing: z.unknown().optional(),
+  // Skills lane: the skills a CLOUD run carries (src/lib/code-v2/cloud-skills.ts),
+  // account skills by library id and the repository's own by name. Absent =
+  // what the conversation's last cloud run carried; [] = none. A run on a Mac
+  // takes its skills over the device link, so a device task ignores this.
+  skills: cloudSkillRefsSchema.optional(),
 }).refine(
   (v) => (v.prompt?.trim().length ?? 0) > 0 || (v.attachmentIds?.length ?? 0) > 0,
   { message: "prompt_or_attachments_required", path: ["prompt"] },
@@ -299,6 +305,7 @@ export async function POST(req: Request) {
     reasoningEffort,
     environmentId,
     permissionMode,
+    skills: requestedSkills,
   } = parsed.data;
   // A pre-v2 host reads only `model`: give it the orchestrator's catalogue
   // model when the request named routing but no model.
@@ -543,14 +550,18 @@ export async function POST(req: Request) {
         // showing one setting while the run used another.
         const inheritEnvironment = environmentId === undefined;
         const inheritPermissionMode = permissionMode === undefined;
+        // Skills follow the same rule: absent inherits, [] is a choice.
+        const inheritSkills = requestedSkills === undefined;
         let inheritedEnvironmentId: string | null = environmentId ?? null;
         let inheritedPermissionMode: CodePermissionMode | null = permissionMode ?? null;
-        if (conversationId && (inheritEnvironment || inheritPermissionMode)) {
+        let inheritedSkills: CloudSkillRef[] = requestedSkills ? dedupeRefs(requestedSkills) : [];
+        if (conversationId && (inheritEnvironment || inheritPermissionMode || inheritSkills)) {
           const last = await tx.codeTask.findFirst({
             where: { userId: user.id, conversationId, target: "cloud" },
             orderBy: { createdAt: "desc" },
-            select: { environmentId: true, permissionMode: true },
+            select: { environmentId: true, permissionMode: true, skills: true },
           });
+          if (inheritSkills) inheritedSkills = readCloudSkillRefs(last?.skills);
           if (inheritEnvironment) inheritedEnvironmentId = last?.environmentId ?? null;
           // Checked rather than copied: the column is a plain string, and a
           // mode written by a deploy that offered a value this one no longer
@@ -592,6 +603,7 @@ export async function POST(req: Request) {
             environmentId: inheritedEnvironmentId,
             permissionMode: inheritedPermissionMode,
             roleRouting: roleRoutingJson,
+            skills: inheritedSkills.length ? (inheritedSkills as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
           },
         });
       });

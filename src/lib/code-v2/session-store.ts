@@ -187,6 +187,12 @@ export function applyEnvelope(view: SessionView, envelope: ServerEventEnvelope):
     case "session.scheduled":
       next = { ...view, scheduledResume: event.scheduledResume };
       break;
+    case "session.skills": {
+      // The thread's selection, set on any device (an empty list clears it).
+      const { skills: _previous, ...rest } = view;
+      next = event.skills.length ? { ...rest, skills: event.skills } : rest;
+      break;
+    }
     default:
       break;
   }

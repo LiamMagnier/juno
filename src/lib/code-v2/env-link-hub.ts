@@ -68,6 +68,8 @@ export const LINK_RELAYED_COMMANDS: ReadonlySet<ClientCommandType> = new Set<Cli
   "conversation.toggle",
   // skills lane: what is installed on the Mac (names, descriptions, paths; the env server never sends a body).
   "skills.list",
+  // skills lane: a thread's selection set from this device; every device following it gets `session.skills`.
+  "skills.select",
 ]);
 
 /**

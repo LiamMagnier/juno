@@ -2105,6 +2105,12 @@ model CodeTask {
   // cloud tasks accept it today: the Mac host owns its own approval gating and
   // does not read this, and a value a runner ignores is worse than no value.
   permissionMode    String?
+  // The skills this run carries (skills lane, src/lib/code-v2/cloud-skills.ts):
+  // `[{source: "account", id, name} | {source: "project", name}]`. Account
+  // skills by library id, read fresh by runner-context; the repository's own
+  // by name, read from the clone by the runner. Null = none chosen. Cloud only:
+  // a run on a Mac takes its skills over the device link instead.
+  skills            Json?
   // Cloud runner one-time handoff: set the first time the GitHub Actions runner
   // successfully exchanges its dispatch code for runner-context (clone token +
   // fresh task token). A non-null value means that handoff is spent, so a

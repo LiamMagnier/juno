@@ -1,5 +1,6 @@
 "use client";
 
+import type { CloudSkillRef } from "@/lib/code-v2/cloud-skills";
 import * as React from "react";
 import { toast } from "sonner";
 import type { ChatMessage } from "@/hooks/use-chat";
@@ -717,7 +718,7 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
        * catalog. Optional, so a caller that has no preference still gets that
        * fallback rather than a failure.
        */
-      choice: { model?: string | null; reasoningEffort?: string | null } = {},
+      choice: { model?: string | null; reasoningEffort?: string | null; skills?: CloudSkillRef[] } = {},
     ): Promise<{ accepted: boolean }> => {
       if (statusRef.current !== "idle") return { accepted: false };
       const trimmed = text.trim();
@@ -753,6 +754,8 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
                 conversationId: opts.conversationId,
                 model: choice.model || undefined,
                 reasoningEffort: choice.reasoningEffort || undefined,
+                // Skills lane: absent keeps the conversation's last choice.
+                skills: choice.skills,
               }
             : {
                 deviceId: target.deviceId,

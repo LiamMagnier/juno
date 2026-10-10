@@ -21,6 +21,7 @@ import {
   isCodePermissionMode,
   readStoredEnvVars,
 } from "@/lib/code-environments";
+import { readCloudSkillRefs, resolveCloudSkillContext } from "@/lib/code-v2/cloud-skills";
 import { backendAgentCatalog, loadAvailableModels } from "@/lib/model-catalog-api";
 import { catalogEntryMatchesModel } from "@/lib/models";
 import { loadModelCapabilityMap } from "@/lib/model-capability";
@@ -103,6 +104,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       reasoningEffort: true,
       roleRouting: true,
       permissionMode: true,
+      skills: true,
       conversationId: true,
       createdAt: true,
       environment: {
@@ -407,6 +409,11 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     ? [...catalog].sort((a, b) => (chosen(a) ? -1 : chosen(b) ? 1 : 0))
     : catalog;
 
+  // Skills lane: the account skills' instructions as they are NOW (an edit
+  // made after dispatch still applies), for this user only; the repository's
+  // own skills by name, which the runner reads from its clone.
+  const skills = await resolveCloudSkillContext(prisma, user.id, readCloudSkillRefs(task.skills));
+
   return NextResponse.json(
     {
       // The agent protocol this server stores as `protocol` task events; the
@@ -477,6 +484,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
        * is continuing — only the CREATION is deferred.
        */
       openPullRequest: task.conversationId ? "never" : "auto",
+      // runner/agent-core `readCloudSkillRequest`: { account: [{name, title?,
+      // instructions}], project: [name] }. Empty lists when none were chosen.
+      skills,
     },
     { headers: { "Cache-Control": "no-store" } },
   );

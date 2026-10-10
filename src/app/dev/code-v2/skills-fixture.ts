@@ -43,6 +43,7 @@ export function useFixtureSkills(initial?: { selected?: string[]; once?: string;
     selected,
     once,
     macUnavailable: false,
+    localKind: "mac",
     load: () => undefined,
     reload: () => undefined,
     toggle: (c) => setIds((x) => (x.includes(c.id) ? x.filter((i) => i !== c.id) : [...x, c.id])),
@@ -52,6 +53,10 @@ export function useFixtureSkills(initial?: { selected?: string[]; once?: string;
       setOnce(null);
     },
     take: async () => {
+      setOnce(null);
+      return undefined;
+    },
+    takeCloud: () => {
       setOnce(null);
       return undefined;
     },
