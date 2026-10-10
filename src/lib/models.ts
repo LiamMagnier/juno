@@ -552,6 +552,16 @@ const CURATED: ModelInfo[] = [
 
   // —— Mistral ——
   def({ provider: "mistral", id: "mistral-medium-latest", name: "Mistral Medium 3.5", family: "medium", status: "current", released: "2026-04", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 262_144, description: "Mistral's frontier multimodal model: agentic work with reasoning effort." }),
+  // Mistral Large 4 (owner-approved 2026-10-10), read 2026-10-10 from
+  // docs.mistral.ai/models/mistral-large-4-0: API names `mistral-large-4` and
+  // `mistral-large-4-0` (the card's copy badges), v26.10, Public Preview,
+  // 1M context, multimodal (1.6B vision encoder), function calling. Priced
+  // at list $1.36 / $4.18 (cached $0.14); the card shows a sale at $0.68 /
+  // $2.09 with no end date, which models:sync reports but does not bill.
+  // `mistral-large-latest` still lists on Large 3's card, so that row keeps
+  // its name. The card states no reasoning control, so none is set. Its own
+  // family: Large 3 stays the GA `-latest` while Large 4 is in preview.
+  def({ provider: "mistral", id: "mistral-large-4", name: "Mistral Large 4", family: "large-4", status: "current", released: "2026-10", minPlan: "PRO", vision: true, reasoning: false, cost: 2, contextWindow: 1_000_000, description: "Mistral's open-weight 1T-parameter flagship, in public preview: multimodal, 1M context, tool use." }),
   def({ provider: "mistral", id: "mistral-large-latest", name: "Mistral Large 3", family: "large", status: "current", released: "2025-12", minPlan: "PRO", vision: true, cost: 1, contextWindow: 262_144, description: "Open-weight multimodal model: very cheap, but benchmarks below Medium 3.5." }),
   def({ provider: "mistral", id: "mistral-small-latest", name: "Mistral Small 4", family: "small", status: "current", released: "2026-03", minPlan: "FREE", vision: true, reasoning: true, cost: 1, contextWindow: 262_144, description: "Cost-efficient hybrid: instruct, reasoning, and vision in one." }),
   // Codestral 25.08 is a 128k model (docs.mistral.ai/models/codestral-25-08),
@@ -643,6 +653,15 @@ const CURATED: ModelInfo[] = [
   def({ provider: "qwen", id: "qwen3.7-plus", name: "Qwen3.7 Plus", family: "qwen-plus", status: "current", released: "2026-05", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 1_000_000, description: "Balanced multimodal hybrid-thinking model with 1M context." }),
   // The id is exactly `qwen3.8-flash`: lowercase, with the period. Not
   // `Qwen3.8-Flash` and not `qwen-3.8-flash`, both of which 404.
+  // Qwen3.8 Omni Flash (owner-approved 2026-10-10), read 2026-10-10 from
+  // alibabacloud.com/help/en/model-studio/qwen3-8-omni-flash: text, image,
+  // audio and video in, text out, Singapore among its regions, 1M context
+  // (131,072 output), custom tool calling. $0.15 / $0.47, cache hit $0.016
+  // (model-pricing, Qwen-Omni, Singapore). Thinking is on by default "with
+  // adjustable reasoning effort", but the levels are not published, so the
+  // row claims no reasoning control and sends no thinking parameter: the
+  // model runs at its own default.
+  def({ provider: "qwen", id: "qwen3.8-omni-flash", name: "Qwen3.8 Omni Flash", family: "qwen-omni", status: "current", released: "2026-09", minPlan: "FREE", vision: true, reasoning: false, cost: 1, contextWindow: 1_000_000, description: "Qwen's omni-modal volume tier: text, images, audio and video in, 1M context, tool calling." }),
   def({ provider: "qwen", id: "qwen3.8-flash", name: "Qwen3.8 Flash", family: "qwen-flash", status: "current", released: "2026-08", minPlan: "FREE", vision: true, reasoning: true, cost: 1, contextWindow: 1_000_000, description: "Qwen's volume tier: text, image and video in, a 1M window, and a 256K thinking budget." }),
   // qwen3.7-flash (Model Studio page, read 2026-10-04): hybrid thinking on by
   // default (enable_thinking + thinking_budget, up to 262,144), image/video/
@@ -682,7 +701,15 @@ const GENERATIVE: ModelInfo[] = [
   def({ provider: "openai", id: "gpt-image-1.5", name: "GPT Image 1.5", family: "gpt-image", status: "deprecated", released: "2025-12", modality: "image", minPlan: "PRO", cost: 2, description: "Previous OpenAI image generation and editing model.", deprecationNote: "Retires Dec 1, 2026. Use GPT Image 2.5 Sunburst", retiresOn: "2026-12-01", replacedBy: "openai:gpt-image-2.5-sunburst" }),
   def({ provider: "openai", id: "gpt-image-1", name: "GPT Image 1", family: "gpt-image", status: "deprecated", released: "2025-04", modality: "image", minPlan: "PRO", cost: 2, description: "Previous OpenAI image model.", deprecationNote: "Retires Oct 23, 2026. Use GPT Image 2.5", retiresOn: "2026-10-23", replacedBy: "openai:gpt-image-2.5-sunburst" }),
   def({ provider: "google", id: "gemini-3-pro-image", name: "Nano Banana Pro", family: "gemini-image-pro", status: "current", released: "2025-11", modality: "image", minPlan: "PRO", cost: 3, description: "Premium image generation: complex composition, text rendering, 4K." }),
-  def({ provider: "google", id: "gemini-3.1-flash-image", name: "Nano Banana 2", family: "gemini-image-flash", status: "current", released: "2026-04", modality: "image", minPlan: "PRO", cost: 2, description: "Workhorse image generation: 4K, references, Search grounding." }),
+  // Nano Banana 2.1 (owner-approved 2026-10-10), read 2026-10-10 from
+  // ai.google.dev/gemini-api/docs/models/gemini-nano-banana-2.1 and the
+  // pricing page: "an update to Nano Banana 2", 1K / 2K / 4K (default 1K),
+  // up to 14 reference images, Search grounding, text/image/video/PDF in.
+  // $0.0336 a 1K image, $0.0504 2K, $0.113 4K (spend.ts). It takes Nano
+  // Banana 2's place in the family, which steps down to legacy and stays
+  // callable; Google's deprecations page names 2.1 as Imagen 4's replacement.
+  def({ provider: "google", id: "gemini-nano-banana-2.1", name: "Nano Banana 2.1", family: "gemini-image-flash", status: "current", released: "2026-10", modality: "image", minPlan: "PRO", cost: 2, description: "Google's Flash image model: sharper text and layouts, 1K to 4K, up to 14 references, Search grounding." }),
+  def({ provider: "google", id: "gemini-3.1-flash-image", name: "Nano Banana 2", family: "gemini-image-flash", status: "legacy", released: "2026-04", modality: "image", minPlan: "PRO", cost: 2, description: "Workhorse image generation: 4K, references, Search grounding." }),
   def({ provider: "google", id: "gemini-3.1-flash-lite-image", name: "Nano Banana 2 Lite", family: "gemini-image-lite", status: "current", released: "2026-04", modality: "image", minPlan: "FREE", cost: 1, description: "Fastest, cheapest image generation for rapid ideation." }),
   def({ provider: "xai", id: "grok-imagine-image-2.0", name: "Grok Imagine 2.0", family: "imagine-image-2", status: "current", released: "2026-08", modality: "image", minPlan: "PRO", cost: 2, description: "xAI's latest image generation and editing model." }),
   // xAI's May 15 retirement guide: "On November 2, 2026, grok-imagine-image-
@@ -865,7 +892,7 @@ export const RETIRED_MODELS: Record<string, ModelId> = {
   // Google — marketing names listed as chat models + retired Imagen/Veo ids.
   "google:nano-banana-pro": "google:gemini-3.8-flash", // was mis-listed as a chat model
   "google:nano-banana-2": "google:gemini-3.8-flash", // was mis-listed as a chat model
-  "google:imagen-3.0-generate-002": "google:gemini-3.1-flash-image", // shut down 2025-11-10
+  "google:imagen-3.0-generate-002": "google:gemini-nano-banana-2.1", // shut down 2025-11-10
   "google:imagen-3.0-fast-002": "google:gemini-3.1-flash-lite-image", // id never existed; line retired
   // Listed by ListModels but 404s on every call: "no longer available to new users".
   "google:gemini-2.5-flash": "google:gemini-3.8-flash",
@@ -959,8 +986,9 @@ export const RETIRED_MODELS: Record<string, ModelId> = {
   "qwen:qwen-turbo": "qwen:qwen3.8-flash", // retired 2026-10-09 (models:sync)
   "qwen:qwen-vl-max": "qwen:qwen3.7-plus", // retired 2026-10-09 (models:sync)
   "qwen:qwq-plus": "qwen:qwen3.8-max", // retired 2026-10-09 (models:sync)
-  "google:gemini-2.5-flash-image": "google:gemini-3.1-flash-image", // retired 2026-10-02 (models:sync)
-  "google:imagen-4.0-generate-001": "google:gemini-3.1-flash-image", // retired 2026-08-17 (models:sync)
+  // Nano Banana's own line continues in 2.1 (Google's page lists 3.1 Flash-Lite Image as the cheap alternative).
+  "google:gemini-2.5-flash-image": "google:gemini-nano-banana-2.1", // retired 2026-10-02 (models:sync)
+  "google:imagen-4.0-generate-001": "google:gemini-nano-banana-2.1", // retired 2026-08-17; Google's named replacement
   "google:gemini-omni-flash-preview": "google:gemini-omni-1.1-flash", // retired 2026-09-30 (models:sync)
 };
 
