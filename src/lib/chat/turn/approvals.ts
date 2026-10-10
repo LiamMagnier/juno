@@ -10,6 +10,7 @@ import { narrowRuntimeToolsForSkill } from "@/lib/chat/skills";
 import { START_TASK_TOOL_ID, chatTaskToolEnabled, isTaskApproval } from "@/lib/chat/task-tool";
 import { HAND_OFF_TOOL_ID, isHandoffApproval } from "@/lib/chat/handoff-tool";
 import { chatAgentConfigToolsEnabled } from "@/lib/chat/agent-config-tools";
+import { LOCAL_FOLDER_FEATURE, localFolderToolsEnabled } from "@/lib/chat/local-folder";
 import type { ChatRequestBody } from "@/lib/chat/request";
 import type { SseSender } from "@/lib/chat-stream";
 import type { StallWatchdog } from "@/lib/chat-stall";
@@ -127,7 +128,29 @@ export async function resolveApprovals({
         })
       : null;
 
-  return { taskGate, taskToolOn, handoffGateOpen, agentConfigToolsOn, turnAgentId, agentContext };
+  /*
+   * The folder on the person's Mac (src/lib/chat/local-folder.ts): whether
+   * this turn carries the folder tools, and the folder it names. Not narrowed
+   * by an applied skill: the folder is a choice the person made in the
+   * composer for this chat, as a connector is, not a tool the model reached
+   * for.
+   */
+  const localFolderOn = localFolderToolsEnabled({
+    clientDeclares: input.clientFeatures?.includes(LOCAL_FOLDER_FEATURE) ?? false,
+    folder: input.localFolder,
+    privateMode: !!input.privateMode,
+    voiceMode: !!input.voiceMode,
+    lockdown: !!settings?.lockdownMode,
+    functionToolsReachModel: taskGate.functionToolsReachModel,
+    agenticTools: !!modelInfo.agenticTools,
+    conversationKind: conversation.kind,
+    artifactEdit,
+    researchActive,
+    skillPermits: true,
+  });
+  const localFolder = localFolderOn ? (input.localFolder ?? null) : null;
+
+  return { taskGate, taskToolOn, handoffGateOpen, agentConfigToolsOn, turnAgentId, agentContext, localFolder };
 }
 
 export type TurnApprovals = Awaited<ReturnType<typeof resolveApprovals>>;

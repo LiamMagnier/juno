@@ -89,6 +89,8 @@ export async function* streamChat(opts: {
    * decides whether a turn may carry one, and private turns never do.
    */
   nativeTools?: readonly NativeChatTool[];
+  /** Tool rounds this turn may take (`ToolLoop.maxRounds`). Absent: the adapter's default. */
+  maxToolRounds?: number;
   /**
    * Provider specs this turn may carry (the execution and skill lanes'
    * `run_code`, `check_run`, `use_skill`, `read_skill_file`), already granted
@@ -170,7 +172,8 @@ export async function* streamChat(opts: {
    * the call ids it issues are stable across a replayed round.
    */
   const tools: ToolLoop | undefined =
-    opts.toolLoop ?? (toolset && toolset.tools.length > 0 ? createToolLoop(toolset) : undefined);
+    opts.toolLoop ??
+    (toolset && toolset.tools.length > 0 ? createToolLoop(toolset, { maxRounds: opts.maxToolRounds }) : undefined);
   try {
     // `webSearch` picks Meta's transport: its search exists only on Responses.
     const adapter = providerAdapterFor(model, proMode, { webSearch: !!webSearch });

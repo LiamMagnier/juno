@@ -570,6 +570,30 @@ const connector: Entry = {
   figure: () => null,
 };
 
+/**
+ * The Mac's folder tools (src/lib/chat/local-folder.ts). Only a Mac runs them,
+ * so the web and the phone meet these rows only when they open a chat that
+ * worked in a folder: a reading row names the file, anything else names what
+ * it acted on.
+ */
+const localFolder: Entry = {
+  icon: "document",
+  running: (r) => {
+    const action = arg(r, "action");
+    const subject = arg(r, "command") ?? arg(r, "path") ?? arg(r, "query");
+    if (action === "read" && subject) return [spec(phrase("reading"), file(subject))];
+    if (action === "search" && subject) return [spec(phrase("searchingIn"), quote(subject))];
+    return [subject ? spec(phrase("usingTool"), label(subject)) : only("usingTool")];
+  },
+  done: (r) => {
+    const action = arg(r, "action");
+    const subject = arg(r, "command") ?? arg(r, "path") ?? arg(r, "query");
+    if (action === "read" && subject) return [spec(phrase("read"), file(subject))];
+    return [spec(phrase("used"), subject ? label(subject) : null)];
+  },
+  figure: () => null,
+};
+
 const REGISTRY: Record<CanonicalToolId, Entry> = {
   web_search: webSearch,
   // A news search reads as a search; finding in a page reads as reading it
@@ -587,6 +611,7 @@ const REGISTRY: Record<CanonicalToolId, Entry> = {
   calculate,
   start_task: startTask,
   suggest_research: suggestResearch,
+  local_folder: localFolder,
   mcp: connector,
 };
 

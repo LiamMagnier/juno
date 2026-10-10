@@ -154,7 +154,7 @@ public struct NativeTurnStream: Equatable, Sendable {
             return .failed(message: message, finishReason: reason)
         case .handoff(let handoff):
             return .handoff(handoff)
-        case .metadata, .title, .approval, .mediaProgress, .resume, .work, .sequence, .ping:
+        case .metadata, .title, .approval, .mediaProgress, .resume, .work, .localTool, .sequence, .ping:
             break
         }
         return .continuing

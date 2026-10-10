@@ -21,6 +21,7 @@ export const CLIENT_FEATURES = [
   "live_ui",             // renders ```live-ui interactive views; the prompt may teach them (docs/design/LIVE_UI.md)
   "live_ui_exercise",    // renders the Live UI `exercise` card (answer box, hints, send); without it exercises are posed in prose
   "code_run",            // shows Run on chat code blocks (JS, TS, Python, SQL); the prompt may say so
+  "local_folder",        // Mac only: runs the folder tools on a folder the person picked (src/lib/chat/local-folder.ts)
 ] as const;
 export type ClientFeature = (typeof CLIENT_FEATURES)[number];
 
@@ -64,5 +65,14 @@ export function parseClientFeatures(raw: readonly string[] | undefined): ClientF
   };
 }
 
+/**
+ * Features only a native client can honour. A browser has no folder on the
+ * person's disk to run a tool against, so the web never claims `local_folder`;
+ * claiming it would offer the model tools whose calls nothing executes.
+ */
+export const NATIVE_ONLY_CLIENT_FEATURES: readonly ClientFeature[] = ["local_folder"];
+
 /** What the web client sends on every /api/chat request. */
-export const WEB_CLIENT_FEATURES: readonly ClientFeature[] = CLIENT_FEATURES;
+export const WEB_CLIENT_FEATURES: readonly ClientFeature[] = CLIENT_FEATURES.filter(
+  (feature) => !NATIVE_ONLY_CLIENT_FEATURES.includes(feature)
+);

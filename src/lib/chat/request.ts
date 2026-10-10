@@ -16,6 +16,7 @@
  */
 import { z } from "zod";
 import { CLIENT_FEATURES, MAX_CLIENT_FEATURES, type ClientFeature } from "@/lib/chat/client-features";
+import { lenientLocalFolder } from "@/lib/chat/local-folder";
 import { HISTORY_LIMIT } from "@/lib/chat/context-assembly";
 import {
   chatOriginSchema,
@@ -266,6 +267,14 @@ export const chatBodySchema = z
      * would otherwise start runs it has nowhere to draw.
      */
     workHandoff: z.boolean().optional(),
+    /**
+     * The folder on the person's Mac this chat works in (the Mac's "Work in a
+     * folder"): its display name and the access they chose, never a path.
+     * Read only together with the `local_folder` client feature
+     * (src/lib/chat/local-folder.ts). Lenient: a malformed value is dropped,
+     * and the turn simply has no folder tools.
+     */
+    localFolder: z.unknown().optional().transform(lenientLocalFolder),
     /**
      * A follow-up agent turn in a room (src/lib/agents/rooms.ts): answer the
      * room's newest message as this member, appended as a new reply. Sent with

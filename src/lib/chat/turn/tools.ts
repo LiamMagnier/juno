@@ -17,6 +17,8 @@ import { createAgentConfigTools } from "@/lib/chat/agent-config-tools";
 import { createSetupChangeTool } from "@/lib/chat/setup-change-tool";
 import { createAskRoomMemberTool, createCreateRoomTool } from "@/lib/chat/room-tools";
 import { isAgentComputerConfigured } from "@/lib/computer/provider";
+import { createLocalFolderTools } from "@/lib/chat/local-folder-tools";
+import type { LocalFolderGrant } from "@/lib/chat/local-folder";
 import { agentApprovalMode } from "@/lib/agents/domain";
 import type { RoomTurnSetup } from "@/lib/agents/room-store";
 import type { WorkspaceConfig } from "@/lib/projects/workspace-config";
@@ -172,6 +174,7 @@ export async function buildNativeTools({
   roomMessageId,
   clarificationVisibleContent,
   preflightVisibleContent,
+  localFolder = null,
 }: {
   user: TurnUser;
   input: ChatRequestBody;
@@ -194,6 +197,8 @@ export async function buildNativeTools({
   roomMessageId: string | null;
   clarificationVisibleContent: string | null;
   preflightVisibleContent: string | null;
+  /** The Mac folder this turn works in (`resolveApprovals`), or null. */
+  localFolder?: LocalFolderGrant | null;
 }): Promise<NativeChatTool[]> {
   let taskAnnounced = false;
   const taskTool =
@@ -338,6 +343,12 @@ export async function buildNativeTools({
           },
         })
       : null;
+  // The folder tools run on the Mac: each call goes out on this stream as a
+  // `local_tool` frame and waits for the Mac's answer
+  // (src/lib/chat/local-folder-tools.ts).
+  const folderTools = localFolder
+    ? createLocalFolderTools({ folder: localFolder, userId: user.id, generationId, send })
+    : [];
   const nativeTools = [
     taskTool,
     handoffTool,
@@ -348,5 +359,5 @@ export async function buildNativeTools({
   ].filter(
     (tool): tool is NativeChatTool => tool !== null
   );
-  return nativeTools;
+  return folderTools.length > 0 ? [...folderTools, ...nativeTools] : nativeTools;
 }

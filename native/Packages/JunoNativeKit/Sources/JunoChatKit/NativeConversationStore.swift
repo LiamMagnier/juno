@@ -1181,6 +1181,35 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
     /// reader never sees. Private chats and Compare never carry it.
     public var claimsWorkHandoff = false
 
+    // MARK: Work in a folder
+
+    /// Runs the folder calls a turn sends (`local_tool` frames) and names the
+    /// folder each conversation works in. The Mac sets it; the phone never
+    /// does, so a phone neither names a folder nor runs a call.
+    @ObservationIgnored public weak var localToolHost: (any NativeLocalToolHosting)?
+
+    /// Calls already handed to the host, by id. A resumed stream replays the
+    /// frames after its last seen sequence, and a call must run once.
+    @ObservationIgnored private var startedLocalToolCalls: Set<String> = []
+
+    /// Hands one folder call to the host and posts how it ended. Off the
+    /// stream's own loop: the turn keeps reading frames (pings, the approval
+    /// it may be waiting on) while the call runs.
+    private func runLocalTool(_ call: NativeLocalToolCall, conversationID: String, generationID: String, accountID: AccountID) {
+        guard startedLocalToolCalls.insert(call.id).inserted, let chatClient else { return }
+        let host = localToolHost
+        Task { @MainActor in
+            let result = await host?.perform(call, conversationID: conversationID)
+                ?? .failed("This app cannot work in folders, so nothing was done.")
+            try? await chatClient.submitLocalToolResult(
+                callID: call.id,
+                result: result,
+                generationID: generationID,
+                for: accountID
+            )
+        }
+    }
+
     /// The newest task the model started in each conversation, from the
     /// stream's `work` frame, by conversation id. The app's follower adopts it
     /// (the web's `onWorkStarted` → `useConversationWork.adopt`).
@@ -2690,6 +2719,9 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         needsAppend: Bool
     ) async {
         guard let chatClient, accountID == initialContext.accountID else { return }
+        // However the turn ends — done, failed, stopped, replaced — nothing is
+        // waiting for an answer to a folder card it raised any more.
+        defer { localToolHost?.turnEnded(conversationID: initialContext.conversationID) }
         var context = initialContext
         // The generation this run is, once it has one, and the last frame of
         // it this client has handled — what a reconnect resumes after.
@@ -2765,7 +2797,8 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
                         regenerateInstruction: context.regenerateInstruction,
                         workHandoff: claimsWorkHandoff,
                         skillSlug: context.skillSlug,
-                        context: context.contextTokens
+                        context: context.contextTokens,
+                        localFolder: localToolHost?.folderContext(for: context.conversationID)
                     ),
                     for: context.accountID
                 )
@@ -2939,6 +2972,15 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
                 // The model started a task from this turn. Not terminal: the
                 // reply goes on to say so. The app's follower adopts it.
                 adoptWorkStart(start, conversationID: context.conversationID)
+            case .localTool(let call):
+                // A folder call for this Mac. Not terminal: the turn waits on
+                // the outcome the host posts, and the stream goes on.
+                runLocalTool(
+                    call,
+                    conversationID: context.conversationID,
+                    generationID: generationID,
+                    accountID: context.accountID
+                )
             case .handoff(let handoff):
                 // The turn became a research run: no answer is written, so the
                 // placeholder goes, and the run's row takes its place.

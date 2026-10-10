@@ -387,7 +387,7 @@ export async function* streamOpenAIResponses(
   let xaiReportedSearches: number | null = null;
   let xaiReportedXSearches = 0;
   const c: ResponsesTransport = transport ?? sdkResponsesTransport(host);
-  const maxRounds = hasTools ? MAX_TOOL_ROUNDS + 1 : 1;
+  const maxRounds = hasTools ? (tools?.maxRounds ?? MAX_TOOL_ROUNDS) + 1 : 1;
   for (let round = 0; round < maxRounds; round++) {
     const isFinalRound = round === maxRounds - 1;
     const params: OpenAI.Responses.ResponseCreateParamsStreaming & Record<string, unknown> = {

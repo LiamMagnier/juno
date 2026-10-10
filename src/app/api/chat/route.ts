@@ -192,6 +192,9 @@ async function handleChat(req: Request) {
       documentTool: attachmentToolToggles.documents,
       historyHasToolNotes: context.historyHasToolNotes,
       contextTokensUntrusted: turnContext.untrusted,
+      // Only a Mac that runs the folder tools names a folder; the gate in
+      // resolveApprovals decides whether this turn really carries them.
+      localFolder: !!input.localFolder && !!input.clientFeatures?.includes("local_folder"),
     });
 
     const approvals = await resolveApprovals({
@@ -277,6 +280,7 @@ async function handleChat(req: Request) {
       agentContext,
       roomSetup,
       roomMessageId,
+      localFolder: approvals.localFolder,
     });
 
     const trace = createTurnTrace({

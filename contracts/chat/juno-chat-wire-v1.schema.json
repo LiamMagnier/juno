@@ -10,7 +10,7 @@
     "unclassified": "Nobody has decided yet. `npm run native:wire:check` fails."
   },
   "x-native-summary": {
-    "native": 190,
+    "native": 196,
     "planned": 227,
     "web-only": 45,
     "unclassified": 0
@@ -468,6 +468,9 @@
           "type": "boolean",
           "x-native": "native"
         },
+        "localFolder": {
+          "x-native": "native"
+        },
         "roomTurn": {
           "type": "object",
           "properties": {
@@ -714,6 +717,24 @@
           "required": [
             "type",
             "session"
+          ],
+          "x-native": "native"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "local_tool"
+            },
+            "call": {
+              "$ref": "#/$defs/ClientLocalToolCall",
+              "x-native": "native"
+            }
+          },
+          "required": [
+            "type",
+            "call"
           ],
           "x-native": "native"
         },
@@ -1055,6 +1076,7 @@
         "current_time",
         "find_in_page",
         "inspect_image",
+        "local_folder",
         "mcp",
         "provider_web_search",
         "provider_x_search",
@@ -2209,6 +2231,42 @@
         "mimeType",
         "size",
         "url"
+      ]
+    },
+    "ClientLocalToolCall": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "x-native": "native"
+        },
+        "tool": {
+          "type": "string",
+          "x-native": "native"
+        },
+        "args": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          },
+          "x-native": "native"
+        }
+      },
+      "required": [
+        "id",
+        "tool",
+        "args"
       ]
     },
     "ClientMemoryReceipt": {
