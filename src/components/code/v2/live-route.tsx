@@ -36,6 +36,9 @@ import { useCodeSkills } from "./use-code-skills";
 import type { WorkspaceModel } from "./types";
 import { CodeWorkspace } from "./workspace";
 import { initialModePair, projectModeKey, type ProjectModeDefault } from "@/lib/code-v2/composer-mode";
+import { createFirstPromptHandoff, firstPromptNeedsSkills } from "@/lib/code-v2/first-prompt";
+import { skillsStorageKey } from "@/lib/code-v2/skills";
+import { clearPendingCodePrompt, peekPendingCodePrompt } from "@/lib/code-session-handoff";
 
 export interface CodeV2RouteProps {
   conversation: {
@@ -349,6 +352,46 @@ export function CodeV2Route({ conversation, initialMessages }: CodeV2RouteProps)
       void fetch(`/api/conversations/${conversation.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title }) }).catch(() => undefined);
     },
   };
+
+  /*
+   * The /code landing's first prompt. The landing leaves it in sessionStorage
+   * (with its Skills choice as this thread's selection and an armed `/name` in
+   * front of the text); only the legacy view used to read it, so a run on a
+   * Mac opened here never sent its task. Sent once, when the thread knows where
+   * it runs; cleared once accepted (lib/code-v2/first-prompt.ts).
+   */
+  const latest = React.useRef({ actions, skills, sendLegacy });
+  latest.current = { actions, skills, sendLegacy };
+  const handoff = React.useMemo(
+    () =>
+      createFirstPromptHandoff({
+        peek: () => peekPendingCodePrompt(conversation.id)?.text ?? null,
+        clear: () => clearPendingCodePrompt(conversation.id),
+        arm: (skill) => latest.current.skills.arm(skill),
+        async send(route, text) {
+          if (route === "env") return !!(await latest.current.actions.send(text));
+          return (await latest.current.sendLegacy(text)).accepted;
+        },
+        onError: (e) => toast.error(e instanceof Error ? e.message : "Could not send your first message. It is kept for when you reload."),
+      }),
+    [conversation.id],
+  );
+  const [landingSkillIds] = React.useState<string[]>(() => (typeof window === "undefined" ? [] : (readJson<string[]>(skillsStorageKey(conversation.id)) ?? [])));
+  const firstPromptGate = {
+    metaLoaded: meta.loaded,
+    isCloud: meta.isCloud,
+    envReady: env.ready && !!env.client,
+    envProbed: env.probed,
+    legacyTarget: !!presence.device && presence.state === "online" && !!cwd,
+    skillsLoaded: skills.choices !== null && !skills.loading,
+  };
+  React.useEffect(() => {
+    const pending = handoff.pending();
+    if (!pending) return;
+    // The `/name` and the account skills' instructions need the list.
+    if (firstPromptGate.envReady && firstPromptNeedsSkills(pending, landingSkillIds)) latest.current.skills.load();
+    void handoff.tick(firstPromptGate, skills.choices ?? [], landingSkillIds);
+  });
 
   const threads: ThreadSummary[] = conversations
     .filter((c) => c.kind === "code")
