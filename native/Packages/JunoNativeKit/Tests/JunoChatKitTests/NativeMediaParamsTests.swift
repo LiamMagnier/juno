@@ -69,12 +69,23 @@ final class NativeMediaParamsTests: XCTestCase {
         let control = try XCTUnwrap(sunburst.controls(square).first { $0.key == "resolution" })
         let fourK = try XCTUnwrap(control.choices.first { $0.value == .string("4K") })
         XCTAssertTrue(fourK.conflict)
-        // Parity with the web's applyParamChange, quirk included: the first
-        // escape from 1:1 is 2:3, which itself caps the resolution at 1K.
-        XCTAssertEqual(fourK.consequence, "Aspect ratio becomes Portrait")
+        // Parity with the web's applyParamChange: the picked 4K is kept, and
+        // the aspect moves only to a ratio that has 4K, the closest to 1:1
+        // (16:9 and 9:16 tie; the option's order picks 16:9). Never 2:3,
+        // which would cap the resolution at 1K and lose the pick.
+        XCTAssertEqual(fourK.consequence, "Aspect ratio becomes Widescreen")
         let moved = sunburst.applying("resolution", .string("4K"), to: square)
-        XCTAssertEqual(moved["aspect"], .string("2:3"))
-        XCTAssertEqual(moved["resolution"], .string("1K"))
+        XCTAssertEqual(moved["aspect"], .string("16:9"))
+        XCTAssertEqual(moved["resolution"], .string("4K"))
+
+        // A tall frame stays tall: 2:3 → 4K lands on 9:16; 2:3 → 2K on 1:1.
+        let portrait = sunburst.applying("aspect", .string("2:3"), to: square)
+        let tall4K = sunburst.applying("resolution", .string("4K"), to: portrait)
+        XCTAssertEqual(tall4K["aspect"], .string("9:16"))
+        XCTAssertEqual(tall4K["resolution"], .string("4K"))
+        let portrait2K = sunburst.applying("resolution", .string("2K"), to: portrait)
+        XCTAssertEqual(portrait2K["aspect"], .string("1:1"))
+        XCTAssertEqual(portrait2K["resolution"], .string("2K"))
 
         // From a wide frame, 4K simply applies.
         let wide = sunburst.applying("resolution", .string("4K"), to: sunburst.applying("aspect", .string("16:9"), to: square))

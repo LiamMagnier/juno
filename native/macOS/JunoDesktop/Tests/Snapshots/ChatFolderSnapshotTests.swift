@@ -61,6 +61,31 @@ struct ChatFolderSnapshotTests {
         )
     }
 
+    /// A new chat: the folder control leads the tray's line, before Project ·
+    /// Apps · Skills; then with a folder chosen for the draft.
+    @Test
+    func theNewChatTrayLeadsWithTheFolder() async throws {
+        let world = try await SnapshotPreviewWorld.shared()
+        world.showDraft()
+        defer { world.showConversation() }
+        let empty = try ChatFolderSnapshotFixtures.store(conversationID: nil, access: .readWrite)
+        try await render(
+            ChatFolderSnapshotFixtures.composer(world: world, prompt: nil)
+                .environment(\.desktopChatFolders, empty)
+                .padding(.vertical, JunoSpace.section)
+                .junoAccentTint(),
+            name: "folder-tray-new-chat"
+        )
+        let chosen = try ChatFolderSnapshotFixtures.store(conversationID: nil, access: .readWrite, draft: true)
+        try await render(
+            ChatFolderSnapshotFixtures.composer(world: world, prompt: "Sort these receipts by month.")
+                .environment(\.desktopChatFolders, chosen)
+                .padding(.vertical, JunoSpace.section)
+                .junoAccentTint(),
+            name: "folder-tray-new-chat-chosen"
+        )
+    }
+
     @Test
     func aRunningTaskShowsItsFolderRows() async throws {
         try await render(
@@ -143,8 +168,9 @@ enum ChatFolderSnapshotFixtures {
         .padding(.top, JunoSpace.cozy)
     }
 
-    /// A store with a real folder named "Q3 Invoices" chosen for the chat.
-    static func store(conversationID: String?, access: ChatFolderAccess) throws -> DesktopChatFolderStore {
+    /// A store with a real folder named "Q3 Invoices" chosen for the chat
+    /// (`conversationID`), or for the new chat's draft (`draft`).
+    static func store(conversationID: String?, access: ChatFolderAccess, draft: Bool = false) throws -> DesktopChatFolderStore {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("folder-snapshot-\(UUID().uuidString)", isDirectory: true)
         let folder = root.appendingPathComponent("Q3 Invoices", isDirectory: true)
@@ -155,6 +181,7 @@ enum ChatFolderSnapshotFixtures {
             panel: { _ in nil }
         )
         if let conversationID { store.adopt(folder, for: conversationID, access: access) }
+        if draft { store.adopt(folder, for: nil, access: access) }
         return store
     }
 

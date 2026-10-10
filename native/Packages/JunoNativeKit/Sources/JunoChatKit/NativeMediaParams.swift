@@ -290,8 +290,42 @@ public extension NativeMediaParamSchema {
         return values
     }
 
+    /// "16:9" as 16/9; nil for "auto" or anything that is not a ratio (`aspectRatioOf`).
+    private static func aspectRatio(_ value: NativeMediaParamValue) -> Double? {
+        guard let text = value.stringValue else { return nil }
+        let parts = text.split(separator: ":", omittingEmptySubsequences: false)
+        guard parts.count == 2, let w = Double(parts[0]), let h = Double(parts[1]),
+            w.isFinite, h.isFinite, w > 0, h > 0
+        else { return nil }
+        return w / h
+    }
+
+    /// The escape closest to where the blocker was (`closestEscape`): the
+    /// nearest tier or number, or for an aspect the ratio closest in shape (by
+    /// log ratio; a tie keeps the option's own order).
+    private static func closestEscape(
+        _ key: String, _ held: NativeMediaParamValue, _ candidates: [NativeMediaParamValue]
+    ) -> NativeMediaParamValue? {
+        guard key == "aspect" else { return nearest(key, held, candidates) }
+        guard let from = aspectRatio(held) else { return nil }
+        var best: NativeMediaParamValue?
+        var bestGap = Double.infinity
+        for candidate in candidates {
+            guard let r = aspectRatio(candidate) else { continue }
+            let gap = abs(log(r / from))
+            if gap < bestGap - 1e-9 {
+                best = candidate
+                bestGap = gap
+            }
+        }
+        return best
+    }
+
     /// Sets one option the way a person means it (`applyParamChange`): the
-    /// picked value wins, and an option that rules it out moves instead.
+    /// picked value wins, and an option that rules it out moves instead — only
+    /// to a value where the pick is allowed (4K at 1:1 moves to 16:9, never to
+    /// 2:3, which caps at 1K): the blocker's default if it qualifies, else the
+    /// closest to where it was.
     func applying(_ key: String, _ value: NativeMediaParamValue, to params: NativeMediaParams) -> NativeMediaParams {
         var next = normalized(params)
         next[key] = value
@@ -301,9 +335,17 @@ public extension NativeMediaParamSchema {
                 let blocker = option(rule.when.key)
             else { continue }
             let escapes = Self.values(of: blocker).filter { !rule.when.in.contains($0) }
-            let pick = escapes.contains(blocker.default)
+            // A real escape: no rule on the same pair rules the pick out there either.
+            let keeping = escapes.filter { candidate in
+                !rules.contains { other in
+                    other.when.key == rule.when.key && other.allow.key == key
+                        && other.when.in.contains(candidate) && !other.allow.in.contains(value)
+                }
+            }
+            let pool = keeping.isEmpty ? escapes : keeping
+            let pick = pool.contains(blocker.default)
                 ? blocker.default
-                : (Self.nearest(rule.when.key, held, escapes) ?? escapes.first)
+                : (Self.closestEscape(rule.when.key, held, pool) ?? pool.first)
             if let pick { next[rule.when.key] = pick }
         }
         return normalized(next)

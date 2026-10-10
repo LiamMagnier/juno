@@ -67,17 +67,16 @@ Always for This Folder.
   (`JunoDesktop.entitlements` explains why), so no user-selected entitlement is
   involved; bookmarks are plain, as Work's are.
 
-## Moving the control into the composer tray
+## In the composer tray (done on `native/next-integration`)
 
-`native/composer-tray` had no tray commits when this was built, so the control
-sits in the composer's controls row right after `+`
-(`ChatComposer.controlsRow`, guarded by `!isPrivate, !voiceActive`). To move
-it: delete that `if` block and put
-`ChatFolderControl(conversationID: fixedProjectID == nil ? model.selectedConversationID : nil)`
-in the tray's extension slot. It reads `@Environment(\.desktopChatFolders)`
-(set in `JunoDesktopApp.liveRoot`) and needs nothing else. Keep the draft
-hand-off in `ChatComposer.dispatch` (`chatFolders?.adoptDraft(into:)` after
-`createConversationResolvingID`).
+The control is `ChatComposer.trayLeading` (guarded `!isPrivate, !voiceActive`),
+with `trayShowsInThreads` true wherever the store is in the environment, so a
+chat thread keeps it. It is styled with `NativeComposerTrayPillStyle` like
+Project · Apps · Skills: "Work in a folder" before a choice, the folder's name
+and a menu after, a square × pill beside it. It no longer sits after `+`. The
+draft hand-off in `ChatComposer.dispatch` (`chatFolders?.adoptDraft(into:)`
+after `createConversationResolvingID`) is unchanged. Snapshots:
+`folder-tray-new-chat`, `folder-tray-new-chat-chosen` beside the ones below.
 
 ## Tests
 

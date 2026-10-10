@@ -1546,12 +1546,6 @@ struct ChatComposer: View {
             HStack(spacing: JunoComposerMetrics.controlSpacing) {
                 HStack(spacing: JunoComposerMetrics.controlSpacing) {
                     plusMenu
-                    // Work in a folder. Here until the composer tray lands;
-                    // the control is self-contained and moves to the tray's
-                    // slot as is (docs: .claude/handoff/mac-cowork/STATUS.md).
-                    if !isPrivate, !voiceActive {
-                        ChatFolderControl(conversationID: fixedProjectID == nil ? model.selectedConversationID : nil)
-                    }
                     Spacer(minLength: JunoSpace.snug)
                     modelChip
                     // Steering is text only: the mic steps aside (the web's).
@@ -1667,18 +1661,22 @@ struct ChatComposer: View {
         }
     }
 
-    /// EXTENSION POINT: true once `trayLeading`/`trayTrailing` hold an item
-    /// that applies to an existing conversation too (the local-folder
-    /// control), so the tray is drawn in a thread with a chat model.
-    private var trayShowsInThreads: Bool { false }
+    /// True while a `trayLeading`/`trayTrailing` item applies to an existing
+    /// conversation too, so the tray is drawn in a thread with a chat model:
+    /// the folder belongs to a conversation as well as a draft. Only where
+    /// the folder store is (the live app); otherwise a thread keeps no tray.
+    private var trayShowsInThreads: Bool { chatFolders != nil }
 
-    /// EXTENSION POINT (docs/native/composer-tray/STATUS.md): tray items other
-    /// features add on a new chat's line, before Project — the Mac's "work in
-    /// a local folder" control goes here. Style them with
-    /// `NativeComposerTrayPillStyle` and keep them one pill each.
+    /// Tray items other features add, first on the line (before Project on a
+    /// new chat, before a media model's choices, alone in a chat thread). Style
+    /// them with `NativeComposerTrayPillStyle` and keep them one pill each.
+    /// Work in a folder (`ChatFolderControl`): the draft's folder on a new
+    /// chat, handed to the chat it becomes in `dispatch`.
     @ViewBuilder
     private var trayLeading: some View {
-        EmptyView()
+        if !isPrivate, !voiceActive {
+            ChatFolderControl(conversationID: fixedProjectID == nil ? model.selectedConversationID : nil)
+        }
     }
 
     /// EXTENSION POINT: items pushed to the end of the line (where the web

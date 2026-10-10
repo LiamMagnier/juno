@@ -1214,23 +1214,73 @@ export function allowedValues(modelId: string, key: MediaParamKey, params: Media
   return values;
 }
 
+/** "16:9" as 16/9; null for "auto" or anything that is not a ratio. */
+function aspectRatioOf(value: unknown): number | null {
+  if (typeof value !== "string") return null;
+  const parts = value.split(":");
+  if (parts.length !== 2) return null;
+  const w = Number(parts[0]);
+  const h = Number(parts[1]);
+  return Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0 ? w / h : null;
+}
+
+/**
+ * The escape closest to where the blocker was: the nearest resolution tier or
+ * number, or for an aspect the ratio closest in shape (by log ratio, so 1:1 is
+ * as far from 16:9 as from 9:16; a tie keeps the option's own order).
+ */
+function closestEscape<T>(key: MediaParamKey, held: unknown, candidates: T[]): T | null {
+  if (key !== "aspect") return nearest(key, held, candidates);
+  const from = aspectRatioOf(held);
+  if (from == null) return null;
+  let best: T | null = null;
+  let bestGap = Infinity;
+  for (const c of candidates) {
+    const r = aspectRatioOf(c);
+    if (r == null) continue;
+    const gap = Math.abs(Math.log(r / from));
+    if (gap < bestGap - 1e-9) {
+      best = c;
+      bestGap = gap;
+    }
+  }
+  return best;
+}
+
 /**
  * Set one option the way a person means it: the value they picked wins, and an
  * option that rules it out moves instead. Picking 4s on Veo at 1080p drops the
  * resolution to 720p rather than snapping the length back to 8s.
+ *
+ * The blocker only moves to a value where the pick is allowed: 4K on GPT Image
+ * 2.5 at 1:1 moves the aspect to 16:9 (which has 4K), never to 2:3 (which caps
+ * resolution at 1K and would lose the 4K). Among those, the blocker's default
+ * if it qualifies, else the one closest to where it was.
  */
 export function applyParamChange(modelId: string, params: MediaParams, key: MediaParamKey, value: unknown): MediaParams {
   const caps = capabilitiesFor(modelId);
   if (!caps) return {};
+  const rules = caps.rules ?? [];
   const next: Record<string, unknown> = { ...normalizeParams(modelId, params), [key]: value };
-  for (const rule of caps.rules ?? []) {
+  for (const rule of rules) {
     if (rule.allow.key !== key) continue;
     if (rule.allow.in.includes(value as string | number)) continue;
     if (!rule.when.in.includes(next[rule.when.key] as string | number)) continue;
     const blocker = caps.options[rule.when.key];
     if (!blocker) continue;
     const escapes = optionValues(blocker).filter((v) => !rule.when.in.includes(v as string | number));
-    const pick = escapes.includes(blocker.default) ? blocker.default : (nearest(rule.when.key, next[rule.when.key], escapes) ?? escapes[0]);
+    // A real escape: no rule on the same pair rules the pick out there either.
+    const keepsPick = (v: unknown) =>
+      !rules.some(
+        (r) =>
+          r.when.key === rule.when.key &&
+          r.allow.key === key &&
+          r.when.in.includes(v as string | number) &&
+          !r.allow.in.includes(value as string | number),
+      );
+    const keeping = escapes.filter(keepsPick);
+    const pool = keeping.length > 0 ? keeping : escapes;
+    const pick = pool.includes(blocker.default) ? blocker.default : (closestEscape(rule.when.key, next[rule.when.key], pool) ?? pool[0]);
     if (pick !== undefined) next[rule.when.key] = pick;
   }
   return normalizeParams(modelId, next);

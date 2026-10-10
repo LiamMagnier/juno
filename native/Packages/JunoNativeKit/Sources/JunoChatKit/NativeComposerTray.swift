@@ -49,6 +49,8 @@ public enum NativeComposerTrayMetrics {
     public static var cornerRadius: CGFloat { pillHeight / 2 + inset }
     /// The soft fade at an edge with more to scroll.
     public static let fade: CGFloat = JunoSpace.roomy
+    /// The fully clear strip past a fade, at the very edge.
+    public static let fadeTail: CGFloat = JunoSpace.tight
 }
 
 // MARK: - Shelf
@@ -182,13 +184,16 @@ struct NativeTrayMenu<Label: View, Content: View>: View {
     }
 }
 
-/// The hairline between a media line and its Project control.
+/// The hairline between a media line and its Project control. It stands a
+/// pill's own trailing inset clear of both neighbours (the line's 2pt gap plus
+/// 6pt here = 8pt), so the last choice's chevron — or the scrolling line's
+/// fade over it — never runs into the rule.
 struct NativeTrayRule: View {
     var body: some View {
         Rectangle()
             .fill(Color.junoForeground.opacity(0.1))
             .frame(width: 1, height: JunoSpace.regular)
-            .padding(.horizontal, JunoSpace.micro)
+            .padding(.horizontal, JunoSpace.tight)
             .accessibilityHidden(true)
     }
 }
@@ -923,12 +928,17 @@ struct NativeTrayScrollingLine<Content: View>: View {
             fades = next
         }
         .mask {
+            // Each fade ends in a short fully clear tail, so a clipped glyph
+            // dissolves well short of the edge and never meets whatever sits
+            // past it (the media line's rule before Project).
             HStack(spacing: 0) {
+                Color.clear.frame(width: fades.leading ? NativeComposerTrayMetrics.fadeTail : 0)
                 LinearGradient(colors: [.clear, .black], startPoint: .leading, endPoint: .trailing)
                     .frame(width: fades.leading ? NativeComposerTrayMetrics.fade : 0)
                 Rectangle()
                 LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing)
                     .frame(width: fades.trailing ? NativeComposerTrayMetrics.fade : 0)
+                Color.clear.frame(width: fades.trailing ? NativeComposerTrayMetrics.fadeTail : 0)
             }
         }
     }

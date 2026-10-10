@@ -35,7 +35,11 @@ Screenshots: `.claude/handoff/composer-tray/` in the main checkout (`mac/`, `iph
 
 - **The frame chooser's stage** (the web's large morphing ratio preview with the output size in pixels): native uses the platform menu with each ratio's name and ratio, Auto first then tall → wide. Every ratio the web offers is there; the pixel readout (`framePixels`) is not.
 - **The web's "Mac app" link** at the end of the chat line: omitted on native (owner's instruction); the trailing slot is where something native-relevant can go.
-- **Parity quirk, kept on purpose:** on GPT Image 2.5 at 1:1, picking 4K moves the aspect to Portrait (2:3), which then caps resolution at 1K — the web's `applyParamChange` does exactly this (the first escape from 1:1 is 2:3). The native port matches the web; the fix belongs in `media-params.ts` (prefer an escape whose own rules allow the picked value), and both clients would follow.
+- **Fixed on `native/next-integration`:** on GPT Image 2.5 at 1:1, picking 4K used to move the aspect to Portrait (2:3), which caps resolution at 1K, losing the 4K. `applyParamChange` (web) and `applying` (native) now keep the picked value and move the blocker only to a value where it is allowed: the blocker's default if it qualifies, else the closest (resolution/number by rank, aspect by log ratio; a tie keeps the option order). 1:1 → 4K gives 16:9 · 4K; 2:3 → 4K gives 9:16; 2:3 → 2K gives 1:1. Tests: `tests/media-params.test.ts`, `NativeMediaParamsTests.testThePickedValueWinsAndTheBlockerMoves`.
+
+## Integrated with native/mac-cowork (`native/next-integration`)
+
+`ChatFolderControl` is the tray's `trayLeading` item (first on the line: before Project on a new chat, before a media model's choices, alone in a chat thread). `trayShowsInThreads` is true wherever the folder store is in the environment (the live Mac app). The control uses `NativeComposerTrayPillStyle`: "Work in a folder" with the folder-plus mark before a folder is chosen (so the lone pill in a thread names what it does), the folder's name + chevron menu after, with a square × pill beside it. The old spot after `+` is gone. The media line's divider (`NativeTrayRule`) now stands 8pt clear of both neighbours.
 
 ## Verification
 

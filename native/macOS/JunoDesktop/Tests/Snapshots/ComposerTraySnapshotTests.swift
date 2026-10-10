@@ -64,6 +64,17 @@ struct ComposerTraySnapshotTests {
                 media: NativeComposerTrayMedia(schema: schema, params: schema.defaults(), set: { _, _ in })
             )
         }
+        // 1:1, then 4K picked: the 4K is kept and the frame moves to the
+        // closest ratio that has it (16:9), never to 2:3 (which caps at 1K).
+        let fourK = schema.applying("resolution", .string("4K"), to: schema.defaults())
+        #expect(fourK["resolution"] == .string("4K"))
+        #expect(fourK["aspect"] == .string("16:9"))
+        try await render(name: "image-4k", placeholder: "Describe an image to generate…", model: "GPT Image 2.5 Sunburst") {
+            NativeComposerTray(
+                projects: Self.projects,
+                media: NativeComposerTrayMedia(schema: schema, params: fourK, set: { _, _ in })
+            )
+        }
         // Non-default choices: wide, 2K, high, four, opaque, WebP.
         var picked = schema.defaults()
         for (key, value) in [
