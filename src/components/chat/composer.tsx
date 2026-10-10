@@ -2540,6 +2540,17 @@ function ComposerImpl({
         }
       : null;
 
+  /*
+   * ONE DOOR EACH. On the home, the tray under the composer already holds
+   * Select project, Apps and Skills (composer-tray.tsx), so the + menu leaves
+   * those three rows out there. Everywhere the tray is not drawn (a thread's
+   * dock, incognito, steering) the + menu stays their only door and keeps
+   * them. With an image, video or music model the tray keeps only Project,
+   * so Apps and Skills stay in the + menu then.
+   */
+  const trayHasProject = showTray;
+  const trayHasAppsAndSkills = showTray && !mediaParams.caps;
+
   const plusSections: PlusMenuSection[] = voiceActive
     ? [
         [
@@ -2621,7 +2632,7 @@ function ComposerImpl({
         ],
         // Name things in the sentence: what "@" and "/" do, taught here so the
         // placeholder never has to be a syntax lesson.
-        [...(mentionRow ? [mentionRow] : []), ...(skillRow ? [skillRow] : [])],
+        [...(mentionRow ? [mentionRow] : []), ...(skillRow && !trayHasAppsAndSkills ? [skillRow] : [])],
         // How this message is answered: the Deep Field mode, then the two
         // switches people actually flip (C19).
         [
@@ -2647,7 +2658,7 @@ function ComposerImpl({
         ],
         // Where this chat sits and what it can reach.
         [
-          ...(!privateMode
+          ...(!privateMode && !trayHasProject
             ? [
                 {
                   kind: "sub" as const,
@@ -2659,7 +2670,7 @@ function ComposerImpl({
                 },
               ]
             : []),
-          ...(showConnectors
+          ...(showConnectors && !trayHasAppsAndSkills
             ? [
                 {
                   kind: "sub" as const,
