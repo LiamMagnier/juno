@@ -202,6 +202,8 @@ public struct StudioLanding: View {
         .task(id: project?.descriptor.localPathHint) {
             let root = project.map { URL(fileURLWithPath: $0.descriptor.localPathHint, isDirectory: true) }
             skills.configure(listLocal: { await CodeSkillsModel.macSkills(projectRoot: root) }, account: accountSkills)
+            // An edit to a skill on this Mac reaches an opened list at once.
+            skills.followMacCatalog()
             await skills.refresh()
         }
         .onChange(of: environment) { _, choice in configureRemote(choice) }

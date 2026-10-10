@@ -170,6 +170,14 @@ public final class CodeSkillsModel {
     /// A `/name` skill for the next message only.
     public var once: CodeSkillChoice?
 
+    /// Live selection (env server threads): called with the thread's whole
+    /// selection whenever it changes here, to send it to the env server now
+    /// (`skills.select`) so every device following the thread applies it.
+    @ObservationIgnored public var onSelectionChange: (@MainActor ([CodeV2.SkillActivation]) async -> Void)?
+    /// The env server's last record of the selection (ids), nil until seen.
+    @ObservationIgnored private var remoteIDs: [String]?
+    @ObservationIgnored private var remoteActivations: [String: CodeV2.SkillActivation] = [:]
+    @ObservationIgnored nonisolated(unsafe) private var catalogListener: UUID?
     @ObservationIgnored private var listLocal: (@Sendable () async -> [CodeV2.LocalSkillSummary]?)?
     @ObservationIgnored public private(set) var account: CodeAccountSkills?
     @ObservationIgnored private var threadKey: String?
@@ -188,6 +196,10 @@ public final class CodeSkillsModel {
         self.loaded = !choices.isEmpty
         bind(threadKey: threadKey)
         if let selectedIDs { self.selectedIDs = selectedIDs }
+    }
+
+    deinit {
+        if let catalogListener { Self.macCatalog.removeListener(catalogListener) }
     }
 
     nonisolated static func storageKey(_ thread: String) -> String { "alevr.code.skills.thread.\(thread)" }
@@ -211,6 +223,8 @@ public final class CodeSkillsModel {
     public func bind(threadKey: String?, snapshot: [CodeV2.SkillActivation]? = nil) {
         guard threadKey != self.threadKey || threadKey == nil else { return }
         self.threadKey = threadKey
+        remoteIDs = nil
+        remoteActivations = [:]
         if let threadKey, let stored = defaults.stringArray(forKey: Self.storageKey(threadKey)) {
             selectedIDs = stored
         } else if let snapshot {
@@ -234,6 +248,67 @@ public final class CodeSkillsModel {
     ) {
         self.listLocal = listLocal
         self.account = account
+    }
+
+    /// Re-reads an opened list whenever the Mac's skills change on disk (the
+    /// in-process engine's composers, which list `macCatalog` directly).
+    public func followMacCatalog() {
+        guard catalogListener == nil else { return }
+        catalogListener = Self.macCatalog.onChange { [weak self] in
+            Task { @MainActor in await self?.refreshIfLoaded() }
+        }
+    }
+
+    /// Reads the list again if it was ever read (a picker that is not open
+    /// stays lazy).
+    public func refreshIfLoaded() async {
+        guard loaded else { return }
+        await refresh()
+    }
+
+    // MARK: Live selection
+
+    /// The env server's record of the thread's selection (its snapshot, then
+    /// each `session.skills`). The first time a thread is seen with nothing
+    /// selected there while this Mac has a selection for it, this Mac's is
+    /// sent; after that, the env server's record is the selection.
+    public func applyRemote(_ activations: [CodeV2.SkillActivation]?) {
+        let list = (activations ?? []).filter { $0.once != true }
+        let ids = list.map { "\($0.source.rawValue):\($0.name)" }
+        remoteActivations = Dictionary(list.map { ("\($0.source.rawValue):\($0.name)", $0) }, uniquingKeysWith: { a, _ in a })
+        let first = remoteIDs == nil
+        guard first || ids != remoteIDs else { return }
+        remoteIDs = ids
+        if first, ids.isEmpty, !selectedIDs.isEmpty {
+            pushSelection()
+            return
+        }
+        guard ids != selectedIDs else { return }
+        selectedIDs = ids
+        persist()
+    }
+
+    private func pushSelection() {
+        guard let onSelectionChange else { return }
+        // The selection as it is now, not as it is when the task runs.
+        let ids = selectedIDs
+        Task { @MainActor in
+            await onSelectionChange(await persistentActivations(ids))
+        }
+    }
+
+    /// The thread's selection as activations (account text read now); an id
+    /// this Mac cannot rebuild keeps the env server's activation for it.
+    private func persistentActivations(_ ids: [String]? = nil) async -> [CodeV2.SkillActivation] {
+        var out: [CodeV2.SkillActivation] = []
+        for id in ids ?? selectedIDs {
+            if let choice = choices.first(where: { $0.id == id }) ?? Self.placeholder(id) {
+                let built = await activation(choice, once: false)
+                if built.source != .account || !(built.instructions ?? "").isEmpty { out.append(built); continue }
+            }
+            if let known = remoteActivations[id] { out.append(known) }
+        }
+        return out
     }
 
     public func loadIfNeeded() async {
@@ -285,12 +360,14 @@ public final class CodeSkillsModel {
     public func toggle(_ choice: CodeSkillChoice) {
         if let index = selectedIDs.firstIndex(of: choice.id) { selectedIDs.remove(at: index) } else { selectedIDs.append(choice.id) }
         persist()
+        pushSelection()
     }
 
     public func clear() {
         selectedIDs = []
         once = nil
         persist()
+        pushSelection()
     }
 
     /// The chip's words: "Skills", one skill's name, or "2 skills".
@@ -352,10 +429,12 @@ public final class CodeSkillsModel {
     public func takeActivations() async -> [CodeV2.SkillActivation] {
         let armed = once
         once = nil
-        var out: [CodeV2.SkillActivation] = []
-        for choice in selected { out.append(await activation(choice, once: false)) }
-        if let armed, !selected.contains(armed) { out.append(await activation(armed, once: true)) }
-        return out.filter { $0.source != .account || !($0.instructions ?? "").isEmpty }
+        var out = await persistentActivations()
+        if let armed, !selected.contains(armed) {
+            let one = await activation(armed, once: true)
+            if one.source != .account || !(one.instructions ?? "").isEmpty { out.append(one) }
+        }
+        return out
     }
 
     private func activation(_ choice: CodeSkillChoice, once: Bool) async -> CodeV2.SkillActivation {

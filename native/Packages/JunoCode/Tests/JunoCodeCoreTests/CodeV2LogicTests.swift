@@ -248,6 +248,27 @@ final class CodeV2LogicTests: XCTestCase {
 
     // MARK: Reducer
 
+    func testReducerAppliesAThreadsSkillsSetOnAnotherDevice() throws {
+        var state = CodeV2SessionState(snapshot: CodeV2.SessionSnapshot(id: "s1", cwd: "/tmp", selection: selection), cursor: 3)
+        let chosen = [CodeV2.SkillActivation(name: "tidy", source: .account, path: nil, instructions: "T", title: "Tidy", once: nil)]
+        CodeV2SessionReducer.apply(.init(sessionId: "s1", sequence: 4, at: at(0), event: .sessionSkills(chosen)), to: &state)
+        XCTAssertEqual(state.snapshot.skills, chosen)
+        CodeV2SessionReducer.apply(.init(sessionId: "s1", sequence: 5, at: at(1), event: .sessionSkills([])), to: &state)
+        XCTAssertNil(state.snapshot.skills, "an empty list clears it")
+        XCTAssertEqual(state.cursor, 5)
+
+        // The wire shape, both ways.
+        let frame = #"{"type":"event","stream":"global","sequence":9,"at":"2026-10-10T20:00:02Z","event":{"type":"skills.updated","cwd":"/repo"}}"#
+        let decoded = try JSONDecoder().decode(CodeV2.ServerEventEnvelope.self, from: Data(frame.utf8))
+        XCTAssertEqual(decoded.event, .skillsUpdated(cwd: "/repo"))
+        let skills = #"{"type":"event","stream":"session","sessionId":"s1","sequence":51,"at":"2026-10-10T20:00:00Z","event":{"type":"session.skills","skills":[{"name":"a","source":"user"}]}}"#
+        let session = try JSONDecoder().decode(CodeV2.ServerEventEnvelope.self, from: Data(skills.utf8))
+        guard case let .sessionSkills(list) = session.event else { return XCTFail("not session.skills") }
+        XCTAssertEqual(list.map(\.name), ["a"])
+        let again = try JSONDecoder().decode(CodeV2.ServerEventEnvelope.self, from: JSONEncoder().encode(session))
+        XCTAssertEqual(again, session)
+    }
+
     func testReducerAppliesInOrderAndAsksToReopenOnAGap() {
         var state = CodeV2SessionState(snapshot: CodeV2.SessionSnapshot(id: "s1", cwd: "/tmp", selection: selection))
         let snapshot = CodeV2.ServerEventEnvelope(sessionId: "s1", sequence: 4, at: at(0), event: .sessionSnapshot(

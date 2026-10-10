@@ -304,25 +304,43 @@ public struct LocalSkillDiscovery: Sendable {
     }
 }
 
-/// The Mac's skills, cached per project and dropped whenever a skills folder
-/// (or Claude Code's plugin records) changes on disk.
+/// The Mac's skills, cached per project and dropped the moment a skill
+/// changes on disk.
+///
+/// Watched, not polled: every skills folder (a missing one through its
+/// parent), Claude Code's plugin records, each skill's own folder and each
+/// `SKILL.md` itself has a `DispatchSource` on it, so an edit to a skill file
+/// (which a folder watcher does not see) invalidates at once. An atomic save
+/// (a temporary file renamed over `SKILL.md`) ends that file's watcher; a
+/// rescan ~150 ms later re-reads the listings that were cached and watches
+/// whatever is at each path now, so the next edit is seen too.
 public final class LocalSkillCatalog: @unchecked Sendable {
     private let home: URL
     private let lock = NSLock()
     private var cache: [String: [CodeV2.LocalSkillSummary]] = [:]
-    private var sources: [String: DispatchSourceFileSystemObject] = [:]
+    /// path -> its watcher; `file` ones are SKILL.md files.
+    private var sources: [String: (source: DispatchSourceFileSystemObject, file: Bool)] = [:]
     private var listeners: [UUID: @Sendable () -> Void] = [:]
+    /// Listings to read again (and re-watch) after a change.
+    private var stale: Set<String> = []
+    private var rescanScheduled = false
     private let queue = DispatchQueue(label: "alevr.code.skills.watch")
+    /// Most SKILL.md files watched one by one (file descriptors are finite);
+    /// past it the folder watchers still see installs and removals.
+    static let maximumFileWatchers = 512
+    /// One rescan for a burst of events, this long after the first.
+    let rescanDelay: DispatchTimeInterval
 
-    public init(home: URL = FileManager.default.homeDirectoryForCurrentUser) {
+    public init(home: URL = FileManager.default.homeDirectoryForCurrentUser, rescanDelay: DispatchTimeInterval = .milliseconds(150)) {
         self.home = home
+        self.rescanDelay = rescanDelay
     }
 
     deinit {
-        for source in sources.values { source.cancel() }
+        for entry in sources.values { entry.source.cancel() }
     }
 
-    /// Called on a background queue whenever a watched folder changes.
+    /// Called on a background queue whenever a watched skill or folder changes.
     @discardableResult
     public func onChange(_ listener: @escaping @Sendable () -> Void) -> UUID {
         let id = UUID()
@@ -340,36 +358,102 @@ public final class LocalSkillCatalog: @unchecked Sendable {
         if let hit = lock.withLock({ cache[key] }) { return hit }
         let discovery = LocalSkillDiscovery(home: home, projectRoot: projectRoot)
         let roots = discovery.roots()
-        watch(roots.map(\.directory) + [home.appendingPathComponent(".claude/plugins", isDirectory: true)])
-        let skills = discovery.discover()
+        let all = discovery.discoverAll()
+        watch(folders: roots.map(\.directory) + [home.appendingPathComponent(".claude/plugins", isDirectory: true)], skills: all)
+        let skills = LocalSkillDiscovery.dedupe(all)
         lock.withLock { cache[key] = skills }
         return skills
     }
 
+    /// Drops every listing now and tells the listeners; the listings that were
+    /// cached are read again (and watched again) shortly after.
     public func invalidate() {
         let callbacks = lock.withLock { () -> [@Sendable () -> Void] in
+            stale.formUnion(cache.keys)
             cache.removeAll()
             return Array(listeners.values)
         }
+        scheduleRescan()
         callbacks.forEach { $0() }
     }
 
-    private func watch(_ directories: [URL]) {
-        for directory in directories {
+    private func scheduleRescan() {
+        let schedule = lock.withLock { () -> Bool in
+            guard !rescanScheduled else { return false }
+            rescanScheduled = true
+            return true
+        }
+        guard schedule else { return }
+        queue.asyncAfter(deadline: .now() + rescanDelay) { [weak self] in
+            guard let self else { return }
+            let keys = self.lock.withLock { () -> Set<String> in
+                self.rescanScheduled = false
+                defer { self.stale.removeAll() }
+                return self.stale
+            }
+            // Re-arms the watchers on new or replaced files.
+            for key in keys { _ = self.list(projectRoot: key.isEmpty ? nil : URL(fileURLWithPath: key, isDirectory: true)) }
+        }
+    }
+
+    private func watch(folders: [URL], skills: [CodeV2.LocalSkillSummary]) {
+        var targets: [(path: String, file: Bool)] = []
+        for directory in folders {
             // A folder that does not exist yet is watched through its parent.
             var target = directory
             if !FileManager.default.fileExists(atPath: target.path) { target = directory.deletingLastPathComponent() }
-            let path = target.standardizedFileURL.path
-            guard lock.withLock({ sources[path] == nil }), FileManager.default.fileExists(atPath: path) else { continue }
+            targets.append((target.standardizedFileURL.path, false))
+        }
+        // Each skill's folder (a new file in it, a rename over SKILL.md) and
+        // its SKILL.md (an edit in place, which no folder watcher sees).
+        for skill in skills {
+            let file = URL(fileURLWithPath: skill.path)
+            targets.append((file.deletingLastPathComponent().standardizedFileURL.path, false))
+            targets.append((file.standardizedFileURL.path, true))
+        }
+        for target in targets {
+            let path = target.path
+            let allowed = lock.withLock { () -> Bool in
+                guard sources[path] == nil else { return false }
+                return !target.file || sources.values.filter(\.file).count < Self.maximumFileWatchers
+            }
+            guard allowed, FileManager.default.fileExists(atPath: path) else { continue }
             let fd = open(path, O_EVTONLY)
             guard fd >= 0 else { continue }
-            let source = DispatchSource.makeFileSystemObjectSource(
-                fileDescriptor: fd, eventMask: [.write, .rename, .delete, .link], queue: queue
-            )
-            source.setEventHandler { [weak self] in self?.invalidate() }
+            let mask: DispatchSource.FileSystemEvent = target.file
+                ? [.write, .extend, .rename, .delete, .revoke]
+                : [.write, .rename, .delete, .link]
+            let source = DispatchSource.makeFileSystemObjectSource(fileDescriptor: fd, eventMask: mask, queue: queue)
+            let isFile = target.file
+            source.setEventHandler { [weak self, weak source] in
+                guard let self else { return }
+                // A replaced or removed file: this watcher follows the old
+                // inode, so drop it; the rescan watches what is there now.
+                if isFile, let event = source?.data, !event.isDisjoint(with: [.rename, .delete, .revoke]) {
+                    self.unwatch(path)
+                } else if !isFile, let event = source?.data, !event.isDisjoint(with: [.rename, .delete]),
+                          !FileManager.default.fileExists(atPath: path) {
+                    self.unwatch(path)
+                }
+                self.invalidate()
+            }
             source.setCancelHandler { close(fd) }
-            lock.withLock { sources[path] = source }
+            let kept = lock.withLock { () -> Bool in
+                guard sources[path] == nil else { return false }
+                sources[path] = (source, target.file)
+                return true
+            }
             source.resume()
+            // Another thread watched this path first: this one is surplus.
+            if !kept { source.cancel() }
         }
     }
+
+    private func unwatch(_ path: String) {
+        let entry = lock.withLock { sources.removeValue(forKey: path) }
+        entry?.source.cancel()
+    }
+
+    /// For tests: how many SKILL.md files are watched one by one.
+    var watchedFileCount: Int { lock.withLock { sources.values.filter(\.file).count } }
 }

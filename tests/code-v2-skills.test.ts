@@ -107,3 +107,11 @@ test("skills: the thread's selection comes from the env server when this browser
   } satisfies SessionSnapshot;
   assert.deepEqual(sessionViewFromSnapshot(snapshot, 3).skills, [{ name: "repo-rules", source: "project" }]);
 });
+
+test("skills: live selection adopts the env server's record, except a first sight that this browser chose before the session existed", async () => {
+  const { reconcileRemoteSelection } = await import("@/lib/code-v2/skills");
+  assert.deepEqual(reconcileRemoteSelection({ firstSight: true, remote: [], stored: ["user:taste"] }), { push: ["user:taste"] });
+  assert.deepEqual(reconcileRemoteSelection({ firstSight: true, remote: ["account:tidy"], stored: ["user:taste"] }), { adopt: ["account:tidy"] });
+  assert.deepEqual(reconcileRemoteSelection({ firstSight: false, remote: [], stored: ["user:taste"] }), { adopt: [] }, "cleared on another device");
+  assert.deepEqual(reconcileRemoteSelection({ firstSight: true, remote: [], stored: null }), { adopt: [] });
+});

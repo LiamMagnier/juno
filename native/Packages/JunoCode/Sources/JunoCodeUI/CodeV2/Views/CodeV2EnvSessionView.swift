@@ -91,6 +91,20 @@ public struct CodeV2EnvSessionView: View {
             let thread = session
             skills.bind(threadKey: thread.sessionId, snapshot: thread.snapshot.skills)
             skills.configure(listLocal: { await thread.listSkills() }, account: accountSkills)
+            // Live selection: a change here goes to the env server now; one
+            // made on another device arrives as `session.skills`.
+            skills.onSelectionChange = { [weak thread] selection in await thread?.selectSkills(selection) }
+            if thread.state.cursor != nil { skills.applyRemote(thread.snapshot.skills) }
+        }
+        .onChange(of: session.snapshot.skills) { _, remote in
+            if session.state.cursor != nil { skills.applyRemote(remote) }
+        }
+        .onChange(of: session.state.cursor == nil) { _, unopened in
+            if !unopened { skills.applyRemote(session.snapshot.skills) }
+        }
+        .onChange(of: session.skillsRevision) { _, _ in
+            // A skill installed, edited or removed on this Mac: re-read an opened list.
+            Task { await skills.refreshIfLoaded() }
         }
         .onChange(of: session.sessionId, initial: true) { old, new in
             if old != new { CodeV2ConnectedApprovals.shared.hiding(session: old) }

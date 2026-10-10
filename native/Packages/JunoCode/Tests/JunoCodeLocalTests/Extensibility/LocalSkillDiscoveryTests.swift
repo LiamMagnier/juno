@@ -140,4 +140,78 @@ final class LocalSkillDiscoveryTests: XCTestCase {
         wait(for: [changed], timeout: 5)
         XCTAssertTrue(catalog.list(projectRoot: project).contains { $0.name == "fresh" })
     }
+
+    /// Waits for the catalog's next change, failing after `seconds`.
+    private func expectChange(_ catalog: LocalSkillCatalog, within seconds: TimeInterval = 1, _ change: () throws -> Void) throws {
+        let changed = expectation(description: "skills changed")
+        changed.assertForOverFulfill = false
+        let id = catalog.onChange { changed.fulfill() }
+        defer { catalog.removeListener(id) }
+        try change()
+        wait(for: [changed], timeout: seconds)
+    }
+
+    private func description(_ name: String, in catalog: LocalSkillCatalog, project: URL) -> String? {
+        catalog.list(projectRoot: project).first { $0.name == name }?.description
+    }
+
+    func testEditingASkillFileInvalidatesWithinASecond() throws {
+        let (home, project) = try fixture()
+        let catalog = LocalSkillCatalog(home: home)
+        let file = try XCTUnwrap(catalog.list(projectRoot: project).first { $0.name == "design-taste-frontend" }).path
+        XCTAssertGreaterThan(catalog.watchedFileCount, 0, "each SKILL.md is watched itself")
+
+        // An in-place write: no folder changes, only the file.
+        let handle = try XCTUnwrap(FileHandle(forWritingAtPath: file))
+        try expectChange(catalog) {
+            try handle.truncate(atOffset: 0)
+            try handle.write(contentsOf: Data("---\nname: design-taste-frontend\ndescription: Edited in place.\n---\nUSER TASTE BODY\n".utf8))
+            try handle.synchronize()
+        }
+        try handle.close()
+        XCTAssertEqual(description("design-taste-frontend", in: catalog, project: project), "Edited in place.")
+    }
+
+    func testAnAtomicSaveIsSeenAndTheReplacedFileIsWatchedAgain() throws {
+        let (home, project) = try fixture()
+        let catalog = LocalSkillCatalog(home: home)
+        let path = try XCTUnwrap(catalog.list(projectRoot: project).first { $0.name == "design-taste-frontend" }).path
+        let file = URL(fileURLWithPath: path)
+
+        // `write(atomically:)` writes a temporary file and renames it over SKILL.md.
+        try expectChange(catalog) {
+            try "---\nname: design-taste-frontend\ndescription: Saved atomically.\n---\nBODY\n".write(to: file, atomically: true, encoding: .utf8)
+        }
+        XCTAssertEqual(description("design-taste-frontend", in: catalog, project: project), "Saved atomically.")
+
+        // The rescan re-armed a watcher on the new file: an in-place edit of it is seen too.
+        let rearmed = Date().addingTimeInterval(2)
+        while Date() < rearmed, catalog.watchedFileCount == 0 { RunLoop.current.run(until: Date().addingTimeInterval(0.05)) }
+        Thread.sleep(forTimeInterval: 0.3)
+        let handle = try XCTUnwrap(FileHandle(forWritingAtPath: path))
+        try expectChange(catalog) {
+            try handle.truncate(atOffset: 0)
+            try handle.write(contentsOf: Data("---\nname: design-taste-frontend\ndescription: Third edit.\n---\nBODY\n".utf8))
+            try handle.synchronize()
+        }
+        try handle.close()
+        XCTAssertEqual(description("design-taste-frontend", in: catalog, project: project), "Third edit.")
+    }
+
+    func testAProjectSkillEditAndARemovalAreSeen() throws {
+        let (home, project) = try fixture()
+        let catalog = LocalSkillCatalog(home: home)
+        let listed = catalog.list(projectRoot: project)
+        let rules = try XCTUnwrap(listed.first { $0.source == .project }).path
+        try expectChange(catalog) {
+            try "---\ndescription: Revised rules\n---\nBODY\n".write(toFile: rules, atomically: false, encoding: .utf8)
+        }
+        _ = catalog.list(projectRoot: project)
+        Thread.sleep(forTimeInterval: 0.3)
+        let gone = try XCTUnwrap(listed.first { $0.name == "codex-only" }).path
+        try expectChange(catalog) {
+            try FileManager.default.removeItem(at: URL(fileURLWithPath: gone).deletingLastPathComponent())
+        }
+        XCTAssertFalse(catalog.list(projectRoot: project).contains { $0.name == "codex-only" })
+    }
 }

@@ -279,6 +279,36 @@ final class EnvServerTests: XCTestCase {
         XCTAssertEqual(forwarded.types, [.skillsList, .skillsList])
     }
 
+    func testLinkRelaysALinkedThreadsSkillSelectionAndSkillsUpdatedWithoutItsFolder() async {
+        let forwarded = ForwardLog()
+        let link = makeLink(forwarded: forwarded)
+        func rpc(_ type: String, _ params: [String: JSONValue]) async -> CodeV2.ServerResponse? {
+            await link.handle(EnvLinkRequest(kind: .rpc, command: .init(id: "1", type: type, params: .object(params)))).responses?.first
+        }
+        XCTAssertTrue(EnvServerDeviceLink.remoteCommands.contains(.skillsSelect))
+        let unlinked = await rpc("skills.select", ["sessionId": .string("someone-else"), "skills": .array([])])
+        XCTAssertEqual(unlinked?.error?.code, .badRequest)
+        XCTAssertEqual(forwarded.types, [])
+        _ = await rpc("session.open", ["cwd": .string("/Users/maya/code/shop/web")])
+        let selected = await rpc("skills.select", ["sessionId": .string("s-new"), "skills": .array([])])
+        XCTAssertEqual(selected?.ok, true)
+        XCTAssertEqual(forwarded.types, [.sessionOpen, .skillsSelect])
+
+        // The env server's answers: the thread's selection for the linked
+        // session, and a project's skills.updated, its folder left out.
+        let chosen = [CodeV2.SkillActivation(name: "design-taste-frontend", source: .user, path: nil, instructions: nil, title: nil, once: nil)]
+        await link.record(CodeV2.ServerEventEnvelope(sessionId: "s-new", sequence: 7, at: "2026-10-10T20:00:00Z", event: .sessionSkills(chosen)))
+        let updated = CodeV2.ServerEventEnvelope(stream: .global, sessionId: nil, sequence: 3, at: "2026-10-10T20:00:01Z", event: .skillsUpdated(cwd: "/Users/maya/private"))
+        await link.record(updated)
+        let shareable = await link.shareable(updated)
+        XCTAssertTrue(shareable)
+        let reply = await link.handle(EnvLinkRequest(kind: .poll, cursors: ["s-new": 6], globalCursor: 0), longPoll: .zero)
+        let events = reply.events?.map(\.event) ?? []
+        XCTAssertTrue(events.contains(.sessionSkills(chosen)))
+        XCTAssertTrue(events.contains(.skillsUpdated(cwd: nil)), "a private folder's path never leaves the Mac")
+        XCTAssertFalse(events.contains(.skillsUpdated(cwd: "/Users/maya/private")))
+    }
+
     func testLinkRefusesAttachingToASessionOutsideSharedFolders() async {
         let forwarded = ForwardLog()
         let link = EnvServerDeviceLink(

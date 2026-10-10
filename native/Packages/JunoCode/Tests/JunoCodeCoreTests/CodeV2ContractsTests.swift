@@ -97,7 +97,7 @@ final class CodeV2ContractsTests: XCTestCase {
         }
         XCTAssertEqual(responses, 2)
         XCTAssertEqual(types, Set(CodeV2.ServerEventType.allCases.map(\.rawValue)))
-        XCTAssertEqual(cursor, 50)
+        XCTAssertEqual(cursor, 52)
         let snapshot = CodeV2.ServerEvent.sessionSnapshot(
             snapshotSequence: 40,
             session: CodeV2.SessionSnapshot(id: "s1", cwd: "/repo", selection: CodeV2.ModelSelection(instanceId: "alevr", model: "m"))

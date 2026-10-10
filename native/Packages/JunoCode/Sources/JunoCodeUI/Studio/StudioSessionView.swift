@@ -244,6 +244,8 @@ public struct StudioSessionView: View {
             skills.bind(threadKey: controller.sessionID.value)
             let root = controller.context?.access.rootURL
             skills.configure(listLocal: { await CodeSkillsModel.macSkills(projectRoot: root) }, account: accountSkills)
+            // An edit to a skill on this Mac reaches an opened list at once.
+            skills.followMacCatalog()
             await controller.commands.reload(context: controller.context)
         }
         // The sheets, questions and side answers slash verbs open (Lane F).

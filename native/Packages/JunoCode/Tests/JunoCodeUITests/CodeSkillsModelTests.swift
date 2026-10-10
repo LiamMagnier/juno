@@ -118,4 +118,44 @@ final class CodeSkillsModelTests: XCTestCase {
         let once = controller.renderedSkills([.init(name: "tidy", source: .account, instructions: "ACCOUNT BODY", once: true)])
         XCTAssertTrue(once.contains("<skill name=\"tidy\">\nACCOUNT BODY"))
     }
+
+    // MARK: Live selection
+
+    func testAnotherDevicesSelectionIsAppliedAsItLands() async {
+        let skills = await model()
+        var sent: [[CodeV2.SkillActivation]] = []
+        skills.onSelectionChange = { sent.append($0) }
+        skills.applyRemote([.init(name: "repo-rules", source: .project, path: nil, instructions: nil, title: nil, once: nil)])
+        XCTAssertEqual(skills.selectedIDs, ["project:repo-rules"])
+        XCTAssertEqual(defaults.stringArray(forKey: CodeSkillsModel.storageKey("t1")), ["project:repo-rules"], "kept for the thread")
+        // Cleared elsewhere.
+        skills.applyRemote(nil)
+        XCTAssertEqual(skills.selectedIDs, [])
+        // An account skill chosen on the web, its text with it, before this Mac's list knows it.
+        let fresh = CodeSkillsModel(threadKey: "t2", defaults: defaults)
+        fresh.applyRemote([.init(name: "web-only", source: .account, path: nil, instructions: "WEB TEXT", title: "Web only", once: nil)])
+        let active = await fresh.takeActivations()
+        XCTAssertEqual(active.first?.instructions, "WEB TEXT", "the env server's activation stands in")
+        XCTAssertTrue(sent.isEmpty, "applying a remote change sends nothing back")
+    }
+
+    func testAChangeHereIsSentAtOnceAndAFirstSightPushesThisMacsChoice() async throws {
+        defaults.set(["user:design-taste-frontend"], forKey: CodeSkillsModel.storageKey("t1"))
+        let skills = await model()
+        let sent = expectation(description: "sent")
+        sent.expectedFulfillmentCount = 2
+        var selections: [[String]] = []
+        skills.onSelectionChange = { selection in
+            selections.append(selection.map(\.name))
+            sent.fulfill()
+        }
+        // The env server knows nothing yet; this Mac chose before the session opened.
+        skills.applyRemote([])
+        XCTAssertEqual(skills.selectedIDs, ["user:design-taste-frontend"], "kept, not cleared")
+        let tidy = try XCTUnwrap(skills.choices.first { $0.name == "tidy-commits" })
+        skills.toggle(tidy)
+        await fulfillment(of: [sent], timeout: 2)
+        XCTAssertEqual(selections.first, ["design-taste-frontend"])
+        XCTAssertEqual(selections.last, ["design-taste-frontend", "tidy-commits"])
+    }
 }

@@ -106,7 +106,10 @@ public enum CodeV2SessionReducer {
             state.snapshot.usage = usage
         case let .sessionScheduled(schedule):
             state.snapshot.scheduledResume = schedule
-        case .providerUpdated, .terminalOutput, .terminalExited, .unknown:
+        case let .sessionSkills(skills):
+            // The thread's selection, set on any device (empty: cleared).
+            state.snapshot.skills = skills.isEmpty ? nil : skills
+        case .providerUpdated, .terminalOutput, .terminalExited, .skillsUpdated, .unknown:
             break
         }
     }

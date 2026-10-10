@@ -19,6 +19,7 @@ import {
   idsFromSnapshot,
   orderSkills,
   placeholderChoice,
+  reconcileRemoteSelection,
   skillsStorageKey,
   type CodeSkillChoice,
 } from "@/lib/code-v2/skills";
@@ -223,19 +224,13 @@ export function useCodeSkills({
     if (seen.thread === threadKey && seen.key === remoteKey) return;
     const first = seen.thread !== threadKey;
     remoteSeen.current = { thread: threadKey, key: remoteKey };
-    const next = JSON.parse(remoteKey) as string[];
-    const stored = readIds(skillsStorageKey(threadKey));
-    // First sight of a thread whose env session knows no selection yet, while
-    // this browser has one (chosen on the landing, or before the session
-    // opened): this browser's choice is the thread's; tell the env server.
-    if (first && next.length === 0 && stored?.length) {
-      void pushRef.current?.(stored);
+    const decision = reconcileRemoteSelection({ firstSight: first, remote: JSON.parse(remoteKey) as string[], stored: readIds(skillsStorageKey(threadKey)) });
+    if ("push" in decision) {
+      void pushRef.current?.(decision.push);
       return;
     }
-    // Otherwise the env server's record is the thread's selection: another
-    // device (or this one, echoed back) set it.
-    setIds(next);
-    writeIds(skillsStorageKey(threadKey), next);
+    setIds(decision.adopt);
+    writeIds(skillsStorageKey(threadKey), decision.adopt);
   }, [remoteKey, threadKey]);
 
   const choicesRef = React.useRef(choices);

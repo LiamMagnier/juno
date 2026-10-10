@@ -135,6 +135,17 @@ public final class CodeV2EnvSession {
         return try? await connection.skillsList(sessionId: sessionId)
     }
 
+    /// Skills lane: sets this thread's selection on the env server now, so
+    /// every device following it (the web, another window) applies it live.
+    /// A thread not opened yet keeps its choice for its first message instead.
+    public func selectSkills(_ skills: [CodeV2.SkillActivation]) async {
+        guard state.cursor != nil, let connection = try? await hub?.ready() else { return }
+        _ = try? await connection.skillsSelect(sessionId: sessionId, skills: skills)
+    }
+
+    /// Skills lane: changes with every `skills.updated` from the env server.
+    public var skillsRevision: Int { hub?.skillsRevision ?? 0 }
+
     public func queue(_ text: String, skills: [CodeV2.SkillActivation]? = nil) async {
         await perform { connection in
             _ = try await connection.turnQueue(sessionId: self.sessionId, input: CodeV2.UserInput(text: text, skills: skills))

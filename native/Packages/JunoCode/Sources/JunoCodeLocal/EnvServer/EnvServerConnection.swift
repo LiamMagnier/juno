@@ -280,6 +280,15 @@ public extension EnvServerConnection {
         return try await request(.skillsList, params: P(cwd: cwd, sessionId: sessionId), as: SkillsResult.self).skills
     }
 
+    struct SkillSelectionResult: Decodable, Sendable { public let skills: [CodeV2.SkillActivation] }
+
+    /// Skills lane: sets a thread's selection now (an empty list clears it);
+    /// the env server keeps it and tells every client with `session.skills`.
+    func skillsSelect(sessionId: String, skills: [CodeV2.SkillActivation]) async throws -> [CodeV2.SkillActivation] {
+        struct P: Encodable { let sessionId: String; let skills: [CodeV2.SkillActivation] }
+        return try await request(.skillsSelect, params: P(sessionId: sessionId, skills: skills), as: SkillSelectionResult.self).skills
+    }
+
     func providerList() async throws -> [CodeV2.ProviderInstance] {
         try await request(.providerList, params: EnvServerEmpty(), as: InstancesResult.self).instances
     }

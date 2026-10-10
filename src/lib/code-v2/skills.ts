@@ -175,3 +175,16 @@ export const skillsStorageKey = (threadId: string) => `alevr.code.skills.${threa
 export function idsFromSnapshot(skills: readonly SkillActivation[] | undefined): string[] {
   return (skills ?? []).filter((s) => s.once !== true).map((s) => `${s.source}:${s.name}`);
 }
+
+/**
+ * Live selection (`session.skills`): what a browser does when the env
+ * server's record of a thread's selection arrives or changes. The first time
+ * it sees a thread whose env session has no selection while this browser has
+ * one (chosen on the landing, or before the session opened), this browser's
+ * choice is the thread's, and it is sent; otherwise the env server's record
+ * is the thread's selection, set by another device or echoed back.
+ */
+export function reconcileRemoteSelection(input: { firstSight: boolean; remote: readonly string[]; stored: readonly string[] | null }): { push: string[] } | { adopt: string[] } {
+  if (input.firstSight && input.remote.length === 0 && input.stored?.length) return { push: [...input.stored] };
+  return { adopt: [...input.remote] };
+}

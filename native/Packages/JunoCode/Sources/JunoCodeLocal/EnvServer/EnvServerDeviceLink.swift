@@ -97,8 +97,9 @@ public actor EnvServerDeviceLink {
         // Alevr's backend after its checks; a bounded read; the thread's toggle.
         .conversationDeliver, .conversationRead, .conversationToggle,
         // Skills lane: the skills installed here, names, descriptions and paths
-        // only (the env server never answers with a body).
-        .skillsList,
+        // only (the env server never answers with a body); a linked thread's
+        // selection, set from another device.
+        .skillsList, .skillsSelect,
     ]
     public static let terminalCommands: Set<CodeV2.ClientCommandType> = [
         .terminalOpen, .terminalWrite, .terminalResize, .terminalClose,
@@ -152,6 +153,12 @@ public actor EnvServerDeviceLink {
 
     /// Records an env-server event for remote readers.
     public func record(_ envelope: CodeV2.ServerEventEnvelope) async {
+        var envelope = envelope
+        // A project's `skills.updated` names its folder, which may not be one
+        // shared with other devices: remotes hear only that skills changed.
+        if case let .skillsUpdated(cwd) = envelope.event, cwd != nil {
+            envelope.event = .skillsUpdated(cwd: nil)
+        }
         buffer.append(envelope)
         if buffer.count > bufferLimit { buffer.removeFirst(buffer.count - bufferLimit) }
         let waiting = waiters
@@ -166,7 +173,7 @@ public actor EnvServerDeviceLink {
         switch envelope.stream {
         case .global:
             switch envelope.event {
-            case .providerUpdated: return true
+            case .providerUpdated, .skillsUpdated: return true
             case let .terminalOutput(id, _), let .terminalExited(id, _):
                 return linkedTerminals.contains(id) ? await allowsTerminal() : false
             default: return false
@@ -186,7 +193,7 @@ public actor EnvServerDeviceLink {
             case .global:
                 guard envelope.sequence > globalCursor else { return false }
                 switch envelope.event {
-                case .providerUpdated: return true
+                case .providerUpdated, .skillsUpdated: return true
                 case let .terminalOutput(id, _), let .terminalExited(id, _): return terminal && linkedTerminals.contains(id)
                 default: return false
                 }
@@ -325,7 +332,7 @@ public actor EnvServerDeviceLink {
             guard case let .string(id)? = object["terminalId"] else { return "A terminal is required." }
             return linkedTerminals.contains(id) ? nil : "Open the terminal first."
         case .turnStart, .turnSteer, .turnQueue, .turnInterrupt, .approvalRespond, .checkpointRollback,
-             .checkpointDiff, .sessionClose, .checkpointApplyPatch, .turnSchedule, .turnUnschedule:
+             .checkpointDiff, .sessionClose, .checkpointApplyPatch, .turnSchedule, .turnUnschedule, .skillsSelect:
             guard case let .string(id)? = object["sessionId"] else { return "A session is required." }
             return linkedSessions.contains(id) ? nil : "Open the session first."
         default:

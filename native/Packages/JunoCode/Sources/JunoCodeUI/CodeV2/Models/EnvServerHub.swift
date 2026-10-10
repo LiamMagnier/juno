@@ -29,6 +29,9 @@ public final class EnvServerHub {
     /// Instance ids whose setup terminal is opening.
     public private(set) var openingSetup: Set<String> = []
     public private(set) var lastError: String?
+    /// Skills lane: bumped by each `skills.updated` (a skill installed, edited
+    /// or removed on this Mac), so an open Skills list reads again.
+    public private(set) var skillsRevision = 0
     /// Runtimes Alevr installs and signs in itself (Antigravity): download
     /// and sign-in progress per instance id.
     public private(set) var runtimeSetup: [String: CodeV2RuntimeSetup] = [:]
@@ -183,6 +186,7 @@ public final class EnvServerHub {
         if case let .providerUpdated(instance) = envelope.event {
             apply(instance)
         }
+        if case .skillsUpdated = envelope.event { skillsRevision += 1 }
         if let sessionId = envelope.sessionId, let session = sessions[sessionId]?.value {
             session.receive(envelope)
         }
