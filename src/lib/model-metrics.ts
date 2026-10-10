@@ -715,6 +715,11 @@ export function reasoningCaps(model: ModelInfo): ReasoningCaps {
       // Wire shape is decided in anthropic.ts (buildAnthropicThinkingBits):
       //   adaptive + output_config.effort — fable/mythos/opus-4.6+/sonnet-4.6+/sonnet-5
       //   manual type:enabled + budget_tokens — haiku 4.5, opus 4.5, sonnet 4.5
+      // Haiku 5.5: adaptive, all five effort levels, default `medium`, and
+      // `thinking: {type: "disabled"}` accepted at effort high or below, so
+      // Instant is real (effort + thinking docs, platform.claude.com,
+      // 2026-10-10). Matched before the Haiku 4.5 rule below.
+      if (id.includes("haiku-5-5")) return caps(LMHXM, true, false, "medium");
       // Haiku 4.5 is absent from the effort-supported list entirely — on/off only.
       if (id.includes("haiku")) return caps([], true, true);
       // Fable/Mythos: adaptive always on; disabled rejected.

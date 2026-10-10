@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import { latestPerFamily, withSupersededMarked } from "../src/lib/model-metrics";
-import { hasRetired, isSupersededModel, migrateModelId, MODEL_LIST, MODELS, resolveModel, type ModelInfo } from "../src/lib/models";
+import { hasRetired, isSupersededModel, MODEL_LIST, MODELS, type ModelInfo } from "../src/lib/models";
 
 /**
  * What a model picker shows: every configured lab, every model still being
