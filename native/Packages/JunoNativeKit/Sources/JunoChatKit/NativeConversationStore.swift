@@ -846,6 +846,20 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
     /// pickers offer these, under their own Images and Video sections.
     public private(set) var generationModels: [NativeChatModelOption] = []
 
+    /// The composer trays' generation choices, remembered per model on this
+    /// device (the web's `alevr.mediaParams.v1`). Read at send time when a
+    /// caller passes none, so every composer sends what its tray shows.
+    public let mediaParamsMemory: NativeMediaParamsMemory
+
+    /// The choices a turn to `modelID` would carry now: the tray's, cleaned
+    /// against the model's schema; empty for a chat model or a model the
+    /// catalogue publishes no choices for.
+    public func currentMediaParams(for modelID: String) -> NativeMediaParams {
+        guard let schema = generationModels.first(where: { $0.id == modelID })?.mediaParams, !schema.options.isEmpty
+        else { return [:] }
+        return schema.request(mediaParamsMemory.params(for: modelID, schema: schema))
+    }
+
     /// What a chat composer's model picker lists: the chat catalogue, then
     /// the picture and video models.
     public var composerCatalog: [NativeChatModelOption] { modelCatalog + generationModels }
@@ -1690,6 +1704,10 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         /// source attachment and the area, sent to `/api/generate` with the
         /// instructions.
         var edit: NativeMediaGenerationRequest.Edit? = nil
+        /// A picture, video or music turn's generation choices, carried
+        /// through retries for the reason the tool flags are: a retry is the
+        /// request the reader made, at the size and length they chose.
+        var mediaParams: NativeMediaParams = [:]
     }
 
     /// Where a forked turn belongs in the tree.
@@ -1710,8 +1728,10 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         syncModel: NativeSyncModel<Repository>,
         chatClient: NativeChatAPIClient? = nil,
         titleClient: NativeConversationTitleClient? = nil,
-        opensMostRecentConversationOnLoad: Bool = true
+        opensMostRecentConversationOnLoad: Bool = true,
+        mediaParamsMemory: NativeMediaParamsMemory? = nil
     ) {
+        self.mediaParamsMemory = mediaParamsMemory ?? NativeMediaParamsMemory()
         store = NativeConversationStore(repository: repository, outbox: outbox)
         self.outbox = outbox
         self.drainer = drainer
@@ -2294,7 +2314,10 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         // The skill the composer armed (`skillSlug` on the route). Defaulted
         // for the call sites with no skill UI.
         skillSlug: String? = nil,
-        contextTokens: [NativeContextToken] = []
+        contextTokens: [NativeContextToken] = [],
+        // A picture, video or music model's choices (`/api/generate`'s
+        // `params`). Nil reads the tray's, from ``mediaParamsMemory``.
+        mediaParams: NativeMediaParams? = nil
     ) -> Bool {
         sendMessage(
             conversationID: conversationID,
@@ -2312,7 +2335,8 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
             branchPlacement: nil,
             attachments: attachments,
             skillSlug: skillSlug,
-            contextTokens: contextTokens
+            contextTokens: contextTokens,
+            mediaParams: mediaParams
         )
     }
 
@@ -2337,7 +2361,8 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         branchPlacement: BranchPlacement?,
         attachments: [NativeChatAttachment] = [],
         skillSlug: String? = nil,
-        contextTokens: [NativeContextToken] = []
+        contextTokens: [NativeContextToken] = [],
+        mediaParams: NativeMediaParams? = nil
     ) -> Bool {
         guard !chatPhase.isActive, let accountID, chatClient != nil,
             let conversation = conversations.first(where: { $0.id == conversationID }),
@@ -2410,7 +2435,11 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
             // Not on a picture or video turn: `/api/generate` takes no files,
             // so showing them on the question would claim they went with it.
             attachments: mediaModality(of: modelID) == nil
-                ? attachments.filter { attachmentIDs.contains($0.id) } : []
+                ? attachments.filter { attachmentIDs.contains($0.id) } : [],
+            // What the tray shows, unless the caller said otherwise; nothing
+            // on a chat turn.
+            mediaParams: mediaModality(of: modelID) == nil
+                ? [:] : (mediaParams ?? currentMediaParams(for: modelID))
         )
         retryContexts.removeValue(forKey: conversationID)
         chatErrorDescription = nil
@@ -2764,7 +2793,8 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
                         prompt: context.prompt,
                         modelID: context.modelID,
                         modality: modality,
-                        edit: context.edit
+                        edit: context.edit,
+                        params: context.mediaParams
                     ),
                     for: context.accountID
                 )

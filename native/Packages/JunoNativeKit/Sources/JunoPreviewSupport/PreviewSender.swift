@@ -83,6 +83,17 @@ public actor PreviewSender: NativeChatRequestSending {
         // attachment's own `url`, which the showcase points here.
         if request.path.hasPrefix("/api/attachments/") || request.path.hasPrefix("/api/files/") {
             let id = String(request.path.split(separator: "/").last ?? "")
+            if id == PreviewImageFixtures.generatedAudioID {
+                let wav = PreviewAudioFixtures.wav
+                return HTTPResponse(
+                    statusCode: 200,
+                    headers: try HTTPHeaders([
+                        "content-type": "audio/wav",
+                        "content-length": String(wav.count),
+                    ]),
+                    body: wav
+                )
+            }
             if let png = PreviewImageFixtures.png(for: id) {
                 return HTTPResponse(
                     statusCode: 200,
@@ -505,6 +516,13 @@ public enum PreviewModelCatalog {
             efforts: ["low", "medium", "high"], canDisable: true, reasoning: true
         )),
         \(model(
+            id: "openai:gpt-image-2.5-sunburst", provider: "openai", providerName: "OpenAI · GPT",
+            name: "GPT Image 2.5 Sunburst",
+            description: "Precision-first: the highest quality and the most control over an edit.",
+            context: nil, cost: nil, efforts: [], canDisable: true, reasoning: false,
+            modality: "image"
+        )),
+        \(model(
             id: "openai:gpt-image-2.5-flare", provider: "openai", providerName: "OpenAI · GPT",
             name: "GPT Image 2.5 Flare",
             description: "The everyday default: GPT Image 2 quality at half the latency.",
@@ -531,6 +549,20 @@ public enum PreviewModelCatalog {
             description: "Short clips with sound, from a prompt or a still.",
             context: nil, cost: nil, efforts: [], canDisable: true, reasoning: false,
             modality: "video"
+        )),
+        \(model(
+            id: "google:veo-3.1-generate-preview", provider: "google", providerName: "Google · Gemini",
+            name: "Veo 3.1",
+            description: "Cinematic clips with native sound, up to 4K.",
+            context: nil, cost: nil, efforts: [], canDisable: true, reasoning: false,
+            modality: "video"
+        )),
+        \(model(
+            id: "google:lyria-3.5", provider: "google", providerName: "Google · Gemini",
+            name: "Lyria 3.5",
+            description: "Full songs with vocals or instrumentals, from a prompt.",
+            context: nil, cost: nil, efforts: [], canDisable: true, reasoning: false,
+            modality: "audio"
         ))
       ]
     }
@@ -602,7 +634,8 @@ public enum PreviewModelCatalog {
           },
           "fastMode": \(fastRateMultiplier.map { "{\"rateMultiplier\": \($0)}" } ?? "null"),
           "ultraFastMode": \(ultraFastRateMultiplier.map { "{\"rateMultiplier\": \($0)}" } ?? "null"),
-          "deprecationNote": null
+          "deprecationNote": null,
+          "mediaParams": \(PreviewMediaParams.json[id] ?? "null")
         }
         """
     }

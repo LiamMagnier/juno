@@ -92,12 +92,23 @@ enum PreviewChatStream {
     /// the answer (`PreviewImageFixtures.generatedID`, served at
     /// `/api/files/<id>`). `--juno-preview-generate-hold` stops at the
     /// generating stage so the placeholder can be captured.
+    /// A 1K picture's pixels at a ratio ("16:9" → 1536×864), as the fixture draws it.
+    static func previewFrame(aspect: String?) -> (Int, Int) {
+        let parts = (aspect ?? "").split(separator: ":").compactMap { Double($0) }
+        guard parts.count == 2, parts[0] > 0, parts[1] > 0, parts[0] != parts[1] else { return (1024, 1024) }
+        let ratio = parts[0] / parts[1]
+        let area = 1024.0 * 1024.0
+        func round16(_ value: Double) -> Int { max(64, Int((value / 16).rounded()) * 16) }
+        return (round16((area * ratio).squareRoot()), round16((area / ratio).squareRoot()))
+    }
+
     static func generateBytes(for request: NativeBearerRequest) -> AsyncThrowingStream<UInt8, any Error>? {
         guard request.method == .post, request.path == "/api/generate" else { return nil }
         let body = request.body.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
         let conversationID = body?["conversationId"] as? String ?? "preview-generate"
         let modelID = body?["model"] as? String ?? "openai:gpt-image-2.5-flare"
         let hold = CommandLine.arguments.contains("--juno-preview-generate-hold")
+        let requestedAspect = (body?["params"] as? [String: Any])?["aspect"] as? String
         return AsyncThrowingStream { continuation in
             let task = Task {
                 func frame(_ object: [String: Any]) {
@@ -115,20 +126,37 @@ enum PreviewChatStream {
                 try? await Task.sleep(for: .milliseconds(900))
                 let formatter = ISO8601DateFormatter()
                 formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-                let id = PreviewImageFixtures.generatedID
+                // What the request asked for: a music model answers with a
+                // track (`FILE`, audio/*), a picture model with a picture at
+                // the frame its `params.aspect` chose.
+                let isAudio = PreviewMediaParams.json[modelID]?.contains(#""kind":"audio""#) == true
+                let attachment: [String: Any]
+                if isAudio {
+                    let id = PreviewImageFixtures.generatedAudioID
+                    attachment = [
+                        "id": id, "kind": "FILE", "fileName": "evening-drive.wav",
+                        "mimeType": "audio/wav", "size": PreviewAudioFixtures.wav.count,
+                        "url": "/api/files/\(id)",
+                    ]
+                } else {
+                    let (width, height) = previewFrame(aspect: requestedAspect)
+                    let id = width == height ? PreviewImageFixtures.generatedID
+                        : PreviewImageFixtures.generatedID(width: width, height: height)
+                    attachment = [
+                        "id": id, "kind": "IMAGE", "fileName": "generated.png",
+                        "mimeType": "image/png", "size": 182_000,
+                        "width": width, "height": height, "url": "/api/files/\(id)",
+                    ]
+                }
                 frame([
                     "type": "done",
                     "message": [
                         "id": "preview-gen-answer",
                         "role": "ASSISTANT",
-                        "content": "",
+                        "content": isAudio ? "**Evening Drive**\n\nSoft synths over a slow arpeggio, no vocals." : "",
                         "model": modelID,
                         "createdAt": formatter.string(from: Date()),
-                        "attachments": [[
-                            "id": id, "kind": "IMAGE", "fileName": "generated.png",
-                            "mimeType": "image/png", "size": 182_000,
-                            "width": 1024, "height": 1024, "url": "/api/files/\(id)",
-                        ]],
+                        "attachments": [attachment],
                     ],
                 ])
                 continuation.finish()
