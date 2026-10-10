@@ -1140,13 +1140,18 @@ public final class SessionController {
             registry: ToolRegistry(tools: tools, contextProvider: context.instructions),
             permissions: live.permissions,
             store: live.store,
-            configuration: orchestratorConfiguration(
-                contract: contract,
-                live: live,
-                systemPrompt: systemPrompt,
-                sessionState: sessionState,
-                autonomy: autonomy
-            ),
+            configuration: {
+                var configuration = orchestratorConfiguration(
+                    contract: contract,
+                    live: live,
+                    systemPrompt: systemPrompt,
+                    sessionState: sessionState,
+                    autonomy: autonomy
+                )
+                // Team lane: Plan → Build → Verify runs before the lead, in Code turns.
+                configuration.team = contract.behavior == .code ? TeamPipeline(routing: contract.roleRouting) : nil
+                return configuration
+            }(),
             modelID: contract.modelID,
             reasoningEffort: contract.reasoningEffort,
             lifecycleHooks: lifecycleHooks,

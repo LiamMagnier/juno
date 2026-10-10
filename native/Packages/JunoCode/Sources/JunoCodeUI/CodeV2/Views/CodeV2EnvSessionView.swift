@@ -247,6 +247,7 @@ public struct CodeV2EnvSessionView: View {
                 threadTokens: snapshot.usage?.contextTokens ?? 0,
                 openConnections: openConnections, setup: setup
             )
+            .codeV2TeamScope(session: session.sessionId, project: (snapshot.cwd as NSString).lastPathComponent)
         } trailing: {
             CodeV2ComposerTrailing(
                 context: context,

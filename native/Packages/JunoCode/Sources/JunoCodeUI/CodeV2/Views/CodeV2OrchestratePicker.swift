@@ -75,7 +75,7 @@ struct CodeV2OrchestratePicker: View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(spacing: 0) {
                 switch draft.preset {
-                case .solo, .leadWorkers:
+                case .solo, .leadWorkers, .planBuildVerify:
                     roleRow("Lead", selection: draft.lead) { editing = .lead }
                     roleRow("Workers", selection: draft.worker, count: draft.workerCount) { editing = .workers }
                     roleRow("Reviewer", selection: draft.reviewer) { editing = .reviewer }

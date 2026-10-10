@@ -69,6 +69,7 @@ public struct SubagentRouting: Sendable {
         switch agentName?.lowercased() {
         case "explorer"?: return .explorer
         case "reviewer"?, "verifier"?: return .reviewer
+        case "architect"?: return .architect
         default: break
         }
         return role == .reviewer ? .reviewer : .worker
@@ -89,6 +90,8 @@ public struct SubagentRouting: Sendable {
         case .compaction: return routing.compaction
         case .orchestrator: return routing.orchestrator
         case .worker: return worker
+        // Team lane: the Architect plans on its own model, else the lead's.
+        case .architect: return routing.architect ?? routing.orchestrator
         }
     }
 

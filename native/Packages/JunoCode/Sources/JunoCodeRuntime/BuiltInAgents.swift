@@ -126,7 +126,24 @@ public enum BuiltInAgents {
         maxSteps: 18
     )
 
-    public static let all = [explorer, reviewer, verifier]
+    /// The team's planner (Plan → Build → Verify): reads the project and
+    /// answers with a plan split into parts builders can take in parallel.
+    public static let architect = SubagentDefinition(
+        name: "architect",
+        description: "Plans the structure and approach of a change, read-only, as parts builders can take in parallel.",
+        prompt: """
+            You are the team's architect. Read enough of the project to plan \
+            the change you were given well. Change nothing and write no \
+            code. Weigh the trade-offs, then answer with the plan: the \
+            structure and approach, and the work split into parts that can \
+            be built in parallel without touching the same lines.
+            """,
+        mode: .readOnly,
+        tools: readTools,
+        maxSteps: 18
+    )
+
+    public static let all = [explorer, reviewer, verifier, architect]
 
     public static func named(_ name: String) -> SubagentDefinition? {
         all.first { $0.name == name.lowercased() }
