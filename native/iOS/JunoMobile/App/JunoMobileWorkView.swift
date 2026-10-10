@@ -99,9 +99,9 @@ struct JunoMobileWorkView: View {
         // Two things need it. The composer has to be able to push — it creates
         // a task and the reader should land in it — and the stack here belongs
         // to the shell's `detail(for:)`, so there is no path binding to append
-        // to. And a destination bound to *this* state cannot be claimed by the
-        // `navigationDestination(for: String.self)` that Projects and Artifacts
-        // register on the same stack, which a bare `String` route could be.
+        // to. And a destination bound to *this* state cannot be claimed by any
+        // String-valued route registered on the same stack, which a bare
+        // `String` route could be.
         .navigationDestination(item: $openSessionID) { sessionID in
             JunoMobileWorkThread(model: model, sessionID: sessionID)
         }

@@ -20,12 +20,18 @@ import SwiftUI
 struct JunoMobileProjectBreadcrumbs: View {
   let crumbs: [NativeProjectCrumb]
   let current: String
+  /// The page a crumb opens. A destination link, not `NavigationLink(value:)`:
+  /// the phone's stack has a typed path of sections, so a pushed `String`
+  /// value had no destination and a tap only highlighted the row.
+  let destination: (String) -> AnyView
 
   var body: some View {
     ScrollView(.horizontal) {
       HStack(spacing: JunoSpace.hairline) {
         ForEach(crumbs) { crumb in
-          NavigationLink(value: crumb.id) {
+          NavigationLink {
+            destination(crumb.id)
+          } label: {
             Text(crumb.name)
               .foregroundStyle(Color.junoMutedForeground)
               .frame(minHeight: 32)
@@ -60,6 +66,8 @@ struct JunoMobileProjectFolderSection: View {
   @Bindable var model: NativeProjectModel<SQLiteAccountRepository>
   let project: NativeProject
   let create: () -> Void
+  /// The folder page a row opens (see JunoMobileProjectBreadcrumbs.destination).
+  let destination: (String) -> AnyView
 
   private var folders: [NativeProject] { model.children(of: project.id) }
   private var refusal: NativeProjectMoveRefusal? { model.newFolderRefusal(in: project.id) }
@@ -68,7 +76,9 @@ struct JunoMobileProjectFolderSection: View {
     if !folders.isEmpty || refusal == nil {
       Section {
         ForEach(folders) { folder in
-          NavigationLink(value: folder.id) {
+          NavigationLink {
+            destination(folder.id)
+          } label: {
             HStack(spacing: JunoSpace.cozy) {
               JunoSymbol(.projects)
                 .font(.title3)
@@ -135,6 +145,8 @@ enum JunoMobileProjectFolderLine {
 /// receive from each project above it.
 struct JunoMobileInheritedSections: View {
   let inherited: [NativeProjectInheritance]
+  /// The project page "Open …" leads to (see JunoMobileProjectBreadcrumbs.destination).
+  let destination: (String) -> AnyView
 
   var body: some View {
     ForEach(inherited) { source in
@@ -152,7 +164,9 @@ struct JunoMobileInheritedSections: View {
             .font(.subheadline)
             .foregroundStyle(.secondary)
         }
-        NavigationLink(value: source.id) {
+        NavigationLink {
+          destination(source.id)
+        } label: {
           Text("Open \(source.name)")
         }
       } header: {
