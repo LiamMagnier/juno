@@ -57,12 +57,13 @@ final class JunoMobileIncognitoUITests: XCTestCase {
                 .waitForExistence(timeout: 10),
             "The incognito session did not open. On screen:\n\(app.debugDescription)"
         )
-        // The promise is on screen, verbatim, because it is the reason the mode
-        // exists and paraphrasing a privacy claim per platform is how the two stop
-        // matching.
+        // The promise is on screen, because it is the reason the mode exists.
+        // Since the round-2 rework the intro reads "This chat won’t appear in
+        // your history…", the web's opening clause; matched on that clause
+        // rather than the apostrophe, which differs between the two.
         XCTAssertTrue(
             app.staticTexts.containing(
-                NSPredicate(format: "label CONTAINS %@", "aren't saved")
+                NSPredicate(format: "label CONTAINS %@", "appear in your history")
             ).firstMatch.exists,
             "The incognito greeting lost its promise. On screen:\n\(app.debugDescription)"
         )

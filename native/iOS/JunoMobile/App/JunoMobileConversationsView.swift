@@ -2578,10 +2578,16 @@ struct JunoMobileSoftScrollEdges: ViewModifier {
 }
 
 extension View {
-  /// The composer as a bottom bar: `safeAreaBar` on iOS 26, which lets the
-  /// scroll edge effect run under it, and `safeAreaInset` before.
+  /// The composer as a bottom inset.
+  ///
+  /// `safeAreaInset`, not `safeAreaBar`: the "+" panel grows up out of the
+  /// composer, beyond the bar's own bounds, and a `safeAreaBar` hit-tests only
+  /// inside those bounds, so every row of the open panel (Camera, Photos,
+  /// Files, Deep research, Model…) passed its taps to the transcript behind
+  /// and did nothing. The inset delivers them; the cost is the system's scroll
+  /// edge blur under the bar, which the glass composer does not need.
   func junoComposerBar<Bar: View>(@ViewBuilder _ bar: @escaping () -> Bar) -> some View {
-    safeAreaBar(edge: .bottom, content: bar)
+    safeAreaInset(edge: .bottom, spacing: 0, content: bar)
   }
 }
 

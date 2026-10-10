@@ -3,9 +3,9 @@ import XCTest
 /// Drives the chat header and the transcript through the preview harness.
 ///
 /// These three behaviours are only observable in a running app: whether the
-/// wire format leaks into the rendered transcript, whether the two trailing
-/// header controls land in ONE capsule or two, and whether the thought-process
-/// row actually opens anything. Unit tests over `NativeMessageContent` prove the
+/// wire format leaks into the rendered transcript, where the header's three
+/// controls (sidebar, title menu, New chat) land, and whether the
+/// thought-process row actually opens anything. Unit tests over `NativeMessageContent` prove the
 /// parsing; only this proves what a reader sees.
 final class JunoMobileChatChromeUITests: XCTestCase {
     override func setUpWithError() throws {
@@ -88,34 +88,57 @@ final class JunoMobileChatChromeUITests: XCTestCase {
         XCTAssertEqual(leaked.count, 0, "The artifact's body rendered as text.")
     }
 
-    // MARK: - The header pill
+    // MARK: - The header
 
-    /// New chat and the menu have to be ONE capsule, not two.
+    /// The conversation bar keeps exactly three things: the sidebar button on
+    /// the leading edge, the title (which IS the conversation's menu) in the
+    /// middle, and New chat alone on the trailing edge — ChatGPT's bar.
     ///
-    /// From OS 26 the toolbar merges adjacent items into a single pane of glass,
-    /// and a `ToolbarSpacer` between them would split it into two bubbles that
-    /// look nothing like the design. Nothing in the source says which happened —
-    /// only the laid-out frames do, so this asserts on the gap between them.
+    /// This replaced the old trailing "New chat + menu" pair in one capsule:
+    /// the conversation's verbs moved under its title, the way Notes and
+    /// Photos put a document's actions under its name. Only the laid-out
+    /// frames say the order is right, so this asserts on them.
     @MainActor
-    func testTheHeaderPairsNewChatWithTheMenuInOneCapsule() {
+    func testTheHeaderPutsTheTitleMenuBetweenTheSidebarAndNewChat() {
         let app = launch()
-        let newChat = app.buttons["juno.mobile.chat-new"]
+        let sidebar = app.buttons["juno.mobile.menu"]
         let menu = app.buttons["juno.mobile.conversation-menu"]
+        let newChat = app.buttons["juno.mobile.chat-new"]
         require(newChat, app)
         require(menu, app, timeout: 5)
+        require(sidebar, app, timeout: 5)
 
         XCTAssertLessThan(
-            newChat.frame.maxX, menu.frame.minX + 1,
-            "New chat should sit on the leading side of the menu."
+            sidebar.frame.maxX, menu.frame.minX,
+            "The sidebar button should sit on the leading side of the title."
         )
         XCTAssertLessThan(
-            menu.frame.minX - newChat.frame.maxX, 24,
-            "The two trailing controls are too far apart to be sharing one capsule."
+            menu.frame.maxX, newChat.frame.minX,
+            "New chat should sit on the trailing side of the title."
         )
-        XCTAssertEqual(
-            newChat.frame.midY, menu.frame.midY, accuracy: 2,
-            "The two trailing controls are not on one row."
+        // The title menu reads the conversation's name: it is the title, not
+        // an anonymous "…" capsule.
+        XCTAssertTrue(
+            menu.staticTexts["juno.mobile.conversation-title"].firstMatch.exists,
+            "The conversation menu does not carry the conversation's title."
         )
+        // New chat stands at the trailing edge of the bar, on the bar's edge
+        // inset rather than next to the title.
+        let screen = app.windows.firstMatch.frame
+        XCTAssertGreaterThan(
+            newChat.frame.midX, screen.width * 0.8,
+            "New chat is not on the trailing edge of the bar."
+        )
+        XCTAssertLessThan(
+            sidebar.frame.midX, screen.width * 0.2,
+            "The sidebar button is not on the leading edge of the bar."
+        )
+        for control in [sidebar, newChat] {
+            XCTAssertEqual(
+                control.frame.midY, menu.frame.midY, accuracy: 2,
+                "The bar's three controls are not on one row."
+            )
+        }
     }
 
     @MainActor
@@ -155,7 +178,7 @@ final class JunoMobileChatChromeUITests: XCTestCase {
         XCTAssertGreaterThanOrEqual(chat.frame.height, 44)
     }
 
-    /// A device heartbeat alone is not enough to run Juno Code. The target
+    /// A device heartbeat alone is not enough to run Alevr Code. The target
     /// picker must distinguish the Mac that advertises queued execution from a
     /// signed-in computer that would otherwise leave a task queued forever.
     @MainActor
@@ -168,8 +191,28 @@ final class JunoMobileChatChromeUITests: XCTestCase {
         ]
         app.launch()
 
-        let target = app.buttons["Liam’s MacBook Pro · juno"]
-        require(target, app)
+        // Code opens on the paired Mac's remote sessions. The queued-task
+        // composer (and its target picker) lives under Cloud in the "Run on"
+        // host menu at the top of the page.
+        let hosts = app.buttons.matching(
+            NSPredicate(format: "label BEGINSWITH %@", "Run on")
+        ).firstMatch
+        require(hosts, app)
+        hosts.tap()
+        let cloud = app.buttons["Cloud"].firstMatch
+        require(cloud, app, timeout: 5)
+        cloud.tap()
+
+        // Remote, not Cloud or No project, is what sends a task to a computer.
+        let target = app.buttons.matching(
+            NSPredicate(format: "label BEGINSWITH %@", "Liam’s MacBook Pro")
+        ).firstMatch
+        if !target.waitForExistence(timeout: 5) {
+            let remote = app.buttons["Remote"].firstMatch
+            require(remote, app, timeout: 5)
+            remote.tap()
+        }
+        require(target, app, timeout: 10)
         target.tap()
 
         require(app.staticTexts["Computer"], app, timeout: 10)
@@ -177,7 +220,7 @@ final class JunoMobileChatChromeUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Not hosting"].exists)
         XCTAssertTrue(
             app.staticTexts.matching(
-                NSPredicate(format: "label CONTAINS %@", "not set up to run remote Juno Code work")
+                NSPredicate(format: "label CONTAINS %@", "not set up to run remote Alevr Code work")
             ).firstMatch.exists,
             "The unavailable host does not explain why it cannot accept a task."
         )
@@ -213,8 +256,11 @@ final class JunoMobileChatChromeUITests: XCTestCase {
         // The fixture is deliberately a long transcript and opens at the
         // newest turn. Reveal the disclosure before asserting its hit target;
         // this is the same gesture a reader uses to inspect an older run.
-        if !row.isHittable {
-            app.swipeDown()
+        // Bounded rather than `while`: a fixture that stopped being long
+        // should fail this test, not hang it.
+        let transcript = app.scrollViews["juno.mobile.conversation-detail"].firstMatch
+        for _ in 0..<6 where !row.isHittable {
+            transcript.swipeDown()
         }
         XCTAssertTrue(row.isHittable, "The thought-process row is on screen but not hittable.")
 
@@ -264,21 +310,27 @@ final class JunoMobileChatChromeUITests: XCTestCase {
     @MainActor
     func testTheComposerOpensOnTheAccountDefaultModelNotAuto() {
         let app = launch()
-        let chip = app.buttons["juno.mobile.chat-model"]
-        require(chip, app)
+        // The composer lost its model chip: the model is named, and chosen,
+        // on the "Model" row at the foot of the "+" panel.
+        let plus = app.buttons["juno.mobile.chat-plus"]
+        require(plus, app)
+        plus.tap()
+        let row = app.descendants(matching: .any)["juno.mobile.composer-model"].firstMatch
+        require(row, app, timeout: 5)
 
-        // The fixture account's default is Claude Opus 4.8. Settings load
-        // asynchronously, so the chip legitimately shows Auto for a moment.
+        // The fixture account's default is Claude Opus 4.8; the row shows the
+        // short name ("Opus 4.8"). Settings load asynchronously, so the row
+        // legitimately shows Auto for a moment.
         let settled = expectation(
-            for: NSPredicate(format: "label CONTAINS 'Claude Opus' OR value CONTAINS 'Claude Opus'"),
-            evaluatedWith: chip
+            for: NSPredicate(format: "label CONTAINS 'Opus' OR value CONTAINS 'Opus'"),
+            evaluatedWith: row
         )
         XCTAssertEqual(
             XCTWaiter().wait(for: [settled], timeout: 15),
             .completed,
             """
             The composer never adopted the account's default model. \
-            Chip label was \(chip.label), value \(String(describing: chip.value)).
+            Row label was \(row.label), value \(String(describing: row.value)).
             """
         )
     }
@@ -338,18 +390,40 @@ final class JunoMobileChatChromeUITests: XCTestCase {
     }
 
     /// The open drawer's search button and the pushed card's sidebar button
-    /// are one control size on one line: same diameter, same vertical centre.
+    /// are one control on one line: the top bar's 44pt glass circle, on the
+    /// same vertical centre.
+    ///
+    /// What accessibility can and cannot measure here: the drawer's search
+    /// button is ours (`JunoLayout.Bar.button`, 44pt) and reports its circle.
+    /// The card's sidebar button is a system toolbar item, whose Liquid Glass
+    /// circle the system draws OUTSIDE the frame it reports (the item reports
+    /// its 36pt content box, the button its glyph). So the diameter is asserted
+    /// on our button, and the shared centre line on both — the claim the
+    /// design makes about the pair.
     @MainActor
     func testDrawerSearchAndSidebarButtonShareSizeAndCentreLine() {
         let app = launch(["--juno-preview-sidebar"])
 
-        let search = app.buttons["juno.mobile.sidebar-search"]
+        // The drawer is one accessibility container, so SwiftUI propagates its
+        // identifier ("juno.mobile.sidebar") over the button's own; select the
+        // button by its label within either identifier.
+        let search = app.buttons.matching(
+            NSPredicate(
+                format: "label == %@ AND (identifier == %@ OR identifier == %@)",
+                "Search", "juno.mobile.sidebar-search", "juno.mobile.sidebar"
+            )
+        ).firstMatch
         let toggle = app.buttons["juno.mobile.menu"]
         require(search, app, timeout: 10)
         require(toggle, app, timeout: 10)
 
+        // The drawer is open: the card (and its sidebar button) is pushed to
+        // the trailing side, the search button is the drawer header's last
+        // control, so the two stand side by side.
+        XCTAssertLessThan(search.frame.maxX, toggle.frame.minX, "the card is not pushed past the drawer's search")
+
         XCTAssertEqual(search.frame.midY, toggle.frame.midY, accuracy: 1.5, "centre lines differ")
-        XCTAssertEqual(search.frame.height, toggle.frame.height, accuracy: 2, "heights differ")
-        XCTAssertEqual(search.frame.width, toggle.frame.width, accuracy: 2, "widths differ")
+        XCTAssertEqual(search.frame.width, 44, accuracy: 1, "the search button is not the bar's 44pt circle")
+        XCTAssertEqual(search.frame.height, 44, accuracy: 1, "the search button is not the bar's 44pt circle")
     }
 }

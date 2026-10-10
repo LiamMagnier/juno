@@ -42,11 +42,11 @@ final class JunoMobileWorkspaceScreensUITests: XCTestCase {
     /// the clamp and its toggle are both exercised.
     private func openFirstProject(_ app: XCUIApplication) {
         require(app.descendants(matching: .any)["juno.mobile.project-list"].firstMatch, app)
-        // The redesigned row combines icon, title, counts and instructions
-        // into one accessible button label. Query that label directly instead
-        // of asking for a descendant text element that no longer exists as a
-        // separate accessibility node.
-        let card = app.buttons.matching(
+        // The row combines title, pin state, counts and date into one
+        // accessible label ("Astro research, Pinned · 1 chat · …"). Since the
+        // round-2 native List the row reports as text rather than a button,
+        // so match the label on any element type.
+        let card = app.descendants(matching: .any).matching(
             NSPredicate(format: "label BEGINSWITH %@", "Astro research,")
         ).firstMatch
         require(card, app)
@@ -76,20 +76,38 @@ final class JunoMobileWorkspaceScreensUITests: XCTestCase {
         let app = launch(tab: "projects")
         openFirstProject(app)
 
-        let toggle = app.buttons["juno.mobile.clamped-toggle"]
+        // The section's identifier ("juno.mobile.project-instructions") is
+        // propagated over the toggle's own `juno.mobile.clamped-toggle`, so
+        // the control is found by what it says.
+        func toggle(_ label: String) -> XCUIElement {
+            app.buttons.matching(
+                NSPredicate(format: "label == %@", label)
+            ).firstMatch
+        }
+        let showAll = toggle("Show all")
+        // The round-2 native List puts New Chat, Chats, Folders and Files
+        // first and the instructions near the foot, so scroll down to them.
+        // Bounded rather than `while`: a list that stopped scrolling should
+        // fail this test, not hang it.
+        let list = app.collectionViews.firstMatch
+        for _ in 0..<6 where !(showAll.exists && showAll.isHittable) {
+            list.swipeUp()
+        }
         // No skip: the fixture instructions typeset to 405pt against a 145pt
         // clamp, so the control must be there. Skipping here is what hid the
         // measurement being broken through two earlier attempts.
-        require(toggle, app, timeout: 10)
+        require(showAll, app, timeout: 10)
 
-        // The Assistant section sits under the instructions in the round-2
-        // single-list layout, so it is what an expansion pushes down.
-        let files = app.staticTexts["Assistant"]
-        let filesBefore = files.frame.minY
-        toggle.tap()
+        // The toggle sits under the text in the same row, so it is what an
+        // expansion pushes down. (The sections below it are no use as a
+        // marker any more: in the lazy native List they scroll out of
+        // existence as the row grows.)
+        let toggleBefore = showAll.frame.minY
+        showAll.tap()
 
-        // Expanding pushes the later sections DOWN — which is what proves the
-        // clamp was really holding the text back rather than truncating it away.
+        // Expanding pushes the toggle — now "Show less" — DOWN, which is what
+        // proves the clamp was really holding the text back rather than
+        // truncating it away.
         //
         // A block predicate, not `NSPredicate(format: "frame.origin.y > …")`.
         // `frame` crosses into KVC as an opaque `NSValue`, which answers to no
@@ -98,10 +116,10 @@ final class JunoMobileWorkspaceScreensUITests: XCTestCase {
         // by 259pt exactly as intended.
         let expanded = expectation(
             for: NSPredicate { element, _ in
-                guard let element = element as? XCUIElement else { return false }
-                return element.frame.minY > filesBefore
+                guard let element = element as? XCUIElement, element.exists else { return false }
+                return element.frame.minY > toggleBefore + 20
             },
-            evaluatedWith: files
+            evaluatedWith: toggle("Show less")
         )
         XCTAssertEqual(
             XCTWaiter().wait(for: [expanded], timeout: 5),
@@ -146,7 +164,14 @@ final class JunoMobileWorkspaceScreensUITests: XCTestCase {
         require(card, app)
         card.tap()
 
-        require(app.buttons["juno.mobile.artifact-menu"], app, timeout: 10)
+        // The artifact's menu, or the system's overflow "More" that folds it in
+        // when Version and Share already fill a narrow bar.
+        let menu = app.buttons["juno.mobile.artifact-menu"]
+        let overflow = app.buttons["OverflowBarButtonItem"]
+        XCTAssertTrue(
+            menu.waitForExistence(timeout: 10) || overflow.waitForExistence(timeout: 2),
+            "Neither the artifact menu nor the bar's overflow is on screen."
+        )
 
         // Preview/Source is the system segmented control again (round 2): it
         // reports as two selectable buttons inside one identified container.
@@ -161,7 +186,7 @@ final class JunoMobileWorkspaceScreensUITests: XCTestCase {
         // The page states where it came from in its actions menu ("Open Chat")
         // and its kind in the navigation bar's secondary line on the sheet.
         XCTAssertTrue(
-            app.buttons["juno.mobile.artifact-menu"].exists,
+            menu.exists || overflow.exists,
             "The artifact page lost its actions menu. On screen:\n\(app.debugDescription)"
         )
 

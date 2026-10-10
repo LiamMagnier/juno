@@ -84,9 +84,6 @@ struct JunoMobileProjectsView: View {
         .accessibilityIdentifier("juno.mobile.project-new")
       }
     }
-    .navigationDestination(for: String.self) { projectID in
-      projectPage(projectID)
-    }
     .navigationDestination(item: $previewProjectID) { projectID in
       projectPage(projectID)
     }
@@ -195,7 +192,12 @@ struct JunoMobileProjectsView: View {
   }
 
   private func row(_ project: NativeProject) -> some View {
-    NavigationLink(value: project.id) {
+    // A destination link: the phone's stack has a typed path of sections, so
+    // `NavigationLink(value: project.id)` had nowhere to go and a tap only
+    // highlighted the row.
+    NavigationLink {
+      projectPage(project.id)
+    } label: {
       JunoMobileProjectRow(
         project: project,
         conversations: model.conversationsByProject[project.id]?.count ?? 0,
@@ -527,16 +529,6 @@ struct JunoMobileArtifactsView: View {
     .navigationTitle("navigation.artifacts")
     .navigationBarTitleDisplayMode(.large)
     .searchable(text: $searchText, prompt: "Search artifacts")
-    .navigationDestination(for: String.self) { id in
-      if let artifact = model.artifacts.first(where: { $0.id == id }) {
-        JunoMobileArtifactDetail(
-          model: model,
-          artifact: artifact,
-          openConversation: openConversation
-        )
-        .id(artifact.id)
-      }
-    }
     .toolbar {
       if availableKinds.count > 1 {
         ToolbarItem(placement: .topBarTrailing) {
@@ -613,7 +605,15 @@ struct JunoMobileArtifactsView: View {
   }
 
   private func row(_ artifact: NativeArtifact) -> some View {
-    NavigationLink(value: artifact.id) {
+    // A destination link, for the same reason as the projects list's rows.
+    NavigationLink {
+      JunoMobileArtifactDetail(
+        model: model,
+        artifact: artifact,
+        openConversation: openConversation
+      )
+      .id(artifact.id)
+    } label: {
       HStack(spacing: JunoSpace.cozy) {
         JunoIconView(Self.kindIcon(artifact.kind), size: 20)
           .foregroundStyle(.secondary)
@@ -741,6 +741,22 @@ private struct JunoMobileProjectDetail: View {
     workspaceModel?.workspaces[project.id]
   }
 
+  /// Another project's page (a folder, an ancestor, an inherited source), as a
+  /// destination link pushes it on whichever stack this page sits in.
+  private func page(_ id: String) -> AnyView {
+    guard let other = model.projects.first(where: { $0.id == id }) else { return AnyView(EmptyView()) }
+    return AnyView(
+      JunoMobileProjectDetail(
+        model: model,
+        workspaceModel: workspaceModel,
+        conversationModel: conversationModel,
+        project: other,
+        openConversation: openConversation
+      )
+      .onAppear { model.selectedProjectID = id }
+    )
+  }
+
   private func createProjectConversation() {
     guard !project.isPending, let conversationModel else { return }
     Task {
@@ -800,7 +816,7 @@ private struct JunoMobileProjectDetail: View {
       let crumbs = model.breadcrumbs(for: project.id)
       if !crumbs.isEmpty {
         Section {
-          JunoMobileProjectBreadcrumbs(crumbs: crumbs, current: project.name)
+          JunoMobileProjectBreadcrumbs(crumbs: crumbs, current: project.name, destination: page)
             .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 20))
             .listRowBackground(Color.clear)
         }
@@ -820,11 +836,12 @@ private struct JunoMobileProjectDetail: View {
       JunoMobileProjectFolderSection(
         model: model,
         project: project,
-        create: { creatingFolder = true }
+        create: { creatingFolder = true },
+        destination: page
       )
       filesSection
       instructionsSection
-      JunoMobileInheritedSections(inherited: model.inherited(for: project.id))
+      JunoMobileInheritedSections(inherited: model.inherited(for: project.id), destination: page)
       assistantSection
     }
     .listStyle(.insetGrouped)
