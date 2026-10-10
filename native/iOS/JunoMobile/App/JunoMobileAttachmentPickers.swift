@@ -27,6 +27,21 @@ enum JunoAttachmentTypes {
 
 @MainActor
 enum JunoFileLoader {
+    /// Reads the importer's URLs as picked files, for a composer that keeps its own.
+    static func read(_ urls: [URL]) -> [JunoPickedFile] {
+        urls.compactMap { url in
+            let scoped = url.startAccessingSecurityScopedResource()
+            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+            guard let data = try? Data(contentsOf: url) else { return nil }
+            let type = UTType(filenameExtension: url.pathExtension)
+            return JunoPickedFile(
+                data: data, fileName: url.lastPathComponent,
+                mimeType: type?.preferredMIMEType ?? "application/octet-stream",
+                isImage: type?.conforms(to: .image) ?? false
+            )
+        }
+    }
+
     /// Reads the URLs the file importer returned.
     ///
     /// `.fileImporter` hands back security-scoped URLs, so the start/stop pair

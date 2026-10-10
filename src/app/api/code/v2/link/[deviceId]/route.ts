@@ -9,7 +9,9 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 35;
 
-const MAX_BODY_BYTES = 1024 * 1024;
+// Room for `host.upload`: a photo or file attached from the phone, base64
+// (the phone keeps each under 4 MB before encoding).
+const MAX_BODY_BYTES = 6 * 1024 * 1024;
 
 /**
  * The hosted web's side of the device link (Alevr Code v2, SPEC §3.1;

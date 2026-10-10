@@ -8,7 +8,9 @@ import UniformTypeIdentifiers
 
 /// The Mac's own answers on the device link (docs/code-v2/REMOTE-CONTROL.md
 /// §3): `host.info` (who this Mac is and what a paired device may reach) and
-/// `host.capture` (a picture of the Code preview or the Simulator).
+/// `host.capture` (a picture of the Code preview or the Simulator) and
+/// `host.upload` (a file a paired phone attached to a message, kept in this
+/// app's own folder, never inside a shared one, and referred to by its path).
 ///
 /// Captures are taken by WebKit (the preview's page) and `simctl` (the named
 /// Simulator), never by reading the screen: neither can contain anything but
@@ -33,8 +35,19 @@ struct DesktopRemoteHostResponder: Sendable {
     /// PNG of the preview's page, or nil when there is none.
     var capturePreview: @Sendable () async throws -> Data?
     var now: @Sendable () -> Date = { Date() }
+    /// Where attached files are kept, one folder per file.
+    var uploadsDirectory: URL = Self.defaultUploadsDirectory
 
     static let maxLongEdge = 1_600
+    /// The largest file a paired device may attach.
+    static let maxUploadBytes = 5 * 1024 * 1024
+
+    static var defaultUploadsDirectory: URL {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? URL(fileURLWithPath: NSTemporaryDirectory())
+        return base.appendingPathComponent("Alevr", isDirectory: true)
+            .appendingPathComponent("Remote uploads", isDirectory: true)
+    }
 
     /// The ``EnvServerDeviceLink/HostHandler``.
     func handle(_ type: CodeV2.ClientCommandType, _ params: JSONValue) async throws -> JSONValue? {
@@ -48,6 +61,13 @@ struct DesktopRemoteHostResponder: Sendable {
                 throw EnvServerConnectionError.server(.badRequest, "Say which to capture: the preview or the Simulator.")
             }
             return try CodeV2.ClientCommand.encodeParams(await capture(target))
+        case .hostUpload:
+            guard case let .object(object) = params, case let .string(name)? = object["name"],
+                case let .string(mediaType)? = object["mediaType"], case let .string(base64)? = object["data"]
+            else {
+                throw EnvServerConnectionError.server(.badRequest, "Send the file's name, type and contents.")
+            }
+            return try CodeV2.ClientCommand.encodeParams(try upload(name: name, mediaType: mediaType, base64: base64))
         default:
             throw EnvServerConnectionError.server(.unsupported, "Your Mac does not answer that itself.")
         }
@@ -104,6 +124,39 @@ struct DesktopRemoteHostResponder: Sendable {
             height: scaled.height,
             at: Self.timestamp(now())
         )
+    }
+
+    /// Keeps an attached file in its own folder under ``uploadsDirectory``.
+    /// The name is reduced to its last path component and stripped of
+    /// anything that could climb out of that folder.
+    func upload(name: String, mediaType: String, base64: String) throws -> CodeV2.HostUpload {
+        guard let data = Data(base64Encoded: base64, options: .ignoreUnknownCharacters), !data.isEmpty else {
+            throw EnvServerConnectionError.server(.badRequest, "That file arrived empty.")
+        }
+        guard data.count <= Self.maxUploadBytes else {
+            throw EnvServerConnectionError.server(.badRequest, "That file is too large to attach from the phone.")
+        }
+        let file = Self.safeFileName(name)
+        let folder = uploadsDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        do {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let url = folder.appendingPathComponent(file)
+            try data.write(to: url, options: .atomic)
+            return CodeV2.HostUpload(ref: url.path, name: file, mediaType: mediaType, size: data.count)
+        } catch {
+            throw EnvServerConnectionError.server(.internal, "Your Mac could not keep that file. Try again.")
+        }
+    }
+
+    static func safeFileName(_ name: String) -> String {
+        let last = (name as NSString).lastPathComponent
+        let cleaned = last.unicodeScalars.map { scalar -> Character in
+            if CharacterSet.alphanumerics.contains(scalar) || "._- ".unicodeScalars.contains(scalar) { return Character(scalar) }
+            return "_"
+        }
+        var result = String(cleaned).trimmingCharacters(in: .whitespaces)
+        while result.hasPrefix(".") { result.removeFirst() }
+        return result.isEmpty ? "attachment" : String(result.prefix(120))
     }
 
     /// Re-encodes an image as PNG no larger than `maxLongEdge` on its long side.

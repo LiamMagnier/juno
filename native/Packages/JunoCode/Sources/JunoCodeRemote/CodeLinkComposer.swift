@@ -123,12 +123,15 @@ public struct CodeLinkComposerState: Equatable, Sendable {
 
     /// `turn.start` for `text` in `sessionId`; nil without a model.
     public func turnStart(
-        sessionId: String, text: String, skills available: [CodeV2.LocalSkillSummary] = []
+        sessionId: String, text: String, skills available: [CodeV2.LocalSkillSummary] = [],
+        attachments: [CodeV2.Attachment] = []
     ) -> CodeLinkClient.TurnStartParams? {
         guard let selection else { return nil }
         return CodeLinkClient.TurnStartParams(
             sessionId: sessionId,
-            input: CodeV2.UserInput(text: text, skills: activations(from: available)),
+            input: CodeV2.UserInput(
+                text: text, attachments: attachments.isEmpty ? nil : attachments, skills: activations(from: available)
+            ),
             selection: selection,
             routing: routing,
             runtimeMode: runtimeMode,

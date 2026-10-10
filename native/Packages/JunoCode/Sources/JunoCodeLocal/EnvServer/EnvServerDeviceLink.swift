@@ -105,10 +105,10 @@ public actor EnvServerDeviceLink {
         .fsList, .gitStatus, .gitCommit, .gitPush, .gitPr,
         // Answered by this app, never forwarded: its name and shared folders,
         // a screenshot of the preview pane or the Simulator.
-        .hostInfo, .hostCapture,
+        .hostInfo, .hostCapture, .hostUpload,
     ]
     /// Commands this app answers itself (``hostHandler``) instead of the env server.
-    public static let hostCommands: Set<CodeV2.ClientCommandType> = [.hostInfo, .hostCapture]
+    public static let hostCommands: Set<CodeV2.ClientCommandType> = [.hostInfo, .hostCapture, .hostUpload]
     public static let terminalCommands: Set<CodeV2.ClientCommandType> = [
         .terminalOpen, .terminalWrite, .terminalResize, .terminalClose,
     ]

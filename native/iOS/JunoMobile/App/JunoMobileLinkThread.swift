@@ -11,11 +11,17 @@ import SwiftUI
 /// and the rest (Terminal, Screens, Ship, Continue on) lives in the "…" menu.
 struct JunoMobileLinkThreadView: View {
   @Bindable var model: CodeLinkRemoteModel
+  /// The home's microphone opened a new session: start dictating.
+  var dictateOnAppear = false
+  /// Opens with this composer panel up: the offscreen snapshots only.
+  var previewPanel: JunoMobileLinkPanel? = nil
 
   @State private var sheet: JunoMobileLinkSurface?
   @State private var handoffNotice: JunoMobileHandoffNotice?
   @State private var attentionHaptic = JunoMobileHapticTrigger()
+  @State private var attachments = JunoMobileAttachmentCoordinator()
   @Environment(\.junoThreadSync) private var threadSync
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   private var snapshot: CodeV2.SessionSnapshot? { model.openSnapshot }
 
@@ -24,27 +30,58 @@ struct JunoMobileLinkThreadView: View {
     return .code(deviceID: deviceID, sessionID: sessionID, title: snapshot?.title)
   }
 
+  /// The title once there is a thread: the Mac's, else the first message.
+  private var title: String {
+    if let title = snapshot?.title, !title.isEmpty { return title }
+    if let first = model.pendingFirstMessage { return String(first.prefix(80)) }
+    return "Session"
+  }
+
   var body: some View {
+    // One screen from the empty thread to the live one: the list is always
+    // here (empty while drafting), so sending never swaps the view.
     JunoMobileLinkThreadList(model: model, openChanges: { sheet = .changes })
+      .overlay(alignment: .top) {
+        if model.isDraftingNewSession { draftState }
+      }
       .junoScreenCanvas()
-      .navigationTitle(snapshot?.title ?? "Session")
+      .navigationTitle(model.isDraftingNewSession ? "" : title)
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
-        ToolbarItem(placement: .principal) {
-          VStack(spacing: 0) {
-            Text(snapshot?.title ?? "Session")
-              .font(.subheadline.weight(.medium))
-              .lineLimit(1)
-            Text(placeLine)
-              .font(.caption)
-              .foregroundStyle(Color.junoSecondaryInk)
-              .lineLimit(1)
+        if !model.isDraftingNewSession {
+          ToolbarItem(placement: .principal) {
+            VStack(spacing: 0) {
+              Text(title)
+                .font(.subheadline.weight(.medium))
+                .lineLimit(1)
+              Text(placeLine)
+                .font(.caption)
+                .foregroundStyle(Color.junoSecondaryInk)
+                .lineLimit(1)
+            }
+            .accessibilityElement(children: .combine)
+            .transition(.opacity)
           }
-          .accessibilityElement(children: .combine)
         }
-        ToolbarItem(placement: .topBarTrailing) { menu }
+        if model.openSessionID != nil {
+          ToolbarItem(placement: .topBarTrailing) { menu }
+        }
       }
-      .safeAreaInset(edge: .bottom) { JunoMobileLinkFooter(model: model) }
+      .animation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion), value: model.isDraftingNewSession)
+      .safeAreaInset(edge: .bottom) {
+        if showsComposer {
+          JunoMobileLinkFooter(
+            model: model, dictateOnAppear: dictateOnAppear, previewPanel: previewPanel, attachments: attachments
+          )
+        }
+      }
+      // After the composer's inset, so the camera and photos panels sit above it.
+      .junoAttachmentSurfaces(
+        coordinator: attachments,
+        capacity: CodeLinkRemoteModel.maxAttachments - model.draftAttachments.count
+      ) { files in
+        model.attach(files.map(CodeLinkDraftAttachment.init))
+      }
       .sheet(item: $sheet) { surface in
         JunoMobileLinkSurfaceSheet(model: model, surface: surface)
       }
@@ -56,6 +93,40 @@ struct JunoMobileLinkThreadView: View {
         if id != nil { attentionHaptic.fire() }
       }
       .accessibilityIdentifier("juno.mobile.link-thread")
+  }
+
+  /// Nothing to compose on: no Mac paired, or this one refuses the iPhone.
+  private var showsComposer: Bool {
+    guard model.isDraftingNewSession else { return true }
+    return !model.macs.isEmpty && !refused
+  }
+
+  private var refused: Bool {
+    if let error = model.linkError, error.isNotPaired || error == .unpairedMac { return true }
+    if case .notPaired? = model.selectedMac?.reachability { return true }
+    return false
+  }
+
+  /// The empty thread says nothing, unless there is nothing it can do.
+  @ViewBuilder
+  private var draftState: some View {
+    if model.macs.isEmpty {
+      JunoMobileLinkPairPrompt()
+        .padding(.horizontal, JunoSpace.regular)
+        .padding(.top, JunoSpace.section)
+    } else if refused, let mac = model.selectedMac {
+      JunoMobileLinkNotPaired(macName: mac.name, unknownMac: model.linkError == .unpairedMac)
+        .padding(.horizontal, JunoSpace.regular)
+        .padding(.top, JunoSpace.section)
+    } else if case let .offline(message)? = model.selectedMac?.reachability {
+      JunoMobileLinkNotice(icon: .wifiOff, text: message.isEmpty ? "\(model.selectedMac?.name ?? "This Mac") is offline." : message)
+        .padding(.horizontal, JunoSpace.regular)
+        .padding(.top, JunoSpace.cozy)
+    } else if let error = model.lastError {
+      JunoInlineError(message: error)
+        .padding(.horizontal, JunoSpace.regular)
+        .padding(.top, JunoSpace.cozy)
+    }
   }
 
   private var menu: some View {
@@ -85,7 +156,7 @@ struct JunoMobileLinkThreadView: View {
   /// "Studio, shop" under the title: where this runs.
   private var placeLine: String {
     let mac = model.selectedMac?.name ?? "Mac"
-    guard let cwd = snapshot?.cwd else { return mac }
+    guard let cwd = snapshot?.cwd ?? model.newSession?.cwd else { return mac }
     let folder = CodeLinkFolderBrowser.name(of: cwd)
     if let branch = snapshot?.worktree?.branch { return "\(mac), \(folder) on \(branch)" }
     return "\(mac), \(folder)"
@@ -188,6 +259,10 @@ struct JunoMobileLinkThreadList: View {
   var body: some View {
     ScrollView {
       LazyVStack(alignment: .leading, spacing: JunoSpace.regular) {
+        if let first = model.pendingFirstMessage {
+          JunoMobileLinkItem(item: .userMessage(CodeV2.UserMessage(id: "pending-first", turnId: "pending", createdAt: "", text: first)))
+            .transition(.opacity)
+        }
         ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
           JunoMobileLinkItem(
             item: item,
@@ -200,7 +275,7 @@ struct JunoMobileLinkThreadList: View {
         ForEach(snapshot?.queue ?? []) { queued in
           JunoMobileCodeQueuedPrompt(text: queued.input.text)
         }
-        if snapshot?.state == .running, !isStreamingText {
+        if snapshot?.state == .running, !isStreamingText, model.openThread?.cursor != nil {
           JunoShimmerText(workingLine, font: .subheadline)
             .padding(.leading, JunoSpace.hairline)
             .accessibilityIdentifier("juno.mobile.link-working")
@@ -208,10 +283,17 @@ struct JunoMobileLinkThreadList: View {
         if let message = model.openThread?.stateMessage, snapshot?.state == .limited || snapshot?.state == .error {
           JunoMobileLinkNotice(icon: .clockAlert, text: message)
         }
-        if model.openThread?.cursor == nil {
-          JunoShimmerText("Opening the session on \(model.selectedMac?.name ?? "your Mac")", font: .subheadline)
+        if model.isStartingNewSession || (model.openThread != nil && model.openThread?.cursor == nil) {
+          JunoShimmerText(
+            model.pendingFirstMessage != nil
+              ? "Starting on \(model.selectedMac?.name ?? "your Mac")"
+              : "Opening the session on \(model.selectedMac?.name ?? "your Mac")",
+            font: .subheadline
+          )
+          .padding(.leading, JunoSpace.hairline)
+          .accessibilityIdentifier("juno.mobile.link-starting")
         }
-        if let error = model.lastError {
+        if let error = model.lastError, !model.isDraftingNewSession {
           JunoInlineError(message: error)
         }
       }
@@ -244,6 +326,7 @@ struct JunoMobileLinkThreadList: View {
 
   /// Every file the session changed, merged by path: one line at the end of the thread.
   private var changeSummary: (files: Int, additions: Int, deletions: Int)? {
+    guard model.openSessionID != nil else { return nil }
     if !model.threadDiff.isEmpty {
       return (model.threadDiff.count, model.threadDiff.reduce(0) { $0 + $1.additions }, model.threadDiff.reduce(0) { $0 + $1.deletions })
     }

@@ -55,6 +55,7 @@ Added, additive in the contract (`src/lib/code-v2/contracts.ts`, mirrors, schema
 | `git.pr {sessionId, title, body?, draft?, base?}` | env server | `gh pr create` → `{url}` |
 | `host.info {}` | the Mac app | `{name, sharedFolders, terminal, captures, appVersion}` |
 | `host.capture {target:"preview"\|"simulator"}` | the Mac app | `{mime:"image/png", data(base64), width, height, at}` |
+| `host.upload {name, mediaType, data(base64)}` | the Mac app | `{ref, name, mediaType, size}`: a file attached on the phone, kept under `~/Library/Application Support/Alevr/Remote uploads/<uuid>/` (never inside a shared folder, at most 5 MB, the name reduced to a safe last component); `ref` is its absolute path, sent as the message's `Attachment.ref` |
 
 Git commands run without prompts (`GIT_TERMINAL_PROMPT=0`, `GH_PROMPT_DISABLED=1`), so a push that needs a password fails with the reason instead of hanging.
 
@@ -76,3 +77,9 @@ When the Mac pushes an `approval_request` item (added, updated, or inside a snap
 - Re-open after a Mac restart: the hub's replay `session.open {sessionId, cwd:"/", afterSequence}` was refused because the restarted Mac had forgotten which sessions the link opened; an existing session in a shared folder is now re-admitted by its own folder.
 - Clients apply events through `classifyEvent` (stale snapshots never roll a thread back, duplicates dropped, gaps re-open with `afterSequence`).
 - Approval notifications and needs-you are deduplicated per request id (above).
+
+## 7. The iPhone's Code home and new session (Oct 11, after Codex)
+
+- **Home:** a scope row (All, Cloud, one chip per computer; the chosen one on a soft glass capsule, a quiet spinner while one works, an unreachable one greyed), one Recents list across cloud runs, link sessions and watched computers (needs you first, then newest; Stop on a swipe; pull to refresh; search from the bar), and "Ask Alevr" docked over the list as a Liquid Glass capsule (`+`, the target in All, the field, the microphone).
+- **New session** is the thread screen itself, empty: the computer and the project as two plain rows over the same composer the live thread uses (model, effort gauge, mode, plan/team/skills, `+`, dictation, voice). The first message makes the session (`session.open`, then `host.upload` for each attachment, then `turn.start`) and the same screen becomes the thread; the message shows at once and until the Mac's copy arrives. The last Mac, folder per Mac and model/effort/mode are remembered on the phone.
+- Attachments need the web's link route (6 MB bodies) and a Mac app that answers `host.upload`; an older Mac refuses it and the message stays in the composer.

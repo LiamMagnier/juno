@@ -47,6 +47,7 @@
     {"id": "44", "type": "git.push", "params": {"sessionId": "s1"}},
     {"id": "45", "type": "git.pr", "params": {"sessionId": "s1", "title": "Fix the login redirect", "body": "Opened from my iPhone.", "draft": true}},
     {"id": "46", "type": "host.info", "params": {}},
-    {"id": "47", "type": "host.capture", "params": {"target": "simulator"}}
+    {"id": "47", "type": "host.capture", "params": {"target": "simulator"}},
+    {"id": "48", "type": "host.upload", "params": {"name": "screenshot.jpg", "mediaType": "image/jpeg", "data": "/9j/4AAQSkZJRg=="}}
   ]
 }

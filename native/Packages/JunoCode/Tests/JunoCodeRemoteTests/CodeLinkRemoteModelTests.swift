@@ -14,6 +14,7 @@ final class CodeLinkRemoteModelTests: XCTestCase {
         let lock = NSLock()
         var polls: [[[String: Any]]] = []
         var notPaired = false
+        var refuseOpen = false
 
         func nextPoll() -> [[String: Any]] {
             lock.withLock { polls.isEmpty ? [] : polls.removeFirst() }
@@ -24,7 +25,7 @@ final class CodeLinkRemoteModelTests: XCTestCase {
         ["type": "event", "stream": "session", "sessionId": session, "sequence": sequence, "at": "2026-10-10T10:00:0\(sequence % 10)Z", "event": event]
     }
 
-    private func makeModel(_ script: Script) -> (CodeLinkRemoteModel, FakeSender) {
+    private func makeModel(_ script: Script, memory: UserDefaults? = nil) -> (CodeLinkRemoteModel, FakeSender) {
         let sender = FakeSender { request in
             if request.path == "/api/code/pairing/pairs" {
                 return FakeSender.json(["pairs": [[
@@ -52,7 +53,13 @@ final class CodeLinkRemoteModelTests: XCTestCase {
                 let data = try! JSONEncoder().encode(Fixture.providers)
                 return FakeSender.rpcReply(request, result: ["instances": try! JSONSerialization.jsonObject(with: data)])
             case "skills.list": return FakeSender.rpcReply(request, result: ["skills": []])
-            case "session.open": return FakeSender.rpcReply(request, result: ["sessionId": "s1"])
+            case "session.open":
+                if script.refuseOpen {
+                    return FakeSender.json(["message": "Not a shared folder.", "code": "bad_request"], status: 400)
+                }
+                return FakeSender.rpcReply(request, result: ["sessionId": "s1"])
+            case "host.upload":
+                return FakeSender.rpcReply(request, result: ["ref": "/Users/me/Library/Application Support/Alevr/Remote uploads/u1/shot.png", "name": "shot.png", "mediaType": "image/png", "size": 3])
             case "turn.start": return FakeSender.rpcReply(request, result: ["turnId": "t9"])
             case "turn.queue": return FakeSender.rpcReply(request, result: ["queuedId": "q1"])
             case "turn.steer": return FakeSender.rpcReply(request, result: ["accepted": true])
@@ -60,7 +67,7 @@ final class CodeLinkRemoteModelTests: XCTestCase {
             default: return FakeSender.rpcReply(request)
             }
         }
-        let model = CodeLinkRemoteModel(sender: sender, sleep: { _ in try await Task.sleep(for: .milliseconds(5)) })
+        let model = CodeLinkRemoteModel(sender: sender, sleep: { _ in try await Task.sleep(for: .milliseconds(5)) }, memory: memory)
         model.start(for: Fixture.account)
         return (model, sender)
     }
@@ -200,6 +207,76 @@ final class CodeLinkRemoteModelTests: XCTestCase {
         XCTAssertNil(open.params["sessionId"])
         XCTAssertEqual(sender.commands.last?.type, "turn.start")
         XCTAssertEqual(model.openSessionID, "s1")
+    }
+
+    /// Codex's way: the empty thread picks the newest session's folder, the
+    /// first message (with a photo) makes the session, turns the same screen
+    /// into the thread, and is remembered for next time.
+    func testTheEmptyThreadBecomesTheSessionAndIsRemembered() async throws {
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: "link-new-\(UUID().uuidString)"))
+        let script = Script()
+        let (model, sender) = makeModel(script, memory: defaults)
+        await model.refreshMacs()
+        await model.select("mac1")
+        model.beginNewSession()
+        XCTAssertTrue(model.isDraftingNewSession)
+        XCTAssertTrue(model.showsThread)
+        XCTAssertEqual(model.newSession?.cwd, "/Users/me/code/shop", "the newest session's folder")
+        model.chooseNewSessionFolder("/etc")
+        XCTAssertEqual(model.newSession?.cwd, "/Users/me/code/shop", "never outside the shared folders")
+        model.composer.runtimeMode = .full
+        model.attach([CodeLinkDraftAttachment(name: "shot.png", mediaType: "image/png", data: Data([1, 2, 3]))])
+        model.draft = "Make the cart faster"
+
+        let id = await model.startNewSession(model.draft)
+        XCTAssertEqual(id, "s1")
+        XCTAssertEqual(model.openSessionID, "s1")
+        XCTAssertNil(model.newSession)
+        XCTAssertTrue(model.showsThread, "the same screen stays up")
+        XCTAssertEqual(model.pendingFirstMessage, "Make the cart faster", "shown until the Mac's copy arrives")
+        XCTAssertEqual(model.draft, "")
+        XCTAssertTrue(model.draftAttachments.isEmpty)
+        XCTAssertEqual(sender.commands.map(\.type).suffix(3), ["session.open", "host.upload", "turn.start"])
+        let turn = try XCTUnwrap(sender.commands.last { $0.type == "turn.start" })
+        let input = try XCTUnwrap(turn.params["input"] as? [String: Any])
+        let attachments = try XCTUnwrap(input["attachments"] as? [[String: Any]])
+        XCTAssertEqual(attachments.first?["ref"] as? String, "/Users/me/Library/Application Support/Alevr/Remote uploads/u1/shot.png")
+        XCTAssertEqual(turn.params["runtimeMode"] as? String, "full")
+
+        model.receive([try decode(Self.event(4, [
+            "type": "session.snapshot", "snapshotSequence": 4,
+            "session": [
+                "id": "s1", "cwd": "/Users/me/code/shop", "title": "Make the cart faster",
+                "selection": ["instanceId": "alevr", "model": "claude-sonnet-5-5"],
+                "runtimeMode": "full", "interactionMode": "default", "state": "running", "activeTurnId": "t1",
+                "items": [["kind": "user_message", "id": "u1", "turnId": "t1", "createdAt": "2026-10-10T10:00:00Z", "text": "Make the cart faster"]],
+                "queue": [],
+            ],
+        ]))], deviceID: "mac1")
+        XCTAssertNil(model.pendingFirstMessage, "the Mac's own copy took its place")
+
+        // Next time: the same folder and mode, even with no sessions listed.
+        model.close()
+        XCTAssertFalse(model.showsThread)
+        model.composer.runtimeMode = .ask
+        model.beginNewSession()
+        XCTAssertEqual(model.newSession?.cwd, "/Users/me/code/shop")
+        XCTAssertEqual(model.composer.runtimeMode, .full)
+    }
+
+    func testARefusedStartPutsTheWordsBack() async throws {
+        let script = Script()
+        script.refuseOpen = true
+        let (model, _) = makeModel(script)
+        await model.refreshMacs()
+        await model.select("mac1")
+        model.beginNewSession()
+        let id = await model.startNewSession("Try this")
+        XCTAssertNil(id)
+        XCTAssertTrue(model.isDraftingNewSession)
+        XCTAssertEqual(model.draft, "Try this")
+        XCTAssertNil(model.pendingFirstMessage)
+        XCTAssertNotNil(model.lastError)
     }
 
     final class RecordingSync: CodeLinkThreadSyncing {

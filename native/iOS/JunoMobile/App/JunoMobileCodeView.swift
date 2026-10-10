@@ -1,5 +1,6 @@
 import JunoAuth
 import JunoChatKit
+import JunoCodeCore
 import JunoCodeKit
 import JunoCodeRemote
 import JunoCore
@@ -65,13 +66,23 @@ struct JunoMobileCodeView: View {
   @State private var prompt = ""
   @State private var showingPulls = false
   @State private var showingUsage = false
-  /// Which chip in the hosts strip is chosen. Nil until the hosts load, then
-  /// the remembered default, the first online Mac, or Cloud.
-  @State private var hostSelection: JunoMobileCodeHostSelection?
   @State private var showingDevices = false
-  @State private var showingNewSession = false
-  @State private var showingLinkNewSession = false
+  /// The scope (All, Cloud, a computer) and, in All, where the dock starts work.
+  @AppStorage(JunoMobilePreferences.codeScope) private var scopeStored = "all"
+  @AppStorage(JunoMobilePreferences.codeLastTarget) private var lastTargetStored = ""
   @AppStorage(JunoMobilePreferences.codeDefaultHost) private var defaultHostID = ""
+  @State private var searching = false
+  @State private var query = ""
+  /// The cloud composer, unfolded from the dock in place.
+  @State private var cloudComposerOpen = false
+  @State private var cloudDictate = false
+  /// The dock's microphone opened a session on a Mac: its composer dictates.
+  @State private var linkDictate = false
+  /// The home's camera, photos and files, for the dock's "+".
+  @State private var homeAttachments = JunoMobileAttachmentCoordinator()
+  @Environment(\.junoThreadSync) private var threadSync
+  /// Opens on this scope: the offscreen snapshots only.
+  var previewScope: JunoMobileCodeScope? = nil
   @Namespace private var zoom
   @FocusState private var composerFocused: Bool
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -121,48 +132,19 @@ struct JunoMobileCodeView: View {
     // Inline: on the phone the bar's centre is Chat | Code, and a large
     // title would only leave an empty band above the list.
     .navigationBarTitleDisplayMode(.inline)
-    .refreshable { await model.refresh() }
-    // A destination rather than a tab: a reader checks on pull requests
-    // between sessions, not while they have one open, so it belongs beside
-    // the session list and not inside it.
-    // One menu for everything that is not the list itself — the way Mail and
-    // Files keep their secondary verbs behind a single toolbar button. The
-    // avatar chip that sat here was the web's user menu; on the phone the
-    // account is one tap away in the drawer's gear.
+    // One trailing item, as Codex's home: search. Everything else is the
+    // "…" at the end of the scope row.
     .toolbar {
       ToolbarItem(placement: .topBarTrailing) {
-        Menu {
-          if pullsClient != nil {
-            Button {
-              showingPulls = true
-            } label: {
-              Label("Pull requests", image: JunoIcon.pulls.assetName(.regular))
-            }
-            .accessibilityIdentifier("juno.mobile.code.pulls")
-          }
-          if let openWork {
-            Button(action: openWork) {
-              Label("Work sessions", image: JunoIcon.listChecks.assetName(.regular))
-            }
-          }
-          if session != nil {
-            Button {
-              showingUsage = true
-            } label: {
-              Label("Your usage", image: JunoIcon.usage.assetName(.regular))
-            }
-          }
-          if let openSettings {
-            Button(action: openSettings) {
-              Label("navigation.settings", image: JunoIcon.settings.assetName(.regular))
-            }
-          }
+        Button {
+          searching.toggle()
+          if !searching { query = "" }
         } label: {
-          JunoSymbol(.ellipsis)
+          JunoIconView(searching ? .close : .search, size: 18)
+            .foregroundStyle(Color.primary)
         }
-        .tint(Color.primary)
-        .accessibilityLabel("More")
-        .accessibilityIdentifier("juno.mobile.code.account")
+        .accessibilityLabel(searching ? "Close search" : "Search sessions")
+        .accessibilityIdentifier("juno.mobile.code-search")
       }
     }
     .navigationDestination(isPresented: $showingPulls) {
@@ -212,35 +194,19 @@ struct JunoMobileCodeView: View {
     .navigationDestination(isPresented: $showingDevices) {
       JunoMobileCodeDevicesView(remoteModel: remoteModel)
     }
-    // A session on a Mac paired over the device link.
+    // A session on a Mac paired over the device link: a live one, or the
+    // empty thread a new one starts from (the same screen, so the first
+    // message turns it into the thread without a swap).
     .navigationDestination(
       isPresented: Binding(
-        get: { linkModel?.openSessionID != nil },
-        set: { if !$0 { linkModel?.close() } }
+        get: { linkModel?.showsThread == true },
+        set: { if !$0 { linkModel?.close(); linkDictate = false } }
       )
     ) {
       if let linkModel {
-        JunoMobileLinkThreadView(model: linkModel)
-      }
-    }
-    .sheet(isPresented: $showingLinkNewSession) {
-      if let linkModel {
-        JunoMobileLinkNewSessionSheet(model: linkModel) { _ in }
-      }
-    }
-    .sheet(isPresented: $showingNewSession) {
-      if let remoteModel, let host = remoteModel.selectedHost {
-        JunoMobileCodeRemoteNewSessionSheet(
-          host: host,
-          workspaces: model.devices.first { $0.id == host.id }?.workspaces ?? []
-        ) { workspace, text in
-          if let id = await remoteModel.createSession(
-            deviceID: host.id, workspaceKey: workspace?.key,
-            workspaceName: workspace?.name, prompt: text
-          ) {
-            remoteModel.openSession(id)
-          }
-        }
+        JunoMobileLinkThreadView(model: linkModel, dictateOnAppear: linkDictate)
+          .environment(\.junoCodeVoiceSession, codeVoice)
+          .environment(\.junoStartCodeVoice, startCodeVoice)
       }
     }
     // Asked here, on first use of Code, rather than at launch — see
@@ -249,96 +215,198 @@ struct JunoMobileCodeView: View {
     .accessibilityIdentifier("juno.mobile.code")
   }
 
-  // MARK: Session list + composer
+  // MARK: Home: scopes, Recents, the dock
 
   private var linkModel: CodeLinkRemoteModel? {
     linkModelOverride ?? JunoMobileLinkModels.model(for: requestSender)
   }
 
-  /// The chosen Mac when it is paired with this iPhone over the device link.
-  private var selectedLinkMac: CodeLinkMac? {
-    guard case .host(let id)? = hostSelection else { return nil }
-    return linkModel?.macs.first { $0.id == id }
+  private var scope: JunoMobileCodeScope {
+    if let previewScope { return previewScope }
+    guard let stored = JunoMobileCodeScope(stored: scopeStored) else { return .all }
+    if let id = stored.deviceID, !scopeDevices.contains(where: { $0.id == id }) { return .all }
+    return stored
   }
 
-  /// Whether the chosen computer can take a new session from here.
-  private var remoteNewSessionAvailable: Bool {
-    if let mac = selectedLinkMac { return mac.reachability == .online }
-    guard let remoteModel, let host = remoteModel.selectedHost,
-      case .host(let id)? = hostSelection, id == host.id
-    else { return false }
-    return host.online
+  private var scopeBinding: Binding<JunoMobileCodeScope> {
+    Binding(get: { scope }, set: { choose(scope: $0) })
+  }
+
+  /// Paired Macs first (they take new sessions), then other signed-in
+  /// computers that can only be watched.
+  private var scopeDevices: [JunoMobileCodeScopeDevice] {
+    var out: [JunoMobileCodeScopeDevice] = (linkModel?.macs ?? []).map { mac in
+      let reachable: Bool
+      switch mac.reachability {
+      case .online, .unknown: reachable = true
+      case .offline, .notPaired: reachable = false
+      }
+      return JunoMobileCodeScopeDevice(
+        id: mac.id, name: mac.name, reachable: reachable,
+        working: linkModel?.isWorking(mac.id) ?? false, paired: true
+      )
+    }
+    for host in remoteModel?.hosts ?? [] where !out.contains(where: { $0.id == host.id }) {
+      let sessions = remoteModel?.sessionsByDevice[host.id] ?? []
+      out.append(JunoMobileCodeScopeDevice(
+        id: host.id, name: host.name, reachable: host.online,
+        working: sessions.contains { $0.isRunning || $0.isAwaitingApproval }, paired: false,
+        icon: host.platform == "windows" ? .monitor : .device
+      ))
+    }
+    return out
+  }
+
+  /// Where the dock starts work: the scope, or in All the last target.
+  private var target: JunoMobileCodeTarget {
+    switch scope {
+    case .cloud: return .cloud
+    case .device(let id): return .device(id)
+    case .all:
+      if let last = JunoMobileCodeTarget(stored: lastTargetStored) {
+        if case .device(let id) = last, !scopeDevices.contains(where: { $0.id == id && $0.paired }) {
+          return defaultTarget
+        }
+        return last
+      }
+      return defaultTarget
+    }
+  }
+
+  /// The settings' default computer when paired, else the first paired Mac, else Cloud.
+  private var defaultTarget: JunoMobileCodeTarget {
+    let paired = scopeDevices.filter(\.paired)
+    if let chosen = paired.first(where: { $0.id == defaultHostID }) ?? paired.first { return .device(chosen.id) }
+    return .cloud
+  }
+
+  /// Every session the home knows of, as Recents rows.
+  private var recents: [JunoMobileCodeRecent] {
+    var rows: [JunoMobileCodeRecent] = model.tasks.map { task in
+      JunoMobileCodeRecent(
+        source: .cloud(taskID: task.id, deviceID: task.target == .cloud ? nil : task.deviceID),
+        title: task.title,
+        place: task.target == .cloud ? "Cloud" : (scopeDevices.first { $0.id == task.deviceID }?.name ?? task.whereItRuns),
+        date: task.updatedAt,
+        status: CodeLinkSessionStatus(cloud: task.status)
+      )
+    }
+    if let linkModel {
+      for mac in linkModel.macs {
+        for session in linkModel.sessions(on: mac.id) {
+          rows.append(JunoMobileCodeRecent(
+            source: .link(deviceID: mac.id, session: session),
+            title: session.title ?? "Untitled session",
+            place: mac.name,
+            date: CodeV2Dates.parse(session.updatedAt) ?? .distantPast,
+            status: linkStatus(session, on: mac.id)
+          ))
+        }
+      }
+    }
+    for device in scopeDevices where !device.paired {
+      for session in remoteModel?.sessionsByDevice[device.id] ?? [] {
+        rows.append(JunoMobileCodeRecent(
+          source: .relay(deviceID: device.id, sessionID: session.sessionID),
+          title: session.title,
+          place: device.name,
+          date: session.updatedAt,
+          status: CodeLinkSessionStatus(relay: session)
+        ))
+      }
+    }
+    return rows
+  }
+
+  /// The live state, or the backend's needs-you for a session not opened here.
+  private func linkStatus(_ session: CodeV2.SessionSummary, on deviceID: String) -> CodeLinkSessionStatus {
+    let live = linkModel?.status(of: session, on: deviceID) ?? CodeLinkSessionStatus(state: session.state)
+    if live.isLive { return live }
+    if threadSync?.states[ThreadSyncKey.code(deviceID: deviceID, sessionID: session.id)]?.needsYou == true { return .needsYou }
+    return live
+  }
+
+  /// The scope's computer when this iPhone cannot start sessions on it.
+  private var unpairedScopeDevice: JunoMobileCodeScopeDevice? {
+    guard let id = scope.deviceID else { return nil }
+    if let device = scopeDevices.first(where: { $0.id == id }), !device.paired { return device }
+    if case .notPaired? = linkModel?.macs.first(where: { $0.id == id })?.reachability {
+      return scopeDevices.first { $0.id == id }
+    }
+    return nil
+  }
+
+  private var emptyLine: String {
+    switch scope {
+    case .all: "No sessions yet. Ask Alevr below to start one."
+    case .cloud: "No cloud sessions yet. Ask Alevr below to start one in a repository."
+    case .device(let id): "Nothing on \(scopeDevices.first { $0.id == id }?.name ?? "this computer") yet. Ask Alevr below to start a session there."
+    }
   }
 
   private var sessions: some View {
     VStack(spacing: 0) {
-      if let remoteModel {
-        JunoMobileCodeHostsStrip(
-          hosts: remoteModel.hosts,
-          linkMacs: linkModel?.macs ?? [],
-          selection: Binding(
-            get: { hostSelection ?? .cloud },
-            set: { choice in
-              hostSelection = choice
-              if let id = choice.deviceID {
-                if let linkModel, linkModel.macs.contains(where: { $0.id == id }) {
-                  Task { await linkModel.select(id) }
-                } else {
-                  Task { await remoteModel.selectHost(id) }
-                }
-              }
-            }
-          ),
-          onPair: junoMobileRequestPairing,
-          onDevices: { showingDevices = true }
-        )
-        // New session belongs to the chosen computer, so it sits on that
-        // computer's row as a glass circle — not in the bar, where a second
-        // trailing item shares the "…" capsule and pushes Chat | Code off
-        // centre (docs/native/spacing-pass/AUDIT.md X3).
-        .overlay(alignment: .trailing) {
-          if remoteNewSessionAvailable {
-            JunoGlass {
-              Button {
-                if selectedLinkMac != nil {
-                  linkModel?.beginNewSession()
-                  showingLinkNewSession = true
-                } else {
-                  showingNewSession = true
-                }
-              } label: {
-                JunoIconView(.new, size: JunoLayout.Control.glyph)
-                  .foregroundStyle(Color.primary)
-                  .frame(width: JunoLayout.Control.height, height: JunoLayout.Control.height)
-                  .contentShape(Circle())
-              }
-              .buttonStyle(.plain)
-              .glassEffect(.regular.interactive(), in: Circle())
-            }
-            .padding(.trailing, JunoLayout.Page.gutter)
-            .accessibilityLabel("New session")
-            .accessibilityIdentifier("juno.mobile.code-remote-new")
-          }
-        }
-        .padding(.top, JunoSpace.hairline)
+      JunoMobileCodeScopeBar(
+        scope: scopeBinding,
+        devices: scopeDevices,
+        cloudWorking: model.tasks.contains { $0.status.isActive && $0.target == .cloud },
+        onPair: junoMobileRequestPairing
+      ) {
+        overflowMenu
       }
-      if let linkModel, let mac = selectedLinkMac {
-        JunoMobileLinkSessionsView(model: linkModel, mac: mac) {
-          linkModel.beginNewSession()
-          showingLinkNewSession = true
+      .padding(.top, JunoSpace.hairline)
+
+      JunoMobileCodeRecentsList(
+        rows: JunoMobileCodeRecent.visible(recents, scope: scope, query: searching ? query : ""),
+        loading: recents.isEmpty && (model.phase == .loading || (linkModel?.isLoadingSessions ?? false)),
+        emptyLine: emptyLine,
+        query: $query,
+        searching: searching,
+        hasLeading: showsListLead,
+        compose: { openComposer(dictate: false) },
+        open: open,
+        stop: stop,
+        refresh: refreshAll
+      ) {
+        if let error = model.lastErrorDescription, scope == .cloud || scope == .all, model.tasks.isEmpty {
+          JunoInlineError(message: error) { Task { await model.refresh() } }
         }
-      } else if let remoteModel, let host = remoteModel.selectedHost,
-        case .host(let id)? = hostSelection, id == host.id
-      {
-        JunoMobileCodeRemoteSessionsList(
-          model: remoteModel,
-          host: host,
-          open: { session in remoteModel.openSession(session.sessionID) },
-          newSession: host.online ? { showingNewSession = true } : nil
-        )
-      } else {
-        cloudSessions
+        if let device = unpairedScopeDevice {
+          JunoMobileCodePairLine(name: device.name)
+        } else if let id = scope.deviceID, case .offline? = linkModel?.macs.first(where: { $0.id == id })?.reachability {
+          JunoMobileLinkNotice(icon: .wifiOff, text: "\(scopeDevices.first { $0.id == id }?.name ?? "This Mac") is offline. Open Alevr on it to reach it.")
+        }
       }
+      .animation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion), value: scope)
+      // The composer floats over the list, which scrolls under its glass and
+      // fades softly at the foot: no slab behind it.
+      .scrollEdgeEffectStyle(.soft, for: .top)
+      .modifier(JunoMobileSoftBottomEdge())
+      .safeAreaInset(edge: .bottom, spacing: 0) { bottomComposer }
+    }
+    .animation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion), value: cloudComposerOpen)
+    // Files picked from the dock go with the next session on the Mac, which
+    // opens with them already in its composer.
+    .junoAttachmentSurfaces(
+      coordinator: homeAttachments,
+      capacity: CodeLinkRemoteModel.maxAttachments - (linkModel?.draftAttachments.count ?? 0)
+    ) { files in
+      guard let linkModel else { return }
+      linkModel.attach(files.map(CodeLinkDraftAttachment.init))
+      openComposer(dictate: false, keepAttachments: true)
+    }
+    .onChange(of: composerFocused) { _, focused in
+      // The cloud composer folds back into the dock when it is left empty.
+      if !focused, prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, codeVoice == nil {
+        cloudComposerOpen = false
+      }
+    }
+    .onAppear {
+      if let previewPrompt {
+        prompt = previewPrompt
+        cloudComposerOpen = true
+      }
+      if previewDictation != nil { cloudComposerOpen = true }
     }
     .task(id: accountID) {
       // Remote state is account-scoped. Starting it here rather than at app
@@ -347,29 +415,42 @@ struct JunoMobileCodeView: View {
       if let accountID {
         remoteModel?.start(for: accountID)
         remoteModel?.updateHosts(from: model.devices)
-        chooseInitialHost()
         if let linkModel, linkModelOverride == nil {
           linkModel.start(for: accountID)
           await linkModel.refreshMacs()
-          chooseInitialHost()
-          if let mac = selectedLinkMac { await linkModel.select(mac.id) }
+          if let id = scope.deviceID, linkModel.macs.contains(where: { $0.id == id }) {
+            await linkModel.select(id)
+          } else if let id = linkModel.selectedDeviceID {
+            await linkModel.select(id)
+          }
+          await linkModel.refreshAllSessions()
         }
+        await remoteModel?.refreshAllSessions()
       } else {
         remoteModel?.stop()
         if linkModelOverride == nil { linkModel?.stop() }
       }
     }
-    // The device link streams while a paired Mac is chosen (and its thread
-    // is open on top of this list).
-    .task(id: linkModelOverride == nil ? selectedLinkMac?.id : nil) {
-      guard selectedLinkMac != nil, let linkModel else { return }
+    // The device link streams for the selected Mac (and its thread on top).
+    .task(id: linkModelOverride == nil ? linkModel?.selectedDeviceID : nil) {
+      guard linkModelOverride == nil, let linkModel, linkModel.selectedDeviceID != nil else { return }
       await linkModel.runLink()
+    }
+    // The other Macs and the watched computers, every 20 seconds while the
+    // home is up: enough to know which one is working and what needs you.
+    .task(id: linkModelOverride == nil ? accountID : nil) {
+      guard accountID != nil, linkModelOverride == nil else { return }
+      while !Task.isCancelled {
+        try? await Task.sleep(for: .seconds(20))
+        guard !Task.isCancelled else { return }
+        await linkModel?.refreshAllSessions()
+        await remoteModel?.refreshAllSessions()
+      }
     }
     // A notification or Handoff named a session on a paired Mac.
     .onChange(of: JunoMobileRemoteRouting.shared.linkSession, initial: true) { _, request in
       guard let request, let linkModel else { return }
       JunoMobileRemoteRouting.shared.linkSession = nil
-      hostSelection = .host(request.deviceID)
       Task { await linkModel.openRouted(deviceID: request.deviceID, sessionID: request.sessionID) }
     }
     .onChange(of: JunoMobileRemoteRouting.shared.linkApproval, initial: true) { _, request in
@@ -383,125 +464,166 @@ struct JunoMobileCodeView: View {
     }
     .onChange(of: model.devices) { _, devices in
       remoteModel?.updateHosts(from: devices)
-      chooseInitialHost()
-    }
-    .onChange(of: remoteModel?.openSessionID) { _, id in
-      // A session opened from outside — a notification, a preview flag —
-      // names its host; follow it so the list behind the thread agrees.
-      guard let id, let remoteModel,
-        let session = remoteModel.sessionsByDevice.values.joined().first(where: { $0.sessionID == id })
-      else { return }
-      if hostSelection != .host(session.deviceID) {
-        hostSelection = .host(session.deviceID)
-        Task { await remoteModel.selectHost(session.deviceID) }
-      }
     }
   }
 
-  /// Picks the strip's chip the first time hosts arrive: the remembered
-  /// default when it is still paired, else the first online Mac, else Cloud.
-  private func chooseInitialHost() {
-    if hostSelection == nil, remoteModel?.hosts.isEmpty ?? true, let mac = linkModel?.macs.first {
-      hostSelection = .host(mac.id)
-      return
-    }
-    guard hostSelection == nil, let remoteModel, !remoteModel.hosts.isEmpty else { return }
-    let chosen = remoteModel.hosts.first { $0.id == defaultHostID && !defaultHostID.isEmpty }
-      ?? remoteModel.hosts.first { $0.online }
-      ?? remoteModel.hosts.first
-    if let chosen {
-      hostSelection = .host(chosen.id)
-      Task { await remoteModel.selectHost(chosen.id) }
-    } else {
-      hostSelection = .cloud
-    }
+  /// An error, a pairing line or an offline notice above Recents.
+  private var showsListLead: Bool {
+    if model.lastErrorDescription != nil, scope == .cloud || scope == .all, model.tasks.isEmpty { return true }
+    if unpairedScopeDevice != nil { return true }
+    if let id = scope.deviceID, case .offline? = linkModel?.macs.first(where: { $0.id == id })?.reachability { return true }
+    return false
   }
 
-  /// The cloud runner's home — the task list and the launch composer.
-  ///
-  /// A plain `List`: what needs you, what is running, what finished, each a
-  /// section of ordinary rows. The "Build queue" card with its stat tiles and
-  /// status pill is gone — the sections already say what is happening.
-  private var cloudSessions: some View {
-    VStack(spacing: 0) {
-      if model.tasks.isEmpty {
-        ScrollView {
-          VStack(alignment: .leading, spacing: JunoSpace.cozy) {
-            if let error = model.lastErrorDescription {
-              JunoInlineError(message: error) { Task { await model.refresh() } }
-            }
-            JunoMobileCodeGreeting(
-              targetless: model.isTargetless,
-              onSelectIntent: { selected in
-                prompt = selected
-                composerFocused = true
-              }
-            )
-            .containerRelativeFrame(.vertical) { height, _ in height * 0.68 }
-          }
-          .padding(.horizontal, JunoSpace.regular)
-        }
-      } else {
-        List {
-          if let error = model.lastErrorDescription {
-            JunoInlineError(message: error) { Task { await model.refresh() } }
-              .listRowSeparator(.hidden)
-          }
-          // Triage first: a run waiting on the reader stays above ordinary
-          // activity, as the website's Needs you bucket does.
-          codeTaskSection("Needs you", tasks: attentionTasks)
-          codeTaskSection("In progress", tasks: inFlightTasks)
-          codeTaskSection("Recently finished", tasks: recentTasks)
-        }
-        .listStyle(.plain)
-        .scrollContentBackground(.hidden)
-        .accessibilityIdentifier("juno.mobile.code-overview")
-      }
-
-      // A layout sibling, rather than a safe-area overlay, so the last row
-      // can never render underneath it.
-      composer
-    }
-  }
-
+  /// The foot of the home: the cloud composer unfolded in place, or the dock.
   @ViewBuilder
-  private func codeTaskSection(_ title: LocalizedStringKey, tasks: [NativeCodeTask]) -> some View {
-    if !tasks.isEmpty {
-      Section {
-        ForEach(tasks) { task in
-          Button {
-            model.open(task)
-          } label: {
-            JunoMobileCodeTaskRow(task: task)
-          }
-          .buttonStyle(.plain)
-          .listRowBackground(Color.clear)
+  private var bottomComposer: some View {
+    if cloudComposerOpen {
+      composer
+        .transition(.opacity.combined(with: .move(edge: .bottom)))
+    } else if unpairedScopeDevice == nil {
+      JunoMobileCodeDock(
+        target: target,
+        devices: scopeDevices.filter(\.paired),
+        showsTarget: scope == .all,
+        attachments: homeAttachments,
+        canAttach: dockCanAttach,
+        attachNote: target == .cloud ? "Cloud sessions take text for now. Attach files to a session on your Mac." : nil,
+        choose: { lastTargetStored = $0.stored },
+        open: { openComposer(dictate: $0) }
+      )
+      .transition(.opacity)
+    }
+  }
+
+  private var dockCanAttach: Bool {
+    guard target != .cloud, let linkModel else { return false }
+    return linkModel.canAttachMore
+  }
+
+  /// Everything that is not the list: pull requests, Work, usage, pairing, settings.
+  private var overflowMenu: some View {
+    Menu {
+      if pullsClient != nil {
+        Button {
+          showingPulls = true
+        } label: {
+          Label("Pull requests", image: JunoIcon.pulls.assetName(.regular))
         }
-      } header: {
-        Text(title)
-          .font(.subheadline.weight(.semibold))
-          .foregroundStyle(.secondary)
-          .textCase(nil)
+        .accessibilityIdentifier("juno.mobile.code.pulls")
+      }
+      if let openWork {
+        Button(action: openWork) {
+          Label("Work sessions", image: JunoIcon.listChecks.assetName(.regular))
+        }
+      }
+      if session != nil {
+        Button {
+          showingUsage = true
+        } label: {
+          Label("Your usage", image: JunoIcon.usage.assetName(.regular))
+        }
+      }
+      Section {
+        Button(action: junoMobileRequestPairing) {
+          Label("Pair a Mac", image: JunoIcon.scan.assetName(.regular))
+        }
+        .accessibilityIdentifier("juno.mobile.code-pair")
+        if remoteModel != nil {
+          Button {
+            showingDevices = true
+          } label: {
+            Label("Paired computers", image: JunoIcon.device.assetName(.regular))
+          }
+        }
+        if let openSettings {
+          Button(action: openSettings) {
+            Label("navigation.settings", image: JunoIcon.settings.assetName(.regular))
+          }
+        }
+      }
+    } label: {
+      JunoIconView(.ellipsis, size: 17)
+        .foregroundStyle(Color.junoSecondaryInk)
+        .frame(width: 44, height: 44)
+        .contentShape(Rectangle())
+    }
+    .tint(Color.primary)
+    .accessibilityLabel("More")
+    .accessibilityIdentifier("juno.mobile.code.account")
+  }
+
+  private func choose(scope next: JunoMobileCodeScope) {
+    scopeStored = next.stored
+    cloudComposerOpen = false
+    if case .device(let id) = next, let linkModel, linkModel.macs.contains(where: { $0.id == id }) {
+      lastTargetStored = JunoMobileCodeTarget.device(id).stored
+      Task { await linkModel.select(id) }
+    } else if case .device(let id) = next, let remoteModel {
+      Task { await remoteModel.loadSessions(deviceID: id) }
+    } else if next == .cloud {
+      lastTargetStored = JunoMobileCodeTarget.cloud.stored
+    }
+  }
+
+  /// Opens the full composer where the target lives: the empty thread on a
+  /// paired Mac, the cloud composer in place.
+  private func openComposer(dictate: Bool, keepAttachments: Bool = false) {
+    switch target {
+    case .cloud:
+      model.isTargetless = false
+      model.target = .cloud
+      model.loadRepositoriesIfNeeded()
+      cloudDictate = dictate
+      cloudComposerOpen = true
+      if !dictate {
+        Task {
+          try? await Task.sleep(for: .milliseconds(120))
+          composerFocused = true
+        }
+      }
+    case .device(let id):
+      guard let linkModel, linkModel.macs.contains(where: { $0.id == id }) else { return }
+      linkDictate = dictate
+      lastTargetStored = JunoMobileCodeTarget.device(id).stored
+      Task {
+        if linkModel.selectedDeviceID != id { await linkModel.select(id) }
+        linkModel.beginNewSession(keepingAttachments: keepAttachments)
       }
     }
   }
 
-  private var activeTasks: [NativeCodeTask] {
-    model.tasks.filter { $0.status.isActive }
-  }
-
-  private var attentionTasks: [NativeCodeTask] {
-    model.tasks.filter {
-      $0.status == .awaitingApproval || $0.status == .failed
+  private func open(_ recent: JunoMobileCodeRecent) {
+    switch recent.source {
+    case .cloud(let id, _):
+      if let task = model.tasks.first(where: { $0.id == id }) { model.open(task) }
+    case .link(let deviceID, let session):
+      guard let linkModel else { return }
+      Task { await linkModel.openRouted(deviceID: deviceID, sessionID: session.id) }
+    case .relay(let deviceID, let sessionID):
+      guard let remoteModel else { return }
+      Task {
+        if remoteModel.selectedDeviceID != deviceID { await remoteModel.selectHost(deviceID) }
+        remoteModel.openSession(sessionID)
+      }
     }
   }
 
-  private var inFlightTasks: [NativeCodeTask] {
-    model.tasks.filter { $0.status == .queued || $0.status == .running }
+  private func stop(_ recent: JunoMobileCodeRecent) {
+    switch recent.source {
+    case .cloud(let id, _):
+      if let task = model.tasks.first(where: { $0.id == id }) { Task { await model.cancel(task) } }
+    case .link(let deviceID, let session):
+      Task { await linkModel?.stop(session, on: deviceID) }
+    case .relay(let deviceID, let sessionID):
+      Task { await remoteModel?.stopGeneration(deviceID: deviceID, sessionID: sessionID) }
+    }
   }
 
-  private var recentTasks: [NativeCodeTask] {
-    model.tasks.filter { $0.status == .done || $0.status == .cancelled }
+  private func refreshAll() async {
+    await model.refresh()
+    await linkModel?.refreshAllSessions()
+    await remoteModel?.refreshAllSessions()
   }
 
   /// The start composer: prompt, target toggle, target picker, go.
@@ -534,7 +656,8 @@ struct JunoMobileCodeView: View {
         startVoice: startCodeVoice.map { begin in
           { begin(JunoMobileCodeVoiceRelay.briefing(place: startPlace, turns: [])) }
         },
-        previewDictation: previewDictation
+        previewDictation: previewDictation,
+        dictateOnAppear: cloudDictate
       ) {
         JunoMobileCodeWhereChip(model: model)
         if !model.isTargetless {
@@ -549,7 +672,7 @@ struct JunoMobileCodeView: View {
     // thread is open, that thread's composer takes the sentences instead.
     .junoCodeVoiceLink(
       codeVoice, isRunning: false, latestReply: nil,
-      enabled: model.openTask == nil && remoteModel?.openSessionID == nil
+      enabled: model.openTask == nil && remoteModel?.openSessionID == nil && linkModel?.showsThread != true
     ) { sentence in
       prompt = Self.joined(prompt, sentence)
       start()
@@ -622,113 +745,6 @@ struct JunoMobileCodeView: View {
       let mode = model.target == .cloud ? startMode.cloudPermissionMode : nil
       if await model.startTask(prompt: text, permissionMode: mode) != nil { prompt = "" }
     }
-  }
-}
-
-/// The Code home greeting, in the same editorial voice as the chat one so the
-/// two destinations read as one product.
-private struct JunoMobileCodeGreeting: View {
-  /// The promise below is different without a target: there is no pull
-  /// request coming and no folder being worked in.
-  let targetless: Bool
-  var onSelectIntent: ((String) -> Void)? = nil
-
-  private struct MobilePreset: Identifiable {
-    let id: String
-    let title: String
-    let prompt: String
-    let icon: JunoIcon
-  }
-
-  private static let presets: [MobilePreset] = [
-    MobilePreset(
-      id: "scaffold", title: "Scaffold Feature",
-      prompt: "Scaffold a new feature with clean architecture, types, and unit tests.",
-      icon: .plus),
-    MobilePreset(
-      id: "survey", title: "Codebase Audit",
-      prompt:
-        "Audit this codebase for architectural patterns, performance bottlenecks, and security.",
-      icon: .research),
-    MobilePreset(
-      id: "refactor", title: "Refactor",
-      prompt: "Refactor and modernize code to reduce technical debt and improve type safety.",
-      icon: .tools),
-    MobilePreset(
-      id: "tests", title: "Generate Tests",
-      prompt: "Write comprehensive unit and integration tests covering core workflows.",
-      icon: .check),
-    MobilePreset(
-      id: "fix", title: "Fix Bug",
-      prompt: "Diagnose and fix the root cause of this error. Propose the most reliable patch.",
-      icon: .error),
-    MobilePreset(
-      id: "plan", title: "API & Schema",
-      prompt: "Design the data models, database migration schema, and API contracts.",
-      icon: .branch),
-  ]
-
-  private static let phrases = [
-    "code.greeting.building", "code.greeting.task", "code.greeting.next",
-    "code.greeting.start", "code.greeting.ready",
-  ]
-
-  @State private var phrase: LocalizedStringKey = "code.greeting.ready"
-
-  var body: some View {
-    VStack(spacing: JunoSpace.cozy) {
-      // The wordmark, in the UI face. It was set in the code face, which
-      // is the one thing the house rule reserves for code, paths and
-      // terminal output — a product name in monospace is the single
-      // clearest tell that a screen was drawn by a developer.
-      Text("code.brand")
-        .junoFont(size: 11, relativeTo: .caption2, weight: .medium)
-        .tracking(0.6)
-        .junoMetaInk()
-      HStack(spacing: JunoSpace.snug) {
-        JunoMark(size: 20)
-        Text(phrase)
-          .font(JunoSerif.greeting(compact: true))
-          .multilineTextAlignment(.center)
-          .minimumScaleFactor(0.7)
-          .lineLimit(2)
-      }
-      Text(targetless ? "code.greeting.detail.none" : "code.greeting.detail")
-        .font(.callout)
-        .junoSecondaryInk()
-        .multilineTextAlignment(.center)
-        .padding(.horizontal, JunoSpace.section)
-
-      if let onSelectIntent {
-        ScrollView(.horizontal, showsIndicators: false) {
-          HStack(spacing: JunoSpace.snug) {
-            ForEach(Self.presets) { preset in
-              Button {
-                onSelectIntent(preset.prompt)
-              } label: {
-                HStack(spacing: JunoSpace.tight) {
-                  JunoIconView(preset.icon, size: 12)
-                    .foregroundStyle(Color.junoAccent)
-                  Text(preset.title)
-                    .junoFont(size: 12, relativeTo: .caption, weight: .medium)
-                    .foregroundStyle(.primary)
-                }
-                .padding(.horizontal, JunoSpace.close)
-                .frame(minHeight: 44)
-                .modifier(JunoGlassCapsule())
-                .contentShape(Capsule())
-              }
-              .buttonStyle(.plain)
-              .accessibilityLabel("Preset: \(preset.title)")
-            }
-          }
-          .padding(.horizontal, JunoSpace.regular)
-        }
-        .padding(.top, JunoSpace.tight)
-      }
-    }
-    .frame(maxWidth: .infinity)
-    .onAppear { phrase = LocalizedStringKey(Self.phrases.randomElement() ?? "code.greeting.ready") }
   }
 }
 
@@ -1036,70 +1052,6 @@ private struct JunoMobileCodeTargetSheet: View {
     if !device.online { return String(localized: "code.device.offline") }
     if !device.servesQueuedTasks { return String(localized: "code.device.not-hosting") }
     return String(localized: "code.device.online")
-  }
-}
-
-/// One session in the list.
-private struct JunoMobileCodeTaskRow: View {
-  let task: NativeCodeTask
-
-  /// A list row in the system's grammar: a status symbol, the title in body
-  /// text, one secondary line — where it runs, the status in words, when.
-  /// Colour only on the two states that ask something of the reader.
-  var body: some View {
-    HStack(alignment: .firstTextBaseline, spacing: JunoSpace.cozy) {
-      statusSymbol
-        .frame(width: 22)
-      VStack(alignment: .leading, spacing: JunoSpace.hairline) {
-        Text(task.title)
-          .font(.body)
-          .foregroundStyle(.primary)
-          .lineLimit(2)
-          .multilineTextAlignment(.leading)
-        HStack(spacing: JunoSpace.hairline) {
-          Text(junoCodeStatusText(task.status))
-            .foregroundStyle(statusIsLoud ? junoCodeStatusTint(task.status) : .secondary)
-          Text("·").accessibilityHidden(true)
-          Text(task.whereItRuns)
-            .lineLimit(1)
-            .truncationMode(.head)
-          if task.pullRequestURL != nil {
-            JunoSymbol(.pulls)
-              .accessibilityLabel("Pull request")
-          }
-        }
-        .font(.subheadline)
-        .foregroundStyle(.secondary)
-      }
-      Spacer(minLength: 8)
-      Text(task.updatedAt, format: .relative(presentation: .numeric, unitsStyle: .narrow))
-        .font(.subheadline)
-        .foregroundStyle(.secondary)
-        .monospacedDigit()
-    }
-    .padding(.vertical, JunoSpace.hairline)
-    .contentShape(Rectangle())
-    .accessibilityElement(children: .combine)
-  }
-
-  private var statusIsLoud: Bool {
-    task.status == .awaitingApproval || task.status == .failed
-  }
-
-  @ViewBuilder
-  private var statusSymbol: some View {
-    switch task.status {
-    case .running, .queued:
-      ProgressView().controlSize(.small)
-    case .awaitingApproval:
-      JunoSymbol(.hand).foregroundStyle(Color.junoCaution)
-    case .failed:
-      JunoSymbol(.triangleAlert).foregroundStyle(Color.junoDanger)
-    case .done:
-      JunoSymbol(.circleCheck).foregroundStyle(.secondary)
-    case .cancelled:
-      JunoSymbol(.circleStop).foregroundStyle(.secondary)
-    }
   }
 }
 

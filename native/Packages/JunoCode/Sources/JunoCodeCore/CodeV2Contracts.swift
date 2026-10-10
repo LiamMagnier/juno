@@ -1662,6 +1662,7 @@ public enum CodeV2 {
         case gitPr = "git.pr"
         case hostInfo = "host.info"
         case hostCapture = "host.capture"
+        case hostUpload = "host.upload"
     }
 
     // MARK: Remote lane (docs/code-v2/REMOTE-CONTROL.md)
@@ -1774,6 +1775,22 @@ public enum CodeV2 {
             self.width = width
             self.height = height
             self.at = at
+        }
+    }
+
+    /// `host.upload`'s answer: where the Mac keeps a file a paired device
+    /// attached, as the `Attachment.ref` the env server resolves.
+    public struct HostUpload: Codable, Sendable, Hashable {
+        public var ref: String
+        public var name: String
+        public var mediaType: String
+        public var size: Int
+
+        public init(ref: String, name: String, mediaType: String, size: Int) {
+            self.ref = ref
+            self.name = name
+            self.mediaType = mediaType
+            self.size = size
         }
     }
 

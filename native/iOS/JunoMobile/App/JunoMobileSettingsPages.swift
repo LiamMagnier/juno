@@ -22,6 +22,9 @@ enum JunoMobilePreferences {
   /// Shared with the controller that plays the chimes, so it reads JunoVoiceKit's key.
   static let voiceSounds = JunoVoiceCues.defaultsKey
   static let codeDefaultHost = "juno.mobile.code.default-host"
+  /// Code home's scope (All, Cloud, a computer) and the dock's last target.
+  static let codeScope = "juno.mobile.code.scope"
+  static let codeLastTarget = "juno.mobile.code.last-target"
   static let codeApprovalNotifications = "juno.mobile.code.notify-approvals"
   static let codeCompletionNotifications = "juno.mobile.code.notify-completions"
 }

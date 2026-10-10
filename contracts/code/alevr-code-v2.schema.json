@@ -212,7 +212,8 @@
         "git.push",
         "git.pr",
         "host.info",
-        "host.capture"
+        "host.capture",
+        "host.upload"
       ]
     },
     "ServerEventType": {
@@ -3838,6 +3839,45 @@
               },
               "required": [
                 "target"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "type",
+            "params"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": {
+              "const": "host.upload"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "mediaType": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "data": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "name",
+                "mediaType",
+                "data"
               ]
             }
           },

@@ -412,6 +412,19 @@ public final class NativeCodeModel {
         }
     }
 
+    /// Cancels a run from the list, without opening it.
+    public func cancel(_ task: NativeCodeTask) async {
+        guard let accountID else { return }
+        do {
+            let updated = try await client.cancel(id: task.id, for: accountID)
+            guard self.accountID == accountID else { return }
+            apply(updated)
+        } catch {
+            guard self.accountID == accountID else { return }
+            lastErrorDescription = NativeFailureMessage.presentable(error)
+        }
+    }
+
     public func respondToApproval(approve: Bool) async {
         guard let accountID, let openTask, let approval = pendingApproval else { return }
         // Cleared optimistically: the agent is blocked on this answer, and a card

@@ -72,6 +72,9 @@ public final class CodeLinkRemoteModel {
     public internal(set) var remote = CodeLinkRemoteState()
     public internal(set) var isLoadingSessions = false
     public internal(set) var openSessionID: String?
+    /// Every paired Mac's last `session.list`, for the home's All: the
+    /// selected Mac's live list wins over its entry here.
+    public internal(set) var sessionsByMac: [String: [CodeV2.SessionSummary]] = [:]
 
     // MARK: Composer
 
@@ -84,6 +87,8 @@ public final class CodeLinkRemoteModel {
         didSet { if draft != oldValue, !applyingRemote { draftChanged() } }
     }
     public internal(set) var isSending = false
+    /// Files attached to the next message, sent to the Mac (`host.upload`) as it goes.
+    public internal(set) var draftAttachments: [CodeLinkDraftAttachment] = []
 
     // MARK: Surfaces
 
@@ -102,6 +107,17 @@ public final class CodeLinkRemoteModel {
     public internal(set) var pullRequestURL: String?
     public internal(set) var browser: CodeLinkFolderBrowser?
     public internal(set) var isBrowsing = false
+
+    // MARK: New session
+
+    /// The empty thread a new session starts from (where it will run), from
+    /// New session until the session exists or the person leaves.
+    public internal(set) var newSession: CodeLinkNewSession?
+    /// The first message of a session started here, shown in the thread at
+    /// once and until the Mac's own copy of it arrives.
+    public internal(set) var startingPrompt: String?
+    /// The session `startingPrompt` belongs to, once the Mac has made it.
+    public internal(set) var startingSessionID: String?
     /// The last action's failure, in words.
     public internal(set) var lastError: String?
 
@@ -109,15 +125,17 @@ public final class CodeLinkRemoteModel {
 
     @ObservationIgnored private let sender: (any NativeAuthenticatedRequestSending)?
     @ObservationIgnored private var accountID: AccountID?
-    @ObservationIgnored private var client: CodeLinkClient?
+    @ObservationIgnored var client: CodeLinkClient?
     @ObservationIgnored private var pollTask: Task<[CodeV2.ServerEventEnvelope], Error>?
     @ObservationIgnored private var reopening = Set<String>()
     @ObservationIgnored private var lastListAt = Date.distantPast
-    @ObservationIgnored private var applyingRemote = false
+    @ObservationIgnored var applyingRemote = false
     @ObservationIgnored private var prefsChangedAt: Date?
     @ObservationIgnored private var draftSyncer: ThreadDraftSyncer?
     @ObservationIgnored private let sleep: @Sendable (Duration) async throws -> Void
-    @ObservationIgnored private let now: @Sendable () -> Date
+    @ObservationIgnored let now: @Sendable () -> Date
+    /// The last Mac, folder and composer settings a session was started with.
+    @ObservationIgnored var memory: CodeLinkMemory
     /// The app's thread sync; nil uses the model's own (tests, other hosts).
     @ObservationIgnored public weak var externalSync: (any CodeLinkThreadSyncing)?
     /// Device name for the draft echo guard.
@@ -126,11 +144,13 @@ public final class CodeLinkRemoteModel {
     public init(
         sender: (any NativeAuthenticatedRequestSending)?,
         sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
-        now: @escaping @Sendable () -> Date = { Date() }
+        now: @escaping @Sendable () -> Date = { Date() },
+        memory: UserDefaults? = nil
     ) {
         self.sender = sender
         self.sleep = sleep
         self.now = now
+        self.memory = CodeLinkMemory(defaults: memory)
     }
 
     // MARK: Lifecycle
@@ -154,9 +174,13 @@ public final class CodeLinkRemoteModel {
         client = nil
         draftSyncer = nil
         macs = []
+        sessionsByMac = [:]
         selectedDeviceID = nil
         remote.reset()
         openSessionID = nil
+        newSession = nil
+        startingPrompt = nil
+        startingSessionID = nil
         phase = .idle
         linkError = nil
     }
@@ -179,7 +203,8 @@ public final class CodeLinkRemoteModel {
             return
         }
         if selectedDeviceID == nil || !macs.contains(where: { $0.id == selectedDeviceID }) {
-            selectedDeviceID = macs.first?.id
+            let remembered = memory.lastMac.flatMap { id in macs.first { $0.id == id } }
+            selectedDeviceID = (remembered ?? macs.first)?.id
         }
         await withTaskGroup(of: Void.self) { group in
             for mac in macs {
@@ -193,6 +218,7 @@ public final class CodeLinkRemoteModel {
         do {
             let info = try await client.hostInfo(deviceID)
             update(deviceID) { $0.info = info; $0.reachability = .online }
+            if deviceID == selectedDeviceID { newSessionSourcesChanged() }
         } catch let error as CodeLinkError {
             update(deviceID) { mac in
                 switch error {
@@ -236,6 +262,7 @@ public final class CodeLinkRemoteModel {
             let list = try await client.sessionList(deviceID, limit: 100)
             guard deviceID == selectedDeviceID else { return }
             remote.setSessions(list)
+            newSessionSourcesChanged()
             lastListAt = now()
             linkError = nil
             update(deviceID) { if $0.reachability != .online, $0.info != nil { $0.reachability = .online } }
@@ -282,6 +309,8 @@ public final class CodeLinkRemoteModel {
     /// Opens a session: follow it, `session.open`, and let the link loop stream it.
     public func open(_ sessionID: String) async {
         guard let client, let deviceID = selectedDeviceID else { return }
+        newSession = nil
+        if sessionID != startingSessionID { startingPrompt = nil; startingSessionID = nil }
         let summary = remote.sessions[sessionID] ?? CodeV2.SessionSummary(
             id: sessionID, cwd: "/", state: .idle,
             selection: composer.selection ?? CodeV2.ModelSelection(instanceId: "alevr", model: ""),
@@ -309,6 +338,10 @@ public final class CodeLinkRemoteModel {
     public func close() {
         if externalSync == nil, let key = threadKey, let syncer = draftSyncer { Task { await syncer.flush(key) } }
         openSessionID = nil
+        newSession = nil
+        startingPrompt = nil
+        startingSessionID = nil
+        draftAttachments = []
         draftApplied = ""
         applyingRemote = true
         draft = ""
@@ -379,10 +412,14 @@ public final class CodeLinkRemoteModel {
             await queue(trimmed)
         } else {
             await perform { client, deviceID in
-                guard let params = self.composer.turnStart(sessionId: sessionID, text: trimmed, skills: self.skills) else {
+                let attachments = try await self.uploadDraftAttachments(client, deviceID)
+                guard let params = self.composer.turnStart(
+                    sessionId: sessionID, text: trimmed, skills: self.skills, attachments: attachments
+                ) else {
                     throw CodeLinkError.refused(code: .badRequest, message: "Choose a model first.")
                 }
                 try await client.turnStart(deviceID, params)
+                self.draftAttachments = []
             }
         }
         if lastError == nil { await clearedDraft() }
@@ -391,7 +428,12 @@ public final class CodeLinkRemoteModel {
     public func queue(_ text: String) async {
         guard let sessionID = openSessionID else { return }
         await perform { client, deviceID in
-            try await client.turnQueue(deviceID, sessionId: sessionID, input: CodeV2.UserInput(text: text, skills: self.composer.activations(from: self.skills)))
+            let attachments = try await self.uploadDraftAttachments(client, deviceID)
+            try await client.turnQueue(deviceID, sessionId: sessionID, input: CodeV2.UserInput(
+                text: text, attachments: attachments.isEmpty ? nil : attachments,
+                skills: self.composer.activations(from: self.skills)
+            ))
+            self.draftAttachments = []
         }
         if lastError == nil { await clearedDraft() }
     }
@@ -546,10 +588,6 @@ public final class CodeLinkRemoteModel {
 
     // MARK: New session
 
-    public func beginNewSession() {
-        browser = CodeLinkFolderBrowser(sharedFolders: selectedMac?.info?.sharedFolders ?? [])
-    }
-
     public func browse(_ path: String) async {
         guard browser?.allows(path) == true else { return }
         isBrowsing = true
@@ -583,9 +621,11 @@ public final class CodeLinkRemoteModel {
             remote.follow(summary)
             openSessionID = id
             restartPoll()
-            if let params = composer.turnStart(sessionId: id, text: prompt, skills: skills) {
+            let attachments = try await uploadDraftAttachments(client, deviceID)
+            if let params = composer.turnStart(sessionId: id, text: prompt, skills: skills, attachments: attachments) {
                 try await client.turnStart(deviceID, params)
             }
+            draftAttachments = []
             browser = nil
             lastError = nil
             writePrefs()
@@ -687,7 +727,7 @@ public final class CodeLinkRemoteModel {
         writePrefs()
     }
 
-    private func writePrefs() {
+    func writePrefs() {
         guard let key = threadKey else { return }
         let stamp = now()
         prefsChangedAt = stamp
@@ -711,7 +751,7 @@ public final class CodeLinkRemoteModel {
         Task { await syncer.draftChanged(key, text: text, at: stamp) }
     }
 
-    private func clearedDraft() async {
+    func clearedDraft() async {
         applyingRemote = true
         draft = ""
         applyingRemote = false
@@ -736,7 +776,7 @@ public final class CodeLinkRemoteModel {
         }
     }
 
-    private func note(_ error: Error, deviceID: String) {
+    func note(_ error: Error, deviceID: String) {
         if let link = error as? CodeLinkError {
             switch link {
             case let .notPaired(message):
@@ -809,6 +849,17 @@ public extension CodeLinkRemoteModel {
             )])
         }
         return model
+    }
+
+    /// Snapshot tests: the first message sent, the session not made yet.
+    func setPreviewStarting(_ text: String) {
+        if newSession == nil { beginNewSession() }
+        startingPrompt = text
+    }
+
+    /// Snapshot tests: every paired Mac's list, for the home's All.
+    func setPreviewSessions(_ list: [CodeV2.SessionSummary], on deviceID: String) {
+        sessionsByMac[deviceID] = list
     }
 
     /// Snapshot tests: what the composer has typed.

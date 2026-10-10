@@ -250,6 +250,26 @@ struct DesktopRemoteHostResponderTests {
     }
 
     @Test
+    func anUploadIsKeptInItsOwnFolderUnderASafeName() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("uploads-\(UUID().uuidString)")
+        var host = responder()
+        host.uploadsDirectory = folder
+        let result = try await host.handle(.hostUpload, .object([
+            "name": .string("../../etc/pass wd.png"), "mediaType": .string("image/png"),
+            "data": .string(Data("hello".utf8).base64EncodedString()),
+        ]))
+        let upload = try JSONDecoder().decode(CodeV2.HostUpload.self, from: JSONEncoder().encode(try #require(result)))
+        #expect(upload.name == "pass wd.png")
+        #expect(upload.size == 5)
+        #expect(upload.ref.hasPrefix(folder.path + "/"))
+        #expect(try String(contentsOfFile: upload.ref, encoding: .utf8) == "hello")
+        await #expect(throws: (any Error).self) {
+            _ = try await host.handle(.hostUpload, .object(["name": .string("x"), "mediaType": .string("text/plain"), "data": .string("")]))
+        }
+        try? FileManager.default.removeItem(at: folder)
+    }
+
+    @Test
     func aCaptureIsBase64PNGDownscaledToTheLongEdge() async throws {
         let result = try await responder(simulator: "UDID-1", simulatorPNG: Self.png(width: 3_200, height: 1_000))
             .handle(.hostCapture, .object(["target": .string("simulator")]))

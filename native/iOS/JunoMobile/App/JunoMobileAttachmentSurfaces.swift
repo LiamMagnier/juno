@@ -28,12 +28,35 @@ extension View {
             )
         )
     }
+
+    /// The same three surfaces for a composer that keeps its own files (Code
+    /// on a paired Mac): what is picked goes to `sink` instead of the chat's
+    /// upload model, at most `capacity` at a time.
+    func junoAttachmentSurfaces(
+        coordinator: JunoMobileAttachmentCoordinator,
+        capacity: Int,
+        sink: @escaping ([JunoPickedFile]) -> Void
+    ) -> some View {
+        modifier(
+            JunoAttachmentSurfaces(
+                coordinator: coordinator,
+                attachmentModel: nil,
+                conversationID: nil,
+                capacity: capacity,
+                sink: sink
+            )
+        )
+    }
 }
 
 private struct JunoAttachmentSurfaces: ViewModifier {
     @Bindable var coordinator: JunoMobileAttachmentCoordinator
     let attachmentModel: NativeComposerAttachmentModel?
     let conversationID: String?
+    /// Set with `sink`: how many more files the composer takes.
+    var capacity: Int? = nil
+    /// Where picked files go when the composer keeps its own.
+    var sink: (([JunoPickedFile]) -> Void)? = nil
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -72,7 +95,7 @@ private struct JunoAttachmentSurfaces: ViewModifier {
         }
         if coordinator.isShowingCamera {
             JunoMobileCameraPanel(
-                canAttach: attachmentModel?.hasCapacity ?? false,
+                canAttach: capacity.map { $0 > 0 } ?? attachmentModel?.hasCapacity ?? false,
                 onCapture: { file in add([file]) },
                 openPhotos: { coordinator.showPhotosFromCamera(reduceMotion: reduceMotion) },
                 close: { coordinator.dismissCamera(reduceMotion: reduceMotion) }
@@ -91,6 +114,7 @@ private struct JunoAttachmentSurfaces: ViewModifier {
     }
 
     private var remainingCapacity: Int {
+        if let capacity { return max(1, capacity) }
         guard let attachmentModel else { return 1 }
         return max(
             1, NativeComposerAttachmentModel.maximumAttachments - attachmentModel.attachments.count
@@ -116,6 +140,10 @@ private struct JunoAttachmentSurfaces: ViewModifier {
     private func importFiles(_ result: Result<[URL], any Error>) {
         switch result {
         case .success(let urls):
+            if let sink {
+                sink(JunoFileLoader.read(urls))
+                return
+            }
             guard let attachmentModel else { return }
             JunoFileLoader.load(urls, into: attachmentModel, conversationID: conversationID)
         case .failure:
@@ -126,6 +154,10 @@ private struct JunoAttachmentSurfaces: ViewModifier {
     }
 
     private func add(_ files: [JunoPickedFile]) {
+        if let sink {
+            sink(files)
+            return
+        }
         JunoAttachmentIngest.add(files, to: attachmentModel, conversationID: conversationID)
     }
 }
