@@ -359,6 +359,15 @@ struct JunoDesktopRootView: View {
             workbench.setGenerationModels(
                 Self.generationModels(from: configuration.conversationModel?.selectableModels ?? [])
             )
+            // Conversations messaging each other: the Alevr engine's sessions
+            // reach the reader's other conversations through Alevr's backend,
+            // speaking as this Mac's paired device and their own session id.
+            CodeConversationHub.shared.configure(
+                client: BackendCodeConversationClient(sender: runtime, accountID: accountID)
+            )
+            CodeConversationHub.shared.configure(titles: { [weak workbench] id in
+                workbench?.sessions.first { $0.id == id }?.title
+            })
             workbenchModel = workbench
             configuration.codeHostModel?.connect(workbench: workbench)
             DesktopWorkbenchRegistry.shared.register(

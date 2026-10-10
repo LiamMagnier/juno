@@ -401,6 +401,7 @@ struct StudioGeneralSettings: View {
             Toggle("Resume interrupted runs when Alevr opens", isOn: $preferences.resumeInterruptedOnLaunch)
                 .help("Off: a run Alevr quit in the middle of waits for you to press Resume.")
         }
+        StudioCrossConversationSettings()
         Section("Composer") {
             Picker("Send with", selection: $preferences.commandReturnSends) {
                 Text("Return").tag(false)

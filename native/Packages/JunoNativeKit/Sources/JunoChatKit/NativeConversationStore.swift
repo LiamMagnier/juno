@@ -855,6 +855,57 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
     public private(set) var chatApprovalInFlightID: String?
     public var selectedConversationID: String?
 
+    // MARK: Conversations messaging each other (src/lib/cross-conversation)
+
+    /// Each Chat's messages to and from the reader's other conversations,
+    /// oldest first, for the transcript's compact rows.
+    public private(set) var crossMessagesByConversation: [String: [NativeCrossMessage]] = [:]
+    /// Chats with a message from another conversation the reader has not opened.
+    public private(set) var crossUnreadConversationIDs: Set<String> = []
+    /// Replies this app already started, so a poll never starts one twice.
+    @ObservationIgnored private var crossRepliesStarted = Set<String>()
+
+    public func crossMessages(for conversationID: String?) -> [NativeCrossMessage] {
+        conversationID.flatMap { crossMessagesByConversation[$0] } ?? []
+    }
+
+    /// Reads one Chat's rows; marks the received ones read when it is the open one.
+    public func loadCrossMessages(conversationID: String) async {
+        guard let chatClient, let accountID, !conversationID.isEmpty,
+              let rows = try? await chatClient.crossMessages(conversationID: conversationID, for: accountID),
+              self.accountID == accountID
+        else { return }
+        if crossMessagesByConversation[conversationID] != rows { crossMessagesByConversation[conversationID] = rows }
+        if conversationID == selectedConversationID, rows.contains(where: { $0.direction == .received && !$0.read }) {
+            try? await chatClient.markCrossMessagesRead(conversationID: conversationID, for: accountID)
+            crossUnreadConversationIDs.remove(conversationID)
+        }
+    }
+
+    /// One pass of the app's inbox: the unread set for the sidebar, and the
+    /// replies Chats owe another conversation's message, started here (the
+    /// server claims each before answering, so devices never answer twice).
+    public func pollCrossMessages() async {
+        guard let chatClient, let accountID,
+              let pending = try? await chatClient.pendingCrossReplies(for: accountID),
+              self.accountID == accountID
+        else { return }
+        var unread = pending.unread
+        if let open = selectedConversationID { unread.remove(open) }
+        if unread != crossUnreadConversationIDs { crossUnreadConversationIDs = unread }
+        var seen = Set<String>()
+        for owed in pending.replies where !crossRepliesStarted.contains(owed.linkID) && !seen.contains(owed.conversationID) {
+            seen.insert(owed.conversationID)
+            crossRepliesStarted.insert(owed.linkID)
+            Task { [weak self] in
+                let ran = await chatClient.runCrossReply(owed, for: accountID)
+                guard let self, ran else { return }
+                await self.loadCrossMessages(conversationID: owed.conversationID)
+            }
+        }
+        if let open = selectedConversationID { await loadCrossMessages(conversationID: open) }
+    }
+
     /// Identifier of the latest finished assistant message in the selected conversation
     /// that ran an agent self-configuration tool (BRIEF.md §4.9).
     public var latestCompletedAgentConfigMessageID: String? {

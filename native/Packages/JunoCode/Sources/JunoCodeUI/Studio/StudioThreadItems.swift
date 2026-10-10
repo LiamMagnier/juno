@@ -59,6 +59,9 @@ enum StudioThreadItem: Identifiable, Equatable {
     case ciStatus(id: String, event: CIStatusEvent)
     /// The run's report, built from its ledger. Lane B, `StudioRunReport.swift`.
     case runReport(id: String, event: RunOutcomeEvent)
+    /// A message to or from another of the reader's conversations, or the
+    /// idle notice a send asked for. Never drawn as the reader's message.
+    case conversationMessage(id: String, event: ConversationMessageEvent)
 
     var id: String {
         switch self {
@@ -70,7 +73,7 @@ enum StudioThreadItem: Identifiable, Equatable {
              let .planReview(id, _, _),
              let .continued(id, _), let .goalVerdict(id, _), let .verification(id, _),
              let .uiCheck(id, _), let .reviewFindings(id, _), let .screenStep(id, _),
-             let .ciStatus(id, _), let .runReport(id, _):
+             let .ciStatus(id, _), let .runReport(id, _), let .conversationMessage(id, _):
             id
         case let .activity(group, _):
             group.id
@@ -294,6 +297,10 @@ enum StudioThreadItems {
 
             case .goalSet, .goalEdited, .goalStatus, .checkInDue, .budgetReached:
                 continue
+
+            case let .conversationMessage(message):
+                flushReasoning(id: event.id)
+                items.append(.conversationMessage(id: event.id, event: message))
             }
         }
         return items

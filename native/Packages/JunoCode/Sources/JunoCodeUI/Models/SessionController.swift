@@ -973,6 +973,13 @@ public final class SessionController {
         // `<session_state>` skills section, and the tool loads a body only
         // for one the reader trusts, as it reads now, and has left on.
         tools.append(UseSkillTool(skills: SessionSkillProvider(context: context)))
+        // Conversations messaging each other: offered in every behaviour (the
+        // send tool asks first in all but Full Access, Plan included), once
+        // the reader is signed in and has left it on for this session.
+        if CodeConversationHub.shared.isConfigured,
+           CodeDefaults.shared.crossMessagesEnabled(forSession: sessionID.value) {
+            tools.append(contentsOf: ToolRegistry.conversationTools(service: CodeConversationHub.shared))
+        }
         if contract.behavior == .plan {
             tools.append(ExitPlanTool(questions: live.questions))
         }
@@ -1764,6 +1771,9 @@ public final class SessionController {
             )
         )
         let orchestrator = await currentOrchestrator(live)
+        // The reader spoke: any exchange a message from another conversation
+        // started here is over, and this turn's sends count afresh.
+        await CodeConversationHub.shared.noteUserInput(sessionID)
         // Each turn is its own run for the Orchestrate budget.
         await runBudget?.reset()
         try await orchestrator.submit(

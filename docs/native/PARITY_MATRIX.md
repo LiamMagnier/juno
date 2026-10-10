@@ -22,7 +22,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 
 ## Summary
 
-326 routes: 206 native, 52 planned, 55 web only, 13 internal. 50 pages: on the Mac 37 native, 2 partial, 2 planned, 9 web only; on iOS 24 native, 9 partial, 8 planned, 9 web only.
+332 routes: 212 native, 52 planned, 55 web only, 13 internal. 50 pages: on the Mac 37 native, 2 partial, 2 planned, 9 web only; on iOS 24 native, 9 partial, 8 planned, 9 web only.
 
 | Feature | Pages (Mac) | Pages (iOS) | Routes native | Planned | Web only | Internal |
 |---|---|---|---|---|---|---|
@@ -50,6 +50,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 | [Roadmap and Compare](#community) | 0/3 | 0/3 | 0 | 0 | 4 | 0 |
 | [Owner tools](#admin) | 0/6 | 0/6 | 0 | 0 | 15 | 0 |
 | [Platform endpoints](#platform) | – | – | 1 | 0 | 0 | 10 |
+| [Conversations messaging each other](#cross-conversation) | – | – | 6 | 0 | 0 | 0 |
 
 <a id="auth"></a>
 
@@ -668,3 +669,18 @@ Health, reports, webhooks and runner endpoints no client screen calls, and the d
 | `/api/v1/billing/app-store/webhook` | POST | Internal |  | App Store Server Notifications (the v1 alias). |
 | `/api/voice/spend` | POST | Internal |  | The voice relay reports what a live call has cost. |
 | `/api/work/schedules/[id]/fire` | POST | Internal |  | Fired from outside Juno with the automation's own token. |
+
+<a id="cross-conversation"></a>
+
+## Conversations messaging each other
+
+An agent in one Chat or Code conversation lists, reads and messages the user's other conversations (src/lib/cross-conversation). The Mac's Alevr engine reaches them through BackendCodeConversationClient (JunoCodeBridge); Mac Chat draws the rows and runs owed replies through NativeCrossMessages (JunoChatKit). Env-server threads use the same routes for Chat targets.
+
+| Route | Methods | Status | Called from | Note |
+|---|---|---|---|---|
+| `/api/cross-messages` | POST | Native | JunoCodeBridge |  |
+| `/api/cross-messages/conversations` | GET | Native | JunoCodeBridge |  |
+| `/api/cross-messages/read` | GET | Native | JunoCodeBridge |  |
+| `/api/cross-messages/pending` | GET | Native | JunoChatKit |  |
+| `/api/cross-messages/[id]/state` | POST | Native | JunoCodeBridge |  |
+| `/api/conversations/[id]/cross-messages` | GET, POST, PATCH | Native | JunoChatKit | Rows and mark-read on the Mac; the conversation's own toggle (PATCH) is web-only for Chat, and Code sessions keep theirs on the Mac. |

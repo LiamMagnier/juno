@@ -1265,6 +1265,22 @@
           "note": "Fired from outside Juno with the automation's own token."
         }
       }
+    },
+    {
+      "id": "cross-conversation",
+      "title": "Conversations messaging each other",
+      "note": "An agent in one Chat or Code conversation lists, reads and messages the user's other conversations (src/lib/cross-conversation). The Mac's Alevr engine reaches them through BackendCodeConversationClient (JunoCodeBridge); Mac Chat draws the rows and runs owed replies through NativeCrossMessages (JunoChatKit). Env-server threads use the same routes for Chat targets.",
+      "routes": {
+        "/api/cross-messages": "native",
+        "/api/cross-messages/conversations": "native",
+        "/api/cross-messages/read": "native",
+        "/api/cross-messages/pending": "native",
+        "/api/cross-messages/[id]/state": "native",
+        "/api/conversations/[id]/cross-messages": {
+          "status": "native",
+          "note": "Rows and mark-read on the Mac; the conversation's own toggle (PATCH) is web-only for Chat, and Code sessions keep theirs on the Mac."
+        }
+      }
     }
   ]
 }

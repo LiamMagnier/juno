@@ -75,6 +75,8 @@ public final class CodeDefaults {
         public static let disabledHooks = "juno.code.defaults.disabled-hooks"
         public static let disabledSkills = "juno.code.defaults.disabled-skills"
         public static let hookLastRun = "juno.code.defaults.hook-last-run"
+        public static let crossMessages = "juno.code.defaults.cross-messages"
+        public static let crossMessagesSessions = "juno.code.defaults.cross-messages-sessions"
     }
 
     private let store: UserDefaults
@@ -92,6 +94,30 @@ public final class CodeDefaults {
         disabledHooks = Set(store.stringArray(forKey: Key.disabledHooks) ?? [])
         disabledSkills = Set(store.stringArray(forKey: Key.disabledSkills) ?? [])
         hookLastRun = (store.dictionary(forKey: Key.hookLastRun) as? [String: Date]) ?? [:]
+        crossMessagesEnabled = store.object(forKey: Key.crossMessages) as? Bool ?? true
+        crossMessagesSessions = (store.dictionary(forKey: Key.crossMessagesSessions) as? [String: Bool]) ?? [:]
+    }
+
+    /// "Let conversations message each other" for Code: whether a session may
+    /// list, read and message the reader's other conversations, and be
+    /// messaged. On by default (the web's Settings › Capabilities has the
+    /// same switch for the account).
+    public var crossMessagesEnabled: Bool {
+        didSet { store.set(crossMessagesEnabled, forKey: Key.crossMessages) }
+    }
+
+    /// A session's own choice, by session id; absent follows the setting.
+    public var crossMessagesSessions: [String: Bool] {
+        didSet { store.set(crossMessagesSessions, forKey: Key.crossMessagesSessions) }
+    }
+
+    public func crossMessagesEnabled(forSession sessionID: String) -> Bool {
+        crossMessagesSessions[sessionID] ?? crossMessagesEnabled
+    }
+
+    /// Sets a session's own choice; nil returns it to the setting.
+    public func setCrossMessages(_ enabled: Bool?, forSession sessionID: String) {
+        crossMessagesSessions[sessionID] = enabled
     }
 
     /// The permission level a new Code task starts with.

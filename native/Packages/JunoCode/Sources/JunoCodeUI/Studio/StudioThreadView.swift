@@ -201,6 +201,9 @@ public struct StudioThreadView: View {
             StudioCIStatusRow(event: event)
         case let .runReport(_, event):
             StudioRunReportRow(event: event)
+        case let .conversationMessage(_, event):
+            StudioConversationMessageRow(event: event)
+                .accessibilityIdentifier("juno.code.transcript.conversation-message")
         }
     }
 

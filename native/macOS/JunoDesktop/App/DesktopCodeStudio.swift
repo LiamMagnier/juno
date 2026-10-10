@@ -1047,6 +1047,14 @@ struct DesktopCodeSessionRow: View {
 
     private var status: StudioStatus { StudioStatus(run.status) }
 
+    /// Another conversation messaged this session and the reader has not
+    /// opened it since: the title reads like any unread row (full ink,
+    /// medium weight), with no mark.
+    private var hasUnreadMessage: Bool {
+        guard !isSelected, case let .session(id) = run.item else { return false }
+        return CodeCrossInbox.shared.isUnread(id)
+    }
+
     /// The second line: the project, then where the work sits.
     private var place: String? {
         let name = project ?? (run.workspace.isEmpty ? nil : run.workspace)
@@ -1057,8 +1065,8 @@ struct DesktopCodeSessionRow: View {
         VStack(alignment: .leading, spacing: JunoSpace.hairline) {
             HStack(spacing: JunoSpace.snug) {
                 Text(run.title)
-                    .junoFont(size: DesktopSidebarMetrics.labelSize, relativeTo: .body)
-                    .foregroundStyle(isSelected || hovered ? Color.junoForeground : Color.junoSidebarInk)
+                    .junoFont(size: DesktopSidebarMetrics.labelSize, relativeTo: .body, weight: hasUnreadMessage ? .medium : .regular)
+                    .foregroundStyle(isSelected || hovered || hasUnreadMessage ? Color.junoForeground : Color.junoSidebarInk)
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .frame(maxWidth: .infinity, alignment: .leading)

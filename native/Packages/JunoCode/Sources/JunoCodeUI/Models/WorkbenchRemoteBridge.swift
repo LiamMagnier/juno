@@ -30,6 +30,7 @@ public final class WorkbenchRemoteBridge:
     CodeRemoteSessionAdoptingBridging,
     CodeRemoteCeilingProviding,
     CodeRemoteSessionUpdating,
+    CodeRemoteConversationBridging,
     CodeRemoteSyncSource
 {
     /// At most this many sessions are listed on the phone.
@@ -422,6 +423,13 @@ public final class WorkbenchRemoteBridge:
 
     nonisolated public func queueMessage(sessionID: String, text: String) async throws {
         try await require(sessionID).deliverRemotePrompt(text, as: .queue)
+    }
+
+    /// A message from another of the reader's conversations (cross_message),
+    /// which the backend wrote after its own checks. Delivered by the session
+    /// itself, under its own mode; never as the reader's prompt.
+    nonisolated public func deliverConversationMessage(sessionID: String, delivery: CodeConversationDelivery) async throws -> String {
+        try await require(sessionID).deliverConversationMessage(delivery)
     }
 
     nonisolated public func stopAgent(sessionID: String) async throws {

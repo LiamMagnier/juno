@@ -107,6 +107,13 @@ public enum ApprovalPolicy: String, Codable, CaseIterable, Sendable {
     /// It does not *raise* authority: a mode that refuses the action outright
     /// still refuses it, rather than offering a prompt that would carry it out.
     case alwaysRequiresApproval
+    /// A message to another of the reader's conversations
+    /// (`send_to_conversation`). Its own rung: it asks in Plan and Answer
+    /// (read-only, where every other non-read action is refused), in Ask and
+    /// in Auto-edit, and goes without asking only in Full Access. It writes
+    /// nothing here, so read-only does not refuse it; it speaks for the
+    /// session elsewhere, so only Full Access lets it through unasked.
+    case messaging
 }
 
 public enum PermissionRuling: Equatable, Sendable {
@@ -130,6 +137,9 @@ public enum PermissionPolicy {
         risk: ActionRisk,
         approvalPolicy: ApprovalPolicy = .byRisk
     ) -> PermissionRuling {
+        if approvalPolicy == .messaging {
+            return mode == .fullAccess ? .allow : .requireApproval
+        }
         let ladder = ladderRuling(mode: mode, risk: risk)
         guard approvalPolicy == .alwaysRequiresApproval else { return ladder }
         switch ladder {

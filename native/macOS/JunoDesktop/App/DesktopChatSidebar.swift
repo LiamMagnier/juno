@@ -493,7 +493,8 @@ struct DesktopChatSidebar: View {
             projects: projectModel?.projects ?? [],
             actions: actions,
             acknowledgeRename: { model.acknowledgeTitleAnimation(for: conversation.id) },
-            textEdge: isCanonical ? DesktopSidebarMetrics.glyphEdge : DesktopSidebarMetrics.labelEdge
+            textEdge: isCanonical ? DesktopSidebarMetrics.glyphEdge : DesktopSidebarMetrics.labelEdge,
+            hasUnreadMessage: !selected && model.crossUnreadConversationIDs.contains(conversation.id)
         )
         if isCanonical {
             row
@@ -848,6 +849,9 @@ private struct DesktopConversationRow: View {
     /// Where the title starts: the 16pt edge, or the 46pt label edge for a
     /// chat listed under its pinned project.
     var textEdge: CGFloat = DesktopSidebarMetrics.glyphEdge
+    /// Another conversation messaged this chat and the reader has not opened
+    /// it since: full ink, medium weight, no mark.
+    var hasUnreadMessage = false
 
     @State private var isHovering = false
 
@@ -863,7 +867,8 @@ private struct DesktopConversationRow: View {
                 }
             } else {
                 Text(conversation.title)
-                    .junoFont(size: DesktopSidebarMetrics.labelSize, relativeTo: .body)
+                    .junoFont(size: DesktopSidebarMetrics.labelSize, relativeTo: .body, weight: hasUnreadMessage ? .medium : .regular)
+                    .foregroundStyle(hasUnreadMessage ? Color.junoForeground : (isSelected || isHovering ? Color.junoForeground : Color.junoSidebarInk))
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .contentTransition(.opacity)

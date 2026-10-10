@@ -141,7 +141,15 @@ async function envRpc<T>(userId: string, deviceId: string, command: Omit<ClientC
 
 export async function listCrossConversations(
   userId: string,
-  filter: { exclude?: string | null; product?: string | null; project?: string | null; query?: string | null; includeEnv?: boolean },
+  filter: {
+    exclude?: string | null;
+    /** The asking Mac session, by device and its own id (it does not know its mirror's id). */
+    excludeCode?: { deviceId: string; sessionId: string } | null;
+    product?: string | null;
+    project?: string | null;
+    query?: string | null;
+    includeEnv?: boolean;
+  },
 ): Promise<CrossConversationRow[]> {
   const product = filter.product === "chat" || filter.product === "code" ? filter.product : "any";
   const project = filter.project?.trim().toLowerCase() || "";
@@ -195,6 +203,8 @@ export async function listCrossConversations(
       take: CROSS_MESSAGE_LIMITS.listMax,
       select: {
         id: true,
+        deviceId: true,
+        sessionId: true,
         title: true,
         projectName: true,
         workspaceName: true,
@@ -204,6 +214,7 @@ export async function listCrossConversations(
       },
     });
     for (const s of sessions) {
+      if (filter.excludeCode && s.deviceId === filter.excludeCode.deviceId && s.sessionId === filter.excludeCode.sessionId) continue;
       const projectName = s.projectName ?? s.workspaceName ?? undefined;
       if (project && !projectName?.toLowerCase().includes(project)) continue;
       rows.push({

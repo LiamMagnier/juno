@@ -104,6 +104,12 @@ public enum SessionEventPayload: Hashable, Codable, Sendable {
     /// A run or goal budget was reached. `budget.reached`.
     case budgetReached(BudgetReachedEvent)
 
+    /// A message between this session and another of the reader's
+    /// conversations (Chat or Code): sent from here, received here, or the
+    /// one-shot "idle again" notice a send asked for. Never a user prompt: it
+    /// carries no authority to approve anything or change the mode.
+    case conversationMessage(ConversationMessageEvent)
+
     /// Whether this event replaces everything before it in the stream, so a
     /// reader keeping its place by sequence drops what it holds and rebuilds
     /// from here rather than treating the jump in numbering as a hole.
@@ -1105,5 +1111,46 @@ public struct BudgetReachedEvent: Hashable, Codable, Sendable {
         self.budget = budget
         self.usage = usage
         self.goalID = goalID
+    }
+}
+
+/// A message between two of the reader's conversations (src/lib/cross-conversation
+/// on the web has the shared rules). Recorded in the session it was sent from
+/// and in the one it reached.
+public struct ConversationMessageEvent: Hashable, Codable, Sendable {
+    public enum Direction: String, Codable, Sendable, CaseIterable {
+        case received
+        case sent
+        case notice
+    }
+
+    public let direction: Direction
+    /// The other conversation, as the tools name it (chat:…, code:…, env:…).
+    public let peerRef: String
+    public let peerTitle: String
+    /// "chat" or "code".
+    public let peerProduct: String
+    public let text: String
+    /// Its hop in the chain of messages (loop protection).
+    public let hop: Int
+    public let chainID: String?
+    /// The backend's record of it, when it went through Alevr's backend.
+    public let linkID: String?
+    /// For a sent message: "delivered", "queued" or "failed".
+    public let status: String?
+
+    public init(
+        direction: Direction, peerRef: String, peerTitle: String, peerProduct: String, text: String,
+        hop: Int = 0, chainID: String? = nil, linkID: String? = nil, status: String? = nil
+    ) {
+        self.direction = direction
+        self.peerRef = peerRef
+        self.peerTitle = peerTitle
+        self.peerProduct = peerProduct
+        self.text = text
+        self.hop = hop
+        self.chainID = chainID
+        self.linkID = linkID
+        self.status = status
     }
 }

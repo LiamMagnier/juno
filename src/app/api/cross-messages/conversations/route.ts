@@ -18,6 +18,7 @@ export async function GET(req: Request) {
   const q = (key: string) => url.searchParams.get(key)?.slice(0, 300) ?? null;
   const conversations = await listCrossConversations(user.id, {
     exclude: q("exclude"),
+    excludeCode: q("excludeDevice") && q("excludeSession") ? { deviceId: q("excludeDevice")!, sessionId: q("excludeSession")! } : null,
     product: q("product"),
     project: q("project"),
     query: q("query"),
