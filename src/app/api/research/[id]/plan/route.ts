@@ -7,6 +7,7 @@ import {
   reviseResearchPlanInBackground,
 } from "@/lib/research/run";
 import { RESEARCH_REFUSAL_COPY } from "@/lib/research/entitlement";
+import { isAutoModelId } from "@/lib/auto-model";
 import {
   RESEARCH_CONTROL_MESSAGE,
   decidePlanSchema,
@@ -51,6 +52,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     questions: parsed.data.questions,
     answers: parsed.data.answers,
     sources: parsed.data.sources,
+    preferredModel: isAutoModelId(parsed.data.preferredModel) ? null : parsed.data.preferredModel ?? null,
   });
   if (!decided.ok) {
     const refusal = decided.refusal;

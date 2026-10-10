@@ -353,9 +353,15 @@ export function researchBudgetFor(input: {
   /**
    * The researchers' model, why it differs from a chosen lead, and whether
    * the lead is the person's own pick. Recorded on the envelope so every
-   * view shows the models that really ran. Additive.
+   * view shows the models that really ran. `chosenRefused` is the model the
+   * person picked when it could not lead, and why. Additive.
    */
-  models?: { workerModel?: string | null; workerNote?: ResearchEnvelope["workerNote"] | null; chosen?: boolean };
+  models?: {
+    workerModel?: string | null;
+    workerNote?: ResearchEnvelope["workerNote"] | null;
+    chosen?: boolean;
+    chosenRefused?: ResearchEnvelope["chosenRefused"] | null;
+  };
 }): ResearchEnvelope | ResearchBudgetRefusal {
   const caps = RESEARCH_PLAN_CAPS[input.plan];
   if (!caps.entitled) return { refused: true, reason: "plan", params: {} };
@@ -460,6 +466,7 @@ export function researchBudgetFor(input: {
     ...(input.models?.workerModel ? { workerModel: input.models.workerModel } : {}),
     ...(input.models?.workerNote ? { workerNote: input.models.workerNote } : {}),
     ...(input.models?.chosen ? { chosen: true } : {}),
+    ...(input.models?.chosenRefused && !input.models.chosen ? { chosenRefused: input.models.chosenRefused } : {}),
     rates: { lead: pricing.lead, worker: input.rates.worker },
     limitedBy,
     estimate: estimateFor(scope, estimateCaps),

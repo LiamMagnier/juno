@@ -248,6 +248,10 @@ export function runModelsOf(
       workerNote: envelope.workerNote ?? null,
       writer,
       chosen: !!envelope.chosen,
+      chosenRefused:
+        envelope.chosenRefused && !envelope.chosen
+          ? { model: { id: envelope.chosenRefused.model, label: labelOf(envelope.chosenRefused.model) }, reason: envelope.chosenRefused.reason }
+          : null,
     },
   };
 }

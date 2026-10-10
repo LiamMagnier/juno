@@ -247,6 +247,15 @@ export const RESEARCH_COPY = {
     ledBy: "Led by",
     researchersOn: "Researchers on",
     searchedBy: "Searched by",
+    /*
+     * The model the person picked could not lead, so the run went on the
+     * Auto pair: "Gemini 3.5 Flash-Lite isn't available on your plan · Led by
+     * Claude Fable 5.1 · Researchers on Claude Haiku 5.5". Model name, then
+     * one of these; never a silent swap.
+     */
+    chosenNotOnPlan: "isn't available on your plan",
+    chosenNotConfigured: "isn't available right now",
+    chosenUnavailable: "can't run research",
   },
 
   /** The Details tab: the one place money shows (DECISIONS §4b). */

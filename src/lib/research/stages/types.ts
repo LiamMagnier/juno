@@ -803,6 +803,12 @@ export interface ResearchEngine {
     answers?: Record<string, string>;
     /** The sources the reader left switched on at the gate. Only offered keys apply. */
     sources?: { web?: boolean; enabled?: string[] };
+    /**
+     * The chat model chosen when the plan was confirmed or revised (§9.5.1):
+     * replaces the plan's `preferredLead` before sizing. Absent or null keeps
+     * the one recorded at start (Auto never erases a choice).
+     */
+    preferredModel?: string | null;
   }): Promise<ControlResult>;
   /**
    * Runs the planner again with the reader's edits, for a `revise` decision

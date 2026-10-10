@@ -132,6 +132,11 @@ export async function resolveResearchStage({
   if (researchActive) {
     const researchPrompt =
       [...modelHistory].reverse().find((m) => m.role === "USER")?.content ?? input.message?.trim() ?? "";
+    const lastUser = modelHistory.map((m) => m.role).lastIndexOf("USER");
+    const history: ContextTurn[] = modelHistory
+      .slice(0, lastUser >= 0 ? lastUser : modelHistory.length)
+      .filter((m) => m.role === "USER" || m.role === "ASSISTANT")
+      .map((m) => ({ role: m.role as ContextTurn["role"], content: m.content }));
     const research = await runDeepResearch({
       userId: user.id,
       prompt: researchPrompt,
@@ -152,6 +157,14 @@ export async function resolveResearchStage({
       client: legacyClient,
       signal,
       sendActivity,
+      history,
+      timeZone: input.timeZone ?? null,
+      locale: input.locale ?? null,
+      // The model chosen in the composer leads the whole run (§9.5.1), on
+      // this path exactly as on the background hand-off above. Without it the
+      // web's runs were sized as Auto: led by the plan class's strongest
+      // model with Haiku researchers, whatever the person had picked.
+      preferredModel: isAutoModelId(requestedId) ? null : modelInfo.id,
     });
     researchCostUsd = research.costUsd;
     if (research.ok) {

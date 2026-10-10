@@ -96,6 +96,12 @@ export const startResearchSchema = z.object({
   locale: lenient(35),
   /** An explicit content language, BCP-47 (§9.5). */
   language: lenient(35),
+  /**
+   * The chat model the person has selected (`provider:model`), the run's
+   * preferred lead (§9.5.1). An unknown id or Auto is no choice; a known
+   * model the plan cannot use is recorded and the run card says so.
+   */
+  preferredModel: lenient(120),
 });
 
 /** One question as the reader left it on the scope card; a row without an id is new. */
@@ -128,6 +134,8 @@ export const decidePlanSchema = z.object({
       enabled: z.array(z.string().trim().min(1).max(120)).max(12).optional(),
     })
     .optional(),
+  /** The chat model selected when the plan is confirmed or revised (§9.5.1); absent keeps the start's. */
+  preferredModel: lenient(120),
 });
 
 /**

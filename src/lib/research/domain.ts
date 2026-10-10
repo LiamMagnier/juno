@@ -1657,6 +1657,16 @@ export function parseEnvelope(value: unknown): ResearchEnvelope | undefined {
   const reserve = raw.reserve && typeof raw.reserve === "object" ? (raw.reserve as Record<string, unknown>) : null;
   const estimate = raw.estimate && typeof raw.estimate === "object" ? (raw.estimate as Record<string, unknown>) : null;
   const caps = parseEstimateCaps(raw.caps);
+  const refusedRaw =
+    raw.chosenRefused && typeof raw.chosenRefused === "object" && !Array.isArray(raw.chosenRefused)
+      ? (raw.chosenRefused as Record<string, unknown>)
+      : null;
+  const refusedModel = refusedRaw ? oneLine(refusedRaw.model, 120) : "";
+  const refusedReason = refusedRaw?.reason;
+  const chosenRefused: ResearchEnvelope["chosenRefused"] | null =
+    refusedModel && (refusedReason === "plan" || refusedReason === "not_configured" || refusedReason === "unavailable")
+      ? { model: refusedModel, reason: refusedReason }
+      : null;
   const ceiling = positiveInt(raw.ceilingMicroUsd);
   const numbers = {
     workers: positiveInt(raw.workers),
@@ -1695,6 +1705,7 @@ export function parseEnvelope(value: unknown): ResearchEnvelope | undefined {
     ...(oneLine(raw.workerModel, 120) ? { workerModel: oneLine(raw.workerModel, 120) } : {}),
     ...(raw.workerNote === "no_tools" || raw.workerNote === "responses_api" ? { workerNote: raw.workerNote } : {}),
     ...(raw.chosen === true ? { chosen: true } : {}),
+    ...(chosenRefused ? { chosenRefused } : {}),
     ...(rates ? { rates } : {}),
     limitedBy,
     estimate: { minutesUpTo: count(estimate.minutesUpTo), pagesUpTo: count(estimate.pagesUpTo) },
