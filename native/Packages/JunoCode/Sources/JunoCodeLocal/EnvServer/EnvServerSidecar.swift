@@ -328,6 +328,11 @@ public actor EnvServerSidecar {
     }
 
     private var process: Process?
+    /// The server's stdin. The server treats end-of-file on stdin as "the app
+    /// went away" and exits, so the app holds the write end open for the
+    /// server's whole life: it closes when the app quits (or crashes), or when
+    /// ``stop()`` closes it. `/dev/null` here made the server exit at once.
+    private var stdinPipe: Pipe?
     private var launch: EnvServerLaunch?
     private var state: State = .stopped
     private var restartAttempt = 0
@@ -395,6 +400,7 @@ public actor EnvServerSidecar {
             return
         }
         self.process = nil
+        releaseStdin()
         if process.isRunning {
             process.terminate()
             let pid = process.processIdentifier
@@ -405,6 +411,16 @@ public actor EnvServerSidecar {
         }
         set(.stopped)
     }
+
+    /// Closes the server's stdin, which tells it to exit.
+    private func releaseStdin() {
+        guard let pipe = stdinPipe else { return }
+        stdinPipe = nil
+        try? pipe.fileHandleForWriting.close()
+    }
+
+    /// Whether the server's stdin is held open (for tests).
+    var holdsServerStdin: Bool { stdinPipe != nil }
 
     private func spawn() async throws -> EnvServerLaunch {
         set(.starting)
@@ -438,7 +454,8 @@ public actor EnvServerSidecar {
         let stderr = Pipe()
         process.standardOutput = stdout
         process.standardError = stderr
-        process.standardInput = FileHandle.nullDevice
+        let stdin = Pipe()
+        process.standardInput = stdin
         attach(stdout, isStdout: true)
         attach(stderr, isStdout: false)
         process.terminationHandler = { [weak self] finished in
@@ -452,6 +469,10 @@ public actor EnvServerSidecar {
             throw EnvServerSidecarError.launchFailed(error.localizedDescription)
         }
         self.process = process
+        releaseStdin()
+        stdinPipe = stdin
+        // The child holds its own copy of the read end; ours is not needed.
+        try? stdin.fileHandleForReading.close()
 
         let announced = await waitForReady(port: port)
         guard self.process === process, process.isRunning else {
@@ -463,6 +484,7 @@ public actor EnvServerSidecar {
             set(.failed(.notReady))
             process.terminate()
             self.process = nil
+            releaseStdin()
             throw EnvServerSidecarError.notReady
         }
         plan.port = readyPort
@@ -544,6 +566,7 @@ public actor EnvServerSidecar {
         resolveReady(nil)
         guard process === finished else { return }
         process = nil
+        releaseStdin()
         launch = nil
         guard wantsRunning else {
             set(.stopped)

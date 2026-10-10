@@ -9,6 +9,42 @@ import JunoCodeCore
 final class EnvServerTests: XCTestCase {
     // MARK: Sidecar
 
+    /// The server exits when its stdin ends (the app went away). The sidecar
+    /// must hold stdin open, or the server dies right after its handshake:
+    /// Mac 1.10.3 shipped /dev/null there and Connections never connected.
+    func testTheServerOutlivesItsHandshakeBecauseStdinStaysOpen() async throws {
+        guard let node = EnvServerLaunchPlanner.findNode() else { throw XCTSkip("no Node on this machine") }
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("sidecar-stdin-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let script = dir.appendingPathComponent("fake-env.mjs")
+        // Same contract as runner/env-server/src/bin.ts: handshake line, exit on stdin end.
+        try """
+        const i = process.argv.indexOf("--port");
+        const port = Number(process.argv[i + 1]);
+        process.stdout.write(JSON.stringify({ alevrEnv: 1, port }) + "\\n");
+        process.stdin.on("end", () => process.exit(0));
+        process.stdin.resume();
+        setInterval(() => {}, 1000);
+        """.write(to: script, atomically: true, encoding: .utf8)
+        let entry = EnvServerEntry(url: script, kind: .javascript, packageRoot: dir)
+        let sidecar = EnvServerSidecar(
+            resolveEntry: { entry }, resolveNode: { node }, diagnoseNode: { .success(node) },
+            dataDirectory: dir.appendingPathComponent("data"), readinessTimeout: .seconds(10)
+        )
+        let launch = try await sidecar.start()
+        let held = await sidecar.holdsServerStdin
+        XCTAssertTrue(held)
+        try await Task.sleep(for: .milliseconds(1500))
+        guard case .running = await sidecar.currentState else {
+            return XCTFail("the server exited after its handshake: \(await sidecar.currentState)")
+        }
+        if let pid = launch.pid { XCTAssertEqual(kill(pid, 0), 0, "server process is alive") }
+        await sidecar.stop()
+        let released = await sidecar.holdsServerStdin
+        XCTAssertFalse(released)
+    }
+
     func testTokensAreLongAndURLSafe() {
         let a = EnvServerLaunchPlanner.makeToken()
         let b = EnvServerLaunchPlanner.makeToken()
