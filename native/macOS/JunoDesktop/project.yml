@@ -124,6 +124,10 @@ targets:
       # window shell owns the session's lifetime, so it needs the types directly.
       - package: JunoCode
         product: JunoSimulator
+      # Work in a folder runs a chat's commands through Alevr Code's contained
+      # executor (the kernel sandbox profile), not a second shell of its own.
+      - package: JunoCode
+        product: JunoCodeLocal
       # The Juno Design scene contract, for the hosted design editor.
       - package: JunoNativeKit
         product: JunoDesignKit

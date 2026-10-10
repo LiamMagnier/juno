@@ -85,6 +85,11 @@ struct JunoDesktopConfiguration {
     /// configuration with no live Work runtime at all and should not have to name
     /// a dependency it has no use for.
     var workGrantStore: DesktopWorkGrantStore? = nil
+    /// The folder each chat works in (Work in a folder), and the Mac side of
+    /// the chat model's folder calls. Its own store rather than Work's grants:
+    /// a folder picked for one chat is never advertised to the relay.
+    /// Defaulted for the reason ``workGrantStore`` is.
+    var chatFolderStore: DesktopChatFolderStore? = nil
     /// The account's agents (docs/design/AGENTS.md): named teammates whose
     /// tasks are ordinary Work sessions. Its own model, beside Work's rather
     /// than inside it, because the roster is an account identity — faces,
@@ -397,6 +402,7 @@ struct JunoDesktopConfiguration {
                 // sentences with two different fixes.
                 workHostModel: workHostModel,
                 workGrantStore: workGrantStore,
+                chatFolderStore: DesktopChatFolderStore(),
                 // With a Work client, so an agent's page can answer what its
                 // tasks are stopped at in place. A client and not the Work
                 // model: the page reads the runs it needs without taking the
@@ -473,6 +479,10 @@ struct JunoDesktopConfiguration {
         // saved chat's request says so (`workHandoff`). Only with the Work
         // transport composed: without it there is no card to draw.
         conversationModel.claimsWorkHandoff = workModel != nil
+        // Work in a folder: the chat names its folder on each turn and runs
+        // the folder calls the model makes, on this Mac. Weak on the model's
+        // side; the configuration owns the store.
+        conversationModel.localToolHost = chatFolderStore
         // The sidebar joins every chat's newest task from the account's list,
         // so it reads what the web's sidebar reads: a hundred.
         workModel?.sessionListLimit = 100

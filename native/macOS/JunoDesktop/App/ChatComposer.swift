@@ -970,6 +970,8 @@ struct ChatComposer: View {
     /// The call this composer is inside, published by ``SwiftUI/View/junoVoiceCall(_:)``.
     /// Non-nil routes a send over the socket instead of to `/api/chat`.
     @Environment(\.junoVoiceCall) private var voiceCall
+    /// The folders chats work in; nil hides "Work in a folder".
+    @Environment(\.desktopChatFolders) private var chatFolders
     /// The transcript's media loader: a sent picture's bytes are handed to it
     /// here, so the reader's own turn draws the photo at once instead of
     /// fetching back what this Mac just uploaded.
@@ -1528,6 +1530,12 @@ struct ChatComposer: View {
             HStack(spacing: JunoComposerMetrics.controlSpacing) {
                 HStack(spacing: JunoComposerMetrics.controlSpacing) {
                     plusMenu
+                    // Work in a folder. Here until the composer tray lands;
+                    // the control is self-contained and moves to the tray's
+                    // slot as is (docs: .claude/handoff/mac-cowork/STATUS.md).
+                    if !isPrivate, !voiceActive {
+                        ChatFolderControl(conversationID: fixedProjectID == nil ? model.selectedConversationID : nil)
+                    }
                     Spacer(minLength: JunoSpace.snug)
                     modelChip
                     // Steering is text only: the mic steps aside (the web's).
@@ -2403,6 +2411,9 @@ struct ChatComposer: View {
                     model: turn.modelID,
                     projectID: turn.projectID
                 )
+                // A folder picked before the chat existed becomes the chat's,
+                // before its first turn asks which folder it works in.
+                if let conversationID { chatFolders?.adoptDraft(into: conversationID) }
             }
             guard let conversationID else {
                 if restoreOnRefusal { restore(turn) }
