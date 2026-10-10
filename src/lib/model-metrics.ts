@@ -2,6 +2,7 @@ import { hasRetired, isSupersededModel, MODELS, type ModelInfo } from "@/lib/mod
 import { PROVIDER_LIST, type Provider } from "@/lib/providers";
 import { BENCHMARKS, type ModelBenchmark } from "@/lib/benchmarks.generated";
 import { geminiFlashRate, type TokenPrice } from "@/lib/scheduled-prices";
+import { OFFICIAL_RATES } from "@/lib/model-rates.generated";
 
 export type ReasoningEffort = "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null;
 
@@ -391,7 +392,13 @@ export function getModelMetrics(model: ModelInfo, at: Date | number = Date.now()
     intelligence: model.cost === 3 ? 8 : model.cost === 2 ? 7 : 5,
     source: "estimated",
   };
-  const grounded = overlayBenchmark(base, BENCHMARKS[model.id]);
+  const benchmarked = overlayBenchmark(base, BENCHMARKS[model.id]);
+  // The lab's own published rate (models:sync) outranks both the hand-tuned
+  // family rule and a leaderboard's copy of it: it is the figure billing uses.
+  const official = OFFICIAL_RATES[model.id];
+  const grounded: ModelMetrics = official
+    ? { ...benchmarked, inputUsdPerMTok: official.input, outputUsdPerMTok: official.output, source: "official" }
+    : benchmarked;
   // The registry's verified per-model context window always wins; the family
   // rule's contextTokens is only a fallback for discovered models.
   if (model.contextWindow && model.contextWindow !== grounded.contextTokens) {
