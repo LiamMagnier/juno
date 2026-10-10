@@ -219,7 +219,7 @@ struct JunoMobileThinkingPanel: View {
           JunoEffortSpeedButton(
             tier: speedTier,
             multiplier: speedTier == .ultra ? ladder.ultraFastRateMultiplier : ladder.fastModeRateMultiplier,
-            side: JunoLayout.touchTarget,
+            hitSide: JunoLayout.touchTarget,
             action: cycleSpeed
           )
           .accessibilityIdentifier("juno.mobile.thinking-speed")
@@ -227,20 +227,22 @@ struct JunoMobileThinkingPanel: View {
         if showsPro, let proMode {
           JunoEffortProCapsule(
             isOn: Binding(get: { proMode.wrappedValue }, set: { tick.fire(); proMode.wrappedValue = $0 }),
-            height: JunoMobileComposerPanelMetrics.proHeight,
             hitHeight: JunoLayout.touchTarget
           )
           .accessibilityIdentifier("juno.mobile.thinking-pro")
         }
       }
-      .frame(width: JunoMobileComposerPanelMetrics.sideColumn, alignment: .leading)
+      .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
 
       VStack(spacing: 0) {
         levelName
           .accessibilityHidden(true)
         modelButton
       }
-      .frame(maxWidth: .infinity)
+      // Sized to the rung and the model's name, as the Mac's header is: the
+      // side groups share what is left, so the name is never cut for them.
+      .fixedSize(horizontal: true, vertical: false)
+      .layoutPriority(1)
 
       roundButton(
         icon: .rotateCcw,
@@ -254,7 +256,7 @@ struct JunoMobileThinkingPanel: View {
       }
       .disabled(!canReset)
       .opacity(canReset ? 1 : 0.35)
-      .frame(width: JunoMobileComposerPanelMetrics.sideColumn, alignment: .trailing)
+      .frame(minWidth: 0, maxWidth: .infinity, alignment: .trailing)
     }
   }
 
@@ -344,9 +346,4 @@ enum JunoMobileComposerPanelMetrics {
   static let radius: CGFloat = JunoSpace.wide
   /// The "+" panel's width: wide enough for "Deep research" and a check.
   static let plusWidth: CGFloat = 264
-  /// The header's two side columns, equal so the level name centres: room
-  /// for the 44pt bolt and the Pro capsule.
-  static let sideColumn: CGFloat = 92
-  /// Pro's drawn capsule; its target is the 44pt row.
-  static let proHeight: CGFloat = JunoSpace.wide
 }
