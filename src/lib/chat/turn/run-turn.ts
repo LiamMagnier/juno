@@ -1,4 +1,5 @@
 import "server-only";
+import type { FastMode } from "@/lib/pricing";
 import { applySemanticEditReply, resolveArtifactOps } from "@/lib/artifact-ops";
 import { isSemanticArtifactType } from "@/lib/work/deliverables/semantic";
 import { SemanticError } from "@/lib/work/deliverables/semantic/shared";
@@ -152,7 +153,8 @@ export interface SavedTurnPlan {
   researchRequested: boolean;
   useWebSearch: boolean;
   useAlevrSearch: boolean;
-  useFastMode: boolean;
+  /** The serving tier (pricing.ts FastMode), resolved by turn/capabilities.ts. */
+  useFastMode: FastMode;
   useProMode: boolean;
   skill: TurnSkill;
   untrustedContentInTurn: boolean;

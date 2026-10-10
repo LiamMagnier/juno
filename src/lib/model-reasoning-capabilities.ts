@@ -48,7 +48,8 @@ function wireContract(model: ModelInfo, caps: ReasoningCaps) {
   const id = model.providerModel.toLowerCase();
   if (!model.reasoning) return { controlType: "none" as const, parameter: null, apiSurface: model.api ?? "chat" };
   if (model.provider === "anthropic") {
-    const adaptive = !id.includes("4-5") && !id.includes("haiku");
+    // Haiku 4.5, Opus 4.5 and Sonnet 4.5 take budget_tokens; Haiku 5.5 is adaptive.
+    const adaptive = !id.includes("4-5") && !/haiku-[34]/.test(id);
     return {
       controlType: adaptive ? "adaptive" as const : caps.onOff ? "on_off" as const : "numeric_budget" as const,
       parameter: adaptive ? "thinking.type + output_config.effort" : "thinking.type + thinking.budget_tokens",

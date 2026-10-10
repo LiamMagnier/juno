@@ -22,7 +22,9 @@ test("every Gemini model bills a cache hit at Google's 10%, not the 0.25x fallba
 
 test("DeepSeek cache hits bill at DeepSeek's published 2% / 3.3%", () => {
   assert.ok(Math.abs(ratio("deepseek-flash") - 0.02) < 1e-9);
-  assert.ok(Math.abs(ratio("deepseek-v4-pro") - 0.0333) < 1e-9);
+  // The page's own figure, $0.022 on $0.66 (models:sync), not a rounded ratio.
+  assert.ok(Math.abs(tokenRate(model("deepseek-v4-pro")).cacheRead - 0.022) < 1e-9);
+  assert.ok(Math.abs(ratio("deepseek-v4-pro") - 0.0333) < 1e-3);
   // $0.003 per MTok on Flash: within a hair of the published price.
   assert.ok(Math.abs(tokenRate(model("deepseek-flash")).cacheRead - 0.003) < 1e-9);
 });

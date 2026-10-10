@@ -68,10 +68,19 @@ test("a model without a surcharge has exactly one tier, its curated window", () 
 });
 
 test("unrecorded long-context bands are marked, never priced as if flat", () => {
+  // Qwen's Model Studio tiers by prompt size and the catalogue records only
+  // the lowest tier, so the window is shown, marked, at that tier's rate.
+  const plus = tiersFor(model("qwen:qwen3.7-plus"));
+  assert.equal(plus.length, 1);
+  assert.equal(plus[0].unverified, true);
+  assert.match(plus[0].note ?? "", /lowest tier shown/);
+});
+
+test("a band the lab's page states becomes a priced tier (Gemini 3.1 Pro, read by models:sync)", () => {
   const pro = tiersFor(model("google:gemini-3.1-pro-preview"));
-  assert.equal(pro.length, 1);
-  assert.equal(pro[0].unverified, true);
-  assert.match(pro[0].note ?? "", /200K not confirmed/);
+  assert.deepEqual(pro.map((t) => t.tokens), [200_000, 1_048_576]);
+  assert.equal(pro[1].unverified, undefined);
+  assert.match(pro[1].note ?? "", /2× input, 1\.5× output above 200K/);
 });
 
 test("tiers agree with billing: each band's rate is what estimateCostUsd charges inside it", () => {

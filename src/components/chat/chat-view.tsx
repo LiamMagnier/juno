@@ -332,9 +332,13 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       ? initialReasoningEffort
       : composerPrefs.reasoningEffort;
   const fastMode = composerPrefs.fastMode;
+  const ultraFast = composerPrefs.ultraFast;
   const proMode = composerPrefs.proMode;
   const setWebSearchEnabled = React.useCallback((v: boolean) => setComposerPrefs({ webSearch: v }), [setComposerPrefs]);
-  const setFastMode = React.useCallback((v: boolean) => setComposerPrefs({ fastMode: v }), [setComposerPrefs]);
+  // Fast and Ultrafast are two premiums for the same thing: choosing one
+  // clears the other, so a request never asks for both.
+  const setFastMode = React.useCallback((v: boolean) => setComposerPrefs(v ? { fastMode: true, ultraFast: false } : { fastMode: false }), [setComposerPrefs]);
+  const setUltraFast = React.useCallback((v: boolean) => setComposerPrefs(v ? { ultraFast: true, fastMode: false } : { ultraFast: false }), [setComposerPrefs]);
   const setProMode = React.useCallback((v: boolean) => setComposerPrefs({ proMode: v }), [setComposerPrefs]);
   const setReasoningEffort = React.useCallback(
     (e: ReasoningEffort | null) => {
@@ -429,6 +433,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
     webSearch: webSearchEnabled,
     reasoningEffort: reasoningEffort ?? undefined,
     fastMode,
+    ultraFast,
     proMode,
     connectors: enabledConnectors,
     privateMode,
@@ -2096,6 +2101,8 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       onReasoningChange={setReasoningEffort}
       fastMode={fastMode}
       onToggleFastMode={setFastMode}
+      ultraFast={ultraFast}
+      onToggleUltraFast={setUltraFast}
       proMode={proMode}
       onToggleProMode={setProMode}
       connectorsEnabled={enabledConnectors}

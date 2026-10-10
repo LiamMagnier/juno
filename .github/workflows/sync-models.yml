@@ -43,6 +43,11 @@ jobs:
       - name: Scan the wider industry catalog
         run: npm run radar:models -- --out /tmp/model-radar-report.md
 
+      # Official pages vs the catalogue (docs/models/SYNC.md). Dry run: the
+      # report goes into the model-watch issue; applying stays a reviewed PR.
+      - name: Check the catalogue against the labs' own pages
+        run: npm run models:sync -- --out /tmp/model-sync-report.md
+
       - name: Validate catalog
         run: npm run validate:models
 
@@ -81,6 +86,7 @@ jobs:
         if: steps.changes.outputs.changed == 'true'
         shell: bash
         run: |
+          cat /tmp/model-sync-report.md >> /tmp/model-radar-report.md 2>/dev/null || true
           if [ -s /tmp/model-radar-report.md ]; then
             gh issue create \
               --title "Model watch: new provider releases detected" \

@@ -1,5 +1,31 @@
 import type { ModelInfo } from "@/lib/models";
 import { geminiFlashRate, isGeminiPromoFlash } from "@/lib/scheduled-prices";
+import { OFFICIAL_RATES, type OfficialRateEntry } from "@/lib/model-rates.generated";
+
+/**
+ * The lab's own published rate for this model, as `npm run models:sync` last
+ * read it (src/lib/model-rates.generated.ts), or undefined when the sync could
+ * not verify one. Everything below reads this FIRST: the hand-coded rules are
+ * the fallback for a model the sync has no verified rate for, never a second
+ * opinion that could override the lab's page.
+ */
+export function officialRate(model: Pick<ModelInfo, "id">): OfficialRateEntry | undefined {
+  return OFFICIAL_RATES[model.id];
+}
+
+/**
+ * A request's serving tier as the pricing and transport layers see it:
+ * `false` standard, `true` the lab's fast / priority tier, `"ultrafast"`
+ * OpenAI's Ultrafast service tier. Truthy for both premium tiers, so every
+ * `if (fastMode)` that only asks "is this a premium tier?" keeps working.
+ */
+export type FastMode = boolean | "ultrafast";
+
+/** The OpenAI-style `service_tier` value for a request's tier, or undefined for standard. */
+export function serviceTierFor(fastMode: FastMode | undefined): "priority" | "ultrafast" | undefined {
+  if (!fastMode) return undefined;
+  return fastMode === "ultrafast" ? "ultrafast" : "priority";
+}
 
 /**
  * Per-model token + tool pricing so message cost and ApiSpend match real
@@ -132,6 +158,8 @@ export function normalizeUsage(provider: string, u: RawUsage): NormalizedUsage {
 // Verified against provider pricing pages + Artificial Analysis, 2026-07-10
 // (sources in docs/models.md). Keep in sync with model-metrics.ts FAMILY_RULES.
 function baseRate(model: ModelInfo, at: Date | number = Date.now()): { input: number; output: number } {
+  const official = officialRate(model);
+  if (official) return { input: official.input, output: official.output };
   const pm = model.providerModel.toLowerCase();
   switch (model.provider) {
     case "anthropic":
@@ -348,6 +376,12 @@ function baseRate(model: ModelInfo, at: Date | number = Date.now()): { input: nu
  * which models show the "Fast" toggle and how the premium is billed.
  */
 export function fastModeMultiplier(model: ModelInfo): number | null {
+  // The lab's fast table, when the sync read one, is the whole answer: a
+  // model absent from it (null) has no fast tier, whatever the rules below say.
+  const official = officialRate(model);
+  if (official && official.fast !== undefined) {
+    return official.fast ? Math.round((official.fast.input / official.input) * 100) / 100 : null;
+  }
   const pm = model.providerModel.toLowerCase();
   if (model.provider === "anthropic") return pm.includes("opus-4-8") || pm.includes("opus-5-5") ? 2 : null;
   if (model.provider === "openai") {
@@ -367,6 +401,46 @@ export function supportsFastMode(model: ModelInfo): boolean {
 }
 
 /**
+ * OpenAI's Ultrafast service tier (`service_tier: "ultrafast"`, Responses API):
+ * the rate multiple over standard, or null when the model is not served on it.
+ *
+ * Read only from the lab's Ultrafast pricing table (via the sync), never
+ * inferred: OpenAI serves it on GPT-6 Astra and GPT-6.1 Sol at 6x standard,
+ * and a guess here would put a 6x premium in front of a model that rejects it.
+ */
+export function ultraFastMultiplier(model: ModelInfo): number | null {
+  const official = officialRate(model);
+  if (!official?.ultrafast) return null;
+  return Math.round((official.ultrafast.input / official.input) * 100) / 100;
+}
+
+/** Whether this model can be served on the Ultrafast tier. */
+export function supportsUltraFastMode(model: ModelInfo): boolean {
+  return ultraFastMultiplier(model) !== null;
+}
+
+/**
+ * The serving tier a request gets: Ultrafast only where the model is on
+ * OpenAI's Ultrafast table, Fast only where it has a fast tier, else standard.
+ * An Ultrafast request on a model without it does NOT fall back to Fast: the
+ * reader agreed to a specific premium, not to whichever one is available.
+ */
+export function resolveFastMode(model: ModelInfo, req: { fastMode?: boolean; ultraFast?: boolean }): FastMode {
+  if (req.ultraFast) return supportsUltraFastMode(model) ? "ultrafast" : false;
+  return !!req.fastMode && supportsFastMode(model);
+}
+
+/** Input / output rate multiples for a request's serving tier. */
+function speedMultipliers(model: ModelInfo, fastMode: FastMode): { input: number; output: number } {
+  if (!fastMode) return { input: 1, output: 1 };
+  const official = officialRate(model);
+  const tier = fastMode === "ultrafast" && official?.ultrafast ? official.ultrafast : official?.fast;
+  if (official && tier) return { input: tier.input / official.input, output: tier.output / official.output };
+  const m = fastModeMultiplier(model) ?? 1;
+  return { input: m, output: m };
+}
+
+/**
  * Full rate incl. cache multipliers.
  * Anthropic: read 0.1× (0.025× on Fable/Mythos 5.1, 0.05× on Opus 5.5),
  * 5m write 1.25×, 1h write 2×.
@@ -374,11 +448,29 @@ export function supportsFastMode(model: ModelInfo): boolean {
  * `cacheWrite` for Anthropic is the **1h** rate (2×).
  * `fastMode` scales base input/output (and derived cache rates).
  */
-export function tokenRate(model: ModelInfo, fastMode = false, at: Date | number = Date.now()): TokenRate {
+export function tokenRate(model: ModelInfo, fastMode: FastMode = false, at: Date | number = Date.now()): TokenRate {
   const raw = baseRate(model, at);
-  const mult = fastMode ? fastModeMultiplier(model) ?? 1 : 1;
-  const input = raw.input * mult;
-  const output = raw.output * mult;
+  const speed = speedMultipliers(model, fastMode);
+  const rate = computedRate(model, raw.input * speed.input, raw.output * speed.output);
+  const official = officialRate(model);
+  if (!official) return rate;
+  // The lab's own cache columns win over the ratios computedRate assumes, at
+  // the same tier multiple as the input they discount.
+  const k = speed.input;
+  if (official.cacheRead != null) rate.cacheRead = official.cacheRead * k;
+  if (official.cacheWrite5m != null) rate.cacheWrite5m = official.cacheWrite5m * k;
+  if (official.cacheWrite1h != null) {
+    rate.cacheWrite1h = official.cacheWrite1h * k;
+    if (model.provider === "anthropic") rate.cacheWrite = rate.cacheWrite1h; // Juno writes 1h
+  }
+  if (official.cacheWrite != null && model.provider !== "anthropic") {
+    rate.cacheWrite = rate.cacheWrite5m = rate.cacheWrite1h = official.cacheWrite * k;
+  }
+  return rate;
+}
+
+/** The provider-rule rates for an already tier-scaled input / output price. */
+function computedRate(model: ModelInfo, input: number, output: number): TokenRate {
   if (model.provider === "anthropic") {
     return {
       input,
@@ -631,8 +723,10 @@ export interface LongContextPricing {
 }
 
 export function longContextPricing(
-  model: Pick<ModelInfo, "provider" | "providerModel" | "modality">
+  model: Pick<ModelInfo, "provider" | "providerModel" | "modality"> & Partial<Pick<ModelInfo, "id">>
 ): LongContextPricing | null {
+  const official = officialRate({ id: model.id ?? `${model.provider}:${model.providerModel}` });
+  if (official && official.longContext !== undefined) return official.longContext ? { ...official.longContext } : null;
   const pm = model.providerModel.toLowerCase();
   if (model.provider === "openai" && /gpt-6(?:\.\d+)?-(astra|sol|luna)/.test(pm)) {
     return { threshold: 272_000, inclusive: false, inputMultiplier: 2, outputMultiplier: 1.5 };
@@ -653,7 +747,7 @@ function longContextMultipliers(model: ModelInfo, totalInput: number): { input: 
 }
 
 /** Token-only cost (no tool fees). */
-function tokenCostUsd(model: ModelInfo, u: RawUsage, fastMode = false, at: Date | number = Date.now()): number {
+function tokenCostUsd(model: ModelInfo, u: RawUsage, fastMode: FastMode = false, at: Date | number = Date.now()): number {
   const n = normalizeUsage(model.provider, u);
   const r = tokenRate(model, fastMode, at);
 
@@ -696,7 +790,7 @@ export function batchPriceMultiplier(provider: ModelInfo["provider"] | string): 
 export function estimateCostUsd(
   model: ModelInfo,
   u: RawUsage,
-  fastMode = false,
+  fastMode: FastMode = false,
   extras: ToolUsageExtras = {},
   at: Date | number = Date.now()
 ): number {
@@ -785,7 +879,7 @@ export type GenerationCostOpts = {
   cacheWrite?: number | null;
   cacheWrite5m?: number | null;
   cacheWrite1h?: number | null;
-  fastMode?: boolean;
+  fastMode?: FastMode;
   promptChars?: number;
   completionChars?: number;
   reasoningChars?: number;
@@ -832,7 +926,7 @@ export function estimateGenerationCostUsd(
       cacheWrite5m: opts.cacheWrite5m ?? undefined,
       cacheWrite1h: opts.cacheWrite1h ?? undefined,
     },
-    !!opts.fastMode,
+    opts.fastMode ?? false,
     extras
   );
   const batchMultiplier = opts.batch ? batchPriceMultiplier(model.provider) : null;

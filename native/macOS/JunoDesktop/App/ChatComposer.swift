@@ -457,6 +457,8 @@ struct ChatComposerTurn {
     let connectors: [String]
     let fastMode: Bool
     let proMode: Bool
+    /// OpenAI's Ultrafast tier; never true together with `fastMode`.
+    var ultraFast: Bool = false
     let groundDocuments: Bool
     let documentCount: Int
     /// The skill the message is sent under (`skillSlug`), or nil.
@@ -905,6 +907,9 @@ struct ChatComposer: View {
     // @AppStorage rather than @State: preferences that survive a relaunch, as
     // the web keeps them in localStorage and the phone in UserDefaults.
     @AppStorage("juno.desktop.composer.fast-mode") private var fastMode = false
+    /// OpenAI's Ultrafast tier (GPT-6.1 Sol, GPT-6 Astra). Kept exclusive with
+    /// Flash by the chip's bindings: two premiums for one thing, never both.
+    @AppStorage("juno.desktop.composer.ultra-fast") private var ultraFast = false
     @AppStorage("juno.desktop.composer.pro-mode") private var proMode = false
     /// Whether a turn may quote this Mac's own document index.
     ///
@@ -1791,7 +1796,20 @@ struct ChatComposer: View {
                 get: { thinkingStopID.isEmpty ? nil : thinkingStopID },
                 set: { thinkingStopID = $0 ?? "" }
             ),
-            fastMode: $fastMode,
+            fastMode: Binding(
+                get: { fastMode },
+                set: { on in
+                    fastMode = on
+                    if on { ultraFast = false }
+                }
+            ),
+            ultraFast: Binding(
+                get: { ultraFast },
+                set: { on in
+                    ultraFast = on
+                    if on { fastMode = false }
+                }
+            ),
             proMode: $proMode,
             favorites: Set(memorySettings?.settings?.favoriteModels ?? []),
             toggleFavorite: memorySettings.map { store in
@@ -2291,6 +2309,7 @@ struct ChatComposer: View {
             connectors: isPrivate ? [] : Array(selectedConnectors.prefix(ComposerPlusMenuModel.connectorLimit)),
             fastMode: fastMode,
             proMode: proMode,
+            ultraFast: ultraFast,
             groundDocuments: documentGroundingArmed,
             documentCount: indexedDocumentCount,
             skillSlug: armedSkill?.slug,
@@ -2423,6 +2442,7 @@ struct ChatComposer: View {
                 webSearch: turn.webSearch,
                 connectors: turn.connectors,
                 fastMode: turn.fastMode,
+                ultraFast: turn.ultraFast,
                 proMode: turn.proMode,
                 attachments: turn.attachments,
                 skillSlug: turn.skillSlug,
@@ -2479,6 +2499,7 @@ struct ChatComposer: View {
                 modelID: turn.modelID,
                 reasoningEffort: turn.effort,
                 fastMode: turn.fastMode,
+                ultraFast: turn.ultraFast,
                 proMode: turn.proMode
             )
         }

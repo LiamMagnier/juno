@@ -354,7 +354,14 @@ const CURATED: ModelInfo[] = [
   // anthropic-thinking.ts sends. Forced tool_choice (`any`/`tool`) is rejected.
   def({ provider: "anthropic", id: "claude-sonnet-5-5", name: "Claude Sonnet 5.5", family: "sonnet", status: "current", released: "2026-09", minPlan: "FREE", vision: true, reasoning: true, cost: 2, contextWindow: 1_000_000, description: "Best speed-to-intelligence balance: near-Opus quality for everyday work." }),
   def({ provider: "anthropic", id: "claude-sonnet-5", name: "Claude Sonnet 5", family: "sonnet", status: "legacy", released: "2026-06", minPlan: "FREE", vision: true, cost: 2, contextWindow: 1_000_000, description: "Previous-generation Sonnet, superseded by Sonnet 5.5." }),
-  def({ provider: "anthropic", id: "claude-haiku-4-5", name: "Claude Haiku 4.5", family: "haiku", status: "current", released: "2025-10", minPlan: "FREE", vision: true, reasoning: true, cost: 1, contextWindow: 200_000, description: "Fastest, most cost-effective Claude: great for high-volume tasks." }),
+  // Claude Haiku 5.5: added by models:sync on 2026-10-10 from https://platform.claude.com/docs/en/models/overview, https://platform.claude.com/docs/en/about-claude/pricing, https://platform.claude.com/docs/en/models/haiku-5-5/overview.
+  // Released 2026-10-07: 1M context, 128K output, text + image in. Priced by
+  // prompt length ($0.10/$0.50 up to 100K tokens, $0.50/$2.50 over, the
+  // band model-rates.generated.ts carries). Adaptive thinking ON by default,
+  // effort low..max with default `medium`; `disabled` is accepted at effort
+  // high or below (anthropic-thinking.ts). No fast mode, no Priority Tier.
+  def({ provider: "anthropic", id: "claude-haiku-5-5", name: "Claude Haiku 5.5", family: "haiku", status: "current", released: "2026-10", minPlan: "FREE", vision: true, reasoning: true, cost: 1, contextWindow: 1_000_000, description: "For high-volume, latency-sensitive tasks such as classification, extraction, and routing." }),
+  def({ provider: "anthropic", id: "claude-haiku-4-5", name: "Claude Haiku 4.5", family: "haiku", status: "legacy", released: "2025-10", minPlan: "FREE", vision: true, reasoning: true, cost: 1, contextWindow: 200_000, description: "Previous Haiku, superseded by Haiku 5.5: 200K context." }),
   def({ provider: "anthropic", id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6", family: "sonnet", status: "legacy", released: "2026-02", minPlan: "FREE", vision: true, cost: 2, contextWindow: 1_000_000, description: "Older Sonnet generation, superseded by Sonnet 5.5." }),
   def({ provider: "anthropic", id: "claude-opus-4-7", name: "Claude Opus 4.7", family: "opus", status: "legacy", released: "2026-04", minPlan: "PRO", vision: true, cost: 3, contextWindow: 1_000_000, description: "Previous-generation Opus." }),
   def({ provider: "anthropic", id: "claude-opus-4-6", name: "Claude Opus 4.6", family: "opus", status: "legacy", released: "2026-02", minPlan: "PRO", vision: true, cost: 3, contextWindow: 1_000_000, description: "Older Opus generation." }),
@@ -426,9 +433,7 @@ const CURATED: ModelInfo[] = [
 
   // —— Google ——
   def({ provider: "google", id: "gemini-3.8-flash", name: "Gemini 3.8 Flash", family: "flash", status: "current", released: "2026-09", minPlan: "FREE", vision: true, reasoning: true, cost: 2, contextWindow: 1_048_576, description: "Google's flagship multimodal Flash model with hybrid reasoning." }),
-  def({ provider: "google", id: "gemini-3.7-flash", name: "Gemini 3.7 Flash", family: "flash", status: "legacy", released: "2026-08", minPlan: "FREE", vision: true, reasoning: true, cost: 2, contextWindow: 1_048_576, description: "Google's flagship multimodal Flash model with hybrid reasoning." }),
   def({ provider: "google", id: "gemini-3.6-flash", name: "Gemini 3.6 Flash", family: "flash", status: "legacy", released: "2026-07", minPlan: "FREE", vision: true, cost: 2, contextWindow: 1_048_576, description: "Earlier Flash generation." }),
-  def({ provider: "google", id: "gemini-3.5-flash", name: "Gemini 3.5 Flash", family: "flash", status: "legacy", released: "2026-05", minPlan: "FREE", vision: true, cost: 2, contextWindow: 1_048_576, description: "Earlier stable Flash generation." }),
   def({ provider: "google", id: "gemini-3.1-pro-preview", name: "Gemini 3.1 Pro", family: "pro", status: "current", released: "2026-02", minPlan: "PRO", vision: true, cost: 3, contextWindow: 1_048_576, description: "Deep-reasoning Pro tier (preview): 3.5 Flash now edges it on most benchmarks." }),
   def({ provider: "google", id: "gemini-3.5-flash-lite", name: "Gemini 3.5 Flash-Lite", family: "flash-lite", status: "current", released: "2026-07", minPlan: "FREE", vision: true, reasoning: true, cost: 1, contextWindow: 1_048_576, description: "Fastest of the 3.5 line: high-volume subagents, document parsing, 1M context." }),
   // Google's deprecations page: shutdown 2027-05-07, replacement 3.5 Flash-Lite.
@@ -543,13 +548,20 @@ const CURATED: ModelInfo[] = [
   // way `deepseek-chat` used to work, and the version appears only in the
   // product name. Getting this wrong is a 404 on every message.
   def({ provider: "deepseek", id: "deepseek-flash", name: "DeepSeek V4.1 Flash", family: "v4-flash", status: "current", released: "2026-09", minPlan: "FREE", vision: true, cost: 1, contextWindow: 1_048_576, reasoning: true, description: "Sparse MoE on a 552B backbone: a 1M window, 384K of output, image input, and the cheapest frontier tier there is." }),
-  def({ provider: "deepseek", id: "deepseek-v4-flash", name: "DeepSeek V4 Flash", family: "v4-flash", status: "legacy", released: "2026-04", minPlan: "FREE", cost: 1, contextWindow: 1_000_000, description: "Fast, very cheap default: near-Pro reasoning at a third of the cost." }),
   def({ provider: "deepseek", id: "deepseek-v4-pro", name: "DeepSeek V4 Pro", family: "v4-pro", status: "current", released: "2026-04", minPlan: "PRO", cost: 2, contextWindow: 1_000_000, description: "DeepSeek flagship: hardest reasoning and complex agent tasks." }),
-  def({ provider: "deepseek", id: "deepseek-chat", name: "DeepSeek Chat", family: "v4-flash", status: "deprecated", released: "2024-12", minPlan: "FREE", cost: 1, contextWindow: 1_000_000, description: "Legacy alias routing to V4 Flash.", deprecationNote: "Retires Jul 24, 2026. Use DeepSeek V4.1 Flash", retiresOn: "2026-07-24", replacedBy: "deepseek:deepseek-flash" }),
-  def({ provider: "deepseek", id: "deepseek-reasoner", name: "DeepSeek Reasoner", family: "v4-flash", status: "deprecated", released: "2025-01", minPlan: "PRO", reasoning: true, cost: 1, contextWindow: 1_000_000, description: "Legacy alias routing to V4 Flash (thinking).", deprecationNote: "Retires Jul 24, 2026. Use DeepSeek V4.1 Flash", retiresOn: "2026-07-24", replacedBy: "deepseek:deepseek-flash" }),
 
   // —— Mistral ——
   def({ provider: "mistral", id: "mistral-medium-latest", name: "Mistral Medium 3.5", family: "medium", status: "current", released: "2026-04", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 262_144, description: "Mistral's frontier multimodal model: agentic work with reasoning effort." }),
+  // Mistral Large 4 (owner-approved 2026-10-10), read 2026-10-10 from
+  // docs.mistral.ai/models/mistral-large-4-0: API names `mistral-large-4` and
+  // `mistral-large-4-0` (the card's copy badges), v26.10, Public Preview,
+  // 1M context, multimodal (1.6B vision encoder), function calling. Priced
+  // at list $1.36 / $4.18 (cached $0.14); the card shows a sale at $0.68 /
+  // $2.09 with no end date, which models:sync reports but does not bill.
+  // `mistral-large-latest` still lists on Large 3's card, so that row keeps
+  // its name. The card states no reasoning control, so none is set. Its own
+  // family: Large 3 stays the GA `-latest` while Large 4 is in preview.
+  def({ provider: "mistral", id: "mistral-large-4", name: "Mistral Large 4", family: "large-4", status: "current", released: "2026-10", minPlan: "PRO", vision: true, reasoning: false, cost: 2, contextWindow: 1_000_000, description: "Mistral's open-weight 1T-parameter flagship, in public preview: multimodal, 1M context, tool use." }),
   def({ provider: "mistral", id: "mistral-large-latest", name: "Mistral Large 3", family: "large", status: "current", released: "2025-12", minPlan: "PRO", vision: true, cost: 1, contextWindow: 262_144, description: "Open-weight multimodal model: very cheap, but benchmarks below Medium 3.5." }),
   def({ provider: "mistral", id: "mistral-small-latest", name: "Mistral Small 4", family: "small", status: "current", released: "2026-03", minPlan: "FREE", vision: true, reasoning: true, cost: 1, contextWindow: 262_144, description: "Cost-efficient hybrid: instruct, reasoning, and vision in one." }),
   // Codestral 25.08 is a 128k model (docs.mistral.ai/models/codestral-25-08),
@@ -561,8 +573,6 @@ const CURATED: ModelInfo[] = [
   def({ provider: "mistral", id: "ministral-14b-latest", name: "Ministral 3 14B", family: "ministral", status: "current", released: "2025-12", minPlan: "FREE", vision: true, cost: 1, contextWindow: 262_144, description: "Small dense model: strong cost/performance for high volume." }),
   def({ provider: "mistral", id: "ministral-8b-latest", name: "Ministral 3 8B", family: "ministral-8b", status: "current", released: "2025-12", minPlan: "FREE", vision: true, cost: 1, contextWindow: 262_144, description: "Compact Ministral 3 tier for inexpensive high-volume tasks." }),
   def({ provider: "mistral", id: "ministral-3b-latest", name: "Ministral 3 3B", family: "ministral-3b", status: "current", released: "2025-12", minPlan: "FREE", vision: true, cost: 1, contextWindow: 262_144, description: "Smallest Ministral 3 tier for lowest-latency simple tasks." }),
-  def({ provider: "mistral", id: "magistral-medium-2509", name: "Magistral Medium", family: "magistral", status: "deprecated", released: "2025-09", minPlan: "PRO", reasoning: true, cost: 3, description: "Dedicated reasoning line, folded into Medium 3.5.", deprecationNote: "Retires Jul 31, 2026. Use Mistral Medium 3.5", retiresOn: "2026-07-31", replacedBy: "mistral:mistral-medium-latest" }),
-  def({ provider: "mistral", id: "devstral-2512", name: "Devstral 2", family: "devstral", status: "deprecated", released: "2025-12", minPlan: "PRO", cost: 2, contextWindow: 262_144, description: "Code-agent model, superseded.", deprecationNote: "Retires Jul 31, 2026. Use Mistral Medium 3.5", retiresOn: "2026-07-31", replacedBy: "mistral:mistral-medium-latest" }), // Mistral's retired table: deprecated 2026-05-22, retired 2026-07-31
 
   // Grok 4.7 (2026-09-21): same $2/$6 pricing and 500K context as 4.6, on a
   // 2.1T-parameter base (a 40% expansion over 4.6's 1.5T) with a longer
@@ -627,8 +637,8 @@ const CURATED: ModelInfo[] = [
   // and the choice between them is exactly the one a user should be making.
   def({ provider: "mimo", id: "mimo-v2.6-pro-ultraspeed", name: "MiMo V2.6 Pro UltraSpeed", family: "mimo-ultraspeed", status: "current", released: "2026-09", minPlan: "PRO", vision: true, reasoning: true, cost: 3, contextWindow: 1_050_000, description: "V2.6 Pro at up to 20x the speed: real-time and latency-sensitive work, at a premium rate." }),
   def({ provider: "mimo", id: "mimo-v2.6-flash", name: "MiMo V2.6 Flash", family: "mimo-flash", status: "current", released: "2026-09", minPlan: "FREE", vision: true, reasoning: true, cost: 1, contextWindow: 1_050_000, description: "Full-modality reasoning at low cost: the volume tier for high-frequency calls." }),
-  def({ provider: "mimo", id: "mimo-v2.5", name: "MiMo V2.5", family: "mimo-omni", status: "deprecated", released: "2026-04", minPlan: "FREE", vision: true, cost: 1, contextWindow: 1_050_000, description: "Natively omnimodal (text, audio, images and video in) at half the Pro's cost.", deprecationNote: "Retires Oct 20, 2026 (Xiaomi switches it off Oct 21, 10:00 Beijing, with no automatic replacement). Use MiMo V2.6 Flash", retiresOn: "2026-10-20", replacedBy: "mimo:mimo-v2.6-flash" }),
-  def({ provider: "mimo", id: "mimo-v2.5-pro", name: "MiMo V2.5 Pro", family: "mimo", status: "deprecated", released: "2026-04", minPlan: "PRO", vision: true, cost: 2, contextWindow: 1_050_000, description: "Previous MiMo flagship, superseded by V2.6 Pro.", deprecationNote: "Retires Oct 20, 2026 (Xiaomi switches it off Oct 21, 10:00 Beijing, with no automatic replacement). Use MiMo V2.6 Pro", retiresOn: "2026-10-20", replacedBy: "mimo:mimo-v2.6-pro" }),
+  def({ provider: "mimo", id: "mimo-v2.5", name: "MiMo V2.5", family: "mimo-omni", status: "deprecated", released: "2026-04", minPlan: "FREE", vision: true, cost: 1, contextWindow: 1_050_000, description: "Natively omnimodal (text, audio, images and video in) at half the Pro's cost.", deprecationNote: "Retires Oct 13, 2026 (Xiaomi answers it with MiMo V2.6 Flash from Oct 14). Use MiMo V2.6 Flash", retiresOn: "2026-10-13", replacedBy: "mimo:mimo-v2.6-flash" }),
+  def({ provider: "mimo", id: "mimo-v2.5-pro", name: "MiMo V2.5 Pro", family: "mimo", status: "deprecated", released: "2026-04", minPlan: "PRO", vision: false, cost: 2, contextWindow: 1_050_000, description: "Previous MiMo flagship, superseded by V2.6 Pro.", deprecationNote: "Retires Oct 13, 2026 (Xiaomi answers it with MiMo V2.6 Pro from Oct 14). Use MiMo V2.6 Pro", retiresOn: "2026-10-13", replacedBy: "mimo:mimo-v2.6-pro" }),
 
   // —— Alibaba · Qwen (DashScope / Model Studio, OpenAI-compatible) ——
   // qwen3.8-max: the GA of the 3.8 Max preview, which this replaces. Per its
@@ -643,6 +653,15 @@ const CURATED: ModelInfo[] = [
   def({ provider: "qwen", id: "qwen3.7-plus", name: "Qwen3.7 Plus", family: "qwen-plus", status: "current", released: "2026-05", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 1_000_000, description: "Balanced multimodal hybrid-thinking model with 1M context." }),
   // The id is exactly `qwen3.8-flash`: lowercase, with the period. Not
   // `Qwen3.8-Flash` and not `qwen-3.8-flash`, both of which 404.
+  // Qwen3.8 Omni Flash (owner-approved 2026-10-10), read 2026-10-10 from
+  // alibabacloud.com/help/en/model-studio/qwen3-8-omni-flash: text, image,
+  // audio and video in, text out, Singapore among its regions, 1M context
+  // (131,072 output), custom tool calling. $0.15 / $0.47, cache hit $0.016
+  // (model-pricing, Qwen-Omni, Singapore). Thinking is on by default "with
+  // adjustable reasoning effort", but the levels are not published, so the
+  // row claims no reasoning control and sends no thinking parameter: the
+  // model runs at its own default.
+  def({ provider: "qwen", id: "qwen3.8-omni-flash", name: "Qwen3.8 Omni Flash", family: "qwen-omni", status: "current", released: "2026-09", minPlan: "FREE", vision: true, reasoning: false, cost: 1, contextWindow: 1_000_000, description: "Qwen's omni-modal volume tier: text, images, audio and video in, 1M context, tool calling." }),
   def({ provider: "qwen", id: "qwen3.8-flash", name: "Qwen3.8 Flash", family: "qwen-flash", status: "current", released: "2026-08", minPlan: "FREE", vision: true, reasoning: true, cost: 1, contextWindow: 1_000_000, description: "Qwen's volume tier: text, image and video in, a 1M window, and a 256K thinking budget." }),
   // qwen3.7-flash (Model Studio page, read 2026-10-04): hybrid thinking on by
   // default (enable_thinking + thinking_budget, up to 262,144), image/video/
@@ -660,9 +679,6 @@ const CURATED: ModelInfo[] = [
   def({ provider: "qwen", id: "qwen3-235b-a22b", name: "Qwen3 235B A22B", family: "qwen3-open", status: "legacy", released: "2025-04", minPlan: "PRO", reasoning: true, agenticTools: false, cost: 2, contextWindow: 131_072, description: "Open-weight hybrid-thinking MoE (235B total / 22B active), superseded in hosted Model Studio." }),
   def({ provider: "qwen", id: "qwen3-30b-a3b", name: "Qwen3 30B A3B", family: "qwen3-open-flash", status: "legacy", released: "2025-04", minPlan: "FREE", reasoning: true, agenticTools: false, cost: 1, contextWindow: 131_072, description: "Efficient open-weight hybrid-thinking MoE (30B total / 3B active), superseded in hosted Model Studio." }),
   def({ provider: "qwen", id: "qwen-max", name: "Qwen Max", family: "qwen-max", status: "legacy", released: "2025-01", minPlan: "PRO", reasoning: false, agenticTools: false, cost: 3, contextWindow: 32_768, description: "Previous-generation Qwen-Max (2.5 line)." }),
-  def({ provider: "qwen", id: "qwen-turbo", name: "Qwen Turbo", family: "qwen-flash", status: "deprecated", released: "2025-04", minPlan: "FREE", reasoning: true, agenticTools: false, cost: 1, contextWindow: 131_072, description: "Older ultra-cheap Qwen3 tier with hybrid thinking (off by default).", deprecationNote: "Retires Oct 9, 2026 (Model Studio switches it off Oct 10, 00:00 Beijing). Use Qwen3.8 Flash", retiresOn: "2026-10-09", replacedBy: "qwen:qwen3.8-flash" }),
-  def({ provider: "qwen", id: "qwen-vl-max", name: "Qwen-VL Max", family: "qwen-vl", status: "deprecated", released: "2024-01", minPlan: "PRO", vision: true, agenticTools: false, cost: 2, contextWindow: 131_072, description: "Previous-generation vision-language model.", deprecationNote: "Retires Oct 9, 2026 (Model Studio switches it off Oct 10, 00:00 Beijing). Use Qwen3.7 Plus", retiresOn: "2026-10-09", replacedBy: "qwen:qwen3.7-plus" }),
-  def({ provider: "qwen", id: "qwq-plus", name: "QwQ Plus", family: "qwq", status: "deprecated", released: "2025-03", minPlan: "PRO", reasoning: true, agenticTools: false, cost: 2, contextWindow: 131_072, description: "Dedicated QwQ reasoning model, superseded by Qwen3 thinking.", deprecationNote: "Retires Oct 9, 2026 (Model Studio switches it off Oct 10, 00:00 Beijing). Use Qwen3.8 Max", retiresOn: "2026-10-09", replacedBy: "qwen:qwen3.8-max" }),
 
   // —— Meituan · LongCat ——
   def({ provider: "longcat", id: "LongCat-2.0", name: "LongCat 2.0", family: "longcat", status: "current", released: "2026-06", minPlan: "PRO", reasoning: true, cost: 2, contextWindow: 1_000_000, description: "Meituan's 1.6T-parameter open MoE: native 1M context via LongCat Sparse Attention." }),
@@ -685,10 +701,16 @@ const GENERATIVE: ModelInfo[] = [
   def({ provider: "openai", id: "gpt-image-1.5", name: "GPT Image 1.5", family: "gpt-image", status: "deprecated", released: "2025-12", modality: "image", minPlan: "PRO", cost: 2, description: "Previous OpenAI image generation and editing model.", deprecationNote: "Retires Dec 1, 2026. Use GPT Image 2.5 Sunburst", retiresOn: "2026-12-01", replacedBy: "openai:gpt-image-2.5-sunburst" }),
   def({ provider: "openai", id: "gpt-image-1", name: "GPT Image 1", family: "gpt-image", status: "deprecated", released: "2025-04", modality: "image", minPlan: "PRO", cost: 2, description: "Previous OpenAI image model.", deprecationNote: "Retires Oct 23, 2026. Use GPT Image 2.5", retiresOn: "2026-10-23", replacedBy: "openai:gpt-image-2.5-sunburst" }),
   def({ provider: "google", id: "gemini-3-pro-image", name: "Nano Banana Pro", family: "gemini-image-pro", status: "current", released: "2025-11", modality: "image", minPlan: "PRO", cost: 3, description: "Premium image generation: complex composition, text rendering, 4K." }),
-  def({ provider: "google", id: "gemini-3.1-flash-image", name: "Nano Banana 2", family: "gemini-image-flash", status: "current", released: "2026-04", modality: "image", minPlan: "PRO", cost: 2, description: "Workhorse image generation: 4K, references, Search grounding." }),
+  // Nano Banana 2.1 (owner-approved 2026-10-10), read 2026-10-10 from
+  // ai.google.dev/gemini-api/docs/models/gemini-nano-banana-2.1 and the
+  // pricing page: "an update to Nano Banana 2", 1K / 2K / 4K (default 1K),
+  // up to 14 reference images, Search grounding, text/image/video/PDF in.
+  // $0.0336 a 1K image, $0.0504 2K, $0.113 4K (spend.ts). It takes Nano
+  // Banana 2's place in the family, which steps down to legacy and stays
+  // callable; Google's deprecations page names 2.1 as Imagen 4's replacement.
+  def({ provider: "google", id: "gemini-nano-banana-2.1", name: "Nano Banana 2.1", family: "gemini-image-flash", status: "current", released: "2026-10", modality: "image", minPlan: "PRO", cost: 2, description: "Google's Flash image model: sharper text and layouts, 1K to 4K, up to 14 references, Search grounding." }),
+  def({ provider: "google", id: "gemini-3.1-flash-image", name: "Nano Banana 2", family: "gemini-image-flash", status: "legacy", released: "2026-04", modality: "image", minPlan: "PRO", cost: 2, description: "Workhorse image generation: 4K, references, Search grounding." }),
   def({ provider: "google", id: "gemini-3.1-flash-lite-image", name: "Nano Banana 2 Lite", family: "gemini-image-lite", status: "current", released: "2026-04", modality: "image", minPlan: "FREE", cost: 1, description: "Fastest, cheapest image generation for rapid ideation." }),
-  def({ provider: "google", id: "gemini-2.5-flash-image", name: "Nano Banana", family: "gemini-image-flash", status: "deprecated", released: "2025-08", modality: "image", minPlan: "PRO", cost: 2, description: "Pioneer Gemini image model.", deprecationNote: "Retires Oct 2, 2026. Use Nano Banana 2", retiresOn: "2026-10-02", replacedBy: "google:gemini-3.1-flash-image" }),
-  def({ provider: "google", id: "imagen-4.0-generate-001", name: "Imagen 4", family: "imagen", status: "deprecated", released: "2025-05", modality: "image", minPlan: "PRO", cost: 2, description: "Last of the Imagen line.", deprecationNote: "Retires Aug 17, 2026. Use Nano Banana 2", retiresOn: "2026-08-17", replacedBy: "google:gemini-3.1-flash-image" }),
   def({ provider: "xai", id: "grok-imagine-image-2.0", name: "Grok Imagine 2.0", family: "imagine-image-2", status: "current", released: "2026-08", modality: "image", minPlan: "PRO", cost: 2, description: "xAI's latest image generation and editing model." }),
   // xAI's May 15 retirement guide: "On November 2, 2026, grok-imagine-image-
   // quality is itself retired in favor of grok-imagine-image-2.0".
@@ -730,7 +752,6 @@ const GENERATIVE: ModelInfo[] = [
   // Billed by output tokens: 5,792 a second of 720p at $17.50/M, about
   // $0.10/s (spend.ts).
   def({ provider: "google", id: "gemini-omni-1.1-flash", name: "Gemini Omni Flash", family: "gemini-omni", status: "current", released: "2026-08", modality: "video", minPlan: "MAX", cost: 2, description: "Conversational video: generate a clip, then edit or extend it by asking, from 360p drafts to 4K, with native audio." }),
-  def({ provider: "google", id: "gemini-omni-flash-preview", name: "Gemini Omni Flash Preview", family: "gemini-omni", status: "deprecated", released: "2026-06", modality: "video", minPlan: "MAX", cost: 2, description: "Conversational video generation and editing (preview).", deprecationNote: "Retires Sep 30, 2026. Use Gemini Omni Flash", retiresOn: "2026-09-30", replacedBy: "google:gemini-omni-1.1-flash" }),
   def({ provider: "xai", id: "grok-imagine-video", name: "Grok Imagine Video", family: "imagine-video", status: "current", released: "2025-10", modality: "video", minPlan: "MAX", cost: 2, description: "Text-, image-, and video-to-video generation." }),
   // grok-imagine-video-1.5-lite (docs.x.ai/developers/models/grok-imagine-
   // video-1.5-lite, 2026-10-04): text and image in, video out, $0.02/s at
@@ -788,9 +809,6 @@ export const DEFAULT_AUDIO_MODEL: ModelId = "google:lyria-3.5";
  * Hand-maintained, like RETIRED_MODELS — formerly the sync job's output.
  */
 const UNAVAILABLE: readonly ModelId[] = [
-  "deepseek:deepseek-chat",
-  "deepseek:deepseek-reasoner",
-  "deepseek:deepseek-v4-flash",
   // China (Beijing) only: its Model Studio page lists no Singapore region,
   // so the international endpoint cannot serve it. Saved chats move to the
   // default model (Qwen3.8 Flash, 1M context).
@@ -848,10 +866,10 @@ export const RETIRED_MODELS: Record<string, ModelId> = {
   "anthropic:claude-3-7-sonnet-20250219": "anthropic:claude-sonnet-5-5", // retired 2026-02-19
   "anthropic:claude-sonnet-4-20250514": "anthropic:claude-sonnet-5-5", // retired 2026-06-15
   "anthropic:claude-opus-4-20250514": "anthropic:claude-opus-5-5", // retired 2026-06-15
-  "anthropic:claude-3-5-haiku-20241022": "anthropic:claude-haiku-4-5",
+  "anthropic:claude-3-5-haiku-20241022": "anthropic:claude-haiku-5-5",
   "anthropic:claude-3-opus-20240229": "anthropic:claude-opus-5-5",
   "anthropic:claude-3-sonnet-20240229": "anthropic:claude-sonnet-5-5",
-  "anthropic:claude-3-haiku-20240307": "anthropic:claude-haiku-4-5",
+  "anthropic:claude-3-haiku-20240307": "anthropic:claude-haiku-5-5",
   // Retired at the API: GET /v1/models/claude-opus-4-1 -> 404 not_found_error
   // (the other nine Claude ids return 200 on the same key).
   "anthropic:claude-opus-4-1": "anthropic:claude-opus-5-5",
@@ -874,7 +892,7 @@ export const RETIRED_MODELS: Record<string, ModelId> = {
   // Google — marketing names listed as chat models + retired Imagen/Veo ids.
   "google:nano-banana-pro": "google:gemini-3.8-flash", // was mis-listed as a chat model
   "google:nano-banana-2": "google:gemini-3.8-flash", // was mis-listed as a chat model
-  "google:imagen-3.0-generate-002": "google:gemini-3.1-flash-image", // shut down 2025-11-10
+  "google:imagen-3.0-generate-002": "google:gemini-nano-banana-2.1", // shut down 2025-11-10
   "google:imagen-3.0-fast-002": "google:gemini-3.1-flash-lite-image", // id never existed; line retired
   // Listed by ListModels but 404s on every call: "no longer available to new users".
   "google:gemini-2.5-flash": "google:gemini-3.8-flash",
@@ -939,8 +957,10 @@ export const RETIRED_MODELS: Record<string, ModelId> = {
   "xai:grok-imagine-image-pro": "xai:grok-imagine-image-2.0", // retired 2026-05-15
   "xai:grok-3-image": "xai:grok-imagine-image-2.0", // never existed
   "xai:grok-2-image": "xai:grok-imagine-image-2.0", // retired 2026-02-28 (real id grok-2-image-1212)
-  // MiMo — ids Xiaomi no longer serves. V2.5 and V2.5 Pro still answer until
-  // 2026-10-21 and carry their own retiresOn, so they are NOT here.
+  // MiMo — ids Xiaomi no longer serves. V2.5 and V2.5 Pro carry their own
+  // retiresOn (Oct 13: Xiaomi routes both to V2.6 from 10:00 Beijing on Oct 14
+  // and the names stop answering Oct 21, mimo.mi.com "Model Deprecation"), so
+  // they move here when models:sync sees the date pass.
   "mimo:mimo-v2-pro": "mimo:mimo-v2.6-pro",
   "mimo:mimo-v2": "mimo:mimo-v2.6-flash",
   // Deprecated 2026-06-30 (mimo.mi.com "Model Deprecation"): requests were
@@ -956,6 +976,20 @@ export const RETIRED_MODELS: Record<string, ModelId> = {
   "qwen:qwen3.8-max-preview": "qwen:qwen3.8-max",
   "qwen:qwen-plus": "qwen:qwen3.7-plus",
   "qwen:qwen-flash": "qwen:qwen3.8-flash",
+  "google:gemini-3.7-flash": "google:gemini-3.8-flash", // retired 2026-10-09 (models:sync)
+  "google:gemini-3.5-flash": "google:gemini-3.8-flash", // retired 2026-10-09 (models:sync)
+  "deepseek:deepseek-v4-flash": "deepseek:deepseek-flash", // retired 2026-10-09 (models:sync)
+  "deepseek:deepseek-chat": "deepseek:deepseek-flash", // retired 2026-07-24 (models:sync)
+  "deepseek:deepseek-reasoner": "deepseek:deepseek-flash", // retired 2026-07-24 (models:sync)
+  "mistral:magistral-medium-2509": "mistral:mistral-medium-latest", // retired 2026-07-31 (models:sync)
+  "mistral:devstral-2512": "mistral:mistral-medium-latest", // retired 2026-07-31 (models:sync)
+  "qwen:qwen-turbo": "qwen:qwen3.8-flash", // retired 2026-10-09 (models:sync)
+  "qwen:qwen-vl-max": "qwen:qwen3.7-plus", // retired 2026-10-09 (models:sync)
+  "qwen:qwq-plus": "qwen:qwen3.8-max", // retired 2026-10-09 (models:sync)
+  // Nano Banana's own line continues in 2.1 (Google's page lists 3.1 Flash-Lite Image as the cheap alternative).
+  "google:gemini-2.5-flash-image": "google:gemini-nano-banana-2.1", // retired 2026-10-02 (models:sync)
+  "google:imagen-4.0-generate-001": "google:gemini-nano-banana-2.1", // retired 2026-08-17; Google's named replacement
+  "google:gemini-omni-flash-preview": "google:gemini-omni-1.1-flash", // retired 2026-09-30 (models:sync)
 };
 
 /** Ids whose retirement date has passed, mapped to what replaces them. */

@@ -15,7 +15,7 @@ import { streamChat, providerErrorMessage } from "@/lib/llm";
 import { checkBudget, releaseSpend, reserveSpend, modelRatesMicroUsdPerToken, type billingPeriodFor } from "@/lib/spend";
 import { createSseSender, SSE_HEADERS } from "@/lib/chat-stream";
 import { DEFAULT_PERSONALITY } from "@/lib/personalities";
-import { supportsFastMode } from "@/lib/pricing";
+import { resolveFastMode } from "@/lib/pricing";
 import { supportsProMode } from "@/lib/model-metrics";
 import { buildUsage } from "@/lib/chat-usage";
 import { createStallWatchdog, stallDetail, stallMessageFor } from "@/lib/chat-stall";
@@ -98,7 +98,7 @@ export async function runPrivateTurn({
   }
 
   const useWebSearch = !!input.webSearch && PLANS[plan].webSearch && modelInfo.webSearch;
-  const useFastMode = !!input.fastMode && supportsFastMode(modelInfo);
+  const useFastMode = resolveFastMode(modelInfo, input);
   const useProMode = !!input.proMode && supportsProMode(modelInfo);
   /*
    * A skill applies here too.

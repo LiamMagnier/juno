@@ -4,20 +4,30 @@
  * gallery (/dev/model-picker) renders, for a side-by-side check.
  *
  *   npx tsx scripts/export-model-picker-fixture.mts > native/macOS/JunoDesktop/Tests/Snapshots/ModelPickerWebFixtures.swift
+ *
+ * `npm run models:sync -- --apply` runs this after every catalogue change, and
+ * tests/model-picker-fixture-drift.test.ts fails when the committed fixture is
+ * not what this prints. The catalogue is read AS OF `FIXTURE_DAY` (default
+ * below, which the sync moves forward), so the output does not change at
+ * midnight on its own: retirements are applied by the sync, not by the clock.
  */
-import { GEN_MODELS, MODEL_LIST } from "@/lib/models";
-import { PROVIDERS } from "@/lib/providers";
-import { PLANS, modelRequiredPlan, planRank } from "@/lib/plans";
-import { defaultReasoning, getModelMetrics, reasoningOptions, sortModelsForDisplay, withSupersededMarked } from "@/lib/model-metrics";
-import { fastModeMultiplier } from "@/lib/pricing";
+export const DEFAULT_FIXTURE_DAY = "2026-10-10";
+const FIXTURE_DAY = process.env.FIXTURE_DAY ?? DEFAULT_FIXTURE_DAY;
+// Before the catalogue loads: MODEL_LIST is filtered by this day at import.
+process.env.JUNO_CATALOG_TODAY = FIXTURE_DAY;
+const { GEN_MODELS, MODEL_LIST } = await import("@/lib/models");
+const { PROVIDERS } = await import("@/lib/providers");
+const { PLANS, modelRequiredPlan, planRank } = await import("@/lib/plans");
+const { defaultReasoning, getModelMetrics, reasoningOptions, sortModelsForDisplay, withSupersededMarked } = await import("@/lib/model-metrics");
+const { fastModeMultiplier, ultraFastMultiplier } = await import("@/lib/pricing");
 
 const PLAN = "PRO" as const;
 const s = (v: string) => JSON.stringify(v);
 const opt = (v: string | null | undefined) => (v == null ? "nil" : s(v));
 
-const models = sortModelsForDisplay(withSupersededMarked([...MODEL_LIST, ...GEN_MODELS], "2026-10-09"));
+const models = sortModelsForDisplay(withSupersededMarked([...MODEL_LIST, ...GEN_MODELS], FIXTURE_DAY));
 const rows = models.map((m) => {
-  const metrics = getModelMetrics(m, new Date("2026-10-09"));
+  const metrics = getModelMetrics(m, new Date(FIXTURE_DAY));
   const options = reasoningOptions(m);
   const stopId = (v: string | null, label: string) => (v === null ? "instant" : label === "Thinking" ? "thinking" : v);
   const stops = options.length >= 2
@@ -27,6 +37,7 @@ const rows = models.map((m) => {
   const defaultLabel = options.find((o) => o.value === def)?.label ?? "";
   const defaultId = options.length >= 2 ? stopId(def, defaultLabel) : null;
   const fast = fastModeMultiplier(m);
+  const ultra = ultraFastMultiplier(m);
   const caps = [
     m.reasoning ? ".reasoning" : null,
     m.vision ? ".vision" : null,
@@ -51,7 +62,7 @@ const rows = models.map((m) => {
             speedGrade: ${metrics.speed},
             intelligenceGrade: ${metrics.intelligence},
             capabilities: [${caps.join(", ")}],
-            thinking: JunoThinkingLadder(stops: [${stops.join(", ")}], modelName: ${s(m.name)}, fastModeRateMultiplier: ${fast ?? "nil"}, defaultStopID: ${opt(defaultId)}),
+            thinking: JunoThinkingLadder(stops: [${stops.join(", ")}], modelName: ${s(m.name)}, fastModeRateMultiplier: ${fast ?? "nil"}, ${ultra != null ? `ultraFastRateMultiplier: ${ultra}, ` : ""}defaultStopID: ${opt(defaultId)}),
             unavailabilityReason: ${opt(reason)},
             deprecationNote: ${opt(m.status === "deprecated" ? m.deprecationNote ?? null : null)},
             retiresOn: ${opt(m.retiresOn)},

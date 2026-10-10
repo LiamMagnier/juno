@@ -58,6 +58,13 @@ export interface ComposerPrefs {
   webSearch: boolean;
   /** Premium "fast mode" — only ever applied to models that support it. */
   fastMode: boolean;
+  /**
+   * OpenAI's Ultrafast tier (GPT-6.1 Sol, GPT-6 Astra) — only ever applied to
+   * models that have it. Mutually exclusive with fastMode: they are two
+   * premiums for one thing, and the chat view turns one off as the other
+   * goes on. Defaults off, like proMode: it is 6x the standard rate.
+   */
+  ultraFast: boolean;
   /** GPT-5.6 pro execution — only ever applied to models that support it. */
   proMode: boolean;
 }
@@ -67,7 +74,7 @@ export interface ComposerPrefs {
 // proMode defaults OFF, unlike webSearch: it spends materially more output
 // tokens per turn, so it is a thing the user opts into rather than discovers
 // on their bill.
-const DEFAULT_COMPOSER_PREFS: ComposerPrefs = { reasoningEffort: "high", webSearch: true, fastMode: false, proMode: false };
+const DEFAULT_COMPOSER_PREFS: ComposerPrefs = { reasoningEffort: "high", webSearch: true, fastMode: false, ultraFast: false, proMode: false };
 
 /** The bundled catalog, marked the same way /api/models marks it a moment
  *  later. It is filtered against the server bootstrap before becoming visible:
@@ -97,6 +104,7 @@ function sanitizeComposerPrefs(v: unknown): Partial<ComposerPrefs> {
   // browser still holding {"canvas":false} from before drops it on read and
   // overwrites it on the next write, so nobody stays silently artifact-less.
   if (typeof o.fastMode === "boolean") out.fastMode = o.fastMode;
+  if (typeof o.ultraFast === "boolean") out.ultraFast = o.ultraFast;
   if (typeof o.proMode === "boolean") out.proMode = o.proMode;
   return out;
 }

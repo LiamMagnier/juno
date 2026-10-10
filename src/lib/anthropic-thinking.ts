@@ -36,8 +36,10 @@ export interface AnthropicThinkingBits {
 
 export function anthropicThinkingKind(providerModel: string): AnthropicThinkingKind {
   const id = providerModel.toLowerCase();
-  // Manual-only families — match before broader adaptive patterns.
-  if (id.includes("haiku")) return "manual";
+  // Manual-only families — match before broader adaptive patterns. Haiku 4.5
+  // only: Haiku 5.5 is adaptive, and `type: "enabled"` is a 400 on it
+  // (platform.claude.com/docs/en/models/haiku-5-5/migration-guide).
+  if (/haiku-[34]/.test(id) || id.includes("claude-3-haiku")) return "manual";
   if (id.includes("opus-4-5") || id.includes("sonnet-4-5")) return "manual";
   if (id.includes("opus-4-1") || /claude-3/.test(id)) return "manual";
   // Adaptive-required: fable, mythos, opus-5/5.5, opus-4-8, opus-4-7,
@@ -90,7 +92,10 @@ function alwaysOnDefaultEffort(providerModel: string): ReasoningEffort {
  * reaches the Instant branch.
  */
 export function adaptiveDefaultOn(providerModel: string): boolean {
-  return /(opus|sonnet)-5(?![-.]\d)|sonnet-5-5/.test(providerModel.toLowerCase());
+  // Haiku 5.5 thinks by default too, and takes `{type: "disabled"}` at effort
+  // high or below (thinking docs, 2026-10-10) — an Instant turn sends no
+  // effort, so the API's own default (medium) applies.
+  return /(opus|sonnet)-5(?![-.]\d)|sonnet-5-5|haiku-5-5/.test(providerModel.toLowerCase());
 }
 
 /**
@@ -116,7 +121,8 @@ export function needsSummarizedDisplay(providerModel: string): boolean {
     id.includes("opus-5") || // claude-opus-5 and claude-opus-5-5 alike
     id.includes("opus-4-8") ||
     id.includes("opus-4-7") ||
-    id.includes("sonnet-5")
+    id.includes("sonnet-5") ||
+    id.includes("haiku-5-5") // display defaults to "omitted" on Haiku 5.5 as well
   );
 }
 

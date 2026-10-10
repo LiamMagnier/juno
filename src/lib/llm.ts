@@ -1,4 +1,5 @@
 import "server-only";
+import type { FastMode } from "@/lib/pricing";
 import { streamAnthropic } from "@/lib/anthropic";
 import { streamGemini } from "@/lib/gemini";
 import { streamOpenAICompat } from "@/lib/openai-compat";
@@ -69,7 +70,7 @@ export async function* streamChat(opts: {
   systemStablePrefix?: string;
   /** Premium "fast mode": Anthropic speed:"fast" / OpenAI service_tier:"priority".
    *  The route only sets this on models that support it. */
-  fastMode?: boolean;
+  fastMode?: FastMode;
   /** OpenAI GPT-5.6 `reasoning.mode: "pro"` — deeper execution on the same model
    *  id. The route only sets this on models that support it. */
   proMode?: boolean;
@@ -189,7 +190,7 @@ export async function* streamChat(opts: {
           // yield* streamAnthropic(request)
           yield* streamAnthropic(
             model, system, history, maxTokens, signal, reasoningEffort, webSearch,
-            tools, dynamicContext, fastMode, opts.systemStablePrefix
+            tools, dynamicContext, fastMode === true, opts.systemStablePrefix
           );
           return;
         case "gemini-native":

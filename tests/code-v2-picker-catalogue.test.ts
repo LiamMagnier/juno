@@ -49,7 +49,8 @@ test("a lab lists Alevr, then your key; newest generation first; rows carry thei
   const groups = labGroups(INSTANCES, "anthropic");
   assert.deepEqual(groups.map((g) => g.title), ["Alevr", "Your Anthropic key"]);
   const names = groups[0].rows.map((r) => r.model.label);
-  assert.ok(names.indexOf("Claude Opus 5.5") < names.indexOf("Claude Haiku 4.5"));
+  // Haiku 5.5 replaced 4.5 as the current Haiku on 2026-10-07 (models:sync).
+  assert.ok(names.indexOf("Claude Opus 5.5") >= 0 && names.indexOf("Claude Opus 5.5") < names.indexOf("Claude Haiku 5.5"));
   assert.match(groups[0].rows[0].line, /^\$[\d.]+ \/ \$[\d.]+ · \d+[KM]$/);
   assert.match(groups[1].rows[0].line, /^Your key · \d+[KM]$/);
   // A lab without the user's key has only the Alevr group.

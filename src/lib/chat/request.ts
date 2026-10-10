@@ -185,6 +185,10 @@ export const chatBodySchema = z
     // Premium "fast mode" (Anthropic speed:"fast" / OpenAI service_tier:
     // "priority"). Honored only on models that support it (supportsFastMode).
     fastMode: z.boolean().optional(),
+    // OpenAI's Ultrafast service tier (service_tier:"ultrafast", Responses
+    // API): GPT-6.1 Sol and GPT-6 Astra at 6x standard. Honored only where
+    // supportsUltraFastMode; it takes precedence over fastMode.
+    ultraFast: z.boolean().optional(),
     // GPT-5.6 pro execution (reasoning.mode:"pro"). Honored only on models that
     // support it (supportsProMode); a request for it elsewhere is a recorded
     // degradation, not an error.

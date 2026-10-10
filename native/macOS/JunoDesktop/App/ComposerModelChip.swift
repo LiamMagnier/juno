@@ -26,6 +26,9 @@ struct ComposerModelChip: View {
     /// The selected stop on `scale`, by `NativeThinkingStop.id`.
     @Binding var stopID: String?
     @Binding var fastMode: Bool
+    /// Ultra fast: drawn in the effort panel only for a model on OpenAI's
+    /// Ultrafast tier (GPT-6.1 Sol, GPT-6 Astra).
+    @Binding var ultraFast: Bool
     /// Pro: drawn in the effort panel only for a model whose scale has it.
     @Binding var proMode: Bool
     /// The account's starred models, and how to star one; nil where there is
@@ -58,6 +61,7 @@ struct ComposerModelChip: View {
                 ladder: ladder,
                 stopID: $stopID,
                 fastMode: $fastMode,
+                ultraFast: $ultraFast,
                 proMode: $proMode,
                 favorites: favorites,
                 toggleFavorite: toggleFavorite,

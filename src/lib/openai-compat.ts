@@ -1,4 +1,5 @@
 import "server-only";
+import type { FastMode } from "@/lib/pricing";
 import OpenAI from "openai";
 import { getObjectBytes } from "@/lib/storage";
 import { providerApiKey, providerBaseUrl, PROVIDERS, type Provider } from "@/lib/providers";
@@ -300,7 +301,7 @@ export async function* streamOpenAICompat(
   tools?: ToolLoop,
   dynamicContext?: string,
   cacheKey?: string,
-  fastMode?: boolean,
+  fastMode?: FastMode,
   transport?: CompatTransport
 ): AsyncGenerator<LlmEvent> {
   const toolset = tools?.toolset;
@@ -391,6 +392,8 @@ export async function* streamOpenAICompat(
   // price. The route only sets fastMode on priority-eligible models, so relaying
   // it straight through is safe. (Anthropic's own fast mode lives in the native
   // adapter; this path covers OpenAI.)
+  // Chat Completions documents only "priority"; Ultrafast is a Responses tier
+  // (every model that has it routes to Responses), so it is never sent here.
   if (fastMode && model.provider === "openai") params.service_tier = "priority";
   // NOTE: assigned through the Record index rather than the SDK's typed field —
   // the installed openai types predate "none"/"xhigh"/"max", which the REST API

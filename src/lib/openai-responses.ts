@@ -1,4 +1,5 @@
 import "server-only";
+import { serviceTierFor, type FastMode } from "@/lib/pricing";
 import OpenAI from "openai";
 import { getObjectBytes } from "@/lib/storage";
 import { providerApiKey, providerBaseUrl, PROVIDERS } from "@/lib/providers";
@@ -225,7 +226,7 @@ export async function* streamOpenAIResponses(
   tools?: ToolLoop,
   dynamicContext?: string,
   cacheKey?: string,
-  fastMode?: boolean,
+  fastMode?: FastMode,
   proMode?: boolean,
   transport?: ResponsesTransport
 ): AsyncGenerator<LlmEvent> {
@@ -451,7 +452,10 @@ export async function* streamOpenAIResponses(
     Object.assign(params, openAIPromptCacheRequestFields(model, cacheKey));
     // OpenAI priority processing (premium latency). The route gates fastMode to
     // priority-eligible models, so relaying it straight through is safe.
-    if (fastMode) params.service_tier = "priority";
+    // "priority" (Fast) or "ultrafast" (GPT-6.1 Sol / GPT-6 Astra, Responses only).
+    const tier = serviceTierFor(fastMode);
+    // The SDK's service_tier union predates "ultrafast"; the API accepts it.
+    if (tier) params.service_tier = tier as typeof params.service_tier;
 
     const stream = await c.create(params, { signal });
 

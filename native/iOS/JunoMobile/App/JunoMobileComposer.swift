@@ -1326,6 +1326,7 @@ struct JunoMobileComposer: View {
       canvasEnabled: options.canvas ? nil : false,
       connectors: options.connectors,
       fastMode: options.fastMode,
+      ultraFast: options.ultraFast,
       proMode: options.proMode,
       contextTokens: contextTokens.filter { prompt.contains("@" + $0.label) }
     )

@@ -1,8 +1,9 @@
+import { execFileSync } from "node:child_process";
 import { describe, it } from "node:test";
 import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import { latestPerFamily, withSupersededMarked } from "../src/lib/model-metrics";
-import { hasRetired, isSupersededModel, migrateModelId, MODEL_LIST, MODELS, resolveModel, type ModelInfo } from "../src/lib/models";
+import { hasRetired, isSupersededModel, MODEL_LIST, MODELS, type ModelInfo } from "../src/lib/models";
 
 /**
  * What a model picker shows: every configured lab, every model still being
@@ -255,10 +256,25 @@ describe("retirement dates in the registry", () => {
 
   it("migrates a stored id off a model that has retired", () => {
     // A date passing has to behave like a RETIRED_MODELS entry, or the id keeps
-    // resolving to a model the provider no longer answers on.
-    const expired = Object.values(MODELS).find((m) => hasRetired(m) && m.replacedBy);
-    assert.ok(expired, "fixture requires at least one already-expired registry entry");
-    assert.equal(migrateModelId(expired.id), expired.replacedBy);
-    assert.equal(resolveModel(expired.id)?.id, expired.replacedBy);
+    // resolving to a model the provider no longer answers on. models:sync moves
+    // expired rows into RETIRED_MODELS, so today there may be none left to
+    // test against: the clock is moved past the last scheduled retirement in a
+    // child process instead (tests/model-retirement-clock.test.ts does the
+    // same for the pinned suites).
+    const retiring = Object.values(MODELS).filter((m) => m.retiresOn && m.replacedBy);
+    if (!retiring.length) return;
+    const last = retiring.map((m) => m.retiresOn!).sort().pop()!;
+    const after = new Date(Date.parse(`${last}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
+    const out = execFileSync(
+      "npx",
+      ["tsx", "-e", `import { MODEL_LIST, migrateModelId, resolveModel } from "./src/lib/models"; const ids = ${JSON.stringify(retiring.map((m) => m.id))}; console.log(JSON.stringify(ids.map((id) => [id, MODEL_LIST.some((m) => m.id === id), migrateModelId(id), resolveModel(id)?.id])));`],
+      { cwd: process.cwd(), encoding: "utf8", env: { ...process.env, JUNO_CATALOG_TODAY: after } }
+    );
+    for (const [id, listed, migrated, resolved] of JSON.parse(out) as [string, boolean, string, string][]) {
+      const heir = MODELS[id].replacedBy;
+      assert.equal(listed, false, `${id} is still listed on ${after}`);
+      assert.equal(migrated, heir, `${id} migrates to ${heir} on ${after}`);
+      assert.equal(resolved, heir, `${id} resolves to ${heir} on ${after}`);
+    }
   });
 });

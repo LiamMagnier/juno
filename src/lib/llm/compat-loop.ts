@@ -471,6 +471,7 @@ export function buildCompatRequest(
   // Without this most hosts report usage as null on every chunk.
   if (!NO_STREAM_USAGE.has(model.provider)) params.stream_options = { include_usage: true };
   // OpenAI priority processing; the route only sets fastMode on eligible models.
+  // Chat Completions documents only "priority" (Ultrafast is Responses-only).
   if (req.fastMode && model.provider === "openai") params.service_tier = "priority";
   Object.assign(params, shape.reasoning, maxTokenFields(model, req.maxTokens));
   // OpenAI: prompt_cache_key and the GPT-5.6 options. Mistral caches only when

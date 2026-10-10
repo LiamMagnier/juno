@@ -110,6 +110,7 @@
     "backup:restore": "node scripts/restore-production.mjs",
     "sync:benchmarks": "tsx scripts/fetch-benchmarks.ts",
     "radar:models": "tsx scripts/model-radar.ts",
+    "models:sync": "tsx scripts/model-sync/index.ts",
     "design:contract": "tsx scripts/generate-design-contract.ts",
     "design:contract:check": "tsx scripts/generate-design-contract.ts --check",
     "design:tokens": "tsx scripts/generate-design-tokens.ts",

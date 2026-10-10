@@ -56,6 +56,24 @@ final class NativeModelManifestTests: XCTestCase {
         XCTAssertFalse(model.supportsFastMode)
     }
 
+    /// OpenAI's Ultrafast tier arrives as its own key beside `fastMode`, so a
+    /// model can carry both premiums and a server without the key (or Auto)
+    /// offers none.
+    func testUltraFastDecodesBesideFlashAndNeverOnAuto() async throws {
+        let sol = fullModel
+            .replacingOccurrences(of: "\"id\": \"moonshot:kimi-k3\"", with: "\"id\": \"openai:gpt-6.1-sol\"")
+            .replacingOccurrences(of: "\"fastMode\": {\"rateMultiplier\":2.5},", with: "\"fastMode\": {\"rateMultiplier\":2}, \"ultraFastMode\": {\"rateMultiplier\":6},")
+        let permissiveAuto = autoModel
+            .replacingOccurrences(of: "\"deprecationNote\": null", with: "\"ultraFastMode\": {\"rateMultiplier\":6}, \"deprecationNote\": null")
+        let catalog = try await client(body: manifest(models: [sol, permissiveAuto, fullModel])).modelCatalog(for: accountID)
+        XCTAssertEqual(catalog.models[0].fastModeRateMultiplier, 2)
+        XCTAssertEqual(catalog.models[0].ultraFastRateMultiplier, 6)
+        XCTAssertTrue(catalog.models[0].supportsUltraFastMode)
+        XCTAssertEqual(NativeThinkingScale(model: catalog.models[0]).junoLadder.ultraFastRateMultiplier, 6)
+        XCTAssertNil(catalog.models[1].ultraFastRateMultiplier, "Auto never carries a premium")
+        XCTAssertNil(catalog.models[2].ultraFastRateMultiplier, "absent key: no Ultra fast")
+    }
+
     func testAutoOffersNeitherModeHoweverTheServerAnswers() async throws {
         // Auto routes per message, so a premium agreed to on the router would be
         // charged on a model the reader never picked. The client refuses on its
