@@ -114,7 +114,7 @@ test("built-in engine and children receive images, current permissions and separ
 
 test("text models receive current accessibility controls and routed vision children receive images", async () => {
   const mcp = new FakeMcp();
-  const sent: ComputerBridgeRequest[] = [];
+  const sent: Omit<ComputerBridgeRequest, "id" | "token">[] = [];
   const bridge: ComputerBridge = {
     async send(request) {
       sent.push(request);
