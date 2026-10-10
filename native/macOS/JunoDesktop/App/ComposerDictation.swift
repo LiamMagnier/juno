@@ -25,7 +25,7 @@ final class ComposerDictationSession {
     }
 
     let speech = JunoSpeechService()
-    private(set) var phase: Phase = .starting
+    fileprivate(set) var phase: Phase = .starting
 
     /// Whether the microphone or recognizer was refused rather than failing
     /// some other way — the one failure the status names.
@@ -68,6 +68,23 @@ final class ComposerDictationSession {
         !speech.transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 }
+
+#if DEBUG
+extension ComposerDictationSession {
+    /// A take with no microphone behind it, already listening: the snapshot
+    /// harness's dictation (see `JunoSpeechService.beginPreviewSession`).
+    func beginPreview(final: String = "", partial: String = "") {
+        speech.beginPreviewSession(final: final, partial: partial, speaking: !(final.isEmpty && partial.isEmpty))
+        speech.seedPreviewHistory()
+        phase = .listening
+    }
+}
+
+extension EnvironmentValues {
+    /// Hands the composer a dictation in progress, for snapshots only.
+    @Entry var junoPreviewDictation: ComposerDictationSession?
+}
+#endif
 
 // MARK: - The field slot
 
@@ -209,6 +226,23 @@ struct ComposerDictationControls<Disc: View>: View {
         case .failed: session.wasDenied ? "Microphone blocked" : nil
         case .starting, .finished: nil
         }
+    }
+}
+
+// MARK: - The light
+
+/// The voice light on the shell while dictating: ember, following the
+/// microphone, gone the moment the take is finished (the web's dictation
+/// wears the same `JunoVoiceGlow`, tone "you").
+struct ComposerDictationGlow: View {
+    let session: ComposerDictationSession
+
+    var body: some View {
+        JunoVoiceGlow(
+            mode: session.isListening ? .you : .off,
+            you: { [session] in session.speech.loudness },
+            cornerRadius: JunoComposerMetrics.cornerRadius
+        )
     }
 }
 

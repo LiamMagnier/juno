@@ -437,6 +437,15 @@ public final class JunoRealtimeVoiceController {
     /// vowels, highs flick on sibilants. Juno's are read at the playhead, not
     /// on arrival — see ``JunoVoicePlaybackEnvelope``.
     public private(set) var spectrum: JunoVoiceSpectrum = .silent
+    /// Your microphone alone, 0–1 on the speech-loudness window, unsmoothed
+    /// (the voice light keeps its own envelopes). Zero while muted.
+    ///
+    /// Split from ``level`` because the light draws each voice from its own
+    /// audio: talking over Juno shows two voices, not one blended line.
+    public private(set) var micLoudness: Double = 0
+    /// Juno's voice at the playhead — what is heard now, not what arrived —
+    /// on the same scale as ``micLoudness``.
+    public private(set) var replyLoudness: Double = 0
     /// Juno's audio is still coming out of the speaker. Outlives
     /// ``assistantSpeaking``, which ends when the relay has finished *sending*
     /// the answer, often a second or more before the listener has heard it.
@@ -2147,6 +2156,10 @@ public final class JunoRealtimeVoiceController {
                 let heard = playhead.map { self.playbackEnvelope.spectrum(at: $0) } ?? .silent
                 let audible = playhead.map { self.playbackEnvelope.hasAudio(after: $0) } ?? false
                 if audible != self.playbackAudible { self.playbackAudible = audible }
+                // Published only on a visible change, so a silent call does not
+                // invalidate its observers thirty times a second.
+                if abs(micTarget - self.micLoudness) > 0.004 { self.micLoudness = micTarget }
+                if abs(heard.level - self.replyLoudness) > 0.004 { self.replyLoudness = heard.level }
                 let target = max(micTarget, heard.level)
                 let rate = target > self.level ? Self.attackRate : Self.decayRate
                 self.level += (target - self.level) * (1 - exp(-rate * Self.meterInterval))
@@ -2338,6 +2351,8 @@ public final class JunoRealtimeVoiceController {
         box.reset()
         level = 0
         spectrum = .silent
+        micLoudness = 0
+        replyLoudness = 0
         playbackAudible = false
         assistantSpeaking = false
         #if os(iOS)
@@ -2416,6 +2431,13 @@ extension JunoRealtimeVoiceController {
                 let envelope = 0.5 + 0.5 * sin(t * 1.7) * sin(t * 0.6 + 1)
                 let tremor = 0.5 + 0.5 * sin(t * 11)
                 level = self.muted ? 0 : 0.18 + 0.55 * envelope * (0.6 + 0.4 * tremor)
+                if self.assistantSpeaking {
+                    replyLoudness = level
+                    micLoudness = 0
+                } else {
+                    micLoudness = level
+                    replyLoudness = 0
+                }
                 // Vowels in the lows, a sibilant flick in the highs every
                 // half-second or so, so previews show the lobes articulating.
                 let sibilant = max(0, sin(t * 7.3) * sin(t * 2.1 + 0.4))

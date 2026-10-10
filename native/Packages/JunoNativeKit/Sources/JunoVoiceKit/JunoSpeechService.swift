@@ -70,6 +70,12 @@ public final class JunoSpeechService {
     public private(set) var level: Double = 0
     /// Recent levels, newest last, for the waveform.
     public private(set) var levelHistory: [Double] = []
+    /// The microphone on the speech-loudness window (-52...-12 dBFS → 0...1),
+    /// unsmoothed: the scale the voice light and the waveform read, where a
+    /// normal voice reaches the top and a quiet room stays at the bottom.
+    public private(set) var loudness: Double = 0
+    /// Recent ``loudness`` values, newest last, one per meter tick (30 Hz).
+    public private(set) var loudnessHistory: [Double] = []
     public private(set) var lastErrorMessage: String?
 
     /// Everything heard so far — committed text plus the live hypothesis.
@@ -308,6 +314,11 @@ public final class JunoSpeechService {
                     self.levelHistory.removeFirst()
                 }
                 self.levelHistory.append(self.level)
+                self.loudness = RealtimeLoudness.normalized(self.tap.rawLevel)
+                if self.loudnessHistory.count >= Self.levelHistoryCapacity {
+                    self.loudnessHistory.removeFirst()
+                }
+                self.loudnessHistory.append(self.loudness)
             }
         }
     }
@@ -327,6 +338,8 @@ public final class JunoSpeechService {
         tap.rawLevel = 0
         level = 0
         levelHistory = []
+        loudness = 0
+        loudnessHistory = []
         isListening = false
         // The iOS audio session is left active on purpose: deactivating it here
         // clicks, and anything that speaks next would have to rebuild it.
@@ -389,6 +402,53 @@ public final class JunoSpeechService {
             }
             rawLevel = Double((sum / Float(frames)).squareRoot())
         }
+    }
+}
+#endif
+
+#if DEBUG && canImport(AVFoundation) && canImport(Speech)
+extension JunoSpeechService {
+    /// A take with no microphone behind it, for the screenshot harnesses: the
+    /// words given, and a synthetic loudness that moves the way a voice does
+    /// (two slow envelopes under a syllable tremor), so the waveform and the
+    /// voice light can be looked at on a simulator or offscreen. Debug-only.
+    /// `cancel()` or `stopAndFreeze()` ends it like a real take.
+    public func beginPreviewSession(final: String = "", partial: String = "", speaking: Bool = true) {
+        finalizedText = final
+        partialText = partial
+        isListening = true
+        active = true
+        permission = .granted
+        levelPump?.cancel()
+        levelPump = Task { [weak self] in
+            let started = Date()
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(33))
+                guard let self, self.active else { break }
+                let t = Date().timeIntervalSince(started)
+                let envelope = 0.5 + 0.5 * sin(t * 1.9) * sin(t * 0.7 + 1)
+                let tremor = 0.5 + 0.5 * sin(t * 13)
+                let loud = speaking ? 0.22 + 0.62 * envelope * (0.55 + 0.45 * tremor) : 0.05
+                self.loudness = loud
+                if self.loudnessHistory.count >= Self.levelHistoryCapacity {
+                    self.loudnessHistory.removeFirst()
+                }
+                self.loudnessHistory.append(loud)
+                self.level = loud * 0.6
+            }
+        }
+    }
+
+    /// Seeds the waveform's history with `seconds` of synthetic speech at once,
+    /// so an offscreen still shows a full row rather than its first frame.
+    public func seedPreviewHistory(phase: Double = 0) {
+        loudnessHistory = (0..<Self.levelHistoryCapacity).map { index in
+            let t = phase + Double(index) / 30
+            let envelope = 0.5 + 0.5 * sin(t * 1.9) * sin(t * 0.7 + 1)
+            let tremor = 0.5 + 0.5 * sin(t * 13)
+            return 0.22 + 0.62 * envelope * (0.55 + 0.45 * tremor)
+        }
+        loudness = loudnessHistory.last ?? 0
     }
 }
 #endif

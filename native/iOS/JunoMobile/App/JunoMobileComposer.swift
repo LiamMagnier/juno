@@ -357,12 +357,14 @@ struct JunoMobileComposer: View {
         JunoMobileVoiceSelfView(camera: voiceSession.camera) { voiceSession.camera.stop() }
       }
 
-      // Dictation REPLACES the composer rather than sitting beside it: it
-      // owns the microphone, the transcript and the send action for as long
-      // as it is up, and leaving the text field visible underneath invited
-      // typing into a field whose contents were about to be overwritten.
+      // Dictation is the composer listening: the same card, in the same
+      // place, holding the words being heard instead of the draft. The two
+      // share one cell (bottom-aligned) so the swap is a cross-fade in place,
+      // never two cards stacked for the length of the transition.
+      ZStack(alignment: .bottom) {
       if dictating {
         JunoMobileDictation(
+          draft: prompt,
           onCancel: { setDictating(false) },
           onStop: { transcript in
             setDictating(false)
@@ -375,7 +377,7 @@ struct JunoMobileComposer: View {
             send()
           }
         )
-        .transition(.opacity.combined(with: .move(edge: .bottom)))
+        .transition(.opacity)
       } else {
         JunoGlass(spacing: JunoSpace.snug) {
           VStack(alignment: .leading, spacing: 0) {
@@ -474,6 +476,14 @@ struct JunoMobileComposer: View {
           .junoGlass(
             in: RoundedRectangle(cornerRadius: 24, style: .continuous)
           )
+          // In a call the card's own edge carries the voice light: on the
+          // edge and outside it, never over the field.
+          .overlay {
+            if let voiceSession {
+              JunoMobileVoiceComposerGlow(session: voiceSession)
+                .transition(.opacity)
+            }
+          }
           .animation(JunoMotion.reduced(JunoMotion.chatControl, when: reduceMotion), value: thinkingOpen)
           // The "+" panel grows up out of the composer's leading corner, its
           // foot 8pt above the card: it never covers the field, and it shares
@@ -513,6 +523,7 @@ struct JunoMobileComposer: View {
         }
         .transition(.opacity)
       }
+      }
     }
     .padding(.horizontal, JunoSpace.regular)
     .padding(.vertical, JunoSpace.tight)
@@ -521,9 +532,6 @@ struct JunoMobileComposer: View {
     // field, which stays as wide as the screen it lights.
     .frame(maxWidth: JunoMobileMeasure.reading)
     .frame(maxWidth: .infinity)
-    // Voice is the one ambient field with semantic meaning. It remains mounted
-    // here so it tracks the keyboard with the safe-area composer.
-    .background(alignment: .bottom) { voiceGlowLayer }
     .junoHaptic(JunoMobileHaptic.send, trigger: sendHaptic)
     .junoHaptic(JunoMobileHaptic.stop, trigger: stopHaptic)
     .junoHaptic(JunoMobileHaptic.send, trigger: voiceStartHaptic)
@@ -641,19 +649,6 @@ struct JunoMobileComposer: View {
       })
     }
     return tokens
-  }
-
-  // MARK: Voice glow
-
-  /// Libraries.dev Voice, "mobile": the light pooled at the foot of the
-  /// screen and rising through the composer's glass. Mounted only during a
-  /// call, so an ordinary composer pays nothing for it.
-  @ViewBuilder
-  private var voiceGlowLayer: some View {
-    if let voiceSession {
-      JunoMobileVoiceComposerGlow(session: voiceSession)
-        .transition(.opacity)
-    }
   }
 
   /// The quiet offer under a long draft: "That's a long one — attach it as a
@@ -818,6 +813,9 @@ struct JunoMobileComposer: View {
       // <text>` types it and sends it, against the harness's paced stream.
       if let typed = JunoComposerPreviewFlags.value("--juno-preview-prompt") {
         prompt = typed
+      }
+      if JunoComposerPreviewFlags.value("--juno-preview-dictation") != nil {
+        setDictating(true)
       }
       if JunoComposerPreviewFlags.focusesComposer {
         composerFocused.wrappedValue = true
@@ -1029,7 +1027,7 @@ struct JunoMobileComposer: View {
   }
 
   private func setDictating(_ active: Bool) {
-    withAnimation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion)) {
+    withAnimation(JunoMotion.reduced(JunoMotion.chatControl, when: reduceMotion)) {
       dictating = active
     }
   }

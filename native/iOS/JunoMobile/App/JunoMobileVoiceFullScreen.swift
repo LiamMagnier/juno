@@ -27,19 +27,14 @@ struct JunoMobileVoiceFullScreen: View {
   @Environment(\.openURL) private var openURL
 
   private var controller: JunoRealtimeVoiceController { session.controller }
+  private static let discSize: CGFloat = 208
   private var canSee: Bool { controller.capabilities?.videoInput == true }
 
   var body: some View {
     ZStack {
+      // The canvas and nothing else: the light lives on the disc's edge, not
+      // as a wash over the room.
       Color.junoCanvas.ignoresSafeArea()
-      // The field, dimmed, as the room the orb sits in.
-      JunoVoiceAura(
-        level: controller.level,
-        speaking: controller.assistantSpeaking,
-        active: session.isLive
-      )
-      .opacity(0.55)
-      .ignoresSafeArea()
 
       VStack(spacing: 0) {
         topBar
@@ -189,13 +184,8 @@ struct JunoMobileVoiceFullScreen: View {
   // MARK: - Orb
 
   private var orb: some View {
-    JunoVoiceOrb(
-      level: controller.level,
-      speaking: controller.assistantSpeaking,
-      active: session.isLive,
-      pressed: holding
-    )
-    .frame(width: 260, height: 260)
+    JunoMobileVoiceDisc(session: session, side: Self.discSize, pressed: holding)
+      .padding(JunoSpace.section)
     .contentShape(Circle())
     .gesture(orbGesture)
     .accessibilityElement()
@@ -450,5 +440,40 @@ struct JunoMobileVoiceFullScreen: View {
     .buttonStyle(.plain)
     .accessibilityLabel(label)
     .accessibilityIdentifier(identifier)
+  }
+}
+
+/// The full-screen call's one object: a glass disc whose edge carries the
+/// voice light — the composer's light, on a circle. Ember while you speak,
+/// presence while Alevr does, the handoff travelling round it while it
+/// thinks. The old orb and the aura behind it are gone: one light, in one
+/// place, drawn the same way on every surface.
+///
+/// Pressing it (push to talk) settles it a few percent, the press and
+/// nothing more; Reduce Motion keeps the light's poses and drops the press.
+struct JunoMobileVoiceDisc: View {
+  let session: JunoMobileVoiceSession
+  let side: CGFloat
+  var pressed = false
+
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  var body: some View {
+    let controller = session.controller
+    Circle()
+        .fill(Color.clear)
+        .junoGlass(in: Circle())
+        .overlay {
+          JunoVoiceGlow(
+            mode: session.callPhase.glowMode,
+            you: { [controller] in controller.micLoudness },
+            alevr: { [controller] in controller.replyLoudness },
+            cornerRadius: side / 2,
+            margin: 40
+          )
+        }
+        .frame(width: side, height: side)
+    .scaleEffect(pressed && !reduceMotion ? 0.96 : 1)
+    .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: pressed)
   }
 }

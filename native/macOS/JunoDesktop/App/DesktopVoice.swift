@@ -213,16 +213,16 @@ enum DesktopVoiceCallPhase: Equatable {
         }
     }
 
-    /// Whose light the glow shows: the glow is the call's status (there is
-    /// no meter and no phase label). Warm while the floor is yours, cool while
-    /// Juno speaks, the whole palette gathered into a beam while it thinks,
-    /// grey when the microphone is off, held low otherwise.
-    var glowTone: JunoVoiceGlowTone {
+    /// Who holds the floor, as the voice light draws it: ember for you,
+    /// presence ink for Alevr, the handoff beam while it thinks, graphite
+    /// when muted, no light while there is no call to follow.
+    var glowMode: JunoVoiceGlowMode {
         switch self {
-        case .listening, .interrupting: .caller
-        case .speaking: .juno
+        case .listening, .interrupting: .you
+        case .speaking: .alevr
+        case .thinking: .thinking
         case .muted: .muted
-        case .thinking, .connecting, .reconnecting, .ended, .failed: .mixed
+        case .connecting, .reconnecting, .ended, .failed: .off
         }
     }
 
@@ -807,15 +807,15 @@ struct DesktopVoiceCallEnd: View {
 /// invalidate this view and nothing else.
 struct DesktopVoiceComposerGlow: View {
     let controller: JunoRealtimeVoiceController
+    /// The shell's own radius, so the light runs on its edge.
+    var cornerRadius: CGFloat = JunoComposerMetrics.cornerRadius
 
     var body: some View {
-        let phase = DesktopVoiceCallText.phase(controller)
         JunoVoiceGlow(
-            level: { [controller] in controller.muted ? 0 : controller.level },
-            bands: { [controller] in controller.muted ? .silent : controller.glowBands },
-            processing: phase == .thinking,
-            paused: phase.holdsGlowStill,
-            tone: phase.glowTone
+            mode: DesktopVoiceCallText.phase(controller).glowMode,
+            you: { [controller] in controller.micLoudness },
+            alevr: { [controller] in controller.replyLoudness },
+            cornerRadius: cornerRadius
         )
     }
 }

@@ -1,22 +1,44 @@
 import JunoDesignSystem
 import JunoVoiceKit
 import SwiftUI
+#if DEBUG
+  import JunoPreviewSupport
+#endif
 
-/// Dictate Mode: the composer's text field is replaced by a listening capsule.
+/// Dictate Mode: the composer, listening.
 ///
-/// Ported from the website's `ComposerDictation` — the same shape and the same
-/// three exits, because the shape is the argument. A microphone that just streams
-/// words into the text field gives no way to abandon a sentence you got wrong and
-/// no way to send without reaching back to the keyboard. So the capsule offers
-/// exactly three: **cancel** discards, **stop** hands the text to the composer to
-/// edit, **send** submits it.
+/// **What this replaced.** A floating capsule that took the composer's place: a
+/// different shape, a different material, a coral radial glow scaling behind
+/// it, a 32-bar gradient meter, an uppercase "LISTENING…" eyebrow with a dot,
+/// and the transcript floating in a second card above. Two new objects for one
+/// fact — the microphone is on — and the words you were saying were in neither
+/// of the places you were looking.
 ///
-///     ✕   ▁▃▅█▅▃▁ ▁▂▄▆▄▂▁ ▁▃▅   ■   ↑
+/// **What it is now** is the website's `ComposerDictation` with the iPhone's
+/// ChatGPT/Claude feel: the same card as the composer (same glass, same 24pt
+/// radius, same field inset, same 44pt row), so the swap reads as the field
+/// changing what it holds rather than something arriving.
 ///
-/// The live transcript floats *above* the capsule rather than filling it. Reading
-/// what you just said while the meter shows you are still being heard is the whole
-/// feedback loop; putting the text inside the capsule made it resize on every word.
+///     ┌─────────────────────────────────────────┐
+///     │ The words, as they are heard…           │   the field slot
+///     │ ✕   ▁▂▅▇▅▂▁▂▃▅▃▂ live waveform    ✓   ↑  │   the row
+///     └─────────────────────────────────────────┘
+///
+/// - The words land **in the field**, final in full ink, the live hypothesis
+///   in secondary until it settles, newest line pinned in view.
+/// - The row is a live waveform that flows from the right as you speak, with
+///   the three exits at the composer's own positions: ✕ discards (where `+`
+///   was), ✓ puts the words in the field to edit, ↑ sends (where Send is).
+/// - The card's edge carries the voice light in your ink, the same light a
+///   call draws, rising with your voice and leaving the moment you finish.
+///
+/// Reduce Motion: the waveform holds still at rest height and only the edge
+/// light's static pose says the microphone is live; the swap is a fade.
 struct JunoMobileDictation: View {
+    /// The words already typed, shown ahead of the live ones so the field does
+    /// not appear to empty as the microphone opens. Not part of the transcript
+    /// handed back — the composer appends to its own draft.
+    var draft: String = ""
     /// Discard and return to typing.
     let onCancel: () -> Void
     /// Finish and hand the transcript to the composer for editing.
@@ -27,241 +49,211 @@ struct JunoMobileDictation: View {
     @State private var speech = JunoSpeechService()
     @State private var startFailure: String?
     @State private var finishing = false
+    @State private var haptic = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.openURL) private var openURL
 
-    private var transcript: String { speech.transcript }
+    static let cornerRadius: CGFloat = 24
 
-    private var averageLevel: Double {
-        guard !speech.levelHistory.isEmpty else { return 0 }
-        let sum = speech.levelHistory.reduce(0.0, +)
-        return min(1.0, max(0.0, sum / Double(speech.levelHistory.count)))
+    private var transcript: String {
+        speech.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
     }
+
+    private var listening: Bool { speech.isListening && !finishing && startFailure == nil }
 
     var body: some View {
-        VStack(spacing: JunoSpace.cozy) {
-            if let startFailure {
-                unavailable(startFailure)
-            } else {
-                preview
-                ZStack {
-                    if !reduceMotion {
-                        Circle()
-                            .fill(
-                                RadialGradient(
-                                    colors: [
-                                        Color.junoAccent.opacity(0.35 + averageLevel * 0.45),
-                                        Color.junoAccent.opacity(0.1),
-                                        Color.clear,
-                                    ],
-                                    center: .center,
-                                    startRadius: 8,
-                                    endRadius: 90
-                                )
-                            )
-                            .frame(width: 220, height: 110)
-                            .scaleEffect(1.0 + averageLevel * 0.35)
-                            .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: averageLevel)
-                    }
-                    capsule
-                }
-            }
+        VStack(alignment: .leading, spacing: 0) {
+            field
+                .padding(.horizontal, JunoSpace.regular)
+                .padding(.top, JunoSpace.comfy)
+                .padding(.bottom, JunoSpace.tight)
+            row
+                .padding(.horizontal, JunoSpace.tight)
+                .padding(.bottom, JunoSpace.tight)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .junoGlass(in: RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous))
+        .overlay {
+            JunoVoiceGlow(
+                mode: listening ? .you : .off,
+                you: { [speech] in speech.loudness },
+                cornerRadius: Self.cornerRadius
+            )
+        }
+        .sensoryFeedback(.impact(weight: .light), trigger: haptic)
         .task { await begin() }
-        .accessibilityAddTraits(.isModal)
-    }
-
-    // MARK: - Preview
-
-    /// Committed words in full contrast, the live hypothesis dimmed — so the
-    /// reader can see which part of the sentence is still being revised.
-    private var preview: some View {
-        VStack(alignment: .leading, spacing: JunoSpace.tight) {
-            HStack(spacing: JunoSpace.tight) {
-                Circle()
-                    .fill(Color.junoAccent)
-                    .frame(width: 7, height: 7)
-                    .opacity(speech.isListening ? 1 : 0.4)
-                Text("Listening…")
-                    .junoFont(size: 11, relativeTo: .caption2, weight: .semibold)
-                    .foregroundStyle(Color.junoAccent)
-                    .textCase(.uppercase)
-            }
-            .padding(.horizontal, JunoSpace.regular)
-            .padding(.top, JunoSpace.cozy)
-
-            ScrollView {
-                Text(previewText)
-                    .junoFont(size: 15, relativeTo: .subheadline)
-                    .lineSpacing(4)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, JunoSpace.regular)
-                    .padding(.bottom, JunoSpace.cozy)
-            }
-            .frame(maxHeight: 120)
-            .scrollBounceBehavior(.basedOnSize)
-        }
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color.junoPopover.opacity(0.94))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .strokeBorder(Color.junoHairline, lineWidth: 1)
-        )
-        .shadow(color: Color.black.opacity(0.08), radius: 10, y: 4)
-        .accessibilityLabel(transcript.isEmpty ? "Listening" : transcript)
-        .accessibilityIdentifier("juno.mobile.dictation-preview")
-    }
-
-    private var previewText: AttributedString {
-        guard !transcript.isEmpty else {
-            var listening = AttributedString("Speak now, Alevr is listening…")
-            listening.foregroundColor = Color.junoMutedForeground
-            return listening
-        }
-        var result = AttributedString(speech.finalizedText)
-        let partial = speech.partialText.trimmingCharacters(in: .whitespaces)
-        guard !partial.isEmpty else { return result }
-        if !speech.finalizedText.isEmpty { result.append(AttributedString(" ")) }
-        var hypothesis = AttributedString(partial)
-        hypothesis.foregroundColor = Color.junoMutedForeground
-        result.append(hypothesis)
-        return result
-    }
-
-    // MARK: - Capsule
-
-    private var capsule: some View {
-        HStack(spacing: JunoSpace.cozy) {
-            circleButton(
-                icon: .close,
-                label: "Cancel dictation",
-                identifier: "juno.mobile.dictation-cancel",
-                style: .outline,
-                action: cancel
-            )
-
-            JunoMobileDictationMeter(levels: speech.levelHistory)
-                .frame(maxWidth: .infinity)
-
-            circleButton(
-                icon: .stop,
-                label: "Stop and edit",
-                identifier: "juno.mobile.dictation-stop",
-                style: .neutral,
-                glyphSize: 13,
-                action: stop
-            )
-
-            circleButton(
-                icon: .send,
-                label: "Send dictation",
-                identifier: "juno.mobile.dictation-send",
-                style: .accent,
-                action: send
-            )
-            .disabled(transcript.isEmpty)
-            .opacity(transcript.isEmpty ? 0.4 : 1)
-        }
-        .padding(.horizontal, JunoSpace.cozy)
-        .frame(height: 64)
-        .background(JunoGlassBackground(cornerRadius: 32))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Dictation")
         .accessibilityIdentifier("juno.mobile.dictation")
     }
 
-    private enum CircleStyle { case outline, neutral, accent }
+    // MARK: - The field slot
 
-    private func circleButton(
-        icon: JunoIcon,
-        label: String,
-        identifier: String,
-        style: CircleStyle,
-        glyphSize: Double = 15,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: {
-            #if os(iOS)
-            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-            #endif
-            action()
-        }) {
-            JunoIconView(icon, size: glyphSize)
-                .foregroundStyle(style == .accent ? Color.junoOnAccent : Color.primary)
-                .frame(width: 40, height: 40)
-                .background {
-                    switch style {
-                    case .outline:
-                        Circle().strokeBorder(Color.junoHairline, lineWidth: 1)
-                    case .neutral:
-                        Circle().fill(Color.junoMuted)
-                    case .accent:
-                        Circle().fill(Color.junoAccent)
-                    }
-                }
-                .frame(width: 44, height: 44)
-                .contentShape(Circle())
-        }
-        .buttonStyle(.plain)
-        .disabled(finishing)
-        .accessibilityLabel(label)
-        .accessibilityIdentifier(identifier)
-    }
-
-    // MARK: - Unavailable
-
-    private func unavailable(_ message: String) -> some View {
-        HStack(spacing: JunoSpace.cozy) {
-            JunoIconView(.mic, size: 15)
-                .foregroundStyle(Color.junoMutedForeground)
-            Text(message)
-                .junoFont(size: 13, relativeTo: .footnote)
-                .foregroundStyle(Color.junoMutedForeground)
+    private var field: some View {
+        ScrollView {
+            fieldText
+                .junoFont(size: 17, relativeTo: .body)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            circleButton(
-                icon: .close,
-                label: "Close dictation",
-                identifier: "juno.mobile.dictation-cancel",
-                style: .outline,
-                action: onCancel
-            )
+                .fixedSize(horizontal: false, vertical: true)
+                .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint), value: transcript)
         }
-        .padding(.leading, JunoSpace.regular)
-        .padding(.trailing, JunoSpace.cozy)
-        .frame(height: 64)
-        .background(JunoGlassBackground(cornerRadius: 32))
-        .accessibilityIdentifier("juno.mobile.dictation-unavailable")
+        .defaultScrollAnchor(.bottom)
+        .scrollBounceBehavior(.basedOnSize)
+        .scrollIndicators(.hidden)
+        // Six lines, the text field's own ceiling: a long take scrolls inside
+        // the card rather than pushing the conversation off the screen.
+        .frame(maxHeight: 132)
+        .fixedSize(horizontal: false, vertical: true)
+        .accessibilityLabel(accessibilityTranscript)
+        .accessibilityAddTraits(.updatesFrequently)
+        .accessibilityIdentifier("juno.mobile.dictation-preview")
     }
+
+    private var fieldText: Text {
+        if let startFailure {
+            return Text(startFailure).foregroundStyle(Color.junoSecondaryInk)
+        }
+        let typed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lead = typed.isEmpty
+            ? Text(verbatim: "")
+            : Text(verbatim: "\(typed) ").foregroundStyle(Color.junoSecondaryInk)
+        let final = speech.finalizedText.trimmingCharacters(in: .whitespaces)
+        let partial = speech.partialText.trimmingCharacters(in: .whitespaces)
+        if final.isEmpty, partial.isEmpty {
+            return typed.isEmpty
+                ? Text("Speak now, in any language.").foregroundStyle(Color.junoSecondaryInk)
+                : lead
+        }
+        let separator = final.isEmpty || partial.isEmpty ? "" : " "
+        return Text("\(lead)\(Text(verbatim: final).foregroundStyle(Color.junoForeground))\(separator)\(Text(verbatim: partial).foregroundStyle(Color.junoSecondaryInk))")
+    }
+
+    private var accessibilityTranscript: Text {
+        if let startFailure { return Text(startFailure) }
+        return transcript.isEmpty ? Text("Listening") : Text(verbatim: transcript)
+    }
+
+    // MARK: - The row
+
+    private var row: some View {
+        HStack(spacing: JunoSpace.tight) {
+            Button(action: cancel) {
+                JunoIconView(.close, size: 19)
+                    .foregroundStyle(Color.primary)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.junoQuietPress)
+            .accessibilityLabel("Cancel dictation")
+            .accessibilityIdentifier("juno.mobile.dictation-cancel")
+
+            if startFailure == nil {
+                JunoMobileDictationWaveform(samples: speech.loudnessHistory, active: listening)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 44)
+                    .transition(.opacity.combined(with: .scale(scale: 0.6, anchor: .leading)))
+
+                Button(action: stop) {
+                    JunoIconView(.check, size: 17, weight: .bold)
+                        .foregroundStyle(Color.primary)
+                        .frame(width: 36, height: 36)
+                        .modifier(JunoComposerGlassCircle())
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(finishing)
+                .accessibilityLabel("Stop and edit")
+                .accessibilityIdentifier("juno.mobile.dictation-stop")
+
+                Button(action: send) {
+                    JunoIconView(.arrowUp, size: 18, weight: .bold)
+                        .foregroundStyle(canSend ? Color.junoCanvas : Color.junoSecondaryInk)
+                        .frame(width: 36, height: 36)
+                        .modifier(JunoComposerSendBackground(active: canSend, tint: Color.primary))
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(!canSend)
+                .animation(JunoMotion.reduced(JunoMotion.sendMorph, when: reduceMotion, tier: .tint), value: canSend)
+                .accessibilityLabel("Send dictation")
+                .accessibilityIdentifier("juno.mobile.dictation-send")
+            } else {
+                Spacer(minLength: 0)
+                Button {
+                    guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+                    openURL(url)
+                } label: {
+                    Text("Open Settings")
+                        .junoFont(size: 15, relativeTo: .subheadline, weight: .medium)
+                        .foregroundStyle(Color.primary)
+                        .padding(.horizontal, JunoSpace.regular)
+                        .frame(height: 36)
+                        .modifier(JunoGlassCapsule())
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("juno.mobile.dictation-settings")
+            }
+        }
+    }
+
+    private var canSend: Bool { !transcript.isEmpty && !finishing }
 
     // MARK: - Actions
 
     private func begin() async {
+        #if DEBUG
+            // `--juno-preview-dictation idle|listening|transcribed`: a take with
+            // no microphone behind it, for screenshots on a simulator.
+            if let state = JunoComposerPreviewFlags.value("--juno-preview-dictation") {
+                switch state {
+                case "idle":
+                    speech.beginPreviewSession(speaking: false)
+                case "transcribed":
+                    speech.beginPreviewSession(
+                        final: "Can you move the design review to Thursday afternoon and",
+                        partial: "let the team know"
+                    )
+                    speech.seedPreviewHistory()
+                default:
+                    speech.beginPreviewSession(final: "", partial: "Move the design review to")
+                    speech.seedPreviewHistory(phase: 1.3)
+                }
+                return
+            }
+        #endif
         guard await speech.requestPermission() else {
-            startFailure = "Microphone or speech access was blocked — allow it in Settings to dictate."
+            startFailure = String(localized: "Alevr needs the microphone and speech recognition to dictate. Allow them in Settings.")
             return
         }
         do {
             try speech.start()
         } catch {
-            startFailure = (error as? LocalizedError)?.errorDescription
-                ?? error.localizedDescription
+            startFailure = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
         }
     }
 
     private func cancel() {
         finishing = true
+        haptic += 1
         speech.cancel()
         onCancel()
     }
 
     private func stop() {
         finishing = true
+        haptic += 1
         onStop(speech.stopAndFreeze())
     }
 
     private func send() {
         finishing = true
+        haptic += 1
         let text = speech.stopAndFreeze()
-        guard !text.isEmpty else {
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             onCancel()
             return
         }
@@ -269,55 +261,69 @@ struct JunoMobileDictation: View {
     }
 }
 
-struct JunoMobileDictationMeter: View {
-    let levels: [Double]
+/// The live waveform: your voice over the last second and a half, flowing in
+/// from the right, one bar per meter tick.
+///
+/// Bars rather than a line because a bar per moment is what the eye reads as
+/// "this is being recorded" (Voice Memos, ChatGPT, Claude), and because a
+/// still room has to look still: below speech loudness a bar sits at its
+/// floor, so the row only moves when you do. The oldest bars fade at the
+/// leading edge instead of being cut off.
+struct JunoMobileDictationWaveform: View {
+    /// Speech loudness, 0...1, newest last.
+    let samples: [Double]
+    let active: Bool
 
-    private static let barCount = 32
-    private static let barWidth: Double = 3.5
-    private static let spacing: Double = 3
-    private static let restingHeight: Double = 4
-    private static let maximumHeight: Double = 28
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    static let barWidth: CGFloat = 3
+    static let gap: CGFloat = 3
+    static let minimumHeight: CGFloat = 3
+    static let maximumHeight: CGFloat = 26
+
+    /// A sample's bar height. Below the floor is a room, not a voice; above
+    /// it a soft curve, so a word's onset rises rather than switching on.
+    static func height(for loudness: Double) -> CGFloat {
+        let floor = 0.14
+        guard loudness > floor else { return minimumHeight }
+        let x = min(1, (loudness - floor) / (0.82 - floor))
+        return minimumHeight + CGFloat(pow(x, 0.85)) * (maximumHeight - minimumHeight)
+    }
 
     var body: some View {
-        HStack(alignment: .center, spacing: Self.spacing) {
-            ForEach(0..<Self.barCount, id: \.self) { index in
-                Capsule(style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                Color.junoAccent.opacity(0.7 + level(at: index) * 0.3),
-                                Color.primary.opacity(0.4 + level(at: index) * 0.5),
-                            ],
-                            startPoint: .bottom,
-                            endPoint: .top
-                        )
-                    )
-                    .frame(width: Self.barWidth, height: height(at: index))
+        Canvas { context, size in
+            let pitch = Self.barWidth + Self.gap
+            let count = max(1, Int((size.width + Self.gap) / pitch))
+            let recent = Array(samples.suffix(count))
+            let ink = active ? Color.primary : Color.junoSecondaryInk.opacity(0.6)
+            let midY = size.height / 2
+            for slot in 0..<count {
+                // Right-aligned: the newest sample sits against the ✓.
+                let sampleIndex = recent.count - count + slot
+                let loudness = sampleIndex >= 0 && !reduceMotion && active ? recent[sampleIndex] : 0
+                let height = Self.height(for: loudness)
+                let x = CGFloat(slot) * pitch
+                let rect = CGRect(x: x, y: midY - height / 2, width: Self.barWidth, height: height)
+                // The leading quarter fades out, so the past leaves softly.
+                let fade = min(1, Double(slot) / max(1, Double(count) * 0.25))
+                context.fill(
+                    Path(roundedRect: rect, cornerRadius: Self.barWidth / 2),
+                    with: .color(ink.opacity(0.25 + 0.75 * fade))
+                )
             }
         }
-        .frame(height: Self.maximumHeight)
-        .animation(nil, value: levels)
         .accessibilityHidden(true)
-    }
-
-    private func level(at index: Int) -> Double {
-        let offset = Self.barCount - 1 - index
-        let position = levels.count - 1 - offset
-        guard position >= 0, position < levels.count else { return 0 }
-        return min(1, max(0, levels[position]))
-    }
-
-    private func height(at index: Int) -> Double {
-        Self.restingHeight
-            + level(at: index) * (Self.maximumHeight - Self.restingHeight)
     }
 }
 
 #if DEBUG
-#Preview("Dictation meter") {
+#Preview("Dictation waveform") {
     VStack(spacing: JunoSpace.section) {
-        JunoMobileDictationMeter(levels: (0..<48).map { _ in Double.random(in: 0...1) })
-        JunoMobileDictationMeter(levels: [])
+        JunoMobileDictationWaveform(
+            samples: (0..<48).map { 0.3 + 0.5 * abs(sin(Double($0) / 3)) }, active: true
+        )
+        .frame(height: 44)
+        JunoMobileDictationWaveform(samples: [], active: true).frame(height: 44)
     }
     .padding()
     .background(Color.junoCanvas)

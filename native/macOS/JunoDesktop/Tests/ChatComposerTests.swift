@@ -139,10 +139,11 @@ struct ChatComposerTests {
     /// gathered while it thinks, grey and still when muted.
     @Test
     func theGlowsToneIsThePhase() {
-        #expect(DesktopVoiceCallPhase.listening.glowTone == .caller)
-        #expect(DesktopVoiceCallPhase.speaking.glowTone == .juno)
-        #expect(DesktopVoiceCallPhase.thinking.glowTone == .mixed)
-        #expect(DesktopVoiceCallPhase.muted.glowTone == .muted)
+        #expect(DesktopVoiceCallPhase.listening.glowMode == .you)
+        #expect(DesktopVoiceCallPhase.speaking.glowMode == .alevr)
+        #expect(DesktopVoiceCallPhase.thinking.glowMode == .thinking)
+        #expect(DesktopVoiceCallPhase.muted.glowMode == .muted)
+        #expect(DesktopVoiceCallPhase.connecting.glowMode == .off)
         #expect(DesktopVoiceCallPhase.muted.holdsGlowStill)
         #expect(DesktopVoiceCallPhase.connecting.holdsGlowStill)
         #expect(!DesktopVoiceCallPhase.speaking.holdsGlowStill)

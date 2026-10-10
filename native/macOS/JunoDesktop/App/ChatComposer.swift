@@ -929,6 +929,9 @@ struct ChatComposer: View {
     /// The dictation in progress, if the reader is dictating. Dropping it is
     /// what tears the recognizer down.
     @State private var dictation: ComposerDictationSession?
+    #if DEBUG
+    @Environment(\.junoPreviewDictation) private var previewDictation
+    #endif
     /// Hanging up a call, and a save that failed afterwards. Held here because
     /// the call bar and the line above the shell are two views of it.
     @State private var voiceHangUp = DesktopVoiceHangUp()
@@ -1256,6 +1259,10 @@ struct ChatComposer: View {
             consumeDraftPrompt()
             focused = true
             isInCall = voiceActive
+            #if DEBUG
+            // The snapshot harness's dictation, already listening.
+            if let previewDictation { dictation = previewDictation }
+            #endif
             armPasteMonitor()
             pasteMonitor.install()
         }
@@ -1551,12 +1558,16 @@ struct ChatComposer: View {
         if isDropTargeted {
             JunoComposerDropEdge(label: "Drop to attach")
         } else if let voiceCall {
-            // The voice glow (premium voice pass): a band of light along the
-            // shell's bottom edge that rises with the voice and gathers into a
-            // travelling beam while the reply is thought through. Clipped to
-            // the shell, so it follows its corners and never reaches the page.
+            // The voice light (the website's): on the shell's own edge and
+            // a short falloff outside it, never over the field. Ember while
+            // you speak, presence while Alevr does, the handoff beam between.
             DesktopVoiceComposerGlow(controller: voiceCall.controller)
-                .clipShape(ContainerRelativeShape())
+                .transition(.opacity)
+        } else if let dictation {
+            // Dictation is the composer listening, so it wears the same
+            // light, in your ink only: it rises with your voice and leaves
+            // on the exit rung the moment the take is finished.
+            ComposerDictationGlow(session: dictation)
                 .transition(.opacity)
         } else if isPrivate {
             JunoComposerPrivateEdge()

@@ -208,22 +208,16 @@ enum JunoMobileVoiceCallPhase: Equatable {
         }
     }
 
-    /// Whose voice the glow shows: the warm dawn inks for you, the cool dusk
-    /// inks for Juno, the whole palette while it thinks, grey when muted.
-    var glowTone: JunoVoiceGlowTone {
+    /// Who holds the floor, as the voice light draws it: ember for you,
+    /// presence ink for Alevr, the handoff beam while it thinks, graphite
+    /// when muted, and no light at all while there is no call to follow.
+    var glowMode: JunoVoiceGlowMode {
         switch self {
-        case .listening: .caller
-        case .speaking, .interrupting: .juno
+        case .listening: .you
+        case .speaking, .interrupting: .alevr
+        case .thinking: .thinking
         case .muted: .muted
-        case .thinking, .connecting, .reconnecting, .ended, .unavailable: .mixed
-        }
-    }
-
-    /// No voice to follow: the light holds still and low.
-    var glowPaused: Bool {
-        switch self {
-        case .muted, .connecting, .reconnecting, .ended, .unavailable: true
-        case .listening, .thinking, .speaking, .interrupting: false
+        case .connecting, .reconnecting, .ended, .unavailable: .off
         }
     }
 
@@ -578,47 +572,24 @@ struct JunoMobileVoiceCallControls: View {
     }
 }
 
-/// The glow behind a composer that is a call.
+/// The voice light on the composer while it is a call: the website's light,
+/// on the card's own edge. Ember while you speak, presence while Alevr does,
+/// the handoff beam while it thinks — each voice from its own audio, so
+/// talking over Alevr lights both. Nothing is drawn over the field.
 ///
-/// A leaf so the level it reads every frame reaches only the canvas. The light
-/// pools on the composer's bottom edge and rises up through its glass, which
-/// is the Libraries.dev "mobile" composition; on a phone that edge sits just
-/// above the tab bar and the home indicator.
+/// A leaf, so the levels it samples every frame reach only the canvas.
 struct JunoMobileVoiceComposerGlow: View {
     let session: JunoMobileVoiceSession
-    /// How far the light rises above the composer's top edge.
-    var rise: CGFloat = 96
-    /// The strip under the composer's foot the bloom spills into and fades
-    /// out across.
-    var underhang: CGFloat = 36
-
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var appeared = false
+    var cornerRadius: CGFloat = 24
 
     var body: some View {
         let controller = session.controller
-        let phase = session.callPhase
         JunoVoiceGlow(
-            level: { [controller] in controller.muted ? 0 : controller.level },
-            bands: { [controller] in controller.muted ? .silent : controller.glowBands },
-            processing: phase == .thinking,
-            paused: phase.glowPaused,
-            tone: phase.glowTone,
-            edgeInset: underhang
+            mode: session.callPhase.glowMode,
+            you: { [controller] in controller.micLoudness },
+            alevr: { [controller] in controller.replyLoudness },
+            cornerRadius: cornerRadius
         )
-        // Up through the composer and a little above it, and a strip under
-        // its foot: the band sits on the composer's bottom edge and the bloom
-        // spills below it, fading out toward the home indicator.
-        .padding(.top, -rise)
-        .padding(.bottom, -underhang)
-        // Arriving mid-sentence is worse than arriving late: the light fades
-        // up rather than appearing at full strength the frame the call opens.
-        .opacity(appeared ? 1 : 0)
-        .task {
-            withAnimation(JunoMotion.reduced(JunoMotion.outSoft(JunoMotion.Duration.slow), when: reduceMotion)) {
-                appeared = true
-            }
-        }
     }
 }
 
