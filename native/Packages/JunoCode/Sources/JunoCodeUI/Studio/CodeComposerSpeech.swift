@@ -24,7 +24,8 @@ public struct CodeComposerSpeech {
     /// While a call is live: the row the call takes, given whether something
     /// is typed and the composer's own Send (which takes End's place then).
     public var callRow: ((_ hasDraft: Bool, _ send: AnyView) -> AnyView)?
-    /// While a call is live: the light along the shell's bottom edge.
+    /// While a call is live, or while dictating: the light on the shell's
+    /// edge (the host's `DesktopVoiceComposerGlow` or `ComposerDictationGlow`).
     public var callGlow: AnyView?
 
     public init(

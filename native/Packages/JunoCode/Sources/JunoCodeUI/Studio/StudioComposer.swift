@@ -171,12 +171,13 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
         // card under Reduce Transparency), so both products type into one
         // surface — the owner's rule: native glass, never a rebuilt one.
         .junoComposerGlass(cornerRadius: Studio.Radius.composer)
-        // A call's glow along the shell's bottom edge, clipped to its corners
-        // (Chat's `DesktopVoiceComposerGlow`, as the web's composer does it).
-        .overlay(alignment: .bottom) {
+        // The voice light on the shell's edge, a call's or dictation's, drawn
+        // as Chat's composer draws it (`DesktopVoiceComposerGlow`,
+        // `ComposerDictationGlow`): on the edge and a short falloff outside
+        // it, never over the field, so it is not clipped to the shell.
+        .overlay {
             if let glow = speech?.callGlow, takeover == nil {
                 glow
-                    .clipShape(RoundedRectangle(cornerRadius: Studio.Radius.composer, style: .continuous))
                     .allowsHitTesting(false)
                     .transition(.opacity)
             }
