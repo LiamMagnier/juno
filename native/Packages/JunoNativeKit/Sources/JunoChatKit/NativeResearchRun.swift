@@ -234,6 +234,11 @@ public struct NativeResearchRun: Equatable, Sendable, Identifiable {
     public var finishedAt: Date?
     public var assistantMessageID: String?
     public var leadModel: String?
+    /// The run's lead model, as the server recorded it; nil on older runs.
+    public var runModel: String?
+    /// Which models did the work, the web's `modelsLine`:
+    /// "Running on X", or "Running on X · Search by Y · X has no tool calling".
+    public var modelsLine: String?
     public var findings: [Finding]
     public var sources: [Source]
     public var steering: [Steering]
@@ -289,6 +294,8 @@ public struct NativeResearchRun: Equatable, Sendable, Identifiable {
         finishedAt: Date? = nil,
         assistantMessageID: String? = nil,
         leadModel: String? = nil,
+        runModel: String? = nil,
+        modelsLine: String? = nil,
         findings: [Finding] = [],
         sources: [Source] = [],
         steering: [Steering] = [],
@@ -318,6 +325,8 @@ public struct NativeResearchRun: Equatable, Sendable, Identifiable {
         self.finishedAt = finishedAt
         self.assistantMessageID = assistantMessageID
         self.leadModel = leadModel
+        self.runModel = runModel
+        self.modelsLine = modelsLine
         self.findings = findings
         self.sources = sources
         self.steering = steering
@@ -328,6 +337,27 @@ public struct NativeResearchRun: Equatable, Sendable, Identifiable {
         self.finishRequested = finishRequested
         self.steps = steps
         self.lastSeq = lastSeq
+    }
+
+    /// The models line, worded as the web's `modelsLine` (research-view.ts).
+    public static func modelsLine(
+        lead: String?, leadID: String?, worker: String?, workerID: String?,
+        workerNote: String?, chosen: Bool, done: Bool
+    ) -> String? {
+        guard let lead else { return nil }
+        let running = "\(done ? "Ran on" : "Running on") \(lead)"
+        guard let worker, let workerID, workerID != leadID else { return running }
+        if chosen {
+            var parts = [running, "Search by \(worker)"]
+            if workerNote == "no_tools" { parts.append("\(lead) has no tool calling") }
+            else if workerNote == "responses_api" { parts.append("\(lead) can't run the search tools") }
+            return parts.joined(separator: " \u{00B7} ")
+        }
+        return "Led by \(lead) \u{00B7} Researchers on \(worker)"
+    }
+
+    static func isTerminalState(_ state: String) -> Bool {
+        ["completed", "partially_completed", "failed", "cancelled"].contains(state)
     }
 
     /// Working time now: extrapolated between polls while working, frozen at
@@ -1003,6 +1033,14 @@ private struct ResearchRunEnvelopeWire: Decodable {
             let id: String?
             let label: String?
         }
+        /// The run's recorded models (`ResearchRunModels` on the web).
+        struct Models: Decodable {
+            let lead: Lead?
+            let worker: Lead?
+            let workerNote: String?
+            let writer: Lead?
+            let chosen: Bool?
+        }
         struct Finding: Decodable {
             let id: String
             let claim: String
@@ -1040,6 +1078,7 @@ private struct ResearchRunEnvelopeWire: Decodable {
         let finishedAt: String?
         let assistantMessageId: String?
         let leadModel: Lead?
+        let models: Models?
         let latestFindings: LossyList<Finding>?
         let sources: LossyList<Source>?
         let steering: LossyList<Steering>?
@@ -1053,7 +1092,7 @@ private struct ResearchRunEnvelopeWire: Decodable {
 
         private enum CodingKeys: String, CodingKey {
             case id, conversationId, goal, state, title, phase, phaseDetail, plan, questions, counts, workingMs,
-                 createdAt, finishedAt, assistantMessageId, leadModel, latestFindings, sources, steering, estimate,
+                 createdAt, finishedAt, assistantMessageId, leadModel, models, latestFindings, sources, steering, estimate,
                  report, revising, finishRequested, costMicroUsd, auditSummary, error
         }
 
@@ -1074,6 +1113,7 @@ private struct ResearchRunEnvelopeWire: Decodable {
             finishedAt = try? container.decodeIfPresent(String.self, forKey: .finishedAt)
             assistantMessageId = try? container.decodeIfPresent(String.self, forKey: .assistantMessageId)
             leadModel = try? container.decodeIfPresent(Lead.self, forKey: .leadModel)
+            models = try? container.decodeIfPresent(Models.self, forKey: .models)
             latestFindings = try? container.decodeIfPresent(LossyList<Finding>.self, forKey: .latestFindings)
             sources = try? container.decodeIfPresent(LossyList<Source>.self, forKey: .sources)
             steering = try? container.decodeIfPresent(LossyList<Steering>.self, forKey: .steering)
@@ -1195,6 +1235,16 @@ private struct ResearchRunEnvelopeWire: Decodable {
             finishedAt: run.finishedAt.flatMap(parseDate),
             assistantMessageID: run.assistantMessageId,
             leadModel: run.leadModel?.label,
+            runModel: run.models?.lead?.label,
+            modelsLine: NativeResearchRun.modelsLine(
+                lead: run.models?.lead?.label,
+                leadID: run.models?.lead?.id,
+                worker: run.models?.worker?.label,
+                workerID: run.models?.worker?.id,
+                workerNote: run.models?.workerNote,
+                chosen: run.models?.chosen ?? false,
+                done: NativeResearchRun.isTerminalState(run.state)
+            ),
             findings: (run.latestFindings?.elements ?? []).prefix(5).map {
                 NativeResearchRun.Finding(
                     id: $0.id, claim: $0.claim, quote: $0.quote, url: $0.url.flatMap(URL.init(string:)),

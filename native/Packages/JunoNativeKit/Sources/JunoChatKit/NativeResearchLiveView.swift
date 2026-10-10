@@ -154,9 +154,22 @@ public struct NativeResearchLiveView: View {
                     .transition(.opacity)
                     .accessibilityLabel("Research: \(phaseSentence)")
                 Spacer(minLength: JunoSpace.snug)
+                // Which model is working, beside the clock (recorded, never guessed).
+                if let model = run.runModel {
+                    Text(model)
+                        .foregroundStyle(Color.junoSecondaryInk)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
                 clock
             }
             .junoFont(size: 12, relativeTo: .caption, design: .monospaced)
+            if let models = run.modelsLine {
+                Text(models)
+                    .junoFont(size: 12, relativeTo: .caption, design: .monospaced)
+                    .foregroundStyle(Color.junoSecondaryInk)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             Text(title)
                 .font(JunoSerif.font(size: compact ? 23 : 27, relativeTo: .title2))
                 .foregroundStyle(Color.junoForeground)

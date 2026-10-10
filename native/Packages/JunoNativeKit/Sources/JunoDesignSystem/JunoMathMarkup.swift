@@ -153,7 +153,8 @@ public enum JunoMathMarkup {
                     index += 1
                     continue
                 }
-                if let close = closingInlineDollar(in: chars, after: index) {
+                if let close = closingInlineDollar(in: chars, after: index),
+                   !looksLikeMoney(chars[(index + 1)..<close]) {
                     emitMath(chars[(index + 1)..<close], display: false)
                     index = close + 1
                     continue
@@ -238,6 +239,17 @@ public enum JunoMathMarkup {
             index += 1
         }
         return nil
+    }
+
+    /// A `$…$` run that opens on a figure and reads like prose (a space, no TeX
+    /// signal such as `\`, `^`, `_`, `{`, `=`) is a price that happened to pass
+    /// the delimiter rules: "$5 a month to 10$". The web renderer applies the
+    /// same rule (src/components/chat/markdown-currency.ts), so a report reads
+    /// the same on both.
+    private static func looksLikeMoney(_ body: ArraySlice<Character>) -> Bool {
+        guard let first = body.first, first.isNumber else { return false }
+        guard body.contains(where: \.isWhitespace) else { return false }
+        return !body.contains(where: { "\\^_{}=<>".contains($0) })
     }
 
     /// Index of the first occurrence of `needle`, or nil. Used for the

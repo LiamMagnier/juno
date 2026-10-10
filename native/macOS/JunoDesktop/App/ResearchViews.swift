@@ -680,6 +680,7 @@ struct DesktopResearchPanel: View {
 
     private var details: some View {
         VStack(alignment: .leading, spacing: JunoSpace.cozy) {
+            if let models = run.modelsLine { fact("Models", models) }
             if let lead = run.leadModel { fact("Written by", lead) }
             if run.counts.pages > 0 {
                 fact("Pages read", NativeRunPhrase([.count(run.counts.pages, one: "page", other: "pages", approx: false)]).text)
