@@ -1653,6 +1653,127 @@ public enum CodeV2 {
         case conversationRead = "conversation.read"
         case conversationToggle = "conversation.toggle"
         case skillsList = "skills.list"
+        // remote lane (docs/code-v2/REMOTE-CONTROL.md)
+        case fsList = "fs.list"
+        case gitStatus = "git.status"
+        case gitCommit = "git.commit"
+        case gitPush = "git.push"
+        case gitPr = "git.pr"
+        case hostInfo = "host.info"
+        case hostCapture = "host.capture"
+    }
+
+    // MARK: Remote lane (docs/code-v2/REMOTE-CONTROL.md)
+
+    // contract: FS_ENTRY_KIND_VALUES
+    public enum FsEntryKind: String, Codable, Sendable, CaseIterable, Hashable {
+        case dir
+        case file
+    }
+
+    /// One row of the `fs.list` folder browser.
+    public struct FsEntry: Codable, Sendable, Hashable, Identifiable {
+        public var name: String
+        public var path: String
+        public var kind: FsEntryKind
+        public var isRepo: Bool?
+        public var id: String { path }
+
+        public init(name: String, path: String, kind: FsEntryKind, isRepo: Bool? = nil) {
+            self.name = name
+            self.path = path
+            self.kind = kind
+            self.isRepo = isRepo
+        }
+    }
+
+    /// The `fs.list` result.
+    public struct FsListing: Codable, Sendable, Hashable {
+        public var path: String
+        public var parent: String?
+        public var entries: [FsEntry]
+
+        public init(path: String, parent: String? = nil, entries: [FsEntry]) {
+            self.path = path
+            self.parent = parent
+            self.entries = entries
+        }
+    }
+
+    public struct GitFileStatus: Codable, Sendable, Hashable {
+        public var path: String
+        public var status: String
+
+        public init(path: String, status: String) {
+            self.path = path
+            self.status = status
+        }
+    }
+
+    /// The `git.status` result.
+    public struct GitStatusResult: Codable, Sendable, Hashable {
+        public var branch: String?
+        public var upstream: String?
+        public var ahead: Int
+        public var behind: Int
+        public var files: [GitFileStatus]
+        public var isRepo: Bool
+        public var canOpenPr: Bool
+        public var remoteUrl: String?
+
+        public init(
+            branch: String? = nil, upstream: String? = nil, ahead: Int = 0, behind: Int = 0,
+            files: [GitFileStatus] = [], isRepo: Bool, canOpenPr: Bool = false, remoteUrl: String? = nil
+        ) {
+            self.branch = branch
+            self.upstream = upstream
+            self.ahead = ahead
+            self.behind = behind
+            self.files = files
+            self.isRepo = isRepo
+            self.canOpenPr = canOpenPr
+            self.remoteUrl = remoteUrl
+        }
+    }
+
+    // contract: REMOTE_CAPTURE_TARGET_VALUES
+    public enum RemoteCaptureTarget: String, Codable, Sendable, CaseIterable, Hashable {
+        case preview
+        case simulator
+    }
+
+    /// The `host.info` result: answered by the Mac app, not the env server.
+    public struct HostInfo: Codable, Sendable, Hashable {
+        public var name: String
+        public var sharedFolders: [String]
+        public var terminal: Bool
+        public var captures: [RemoteCaptureTarget]
+        public var appVersion: String?
+
+        public init(name: String, sharedFolders: [String], terminal: Bool, captures: [RemoteCaptureTarget], appVersion: String? = nil) {
+            self.name = name
+            self.sharedFolders = sharedFolders
+            self.terminal = terminal
+            self.captures = captures
+            self.appVersion = appVersion
+        }
+    }
+
+    /// The `host.capture` result: `data` is base64 PNG.
+    public struct HostCapture: Codable, Sendable, Hashable {
+        public var mime: String
+        public var data: String
+        public var width: Int
+        public var height: Int
+        public var at: String
+
+        public init(mime: String = "image/png", data: String, width: Int, height: Int, at: String) {
+            self.mime = mime
+            self.data = data
+            self.width = width
+            self.height = height
+            self.at = at
+        }
     }
 
     /// The git worktree a session runs in (`SessionSnapshot.worktree`).

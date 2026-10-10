@@ -4,6 +4,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/code-remote";
 import { sessionCommandRateLimit } from "@/lib/code-session-command-route";
+import { requireRemotePair } from "@/lib/code-v2/device-pairing-store";
 import { canonicalSessionCommand } from "@/lib/code-session-command-compat";
 import {
   TRANSCRIPT_POLICIES,
@@ -102,6 +103,8 @@ async function enqueueMutation(
   const { deviceId, sessionId } = await params;
   const session = await ownedSession(deviceId, sessionId, user.id);
   if (!session) return NextResponse.json({ error: "Session not found" }, { status: 404 });
+  const unpaired = await requireRemotePair(req, user.id, deviceId);
+  if (unpaired) return unpaired;
   const parsed = patchSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid input" }, { status: 400 });
   if (parsed.data.expectedVersion && parsed.data.expectedVersion !== session.snapshotVersion) {

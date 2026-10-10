@@ -68,6 +68,16 @@ export const LINK_RELAYED_COMMANDS: ReadonlySet<ClientCommandType> = new Set<Cli
   "conversation.toggle",
   // skills lane: what is installed on the Mac (names, descriptions, paths; the env server never sends a body).
   "skills.list",
+  // remote lane (docs/code-v2/REMOTE-CONTROL.md): the folder browser and shipping a session's work
+  // (the Mac keeps both inside its shared folders and link-opened sessions), and what the Mac app
+  // itself answers: its name and shared folders, a preview or Simulator screenshot.
+  "fs.list",
+  "git.status",
+  "git.commit",
+  "git.push",
+  "git.pr",
+  "host.info",
+  "host.capture",
 ]);
 
 /**

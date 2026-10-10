@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/code-remote";
 import { canonicalSessionCommand } from "@/lib/code-session-command-compat";
 import { rateLimit } from "@/lib/rate-limit";
+import { requireRemotePair } from "@/lib/code-v2/device-pairing-store";
 
 export type SessionRouteParams = Promise<{ deviceId: string; sessionId: string }>;
 
@@ -38,6 +39,10 @@ export async function enqueueSessionCommand(
     where: { userId: user.id, deviceId, sessionId, deletedAt: null },
   });
   if (!session) return NextResponse.json({ error: "Session not found" }, { status: 404 });
+  // Remote control: a command from a phone or browser needs a live pair with
+  // this Mac, on top of the account owning it (docs/code-v2/REMOTE-CONTROL.md).
+  const unpaired = await requireRemotePair(req, user.id, deviceId);
+  if (unpaired) return unpaired;
   const parsed = validate(await req.json().catch(() => null));
   if (!parsed.success || !parsed.data) return NextResponse.json({ error: "Invalid input" }, { status: 400 });
   const idempotencyKey = parsed.data.idempotencyKey;

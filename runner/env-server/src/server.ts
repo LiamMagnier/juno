@@ -34,6 +34,7 @@ import {
   type UserInput,
 } from "./contracts/code-v2.js";
 import { ProviderRegistry } from "./providers/registry.js";
+import { gitCommit, gitPullRequest, gitPush, gitStatus, listFolder } from "./remote/remote-commands.js";
 import type { EnvSecrets, ProviderAdapter } from "./providers/types.js";
 import { ClaudeAgentAdapter, type ClaudeQueryFn } from "./providers/claude-agent.js";
 import { CodexAdapter } from "./providers/codex.js";
@@ -430,6 +431,16 @@ export class Connection {
   }
 }
 
+/** A remote-lane command's folder: its session's cwd, or an absolute `cwd`. */
+function remoteCwd(sessions: ConnectionDeps["sessions"], params: { sessionId?: string; cwd?: string }): string {
+  if (typeof params.sessionId === "string" && params.sessionId) {
+    if (!sessions.has(params.sessionId)) throw new WireError("not_found", `No session ${params.sessionId}.`);
+    return sessions.log(params.sessionId).meta.cwd;
+  }
+  if (typeof params.cwd === "string" && path.isAbsolute(params.cwd)) return params.cwd;
+  throw new WireError("bad_request", "A session or an absolute cwd is required.");
+}
+
 /** Executes one command against the server state. Shared by the WebSocket and the device relay. */
 export async function dispatchCommand(deps: ConnectionDeps, cmd: ClientCommand, _connection?: Connection): Promise<unknown> {
   const { sessions, registry, terminals, secrets } = deps;
@@ -469,6 +480,22 @@ export async function dispatchCommand(deps: ConnectionDeps, cmd: ClientCommand, 
       if (cwd && !path.isAbsolute(cwd)) throw new WireError("bad_request", "cwd must be an absolute path.");
       return { skills: await deps.skills.list(cwd) };
     }
+    // remote lane (docs/code-v2/REMOTE-CONTROL.md). Which folders a remote may
+    // name is the Mac app's rule (EnvServerDeviceLink); here a session's own
+    // folder, or an absolute cwd.
+    case "fs.list":
+      return listFolder(cmd.params.path, { files: cmd.params.files, showHidden: cmd.params.showHidden });
+    case "git.status":
+      return gitStatus(remoteCwd(sessions, cmd.params));
+    case "git.commit":
+      return gitCommit(remoteCwd(sessions, cmd.params), cmd.params.message);
+    case "git.push":
+      return gitPush(remoteCwd(sessions, cmd.params));
+    case "git.pr":
+      return gitPullRequest(remoteCwd(sessions, cmd.params), cmd.params);
+    case "host.info":
+    case "host.capture":
+      throw new WireError("unsupported", "Alevr on your Mac answers that, not its local environment.");
     case "conversation.toggle":
       if (!deps.conversations) throw new WireError("unsupported", "Conversations cannot message each other here.");
       return deps.conversations.toggle(cmd.params.sessionId, cmd.params.enabled);

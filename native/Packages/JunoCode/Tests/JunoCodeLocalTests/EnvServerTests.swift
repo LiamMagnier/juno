@@ -477,6 +477,100 @@ final class EnvServerTests: XCTestCase {
         XCTAssertEqual(stranger.error?.code, .badRequest)
     }
 
+    // MARK: Remote lane (docs/code-v2/REMOTE-CONTROL.md)
+
+    func testRemoteLaneStaysInsideSharedFoldersAndLinkedSessions() async {
+        let forwarded = ForwardLog()
+        let link = makeLink(forwarded: forwarded)
+        func rpc(_ type: String, _ params: [String: JSONValue]) async -> CodeV2.ServerResponse? {
+            await link.handle(EnvLinkRequest(kind: .rpc, command: .init(id: "1", type: type, params: .object(params)))).responses?.first
+        }
+        let browseOutside = await rpc("fs.list", ["path": .string("/Users/maya")])
+        XCTAssertEqual(browseOutside?.error?.code, .badRequest)
+        let browseEscape = await rpc("fs.list", ["path": .string("/Users/maya/code/shop/../../secrets")])
+        XCTAssertEqual(browseEscape?.error?.code, .badRequest)
+        let commitUnlinked = await rpc("git.commit", ["sessionId": .string("someone-else"), "message": .string("x")])
+        XCTAssertEqual(commitUnlinked?.error?.code, .badRequest)
+        let statusOutside = await rpc("git.status", ["cwd": .string("/Users/maya/private")])
+        XCTAssertEqual(statusOutside?.error?.code, .badRequest)
+        XCTAssertEqual(forwarded.types, [])
+
+        let browse = await rpc("fs.list", ["path": .string("/Users/maya/code/shop/web")])
+        XCTAssertEqual(browse?.ok, true)
+        _ = await rpc("session.open", ["cwd": .string("/Users/maya/code/shop")])
+        for type in ["git.status", "git.commit", "git.push", "git.pr"] {
+            let answer = await rpc(type, ["sessionId": .string("s-new"), "message": .string("m"), "title": .string("t")])
+            XCTAssertEqual(answer?.ok, true, type)
+        }
+        XCTAssertEqual(forwarded.types, [.fsList, .sessionOpen, .gitStatus, .gitCommit, .gitPush, .gitPr])
+    }
+
+    func testHostCommandsAreAnsweredByTheAppNeverTheEnvServer() async {
+        let forwarded = ForwardLog()
+        let plain = makeLink(forwarded: forwarded)
+        let refused = await plain.run(.init(id: "1", type: "host.info", params: .object([:])))
+        XCTAssertEqual(refused.error?.code, .unsupported, "no handler: an older app says so")
+
+        let answered = EnvServerDeviceLink(
+            allowedRoots: { ["/Users/maya/code/shop"] },
+            hostHandler: { type, _ in
+                type == .hostInfo ? .object(["name": .string("Studio Mac")]) : .object(["mime": .string("image/png")])
+            },
+            forward: { type, _ in
+                forwarded.append(type)
+                return .object([:])
+            }
+        )
+        let info = await answered.run(.init(id: "2", type: "host.info", params: .object([:])))
+        XCTAssertEqual(info.ok, true)
+        XCTAssertEqual(info.result, .object(["name": .string("Studio Mac")]))
+        let capture = await answered.run(.init(id: "3", type: "host.capture", params: .object(["target": .string("simulator")])))
+        XCTAssertEqual(capture.ok, true)
+        XCTAssertEqual(forwarded.types, [], "host.* never reaches the env server")
+    }
+
+    /// After the app restarts, the hub's replay of a followed session (cwd "/")
+    /// is re-admitted by the session's own folder, never by the cwd it names.
+    func testReplayAfterARestartIsReadmittedByTheSessionsOwnFolder() async {
+        let link = EnvServerDeviceLink(
+            allowedRoots: { ["/Users/maya/code/shop"] },
+            forward: { type, _ in
+                if type == .sessionList {
+                    return .object(["sessions": .array([
+                        .object(["id": .string("s-shop"), "cwd": .string("/Users/maya/code/shop/web")]),
+                        .object(["id": .string("s-private"), "cwd": .string("/Users/maya/private")]),
+                    ])])
+                }
+                if type == .sessionOpen { return .object(["sessionId": .string("s-shop")]) }
+                return .object([:])
+            }
+        )
+        let replay = await link.run(.init(id: "r1", type: "session.open", params: .object(["sessionId": .string("s-shop"), "cwd": .string("/"), "afterSequence": .number(12)])))
+        XCTAssertEqual(replay.ok, true)
+        let followUp = await link.run(.init(id: "r2", type: "turn.queue", params: .object(["sessionId": .string("s-shop"), "input": .object(["text": .string("next")])])))
+        XCTAssertEqual(followUp.ok, true, "the replayed session is linked again")
+        let privateReplay = await link.run(.init(id: "r3", type: "session.open", params: .object(["sessionId": .string("s-private"), "cwd": .string("/Users/maya/code/shop")])))
+        XCTAssertEqual(privateReplay.error?.code, .badRequest)
+    }
+
+    /// A push the backend did not take is retried in order, not dropped.
+    func testAFailedPushIsRetriedInOrderRatherThanDropped() async throws {
+        let posted = PostLog()
+        let failures = Counter(2)
+        let link = makeLink(forwarded: ForwardLog())
+        let channel = EnvServerDeviceLinkChannel(deviceId: "mac-1", link: link, flushDelay: .milliseconds(5)) { _, path, body in
+            posted.append(path, body)
+            return failures.take() ? (502, Data()) : (200, Data(#"{"accepted":1}"#.utf8))
+        }
+        await channel.enqueue(.event(CodeV2.ServerEventEnvelope(sessionId: "s1", sequence: 1, at: "2026-10-10T10:00:00Z", event: .sessionState(state: .running, resumeAt: nil, message: nil))))
+        await channel.enqueue(.event(CodeV2.ServerEventEnvelope(sessionId: "s1", sequence: 2, at: "2026-10-10T10:00:01Z", event: .sessionState(state: .idle, resumeAt: nil, message: nil))))
+        for _ in 0..<200 where posted.paths.count < 3 { try await Task.sleep(for: .milliseconds(20)) }
+        XCTAssertEqual(posted.paths.count, 3, "two failures, then the same batch lands")
+        let last = posted.bodies.last.flatMap { $0 }.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+        let sequences = ((last?["events"] as? [[String: Any]]) ?? []).compactMap { $0["sequence"] as? Int }
+        XCTAssertEqual(sequences, [1, 2])
+    }
+
     // MARK: Node requirement (release: the app runs the bundle with the user's node)
 
     func testNodeOlderThanTheServerNeedsIsReportedPlainly() {
@@ -615,6 +709,14 @@ final class ParamsLog: @unchecked Sendable {
     private var stored: [(CodeV2.ClientCommandType, JSONValue)] = []
     func append(_ type: CodeV2.ClientCommandType, _ params: JSONValue) { lock.withLock { stored.append((type, params)) } }
     func last(_ type: CodeV2.ClientCommandType) -> JSONValue? { lock.withLock { stored.last(where: { $0.0 == type })?.1 } }
+}
+
+final class Counter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var remaining: Int
+    init(_ count: Int) { remaining = count }
+    /// True while any remain, counting one down.
+    func take() -> Bool { lock.withLock { guard remaining > 0 else { return false }; remaining -= 1; return true } }
 }
 
 final class PostLog: @unchecked Sendable {
