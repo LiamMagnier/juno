@@ -259,6 +259,26 @@ final class EnvServerTests: XCTestCase {
         XCTAssertEqual(forwarded.types, [.sessionOpen, .turnStart])
     }
 
+    func testLinkRelaysSkillsListOnlyForSharedFoldersAndLinkedSessions() async {
+        let forwarded = ForwardLog()
+        let link = makeLink(forwarded: forwarded)
+        func rpc(_ type: String, _ params: [String: JSONValue]) async -> CodeV2.ServerResponse? {
+            await link.handle(EnvLinkRequest(kind: .rpc, command: .init(id: "1", type: type, params: .object(params)))).responses?.first
+        }
+        XCTAssertTrue(EnvServerDeviceLink.remoteCommands.contains(.skillsList))
+        let unshared = await rpc("skills.list", ["cwd": .string("/Users/maya/private")])
+        XCTAssertEqual(unshared?.error?.code, .badRequest)
+        let unlinked = await rpc("skills.list", ["sessionId": .string("someone-else")])
+        XCTAssertEqual(unlinked?.error?.code, .badRequest)
+        XCTAssertEqual(forwarded.types, [])
+
+        let mine = await rpc("skills.list", [:])
+        XCTAssertEqual(mine?.ok, true, "the Mac's own skills, no project")
+        let shared = await rpc("skills.list", ["cwd": .string("/Users/maya/code/shop/web")])
+        XCTAssertEqual(shared?.ok, true)
+        XCTAssertEqual(forwarded.types, [.skillsList, .skillsList])
+    }
+
     func testLinkRefusesAttachingToASessionOutsideSharedFolders() async {
         let forwarded = ForwardLog()
         let link = EnvServerDeviceLink(

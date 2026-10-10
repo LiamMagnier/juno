@@ -96,6 +96,9 @@ public actor EnvServerDeviceLink {
         // Cross-conversation lane: another conversation's message, written by
         // Alevr's backend after its checks; a bounded read; the thread's toggle.
         .conversationDeliver, .conversationRead, .conversationToggle,
+        // Skills lane: the skills installed here, names, descriptions and paths
+        // only (the env server never answers with a body).
+        .skillsList,
     ]
     public static let terminalCommands: Set<CodeV2.ClientCommandType> = [
         .terminalOpen, .terminalWrite, .terminalResize, .terminalClose,
@@ -306,6 +309,16 @@ public actor EnvServerDeviceLink {
         case .sessionList:
             if case let .string(cwd)? = object["cwd"], !Self.isInside(cwd, roots: await allowedRoots()) {
                 return "That folder is not shared with other devices."
+            }
+            return nil
+        case .skillsList:
+            // A project's skills only for a folder shared with other devices,
+            // or a session the link itself opened; with neither, the Mac's own.
+            if case let .string(cwd)? = object["cwd"], !Self.isInside(cwd, roots: await allowedRoots()) {
+                return "That folder is not shared with other devices."
+            }
+            if case let .string(id)? = object["sessionId"], !linkedSessions.contains(id) {
+                return "Open the session first."
             }
             return nil
         case .terminalWrite, .terminalResize, .terminalClose:

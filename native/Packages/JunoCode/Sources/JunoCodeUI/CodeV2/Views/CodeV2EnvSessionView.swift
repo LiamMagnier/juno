@@ -19,6 +19,9 @@ public struct CodeV2EnvSessionView: View {
     var speech: CodeComposerSpeech?
 
     @State private var pendingIndex = 0
+    /// Skills lane: the thread's skills, kept per thread.
+    @State private var skills = CodeSkillsModel()
+    @Environment(\.codeAccountSkills) private var accountSkills
     /// "Resume at reset" was chosen: the task that sends "Continue." then.
     @State private var resumeTask: Task<Void, Never>?
     @FocusState private var focused: Bool
@@ -85,6 +88,9 @@ public struct CodeV2EnvSessionView: View {
         .task(id: session.sessionId) {
             focused = true
             if session.state.cursor == nil { await session.open() }
+            let thread = session
+            skills.bind(threadKey: thread.sessionId, snapshot: thread.snapshot.skills)
+            skills.configure(listLocal: { await thread.listSkills() }, account: accountSkills)
         }
         .onChange(of: session.sessionId, initial: true) { old, new in
             if old != new { CodeV2ConnectedApprovals.shared.hiding(session: old) }
@@ -276,12 +282,14 @@ public struct CodeV2EnvSessionView: View {
             plusMenu: AnyView(CodeV2PlusMenuItems(model: composer, directory: directory)),
             contextStrip: place.map { AnyView(CodeV2ContextStrip(place: $0)) },
             minimumLines: snapshot.items.isEmpty ? 3 : 2,
-            speech: speech
+            speech: speech,
+            skills: skills
         ) {
             CodeV2ComposerLeading(
                 model: composer, directory: directory, isEnabled: enabled,
                 threadTokens: snapshot.usage?.contextTokens ?? 0,
-                openConnections: openConnections, setup: setup
+                openConnections: openConnections, setup: setup,
+                skills: skills
             )
             .codeV2TeamScope(session: session.sessionId, project: (snapshot.cwd as NSString).lastPathComponent)
         } trailing: {
@@ -304,12 +312,17 @@ public struct CodeV2EnvSessionView: View {
         guard !text.isEmpty else { return }
         composer.draft = ""
         if isRunning {
-            Task { await session.queue(text) }
+            Task {
+                let active = await skills.takeActivations()
+                await session.queue(text, skills: active)
+            }
         } else {
             Task {
+                let active = await skills.takeActivations()
                 await session.send(
                     text, selection: composer.selection, routing: composer.routing,
-                    runtimeMode: composer.runtimeMode, interactionMode: composer.interactionMode
+                    runtimeMode: composer.runtimeMode, interactionMode: composer.interactionMode,
+                    skills: active
                 )
             }
         }

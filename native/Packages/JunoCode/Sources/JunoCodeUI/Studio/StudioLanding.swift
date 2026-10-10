@@ -16,6 +16,9 @@ public struct StudioDraft: Equatable {
     /// A subscription was chosen in the composer: the host starts the
     /// session and hands its first message to the env server.
     public var handsOff = false
+    /// Skills lane: the skills the first message runs under (the landing's
+    /// Skills chip and a `/name`); the ones without `once` stay with the thread.
+    public var skills: [CodeV2.SkillActivation] = []
 
     public var configuration: AgentConfiguration {
         AgentConfiguration(
@@ -82,6 +85,9 @@ public struct StudioLanding: View {
     /// so a second Return or a Return then a click in between created, and
     /// billed, a second remote task for the same prompt.
     @State private var isSubmittingRemote = false
+    /// Skills lane: chosen here, handed to the thread the landing starts.
+    @State private var skills = CodeSkillsModel()
+    @Environment(\.codeAccountSkills) private var accountSkills
     @FocusState private var focused: Bool
 
     public init(
@@ -193,6 +199,11 @@ public struct StudioLanding: View {
             adoptedInitialPrompt?()
         }
         .task(id: project?.id) { await loadBranch() }
+        .task(id: project?.descriptor.localPathHint) {
+            let root = project.map { URL(fileURLWithPath: $0.descriptor.localPathHint, isDirectory: true) }
+            skills.configure(listLocal: { await CodeSkillsModel.macSkills(projectRoot: root) }, account: accountSkills)
+            await skills.refresh()
+        }
         .onChange(of: environment) { _, choice in configureRemote(choice) }
         .onChange(of: workbench.availableModels.map(\.modelID)) { _, ids in
             if !ids.contains(modelID) { modelID = ids.first ?? "" }
@@ -226,12 +237,14 @@ public struct StudioLanding: View {
             plusMenu: v2.map { AnyView(CodeV2PlusMenuItems(model: $0.composer, directory: $0.directory)) },
             contextStrip: AnyView(placeStrip),
             minimumLines: 3,
-            speech: speech
+            speech: speech,
+            skills: isRemote ? nil : skills
         ) {
             if let v2 {
                 CodeV2ComposerLeading(
                     model: v2.composer, directory: v2.directory, isEnabled: !isRemote,
-                    openConnections: v2.openConnections, setup: v2.setup
+                    openConnections: v2.openConnections, setup: v2.setup,
+                    skills: isRemote ? nil : skills
                 )
                 .codeV2TeamScope(session: nil, project: project?.descriptor.displayName)
             } else {
@@ -574,7 +587,10 @@ public struct StudioLanding: View {
                 fileReferences: fileReferences
             )
             draft.handsOff = handsOff
-            startLocal(draft)
+            Task {
+                draft.skills = await skills.takeActivations()
+                startLocal(draft)
+            }
         case .cloud, .device:
             guard let code, !isSubmittingRemote else { return }
             isSubmittingRemote = true

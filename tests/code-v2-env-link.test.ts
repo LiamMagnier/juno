@@ -12,6 +12,7 @@ import {
   DeviceLink,
   EnvLinkHub,
   LINK_LIMITS,
+  LINK_RELAYED_COMMANDS,
   parseClientRequest,
   parseHostRequest,
 } from "@/lib/code-v2/env-link-hub";
@@ -64,6 +65,20 @@ test("link: secrets are never relayed, terminals only while the Mac shares one; 
   // Turned off again on the next pull.
   await link.pull(0);
   assert.equal((await link.rpc({ id: "5", type: "terminal.write", params: { terminalId: "t1", data: "ls\n" } })).responses?.[0]?.ok, false);
+});
+
+test("link: skills.list is relayed to the Mac, and its answer (names, descriptions, paths) comes back unchanged", async () => {
+  const link = new DeviceLink();
+  await online(link);
+  assert.ok(LINK_RELAYED_COMMANDS.has("skills.list"));
+  assert.ok(parseClientRequest({ kind: "rpc", command: { id: "s1", type: "skills.list", params: { cwd: "/repo" } } }));
+  const reply = link.rpc({ id: "s1", type: "skills.list", params: { cwd: "/repo" } });
+  const { commands } = await link.pull(0);
+  assert.equal(commands[0]?.type, "skills.list");
+  const skills = [{ name: "design-taste-frontend", description: "Anti-slop frontend.", source: "user", origin: "claude", path: "/Users/me/.claude/skills/design-taste-frontend/SKILL.md" }];
+  link.push({ responses: [{ type: "response", id: commands[0]!.id, ok: true, result: { skills } }] });
+  const out = await reply;
+  assert.deepEqual(out.responses?.[0], { type: "response", id: "s1", ok: true, result: { skills } });
 });
 
 test("link: the Mac goes offline when it stops pulling", async () => {

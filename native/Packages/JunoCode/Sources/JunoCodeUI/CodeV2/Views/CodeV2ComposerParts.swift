@@ -53,6 +53,8 @@ struct CodeV2ComposerLeading: View {
     var computerUse: Binding<Bool>?
     var openConnections: (() -> Void)?
     var setup: ((String, CodeV2.ProviderSetupAction) -> Void)?
+    /// Skills lane: the thread's skills, on the row after the mode.
+    var skills: CodeSkillsModel?
 
     private var instance: CodeV2.ProviderInstance? { directory.instance(model.selection.instanceId) }
     private var modes: [CodeV2.RuntimeMode] {
@@ -74,6 +76,9 @@ struct CodeV2ComposerLeading: View {
         // Team lane: always on the composer, Solo or not.
         CodeV2TeamChip(model: model, directory: directory, isEnabled: isEnabled)
         CodeV2ModeControl(model: model, modes: composerModes, isEnabled: isEnabled)
+        if let skills {
+            CodeSkillsChip(skills: skills, isEnabled: isEnabled)
+        }
         if let computerUse, computerUse.wrappedValue {
             Menu {
                 Button("Turn Off Computer Use") { computerUse.wrappedValue = false }

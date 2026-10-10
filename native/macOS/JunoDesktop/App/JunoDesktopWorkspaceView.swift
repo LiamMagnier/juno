@@ -56,6 +56,9 @@ struct JunoDesktopWorkspaceView: View {
     /// thread, or a task (its chat, or the task sheet) — consumed once by the
     /// Chat workspace, which is the only view that can open any of them.
     @State private var chatRoute: DesktopWorkbenchRegistry.RouteRequest?
+    /// A Chat page Code asked for (its Skills chip's Manage skills…),
+    /// consumed once by the Chat workspace like a launch destination.
+    @State private var codeRequestedDestination: DesktopDestination?
     @State private var registry = DesktopWorkbenchRegistry.shared
     /// The appearance on screen, which names View › Switch to Dark/Light Mode.
     @Environment(\.appearsActive) private var appearsActive
@@ -138,8 +141,11 @@ struct JunoDesktopWorkspaceView: View {
                     configuration: configuration,
                     session: session,
                     product: $product,
-                    initialDestination: initialDestination,
-                    consumeInitialDestination: consumeInitialDestination,
+                    initialDestination: initialDestination ?? codeRequestedDestination,
+                    consumeInitialDestination: {
+                        codeRequestedDestination = nil
+                        consumeInitialDestination?()
+                    },
                     unscopedChatRequestID: unscopedChatRequestID,
                     unscopedChatPrompt: unscopedChatPrompt,
                     unscopedChatIsPrivate: unscopedChatIsPrivate,
@@ -173,7 +179,11 @@ struct JunoDesktopWorkspaceView: View {
                     configuration: configuration,
                     session: session,
                     product: $product,
-                    newChat: { requestChat(prompt: nil, isPrivate: false) }
+                    newChat: { requestChat(prompt: nil, isPrivate: false) },
+                    openSkills: configuration.skillLibraryModel == nil ? nil : {
+                        codeRequestedDestination = .skills
+                        product = .chat
+                    }
                 )
             } else {
                 JunoEmptyState(

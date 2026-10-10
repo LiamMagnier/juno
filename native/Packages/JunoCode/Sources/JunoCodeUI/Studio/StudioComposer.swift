@@ -75,6 +75,9 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
     /// and lights the bottom edge, and with nothing typed Send is the voice
     /// button.
     var speech: CodeComposerSpeech? = nil
+    /// Skills lane: listed in the `/` menu under Skills; choosing one (or
+    /// sending `/name …`) arms it for the next message.
+    var skills: CodeSkillsModel? = nil
     @ViewBuilder var leading: () -> Leading
     @ViewBuilder var trailing: () -> Trailing
 
@@ -95,8 +98,20 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
 
     private var slashMatches: [CodeSlashCommand] {
         guard let token = slashToken, token.isNamingCommand else { return [] }
-        return slashCommands.matches(token.query)
+        let commands = slashCommands.matches(token.query)
+        // A SKILL.md the library also offers as a pasted prompt is listed once,
+        // as a skill, when the composer has skills.
+        guard skills != nil else { return commands }
+        return commands.filter { !($0.source.path?.hasSuffix("/SKILL.md") ?? false) }
     }
+
+    private var skillMatches: [CodeSkillChoice] {
+        guard let skills, let token = slashToken, token.isNamingCommand else { return [] }
+        return Array(skills.matches(token.query).prefix(24))
+    }
+
+    /// Commands, then skills.
+    private var slashCount: Int { slashMatches.count + skillMatches.count }
 
     private var fileToken: CodeFileContextToken? {
         guard searchFiles != nil else { return nil }
@@ -104,7 +119,7 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
     }
 
     private var fileQuery: String? {
-        guard slashMatches.isEmpty, let query = fileToken?.query, !query.isEmpty else { return nil }
+        guard slashCount == 0, let query = fileToken?.query, !query.isEmpty else { return nil }
         return query
     }
 
@@ -115,13 +130,13 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
 
     /// `@diff` and `@shell:` above the files, while their names are typed.
     private var specialMatches: [ComposerMention] {
-        guard slashMatches.isEmpty, let token = fileToken else { return [] }
+        guard slashCount == 0, let token = fileToken else { return [] }
         return ComposerMentionSuggestions.special(for: token.query, shellIDs: shellIDs)
     }
 
     private var mentionCount: Int { specialMatches.count + fileMatches.count }
 
-    private var menuCount: Int { slashMatches.isEmpty ? mentionCount : slashMatches.count }
+    private var menuCount: Int { slashCount == 0 ? mentionCount : slashCount }
 
     // MARK: Body
 
@@ -442,7 +457,8 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
 
     @ViewBuilder
     private var suggestionMenu: some View {
-        if !slashMatches.isEmpty {
+        if slashCount > 0 {
+            let sectioned = !skillMatches.isEmpty && !slashMatches.isEmpty
             StudioSuggestionList(
                 rows: slashMatches.map { command in
                     let unavailable = commandUnavailableReason(command)
@@ -452,11 +468,21 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
                         detail: unavailable ?? command.summary,
                         isMono: false,
                         hint: command.argumentHint,
-                        isEnabled: unavailable == nil
+                        isEnabled: unavailable == nil,
+                        section: sectioned ? "Commands" : nil
+                    )
+                } + skillMatches.map { choice in
+                    .init(
+                        id: "skill." + choice.id,
+                        title: "/" + choice.name,
+                        detail: choice.description.isEmpty ? nil : choice.description,
+                        isMono: false,
+                        trailing: choice.originLabel,
+                        section: "Skills"
                     )
                 },
-                highlighted: min(highlighted, slashMatches.count - 1),
-                choose: { index in apply(slashMatches[index]) }
+                highlighted: min(highlighted, slashCount - 1),
+                choose: { index in chooseSlash(index) }
             )
         } else if mentionCount > 0 || searchingQuery != nil {
             StudioMentionPicker(
@@ -486,9 +512,26 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
         focus?.wrappedValue = true
     }
 
+    private func chooseSlash(_ index: Int) {
+        if index < slashMatches.count {
+            apply(slashMatches[index])
+        } else if index - slashMatches.count < skillMatches.count {
+            apply(skill: skillMatches[index - slashMatches.count])
+        }
+    }
+
+    /// A skill from the `/` menu: armed for the next message, its `/name`
+    /// taken out of the draft and the words after it kept.
+    private func apply(skill choice: CodeSkillChoice) {
+        highlighted = 0
+        skills?.arm(choice)
+        text = slashToken?.argument ?? ""
+        focus?.wrappedValue = true
+    }
+
     private func choose() {
-        if !slashMatches.isEmpty {
-            apply(slashMatches[min(highlighted, slashMatches.count - 1)])
+        if slashCount > 0 {
+            chooseSlash(min(highlighted, slashCount - 1))
         } else if mentionCount > 0 {
             chooseMention(min(highlighted, mentionCount - 1))
         }
@@ -513,6 +556,13 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
     /// by name — `/compact keep the API decisions` — runs as the verb with its
     /// argument, instead of going to the model as a message.
     private func submit() {
+        // `/design-taste-frontend make the hero calmer`: the skill for this
+        // message, the rest as the message.
+        if let skills, let invocation = skills.invocation(in: text) {
+            skills.arm(invocation.choice)
+            text = invocation.remainder
+            if invocation.remainder.isEmpty { return }
+        }
         if let typed = slashCommands.typedAction(in: text) {
             if runCommand(typed.command, typed.argument) { text = "" }
             return
@@ -606,6 +656,10 @@ struct StudioSuggestionList: View {
         /// What may follow the title — a verb's argument — set lighter beside it.
         var hint: String?
         var isEnabled = true
+        /// Right-aligned, lighter: where a skill came from.
+        var trailing: String? = nil
+        /// A heading drawn above the first row of each run ("Commands", "Skills").
+        var section: String? = nil
     }
 
     let rows: [Row]
@@ -658,6 +712,14 @@ struct StudioSuggestionList: View {
     private var list: some View {
         VStack(alignment: .leading, spacing: 1) {
             ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
+                if let section = row.section, index == 0 || rows[index - 1].section != section {
+                    Text(section)
+                        .font(Studio.Font.meta)
+                        .foregroundStyle(Studio.Ink.tertiary)
+                        .padding(.horizontal, JunoSpace.snug)
+                        .padding(.top, index == 0 ? JunoSpace.tight : JunoSpace.snug)
+                        .accessibilityAddTraits(.isHeader)
+                }
                 Button { choose(index) } label: {
                     HStack(spacing: JunoSpace.snug) {
                         Text(row.title)
@@ -679,6 +741,13 @@ struct StudioSuggestionList: View {
                                 .lineLimit(1)
                         }
                         Spacer(minLength: 0)
+                        if let trailing = row.trailing {
+                            Text(trailing)
+                                .font(Studio.Font.meta)
+                                .foregroundStyle(Studio.Ink.tertiary)
+                                .lineLimit(1)
+                                .fixedSize()
+                        }
                     }
                     .padding(.horizontal, JunoSpace.snug)
                     .frame(height: Studio.Metrics.rowHeight)

@@ -425,6 +425,15 @@ public final class SessionController {
     /// Code v2 (Orchestrate): which model each sub-agent role runs on and the
     /// run's budget. Nil is solo: children inherit the session's model.
     public private(set) var roleRouting: CodeV2.RoleRouting?
+
+    /// Skills lane: the skills this thread runs under (the Skills selector),
+    /// carried in a `<session_state>` section every request reads.
+    public var selectedSkills: [CodeV2.SkillActivation] = []
+    /// A `/name` skill for the next message only, prepended to what the model
+    /// reads (never to what the thread shows). Cleared once it is sent.
+    public var onceSkills: [CodeV2.SkillActivation] = []
+    /// Where local skills are found; the reader's own Mac by default.
+    public var skillDiscovery: (@Sendable (URL?) -> LocalSkillDiscovery)? = nil
     /// Code v2: where routed children on other provider instances run.
     @ObservationIgnored public private(set) var subagentProviders: CodeV2SubagentProviders?
     /// Code v2: the composer's context tier or Lean window (nil: the model's).
@@ -1346,6 +1355,12 @@ public final class SessionController {
             if let skills = await self?.skillsStateSection() {
                 sections.append(skills)
             }
+            // Skills lane: the skills the reader turned on for this thread,
+            // their instructions in full, sent again only when the choice or a
+            // skill's text changes.
+            if let selected = await self?.selectedSkillsStateSection() {
+                sections.append(selected)
+            }
             return sections
         }
     }
@@ -1681,10 +1696,16 @@ public final class SessionController {
         }
         isSubmitting = true
         defer { isSubmitting = false }
-        let modelPrompt = await explicitFileContextPrompt(
+        var modelPrompt = await explicitFileContextPrompt(
             visiblePrompt: prompt,
             live: live
         )
+        // Skills lane: a `/name` skill rides ahead of this message only.
+        let once = onceSkills
+        if !once.isEmpty {
+            let text = renderedSkills(once)
+            if !text.isEmpty { modelPrompt = text + "\n\n" + modelPrompt }
+        }
         let wasActive = session.status.isActive
         // The reader's queued line comments ride on this message, without
         // touching the draft (CODE_AGENT_SPEC §5.10).
@@ -1698,6 +1719,7 @@ public final class SessionController {
                 live: live
             )
             reviewQueue.markSent(outgoing.commentIDs)
+            if !once.isEmpty { onceSkills = [] }
             composerText = ""
             composerFileReferences = []
             pendingAttachments = []
@@ -4207,6 +4229,27 @@ public final class SessionController {
     /// Listed, not included: the agent loads a body with `use_skill` when it
     /// needs one, and receives it fenced as repository data. An untrusted
     /// repository skill is not mentioned at all.
+    /// The selected skills' instructions as a `<session_state>` section, or
+    /// nil when none are selected.
+    func selectedSkillsStateSection() -> SessionStateSection? {
+        guard !selectedSkills.isEmpty else { return nil }
+        let text = renderedSkills(selectedSkills)
+        guard !text.isEmpty else { return nil }
+        return SessionStateSection(name: "selected_skills", body: text)
+    }
+
+    /// The instructions block for `activations`, bodies read on this Mac.
+    func renderedSkills(_ activations: [CodeV2.SkillActivation]) -> String {
+        let root = context?.access.rootURL
+        let discovery = skillDiscovery?(root) ?? LocalSkillDiscovery(projectRoot: root)
+        let resolved = discovery.resolve(activations)
+        var parts = [LocalSkillDiscovery.render(resolved.skills)]
+        if !resolved.missing.isEmpty {
+            parts.append("(The skill\(resolved.missing.count == 1 ? "" : "s") \(resolved.missing.joined(separator: ", ")) could not be found on this Mac.)")
+        }
+        return parts.filter { !$0.isEmpty }.joined(separator: "\n\n")
+    }
+
     func skillsStateSection() -> SessionStateSection {
         let skills = context.map(SessionSkillProvider.offered(in:)) ?? []
         guard !skills.isEmpty else {
