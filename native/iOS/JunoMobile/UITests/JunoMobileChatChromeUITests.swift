@@ -204,16 +204,20 @@ final class JunoMobileChatChromeUITests: XCTestCase {
         cloud.tap()
 
         // Remote, not Cloud or No project, is what sends a task to a computer.
-        let target = app.buttons.matching(
-            NSPredicate(format: "label BEGINSWITH %@", "Liam’s MacBook Pro")
+        // Where it runs is one menu on the composer's row: Remote, then
+        // "Choose a computer" opens the hosts.
+        let place = app.buttons["juno.mobile.code-target"].firstMatch
+        require(place, app, timeout: 5)
+        place.tap()
+        let remote = app.buttons["Remote"].firstMatch
+        require(remote, app, timeout: 5)
+        remote.tap()
+        place.tap()
+        let choose = app.buttons.matching(
+            NSPredicate(format: "label BEGINSWITH %@", "Choose a computer")
         ).firstMatch
-        if !target.waitForExistence(timeout: 5) {
-            let remote = app.buttons["Remote"].firstMatch
-            require(remote, app, timeout: 5)
-            remote.tap()
-        }
-        require(target, app, timeout: 10)
-        target.tap()
+        require(choose, app, timeout: 5)
+        choose.tap()
 
         require(app.staticTexts["Computer"], app, timeout: 10)
         XCTAssertTrue(app.staticTexts["Online"].exists)

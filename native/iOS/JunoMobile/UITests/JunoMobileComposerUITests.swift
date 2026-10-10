@@ -104,7 +104,9 @@ final class JunoMobileComposerUITests: XCTestCase {
         waitForChipValue(chip, prefix: "Max")
 
         // And back to the shallowest.
-        chip.tap()
+        // The Thinking panel stays open after a change (it folds back only
+        // when dismissed), so open it again only if it has closed.
+        if !slider.exists { chip.tap() }
         require(slider, app, timeout: 5)
         slider.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5))
             .press(
@@ -176,7 +178,9 @@ final class JunoMobileComposerUITests: XCTestCase {
         let chip = thinkingChip(app)
         waitForChipValue(chip, prefix: "Thinking")
 
-        chip.tap()
+        // The Thinking panel stays open after a change (it folds back only
+        // when dismissed), so open it again only if it has closed.
+        if !slider.exists { chip.tap() }
         require(slider, app, timeout: 5)
         slider.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.5)).tap()
         waitForChipValue(chip, prefix: "Instant")
