@@ -488,6 +488,9 @@ public enum NativeToolPresentation {
     /// process", and anything else has no lead — its facts are the line.
     public static func summaryLead(_ view: NativeRunView, workedMs: Int?) -> NativeRunPhrase? {
         if let research = view.facts.research {
+            // The server recalculates this from the run (never the stored
+            // figure) and sends 0 when the run is gone: no time, not a wrong one.
+            guard research.workedMs > 0 else { return NativeRunPhrase("Researched") }
             return NativeRunPhrase([.phrase("Researched for"), .duration(ms: research.workedMs)])
         }
         let thought = view.hasReasoning || !view.calls.isEmpty

@@ -173,6 +173,8 @@ export const RUN_COPY = {
   thoughtFor: "Thought for",
   answeredIn: "Answered in",
   researchedFor: "Researched for",
+  /** A research message whose run is gone: no time rather than a wrong one. */
+  researched: "Researched",
   stoppedAfter: "Stopped after",
   couldNotFinish: "Couldn't finish",
   factRanCode: "ran code",

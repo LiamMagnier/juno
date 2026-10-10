@@ -76,6 +76,9 @@ export function summaryLead(
   }
   const research = view.facts.research;
   if (research?.key === "research") {
+    // 0 is "no time": the serializer recalculates it from the run and
+    // writes 0 when the run is gone, rather than a stored wrong figure.
+    if (!(research.workedMs > 0)) return [only("researched")];
     return [spec({ phrase: RUN_COPY.researchedFor }, duration(research.workedMs, style))];
   }
   const key = didWork(view) ? "thoughtFor" : "answeredIn";

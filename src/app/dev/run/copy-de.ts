@@ -135,6 +135,7 @@ export const RUN_PHRASES_DE: Record<RunCopyKey, string> = {
   thoughtFor: "Nachgedacht für",
   answeredIn: "Geantwortet in",
   researchedFor: "Recherchiert für",
+  researched: "Recherchiert",
   stoppedAfter: "Gestoppt nach",
   couldNotFinish: "Konnte nicht fertig werden",
   factRanCode: "Code ausgeführt",
