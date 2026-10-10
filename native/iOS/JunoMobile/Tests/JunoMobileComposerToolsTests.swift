@@ -206,6 +206,7 @@ final class JunoMobileThinkingProTests: XCTestCase {
             supportsReasoning: true,
             supportsProMode: pro,
             fastModeRateMultiplier: 2,
+            ultraFastRateMultiplier: 6,
             supportsStreaming: true
         ))
     }
@@ -227,14 +228,19 @@ final class JunoMobileThinkingProTests: XCTestCase {
         }
         let root = URL(fileURLWithPath: path, isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        let size = CGSize(width: 390, height: 260)
-        for on in [false, true] {
+        let size = CGSize(width: 390, height: 200)
+        let states: [(name: String, fast: Bool, ultra: Bool, pro: Bool)] = [
+            ("off", false, false, false), ("fast", true, false, false),
+            ("ultra", false, true, false), ("pro", false, false, true),
+        ]
+        for state in states {
             for dark in [false, true] {
                 let view = JunoMobileThinkingPanel(
                     scale: scale(pro: true),
                     effort: .constant(.high),
-                    fastMode: .constant(on),
-                    proMode: .constant(on),
+                    fastMode: .constant(state.fast),
+                    ultraFast: .constant(state.ultra),
+                    proMode: .constant(state.pro),
                     modelName: "GPT-5.6 Sol",
                     providerID: "openai",
                     providerName: "OpenAI · GPT",
@@ -257,7 +263,7 @@ final class JunoMobileThinkingProTests: XCTestCase {
                     _ = host.view.drawHierarchy(in: host.view.bounds, afterScreenUpdates: true)
                 }
                 let data = try XCTUnwrap(image.pngData())
-                let url = root.appendingPathComponent("ios-thinking-pro-\(on ? "on" : "off")-\(dark ? "dark" : "light").png")
+                let url = root.appendingPathComponent("ios-thinking-\(state.name)-\(dark ? "dark" : "light").png")
                 try data.write(to: url)
                 window.isHidden = true
                 XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))

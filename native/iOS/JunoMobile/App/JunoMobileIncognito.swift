@@ -125,6 +125,7 @@ struct JunoMobileIncognitoChat: View {
     // than wrong — and clearing it would make a sticky preference un-sticky the
     // moment someone browsed the model list.
     @State private var fastMode = false
+    @State private var ultraFast = false
     @State private var proMode = false
     @State private var showingCloseWarning = false
     @State private var showingModelPicker = false
@@ -340,6 +341,7 @@ struct JunoMobileIncognitoChat: View {
                             scale: scale,
                             effort: $reasoningEffort,
                             fastMode: $fastMode,
+                            ultraFast: $ultraFast,
                             proMode: $proMode,
                             modelName: selectedModel?.displayName ?? junoDisplayModelName(selectedModelID),
                             providerID: selectedModel?.providerID ?? "juno",
@@ -406,6 +408,7 @@ struct JunoMobileIncognitoChat: View {
             modelID: selectedModelID.isEmpty ? initialModelID : selectedModelID,
             reasoningEffort: reasoningEffort,
             fastMode: fastMode,
+            ultraFast: ultraFast,
             proMode: proMode
         )
     }

@@ -430,11 +430,21 @@ public struct JunoEffortPanel: View {
 /// from the rung, so a toggle rather than another stop.
 public struct JunoEffortProCapsule: View {
     @Binding var isOn: Bool
+    private let height: CGFloat
+    private let hitHeight: CGFloat
     @State private var hovered = false
     @Environment(\.isEnabled) private var isEnabled
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    public init(isOn: Binding<Bool>) { _isOn = isOn }
+    /// - Parameters:
+    ///   - height: the drawn capsule; the Mac's 24pt by default.
+    ///   - hitHeight: the target around it, at least `height` (a phone
+    ///     passes the 44pt touch target).
+    public init(isOn: Binding<Bool>, height: CGFloat = 24, hitHeight: CGFloat? = nil) {
+        _isOn = isOn
+        self.height = height
+        self.hitHeight = max(hitHeight ?? height, height)
+    }
 
     public var body: some View {
         Button {
@@ -444,14 +454,15 @@ public struct JunoEffortProCapsule: View {
                 .junoType(.caption.weight(.medium))
                 .foregroundStyle(isOn ? Color.junoCanvas : (hovered ? Color.junoForeground : Color.junoSecondaryInk))
                 .padding(.horizontal, JunoSpace.snug)
-                .frame(height: 24)
+                .frame(height: height)
                 .background {
                     Capsule(style: .continuous).fill(isOn ? Color.junoForeground : Color.junoGlassHover.opacity(hovered ? 1 : 0))
                 }
                 .overlay {
                     Capsule(style: .continuous).strokeBorder(isOn ? Color.clear : Color.junoHairline, lineWidth: 1)
                 }
-                .contentShape(Capsule(style: .continuous))
+                .frame(minHeight: hitHeight)
+                .contentShape(hitHeight > height ? AnyShape(Rectangle()) : AnyShape(Capsule(style: .continuous)))
         }
         .buttonStyle(.plain)
         .opacity(isEnabled ? 1 : 0.35)
@@ -505,12 +516,21 @@ private struct JunoEffortModelButton: View {
 public struct JunoEffortSpeedButton: View {
     let tier: JunoSpeedTier
     let multiplier: Double?
+    let side: CGFloat
     let action: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    public init(tier: JunoSpeedTier, multiplier: Double?, action: @escaping () -> Void) {
+    /// - Parameter side: the round target; the Mac's 32pt by default, a
+    ///   phone passes the 44pt touch target.
+    public init(
+        tier: JunoSpeedTier,
+        multiplier: Double?,
+        side: CGFloat = JunoEffortIconButton.side,
+        action: @escaping () -> Void
+    ) {
         self.tier = tier
         self.multiplier = multiplier
+        self.side = side
         self.action = action
     }
 
@@ -528,7 +548,7 @@ public struct JunoEffortSpeedButton: View {
                 value: tier
             )
         }
-        .buttonStyle(JunoEffortIconButton(isOn: false, tinted: tier != .off))
+        .buttonStyle(JunoEffortIconButton(isOn: false, tinted: tier != .off, side: side))
         .contentShape(Circle())
         .help(tier.label(multiplier: multiplier))
         .accessibilityLabel(tier.label(multiplier: multiplier))
@@ -540,20 +560,22 @@ public struct JunoEffortSpeedButton: View {
 
 /// The panel's two round buttons: muted at rest, the hover tone under the
 /// pointer, the inverted pair when on, faded when there is nothing to do.
-struct JunoEffortIconButton: ButtonStyle {
-    static let side: CGFloat = 32
+public struct JunoEffortIconButton: ButtonStyle {
+    public static let side: CGFloat = 32
     let isOn: Bool
     /// On through tint alone: full ink, no fill (the speed control).
     var tinted: Bool = false
+    var side: CGFloat = JunoEffortIconButton.side
 
-    func makeBody(configuration: Configuration) -> some View {
-        Face(configuration: configuration, isOn: isOn, tinted: tinted)
+    public func makeBody(configuration: Configuration) -> some View {
+        Face(configuration: configuration, isOn: isOn, tinted: tinted, side: side)
     }
 
     private struct Face: View {
         let configuration: Configuration
         let isOn: Bool
         let tinted: Bool
+        let side: CGFloat
         @State private var hovered = false
         @Environment(\.isEnabled) private var isEnabled
         @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -561,7 +583,7 @@ struct JunoEffortIconButton: ButtonStyle {
         var body: some View {
             configuration.label
                 .foregroundStyle(isOn ? Color.junoCanvas : (hovered || tinted ? Color.junoForeground : Color.junoSecondaryInk))
-                .frame(width: JunoEffortIconButton.side, height: JunoEffortIconButton.side)
+                .frame(width: side, height: side)
                 .background {
                     Circle().fill(
                         isOn

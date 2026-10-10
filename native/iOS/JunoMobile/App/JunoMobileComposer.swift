@@ -122,7 +122,7 @@ struct JunoMobileComposer: View {
   @State private var draftExpanded = false
 
   private var selectedModel: NativeChatModelOption? {
-    model.modelCatalog.first { $0.id == selectedModelID }
+    model.model(withID: selectedModelID)
   }
 
   /// The "/" commands this composer can honour. Rows whose surface the
@@ -557,7 +557,7 @@ struct JunoMobileComposer: View {
     .task { await applyPreviewFlags() }
     .sheet(isPresented: $showingModelPicker) {
       JunoMobileModelSelectorView(
-        models: model.modelCatalog,
+        models: model.composerCatalog,
         selectedModelID: selectedModelID,
         onSelect: { option in
           selectedModelID = option.id
@@ -622,6 +622,7 @@ struct JunoMobileComposer: View {
       scale: scale,
       effort: $reasoningEffort,
       fastMode: $tools.fastMode,
+      ultraFast: $tools.ultraFast,
       proMode: $tools.proMode,
       modelName: selectedModel?.displayName ?? junoDisplayModelName(conversation?.model ?? selectedModelID),
       providerID: selectedModel?.providerID ?? "juno",
@@ -651,7 +652,10 @@ struct JunoMobileComposer: View {
       })
     }
     if tools.fastMode {
-      tokens.append(ArmedToken(id: "flash", icon: .work, title: "Flash") { tools.fastMode = false })
+      tokens.append(ArmedToken(id: "flash", icon: .zap, title: "Fast") { tools.fastMode = false })
+    }
+    if tools.ultraFast {
+      tokens.append(ArmedToken(id: "ultra-fast", icon: .zap, title: JunoUltraFastMode.title) { tools.ultraFast = false })
     }
     if tools.proMode {
       tokens.append(ArmedToken(id: "pro", icon: .sparkles, title: "Pro") { tools.proMode = false })
@@ -812,10 +816,10 @@ struct JunoMobileComposer: View {
       if let forced = JunoComposerPreviewFlags.forcedModelID {
         // The catalog arrives asynchronously; without waiting, a scripted
         // screenshot silently lands on whatever was selected by default.
-        for _ in 0..<20 where !model.modelCatalog.contains(where: { $0.id == forced }) {
+        for _ in 0..<20 where model.model(withID: forced) == nil {
           try? await Task.sleep(nanoseconds: 100_000_000)
         }
-        if model.modelCatalog.contains(where: { $0.id == forced }) {
+        if model.model(withID: forced) != nil {
           selectedModelID = forced
         }
       }

@@ -116,10 +116,14 @@ extension View {
 /// The dial, open: the Mac and web effort panel, drawn for a thumb.
 ///
 /// The rung named large with the model under it — the model's name is the
-/// way to the full catalogue — Flash on the left where the model has it,
-/// reset on the right, then the effort track: a full capsule whose ground is
-/// always visible, filled up to the knob (``JunoEffortSlider``, the same
-/// control the Mac draws). Pro sits under a hairline where the model has it.
+/// way to the full catalogue — and, on the header's left, the speed bolt and
+/// Pro, as the Mac and the web draw them (``JunoEffortSpeedButton``,
+/// ``JunoEffortProCapsule``): one press of the bolt moves Off → Fast (one
+/// bolt) → Ultra fast (two bolts), Pro is a capsule beside it, and there is no
+/// row or submenu under the track (owner: "move the ultra fast and pro next
+/// to the actual flash icon … no submenu"). Reset sits on the right. Then the
+/// effort track: a full capsule whose ground is always visible, filled up to
+/// the knob (``JunoEffortSlider``, the same control the Mac draws).
 ///
 /// It replaced a row of dots with a ring knob drawn straight on the
 /// composer's glass, which showed the knob and nothing it travelled along,
@@ -128,8 +132,10 @@ extension View {
 struct JunoMobileThinkingPanel: View {
   let scale: NativeThinkingScale
   @Binding var effort: NativeReasoningEffort?
-  /// Flash, drawn only where the model publishes a rate for it.
+  /// Fast, drawn only where the model publishes a rate for it.
   var fastMode: Binding<Bool>?
+  /// Ultra fast (OpenAI's Ultrafast tier), exclusive with Fast.
+  var ultraFast: Binding<Bool>?
   /// Pro, drawn only where the ladder supports it.
   var proMode: Binding<Bool>?
   let modelName: String
@@ -152,8 +158,31 @@ struct JunoMobileThinkingPanel: View {
   }
 
   private var current: NativeThinkingStop? { scale.stops.first { $0.effort == effort } }
-  private var showsFlash: Bool { fastMode != nil && ladder.supportsFastMode }
-  private var showsPro: Bool { proMode != nil && ladder.supportsProMode }
+  private var showsFast: Bool { fastMode != nil && ladder.supportsFastMode }
+  private var showsUltra: Bool { JunoEffortPanel.showsUltraFast(ladder: ladder, ultraFast: ultraFast) }
+  private var showsPro: Bool { JunoEffortPanel.showsPro(ladder: ladder, proMode: proMode) }
+
+  private var speedTier: JunoSpeedTier {
+    if showsUltra, ultraFast?.wrappedValue == true { return .ultra }
+    if showsFast, fastMode?.wrappedValue == true { return .fast }
+    return .off
+  }
+
+  /// One press, one tier: the shared cycle, Fast and Ultra fast never both on.
+  private func cycleSpeed() {
+    tick.fire()
+    switch speedTier.next(hasFast: showsFast, hasUltra: showsUltra) {
+    case .fast:
+      ultraFast?.wrappedValue = false
+      fastMode?.wrappedValue = true
+    case .ultra:
+      fastMode?.wrappedValue = false
+      ultraFast?.wrappedValue = true
+    case .off:
+      fastMode?.wrappedValue = false
+      ultraFast?.wrappedValue = false
+    }
+  }
   private var canReset: Bool {
     guard let defaultStopID = ladder.defaultStopID else { return false }
     return stopID.wrappedValue != defaultStopID
@@ -169,16 +198,6 @@ struct JunoMobileThinkingPanel: View {
         .contentShape(Rectangle())
         .accessibilityIdentifier("juno.mobile.thinking-dial")
         .junoMobileBloomRow(1, shown: rowsIn)
-      if showsPro, let proMode {
-        VStack(spacing: JunoSpace.cozy) {
-          Rectangle()
-            .fill(Color.junoHairline)
-            .frame(height: 1)
-            .accessibilityHidden(true)
-          JunoMobileProRow(isOn: proMode)
-        }
-        .junoMobileBloomRow(2, shown: rowsIn)
-      }
     }
     .padding(.horizontal, JunoSpace.regular)
     .padding(.vertical, JunoSpace.cozy)
@@ -195,31 +214,29 @@ struct JunoMobileThinkingPanel: View {
 
   private var header: some View {
     HStack(spacing: JunoSpace.snug) {
-      Group {
-        if showsFlash, let fastMode {
-          roundButton(
-            icon: .zap,
-            isOn: fastMode.wrappedValue,
-            label: fastMode.wrappedValue ? "Flash on: faster replies" : "Flash: faster replies",
-            identifier: "juno.mobile.thinking-flash"
-          ) {
-            tick.fire()
-            fastMode.wrappedValue.toggle()
-          }
-        } else {
-          Color.clear.accessibilityHidden(true)
+      HStack(spacing: 0) {
+        if showsFast || showsUltra {
+          JunoEffortSpeedButton(
+            tier: speedTier,
+            multiplier: speedTier == .ultra ? ladder.ultraFastRateMultiplier : ladder.fastModeRateMultiplier,
+            side: JunoLayout.touchTarget,
+            action: cycleSpeed
+          )
+          .accessibilityIdentifier("juno.mobile.thinking-speed")
+        }
+        if showsPro, let proMode {
+          JunoEffortProCapsule(
+            isOn: Binding(get: { proMode.wrappedValue }, set: { tick.fire(); proMode.wrappedValue = $0 }),
+            height: JunoMobileComposerPanelMetrics.proHeight,
+            hitHeight: JunoLayout.touchTarget
+          )
+          .accessibilityIdentifier("juno.mobile.thinking-pro")
         }
       }
-      .frame(width: JunoLayout.touchTarget, height: JunoLayout.touchTarget)
+      .frame(width: JunoMobileComposerPanelMetrics.sideColumn, alignment: .leading)
 
       VStack(spacing: 0) {
-        Text(verbatim: current?.label ?? scale.stops.first?.label ?? "")
-          .junoFont(size: 17, relativeTo: .headline, weight: .semibold)
-          .foregroundStyle(Color.junoForeground)
-          .monospacedDigit()
-          .lineLimit(1)
-          .contentTransition(.opacity)
-          .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint), value: current)
+        levelName
           .accessibilityHidden(true)
         modelButton
       }
@@ -237,7 +254,34 @@ struct JunoMobileThinkingPanel: View {
       }
       .disabled(!canReset)
       .opacity(canReset ? 1 : 0.35)
+      .frame(width: JunoMobileComposerPanelMetrics.sideColumn, alignment: .trailing)
     }
+  }
+
+  /// The rung's name, large. The deepest rung ("Max") wears the web's
+  /// top-tier ramp (`--ultra-from` → `--ultra-to`), as the web's effort
+  /// panel draws it; every other rung is ink.
+  private var levelName: some View {
+    let word = Text(verbatim: current?.label ?? scale.stops.first?.label ?? "")
+      .junoFont(size: 17, relativeTo: .headline, weight: .semibold)
+      .monospacedDigit()
+    let deepest = scale.stops.count > 1 && current != nil && current == scale.stops.last
+    return word
+      .foregroundStyle(
+        deepest
+          ? AnyShapeStyle(LinearGradient(
+            colors: [
+              Color.junoAdaptive(JunoGeneratedColors.ultraFrom),
+              Color.junoAdaptive(JunoGeneratedColors.ultraTo),
+            ],
+            startPoint: .leading,
+            endPoint: .trailing
+          ))
+          : AnyShapeStyle(Color.junoForeground)
+      )
+      .lineLimit(1)
+      .contentTransition(.opacity)
+      .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint), value: current)
   }
 
   /// The model, and the way to every other: the lab's mark, the name and a
@@ -300,4 +344,9 @@ enum JunoMobileComposerPanelMetrics {
   static let radius: CGFloat = JunoSpace.wide
   /// The "+" panel's width: wide enough for "Deep research" and a check.
   static let plusWidth: CGFloat = 264
+  /// The header's two side columns, equal so the level name centres: room
+  /// for the 44pt bolt and the Pro capsule.
+  static let sideColumn: CGFloat = 92
+  /// Pro's drawn capsule; its target is the 44pt row.
+  static let proHeight: CGFloat = JunoSpace.wide
 }

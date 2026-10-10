@@ -59,30 +59,6 @@ struct JunoMobileThinkingDialButton: View {
   }
 }
 
-/// Pro under the dial: the name over the one line that says it spends more,
-/// and a switch. The web's words (`PRO_MODE_HELP`, ``JunoProMode``).
-struct JunoMobileProRow: View {
-  @Binding var isOn: Bool
-
-  var body: some View {
-    Toggle(isOn: $isOn) {
-      VStack(alignment: .leading, spacing: 0) {
-        Text(JunoProMode.title)
-          .junoType(JunoType.ui.weight(.medium))
-          .foregroundStyle(Color.junoForeground)
-        Text(JunoProMode.help)
-          .junoType(.caption)
-          .foregroundStyle(Color.junoSecondaryInk)
-          .fixedSize(horizontal: false, vertical: true)
-      }
-    }
-    .toggleStyle(.switch)
-    .tint(Color.junoForeground)
-    .frame(minHeight: 44)
-    .accessibilityIdentifier("juno.mobile.thinking-pro")
-  }
-}
-
 /// The composer's one primary action: voice when there is nothing to send,
 /// send the moment there is, stop while a reply is arriving.
 ///
