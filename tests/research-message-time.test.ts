@@ -19,10 +19,10 @@ const at = (m: number) => new Date(T0.getTime() + m * MIN);
 
 function message(runId: string): ClientActivityEvent[] {
   return [
-    { id: "a1", kind: "status", title: "Searching", createdAt: T0.toISOString() } as ClientActivityEvent,
+    { id: "a1", kind: "search", title: "Searching", createdAt: T0.toISOString() } as ClientActivityEvent,
     {
       id: "a2",
-      kind: "status",
+      kind: "search",
       title: "Research report",
       createdAt: T0.toISOString(),
       fact: { key: "research", runId, title: "Plans", workedMs: STORED_30H, cited: 45, read: 50, pages: 50, leadModel: "claude-fable", state: "completed" },
@@ -75,7 +75,7 @@ test("a run that cannot be found hides the time instead of showing the stored on
 });
 
 test("a message with no research fact is passed through untouched", async () => {
-  const plain = [{ id: "a1", kind: "status", title: "Searching", createdAt: T0.toISOString() } as ClientActivityEvent];
+  const plain = [{ id: "a1", kind: "search", title: "Searching", createdAt: T0.toISOString() } as ClientActivityEvent];
   let looked = false;
   const out = await refreshResearchFactsWith(plain, "conv-1", {
     lookup: async () => {
