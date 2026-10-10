@@ -1,5 +1,6 @@
 import "server-only";
 import { parseRoutingReceipt } from "@/lib/router/receipt";
+import { refreshResearchFacts } from "@/lib/research/working-time";
 import type {
   Attachment,
   Artifact,
@@ -250,7 +251,8 @@ export async function serializeMessage(
     createdAt: msg.createdAt.toISOString(),
     attachments: await Promise.all(msg.attachments.map(serializeAttachment)),
     sources: (msg.sources as ClientSource[] | null) ?? undefined,
-    activity: serializeActivity(msg.activity),
+    // A research message's "Researched for" comes from its run, never the stored figure.
+    activity: await refreshResearchFacts(serializeActivity(msg.activity), msg.conversationId),
     promptTokens: msg.promptTokens,
     completionTokens: msg.completionTokens,
     // The prompt-cache split, straight off the row. `?? undefined` so a NULL

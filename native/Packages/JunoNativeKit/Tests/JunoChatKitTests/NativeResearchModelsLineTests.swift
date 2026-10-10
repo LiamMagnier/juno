@@ -27,6 +27,19 @@ final class NativeResearchModelsLineTests: XCTestCase {
         )
     }
 
+    /// The server recalculates "Researched for" from the run and sends 0 when
+    /// the run is gone; a zero says "Researched", never "Researched for 0s".
+    func testResearchLeadHidesAMissingTime() {
+        func view(workedMs: Int) -> NativeRunView {
+            var row = NativeChatActivity(id: "r", kind: .context, title: "Research report", detail: nil, url: nil, createdAt: Date())
+            row.fact = .research(.init(runID: "run", title: "Plans", workedMs: workedMs, cited: 45, read: 50, pages: 50,
+                                       leadModel: "claude", state: "completed"))
+            return NativeRunView.build(activity: [row], reasoning: nil)
+        }
+        XCTAssertEqual(NativeToolPresentation.summaryLead(view(workedMs: 0), workedMs: nil)?.text, "Researched")
+        XCTAssertEqual(NativeToolPresentation.summaryLead(view(workedMs: 17 * 60_000), workedMs: nil)?.text, "Researched for 17m")
+    }
+
     func testOlderRunsShowNothing() {
         XCTAssertNil(NativeResearchRun.modelsLine(lead: nil, leadID: nil, worker: nil, workerID: nil, workerNote: nil, chosen: false, done: true))
     }

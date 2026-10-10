@@ -77,6 +77,9 @@ import {
 import { researchRoster } from "@/lib/research/search-metering";
 import { parseWorkspaceConfig, type WorkspaceConfig } from "@/lib/projects/workspace-config";
 import { buildCompletionWrite } from "@/lib/research/completion-core";
+import { runWorkingMs } from "@/lib/research/working-time";
+
+export { runWorkingMs };
 import { finalizeResearchRun } from "@/lib/research/completion";
 import { researchWebOwner } from "@/lib/research/lease-core";
 import { researchGoalContext, type ContextTurn } from "@/lib/research/planner";
@@ -98,8 +101,6 @@ import {
   runModelsOf,
   runTitleOf,
   summaryOf,
-  workingMsOf,
-  activeWorkingMs,
   type LatestPhaseEvent,
 } from "@/lib/research/view";
 import type { ResearchPlan } from "@/lib/research/domain";
@@ -794,43 +795,6 @@ const draftPlanForRun: NonNullable<ResearchDeps["draftPlan"]> = async (input) =>
   }
   return draftResearchPlanWithModel({ ...input, leadModel });
 };
-
-/**
- * Time the run spent working, from its own event log (`activeWorkingMs`):
- * startedAt to the finish (or now), with the plan gate, pauses and every
- * stretch nobody was driving it left out. Falls back to the plan's clock only
- * when the log cannot be read.
- */
-export async function runWorkingMs(run: ResearchRunRow, plan: ResearchPlan, now: Date): Promise<number> {
-  const end = run.finishedAt ?? now;
-  try {
-    const [stamps, moves] = await Promise.all([
-      prisma.researchEvent.findMany({
-        where: { runId: run.id, userId: run.userId },
-        orderBy: { seq: "asc" },
-        select: { seq: true, createdAt: true },
-      }),
-      prisma.researchEvent.findMany({
-        where: { runId: run.id, userId: run.userId, kind: "state_changed" },
-        select: { seq: true, payload: true },
-      }),
-    ]);
-    if (stamps.length === 0) return workingMsOf(run, plan, now);
-    const moved = new Map<number, string>();
-    for (const move of moves) {
-      const payload = move.payload && typeof move.payload === "object" && !Array.isArray(move.payload) ? (move.payload as Record<string, unknown>) : {};
-      if (typeof payload.state === "string") moved.set(move.seq, payload.state);
-    }
-    return activeWorkingMs({
-      startedAt: run.startedAt ?? run.createdAt,
-      end,
-      events: stamps.map((stamp) => ({ at: stamp.createdAt, state: moved.get(stamp.seq) ?? null })),
-    });
-  } catch (error) {
-    console.error("[research] working time from events failed", { runId: run.id, error });
-    return workingMsOf(run, plan, now);
-  }
-}
 
 /**
  * The web completion (§9.6.3): the summary and the report renumbered so
