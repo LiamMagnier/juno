@@ -58,7 +58,7 @@ public final class JunoSpeechService {
     }
 
     /// How many recent levels the waveform can draw.
-    public static let levelHistoryCapacity = 48
+    public static let levelHistoryCapacity = 72
 
     public private(set) var permission: Permission = .undetermined
     public private(set) var isListening = false
@@ -93,7 +93,11 @@ public final class JunoSpeechService {
         SFSpeechRecognizer(locale: .autoupdatingCurrent) != nil || SFSpeechRecognizer() != nil
     }
 
-    private let audioEngine = AVAudioEngine()
+    /// One engine per take, released when the take ends. A long-lived engine
+    /// keeps its input node, and with it a claim on the microphone, for as
+    /// long as the composer that made it exists, which is the claim a voice
+    /// call then fought with.
+    private var audioEngine: AVAudioEngine?
     private let tap = TapBox()
     private var recognizer: SFSpeechRecognizer?
     private var recognitionTask: SFSpeechRecognitionTask?
@@ -181,22 +185,36 @@ public final class JunoSpeechService {
         partialText = ""
         lastErrorMessage = nil
 
+        // A call (or another take) lets go of the microphone first. If a call
+        // claims it back, this take ends the way Cancel would.
+        JunoMicrophoneArbiter.shared.claim(.dictation, by: self) { [weak self] in
+            self?.cancel()
+        }
+
         #if os(iOS)
         // `.playAndRecord` rather than `.record`: a dictation that ends in a
         // spoken reply must not have to tear the session down and build a new
         // one, which audibly clicks and drops the first syllable.
         let session = AVAudioSession.sharedInstance()
-        try session.setCategory(
-            .playAndRecord,
-            mode: .spokenAudio,
-            options: [.duckOthers, .defaultToSpeaker, .allowBluetoothHFP]
-        )
-        try session.setActive(true, options: .notifyOthersOnDeactivation)
+        do {
+            try session.setCategory(
+                .playAndRecord,
+                mode: .spokenAudio,
+                options: [.duckOthers, .defaultToSpeaker, .allowBluetoothHFP]
+            )
+            try session.setActive(true, options: .notifyOthersOnDeactivation)
+        } catch {
+            releaseMicrophone()
+            throw error
+        }
         #endif
 
-        let input = audioEngine.inputNode
+        let engine = AVAudioEngine()
+        audioEngine = engine
+        let input = engine.inputNode
         let format = input.outputFormat(forBus: 0)
         guard format.sampleRate > 0, format.channelCount > 0 else {
+            releaseMicrophone()
             throw Failure.noAudioInput
         }
 
@@ -210,12 +228,13 @@ public final class JunoSpeechService {
         input.removeTap(onBus: 0)
         Self.installTap(on: input, format: format, box: tap)
 
-        audioEngine.prepare()
+        engine.prepare()
         do {
-            try audioEngine.start()
+            try engine.start()
         } catch {
             active = false
             input.removeTap(onBus: 0)
+            releaseMicrophone()
             throw Failure.engineFailed(error.localizedDescription)
         }
 
@@ -333,16 +352,36 @@ public final class JunoSpeechService {
         recognitionTask = nil
         tap.request?.endAudio()
         tap.request = nil
-        if audioEngine.isRunning { audioEngine.stop() }
-        audioEngine.inputNode.removeTap(onBus: 0)
+        releaseMicrophone()
         tap.rawLevel = 0
         level = 0
         levelHistory = []
         loudness = 0
         loudnessHistory = []
         isListening = false
-        // The iOS audio session is left active on purpose: deactivating it here
-        // clicks, and anything that speaks next would have to rebuild it.
+    }
+
+    /// Stops the take's engine, drops it, and gives the microphone back.
+    ///
+    /// On iOS the session is deactivated too, but only when nothing else in
+    /// the process holds the microphone: a call that took it over has already
+    /// set its own category, and deactivating under it would stop its graph.
+    /// Leaving dictation's `.spokenAudio` session active kept other apps
+    /// ducked after the take and handed the next call a session in the wrong
+    /// mode.
+    private func releaseMicrophone() {
+        if let engine = audioEngine {
+            engine.inputNode.removeTap(onBus: 0)
+            if engine.isRunning { engine.stop() }
+        }
+        audioEngine = nil
+        let held = JunoMicrophoneArbiter.shared.isHeld(by: self)
+        JunoMicrophoneArbiter.shared.release(by: self)
+        #if os(iOS)
+        if held, JunoMicrophoneArbiter.shared.owner == nil {
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        }
+        #endif
     }
 
     /// Installs the microphone tap from a **non-isolated** context.

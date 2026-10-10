@@ -103,7 +103,6 @@ struct JunoMobileRootView: View {
   /// the composer can clear it once speech recognition owns the microphone.
   @State private var pendingDictation = false
   /// Whether full-screen voice is up — see the note on the cover.
-  @State private var voiceFullScreenPresented = false
   /// Local notifications and the background approval check for Juno Code.
   private var codeNotifications: JunoMobileCodeNotifications { .shared }
 
@@ -506,26 +505,6 @@ struct JunoMobileRootView: View {
     // call must not end because a screen re-rendered, and because the shell
     // is where the credential that authorized it lives.
     .environment(\.junoVoiceSession, voiceSession)
-    // Full-screen voice, over everything. A cover rather than a push so the
-    // chat underneath keeps its scroll position and its composer, and so
-    // swiping down lands exactly where the reader left.
-    // Mirrored into local state rather than read through a binding getter:
-    // Observation only tracks what the *body* reads, and a presentation
-    // binding is read too late for the cover to notice the flag flipping.
-    .onChange(of: voiceSession?.isFullScreen ?? false, initial: true) { _, open in
-      voiceFullScreenPresented = open
-    }
-    .onChange(of: voiceFullScreenPresented) { _, open in
-      if !open { voiceSession?.isFullScreen = false }
-    }
-    .fullScreenCover(isPresented: $voiceFullScreenPresented) {
-      if let voiceSession {
-        JunoMobileVoiceFullScreen(session: voiceSession) {
-          voiceSession.isFullScreen = false
-        }
-        .tint(Color.junoAccent)
-      }
-    }
     // Siri, Shortcuts, quick actions and notification taps all land here.
     .onChange(of: launchRequests.pending, initial: true) { _, request in
       guard let request else { return }
@@ -606,10 +585,9 @@ struct JunoMobileRootView: View {
           if CommandLine.arguments.contains("--juno-preview-voice")
             || JunoPreviewEnvironment.opensVoiceFullScreen
           {
+            // The call lives in the composer: there is no full-screen
+            // mode to open, so the old flag starts the same call.
             startVoice()
-            if JunoPreviewEnvironment.opensVoiceFullScreen {
-              voiceSession?.isFullScreen = true
-            }
           }
     }
   #endif

@@ -5,6 +5,25 @@ import JunoVoiceKit
 import SwiftUI
 import UIKit
 
+// A voice call, in the composer (the website's design: the call is the
+// composer, not a screen of its own).
+//
+// Host usage, for any iPhone composer card (Chat's `JunoMobileComposer` is
+// the reference). The session arrives through `\.junoVoiceSession`:
+//
+//     // placeholder while in a call: "Type while you talk…"
+//     // accessory row, replacing the host's own row (never beside it):
+//     HStack {
+//         plusMenu                                   // the host's `+`
+//         Spacer()
+//         JunoMobileVoiceCallControls(session: call) // [stop] mic screen settings
+//         if draft.isEmpty { JunoMobileVoiceCallEnd(session: call) } else { sendButton }
+//     }
+//     // on the card's edge:
+//     .overlay { JunoMobileVoiceComposerGlow(session: call, cornerRadius: 24) }
+//     // one quiet line above the card:
+//     JunoMobileVoiceCallNotices(session: call)
+
 /// One spoken conversation, handed to the chat column through the environment.
 ///
 /// A `@MainActor` class rather than a struct of closures, for two reasons. The
@@ -46,8 +65,6 @@ final class JunoMobileVoiceSession: Identifiable {
     let screenShare = JunoMobileVoiceScreenShare()
     /// Interruptions and route changes, watched for the life of the call.
     let audioSession: JunoMobileVoiceAudioSession
-    /// Whether the full-screen mode is showing over the chat.
-    var isFullScreen = false
     /// Set by the hang-up while it files the transcript; read by both surfaces.
     var isSaving = false
     var saveError: String?
@@ -78,7 +95,6 @@ final class JunoMobileVoiceSession: Identifiable {
     func hangUp() {
         camera.stop()
         screenShare.stop()
-        isFullScreen = false
         controller.end()
         guard let saveTranscript, !savableTurns.isEmpty else {
             close()
@@ -433,6 +449,7 @@ struct JunoMobileVoiceCallControls: View {
                 }
                 round(
                     icon: controller.muted ? .micOff : .mic,
+                    size: 18,
                     label: controller.muted ? "voice.unmute" : "voice.mute",
                     identifier: "juno.mobile.voice-mute",
                     pressed: controller.muted
@@ -441,11 +458,26 @@ struct JunoMobileVoiceCallControls: View {
                     controller.setMuted(!controller.muted)
                 }
                 .disabled(!session.isLive)
+                // The website's third verb: share the screen, offered while
+                // the call is live and the provider can see.
+                if session.canSee && session.isLive {
+                    round(
+                        icon: .monitorUp,
+                        label: session.screenShare.isLive ? "Stop sharing your screen" : "Share your screen",
+                        identifier: "juno.mobile.voice-screen-share",
+                        pressed: session.screenShare.isLive
+                    ) {
+                        session.toggleScreenShare()
+                    }
+                    .disabled(session.screenShare.isBusy)
+                    .transition(.opacity)
+                }
             }
             settingsMenu
         }
         .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: controller.assistantSpeaking)
         .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: controller.muted)
+        .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: session.screenShare.isLive)
         .junoHaptic(JunoMobileHaptic.mute, trigger: muteHaptic)
         .junoHaptic(JunoMobileHaptic.stop, trigger: stopHaptic)
         .modifier(JunoMobileVoiceCallLifecycle(session: session))
@@ -505,26 +537,10 @@ struct JunoMobileVoiceCallControls: View {
                         )
                     }
                     .disabled(!session.isLive || session.camera.isBusy)
-                    Button {
-                        session.toggleScreenShare()
-                    } label: {
-                        JunoIconLabel(
-                            session.screenShare.isLive ? "Stop screen sharing" : "Start screen sharing",
-                            icon: .monitorUp
-                        )
-                    }
-                    .disabled(!session.isLive || session.screenShare.isBusy)
                 } else {
                     // Not a disabled switch: the reason is the useful part,
                     // and the fix (another provider) is the section above.
                     JunoIconLabel("voice.camera.unsupported", icon: .camera)
-                }
-                Button {
-                    withAnimation(JunoMotion.reduced(JunoMotion.emphasized, when: reduceMotion)) {
-                        session.isFullScreen = true
-                    }
-                } label: {
-                    JunoIconLabel("Full screen", icon: .maximize)
                 }
             }
         } label: {
@@ -557,19 +573,52 @@ struct JunoMobileVoiceCallControls: View {
         .contentShape(.rect)
     }
 
-    /// A 34pt glass circle in a 44pt target, the same object as the `+`
-    /// across the row. Pressed lays an ink disc over the glass rather than
-    /// swapping the material, so the button keeps one identity and the change
-    /// is a fill, not a new control.
+    /// The website's `CallButton`: a bare glyph in muted ink on the card's
+    /// own glass, in a 44pt target. Pressed (muted, sharing) is a 36pt ink
+    /// disc with the glyph in the canvas colour, so the one state worth
+    /// noticing is the one that changes shape.
     private func glyph(_ icon: JunoIcon, size: CGFloat, pressed: Bool) -> some View {
         JunoIconView(icon, size: size)
-            .foregroundStyle(pressed ? Color.junoCanvas : Color.junoForeground)
-            .frame(width: 34, height: 34)
+            .foregroundStyle(pressed ? Color.junoCanvas : Color.junoMutedForeground)
+            .frame(width: 36, height: 36)
             .background(Circle().fill(Color.junoForeground).opacity(pressed ? 1 : 0))
-            .modifier(JunoComposerGlassCircle())
             .frame(minWidth: 44, minHeight: 44)
             .contentShape(Rectangle())
     }
+}
+
+/// End, in the composer's primary slot (Send's place) while nothing is typed:
+/// a solid destructive disc, the one coloured control in a call. The glyph
+/// takes the canvas ink, white on the light red and near-black on the dark
+/// appearance's lifted red, as the web's `destructive-foreground` does.
+struct JunoMobileVoiceCallEnd: View {
+  let session: JunoMobileVoiceSession
+  /// Runs first, for the host's haptic.
+  var onEnd: () -> Void = {}
+
+  var body: some View {
+    Button {
+      onEnd()
+      session.hangUp()
+    } label: {
+      Group {
+        if session.isSaving {
+          ProgressView().tint(Color.junoCanvas)
+        } else {
+          JunoIconView(.phoneOff, size: 19)
+        }
+      }
+      .foregroundStyle(Color.junoCanvas)
+      .frame(width: 36, height: 36)
+      .background(Circle().fill(Color.junoDanger))
+      .frame(minWidth: 44, minHeight: 44)
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .disabled(session.isSaving)
+    .accessibilityLabel("voice.end")
+    .accessibilityIdentifier("juno.mobile.voice-end")
+  }
 }
 
 /// The voice light on the composer while it is a call: the website's light,

@@ -1521,15 +1521,8 @@ struct ChatComposer: View {
             ComposerDictationControls(
                 session: dictation,
                 cancel: cancelDictation,
-                stop: stopDictation
-            ) {
-                ComposerPrimaryDisc(
-                    face: dictation.hasWords ? .send : .disabled("Send what you dictated"),
-                    label: "Send what you dictated",
-                    identifier: "juno.desktop.dictation-send",
-                    action: sendDictation
-                )
-            }
+                done: stopDictation
+            )
             .transition(.opacity)
         } else {
             HStack(spacing: JunoComposerMetrics.controlSpacing) {

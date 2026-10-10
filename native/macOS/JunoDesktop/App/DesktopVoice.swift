@@ -9,6 +9,28 @@ import JunoSync
 import JunoVoiceKit
 import SwiftUI
 
+// A voice call, in the composer's own shell (the website's design: the call
+// is the composer, not a strip or a window of its own).
+//
+// Host usage, for any composer with a field, a controls row and an edge
+// overlay (Chat's `ChatComposer` is the reference):
+//
+//     // placeholder while in a call: "Type while you talk…"
+//     // controls row, replacing the host's own row (never beside it):
+//     DesktopVoiceCallBar(
+//         column: call, hangUp: hangUp, hasDraft: !draft.isEmpty,
+//         leading: { plusMenu },          // the host's `+`
+//         primary: { sendDisc }           // the host's Send, shown once typed
+//     )
+//     // edge overlay on the shell:
+//     DesktopVoiceComposerGlow(controller: call.controller)
+//     // one quiet line above the shell, when there is news:
+//     DesktopVoiceCallNotices(column: call, hangUp: hangUp)
+//
+// The bar draws `+ · [stop] · mic · screen · settings · End`, End in the
+// primary slot until something is typed. Nothing is drawn outside the shell
+// except the light on its edge.
+
 /// One spoken conversation, owned by the screen that started it.
 ///
 /// `id` doubles as the save's idempotency key. It used to be `@State` on the

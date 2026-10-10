@@ -16,7 +16,13 @@ import JunoChatKit
 ///     --juno-preview-model anthropic:claude-haiku-4-5 --juno-preview-thinking
 ///     --juno-preview-thinking-level max --juno-preview-keyboard
 public enum JunoComposerPreviewFlags {
+    /// Values a hosted test sets in place of launch arguments, so a snapshot
+    /// can put one composer into one state without relaunching the app.
+    /// Checked before the command line.
+    nonisolated(unsafe) public static var overrides: [String: String] = [:]
+
     public static func value(_ name: String) -> String? {
+        if let forced = overrides[name] { return forced }
         let arguments = CommandLine.arguments
         guard let index = arguments.firstIndex(of: name),
             arguments.index(after: index) < arguments.endIndex

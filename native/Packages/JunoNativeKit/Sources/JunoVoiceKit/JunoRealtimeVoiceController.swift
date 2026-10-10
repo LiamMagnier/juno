@@ -1,7 +1,7 @@
 #if canImport(AVFoundation) && canImport(Speech)
 // `@preconcurrency` on this import alone, because AVFAudio's callback types are
 // declared `@Sendable` while being invoked synchronously on the calling thread —
-// annotations the framework predates. ``ConversionInput`` below is the *real*
+// annotations the framework predates. ``ConversionInput`` (RealtimeUplinkEncoder.swift) is the *real*
 // fix for the converter block; this covers the rest of the file's AVFoundation
 // surface, which the macos-15 toolchain CI runs on diagnoses more strictly than
 // the Xcode 27 toolchain available here. It is deliberately narrow: scoped to
@@ -99,8 +99,8 @@ private final class VoiceRelayShuttle: @unchecked Sendable {
     private let lock = NSLock()
 
     private var storedSocket: URLSessionWebSocketTask?
-    private var storedConverter: AVAudioConverter?
-    private var storedCaptureFormat: AVAudioFormat?
+    /// Touched only from the tap, which AVAudioEngine calls serially.
+    private let encoder = RealtimeUplinkEncoder()
     private var storedSpeechRequest: SFSpeechAudioBufferRecognitionRequest?
     private var storedMuted = false
     private var storedAssistantSpeaking = false
@@ -195,17 +195,9 @@ private final class VoiceRelayShuttle: @unchecked Sendable {
         set { lock.lock(); defer { lock.unlock() }; storedPlaybackLevel = newValue }
     }
 
-    func configureCapture(converter: AVAudioConverter, captureFormat: AVAudioFormat) {
-        lock.lock(); defer { lock.unlock() }
-        storedConverter = converter
-        storedCaptureFormat = captureFormat
-    }
-
     func reset() {
         lock.lock(); defer { lock.unlock() }
         storedSocket = nil
-        storedConverter = nil
-        storedCaptureFormat = nil
         storedSpeechRequest = nil
         storedMicLevel = 0
         storedMicSpectrum = .silent
@@ -226,10 +218,8 @@ private final class VoiceRelayShuttle: @unchecked Sendable {
     /// their microphone is muted rather than broken.
     func processMic(_ buffer: AVAudioPCMBuffer) {
         let frames = Int(buffer.frameLength)
-        guard frames > 0, let floatData = buffer.floatChannelData else { return }
-        let channelCount = Int(buffer.format.channelCount)
-        let ch0 = floatData[0]
-        let ch1 = channelCount > 1 ? floatData[1] : nil
+        // Every sample layout, not only Float32: see ``RealtimeUplinkEncoder``.
+        guard frames > 0, let sample = RealtimeUplinkEncoder.monoSamples(of: buffer) else { return }
 
         // One pass for the level and the bands the glow's lobes follow.
         let rate = buffer.format.sampleRate
@@ -239,9 +229,9 @@ private final class VoiceRelayShuttle: @unchecked Sendable {
         }
         var sum: Float = 0
         let spectrum = micSplitter!.measure(count: frames) { index in
-            let sample = ch1 != nil ? (ch0[index] + ch1![index]) * 0.5 : ch0[index]
-            sum += sample * sample
-            return sample
+            let value = sample(index)
+            sum += value * value
+            return value
         }
         micLevel = Double((sum / Float(frames)).squareRoot())
         micSpectrum = spectrum
@@ -258,57 +248,8 @@ private final class VoiceRelayShuttle: @unchecked Sendable {
         lock.lock()
         let socket = storedSocket
         lock.unlock()
-        guard let socket else { return }
-
-        let inRate = buffer.format.sampleRate
-        guard inRate > 0 else { return }
-        let targetRate = 16000.0
-        let ratio = inRate / targetRate
-        let outFrames = max(1, Int(Double(frames) / ratio))
-        var pcmData = Data(count: outFrames * MemoryLayout<Int16>.size)
-        pcmData.withUnsafeMutableBytes { raw in
-            let dest = raw.bindMemory(to: Int16.self)
-            for k in 0..<outFrames {
-                let start = Int(Double(k) * ratio)
-                let end = min(frames, Int(Double(k + 1) * ratio))
-                var acc: Float = 0
-                if end > start {
-                    for j in start..<end {
-                        let sample = ch1 != nil ? (ch0[j] + ch1![j]) * 0.5 : ch0[j]
-                        acc += sample
-                    }
-                    acc /= Float(end - start)
-                } else if start < frames {
-                    acc = ch1 != nil ? (ch0[start] + ch1![start]) * 0.5 : ch0[start]
-                }
-                let clamped = max(-1.0, min(1.0, acc))
-                dest[k] = Int16(clamped * 32767.0).littleEndian
-            }
-        }
-        socket.send(.data(pcmData)) { _ in }
-    }
-}
-
-/// The single input buffer handed to one `AVAudioConverter.convert` call, plus
-/// the flag that makes it a once-only supply.
-///
-/// `@unchecked Sendable`, and the reason is specific rather than a shrug:
-/// `AVAudioConverterInputBlock` is *typed* `@Sendable` but is invoked
-/// **synchronously**, on the calling thread, before
-/// `convert(to:error:withInputFrom:)` returns. One instance is created per tap
-/// callback, is reachable only from that one `convert` call, and is dead before
-/// the next line runs — so no two threads can ever see it, and the compiler's
-/// concurrency rules are being satisfied for an API that predates them.
-///
-/// A captured `var` and a bare buffer were used here before, which the checker
-/// rejects for exactly the right general reason; the box is what states the
-/// narrower fact that makes it safe. Nothing outside this file may hold one.
-private final class ConversionInput: @unchecked Sendable {
-    let buffer: AVAudioPCMBuffer
-    var consumed = false
-
-    init(buffer: AVAudioPCMBuffer) {
-        self.buffer = buffer
+        guard let socket, let pcm = encoder.encode(buffer) else { return }
+        socket.send(.data(pcm)) { _ in }
     }
 }
 
@@ -546,6 +487,9 @@ public final class JunoRealtimeVoiceController {
     private var noticeTask: Task<Void, Never>?
     private var audioConfigurationObservers: [NSObjectProtocol] = []
     private var audioRouteRecoveryTask: Task<Void, Never>?
+    /// How many times the graph has been rebuilt lately; see
+    /// ``scheduleAudioRouteRecovery()``.
+    private var graphRecovery = RealtimeGraphRecoveryPolicy()
     /// Set by ``end()``. Every async step re-checks it, because a token fetch or
     /// a permission prompt can outlive the screen that started it and would
     /// otherwise bring an audio engine up behind a dismissed sheet.
@@ -855,6 +799,34 @@ public final class JunoRealtimeVoiceController {
         speakerOutput.toggle()
         try? AVAudioSession.sharedInstance()
             .overrideOutputAudioPort(speakerOutput ? .speaker : .none)
+    }
+
+    /// Brings the audio back after an interruption ends.
+    ///
+    /// **iOS stops the engine when an interruption begins and never restarts
+    /// it.** Before this, nothing did either: once a call had been through
+    /// one interruption (Siri, an alarm, a phone call, or the spurious one iOS
+    /// can deliver as a session activates) the socket stayed open on a graph
+    /// that rendered nothing, so the model neither heard nor spoke and the
+    /// queued reply never drained, which also held the uplink shut. The
+    /// session is re-activated, anything queued for the speaker is dropped
+    /// (it belongs to a moment that has passed), and the graph is rebuilt if
+    /// it is not running.
+    public func resumeAudioAfterInterruption() {
+        guard phase == .live || phase == .reconnecting, !closedByUser else { return }
+        try? AVAudioSession.sharedInstance().setActive(true, options: .notifyOthersOnDeactivation)
+        flushPlayback()
+        guard audioEngine?.isRunning != true || playbackEngine?.isRunning != true else { return }
+        do {
+            try startAudioEngine()
+            Self.audioLog.info("Voice graph restarted after an interruption")
+        } catch {
+            Self.audioLog.error(
+                "Voice graph restart after an interruption failed: \(Self.diagnostic(error), privacy: .public)"
+            )
+            teardown(closeCode: .abnormalClosure)
+            phase = .error(error)
+        }
     }
     #endif
 
@@ -1489,7 +1461,14 @@ public final class JunoRealtimeVoiceController {
     /// node on the plain hardware format is the simplest thing this process can
     /// ask CoreAudio for, so a third attempt would fail identically and only
     /// delay the message.
-    private func startAudioEngine() throws(JunoRealtimeVoiceError) {
+    private func startAudioEngine(rawOnly: Bool = false) throws(JunoRealtimeVoiceError) {
+        // Dictation lets go of the microphone before this graph is built: two
+        // engines on one input is a voice-processing unit that refuses, or a
+        // call on a microphone that delivers nothing. See
+        // ``JunoMicrophoneArbiter``.
+        JunoMicrophoneArbiter.shared.claim(.voiceCall, by: self) { [weak self] in
+            self?.end()
+        }
         #if os(iOS)
         // `.playAndRecord` with `.voiceChat` is the **precondition** for what
         // `buildAudioGraph` does next, not a substitute for it. The node's
@@ -1526,7 +1505,7 @@ public final class JunoRealtimeVoiceController {
         // initialisation failure. Costs nothing when there is nothing to drop.
         disposeAudioGraph()
 
-        let attempts = RealtimeAudioGraphPlan.current.voiceProcessingAttempts
+        let attempts = rawOnly ? [false] : RealtimeAudioGraphPlan.current.voiceProcessingAttempts
         do {
             try buildAudioGraph(voiceProcessing: attempts[0])
         } catch where attempts.count > 1 {
@@ -1642,10 +1621,11 @@ public final class JunoRealtimeVoiceController {
         ) else {
             throw RealtimeAudioSetupError.noInput
         }
-        guard let converter = AVAudioConverter(from: inputFormat, to: capture) else {
+        // Asked once here as a check that the uplink can be made at all; the
+        // tap's own encoder builds the converter it uses from each buffer.
+        guard AVAudioConverter(from: inputFormat, to: capture) != nil else {
             throw RealtimeAudioSetupError.formatUnavailable
         }
-        box.configureCapture(converter: converter, captureFormat: capture)
         box.muted = muted
 
         // Defensive: installing a second tap on a bus that still has one raises
@@ -1735,27 +1715,73 @@ public final class JunoRealtimeVoiceController {
 
     /// A headset transition can emit several graph notifications; debounce them
     /// into one fresh voice-processing attempt followed by the raw fallback.
+    ///
+    /// **This is the iPhone call that neither heard nor spoke.** On iOS the
+    /// voice-processing unit finishes configuring itself a few milliseconds
+    /// *after* `engine.start()` returns, reports that as a configuration
+    /// change, and `AVAudioEngine` stops itself in answer. The graph is built
+    /// before the socket opens, so at that moment the call is still
+    /// `connecting`, and this used to return early for anything but `live`:
+    /// the engine stayed stopped for the whole call, with no microphone to
+    /// send and no output to play the reply through, and no error anywhere.
+    /// Recovery now runs in every phase that wants audio, rebuilds only a
+    /// graph that is actually down, and falls back to the plain input after
+    /// repeated stops so a unit that keeps reconfiguring cannot loop. See
+    /// ``RealtimeGraphRecoveryPolicy``.
     private func scheduleAudioRouteRecovery() {
-        guard phase == .live, !closedByUser else { return }
+        guard RealtimeGraphRecoveryPolicy.wantsAudio(phase: phase, closedByUser: closedByUser) else { return }
         audioRouteRecoveryTask?.cancel()
-        Self.audioLog.notice("Audio route changed; scheduling voice graph recovery")
+        Self.audioLog.notice("Audio configuration changed; scheduling voice graph recovery")
         audioRouteRecoveryTask = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(300))
-            guard !Task.isCancelled, let self, self.phase == .live, !self.closedByUser else {
+            guard !Task.isCancelled, let self else { return }
+            let running = self.audioEngine?.isRunning == true && self.playbackEngine?.isRunning == true
+            let decision = self.graphRecovery.decide(
+                wantsAudio: RealtimeGraphRecoveryPolicy.wantsAudio(
+                    phase: self.phase, closedByUser: self.closedByUser
+                ),
+                engineRunning: running,
+                now: ProcessInfo.processInfo.systemUptime
+            )
+            guard case .rebuild(let rawOnly) = decision else { return }
+            // First the cheap way, the one Apple documents for a
+            // configuration change: start the same engine again. The
+            // voice-processing unit is configured by now, so it usually
+            // stays up, and nothing is rebuilt or re-armed.
+            if !rawOnly, self.restartAudioEngineInPlace() {
+                Self.audioLog.info("Voice graph restarted in place after a configuration change")
                 return
             }
             do {
-                try self.startAudioEngine()
-                Self.audioLog.info("Voice graph recovered after audio route change")
+                try self.startAudioEngine(rawOnly: rawOnly)
+                Self.audioLog.info(
+                    "Voice graph recovered after a configuration change (raw only: \(rawOnly, privacy: .public))"
+                )
             } catch {
-                let voiceError = error as? JunoRealtimeVoiceError ?? Self.audioFailure(error)
                 Self.audioLog.error(
-                    "Voice route recovery failed: \(Self.diagnostic(error), privacy: .public)"
+                    "Voice graph recovery failed: \(Self.diagnostic(error), privacy: .public)"
                 )
                 self.teardown(closeCode: .abnormalClosure)
-                self.phase = .error(voiceError)
+                self.phase = .error(error as? JunoRealtimeVoiceError ?? Self.audioFailure(error))
             }
         }
+    }
+
+    /// Starts the existing graph again after the engine stopped itself.
+    /// False when there is no graph or it will not start, and the caller
+    /// rebuilds instead.
+    private func restartAudioEngineInPlace() -> Bool {
+        guard let engine = audioEngine, let output = playbackEngine else { return false }
+        do {
+            if !engine.isRunning { try engine.start() }
+            if !output.isRunning { try output.start() }
+        } catch {
+            return false
+        }
+        // A stopped engine drops what was queued; the drain must not hold the
+        // microphone shut for buffers that will never play.
+        flushPlayback()
+        return engine.isRunning && output.isRunning
     }
 
     /// The input node's format now, with voice processing withdrawn if enabling
@@ -2348,6 +2374,7 @@ public final class JunoRealtimeVoiceController {
         socket?.cancel(with: closeCode, reason: nil)
         socket = nil
         disposeAudioGraph()
+        JunoMicrophoneArbiter.shared.release(by: self)
         box.reset()
         level = 0
         spectrum = .silent

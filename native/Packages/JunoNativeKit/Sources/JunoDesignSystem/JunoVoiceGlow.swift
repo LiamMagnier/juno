@@ -418,7 +418,7 @@ public struct JunoVoiceGlowState: Equatable, Sendable {
 /// The shell's motion curves, as functions of progress.
 enum JunoVoiceGlowCurve {
     /// A CSS `cubic-bezier(x1, y1, x2, y2)`.
-    static func cubicBezier(_ x1: Double, _ y1: Double, _ x2: Double, _ y2: Double) -> (Double) -> Double {
+    static func cubicBezier(_ x1: Double, _ y1: Double, _ x2: Double, _ y2: Double) -> @Sendable (Double) -> Double {
         let ax = 3 * x1 - 3 * x2 + 1, bx = 3 * x2 - 6 * x1, cx = 3 * x1
         let ay = 3 * y1 - 3 * y2 + 1, by = 3 * y2 - 6 * y1, cy = 3 * y1
         return { t in
