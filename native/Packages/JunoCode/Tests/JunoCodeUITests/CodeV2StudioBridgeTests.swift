@@ -66,7 +66,8 @@ final class CodeV2StudioBridgeTests: XCTestCase {
         XCTAssertEqual(nodes[0].elapsedSeconds, 112)
         XCTAssertEqual(nodes[1].liveLine, "Editing src/cart/useCartTotal.ts")
         XCTAssertEqual(nodes[1].elapsedSeconds, 161)
-        XCTAssertEqual(nodes[2].liveLine, "Waiting for you: wants to run a command")
+        // TARGET §6.1: a waiting agent says "Waiting for you"; what it wants is the composer takeover.
+        XCTAssertEqual(nodes[2].liveLine, "Waiting for you")
         XCTAssertEqual(nodes[3].liveLine, "Found 3 call sites and 2 tests. Closed.")
         // The children's own narration is not in the lead's work log.
         let turn = try XCTUnwrap(CodeV2TurnFolding.turns(from: snapshot.items, activeTurnId: "t1").first)

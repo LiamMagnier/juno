@@ -77,7 +77,7 @@ struct CodeV2Dial: View {
         ZStack {
             Circle().strokeBorder(Studio.Ink.secondary.opacity(0.55), lineWidth: 1)
             CodeV2Wedge(fraction: min(1, max(0, fraction)))
-                .fill(warning ? Studio.Signal.edge : Studio.Ink.secondary)
+                .fill(Studio.Ink.secondary)
                 .padding(2.5)
         }
     }
@@ -104,34 +104,35 @@ struct CodeV2Wedge: Shape {
     }
 }
 
-/// The 280pt hover card (DESIGN §5.7).
+/// The ring's card: how full the window is and when it compacts, in
+/// numbers (no bar), with Compact now.
 struct CodeV2ContextCard: View {
     let reading: CodeV2ContextReading
     var compact: (() -> Void)?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: JunoSpace.snug) {
-            HStack {
-                Text("Context").font(Studio.Font.labelEmphasis)
+        VStack(alignment: .leading, spacing: JunoSpace.tight + 2) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Context").studioType(.textMedium).foregroundStyle(Studio.Ink.primary)
                 Spacer()
-                Text(reading.usedLine).font(Studio.Font.metaDigits).foregroundStyle(Studio.Ink.secondary)
+                Text(reading.usedLine).studioType(.small).monospacedDigit().foregroundStyle(Studio.Ink.secondary)
             }
-            CodeV2Meter(fraction: reading.fraction, tint: reading.isWarning ? Studio.Signal.edge : Studio.Ink.primary)
             Text("Compacts at \(CodeV2ContextMath.compactCount(reading.autoCompactAt))")
-                .font(Studio.Font.meta).foregroundStyle(Studio.Ink.secondary)
+                .studioType(.small).monospacedDigit().foregroundStyle(Studio.Ink.secondary)
             if let cost = reading.costUsd {
-                Text("This thread so far: \(CodeV2ContextMath.dollars(cost))")
-                    .font(Studio.Font.metaDigits).foregroundStyle(Studio.Ink.secondary)
+                Text("This thread so far \(CodeV2ContextMath.dollars(cost))")
+                    .studioType(.small).monospacedDigit().foregroundStyle(Studio.Ink.secondary)
             } else if let plan = reading.planSentence {
-                Text(plan).font(Studio.Font.meta).foregroundStyle(Studio.Ink.secondary)
+                Text(plan).studioType(.small).foregroundStyle(Studio.Ink.secondary)
             }
             if let compact {
-                Button("Compact now", action: compact)
-                    .buttonStyle(CodeV2OutlineButtonStyle(compact: true)).contentShape(.rect)
+                Button("Compact Now", action: compact)
+                    .buttonStyle(.bordered).controlSize(.small)
                     .padding(.top, JunoSpace.tight)
+                    .contentShape(.rect)
             }
         }
         .padding(JunoSpace.cozy)
-        .frame(width: 280, alignment: .leading)
+        .frame(width: 260, alignment: .leading)
     }
 }

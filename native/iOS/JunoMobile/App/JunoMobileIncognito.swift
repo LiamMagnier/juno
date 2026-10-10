@@ -294,6 +294,7 @@ struct JunoMobileIncognitoChat: View {
                 JunoMobileThinkingDialSlider(
                     scale: scale,
                     effort: $reasoningEffort,
+                    proMode: $proMode,
                     close: { withAnimation(JunoMotion.reduced(JunoMotion.chatControl, when: reduceMotion)) { thinkingOpen = false } }
                 )
                 .padding(JunoSpace.tight)

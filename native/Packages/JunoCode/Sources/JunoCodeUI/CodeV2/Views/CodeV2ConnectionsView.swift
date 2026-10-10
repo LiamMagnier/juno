@@ -3,20 +3,22 @@ import JunoCodeCore
 import JunoCodeLocal
 import JunoDesignSystem
 
-/// Settings › Connections (DESIGN §5.13): the plans the user already pays
-/// for, their own API keys, and Alevr's plan. Alevr starts each vendor's own
-/// agent on this Mac; the sign-in, billing and limits stay with the vendor.
+/// Settings › Connections (code-v4 TARGET §11): master and detail. The list
+/// names every source with one short status line (Subscriptions, Your API
+/// keys, Alevr); the detail is a stock grouped form with the account, the
+/// plan's windows as numbers, and the one action the state calls for.
 ///
-/// Health is words, never a badge. Install and Sign in open Terminal with
-/// the vendor's command typed in, not run; Re-check runs the probe, which
-/// never starts a login or a session.
+/// Health is words, never a badge or a bar. Install and Sign in open
+/// Terminal with the vendor's command typed in, not run; Re-check runs the
+/// probe, which never starts a login or a session.
 public struct CodeV2ConnectionsView: View {
     let hub: EnvServerHub
     let keys: CodeV2KeysModel
     var alevrPlanLine: String?
     var antigravityEnabled = true
 
-    @State private var addingKey: CodeV2.ByokProvider?
+    @State private var selection: String?
+    @State private var addingKey = false
     @State private var keyDraft = ""
 
     public init(hub: EnvServerHub, keys: CodeV2KeysModel, alevrPlanLine: String? = nil, antigravityEnabled: Bool = true) {
@@ -37,84 +39,24 @@ public struct CodeV2ConnectionsView: View {
         ).instances.filter { $0.kind != .alevr && $0.kind != .byok }
     }
 
+    private var current: String { selection ?? subscriptions.first?.id ?? "alevr" }
+
+    /// Labs with a saved key, plus the one being added right now.
+    private var listedKeyProviders: [CodeV2.ByokProvider] {
+        CodeV2.ByokProvider.allCases.filter { keys.record(for: $0) != nil || current == "key:" + $0.rawValue }
+    }
+
+    private var unkeyedProviders: [CodeV2.ByokProvider] {
+        CodeV2.ByokProvider.allCases.filter { !listedKeyProviders.contains($0) }
+    }
+
     public var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: JunoSpace.snug) {
-                Text("Connections").junoFont(size: 22, relativeTo: .title2, weight: .medium)
-                Text("Use the plans you already pay for. Alevr starts each vendor's own agent on your Mac, so your sign-in, billing and limits stay with the vendor.")
-                    .font(Studio.Font.label).foregroundStyle(Studio.Ink.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                if case let .failed(message) = hub.phase {
-                    Text(message).font(Studio.Font.meta).foregroundStyle(Studio.Signal.ink)
-                } else if hub.phase == .starting {
-                    Text("Starting Alevr's local environment…").font(Studio.Font.meta).foregroundStyle(Studio.Ink.secondary)
-                }
-            }
-            // On the grouped form's own leading edge (its inset plus a
-            // section's), so the title lines up with the section headings.
-            .padding(.horizontal, 38)
-            .padding(.top, JunoSpace.roomy)
-        Form {
-            Section("Subscriptions") {
-                ForEach(subscriptions, id: \.id) { instance in
-                    CodeV2SubscriptionRow(
-                        instance: instance,
-                        isProbing: hub.probing.contains(instance.id),
-                        isOpening: hub.openingSetup.contains(instance.id),
-                        setup: { action in Task { await hub.openSetup(for: instance.id, action: action) } },
-                        recheck: { Task { await hub.probe(instance.id) } },
-                        managed: hub.managesRuntime(instance.id) ? CodeV2ManagedRuntime(hub: hub, instanceId: instance.id) : nil
-                    )
-                }
-                if !antigravityEnabled {
-                    // Listed, honestly, rather than missing while its terms check is open.
-                    HStack(spacing: JunoSpace.cozy) {
-                        CodeV2MarkTile(id: "google", name: "Antigravity", dimmed: true)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Antigravity").font(Studio.Font.labelEmphasis).foregroundStyle(Studio.Ink.secondary)
-                            Text(Self.heldSentence)
-                                .font(Studio.Font.meta).foregroundStyle(Studio.Ink.tertiary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        Spacer()
-                    }
-                    .padding(.vertical, JunoSpace.tight)
-                }
-                if let error = hub.lastError {
-                    Text(error).font(Studio.Font.meta).foregroundStyle(Studio.Ink.danger)
-                }
-            }
-
-            Section {
-                ForEach(CodeV2.ByokProvider.allCases, id: \.self) { provider in
-                    keyRow(provider)
-                }
-                if keys.canUndo {
-                    HStack {
-                        Text("Key removed.").font(Studio.Font.meta).foregroundStyle(Studio.Ink.secondary)
-                        Button("Undo") { Task { await keys.undoRemove() } }.buttonStyle(StudioQuietButtonStyle())
-                    }
-                }
-            } header: {
-                Text("Your API keys")
-            } footer: {
-                Text("Used by the Alevr engine and never billed by Alevr.").font(Studio.Font.meta).foregroundStyle(Studio.Ink.secondary)
-            }
-
-            Section("Alevr") {
-                HStack(spacing: JunoSpace.cozy) {
-                    CodeV2MarkTile(id: "alevr", name: "Alevr")
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Alevr").font(Studio.Font.labelEmphasis)
-                        Text(alevrPlanLine ?? "Alevr models on your plan.").font(Studio.Font.meta).foregroundStyle(Studio.Ink.secondary)
-                    }
-                    Spacer()
-                }
-                .padding(.vertical, JunoSpace.tight)
-            }
-        }
-        .formStyle(.grouped)
-        .scrollContentBackground(.hidden)
+        HStack(spacing: 0) {
+            list
+                .frame(width: 280)
+            Rectangle().fill(Studio.Surface.hairline).frame(width: 1)
+            detail
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .background(Studio.Surface.canvas)
         .task {
@@ -123,162 +65,283 @@ public struct CodeV2ConnectionsView: View {
         }
     }
 
-    @ViewBuilder
-    private func keyRow(_ provider: CodeV2.ByokProvider) -> some View {
-        let record = keys.record(for: provider)
-        VStack(alignment: .leading, spacing: JunoSpace.snug) {
-            HStack(spacing: JunoSpace.cozy) {
-                CodeV2MarkTile(id: provider.markID, name: provider.labName)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(provider.labName).font(Studio.Font.labelEmphasis)
-                    if let record {
-                        Text(keyLine(record)).font(Studio.Font.meta).foregroundStyle(record.isValid ? Studio.Ink.secondary : Studio.Signal.ink)
-                    } else {
-                        Text("No key").font(Studio.Font.meta).foregroundStyle(Studio.Ink.secondary)
+    // MARK: List
+
+    private var list: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 2) {
+                heading("Subscriptions")
+                ForEach(subscriptions, id: \.id) { instance in
+                    sourceRow(
+                        id: instance.id, mark: CodeV2Marks.markID(instance: instance), name: CodeV2ProviderDirectory.vendorName(instance),
+                        status: Self.status(instance), danger: instance.status == .signedOut && instance.statusMessage != nil,
+                        dimmed: !(instance.status == .ready || instance.status == .limited)
+                    )
+                }
+                heading("Your API keys")
+                // Only keys that exist get a row; the labs without one fold
+                // into a single Add a key (the web's list does the same), so
+                // the column is not a wall of "No key".
+                ForEach(listedKeyProviders, id: \.self) { provider in
+                    let record = keys.record(for: provider)
+                    sourceRow(
+                        id: "key:" + provider.rawValue, mark: provider.markID, name: provider.labName,
+                        status: record.map { $0.isValid ? "Key \($0.hint)" : "Key refused" } ?? "No key",
+                        danger: record?.isValid == false, dimmed: record == nil
+                    )
+                }
+                if !unkeyedProviders.isEmpty {
+                    Menu {
+                        ForEach(unkeyedProviders, id: \.self) { provider in
+                            Button(provider.labName) {
+                                selection = "key:" + provider.rawValue
+                                addingKey = true
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: JunoSpace.snug + 2) {
+                            JunoIconView(.plus, size: 13)
+                                .foregroundStyle(Studio.Ink.secondary)
+                                .frame(minWidth: 20)
+                            Text("Add a key").studioType(.text).foregroundStyle(Studio.Ink.secondary)
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.horizontal, JunoSpace.snug)
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        .contentShape(.rect)
                     }
+                    .menuStyle(.button)
+                    .buttonStyle(.plain)
+                    .menuIndicator(.hidden)
+                    .help("Add an API key")
                 }
-                Spacer()
-                if keys.isWorking.contains(provider) {
-                    StudioSpinner().frame(width: 14, height: 14)
-                } else if record != nil {
-                    Button("Remove") { Task { await keys.remove(provider) } }.buttonStyle(StudioQuietButtonStyle()).contentShape(.rect)
-                } else if addingKey != provider {
-                    Button("Add key") { addingKey = provider; keyDraft = "" }.buttonStyle(CodeV2OutlineButtonStyle(compact: true)).contentShape(.rect)
-                }
+                heading("Alevr")
+                sourceRow(id: "alevr", mark: "alevr", name: "Alevr", status: alevrPlanLine ?? "Your Alevr plan", danger: false, dimmed: false)
             }
-            if addingKey == provider {
-                HStack(spacing: JunoSpace.snug) {
-                    SecureField(provider.keyPrefix.map { "\($0)…" } ?? "Paste your key", text: $keyDraft)
-                        .textFieldStyle(.roundedBorder)
-                        .font(Studio.Font.mono)
-                        .onSubmit { commit(provider) }
-                    Button("Cancel") { addingKey = nil }.buttonStyle(StudioQuietButtonStyle()).contentShape(.rect)
-                    Button("Save") { commit(provider) }.buttonStyle(CodeV2InkButtonStyle()).disabled(keyDraft.isEmpty).contentShape(.rect)
-                }
-                .padding(.leading, 44)
-            }
-            if let error = keys.errors[provider] {
-                Text(error).font(Studio.Font.meta).foregroundStyle(Studio.Ink.danger).padding(.leading, 44)
-            }
+            .padding(JunoSpace.snug)
         }
-        .padding(.vertical, JunoSpace.tight)
     }
 
-    private func keyLine(_ record: ByokKeyRecord) -> String {
-        var parts = [record.hint, "added " + record.addedAt.formatted(date: .abbreviated, time: .omitted)]
-        if let used = record.lastUsedAt { parts.append("last used " + used.formatted(.relative(presentation: .named))) }
-        if !record.isValid { parts.append(record.statusDetail ?? "the provider refused it") }
-        parts.append(record.location == .account ? "in your account" : "on this Mac only")
-        return parts.joined(separator: " · ")
+    private func heading(_ title: String) -> some View {
+        Text(title)
+            .studioType(.smallMedium)
+            .foregroundStyle(Studio.Ink.secondary)
+            .padding(.horizontal, JunoSpace.snug)
+            .padding(.top, JunoSpace.cozy)
+            .padding(.bottom, 2)
+    }
+
+    private func sourceRow(id: String, mark: String, name: String, status: String, danger: Bool, dimmed: Bool) -> some View {
+        Button { selection = id; addingKey = false } label: {
+            HStack(spacing: JunoSpace.snug + 2) {
+                CodeV2Mark(id: mark, name: name, size: 16, dimmed: dimmed)
+                    .frame(width: 20)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(name).studioType(.text).foregroundStyle(Studio.Ink.primary).lineLimit(1)
+                    Text(status).studioType(.small).monospacedDigit()
+                        .foregroundStyle(danger ? Studio.Ink.danger : Studio.Ink.secondary).lineLimit(1)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, JunoSpace.snug)
+            .frame(height: 44)
+            .background(
+                RoundedRectangle(cornerRadius: Studio.Radius.control, style: .continuous)
+                    .fill(current == id ? Studio.Surface.selected : Color.clear)
+            )
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// The list's one line: "Max plan · 38% of 5-hour window", "Not signed in".
+    static func status(_ instance: CodeV2.ProviderInstance) -> String {
+        switch instance.status {
+        case .ready, .limited:
+            var parts: [String] = []
+            if let plan = instance.account?.plan { parts.append(CodeV2ProviderDirectory.planName(plan) + " plan") }
+            if let window = instance.limits?.first, let used = window.usedPct {
+                parts.append("\(Int(used.rounded()))% of \(window.label.lowercased()) window")
+            }
+            return parts.isEmpty ? "Connected" : parts.joined(separator: " · ")
+        case .signedOut: return instance.statusMessage == nil ? "Not signed in" : "Sign-in expired"
+        case .notInstalled: return "Not installed"
+        case .error, .unknown: return "Not responding"
+        }
+    }
+
+    // MARK: Detail
+
+    @ViewBuilder
+    private var detail: some View {
+        if current == "alevr" {
+            alevrDetail
+        } else if current.hasPrefix("key:"), let provider = CodeV2.ByokProvider(rawValue: String(current.dropFirst(4))) {
+            keyDetail(provider)
+        } else if let instance = subscriptions.first(where: { $0.id == current }) {
+            subscriptionDetail(instance)
+        }
+    }
+
+    private func header(mark: String, name: String, detail: String?) -> some View {
+        HStack(spacing: JunoSpace.snug + 2) {
+            CodeV2Mark(id: mark, name: name, size: 20)
+            Text(name).studioType(.textMedium).foregroundStyle(Studio.Ink.primary)
+            if let detail { Text(detail).studioType(.small).foregroundStyle(Studio.Ink.secondary) }
+            Spacer()
+        }
+        .padding(.horizontal, 28)
+        .padding(.top, JunoSpace.regular)
+    }
+
+    private func subscriptionDetail(_ instance: CodeV2.ProviderInstance) -> some View {
+        let managed = hub.managesRuntime(instance.id) ? CodeV2ManagedRuntime(hub: hub, instanceId: instance.id) : nil
+        let known = CodeV2KnownSubscription.allCases.first { $0.instanceId == instance.id }
+        return VStack(alignment: .leading, spacing: 0) {
+            header(mark: CodeV2Marks.markID(instance: instance), name: CodeV2ProviderDirectory.vendorName(instance),
+                   detail: instance.version.map { "Version \($0)" })
+            Text("Runs your own \(CodeV2ProviderDirectory.vendorName(instance)) agent on this Mac. Sign-in, billing and limits stay with the vendor.")
+                .studioType(.small).foregroundStyle(Studio.Ink.secondary)
+                .padding(.horizontal, 28).padding(.top, JunoSpace.tight)
+            Form {
+                Section {
+                    LabeledContent("Status") {
+                        Text(instance.status == .ready ? "Connected" : (instance.status == .limited ? "Limit reached" : Self.status(instance)))
+                            .foregroundStyle(instance.status == .signedOut && instance.statusMessage != nil ? Studio.Ink.danger : Studio.Ink.secondary)
+                    }
+                    if let email = instance.account?.email { LabeledContent("Account", value: email) }
+                    if let plan = instance.account?.plan { LabeledContent("Plan", value: CodeV2ProviderDirectory.planName(plan)) }
+                    ForEach(instance.limits ?? [], id: \.id) { window in
+                        LabeledContent("\(window.label) window") {
+                            Text("\(Int((window.usedPct ?? 0).rounded()))% used"
+                                 + (window.resetsAt.flatMap { CodeV2Formatting.clockTime(iso: $0) }.map { ", resets \($0)" } ?? ""))
+                                .monospacedDigit()
+                        }
+                    }
+                    if let note = known?.note {
+                        Text(note).foregroundStyle(Studio.Ink.secondary)
+                    }
+                    if let managed {
+                        CodeV2ManagedRuntimeDetail(managed: managed)
+                    }
+                } footer: {
+                    HStack {
+                        Spacer()
+                        if let managed {
+                            CodeV2ManagedRuntimeAction(managed: managed, status: instance.status, recheck: { Task { await hub.probe(instance.id) } })
+                        } else {
+                            subscriptionAction(instance)
+                        }
+                    }
+                }
+                if let error = hub.lastError {
+                    Section { Text(error).foregroundStyle(Studio.Ink.danger) }
+                }
+            }
+            .formStyle(.grouped)
+            .scrollContentBackground(.hidden)
+        }
+    }
+
+    @ViewBuilder
+    private func subscriptionAction(_ instance: CodeV2.ProviderInstance) -> some View {
+        let expired = instance.status == .signedOut && instance.statusMessage != nil
+        if hub.probing.contains(instance.id) || hub.openingSetup.contains(instance.id) {
+            ProgressView().controlSize(.small)
+        } else {
+            switch instance.status {
+            case .notInstalled:
+                Button("Install") { Task { await hub.openSetup(for: instance.id, action: .install) } }
+                    .help("Alevr opens a terminal with the install command so you can read it first.")
+                    .contentShape(.rect)
+            case .signedOut:
+                Button(expired ? "Sign In Again" : "Sign In") { Task { await hub.openSetup(for: instance.id, action: .login) } }
+                    .contentShape(.rect)
+            case .error, .unknown:
+                Button("Re-check") { Task { await hub.probe(instance.id) } }
+                    .contentShape(.rect)
+            case .ready, .limited:
+                Menu("Manage") {
+                    Button("Re-check") { Task { await hub.probe(instance.id) } }
+                    Button("Sign In Again") { Task { await hub.openSetup(for: instance.id, action: .login) } }
+                }
+                .fixedSize()
+                    .contentShape(.rect)
+            }
+        }
+    }
+
+    private func keyDetail(_ provider: CodeV2.ByokProvider) -> some View {
+        let record = keys.record(for: provider)
+        return VStack(alignment: .leading, spacing: 0) {
+            header(mark: provider.markID, name: provider.labName, detail: nil)
+            Text("Used by the Alevr engine. \(provider.labName) bills it, never Alevr.")
+                .studioType(.small).foregroundStyle(Studio.Ink.secondary)
+                .padding(.horizontal, 28).padding(.top, JunoSpace.tight)
+            Form {
+                Section {
+                    if let record {
+                        LabeledContent("Key", value: record.hint)
+                        LabeledContent("Added", value: record.addedAt.formatted(date: .abbreviated, time: .omitted))
+                        LabeledContent("Last used", value: record.lastUsedAt?.formatted(.relative(presentation: .named)) ?? "Not yet")
+                        LabeledContent("Stored", value: record.location == .account ? "In your account" : "On this Mac only")
+                        if !record.isValid {
+                            Text(record.statusDetail ?? "The provider refused this key.").foregroundStyle(Studio.Ink.danger)
+                        }
+                    } else if addingKey {
+                        SecureField("Key", text: $keyDraft, prompt: Text(provider.keyPrefix.map { "\($0)…" } ?? "Paste your key"))
+                            .onSubmit { commit(provider) }
+                    } else {
+                        LabeledContent("Key", value: "None")
+                    }
+                    if let error = keys.errors[provider] {
+                        Text(error).foregroundStyle(Studio.Ink.danger)
+                    }
+                } footer: {
+                    HStack {
+                        if keys.canUndo {
+                            Text("Key removed.").foregroundStyle(Studio.Ink.secondary)
+                            Button("Undo") { Task { await keys.undoRemove() } }
+                        }
+                        Spacer()
+                        if keys.isWorking.contains(provider) {
+                            ProgressView().controlSize(.small)
+                        } else if record != nil {
+                            Button("Remove Key", role: .destructive) { Task { await keys.remove(provider) } }
+                        } else if addingKey {
+                            Button("Cancel") { addingKey = false }
+                            Button("Save") { commit(provider) }.disabled(keyDraft.isEmpty).keyboardShortcut(.defaultAction)
+                        } else {
+                            Button("Add Key…") { addingKey = true; keyDraft = "" }
+                        }
+                    }
+                }
+            }
+            .formStyle(.grouped)
+            .scrollContentBackground(.hidden)
+        }
+    }
+
+    private var alevrDetail: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            header(mark: "alevr", name: "Alevr", detail: nil)
+            Form {
+                Section {
+                    LabeledContent("Plan", value: alevrPlanLine ?? "Your Alevr plan")
+                    Text("Alevr models run on Alevr and count against this plan.").foregroundStyle(Studio.Ink.secondary)
+                }
+            }
+            .formStyle(.grouped)
+            .scrollContentBackground(.hidden)
+        }
     }
 
     private func commit(_ provider: CodeV2.ByokProvider) {
         let draft = keyDraft
         Task {
             if await keys.save(draft, for: provider) {
-                addingKey = nil
+                addingKey = false
                 keyDraft = ""
-            }
-        }
-    }
-}
-
-/// A 32pt mark tile: the mark on the quiet fill.
-struct CodeV2MarkTile: View {
-    let id: String
-    let name: String
-    var dimmed = false
-    var body: some View {
-        CodeV2Mark(id: id, name: name, size: 18, dimmed: dimmed)
-            .frame(width: 32, height: 32)
-            .background(RoundedRectangle(cornerRadius: Studio.Radius.control, style: .continuous).fill(Studio.Surface.muted))
-            .overlay(RoundedRectangle(cornerRadius: Studio.Radius.control, style: .continuous).strokeBorder(Studio.Surface.hairline))
-    }
-}
-
-/// One subscription: mark, name, the facts in a sentence, the plan windows
-/// as thin meters, and the one action its state calls for.
-struct CodeV2SubscriptionRow: View {
-    let instance: CodeV2.ProviderInstance
-    var isProbing = false
-    var isOpening = false
-    var setup: (CodeV2.ProviderSetupAction) -> Void
-    var recheck: () -> Void
-    /// Antigravity: Alevr installs and signs in the runtime itself.
-    var managed: CodeV2ManagedRuntime?
-
-    private var known: CodeV2KnownSubscription? {
-        CodeV2KnownSubscription.allCases.first { $0.instanceId == instance.id }
-    }
-    private var connected: Bool { instance.status == .ready || instance.status == .limited }
-    private var expired: Bool { instance.status == .signedOut && instance.statusMessage != nil }
-
-    var body: some View {
-        HStack(alignment: .top, spacing: JunoSpace.cozy) {
-            CodeV2MarkTile(id: CodeV2Marks.markID(instance: instance), name: instance.label, dimmed: !connected)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(instance.label).font(Studio.Font.labelEmphasis)
-                Text(CodeV2ProviderDirectory.statusSentence(instance))
-                    .font(Studio.Font.meta)
-                    .foregroundStyle(expired ? Studio.Signal.ink : Studio.Ink.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                if let note = known?.note {
-                    Text(note).font(Studio.Font.meta).foregroundStyle(Studio.Ink.tertiary)
-                }
-                if let managed {
-                    CodeV2ManagedRuntimeDetail(managed: managed)
-                }
-                if connected, let limits = instance.limits, !limits.isEmpty {
-                    HStack(spacing: JunoSpace.regular) {
-                        ForEach(limits, id: \.id) { window in
-                            HStack(spacing: JunoSpace.tight) {
-                                Text(window.label).font(Studio.Font.meta).foregroundStyle(Studio.Ink.secondary)
-                                CodeV2Meter(fraction: (window.usedPct ?? 0) / 100, width: 56)
-                                Text("\(Int((window.usedPct ?? 0).rounded()))%"
-                                     + (window.resetsAt.flatMap { CodeV2Formatting.clockTime(iso: $0) }.map { " resets \($0)" } ?? ""))
-                                    .font(Studio.Font.metaDigits).foregroundStyle(Studio.Ink.secondary)
-                            }
-                        }
-                    }
-                    .padding(.top, 2)
-                }
-            }
-            .opacity(isProbing ? 0.55 : 1)
-            Spacer(minLength: JunoSpace.snug)
-            action
-        }
-        .padding(.vertical, JunoSpace.tight)
-        .accessibilityElement(children: .contain)
-    }
-
-    @ViewBuilder
-    private var action: some View {
-        if let managed {
-            CodeV2ManagedRuntimeAction(managed: managed, status: instance.status, recheck: recheck)
-        } else if isProbing || isOpening {
-            StudioSpinner().frame(width: 14, height: 14).frame(width: 28, height: 28)
-        } else {
-            switch instance.status {
-            case .notInstalled:
-                Button("Install") { setup(.install) }.buttonStyle(CodeV2OutlineButtonStyle(compact: true)).contentShape(.rect)
-                    .help("Alevr opens a terminal with the install command so you can read it first.")
-            case .signedOut:
-                Button(expired ? "Sign in again" : "Sign in") { setup(.login) }.buttonStyle(CodeV2OutlineButtonStyle(compact: true)).contentShape(.rect)
-            case .error, .unknown:
-                Button("Re-check", action: recheck).buttonStyle(CodeV2OutlineButtonStyle(compact: true)).contentShape(.rect)
-            case .ready, .limited:
-                Menu {
-                    Button("Re-check", action: recheck)
-                    Button("Sign in again") { setup(.login) }
-                } label: {
-                    Text("Manage")
-                }
-                .menuStyle(.button)
-                .menuIndicator(.hidden)
-                .buttonStyle(CodeV2OutlineButtonStyle(compact: true))
-                .fixedSize()
-                .help("Re-check or sign in again")
-                .contentShape(.rect)
             }
         }
     }

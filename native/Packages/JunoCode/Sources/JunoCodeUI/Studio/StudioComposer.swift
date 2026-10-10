@@ -51,24 +51,24 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
     /// new-session screen. Separated from the field by a hairline. Nil in a
     /// thread, where the place is fixed and the title bar says it.
     var header: AnyView? = nil
-    /// The border beam over the shell (premium pass): `.pulse` on an empty
-    /// new-session composer until the first keystroke, `.line` while a run
-    /// works. Nil draws none.
-    var beam: JunoBorderBeamStyle? = nil
-    /// The beam's colour: Code's fixed signal coral (DESIGN §3.2), never the
-    /// account accent — the glow means "working", not "brand".
-    var beamTint: Color = Studio.Signal.edge
     /// ⌘↩ while a run works: steer it (Code v2 §5.6). Nil keeps ⌘↩ as send.
     var steer: (() -> Void)? = nil
     /// Esc twice within 600 ms while a run works stops it (DESIGN §8).
     var stopOnDoubleEscape: Bool = false
     /// Replaces the field and the control row in place: the approval or
-    /// question takeover (DESIGN §5.14). The shell, its position and its
-    /// glow stay; the edge holds coral instead of travelling.
+    /// question takeover (TARGET §7.4). The shell and its position stay; the
+    /// 1pt edge turns signal while it needs the reader. Nothing glows.
     var takeover: AnyView? = nil
     /// The takeover is waiting on the reader (an approval, a question):
     /// hold the coral edge. A Limited notice is not, and stays neutral.
     var takeoverNeedsYou = true
+    /// Extra items for the `+` menu after the attach items: plan mode, the
+    /// run's mode, permissions, computer use (code-v4 TARGET §7.1).
+    var plusMenu: AnyView? = nil
+    /// The drawer that hangs under the shell: project, branch, where it runs.
+    var contextStrip: AnyView? = nil
+    /// Lines the prompt reserves at rest: 2 in a thread, 3 on a new session.
+    var minimumLines = 2
     @ViewBuilder var leading: () -> Leading
     @ViewBuilder var trailing: () -> Trailing
 
@@ -121,6 +121,15 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            shell
+            if let contextStrip, takeover == nil {
+                contextStrip.transition(.opacity)
+            }
+        }
+    }
+
+    private var shell: some View {
+        VStack(spacing: 0) {
             if let header {
                 header
                     .padding(.horizontal, JunoSpace.snug)
@@ -152,17 +161,11 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
                     .allowsHitTesting(false)
             }
         }
-        .junoBorderBeam(
-            cornerRadius: Studio.Radius.composer,
-            style: beam ?? .line,
-            isActive: beam != nil && !isDropTargeted && takeover == nil,
-            tint: beamTint
-        )
-        // Needs you: the edge holds, brighter, and does not travel.
+        // Needs you: the 1pt edge in the signal ink. No ring, no glow.
         .overlay {
             if takeover != nil, takeoverNeedsYou {
                 RoundedRectangle(cornerRadius: Studio.Radius.composer, style: .continuous)
-                    .strokeBorder(Studio.Signal.edge.opacity(0.7), lineWidth: 1.5)
+                    .strokeBorder(Studio.Signal.edge, lineWidth: 1)
                     .allowsHitTesting(false)
             }
         }
@@ -194,7 +197,7 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
         let field = TextField(placeholder, text: $text, axis: .vertical)
             .textFieldStyle(.plain)
             .studioReadingFont()
-            .lineLimit(1...12)
+            .lineLimit(minimumLines...12)
             .padding(.horizontal, JunoSpace.regular)
             .padding(.top, JunoSpace.cozy + 2)
             .padding(.bottom, JunoSpace.snug)
@@ -270,16 +273,22 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
 
     private var controlRow: some View {
         HStack(spacing: JunoSpace.hairline) {
-            if addAttachment != nil {
+            if addAttachment != nil || plusMenu != nil {
                 Menu {
-                    Button("Add Images or PDFs…") { isChoosingImage = true }
-                    Button("Paste Image") {
-                        StudioPasteboard.attachments().forEach { addAttachment?($0) }
+                    if addAttachment != nil {
+                        Button("Attach Files…") { isChoosingImage = true }
+                        Button("Paste Image") {
+                            StudioPasteboard.attachments().forEach { addAttachment?($0) }
+                        }
                     }
                     if searchFiles != nil {
-                        Button("Mention a File or Folder") { text += text.isEmpty || text.hasSuffix(" ") ? "@" : " @" }
+                        Button("Mention a File") { text += text.isEmpty || text.hasSuffix(" ") ? "@" : " @" }
                     }
-                    Button("Commands") { if text.isEmpty { text = "/" } }
+                    Button("Commands and Skills") { if text.isEmpty { text = "/" } }
+                    if let plusMenu {
+                        Divider()
+                        plusMenu
+                    }
                 } label: {
                     JunoIconView(.plus, size: 15)
                 }
@@ -287,7 +296,7 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
                 .menuIndicator(.hidden)
                 .buttonStyle(StudioIconButtonStyle())
                 .fixedSize()
-                .help("Add images, files or commands")
+                .help("Attach, mention, plan mode, permissions and more")
                 .accessibilityLabel("Add").contentShape(.rect)
             }
             leading()
@@ -326,9 +335,10 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
         } else {
             Button(action: submit) {
                 JunoIconView(.send, size: 14, weight: .bold)
-                    .foregroundStyle(canSend ? Studio.Surface.canvas : Studio.Ink.tertiary)
+                    .foregroundStyle(Studio.Surface.canvas)
                     .frame(width: Studio.Metrics.sendButton, height: Studio.Metrics.sendButton)
-                    .background(Circle().fill(canSend ? Studio.Ink.primary : Studio.Surface.muted))
+                    .background(Circle().fill(Studio.Ink.primary))
+                    .opacity(canSend ? 1 : 0.3)
                     .contentShape(Circle())
                     .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint), value: canSend)
             }
@@ -692,8 +702,12 @@ private struct StudioModeShortcut: ViewModifier {
     }
 }
 
-/// The model and thinking depth, as one chip opening the same selector Chat
-/// uses — one model picker across the whole app.
+/// The model and its thinking depth, as one chip: the same two-stage control
+/// Chat mounts (the website's model-selector.tsx). A model with thinking
+/// levels opens on the effort panel first; its name there opens the full
+/// catalogue. Everything else opens the catalogue straight away.
+///
+/// ⇧⌘M opens the catalogue and ⇧⌘E the effort panel directly.
 struct StudioModelChip: View {
     let models: [ModelOption]
     let modelID: String
@@ -702,8 +716,7 @@ struct StudioModelChip: View {
     let selectEffort: (ReasoningEffort?) -> Void
     var isEnabled = true
 
-    @State private var modelPresented = false
-    @State private var effortPresented = false
+    @State private var stage: JunoModelPickerStage?
 
     private var selected: ModelOption? { models.first { $0.modelID == modelID } }
 
@@ -721,6 +734,8 @@ struct StudioModelChip: View {
             .joined(separator: " ")
     }
 
+    /// The ladder Code can actually send for this model, which is not always
+    /// the catalog's (see ``ModelOption/thinkingLadder``).
     private var ladder: JunoThinkingLadder {
         selected?.thinkingLadder ?? .code(efforts: ModelOption.contractReasoningEfforts)
     }
@@ -740,55 +755,33 @@ struct StudioModelChip: View {
     }
 
     var body: some View {
-        HStack(spacing: 0) {
-            Button { modelPresented = true } label: {
-                StudioChipLabel(title: name, showsChevron: false)
+        JunoModelPicker(
+            models: models.map(\.descriptor),
+            selectedModelID: modelID,
+            ladder: ladder,
+            stopID: stopID,
+            fallbackName: name,
+            isEnabled: isEnabled,
+            accessibilityID: "juno.code.composer.model",
+            stage: $stage,
+            select: { selectModel($0.id) }
+        )
+        .background {
+            // The two shortcuts, as hidden buttons so they work wherever the
+            // composer has focus.
+            Group {
+                Button("Model") { stage = .catalog }
+                    .keyboardShortcut("m", modifiers: [.command, .shift])
+                    .contentShape(.rect)
+                Button("Thinking depth") { if ladder.isAdjustable { stage = .effort } }
+                    .keyboardShortcut("e", modifiers: [.command, .shift])
+                    .contentShape(.rect)
             }
-            .buttonStyle(.plain)
+            .opacity(0)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
             .disabled(!isEnabled || models.isEmpty)
-            .help("Model (⇧⌘M)")
-            .keyboardShortcut("m", modifiers: [.command, .shift])
-            .accessibilityLabel("Model")
-            .accessibilityValue(name)
-            .accessibilityIdentifier("juno.code.composer.model")
-            .popover(isPresented: $modelPresented, arrowEdge: .bottom) {
-                JunoModelSelector(
-                    models: models.map(\.descriptor),
-                    selectedModelID: modelID,
-                    metrics: .standard,
-                    select: { model in
-                        modelPresented = false
-                        selectModel(model.id)
-                    }
-                )
-                .frame(
-                    width: JunoModelSelectorMetrics.standard.width,
-                    height: JunoModelSelectorMetrics.standard.height
-                )
-            }.contentShape(.rect)
-
-            if ladder.isAdjustable {
-                Button { effortPresented = true } label: {
-                    StudioChipLabel(
-                        title: ladder.isAutomatic ? "Auto" : ladder.label(for: stopID.wrappedValue),
-                        showsChevron: true
-                    )
-                }
-                .buttonStyle(.plain)
-                .disabled(!isEnabled)
-                .help("Thinking depth (⇧⌘E)")
-                .keyboardShortcut("e", modifiers: [.command, .shift])
-                .accessibilityLabel("Thinking")
-                .popover(isPresented: $effortPresented, arrowEdge: .bottom) {
-                    JunoThinkingPanel(ladder: ladder, stopID: stopID)
-                        .frame(
-                            width: JunoThinkingMetrics.width,
-                            height: JunoThinkingMetrics.height(caption: ladder.caption != nil, modeToggles: false)
-                        )
-                }.contentShape(.rect)
-            }
         }
-        .fixedSize()
     }
 }
 

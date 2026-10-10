@@ -173,10 +173,7 @@ struct LiveExerciseView: View {
                     JunoIconView(.info, size: 13)
                         .foregroundStyle(Color.junoSecondaryInk)
                         .accessibilityHidden(true)
-                    (exercise.hints.count > 1
-                        ? Text("Hint \(i + 1). ").foregroundColor(Color.junoForeground.opacity(0.8))
-                        : Text(""))
-                        + Text(Self.statement(interp(hint))).foregroundColor(Color.junoSecondaryInk)
+                    Text("\(exercise.hints.count > 1 ? Text("Hint \(i + 1). ").foregroundColor(Color.junoForeground.opacity(0.8)) : Text(""))\(Text(Self.statement(interp(hint))).foregroundColor(Color.junoSecondaryInk))")
                 }
                 .font(.callout)
                 .fixedSize(horizontal: false, vertical: true)

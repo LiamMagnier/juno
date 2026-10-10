@@ -134,11 +134,15 @@ export const INSTANCES: ProviderInstance[] = [
 export const DEVICE = { id: "dev-mac", name: "Maya's MacBook Pro", online: true, lastSeenAt: at(2) };
 
 export const THREADS: ThreadSummary[] = [
-  { id: "t1", title: "Move checkout totals to the server", project: "storefront", state: "running", updatedAt: at(0) },
-  { id: "t2", title: "Cart total regression suite", project: "storefront", state: "waiting", updatedAt: at(3), waitingFor: "wants to run a command" },
-  { id: "t3", title: "Lazy-load product images", project: "storefront", state: "idle", updatedAt: at(60) },
-  { id: "t4", title: "Fix the stale cart total", project: "storefront", state: "idle", updatedAt: at(240) },
-  { id: "t5", title: "Document the webhooks API", project: "docs-site", state: "idle", updatedAt: at(600) },
+  { id: "t1", title: "Move checkout totals to the server", project: "storefront", state: "running", updatedAt: at(0), branch: "alevr/server-totals" },
+  { id: "t2", title: "Cart total regression suite", project: "storefront", state: "waiting", updatedAt: at(3), waitingFor: "wants to run a command", branch: "alevr/cart-suite" },
+  { id: "t3", title: "Lazy-load product images", project: "storefront", state: "idle", updatedAt: at(48), pr: 7723, unread: true },
+  { id: "t6", title: "Webhook retries with backoff", project: "payments-api", state: "idle", updatedAt: at(130), branch: "alevr/webhook-retries" },
+  { id: "t4", title: "Fix the stale cart total", project: "storefront", state: "idle", updatedAt: at(240), pr: 7698 },
+  { id: "t5", title: "Document the webhooks API", project: "docs-site", state: "idle", updatedAt: at(60 * 26), branch: "main" },
+  { id: "t7", title: "Upgrade to React 20", project: "storefront", state: "idle", updatedAt: at(60 * 24 * 4), settled: true, pr: 7610 },
+  { id: "t8", title: "Rate limit the search endpoint", project: "payments-api", state: "idle", updatedAt: at(60 * 24 * 6), settled: true, branch: "alevr/search-limit" },
+  { id: "t9", title: "Dark mode for the receipt emails", project: "storefront", state: "idle", updatedAt: at(60 * 24 * 9), settled: true },
 ];
 
 const DIFF_TOTAL = `--- a/src/server/cart/total.ts
@@ -237,7 +241,7 @@ function agents(): SubagentItem[] {
   const base = { turnId: "turn3", createdAt: at(3) };
   return [
     { ...base, id: "sa1", kind: "subagent", agentId: "w1", role: "worker", label: "Worker 1", title: "Server route for the total", model: { instanceId: "codex:default", model: "gpt-6.1-sol" }, status: "completed", closingText: "Added /api/cart/total with tax before coupon.", elapsedMs: 112_000, candidate: { additions: 84, deletions: 6 }, task: "Add GET /api/cart/total computing tax before the coupon." },
-    { ...base, id: "sa2", kind: "subagent", agentId: "w2", role: "worker", label: "Worker 2", title: "Client reads the server total", model: { instanceId: "codex:default", model: "gpt-6.1-sol" }, status: "running", liveLine: "Editing src/cart/useCartTotal.ts", elapsedMs: 161_000, task: "Replace the client-side total in useCartTotal with a query to /api/cart/total. Keep the optimistic coupon state. Don't touch the server route.", costUsd: 0.21 },
+    { ...base, id: "sa2", kind: "subagent", agentId: "w2", role: "worker", label: "Worker 2", title: "Client reads the server total", model: { instanceId: "codex:default", model: "gpt-6.1-sol" }, status: "running", liveLine: "Editing src/cart/useCartTotal.ts", elapsedMs: 161_000, candidate: { additions: 9, deletions: 4 }, worktreeBranch: "alevr/w2-client-total", tokens: { input: 48_200, output: 6_100 }, task: "Replace the client-side total in useCartTotal with a query to /api/cart/total. Keep the optimistic coupon state. Don't touch the server route.", costUsd: 0.21 },
     { ...base, id: "sa3", kind: "subagent", agentId: "w3", role: "worker", label: "Worker 3", title: "Cart total regression suite", model: { instanceId: "codex:default", model: "gpt-6.1-sol" }, status: "waiting", liveLine: "wants to run a command", elapsedMs: 123_000, costUsd: 0.31 },
     { ...base, id: "sa4", kind: "subagent", agentId: "e1", role: "explorer", label: "Explorer", title: "Map every caller of selectCartTotal", model: { instanceId: "acp:dsh", model: "deepseek-v4-flash" }, status: "completed", closingText: "Found 3 call sites and 2 tests. Closed.", elapsedMs: 38_000, costUsd: 0.12 },
   ];
@@ -335,9 +339,9 @@ export const STATES: GalleryState[] = [
     id: "needs-you",
     label: "Needs you: approval takeover, agents",
     model: base({
-      thread: { id: "t2", title: "Move checkout totals to the server", repo: "storefront", branch: "alevr/server-totals" },
+      thread: { id: "t2", title: "Cart total regression suite", repo: "storefront", branch: "alevr/cart-suite" },
       items: [
-        { id: "u3", turnId: "turn3", kind: "user_message", text: "Move checkout totals to the server and add tests. Split the call sites across workers.", createdAt: at(4), delivery: "send" },
+        { id: "u3", turnId: "turn3", kind: "user_message", text: "Write the cart total regression suite and move the last call sites to the server total. Split the work across workers.", createdAt: at(4), delivery: "send" },
         { id: "r3", turnId: "turn3", kind: "reasoning", text: "Three call sites; one worker each.", streaming: false, createdAt: at(4, 2) },
         { id: "p3", turnId: "turn3", kind: "plan", text: "3 tasks, one per call site", steps: [{ text: "Server route for the total", status: "completed" }, { text: "Client reads the server total", status: "in_progress" }, { text: "Cart total regression suite", status: "in_progress" }], createdAt: at(4, 5) },
         { id: "a3", turnId: "turn3", kind: "assistant_message", text: "Three workers, one per call site. The explorer already mapped them; I'll merge their branches and have the reviewer read each diff.", streaming: false, createdAt: at(4, 8) },
@@ -393,20 +397,37 @@ export const STATES: GalleryState[] = [
     ui: { dockOpen: true, dockTab: "agents" },
   },
   {
+    id: "settled",
+    label: "Settled thread",
+    model: base({ items: [...workedTurn(), { id: "u8", turnId: "turn8", kind: "user_message", text: "Also show the server total in the order confirmation email.", createdAt: at(6), delivery: "send" }, { id: "r8", turnId: "turn8", kind: "reasoning", text: "The email template reads the cart from the session.", streaming: false, createdAt: at(6, 2) }, { id: "s8", turnId: "turn8", kind: "search", callId: "c20", query: "src/emails/order-confirmation.tsx", scope: "files", status: "completed", createdAt: at(5.8) }, { id: "f8", turnId: "turn8", kind: "file_change", callId: "c21", status: "completed", createdAt: at(5), changes: [{ path: "src/emails/order-confirmation.tsx", change: "modify", additions: 4, deletions: 2 }] }, { id: "a8", turnId: "turn8", kind: "assistant_message", text: "The confirmation email now renders `total` from the same server route, so the receipt, the cart and the charge always agree.", streaming: false, createdAt: at(4.5) }] }),
+  },
+  {
     id: "model-picker",
-    label: "Model picker",
+    label: "Model picker (effort first)",
     model: base({ items: workedTurn() }),
     ui: { popover: "model" },
   },
   {
+    id: "model-catalog",
+    label: "Model picker (catalogue)",
+    model: base({ items: workedTurn() }),
+    ui: { popover: "catalog" },
+  },
+  {
     id: "tiers",
-    label: "Context window tiers (Alevr)",
+    label: "Context window (Alevr)",
     model: base({ items: workedTurn(), selection: { instanceId: "alevr", model: "openai:gpt-6.1-sol", effort: "high" }, usage: USAGE_ALEVR }),
     ui: { popover: "tier" },
   },
   {
+    id: "overflow",
+    label: "Composer options menu",
+    model: base({ items: workedTurn() }),
+    ui: { popover: "overflow" },
+  },
+  {
     id: "orchestrate",
-    label: "Orchestrate",
+    label: "Team",
     model: base({ items: workedTurn(), routing: ROUTING_LEAD }),
     ui: { popover: "orchestrate" },
   },
@@ -432,6 +453,18 @@ export const STATES: GalleryState[] = [
     label: "Offline device",
     model: base({ items: [...workedTurn(), ...runningTurn()], state: "running", offline: true, device: { ...DEVICE, online: false, lastSeenAt: at(6) } }),
     ui: { dockOpen: true, dockTab: "terminal" },
+  },
+  {
+    id: "connections",
+    label: "Settings: Connections",
+    model: base({ items: workedTurn() }),
+    ui: { settings: "connections", alevrPlan: { name: "Plus plan", spentUsd: 12.4, capUsd: 40 } },
+  },
+  {
+    id: "settings-orchestration",
+    label: "Settings: Orchestration",
+    model: base({ items: workedTurn(), routing: ROUTING_LEAD }),
+    ui: { settings: "orchestration" },
   },
   {
     id: "no-provider",

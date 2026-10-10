@@ -11,13 +11,19 @@ import JunoScreenControl
 @MainActor
 public enum CodeV2Gallery {
     public enum Surface: String, CaseIterable, Sendable {
-        case workspaceWorking = "workspace-working"
-        case workspaceMultiAgent = "workspace-multi-agent"
-        case workspaceComputerUse = "workspace-computer-use"
+        case windowNew = "window-new"
+        case windowSettled = "window-settled"
+        case windowWorking = "window-working"
+        case windowChanges = "window-changes"
+        case windowTeam = "window-team"
+        case windowComputer = "window-computer"
+        case windowLimited = "window-limited"
+        case windowModelPicker = "window-model-picker"
         case dockBestOfN = "dock-best-of-n"
-        case sessionLimited = "session-limited"
         case modelPickerSubscription = "model-picker-subscription"
         case modelPickerAlevr = "model-picker-alevr"
+        case modelEffortSubscription = "model-effort-subscription"
+        case modelEffortAlevr = "model-effort-alevr"
         case contextTiersAlevr = "context-tiers-alevr"
         case contextTiersSubscription = "context-tiers-subscription"
         case orchestrateLeadWorkers = "orchestrate-lead-workers"
@@ -30,17 +36,16 @@ public enum CodeV2Gallery {
 
         public var size: CGSize {
             switch self {
-            case .workspaceWorking, .workspaceMultiAgent: CGSize(width: 1280, height: 860)
-            case .workspaceComputerUse: CGSize(width: 1280, height: 760)
-            case .dockBestOfN: CGSize(width: 680, height: 420)
-            case .sessionLimited: CGSize(width: 820, height: 560)
-            case .modelPickerSubscription, .modelPickerAlevr: CGSize(width: 700, height: 600)
-            case .contextTiersAlevr: CGSize(width: 520, height: 520)
-            case .contextTiersSubscription: CGSize(width: 520, height: 360)
-            case .orchestrateLeadWorkers: CGSize(width: 680, height: 620)
-            case .orchestrateBestOfN: CGSize(width: 680, height: 560)
+            case .windowNew, .windowSettled, .windowWorking, .windowChanges, .windowTeam,
+                 .windowComputer, .windowLimited, .windowModelPicker:
+                CGSize(width: 1512, height: 982)
+            case .dockBestOfN: CGSize(width: 480, height: 420)
+            case .modelPickerSubscription, .modelPickerAlevr: CGSize(width: 460, height: 520)
+            case .modelEffortSubscription, .modelEffortAlevr: CGSize(width: 380, height: 220)
+            case .contextTiersAlevr, .contextTiersSubscription: CGSize(width: 440, height: 300)
+            case .orchestrateLeadWorkers, .orchestrateBestOfN: CGSize(width: 460, height: 300)
             case .contextCard: CGSize(width: 340, height: 220)
-            case .settingsConnections: CGSize(width: 760, height: 1180)
+            case .settingsConnections: CGSize(width: 900, height: 640)
             case .dockTerminal: CGSize(width: 520, height: 420)
             case .computerOverlay: CGSize(width: 960, height: 600)
             case .connectedApproval: CGSize(width: 820, height: 360)
@@ -50,36 +55,72 @@ public enum CodeV2Gallery {
 
     public static func view(_ surface: Surface) -> AnyView {
         let directory = CodeV2Fixtures.directory
-        func composer(_ selection: CodeV2.ModelSelection, roles: CodeV2RoleDraft? = nil) -> CodeV2ComposerModel {
-            CodeV2ComposerModel(selection: selection, runtimeMode: .autoEdit, roles: roles)
+        func composer(_ selection: CodeV2.ModelSelection, roles: CodeV2RoleDraft? = nil, mode: CodeV2.RuntimeMode = .autoEdit) -> CodeV2ComposerModel {
+            CodeV2ComposerModel(selection: selection, runtimeMode: mode, roles: roles)
+        }
+        let place = CodeV2SessionPlace(project: "storefront", branch: "alevr/server-totals", machine: "This Mac",
+                                       projectMenu: [("storefront", {})], branchMenu: [("main", {})], machineMenu: [("This Mac", {})])
+        func thread(_ snapshot: CodeV2.SessionSnapshot, composer model: CodeV2ComposerModel, dock: CodeV2DockController? = nil) -> some View {
+            CodeV2EnvSessionView(
+                session: CodeV2EnvSession(preview: snapshot), composer: model, directory: directory,
+                dock: dock, openConnections: {}, place: place
+            )
         }
         switch surface {
-        case .workspaceWorking:
-            let session = CodeV2EnvSession(preview: CodeV2Fixtures.workingSnapshot)
+        case .windowNew:
+            return AnyView(CodeV2WindowPreview(title: "New session", subtitle: "storefront", selected: nil, inspectorOpen: false) {
+                thread(CodeV2Fixtures.newSnapshot, composer: composer(CodeV2Fixtures.claudeSelection))
+            } inspector: { EmptyView() })
+        case .windowSettled:
+            return AnyView(CodeV2WindowPreview(title: "Move checkout totals to the server", subtitle: "storefront", selected: "s1", inspectorOpen: false) {
+                thread(CodeV2Fixtures.settledSnapshot, composer: composer(CodeV2Fixtures.claudeSelection))
+            } inspector: { EmptyView() })
+        case .windowWorking:
+            return AnyView(CodeV2WindowPreview(title: "Move checkout totals to the server", subtitle: "storefront", selected: "s1", inspectorOpen: false) {
+                thread(CodeV2Fixtures.workingSnapshot, composer: composer(CodeV2Fixtures.claudeSelection, mode: .full))
+            } inspector: { EmptyView() })
+        case .windowChanges:
+            let session = CodeV2EnvSession(preview: CodeV2Fixtures.settledSnapshot)
             session.setPreviewDiff(thread: CodeV2Fixtures.diffFiles)
             let dock = CodeV2DockController()
             dock.show(.changes)
-            if let hunk = CodeV2Fixtures.diffFiles.dropFirst().first?.hunks.first { dock.decisions.set(.accepted, for: hunk) }
-            return window(
-                CodeV2EnvSessionView(session: session, composer: composer(CodeV2Fixtures.claudeSelection, roles: CodeV2Fixtures.leadWorkers), directory: directory, dock: dock),
-                dock: CodeV2EnvDockView(session: session, dock: dock)
-            )
-        case .workspaceMultiAgent:
+            dock.scope = .thread
+            return AnyView(CodeV2WindowPreview(title: "Move checkout totals to the server", subtitle: "storefront", selected: "s1", inspectorOpen: true, inspectorWidth: 560) {
+                CodeV2EnvSessionView(session: session, composer: composer(CodeV2Fixtures.claudeSelection), directory: directory, dock: dock, place: place)
+            } inspector: {
+                CodeV2EnvDockView(session: session, dock: dock, close: {})
+            })
+        case .windowTeam:
             let session = CodeV2EnvSession(preview: CodeV2Fixtures.multiAgentSnapshot)
             let dock = CodeV2DockController()
-            dock.selectAgent("w2")
-            return window(
-                CodeV2EnvSessionView(session: session, composer: composer(CodeV2Fixtures.claudeSelection, roles: CodeV2Fixtures.leadWorkers), directory: directory, dock: dock),
-                dock: CodeV2EnvDockView(session: session, dock: dock)
-            )
-        case .workspaceComputerUse:
+            dock.show(.agents)
+            return AnyView(CodeV2WindowPreview(title: "Regression suite for cart totals", subtitle: "storefront", selected: "s3", inspectorOpen: true) {
+                CodeV2EnvSessionView(session: session, composer: composer(CodeV2Fixtures.claudeSelection, roles: CodeV2Fixtures.leadWorkers), directory: directory, dock: dock, place: place)
+            } inspector: {
+                CodeV2EnvDockView(session: session, dock: dock, close: {})
+            })
+        case .windowComputer:
             let session = CodeV2EnvSession(preview: CodeV2Fixtures.computerSnapshot)
             let dock = CodeV2DockController()
             dock.show(.screen)
-            return window(
-                CodeV2EnvSessionView(session: session, composer: composer(CodeV2Fixtures.claudeSelection), directory: directory, dock: dock),
-                dock: CodeV2EnvDockView(session: session, dock: dock)
-            )
+            let model = composer(CodeV2Fixtures.claudeSelection)
+            return AnyView(CodeV2WindowPreview(title: "Check the receipt in Safari", subtitle: "storefront", selected: "s2", inspectorOpen: true) {
+                CodeV2EnvSessionView(session: session, composer: model, directory: directory, dock: dock, place: place)
+            } inspector: {
+                CodeV2EnvDockView(session: session, dock: dock, close: {})
+            })
+        case .windowLimited:
+            return AnyView(CodeV2WindowPreview(title: "Move checkout totals to the server", subtitle: "storefront", selected: "s1", inspectorOpen: false) {
+                thread(CodeV2Fixtures.limitedSnapshot, composer: composer(CodeV2Fixtures.claudeSelection))
+            } inspector: { EmptyView() })
+        case .windowModelPicker:
+            return AnyView(CodeV2WindowPreview(title: "Move checkout totals to the server", subtitle: "storefront", selected: "s1", inspectorOpen: false) {
+                thread(CodeV2Fixtures.settledSnapshot, composer: composer(CodeV2Fixtures.claudeSelection))
+                    .overlay(alignment: .bottom) {
+                        floating(CodeV2ModelPicker(directory: directory, selection: .constant(CodeV2Fixtures.claudeSelection), threadTokens: 196_000, openConnections: {}))
+                            .offset(x: -170, y: -150)
+                    }
+            } inspector: { EmptyView() })
         case .dockBestOfN:
             var snapshot = CodeV2Fixtures.workingSnapshot
             var draft = CodeV2Fixtures.leadWorkers
@@ -88,14 +129,28 @@ public enum CodeV2Gallery {
             let dock = CodeV2DockController()
             dock.show(.agents)
             return AnyView(CodeV2EnvDockView(session: CodeV2EnvSession(preview: snapshot), dock: dock, bestOfN: CodeV2Fixtures.bestOfNCandidates))
-        case .sessionLimited:
-            return AnyView(CodeV2EnvSessionView(
-                session: CodeV2EnvSession(preview: CodeV2Fixtures.limitedSnapshot),
-                composer: composer(CodeV2Fixtures.claudeSelection), directory: directory
-            ))
         case .modelPickerSubscription, .modelPickerAlevr:
             let selection = surface == .modelPickerAlevr ? CodeV2Fixtures.alevrSelection : CodeV2Fixtures.claudeSelection
-            return popover(CodeV2ModelPicker(directory: directory, selection: .constant(selection), threadTokens: 184_000, openConnections: {}))
+            return popover(
+                CodeV2ModelPicker(directory: directory, selection: .constant(selection), threadTokens: 184_000, openConnections: {})
+                    .frame(width: CodeV2ModelControl.catalogSize.width, height: CodeV2ModelControl.catalogSize.height)
+            )
+        case .modelEffortSubscription, .modelEffortAlevr:
+            // The chip's first stage: the shared effort panel over the
+            // selected model's effort levels; its name leads to the picker.
+            let selection = surface == .modelEffortAlevr ? CodeV2Fixtures.alevrSelection : CodeV2Fixtures.claudeSelection
+            let model = directory.instance(selection.instanceId)?.models?.first { $0.id == selection.model }
+            let name = model?.label ?? selection.model
+            return popover(
+                JunoEffortPanel(
+                    ladder: CodeV2ModelControl.ladder(for: model, name: name),
+                    stopID: .constant(selection.effort?.rawValue),
+                    modelName: name,
+                    fastMode: model?.supportsFast == true ? .constant(false) : nil,
+                    openModels: {}
+                )
+                .frame(width: JunoEffortPanelMetrics.width, height: JunoEffortPanelMetrics.height)
+            )
         case .contextTiersAlevr:
             return popover(CodeV2TierSelector(
                 instance: CodeV2Fixtures.alevr, model: CodeV2Fixtures.gpt,
@@ -185,13 +240,15 @@ public enum CodeV2Gallery {
         })
     }
 
-    private static func window<Center: View, Dock: View>(_ center: Center, dock: Dock) -> AnyView {
-        AnyView(HStack(spacing: 0) {
-            center
-            Rectangle().fill(Studio.Surface.hairline).frame(width: 1)
-            dock.frame(width: 460)
-        }
-        .background(Studio.Surface.canvas))
+    /// A popover's content as it floats over the window: the system's
+    /// popover ground, radius 12, a hairline, and the pop shadow in light.
+    private static func floating<Content: View>(_ content: Content) -> some View {
+        content
+            .background(Studio.Surface.popover)
+            .clipShape(RoundedRectangle(cornerRadius: Studio.Radius.card, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Studio.Radius.card, style: .continuous).strokeBorder(Studio.Surface.hairline))
+            .shadow(color: .black.opacity(0.08), radius: 2, y: 1)
+            .shadow(color: .black.opacity(0.18), radius: 28, y: 14)
     }
 
     /// A popover's content as the system draws it: the popover ground, the
@@ -199,10 +256,7 @@ public enum CodeV2Gallery {
     private static func popover<Content: View>(_ content: Content) -> AnyView {
         AnyView(ZStack {
             Studio.Surface.canvas
-            content
-                .clipShape(RoundedRectangle(cornerRadius: Studio.Radius.menu, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: Studio.Radius.menu, style: .continuous).strokeBorder(Studio.Surface.hairline))
-                .shadow(color: .black.opacity(0.16), radius: 20, y: 10)
+            floating(content)
         })
     }
 }

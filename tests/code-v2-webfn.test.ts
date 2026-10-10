@@ -221,14 +221,15 @@ test("managed runtime: only https sign-in pages open, and only loopback redirect
 });
 
 test("Connections: Antigravity mid sign-in offers the Google page and the paste-back path; an older Mac says to update", () => {
-  const html = renderToStaticMarkup(React.createElement(ConnectionsPanel, { instances: INSTANCES, device: DEVICE, onManaged: async () => ({}) }));
+  const html = renderToStaticMarkup(React.createElement(ConnectionsPanel, { instances: INSTANCES, device: DEVICE, onManaged: async () => ({}), initialSelected: "acp:antigravity" }));
   assert.match(html, /Antigravity/);
   assert.match(html, /Sign in with your Google account to finish\./);
   assert.match(html, /href="https:\/\/accounts\.google\.com\/o\/oauth2\/v2\/auth\?client_id=example"[^>]*target="_blank" rel="noopener noreferrer"/);
   assert.match(html, /Not on your Mac\?/);
   assert.match(html, />Cancel</);
-  const older = renderToStaticMarkup(React.createElement(ConnectionsPanel, { instances: INSTANCES.filter((i) => i.id !== "acp:antigravity"), device: DEVICE }));
-  assert.match(older, /Antigravity<\/div><div class="ds"[^>]*>Your Mac does not offer this yet\./);
+  const older = renderToStaticMarkup(React.createElement(ConnectionsPanel, { instances: INSTANCES.filter((i) => i.id !== "acp:antigravity"), device: DEVICE, initialSelected: "acp:antigravity" }));
+  assert.match(older, /Antigravity<\/span><span class="ds">Update Alevr on your Mac/);
+  assert.match(older, /<p class="cv2-ds"[^>]*>Your Mac does not offer this yet\./);
   assert.doesNotMatch(older + html, /\u2014/, "no em-dashes in UI copy");
 });
 

@@ -333,6 +333,9 @@ const PHOSPHOR = {
   // pinned-model star (drawn filled, as the web's is).
   Camera: "Camera",
   Star: "Star",
+
+  // The model chip's effort panel: Flash (the web's `Zap`, its `bolt` drawing).
+  Lightning: "Zap",
 };
 
 /** Glyphs with a `.fill` twin: the "on" drawings §8.6 asks for — a pinned row,

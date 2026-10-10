@@ -1,3 +1,7 @@
+import JunoChatKit
+import JunoDesignSystem
+import SwiftUI
+import UIKit
 import XCTest
 @testable import JunoMobile
 
@@ -158,5 +162,82 @@ final class JunoMobileComposerToolsTests: XCTestCase {
         tools.deepResearch = true
         _ = tools.consumeForSend()
         XCTAssertFalse(tools.isArmed)
+    }
+}
+
+/// Pro in the thinking dial: drawn under the track for a model whose scale has
+/// the mode, bound to `tools.proMode`, and absent otherwise. With
+/// `JUNO_SNAPSHOT_DIR` set (pass `TEST_RUNNER_JUNO_SNAPSHOT_DIR` to
+/// xcodebuild), the open dial is also drawn offscreen, light and dark:
+/// `$JUNO_SNAPSHOT_DIR/ios-thinking-pro-<off|on>-<light|dark>.png`.
+@MainActor
+final class JunoMobileThinkingProTests: XCTestCase {
+    private func scale(pro: Bool) -> NativeThinkingScale {
+        NativeThinkingScale(model: NativeChatModelOption(
+            id: "openai:gpt-5.6-sol",
+            providerID: "openai",
+            providerName: "OpenAI · GPT",
+            displayName: "GPT-5.6 Sol",
+            minimumPlan: "free",
+            availability: "available",
+            supportedReasoningEfforts: [.low, .medium, .high, .xhigh, .max],
+            defaultReasoningEffort: .medium,
+            canDisableReasoning: true,
+            supportsReasoning: true,
+            supportsProMode: pro,
+            fastModeRateMultiplier: 2,
+            supportsStreaming: true
+        ))
+    }
+
+    func testTheScaleCarriesProOnlyWhereTheModelHasIt() {
+        XCTAssertTrue(scale(pro: true).supportsProMode)
+        XCTAssertFalse(scale(pro: false).supportsProMode)
+        XCTAssertTrue(scale(pro: true).isAdjustable)
+    }
+
+    func testTheProCopyIsTheWebsWords() {
+        XCTAssertEqual(JunoProMode.title, "Pro")
+        XCTAssertEqual(JunoProMode.help, "The model's deeper reasoning mode. Slower and costs more.")
+    }
+
+    func testDrawsTheOpenDialWithPro() throws {
+        guard let path = ProcessInfo.processInfo.environment["JUNO_SNAPSHOT_DIR"] else {
+            throw XCTSkip("Set JUNO_SNAPSHOT_DIR to draw the thinking dial with Pro.")
+        }
+        let root = URL(fileURLWithPath: path, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let size = CGSize(width: 390, height: 190)
+        for on in [false, true] {
+            for dark in [false, true] {
+                let view = JunoMobileThinkingDialSlider(
+                    scale: scale(pro: true),
+                    effort: .constant(.high),
+                    proMode: .constant(on),
+                    close: {}
+                )
+                .padding(JunoSpace.cozy)
+                .background(Color.junoCanvas)
+                .frame(width: size.width, height: size.height)
+                let host = UIHostingController(rootView: view)
+                host.overrideUserInterfaceStyle = dark ? .dark : .light
+                let window = UIWindow(frame: CGRect(origin: .zero, size: size))
+                window.overrideUserInterfaceStyle = dark ? .dark : .light
+                window.rootViewController = host
+                window.isHidden = false
+                host.view.frame = window.bounds
+                host.view.setNeedsLayout()
+                host.view.layoutIfNeeded()
+                RunLoop.main.run(until: Date().addingTimeInterval(0.4))
+                let image = UIGraphicsImageRenderer(bounds: host.view.bounds).image { _ in
+                    _ = host.view.drawHierarchy(in: host.view.bounds, afterScreenUpdates: true)
+                }
+                let data = try XCTUnwrap(image.pngData())
+                let url = root.appendingPathComponent("ios-thinking-pro-\(on ? "on" : "off")-\(dark ? "dark" : "light").png")
+                try data.write(to: url)
+                window.isHidden = true
+                XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+            }
+        }
     }
 }

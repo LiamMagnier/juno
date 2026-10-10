@@ -2,8 +2,8 @@
 
 /**
  * The app shell's column on every Code route (/code, /code/[id], /code/pulls,
- * a Code session at /chat/[id]): the v2 `ThreadSidebar` (DESIGN §4.1) with
- * Needs you, Pinned and one section per project, reordered with FLIP. The
+ * a Code session at /chat/[id]): the `ThreadSidebar` list of work (sessions
+ * that need you, then working, then by recency, the rest settled), with FLIP. The
  * shell keeps its own frame around it (resize, rail, phone drawer), so the
  * workspace renders with `sidebar={false}` and nothing is drawn twice.
  */
@@ -64,7 +64,7 @@ export function CodeShellSidebar({ onCollapse, onNavigate }: { onCollapse?: () =
         onOpen={(id) => go(`/code/${id}`)}
         onNew={() => go("/code")}
         onSearch={() => window.dispatchEvent(new CustomEvent("juno:search"))}
-        onConnections={() => window.dispatchEvent(new CustomEvent("juno:settings", { detail: "connections" }))}
+        onSettings={() => window.dispatchEvent(new CustomEvent("juno:settings", { detail: "connections" }))}
         onCollapse={onCollapse}
       />
     </div>

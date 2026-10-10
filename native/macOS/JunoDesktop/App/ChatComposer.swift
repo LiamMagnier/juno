@@ -990,16 +990,6 @@ struct ChatComposer: View {
         thinkingScale?.stops.first { $0.id == thinkingStopID }?.effort
     }
 
-    private var effortBinding: Binding<NativeReasoningEffort?> {
-        Binding(
-            get: { reasoningEffort },
-            set: { effort in
-                guard let scale = thinkingScale else { return }
-                thinkingStopID = scale.stopID(for: effort) ?? scale.defaultStop?.id ?? ""
-            }
-        )
-    }
-
     private var voiceActive: Bool { voiceCall != nil }
 
     private var isPrivate: Bool { privateChat != nil }
@@ -1793,9 +1783,20 @@ struct ChatComposer: View {
             catalog: model.modelCatalog,
             catalogError: model.modelCatalogErrorDescription,
             scale: thinkingScale,
-            effort: effortBinding,
+            stopID: Binding(
+                get: { thinkingStopID.isEmpty ? nil : thinkingStopID },
+                set: { thinkingStopID = $0 ?? "" }
+            ),
             fastMode: $fastMode,
             proMode: $proMode,
+            favorites: Set(memorySettings?.settings?.favoriteModels ?? []),
+            toggleFavorite: memorySettings.map { store in
+                { id in
+                    var next = store.settings?.favoriteModels ?? []
+                    if let at = next.firstIndex(of: id) { next.remove(at: at) } else { next.append(id) }
+                    Task { await store.updateSettings(NativeSettingsPatch(favoriteModels: next)) }
+                }
+            },
             choose: { id in
                 selectedModelID = id
                 // The one place this is set, which is what lets a project's
