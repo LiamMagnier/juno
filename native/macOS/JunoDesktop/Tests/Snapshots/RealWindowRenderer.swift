@@ -64,7 +64,6 @@ enum RealWindowRenderer {
     static func capture(_ window: NSWindow, into url: URL) throws {
         guard let frameView = window.contentView?.superview else { throw CocoaError(.featureUnsupported) }
         frameView.layoutSubtreeIfNeeded()
-        standInForGlass(in: frameView, window: window)
         let size = frameView.bounds.size
         guard let rep = NSBitmapImageRep(
             bitmapDataPlanes: nil,
@@ -81,7 +80,7 @@ enum RealWindowRenderer {
         rep.size = size
         if let layer = frameView.layer { TranscriptSnapshotRenderer.circularCapsules(in: layer) }
         frameView.cacheDisplay(in: frameView.bounds, to: rep)
-        drawSidebarRows(of: frameView, into: rep)
+        drawSidebarRows(of: frameView, window: window, into: rep)
         guard let png = rep.representation(using: .png, properties: [:]) else { throw CocoaError(.featureUnsupported) }
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try png.write(to: url)
@@ -89,60 +88,69 @@ enum RealWindowRenderer {
 }
 
 extension RealWindowRenderer {
-    /// The sidebar's source list sits in a scroll view the system masks for
-    /// its edge effect and composites inside the glass, so the frame's own
-    /// capture leaves the column empty. Each visible row view is drawn on its
-    /// own, where it sits, clipped to what its scroll view shows.
-    static func drawSidebarRows(of frameView: NSView, into rep: NSBitmapImageRep) {
+    /// The sidebar is Liquid Glass, which the window server composites: the
+    /// frame's own capture draws the glass as a flat white sheet (in dark
+    /// mode too) and leaves the source list in it empty, because the list's
+    /// scroll view is masked for its edge effect. For the picture, the glass
+    /// is painted in the sidebar's own colour, then the pieces on it are
+    /// drawn one by one where they sit: the search field, each visible row
+    /// (clipped to what its scroll view shows), and the titlebar with its
+    /// window controls and toggle on top, in the window server's order.
+    static func drawSidebarRows(of frameView: NSView, window: NSWindow, into rep: NSBitmapImageRep) {
+        var glasses: [NSView] = []
         var tables: [NSTableView] = []
+        var fields: [NSView] = []
+        var titlebars: [NSView] = []
         func collect(_ view: NSView, inGlass: Bool) {
             let glass = inGlass || view is NSGlassEffectView
+            if view is NSGlassEffectView { glasses.append(view) }
             if glass, let table = view as? NSTableView { tables.append(table) }
+            if view is NSSearchField { fields.append(view) }
+            if String(describing: type(of: view)) == "NSTitlebarContainerView" { titlebars.append(view) }
             view.subviews.forEach { collect($0, inGlass: glass) }
         }
         collect(frameView, inGlass: false)
-        guard !tables.isEmpty, let context = NSGraphicsContext(bitmapImageRep: rep) else { return }
+        guard !glasses.isEmpty, let context = NSGraphicsContext(bitmapImageRep: rep) else { return }
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = context
         defer { NSGraphicsContext.restoreGraphicsState() }
-        for table in tables {
-            let visible = table.visibleRect
-            let range = table.rows(in: visible)
-            let clip = table.enclosingScrollView.map { $0.contentView.convert($0.contentView.bounds, to: frameView) } ?? frameView.bounds
+
+        var sidebar = NSColor.windowBackgroundColor
+        (window.appearance ?? NSAppearance.currentDrawing()).performAsCurrentDrawingAppearance {
+            sidebar = NSColor(cgColor: NSColor(Color.junoSidebar).cgColor) ?? .windowBackgroundColor
+        }
+        func draw(_ view: NSView, clip: CGRect? = nil) {
+            let bounds = view.bounds
+            guard bounds.width > 0, bounds.height > 0,
+                  let sub = view.bitmapImageRepForCachingDisplay(in: bounds) else { return }
+            view.cacheDisplay(in: bounds, to: sub)
             NSGraphicsContext.saveGraphicsState()
-            NSBezierPath(rect: clip).addClip()
-            for row in range.location..<(range.location + range.length) {
-                guard let rowView = table.rowView(atRow: row, makeIfNecessary: false),
-                      let sub = rowView.bitmapImageRepForCachingDisplay(in: rowView.bounds) else { continue }
-                rowView.cacheDisplay(in: rowView.bounds, to: sub)
-                let rect = rowView.convert(rowView.bounds, to: frameView)
-                sub.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
-            }
+            if let clip { NSBezierPath(rect: clip).addClip() }
+            sub.draw(in: view.convert(bounds, to: frameView), from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
             NSGraphicsContext.restoreGraphicsState()
         }
-    }
-
-    /// The sidebar's Liquid Glass is composited by the window server, so
-    /// `cacheDisplay` draws it as a blank (white in dark mode too). For the
-    /// picture only, the glass gets the sidebar's own colour as a layer
-    /// background, the stand-in the composed snapshots have always used.
-    static func standInForGlass(in view: NSView, window: NSWindow) {
-        if view is NSGlassEffectView {
-            var color = CGColor(gray: 0.5, alpha: 1)
-            (window.appearance ?? NSAppearance.currentDrawing()).performAsCurrentDrawingAppearance {
-                color = NSColor(Color.junoSidebar).cgColor
-            }
-            view.wantsLayer = true
-            view.layer?.backgroundColor = color
-            // The glass's own layers (everything that is not a subview's)
-            // draw as a flat white offscreen; hide them so the stand-in
-            // colour shows.
-            let content = Set(view.subviews.compactMap(\.layer).map(ObjectIdentifier.init))
-            for layer in view.layer?.sublayers ?? [] where !content.contains(ObjectIdentifier(layer)) {
-                layer.isHidden = true
+        // In light the glass's flat capture already reads as the sidebar;
+        // in dark it is a white sheet, so it is painted over (anything on the
+        // glass that is not a row, the search field or the titlebar, like
+        // the main window's account footer, is lost with it).
+        let isDark = window.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        if isDark {
+            for glass in glasses {
+                sidebar.setFill()
+                glass.convert(glass.bounds, to: frameView).fill()
             }
         }
-        view.subviews.forEach { standInForGlass(in: $0, window: window) }
+        for table in tables {
+            let range = table.rows(in: table.visibleRect)
+            let clip = table.enclosingScrollView.map { $0.contentView.convert($0.contentView.bounds, to: frameView) }
+            for row in range.location..<(range.location + range.length) {
+                if let rowView = table.rowView(atRow: row, makeIfNecessary: false) { draw(rowView, clip: clip) }
+            }
+        }
+        if isDark {
+            fields.forEach { draw($0) }
+            titlebars.forEach { draw($0) }
+        }
     }
 }
 
