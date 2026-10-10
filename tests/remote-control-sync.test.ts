@@ -221,3 +221,23 @@ test("payloads: approval and hand-off pushes carry the ids the apps route on", (
   const code = buildHandoffPayload({ target: "macos", kind: "code", id: "s1", deviceId: "mac1" });
   assert.deepEqual([code.deviceID, code.sessionID, code.handoff], ["mac1", "s1", "code"]);
 });
+
+// ── Sync audit: a push the Mac retried is not relayed twice ─────────────────
+
+test("device link hub: a global batch pushed twice reaches the browser once, a new one still arrives", async () => {
+  const { EnvLinkHub } = await import("@/lib/code-v2/env-link-hub");
+  const link = new EnvLinkHub().link("u", "mac1");
+  const output = (sequence: number, data: string): ServerEventEnvelope => ({
+    type: "event",
+    stream: "global",
+    sequence,
+    at: "2026-10-10T12:00:00Z",
+    event: { type: "terminal.output", terminalId: "t1", data },
+  });
+  link.push({ events: [output(7, "ls\n"), output(8, "README.md\n")] });
+  link.push({ events: [output(7, "ls\n"), output(8, "README.md\n")] });
+  link.push({ events: [output(9, "$ ")] });
+  const reply = await link.poll({}, -1, 0);
+  const data = (reply.events ?? []).map((e) => (e.event.type === "terminal.output" ? e.event.data : ""));
+  assert.deepEqual(data, ["ls\n", "README.md\n", "$ "]);
+});
