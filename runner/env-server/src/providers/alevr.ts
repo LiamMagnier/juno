@@ -241,6 +241,7 @@ class EngineBackedSession implements ProviderSession {
   #model: string | undefined;
   /** The routing the live engine session was built with; a change rebuilds it. */
   #routingKey = "";
+  #skillText = "";
   readonly #logger: Logger;
   readonly #extraTools: unknown[] | undefined;
 
@@ -263,7 +264,10 @@ class EngineBackedSession implements ProviderSession {
   #ensure(request: TurnRequest): EngineSession {
     const model = splitModel(request.selection.model);
     const routingKey = request.routing && request.routing.preset !== "solo" ? JSON.stringify(request.routing) : "";
-    if (this.#session && this.#model === request.selection.model && this.#routingKey === routingKey) {
+    // skills lane: the selected skills live in the system prompt, so a change
+    // of skills resumes the same engine session under the new prompt.
+    const skillText = request.skillInstructions?.trim() ?? "";
+    if (this.#session && this.#model === request.selection.model && this.#routingKey === routingKey && this.#skillText === skillText) {
       this.#session.setMode(engineMode(request.runtimeMode, request.interactionMode));
       return this.#session;
     }
@@ -278,8 +282,10 @@ class EngineBackedSession implements ProviderSession {
       },
       ...(request.selection.effort ? { reasoningEffort: request.selection.effort } : {}),
       ...(routingKey && request.routing ? { routing: request.routing, resolveProvider: (sel: ModelSelection) => this.#resolve(sel) } : {}),
-      ...(this.#extraTools?.length ? { extraTools: this.#extraTools, systemAppendix: CROSS_CONVERSATION_PROMPT_SECTION } : {}),
+      ...(this.#extraTools?.length ? { extraTools: this.#extraTools } : {}),
     };
+    const appendix = [this.#extraTools?.length ? CROSS_CONVERSATION_PROMPT_SECTION : "", skillText].filter(Boolean).join("\n\n");
+    if (appendix) opts.systemAppendix = appendix;
     let session: EngineSession;
     if (this.#engineSessionId) {
       try {
@@ -293,6 +299,7 @@ class EngineBackedSession implements ProviderSession {
     this.#engineSessionId = session.sessionId;
     this.#model = request.selection.model;
     this.#routingKey = routingKey;
+    this.#skillText = skillText;
     return session;
   }
 

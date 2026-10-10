@@ -51,8 +51,11 @@ import { TerminalManager } from "./terminal/terminals.js";
 import { describeError, newToken, nowIso, stderrLogger, type Logger } from "./util.js";
 import { ConversationHub, conversationEngineTools, type BackendLink } from "./conversations/hub.js";
 import { registerConversationTools } from "./mcp/conversation-tools.js";
+import { SkillCatalog } from "./skills/discovery.js";
 
 export interface EnvServerOptions {
+  /** skills lane: where installed skills are discovered (tests pass a temporary home and `watch: false`). */
+  skills?: SkillCatalog;
   /** Tests: the fetch the cross-conversation tools reach Alevr's backend with. */
   conversationsFetch?: typeof fetch;
   /** Default ~/.alevr/env. */
@@ -168,7 +171,9 @@ export async function startEnvServer(options: EnvServerOptions = {}): Promise<En
   registryRef = registry;
   const mcp = new AlevrMcpServer(logger);
   let port = 0;
+  const skills = options.skills ?? new SkillCatalog();
   const sessions = new SessionManager({
+    skills,
     dataDir,
     registry,
     mcp,
@@ -231,7 +236,7 @@ export async function startEnvServer(options: EnvServerOptions = {}): Promise<En
       return;
     }
     wss.handleUpgrade(req, socket, head, (ws) => {
-      const connection = new Connection(ws, { sessions, registry, terminals, secrets, logger, antigravity, conversations });
+      const connection = new Connection(ws, { sessions, registry, terminals, secrets, logger, antigravity, conversations, skills });
       connections.add(connection);
       ws.on("close", () => {
         connection.dispose();
@@ -269,6 +274,7 @@ export async function startEnvServer(options: EnvServerOptions = {}): Promise<En
       removeSubagentTools();
       removeConversationTools();
       conversations.dispose();
+      if (!options.skills) skills.close();
       removeComputerClose?.();
       for (const c of connections) c.dispose();
       for (const ws of wss.clients) ws.terminate();
@@ -353,6 +359,7 @@ interface ConnectionDeps {
   logger: Logger;
   antigravity?: AntigravityService;
   conversations?: ConversationHub;
+  skills?: SkillCatalog;
 }
 
 /** One client connection: command dispatch, session subscriptions, global stream. */
@@ -454,6 +461,14 @@ export async function dispatchCommand(deps: ConnectionDeps, cmd: ClientCommand, 
     case "conversation.read":
       if (!deps.conversations) throw new WireError("unsupported", "Conversations cannot message each other here.");
       return deps.conversations.readLocal(cmd.params.sessionId, cmd.params.lastN);
+    case "skills.list": {
+      // Names, descriptions and paths only; a skill's body never leaves the Mac.
+      if (!deps.skills) throw new WireError("unsupported", "Skills are not available here.");
+      let cwd = typeof cmd.params.cwd === "string" && cmd.params.cwd ? cmd.params.cwd : undefined;
+      if (!cwd && typeof cmd.params.sessionId === "string" && sessions.has(cmd.params.sessionId)) cwd = sessions.log(cmd.params.sessionId).meta.cwd;
+      if (cwd && !path.isAbsolute(cwd)) throw new WireError("bad_request", "cwd must be an absolute path.");
+      return { skills: await deps.skills.list(cwd) };
+    }
     case "conversation.toggle":
       if (!deps.conversations) throw new WireError("unsupported", "Conversations cannot message each other here.");
       return deps.conversations.toggle(cmd.params.sessionId, cmd.params.enabled);

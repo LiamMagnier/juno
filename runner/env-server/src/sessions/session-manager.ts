@@ -28,6 +28,7 @@ import type {
   UsageWindow,
   UserInput,
   UserInputRequestItem,
+  SkillActivation,
 } from "../contracts/code-v2.js";
 import { SessionLog, type SessionMeta } from "../protocol/session-log.js";
 import type { ProviderRegistry } from "../providers/registry.js";
@@ -37,6 +38,7 @@ import { createWorktree, runWorktreeSetup } from "../git/worktrees.js";
 import { AlevrMcpServer, MCP_SERVER_NAME } from "../mcp/alevr-mcp.js";
 import { deferred, describeError, newId, nowIso, type Deferred, type Logger } from "../util.js";
 import { withTeamBrief } from "../mcp/team-brief.js";
+import { renderSkillInstructions, resolveSkillActivations, type SkillCatalog } from "../skills/discovery.js";
 
 export class WireError extends Error {
   constructor(
@@ -84,6 +86,8 @@ export interface SessionManagerOptions {
   baseUrl: () => string;
   coalesceMs?: number;
   checkpoints?: GitCheckpoints;
+  /** skills lane: the skills installed on this Mac, for turns that run under one. */
+  skills?: SkillCatalog;
 }
 
 const MODE_ORDER: RuntimeMode[] = ["read-only", "ask", "auto-edit", "auto", "full"];
@@ -245,6 +249,15 @@ export class SessionManager {
     if (instance.status === "not-installed") throw new WireError("not_ready", instance.statusMessage ?? `${instance.label} is not installed.`);
     if (instance.status === "signed-out") throw new WireError("not_ready", instance.statusMessage ?? `Sign in to ${instance.label} first.`);
     const log = live.log;
+    // skills lane: an input that names its skills sets the thread's selection
+    // (all but the `/name` ones); one that does not runs under the selection.
+    const named = Array.isArray(params.input.skills) ? params.input.skills.filter(isActivation) : undefined;
+    const activations = named ?? log.meta.skills ?? [];
+    if (named) {
+      const persistent = named.filter((s) => s.once !== true).map(({ once: _once, ...rest }) => rest);
+      log.updateMeta({ skills: persistent.length ? persistent : undefined });
+    }
+    params = { ...params, input: { ...params.input, skills: activations } };
     log.updateMeta({
       selection: params.selection,
       runtimeMode: params.runtimeMode,
@@ -257,6 +270,7 @@ export class SessionManager {
     const turnId = newId("t");
     const ordinal = log.meta.turnCount + 1;
     this.#addItem(live, inputItem(turnId, params.input, "send"));
+
     log.emit({ type: "turn.started", turnId, selection: params.selection });
     const abort = new AbortController();
     const done = deferred<TurnOutcome>();
@@ -281,7 +295,10 @@ export class SessionManager {
     }
     const instance = live.providerInstanceId ? this.#o.registry.get(live.providerInstanceId) : undefined;
     const caps = instance ? this.#o.registry.adapterFor(instance.kind)?.capabilities(instance) : undefined;
-    if (caps?.steering && live.provider?.steer && (await live.provider.steer(params.input))) {
+    const steerSkills = Array.isArray(params.input.skills) ? params.input.skills.filter(isActivation) : [];
+    const steerText = steerSkills.length ? await this.skillInstructions(live.log.meta.cwd, steerSkills) : "";
+    const steered = steerText ? { ...params.input, text: `${steerText}\n\n${params.input.text}` } : params.input;
+    if (caps?.steering && live.provider?.steer && (await live.provider.steer(steered))) {
       this.#addItem(live, inputItem(active.turnId, params.input, "steer"));
       return { accepted: true };
     }
@@ -608,6 +625,21 @@ export class SessionManager {
     });
   }
 
+  /**
+   * The instructions block for the skills a turn runs under, bodies read on
+   * this Mac. Skills that are no longer installed are named in a short note
+   * rather than failing the turn.
+   */
+  async skillInstructions(cwd: string, activations: readonly SkillActivation[]): Promise<string> {
+    if (activations.length === 0) return "";
+    const discovered = this.#o.skills ? await this.#o.skills.discover(cwd).catch(() => []) : [];
+    const { skills, missing } = await resolveSkillActivations(activations, discovered);
+    if (missing.length) this.#o.logger.warn(`skills not found: ${missing.join(", ")}`);
+    const text = renderSkillInstructions(skills);
+    const note = missing.length ? `(The skill${missing.length === 1 ? "" : "s"} ${missing.join(", ")} could not be found on this Mac.)` : "";
+    return [text, note].filter(Boolean).join("\n\n");
+  }
+
   isRunning(sessionId: string): boolean {
     return !!this.#get(sessionId).active;
   }
@@ -634,6 +666,12 @@ export class SessionManager {
       if (abort.signal.aborted || (live.generation ?? 0) !== generation) throw new TurnStoppedEarly();
       const provider = await this.#ensureProvider(live, instance, params.selection, generation);
       const sink = this.#sink(live, instance.id, turnId);
+      // skills lane: Alevr's engine takes the skills in its system prompt; a
+      // vendor runtime (Claude, Codex, ACP) gets them ahead of the message.
+      const skillText = await this.skillInstructions(cwd, params.input.skills ?? []);
+      const engineKind = instance.kind === "alevr" || instance.kind === "byok";
+      const { skills: _skills, ...bareInput } = params.input;
+      const turnInput: UserInput = skillText && !engineKind ? { ...bareInput, text: `${skillText}\n\n${bareInput.text}` } : bareInput;
       // Interrupted while the runtime was starting: nothing was sent yet.
       if (abort.signal.aborted) throw new TurnStoppedEarly();
       result = await provider.runTurn({
@@ -642,7 +680,8 @@ export class SessionManager {
         turnOrdinal: ordinal,
         cwd,
         // Team lane: a vendor agent leads a Plan → Build → Verify team through the Alevr MCP tools.
-        input: withTeamBrief(params.input, params.routing, instance.kind, params.interactionMode),
+        input: withTeamBrief(turnInput, params.routing, instance.kind, params.interactionMode),
+        ...(engineKind ? { skillInstructions: skillText } : {}),
         selection: params.selection,
         ...(params.routing ? { routing: params.routing } : {}),
         runtimeMode: params.runtimeMode,
@@ -919,7 +958,24 @@ function inputItem(turnId: string, input: UserInput, delivery: "send" | "steer")
       ...(c.linkId ? { linkId: c.linkId } : {}),
     };
   }
-  return { id: newId("u"), kind: "user_message", turnId, createdAt: nowIso(), text: input.text, ...(input.attachments?.length ? { attachments: input.attachments } : {}), delivery };
+  const skills = (input.skills ?? []).filter(isActivation).map((s) => s.name);
+  return {
+    id: newId("u"),
+    kind: "user_message",
+    turnId,
+    createdAt: nowIso(),
+    text: input.text,
+    ...(input.attachments?.length ? { attachments: input.attachments } : {}),
+    delivery,
+    ...(skills.length ? { skills } : {}),
+  };
+}
+
+/** A well-formed skill activation from the wire (anything else is ignored, not fatal). */
+function isActivation(value: unknown): value is SkillActivation {
+  if (!value || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
+  return typeof v.name === "string" && v.name.length > 0 && (v.source === "project" || v.source === "user" || v.source === "plugin" || v.source === "account");
 }
 
 export type { ApprovalDecision, FileChangeEntry, UserInput };

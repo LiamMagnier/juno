@@ -80,6 +80,12 @@ export interface TurnRequest {
   interactionMode: InteractionMode;
   sink: TurnSink;
   signal: AbortSignal;
+  /**
+   * skills lane: the instructions of the skills this turn runs under, for an
+   * engine that takes them in its system prompt (Alevr's). Vendor runtimes get
+   * them ahead of `input.text` instead and never see this field.
+   */
+  skillInstructions?: string;
 }
 
 export interface TurnResult {

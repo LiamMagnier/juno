@@ -329,6 +329,74 @@ public enum CodeV2 {
         case logout
     }
 
+    // MARK: Skills lane (additive)
+
+    /// Where a skill lives; same-named local skills resolve project > user > plugin.
+    // contract: SKILL_SOURCE_VALUES
+    public enum SkillSource: String, Codable, Sendable, CaseIterable, Hashable {
+        case project
+        case user
+        case plugin
+        case account
+    }
+
+    /// Which tool's folder a local skill was found in.
+    // contract: SKILL_ORIGIN_VALUES
+    public enum SkillOrigin: String, Codable, Sendable, CaseIterable, Hashable {
+        case claude
+        case codex
+        case alevr
+        case juno
+    }
+
+    /// A skill installed on the Mac, as `skills.list` reports it. Never its body.
+    public struct LocalSkillSummary: Codable, Sendable, Hashable, Identifiable {
+        public var name: String
+        public var description: String
+        public var source: SkillSource
+        public var origin: SkillOrigin
+        /// Absolute path of its SKILL.md.
+        public var path: String
+        /// For `.plugin`: the plugin's name.
+        public var plugin: String?
+
+        public var id: String { name }
+
+        public init(name: String, description: String, source: SkillSource, origin: SkillOrigin, path: String, plugin: String? = nil) {
+            self.name = name
+            self.description = description
+            self.source = source
+            self.origin = origin
+            self.path = path
+            self.plugin = plugin
+        }
+    }
+
+    /// A skill a turn runs under (`UserInput.skills`, `SessionSnapshot.skills`).
+    public struct SkillActivation: Codable, Sendable, Hashable {
+        public var name: String
+        public var source: SkillSource
+        /// Local skills: the SKILL.md path `skills.list` reported.
+        public var path: String?
+        /// Account skills only: the instructions from the reader's Alevr library.
+        public var instructions: String?
+        public var title: String?
+        /// A `/name` activation: this input only.
+        public var once: Bool?
+
+        public init(
+            name: String, source: SkillSource, path: String? = nil, instructions: String? = nil,
+            title: String? = nil, once: Bool? = nil
+        ) {
+            self.name = name
+            self.source = source
+            self.path = path
+            self.instructions = instructions
+            self.title = title
+            self.once = once
+        }
+    }
+
     // MARK: Model and role selection
 
     public struct ModelSelection: Codable, Sendable, Hashable {
@@ -540,11 +608,18 @@ public enum CodeV2 {
         public var attachments: [Attachment]?
         /// Set when the input is a message from another of the user's conversations.
         public var conversation: ConversationDelivery?
+        /// skills lane (additive): absent applies the thread's selection; present
+        /// applies these and makes the ones without `once` the thread's selection.
+        public var skills: [SkillActivation]?
 
-        public init(text: String, attachments: [Attachment]? = nil, conversation: ConversationDelivery? = nil) {
+        public init(
+            text: String, attachments: [Attachment]? = nil, conversation: ConversationDelivery? = nil,
+            skills: [SkillActivation]? = nil
+        ) {
             self.text = text
             self.attachments = attachments
             self.conversation = conversation
+            self.skills = skills
         }
     }
 
@@ -664,10 +739,12 @@ public enum CodeV2 {
         public var text: String
         public var attachments: [Attachment]?
         public var delivery: Delivery?
+        /// skills lane (additive): the names of the skills it ran under.
+        public var skills: [String]?
 
         public init(
             id: String, turnId: String? = nil, createdAt: String, text: String,
-            attachments: [CodeV2.Attachment]? = nil, delivery: Delivery? = nil
+            attachments: [CodeV2.Attachment]? = nil, delivery: Delivery? = nil, skills: [String]? = nil
         ) {
             self.id = id
             self.turnId = turnId
@@ -675,6 +752,7 @@ public enum CodeV2 {
             self.text = text
             self.attachments = attachments
             self.delivery = delivery
+            self.skills = skills
         }
     }
 
@@ -1574,6 +1652,7 @@ public enum CodeV2 {
         case conversationDeliver = "conversation.deliver"
         case conversationRead = "conversation.read"
         case conversationToggle = "conversation.toggle"
+        case skillsList = "skills.list"
     }
 
     /// The git worktree a session runs in (`SessionSnapshot.worktree`).
@@ -1725,6 +1804,8 @@ public enum CodeV2 {
         public var worktree: WorktreeInfo?
         // runtime lane (additive): resume at reset.
         public var scheduledResume: ScheduledResume?
+        // skills lane (additive): the thread's selected skills.
+        public var skills: [SkillActivation]?
 
         public init(
             id: String, cwd: String, title: String? = nil, selection: CodeV2.ModelSelection,
@@ -1732,7 +1813,8 @@ public enum CodeV2 {
             interactionMode: CodeV2.InteractionMode = .default, state: CodeV2.SessionState = .idle,
             activeTurnId: String? = nil, resumeAt: String? = nil, items: [CodeV2.TurnItem] = [],
             queue: [CodeV2.QueuedInput] = [], usage: CodeV2.SessionUsage? = nil,
-            worktree: CodeV2.WorktreeInfo? = nil, scheduledResume: CodeV2.ScheduledResume? = nil
+            worktree: CodeV2.WorktreeInfo? = nil, scheduledResume: CodeV2.ScheduledResume? = nil,
+            skills: [CodeV2.SkillActivation]? = nil
         ) {
             self.id = id
             self.cwd = cwd
@@ -1749,6 +1831,7 @@ public enum CodeV2 {
             self.usage = usage
             self.worktree = worktree
             self.scheduledResume = scheduledResume
+            self.skills = skills
         }
     }
 
