@@ -339,6 +339,34 @@ private struct JunoMobilePairingCheckingScreen: View {
 
 // MARK: - Approve
 
+/// One of the approval's two answers: a 40pt Liquid Glass capsule, accent
+/// tinted when it is the primary one.
+private struct JunoMobilePairingChoice: View {
+  let title: String
+  let prominent: Bool
+  let busy: Bool
+  let action: () -> Void
+
+  var body: some View {
+    Button(action: action) {
+      ZStack {
+        Text(title).opacity(busy ? 0 : 1)
+        if busy { ProgressView().controlSize(.small).tint(prominent ? Color.junoOnAccent : Color.junoForeground) }
+      }
+      .junoFont(size: 15, relativeTo: .subheadline, weight: .medium)
+      .foregroundStyle(prominent ? Color.junoOnAccent : Color.junoForeground)
+      .padding(.horizontal, JunoSpace.roomy)
+      .frame(minWidth: 96)
+      .frame(height: 40)
+      .contentShape(Capsule())
+      .junoGlass(in: Capsule(), tint: prominent ? Color.junoAccent : nil, interactive: true)
+      .padding(.vertical, 2)
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+  }
+}
+
 /// "Allow this iPhone to control Alevr on <Mac>?"
 struct JunoMobilePairingApproveScreen: View {
   enum Busy { case approving, denying }
@@ -368,30 +396,16 @@ struct JunoMobilePairingApproveScreen: View {
       }
     } actions: {
       VStack(spacing: JunoSpace.cozy) {
-        Button(action: approve) {
-          ZStack {
-            Text("Approve").opacity(busy == .approving ? 0 : 1)
-            if busy == .approving { ProgressView().tint(Color.junoOnAccent) }
-          }
-          .junoFont(size: 16, relativeTo: .body, weight: .medium)
-          .frame(maxWidth: .infinity, minHeight: JunoLayout.touchTarget)
+        // Compact, side by side and centred, like the thread's approval card:
+        // Deny is the quiet glass, Approve the accent.
+        HStack(spacing: JunoSpace.cozy) {
+          JunoMobilePairingChoice(title: "Deny", prominent: false, busy: busy == .denying, action: deny)
+            .accessibilityIdentifier("juno.mobile.pairing-deny")
+          JunoMobilePairingChoice(title: "Approve", prominent: true, busy: busy == .approving, action: approve)
+            .accessibilityIdentifier("juno.mobile.pairing-approve")
         }
-        .junoMobileCapsulePrimary()
         .disabled(busy != nil)
-        .accessibilityIdentifier("juno.mobile.pairing-approve")
-
-        Button(action: deny) {
-          ZStack {
-            Text("Deny").opacity(busy == .denying ? 0 : 1)
-            if busy == .denying { ProgressView() }
-          }
-          .junoFont(size: 16, relativeTo: .body, weight: .medium)
-          .foregroundStyle(Color.junoForeground)
-          .frame(maxWidth: .infinity, minHeight: JunoLayout.touchTarget)
-        }
-        .junoMobileCapsuleAction()
-        .disabled(busy != nil)
-        .accessibilityIdentifier("juno.mobile.pairing-deny")
+        .frame(maxWidth: .infinity)
 
         countdown
           .padding(.top, JunoSpace.tight)
