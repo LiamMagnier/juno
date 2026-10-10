@@ -495,7 +495,10 @@ export class DeviceLinkTransport implements EnvTransport {
       .then(async (res) => {
         const body = (await res.json().catch(() => ({}))) as LinkReply;
         if (!res.ok && !body.responses) {
-          this.messages.emit({ type: "response", id: command.id, ok: false, error: { code: res.status === 404 ? "not_found" : "not_ready", message: body.message ?? "Your Mac could not be reached." } });
+          // 403 not_paired (docs/code-v2/REMOTE-CONTROL.md): this browser holds no
+          // pair with the Mac; the server's message says where to pair it.
+          const code = res.status === 404 ? "not_found" : res.status === 403 ? "unsupported" : "not_ready";
+          this.messages.emit({ type: "response", id: command.id, ok: false, error: { code, message: body.message ?? "Your Mac could not be reached." } });
           return;
         }
         this.deliver(body);
@@ -535,6 +538,14 @@ export class DeviceLinkTransport implements EnvTransport {
           signal: this.abort.signal,
         });
         const body = (await res.json().catch(() => ({}))) as LinkReply;
+        if (res.status === 403) {
+          // Not paired (or the pair was removed on the Mac): nothing will
+          // change until someone pairs this browser, so check back slowly.
+          this.statuses.emit("closed");
+          await wait(30_000);
+          if (!this.closed) this.statuses.emit("open");
+          continue;
+        }
         if (!res.ok) throw new Error(String(res.status));
         this.failures = 0;
         this.deliver(body);
