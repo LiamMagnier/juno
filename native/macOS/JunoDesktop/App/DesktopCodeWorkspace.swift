@@ -9,6 +9,7 @@ import JunoDesignSystem
 import JunoStorage
 import JunoSync
 import JunoVoiceKit
+import JunoWorkKit
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -33,6 +34,8 @@ struct DesktopCodeWorkspace: View {
     @Binding var product: DesktopProductMode
     /// Starts a normal Juno conversation, independent of a repository.
     let newChat: () -> Void
+    /// Skills lane: opens the skills library (the Skills chip's Manage skills…).
+    var openSkills: (() -> Void)? = nil
 
     @SceneStorage("juno.desktop.code.selection") private var storedSelection = ""
     @SceneStorage("juno.desktop.code.columns") private var storedColumnVisibility = ""
@@ -166,6 +169,9 @@ struct DesktopCodeWorkspace: View {
     /// on the vendor's own agent runs it.
     private func handOff(_ controller: SessionController, text: String) {
         guard let cwd = controller.context?.access.rootURL.path else { return }
+        // Skills lane: the thread's skills (and a /name one) go with it.
+        let skills = controller.selectedSkills + controller.onceSkills
+        controller.onceSkills = []
         let binding = CodeV2SessionBindings.Binding(
             envSessionId: "draft-" + UUID().uuidString.lowercased(),
             cwd: cwd,
@@ -180,9 +186,11 @@ struct DesktopCodeWorkspace: View {
                 opened.envSessionId = session.sessionId
                 envBindings.bind(controller.sessionID.value, to: opened)
             }
+            CodeSkillsModel.remember(skills, thread: session.sessionId)
             await session.send(
                 text, selection: v2Composer.selection, routing: v2Composer.routing,
-                runtimeMode: v2Composer.runtimeMode, interactionMode: v2Composer.interactionMode
+                runtimeMode: v2Composer.runtimeMode, interactionMode: v2Composer.interactionMode,
+                skills: skills
             )
         }
     }
@@ -299,6 +307,11 @@ struct DesktopCodeWorkspace: View {
     // MARK: - Body
 
     var body: some View {
+        content
+            .environment(\.codeAccountSkills, DesktopCodeSkills.account(configuration?.skillLibraryModel, manage: openSkills))
+    }
+
+    private var content: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             DesktopCodeSidebar(
                 workbench: workbenchModel,
@@ -1118,6 +1131,10 @@ struct DesktopCodeWorkspace: View {
             for attachment in draft.attachments {
                 created.attach(attachment)
             }
+            // Skills lane: the landing's skills become the thread's.
+            created.selectedSkills = draft.skills.filter { $0.once != true }
+            created.onceSkills = draft.skills.filter { $0.once == true }
+            CodeSkillsModel.remember(draft.skills, thread: created.sessionID.value)
             if draft.handsOff {
                 // A subscription was chosen on the new-session screen: the
                 // vendor's own agent takes the first message.
@@ -2002,5 +2019,41 @@ private struct DesktopCodeRelayApproval: View {
         )
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Approval required: \(summary)")
+    }
+}
+
+
+// MARK: - Skills lane
+
+/// The reader's Alevr skills for Code's Skills chip and `/name`: the same
+/// library Chat lists (only what chat may use), and a skill's instructions
+/// read from its current version when a message runs under it.
+@MainActor
+enum DesktopCodeSkills {
+    static func account(_ model: NativeSkillLibraryModel?, manage: (() -> Void)?) -> CodeAccountSkills? {
+        guard let model else { return nil }
+        return CodeAccountSkills(
+            list: { @MainActor in
+                if model.library == nil { await model.refresh() }
+                guard let library = model.library else { return nil }
+                let ids = Dictionary(
+                    (library.yours + library.sources.flatMap(\.skills)).map { ($0.slug, $0.id) },
+                    uniquingKeysWith: { first, _ in first }
+                )
+                return model.chooseable.compactMap { choice in
+                    ids[choice.slug].map {
+                        CodeAccountSkill(
+                            id: $0, slug: choice.slug, name: choice.name,
+                            description: choice.description, sourceLabel: choice.sourceLabel
+                        )
+                    }
+                }
+            },
+            instructions: { @MainActor id in
+                guard let accountID = model.currentAccountID else { return nil }
+                return await model.skillsClient.skill(id: id, for: accountID).value?.version?.instructions
+            },
+            manage: manage.map { open in { @MainActor in open() } }
+        )
     }
 }

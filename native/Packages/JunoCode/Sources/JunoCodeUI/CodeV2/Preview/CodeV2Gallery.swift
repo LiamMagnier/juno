@@ -37,6 +37,10 @@ public enum CodeV2Gallery {
         case dockTerminal = "dock-terminal"
         case computerOverlay = "computer-overlay"
         case connectedApproval = "connected-approval"
+        case skillsPanel = "skills-panel"
+        case skillsPanelSearch = "skills-panel-search"
+        case skillsSlash = "skills-slash"
+        case skillsComposer = "skills-composer"
 
         public var size: CGSize {
             switch self {
@@ -55,6 +59,9 @@ public enum CodeV2Gallery {
             case .dockTerminal: CGSize(width: 520, height: 420)
             case .computerOverlay: CGSize(width: 960, height: 600)
             case .connectedApproval: CGSize(width: 820, height: 360)
+            case .skillsPanel, .skillsPanelSearch: CGSize(width: 460, height: 500)
+            case .skillsSlash: CGSize(width: 600, height: 340)
+            case .skillsComposer: CGSize(width: 900, height: 220)
             }
         }
     }
@@ -235,6 +242,35 @@ public enum CodeV2Gallery {
             ))
         case .computerOverlay:
             return overlay(screen: surface.size)
+        case .skillsPanel, .skillsPanelSearch:
+            let skills = CodeV2Fixtures.skills(selected: ["design-taste-frontend", "tidy-commits"])
+            return popover(CodeSkillsPanel(skills: skills, initialQuery: surface == .skillsPanelSearch ? "design" : ""))
+        case .skillsSlash:
+            let skills = CodeV2Fixtures.skills()
+            let rows = skills.matches("des").map { choice in
+                StudioSuggestionList.Row(
+                    id: choice.id, title: "/" + choice.name, detail: choice.description, isMono: false,
+                    trailing: choice.originLabel, section: "Skills"
+                )
+            }
+            return AnyView(ZStack(alignment: .bottomLeading) {
+                Studio.Surface.canvas
+                StudioSuggestionList(rows: rows, highlighted: 0, choose: { _ in }).padding(JunoSpace.regular)
+            })
+        case .skillsComposer:
+            let skills = CodeV2Fixtures.skills(selected: ["impeccable"], once: "release-notes")
+            let model = composer(CodeV2Fixtures.claudeSelection)
+            return AnyView(ZStack {
+                Studio.Surface.canvas
+                StudioComposer(
+                    text: .constant(""), placeholder: "Ask for a change. @ for files, / for commands",
+                    slashCommands: CodeSlashCommandLibrary(commands: []), canSend: false, send: {},
+                    contextStrip: AnyView(CodeV2ContextStrip(place: place)), skills: skills
+                ) {
+                    CodeV2ComposerLeading(model: model, directory: directory, skills: skills)
+                } trailing: { EmptyView() }
+                .padding(JunoSpace.regular)
+            })
         case .connectedApproval:
             let approvals = CodeV2ConnectedApprovals()
             let request = StudioComputerBridgeApprover.request(

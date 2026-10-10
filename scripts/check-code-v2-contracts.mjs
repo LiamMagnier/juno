@@ -97,6 +97,17 @@ function buildSchema() {
     ProviderAuthPhase: en(C.PROVIDER_AUTH_PHASE_VALUES),
     ProviderInstallAction: en(C.PROVIDER_INSTALL_ACTION_VALUES),
     ProviderAuthAction: en(C.PROVIDER_AUTH_ACTION_VALUES),
+    // skills lane (additive)
+    SkillSource: en(C.SKILL_SOURCE_VALUES),
+    SkillOrigin: en(C.SKILL_ORIGIN_VALUES),
+    SkillActivation: obj(
+      { name: nonEmpty, source: { $ref: "#/definitions/SkillSource" } },
+      { path: nonEmpty, instructions: str, title: str, once: bool },
+    ),
+    LocalSkillSummary: obj(
+      { name: nonEmpty, description: str, source: en(["project", "user", "plugin"]), origin: { $ref: "#/definitions/SkillOrigin" }, path: nonEmpty },
+      { plugin: nonEmpty },
+    ),
     ProviderInstallState: obj(
       { phase: ref("ProviderInstallPhase") },
       { operationId: nonEmpty, downloadedBytes: int, totalBytes: int, version: str, installedVersion: str, message: str },
@@ -176,7 +187,10 @@ function buildSchema() {
     ),
 
     Attachment: obj({ name: nonEmpty, mediaType: nonEmpty, ref: nonEmpty }),
-    UserInput: obj({ text: str }, { attachments: arr(ref("Attachment")), conversation: ref("ConversationDelivery") }),
+    UserInput: obj(
+      { text: str },
+      { attachments: arr(ref("Attachment")), conversation: ref("ConversationDelivery"), skills: arr(ref("SkillActivation")) },
+    ),
     TokenCount: obj({ input: int, output: int }, { cachedInput: int }),
     PlanStep: obj({ text: str, status: ref("StepStatus") }),
     FileChangeEntry: obj(
@@ -184,7 +198,11 @@ function buildSchema() {
       { previousPath: str, diff: str, additions: int, deletions: int },
     ),
 
-    UserMessageItem: itemSchema("user_message", { text: str }, { attachments: arr(ref("Attachment")), delivery: en(["send", "steer", "queue"]) }),
+    UserMessageItem: itemSchema(
+      "user_message",
+      { text: str },
+      { attachments: arr(ref("Attachment")), delivery: en(["send", "steer", "queue"]), skills: arr(nonEmpty) },
+    ),
     AssistantMessageItem: itemSchema("assistant_message", { text: str, streaming: bool }, { agentId: str }),
     ReasoningItem: itemSchema("reasoning", { text: str, streaming: bool }, { summary: bool }),
     PlanItem: itemSchema("plan", { text: str }, { steps: arr(ref("PlanStep")), awaitingApproval: bool }),
@@ -354,6 +372,7 @@ function buildSchema() {
       worktree: obj({ path: nonEmpty, branch: nonEmpty, repoRoot: nonEmpty }),
       scheduledResume: ref("ScheduledResume"),
       crossMessages: en(["on", "off"]),
+      skills: arr(ref("SkillActivation")),
     },
   );
 
@@ -440,6 +459,7 @@ function buildSchema() {
   );
   params["conversation.read"] = obj(sid, { lastN: { type: "integer", minimum: 1 } });
   params["conversation.toggle"] = obj({ ...sid, enabled: { type: ["boolean", "null"] } });
+  params["skills.list"] = obj({}, { cwd: nonEmpty, sessionId: nonEmpty });
   for (const t of C.CLIENT_COMMAND_TYPE_VALUES) if (!params[t]) throw new Error(`no params schema for ${t}`);
   definitions.ClientCommand = {
     oneOf: C.CLIENT_COMMAND_TYPE_VALUES.map((t) => obj({ id: nonEmpty, type: { const: t }, params: params[t] })),

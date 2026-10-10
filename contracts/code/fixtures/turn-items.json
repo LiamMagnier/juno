@@ -3,6 +3,7 @@
   "cases": [
     { "id": "i1", "turnId": "t1", "kind": "user_message", "createdAt": "2026-10-08T20:00:00Z", "text": "Fix the flaky login test", "delivery": "send",
       "attachments": [{ "name": "failure.png", "mediaType": "image/png", "ref": "upload_9f2" }] },
+    { "id": "i1s", "turnId": "t1", "kind": "user_message", "createdAt": "2026-10-08T20:00:00Z", "text": "Redesign the pricing page", "delivery": "send", "skills": ["design-taste-frontend"] },
     { "id": "i2", "turnId": "t1", "kind": "reasoning", "createdAt": "2026-10-08T20:00:01Z", "text": "The test races the session cookie.", "streaming": false, "summary": true },
     { "id": "i3", "turnId": "t1", "kind": "plan", "createdAt": "2026-10-08T20:00:02Z", "text": "Make the login test deterministic", "awaitingApproval": true,
       "steps": [{ "text": "Reproduce", "status": "completed" }, { "text": "Await the cookie", "status": "in_progress" }, { "text": "Run the suite", "status": "pending" }] },

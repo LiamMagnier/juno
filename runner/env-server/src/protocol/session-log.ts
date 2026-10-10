@@ -25,6 +25,7 @@ import type {
   ServerEvent,
   ServerEventEnvelope,
   SessionSnapshot,
+  SkillActivation,
   WorktreeInfo,
 } from "../contracts/code-v2.js";
 import { applySessionEvent } from "./reducer.js";
@@ -49,6 +50,8 @@ export interface SessionMeta {
   providerState?: Record<string, unknown>;
   /** Completed turns; the next turn's ordinal is turnCount + 1. */
   turnCount: number;
+  /** skills lane: the thread's selected skills (never `once` ones). */
+  skills?: SkillActivation[];
 }
 
 interface StoredEvent {
@@ -286,6 +289,8 @@ export class SessionLog {
     if (this.meta.title) next.title = this.meta.title;
     if (this.meta.routing) next.routing = this.meta.routing;
     if (this.meta.worktree) next.worktree = this.meta.worktree;
+    if (this.meta.skills?.length) next.skills = this.meta.skills;
+    else delete next.skills;
     this.#snapshot = next;
   }
 }
@@ -304,6 +309,7 @@ function emptySnapshot(meta: SessionMeta): SessionSnapshot {
   if (meta.title) snapshot.title = meta.title;
   if (meta.routing) snapshot.routing = meta.routing;
   if (meta.worktree) snapshot.worktree = meta.worktree;
+  if (meta.skills?.length) snapshot.skills = meta.skills;
   return snapshot;
 }
 

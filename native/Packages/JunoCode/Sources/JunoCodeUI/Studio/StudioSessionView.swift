@@ -18,6 +18,9 @@ public struct StudioSessionView: View {
     let v2: CodeV2StudioContext?
 
     @State private var isRewindPickerPresented = false
+    /// Skills lane: the thread's skills, kept per thread.
+    @State private var skills = CodeSkillsModel()
+    @Environment(\.codeAccountSkills) private var accountSkills
     @FocusState private var composerFocused: Bool
 
     private var preferences: StudioPreferences { .shared }
@@ -108,10 +111,24 @@ public struct StudioSessionView: View {
             let text = controller.composerText.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !text.isEmpty else { return }
             controller.composerText = ""
-            v2.handoff(text)
+            Task {
+                await applySkills()
+                v2.handoff(text)
+            }
         } else {
-            Task { await controller.send() }
+            Task {
+                await applySkills()
+                await controller.send()
+            }
         }
+    }
+
+    /// Skills lane: the thread's skills and an armed `/name` one, handed to
+    /// the engine for the message about to go (and to a hand-off).
+    private func applySkills() async {
+        let active = await skills.takeActivations()
+        controller.selectedSkills = active.filter { $0.once != true }
+        controller.onceSkills = active.filter { $0.once == true }
     }
 
     /// The v2 controls' choices, applied to the Swift engine: Alevr models
@@ -224,6 +241,9 @@ public struct StudioSessionView: View {
         .background(Studio.Surface.canvas)
         .task(id: controller.sessionID) {
             composerFocused = true
+            skills.bind(threadKey: controller.sessionID.value)
+            let root = controller.context?.access.rootURL
+            skills.configure(listLocal: { await CodeSkillsModel.macSkills(projectRoot: root) }, account: accountSkills)
             await controller.commands.reload(context: controller.context)
         }
         // The sheets, questions and side answers slash verbs open (Lane F).
@@ -350,7 +370,10 @@ public struct StudioSessionView: View {
             focus: $composerFocused,
             steer: isRunning ? {
                 controller.activeInstructionKind = .steer
-                Task { await controller.send() }
+                Task {
+                    await applySkills()
+                    await controller.send()
+                }
             } : nil,
             stopOnDoubleEscape: isRunning,
             // An approval takes over the composer body (code-v4 TARGET §7.4).
@@ -359,13 +382,15 @@ public struct StudioSessionView: View {
                 AnyView(CodeV2PlusMenuItems(model: v2.composer, directory: v2.directory, computerUse: computerUseBinding))
             },
             contextStrip: place.map { AnyView(CodeV2ContextStrip(place: $0)) },
-            speech: effectiveSpeech
+            speech: effectiveSpeech,
+            skills: skills
         ) {
             if let v2 {
                 CodeV2ComposerLeading(
                     model: v2.composer, directory: v2.directory, isEnabled: !isBusy,
                     threadTokens: controller.contextTokens ?? 0, computerUse: computerUseBinding,
-                    openConnections: v2.openConnections, setup: v2.setup
+                    openConnections: v2.openConnections, setup: v2.setup,
+                    skills: skills
                 )
                     .codeV2TeamScope(session: controller.sessionID.value, project: controller.workspaceDisplayName)
                     .onChange(of: v2.composer.selection) { _, _ in syncV2(v2.composer) }

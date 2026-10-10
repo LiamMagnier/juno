@@ -35,6 +35,9 @@
     {"id": "32", "type": "provider.auth", "params": {"instanceId": "acp:antigravity", "action": "logout"}},
     {"id": "33", "type": "conversation.deliver", "params": {"sessionId": "s_cart", "message": {"fromRef": "chat:c_release", "fromTitle": "Release prep", "fromProduct": "chat", "text": "Is the cart total fix merged?", "hop": 0, "chainId": "ch_1", "linkId": "l_1", "notifyWhenIdle": true}}},
     {"id": "34", "type": "conversation.read", "params": {"sessionId": "s_cart", "lastN": 5}},
-    {"id": "35", "type": "conversation.toggle", "params": {"sessionId": "s_cart", "enabled": null}}
+    {"id": "35", "type": "conversation.toggle", "params": {"sessionId": "s_cart", "enabled": null}},
+    {"id": "36", "type": "skills.list", "params": {"cwd": "/repo"}},
+    {"id": "37", "type": "skills.list", "params": {}},
+    {"id": "38", "type": "turn.start", "params": {"sessionId": "s1", "input": {"text": "Redesign the pricing page", "skills": [{"name": "design-taste-frontend", "source": "user", "path": "/Users/me/.claude/skills/design-taste-frontend/SKILL.md"}, {"name": "tidy-commits", "source": "account", "title": "Tidy commits", "instructions": "Squash fixups before a PR.", "once": true}]}, "selection": {"instanceId": "alevr", "model": "anthropic:claude-opus-5-5"}, "runtimeMode": "auto-edit", "interactionMode": "default"}}
   ]
 }

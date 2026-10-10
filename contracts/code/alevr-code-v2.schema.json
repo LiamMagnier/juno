@@ -203,7 +203,8 @@
         "provider.auth",
         "conversation.deliver",
         "conversation.read",
-        "conversation.toggle"
+        "conversation.toggle",
+        "skills.list"
       ]
     },
     "ServerEventType": {
@@ -302,6 +303,91 @@
         "complete",
         "cancel",
         "logout"
+      ]
+    },
+    "SkillSource": {
+      "type": "string",
+      "enum": [
+        "project",
+        "user",
+        "plugin",
+        "account"
+      ]
+    },
+    "SkillOrigin": {
+      "type": "string",
+      "enum": [
+        "claude",
+        "codex",
+        "alevr",
+        "juno"
+      ]
+    },
+    "SkillActivation": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source": {
+          "$ref": "#/definitions/SkillSource"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "instructions": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "once": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "source"
+      ]
+    },
+    "LocalSkillSummary": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "project",
+            "user",
+            "plugin"
+          ]
+        },
+        "origin": {
+          "$ref": "#/definitions/SkillOrigin"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "plugin": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "name",
+        "description",
+        "source",
+        "origin",
+        "path"
       ]
     },
     "ProviderInstallState": {
@@ -745,6 +831,12 @@
         },
         "conversation": {
           "$ref": "#/definitions/ConversationDelivery"
+        },
+        "skills": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/SkillActivation"
+          }
         }
       },
       "required": [
@@ -856,6 +948,13 @@
             "steer",
             "queue"
           ]
+        },
+        "skills": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
         }
       },
       "required": [
@@ -2353,6 +2452,12 @@
             "on",
             "off"
           ]
+        },
+        "skills": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/SkillActivation"
+          }
         }
       },
       "required": [
@@ -3423,6 +3528,36 @@
                 "sessionId",
                 "enabled"
               ]
+            }
+          },
+          "required": [
+            "id",
+            "type",
+            "params"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": {
+              "const": "skills.list"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "cwd": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sessionId": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
             }
           },
           "required": [

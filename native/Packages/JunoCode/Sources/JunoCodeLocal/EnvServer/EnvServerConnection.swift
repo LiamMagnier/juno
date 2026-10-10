@@ -271,6 +271,15 @@ public extension EnvServerConnection {
     struct AuthResult: Decodable, Sendable { public let auth: CodeV2.ProviderAuthState }
     struct TerminalResult: Decodable, Sendable { public let terminalId: String }
 
+    struct SkillsResult: Decodable, Sendable { public let skills: [CodeV2.LocalSkillSummary] }
+
+    /// Skills lane: the skills installed on this Mac plus a project's (names,
+    /// descriptions, paths; never bodies).
+    func skillsList(cwd: String? = nil, sessionId: String? = nil) async throws -> [CodeV2.LocalSkillSummary] {
+        struct P: Encodable { let cwd: String?; let sessionId: String? }
+        return try await request(.skillsList, params: P(cwd: cwd, sessionId: sessionId), as: SkillsResult.self).skills
+    }
+
     func providerList() async throws -> [CodeV2.ProviderInstance] {
         try await request(.providerList, params: EnvServerEmpty(), as: InstancesResult.self).instances
     }

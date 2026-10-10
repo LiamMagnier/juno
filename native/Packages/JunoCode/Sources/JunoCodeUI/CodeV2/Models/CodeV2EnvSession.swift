@@ -116,20 +116,28 @@ public final class CodeV2EnvSession {
         selection: CodeV2.ModelSelection,
         routing: CodeV2.RoleRouting?,
         runtimeMode: CodeV2.RuntimeMode,
-        interactionMode: CodeV2.InteractionMode
+        interactionMode: CodeV2.InteractionMode,
+        skills: [CodeV2.SkillActivation]? = nil
     ) async {
         await perform { connection in
             if self.state.cursor == nil { await self.open() }
             _ = try await connection.turnStart(
-                sessionId: self.sessionId, input: CodeV2.UserInput(text: text), selection: selection,
+                sessionId: self.sessionId, input: CodeV2.UserInput(text: text, skills: skills), selection: selection,
                 routing: routing, runtimeMode: runtimeMode, interactionMode: interactionMode
             )
         }
     }
 
-    public func queue(_ text: String) async {
+    /// Skills lane: the skills on this Mac plus this thread's project
+    /// (names, descriptions, paths). Nil when the env server cannot say.
+    public func listSkills() async -> [CodeV2.LocalSkillSummary]? {
+        guard let connection = try? await hub?.ready() else { return nil }
+        return try? await connection.skillsList(sessionId: sessionId)
+    }
+
+    public func queue(_ text: String, skills: [CodeV2.SkillActivation]? = nil) async {
         await perform { connection in
-            _ = try await connection.turnQueue(sessionId: self.sessionId, input: CodeV2.UserInput(text: text))
+            _ = try await connection.turnQueue(sessionId: self.sessionId, input: CodeV2.UserInput(text: text, skills: skills))
         }
     }
 

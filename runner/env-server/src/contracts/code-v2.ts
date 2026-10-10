@@ -397,6 +397,64 @@ export interface UserInput {
    * `user_message`.
    */
   conversation?: ConversationDelivery;
+  /**
+   * skills lane (additive): the skills this input runs under. Absent: the
+   * thread's own selection (`SessionSnapshot.skills`) applies. Present: these
+   * apply, and the entries without `once` become the thread's selection (an
+   * empty list clears it).
+   */
+  skills?: SkillActivation[];
+}
+
+// ── Skills lane (additive) ──────────────────────────────────────────────────
+//
+// A skill is an instruction document (`SKILL.md`: front matter with `name` and
+// `description`, then the instructions), as Claude Code defines it. The Mac
+// is the source of truth for the ones installed on it; the env server and the
+// Swift engine discover them (`skills.list`). Only names, descriptions and
+// paths ever cross the device link: a local skill's body is read on the Mac
+// when a turn runs under it. An account skill (written or installed on Alevr)
+// is the one kind whose instructions travel, from the account to the Mac.
+
+/**
+ * Where a skill lives. `project` (the session's folder), `user` (the reader's
+ * own `~/.claude/skills`, `~/.alevr/skills`, `~/.juno/skills`,
+ * `~/.codex/skills`), `plugin` (a Claude Code plugin's skills) and `account`
+ * (the Alevr account's library). Same-named local skills resolve
+ * project > user > plugin.
+ */
+export const SKILL_SOURCE_VALUES = ["project", "user", "plugin", "account"] as const;
+export type SkillSource = (typeof SKILL_SOURCE_VALUES)[number];
+
+/** Which tool's folder a local skill was found in. */
+export const SKILL_ORIGIN_VALUES = ["claude", "codex", "alevr", "juno"] as const;
+export type SkillOrigin = (typeof SKILL_ORIGIN_VALUES)[number];
+
+/** A skill installed on the Mac, as `skills.list` reports it. Never its body. */
+export interface LocalSkillSummary {
+  /** The skill's name: what `/name` invokes. Lower-case, `[a-z0-9._-]`. */
+  name: string;
+  description: string;
+  source: "project" | "user" | "plugin";
+  origin: SkillOrigin;
+  /** Absolute path of its SKILL.md on the Mac. */
+  path: string;
+  /** For `plugin`: the plugin's name ("impeccable"). */
+  plugin?: string;
+}
+
+/** A skill a turn runs under. */
+export interface SkillActivation {
+  name: string;
+  source: SkillSource;
+  /** Local skills: the SKILL.md path `skills.list` reported. The env server re-resolves it by name and re-reads it. */
+  path?: string;
+  /** Account skills only: the instructions, from the reader's Alevr library. */
+  instructions?: string;
+  /** Display name when it differs from `name` (account skills). */
+  title?: string;
+  /** A `/name` activation: this input only, never the thread's selection. */
+  once?: boolean;
 }
 
 export interface TokenCount {
@@ -419,6 +477,8 @@ export interface UserMessageItem extends TurnItemBase {
   attachments?: Attachment[];
   /** How it reached the agent: a new turn, steered into the active one, or queued. */
   delivery?: "send" | "steer" | "queue";
+  /** skills lane (additive): the names of the skills it ran under. */
+  skills?: string[];
 }
 export interface AssistantMessageItem extends TurnItemBase {
   kind: "assistant_message";
@@ -841,6 +901,9 @@ export interface SessionSnapshot {
   // cross-conversation lane (additive)
   /** The thread's own toggle; absent follows the account setting. */
   crossMessages?: "on" | "off";
+  // skills lane (additive)
+  /** The thread's selected skills: applied to every input that does not name its own. */
+  skills?: SkillActivation[];
 }
 
 /** A turn the env server starts by itself at `at` (a subscription window reset), until cancelled. */
@@ -892,6 +955,8 @@ export const CLIENT_COMMAND_TYPE_VALUES = [
   "conversation.deliver",
   "conversation.read",
   "conversation.toggle",
+  // skills lane (additive): the skills installed on this Mac (names, descriptions, paths; never bodies).
+  "skills.list",
 ] as const;
 export type ClientCommandType = (typeof CLIENT_COMMAND_TYPE_VALUES)[number];
 
@@ -963,6 +1028,8 @@ export interface ClientCommandParams {
   "conversation.read": { sessionId: string; lastN?: number };
   /** The thread's own "Let conversations message each other" toggle; null follows the account setting. */
   "conversation.toggle": { sessionId: string; enabled: boolean | null };
+  /** The skills installed on this Mac, plus the project skills of `cwd` (or of the session's folder). */
+  "skills.list": { cwd?: string; sessionId?: string };
 }
 
 export interface ConversationDelivery {
@@ -1086,6 +1153,7 @@ export interface ClientCommandResults {
   "conversation.deliver": { outcome: "started" | "steered" | "queued" | "noted" | "refused"; reason?: string };
   "conversation.read": { title?: string; state: SessionState; messages: ConversationExcerptMessage[] };
   "conversation.toggle": { enabled: boolean };
+  "skills.list": { skills: LocalSkillSummary[] };
 }
 
 export const WIRE_ERROR_CODE_VALUES = [
