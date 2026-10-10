@@ -79,14 +79,15 @@ test("at rest (finishing, failed) and under reduced motion every bar is a dot", 
   assert.ok(waveformBars(samples, 400, false).every((bar) => bar.opacity <= 0.55), "the quiet ink at rest");
 });
 
-test("keys: Esc cancels, Enter finishes, ⌘/Ctrl+Enter sends, IME and Shift+Enter pass through", () => {
+test("keys, as native: Esc cancels, Return/Enter sends, IME and Shift+Enter pass through", () => {
   assert.equal(dictationKeyAction({ key: "Escape" }), "cancel");
-  assert.equal(dictationKeyAction({ key: "Enter" }), "done");
-  assert.equal(dictationKeyAction({ key: "Enter", metaKey: true }), "send");
-  assert.equal(dictationKeyAction({ key: "Enter", ctrlKey: true }), "send");
+  assert.equal(dictationKeyAction({ key: "Enter" }), "send");
   assert.equal(dictationKeyAction({ key: "Enter", shiftKey: true }), null);
   assert.equal(dictationKeyAction({ key: "Enter", isComposing: true }), null);
   assert.equal(dictationKeyAction({ key: "a" }), null);
+  const src = read("src/components/chat/composer-dictation.tsx");
+  assert.match(src, /onClick=\{onDone\}/, "✓ is the way to keep the words as a draft");
+  assert.match(src, /onDone=\{stop\}/);
 });
 
 test("the row is ✕ · waveform · ✓ in the card, with no status word, no meter and no second send disc", () => {

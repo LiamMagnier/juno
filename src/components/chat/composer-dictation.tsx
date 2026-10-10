@@ -32,8 +32,8 @@ import { encodeWav, type PcmTake } from "@/lib/wav";
  * send disc, nothing outside the composer's own edge except its light: the
  * voice glow, in your ember, rising with your voice.
  *
- * Keys: Esc cancels, Enter finishes (✓: the words go to the field to edit),
- * ⌘/Ctrl+Enter sends what was heard straight away.
+ * Keys, as native: Esc cancels, Return/Enter sends what was heard (as it
+ * does from the field). ✓ is the one way to keep the words as a draft.
  *
  * THE AUDIO PIPELINE is unchanged and still two-tier:
  *  - the LIVE PREVIEW comes from the Web Speech API: instant, free, rough;
@@ -85,18 +85,16 @@ async function transcribeBlob(blob: Blob, signal: AbortSignal, timeoutMs = STT_T
   }
 }
 
-/** What a key does while dictating. Pure, so the mapping is checked without a DOM. */
+/** What a key does while dictating (native: Esc cancels, Return sends). Pure, so it is checked without a DOM. */
 export function dictationKeyAction(event: {
   key: string;
-  metaKey?: boolean;
-  ctrlKey?: boolean;
   shiftKey?: boolean;
   isComposing?: boolean;
-}): "cancel" | "done" | "send" | null {
+}): "cancel" | "send" | null {
   if (event.isComposing) return null;
   if (event.key === "Escape") return "cancel";
   if (event.key !== "Enter" || event.shiftKey) return null;
-  return event.metaKey || event.ctrlKey ? "send" : "done";
+  return "send";
 }
 
 /**
@@ -166,7 +164,7 @@ export function DictationControls({
             <Check weight="bold" aria-hidden="true" className="size-[15px]" />
           </button>
         </TooltipTrigger>
-        <TooltipContent>Done (Enter)</TooltipContent>
+        <TooltipContent>Done</TooltipContent>
       </Tooltip>
     </div>
   );
@@ -451,14 +449,13 @@ export function ComposerDictation({
       e.preventDefault();
       if (action === "cancel") return cancel();
       if (failed) return;
-      if (action === "done") return stop();
-      // Send only with something to send. With server transcription on, the
+      // Send only with something to send (native: `if hasWords`). With server transcription on, the
       // preview may legitimately be empty and the words still arrive.
       if (transcriptRef.current || serverStt) send();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [cancel, stop, send, serverStt, failed]);
+  }, [cancel, send, serverStt, failed]);
 
   const listening = phaseRef.current === "active" && !closing && !failed && !isTranscribing;
 
@@ -535,7 +532,7 @@ export function ComposerDictation({
               )}
               {!transcript && !typed && <span className="text-muted-foreground">Speak now, in any language.</span>}
               {recognitionLost && !serverStt && (
-                <span className="text-muted-foreground">{transcript ? " " : ""}Live text stopped. Press Enter to keep what was heard.</span>
+                <span className="text-muted-foreground">{transcript ? " " : ""}Live text stopped. Press ✓ to keep what was heard.</span>
               )}
             </p>
           )}
