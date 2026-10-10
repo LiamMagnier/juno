@@ -95,7 +95,7 @@ export function withTeamRole(routing: RoleRouting, role: TeamRole, selection: Mo
     const n = Math.max(1, routing.workers?.length ?? 1);
     return { ...routing, workers: Array.from({ length: n }, () => selection) };
   }
-  const slot = TEAM_ROLE_SLOT[role];
+  const slot = TEAM_ROLE_SLOT[role] as "architect" | "reviewer" | "explorer";
   const next = { ...routing };
   if (selection) next[slot] = selection;
   else delete next[slot];

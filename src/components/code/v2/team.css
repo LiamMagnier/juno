@@ -1,0 +1,27 @@
+/* The Team orchestrator (team lane): the composer chip and the role editor. */
+.cv2-team-chip .v { max-width: 340px; }
+@media (max-width: 720px) { .cv2-team-chip .v { max-width: 150px; } }
+.cv2-team-chip[data-team="solo"] .v { color: hsl(var(--muted-foreground)); }
+
+.cv2-team-head { padding: 12px 12px 10px; display: flex; flex-direction: column; gap: 8px; border-bottom: 1px solid hsl(var(--border) / 0.8); }
+.cv2-team-head .cv2-seg { width: 100%; }
+.cv2-team-head .cv2-seg button { flex: 1; }
+.cv2-team-line { margin: 0; font-size: 12px; line-height: 16px; color: hsl(var(--muted-foreground)); }
+
+.cv2-team-role { display: flex; align-items: center; gap: 6px; margin: 0 6px; padding-right: 6px; border-radius: 8px; transition: background-color 80ms var(--cv2-ease); }
+.cv2-team-role:hover { background: hsl(var(--accent)); }
+.cv2-team-role-main { flex: 1; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto 16px; align-items: center; column-gap: 10px; min-height: 48px; padding: 4px 4px 4px 8px; text-align: left; }
+.cv2-team-role .who { display: flex; flex-direction: column; min-width: 0; }
+.cv2-team-role .who .n { color: hsl(var(--foreground)); font-weight: 500; display: inline-flex; gap: 6px; align-items: baseline; }
+.cv2-team-role .who .ph { font-weight: 400; font-size: 12px; color: hsl(var(--muted-foreground) / 0.8); }
+.cv2-team-role .who .d { font-size: 12px; line-height: 16px; color: hsl(var(--muted-foreground)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cv2-team-model { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 190px; white-space: nowrap; color: hsl(var(--foreground)); }
+.cv2-team-model .eff { color: hsl(var(--muted-foreground)); }
+.cv2-team-role .cv2-stepper .n { min-width: 22px; text-align: center; font-variant-numeric: tabular-nums; }
+.cv2-team-add { margin: 2px 6px 0; width: calc(100% - 12px); }
+.cv2-team-add > span:last-child { font-size: 12px; }
+@media (max-width: 520px) {
+  .cv2-team-model { max-width: 130px; }
+  .cv2-team-role .who .d { display: none; }
+}
+.cv2-phase-head { padding: 8px 0 2px 22px; font-size: 12px; line-height: 16px; color: hsl(var(--muted-foreground)); }

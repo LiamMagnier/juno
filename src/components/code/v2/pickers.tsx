@@ -112,7 +112,7 @@ export function listWords(words: readonly string[]): string {
 
 // ── Roles ────────────────────────────────────────────────────────────────────
 
-export type RoleTab = "lead" | "workers" | "reviewer" | "explorer" | `candidate:${number}`;
+export type RoleTab = "lead" | "architect" | "workers" | "reviewer" | "explorer" | `candidate:${number}`;
 
 function slotOf(tab: RoleTab): RoleSlot {
   if (tab === "lead") return "orchestrator";
@@ -123,6 +123,15 @@ function slotOf(tab: RoleTab): RoleSlot {
 export function roleTabs(routing?: RoleRouting): { id: RoleTab; label: string }[] {
   if (!routing || routing.preset === "solo") return [];
   if (routing.preset === "best-of-n") return (routing.workers ?? []).map((_, i) => ({ id: `candidate:${i}` as RoleTab, label: String.fromCharCode(65 + i) }));
+  // Team lane: Plan → Build → Verify names its roles for what they do.
+  if (routing.preset === "plan-build-verify") {
+    return [
+      { id: "architect", label: "Architect" },
+      { id: "workers", label: "Builders" },
+      { id: "reviewer", label: "Verifier" },
+      { id: "explorer", label: "Explorer" },
+    ];
+  }
   return [
     { id: "lead", label: "Lead" },
     { id: "workers", label: "Workers" },
@@ -135,6 +144,7 @@ export function roleSelection(routing: RoleRouting, tab: RoleTab, lead: ModelSel
   if (tab === "lead") return lead;
   if (tab.startsWith("candidate:")) return routing.workers?.[Number(tab.split(":")[1])] ?? lead;
   if (tab === "workers") return routing.workers?.[0] ?? lead;
+  if (tab === "architect") return routing.architect ?? lead;
   return (tab === "reviewer" ? routing.reviewer : routing.explorer) ?? lead;
 }
 
