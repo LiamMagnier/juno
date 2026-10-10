@@ -61,12 +61,35 @@ final class CodeLinkComposerReviewTests: XCTestCase {
         mine.team = .bestOfN
         mine.skills = ["review"]
         let prefs = mine.prefs
-        XCTAssertEqual(prefs.model, "claude-agent:default:claude-opus-5-5")
+        XCTAssertEqual(prefs.model, "claude-agent:default/claude-opus-5-5")
         XCTAssertEqual(prefs.mode, "auto-edit")
         XCTAssertEqual(prefs.team, "best-of-n")
         var theirs = CodeLinkComposerState()
         theirs.apply(prefs, catalogue: catalogue)
         XCTAssertEqual(theirs, mine)
+    }
+
+    func testPrefsMatchTheMacsShape() {
+        let catalogue = CodeLinkComposerState.catalogue(Fixture.providers)
+        var composer = CodeLinkComposerState()
+        composer.apply(ThreadSyncPrefs(
+            model: "claude-agent:default/claude-opus-5-5", effort: "max", mode: "full",
+            interactionMode: "plan", team: "lead-workers", skills: ["review"]
+        ), catalogue: catalogue)
+        XCTAssertEqual(composer.selection, CodeV2.ModelSelection(instanceId: "claude-agent:default", model: "claude-opus-5-5", effort: .max))
+        XCTAssertEqual(composer.runtimeMode, .full)
+        XCTAssertEqual(composer.interactionMode, .plan)
+        XCTAssertEqual(composer.team, .planBuildVerify)
+        XCTAssertEqual(composer.skills, ["review"])
+        // A model id with its own slash splits at the first one.
+        composer.apply(ThreadSyncPrefs(model: "acp:opencode/openrouter/qwen3"), catalogue: catalogue)
+        XCTAssertEqual(composer.selection?.instanceId, "acp:opencode")
+        XCTAssertEqual(composer.selection?.model, "openrouter/qwen3")
+        // Written back as raw contract values.
+        composer.team = .solo
+        XCTAssertEqual(composer.prefs, ThreadSyncPrefs(
+            model: "acp:opencode/openrouter/qwen3", effort: "max", mode: "full", interactionMode: "plan", team: "solo", skills: ["review"]
+        ))
     }
 
     func testAdoptReadsTheThreadsOwnSettings() {

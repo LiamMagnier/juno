@@ -141,7 +141,7 @@ public struct CodeLinkComposerState: Equatable, Sendable {
     /// What the thread carries to other devices.
     public var prefs: ThreadSyncPrefs {
         ThreadSyncPrefs(
-            model: selection.map { "\($0.instanceId):\($0.model)" },
+            model: selection.map { "\($0.instanceId)/\($0.model)" },
             effort: selection?.effort?.rawValue,
             mode: runtimeMode.rawValue,
             interactionMode: interactionMode.rawValue,
@@ -150,18 +150,18 @@ public struct CodeLinkComposerState: Equatable, Sendable {
         )
     }
 
-    /// Applies another device's prefs. The model resolves against the
-    /// catalogue (instance ids contain colons, so the longest known one wins).
+    /// Applies another device's prefs, in the shape the Mac writes: model is
+    /// `<instanceId>/<model>` split at the first slash; effort, mode,
+    /// interactionMode and team are contract raw values; skills are names.
     public mutating func apply(_ prefs: ThreadSyncPrefs, catalogue: [CodeLinkModelGroup]) {
-        if let raw = prefs.model {
-            let match = catalogue
-                .filter { raw.hasPrefix($0.instance.id + ":") }
-                .max { $0.instance.id.count < $1.instance.id.count }
-            if let group = match {
-                let modelID = String(raw.dropFirst(group.instance.id.count + 1))
-                if let model = group.models.first(where: { $0.id == modelID }) {
-                    choose(instance: group.instance, model: model)
-                }
+        if let raw = prefs.model, let slash = raw.firstIndex(of: "/") {
+            let instanceID = String(raw[..<slash])
+            let modelID = String(raw[raw.index(after: slash)...])
+            if let group = catalogue.first(where: { $0.instance.id == instanceID }),
+               let model = group.models.first(where: { $0.id == modelID }) {
+                choose(instance: group.instance, model: model)
+            } else if !instanceID.isEmpty, !modelID.isEmpty {
+                selection = CodeV2.ModelSelection(instanceId: instanceID, model: modelID, effort: selection?.effort)
             }
         }
         if let effort = prefs.effort.flatMap(CodeV2.EffortLevel.init(rawValue:)) { setEffort(effort) }
