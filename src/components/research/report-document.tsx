@@ -152,7 +152,7 @@ function Groups({ text, claims, sources }: { text: string; claims: CitationAudit
       {groups.map((group, i) => {
         const mark = claims.length ? groupSupport(claimsInGroup(group, claims)) : null;
         return (
-          <div key={i}>
+          <div key={i} className="report-group">
             <Markdown content={group} sources={sources} className="text-reading" />
             {mark && <SupportMark mark={mark} />}
           </div>
@@ -188,9 +188,9 @@ export function ReportDocument({
   if (!parsed) return null;
   return (
     <CitationHoverLayer render={render} onActive={onActiveCitation}>
-      <div lang={run.language ?? undefined} className={cn("research-document space-y-6", className)}>
+      <div lang={run.language ?? undefined} className={cn("research-document", className)}>
         {parsed.preamble && (
-          <div className="space-y-3">
+          <div className="report-section">
             <Groups text={parsed.preamble} claims={claims} sources={citationOrder} />
           </div>
         )}
@@ -199,7 +199,7 @@ export function ReportDocument({
             key={section.id}
             id={sectionAnchor(anchorPrefix, section.id)}
             data-section={section.id}
-            className="scroll-mt-16 space-y-3"
+            className="report-section scroll-mt-10"
           >
             <Groups text={section.body} claims={claims} sources={citationOrder} />
           </section>

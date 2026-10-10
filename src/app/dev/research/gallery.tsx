@@ -335,7 +335,7 @@ export function ResearchGallery() {
                     <CitationCard n={1} source={MESSAGE_SOURCES[0]} passages={citationPassages(AUDIT, 1)} language="en" />
                   </div>
                 )}
-                {(state === "report-fullscreen" || (state === "own-sources-report" && params.get("fullscreen") === "1")) && <AutoFullscreen runId={runId} />}
+                {(state === "report-fullscreen" || state === "report-stress" || (state === "own-sources-report" && params.get("fullscreen") === "1")) && <AutoFullscreen runId={runId} />}
               </div>
             </div>
             {(state === "steer-mode" || state === "mobile-scope") && (

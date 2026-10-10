@@ -459,6 +459,51 @@ function splitCitations(value: string, sourceCount: number): MdNode[] | null {
   }
   if (out.length === 0) return null;
   if (last < value.length) out.push({ type: "text", value: value.slice(last) });
+  return glueCitations(out);
+}
+
+/** The class that keeps a citation run on the line of the word it cites. */
+export const CITE_GLUE_CLASS = "cite-glue";
+
+/**
+ * Keeps each run of chips with the word before it.
+ *
+ * A chip is an inline box, and a line may break before one, between two, or
+ * after the word they cite, so "today [1][2][3]" used to wrap as "today [1]"
+ * over "[2][3]", or leave "today" at the end of a line with its chips alone
+ * at the start of the next. Each run of adjacent chips is wrapped, with the
+ * last word before it, in a no-wrap span. The text is unchanged (the space
+ * stays a space), so a block read back for the citation audit says exactly
+ * what it said before.
+ */
+function glueCitations(nodes: MdNode[]): MdNode[] {
+  const out: MdNode[] = [];
+  for (let i = 0; i < nodes.length; ) {
+    if (nodes[i].type !== "junoCitation") {
+      out.push(nodes[i]);
+      i++;
+      continue;
+    }
+    const run: MdNode[] = [];
+    while (i < nodes.length && nodes[i].type === "junoCitation") run.push(nodes[i++]);
+    const before = out[out.length - 1];
+    const lead: MdNode[] = [];
+    if (before?.type === "text" && typeof before.value === "string") {
+      // Only an ordinary word: gluing a 90-character identifier to its chips
+      // would make one unbreakable run wider than the column.
+      const word = before.value.match(/\S{1,24}\s*$/);
+      if (word && word.index !== undefined && (word.index === 0 || /\s/.test(before.value[word.index - 1]))) {
+        before.value = before.value.slice(0, word.index);
+        if (!before.value) out.pop();
+        lead.push({ type: "text", value: word[0] });
+      }
+    }
+    out.push({
+      type: "junoCitationGroup",
+      data: { hName: "span", hProperties: { className: CITE_GLUE_CLASS } },
+      children: [...lead, ...run],
+    });
+  }
   return out;
 }
 
