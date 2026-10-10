@@ -234,6 +234,13 @@ export interface HeldInput {
   queuedAt: string;
 }
 
+/** A team run ended the turn before the lead's loop (a spent budget, Stop). */
+class TeamStopped extends Error {
+  constructor(readonly reason: 'budget' | 'aborted') {
+    super(`team stopped: ${reason}`);
+  }
+}
+
 export class AgentSession {
   readonly store: SessionStore;
   readonly cwd: string;
@@ -712,7 +719,8 @@ export class AgentSession {
     if (this.store.meta.title === '(new session)') {
       this.store.meta.title = text.slice(0, 60);
     }
-    this.messages.push({ role: 'user', content: [{ type: 'text', text }] });
+    const userMessage: ChatMessage = { role: 'user', content: [{ type: 'text', text }] };
+    this.messages.push(userMessage);
     this.emit({ type: 'turn_started', turnIndex });
     this.emit({ type: 'user_input', id: inputId ?? randomUUID().slice(0, 8), text, delivery });
     this.aborter = new AbortController();
@@ -773,6 +781,27 @@ export class AgentSession {
     };
 
     try {
+      // Team lane: a Plan → Build → Verify routing runs its phases, each on
+      // its own model, before the lead speaks; the lead then reads the team's
+      // report (folded into this turn's message) and writes the summary.
+      if (this.routing?.preset === 'plan-build-verify' && delegation && this.subagents) {
+        const team = await this.subagents.runTeam({ prompt: text, turnIndex, signal });
+        userMessage.content.push({ type: 'text', text: this.subagents.teamReport(team) });
+        this.store.saveMessages(this.messages);
+        if (team.stoppedBy === 'budget' || team.stoppedBy === 'aborted') {
+          const done = team.phases.map((p) => p.phase).join(', ') || 'nothing';
+          const message =
+            team.stoppedBy === 'budget'
+              ? `The team stopped because ${team.stopNote ?? 'the run budget was reached'}. Finished phases: ${done}. Raise the budget in Team and send again to carry on.`
+              : 'Stopped.';
+          if (team.stoppedBy === 'budget') {
+            this.messages.push({ role: 'assistant', content: [{ type: 'text', text: message }] });
+            this.store.saveMessages(this.messages);
+            this.emit({ type: 'assistant_message', text: message });
+          }
+          throw new TeamStopped(team.stoppedBy);
+        }
+      }
       let result = await runAgentLoop(loopOptions);
       usage = result.usage;
       stopReason = result.stopReason;
@@ -791,9 +820,13 @@ export class AgentSession {
         stopReason = result.stopReason;
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      this.emit({ type: 'error', message, code: failureCodeOf(err) });
-      stopReason = 'error';
+      if (err instanceof TeamStopped) {
+        stopReason = err.reason;
+      } else {
+        const message = err instanceof Error ? err.message : String(err);
+        this.emit({ type: 'error', message, code: failureCodeOf(err) });
+        stopReason = 'error';
+      }
     }
 
     const changed = this.checkpoints.changedPaths(turnIndex);
