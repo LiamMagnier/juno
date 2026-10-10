@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { formatCodeInput, PAIRING_CODE_INPUT_LENGTH as CODE_LENGTH } from "@/lib/code-v2/pairing-code";
 
 type Summary = { id: string; deviceName: string; expiresAt: string };
-type Step =
+export type RemotePairStep =
   | { kind: "code" }
   | { kind: "confirm"; summary: Summary }
   | { kind: "paired"; deviceName: string }
@@ -28,9 +28,9 @@ async function post(path: string, body: unknown): Promise<{ ok: boolean; data: R
  * Approving sets this browser's pairing cookie (server side, httpOnly); from
  * then on Code on the web can drive that Mac until it is removed there.
  */
-export function RemotePairBrowser() {
-  const [step, setStep] = React.useState<Step>({ kind: "code" });
-  const [code, setCode] = React.useState("");
+export function RemotePairBrowser({ initialStep, initialCode = "" }: { initialStep?: RemotePairStep; initialCode?: string } = {}) {
+  const [step, setStep] = React.useState<RemotePairStep>(initialStep ?? { kind: "code" });
+  const [code, setCode] = React.useState(initialCode);
   const [error, setError] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
   const field = React.useRef<HTMLInputElement>(null);
