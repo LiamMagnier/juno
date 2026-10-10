@@ -19,7 +19,7 @@ const { GEN_MODELS, MODEL_LIST } = await import("@/lib/models");
 const { PROVIDERS } = await import("@/lib/providers");
 const { PLANS, modelRequiredPlan, planRank } = await import("@/lib/plans");
 const { defaultReasoning, getModelMetrics, reasoningOptions, sortModelsForDisplay, withSupersededMarked } = await import("@/lib/model-metrics");
-const { fastModeMultiplier } = await import("@/lib/pricing");
+const { fastModeMultiplier, ultraFastMultiplier } = await import("@/lib/pricing");
 
 const PLAN = "PRO" as const;
 const s = (v: string) => JSON.stringify(v);
@@ -37,6 +37,7 @@ const rows = models.map((m) => {
   const defaultLabel = options.find((o) => o.value === def)?.label ?? "";
   const defaultId = options.length >= 2 ? stopId(def, defaultLabel) : null;
   const fast = fastModeMultiplier(m);
+  const ultra = ultraFastMultiplier(m);
   const caps = [
     m.reasoning ? ".reasoning" : null,
     m.vision ? ".vision" : null,
@@ -61,7 +62,7 @@ const rows = models.map((m) => {
             speedGrade: ${metrics.speed},
             intelligenceGrade: ${metrics.intelligence},
             capabilities: [${caps.join(", ")}],
-            thinking: JunoThinkingLadder(stops: [${stops.join(", ")}], modelName: ${s(m.name)}, fastModeRateMultiplier: ${fast ?? "nil"}, defaultStopID: ${opt(defaultId)}),
+            thinking: JunoThinkingLadder(stops: [${stops.join(", ")}], modelName: ${s(m.name)}, fastModeRateMultiplier: ${fast ?? "nil"}, ${ultra != null ? `ultraFastRateMultiplier: ${ultra}, ` : ""}defaultStopID: ${opt(defaultId)}),
             unavailabilityReason: ${opt(reason)},
             deprecationNote: ${opt(m.status === "deprecated" ? m.deprecationNote ?? null : null)},
             retiresOn: ${opt(m.retiresOn)},
