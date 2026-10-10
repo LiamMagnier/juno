@@ -452,7 +452,7 @@ test("the chat route gates the tool and its prompt section on one flag", () => {
   // not is null and filtered out); an empty list is no native tools at all.
   assert.match(
     route,
-    /const nativeTools = \[\s*taskTool,\s*handoffTool,\s*\.\.\.agentConfigTools,\s*setupChangeTool,\s*createRoomTool,\s*askRoomMemberTool,\s*\]\.filter\(\s*\(tool\): tool is NativeChatTool => tool !== null\s*\);/
+    /const nativeTools = \[\s*taskTool,\s*handoffTool,\s*\.\.\.agentConfigTools,\s*setupChangeTool,\s*createRoomTool,\s*askRoomMemberTool,\s*\.\.\.crossTools,\s*\]\.filter\(\s*\(tool\): tool is NativeChatTool => tool !== null\s*\);/
   );
   assert.match(route, /const taskTool =\s*taskToolOn && !agentContext\?\.paused && userMessageId\s*\? createStartTaskTool\(\{/);
   assert.match(route, /const createRoomTool =\s*agentConfigToolsOn && userMessageId\s*\? createCreateRoomTool\(\{/);
