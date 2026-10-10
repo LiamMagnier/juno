@@ -534,6 +534,13 @@ struct JunoDesktopApp: App {
                 // prominent button take it, and nothing in the chrome does.
                 .junoAccentTint()
         }
+        // A real, resizable settings window: it opens at the content's ideal
+        // size, never shrinks below its minimum, and wears the standard
+        // unified toolbar, so the sidebar runs full height under the window
+        // controls and the section's name sits in the toolbar.
+        .defaultSize(width: DesktopSettingsMetrics.windowIdeal.width, height: DesktopSettingsMetrics.windowIdeal.height)
+        .windowResizability(.contentMinSize)
+        .windowToolbarStyle(.unified)
 
         Window("Alevr Code Settings", id: JunoDesktopWindow.codeSettingsID) {
             DesktopCodeSettingsWindow(configuration: configuration)

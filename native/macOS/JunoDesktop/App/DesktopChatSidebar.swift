@@ -292,7 +292,8 @@ struct DesktopChatSidebar: View {
         let selected = selection == .destination(item)
         let gesture: DesktopSidebarGesture = switch item {
         case .projects: .folderOpens
-        case .connections: .turns
+        // Customize answers the pointer with the hover fill alone: its
+        // sliders turned 45° read as the row tipping sideways.
         default: .none
         }
         // Customize wears the web's sliders, as `/dev/shell` draws it.

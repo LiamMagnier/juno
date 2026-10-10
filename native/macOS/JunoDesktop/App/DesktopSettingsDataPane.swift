@@ -298,7 +298,7 @@ struct DesktopSharedLinkRow: View {
                     openURL(link.url)
                 } label: {
                     Text(link.title.trimmingCharacters(in: .whitespaces).isEmpty ? "Untitled" : link.title)
-                        .junoType(JunoType.ui.weight(.medium))
+                        .junoType(JunoType.ui)
                         .foregroundStyle(Color.junoForeground)
                         .lineLimit(1)
                         .contentShape(.rect)

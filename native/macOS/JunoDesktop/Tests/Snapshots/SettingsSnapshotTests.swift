@@ -410,7 +410,7 @@ struct DesktopSettingsSnapshotRail: View {
                 ForEach(group) { section in
                     let selected = section == selection
                     HStack(spacing: JunoSpace.snug) {
-                        DesktopSettingsSectionTile(icon: section.icon, selected: selected)
+                        JunoIconView(section.icon, size: 16)
                         Text(section.label)
                             .junoType(.ui)
                         Spacer(minLength: 0)

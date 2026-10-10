@@ -245,7 +245,7 @@ struct DesktopSettingsAccountPane: View {
             VStack(alignment: .leading, spacing: JunoSpace.micro) {
                 HStack(spacing: JunoSpace.snug) {
                     Text("Two-step verification")
-                        .junoType(JunoType.ui.weight(.medium))
+                        .junoType(JunoType.ui)
                         .foregroundStyle(Color.junoForeground)
                 }
                 Text(description)
@@ -442,7 +442,7 @@ private struct DesktopSheetField: View {
     var body: some View {
         VStack(alignment: .leading, spacing: JunoSpace.tight) {
             Text(label)
-                .junoType(JunoType.ui.weight(.medium))
+                .junoType(JunoType.ui)
                 .foregroundStyle(Color.junoForeground)
             Group {
                 if secure {

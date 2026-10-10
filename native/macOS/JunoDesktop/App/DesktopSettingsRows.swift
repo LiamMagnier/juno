@@ -119,8 +119,10 @@ enum DesktopSettingTone {
     case destructive
 }
 
-/// A row's label: the name at 13pt medium with its save status beside it,
-/// then one line of explanation at 12pt in the secondary ink (§C1).
+/// A row's label: the name at 13pt regular with its save status beside it,
+/// then one line of explanation at 12pt in the secondary ink (§C1). Regular,
+/// not medium: a pane holds two weights, regular for rows and semibold for
+/// group headers, as System Settings does.
 struct DesktopSettingLabel: View {
     let title: String
     var description: String?
@@ -131,7 +133,7 @@ struct DesktopSettingLabel: View {
         VStack(alignment: .leading, spacing: JunoSpace.micro) {
             HStack(spacing: JunoSpace.snug) {
                 Text(title)
-                    .junoType(JunoType.ui.weight(.medium))
+                    .junoType(.ui)
                     .foregroundStyle(tone == .destructive ? Color.junoDestructiveInk : Color.junoForeground)
                 if let status {
                     DesktopSaveStatus(state: status)
@@ -374,3 +376,43 @@ extension View {
     }
 }
 
+
+// MARK: - Grouped cards outside a form
+
+/// A grouped form's section, for a page that is not a `Form` (Memory): the
+/// rows in one card on the grouped form's own fill and radius, so the page
+/// reads as the same kind of surface as Settings. No edge: the grouped form
+/// draws none.
+struct DesktopGroupedCard<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            content
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            .fill.quaternary,
+            in: RoundedRectangle(cornerRadius: DesktopSettingsMetrics.cardRadius, style: .continuous)
+        )
+    }
+}
+
+/// A row of a ``DesktopGroupedCard``: a settings row's label and its control,
+/// at the grouped form's row insets.
+struct DesktopGroupedRow<Control: View>: View {
+    let title: String
+    var description: String?
+    var tone: DesktopSettingTone = .normal
+    @ViewBuilder var control: Control
+
+    var body: some View {
+        HStack(alignment: .center, spacing: JunoSpace.cozy) {
+            DesktopSettingLabel(title: title, description: description, tone: tone)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            control
+        }
+        .padding(.horizontal, JunoSpace.cozy)
+        .padding(.vertical, JunoSpace.snug)
+    }
+}

@@ -50,13 +50,14 @@ enum DesktopSidebarMetrics {
 }
 
 /// The glyph gesture a destination makes under the pointer (the web's
-/// `sidebar-motion-icon.tsx`): the folder opens, the search glass tilts, the
-/// gear turns. At most one per row; none under Reduce Motion.
+/// `sidebar-motion-icon.tsx`): the folder opens, the search glass tilts. At
+/// most one per row; none under Reduce Motion. There is no turning gesture:
+/// Customize's sliders rotated 45° read as the row sliding over on its side,
+/// so Customize, like every other row, answers with the hover fill alone.
 enum DesktopSidebarGesture {
     case none
     case folderOpens
     case tilts
-    case turns
 }
 
 extension View {
@@ -157,10 +158,6 @@ struct DesktopSidebarNavRow<Trailing: View>: View {
         case .tilts:
             JunoIconView(icon, size: DesktopSidebarMetrics.glyphSize)
                 .rotationEffect(.degrees(moving ? -12 : 0))
-                .animation(JunoMotion.fast, value: moving)
-        case .turns:
-            JunoIconView(icon, size: DesktopSidebarMetrics.glyphSize)
-                .rotationEffect(.degrees(moving ? 45 : 0))
                 .animation(JunoMotion.fast, value: moving)
         case .none:
             JunoIconView(icon, size: DesktopSidebarMetrics.glyphSize)

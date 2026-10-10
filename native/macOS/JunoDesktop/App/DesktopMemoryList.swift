@@ -155,14 +155,16 @@ struct DesktopMemoryList: View {
         let open = !foldable || expanded.contains(section.id)
         let shown = open ? section.rows : Array(section.rows.prefix(DesktopMemoryListMetrics.previewRows))
         return VStack(alignment: .leading, spacing: JunoSpace.snug) {
+            // The grouped form's section header: the topic's mark, its name
+            // in the header weight, the count quiet beside it.
             HStack(spacing: JunoSpace.snug) {
                 if let topic = section.topic {
-                    JunoIconView(DesktopMemoryTopicIcon.icon(for: topic), size: 15)
+                    JunoIconView(DesktopMemoryTopicIcon.icon(for: topic), size: 14)
                         .foregroundStyle(Color.junoSecondaryInk)
                         .accessibilityHidden(true)
                 }
                 Text(section.label)
-                    .junoType(JunoType.ui.weight(.medium))
+                    .junoType(JunoType.ui.weight(.semibold))
                     .foregroundStyle(Color.junoForeground)
                     .accessibilityAddTraits(.isHeader)
                 Text(section.rows.count, format: .number)
@@ -170,38 +172,43 @@ struct DesktopMemoryList: View {
                     .monospacedDigit()
                     .foregroundStyle(Color.junoSecondaryInk)
             }
-            rows(shown)
-            if foldable {
-                Button {
-                    withAnimation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion)) {
-                        if expanded.contains(section.id) { expanded.remove(section.id) } else { expanded.insert(section.id) }
-                    }
-                } label: {
-                    HStack(spacing: JunoSpace.tight) {
-                        if open {
-                            Text("Show fewer")
-                        } else {
-                            Text("Show all \(Text(section.rows.count, format: .number))")
+            .padding(.horizontal, JunoSpace.cozy)
+            DesktopGroupedCard {
+                rows(shown)
+                if foldable {
+                    DesktopRowDivider().padding(.horizontal, JunoSpace.cozy)
+                    Button {
+                        withAnimation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion)) {
+                            if expanded.contains(section.id) { expanded.remove(section.id) } else { expanded.insert(section.id) }
                         }
-                        JunoIconView(open ? .chevronUp : .chevronDown, size: 12)
+                    } label: {
+                        HStack(spacing: JunoSpace.tight) {
+                            if open {
+                                Text("Show fewer")
+                            } else {
+                                Text("Show all \(Text(section.rows.count, format: .number))")
+                            }
+                            JunoIconView(open ? .chevronUp : .chevronDown, size: 12)
+                            Spacer(minLength: 0)
+                        }
+                        .junoType(.ui)
+                        .foregroundStyle(Color.junoSecondaryInk)
+                        .padding(.horizontal, JunoSpace.cozy)
+                        .frame(minHeight: 36)
+                        .contentShape(.rect)
                     }
-                    .junoType(.ui)
-                    .foregroundStyle(Color.junoSecondaryInk)
-                    .frame(minHeight: 28)
-                    .contentShape(.rect)
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
         }
     }
 
-    /// Rows on hairlines, not in a card: the summary is the page's one
-    /// raised surface, and everything else is a list or quiet text
-    /// (`memory-manager.tsx`, register #77).
+    /// The section's rows inside its grouped card, on inset hairlines, as
+    /// the grouped form divides its rows.
     private func rows(_ facts: [NativeMemoryFact]) -> some View {
         VStack(spacing: 0) {
             ForEach(Array(facts.enumerated()), id: \.element.id) { index, fact in
-                if index > 0 { DesktopRowDivider().padding(.horizontal, JunoSpace.cozy) }
+                if index > 0 { DesktopRowDivider() }
                 DesktopMemoryRow(
                     fact: fact,
                     busy: page.busyIDs.contains(fact.id),
@@ -222,11 +229,15 @@ struct DesktopMemoryList: View {
                 )
             }
         }
+        // The row's own hover fill reaches 12 outside its text; in the card
+        // the text sits on the card's 12pt inset and the fill meets its
+        // edges.
+        .padding(.horizontal, JunoSpace.cozy)
+        .padding(.vertical, JunoSpace.hairline)
     }
 
     private var retiredView: some View {
         VStack(alignment: .leading, spacing: JunoSpace.snug) {
-            Rectangle().fill(Color.junoBorder).frame(height: 1).accessibilityHidden(true)
             Button {
                 withAnimation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion)) { showsRetired.toggle() }
             } label: {
@@ -238,6 +249,7 @@ struct DesktopMemoryList: View {
                 }
                 .junoType(.ui)
                 .foregroundStyle(Color.junoSecondaryInk)
+                .padding(.horizontal, JunoSpace.cozy)
                 .frame(minHeight: 28)
                 .contentShape(.rect)
             }
@@ -248,7 +260,10 @@ struct DesktopMemoryList: View {
                     .junoType(.caption)
                     .foregroundStyle(Color.junoSecondaryInk)
                     .fixedSize(horizontal: false, vertical: true)
-                rows(retired)
+                    .padding(.horizontal, JunoSpace.cozy)
+                DesktopGroupedCard {
+                    rows(retired)
+                }
             }
         }
     }

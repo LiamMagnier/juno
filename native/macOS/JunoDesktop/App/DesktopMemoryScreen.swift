@@ -172,6 +172,7 @@ struct DesktopMemoryPage: View {
             }
         } content: {
             VStack(alignment: .leading, spacing: 0) {
+                enabledCard
                 notices
                 bodyContent
                 if page.phase == .ready {
@@ -239,23 +240,32 @@ struct DesktopMemoryPage: View {
 
     // MARK: Header
 
+    /// The header keeps only the menu of rarer things; the switch is the
+    /// first row of the page, as Settings draws a switch.
     private var headerActions: some View {
-        HStack(spacing: JunoSpace.cozy) {
-            Text(enabled ? "On" : "Off")
-                .junoType(.ui)
-                .foregroundStyle(Color.junoSecondaryInk)
-                .accessibilityHidden(true)
-            Toggle("Memory", isOn: enabledBinding)
-                .toggleStyle(.switch)
-                .labelsHidden()
-                .tint(Color.junoAccent)
-                .disabled(settings.settings == nil || settings.isMutating)
-                .help(enabled ? "Turn memory off" : "Turn memory on")
-                .accessibilityIdentifier("juno.desktop.memory.enabled")
-            DesktopRowMenuButton(accessibilityLabel: "More memory options") {
-                moreMenuItems
+        DesktopRowMenuButton(accessibilityLabel: "More memory options") {
+            moreMenuItems
+        }
+    }
+
+    /// Memory's one switch, in a grouped card of its own above everything it
+    /// governs.
+    private var enabledCard: some View {
+        DesktopGroupedCard {
+            DesktopGroupedRow(
+                title: "Use memory",
+                description: "Alevr remembers lasting facts and preferences from your chats and uses them in later ones."
+            ) {
+                Toggle("Use memory", isOn: enabledBinding)
+                    .toggleStyle(.switch)
+                    .labelsHidden()
+                    .tint(Color.junoAccent)
+                    .disabled(settings.settings == nil || settings.isMutating)
+                    .help(enabled ? "Turn memory off" : "Turn memory on")
+                    .accessibilityIdentifier("juno.desktop.memory.enabled")
             }
         }
+        .padding(.bottom, JunoSpace.roomy)
     }
 
     @ViewBuilder
@@ -491,51 +501,53 @@ struct DesktopMemoryPage: View {
 
     // MARK: Footer
 
+    /// What never reaches memory, then the reader's own data, as a grouped
+    /// card of rows with real buttons, as Settings draws them.
     private var footer: some View {
         VStack(alignment: .leading, spacing: JunoSpace.snug) {
-            Rectangle()
-                .fill(Color.junoBorder)
-                .frame(height: 1)
-                .padding(.bottom, JunoSpace.snug)
-                .accessibilityHidden(true)
-            HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
-                JunoIconView(.shieldCheck, size: 14)
-                    .foregroundStyle(Color.junoSecondaryInk)
-                    .accessibilityHidden(true)
-                Text("Incognito chats are never remembered. Sensitive subjects like health or religion are only learned if you allow them.")
-                    .junoType(.caption)
-                    .foregroundStyle(Color.junoSecondaryInk)
-                    .fixedSize(horizontal: false, vertical: true)
+            DesktopSettingsGroupHeader(
+                title: "Your memory data",
+                note: "Incognito chats are never remembered. Sensitive subjects like health or religion are only learned if you allow them."
+            )
+            .padding(.horizontal, JunoSpace.cozy)
+            DesktopGroupedCard {
+                DesktopGroupedRow(
+                    title: "Memory settings",
+                    description: "What Alevr may learn, and who may read your chats for it."
+                ) {
+                    DesktopOutlineButton(title: "Open") { openMemorySettings() }
+                        .accessibilityLabel("Open memory settings")
+                }
+                DesktopRowDivider().padding(.horizontal, JunoSpace.cozy)
+                DesktopGroupedRow(
+                    title: "Import",
+                    description: "Bring in what another assistant knows about you."
+                ) {
+                    DesktopOutlineButton(title: "Import…") { showsImport = true }
+                        .disabled(!enabled)
+                }
+                DesktopRowDivider().padding(.horizontal, JunoSpace.cozy)
+                DesktopGroupedRow(
+                    title: "Export",
+                    description: "Everything Alevr remembers, as a JSON file."
+                ) {
+                    DesktopOutlineButton(title: "Export…") { export() }
+                        .disabled(!page.anythingRemembered)
+                }
+                DesktopRowDivider().padding(.horizontal, JunoSpace.cozy)
+                DesktopGroupedRow(
+                    title: "Reset memory",
+                    description: "Deletes everything Alevr remembers and its edit history. Your chats stay.",
+                    tone: .destructive
+                ) {
+                    DesktopOutlineButton(title: "Reset…", destructive: true) { confirmsReset = true }
+                        .disabled(!page.anythingRemembered)
+                }
             }
-            HStack(spacing: JunoSpace.tight) {
-                Button("Memory settings") { openMemorySettings() }
-                    .contentShape(.rect)
-                separator
-                Button("Import") { showsImport = true }
-                    .disabled(!enabled)
-                    .contentShape(.rect)
-                separator
-                Button("Export") { export() }
-                    .disabled(!page.anythingRemembered)
-                    .contentShape(.rect)
-                separator
-                Button("Reset memory…") { confirmsReset = true }
-                    .disabled(!page.anythingRemembered)
-                    .contentShape(.rect)
-            }
-            .buttonStyle(DesktopUnderlineLinkStyle())
-            .padding(.leading, JunoSpace.section)
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Your memory data")
         }
         .padding(.top, JunoSpace.expanse)
-    }
-
-    private var separator: some View {
-        Text("·")
-            .junoType(.caption)
-            .foregroundStyle(Color.junoSecondaryInk)
-            .accessibilityHidden(true)
     }
 
     // MARK: Actions
