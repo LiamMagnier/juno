@@ -72,6 +72,9 @@ struct JunoMobileComposer: View {
   var startDictation: Binding<Bool> = .constant(false)
   /// The draft's placeholder. A private chat says so where the reader types.
   var placeholder: LocalizedStringKey = "Ask Alevr"
+  /// A message went into this conversation (its id): the synced draft is
+  /// cleared on every device (``JunoMobileThreadSync/sent(_:)``).
+  var onSent: ((String) -> Void)? = nil
 
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   /// The Thinking panel, open above the card.
@@ -1489,6 +1492,7 @@ struct JunoMobileComposer: View {
     )
     guard sent else { return }
     sendHaptic.fire()
+    onSent?(conversationID)
     prompt = ""
     draftExpanded = false
     attachmentModel?.clear()

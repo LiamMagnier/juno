@@ -227,6 +227,37 @@ struct JunoMobileChatDetailScreen: View {
   }
 }
 
+// MARK: - Thread sync
+
+/// Chat's half of thread sync and hand-off: the open conversation is
+/// advertised to the person's other devices, its draft and prefs are written
+/// as they change and followed while it is open, and the draft is flushed
+/// when the chat is left.
+private struct JunoMobileChatThreadSyncModifier: ViewModifier {
+  let conversationID: String
+  let title: String
+  let prompt: String
+  let prefs: ThreadSyncPrefs
+  @Binding var handoffNotice: JunoMobileHandoffNotice?
+  let follow: () async -> Void
+  let typed: (String) -> Void
+  let prefsChanged: (ThreadSyncPrefs, Bool) -> Void
+  let left: (String) -> Void
+
+  @Environment(\.junoThreadSync) private var threadSync
+
+  func body(content: Content) -> some View {
+    content
+      .junoHandoff(.chat(conversationID, title: title))
+      .junoHandoffNotice($handoffNotice)
+      .onChange(of: prompt) { _, text in typed(text) }
+      .onChange(of: prefs) { old, new in prefsChanged(new, old.model != new.model) }
+      .task(id: "\(conversationID):\(threadSync != nil)") { await follow() }
+      .onChange(of: conversationID) { old, _ in left(old) }
+      .onDisappear { left(conversationID) }
+  }
+}
+
 // MARK: - Draft
 
 /// A chat that does not exist yet: the greeting, the composer, nothing else.
@@ -657,6 +688,24 @@ private struct JunoMobileConversationDetail: View {
   @State private var scrollPosition = ScrollPosition(edge: .bottom)
   /// Find in this conversation, from the "…" menu (JunoMobileFind.swift).
   @State private var find = JunoFindModel()
+  /// Drafts, model and effort shared with the Mac and the web, per thread
+  /// (docs/code-v2/REMOTE-CONTROL.md §5). Nil while signed out.
+  @Environment(\.junoThreadSync) private var threadSync
+  /// A draft just put into the composer from another device: its own
+  /// change is not typing to send back.
+  @State private var appliedRemoteDraft: String?
+  /// The prefs just taken from another device, for the same reason.
+  @State private var appliedRemotePrefs: ThreadSyncPrefs?
+  /// Prefs are written only once the thread's own have been read.
+  @State private var prefsSyncArmed = false
+  /// What "Continue on Mac" answered.
+  @State private var handoffNotice: JunoMobileHandoffNotice?
+
+  private var syncKey: String { ThreadSyncKey.chat(conversation.id) }
+
+  private var currentPrefs: ThreadSyncPrefs {
+    ThreadSyncPrefs(model: selectedModelID.isEmpty ? nil : selectedModelID, effort: reasoningEffort?.rawValue)
+  }
 
   private var messages: [NativeChatMessage] {
     model.messages(for: conversation.id)
@@ -1153,6 +1202,11 @@ private struct JunoMobileConversationDetail: View {
       Label(conversation.pinned ? "Unpin" : "Pin", image: (conversation.pinned ? JunoIcon.pinOff : JunoIcon.pin).assetName(.regular))
     }
     .contentShape(.rect)
+    // Continue on Mac (a notification there opens this chat) or on the web.
+    JunoMobileContinueOnMenu(
+      handoff: .chat(conversation.id, title: conversation.title),
+      notice: $handoffNotice
+    )
     Divider()
     // Delete, not archive. Archiving moved a conversation into a folder this
     // app has no screen for, which from the phone is indistinguishable from
@@ -1463,9 +1517,11 @@ private struct JunoMobileConversationDetail: View {
           openVoiceMode: openVoiceMode,
           composerFocused: $composerFocused,
           sendSwell: sendSwell,
-          greetingVisible: greetingVisible
+          greetingVisible: greetingVisible,
+          onSent: { id in threadSync?.sent(ThreadSyncKey.chat(id)) }
         )
       }
+      .modifier(threadSyncModifier)
       // After the inset, never before it — see the note in the draft screen.
       .junoAttachmentSurfaces(
         coordinator: attachments,
@@ -1566,6 +1622,79 @@ private struct JunoMobileConversationDetail: View {
       .task(id: "\(conversation.id):\(JunoMobileLaunchRequests.shared.pendingReportRunID ?? "")") {
         await openPendingReport()
       }
+  }
+
+  /// The thread's shared state, kept apart from `thread` so that chain stays
+  /// within the type checker's budget.
+  private var threadSyncModifier: JunoMobileChatThreadSyncModifier {
+    JunoMobileChatThreadSyncModifier(
+      conversationID: conversation.id,
+      title: conversation.title,
+      prompt: prompt,
+      prefs: currentPrefs,
+      handoffNotice: $handoffNotice,
+      follow: { await followThreadSync() },
+      typed: { text in
+        if let applied = appliedRemoteDraft, applied == text {
+          appliedRemoteDraft = nil
+          return
+        }
+        threadSync?.draftChanged(syncKey, text: text)
+      },
+      prefsChanged: { prefs, modelChanged in
+        guard prefsSyncArmed, prefs != appliedRemotePrefs, !prefs.isEmpty else { return }
+        if modelChanged, !userPickedModel { return }
+        threadSync?.writePrefs(syncKey, prefs)
+      },
+      left: { id in
+        let key = ThreadSyncKey.chat(id)
+        Task { await threadSync?.flush(key) }
+      }
+    )
+  }
+
+  /// Opens the thread's shared state, then follows it while the chat is on
+  /// screen: another device's draft fills an empty composer (never over
+  /// typing, never while the field has focus), its model and effort apply.
+  private func followThreadSync() async {
+    guard let threadSync else { return }
+    prefsSyncArmed = false
+    let key = syncKey
+    let state = await threadSync.opened(key)
+    if let draft = await threadSync.draftToRestore(state, currentDraft: prompt) {
+      applyRemoteDraft(draft)
+    }
+    if let state { applyRemotePrefs(state) }
+    prefsSyncArmed = true
+    await threadSync.follow([key]) { state in
+      if !composerFocused, state.draft != prompt {
+        applyRemoteDraft(state.draft)
+      }
+      applyRemotePrefs(state)
+    }
+  }
+
+  private func applyRemoteDraft(_ draft: String) {
+    appliedRemoteDraft = draft
+    prompt = draft
+  }
+
+  private func applyRemotePrefs(_ state: ThreadSyncState) {
+    // Only prefs someone set; this device's own echo changes nothing below.
+    guard state.prefsUpdatedAt != nil else { return }
+    var applied = currentPrefs
+    if let id = state.prefs.model, id != selectedModelID,
+      model.composerSelectableModels.contains(where: { $0.id == id })
+    {
+      applied.model = id
+      selectedModelID = id
+      userPickedModel = true
+    }
+    if let raw = state.prefs.effort, let effort = NativeReasoningEffort(rawValue: raw), effort != reasoningEffort {
+      applied.effort = raw
+      reasoningEffort = effort
+    }
+    appliedRemotePrefs = applied
   }
 
   @ViewBuilder
