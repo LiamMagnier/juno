@@ -6,9 +6,10 @@ import { classifyUsageLimit, parseResetFromText, earliestExhaustedReset, normali
 import { SessionLog, type SessionMeta } from "../src/protocol/session-log.js";
 import { applySessionEvent } from "../src/protocol/reducer.js";
 import { claudeSetup, codexSetup, acpSetup, defaultInstances, ACP_PRESETS } from "../src/providers/presets.js";
-import { acpModeFor, autoDecision, pickOption, acpToolItem } from "../src/providers/acp.js";
+import { acpGuardReason, acpModeFor, autoDecision, pickOption, acpToolItem } from "../src/providers/acp.js";
 import { codexLimitWindows, codexTurnPolicy } from "../src/providers/codex.js";
-import { claudeLimitWindows, claudePermissionMode, toolItem, summarizeTool } from "../src/providers/claude-agent.js";
+import { claudeLimitWindows, claudePermissionMode, claudeSdkMode, toolItem, summarizeTool } from "../src/providers/claude-agent.js";
+import { commandGuardReason, fullAccessGuardReason, isOutside } from "../src/providers/full-access-guard.js";
 import { engineMode, splitModel } from "../src/providers/alevr.js";
 import { parseVersion, shellQuote } from "../src/providers/detect.js";
 import { stricterMode } from "../src/sessions/session-manager.js";
@@ -142,6 +143,28 @@ test("presets: honest names, isolated login commands, Antigravity enabled with n
   assert.equal(parseVersion("codex-cli 0.160.0"), "0.160.0");
 });
 
+test("full access guard: inside the project runs, sudo, ssh and writes outside ask with a reason", () => {
+  const cwd = "/Users/me/project";
+  for (const command of ["npm test", "git commit -m wip", "rm -rf dist", "rm -rf ./node_modules", "swift build 2>/dev/null", "echo hi > notes.md", "git push origin main"]) {
+    assert.equal(commandGuardReason(command, cwd), undefined, command);
+  }
+  assert.match(commandGuardReason("sudo rm -rf /etc/hosts", cwd) ?? "", /administrator/);
+  assert.match(commandGuardReason("npm test && sudo reboot", cwd) ?? "", /administrator/);
+  assert.match(commandGuardReason("ssh prod 'ls'", cwd) ?? "", /another machine/);
+  assert.match(commandGuardReason("rm -rf ~/Documents", cwd) ?? "", /deletes ~\/Documents/);
+  assert.match(commandGuardReason("rm -rf ../other", cwd) ?? "", /outside the project/);
+  assert.match(commandGuardReason("rm /tmp/x", cwd) ?? "", /outside the project/);
+  assert.match(commandGuardReason("echo x > /etc/hosts", cwd) ?? "", /writes \/etc\/hosts/);
+  assert.equal(fullAccessGuardReason("Write", { file_path: "/Users/me/project/src/a.ts" }, cwd), undefined);
+  assert.match(fullAccessGuardReason("Edit", { file_path: "/Users/me/.zshrc" }, cwd) ?? "", /outside the project/);
+  assert.equal(fullAccessGuardReason("mcp__alevr__spawn_subagent", { task: "x" }, cwd), undefined, "MCP tools run");
+  assert.equal(isOutside("/Users/me/project", cwd), false);
+  assert.equal(isOutside("/Users/me/project-two/x", cwd), true, "a sibling with the same prefix is outside");
+  assert.equal(acpGuardReason({ rawInput: { command: "npm run build" } }, cwd), undefined);
+  assert.match(acpGuardReason({ rawInput: { command: ["sudo", "ls"] } }, cwd) ?? "", /administrator/);
+  assert.match(acpGuardReason({ locations: [{ path: "/etc/hosts" }] }, cwd) ?? "", /outside the project/);
+});
+
 test("mode tables: Codex, Claude, ACP and the engine", () => {
   assert.deepEqual(codexTurnPolicy("ask"), { approvalPolicy: "untrusted", approvalsReviewer: "user", sandboxPolicy: { type: "readOnly" } });
   assert.deepEqual(codexTurnPolicy("auto"), { approvalPolicy: "on-request", approvalsReviewer: "auto_review", sandboxPolicy: { type: "workspaceWrite" } });
@@ -150,6 +173,10 @@ test("mode tables: Codex, Claude, ACP and the engine", () => {
   assert.equal(claudePermissionMode("auto-edit", "default"), "acceptEdits");
   assert.equal(claudePermissionMode("full", "default"), "bypassPermissions");
   assert.equal(claudePermissionMode("read-only", "default"), "plan");
+  // Full access keeps Alevr's canUseTool in charge (the guard), so the CLI runs in acceptEdits.
+  assert.equal(claudeSdkMode("full", "default"), "acceptEdits");
+  assert.equal(claudeSdkMode("full", "plan"), "plan");
+  assert.equal(claudeSdkMode("ask", "default"), "default");
   assert.equal(engineMode("auto", "default"), "auto-edit");
   assert.equal(engineMode("ask", "plan"), "plan");
   const modes = [{ id: "default", name: "Default" }, { id: "acceptEdits", name: "Accept edits" }, { id: "bypassPermissions", name: "Bypass" }];

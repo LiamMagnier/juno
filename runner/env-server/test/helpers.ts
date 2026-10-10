@@ -157,7 +157,7 @@ export class TestClient {
  * AskUserQuestion, "limit" reports a rejected rate limit, "slow" streams until
  * interrupted.
  */
-export function fakeClaudeQuery(record: { options?: unknown[]; prompts?: string[] } = {}): ClaudeQueryFn {
+export function fakeClaudeQuery(record: { options?: unknown[]; prompts?: string[]; modes?: string[]; toolResults?: string[] } = {}): ClaudeQueryFn {
   return ({ prompt, options }) => {
     record.options?.push(options);
     const out = new AsyncQueue<Record<string, unknown>>();
@@ -187,8 +187,11 @@ export function fakeClaudeQuery(record: { options?: unknown[]; prompts?: string[
       let answered = "";
       if (/bash/.test(text)) {
         out.push({ type: "assistant", message: { content: [{ type: "tool_use", id: "tu1", name: "Bash", input: { command: "ls -la", description: "List files" } }] }, parent_tool_use_id: null, uuid: "a-tool", session_id });
-        const r = await options.canUseTool!("Bash", { command: "ls -la" }, { signal: new AbortController().signal, suggestions: [{ type: "addRules", rules: [{ toolName: "Bash", ruleContent: "ls:*" }], behavior: "allow", destination: "session" }], toolUseID: "tu1" } as never);
+        // "sudo bash" asks about a command that reaches past the project.
+        const command = /sudo/.test(text) ? "sudo rm -rf /etc/hosts" : "ls -la";
+        const r = await options.canUseTool!("Bash", { command }, { signal: new AbortController().signal, suggestions: [{ type: "addRules", rules: [{ toolName: "Bash", ruleContent: "ls:*" }], behavior: "allow", destination: "session" }], toolUseID: "tu1" } as never);
         const allowed = r?.behavior === "allow";
+        record.toolResults?.push(`${command}:${allowed ? "allow" : "deny"}`);
         out.push({ type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "tu1", content: allowed ? "README.md\nsrc" : "The user declined this action.", is_error: !allowed }] }, parent_tool_use_id: null, session_id });
         if ((r as { interrupt?: boolean }).interrupt) interrupted = true;
       }
@@ -248,7 +251,9 @@ export function fakeClaudeQuery(record: { options?: unknown[]; prompts?: string[
         interrupted = true;
         return undefined;
       },
-      setPermissionMode: async () => {},
+      setPermissionMode: async (mode: string) => {
+        record.modes?.push(mode);
+      },
       setModel: async () => {},
       initializationResult: async () => ({
         commands: [],

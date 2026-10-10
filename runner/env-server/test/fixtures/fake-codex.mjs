@@ -69,13 +69,15 @@ async function runTurn(params) {
   }
 
   if (/approve/.test(text)) {
-    notify("item/started", { threadId: thread, turnId, startedAtMs: Date.now(), item: { id: "c1", type: "commandExecution", command: "npm test", cwd: params.cwd ?? "/", commandActions: [], status: "inProgress" } });
-    const answer = await request("item/commandExecution/requestApproval", { threadId: thread, turnId, itemId: "c1", command: "npm test", cwd: params.cwd, reason: "Run the test suite", startedAtMs: Date.now() });
+    // "approve sudo" asks about a command that reaches past the project.
+    const command = /sudo/.test(text) ? "sudo launchctl list" : "npm test";
+    notify("item/started", { threadId: thread, turnId, startedAtMs: Date.now(), item: { id: "c1", type: "commandExecution", command, cwd: params.cwd ?? "/", commandActions: [], status: "inProgress" } });
+    const answer = await request("item/commandExecution/requestApproval", { threadId: thread, turnId, itemId: "c1", command, cwd: params.cwd, reason: "Run the test suite", startedAtMs: Date.now() });
     if (answer.decision === "accept" || answer.decision === "acceptForSession") {
       notify("item/commandExecution/outputDelta", { threadId: thread, turnId, itemId: "c1", delta: "ok 1 - passes\n" });
-      notify("item/completed", { threadId: thread, turnId, completedAtMs: Date.now(), item: { id: "c1", type: "commandExecution", command: "npm test", cwd: params.cwd ?? "/", commandActions: [], status: "completed", exitCode: 0, aggregatedOutput: "ok 1 - passes\n", durationMs: 12 } });
+      notify("item/completed", { threadId: thread, turnId, completedAtMs: Date.now(), item: { id: "c1", type: "commandExecution", command, cwd: params.cwd ?? "/", commandActions: [], status: "completed", exitCode: 0, aggregatedOutput: "ok 1 - passes\n", durationMs: 12 } });
     } else {
-      notify("item/completed", { threadId: thread, turnId, completedAtMs: Date.now(), item: { id: "c1", type: "commandExecution", command: "npm test", cwd: "/", commandActions: [], status: "declined" } });
+      notify("item/completed", { threadId: thread, turnId, completedAtMs: Date.now(), item: { id: "c1", type: "commandExecution", command, cwd: "/", commandActions: [], status: "declined" } });
     }
   }
 

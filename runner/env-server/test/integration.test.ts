@@ -22,7 +22,7 @@ after(async () => {
 
 async function boot(extra: Parameters<typeof startEnvServer>[0] = {}) {
   const bin = fakeBinDir();
-  const record = { options: [] as unknown[], prompts: [] as string[] };
+  const record = { options: [] as unknown[], prompts: [] as string[], modes: [] as string[], toolResults: [] as string[] };
   const server = await startEnvServer({
     dataDir: tempDir("data"),
     searchDirs: [bin],
@@ -133,6 +133,27 @@ test("codex: approval, file change, checkpoint and per-turn diff", async () => {
   await assert.rejects(client.command("checkpoint.rollback", { sessionId: sid, checkpointId: cp.checkpointId }), /replaced/);
   await assert.rejects(client.command("checkpoint.diff", { sessionId: sid, checkpointId: cp.checkpointId }), /replaced/);
   assert.deepEqual(client.gaps, [], "no sequence gaps on the wire");
+});
+
+test("codex: Full access runs never/dangerFullAccess, accepts forwarded approvals, and still asks for sudo", async () => {
+  const { client } = await boot();
+  await client.command("provider.probe", { instanceId: "codex:default" });
+  const repo = initRepo();
+  const selection = { instanceId: "codex:default", model: "gpt-6.1-codex" };
+  const sid = await openSession(client, repo, selection);
+  const full = { runtimeMode: "full", interactionMode: "default" } as const;
+  const t1 = await client.command<{ turnId: string }>("turn.start", { sessionId: sid, input: { text: "approve" }, selection, ...full });
+  assert.equal((await client.turnCompleted(sid, t1.turnId)).outcome, "completed");
+  assert.ok(!items(client, sid).some((i) => i.kind === "approval_request"), "nothing asked under Full access");
+  const cmd = items(client, sid).find((i) => i.kind === "command_execution");
+  assert.ok(cmd && cmd.kind === "command_execution" && cmd.status === "completed");
+
+  const t2 = await client.command<{ turnId: string }>("turn.start", { sessionId: sid, input: { text: "approve sudo" }, selection, ...full });
+  const guarded = await pendingApproval(client, sid);
+  assert.match(guarded.summary, /sudo/);
+  assert.match(guarded.justification ?? "", /administrator/);
+  await client.command("approval.respond", { sessionId: sid, requestId: guarded.requestId, decision: "decline" });
+  await client.turnCompleted(sid, t2.turnId);
 });
 
 test("codex: steer lands in the running turn, interrupt stops the next", async () => {
@@ -252,6 +273,40 @@ test("claude: tool approval, plan capture, questions, steer and interrupt", asyn
   await client.waitFor(() => client.snapshot(sid).state === "running", 4000, "running");
   await client.command("turn.interrupt", { sessionId: sid });
   assert.equal((await client.turnCompleted(sid, t5.turnId)).outcome, "interrupted");
+});
+
+test("claude: Full access mid-session stops asking inside the project, and still asks for sudo with a reason", async () => {
+  const { client, record } = await boot();
+  await client.command("provider.probe", { instanceId: "claude-agent:default" });
+  const selection = { instanceId: "claude-agent:default", model: "claude-opus-5-5" };
+  const sid = await openSession(client, tempDir("cwd"), selection);
+
+  // Ask first: the Bash call is a prompt.
+  const t1 = await client.command<{ turnId: string }>("turn.start", { sessionId: sid, input: { text: "run bash" }, selection, ...ask });
+  const first = await pendingApproval(client, sid);
+  await client.command("approval.respond", { sessionId: sid, requestId: first.requestId, decision: "accept" });
+  await client.turnCompleted(sid, t1.turnId);
+  const launch = record.options.at(-1) as Record<string, unknown>;
+  assert.equal(launch.permissionMode, "default");
+  assert.equal(launch.allowDangerouslySkipPermissions, undefined, "the CLI is never launched to skip Alevr's canUseTool");
+
+  // Switched to Full access in the same session: the same call runs with no prompt.
+  const full = { runtimeMode: "full", interactionMode: "default" } as const;
+  const before = items(client, sid).filter((i) => i.kind === "approval_request").length;
+  const t2 = await client.command<{ turnId: string }>("turn.start", { sessionId: sid, input: { text: "run bash" }, selection, ...full });
+  assert.equal((await client.turnCompleted(sid, t2.turnId)).outcome, "completed");
+  assert.equal(items(client, sid).filter((i) => i.kind === "approval_request").length, before, "no approval under Full access");
+  assert.equal(record.toolResults.at(-1), "ls -la:allow");
+  assert.deepEqual(record.modes, ["acceptEdits"], "the live query switches mode, no restart");
+
+  // sudo still asks, and says why.
+  const t3 = await client.command<{ turnId: string }>("turn.start", { sessionId: sid, input: { text: "sudo bash" }, selection, ...full });
+  const guarded = await pendingApproval(client, sid);
+  assert.match(guarded.summary, /sudo/);
+  assert.match(guarded.justification ?? "", /administrator/);
+  await client.command("approval.respond", { sessionId: sid, requestId: guarded.requestId, decision: "decline" });
+  await client.turnCompleted(sid, t3.turnId);
+  assert.equal(record.toolResults.at(-1), "sudo rm -rf /etc/hosts:deny");
 });
 
 test("claude: a rejected rate limit ends the turn as limited with the vendor's reset", async () => {

@@ -34,6 +34,7 @@ import { RUNTIME_MODE_VENDOR_MAP } from "../contracts/code-v2.js";
 import { JsonRpcError, JsonRpcStdio } from "./jsonrpc-stdio.js";
 import { classifyUsageLimit, earliestExhaustedReset, normalizeReset } from "./limits.js";
 import { codexSetup } from "./presets.js";
+import { commandGuardReason, isOutside } from "./full-access-guard.js";
 import { readVersion } from "./detect.js";
 import { vendorEnv } from "./vendor-env.js";
 import type {
@@ -241,6 +242,9 @@ interface ActiveTurn {
   usage?: SessionUsage;
   /** An interrupt asked for before codex told us its turn id; sent as soon as it does. */
   interruptRequested?: boolean;
+  /** The thread's mode for this turn: under `full`, forwarded approvals are answered here. */
+  runtimeMode?: RuntimeMode;
+  cwd?: string;
 }
 
 class CodexSession implements ProviderSession {
@@ -307,7 +311,14 @@ class CodexSession implements ProviderSession {
 
   async runTurn(request: TurnRequest): Promise<TurnResult> {
     if (this.#active) throw new Error("a Codex turn is already running");
-    const active: ActiveTurn = { turnId: request.turnId, sink: request.sink, done: deferred<TurnResult>(), items: new Map() };
+    const active: ActiveTurn = {
+      turnId: request.turnId,
+      sink: request.sink,
+      done: deferred<TurnResult>(),
+      items: new Map(),
+      runtimeMode: request.runtimeMode,
+      cwd: request.cwd,
+    };
     this.#active = active;
     const onAbort = () => void this.interrupt();
     request.signal.addEventListener("abort", onAbort, { once: true });
@@ -396,14 +407,23 @@ class CodexSession implements ProviderSession {
     if (!active) throw new JsonRpcError(`no active turn for ${method}`, -32600);
     const sink = active.sink;
     const options: ApprovalDecision[] = ["accept", "acceptForSession", "decline", "cancel"];
+    // Full access: codex runs with approvalPolicy never and no sandbox, so it
+    // should not ask at all; anything it still forwards is accepted here,
+    // unless the guard says it reaches outside the project (then it asks,
+    // with the reason).
+    const full = active.runtimeMode === "full";
+    const cwd = typeof p.cwd === "string" ? p.cwd : (active.cwd ?? process.cwd());
     switch (method) {
       case "item/commandExecution/requestApproval": {
+        const command = typeof p.command === "string" ? p.command : Array.isArray(p.command) ? p.command.join(" ") : "";
+        const guard = full ? commandGuardReason(command, cwd) : undefined;
+        if (full && !guard) return { decision: "accept" };
         const answer = await sink.requestApproval({
           callId: String(p.itemId ?? p.approvalId ?? "command"),
           ...(typeof p.approvalId === "string" ? { requestId: p.approvalId } : {}),
           action: "command",
-          summary: typeof p.command === "string" && p.command ? p.command : "Run a command",
-          ...(typeof p.reason === "string" ? { justification: p.reason } : {}),
+          summary: command || "Run a command",
+          ...(guard ? { justification: guard } : typeof p.reason === "string" ? { justification: p.reason } : {}),
           ...(typeof p.cwd === "string" ? { detail: `in ${p.cwd}` } : {}),
           options,
         });
@@ -413,11 +433,17 @@ class CodexSession implements ProviderSession {
       case "item/fileChange/requestApproval": {
         const changes = active.items.get(String(p.itemId));
         const files = changes && changes.kind === "file_change" ? changes.changes.map((c) => c.path) : [];
+        const outside = full ? [...files, ...(typeof p.grantRoot === "string" ? [p.grantRoot] : [])].find((f) => isOutside(f, cwd)) : undefined;
+        if (full && !outside) return { decision: "accept" };
         const answer = await sink.requestApproval({
           callId: String(p.itemId ?? "edit"),
           action: "file_change",
           summary: files.length ? `Edit ${files.length === 1 ? files[0] : `${files.length} files`}` : "Edit files",
-          ...(typeof p.reason === "string" ? { justification: p.reason } : {}),
+          ...(outside
+            ? { justification: `Full access still asks: this writes ${outside}, outside the project folder.` }
+            : typeof p.reason === "string"
+              ? { justification: p.reason }
+              : {}),
           ...(typeof p.grantRoot === "string" ? { detail: `Write access to ${p.grantRoot}` } : {}),
           options,
         });
@@ -425,6 +451,7 @@ class CodexSession implements ProviderSession {
         return { decision: answer.decision };
       }
       case "item/permissions/requestApproval": {
+        if (full) return { permissions: p.permissions ?? {}, scope: "turn" };
         const answer = await sink.requestApproval({
           callId: String(p.itemId ?? "permissions"),
           action: "permissions",
