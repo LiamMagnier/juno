@@ -1200,9 +1200,17 @@ struct ChatComposer: View {
             field: { fieldRow },
             controls: { controlsRow },
             edge: { edges },
+            tray: { tray },
             captionBelow: { captionBelow }
         )
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { composerWidth = $0 }
+        // The tray's generation choices follow the model: a model switched to
+        // inherits what still fits from the one before (the web's carry).
+        .onChange(of: selectedModelID, initial: true) { _, id in
+            if let schema = model.model(withID: id)?.mediaParams, !schema.isEmpty {
+                model.mediaParamsMemory.activate(id, schema: schema)
+            }
+        }
         .task(id: isGenerating) {
             streamedPastBeat = false
             guard isGenerating else { return }
@@ -1396,8 +1404,11 @@ struct ChatComposer: View {
 
     @ViewBuilder
     private var captionsAbove: some View {
+        // The tray's Project control says where a new chat goes; the capsule
+        // stays only where the tray is not drawn.
         let showsProjectCapsule = fixedProjectID == nil && !isPrivate
             && model.selectedConversationID == nil && selectedProjectName != nil
+            && !(showsTray && trayProjects != nil)
         let showsCallNotice = voiceCall.map {
             $0.controller.notice != nil
                 || DesktopVoiceCallText.failureMessage($0.controller, saveError: voiceHangUp.saveError) != nil
@@ -1599,6 +1610,116 @@ struct ChatComposer: View {
                 .frame(height: 16)
                 .accessibilityIdentifier("juno.desktop.composer.footnote")
         }
+    }
+
+    // MARK: Tray
+
+    /// A brand-new chat: the full tray (where it goes, what it can reach), as
+    /// the web's landing composer. In a thread only a media model's choices.
+    private var isNewChatDraft: Bool {
+        fixedProjectID != nil || model.selectedConversationID == nil
+    }
+
+    /// The web's `showTray`: not private, not in a call, not steering a run,
+    /// not while dictating.
+    private var showsTray: Bool {
+        !isPrivate && !voiceActive && !inSteerMode && dictation == nil
+    }
+
+    /// The grey shelf under the card (`NativeComposerTray`, the web's
+    /// `composer-tray.tsx`): Project · Apps · Skills for a chat model, the
+    /// model's generation choices and a compact Project for an image, video or
+    /// music model.
+    @ViewBuilder
+    private var tray: some View {
+        if showsTray {
+            if isNewChatDraft {
+                NativeComposerTray(
+                    projects: trayProjects,
+                    apps: trayApps,
+                    skills: traySkills,
+                    media: trayMedia,
+                    leading: { trayLeading },
+                    trailing: { trayTrailing }
+                )
+                .disabled(quota != nil)
+                .transition(.opacity)
+            } else if let trayMedia {
+                NativeComposerTray(projects: nil, media: trayMedia)
+                    .disabled(quota != nil)
+                    .transition(.opacity)
+            }
+        }
+    }
+
+    /// EXTENSION POINT (docs/native/composer-tray/STATUS.md): tray items other
+    /// features add on a new chat's line, before Project — the Mac's "work in
+    /// a local folder" control goes here. Style them with
+    /// `NativeComposerTrayPillStyle` and keep them one pill each.
+    @ViewBuilder
+    private var trayLeading: some View {
+        EmptyView()
+    }
+
+    /// EXTENSION POINT: items pushed to the end of the line (where the web
+    /// puts "Mac app", which the Mac app has no use for).
+    @ViewBuilder
+    private var trayTrailing: some View {
+        EmptyView()
+    }
+
+    private var trayProjects: NativeComposerTrayProjects? {
+        guard fixedProjectID == nil, let projectModel else { return nil }
+        return NativeComposerTrayProjects(
+            items: projectModel.projects.map { NativeComposerTrayProject(id: $0.id, name: $0.name) },
+            selectedID: selectedProjectID,
+            select: { chooseProject($0) },
+            create: { showingNewProject = true }
+        )
+    }
+
+    private var trayApps: NativeComposerTrayApps? {
+        guard let connectorModel else { return nil }
+        return NativeComposerTrayApps(
+            connectors: connectedConnectors,
+            enabled: selectedConnectors,
+            toggle: { id in
+                if selectedConnectors.contains(id) {
+                    selectedConnectors.remove(id)
+                } else if selectedConnectors.count < ComposerPlusMenuModel.connectorLimit {
+                    selectedConnectors.insert(id)
+                }
+            },
+            manage: manageConnections,
+            isLoading: connectorModel.phase == .loading
+        )
+    }
+
+    private var traySkills: NativeComposerTraySkills? {
+        guard skillsAvailable, let skillLibrary else { return nil }
+        return NativeComposerTraySkills(
+            items: skillLibrary.chooseable.map { NativeComposerTraySkill(slug: $0.slug, name: $0.name) },
+            armed: skillSlug,
+            arm: { skillSlug = $0 },
+            browse: manageSkills,
+            isLoading: skillLibrary.isLoading
+        )
+    }
+
+    /// The selected image, video or music model's choices, remembered per
+    /// model in the store (``NativeConversationModel/mediaParamsMemory``),
+    /// which is also where Send reads them.
+    private var trayMedia: NativeComposerTrayMedia? {
+        guard let selectedModel, selectedModel.isMediaGeneration,
+            let schema = selectedModel.mediaParams, !schema.isEmpty
+        else { return nil }
+        let memory = model.mediaParamsMemory
+        let id = selectedModel.id
+        return NativeComposerTrayMedia(
+            schema: schema,
+            params: memory.params(for: id, schema: schema),
+            set: { memory.set($0, $1, for: id, schema: schema) }
+        )
     }
 
     // MARK: Field

@@ -169,6 +169,7 @@
 		A7F7076E91FF1444E97329B8 /* DesktopUpgradeSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE619BBB86F751F5B29D2D1C /* DesktopUpgradeSheet.swift */; };
 		AA68974C137949C85AE884C5 /* DesktopProjectFolders.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A267668175D440F8249717E /* DesktopProjectFolders.swift */; };
 		AB8B403AB4A8C4BEE6DAFFA4 /* DesktopWorkRunHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B686C9AA50D7A315EE7582E /* DesktopWorkRunHost.swift */; };
+		AD3D1F3E787837E0FBF2846F /* ComposerTraySnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6895DA4EF6AEA5798729D05 /* ComposerTraySnapshotTests.swift */; };
 		AE6C9247995635681585089F /* TranscriptFindTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 315318DF43C4DBF64B2C3CC3 /* TranscriptFindTests.swift */; };
 		AF2DE4C4968362BE0C3AE67C /* FinalSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5F6CE06AAFAA4C045CEC702 /* FinalSnapshotTests.swift */; };
 		B1113DA3F18E59B2D1D5E96D /* Icons.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 70EB5609DF0F6D0E825F390E /* Icons.xcassets */; };
@@ -441,6 +442,7 @@
 		A42266BD81649CCC5E1FE611 /* JunoWork */ = {isa = PBXFileReference; lastKnownFileType = folder; name = JunoWork; path = ../../Packages/JunoWork; sourceTree = SOURCE_ROOT; };
 		A5B4667453C344F1AA51CF0B /* ScrollToLatestButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScrollToLatestButton.swift; sourceTree = "<group>"; };
 		A5B8BB4BEB0D113319C846F6 /* DesktopSettingsScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopSettingsScreen.swift; sourceTree = "<group>"; };
+		A6895DA4EF6AEA5798729D05 /* ComposerTraySnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerTraySnapshotTests.swift; sourceTree = "<group>"; };
 		A6BCDB359E9176A839132C58 /* ArtifactDesignStart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactDesignStart.swift; sourceTree = "<group>"; };
 		A75FD9C41C68F886B6FC99BE /* DesktopStageCPagesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopStageCPagesTests.swift; sourceTree = "<group>"; };
 		A79DC30EB739EE52A46D07B2 /* TranscriptSnapshotFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptSnapshotFixtures.swift; sourceTree = "<group>"; };
@@ -593,6 +595,7 @@
 			children = (
 				CB1E66E3CC3E98693A46C9C1 /* CodeSidebarSnapshotTests.swift */,
 				D6721199D1078639B3C5A438 /* CodeV2SnapshotTests.swift */,
+				A6895DA4EF6AEA5798729D05 /* ComposerTraySnapshotTests.swift */,
 				E80BE16EA92581B65ABB9C3A /* CustomConnectorSnapshotTests.swift */,
 				E5F6CE06AAFAA4C045CEC702 /* FinalSnapshotTests.swift */,
 				AFEC75C74B556C16C538F98B /* FoundationSnapshotTests.swift */,
@@ -1264,6 +1267,7 @@
 				20F3082FD20E3A93A04DD05C /* ChatWorkStageBTests.swift in Sources */,
 				DD69FA1D993610F06891A56D /* CodeSidebarSnapshotTests.swift in Sources */,
 				E835BA9A511D48AE511231BD /* CodeV2SnapshotTests.swift in Sources */,
+				AD3D1F3E787837E0FBF2846F /* ComposerTraySnapshotTests.swift in Sources */,
 				F05C53BB14300390A119AE93 /* CustomConnectorSnapshotTests.swift in Sources */,
 				B5465B6B2C16E892EE7EB748 /* DesktopArtifactComponentTests.swift in Sources */,
 				69E11E717D21C0C6BE70BADC /* DesktopArtifactStatusTests.swift in Sources */,
