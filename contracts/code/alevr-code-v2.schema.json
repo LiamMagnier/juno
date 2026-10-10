@@ -204,7 +204,8 @@
         "conversation.deliver",
         "conversation.read",
         "conversation.toggle",
-        "skills.list"
+        "skills.list",
+        "skills.select"
       ]
     },
     "ServerEventType": {
@@ -222,7 +223,9 @@
         "provider.updated",
         "terminal.output",
         "terminal.exited",
-        "session.scheduled"
+        "session.scheduled",
+        "session.skills",
+        "skills.updated"
       ]
     },
     "TurnOutcome": {
@@ -3565,6 +3568,42 @@
             "type",
             "params"
           ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": {
+              "const": "skills.select"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "sessionId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "skills": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/definitions/SkillActivation"
+                  }
+                }
+              },
+              "required": [
+                "sessionId",
+                "skills"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "type",
+            "params"
+          ]
         }
       ]
     },
@@ -3869,6 +3908,39 @@
             },
             "scheduledResume": {
               "$ref": "#/definitions/ScheduledResume"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "session.skills"
+            },
+            "skills": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/SkillActivation"
+              }
+            }
+          },
+          "required": [
+            "type",
+            "skills"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "skills.updated"
+            },
+            "cwd": {
+              "type": "string",
+              "minLength": 1
             }
           },
           "required": [

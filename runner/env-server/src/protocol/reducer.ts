@@ -54,6 +54,12 @@ export function applySessionEvent(snapshot: SessionSnapshot, event: ServerEvent)
       else delete next.scheduledResume;
       return next;
     }
+    case "session.skills": {
+      const next: SessionSnapshot = { ...snapshot };
+      if (event.skills.length) next.skills = event.skills;
+      else delete next.skills;
+      return next;
+    }
     default:
       return snapshot;
   }

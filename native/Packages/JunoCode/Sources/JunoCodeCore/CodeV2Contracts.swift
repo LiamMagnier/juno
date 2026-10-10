@@ -1653,6 +1653,7 @@ public enum CodeV2 {
         case conversationRead = "conversation.read"
         case conversationToggle = "conversation.toggle"
         case skillsList = "skills.list"
+        case skillsSelect = "skills.select"
     }
 
     /// The git worktree a session runs in (`SessionSnapshot.worktree`).
@@ -1727,6 +1728,8 @@ public enum CodeV2 {
         case terminalOutput = "terminal.output"
         case terminalExited = "terminal.exited"
         case sessionScheduled = "session.scheduled"
+        case sessionSkills = "session.skills"
+        case skillsUpdated = "skills.updated"
     }
 
     // contract: TURN_OUTCOME_VALUES
@@ -1911,11 +1914,16 @@ public enum CodeV2 {
         case terminalExited(terminalId: String, exitCode: Int?)
         /// A resume-at-reset schedule set, or cleared (nil).
         case sessionScheduled(ScheduledResume?)
+        /// Skills lane: the thread's whole selection, set on any device (empty: cleared).
+        case sessionSkills([SkillActivation])
+        /// Skills lane (global): skills changed on the Mac; `cwd` names the project, nil any listing.
+        case skillsUpdated(cwd: String?)
         case unknown(type: String)
 
         private enum Keys: String, CodingKey {
             case type, snapshotSequence, session, state, resumeAt, message, turnId, selection, outcome, usage
             case item, itemId, field, append, queue, instance, terminalId, data, exitCode, scheduledResume
+            case skills, cwd
         }
 
         public var type: String {
@@ -1933,6 +1941,8 @@ public enum CodeV2 {
             case .terminalOutput: ServerEventType.terminalOutput.rawValue
             case .terminalExited: ServerEventType.terminalExited.rawValue
             case .sessionScheduled: ServerEventType.sessionScheduled.rawValue
+            case .sessionSkills: ServerEventType.sessionSkills.rawValue
+            case .skillsUpdated: ServerEventType.skillsUpdated.rawValue
             case let .unknown(type): type
             }
         }
@@ -1990,6 +2000,10 @@ public enum CodeV2 {
                 )
             case .sessionScheduled:
                 self = .sessionScheduled(try c.decodeIfPresent(ScheduledResume.self, forKey: .scheduledResume))
+            case .sessionSkills:
+                self = .sessionSkills(try c.decodeIfPresent([SkillActivation].self, forKey: .skills) ?? [])
+            case .skillsUpdated:
+                self = .skillsUpdated(cwd: try c.decodeIfPresent(String.self, forKey: .cwd))
             }
         }
 
@@ -2028,6 +2042,10 @@ public enum CodeV2 {
                 try c.encodeIfPresent(exitCode, forKey: .exitCode)
             case let .sessionScheduled(schedule):
                 try c.encodeIfPresent(schedule, forKey: .scheduledResume)
+            case let .sessionSkills(skills):
+                try c.encode(skills, forKey: .skills)
+            case let .skillsUpdated(cwd):
+                try c.encodeIfPresent(cwd, forKey: .cwd)
             case .unknown:
                 break
             }

@@ -957,6 +957,8 @@ export const CLIENT_COMMAND_TYPE_VALUES = [
   "conversation.toggle",
   // skills lane (additive): the skills installed on this Mac (names, descriptions, paths; never bodies).
   "skills.list",
+  // skills lane (additive): set a thread's selection now, without a message (every device sees it live).
+  "skills.select",
 ] as const;
 export type ClientCommandType = (typeof CLIENT_COMMAND_TYPE_VALUES)[number];
 
@@ -1030,6 +1032,12 @@ export interface ClientCommandParams {
   "conversation.toggle": { sessionId: string; enabled: boolean | null };
   /** The skills installed on this Mac, plus the project skills of `cwd` (or of the session's folder). */
   "skills.list": { cwd?: string; sessionId?: string };
+  /**
+   * The thread's selected skills, set now (an empty list clears it). Entries
+   * marked `once` are ignored: a `/name` skill belongs to one message. The
+   * env server answers with the selection it kept and emits `session.skills`.
+   */
+  "skills.select": { sessionId: string; skills: SkillActivation[] };
 }
 
 export interface ConversationDelivery {
@@ -1154,6 +1162,7 @@ export interface ClientCommandResults {
   "conversation.read": { title?: string; state: SessionState; messages: ConversationExcerptMessage[] };
   "conversation.toggle": { enabled: boolean };
   "skills.list": { skills: LocalSkillSummary[] };
+  "skills.select": { skills: SkillActivation[] };
 }
 
 export const WIRE_ERROR_CODE_VALUES = [
@@ -1186,6 +1195,10 @@ export const SERVER_EVENT_TYPE_VALUES = [
   "terminal.exited",
   // runtime lane (additive): a schedule set or cleared (absent scheduledResume = cleared).
   "session.scheduled",
+  // skills lane (additive): the thread's selection changed (on any device); an empty list = cleared.
+  "session.skills",
+  // skills lane (additive, global): a skill was installed, edited or removed on this Mac; re-read `skills.list`.
+  "skills.updated",
 ] as const;
 export type ServerEventType = (typeof SERVER_EVENT_TYPE_VALUES)[number];
 
@@ -1208,9 +1221,16 @@ export interface ServerEventPayloads {
   "terminal.output": { terminalId: string; data: string };
   "terminal.exited": { terminalId: string; exitCode?: number };
   "session.scheduled": { scheduledResume?: ScheduledResume };
+  /** The thread's whole selection (`SessionSnapshot.skills`), never `once` entries. */
+  "session.skills": { skills: SkillActivation[] };
+  /**
+   * Skills changed on this Mac. `cwd`: only that project's skills changed;
+   * absent: any listing may have (a user or plugin skill). Names nothing else.
+   */
+  "skills.updated": { cwd?: string };
 }
 
-export const GLOBAL_EVENT_TYPES: readonly ServerEventType[] = ["provider.updated", "terminal.output", "terminal.exited"];
+export const GLOBAL_EVENT_TYPES: readonly ServerEventType[] = ["provider.updated", "terminal.output", "terminal.exited", "skills.updated"];
 
 export type ServerEvent = {
   [T in ServerEventType]: { type: T } & ServerEventPayloads[T];

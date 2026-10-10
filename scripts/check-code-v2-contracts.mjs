@@ -10,6 +10,9 @@
  *      below from the contract's value arrays.
  *   3. Every fixture in contracts/code/fixtures/*.json must validate against
  *      that schema, and every `kind`/`type` in them must be a known value.
+ *   1b. runner/env-server/src/skills/skill-files.ts must be byte-identical to
+ *      runner/agent-core/src/skills/skill-files.ts (the SKILL.md layer the
+ *      Mac's env server and the cloud runner share; agent-core is the source).
  *   4. Every Swift enum in CodeV2Contracts.swift marked
  *      `// contract: <VALUE_ARRAY>` must list exactly those raw values, and
  *      the Swift alias table must equal CODE_MODEL_ALIASES.
@@ -33,6 +36,9 @@ const ENV_SERVER_COPY = join(root, "runner/env-server/src/contracts/code-v2.ts")
 const SCHEMA = join(root, "contracts/code/alevr-code-v2.schema.json");
 const FIXTURES = join(root, "contracts/code/fixtures");
 const SWIFT = join(root, "native/Packages/JunoCode/Sources/JunoCodeCore/CodeV2Contracts.swift");
+// skills lane: SKILL.md discovery and rendering, shared by the env server and the cloud runner.
+const SKILL_FILES = join(root, "runner/agent-core/src/skills/skill-files.ts");
+const SKILL_FILES_COPY = join(root, "runner/env-server/src/skills/skill-files.ts");
 
 const write = process.argv.includes("--write");
 // Imported through a temporary .mts copy so Node treats it as an ES module
@@ -540,6 +546,15 @@ if (write) {
 } else {
   const copy = await readFile(ENV_SERVER_COPY, "utf8").catch(() => null);
   if (copy !== source) fail(`${ENV_SERVER_COPY} differs from ${SOURCE} (run with --write)`);
+}
+
+// 1b. The shared SKILL.md layer.
+const skillFiles = await readFile(SKILL_FILES, "utf8").catch(() => null);
+if (skillFiles === null) fail(`${SKILL_FILES} is missing`);
+else if (write) await writeFile(SKILL_FILES_COPY, skillFiles);
+else {
+  const copy = await readFile(SKILL_FILES_COPY, "utf8").catch(() => null);
+  if (copy !== skillFiles) fail(`${SKILL_FILES_COPY} differs from ${SKILL_FILES} (run with --write)`);
 }
 
 // 2. Schema.

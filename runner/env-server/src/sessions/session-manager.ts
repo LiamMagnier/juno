@@ -253,10 +253,7 @@ export class SessionManager {
     // (all but the `/name` ones); one that does not runs under the selection.
     const named = Array.isArray(params.input.skills) ? params.input.skills.filter(isActivation) : undefined;
     const activations = named ?? log.meta.skills ?? [];
-    if (named) {
-      const persistent = named.filter((s) => s.once !== true).map(({ once: _once, ...rest }) => rest);
-      log.updateMeta({ skills: persistent.length ? persistent : undefined });
-    }
+    if (named) this.#setSkills(live, named);
     params = { ...params, input: { ...params.input, skills: activations } };
     log.updateMeta({
       selection: params.selection,
@@ -623,6 +620,27 @@ export class SessionManager {
       live.idleWaiters.push(done);
       signal?.addEventListener("abort", done, { once: true });
     });
+  }
+
+  /**
+   * skills lane (`skills.select`): sets the thread's selection now, without a
+   * message, so every device following the thread sees it at once.
+   */
+  selectSkills(sessionId: string, skills: unknown): SkillActivation[] {
+    if (!Array.isArray(skills)) throw new WireError("bad_request", "skills must be a list.");
+    return this.#setSkills(this.#get(sessionId), skills.filter(isActivation));
+  }
+
+  /**
+   * Keeps a thread's selection (never its `once` entries) and, when it
+   * changed, emits `session.skills` so other devices apply it live.
+   */
+  #setSkills(live: LiveSession, named: readonly SkillActivation[]): SkillActivation[] {
+    const persistent = named.filter((s) => s.once !== true).map(({ once: _once, ...rest }) => rest);
+    const before = JSON.stringify(live.log.meta.skills ?? []);
+    live.log.updateMeta({ skills: persistent.length ? persistent : undefined });
+    if (JSON.stringify(persistent) !== before) live.log.emit({ type: "session.skills", skills: persistent });
+    return persistent;
   }
 
   /**

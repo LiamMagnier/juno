@@ -172,6 +172,8 @@ export async function startEnvServer(options: EnvServerOptions = {}): Promise<En
   const mcp = new AlevrMcpServer(logger);
   let port = 0;
   const skills = options.skills ?? new SkillCatalog();
+  // skills lane: a skill installed, edited or removed reaches every picker now.
+  const removeSkillsWatch = skills.onChange((change) => broadcast({ type: "skills.updated", ...(change.cwd ? { cwd: change.cwd } : {}) }));
   const sessions = new SessionManager({
     skills,
     dataDir,
@@ -274,6 +276,7 @@ export async function startEnvServer(options: EnvServerOptions = {}): Promise<En
       removeSubagentTools();
       removeConversationTools();
       conversations.dispose();
+      removeSkillsWatch();
       if (!options.skills) skills.close();
       removeComputerClose?.();
       for (const c of connections) c.dispose();
@@ -469,6 +472,8 @@ export async function dispatchCommand(deps: ConnectionDeps, cmd: ClientCommand, 
       if (cwd && !path.isAbsolute(cwd)) throw new WireError("bad_request", "cwd must be an absolute path.");
       return { skills: await deps.skills.list(cwd) };
     }
+    case "skills.select":
+      return { skills: sessions.selectSkills(cmd.params.sessionId, cmd.params.skills) };
     case "conversation.toggle":
       if (!deps.conversations) throw new WireError("unsupported", "Conversations cannot message each other here.");
       return deps.conversations.toggle(cmd.params.sessionId, cmd.params.enabled);
