@@ -1,17 +1,12 @@
 /**
  * The Prisma side of remote control pairing (device-pairing.ts holds the
- * rules), plus the one guard the remote-command routes call.
+ * rules; device-pairing-guard.ts is what the routes call).
  *
  * Every query carries the signed-in user's id, so the ownership guard
  * (src/lib/db.ts) is satisfied by the queries themselves.
  */
-import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getCurrentDeviceSessionId } from "@/lib/session";
 import {
-  browserKeyFromCookie,
-  checkRemotePair,
-  type Controller,
   type DevicePairRow,
   type PairingKind,
   type PairingStore,
@@ -100,20 +95,3 @@ export const prismaPairingStore: PairingStore = {
     await prisma.devicePair.updateMany({ where: { id, userId }, data: { lastUsedAt: now } });
   },
 };
-
-/** This request's controller: the phone behind a native bearer, else the browser's cookie key. */
-export async function controllerFor(req: Request): Promise<Controller> {
-  const deviceSessionId = req.headers.get("authorization") ? await getCurrentDeviceSessionId() : null;
-  if (deviceSessionId) return { kind: "phone", deviceSessionId };
-  return { kind: "browser", browserKey: browserKeyFromCookie(req.headers.get("cookie")) };
-}
-
-/**
- * The remote-command guard: null when this phone or browser holds a live pair
- * with `deviceId`, else the 403 to return. Call it after the ownership check.
- */
-export async function requireRemotePair(req: Request, userId: string, deviceId: string): Promise<NextResponse | null> {
-  const result = await checkRemotePair(prismaPairingStore, { userId, deviceId, controller: await controllerFor(req) });
-  if (result.ok) return null;
-  return NextResponse.json({ error: result.message, message: result.message, code: result.code }, { status: result.status });
-}

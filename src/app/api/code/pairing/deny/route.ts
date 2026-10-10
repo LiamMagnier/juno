@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/code-remote";
 import { denyPairingOffer } from "@/lib/code-v2/device-pairing";
-import { controllerFor, prismaPairingStore } from "@/lib/code-v2/device-pairing-store";
+import { prismaPairingStore } from "@/lib/code-v2/device-pairing-store";
+import { controllerFor } from "@/lib/code-v2/device-pairing-guard";
 import { NO_STORE, offerRefFrom, pairingError, pairingSecret } from "@/lib/code-v2/pairing-route";
 
 export const runtime = "nodejs";

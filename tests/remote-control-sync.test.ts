@@ -52,6 +52,10 @@ function memoryThreads(): ThreadSyncStore & { rows: Map<string, ThreadSyncRow> }
         .sort((a, b) => a.updatedAt.getTime() - b.updatedAt.getTime() || (a.key < b.key ? -1 : 1))
         .slice(0, limit);
     },
+    async latestUpdatedAt(userId) {
+      const mine = [...rows.entries()].filter(([k]) => k.startsWith(`${userId}\u0000`)).map(([, r]) => r.updatedAt.getTime());
+      return mine.length ? new Date(Math.max(...mine)) : null;
+    },
   };
 }
 
@@ -102,10 +106,11 @@ test("cursor: rows written in the same millisecond are neither skipped nor repea
   await writeThreadSync(store, "u", "chat:b", { draft: "b" }, at);
   await writeThreadSync(store, "u", "chat:a", { draft: "a" }, at);
   const first = await readThreadSync(store, "u", { cursor: null });
-  assert.deepEqual(first.threads.map((t) => t.key), ["chat:a", "chat:b"]);
-  await writeThreadSync(store, "u", "chat:c", { draft: "c" }, at);
+  assert.deepEqual(first.threads.map((t) => t.key), ["chat:b", "chat:a"], "each write lands after the one before");
+  // Written in the same millisecond as the last row read, under a smaller key.
+  await writeThreadSync(store, "u", "chat:0", { draft: "0" }, at);
   const second = await readThreadSync(store, "u", { cursor: decodeSyncCursor(first.cursor) });
-  assert.deepEqual(second.threads.map((t) => t.key), ["chat:c"]);
+  assert.deepEqual(second.threads.map((t) => t.key), ["chat:0"]);
   const third = await readThreadSync(store, "u", { cursor: decodeSyncCursor(second.cursor) });
   assert.deepEqual(third.threads, []);
   assert.equal(third.cursor, second.cursor);

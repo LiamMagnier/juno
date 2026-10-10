@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/code-remote";
 import { offlineReply, parseLinkRequest } from "@/lib/code-v2/device-link";
 import { linkHub } from "@/lib/code-v2/env-link-select";
-import { requireRemotePair } from "@/lib/code-v2/device-pairing-store";
+import { requireRemotePair } from "@/lib/code-v2/device-pairing-guard";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

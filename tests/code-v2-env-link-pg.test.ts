@@ -162,6 +162,17 @@ for (const backend of backends) {
       clearInterval(beat);
     }
   });
+
+  test(`${backend.name}: a global batch the Mac pushed twice (a retried push) is relayed once`, async () => {
+    const { browser, mac } = pair();
+    await mac.pull(0);
+    await mac.push({ events: [global(41), global(42)] });
+    await mac.push({ events: [global(41), global(42)] });
+    await mac.push({ events: [global(43)] });
+    const out = await browser.poll({}, -1, 0);
+    assert.equal((out.events ?? []).filter((e) => e.stream === "global").length, 3);
+    assert.ok((out.events ?? []).every((e) => !("_origin" in (e as object))), "the origin never reaches a browser");
+  });
 }
 
 test("the routes use memory unless ALEVR_LINK_STORE=postgres", () => {

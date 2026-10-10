@@ -224,6 +224,8 @@ export interface ThreadSyncStore {
   put(userId: string, row: ThreadSyncRow): Promise<ThreadSyncRow>;
   /** Rows after `cursor` (all when null) in (updatedAt, key) order, at most `limit`. */
   since(userId: string, cursor: SyncCursor | null, limit: number, keys?: string[]): Promise<ThreadSyncRow[]>;
+  /** The newest `updatedAt` of this user's rows. */
+  latestUpdatedAt(userId: string): Promise<Date | null>;
 }
 
 // ── Wake-ups ────────────────────────────────────────────────────────────────
@@ -261,6 +263,11 @@ export async function writeThreadSync(store: ThreadSyncStore, userId: string, ke
   const existing = await store.get(userId, key);
   const { row, changed } = applyThreadUpdate(existing, key, update, now);
   if (!changed) return existing ?? row;
+  // Each write lands strictly after every earlier one of this user: a reader
+  // whose cursor names the last row it saw at time t can then never miss a
+  // row written later in that same millisecond under a smaller key.
+  const latest = await store.latestUpdatedAt(userId);
+  if (latest && row.updatedAt.getTime() <= latest.getTime()) row.updatedAt = new Date(latest.getTime() + 1);
   const saved = await store.put(userId, row);
   notifyThreadSync(userId);
   return saved;

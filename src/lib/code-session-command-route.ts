@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/code-remote";
 import { canonicalSessionCommand } from "@/lib/code-session-command-compat";
 import { rateLimit } from "@/lib/rate-limit";
-import { requireRemotePair } from "@/lib/code-v2/device-pairing-store";
+import { requireRemotePair } from "@/lib/code-v2/device-pairing-guard";
 
 export type SessionRouteParams = Promise<{ deviceId: string; sessionId: string }>;
 

@@ -61,6 +61,10 @@ export const prismaThreadSyncStore: ThreadSyncStore = {
     });
     return toRow(saved);
   },
+  async latestUpdatedAt(userId) {
+    const row = await prisma.threadSync.findFirst({ where: { userId }, orderBy: { updatedAt: "desc" }, select: { updatedAt: true } });
+    return row?.updatedAt ?? null;
+  },
   async since(userId, cursor, limit, keys) {
     const rows = await prisma.threadSync.findMany({
       where: { userId, ...(keys?.length ? { key: { in: keys } } : {}), ...cursorWhere(cursor) },

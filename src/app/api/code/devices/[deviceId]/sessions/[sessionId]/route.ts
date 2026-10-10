@@ -4,7 +4,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/code-remote";
 import { sessionCommandRateLimit } from "@/lib/code-session-command-route";
-import { requireRemotePair } from "@/lib/code-v2/device-pairing-store";
+import { requireRemotePair } from "@/lib/code-v2/device-pairing-guard";
 import { canonicalSessionCommand } from "@/lib/code-session-command-compat";
 import {
   TRANSCRIPT_POLICIES,
