@@ -70,11 +70,13 @@ Tests:
 - `npm run native:design:check`: all 9 gates hold.
 - The Mac app builds.
 
-Left open:
-- QuickLook draws a blank thumbnail for the fixture CSV on the simulator, so that tile is an empty grey card.
-  PDFs and images are fine.
-- In an empty Library, Upload appears twice: in the header (primary) and in the empty state (secondary).
-  The Mac hides the header copy in this case. Consider doing the same.
+Follow-up fixes:
+- When the Library is empty, the header Upload is withheld, as on the Mac, so Upload appears only once. The empty
+  state's "Upload files" becomes the primary capsule.
+- A document tile with no usable thumbnail shows its type glyph and extension (CSV, NUMBERS…) instead of a blank card.
+  This covers three cases: QuickLook draws nothing, QuickLook draws a near-empty page (detected by sampling an 8×8
+  grid), or the file is CSV/TSV, whose QuickLook thumbnail is only hairline text in a corner.
+  The affected iPhone and iPad screenshots were re-shot in light and dark: library grid, list and empty.
 
 ## Earlier: state at pause (2026-10-10, ~14:50, coordinator PAUSE for memory pressure)
 

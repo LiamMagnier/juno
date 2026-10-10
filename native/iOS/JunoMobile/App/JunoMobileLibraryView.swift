@@ -293,7 +293,9 @@ struct JunoMobileLibraryView: View {
           : String(localized: "What Alevr made and the files you gave it.")
       )
       HStack(spacing: JunoSpace.snug) {
-        if canUpload {
+        // Withheld while the empty state carries "Upload files": one Upload
+        // per screen, as the Mac does.
+        if canUpload, !model.libraryFiles.isEmpty {
           Button {
             importIndexes = false
             choosingUpload = true
@@ -792,7 +794,7 @@ struct JunoMobileLibraryView: View {
           } label: {
             JunoMobileCapsuleLabel(String(localized: "Upload files"), icon: .upload)
           }
-          .junoMobileCapsuleAction()
+          .junoMobileCapsulePrimary()
           .contentShape(Capsule())
         }
         if let openConversation {

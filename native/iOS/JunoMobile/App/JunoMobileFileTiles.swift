@@ -26,7 +26,9 @@ struct JunoMobileFilePreviewSurface: View {
     ZStack {
       Color.junoSecondary
       switch state {
-      case .ready(let image):
+      case .ready(let image)
+      where request.isImage
+        || (!JunoMobileFileKind.drawsAsGlyph(request.fileName) && !JunoMobileBlankThumbnail.isBlank(image)):
         // Sized explicitly to the box, then aligned: a photo is recognised by
         // its middle, a document by its first lines — cropping a page to its
         // centre shows a paragraph from nowhere.
@@ -44,12 +46,15 @@ struct JunoMobileFilePreviewSurface: View {
         .transition(.opacity)
       case .loading:
         EmptyView()
-      case .unavailable:
+      case .ready, .unavailable:
+        // No picture, or a picture of nothing (QuickLook hands back a blank
+        // page for some plain-text formats, CSV among them): the type's glyph
+        // and its extension, so the tile still says what it is.
         VStack(spacing: JunoSpace.tight) {
           JunoIconView(JunoMobileFileKind.icon(for: request.fileName, isImage: request.isImage), size: glyphSize)
             .foregroundStyle(Color.junoSecondaryInk)
           if glyphSize > 20 {
-            Text(JunoMobileFileKind.label(for: request.fileName, isImage: request.isImage))
+            Text(JunoMobileFileKind.badge(for: request.fileName, isImage: request.isImage))
               .junoFont(size: 11, relativeTo: .caption2, weight: .semibold, design: .monospaced)
               .foregroundStyle(Color.junoTertiaryInk)
           }
@@ -170,6 +175,55 @@ struct JunoMobileFileRowLabel: View {
   }
 }
 
+// MARK: - Blank thumbnails
+
+/// Whether a thumbnail is a picture of (almost) nothing.
+///
+/// QuickLook renders some plain-text formats (CSV on the simulator, for one) as
+/// a near-empty white page — a few hairline characters in a corner — rather
+/// than failing, and a tile showing that page is a blank card. The image is drawn into an 8×8 grid and its spread measured;
+/// the answer is cached per image, so a tile pays for it once.
+enum JunoMobileBlankThumbnail {
+  @MainActor private static var answers: [ObjectIdentifier: Bool] = [:]
+
+  @MainActor
+  static func isBlank(_ image: CGImage) -> Bool {
+    let key = ObjectIdentifier(image)
+    if let known = answers[key] { return known }
+    let answer = measure(image)
+    answers[key] = answer
+    return answer
+  }
+
+  private static func measure(_ image: CGImage) -> Bool {
+    let side = 8
+    var pixels = [UInt8](repeating: 0, count: side * side * 4)
+    let drawn: Bool = pixels.withUnsafeMutableBytes { buffer in
+      guard let context = CGContext(
+        data: buffer.baseAddress, width: side, height: side, bitsPerComponent: 8,
+        bytesPerRow: side * 4, space: CGColorSpaceCreateDeviceRGB(),
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+      ) else { return false }
+      context.draw(image, in: CGRect(x: 0, y: 0, width: side, height: side))
+      return true
+    }
+    guard drawn else { return false }
+    // Only the opaque cells count: a page thumbnail can come with
+    // transparent margins, and those are not part of the page.
+    var lumas: [Int] = []
+    for index in stride(from: 0, to: pixels.count, by: 4) where pixels[index + 3] > 200 {
+      lumas.append((Int(pixels[index]) * 3 + Int(pixels[index + 1]) * 6 + Int(pixels[index + 2])) / 10)
+    }
+    guard lumas.count >= 8 else { return true }
+    // A page of nothing: nine in ten cells within a few levels of the typical
+    // one. A CSV drawn as a few hairline characters in one corner of a white
+    // page counts — at tile size it reads as a blank card.
+    let typical = lumas.sorted()[lumas.count / 2]
+    let flat = lumas.filter { abs($0 - typical) < 8 }.count
+    return flat * 10 >= lumas.count * 9
+  }
+}
+
 // MARK: - Kind
 
 /// What a file is, from its name: the glyph and the short label ("PDF",
@@ -187,6 +241,20 @@ enum JunoMobileFileKind {
     case "": return String(localized: "File")
     default: return ext.uppercased()
     }
+  }
+
+  /// Data files whose QuickLook thumbnail is a few hairline characters in
+  /// the corner of a white page — unreadable at tile size — so the tile draws
+  /// the type's glyph and extension instead.
+  static func drawsAsGlyph(_ fileName: String) -> Bool {
+    ["csv", "tsv"].contains(URL(fileURLWithPath: fileName).pathExtension.lowercased())
+  }
+
+  /// The fallback's caption: the file's own extension ("CSV", "NUMBERS"),
+  /// or its kind when it has none.
+  static func badge(for fileName: String, isImage: Bool) -> String {
+    let ext = URL(fileURLWithPath: fileName).pathExtension
+    return ext.isEmpty ? label(for: fileName, isImage: isImage) : ext.uppercased()
   }
 
   static func icon(for fileName: String, isImage: Bool) -> JunoIcon {
