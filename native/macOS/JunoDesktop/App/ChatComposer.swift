@@ -1305,6 +1305,13 @@ struct ChatComposer: View {
             if !NativePromptLimits.isHugeDraft(text) { draftExpanded = false }
             firstTurnError = nil
         }
+        // The unsent draft follows the conversation to the account's other
+        // devices (docs/code-v2/REMOTE-CONTROL.md §5). Not a private chat,
+        // a new chat or a project's composer: none has a thread to sync.
+        .modifier(DesktopChatDraftSync(
+            conversationID: privateChat == nil && fixedProjectID == nil ? model.selectedConversationID : nil,
+            text: $prompt
+        ))
         // A refused first send stays said until the reader edits the words or
         // moves to a chat with a transcript of its own — not when the store
         // quietly settles or drops the conversation it tried to create.

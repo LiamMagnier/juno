@@ -80,6 +80,10 @@ struct JunoDesktopRootView: View {
                 applyStartupRouteIfNeeded()
                 await configuration.authModel.restore()
             }
+            // Apple Handoff from the iPhone (or another Mac): open the thread.
+            .onContinueUserActivity(JunoHandoff.activityType) { activity in
+                DesktopHandoff.continueActivity(activity)
+            }
             .onChange(of: configuration.authModel.phase) { _, phase in
                 Task {
                     await updateLifecycle(for: phase)
@@ -326,6 +330,12 @@ struct JunoDesktopRootView: View {
         // exists — so it starts with everything else rather than behind a
         // switch. What it does *not* do is accept work; see DesktopCodeHost.swift.
         configuration.codeHostModel?.start(for: accountID)
+        // Remote control's thread sync and hand-off (REMOTE-CONTROL.md §5):
+        // drafts, Code composer choices and read follow this account's threads.
+        DesktopThreadSync.shared.configure(
+            client: configuration.requestSender.map(ThreadSyncClient.init(sender:)), accountID: accountID
+        )
+        DesktopHandoff.thisDeviceID = { [weak host = configuration.codeHostModel] in host?.deviceID }
         // The same split, for Work. Its heartbeat is what creates the WorkHost
         // row and hands this Mac the id every host-plane route is addressed by —
         // nothing else in the product produces one, which is why switching Juno
@@ -473,6 +483,8 @@ struct JunoDesktopRootView: View {
         configuration.codeModel?.stop()
         configuration.remoteCodeModel?.stop()
         configuration.codeHostModel?.stop()
+        DesktopThreadSync.shared.reset()
+        DesktopHandoff.thisDeviceID = { nil }
         configuration.workModel?.stop()
         configuration.workAutomationModel?.stop()
         configuration.workHostsModel?.stop()

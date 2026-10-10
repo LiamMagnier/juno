@@ -1,5 +1,6 @@
 import JunoAuth
 import JunoChatKit
+import JunoCore
 import JunoDesignSystem
 import JunoStorage
 import JunoSync
@@ -83,6 +84,8 @@ struct ChatDetail<Content: View>: View {
                 }
             }
             .toolbar { toolbar }
+            // Apple Handoff: the chat on screen, for the iPhone (or the web).
+            .desktopHandoff(titleMenuConversation.map { JunoHandoff.chat($0.id, title: $0.title) })
             .onGeometryChange(for: DesktopPanelAnchor.self) { proxy in
                 DesktopPanelAnchor(
                     frame: proxy.frame(in: .named(DesktopSearchPanelMetrics.coordinateSpace)),

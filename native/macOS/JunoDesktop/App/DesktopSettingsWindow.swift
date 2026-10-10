@@ -536,28 +536,9 @@ struct DesktopCodeRemoteHostTile: View {
     var body: some View {
         if let host {
             JunoSettingsTile("Alevr Code Remote") {
-                Toggle(
-                    isOn: Binding(
-                        get: { host.servesQueuedTasks },
-                        set: { host.servesQueuedTasks = $0 }
-                    )
-                ) {
-                    VStack(alignment: .leading, spacing: JunoSpace.hairline) {
-                        Text("Allow remote Alevr Code on this Mac")
-                            .junoRowLabel()
-                        Text(
-                            "Lets your phone and the web start Alevr Code sessions that run here, "
-                                + "in the workspaces you have shared. Off, this Mac stays visible "
-                                + "but runs nothing sent to it."
-                        )
-                        .junoCaption()
-                        .fixedSize(horizontal: false, vertical: true)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .toggleStyle(.switch)
-                .tint(Color.junoAccent)
-                .accessibilityIdentifier("juno.desktop.settings.remote-host-enabled")
+                // The same switch as Settings › Connections › Control this Mac
+                // remotely: one consent, two places, always in agreement.
+                DesktopRemoteControlRows(host: host, layout: .tile)
 
                 if host.servesQueuedTasks {
                     Divider()

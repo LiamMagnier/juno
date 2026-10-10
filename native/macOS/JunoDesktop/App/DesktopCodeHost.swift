@@ -502,9 +502,15 @@ final class DesktopCodeHostModel {
     /// Persisted, because the switch is a standing decision about this machine
     /// rather than a per-launch one, and it is read back on the next launch.
     var servesQueuedTasks: Bool {
-        get { defaults.bool(forKey: Self.servesQueuedTasksKey) }
+        get {
+            // Observed, so every switch bound to it (Settings › Connections
+            // and the Code settings tile) redraws when either one changes it.
+            _ = servesRevision
+            return defaults.bool(forKey: Self.servesQueuedTasksKey)
+        }
         set {
             defaults.set(newValue, forKey: Self.servesQueuedTasksKey)
+            servesRevision += 1
             // Switching it off here is "stop sharing this Mac": its sessions
             // come off the phone, rather than staying there frozen.
             syncRemoteHost(retracting: !newValue)
@@ -517,6 +523,8 @@ final class DesktopCodeHostModel {
     }
 
     static let servesQueuedTasksKey = "juno.code.remote.servesQueuedTasks"
+
+    private var servesRevision = 0
 
     /// Whether the web may open a terminal on this Mac through the Code v2
     /// device link (`terminal.*`). A second, separate consent under Remote
@@ -649,6 +657,9 @@ final class DesktopCodeHostModel {
                 guard let self else { return false }
                 return self.servesQueuedTasks && self.sharesTerminalRemotely
             },
+            hostHandler: { [responder = hostResponder] type, params in
+                try await responder.handle(type, params)
+            },
             perform: { method, path, body in
                 let request = try NativeBearerRequest(
                     path: path,
@@ -660,6 +671,47 @@ final class DesktopCodeHostModel {
                 return (response.statusCode, response.body)
             }
         )
+    }
+
+    // MARK: Remote control
+
+    /// What `host.info` and `host.capture` answer with (REMOTE-CONTROL.md §3).
+    private var hostResponder: DesktopRemoteHostResponder {
+        DesktopRemoteHostResponder.live { [weak self] in
+            await MainActor.run {
+                guard let self else {
+                    return DesktopRemoteHostResponder.Facts(name: "Mac", sharedFolders: [], terminal: false, appVersion: nil)
+                }
+                return self.remoteFacts
+            }
+        }
+    }
+
+    /// This Mac as a paired device sees it.
+    var remoteFacts: DesktopRemoteHostResponder.Facts {
+        DesktopRemoteHostResponder.Facts(
+            name: deviceName,
+            sharedFolders: workspaces.map(\.path),
+            terminal: servesQueuedTasks && sharesTerminalRemotely,
+            appVersion: appVersion
+        )
+    }
+
+    /// The account this Mac is signed in to, for the sync and pairing clients.
+    var signedInAccountID: AccountID? { accountID }
+
+    /// The pairing routes for this Mac, or nil until it is signed in and
+    /// registered (it has no CodeDevice id to pair with before then).
+    var pairingService: (any DesktopRemotePairingService)? {
+        guard let accountID, let deviceID, let linkSender else { return nil }
+        return DesktopLiveRemotePairingService(
+            client: RemotePairingClient(sender: linkSender), deviceID: deviceID, accountID: accountID
+        )
+    }
+
+    /// The thread sync and hand-off routes, or nil while signed out.
+    var threadSyncClient: ThreadSyncClient? {
+        linkSender.map(ThreadSyncClient.init(sender:))
     }
 
     /// Starts or stops the uploader to match the switch, exactly as the claim
@@ -1025,6 +1077,8 @@ final class DesktopCodeHostModel {
         defaults.set(true, forKey: Self.revokedKey)
         defaults.set(false, forKey: Self.servesQueuedTasksKey)
         defaults.set(false, forKey: Self.sharesTerminalKey)
+        servesRevision += 1
+        terminalShareRevision += 1
         lastRegisteredAt = nil
         lastError = nil
         revokeError = nil

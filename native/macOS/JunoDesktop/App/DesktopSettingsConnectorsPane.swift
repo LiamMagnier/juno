@@ -22,6 +22,10 @@ struct DesktopSettingsConnectorsPane: View {
 
     var body: some View {
         DesktopSettingsRecordForm(context: context) { settings in
+            // Its own group, first: the Codex-style "Control this Mac
+            // remotely" (docs/code-v2/REMOTE-CONTROL.md §1).
+            DesktopRemoteControlSection(host: context.services.codeHostModel)
+
             Section {
                 appRows(settings)
             } header: {

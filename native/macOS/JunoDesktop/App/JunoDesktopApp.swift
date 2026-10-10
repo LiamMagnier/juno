@@ -195,6 +195,20 @@ private final class JunoDesktopAppDelegate: NSObject, NSApplicationDelegate, UNU
         }
     }
 
+    /// Apple Handoff: a thread the iPhone (or another Mac) was showing.
+    func application(_ application: NSApplication, willContinueUserActivityWithType userActivityType: String) -> Bool {
+        userActivityType == JunoHandoff.activityType
+    }
+
+    func application(
+        _ application: NSApplication,
+        continue userActivity: NSUserActivity,
+        restorationHandler: @escaping ([any NSUserActivityRestoring]) -> Void
+    ) -> Bool {
+        guard !JunoTestHost.isActive else { return false }
+        return DesktopHandoff.continueActivity(userActivity)
+    }
+
     func application(
         _ application: NSApplication,
         didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
@@ -221,6 +235,11 @@ private final class JunoDesktopAppDelegate: NSObject, NSApplicationDelegate, UNU
         didReceive response: UNNotificationResponse
     ) async {
         let info = Self.stringValues(of: response.notification.request.content.userInfo)
+        // "Continue on Mac" from the iPhone (category ALEVR_HANDOFF).
+        if let handoff = DesktopHandoff.handoff(fromNotification: info) {
+            await MainActor.run { DesktopHandoff.open(handoff) }
+            return
+        }
         guard let route = JunoNotificationRoute(userInfo: info) else {
             let codeNotifications = await MainActor.run { StudioRunMonitor.shared }
             codeNotifications.userNotificationCenter(
