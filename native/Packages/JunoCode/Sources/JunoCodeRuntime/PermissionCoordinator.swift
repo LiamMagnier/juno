@@ -431,7 +431,8 @@ public actor PermissionCoordinator {
                 suggestedRule: risk == .destructive || !PermissionRuleSet.patternsCanVouch(for: subject)
                     || ComputerUseToolName.neverSavedAsRule.contains(toolName)
                     ? nil
-                    : PermissionRuleSet.suggestedRule(toolName: toolName, subject: subject)
+                    : PermissionRuleSet.suggestedRule(toolName: toolName, subject: subject),
+                reason: PermissionPolicy.guardReason(mode: mode, risk: risk, subject: subject)
             )
             pendingRequests[request.id] = request
             notify(.requested(request))
@@ -481,7 +482,8 @@ public actor PermissionCoordinator {
                     approvalPolicy: request.approvalPolicy,
                     requestedAt: request.requestedAt,
                     expiresAt: decidedAt.addingTimeInterval(Self.approvedExecutionWindowSeconds),
-                    suggestedRule: request.suggestedRule
+                    suggestedRule: request.suggestedRule,
+                    reason: request.reason
                 )
             )
         }

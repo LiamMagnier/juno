@@ -191,7 +191,38 @@ struct DesktopCodeWorkspace: View {
             effort: configuration.reasoningEffort,
             contextTokens: controller.contextWindowTokens
         )
-        v2Composer.runtimeMode = CodeV2EngineMapping.runtimeMode(for: configuration.permissionMode)
+        if let own = modeMemory.pair(session: controller.sessionID.value, project: nil) {
+            v2Composer.adopt(own)
+        } else {
+            v2Composer.runtimeMode = configuration.permissionMode == .workspaceWrite && controller.autoReviewEnabled
+                ? .auto
+                : CodeV2EngineMapping.runtimeMode(for: configuration.permissionMode)
+            v2Composer.interactionMode = configuration.behavior == .plan ? .plan : .default
+        }
+    }
+
+    // MARK: - The mode, per thread
+
+    private var modeMemory: CodeComposerModeMemory { CodeComposerModeMemory() }
+
+    /// What the mode is remembered against: the thread on screen, else the
+    /// project a new thread would start in.
+    private var modeScope: String {
+        selectedSessionID.map { "session:\($0.value)" } ?? "project:\(targetRepository?.id.value ?? "")"
+    }
+
+    /// A thread's own mode when it has one; a new thread starts on its
+    /// project's last.
+    private func restoreMode() {
+        if let id = selectedSessionID {
+            if let own = modeMemory.pair(session: id.value, project: nil) { v2Composer.adopt(own) }
+        } else if let project = modeMemory.pair(session: nil, project: targetRepository?.id.value) {
+            v2Composer.adopt(project)
+        }
+    }
+
+    private func rememberMode(_ pair: CodeComposerModeMemory.Pair) {
+        modeMemory.remember(pair, session: selectedSessionID?.value, project: targetRepository?.id.value)
     }
 
     private var selectedSessionID: CodeSessionID? {
@@ -373,6 +404,10 @@ struct DesktopCodeWorkspace: View {
             await v2Keys.reload()
         }
         .task(id: selectedSessionID) { await resolveController() }
+        // The mode is remembered per thread, with the project's last choice
+        // as the default for its next one (the web's per-thread prefs).
+        .task(id: modeScope) { restoreMode() }
+        .onChange(of: v2Composer.modePair) { _, pair in rememberMode(pair) }
         .task(id: selectedTask?.id) { followSelectedTask() }
         .task(id: remoteDeviceID) { await loadRemoteSessions() }
         .task(id: selection.wrappedValue) { await followSelectedRemoteSession() }

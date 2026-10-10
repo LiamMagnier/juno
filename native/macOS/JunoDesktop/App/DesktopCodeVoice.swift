@@ -19,6 +19,9 @@ struct DesktopCodeDictation: View {
     let onCancel: () -> Void
     let onStop: (String) -> Void
     let onSend: (String) -> Void
+    /// False only in the offscreen snapshots, which must never open the
+    /// microphone.
+    var listens = true
 
     @State private var session = ComposerDictationSession()
     @FocusState private var focused: Bool
@@ -54,7 +57,7 @@ struct DesktopCodeDictation: View {
             return .handled
         }
         .onAppear { focused = true }
-        .task { await session.begin() }
+        .task { if listens { await session.begin() } }
         // A recogniser left running with nothing on screen is a live
         // microphone nobody can see.
         .onDisappear { if session.phase != .finished { session.cancel() } }
@@ -85,6 +88,7 @@ struct DesktopCodeDictation: View {
 struct DesktopCodeDictationLayer: ViewModifier {
     @Binding var isDictating: Bool
     @Binding var heard: CodeHeardText?
+    var listens = true
 
     func body(content: Content) -> some View {
         content.overlay(alignment: .bottom) {
@@ -98,7 +102,8 @@ struct DesktopCodeDictationLayer: ViewModifier {
                     onSend: { words in
                         heard = CodeHeardText(text: words, disposition: .appendAndSend)
                         close()
-                    }
+                    },
+                    listens: listens
                 )
                 .frame(maxWidth: Studio.Metrics.measure)
                 .padding(.horizontal, Studio.Metrics.gutter)

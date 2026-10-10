@@ -8,36 +8,19 @@ import JunoDesignSystem
 // MARK: - The + menu
 
 /// Everything that is not on the composer at rest (code-v4 TARGET §7.1):
-/// plan mode, the run's mode, permissions and computer use. Lives in the
-/// composer's `+` menu, after the attach items the composer owns.
+/// orchestration and computer use. Lives in the composer's `+` menu, after
+/// the attach items the composer owns. The mode (Ask, Accept edits, Auto,
+/// Plan, Full access) is on the row itself, as ``CodeV2ModeControl``.
 struct CodeV2PlusMenuItems: View {
     @Bindable var model: CodeV2ComposerModel
     let directory: CodeV2ProviderDirectory
     var computerUse: Binding<Bool>?
 
-    private var capabilities: CodeV2.ProviderCapabilities? { directory.instance(model.selection.instanceId)?.capabilities }
-    private var modes: [CodeV2.RuntimeMode] {
-        let allowed = capabilities?.approvals ?? []
-        return allowed.isEmpty ? CodeV2.RuntimeMode.allCases : allowed
-    }
-
     var body: some View {
-        if capabilities?.planMode ?? true {
-            Toggle("Plan Mode", isOn: Binding(
-                get: { model.interactionMode == .plan },
-                set: { model.interactionMode = $0 ? .plan : .default }
-            ))
-        }
-        Picker("Mode", selection: Binding(get: { model.roles.preset }, set: { setPreset($0) })) {
+        Picker("Orchestrate", selection: Binding(get: { model.roles.preset }, set: { setPreset($0) })) {
             Text("Solo").tag(CodeV2.RolePreset.solo)
             Text("Team").tag(CodeV2.RolePreset.leadWorkers)
             Text("Best of N").tag(CodeV2.RolePreset.bestOfN)
-        }
-        .pickerStyle(.menu)
-        Picker("Permissions", selection: $model.runtimeMode) {
-            ForEach(modes, id: \.self) { mode in
-                Text(CodeV2PermissionCopy.title(mode)).tag(mode)
-            }
         }
         .pickerStyle(.menu)
         if let computerUse {
@@ -69,8 +52,8 @@ enum CodeV2PermissionCopy {
 // MARK: - Leading: the model trigger and what is not on its default
 
 /// The composer's left side after `+` (TARGET §7.1): the model trigger (mark,
-/// model, effort), then only the controls whose setting is not the default:
-/// `Lead + 3`, `Best of 3`, `Plan`, the permission when it is not Auto-edit,
+/// model, effort), the mode (always on the row, as on the web), then only the
+/// controls whose setting is not the default: `Lead + 3`, `Best of 3`,
 /// `Computer` while computer use is on. Used by both engines.
 struct CodeV2ComposerLeading: View {
     @Bindable var model: CodeV2ComposerModel
@@ -86,6 +69,10 @@ struct CodeV2ComposerLeading: View {
         let allowed = instance?.capabilities?.approvals ?? []
         return allowed.isEmpty ? CodeV2.RuntimeMode.allCases : allowed
     }
+    private var planMode: Bool { instance?.capabilities?.planMode ?? true }
+    private var composerModes: [CodeComposerMode] {
+        CodeComposerMode.available(approvals: modes, planMode: planMode)
+    }
 
     var body: some View {
         CodeV2ModelControl(
@@ -97,35 +84,7 @@ struct CodeV2ComposerLeading: View {
         if model.roles.preset != .solo {
             CodeV2OrchestrateControl(directory: directory, draft: $model.roles, isEnabled: isEnabled)
         }
-        if model.interactionMode == .plan {
-            Menu {
-                Button("Turn Off Plan Mode") { model.interactionMode = .default }
-            } label: {
-                CodeV2TextControlLabel(title: "Plan")
-            }
-            .menuStyle(.button).menuIndicator(.hidden)
-            .buttonStyle(CodeV2FooterButtonStyle()).fixedSize()
-            .help("Plan first, then build when you approve")
-            .accessibilityLabel("Plan mode")
-                .contentShape(.rect)
-        }
-        if model.runtimeMode != CodeV2PermissionCopy.defaultMode {
-            Menu {
-                Picker("Permissions", selection: $model.runtimeMode) {
-                    ForEach(modes, id: \.self) { Text(CodeV2PermissionCopy.title($0)).tag($0) }
-                }
-                .pickerStyle(.inline)
-            } label: {
-                CodeV2TextControlLabel(title: CodeV2PermissionCopy.title(model.runtimeMode), icon: .shield)
-            }
-            .menuStyle(.button).menuIndicator(.hidden)
-            .buttonStyle(CodeV2FooterButtonStyle()).fixedSize()
-            .disabled(!isEnabled)
-            .help(model.runtimeMode.summary)
-            .accessibilityLabel("Permissions")
-            .accessibilityValue(model.runtimeMode.title)
-                .contentShape(.rect)
-        }
+        CodeV2ModeControl(model: model, modes: composerModes, isEnabled: isEnabled)
         if let computerUse, computerUse.wrappedValue {
             Menu {
                 Button("Turn Off Computer Use") { computerUse.wrappedValue = false }
@@ -138,16 +97,56 @@ struct CodeV2ComposerLeading: View {
             .accessibilityLabel("Computer use")
                 .contentShape(.rect)
         }
-        // The keyboard paths stay where the controls went: ⇧⌘A cycles the
-        // permission. ⇧⌘E opens the model control's effort panel.
+        // ⇧⌘A cycles the mode, as on the web. ⇧⌘E opens the model
+        // control's effort panel.
         Color.clear.frame(width: 0, height: 0)
             .background {
-                Button("") { model.cycleMode(allowed: modes) }
+                Button("") { model.cycleComposerMode(approvals: modes, planMode: planMode) }
                     .keyboardShortcut("a", modifiers: [.command, .shift])
                     .hidden()
                     .contentShape(.rect)
             }
             .accessibilityHidden(true)
+    }
+}
+
+/// The mode, always on the composer's row: Ask, Accept edits, Auto, Plan or
+/// Full access, each with its one line, the same five as the web. ⇧⌘A cycles
+/// it (``CodeV2ComposerLeading``).
+struct CodeV2ModeControl: View {
+    @Bindable var model: CodeV2ComposerModel
+    let modes: [CodeComposerMode]
+    var isEnabled = true
+
+    var body: some View {
+        let current = model.composerMode
+        Menu {
+            Picker("Mode", selection: Binding(get: { model.composerMode }, set: { model.composerMode = $0 })) {
+                ForEach(modes) { mode in
+                    VStack(alignment: .leading) {
+                        Text(mode.title)
+                        Text(mode.detail)
+                    }
+                    .tag(mode)
+                }
+                if !modes.contains(current) {
+                    Text(current.title).tag(current)
+                }
+            }
+            .pickerStyle(.inline)
+            Divider()
+            Text("\u{21E7}\u{2318}A cycles the mode")
+        } label: {
+            CodeV2TextControlLabel(title: current.title, icon: current.icon)
+        }
+        .menuStyle(.button).menuIndicator(.hidden)
+        .buttonStyle(CodeV2FooterButtonStyle()).fixedSize()
+        .disabled(!isEnabled)
+        .help("\(current.detail) \u{21E7}\u{2318}A cycles the mode.")
+        .accessibilityLabel("Mode")
+        .accessibilityValue(current.title)
+        .accessibilityIdentifier("juno.code.composer.mode")
+        .contentShape(.rect)
     }
 }
 

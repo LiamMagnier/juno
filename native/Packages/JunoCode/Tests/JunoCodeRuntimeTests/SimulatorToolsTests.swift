@@ -65,13 +65,13 @@ final class SimulatorToolsTests: XCTestCase {
 
     func testEachDeviceIsConsentedOncePerSession() async throws {
         let simulator = FakeSimulator()
-        let (tool, permissions) = tool(simulator, mode: .fullAccess)
+        let (tool, permissions) = tool(simulator, mode: .workspaceWrite)
         let asked = await answerAll(permissions)
         _ = try await tool.execute(input: ["action": "launch", "bundle_id": "ai.example.app"], context: context())
         _ = try await tool.execute(input: ["action": "terminate", "bundle_id": "ai.example.app"], context: context())
-        XCTAssertEqual(asked.requests.count, 1, "one card for the device, even in Full access")
+        XCTAssertEqual(asked.requests.count, 1, "one card for the device")
         XCTAssertEqual(asked.requests.first?.summary, "Let Juno use the iPhone 17 Pro simulator (iOS 27.0) for this session")
-        XCTAssertEqual(asked.requests.first?.approvalPolicy, .alwaysRequiresApproval)
+        XCTAssertEqual(asked.requests.first?.approvalPolicy, .asksUnlessFullAccess)
         XCTAssertNil(asked.requests.first?.suggestedRule)
         _ = try await tool.execute(input: ["action": "boot", "udid": "BBB"], context: context())
         XCTAssertEqual(asked.requests.count, 2, "a second device asks again")

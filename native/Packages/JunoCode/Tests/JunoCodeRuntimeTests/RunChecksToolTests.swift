@@ -222,7 +222,7 @@ final class RunChecksToolTests: XCTestCase {
         XCTAssertFalse(unasked)
         let outcomes = await runner.runAndRecord([push])
         XCTAssertEqual(approver.requests.map(\.summary), ["Run check ship: git push --force origin main"])
-        XCTAssertEqual(approver.requests.first?.approvalPolicy, .alwaysRequiresApproval)
+        XCTAssertEqual(approver.requests.first?.approvalPolicy, .asksUnlessFullAccess)
         XCTAssertTrue(executor.commands.isEmpty, "declined, so it never ran")
         XCTAssertNil(outcomes.first?.record)
 

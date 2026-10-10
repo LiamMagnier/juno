@@ -83,3 +83,26 @@ test("the v2 composer keeps the mode on the row and uses Chat's dictation and Co
   // A spoken line takes the same road as a typed one while a turn runs.
   assert.match(src, /if \(canSteer\) void actions\.steer\(text\);\s*else actions\.queue\(text\);/);
 });
+
+test("the landing: cloud runs carry Plan, Accept edits or Full access; a new thread starts on the choice", async () => {
+  const m = await import("../src/lib/code-v2/composer-mode");
+  assert.equal(m.cloudPermissionMode("plan"), "plan");
+  assert.equal(m.cloudPermissionMode("accept-edits"), "auto-edit");
+  assert.equal(m.cloudPermissionMode("full"), "full");
+  assert.equal(m.cloudPermissionMode("ask"), null);
+  assert.deepEqual(
+    m.availableComposerModes(m.CLOUD_RUNTIME_APPROVALS, true).map((x) => x.mode),
+    ["accept-edits", "plan", "full"],
+  );
+  assert.equal(m.landingMode("cloud", null), "full", "cloud runs keep the Full access they always had");
+  assert.equal(m.landingMode("device", null), "accept-edits");
+  assert.equal(m.landingMode("device", { runtimeMode: "full", interactionMode: "default" }), "full", "the project's last choice");
+  assert.equal(m.landingMode("cloud", { runtimeMode: "ask", interactionMode: "default" }), "full", "a cloud run cannot ask, so its default stands");
+  assert.equal(m.threadPrefsKey("c1"), "alevr.code.prefs.c1");
+  assert.deepEqual(m.seededThreadPrefs({ selection: { instanceId: "alevr" } }, "full"), {
+    selection: { instanceId: "alevr" },
+    runtimeMode: "full",
+    interactionMode: "default",
+  });
+  assert.deepEqual(m.seededThreadPrefs(null, "plan"), { runtimeMode: "auto-edit", interactionMode: "plan" });
+});

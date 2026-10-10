@@ -341,10 +341,10 @@ final class MCPFoundationTests: XCTestCase {
         let baseRegistry = ToolRegistry(tools: [])
         let activeRegistry = try await baseRegistry.includingMCPTools(from: mcpRegistry)
         let tool = try XCTUnwrap(activeRegistry.tool(named: "mcp__search__search"))
-        XCTAssertEqual(tool.approvalPolicy, .alwaysRequiresApproval)
+        XCTAssertEqual(tool.approvalPolicy, .asksUnlessFullAccess)
 
         let sessionID = CodeSessionID()
-        let permissions = PermissionCoordinator(sessionID: sessionID, mode: .fullAccess)
+        let permissions = PermissionCoordinator(sessionID: sessionID, mode: .workspaceWrite)
         let observerID = await permissions.addObserver { update in
             guard case let .requested(request) = update else { return }
             Task {

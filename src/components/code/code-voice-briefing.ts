@@ -213,3 +213,24 @@ export function codeVoiceCatchUp(input: CodeVoiceBriefingInput): string {
     MAX_ENTRY_CHARS,
   );
 }
+
+// ── Auto-send (owner, 2026-10-10) ───────────────────────────────────────────
+
+/** What the voice model is asked to say once a run finishes, bounded like the briefing. */
+export function codeVoiceReadBack(reply: string): string {
+  const text = reply.trim().slice(0, 4_000);
+  return `${PRODUCT_NAME} Code finished and replied. Say this back to me briefly and naturally, in your own words, without adding anything:\n${text}`;
+}
+
+/**
+ * The finished lines to hand over, oldest first: final user lines with words,
+ * not already handed over. Exported for the tests.
+ */
+export function codeVoiceAutoSendQueue(
+  lines: readonly { id: number; role: string; final?: boolean; text: string }[],
+  handled: ReadonlySet<number>,
+): { id: number; text: string }[] {
+  return lines
+    .filter((line) => line.role === "user" && line.final && line.text.trim() && !handled.has(line.id))
+    .map((line) => ({ id: line.id, text: line.text.trim() }));
+}

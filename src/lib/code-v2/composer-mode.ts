@@ -31,7 +31,7 @@ export const COMPOSER_MODES: readonly ComposerModeInfo[] = [
   { mode: "accept-edits", label: "Accept edits", description: "Edits files without asking. Asks before commands.", glyph: "edit" },
   { mode: "auto", label: "Auto", description: "A reviewer model approves routine steps. Asks for the rest.", glyph: "shield" },
   { mode: "plan", label: "Plan", description: "Reads and writes a plan. Changes nothing until you approve.", glyph: "plan" },
-  { mode: "full", label: "Full access", description: "Never asks. Edits and runs anything. Use on a machine you trust.", glyph: "unlock" },
+  { mode: "full", label: "Full access", description: "Never asks inside the project. Still asks for sudo, other machines and anything outside the folder.", glyph: "unlock" },
 ];
 
 const READ_ONLY: ComposerModeInfo = { mode: "read-only", label: "Read only", description: "Reads the project. Changes nothing.", glyph: "eye" };
@@ -135,4 +135,43 @@ export function setComposerMode(actions: ModeSetters, mode: ComposerMode, curren
     actions.setInteractionMode(pair.interactionMode);
   }
   return pair;
+}
+
+// ── The /code landing ───────────────────────────────────────────────────────
+
+/** What a cloud run's sandbox can enforce (`CodeTask.permissionMode`): Plan, Accept edits, Full access. */
+export const CLOUD_RUNTIME_APPROVALS: readonly RuntimeMode[] = ["auto-edit", "full"];
+
+/** The cloud task's `permissionMode` for a rung, or null when a cloud run cannot honour it. */
+export function cloudPermissionMode(mode: ComposerMode): "plan" | "auto-edit" | "full" | null {
+  switch (mode) {
+    case "plan":
+      return "plan";
+    case "accept-edits":
+      return "auto-edit";
+    case "full":
+      return "full";
+    default:
+      return null;
+  }
+}
+
+/** The landing's starting rung: the project's last, else the target's own default (cloud runs have always had Full access). */
+export function landingMode(target: "device" | "cloud", project: Partial<ProjectModeDefault> | null): ComposerMode {
+  const fallback: ComposerMode = target === "cloud" ? "full" : "accept-edits";
+  if (!project?.runtimeMode) return fallback;
+  const mode = composerModeOf(project.runtimeMode, project.interactionMode ?? "default");
+  if (target === "cloud" && !cloudPermissionMode(mode)) return fallback;
+  return mode;
+}
+
+/** The per-thread prefs key the v2 route reads (`alevr.code.prefs.<id>`). */
+export function threadPrefsKey(conversationId: string): string {
+  return `alevr.code.prefs.${conversationId}`;
+}
+
+/** The v2 route's prefs for a new thread, with the landing's mode in them. */
+export function seededThreadPrefs(existing: Record<string, unknown> | null, mode: ComposerMode): Record<string, unknown> {
+  const pair = applyComposerMode(mode, "auto-edit");
+  return { ...(existing ?? {}), runtimeMode: pair.runtimeMode, interactionMode: pair.interactionMode };
 }

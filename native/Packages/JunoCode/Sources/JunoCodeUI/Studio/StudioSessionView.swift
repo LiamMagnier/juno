@@ -148,6 +148,12 @@ public struct StudioSessionView: View {
         if controller.autoReviewEnabled != autoReview {
             Task { await controller.setAutoReview(autoReview) }
         }
+        // Plan on the mode control plans on this engine too. A thread in an
+        // answer-only behaviour (`/ask`) is left as it is.
+        let behavior: AgentBehavior = composer.interactionMode == .plan ? .plan : .code
+        if configuration.behavior != behavior, configuration.behavior == .code || configuration.behavior == .plan {
+            Task { await controller.setBehavior(behavior) }
+        }
     }
 
     private var v2Context: CodeV2ContextReading? {
@@ -224,6 +230,13 @@ public struct StudioSessionView: View {
         .studioCommandCenter(controller: controller, models: models)
         .onChange(of: speech?.heard) { _, heard in
             if let heard { take(heard) }
+        }
+        .onChange(of: controller.session.configuration.behavior) { _, behavior in
+            // An approved plan hands the thread to building: the mode control
+            // follows, so it does not put the thread back into planning.
+            guard let composer = v2?.composer else { return }
+            if behavior == .code, composer.interactionMode == .plan { composer.interactionMode = .default }
+            if behavior == .plan, composer.interactionMode != .plan { composer.interactionMode = .plan }
         }
         .onChange(of: isRunning) { _, running in
             if running { controller.activeInstructionKind = preferences.followUp.instructionKind }
@@ -355,6 +368,7 @@ public struct StudioSessionView: View {
                 )
                     .onChange(of: v2.composer.selection) { _, _ in syncV2(v2.composer) }
                     .onChange(of: v2.composer.runtimeMode) { _, _ in syncV2(v2.composer) }
+                    .onChange(of: v2.composer.interactionMode) { _, _ in syncV2(v2.composer) }
                     .onChange(of: v2.composer.routing) { _, _ in syncV2(v2.composer) }
                     .onChange(of: v2.composer.lean) { _, _ in syncV2(v2.composer) }
                     .onChange(of: v2.directory.instances) { _, _ in syncV2(v2.composer) }

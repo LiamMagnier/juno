@@ -149,10 +149,10 @@ public struct GitCommitTool: CodeTool {
     /// approval-gated even when the session otherwise allows commands.
     public func assessRisk(input: JSONValue) -> ActionRisk { .critical }
 
-    /// Pinned, because the description promises the reader sees every commit
-    /// — and `.critical` alone is exactly the tier Full Access lets through.
-    /// An allow rule such as `Bash(git commit:*)` is how a reader opts out.
-    public var approvalPolicy: ApprovalPolicy { .alwaysRequiresApproval }
+    /// Asks in every mode below Full access, so a supervised reader sees
+    /// every commit; Full access commits without asking, as the reader chose.
+    /// An allow rule such as `Bash(git commit:*)` silences it in the others.
+    public var approvalPolicy: ApprovalPolicy { .asksUnlessFullAccess }
 
     public func summary(input: JSONValue) -> String {
         "Commit: \(input["message"]?.stringValue ?? "?")"

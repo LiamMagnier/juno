@@ -263,7 +263,7 @@ public struct SimulatorTool: CodeTool {
         try await authorize(
             summary: "Let Juno use the \(device.name) simulator (\(device.runtime)) for this session",
             risk: .execute,
-            policy: .alwaysRequiresApproval,
+            policy: .asksUnlessFullAccess,
             digestParts: ["device", sessionID.value, device.udid]
         )
         await consents.allow(session: sessionID.value, udid: device.udid)

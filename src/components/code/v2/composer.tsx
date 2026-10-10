@@ -341,6 +341,12 @@ export const Composer = React.forwardRef<
     },
   };
 
+  /** The thread's side of the call: a finished run's newest reply is read back. */
+  const voiceReply = {
+    running,
+    latest: voice.open ? ([...model.items].reverse().find((i) => i.kind === "assistant_message") as { text?: string } | undefined)?.text ?? null : null,
+  };
+
   React.useImperativeHandle(ref, () => ({
     focus: () => textarea.current?.focus(),
     openPopover: (p) => setPopover(p),
@@ -574,7 +580,7 @@ export const Composer = React.forwardRef<
 
   return (
     <div className="cv2-cstack">
-      {voice.open && <CodeVoicePanel briefing={voiceBriefing} send={voiceSend} onClose={voice.close} />}
+      {voice.open && <CodeVoicePanel briefing={voiceBriefing} send={voiceSend} reply={voiceReply} onClose={voice.close} />}
       <DictationSwap active={dictating} draft={draft} onCancel={() => setDictating(false)} onClose={closeDictation}>
       <div className={cn("cv2-composer", tone)} data-state={tone || (running ? "running" : "idle")}>
         {menuOpen && trigger && (

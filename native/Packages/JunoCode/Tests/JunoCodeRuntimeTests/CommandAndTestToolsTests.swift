@@ -94,35 +94,40 @@ final class CommandAndTestToolsTests: XCTestCase {
         XCTAssertEqual(ruling(tool, "swift test", mode: .readOnly), .deny(reason: "The session is read-only."))
     }
 
-    func testAnyOtherCommandStaysPinned() {
+    func testAnyOtherCommandAsksBelowFullAccess() {
         let tool = runTests(accepted: recipe())
-        XCTAssertEqual(tool.approvalPolicy(input: ["command": "swift test --filter X"]), .alwaysRequiresApproval)
+        XCTAssertEqual(tool.approvalPolicy(input: ["command": "swift test --filter X"]), .asksUnlessFullAccess)
         XCTAssertEqual(tool.assessRisk(input: ["command": "swift test --filter X"]), .critical)
-        XCTAssertEqual(ruling(tool, "swift test --filter X", mode: .fullAccess), .requireApproval, "Full access does not silence the pin")
+        XCTAssertEqual(ruling(tool, "swift test --filter X", mode: .workspaceWrite), .requireApproval, "Edit-automatically still shows the command")
+        XCTAssertEqual(ruling(tool, "swift test --filter X", mode: .fullAccess), .allow, "Full access never asks inside the project")
         // A recipe entry that is not a check keeps the pin, whatever the file
         // calls it.
         let pushing = runTests(accepted: VerifyRecipe(checks: [VerifyCheck(id: "t", kind: .test, run: .shell("git push"))]))
-        XCTAssertEqual(pushing.approvalPolicy(input: ["command": "git push"]), .alwaysRequiresApproval)
-        XCTAssertEqual(ruling(pushing, "git push", mode: .fullAccess), .requireApproval)
+        XCTAssertEqual(pushing.approvalPolicy(input: ["command": "git push"]), .asksUnlessFullAccess)
+        XCTAssertEqual(ruling(pushing, "git push", mode: .workspaceWrite), .requireApproval)
         let noRecipe = runTests(accepted: nil)
-        XCTAssertEqual(noRecipe.approvalPolicy(input: ["command": "swift test"]), .alwaysRequiresApproval,
+        XCTAssertEqual(noRecipe.approvalPolicy(input: ["command": "swift test"]), .asksUnlessFullAccess,
                        "a discovered, unaccepted recipe unpins nothing")
     }
 
     func testTheRegistryAuthorizesWithThePerInputPolicy() async throws {
         let session = CodeSessionID()
-        let permissions = PermissionCoordinator(sessionID: session, mode: .fullAccess)
+        let full = PermissionCoordinator(sessionID: session, mode: .fullAccess)
         let registry = ToolRegistry(tools: [runTests(accepted: recipe())])
-        // Accepted check: Full access runs it without asking.
-        try await registry.authorizeInvocation(toolName: "run_tests", input: ["command": "swift test"], permissions: permissions)
-        // Anything else asks; with nobody to answer, Stop denies it.
+        // Full access runs an accepted check, and any other test command, without asking.
+        try await registry.authorizeInvocation(toolName: "run_tests", input: ["command": "swift test"], permissions: full)
+        try await registry.authorizeInvocation(toolName: "run_tests", input: ["command": "make test"], permissions: full)
+        let none = await full.pendingApprovals
+        XCTAssertTrue(none.isEmpty)
+        // Below Full access anything else asks; with nobody to answer, Stop denies it.
+        let permissions = PermissionCoordinator(sessionID: session, mode: .workspaceWrite)
         let pending = Task {
             try await registry.authorizeInvocation(toolName: "run_tests", input: ["command": "make test"], permissions: permissions)
         }
         while await permissions.pendingApprovals.isEmpty { await Task.yield() }
         let first = await permissions.pendingApprovals.first
         let request = try XCTUnwrap(first)
-        XCTAssertEqual(request.approvalPolicy, .alwaysRequiresApproval)
+        XCTAssertEqual(request.approvalPolicy, .asksUnlessFullAccess)
         await permissions.denyAll()
         do {
             try await pending.value

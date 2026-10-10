@@ -318,15 +318,27 @@ final class ToolRegistryTests: XCTestCase {
         // …but `run_tests` and `git_commit` are pinned, so the risk tier is not
         // the last word on either: both descriptions promise the reader sees
         // every invocation, and an allow rule is the reader's way out of it.
-        XCTAssertEqual(runTests.approvalPolicy, .alwaysRequiresApproval)
-        XCTAssertEqual(gitCommit.approvalPolicy, .alwaysRequiresApproval)
+        XCTAssertEqual(runTests.approvalPolicy, .asksUnlessFullAccess)
+        XCTAssertEqual(gitCommit.approvalPolicy, .asksUnlessFullAccess)
     }
 
-    /// The defect end to end: a Full Access session used to run an arbitrary
-    /// repository-authored test command without ever showing it to the user,
-    /// while the tool's own description said the opposite.
-    func testFullAccessStillAsksBeforeRunningTests() async throws {
+    /// Full access (the owner's choice, 2026-10-10) runs a test command
+    /// inside the project without asking.
+    func testFullAccessRunsTestsWithoutAsking() async throws {
         let coordinator = PermissionCoordinator(sessionID: sessionID, mode: .fullAccess)
+        try await registry.authorizeInvocation(
+            toolName: "run_tests",
+            input: ["command": "swift test"],
+            permissions: coordinator
+        )
+        let pending = await coordinator.pendingApprovals.count
+        XCTAssertEqual(pending, 0)
+    }
+
+    /// Below Full access the reader sees every repository-authored test
+    /// command before it runs.
+    func testEditAutomaticallyStillAsksBeforeRunningTests() async throws {
+        let coordinator = PermissionCoordinator(sessionID: sessionID, mode: .workspaceWrite)
         let requested = expectation(description: "approval requested")
         nonisolated(unsafe) var requestID: String?
         nonisolated(unsafe) var requestSummary: String?
@@ -362,7 +374,7 @@ final class ToolRegistryTests: XCTestCase {
 
     /// And denying it refuses the action rather than running it anyway.
     func testDenyingTheTestApprovalRefusesTheRun() async throws {
-        let coordinator = PermissionCoordinator(sessionID: sessionID, mode: .fullAccess)
+        let coordinator = PermissionCoordinator(sessionID: sessionID, mode: .workspaceWrite)
         let requested = expectation(description: "approval requested")
         nonisolated(unsafe) var requestID: String?
         await coordinator.addObserver { update in

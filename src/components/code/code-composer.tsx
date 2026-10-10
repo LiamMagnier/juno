@@ -39,7 +39,20 @@ import { useApp } from "@/components/app/app-provider";
 import { useUploads } from "@/hooks/use-uploads";
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
 import { CodeIcons, StatusIcons } from "@/lib/app-icons";
-import { CODE_PERMISSIONS } from "@/lib/code-environment";
+import {
+  CLOUD_RUNTIME_APPROVALS,
+  COMPOSER_MODES,
+  applyComposerMode,
+  availableComposerModes,
+  cloudPermissionMode,
+  composerModeInfo,
+  landingMode,
+  projectModeKey,
+  seededThreadPrefs,
+  threadPrefsKey,
+  type ComposerMode,
+} from "@/lib/code-v2/composer-mode";
+import { Icon } from "@/components/ui/juno-icons";
 import { resolveModel, DEFAULT_MODEL } from "@/lib/models";
 import { isAutoModelId } from "@/lib/auto-model";
 import { defaultReasoning, reasoningOptions, type ReasoningEffort } from "@/lib/model-metrics";
@@ -60,51 +73,86 @@ const EFFORT_KEY = "juno:code:reasoning";
  */
 type CloudReadiness = { ready: true } | { ready: false; message: string } | null;
 
+function readStoredJson<T = Record<string, unknown>>(key: string): T | null {
+  try {
+    const v = localStorage.getItem(key);
+    return v ? (JSON.parse(v) as T) : null;
+  } catch {
+    return null;
+  }
+}
+function writeStoredJson(key: string, value: unknown) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    /* a per-viewer convenience */
+  }
+}
+
 /**
- * WHAT THIS RUN MAY DO WITHOUT ASKING — a chip on the controls row, and
- * deliberately NOT a dropdown.
- *
- * docs/design/TWO_PRODUCTS.md §3 puts a permission mode here, and this is the
- * honest version of it. The mode is real: a device run pauses for approval, a
- * cloud run has the whole sandbox and is read as a pull request afterwards.
- * What does not exist is a way to CHOOSE a different one — `CodeTask` has no
- * column for a permission mode and neither runner reads one — so a picker here
- * would offer four options that decide nothing, which is the precise defect the
- * `model` / `reasoningEffort` columns were added to end (prisma/schema.prisma:
- * "Four visible controls decided nothing"). The mode IS chosen, by the
- * environment chip one row up; this states the consequence of that choice where
- * it is read before send rather than discovered after it.
- *
- * It replaces a caption that used to sit under the field saying the same thing
- * in two sentences. On a composer pinned to the bottom of the page, prose under
- * the field is the first thing to go.
- *
- * Two words on the chip, the sentence one press down — and that is a width
- * constraint as much as an editorial one; see the note on `CodePermission.mode`
- * for what a long label does to this cluster on a phone.
+ * THE MODE: how much this run may do without asking, the same five rungs as
+ * every Code composer (Ask, Accept edits, Auto, Plan, Full access), each with
+ * its one line. A real choice on both targets: a cloud run carries it as
+ * `CodeTask.permissionMode` (Plan, Accept edits, Full access, which is all its
+ * sandbox can enforce), and a run on a Mac starts its thread on it (the v2
+ * route's per-thread prefs). The project remembers the last one chosen.
  */
-function PermissionChip({ target }: { target: Target }) {
-  const permission = CODE_PERMISSIONS[target];
+function ModeChip({
+  target,
+  mode,
+  onChange,
+  disabled,
+}: {
+  target: Target;
+  mode: ComposerMode;
+  onChange: (mode: ComposerMode) => void;
+  disabled?: boolean;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const info = composerModeInfo(mode);
+  const modes = target === "cloud" ? availableComposerModes(CLOUD_RUNTIME_APPROVALS, true) : COMPOSER_MODES;
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
           type="button"
-          // The visible words are in the accessible name (WCAG 2.5.3), and the
-          // rest says what pressing it gets you, since the chip explains rather
-          // than changes.
-          aria-label={`${permission.mode}. What this run may do without asking`}
+          disabled={disabled}
+          aria-label={`Mode: ${info.label}. What this run may do without asking`}
+          data-mode={mode}
           className={cn(composerChipClass, "max-w-full")}
         >
-          <CodeIcons.permission className="size-3.5 shrink-0" aria-hidden="true" />
-          <span className="min-w-0 truncate">{permission.mode}</span>
+          <Icon name={info.glyph} size={14} />
+          <span className="min-w-0 truncate">{info.label}</span>
         </button>
       </PopoverTrigger>
-      <PopoverContent align="start" side="top" sideOffset={8} collisionPadding={12} className="w-72 p-3">
-        <p className="text-ui leading-relaxed text-muted-foreground">
-          {permission.detail}{" "}
-          <span className="text-foreground">Change it by changing where this runs.</span>
-        </p>
+      <PopoverContent align="end" side="top" sideOffset={8} collisionPadding={12} className="w-80 p-1.5">
+        <div role="menu" aria-label="Mode">
+          {modes.map((m) => (
+            <button
+              key={m.mode}
+              type="button"
+              role="menuitemradio"
+              aria-checked={m.mode === mode}
+              onClick={() => {
+                onChange(m.mode);
+                setOpen(false);
+              }}
+              className="flex w-full items-start gap-2.5 rounded-xs px-2.5 py-2 text-left hover:bg-accent focus-visible:bg-accent focus-visible:outline-none"
+            >
+              <Icon name={m.glyph} size={16} className="mt-0.5 shrink-0" />
+              <span className="min-w-0 flex-1">
+                <span className="block text-ui text-foreground">{m.label}</span>
+                <span className="block text-caption leading-snug text-muted-foreground">{m.description}</span>
+              </span>
+              <Icon name="check" size={14} className={cn("mt-1 shrink-0", m.mode === mode ? "opacity-100" : "opacity-0")} />
+            </button>
+          ))}
+          {target === "cloud" && (
+            <p className="px-2.5 pb-1.5 pt-1 text-caption text-muted-foreground">
+              A cloud run works in a sandbox and opens a pull request, so it offers Plan, Accept edits and Full access.
+            </p>
+          )}
+        </div>
       </PopoverContent>
     </Popover>
   );
@@ -399,6 +447,30 @@ export function CodeComposer({
 
   const codeVoice = useCodeVoice({ disabled: submitting || dictating });
 
+  // —— Mode (per project, remembered) ——
+  const modeProjectKey = projectModeKey(
+    target === "device" ? (selectedWorkspace?.key ?? selectedWorkspace?.path ?? null) : (selectedRepo?.fullName ?? null),
+  );
+  const [mode, setMode] = React.useState<ComposerMode>(() => landingMode(target, null));
+  React.useEffect(() => {
+    setMode(landingMode(target, modeProjectKey ? readStoredJson(modeProjectKey) : null));
+  }, [target, modeProjectKey]);
+  const chooseMode = React.useCallback(
+    (next: ComposerMode) => {
+      setMode(next);
+      if (modeProjectKey) writeStoredJson(modeProjectKey, applyComposerMode(next, "auto-edit"));
+    },
+    [modeProjectKey],
+  );
+  /** A new thread starts on the landing's mode (the v2 route reads these prefs). */
+  const seedThreadMode = React.useCallback(
+    (conversationId: string) => {
+      const key = threadPrefsKey(conversationId);
+      writeStoredJson(key, seededThreadPrefs(readStoredJson(key), mode));
+    },
+    [mode],
+  );
+
   const startDevice = React.useCallback(
     async (w: Workspace, text: string, attachments: ClientAttachment[]): Promise<boolean> => {
       const res = await fetch("/api/conversations", {
@@ -414,12 +486,13 @@ export function CodeComposer({
       });
       if (!res.ok) throw new Error("conversation");
       const { conversation } = (await res.json()) as { conversation: ClientConversation };
+      seedThreadMode(conversation.id);
       setPendingCodePrompt(conversation.id, text, attachments);
       upsertConversation({ ...conversation, model });
       router.push(`/chat/${conversation.id}`);
       return true;
     },
-    [model, router, upsertConversation],
+    [model, router, seedThreadMode, upsertConversation],
   );
 
   const startCloud = React.useCallback(
@@ -460,6 +533,8 @@ export function CodeComposer({
           // This composer's model picker and thinking control, reaching the run.
           model,
           reasoningEffort: reasoningEffort ?? undefined,
+          // And its mode, as far as a cloud sandbox can enforce one.
+          permissionMode: cloudPermissionMode(mode) ?? undefined,
         }),
       });
 
@@ -521,7 +596,7 @@ export function CodeComposer({
       }
       return false;
     },
-    [clear, discardOrphanCloudSession, model, reasoningEffort, router, upsertConversation],
+    [clear, discardOrphanCloudSession, mode, model, reasoningEffort, router, upsertConversation],
   );
 
   const submit = React.useCallback(
@@ -722,7 +797,7 @@ export function CodeComposer({
                 disabled={submitting}
               />
               <span className="ml-auto flex min-w-0">
-                <PermissionChip target={target} />
+                <ModeChip target={target} mode={mode} onChange={chooseMode} disabled={submitting} />
               </span>
             </div>
           </div>
@@ -898,12 +973,12 @@ export function CodeComposer({
         captions under a composer pinned to the bottom of the page is the prose
         stack that was deliberately taken out of this surface.
       */}
-      {/* The mode, explained in one line (Code design, revision 2): what this
-          run may do without asking, set by where it runs. Only when the server
-          has no other news for this line. */}
+      {/* The mode, explained in one line: what this run may do without
+          asking, as chosen on the tray's mode chip. Only when the server has
+          no other news for this line. */}
       {!cloudBlocked && !prefillMessage && (
         <p aria-live="polite" className="mt-2.5 px-5 text-caption text-muted-foreground">
-          <span className="font-medium text-foreground/80">{CODE_PERMISSIONS[target].mode}</span> {CODE_PERMISSIONS[target].line}
+          <span className="font-medium text-foreground/80">{composerModeInfo(mode).label}</span> {composerModeInfo(mode).description}
         </p>
       )}
       {!cloudBlocked && prefillMessage && (

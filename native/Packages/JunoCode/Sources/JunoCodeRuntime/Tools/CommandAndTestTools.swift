@@ -493,8 +493,10 @@ public struct RunTestsTool: CodeTool {
     /// promise that "the exact command always requires approval" was false in
     /// exactly the mode where running an arbitrary repository-authored script
     /// unseen matters most. The pin states the requirement directly instead of
-    /// trying to encode it as blast radius.
-    public var approvalPolicy: ApprovalPolicy { .alwaysRequiresApproval }
+    /// trying to encode it as blast radius. Full access lets it through
+    /// (the reader chose "never ask inside this project"); every lower mode
+    /// still shows the exact command.
+    public var approvalPolicy: ApprovalPolicy { .asksUnlessFullAccess }
 
     public func summary(input: JSONValue) -> String {
         "Run tests: \(input["command"]?.stringValue ?? "?")"
