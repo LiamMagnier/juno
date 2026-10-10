@@ -290,7 +290,7 @@ public struct ResolvedCodeSettings: Equatable, Sendable {
     public static func resolve(
         _ layers: [CodeSettingsLayer],
         projectRoot: URL? = nil,
-        homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
+        homeDirectory: URL = CodeSettingsPaths.defaultHomeDirectory
     ) -> ResolvedCodeSettings {
         var resolved = defaults
         // Whether a file that may loosen named `autonomy.stepLimit`, and the
@@ -441,6 +441,16 @@ public enum CodeSettingsEnvironment {
 
 /// Where a settings file may let commands write.
 public enum CodeSettingsPaths {
+    /// The signed-in user's home folder (`homeDirectoryForCurrentUser` is macOS only;
+    /// on iOS, where the remote reads these types, the sandbox home stands in).
+    public static var defaultHomeDirectory: URL {
+        #if os(macOS)
+        FileManager.default.homeDirectoryForCurrentUser
+        #else
+        URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+        #endif
+    }
+
     /// The canonical form of one `sandbox.writablePaths` entry, or nil when it
     /// names a folder that file may not open up.
     ///

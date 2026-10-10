@@ -22,12 +22,12 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 
 ## Summary
 
-334 routes: 213 native, 52 planned, 56 web only, 13 internal. 50 pages: on the Mac 37 native, 2 partial, 2 planned, 9 web only; on iOS 24 native, 9 partial, 8 planned, 9 web only.
+345 routes: 224 native, 53 planned, 55 web only, 13 internal. 50 pages: on the Mac 37 native, 2 partial, 2 planned, 9 web only; on iOS 24 native, 9 partial, 8 planned, 9 web only.
 
 | Feature | Pages (Mac) | Pages (iOS) | Routes native | Planned | Web only | Internal |
 |---|---|---|---|---|---|---|
 | [Sign-in and account security](#auth) | – | – | 16 | 3 | 6 | 0 |
-| [Sync and bootstrap](#sync) | – | – | 6 | 0 | 2 | 0 |
+| [Sync and bootstrap](#sync) | – | – | 9 | 0 | 2 | 0 |
 | [Chat and streaming](#chat) | 2/2 | 2/2 | 14 | 3 | 1 | 0 |
 | [Conversations, messages and sharing](#conversations) | – | – | 9 | 2 | 3 | 0 |
 | [Search and recents](#search) | – | – | 2 | 0 | 0 | 0 |
@@ -44,7 +44,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 | [Agents](#agents) | 4/4 | 4/4 | 18 | 8 | 1 | 0 |
 | [Research](#research) | 2/2 | 2/2 | 7 | 0 | 0 | 0 |
 | [Voice](#voice) | – | – | 4 | 0 | 3 | 0 |
-| [Juno Code](#code) | 3/5 (+2 partial) | 0/5 (+4 partial) | 18 | 13 | 7 | 0 |
+| [Juno Code](#code) | 3/5 (+2 partial) | 0/5 (+4 partial) | 26 | 14 | 6 | 0 |
 | [Settings, notifications and announcements](#settings) | 3/3 | 3/3 | 12 | 5 | 2 | 0 |
 | [Plans and billing](#billing) | 1/2 | 0/2 | 7 | 0 | 0 | 1 |
 | [Roadmap and Compare](#community) | 0/3 | 0/3 | 0 | 0 | 4 | 0 |
@@ -96,6 +96,9 @@ The apps render from their local store and reconcile through the `/api/v1` sync 
 |---|---|---|---|---|
 | `/api/sync/changes` | GET | Web only |  | The web's own change feed; the apps sync through /api/v1/changes. |
 | `/api/sync/stream` | GET | Web only |  | The web's own wake-up stream; the apps listen on /api/v1/changes/stream. |
+| `/api/sync/threads` | GET | Native | JunoSync | Per-thread draft, composer settings, unread and needs-you, long-polled by the apps and the web (docs/code-v2/REMOTE-CONTROL.md §Sync). |
+| `/api/sync/threads/[key]` | GET, PUT | Native | JunoSync | One thread's shared state, written debounced by every composer. |
+| `/api/sync/handoff` | POST | Native | JunoSync | Continue on iPhone / Mac: the open thread pushed to the other app as a notification that opens it. |
 | `/api/v1/bootstrap` | GET | Native | JunoSync |  |
 | `/api/v1/changes` | GET | Native | JunoSync |  |
 | `/api/v1/changes/stream` | GET | Native | JunoSync |  |
@@ -525,6 +528,7 @@ Owned by the Code rework (`docs/native/code-rework/`), which audits Code's parit
 | `/api/code/environments/[id]` | GET, PATCH, DELETE | Planned |  | As /api/code/environments. |
 | `/api/code/github/branches` | GET | Planned |  | The base-branch list for a cloud run. |
 | `/api/code/github/pulls` | GET | Native | JunoCodeKit |  |
+| `/api/code/github/skills` | GET | Planned |  | A repository's own skills for a cloud run's Skills selector. |
 | `/api/code/github/repos` | GET | Native | JunoCodeKit |  |
 | `/api/code/queue` | GET | Native | JunoCodeKit |  |
 | `/api/code/search` | POST | Native | JunoCodeBridge |  |
@@ -542,7 +546,14 @@ Owned by the Code rework (`docs/native/code-rework/`), which audits Code's parit
 | `/api/code/workspaces` | GET, PUT | Planned |  | The app is meant to mirror its Code workspaces here so the web's Code tab lists them; native Code does not yet. |
 | `/api/v1/code/devices/[deviceId]` | DELETE | Native | JunoCodeKit |  |
 | `/api/code/routing/[conversationId]` | GET, PUT | Web only |  | Code v2 per-thread role routing (Orchestrate). The Mac keeps routing in its own session state and sends it with each run. |
-| `/api/code/v2/link/[deviceId]` | POST | Web only |  | The browser side of the Code v2 device link: the web drives the env server on the user's Mac through it. |
+| `/api/code/v2/link/[deviceId]` | POST | Native | JunoCodeRemote, JunoMobile | The controller side of the Code v2 device link: the web and the iPhone's remote (JunoCodeRemote) drive the env server on a paired Mac through it. Needs a live remote-control pair (docs/code-v2/REMOTE-CONTROL.md). |
+| `/api/code/pairing` | POST | Native | JunoCodeKit | A Mac's pairing offer for its "Control this Mac remotely" sheet: a QR token (phone) or a URL plus code (browser). |
+| `/api/code/pairing/offers/[offerId]` | GET | Native | JunoCodeKit | The Mac's sheet polls its offer: pending, approved, denied or expired. |
+| `/api/code/pairing/inspect` | POST | Native | JunoCodeKit | The approve screen's summary of a scanned (iPhone) or typed (web /pair) offer. |
+| `/api/code/pairing/approve` | POST | Native | JunoCodeKit | Approve on the iPhone, or in the browser at /pair. |
+| `/api/code/pairing/deny` | POST | Native | JunoCodeKit | Deny on the iPhone, or in the browser at /pair. |
+| `/api/code/pairing/pairs` | GET | Native | JunoCodeKit | The Mac's paired devices (?deviceId=), or the Macs this iPhone may control. |
+| `/api/code/pairing/pairs/[pairId]` | DELETE | Native | JunoCodeKit | Remove a paired device on the Mac. |
 | `/api/code/v2/link/[deviceId]/host` | POST | Native | JunoCodeLocal |  |
 | `/api/provider-keys` | GET, POST | Native | JunoCodeLocal |  |
 | `/api/provider-keys/[provider]` | DELETE | Native | JunoCodeLocal |  |

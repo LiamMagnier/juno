@@ -111,6 +111,9 @@ public struct CodeV2EnvSessionView: View {
             CodeV2ConnectedApprovals.shared.showing(session: new)
         }
         .onDisappear { CodeV2ConnectedApprovals.shared.hiding(session: session.sessionId) }
+        // Remote control's sync: the draft and the composer's choices follow
+        // the thread to the account's other devices, and theirs come back.
+        .modifier(CodeV2ThreadContinuityModifier(sessionID: session.sessionId, composer: composer, skills: skills))
         .onChange(of: speech?.heard) { _, heard in
             if let heard { take(heard) }
         }

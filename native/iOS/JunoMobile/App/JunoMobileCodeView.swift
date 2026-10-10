@@ -1,6 +1,7 @@
 import JunoAuth
 import JunoChatKit
 import JunoCodeKit
+import JunoCodeRemote
 import JunoCore
 import JunoDesignSystem
 import JunoSync
@@ -22,6 +23,10 @@ struct JunoMobileCodeView: View {
   /// keeps it architectural; a remote browser surface consumes this instead of
   /// creating another relay client when the mobile Code flow is expanded.
   var remoteModel: CodeRemoteBrowserModel? = nil
+  /// The v2 remote (docs/code-v2/REMOTE-CONTROL.md) for Macs paired with this
+  /// iPhone. Nil builds the app's one from `requestSender`; the snapshot tests
+  /// hand in a filled one.
+  var linkModelOverride: CodeLinkRemoteModel? = nil
   /// Local notifications for approvals. Nil in the harness.
   var notifications: JunoMobileCodeNotifications? = nil
   /// Starts a Juno Code conversation that has no project, sends the reader's
@@ -65,6 +70,7 @@ struct JunoMobileCodeView: View {
   @State private var hostSelection: JunoMobileCodeHostSelection?
   @State private var showingDevices = false
   @State private var showingNewSession = false
+  @State private var showingLinkNewSession = false
   @AppStorage(JunoMobilePreferences.codeDefaultHost) private var defaultHostID = ""
   @Namespace private var zoom
   @FocusState private var composerFocused: Bool
@@ -206,6 +212,22 @@ struct JunoMobileCodeView: View {
     .navigationDestination(isPresented: $showingDevices) {
       JunoMobileCodeDevicesView(remoteModel: remoteModel)
     }
+    // A session on a Mac paired over the device link.
+    .navigationDestination(
+      isPresented: Binding(
+        get: { linkModel?.openSessionID != nil },
+        set: { if !$0 { linkModel?.close() } }
+      )
+    ) {
+      if let linkModel {
+        JunoMobileLinkThreadView(model: linkModel)
+      }
+    }
+    .sheet(isPresented: $showingLinkNewSession) {
+      if let linkModel {
+        JunoMobileLinkNewSessionSheet(model: linkModel) { _ in }
+      }
+    }
     .sheet(isPresented: $showingNewSession) {
       if let remoteModel, let host = remoteModel.selectedHost {
         JunoMobileCodeRemoteNewSessionSheet(
@@ -229,8 +251,19 @@ struct JunoMobileCodeView: View {
 
   // MARK: Session list + composer
 
+  private var linkModel: CodeLinkRemoteModel? {
+    linkModelOverride ?? JunoMobileLinkModels.model(for: requestSender)
+  }
+
+  /// The chosen Mac when it is paired with this iPhone over the device link.
+  private var selectedLinkMac: CodeLinkMac? {
+    guard case .host(let id)? = hostSelection else { return nil }
+    return linkModel?.macs.first { $0.id == id }
+  }
+
   /// Whether the chosen computer can take a new session from here.
   private var remoteNewSessionAvailable: Bool {
+    if let mac = selectedLinkMac { return mac.reachability == .online }
     guard let remoteModel, let host = remoteModel.selectedHost,
       case .host(let id)? = hostSelection, id == host.id
     else { return false }
@@ -242,16 +275,22 @@ struct JunoMobileCodeView: View {
       if let remoteModel {
         JunoMobileCodeHostsStrip(
           hosts: remoteModel.hosts,
+          linkMacs: linkModel?.macs ?? [],
           selection: Binding(
             get: { hostSelection ?? .cloud },
             set: { choice in
               hostSelection = choice
               if let id = choice.deviceID {
-                Task { await remoteModel.selectHost(id) }
+                if let linkModel, linkModel.macs.contains(where: { $0.id == id }) {
+                  Task { await linkModel.select(id) }
+                } else {
+                  Task { await remoteModel.selectHost(id) }
+                }
               }
             }
           ),
-          onPair: { showingDevices = true }
+          onPair: junoMobileRequestPairing,
+          onDevices: { showingDevices = true }
         )
         // New session belongs to the chosen computer, so it sits on that
         // computer's row as a glass circle — not in the bar, where a second
@@ -261,7 +300,12 @@ struct JunoMobileCodeView: View {
           if remoteNewSessionAvailable {
             JunoGlass {
               Button {
-                showingNewSession = true
+                if selectedLinkMac != nil {
+                  linkModel?.beginNewSession()
+                  showingLinkNewSession = true
+                } else {
+                  showingNewSession = true
+                }
               } label: {
                 JunoIconView(.new, size: JunoLayout.Control.glyph)
                   .foregroundStyle(Color.primary)
@@ -278,7 +322,12 @@ struct JunoMobileCodeView: View {
         }
         .padding(.top, JunoSpace.hairline)
       }
-      if let remoteModel, let host = remoteModel.selectedHost,
+      if let linkModel, let mac = selectedLinkMac {
+        JunoMobileLinkSessionsView(model: linkModel, mac: mac) {
+          linkModel.beginNewSession()
+          showingLinkNewSession = true
+        }
+      } else if let remoteModel, let host = remoteModel.selectedHost,
         case .host(let id)? = hostSelection, id == host.id
       {
         JunoMobileCodeRemoteSessionsList(
@@ -299,8 +348,37 @@ struct JunoMobileCodeView: View {
         remoteModel?.start(for: accountID)
         remoteModel?.updateHosts(from: model.devices)
         chooseInitialHost()
+        if let linkModel, linkModelOverride == nil {
+          linkModel.start(for: accountID)
+          await linkModel.refreshMacs()
+          chooseInitialHost()
+          if let mac = selectedLinkMac { await linkModel.select(mac.id) }
+        }
       } else {
         remoteModel?.stop()
+        if linkModelOverride == nil { linkModel?.stop() }
+      }
+    }
+    // The device link streams while a paired Mac is chosen (and its thread
+    // is open on top of this list).
+    .task(id: linkModelOverride == nil ? selectedLinkMac?.id : nil) {
+      guard selectedLinkMac != nil, let linkModel else { return }
+      await linkModel.runLink()
+    }
+    // A notification or Handoff named a session on a paired Mac.
+    .onChange(of: JunoMobileRemoteRouting.shared.linkSession, initial: true) { _, request in
+      guard let request, let linkModel else { return }
+      JunoMobileRemoteRouting.shared.linkSession = nil
+      hostSelection = .host(request.deviceID)
+      Task { await linkModel.openRouted(deviceID: request.deviceID, sessionID: request.sessionID) }
+    }
+    .onChange(of: JunoMobileRemoteRouting.shared.linkApproval, initial: true) { _, request in
+      guard let request, let linkModel else { return }
+      JunoMobileRemoteRouting.shared.linkApproval = nil
+      Task {
+        await linkModel.answerRouted(
+          deviceID: request.deviceID, sessionID: request.sessionID, requestID: request.requestID, approved: request.approved
+        )
       }
     }
     .onChange(of: model.devices) { _, devices in
@@ -323,6 +401,10 @@ struct JunoMobileCodeView: View {
   /// Picks the strip's chip the first time hosts arrive: the remembered
   /// default when it is still paired, else the first online Mac, else Cloud.
   private func chooseInitialHost() {
+    if hostSelection == nil, remoteModel?.hosts.isEmpty ?? true, let mac = linkModel?.macs.first {
+      hostSelection = .host(mac.id)
+      return
+    }
     guard hostSelection == nil, let remoteModel, !remoteModel.hosts.isEmpty else { return }
     let chosen = remoteModel.hosts.first { $0.id == defaultHostID && !defaultHostID.isEmpty }
       ?? remoteModel.hosts.first { $0.online }

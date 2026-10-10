@@ -70,7 +70,7 @@ test("snapshot + cursor: fixtures apply in order; duplicates and gaps are detect
     assert.equal(classifyEvent(cursor, e), "apply", `sequence ${e.sequence}`);
     cursor = e.sequence;
   }
-  assert.equal(cursor, 50);
+  assert.equal(cursor, 52);
   const delta = { sequence: 48, event: { type: "item.delta", itemId: "i", field: "text", append: "x" } } as const;
   assert.equal(classifyEvent(48, delta), "duplicate");
   assert.equal(classifyEvent(48, { ...delta, sequence: 50 }), "gap");

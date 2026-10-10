@@ -454,6 +454,7 @@ export function CodeV2Route({ conversation, initialMessages }: CodeV2RouteProps)
     threads,
     starting: !meta.loaded ? null : session.status === "submitting" ? `Starting on ${presence.device?.name ?? "your Mac"}…` : null,
     offline: !meta.isCloud && presence.state === "offline",
+    pairingRequired: env.pairingRequired && device ? { deviceName: device.name } : null,
     // The account's skills work anywhere; a Mac adds its own.
     skills,
     actions,

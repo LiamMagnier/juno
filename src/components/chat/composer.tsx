@@ -11,6 +11,7 @@ import {
   tokensForText,
   writeComposerDraft,
 } from "@/lib/chat/context-draft";
+import { useThreadDraftSync } from "@/lib/sync/thread-draft-client";
 import { placeComposerLayer, preferredLayerSide, type LayerPlacement, type LayerSide } from "@/lib/chat/composer-layer-placement";
 import { TIMING } from "@/lib/interaction";
 import type { MentionItem, MentionSearchResult } from "@/lib/mentions/types";
@@ -865,11 +866,47 @@ function ComposerImpl({
     if (!draftKey) return;
     return () => writeComposerDraft(draftKey, latestDraft.current);
   }, [draftKey]);
-  /** A send that went: the draft it carried is not kept for later. */
+  /*
+   * The same draft on the user's other devices (docs/code-v2/REMOTE-CONTROL.md
+   * §Sync): a saved chat's text goes to the backend debounced and comes back
+   * from the Mac or the iPhone, never over typing in progress here.
+   */
+  const syncKey = draftKey && draftKey !== "new" ? `chat:${draftKey}` : null;
+  // What this chat's field held when last seen, so only an edit is sent: the
+  // first render of a chat (or of another chat) is what was loaded, not typing.
+  const syncedText = React.useRef<{ key: string | null; text: string }>({ key: null, text: "" });
+  const remoteDraft = useThreadDraftSync(
+    syncKey,
+    () => {
+      const field = textareaRef.current;
+      const editing = !!field && typeof document !== "undefined" && document.activeElement === field;
+      return { text: field?.getDraft().text ?? latestDraft.current.text, editing };
+    },
+    (remote) => {
+      const field = textareaRef.current;
+      if (!field) return;
+      // Applied from elsewhere: not an edit to send back.
+      syncedText.current = { key: syncKey, text: remote };
+      field.setDraft({ text: remote, tokens: [] });
+    },
+  );
+  React.useEffect(() => {
+    if (!syncKey) return;
+    if (syncedText.current.key !== syncKey) {
+      syncedText.current = { key: syncKey, text };
+      return;
+    }
+    if (text === syncedText.current.text) return;
+    syncedText.current = { key: syncKey, text };
+    remoteDraft.changed(text);
+  }, [syncKey, text, remoteDraft]);
+  /** A send that went: the draft it carried is not kept for later, here or on the other devices. */
   const forgetDraft = React.useCallback(() => {
     if (draftKey) forgetStoredDraft(draftKey);
     latestDraft.current = { text: "", tokens: [] };
-  }, [draftKey]);
+    syncedText.current = { key: syncKey, text: "" };
+    remoteDraft.cleared();
+  }, [draftKey, syncKey, remoteDraft]);
   const {
     uploads,
     addFiles,

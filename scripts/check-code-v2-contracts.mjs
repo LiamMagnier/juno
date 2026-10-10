@@ -471,6 +471,16 @@ function buildSchema() {
   params["conversation.toggle"] = obj({ ...sid, enabled: { type: ["boolean", "null"] } });
   params["skills.list"] = obj({}, { cwd: nonEmpty, sessionId: nonEmpty });
   params["skills.select"] = obj({ ...sid, skills: arr(ref("SkillActivation")) });
+  // remote lane (docs/code-v2/REMOTE-CONTROL.md)
+  definitions.FsEntryKind = en(C.FS_ENTRY_KIND_VALUES);
+  definitions.RemoteCaptureTarget = en(C.REMOTE_CAPTURE_TARGET_VALUES);
+  params["fs.list"] = obj({ path: nonEmpty }, { files: bool, showHidden: bool });
+  params["git.status"] = obj({}, { sessionId: nonEmpty, cwd: nonEmpty });
+  params["git.commit"] = obj({ ...sid, message: nonEmpty });
+  params["git.push"] = obj(sid);
+  params["git.pr"] = obj({ ...sid, title: nonEmpty }, { body: str, draft: bool, base: nonEmpty });
+  params["host.info"] = obj({});
+  params["host.capture"] = obj({ target: ref("RemoteCaptureTarget") });
   for (const t of C.CLIENT_COMMAND_TYPE_VALUES) if (!params[t]) throw new Error(`no params schema for ${t}`);
   definitions.ClientCommand = {
     oneOf: C.CLIENT_COMMAND_TYPE_VALUES.map((t) => obj({ id: nonEmpty, type: { const: t }, params: params[t] })),

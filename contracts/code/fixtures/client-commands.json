@@ -40,6 +40,13 @@
     {"id": "37", "type": "skills.list", "params": {}},
     {"id": "38", "type": "turn.start", "params": {"sessionId": "s1", "input": {"text": "Redesign the pricing page", "skills": [{"name": "design-taste-frontend", "source": "user", "path": "/Users/me/.claude/skills/design-taste-frontend/SKILL.md"}, {"name": "tidy-commits", "source": "account", "title": "Tidy commits", "instructions": "Squash fixups before a PR.", "once": true}]}, "selection": {"instanceId": "alevr", "model": "anthropic:claude-opus-5-5"}, "runtimeMode": "auto-edit", "interactionMode": "default"}},
     {"id": "39", "type": "skills.select", "params": {"sessionId": "s1", "skills": [{"name": "design-taste-frontend", "source": "user", "path": "/Users/me/.claude/skills/design-taste-frontend/SKILL.md"}]}},
-    {"id": "40", "type": "skills.select", "params": {"sessionId": "s1", "skills": []}}
+    {"id": "40", "type": "skills.select", "params": {"sessionId": "s1", "skills": []}},
+    {"id": "41", "type": "fs.list", "params": {"path": "/Users/me/Developer", "files": false}},
+    {"id": "42", "type": "git.status", "params": {"sessionId": "s1"}},
+    {"id": "43", "type": "git.commit", "params": {"sessionId": "s1", "message": "Fix the login redirect"}},
+    {"id": "44", "type": "git.push", "params": {"sessionId": "s1"}},
+    {"id": "45", "type": "git.pr", "params": {"sessionId": "s1", "title": "Fix the login redirect", "body": "Opened from my iPhone.", "draft": true}},
+    {"id": "46", "type": "host.info", "params": {}},
+    {"id": "47", "type": "host.capture", "params": {"target": "simulator"}}
   ]
 }

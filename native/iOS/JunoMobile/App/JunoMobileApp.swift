@@ -405,6 +405,9 @@ final class JunoMobileAppDelegate: NSObject, UIApplicationDelegate, UNUserNotifi
         UNUserNotificationCenter.current().delegate = self
         JunoMobileCodeNotifications.shared.registerBackgroundTask()
         JunoMobileResearchNotifications.shared.registerBackgroundTask()
+        // Allow once / Deny on a paired Mac's approval, and the hand-off
+        // category, merged into whatever is registered already.
+        JunoMobileCodeNotifications.registerRemoteCategories()
         // Every launch, as Apple asks: the token can change, and asking never
         // prompts. Whether a push may show is a separate question, asked at
         // sign-in (quietly) and in context (for banners).
@@ -452,10 +455,57 @@ final class JunoMobileAppDelegate: NSObject, UIApplicationDelegate, UNUserNotifi
         let info = JunoMobileLaunchRequests.stringValues(
             of: response.notification.request.content.userInfo
         )
+        // A paired Mac's approval or a hand-off (docs/code-v2/REMOTE-CONTROL.md
+        // §4, §5) before Code's own local notifications, which share the
+        // deviceID / sessionID keys.
+        let route = JunoMobileRemoteNotificationRoute(
+            actionIdentifier: response.actionIdentifier,
+            categoryIdentifier: response.notification.request.content.categoryIdentifier,
+            info: info
+        )
+        let done = JunoMobileCompletion(completionHandler)
         Task { @MainActor in
-            JunoMobileLaunchRequests.shared.handle(notification: info)
+            switch route {
+            case let .answer(answer):
+                // Allow once / Deny, answered in the background. The handler
+                // is held until the answer lands (or times out), so iOS keeps
+                // the app awake for it.
+                await JunoMobileLinkApprovalResponder.shared.answerFromNotification(answer)
+            case let .open(request):
+                JunoMobileLaunchRequests.shared.request(request)
+            case nil:
+                JunoMobileLaunchRequests.shared.handle(notification: info)
+            }
+            done.call()
         }
-        completionHandler()
+    }
+
+    /// A background push. `clearApproval` withdraws a paired Mac's approval
+    /// notification once it was answered anywhere.
+    nonisolated func application(
+        _ application: UIApplication,
+        didReceiveRemoteNotification userInfo: [AnyHashable: Any],
+        fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void
+    ) {
+        let info = JunoMobileLaunchRequests.stringValues(of: userInfo)
+        guard let requestID = info["clearApproval"], !requestID.isEmpty else {
+            completionHandler(.noData)
+            return
+        }
+        let done = JunoMobileFetchCompletion(completionHandler)
+        Task {
+            let center = UNUserNotificationCenter.current()
+            let delivered = await center.deliveredNotifications().map {
+                (identifier: $0.request.identifier,
+                 info: JunoMobileLaunchRequests.stringValues(of: $0.request.content.userInfo))
+            }
+            let ids = JunoMobileRemoteNotificationRoute.deliveredIdentifiers(clearing: requestID, in: delivered)
+            if !ids.isEmpty { center.removeDeliveredNotifications(withIdentifiers: ids) }
+            await MainActor.run {
+                JunoMobileLiveActivityCoordinator.shared.resolveApproval(requestID: requestID)
+            }
+            done.call(ids.isEmpty ? .noData : .newData)
+        }
     }
 
     nonisolated func userNotificationCenter(
@@ -465,6 +515,20 @@ final class JunoMobileAppDelegate: NSObject, UIApplicationDelegate, UNUserNotifi
     ) {
         completionHandler([.banner, .sound])
     }
+}
+
+/// A notification center's completion handler, carried across to the main
+/// actor and called exactly once.
+private final class JunoMobileCompletion: @unchecked Sendable {
+    private let handler: () -> Void
+    init(_ handler: @escaping () -> Void) { self.handler = handler }
+    func call() { handler() }
+}
+
+private final class JunoMobileFetchCompletion: @unchecked Sendable {
+    private let handler: (UIBackgroundFetchResult) -> Void
+    init(_ handler: @escaping (UIBackgroundFetchResult) -> Void) { self.handler = handler }
+    func call(_ result: UIBackgroundFetchResult) { handler(result) }
 }
 
 final class JunoMobileSceneDelegate: NSObject, UIWindowSceneDelegate {

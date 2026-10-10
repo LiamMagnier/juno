@@ -97,6 +97,13 @@ struct JunoMobileRootView: View {
   @State private var drawerShare: NativeShare?
   /// Requests from Siri, Shortcuts, the Home Screen and notifications.
   private var launchRequests: JunoMobileLaunchRequests { .shared }
+  /// Remote control's seam: the pairing sheet reads `pairing` from it.
+  @Bindable private var remoteRouting = JunoMobileRemoteRouting.shared
+  /// Per-thread drafts, prefs and read state shared with the Mac and the web
+  /// (docs/code-v2/REMOTE-CONTROL.md §5). Built at sign-in, published as
+  /// `\.junoThreadSync`.
+  @State private var threadSync: JunoMobileThreadSync?
+  @Environment(\.scenePhase) private var scenePhase
   /// A question from "Ask Juno", handed to the draft composer.
   @State private var pendingAskPrompt: String?
   /// The Widget / App Intent "Dictate" shortcut. It is a one-shot binding so
@@ -349,6 +356,10 @@ struct JunoMobileRootView: View {
             )
           }
           NativePushRegistrar.shared.start(for: session.profile.id, sender: requestSender)
+          // Remote control: drafts and state follow the thread, and an
+          // approval action answers a paired Mac without opening the app.
+          threadSync = JunoMobileThreadSync.live(sender: requestSender, accountID: accountID)
+          JunoMobileLinkApprovalResponder.shared.attach(sender: requestSender, accountID: accountID)
           Task { await NativePushRegistrar.shared.requestQuietAuthorizationIfUndetermined() }
         }
         #if DEBUG
@@ -394,6 +405,9 @@ struct JunoMobileRootView: View {
         // The server has already retired this session's tokens; this only
         // forgets the account so the next sign-in registers afresh.
         NativePushRegistrar.shared.stop()
+        threadSync = nil
+        JunoMobileLinkApprovalResponder.shared.attach(sender: nil, accountID: nil)
+        remoteRouting.pairing = nil
         libraryModel?.stop()
         // Not merely "forget the list": the plaintext of every indexed
         // document is in that index, so `stop()` wipes the account's
@@ -523,6 +537,35 @@ struct JunoMobileRootView: View {
       if let request = JunoMobileLaunchRequests.request(for: url) {
         launchRequests.request(request)
       }
+    }
+    // Apple Handoff: a Chat or Code thread open on the Mac, continued here.
+    .junoContinueHandoff { launchRequests.request($0) }
+    .environment(\.junoThreadSync, threadSync)
+    // A draft typed here reaches the Mac before the phone sleeps.
+    .onChange(of: scenePhase) { _, phase in
+      guard phase != .active, let threadSync else { return }
+      Task { await threadSync.flushAll() }
+    }
+    // Remote control pairing: a scanned QR, the /pair link, or "Pair a Mac".
+    .sheet(item: $remoteRouting.pairing) { request in
+      pairingSheet(request)
+    }
+  }
+
+  @ViewBuilder
+  private func pairingSheet(_ request: JunoMobileRemoteRouting.PairingRequest) -> some View {
+    if let requestSender, let accountID = currentSession?.profile.id {
+      JunoMobileRemotePairingSheet(
+        model: JunoMobileRemotePairingModel(
+          service: JunoMobileRemotePairingClientService(
+            client: RemotePairingClient(sender: requestSender), accountID: accountID
+          ),
+          token: request.token
+        ),
+        openCode: { launchRequests.request(.code) },
+        close: { remoteRouting.pairing = nil }
+      )
+      .tint(Color.junoAccent)
     }
   }
 
@@ -779,6 +822,19 @@ struct JunoMobileRootView: View {
         )
         JunoMobileLiveActivityCoordinator.shared.resolveApproval(requestID: requestID)
       }
+    case .pairRemote(let token):
+      JunoMobileRemoteRouting.shared.pairing = .init(token: token)
+    case let .openLinkSession(deviceID, sessionID):
+      showingSettings = false
+      show(.code)
+      JunoMobileRemoteRouting.shared.linkSession = .init(deviceID: deviceID, sessionID: sessionID)
+    case let .respondToLinkApproval(deviceID, sessionID, requestID, approved):
+      showingSettings = false
+      show(.code)
+      JunoMobileRemoteRouting.shared.linkApproval = .init(
+        deviceID: deviceID, sessionID: sessionID, requestID: requestID, approved: approved
+      )
+      JunoMobileRemoteRouting.shared.linkSession = .init(deviceID: deviceID, sessionID: sessionID)
     }
   }
 

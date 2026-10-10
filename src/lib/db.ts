@@ -267,6 +267,13 @@ export const OWNER_COLUMN = new Map<string, "userId" | "accountId">([
   ["CodeLinkResponse", "userId"],
   ["CodeLinkEvent", "userId"],
   ["CodeLinkSession", "userId"],
+  // Remote control (src/lib/code-v2/device-pairing.ts): who may drive which
+  // Mac, the pending QR / code offers, and the per-thread state shared across
+  // devices. Every call site carries the requester's userId; a token is only
+  // ever looked up for the signed-in user, so none needs prismaUnguarded.
+  ["DevicePair", "userId"],
+  ["PairingToken", "userId"],
+  ["ThreadSync", "userId"],
 ]);
 
 /**

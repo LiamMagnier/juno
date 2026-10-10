@@ -79,6 +79,8 @@ struct DesktopCodeWorkspace: View {
     @State private var envBindings = CodeV2SessionBindings.shared
     @State private var envDock = CodeV2DockController()
     @State private var v2Keys = CodeV2KeysModel()
+    /// "Continue on iPhone"'s answer, over the thread.
+    @State private var codeToasts = JunoToastCenter()
     @Environment(\.openWindow) private var openWindow
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -131,6 +133,35 @@ struct DesktopCodeWorkspace: View {
             byokKeys: v2Keys.providers,
             antigravityEnabled: true
         )
+    }
+
+    // MARK: - Hand-off
+
+    /// The open env-server thread as Handoff carries it: this Mac's device id
+    /// and the env session. Nil until this Mac is registered.
+    private func codeHandoff(for controller: SessionController?) -> JunoHandoff? {
+        guard let controller, let binding = envBindings.binding(for: controller.sessionID.value),
+            let deviceID = configuration?.codeHostModel?.deviceID
+        else { return nil }
+        return JunoHandoff.code(deviceID: deviceID, sessionID: binding.envSessionId, title: controller.session.title)
+    }
+
+    private var codeContinuity: (any CodeV2ThreadContinuity)? {
+        guard let deviceID = configuration?.codeHostModel?.deviceID else { return nil }
+        return DesktopCodeThreadContinuity.shared(deviceID: deviceID)
+    }
+
+    private func continueThread(on target: JunoHandoff.Target) {
+        guard let handoff = codeHandoff(for: controller) else { return }
+        let client = configuration?.codeHostModel?.threadSyncClient
+        let accountID = configuration?.codeHostModel?.signedInAccountID
+        Task {
+            switch await DesktopHandoff.continueOn(target, handoff, client: client, accountID: accountID) {
+            case .sent(let message): codeToasts.post(.success(message))
+            case .openedWeb: break
+            case .failed(let message): codeToasts.post(.error(message))
+            }
+        }
     }
 
     /// The selected thread's env-server binding, when a subscription runs it.
@@ -643,6 +674,12 @@ struct DesktopCodeWorkspace: View {
                 latestReply: DesktopCodeVoiceBriefing.latestReply(env.snapshot.items),
                 deliver: hearRequest
             )
+            // Remote control (docs/code-v2/REMOTE-CONTROL.md §5): Apple
+            // Handoff for this thread, and its draft and composer choices
+            // synced with the account's other devices.
+            .desktopHandoff(codeHandoff(for: controller))
+            .environment(\.codeV2ThreadContinuity, codeContinuity)
+            .junoToastHost(codeToasts)
                 } else {
             alevrSession(controller)
         }
@@ -775,6 +812,13 @@ struct DesktopCodeWorkspace: View {
                 .disabled(controller?.context == nil)
                 Button("Copy Transcript", action: copyTranscript)
                     .disabled(controller == nil)
+                Divider()
+                // Hand-off: this thread on the iPhone (a notification that
+                // opens it there) or on the web.
+                Button("Continue on iPhone") { continueThread(on: .ios) }
+                    .disabled(codeHandoff(for: controller) == nil)
+                Button("Continue on the Web") { continueThread(on: .web) }
+                    .disabled(codeHandoff(for: controller) == nil)
                 Divider()
                 Button("Delete Session", role: .destructive) {
                     guard let id = controller?.sessionID else { return }

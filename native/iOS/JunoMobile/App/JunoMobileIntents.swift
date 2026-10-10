@@ -32,6 +32,13 @@ final class JunoMobileLaunchRequests {
     case openResearch(String)
     case openRemoteSession(deviceID: String, sessionID: String)
     case respondToRemoteApproval(deviceID: String, sessionID: String, requestID: String, approved: Bool)
+    /// Remote control (docs/code-v2/REMOTE-CONTROL.md): the pairing sheet,
+    /// with a scanned or linked offer, or the scanner when nil.
+    case pairRemote(token: String?)
+    /// A session on a paired Mac, through the device link.
+    case openLinkSession(deviceID: String, sessionID: String)
+    /// An approval answered from a notification's action.
+    case respondToLinkApproval(deviceID: String, sessionID: String, requestID: String, approved: Bool)
   }
 
   /// The request waiting to be acted on. Cleared by whoever handles it.
@@ -117,6 +124,13 @@ final class JunoMobileLaunchRequests {
     case ["voice"]: return .voice
     case ["dictate"]: return .dictate
     case ["code"]: return .code
+    case ["pair"]:
+      // A pairing offer from a Mac's QR, opened by the Camera through the web's
+      // /pair page. It only opens the approve screen: nothing is approved
+      // until the person taps Approve there.
+      let token = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "t" }?.value
+      guard let token, token.hasPrefix("rcp1."), token.count <= 1024 else { return .pairRemote(token: nil) }
+      return .pairRemote(token: token)
     case ["code", "approval"]:
       let values = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
       let value = { (name: String) in values.first(where: { $0.name == name })?.value }

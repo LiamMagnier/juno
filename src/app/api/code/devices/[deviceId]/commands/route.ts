@@ -3,6 +3,7 @@ import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/code-remote";
+import { requireRemotePair } from "@/lib/code-v2/device-pairing-guard";
 import { serializeSessionCommand } from "@/lib/code-remote-sessions";
 import { canonicalSessionCommand } from "@/lib/code-session-command-compat";
 import { ACKNOWLEDGEABLE_COMMAND, sweepExpiredCommandClaims } from "@/lib/code-session-command-lease";
@@ -79,6 +80,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ deviceI
     if (!parsed.success) return NextResponse.json({ error: "Invalid input" }, { status: 400 });
     const sid = parsed.data.sessionID || parsed.data.sessionId;
     if (!sid) return NextResponse.json({ error: "Missing sessionID" }, { status: 400 });
+    // Remote control: a phone or browser needs a live pair with this Mac
+    // (docs/code-v2/REMOTE-CONTROL.md), not only the same account.
+    const unpaired = await requireRemotePair(req, user.id, deviceId);
+    if (unpaired) return unpaired;
 
     const remoteSession = await prisma.codeRemoteSession.findUnique({
       where: { deviceId_sessionId: { deviceId, sessionId: sid }, userId: user.id },

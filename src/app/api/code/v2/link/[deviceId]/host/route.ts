@@ -4,6 +4,8 @@ import { requireUser } from "@/lib/code-remote";
 import { parseHostRequest } from "@/lib/code-v2/env-link-hub";
 import { linkHub } from "@/lib/code-v2/env-link-select";
 import { CODE_V2_PROTOCOL } from "@/lib/code-v2/contracts";
+import { noteHostEvents } from "@/lib/code-v2/remote-push";
+import { remotePushDeps } from "@/lib/code-v2/remote-push-deps";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -42,5 +44,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ deviceI
     const reply = await link.pull(request.waitMs, req.signal, request.appVersion, request.terminal === true);
     return NextResponse.json(reply, { headers: { "Cache-Control": "no-store" } });
   }
-  return NextResponse.json(await link.push(request));
+  const accepted = await link.push(request);
+  // Remote control: ring the paired phones for an approval, withdraw it once
+  // answered, keep needs-you in the shared thread state. Never holds up the
+  // Mac's push, and a failure here never fails it.
+  if (request.events?.length) {
+    void noteHostEvents(remotePushDeps, user.id, device.id, request.events).catch((e: unknown) => {
+      console.warn("[remote-push] host events", e instanceof Error ? e.message : String(e));
+    });
+  }
+  return NextResponse.json(accepted);
 }

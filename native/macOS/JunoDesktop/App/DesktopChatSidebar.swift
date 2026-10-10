@@ -1050,6 +1050,19 @@ struct DesktopConversationMenu: View {
                 Button { act { $0.share($1) } } label: { label(share) }
                     .disabled(!canShare)
             }
+            if let continueOn = actions?.continueOn {
+                // Hand-off (docs/code-v2/REMOTE-CONTROL.md §5): this chat on
+                // the iPhone, by a notification, or on the web.
+                ForEach(Self.continueRows) { row in
+                    Button {
+                        guard let conversation else { return }
+                        continueOn(conversation, row.target)
+                    } label: {
+                        Label { Text(row.title) } icon: { Image(row.glyph.assetName) }
+                    }
+                    .disabled(!isAvailable)
+                }
+            }
             if let archive = row(.archive) {
                 Button {
                     // The menu bar's copy of this list has no window in its
@@ -1071,6 +1084,19 @@ struct DesktopConversationMenu: View {
     }
 
     private var isAvailable: Bool { conversation != nil && actions != nil }
+
+    /// "Continue on…": drawn only where the window can hand a chat off.
+    struct ContinueRow: Identifiable, Equatable {
+        let target: JunoHandoff.Target
+        let title: String
+        let glyph: JunoIcon
+        var id: JunoHandoff.Target { target }
+    }
+
+    static let continueRows = [
+        ContinueRow(target: .ios, title: "Continue on iPhone", glyph: .smartphone),
+        ContinueRow(target: .web, title: "Continue on the Web", glyph: .externalLink),
+    ]
 
     private var canShare: Bool {
         guard let conversation, let actions else { return false }
@@ -1113,6 +1139,8 @@ struct DesktopConversationActions {
     let archive: (NativeConversation, UndoManager?) -> Void
     /// Asks first (§2.4); deleting is the confirmation dialog's job.
     let delete: (NativeConversation) -> Void
+    /// "Continue on iPhone / the Web". Nil leaves both rows out.
+    var continueOn: ((NativeConversation, JunoHandoff.Target) -> Void)? = nil
 }
 
 // MARK: - Pinned project row

@@ -15,6 +15,10 @@ configs:
 packages:
   JunoNativeKit:
     path: ../../Packages/JunoNativeKit
+  # The v2 device-link remote for Mac Alevr Code (docs/code-v2/REMOTE-CONTROL.md):
+  # the Code v2 contracts and reducers, and the iPhone's remote model.
+  JunoCode:
+    path: ../../Packages/JunoCode
 targets:
   JunoMobile:
     type: application
@@ -61,6 +65,10 @@ targets:
         product: JunoVoiceKit
       - package: JunoNativeKit
         product: JunoWorkKit
+      - package: JunoCode
+        product: JunoCodeCore
+      - package: JunoCode
+        product: JunoCodeRemote
       # Development-only visual QA harness; its symbols are all #if DEBUG, so it
       # contributes nothing to Stable/Release builds.
       - package: JunoNativeKit

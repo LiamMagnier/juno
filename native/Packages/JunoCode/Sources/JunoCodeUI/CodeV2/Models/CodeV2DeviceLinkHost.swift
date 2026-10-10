@@ -34,6 +34,7 @@ public final class CodeV2DeviceLinkHost {
         deviceId: String,
         allowedRoots: @escaping @MainActor () -> [String],
         allowsTerminal: @escaping @MainActor () -> Bool = { false },
+        hostHandler: EnvServerDeviceLink.HostHandler? = nil,
         perform: @escaping Perform
     ) {
         if self.deviceId == deviceId, channel != nil { return }
@@ -44,6 +45,8 @@ public final class CodeV2DeviceLinkHost {
             isOnline: { await MainActor.run { hub.isReady } },
             allowedRoots: { await MainActor.run { allowedRoots() } },
             allowsTerminal: { await MainActor.run { allowsTerminal() } },
+            // host.info and host.capture: the Mac app's own answers.
+            hostHandler: hostHandler,
             forward: { type, params in
                 let connection = try await hub.ready()
                 return try await connection.send(type, params: params)

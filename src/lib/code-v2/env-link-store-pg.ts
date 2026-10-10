@@ -26,6 +26,7 @@ import {
 } from "./contracts";
 import {
   LINK_LIMITS,
+  globalOriginKey,
   LINK_REFUSED_COMMANDS,
   LINK_RELAYED_COMMANDS,
   LINK_TERMINAL_COMMANDS,
@@ -179,7 +180,10 @@ export class PgDeviceLink implements LinkEndpoint {
       this.deviceId,
       g,
     );
-    for (const row of globals) out.push({ ...row.payload, sequence: Number(row.sequence) });
+    for (const row of globals) {
+      const { _origin: _drop, ...payload } = row.payload as ServerEventEnvelope & { _origin?: string };
+      out.push({ ...payload, sequence: Number(row.sequence) });
+    }
     if (ids.length === 0) return out;
     const rows = await this.sql.$queryRawUnsafe<EventRow[]>(
       `SELECT "sessionId", "sequence", "payload" FROM "CodeLinkEvent" WHERE "userId" = $1 AND "deviceId" = $2 AND "sessionId" = ANY($3::text[]) ORDER BY "sessionId", "sequence", "id"`,
@@ -345,13 +349,23 @@ export class PgDeviceLink implements LinkEndpoint {
     for (const e of (input.events ?? []).slice(0, LINK_LIMITS.maxPushItems)) {
       if (!e || e.type !== "event" || typeof e.sequence !== "number" || !e.event || typeof e.event.type !== "string") continue;
       if (e.stream === "global") {
+        // A batch the Mac pushed again (a retried push) is not relayed twice: the hub renumbers
+        // globals, so the Mac's own sequence and the event's hash say whether it is already here.
+        const origin = globalOriginKey(e);
+        const seen = await this.sql.$queryRawUnsafe<{ one: number }[]>(
+          `SELECT 1 AS one FROM "CodeLinkEvent" WHERE "userId" = $1 AND "deviceId" = $2 AND "sessionId" = '' AND "payload"->>'_origin' = $3 LIMIT 1`,
+          this.userId,
+          this.deviceId,
+          origin,
+        );
+        if (seen.length > 0) continue;
         const [row] = await this.sql.$queryRawUnsafe<{ globalSeq: number }[]>(
           `UPDATE "CodeLinkHost" SET "globalSeq" = "globalSeq" + 1 WHERE "userId" = $1 AND "deviceId" = $2 RETURNING "globalSeq"`,
           this.userId,
           this.deviceId,
         );
         const sequence = Number(row?.globalSeq ?? 0);
-        await this.#insertEvent("", sequence, { ...e, sequence });
+        await this.#insertEvent("", sequence, { ...e, sequence, _origin: origin } as ServerEventEnvelope);
         globals++;
         accepted++;
         continue;

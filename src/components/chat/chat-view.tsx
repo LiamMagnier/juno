@@ -5,6 +5,7 @@ import Link from "next/link";
 import nextDynamic from "next/dynamic";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
+import { ContinueOnMenu } from "@/components/chat/continue-on-menu";
 import { EyeOff, GitFork, GripVertical, Loader2 } from "@/components/ui/icons";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -2201,6 +2202,13 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
           </TooltipTrigger>
           <TooltipContent>Share chat</TooltipContent>
         </Tooltip>
+      )}
+      {/* Continue on iPhone / Mac — the same saved, non-private chats as Share. */}
+      {!privateMode && currentConversationId && hasMessages && (
+        <ContinueOnMenu
+          conversationId={currentConversationId}
+          title={conversations.find((c) => c.id === currentConversationId)?.title ?? undefined}
+        />
       )}
       <PrivateChatToggle
         active={privateMode}

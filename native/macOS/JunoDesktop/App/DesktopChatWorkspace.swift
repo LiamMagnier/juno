@@ -786,6 +786,18 @@ struct DesktopChatWorkspace: View {
             },
             delete: { conversation in
                 deleteConfirmation = DesktopChatDeletion.confirmation { deleteConversation(conversation) }
+            },
+            continueOn: { conversation, target in
+                let handoff = JunoHandoff.chat(conversation.id, title: conversation.title)
+                let client = configuration.requestSender.map(ThreadSyncClient.init(sender:))
+                let accountID = session.profile.id
+                Task {
+                    switch await DesktopHandoff.continueOn(target, handoff, client: client, accountID: accountID) {
+                    case .sent(let message): toasts.post(.success(message))
+                    case .openedWeb: break
+                    case .failed(let message): toasts.post(.error(message))
+                    }
+                }
             }
         )
     }

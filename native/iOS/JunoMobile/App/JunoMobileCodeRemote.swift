@@ -1,6 +1,7 @@
 import JunoAuth
 import JunoChatKit
 import JunoCodeKit
+import JunoCodeRemote
 import JunoCore
 import JunoDesignSystem
 import JunoVoiceKit
@@ -17,8 +18,14 @@ import UIKit
 /// with the checkout is the context every session below belongs to.
 struct JunoMobileCodeHostsStrip: View {
   let hosts: [CodeRemoteHostSummary]
+  /// Macs paired with this iPhone over the v2 device link. One that is also
+  /// a v1 host is listed once and driven over the link.
+  var linkMacs: [CodeLinkMac] = []
   @Binding var selection: JunoMobileCodeHostSelection
+  /// Opens the pairing scanner.
   var onPair: () -> Void
+  /// The paired computers page.
+  var onDevices: (() -> Void)? = nil
 
   @State private var selectionHaptic = JunoMobileHapticTrigger()
 
@@ -30,9 +37,14 @@ struct JunoMobileCodeHostsStrip: View {
     Menu {
       Picker("Run on", selection: pickerSelection) {
         ForEach(hosts) { host in
-          Label(host.name, image: icon(for: host).assetName(.regular))
+          Label(linkMac(host.id)?.name ?? host.name, image: icon(for: host).assetName(.regular))
             .tag(JunoMobileCodeHostSelection.host(host.id))
             .accessibilityIdentifier("juno.mobile.code-host-\(host.id)")
+        }
+        ForEach(linkMacs.filter { mac in !hosts.contains { $0.id == mac.id } }) { mac in
+          Label(mac.name, image: JunoIcon.device.assetName(.regular))
+            .tag(JunoMobileCodeHostSelection.host(mac.id))
+            .accessibilityIdentifier("juno.mobile.code-host-\(mac.id)")
         }
         Label("Cloud", image: JunoIcon.cloud.assetName(.regular))
           .tag(JunoMobileCodeHostSelection.cloud)
@@ -41,9 +53,14 @@ struct JunoMobileCodeHostsStrip: View {
       .pickerStyle(.inline)
       Divider()
       Button(action: onPair) {
-        Label(hosts.isEmpty ? "Pair a Mac…" : "Pair another computer…", image: JunoIcon.plus.assetName(.regular))
+        Label(hosts.isEmpty && linkMacs.isEmpty ? "Pair a Mac" : "Pair another Mac", image: JunoIcon.scan.assetName(.regular))
       }
       .accessibilityIdentifier("juno.mobile.code-pair")
+      if let onDevices {
+        Button(action: onDevices) {
+          Label("Paired computers", image: JunoIcon.device.assetName(.regular))
+        }
+      }
     } label: {
       HStack(spacing: JunoSpace.close) {
         JunoIconView(currentIcon, size: 22)
@@ -93,11 +110,22 @@ struct JunoMobileCodeHostsStrip: View {
     return hosts.first { $0.id == id }
   }
 
-  private var currentName: String { currentHost?.name ?? "Cloud" }
+  private func linkMac(_ id: String) -> CodeLinkMac? { linkMacs.first { $0.id == id } }
 
-  private var currentIcon: JunoIcon { currentHost.map(icon(for:)) ?? .cloud }
+  private var currentLinkMac: CodeLinkMac? {
+    guard case .host(let id) = selection else { return nil }
+    return linkMac(id)
+  }
+
+  private var currentName: String { currentLinkMac?.name ?? currentHost?.name ?? "Cloud" }
+
+  private var currentIcon: JunoIcon {
+    if currentLinkMac != nil { return .device }
+    return currentHost.map(icon(for:)) ?? .cloud
+  }
 
   private var currentState: String {
+    if let mac = currentLinkMac { return mac.stateLine }
     guard let host = currentHost else { return "Runs on Alevr's servers" }
     return host.online
       ? "Online"
@@ -353,10 +381,19 @@ struct JunoMobileCodeDevicesView: View {
         Text("Swipe left on a computer to revoke it. Its sessions and pending approvals go with it; the Mac pairs again from Alevr Code on the Mac.")
       }
 
-      Section("How to pair a Mac") {
-        step(1, "Open Alevr Code on your Mac and sign in to the same account.")
-        step(2, "In the sidebar, turn on Remote and share the folders you want to reach from your phone.")
-        step(3, "The Mac appears here within a minute. Sessions it runs show up under it.")
+      Section {
+        step(1, "On your Mac, open Alevr, then Settings, Connections, Control this Mac remotely.")
+        step(2, "Scan the code it shows with this iPhone, and approve.")
+        step(3, "Share the folders you want to reach from here. Sessions on the Mac show up in Code.")
+        Button {
+          junoMobileRequestPairing()
+        } label: {
+          Label("Pair a Mac", image: JunoIcon.scan.assetName(.regular))
+            .frame(minHeight: 44)
+        }
+        .accessibilityIdentifier("juno.mobile.code-devices-pair")
+      } header: {
+        Text("How to pair a Mac")
       }
     }
     .listStyle(.insetGrouped)
@@ -413,7 +450,7 @@ struct JunoMobileCodeDevicesView: View {
   private func hostRow(_ host: CodeRemoteHostSummary) -> some View {
     HStack(spacing: JunoSpace.cozy) {
       JunoIconView(host.platform == "windows" ? JunoIcon.monitor : JunoIcon.device, size: 17)
-        .foregroundStyle(Color.junoAccent)
+        .foregroundStyle(Color.junoSecondaryInk)
         .frame(width: 26)
       VStack(alignment: .leading, spacing: JunoSpace.micro) {
         Text(host.name).junoRowLabel()
@@ -431,10 +468,6 @@ struct JunoMobileCodeDevicesView: View {
         ProgressView()
           .controlSize(.small)
           .accessibilityLabel("Revoking \(host.name)")
-      } else {
-        Circle()
-          .fill(host.online ? Color.junoSuccess : Color.junoMutedForeground.opacity(0.4))
-          .frame(width: 8, height: 8)
       }
     }
     .padding(.vertical, JunoSpace.micro)
@@ -444,9 +477,9 @@ struct JunoMobileCodeDevicesView: View {
     HStack(alignment: .top, spacing: JunoSpace.cozy) {
       Text("\(number)")
         .junoFont(size: 12, relativeTo: .caption, weight: .semibold)
-        .foregroundStyle(Color.junoOnAccent)
+        .foregroundStyle(Color.primary)
         .frame(width: 22, height: 22)
-        .background(Circle().fill(Color.junoAccent))
+        .background(Circle().fill(Color.junoMuted))
       Text(text)
         .junoRowLabel()
         .fixedSize(horizontal: false, vertical: true)

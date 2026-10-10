@@ -26,6 +26,10 @@
     <string>$(JUNO_CONTRACT_VERSION)</string>
     <key>JunoChannel</key>
     <string>$(JUNO_CHANNEL)</string>
+    <key>NSUserActivityTypes</key>
+    <array>
+        <string>com.liammagnier.juno.thread</string>
+    </array>
     <key>CFBundleURLTypes</key>
     <array>
         <dict>

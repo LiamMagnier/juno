@@ -959,6 +959,16 @@ export const CLIENT_COMMAND_TYPE_VALUES = [
   "skills.list",
   // skills lane (additive): set a thread's selection now, without a message (every device sees it live).
   "skills.select",
+  // remote lane (additive, docs/code-v2/REMOTE-CONTROL.md): a paired phone or browser browsing the
+  // Mac's shared folders, committing / pushing / opening a PR, and asking the Mac app itself
+  // (host.*: answered by Alevr on the Mac, never by the env server) who it is and for a screenshot.
+  "fs.list",
+  "git.status",
+  "git.commit",
+  "git.push",
+  "git.pr",
+  "host.info",
+  "host.capture",
 ] as const;
 export type ClientCommandType = (typeof CLIENT_COMMAND_TYPE_VALUES)[number];
 
@@ -1038,6 +1048,69 @@ export interface ClientCommandParams {
    * env server answers with the selection it kept and emits `session.skills`.
    */
   "skills.select": { sessionId: string; skills: SkillActivation[] };
+  /** The folders inside `path` (absolute), for the new-session folder browser. Files only with `files: true`. */
+  "fs.list": { path: string; files?: boolean; showHidden?: boolean };
+  /** The working tree of the session's folder (or `cwd`): branch, upstream, changed files. */
+  "git.status": { sessionId?: string; cwd?: string };
+  /** Stages everything in the session's folder and commits it with `message`. */
+  "git.commit": { sessionId: string; message: string };
+  /** Pushes the current branch, setting its upstream on `origin` when it has none. */
+  "git.push": { sessionId: string };
+  /** Opens a pull request for the current branch with the GitHub CLI (`gh`). */
+  "git.pr": { sessionId: string; title: string; body?: string; draft?: boolean; base?: string };
+  /** Answered by the Mac app: its name, the folders it shares, and what it allows remotely. */
+  "host.info": Record<string, never>;
+  /** Answered by the Mac app: a PNG of its preview pane or of the booted Simulator. */
+  "host.capture": { target: RemoteCaptureTarget };
+}
+
+// remote lane (additive)
+export const FS_ENTRY_KIND_VALUES = ["dir", "file"] as const;
+export type FsEntryKind = (typeof FS_ENTRY_KIND_VALUES)[number];
+
+export interface FsEntry {
+  name: string;
+  /** Absolute. */
+  path: string;
+  kind: FsEntryKind;
+  /** A folder that holds a git repository (has `.git`). */
+  isRepo?: boolean;
+}
+
+export interface GitFileStatus {
+  /** Repository-relative. */
+  path: string;
+  /** Two-letter porcelain status, e.g. " M", "??", "A ". */
+  status: string;
+}
+
+export interface GitStatusResult {
+  /** Absent outside a repository. */
+  branch?: string;
+  upstream?: string;
+  ahead: number;
+  behind: number;
+  files: GitFileStatus[];
+  isRepo: boolean;
+  /** Whether `gh` is installed and signed in, so a PR can be opened. */
+  canOpenPr: boolean;
+  /** The repository's remote web URL, when it has one. */
+  remoteUrl?: string;
+}
+
+export const REMOTE_CAPTURE_TARGET_VALUES = ["preview", "simulator"] as const;
+export type RemoteCaptureTarget = (typeof REMOTE_CAPTURE_TARGET_VALUES)[number];
+
+export interface HostInfo {
+  /** The Mac's name, as the user's devices list it. */
+  name: string;
+  /** Folders the Mac shares with paired devices: new sessions and the folder browser stay inside them. */
+  sharedFolders: string[];
+  /** Whether the user allowed a remote terminal. */
+  terminal: boolean;
+  /** What host.capture can take right now. */
+  captures: RemoteCaptureTarget[];
+  appVersion?: string;
 }
 
 export interface ConversationDelivery {
@@ -1163,6 +1236,14 @@ export interface ClientCommandResults {
   "conversation.toggle": { enabled: boolean };
   "skills.list": { skills: LocalSkillSummary[] };
   "skills.select": { skills: SkillActivation[] };
+  "fs.list": { path: string; parent?: string; entries: FsEntry[] };
+  "git.status": GitStatusResult;
+  "git.commit": { sha: string; summary: string };
+  "git.push": { branch: string; remote: string };
+  "git.pr": { url: string };
+  "host.info": HostInfo;
+  /** `data` is base64 PNG. */
+  "host.capture": { mime: "image/png"; data: string; width: number; height: number; at: string };
 }
 
 export const WIRE_ERROR_CODE_VALUES = [

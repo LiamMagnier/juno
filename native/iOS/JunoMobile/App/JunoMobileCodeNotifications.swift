@@ -46,6 +46,19 @@ final class JunoMobileCodeNotifications {
     authorization = await center.notificationSettings().authorizationStatus
   }
 
+  // MARK: - Remote control categories
+
+  /// `ALEVR_CODE_APPROVAL` (Allow once / Deny, both behind Face ID, answered
+  /// in the background) and `ALEVR_HANDOFF`, added to whatever categories are
+  /// already registered rather than replacing them.
+  nonisolated static func registerRemoteCategories() {
+    let center = UNUserNotificationCenter.current()
+    Task {
+      let existing = await center.notificationCategories()
+      center.setNotificationCategories(JunoMobileRemoteNotificationRoute.merged(existing))
+    }
+  }
+
   // MARK: - Background refresh
 
   /// Called once at launch. Registration has to happen before the app

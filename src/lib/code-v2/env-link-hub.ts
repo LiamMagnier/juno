@@ -70,6 +70,16 @@ export const LINK_RELAYED_COMMANDS: ReadonlySet<ClientCommandType> = new Set<Cli
   "skills.list",
   // skills lane: a thread's selection set from this device; every device following it gets `session.skills`.
   "skills.select",
+  // remote lane (docs/code-v2/REMOTE-CONTROL.md): the folder browser and shipping a session's work
+  // (the Mac keeps both inside its shared folders and link-opened sessions), and what the Mac app
+  // itself answers: its name and shared folders, a preview or Simulator screenshot.
+  "fs.list",
+  "git.status",
+  "git.commit",
+  "git.push",
+  "git.pr",
+  "host.info",
+  "host.capture",
 ]);
 
 /**
@@ -195,6 +205,8 @@ export class DeviceLink implements LinkEndpoint {
   #replays = new Map<string, { sessionId: string; cursor: number }>();
   #rings = new Map<string, Ring>();
   #global: ServerEventEnvelope[] = [];
+  /** `globalOriginKey` of each `#global` entry, index for index. */
+  #globalOrigins: string[] = [];
   #globalSeq = 0;
   #nextId = 1;
   #lastPullAt = -Infinity;
@@ -362,8 +374,15 @@ export class DeviceLink implements LinkEndpoint {
     for (const e of (input.events ?? []).slice(0, LINK_LIMITS.maxPushItems)) {
       if (!e || e.type !== "event" || typeof e.sequence !== "number" || !e.event || typeof e.event.type !== "string") continue;
       if (e.stream === "global") {
+        const origin = globalOriginKey(e);
+        if (this.#globalOrigins.includes(origin)) continue;
         this.#global.push({ ...e, sequence: ++this.#globalSeq });
-        if (this.#global.length > LINK_LIMITS.ringGlobal) this.#global.splice(0, this.#global.length - LINK_LIMITS.ringGlobal);
+        this.#globalOrigins.push(origin);
+        if (this.#global.length > LINK_LIMITS.ringGlobal) {
+          const drop = this.#global.length - LINK_LIMITS.ringGlobal;
+          this.#global.splice(0, drop);
+          this.#globalOrigins.splice(0, drop);
+        }
         newEvents = true;
         accepted++;
         continue;
@@ -402,6 +421,23 @@ export class DeviceLink implements LinkEndpoint {
   stats(): { queued: number; pending: number; sessions: number; online: boolean } {
     return { queued: this.#queue.length, pending: this.#pending.size, sessions: this.#rings.size, online: this.online };
   }
+}
+
+/**
+ * Who a global event is, as the Mac sent it: its env-server sequence and a
+ * hash of the event. The hub renumbers the global stream, so without this a
+ * batch the Mac pushed twice (it retries a push whose answer it never got)
+ * would reach the browser twice: terminal output written twice. An identical
+ * event at the same sequence is the same event.
+ */
+export function globalOriginKey(e: Pick<ServerEventEnvelope, "sequence" | "event">): string {
+  const text = JSON.stringify(e.event);
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return `${e.sequence}|${text.length}|${hash.toString(36)}`;
 }
 
 /** All device links of this backend process, keyed by user and device. */

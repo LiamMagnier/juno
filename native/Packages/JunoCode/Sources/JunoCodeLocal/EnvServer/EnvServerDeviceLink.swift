@@ -100,7 +100,15 @@ public actor EnvServerDeviceLink {
         // only (the env server never answers with a body); a linked thread's
         // selection, set from another device.
         .skillsList, .skillsSelect,
+        // Remote lane (docs/code-v2/REMOTE-CONTROL.md): the folder browser,
+        // inside the shared folders, and shipping a link-opened session's work.
+        .fsList, .gitStatus, .gitCommit, .gitPush, .gitPr,
+        // Answered by this app, never forwarded: its name and shared folders,
+        // a screenshot of the preview pane or the Simulator.
+        .hostInfo, .hostCapture,
     ]
+    /// Commands this app answers itself (``hostHandler``) instead of the env server.
+    public static let hostCommands: Set<CodeV2.ClientCommandType> = [.hostInfo, .hostCapture]
     public static let terminalCommands: Set<CodeV2.ClientCommandType> = [
         .terminalOpen, .terminalWrite, .terminalResize, .terminalClose,
     ]
@@ -121,14 +129,19 @@ public actor EnvServerDeviceLink {
     private var linkedTerminals: Set<String> = []
     /// Where shareable events go as they arrive (the relay channel's outbox).
     private var outbound: (@Sendable (CodeV2.ServerEventEnvelope) async -> Void)?
+    /// Answers ``hostCommands`` (the Mac app's own: `host.info`, `host.capture`).
+    public typealias HostHandler = @Sendable (_ type: CodeV2.ClientCommandType, _ params: JSONValue) async throws -> JSONValue?
+    private let hostHandler: HostHandler?
 
     public init(
         bufferLimit: Int = 4_000,
         isOnline: @escaping @Sendable () async -> Bool = { true },
         allowedRoots: @escaping @Sendable () async -> [String],
         allowsTerminal: @escaping @Sendable () async -> Bool = { false },
+        hostHandler: HostHandler? = nil,
         forward: @escaping Forward
     ) {
+        self.hostHandler = hostHandler
         self.bufferLimit = bufferLimit
         self.isOnline = isOnline
         self.allowedRoots = allowedRoots
@@ -265,6 +278,18 @@ public actor EnvServerDeviceLink {
         if let problem = await check(type, params) {
             return refuse(command.id, .badRequest, problem)
         }
+        if Self.hostCommands.contains(type) {
+            guard let hostHandler else {
+                return refuse(command.id, .unsupported, "Update Alevr on your Mac to use this from another device.")
+            }
+            do {
+                return CodeV2.ServerResponse(id: command.id, ok: true, result: try await hostHandler(type, params))
+            } catch let EnvServerConnectionError.server(code, message) {
+                return refuse(command.id, code, message)
+            } catch {
+                return refuse(command.id, .notReady, (error as? LocalizedError)?.errorDescription ?? "Your Mac could not do that.")
+            }
+        }
         do {
             var result = try await forward(type, params)
             if type == .sessionOpen, case let .object(object)? = result, case let .string(id)? = object["sessionId"] {
@@ -290,6 +315,18 @@ public actor EnvServerDeviceLink {
             // Re-opening a session the link already follows (the hub's replay
             // after a gap): the env server ignores `cwd` for an existing session.
             if type == .sessionOpen, case let .string(id)? = object["sessionId"], linkedSessions.contains(id) { return nil }
+            // The same replay after this app restarted (it forgot which
+            // sessions the link opened; the hub's replay names cwd "/"): an
+            // existing session is re-admitted by its OWN folder, never by the
+            // cwd the request names.
+            if type == .sessionOpen, case let .string(id)? = object["sessionId"] {
+                let roots = await allowedRoots()
+                if let listed = try? await forward(.sessionList, .object([:])),
+                    let existing = Self.sessionCwd(id, in: listed)
+                {
+                    return Self.isInside(existing, roots: roots) ? nil : "That session is not in a folder shared with other devices."
+                }
+            }
             // Re-attaching to a terminal by id repaints its scrollback: only a
             // terminal the link itself opened.
             if type == .terminalOpen, case let .string(id)? = object["terminalId"], !linkedTerminals.contains(id) {
@@ -328,6 +365,19 @@ public actor EnvServerDeviceLink {
                 return "Open the session first."
             }
             return nil
+        case .fsList:
+            guard case let .string(path)? = object["path"] else { return "A folder is required." }
+            return Self.isInside(path, roots: await allowedRoots())
+                ? nil : "That folder is not shared with other devices. Share it from Alevr on your Mac first."
+        case .gitStatus:
+            if case let .string(id)? = object["sessionId"] {
+                return linkedSessions.contains(id) ? nil : "Open the session first."
+            }
+            guard case let .string(cwd)? = object["cwd"] else { return "A session or a folder is required." }
+            return Self.isInside(cwd, roots: await allowedRoots()) ? nil : "That folder is not shared with other devices."
+        case .gitCommit, .gitPush, .gitPr:
+            guard case let .string(id)? = object["sessionId"] else { return "A session is required." }
+            return linkedSessions.contains(id) ? nil : "Open the session first."
         case .terminalWrite, .terminalResize, .terminalClose:
             guard case let .string(id)? = object["terminalId"] else { return "A terminal is required." }
             return linkedTerminals.contains(id) ? nil : "Open the terminal first."
@@ -403,6 +453,11 @@ public actor EnvServerDeviceLinkChannel {
 
     public static let protocolName = "alevr-code-v2"
     static let maxPushItems = 1_000
+    /// Attempts per batch before it is left to the hub's replay.
+    static let maxPushRetries = 6
+    /// What the outbox may hold while the backend is unreachable.
+    static let maxOutbox = 20_000
+    private var pushFailures = 0
 
     private let deviceId: String
     private let link: EnvServerDeviceLink
@@ -528,7 +583,31 @@ public actor EnvServerDeviceLinkChannel {
                 let events: [CodeV2.ServerEventEnvelope]
             }
             guard let body = try? JSONEncoder().encode(Push(responses: responses, events: events)) else { continue }
-            _ = try? await perform("POST", hostPath, body)
+            // A failed push used to drop its batch: the web then saw a gap
+            // (or, for a response, a timeout) for something the Mac did. The
+            // batch goes back to the front, in order, and is retried with a
+            // short backoff; a 404 (unpaired) is the one answer that drops it.
+            let status = (try? await perform("POST", hostPath, body))?.0
+            if let status, (200..<300).contains(status) || status == 404 {
+                pushFailures = 0
+                continue
+            }
+            outbox.insert(contentsOf: batch, at: 0)
+            if outbox.count > Self.maxOutbox { outbox.removeLast(outbox.count - Self.maxOutbox) }
+            pushFailures += 1
+            guard pushFailures <= Self.maxPushRetries else {
+                // Give up on this batch: the hub's gap replay recovers events,
+                // and the web's RPC timeout covers a lost response.
+                outbox.removeFirst(min(batch.count, outbox.count))
+                pushFailures = 0
+                continue
+            }
+            let delay = Duration.milliseconds(min(5_000, 250 << min(pushFailures - 1, 5)))
+            flushing = Task { [weak self] in
+                try? await Task.sleep(for: delay)
+                await self?.flush()
+            }
+            return
         }
     }
 }
