@@ -502,7 +502,7 @@ public actor PreviewRegistry {
 
         entry.configuration = configuration
         entry.displayCommand = configuration.isStatic
-            ? "Juno's static server"
+            ? "Alevr's static server"
             : configuration.commandLine() ?? configuration.displayArgv.joined(separator: " ")
         entry.workingDirectoryDisplay = configuration.workingDirectoryDisplay
         entry.blockedOutboundHost = nil
