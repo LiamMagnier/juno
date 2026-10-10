@@ -34,6 +34,7 @@ import type { ClientMessage } from "@/types/chat";
 import { useEnvLink } from "./use-env-link";
 import type { WorkspaceModel } from "./types";
 import { CodeWorkspace } from "./workspace";
+import { initialModePair, projectModeKey, type ProjectModeDefault } from "@/lib/code-v2/composer-mode";
 
 export interface CodeV2RouteProps {
   conversation: {
@@ -113,6 +114,9 @@ export function CodeV2Route({ conversation, initialMessages }: CodeV2RouteProps)
     typeof window === "undefined" ? {} : (readJson(prefKey) ?? {}),
   );
   React.useEffect(() => writeJson(prefKey, prefs), [prefKey, prefs]);
+  // The project's last mode is the default for a thread that has not chosen one.
+  const projectKey = projectModeKey(conversation.codeWorkspaceKey ?? conversation.codeWorkspacePath ?? null);
+  const [projectMode] = React.useState<Partial<ProjectModeDefault> | null>(() => (projectKey && typeof window !== "undefined" ? readJson(projectKey) : null));
   const selection = reconcileSelection(instances, prefs.selection);
   const [routing, setRoutingState] = React.useState<RoleRouting>({ preset: "solo", orchestrator: selection });
   React.useEffect(() => {
@@ -170,8 +174,10 @@ export function CodeV2Route({ conversation, initialMessages }: CodeV2RouteProps)
   }, [state]);
 
   const cwd = conversation.codeWorkspacePath ?? "";
-  const runtimeMode = prefs.runtimeMode ?? "auto-edit";
-  const interactionMode = prefs.interactionMode ?? "default";
+  const { runtimeMode, interactionMode } = initialModePair(prefs, projectMode);
+  const rememberMode = (pair: ProjectModeDefault) => {
+    if (projectKey) writeJson(projectKey, pair);
+  };
 
   async function sendLegacy(text: string) {
     const choice = { model: selection.instanceId === "alevr" ? selection.model : null, reasoningEffort: selection.effort ?? null };
@@ -224,8 +230,18 @@ export function CodeV2Route({ conversation, initialMessages }: CodeV2RouteProps)
     },
     setSelection: (sel) => setPrefs((p) => ({ ...p, selection: sel })),
     setRouting: persistRouting,
-    setRuntimeMode: (m) => setPrefs((p) => ({ ...p, runtimeMode: m })),
-    setInteractionMode: (m) => setPrefs((p) => ({ ...p, interactionMode: m })),
+    setRuntimeMode: (m) => {
+      rememberMode({ runtimeMode: m, interactionMode });
+      setPrefs((p) => ({ ...p, runtimeMode: m, interactionMode: p.interactionMode ?? interactionMode }));
+    },
+    setModes: (pair) => {
+      rememberMode(pair);
+      setPrefs((p) => ({ ...p, ...pair }));
+    },
+    setInteractionMode: (m) => {
+      rememberMode({ runtimeMode, interactionMode: m });
+      setPrefs((p) => ({ ...p, interactionMode: m, runtimeMode: p.runtimeMode ?? runtimeMode }));
+    },
     editQueued: (id, text) => setLocalQueue((q) => queueReducer(q, { type: "edit", id, text })),
     removeQueued: (id) => setLocalQueue((q) => queueReducer(q, { type: "remove", id })),
     moveQueued: (id, to) => setLocalQueue((q) => queueReducer(q, { type: "move", id, to })),

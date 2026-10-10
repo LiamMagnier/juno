@@ -15,6 +15,8 @@ public struct CodeV2EnvSessionView: View {
     var setup: ((String, CodeV2.ProviderSetupAction) -> Void)?
     /// Where the thread runs, for the strip under the composer.
     var place: CodeV2SessionPlace?
+    /// Dictation and voice from the host.
+    var speech: CodeComposerSpeech?
 
     @State private var pendingIndex = 0
     /// "Resume at reset" was chosen: the task that sends "Continue." then.
@@ -29,7 +31,8 @@ public struct CodeV2EnvSessionView: View {
         dock: CodeV2DockController? = nil,
         openConnections: (() -> Void)? = nil,
         setup: ((String, CodeV2.ProviderSetupAction) -> Void)? = nil,
-        place: CodeV2SessionPlace? = nil
+        place: CodeV2SessionPlace? = nil,
+        speech: CodeComposerSpeech? = nil
     ) {
         self.session = session
         self.composer = composer
@@ -38,6 +41,7 @@ public struct CodeV2EnvSessionView: View {
         self.openConnections = openConnections
         self.setup = setup
         self.place = place
+        self.speech = speech
     }
 
     private var snapshot: CodeV2.SessionSnapshot { session.snapshot }
@@ -87,6 +91,37 @@ public struct CodeV2EnvSessionView: View {
             CodeV2ConnectedApprovals.shared.showing(session: new)
         }
         .onDisappear { CodeV2ConnectedApprovals.shared.hiding(session: session.sessionId) }
+        .onChange(of: speech?.heard) { _, heard in
+            if let heard { take(heard) }
+        }
+    }
+
+    /// What the host heard: dictation joins the draft (and may send it); a
+    /// spoken request is sent on its own, the way the typed path sends it (a
+    /// new turn, a steer where the runtime steers, else a queued follow-up),
+    /// and the draft is left alone.
+    private func take(_ heard: CodeHeardText) {
+        switch heard.disposition {
+        case .append:
+            composer.draft = heard.joined(to: composer.draft)
+            focused = true
+        case .appendAndSend:
+            composer.draft = heard.joined(to: composer.draft)
+            send()
+        case .sendAlone:
+            let spoken = heard.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !spoken.isEmpty else { return }
+            Task {
+                if isRunning {
+                    if canSteer { await session.steer(spoken) } else { await session.queue(spoken) }
+                } else {
+                    await session.send(
+                        spoken, selection: composer.selection, routing: composer.routing,
+                        runtimeMode: composer.runtimeMode, interactionMode: composer.interactionMode
+                    )
+                }
+            }
+        }
     }
 
     /// A thread with no turns yet (TARGET §4): the question at about 38% of
@@ -254,6 +289,7 @@ public struct CodeV2EnvSessionView: View {
                 editQueued: { item in composer.draft = item.input.text; focused = true },
                 steerQueued: canSteer ? { item in Task { await session.steer(item.input.text) } } : nil
             )
+            CodeComposerSpeechButtons(speech: speech)
         }
     }
 

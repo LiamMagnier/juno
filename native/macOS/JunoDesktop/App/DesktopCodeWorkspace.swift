@@ -58,6 +58,8 @@ struct DesktopCodeWorkspace: View {
     @State private var isDictating = false
     @State private var previewTarget: CodePreviewTarget?
     @State private var voiceSession: DesktopVoiceSession?
+    /// What dictation or the call heard, for the composer on screen to take.
+    @State private var heard: CodeHeardText?
     @State private var voiceUnavailable: String?
     @State private var registry = DesktopWorkbenchRegistry.shared
     // Code v2: the composer's shared choices, the env server for
@@ -541,19 +543,23 @@ struct DesktopCodeWorkspace: View {
                 openConnections: openConnections,
                 setup: { id, action in Task { await envHub.openSetup(for: id, action: action) } }
             ),
+            speech: speech,
             selectProject: { id in selection.wrappedValue = id.map { .repository($0) } ?? .draft },
             addProject: { isChoosingRepository = true },
             startLocal: start,
             openTask: { task in selection.wrappedValue = .task(task.id) }
         )
+        .codeVoiceLink(voiceSession?.controller, isRunning: false, latestReply: nil, deliver: hearRequest)
+        .modifier(dictationLayer)
         .junoVoiceColumn(voiceColumn)
     }
 
     @ViewBuilder
     private func session(_ controller: SessionController) -> some View {
         if let binding = envBindings.binding(for: controller.sessionID.value) {
+            let env = envSession(binding)
             CodeV2EnvSessionView(
-                session: envSession(binding),
+                session: env,
                 composer: v2Composer,
                 directory: v2Directory,
                 dock: envDock,
@@ -562,8 +568,17 @@ struct DesktopCodeWorkspace: View {
                 place: CodeV2SessionPlace(
                     project: controller.workspaceDisplayName,
                     branch: controller.gitStatus?.branch ?? controller.session.gitBranch
-                )
+                ),
+                speech: speech
             )
+            .codeVoiceLink(
+                voiceSession?.controller,
+                isRunning: env.isRunning,
+                latestReply: DesktopCodeVoiceBriefing.latestReply(env.snapshot.items),
+                deliver: hearRequest
+            )
+            .modifier(dictationLayer)
+            .junoVoiceColumn(voiceColumn)
         } else {
             alevrSession(controller)
         }
@@ -578,9 +593,7 @@ struct DesktopCodeWorkspace: View {
                 panelVisible = true
                 if let path { controller.review.focusedPath = path }
             },
-            beginDictation: JunoSpeechService.isSupported
-                ? { withAnimation(JunoMotion.fast) { isDictating = true } }
-                : nil,
+            speech: speech,
             v2: CodeV2StudioContext(
                 composer: v2Composer,
                 directory: v2Directory,
@@ -591,25 +604,14 @@ struct DesktopCodeWorkspace: View {
             )
         )
         .task(id: controller.sessionID) { adoptV2Selection(from: controller) }
+        .codeVoiceLink(
+            voiceSession?.controller,
+            isRunning: controller.isRunning,
+            latestReply: DesktopCodeVoiceBriefing.latestReply(controller.events),
+            deliver: hearRequest
+        )
+        .modifier(dictationLayer)
         .junoVoiceColumn(voiceColumn)
-        .overlay(alignment: .bottom) {
-            if isDictating {
-                DesktopDictation(
-                    onCancel: { withAnimation(JunoMotion.fast) { isDictating = false } },
-                    onStop: { transcript in
-                        appendDictated(transcript, to: controller)
-                        withAnimation(JunoMotion.fast) { isDictating = false }
-                    },
-                    onSend: { transcript in
-                        appendDictated(transcript, to: controller)
-                        withAnimation(JunoMotion.fast) { isDictating = false }
-                        Task { await controller.send() }
-                    }
-                )
-                .padding(JunoSpace.regular)
-                .transition(.junoInline)
-            }
-        }
         .overlay(alignment: .top) {
             // The stop while screen control runs, and the missing macOS grant
             // with its System Settings link when a start could not happen.
@@ -686,13 +688,8 @@ struct DesktopCodeWorkspace: View {
                 Button(controller?.computerUseActive == true ? "Stop Alevr Using Apps" : "Let Alevr Use Apps",
                        action: toggleComputerUse)
                     .disabled(controller?.computerUseUnavailableReason != nil)
-                Button("Voice Conversation") {
-                    startVoice(
-                        modelID: controller?.session.configuration.modelID
-                            ?? workbenchModel.availableModels.first?.modelID ?? "",
-                        projectID: targetRepository?.id.value
-                    )
-                }
+                Button("Voice Conversation", action: startCodeVoice)
+                    .disabled(voiceSession != nil)
                 Divider()
                 Button("Rename…") { if let session = controller?.session { beginRename(session) } }
                     .disabled(controller == nil)
@@ -1080,11 +1077,51 @@ struct DesktopCodeWorkspace: View {
         }
     }
 
-    private func appendDictated(_ transcript: String, to controller: SessionController) {
-        let spoken = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !spoken.isEmpty else { return }
-        let existing = controller.composerText.trimmingCharacters(in: .whitespacesAndNewlines)
-        controller.composerText = existing.isEmpty ? spoken : "\(existing) \(spoken)"
+    // MARK: - Dictation and voice in the composer
+
+    /// The composer's microphone and voice button, and what they heard. The
+    /// mic steps aside during a call (one microphone), and the voice button
+    /// while one is live.
+    private var speech: CodeComposerSpeech {
+        CodeComposerSpeech(
+            dictate: JunoSpeechService.isSupported && voiceSession == nil && !isDictating
+                ? { withAnimation(JunoMotion.fast) { isDictating = true } }
+                : nil,
+            talk: voiceSession == nil && !isDictating ? startCodeVoice : nil,
+            heard: heard
+        )
+    }
+
+    /// A sentence spoken in the call: the thread's next turn.
+    private func hearRequest(_ text: String) {
+        heard = CodeHeardText(text: text, disposition: .sendAlone)
+    }
+
+    private var dictationLayer: DesktopCodeDictationLayer {
+        DesktopCodeDictationLayer(isDictating: $isDictating, heard: $heard)
+    }
+
+    /// The composer button's voice: a call about the thread on screen, on its
+    /// model, briefed with what the thread has done so far.
+    private func startCodeVoice() {
+        guard DesktopPlanGate.shared.require(.voice) else { return }
+        let turns: [(role: JunoVoiceTranscriptRole, text: String)]
+        if let controller, let binding = envBindings.binding(for: controller.sessionID.value) {
+            turns = DesktopCodeVoiceBriefing.turns(envSession(binding).snapshot.items)
+        } else if let controller {
+            turns = DesktopCodeVoiceBriefing.turns(controller.events)
+        } else {
+            turns = []
+        }
+        startVoice(
+            modelID: controller?.session.configuration.modelID
+                ?? workbenchModel.availableModels.first?.modelID ?? "",
+            projectID: targetRepository?.id.value,
+            history: DesktopCodeVoiceBriefing.history(
+                place: controller?.workspaceDisplayName ?? targetRepository?.descriptor.displayName,
+                turns: turns
+            )
+        )
     }
 
     private func beginRename(_ session: CodeSession) {
@@ -1106,31 +1143,19 @@ struct DesktopCodeWorkspace: View {
     // MARK: - Voice
 
     private var voiceColumn: DesktopVoiceColumn? {
-        guard let voiceSession, let configuration, let session else { return nil }
+        guard let voiceSession else { return nil }
         return DesktopVoiceColumn(
             sessionID: voiceSession.id,
             controller: voiceSession.controller,
-            saveTranscript: { sessionID, turns in
-                guard let client = configuration.voiceTranscriptClient else {
-                    throw DesktopVoiceError.unavailable
-                }
-                let saved = try await client.save(
-                    sessionID: sessionID,
-                    conversationID: nil,
-                    modelID: voiceSession.modelID,
-                    projectID: voiceSession.projectID,
-                    connectors: [],
-                    turns: turns,
-                    for: session.profile.id
-                )
-                await configuration.syncModel?.refresh()
-                return saved.conversationID
-            },
+            // Nothing to file: what the reader asked for went to the thread as
+            // turns while they spoke, and the thread is the record. Saving the
+            // call as a chat would put Code's work in Chat's history.
+            saveTranscript: { _, _ in "" },
             close: { self.voiceSession = nil }
         )
     }
 
-    private func startVoice(modelID: String, projectID: String?) {
+    private func startVoice(modelID: String, projectID: String?, history: [JunoVoiceHistoryEntry]) {
         guard voiceSession == nil else { return }
         guard let configuration, let session, let sender = configuration.requestSender else {
             voiceUnavailable = "Alevr is not signed in, so it cannot start a voice conversation."
@@ -1155,7 +1180,9 @@ struct DesktopCodeWorkspace: View {
             projectID: projectID
         )
         voiceSession = started
-        Task { await started.controller.start(provider: provider) }
+        // A call and a dictation cannot share the microphone.
+        isDictating = false
+        Task { await started.controller.start(provider: provider, history: history) }
     }
 
     // MARK: - Lifecycle

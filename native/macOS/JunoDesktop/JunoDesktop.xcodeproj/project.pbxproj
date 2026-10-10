@@ -215,6 +215,7 @@
 		DB3928BCB32445B4288D6165 /* DesktopDesignEditorHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 774077F2584C1A4709F9E8E2 /* DesktopDesignEditorHost.swift */; };
 		DBB5D3544F36C7AC5DEDC120 /* DesktopSettingsPersonalizationPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72BF3D7309716618ED4E4875 /* DesktopSettingsPersonalizationPane.swift */; };
 		DD69FA1D993610F06891A56D /* CodeSidebarSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB1E66E3CC3E98693A46C9C1 /* CodeSidebarSnapshotTests.swift */; };
+		DE3840780118FEF0D61AE228 /* DesktopCodeVoice.swift in Sources */ = {isa = PBXBuildFile; fileRef = 210FB11BEF4C90E7468F1467 /* DesktopCodeVoice.swift */; };
 		DF2A1897160CC8887E91F7D2 /* index.html in Resources */ = {isa = PBXBuildFile; fileRef = 6A84BDBBCFA23EE700276267 /* index.html */; };
 		E1137EF861F13AA12CAF887E /* DesktopSkillSheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42528E92FFAD4E5724D441E9 /* DesktopSkillSheets.swift */; };
 		E1756D0A4778BA64BCEBBAF2 /* DesktopStageCPagesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A75FD9C41C68F886B6FC99BE /* DesktopStageCPagesTests.swift */; };
@@ -313,6 +314,7 @@
 		1DE209A3D8F0677D44B58E99 /* DesktopWorkPageParts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopWorkPageParts.swift; sourceTree = "<group>"; };
 		1F4A1EE60E2138D3DFF69F09 /* DesktopScreenPresence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopScreenPresence.swift; sourceTree = "<group>"; };
 		210068A1A75B6BD25234E4B2 /* ResearchViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResearchViews.swift; sourceTree = "<group>"; };
+		210FB11BEF4C90E7468F1467 /* DesktopCodeVoice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopCodeVoice.swift; sourceTree = "<group>"; };
 		235EB2B1D38AE1D98186CB62 /* DesktopChatShellTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopChatShellTests.swift; sourceTree = "<group>"; };
 		2487D65CB288F8DC1D550F77 /* ChatWorkRunCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatWorkRunCard.swift; sourceTree = "<group>"; };
 		254B3DC49106D54CC41DE6B9 /* DesktopChatWorkspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopChatWorkspace.swift; sourceTree = "<group>"; };
@@ -669,6 +671,7 @@
 				7597B1472C5D749C74C2C1D4 /* DesktopCodeHost.swift */,
 				E025C22E2B1F77D35FC1483B /* DesktopCodePreviewDock.swift */,
 				AE0BCDD021BF5183D9F1413D /* DesktopCodeStudio.swift */,
+				210FB11BEF4C90E7468F1467 /* DesktopCodeVoice.swift */,
 				9F2B1A470F0961AE5B4912BF /* DesktopCodeWorkspace.swift */,
 				1D5623E5F0CBF87DFCB19722 /* DesktopCommandCatalog.swift */,
 				ADA36220F51C8AF1A7636D73 /* DesktopCommands.swift */,
@@ -1138,6 +1141,7 @@
 				7374309827C987CF0E3D49A9 /* DesktopCodeHost.swift in Sources */,
 				0541EBFC31E4BE5D6C38E894 /* DesktopCodePreviewDock.swift in Sources */,
 				07A83475FE4A621A61851E47 /* DesktopCodeStudio.swift in Sources */,
+				DE3840780118FEF0D61AE228 /* DesktopCodeVoice.swift in Sources */,
 				3014845877708BCAAA05C720 /* DesktopCodeWorkspace.swift in Sources */,
 				E29751B5F387F236B91A3B91 /* DesktopCommandCatalog.swift in Sources */,
 				40DC421EE2BBF10E74F5B273 /* DesktopCommands.swift in Sources */,

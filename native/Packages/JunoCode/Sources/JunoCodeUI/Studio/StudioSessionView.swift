@@ -11,6 +11,8 @@ public struct StudioSessionView: View {
     let models: [ModelOption]
     let openReview: (String?) -> Void
     let beginDictation: (() -> Void)?
+    /// Dictation and voice from the host. Takes the place of `beginDictation`.
+    let speech: CodeComposerSpeech?
     /// The Code v2 composer footer (model rail, traits, orchestrate, gauge)
     /// and the hand-off to the env server. Nil keeps the classic chips.
     let v2: CodeV2StudioContext?
@@ -25,12 +27,14 @@ public struct StudioSessionView: View {
         models: [ModelOption],
         openReview: @escaping (String?) -> Void,
         beginDictation: (() -> Void)? = nil,
+        speech: CodeComposerSpeech? = nil,
         v2: CodeV2StudioContext? = nil
     ) {
         self.controller = controller
         self.models = models
         self.openReview = openReview
         self.beginDictation = beginDictation
+        self.speech = speech
         self.v2 = v2
     }
 
@@ -60,6 +64,43 @@ public struct StudioSessionView: View {
     private var handsOff: Bool {
         guard let v2 else { return false }
         return v2.composer.engine == .envServer
+    }
+
+    private var effectiveSpeech: CodeComposerSpeech? {
+        speech ?? beginDictation.map { CodeComposerSpeech(dictate: $0) }
+    }
+
+    /// What the host heard: dictation joins the draft (and may send it), a
+    /// spoken request in a call is sent on its own, by the same road as a
+    /// typed message (a new turn, or a steer or queued follow-up while Alevr
+    /// works), and the draft is put back afterwards.
+    private func take(_ heard: CodeHeardText) {
+        switch heard.disposition {
+        case .append:
+            controller.composerText = heard.joined(to: controller.composerText)
+            composerFocused = true
+        case .appendAndSend:
+            controller.composerText = heard.joined(to: controller.composerText)
+            sendOrHandOff()
+        case .sendAlone:
+            let spoken = heard.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !spoken.isEmpty else { return }
+            let saved = controller.composerText
+            controller.composerText = spoken
+            if handsOff {
+                sendOrHandOff()
+                controller.composerText = saved
+            } else {
+                Task {
+                    await controller.send()
+                    // Delivered: the draft comes back. Refused: the words stay,
+                    // after the draft, so nothing said or typed is lost.
+                    controller.composerText = controller.composerText.isEmpty
+                        ? saved
+                        : heard.joined(to: saved)
+                }
+            }
+        }
     }
 
     private func sendOrHandOff() {
@@ -181,6 +222,9 @@ public struct StudioSessionView: View {
         }
         // The sheets, questions and side answers slash verbs open (Lane F).
         .studioCommandCenter(controller: controller, models: models)
+        .onChange(of: speech?.heard) { _, heard in
+            if let heard { take(heard) }
+        }
         .onChange(of: isRunning) { _, running in
             if running { controller.activeInstructionKind = preferences.followUp.instructionKind }
         }
@@ -363,13 +407,7 @@ public struct StudioSessionView: View {
                 isEnabled: !isBusy
             )
             }
-            if let beginDictation {
-                Button(action: beginDictation) { JunoIconView(.mic, size: 15) }
-                    .buttonStyle(StudioIconButtonStyle())
-                    .help("Dictate")
-                    .accessibilityLabel("Dictate")
-                    .accessibilityIdentifier("juno.code.composer.dictate")
-            }
+            CodeComposerSpeechButtons(speech: effectiveSpeech)
         }
     }
 

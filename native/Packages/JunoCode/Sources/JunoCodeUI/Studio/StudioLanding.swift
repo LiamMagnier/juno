@@ -64,6 +64,8 @@ public struct StudioLanding: View {
     /// The Code v2 composer (model trigger, + menu, team). Nil keeps the
     /// classic chips.
     let v2: CodeV2StudioContext?
+    /// Dictation and voice from the host.
+    let speech: CodeComposerSpeech?
 
     @State private var prompt: String
     @State private var environment: CodeEnvironmentChoice
@@ -91,6 +93,7 @@ public struct StudioLanding: View {
         initialEnvironment: CodeEnvironmentChoice? = nil,
         adoptedInitialPrompt: (() -> Void)? = nil,
         v2: CodeV2StudioContext? = nil,
+        speech: CodeComposerSpeech? = nil,
         selectProject: @escaping (WorkspaceID?) -> Void,
         addProject: @escaping () -> Void,
         startLocal: @escaping (StudioDraft) -> Void,
@@ -104,6 +107,7 @@ public struct StudioLanding: View {
         self.initialEnvironment = initialEnvironment
         self.adoptedInitialPrompt = adoptedInitialPrompt
         self.v2 = v2
+        self.speech = speech
         self.selectProject = selectProject
         self.addProject = addProject
         self.startLocal = startLocal
@@ -249,7 +253,14 @@ public struct StudioLanding: View {
                 }
             }
         } trailing: {
-            EmptyView()
+            CodeComposerSpeechButtons(speech: speech)
+        }
+        .onChange(of: speech?.heard) { _, heard in
+            guard let heard else { return }
+            // Dictation joins the draft; a send, or a spoken request in a
+            // call, starts the session with it, as Return would.
+            prompt = heard.joined(to: prompt)
+            if heard.disposition == .append { focused = true } else { send() }
         }
     }
 
