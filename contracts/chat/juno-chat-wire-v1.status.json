@@ -40,6 +40,15 @@
     "request.webSearch": "native",
     "request.fastMode": "native",
     "request.proMode": "native",
+    "request.ultraFast": {
+      "status": "native",
+      "note": "OpenAI's Ultrafast service tier, exclusive with fastMode; the Mac and iPhone effort panels send it where the model is on the Ultrafast table."
+    },
+    "request.crossReply": {
+      "status": "native",
+      "note": "A turn that answers a message from another conversation (with regenerate: true); the Swift apps send it from NativeCrossMessages."
+    },
+    "request.crossReply.linkId": "native",
     "request.origin": {
       "status": "web-only",
       "note": "Durable creation metadata for a conversation created by this request. The Swift apps create conversations through sync; the Electron client (native/desktop-electron) sends main_macos here."
@@ -686,6 +695,10 @@
       {
         "file": "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeChatAPIClient.swift",
         "struct": "PrivateGenerationRequestWire"
+      },
+      {
+        "file": "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeCrossMessages.swift",
+        "struct": "CrossReplyWire"
       }
     ],
     "frames": [

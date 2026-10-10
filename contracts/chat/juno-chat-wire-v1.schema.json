@@ -10,7 +10,7 @@
     "unclassified": "Nobody has decided yet. `npm run native:wire:check` fails."
   },
   "x-native-summary": {
-    "native": 196,
+    "native": 199,
     "planned": 227,
     "web-only": 45,
     "unclassified": 0
@@ -309,6 +309,11 @@
           "type": "boolean",
           "x-native": "native"
         },
+        "ultraFast": {
+          "type": "boolean",
+          "x-native": "native",
+          "x-native-note": "OpenAI's Ultrafast service tier, exclusive with fastMode; the Mac and iPhone effort panels send it where the model is on the Ultrafast table."
+        },
         "proMode": {
           "type": "boolean",
           "x-native": "native"
@@ -486,6 +491,22 @@
           ],
           "x-native": "planned",
           "x-native-note": "A follow-up agent turn in a room (src/lib/agents/rooms.ts): the web asks the next planned or asked member to answer the room's newest message. The apps do not show rooms yet, so they never send it."
+        },
+        "crossReply": {
+          "type": "object",
+          "properties": {
+            "linkId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "x-native": "native"
+            }
+          },
+          "required": [
+            "linkId"
+          ],
+          "x-native": "native",
+          "x-native-note": "A turn that answers a message from another conversation (with regenerate: true); the Swift apps send it from NativeCrossMessages."
         },
         "privateMode": {
           "type": "boolean",
