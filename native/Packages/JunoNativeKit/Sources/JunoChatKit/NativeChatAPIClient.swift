@@ -611,6 +611,10 @@ public enum NativeChatServerEvent: Equatable, Sendable {
     /// has left `draft`. Not terminal — the reply goes on to say so in a
     /// sentence. The app's task follower adopts it.
     case work(NativeChatWorkStart)
+    /// A folder call for this Mac to run (`local_folder` turns only,
+    /// ``NativeLocalToolHosting``). Not terminal: the turn waits for the
+    /// outcome and carries on.
+    case localTool(NativeLocalToolCall)
     /// The SSE `id:` of the frame just delivered: the generation's frame
     /// sequence number, which a reconnect resumes after
     /// (`/api/chat/stream/{id}?after=seq`). Not a frame of its own.
@@ -832,6 +836,10 @@ public struct NativeChatGenerationRequest: Equatable, Sendable {
     /// (`src/lib/chat/request.ts`), which never parses the message for a
     /// leading slash. Nil is not encoded.
     public let skillSlug: String?
+    /// The folder on this Mac the chat works in (`localFolder` on the
+    /// route). Present, it also adds `local_folder` to `clientFeatures`, so
+    /// the server offers the folder tools. Nil is not encoded.
+    public let localFolder: NativeLocalFolderContext?
 
     /// The route's cap on ``regenerateInstruction``, in characters.
     public static let regenerateInstructionLimit = 400
@@ -862,8 +870,10 @@ public struct NativeChatGenerationRequest: Equatable, Sendable {
         regenerateInstruction: String? = nil,
         workHandoff: Bool = false,
         skillSlug: String? = nil,
-        context: [NativeContextToken] = []
+        context: [NativeContextToken] = [],
+        localFolder: NativeLocalFolderContext? = nil
     ) {
+        self.localFolder = localFolder
         self.context = Array(context.prefix(16))
         self.workHandoff = workHandoff
         self.skillSlug = skillSlug
@@ -1343,7 +1353,8 @@ public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
             workHandoff: request.workHandoff ? true : nil,
             skillSlug: request.skillSlug,
             context: request.context.isEmpty ? nil : request.context,
-            clientFeatures: NativeChatClientFeatures.declared,
+            localFolder: request.localFolder,
+            clientFeatures: NativeChatClientFeatures.declared(localFolder: request.localFolder),
             timeZone: NativeChatClientFeatures.timeZone,
             locale: NativeChatClientFeatures.locale
         )
@@ -1569,6 +1580,7 @@ public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
         }
         guard Self.decodedFrameTypes.contains(frame.type) else { return .ping }
         if frame.type == "work" { return try decodeWorkFrame(payload) }
+        if frame.type == "local_tool" { return decodeLocalToolFrame(payload) }
         let envelope: EventEnvelopeWire
         do { envelope = try JSONDecoder().decode(EventEnvelopeWire.self, from: payload) }
         catch { throw NativeChatAPIError.malformedResponse }
@@ -1708,7 +1720,7 @@ public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
     /// type is skipped as a ``NativeChatServerEvent/ping``.
     private static let decodedFrameTypes: Set<String> = [
         "meta", "title", "delta", "reasoning", "sources", "done", "error",
-        "activity", "approval", "progress", "resume", "handoff", "work", "ping",
+        "activity", "approval", "progress", "resume", "handoff", "work", "local_tool", "ping",
     ]
 
     /// `{type: "work", session: ClientWorkSession}` (`serializers.ts`
@@ -2123,6 +2135,8 @@ private struct GenerationRequestWire: Encodable {
     /// The armed skill's slash name, or absent.
     let skillSlug: String?
     let context: [NativeContextToken]?
+    /// The folder this turn works in, by name and access. Absent unless set.
+    let localFolder: NativeLocalFolderContext?
     /// The grammar this client renders (the rework's `clientFeatures`), with
     /// the zone and locale `current_time` and research read. Always sent: the
     /// route's schema is NOT strict (`chatBodySchema` is a plain `z.object`,

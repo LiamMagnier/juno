@@ -2,6 +2,7 @@ import AppKit
 import Foundation
 import JunoChatKit
 import JunoDesignSystem
+import JunoWorkRuntime
 import SwiftUI
 
 /// A model the Regenerate menu can switch to: the catalog row, reduced to what
@@ -619,7 +620,7 @@ struct DesktopMessageRow: View {
                             message: shown,
                             live: shown.isPending,
                             recovering: isRecovering,
-                            awaitingApproval: approvals.approvals.contains(where: \.isPending),
+                            awaitingApproval: approvals.approvals.contains(where: \.isPending) || !approvals.folder.isEmpty,
                             ownsLoop: activityPanelMessageID != shown.id,
                             openPanel: actions.openActivity,
                             openResearch: actions.openResearch
@@ -636,6 +637,15 @@ struct DesktopMessageRow: View {
                         errorMessage: approvals.error(approval.id),
                         canAllowScope: approvals.canAllowScope(approval),
                         decide: { decision in approvals.decide(approval, decision) }
+                    )
+                }
+                // A folder action on this Mac waiting on the person (Work in
+                // a folder): the same place, the same card language.
+                ForEach(approvals.folder) { pending in
+                    ChatFolderApprovalCard(
+                        request: pending.request,
+                        raisedAt: pending.raisedAt,
+                        decide: { decision in approvals.decideFolder(pending.id, decision) }
                     )
                 }
 
@@ -1025,6 +1035,9 @@ struct DesktopMessageRow: View {
 /// The approval cards a reply is blocked on, and what answering one does.
 struct MessageRowApprovals {
     var approvals: [NativeChatApproval] = []
+    /// Folder actions on this Mac waiting on the person (``DesktopChatFolderStore``).
+    var folder: [DesktopChatFolderStore.PendingApproval] = []
+    var decideFolder: (String, ChatFolderApprovalDecision) -> Void = { _, _ in }
     var inFlightID: String? = nil
     var error: (String) -> String? = { _ in nil }
     var canAllowScope: (NativeChatApproval) -> Bool = { $0.canAllowScope }

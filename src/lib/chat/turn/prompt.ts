@@ -17,6 +17,7 @@ import type { TurnMemory } from "./memory";
 import type { TurnApprovals } from "./approvals";
 import type { TurnSkill } from "./skills";
 import { roomPromptBlock } from "./identity";
+import { localFolderPromptSection, type LocalFolderGrant } from "@/lib/chat/local-folder";
 import type { TurnUser } from "./types";
 
 /*
@@ -56,6 +57,7 @@ export function composeTurnSystem({
   agentContext,
   roomSetup,
   roomMessageId,
+  localFolder = null,
 }: {
   user: TurnUser;
   input: ChatRequestBody;
@@ -76,6 +78,8 @@ export function composeTurnSystem({
   agentContext: TurnApprovals["agentContext"];
   roomSetup: RoomTurnSetup | null;
   roomMessageId: string | null;
+  /** The Mac folder this turn works in, when it carries the folder tools. */
+  localFolder?: LocalFolderGrant | null;
 }) {
   const baseSystemSections = buildSystemPromptSections({
     userName: user.name,
@@ -144,6 +148,7 @@ export function composeTurnSystem({
     ),
     input
   );
-  const system = backgroundHint ? `${systemBase}\n\n${backgroundHint}` : systemBase;
+  const withHint = backgroundHint ? `${systemBase}\n\n${backgroundHint}` : systemBase;
+  const system = localFolder ? `${withHint}\n\n${localFolderPromptSection(localFolder)}` : withHint;
   return { baseSystemSections, system };
 }

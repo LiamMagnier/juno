@@ -159,7 +159,7 @@ export async function* streamGemini(
   let lastFinishReason: string | undefined;
   let groundedWithSearchWidget = false;
 
-  const maxRounds = hasTools ? MAX_GEMINI_TOOL_ROUNDS + 1 : 1;
+  const maxRounds = hasTools ? (tools?.maxRounds ?? MAX_GEMINI_TOOL_ROUNDS) + 1 : 1;
 
   /*
    * TWO NESTED LOOPS, AND THEY ARE NOT THE SAME LOOP.

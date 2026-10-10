@@ -544,6 +544,16 @@ export interface GenerateEditPayload {
 }
 
 // ---- Streaming protocol (server -> client over SSE) ----
+/** One folder call for the Mac (the `local_tool` frame). */
+export interface ClientLocalToolCall {
+  /** Unique per call; the Mac posts its result under it, and runs each id once. */
+  id: string;
+  /** A folder tool id (`folder_read_file`, …). */
+  tool: string;
+  /** The checked arguments: only the keys the tool declares. */
+  args: Record<string, string | number | boolean>;
+}
+
 export type StreamChunk =
   | {
       type: "meta";
@@ -587,6 +597,13 @@ export type StreamChunk =
    * poll. Sent at most once per generation.
    */
   | { type: "work"; session: ClientWorkSession }
+  /**
+   * A folder tool call for the Mac to run (`local_folder` clients only,
+   * src/lib/chat/local-folder.ts). The generation waits until the Mac posts
+   * the result to `/api/chat/local-tools/{call.id}`, or the call times out.
+   * A replayed frame repeats the id, and the Mac runs each id once.
+   */
+  | { type: "local_tool"; call: ClientLocalToolCall }
   | { type: "sources"; sources: ClientSource[] }
   /** `part` mirrors LlmEvent's: the ordinal of the discrete summary part this
    *  delta belongs to, or absent when the provider streams unbroken prose. */
@@ -662,6 +679,8 @@ export interface ChatRequestBody {
   generationId?: string;
   /** The client can draw a task the model starts (see `workHandoff` in request.ts). */
   workHandoff?: boolean;
+  /** Mac only: the folder this chat works in, by display name (see `localFolder` in request.ts). */
+  localFolder?: { name: string; access: "read" | "read_write" };
   /** Durable creation surface for a newly saved conversation. */
   origin?: ChatOrigin;
   /** Paired idempotency keys, valid only on the first saved submission. */

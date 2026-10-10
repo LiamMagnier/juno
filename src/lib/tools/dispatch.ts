@@ -75,6 +75,7 @@ import type { ToolExecution } from "@/lib/mcp";
 import { wrapUntrusted } from "@/lib/untrusted-content";
 import { canonicalize } from "@/lib/work/canonical";
 import type { LlmEvent } from "@/types/llm";
+import type { ToolPresentArgs } from "@/types/run";
 
 /**
  * Appended to the last result of a batch when the next request is the forced
@@ -336,9 +337,19 @@ export async function* executeToolBatch(
     const inflight = new Map<string, Promise<void>>();
     const position = new Map(prepared.map((entry, i) => [entry, i]));
 
-    // Every runnable row is queued at once, before any of them runs.
+    // Every runnable row is queued at once, before any of them runs. The act
+    // carries what the row may show of the arguments (`present`) and their
+    // text: on Anthropic this is the first moment they exist whole, since its
+    // `call` act opens before they stream (anthropic-round.ts).
     for (const entry of prepared) {
       if (!entry.ok) continue;
+      let present: ToolPresentArgs | undefined;
+      try {
+        const shown = entry.tool.present?.(entry.args);
+        if (shown && Object.keys(shown).length > 0) present = shown;
+      } catch {
+        present = undefined;
+      }
       yield {
         type: "tool",
         phase: "status",
@@ -346,6 +357,8 @@ export async function* executeToolBatch(
         name: entry.call.name,
         callId: entry.call.callId,
         status: "queued",
+        ...(present ? { present } : {}),
+        ...(typeof entry.call.argsText === "string" ? { argsText: entry.call.argsText } : {}),
       };
     }
 

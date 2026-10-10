@@ -524,7 +524,7 @@ export async function* streamOpenAICompat(
 
   // One extra round beyond the tool cap, forced to answer (tool_choice "none"),
   // so a run that keeps calling tools still ends with a real reply.
-  const maxRounds = hasTools ? MAX_TOOL_ROUNDS + 1 : 1;
+  const maxRounds = hasTools ? (tools?.maxRounds ?? MAX_TOOL_ROUNDS) + 1 : 1;
   for (let round = 0; round < maxRounds; round++) {
     const isFinalRound = round === maxRounds - 1;
     params.messages = messages;
