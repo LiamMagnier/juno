@@ -185,12 +185,15 @@ export function validateRoleRouting(raw: unknown, ctx: RoutingContext): RoutingV
   }
   const workerCount = Array.isArray(raw.workers) && preset !== "solo" ? raw.workers.length : 0;
   if (preset === "lead-workers" && workerCount < 1) errors.push("Lead + workers needs at least one worker.");
+  if (preset === "plan-build-verify" && workerCount < 1) errors.push("Plan, build, verify needs at least one builder.");
   if (preset === "best-of-n" && (workerCount < BEST_OF_N_MIN || workerCount > BEST_OF_N_MAX)) {
     errors.push(`Best-of-N compares ${BEST_OF_N_MIN} to ${BEST_OF_N_MAX} runs.`);
   }
 
-  for (const role of ["reviewer", "explorer", "compaction"] as const) {
+  for (const role of ["architect", "reviewer", "explorer", "compaction"] as const) {
     if (raw[role] === undefined || raw[role] === null) continue;
+    // Only a team plans before it builds; a solo or Best of N run has no Architect.
+    if (role === "architect" && preset !== "plan-build-verify" && preset !== "lead-workers") continue;
     const sel = validateSelection(raw[role], role, ctx, errors, warnings);
     if (sel) routing[role] = sel;
   }
@@ -223,6 +226,7 @@ export function validateRoleRouting(raw: unknown, ctx: RoutingContext): RoutingV
 export function routingSelections(routing: RoleRouting): ModelSelection[] {
   return [
     routing.orchestrator,
+    ...(routing.architect ? [routing.architect] : []),
     ...(routing.workers ?? []),
     ...[routing.reviewer, routing.explorer, routing.compaction].filter((s): s is ModelSelection => !!s),
   ];

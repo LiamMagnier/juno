@@ -36,9 +36,15 @@ final class CodeV2ContractsTests: XCTestCase {
 
     func testRoleRoutingDecodes() throws {
         let routings = try load("role-routing.json", as: CodeV2.RoleRouting.self).cases
-        XCTAssertEqual(routings.map(\.preset), [.solo, .leadWorkers, .bestOfN])
+        XCTAssertEqual(routings.map(\.preset), [.solo, .leadWorkers, .bestOfN, .planBuildVerify])
         XCTAssertEqual(routings[1].budget?.maxUsd, 12.5)
         XCTAssertEqual(routings[2].workers?.count, 3)
+        // The team lane's Architect survives a decode and a re-encode.
+        let team = routings[3]
+        XCTAssertEqual(team.architect?.instanceId, "claude-agent:default")
+        XCTAssertEqual(team.workers?.count, 2)
+        XCTAssertEqual(team.reviewer?.model, "gpt-6.1-sol")
+        XCTAssertEqual(try JSONDecoder().decode(CodeV2.RoleRouting.self, from: JSONEncoder().encode(team)), team)
     }
 
     func testEveryTurnItemKindDecodesAndRoundTrips() throws {
@@ -54,6 +60,11 @@ final class CodeV2ContractsTests: XCTestCase {
         }
         XCTAssertEqual(child.role, .explorer)
         XCTAssertEqual(child.closingText, "7 callers, all in tests/e2e.")
+        let architect = items.compactMap { item -> CodeV2.Subagent? in
+            if case let .subagent(agent) = item, agent.role == .architect { return agent }
+            return nil
+        }.first
+        XCTAssertEqual(architect?.phase, .plan)
     }
 
     func testUnknownTurnItemKindIsKeptNotFatal() throws {

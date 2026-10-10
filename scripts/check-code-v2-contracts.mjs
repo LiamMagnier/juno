@@ -85,6 +85,7 @@ function buildSchema() {
     StepStatus: en(C.STEP_STATUS_VALUES),
     ComputerActionKind: en(C.COMPUTER_ACTION_VALUES),
     SubagentStatus: en(C.SUBAGENT_STATUS_VALUES),
+    TeamPhase: en(C.TEAM_PHASE_VALUES),
     SessionState: en(C.SESSION_STATE_VALUES),
     ClientCommandType: en(C.CLIENT_COMMAND_TYPE_VALUES),
     ServerEventType: en(C.SERVER_EVENT_TYPE_VALUES),
@@ -165,6 +166,7 @@ function buildSchema() {
     RoleRouting: obj(
       { orchestrator: ref("ModelSelection"), preset: ref("RolePreset") },
       {
+        architect: ref("ModelSelection"),
         workers: arr(ref("ModelSelection")),
         reviewer: ref("ModelSelection"),
         explorer: ref("ModelSelection"),
@@ -232,7 +234,7 @@ function buildSchema() {
     SubagentItem: itemSchema(
       "subagent",
       { agentId: nonEmpty, role: ref("AgentRole"), model: ref("ModelSelection"), status: ref("SubagentStatus") },
-      { task: str, closingText: str, tokens: ref("TokenCount") },
+      { task: str, closingText: str, tokens: ref("TokenCount"), phase: ref("TeamPhase") },
     ),
     ComputerActionItem: itemSchema(
       "computer_action",
@@ -584,6 +586,19 @@ if (swift === null) {
   else if (!/snapshotSequence[^\n]*<\s*cursor|sequence[^\n]*<\s*cursor/.test(classify[1]) || !/\.duplicate/.test(classify[1])) {
     fail("Swift classify does not refuse a snapshot older than the cursor");
   }
+  // Every RoleRouting role the schema knows (the Architect included) must be a
+  // property of the Swift RoleRouting, or a Mac client drops it on decode.
+  const routingStruct = swift.match(/public struct RoleRouting: [^{]*\{([\s\S]*?)\n {8}public init/);
+  if (!routingStruct) {
+    fail("Swift has no struct RoleRouting");
+  } else {
+    const props = new Set([...routingStruct[1].matchAll(/public var (\w+):/g)].map(([, n]) => n));
+    for (const key of Object.keys(schema.definitions.RoleRouting.properties)) {
+      if (!props.has(key)) fail(`Swift RoleRouting has no "${key}" (the contract's RoleRouting does)`);
+    }
+  }
+  const subagentStruct = swift.match(/public struct Subagent: [^{]*\{([\s\S]*?)\n {8}public struct Candidate/);
+  if (!subagentStruct || !/public var phase: TeamPhase\?/.test(subagentStruct[1])) fail('Swift Subagent has no "phase: TeamPhase?"');
   const aliasBlock = swift.match(/\/\/ contract: CODE_MODEL_ALIASES\n[^\[]*\[([\s\S]*?)\n\s*\]/);
   if (!aliasBlock) {
     fail("Swift has no table marked // contract: CODE_MODEL_ALIASES");
