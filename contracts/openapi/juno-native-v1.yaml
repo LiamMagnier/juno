@@ -3560,7 +3560,7 @@ components:
             properties:
               modality:
                 type: string
-                enum: [chat, image, video]
+                enum: [chat, image, video, audio]
                 description: >-
                   What the model produces. Clients section the picker by this
                   (Chat · Image · Video). Only `chat` entries stream, so only
@@ -3584,6 +3584,61 @@ components:
                   whose text is prose and not parseable. The server stops listing
                   the model once the day has passed, so a client never has to
                   decide what an elapsed date means.
+              mediaParams:
+                type: [object, 'null']
+                description: >-
+                  An image, video or music model's generation choices, built
+                  from src/lib/media-params.ts (the web composer tray's source
+                  of truth): each option in the web row's order with the control
+                  the web draws (aspect, segmented, menu, slider, toggle), its
+                  values, labels and default; the cross-option rules (a `when`
+                  value limits an `allow` option to listed values); and plain
+                  facts the person cannot change ("With sound"). Null for chat
+                  models. Optional: absent from older servers. Clients send the
+                  canonical values back as `/api/generate`'s `params`, which the
+                  server cleans against the model.
+                required: [kind, options, rules, facts]
+                additionalProperties: true
+                properties:
+                  kind: { type: string, enum: [image, video, audio] }
+                  options:
+                    type: array
+                    items:
+                      type: object
+                      required: [key, control, kind, label, default]
+                      additionalProperties: true
+                      properties:
+                        key: { type: string }
+                        control: { type: string, enum: [aspect, segmented, menu, slider, toggle] }
+                        kind: { type: string, enum: [select, range, toggle] }
+                        label: { type: string }
+                        default: { type: [string, number, boolean] }
+                        choices:
+                          type: array
+                          items:
+                            type: object
+                            required: [value, label]
+                            properties:
+                              value: { type: [string, number] }
+                              label: { type: string }
+                              detail: { type: string }
+                        range:
+                          type: object
+                          required: [min, max, step, unit]
+                          properties:
+                            min: { type: number }
+                            max: { type: number }
+                            step: { type: number }
+                            unit: { type: string, enum: [s, outputs] }
+                            auto: { type: string }
+                  rules:
+                    type: array
+                    items:
+                      type: object
+                      required: [when, allow]
+                  facts:
+                    type: array
+                    items: { type: string }
               availability:
                 type: string
                 enum: [available, coming_soon, requires_plan]

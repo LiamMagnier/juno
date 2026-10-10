@@ -12,6 +12,7 @@ import { decideModelCapability, type ModelCapabilityEvidence } from "@/lib/model
 import { PRODUCT_NAME } from "@/lib/brand/names";
 import { tiersFor } from "@/lib/code-v2/context-tiers";
 import { codeRank, isCodeAgentModel } from "@/lib/code-v2/code-models";
+import { nativeMediaParams } from "@/lib/media-params-ui";
 
 /**
  * `canUseModel` re-looks-the-model-up in the global registry. Here the manifest
@@ -274,6 +275,15 @@ export function nativeModelCatalog(
       // English sentence above. Null for everything that is not retiring, which
       // is most of the catalog.
       retiresOn: auto ? null : model.retiresOn ?? null,
+      /**
+       * An image, video or music model's generation choices (aspect,
+       * resolution, quality, length, sound, count, background, format), from
+       * media-params.ts: the controls the web's composer tray draws, in its
+       * order, with their values, defaults and cross-option rules. Null for
+       * chat models and for a media model with nothing to choose. A client
+       * sends the canonical values back as `/api/generate`'s `params`.
+       */
+      mediaParams: auto || model.modality === "chat" ? null : nativeMediaParams(model.id),
     };
   });
   const digest = createHash("sha256").update(JSON.stringify(payload)).digest("hex");
