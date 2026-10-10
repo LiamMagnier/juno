@@ -47,13 +47,18 @@ public struct TeamPipeline: Sendable {
         public var stopNote: String?
     }
 
-    /// Runs the three phases in order through `tool`. Throws only on
-    /// cancellation (Stop), which the orchestrator reports as a stopped run.
+    /// Runs the three phases in order. `tool` is read for the budget and
+    /// whether builders can write; every phase is dispatched through `invoke`,
+    /// which the orchestrator binds to the registry's full `invoke` (schema,
+    /// permission and approval), so a team phase is gated like any other
+    /// `delegate_task`. Throws on cancellation (Stop) or a refused phase,
+    /// which the orchestrator reports by letting the lead run alone.
     public func run(
         prompt: String,
         tool: DelegateTaskTool,
         sessionID: CodeSessionID,
-        callPrefix: String
+        callPrefix: String,
+        invoke: @Sendable (JSONValue, ToolContext) async throws -> ToolResult
     ) async throws -> Run {
         var run = Run()
         func spent() async -> Bool {
@@ -68,13 +73,13 @@ public struct TeamPipeline: Sendable {
 
         // 1. Plan.
         if await spent() { return run }
-        let planned = try await tool.execute(
-            input: [
+        let planned = try await invoke(
+            [
                 "task": .string(Self.architectPrompt(prompt, builders: builderCount)),
                 "agent": "architect",
                 "title": "Architect · Plan",
             ],
-            context: context(.plan)
+            context(.plan)
         )
         try Task.checkCancellation()
         let answer = Self.answer(of: planned.content)
@@ -98,19 +103,19 @@ public struct TeamPipeline: Sendable {
                 "team_ordinal": .number(Double(index)),
             ]
         }
-        let built = try await tool.execute(input: ["tasks": .array(tasks)], context: context(.build))
+        let built = try await invoke(["tasks": .array(tasks)], context(.build))
         try Task.checkCancellation()
         run.phases.append(PhaseResult(phase: .build, report: built.content, failed: built.isError))
         if await spent() { return run }
 
         // 3. Verify.
-        let verified = try await tool.execute(
-            input: [
+        let verified = try await invoke(
+            [
                 "task": .string(Self.verifierPrompt(prompt, plan: parsed.plan, built: built.content)),
                 "agent": "verifier",
                 "title": "Verifier · Verify",
             ],
-            context: context(.verify)
+            context(.verify)
         )
         try Task.checkCancellation()
         run.phases.append(PhaseResult(phase: .verify, report: Self.answer(of: verified.content), failed: verified.isError))

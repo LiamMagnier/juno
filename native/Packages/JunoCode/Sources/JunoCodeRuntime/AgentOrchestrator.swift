@@ -580,8 +580,15 @@ public actor AgentOrchestrator {
         guard let tool = registry.allTools.lazy.compactMap({ $0 as? DelegateTaskTool }).first,
               conversation.indices.contains(conversationIndex)
         else { return }
+        let registry = registry
+        let permissions = permissions
+        let toolName = tool.name
         guard let run = try? await team.run(
-            prompt: prompt, tool: tool, sessionID: sessionID, callPrefix: "team-\(promptEventID)"
+            prompt: prompt, tool: tool, sessionID: sessionID, callPrefix: "team-\(promptEventID)",
+            invoke: { input, context in
+                // The registry's full path: schema, permission, approval.
+                try await registry.invoke(toolName: toolName, input: input, context: context, permissions: permissions)
+            }
         ) else { return }
         let report = TeamPipeline.report(run)
         switch conversation[conversationIndex] {
