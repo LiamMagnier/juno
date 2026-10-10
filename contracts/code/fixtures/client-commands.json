@@ -32,6 +32,9 @@
     {"id": "29", "type": "provider.install", "params": {"instanceId": "acp:antigravity", "action": "cancel", "operationId": "op_1"}},
     {"id": "30", "type": "provider.auth", "params": {"instanceId": "acp:antigravity", "action": "start"}},
     {"id": "31", "type": "provider.auth", "params": {"instanceId": "acp:antigravity", "action": "complete", "flowId": "flow_1", "callbackUrl": "http://127.0.0.1:52011/?state=st&code=4%2F0Ab&iss=https%3A%2F%2Faccounts.google.com"}},
-    {"id": "32", "type": "provider.auth", "params": {"instanceId": "acp:antigravity", "action": "logout"}}
+    {"id": "32", "type": "provider.auth", "params": {"instanceId": "acp:antigravity", "action": "logout"}},
+    {"id": "33", "type": "conversation.deliver", "params": {"sessionId": "s_cart", "message": {"fromRef": "chat:c_release", "fromTitle": "Release prep", "fromProduct": "chat", "text": "Is the cart total fix merged?", "hop": 0, "chainId": "ch_1", "linkId": "l_1", "notifyWhenIdle": true}}},
+    {"id": "34", "type": "conversation.read", "params": {"sessionId": "s_cart", "lastN": 5}},
+    {"id": "35", "type": "conversation.toggle", "params": {"sessionId": "s_cart", "enabled": null}}
   ]
 }

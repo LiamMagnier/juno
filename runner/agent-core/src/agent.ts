@@ -71,6 +71,18 @@ export interface AgentOptions {
    */
   runtimeMode?: RuntimeMode;
   tools?: ToolDefinition[];
+  /**
+   * Tools added to the session's own set (default or `tools`) without
+   * replacing it, e.g. the cross-conversation tools the env server hands an
+   * Alevr-engine thread. Unlike `tools`, passing these keeps background jobs.
+   */
+  extraTools?: ToolDefinition[];
+  /**
+   * Constant text appended to the system prompt for the whole session (e.g.
+   * the cross-conversation rules that come with `extraTools`). Constant, so
+   * the cached prefix stays byte-stable.
+   */
+  systemAppendix?: string;
   callbacks: AgentCallbacks;
   /** When set, each turn reserves + records against the account plan. */
   usageReporter?: UsageReporter;
@@ -299,6 +311,9 @@ export class AgentSession {
   private currentSystem = '';
   private currentToolSpecs: ToolSpec[] = [];
   private running = false;
+  /** The user chose "always" for messaging other conversations in this session. */
+  private messagingAllowed = false;
+  private readonly systemAppendix: string | undefined;
 
   private constructor(store: SessionStore, opts: AgentOptions) {
     this.store = store;
@@ -313,6 +328,10 @@ export class AgentSession {
       (this.jobs
         ? [readFileTool, globTool, grepTool, editFileTool, writeFileTool, ...jobAwareShellTools(this.jobs)]
         : defaultTools());
+    if (opts.extraTools?.length) {
+      const taken = new Set(this.tools.map((t) => t.spec.name));
+      this.tools = [...this.tools, ...opts.extraTools.filter((t) => !taken.has(t.spec.name))];
+    }
     this.toolsByName = new Map(this.tools.map((t) => [t.spec.name, t]));
     this.permissions = new PermissionEngine(this.cwd, {
       trustProjectSettings: opts.trustProjectSettings === true,
@@ -327,6 +346,7 @@ export class AgentSession {
     this.reasoningEffort = opts.reasoningEffort;
     this.compaction = opts.compaction;
     this.routing = opts.routing;
+    this.systemAppendix = opts.systemAppendix?.trim() || undefined;
     this.resolveProvider = opts.resolveProvider;
     this.selection = opts.selection;
     this.contextTier = opts.contextTier;
@@ -609,16 +629,17 @@ export class AgentSession {
   }
 
   private systemPrompt(delegation: boolean): string {
-    return buildSystemPrompt(
+    const base = buildSystemPrompt(
       this.cwd,
       delegation && this.subagents ? { maxConcurrent: this.subagents.maxConcurrent, maxPerTurn: this.subagents.maxPerTurn } : null,
       this.globalInstructionsDir,
     );
+    return this.systemAppendix ? `${base}\n\n${this.systemAppendix}` : base;
   }
 
   private toolSpecs(delegation: boolean): ToolSpec[] {
     const describe = (tool: ToolDefinition) => (this.guards.justification ? withJustification(tool) : tool.spec);
-    if (this.mode === 'plan') return this.tools.filter((t) => t.kind === 'read').map(describe);
+    if (this.mode === 'plan') return this.tools.filter((t) => t.kind === 'read' || t.messaging === true).map(describe);
     return [
       ...this.tools.map(describe),
       ...(delegation
@@ -959,7 +980,10 @@ export class AgentSession {
     const reminder = this.guards.repeatCall ? this.repeats.observe(call.name, call.input) : null;
     const { risk, reason } = classifyRisk(tool, call.input);
     const subject = ruleSubjectFor(call.name, call.input, this.cwd);
-    const outcome = this.permissions.decide(this.mode, call.name, risk, subject);
+    // A message to another conversation has its own rung: it asks in every
+    // mode but Full access (Plan included, where it is the one non-read tool
+    // offered), and no settings rule widens it.
+    const outcome = tool.messaging ? (this.mode === 'full' || this.messagingAllowed ? 'allow' : 'ask') : this.permissions.decide(this.mode, call.name, risk, subject);
 
     if (outcome === 'deny') {
       const why = this.permissions.denialReason(this.mode, call.name, subject);
@@ -1000,6 +1024,7 @@ export class AgentSession {
         this.emit({ type: 'tool_denied', callId: call.id, name: call.name, reason: msg });
         return { type: 'tool_result', toolCallId: call.id, content: msg, isError: true };
       }
+      if (decision === 'allow_always' && tool.messaging) this.messagingAllowed = true;
       if (decision === 'allow_always' && mayGrantAlways(risk)) {
         this.permissions.grantAlways(call.name, subject);
       }

@@ -739,6 +739,19 @@ struct DesktopCodeWorkspace: View {
                     .disabled(controller?.computerUseUnavailableReason != nil)
                 Button("Voice Conversation", action: startCodeVoice)
                     .disabled(voiceSession != nil)
+                // This session's own "Let conversations message each other";
+                // the setting in Settings › Code is the default.
+                Toggle(
+                    "Messages from Other Conversations",
+                    isOn: Binding(
+                        get: { controller.map { CodeDefaults.shared.crossMessagesEnabled(forSession: $0.sessionID.value) } ?? false },
+                        set: { on in
+                            guard let id = controller?.sessionID.value else { return }
+                            CodeDefaults.shared.setCrossMessages(on, forSession: id)
+                        }
+                    )
+                )
+                .disabled(controller == nil)
                 Divider()
                 Button("Rename…") { if let session = controller?.session { beginRename(session) } }
                     .disabled(controller == nil)

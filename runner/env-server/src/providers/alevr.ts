@@ -39,6 +39,7 @@ import type {
 } from "./types.js";
 import { classifyUsageLimit } from "./limits.js";
 import { describeError, type Logger } from "../util.js";
+import { CROSS_CONVERSATION_PROMPT_SECTION } from "../conversations/policy.js";
 
 // ── The slice of agent-core this adapter uses (structural, so no build-time dependency) ──
 
@@ -77,6 +78,10 @@ export interface EngineSessionOptions {
   routing?: RoleRouting;
   /** How a role's selection becomes an engine adapter (Alevr and BYOK selections; others inherit). */
   resolveProvider?: (selection: ModelSelection) => { adapter: unknown; model: string; billable?: boolean } | null;
+  /** Added to the engine's own tools (agent-core AgentOptions.extraTools). */
+  extraTools?: unknown[];
+  /** Constant system-prompt text for those tools (agent-core AgentOptions.systemAppendix). */
+  systemAppendix?: string;
 }
 
 export interface AlevrEngine {
@@ -237,6 +242,7 @@ class EngineBackedSession implements ProviderSession {
   /** The routing the live engine session was built with; a change rebuilds it. */
   #routingKey = "";
   readonly #logger: Logger;
+  readonly #extraTools: unknown[] | undefined;
 
   constructor(
     private readonly engine: AlevrEngine,
@@ -245,6 +251,7 @@ class EngineBackedSession implements ProviderSession {
     private readonly secrets: EnvSecrets,
   ) {
     this.#logger = options.logger;
+    this.#extraTools = options.extraTools;
     const s = options.resumeState ?? {};
     if (typeof s.engineSessionId === "string") this.#engineSessionId = s.engineSessionId;
   }
@@ -271,6 +278,7 @@ class EngineBackedSession implements ProviderSession {
       },
       ...(request.selection.effort ? { reasoningEffort: request.selection.effort } : {}),
       ...(routingKey && request.routing ? { routing: request.routing, resolveProvider: (sel: ModelSelection) => this.#resolve(sel) } : {}),
+      ...(this.#extraTools?.length ? { extraTools: this.#extraTools, systemAppendix: CROSS_CONVERSATION_PROMPT_SECTION } : {}),
     };
     let session: EngineSession;
     if (this.#engineSessionId) {

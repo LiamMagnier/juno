@@ -506,6 +506,11 @@ public enum AgentProtocolProjection {
                     budget: budget(reached.budget)
                 ))),
             ]
+
+        // A message between conversations has no protocol event yet; the
+        // phone reads it from the session's own thread on the Mac.
+        case .conversationMessage:
+            return []
         }
     }
 

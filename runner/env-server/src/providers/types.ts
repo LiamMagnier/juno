@@ -109,6 +109,8 @@ export interface OpenSessionOptions {
   selection: ModelSelection;
   resumeState?: Record<string, unknown>;
   mcp?: McpEndpoint;
+  /** Tools for the built-in engine (no MCP): agent-core ToolDefinitions, opaque here. */
+  extraTools?: unknown[];
   logger: Logger;
 }
 

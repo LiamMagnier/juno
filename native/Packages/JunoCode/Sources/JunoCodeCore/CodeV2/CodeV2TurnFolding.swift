@@ -461,6 +461,7 @@ public extension CodeV2.TurnItem {
         case let .handoff(v): v.createdAt
         case let .subagent(v): v.createdAt
         case let .computerAction(v): v.createdAt
+        case let .conversationMessage(v): v.createdAt
         case .unknown: nil
         }
     }
@@ -488,6 +489,7 @@ public extension CodeV2.TurnItem {
         case let .handoff(v): v.turnId
         case let .subagent(v): v.turnId
         case let .computerAction(v): v.turnId
+        case let .conversationMessage(v): v.turnId
         case .unknown: nil
         }
     }

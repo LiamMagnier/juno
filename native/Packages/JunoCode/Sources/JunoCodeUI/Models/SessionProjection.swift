@@ -383,7 +383,7 @@ public final class SessionProjection {
         // row, and change nothing about the execution state.
         case .verificationRecorded, .uiVerificationRecorded,
              .reviewCompleted, .goalSet, .goalEdited, .goalVerdict, .goalStatus, .checkInDue,
-             .ciStatus, .budgetReached:
+             .ciStatus, .budgetReached, .conversationMessage:
             break
         }
     }

@@ -93,6 +93,9 @@ public actor EnvServerDeviceLink {
         .sessionList, .sessionClose,
         // Runtime lane: reject a hunk, resume at reset, a managed runtime's install and sign-in.
         .checkpointApplyPatch, .turnSchedule, .turnUnschedule, .providerInstall, .providerAuth,
+        // Cross-conversation lane: another conversation's message, written by
+        // Alevr's backend after its checks; a bounded read; the thread's toggle.
+        .conversationDeliver, .conversationRead, .conversationToggle,
     ]
     public static let terminalCommands: Set<CodeV2.ClientCommandType> = [
         .terminalOpen, .terminalWrite, .terminalResize, .terminalClose,

@@ -235,6 +235,15 @@ struct DesktopTranscript: View {
                     ForEach(workPlacement[message.id] ?? []) { entry in
                         workRow(entry)
                     }
+                    // Messages to and from the reader's other conversations,
+                    // by time, as their own rows (never the reader's bubble).
+                    ForEach(crossPlacement.byMessage[message.id] ?? []) { cross in
+                        crossRow(cross)
+                    }
+                }
+
+                ForEach(crossPlacement.atFoot) { cross in
+                    crossRow(cross)
                 }
 
                 // Runs with no turn on screen to follow: the transcript's foot.
@@ -405,6 +414,16 @@ struct DesktopTranscript: View {
             follows = true
             position.scrollTo(edge: .bottom)
         }
+        // Conversations messaging each other: this Chat's rows, and the app's
+        // inbox (unread titles, and replies owed by Chats that are not open),
+        // read while a Chat is on screen.
+        .task(id: model.selectedConversationID) {
+            while !Task.isCancelled {
+                if let id = model.selectedConversationID { await model.loadCrossMessages(conversationID: id) }
+                await model.pollCrossMessages()
+                try? await Task.sleep(for: .seconds(15))
+            }
+        }
         // A partial spoken line lands several times a second: unanimated.
         .onChange(of: voiceMessages) { _, _ in
             guard follows else { return }
@@ -521,6 +540,35 @@ struct DesktopTranscript: View {
         default:
             return nil
         }
+    }
+
+    // MARK: Messages between conversations
+
+    /// Where each message to or from another conversation goes: after the
+    /// reply to the last turn before it (the web's `placeInlineRuns`), else
+    /// the foot.
+    private var crossPlacement: (byMessage: [String: [NativeCrossMessage]], atFoot: [NativeCrossMessage]) {
+        guard showsStoreState else { return ([:], []) }
+        let rows = model.crossMessages(for: model.selectedConversationID)
+        guard !rows.isEmpty else { return ([:], []) }
+        let turns = model.selectedMessages.map {
+            ChatWorkPlacement.Turn(id: $0.id, isUser: $0.role == .user, createdAt: $0.createdAt)
+        }
+        var placed: [String: [NativeCrossMessage]] = [:]
+        var foot: [NativeCrossMessage] = []
+        for row in rows {
+            if let anchor = ChatWorkPlacement.anchor(for: row.createdAt, in: turns) {
+                placed[anchor, default: []].append(row)
+            } else {
+                foot.append(row)
+            }
+        }
+        return (placed, foot)
+    }
+
+    private func crossRow(_ message: NativeCrossMessage) -> some View {
+        DesktopCrossMessageRow(message: message, open: { id in model.selectedConversationID = id })
+            .id("cross:\(message.id)")
     }
 
     // MARK: Tasks

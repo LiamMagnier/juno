@@ -120,6 +120,13 @@ public enum ApprovalPolicy: String, Codable, CaseIterable, Sendable {
     /// so does a recipe command the stop check would run on its own, since no
     /// model asked for it.
     case asksUnlessFullAccess
+    /// A message to another of the reader's conversations
+    /// (`send_to_conversation`). Its own rung: it asks in Plan and Answer
+    /// (read-only, where every other non-read action is refused), in Ask and
+    /// in Auto-edit, and goes without asking only in Full Access. It writes
+    /// nothing here, so read-only does not refuse it; it speaks for the
+    /// session elsewhere, so only Full Access lets it through unasked.
+    case messaging
 }
 
 public enum PermissionRuling: Equatable, Sendable {
@@ -143,6 +150,9 @@ public enum PermissionPolicy {
         risk: ActionRisk,
         approvalPolicy: ApprovalPolicy = .byRisk
     ) -> PermissionRuling {
+        if approvalPolicy == .messaging {
+            return mode == .fullAccess ? .allow : .requireApproval
+        }
         let ladder = ladderRuling(mode: mode, risk: risk)
         if approvalPolicy == .byRisk { return ladder }
         if approvalPolicy == .asksUnlessFullAccess, mode == .fullAccess { return ladder }

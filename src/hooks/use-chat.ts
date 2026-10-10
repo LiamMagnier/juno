@@ -1795,6 +1795,42 @@ export function useChat(opts: UseChatOptions) {
     return !refused;
   }, [status, runGeneration, opts.privateMode, opts.voiceMode, opts.reasoningEffort, opts.connectors]);
 
+  /**
+   * The reply to a message from another of the person's conversations
+   * (src/lib/cross-conversation): answered here as a NEW reply, below the ones
+   * already written, while this conversation is open. The server claims the
+   * message first, so a reply another tab or device already started is
+   * refused (404/409) and simply dropped here, not shown as an error.
+   */
+  const continueCrossReply = React.useCallback(async (linkId: string): Promise<boolean> => {
+    if (status !== "idle" && status !== "error") return false;
+    if (!convoIdRef.current || opts.privateMode) return false;
+    const assistantTempId = tempId();
+    setMessages((prev) => [
+      ...prev,
+      { id: assistantTempId, renderKey: assistantTempId, role: "ASSISTANT", content: "", createdAt: new Date().toISOString(), attachments: [], activity: [], streaming: true },
+    ]);
+    await runGeneration(
+      {
+        conversationId: convoIdRef.current,
+        regenerate: true,
+        crossReply: { linkId },
+        voiceMode: opts.voiceMode,
+        reasoningEffort: opts.reasoningEffort,
+        connectors: opts.connectors,
+      },
+      assistantTempId
+    );
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    const placeholder = messagesRef.current.find((m) => m.id === assistantTempId);
+    const refused = !!placeholder?.error && /waits for its turn|not waiting for a reply/i.test(placeholder.errorMessage ?? "");
+    if (refused) {
+      setMessages((prev) => prev.filter((m) => m.id !== assistantTempId));
+      setStatus("idle");
+    }
+    return !refused;
+  }, [status, runGeneration, opts.privateMode, opts.voiceMode, opts.reasoningEffort, opts.connectors]);
+
   const editAndResend = React.useCallback(
     async (messageId: string, newContent: string) => {
       if (status !== "idle" && status !== "error") return;
@@ -2011,6 +2047,7 @@ export function useChat(opts: UseChatOptions) {
     continueResponse,
     regenerate,
     continueRoomTurn,
+    continueCrossReply,
     /** True while the last turn dropped but can still be picked up from its
      *  frame log. The retry affordance should read "Reconnect": it costs
      *  nothing and continues the same answer. */

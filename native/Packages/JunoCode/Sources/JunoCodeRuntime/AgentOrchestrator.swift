@@ -728,6 +728,52 @@ public actor AgentOrchestrator {
         }
     }
 
+    /// Starts a turn on a message from another of the reader's conversations.
+    ///
+    /// Not a prompt and not a runtime note: the model reads the message fenced
+    /// as `<conversation_message>` (data with no authority, see
+    /// `CodeCrossConversation.frame`), never as `<juno_runtime>`, which the
+    /// system prompt tells the model to obey. No user prompt and no prompt
+    /// hooks run; the transcript records a `conversationMessage` event. The
+    /// session's permission mode is the one it already has.
+    ///
+    /// Throws `sessionAlreadyRunning` while a run holds the session: the
+    /// caller waits for it to end, so a message never steers a running turn
+    /// or lands while an approval is pending.
+    public func continueWithConversationMessage(_ framed: String, event: ConversationMessageEvent) async throws {
+        await waitForCompaction()
+        guard runTask == nil, admission == nil else {
+            throw OrchestratorError.sessionAlreadyRunning
+        }
+        stoppedDuringAdmission = false
+        let admission = Task { () async throws -> PromptHookContext in
+            try await self.prepare()
+            return PromptHookContext(session: [])
+        }
+        self.admission = admission
+        defer { self.admission = nil }
+        _ = try await admission.value
+        guard !stoppedDuringAdmission else {
+            throw OrchestratorError.stoppedBeforeSending
+        }
+        conversation.append(.user(framed))
+        _ = try await store.appendEvent(sessionID: sessionID, payload: .conversationMessage(event))
+        try await store.saveConversation(sessionID: sessionID, messages: conversation)
+        try await store.setStatus(id: sessionID, status: .running)
+        // A message is a new piece of work for the session: a new ledger.
+        await ledger.begin(stepAllowance: configuration.stepLimit, at: autonomyNow)
+        runTokens = 0
+        runCost = nil
+        let task = Task { [weak self] in
+            guard let self else { return }
+            await self.runLoop()
+        }
+        runTask = task
+        if stoppedDuringAdmission {
+            task.cancel()
+        }
+    }
+
     private func acceptInstruction(
         prompt: String,
         modelPrompt: String?,

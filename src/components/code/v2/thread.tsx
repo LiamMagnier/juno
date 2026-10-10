@@ -38,6 +38,8 @@ import { formatTokens } from "@/lib/code-v2/tier-view";
 import { describeItem, formatDuration, groupTurns, stepItems, turnHeader, turnMarks, turnVisibility, type DetailLevel, type Turn } from "@/lib/code-v2/turns";
 import { Glyph, useNow } from "./primitives";
 import { cn } from "@/lib/utils";
+import { CrossMessageRow } from "@/components/chat/cross-message-row";
+import { peerHrefForRef as peerHref } from "@/lib/cross-conversation/links";
 
 export interface DockRequest {
   tab: DockTab;
@@ -389,6 +391,16 @@ function Steps({ turn, items, detail, props, now }: { turn: Turn; items: TurnIte
           <div className="cv2-you">{item.text}</div>
           <div className="cv2-you-cap">{item.delivery === "steer" ? "Steered" : "Queued"}</div>
         </div>,
+      );
+      continue;
+    }
+    if (item.kind === "conversation_message") {
+      out.push(
+        <CrossMessageRow
+          key={item.id}
+          className="my-2"
+          row={{ id: item.id, direction: item.direction, peerTitle: item.peerTitle, peerHref: peerHref(item.peerRef), text: item.text, ...(item.status ? { status: item.status } : {}) }}
+        />,
       );
       continue;
     }

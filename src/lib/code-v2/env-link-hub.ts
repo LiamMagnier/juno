@@ -62,6 +62,10 @@ export const LINK_RELAYED_COMMANDS: ReadonlySet<ClientCommandType> = new Set<Cli
   "provider.setup",
   // runtime lane: reject / re-apply a hunk, resume at reset, Antigravity install and sign-in.
   ...RUNTIME_LANE_COMMAND_TYPES,
+  // cross-conversation lane: another conversation's message in, a bounded read out, the thread's toggle.
+  "conversation.deliver",
+  "conversation.read",
+  "conversation.toggle",
 ]);
 
 /**

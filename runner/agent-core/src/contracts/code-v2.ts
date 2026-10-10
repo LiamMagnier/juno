@@ -342,6 +342,8 @@ export const TURN_ITEM_KIND_VALUES = [
   "handoff",
   "subagent",
   "computer_action",
+  // cross-conversation lane (additive): a message from or to another of the user's conversations.
+  "conversation_message",
 ] as const;
 export type TurnItemKind = (typeof TURN_ITEM_KIND_VALUES)[number];
 
@@ -388,6 +390,13 @@ export interface Attachment {
 export interface UserInput {
   text: string;
   attachments?: Attachment[];
+  /**
+   * cross-conversation lane (additive): set when this input is a message from
+   * another of the user's conversations. `text` is then the fenced text the
+   * model reads; the thread records a `conversation_message` item, not a
+   * `user_message`.
+   */
+  conversation?: ConversationDelivery;
 }
 
 export interface TokenCount {
@@ -605,6 +614,36 @@ export interface ComputerActionItem extends TurnItemBase {
   durationMs?: number;
 }
 
+export const CONVERSATION_MESSAGE_DIRECTION_VALUES = ["received", "sent", "notice"] as const;
+/**
+ * received: another conversation sent this one a message (never the user's).
+ * sent: this conversation sent one. notice: the one-shot "it is idle again"
+ * notice a sender asked for with notify_when_idle.
+ */
+export type ConversationMessageDirection = (typeof CONVERSATION_MESSAGE_DIRECTION_VALUES)[number];
+
+/**
+ * A message between two of the user's conversations (src/lib/cross-conversation).
+ * It carries no user authority: it is never a user_message, it cannot answer
+ * an approval_request and it cannot change the runtime or interaction mode.
+ */
+export interface ConversationMessageItem extends TurnItemBase {
+  kind: "conversation_message";
+  direction: ConversationMessageDirection;
+  /** The other conversation, as the tools name it (chat:…, code:…, env:…). */
+  peerRef: string;
+  peerTitle: string;
+  peerProduct: "chat" | "code";
+  text: string;
+  /** Its hop in the chain of messages (loop protection). */
+  hop: number;
+  chainId?: string;
+  /** The backend's record, when the message went through Alevr's backend. */
+  linkId?: string;
+  /** For sent: whether the target took it, is holding it for its next turn, or refused it. */
+  status?: "delivered" | "queued" | "failed";
+}
+
 export type TurnItem =
   | UserMessageItem
   | AssistantMessageItem
@@ -624,7 +663,8 @@ export type TurnItem =
   | CompactionItem
   | HandoffItem
   | SubagentItem
-  | ComputerActionItem;
+  | ComputerActionItem
+  | ConversationMessageItem;
 
 // ── Computer use (SPEC §3.12) ───────────────────────────────────────────────
 //
@@ -798,6 +838,9 @@ export interface SessionSnapshot {
   // runtime lane (additive): resume at reset.
   /** A turn scheduled for when a usage window resets (turn.schedule). */
   scheduledResume?: ScheduledResume;
+  // cross-conversation lane (additive)
+  /** The thread's own toggle; absent follows the account setting. */
+  crossMessages?: "on" | "off";
 }
 
 /** A turn the env server starts by itself at `at` (a subscription window reset), until cancelled. */
@@ -845,6 +888,10 @@ export const CLIENT_COMMAND_TYPE_VALUES = [
   "turn.unschedule",
   "provider.install",
   "provider.auth",
+  // cross-conversation lane (additive): another conversation's message in, a bounded read out, the per-thread toggle.
+  "conversation.deliver",
+  "conversation.read",
+  "conversation.toggle",
 ] as const;
 export type ClientCommandType = (typeof CLIENT_COMMAND_TYPE_VALUES)[number];
 
@@ -905,6 +952,39 @@ export interface ClientCommandParams {
   "provider.install": { instanceId: string; action: ProviderInstallAction; operationId?: string };
   /** Starts, completes (pasted redirect URL), cancels a sign-in, or signs the instance out. */
   "provider.auth": { instanceId: string; action: ProviderAuthAction; flowId?: string; callbackUrl?: string };
+  /**
+   * A message from another of the user's conversations, into this thread: a
+   * `conversation_message` item, then a turn when the thread is idle, steered
+   * or queued when it is busy. Never a user message, never an approval answer;
+   * it cannot carry a mode. `notice` is the one-shot idle notice instead.
+   */
+  "conversation.deliver": { sessionId: string; message: ConversationDelivery };
+  /** A bounded, read-only excerpt of the thread for another conversation's read_conversation. */
+  "conversation.read": { sessionId: string; lastN?: number };
+  /** The thread's own "Let conversations message each other" toggle; null follows the account setting. */
+  "conversation.toggle": { sessionId: string; enabled: boolean | null };
+}
+
+export interface ConversationDelivery {
+  fromRef: string;
+  fromTitle: string;
+  fromProduct: "chat" | "code";
+  text: string;
+  hop: number;
+  chainId: string;
+  linkId?: string;
+  notifyWhenIdle?: boolean;
+  /** The one-shot idle notice for a sender, rather than a message. */
+  notice?: boolean;
+}
+
+export interface ConversationExcerptMessage {
+  role: "user" | "assistant" | "conversation";
+  text: string;
+  /** ISO-8601. */
+  at: string;
+  /** For role conversation: the other conversation's title. */
+  peerTitle?: string;
 }
 
 export const PROVIDER_INSTALL_ACTION_VALUES = ["start", "cancel", "remove"] as const;
@@ -931,6 +1011,11 @@ export interface EnvBackendConfig {
   /** Full Authorization header value carrying the user's Alevr session. */
   authorization: string;
   models?: EnvBackendModel[];
+  // cross-conversation lane (additive)
+  /** This Mac's paired device id, so the backend can route a Chat's answer back to an env thread. */
+  deviceId?: string;
+  /** The account's "Let conversations message each other" setting for Code (default on). */
+  crossMessages?: boolean;
 }
 
 export interface ByokKey {
@@ -998,6 +1083,9 @@ export interface ClientCommandResults {
   "turn.unschedule": { cancelled: boolean };
   "provider.install": { install: ProviderInstallState };
   "provider.auth": { auth: ProviderAuthState };
+  "conversation.deliver": { outcome: "started" | "steered" | "queued" | "noted" | "refused"; reason?: string };
+  "conversation.read": { title?: string; state: SessionState; messages: ConversationExcerptMessage[] };
+  "conversation.toggle": { enabled: boolean };
 }
 
 export const WIRE_ERROR_CODE_VALUES = [

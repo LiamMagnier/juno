@@ -1,6 +1,7 @@
 import Foundation
 import JunoCodeCore
 import JunoCodeKit
+import JunoCodeRuntime
 import JunoCore
 
 /// Turns a relay command into a call on the *existing* Juno Code runtime.
@@ -43,6 +44,11 @@ public enum CodeRemoteCommandKind: String, CaseIterable, Sendable {
     /// Known so it can be refused by name. Deleting a transcript from another
     /// device is not something this Mac does.
     case deleteSession = "delete_session"
+    /// A message from another of the reader's conversations, written by
+    /// Alevr's backend after its ownership, hop and rate checks
+    /// (src/lib/cross-conversation). Not the reader's prompt: it carries no
+    /// mode, cannot answer an approval, and is never shown as theirs.
+    case crossMessage = "cross_message"
 }
 
 public enum CodeRemoteCommandError: Error, Equatable, LocalizedError, Sendable {
@@ -192,6 +198,44 @@ public protocol CodeRemoteSessionConfigurationBridging: CodeRemoteSessionBridgin
 public protocol CodeRemoteSessionSteeringBridging: CodeRemoteSessionBridging {
     func steerMessage(sessionID: String, text: String) async throws
     func queueMessage(sessionID: String, text: String) async throws
+}
+
+/// A message from another of the reader's conversations, as the backend wrote it.
+public struct CodeConversationDelivery: Equatable, Sendable {
+    public let fromRef: String
+    public let fromTitle: String
+    public let fromProduct: String
+    public let text: String
+    public let hop: Int
+    public let chainID: String
+    public let linkID: String?
+    public let notifyWhenIdle: Bool
+    /// The one-shot idle notice a send from this session asked for.
+    public let notice: Bool
+
+    public init(
+        fromRef: String, fromTitle: String, fromProduct: String, text: String, hop: Int, chainID: String,
+        linkID: String? = nil, notifyWhenIdle: Bool = false, notice: Bool = false
+    ) {
+        self.fromRef = fromRef
+        self.fromTitle = fromTitle
+        self.fromProduct = fromProduct
+        self.text = text
+        self.hop = hop
+        self.chainID = chainID
+        self.linkID = linkID
+        self.notifyWhenIdle = notifyWhenIdle
+        self.notice = notice
+    }
+}
+
+/// Hosts whose sessions take messages from the reader's other conversations.
+public protocol CodeRemoteConversationBridging: CodeRemoteSessionBridging {
+    /// Records the message in the session and gives it a turn: at once when
+    /// the session is idle, after the running turn (or the pending approval)
+    /// otherwise. Returns "started", "queued", "noted" or throws when the
+    /// session does not take messages from other conversations.
+    func deliverConversationMessage(sessionID: String, delivery: CodeConversationDelivery) async throws -> String
 }
 
 /// A session a host opened for a remote command — or found already open.
@@ -477,6 +521,17 @@ public struct RemoteCommandAdapter: CodeRemoteCommandExecuting {
                 "Sessions are deleted on the Mac itself. This one is still there."
             )
 
+        case .crossMessage:
+            // No `authorize`: nothing here asks for a mode, and any mode or
+            // approval field in the payload is ignored, never applied. The
+            // message is data for the session's next turn, not a command.
+            guard let conversations = bridge as? any CodeRemoteConversationBridging else {
+                throw CodeRemoteCommandError.unsupportedKind(validated.kind.rawValue)
+            }
+            let delivery = try Self.conversationDelivery(validated)
+            let outcome = try await conversations.deliverConversationMessage(sessionID: validated.sessionID, delivery: delivery)
+            return ["outcome": .string(outcome)]
+
         case .runTests:
             try await authorize(validated)
             try await bridge.runTests(
@@ -563,6 +618,30 @@ public struct RemoteCommandAdapter: CodeRemoteCommandExecuting {
         case .deleteChange: "delete_change"
         case .updateSession: "update_session"
         }
+    }
+
+    /// The delivery a `cross_message` command carries, validated.
+    static func conversationDelivery(_ command: ValidatedRemoteCommand) throws -> CodeConversationDelivery {
+        let text = try command.string("text")
+        guard text.count <= CodeCrossConversation.maxChars else {
+            throw CodeRemoteCommandError.invalidField("text", reason: "it is longer than a message between conversations may be")
+        }
+        let hop = command.payload["hop"]?.numberValue.map { Int($0) } ?? 0
+        guard hop >= 0, hop < CodeCrossConversation.maxHops + 1 else {
+            throw CodeRemoteCommandError.invalidField("hop", reason: "the exchange is past its limit")
+        }
+        let product = command.optionalString("fromProduct") == "chat" ? "chat" : "code"
+        return CodeConversationDelivery(
+            fromRef: try command.string("fromRef"),
+            fromTitle: command.optionalString("fromTitle") ?? "Another conversation",
+            fromProduct: product,
+            text: text,
+            hop: hop,
+            chainID: try command.string("chainId"),
+            linkID: command.optionalString("linkId"),
+            notifyWhenIdle: command.payload["notifyWhenIdle"]?.boolValue ?? false,
+            notice: command.payload["notice"]?.boolValue ?? false
+        )
     }
 
     /// Where a change is named: the Mac's own `changeId`, or the `path` the

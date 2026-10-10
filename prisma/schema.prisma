@@ -550,6 +550,12 @@ model Settings {
   actionApprovalPolicy       String   @default("ask_for_any_change")
   // Lockdown is a hard network/tool stop, not a softer approval mode.
   lockdownMode               Boolean  @default(false)
+  // Conversations messaging each other (src/lib/cross-conversation): whether
+  // an agent in one conversation may list, read and message the user's other
+  // conversations. On by default in Code, off in Chat; a conversation's own
+  // Conversation.crossMessages toggle wins over these.
+  crossMessagesChat          Boolean  @default(false)
+  crossMessagesCode          Boolean  @default(true)
   // Connector ids explicitly refused even when the account policy would ask.
   blockedConnectors          String[] @default([])
   // The account's own monthly API-spend ceiling in EUR, on top of whatever the
@@ -660,6 +666,9 @@ model Conversation {
   // leaves a chat, not a dangling foreign key. `kind` stays "chat" — an agent's
   // thread is a conversation with someone in it, not a new kind of one.
   agentId           String?
+  // This conversation's own "Let conversations message each other" toggle:
+  // "on", "off", or NULL to follow the account setting for its kind.
+  crossMessages     String?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
   lastMessageAt     DateTime  @default(now())
@@ -5156,4 +5165,41 @@ model CodeLinkSession {
   replayCursor  Int?
 
   @@id([userId, deviceId, sessionId])
+}
+
+/// A message one of the user's conversations sent another
+/// (src/lib/cross-conversation). It shows in the target as a message from
+/// another conversation, never as the user's, and in the sender as a sent row.
+/// Refs are `chat:<id>`, `code:<remoteSessionId>` or `env:<device>/<session>`.
+model ConversationMessageLink {
+  id             String    @id @default(cuid())
+  userId         String
+  fromRef        String
+  fromTitle      String
+  toRef          String
+  toTitle        String
+  /// Encrypted with the message keyring (field-crypto).
+  text           String    @db.Text
+  /// The chain this message belongs to and its hop in it (loop protection).
+  chainId        String
+  hop            Int       @default(0)
+  /// queued (waiting for the target's turn) | delivered (the target took it)
+  /// | answered (the target's turn finished) | failed.
+  status         String    @default("queued")
+  error          String?
+  notifyWhenIdle Boolean   @default(false)
+  notifiedAt     DateTime?
+  /// When the reader opened the target after it arrived (sidebar unread).
+  readAt         DateTime?
+  deliveredAt    DateTime?
+  answeredAt     DateTime?
+  /// Who claimed the Chat reply turn, so two clients never answer twice.
+  replyClaimedAt DateTime?
+  dedupeKey      String
+  createdAt      DateTime  @default(now())
+
+  @@index([userId, toRef, createdAt])
+  @@index([userId, fromRef, createdAt])
+  @@index([userId, chainId])
+  @@index([userId, dedupeKey, createdAt])
 }

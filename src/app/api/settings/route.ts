@@ -35,6 +35,9 @@ const schema = z.object({
   memorySensitiveTopics: z.array(z.enum(SENSITIVE_TOPICS)).max(SENSITIVE_TOPICS.length).optional(),
   // Whether the memory dreamer may read older conversations on its own.
   memoryBackgroundLearning: z.boolean().optional(),
+  // "Let conversations message each other" (src/lib/cross-conversation): Chat and Code.
+  crossMessagesChat: z.boolean().optional(),
+  crossMessagesCode: z.boolean().optional(),
   // Where background work (memory extraction, titles, planning, moderation)
   // may be sent. Validated against the union rather than accepted as free text,
   // so an unknown value cannot be stored and later read as permission to cross
@@ -95,6 +98,8 @@ export async function GET() {
       // things the server refuses to keep.
       memorySensitiveTopics: true,
       memoryBackgroundLearning: true,
+      crossMessagesChat: true,
+      crossMessagesCode: true,
       // Exposed so macOS and iOS show the same policy the web does, rather
       // than each client assuming a default.
       backgroundProviderMode: true,
@@ -168,6 +173,8 @@ export async function PATCH(req: Request) {
       ...(d.memoryBackgroundLearning !== undefined
         ? { memoryBackgroundLearning: d.memoryBackgroundLearning }
         : {}),
+      ...(d.crossMessagesChat !== undefined ? { crossMessagesChat: d.crossMessagesChat } : {}),
+      ...(d.crossMessagesCode !== undefined ? { crossMessagesCode: d.crossMessagesCode } : {}),
       ...(d.backgroundProviderMode !== undefined
         ? { backgroundProviderMode: d.backgroundProviderMode }
         : {}),

@@ -405,6 +405,7 @@ struct StudioGeneralSettings: View {
                 .help("On: the Preview opens when Alevr starts a dev server or uses the Preview, and the Simulator opens when it builds or runs an app. Off: open them yourself.")
                 .accessibilityIdentifier("juno.code.settings.auto-open-panes")
         }
+        StudioCrossConversationSettings()
         Section("Composer") {
             Picker("Send with", selection: $preferences.commandReturnSends) {
                 Text("Return").tag(false)

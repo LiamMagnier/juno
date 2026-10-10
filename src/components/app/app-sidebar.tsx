@@ -75,6 +75,8 @@ import { OPEN_NOTIFICATIONS_EVENT } from "@/components/notifications/notificatio
 import { unreadDetail } from "@/components/notifications/inbox-model";
 import { AGENT_STATE_NAMES, BRAND, FEATURE_NAMES, PRODUCT_NAME } from "@/lib/brand/names";
 import { AGENT_STATE_LABEL } from "@/lib/agents/domain";
+import { useCrossMessageInbox } from "@/components/chat/use-cross-messages";
+import { CrossMessagesMenuItem } from "@/components/chat/cross-messages-menu-item";
 
 /* ────────────────────────────────────────────────────────────────────────────
  * The sidebar (docs/design/FLAT_UI.md §3).
@@ -638,6 +640,9 @@ export function AppSidebar({
    */
   const workRuns = useWorkRunsByConversation({ enabled: !isCode });
 
+  // Conversations messaging each other: unread titles, and the replies owed
+  // by chats that are not open (src/components/chat/use-cross-messages.ts).
+  const crossUnread = useCrossMessageInbox(activeConversationId ?? null);
   const rowSignals = React.useMemo(() => {
     const signals = new Map<string, RowSignal>();
     for (const [conversationId, session] of workRuns.byConversation) {
@@ -1432,6 +1437,7 @@ export function AppSidebar({
                             conversation={c}
                             active={c.id === activeConversationId}
                             signal={rowSignals.get(c.id)}
+                            unread={crossUnread.has(c.id) && c.id !== activeConversationId}
                             {...rowProps}
                           />
                         ))}
@@ -1457,6 +1463,7 @@ export function AppSidebar({
                             conversation={c}
                             active={c.id === activeConversationId}
                             signal={rowSignals.get(c.id)}
+                            unread={crossUnread.has(c.id) && c.id !== activeConversationId}
                             {...rowProps}
                           />
                         ))}
@@ -2225,6 +2232,7 @@ function ConversationRow({
   onRequestConfirm,
   onShare,
   onArchive,
+  unread,
 }: RowSharedProps & {
   conversation: ClientConversation;
   active: boolean;
@@ -2232,6 +2240,8 @@ function ConversationRow({
   nested?: boolean;
   /** The run behind this conversation, when one is worth a mark. */
   signal?: RowSignal;
+  /** Another conversation messaged this one and the reader has not opened it since. */
+  unread?: boolean;
 }) {
   const router = useRouter();
   const renaming = renamingId === conversation.id;
@@ -2250,7 +2260,9 @@ function ConversationRow({
      directive, 2026-09-26). A row that needs the reader is set in full ink at
      medium weight instead; every other state says nothing here, and the
      StatusDot left in the slot only carries the words for a screen reader. */
-  const needsReader = signal?.tone === "attention" || signal?.tone === "bad";
+  // A message from another conversation the reader has not opened reads the
+  // same way: full ink at medium weight, no mark.
+  const needsReader = signal?.tone === "attention" || signal?.tone === "bad" || !!unread;
   const trailingMark = conversation.pinned && !nested;
 
   const { patch } = useConversationActions({ conversation, active, onUpdate, onRemove, onRestore, onRequestConfirm });
@@ -2314,7 +2326,7 @@ function ConversationRow({
            attribute is also how a truncated title gets read, and a row that
            answered "what is this" with "Juno has asked you something" would
            have traded one fact for another. */
-        title={signal ? `${rowLabel}: ${signal.meaning}` : rowLabel}
+        title={signal ? `${rowLabel}: ${signal.meaning}` : unread ? `${rowLabel}: a new message from another conversation` : rowLabel}
       >
         <AnimatedTitle
           title={rowLabel}
@@ -2516,6 +2528,7 @@ function ConversationMenu({
         <DropdownMenuItem onSelect={() => onArchive(conversation)}>
           <Archive className="size-4" /> Archive
         </DropdownMenuItem>
+        {!isCodeSession && <CrossMessagesMenuItem conversationId={conversation.id} />}
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={remove} variant="destructive">
           <ActionIcons.delete className="size-4" /> Delete

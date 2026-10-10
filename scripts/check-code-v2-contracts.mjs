@@ -176,7 +176,7 @@ function buildSchema() {
     ),
 
     Attachment: obj({ name: nonEmpty, mediaType: nonEmpty, ref: nonEmpty }),
-    UserInput: obj({ text: str }, { attachments: arr(ref("Attachment")) }),
+    UserInput: obj({ text: str }, { attachments: arr(ref("Attachment")), conversation: ref("ConversationDelivery") }),
     TokenCount: obj({ input: int, output: int }, { cachedInput: int }),
     PlanStep: obj({ text: str, status: ref("StepStatus") }),
     FileChangeEntry: obj(
@@ -249,6 +249,18 @@ function buildSchema() {
         error: str,
         durationMs: num,
       },
+    ),
+    ConversationMessageItem: itemSchema(
+      "conversation_message",
+      {
+        direction: en(C.CONVERSATION_MESSAGE_DIRECTION_VALUES),
+        peerRef: nonEmpty,
+        peerTitle: str,
+        peerProduct: en(["chat", "code"]),
+        text: str,
+        hop: { type: "integer", minimum: 0 },
+      },
+      { chainId: nonEmpty, linkId: nonEmpty, status: en(["delivered", "queued", "failed"]) },
     ),
   };
 
@@ -341,6 +353,7 @@ function buildSchema() {
       usage: ref("SessionUsage"),
       worktree: obj({ path: nonEmpty, branch: nonEmpty, repoRoot: nonEmpty }),
       scheduledResume: ref("ScheduledResume"),
+      crossMessages: en(["on", "off"]),
     },
   );
 
@@ -394,6 +407,8 @@ function buildSchema() {
                 { providerName: str, contextWindow: int, api: en(["chat", "responses"]) },
               ),
             ),
+            deviceId: nonEmpty,
+            crossMessages: bool,
           },
         ),
         byok: arr(obj({ provider: nonEmpty, apiKey: nonEmpty }, { baseUrl: str })),
@@ -408,6 +423,23 @@ function buildSchema() {
       { flowId: nonEmpty, callbackUrl: { type: "string", minLength: 1, maxLength: 16384 } },
     ),
   };
+  params["conversation.deliver"] = obj({
+    ...sid,
+    message: ref("ConversationDelivery"),
+  });
+  definitions.ConversationDelivery = obj(
+    {
+      fromRef: nonEmpty,
+      fromTitle: str,
+      fromProduct: en(["chat", "code"]),
+      text: nonEmpty,
+      hop: { type: "integer", minimum: 0 },
+      chainId: nonEmpty,
+    },
+    { linkId: nonEmpty, notifyWhenIdle: bool, notice: bool },
+  );
+  params["conversation.read"] = obj(sid, { lastN: { type: "integer", minimum: 1 } });
+  params["conversation.toggle"] = obj({ ...sid, enabled: { type: ["boolean", "null"] } });
   for (const t of C.CLIENT_COMMAND_TYPE_VALUES) if (!params[t]) throw new Error(`no params schema for ${t}`);
   definitions.ClientCommand = {
     oneOf: C.CLIENT_COMMAND_TYPE_VALUES.map((t) => obj({ id: nonEmpty, type: { const: t }, params: params[t] })),

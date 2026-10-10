@@ -50,6 +50,14 @@ export interface ClientSettings {
    */
   memoryBackgroundLearning: boolean;
   /**
+   * "Let conversations message each other" (src/lib/cross-conversation): may
+   * an agent in a Chat (default off) or a Code session (default on) list,
+   * read and message the user's other conversations. A conversation's own
+   * toggle wins.
+   */
+  crossMessagesChat?: boolean;
+  crossMessagesCode?: boolean;
+  /**
    * Where invisible work on this account's content may be sent — memory
    * extraction and consolidation, titles, moderation. See
    * @/lib/background-provider-policy. Surfaced because a policy that silently

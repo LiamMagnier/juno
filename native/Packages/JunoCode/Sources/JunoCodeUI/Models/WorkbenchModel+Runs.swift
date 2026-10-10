@@ -47,6 +47,7 @@ public extension WorkbenchModel {
 
     /// Marks a session read: a finished run leaves Ready for review.
     func markViewed(_ id: CodeSessionID, at date: Date = Date()) {
+        CodeCrossInbox.shared.viewed(id)
         runTracker.viewedAt[id.value] = date
         saveRunTracker()
         publishRunIndex()

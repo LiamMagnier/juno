@@ -38,6 +38,7 @@ import { recordRoomPlan, type RoomTurnSetup } from "@/lib/agents/room-store";
 import type { TurnAccount } from "./account";
 import { refuse, usageWindowRefusal } from "./admission";
 import type { TurnUser } from "./types";
+import { claimCrossReply, claimQueuedForUserTurn, releaseCrossClaims } from "@/lib/cross-conversation/store";
 
 /*
  * Pipeline stage 6 — acceptTurn: the budget gate, then the user's message is
@@ -442,7 +443,9 @@ export async function acceptTurn({
     });
     // A room's follow-up turn answers the same message as a NEW reply: the
     // answer before it is another member's and must stay.
-    if (last?.role === "ASSISTANT" && roomSetup?.mode.kind !== "follow_up") {
+    // A reply to another conversation's message is a new reply too: the answer
+    // before it is the person's own earlier answer and must stay.
+    if (last?.role === "ASSISTANT" && roomSetup?.mode.kind !== "follow_up" && !input.crossReply) {
       staleAssistantId = last.id;
       // The reader's verdict on the answer being replaced, for Auto's feedback
       // loop: a regenerate is a miss, and a regenerate on another model is a
@@ -595,12 +598,36 @@ export async function acceptTurn({
 
   turnContext.settleFiles(attachedContextFiles, contextFilesOverLimit);
 
+  /*
+   * Messages from the person's other conversations (src/lib/cross-conversation).
+   * A crossReply turn answers the one it claims here, atomically, so two
+   * clients never answer it twice; a busy or already-claimed message refuses.
+   * A person's own new message reads every message waiting in this
+   * conversation, so those are claimed by it instead of answered again later.
+   */
+  let crossLinkIds: string[] = [];
+  let crossTrigger: { linkId: string; fromRef: string } | null = null;
+  if (input.crossReply) {
+    const claim = await claimCrossReply(user.id, input.crossReply.linkId, conversation.id);
+    if (!claim.ok) {
+      return NextResponse.json(
+        { error: claim.reason === "busy" ? "This conversation is busy; the message waits for its turn." : "That message is not waiting for a reply.", code: `cross_${claim.reason}` },
+        { status: claim.reason === "not_found" ? 404 : 409 }
+      );
+    }
+    crossLinkIds = [claim.link.id];
+    crossTrigger = { linkId: claim.link.id, fromRef: claim.link.fromRef };
+  } else if (userMessageId) {
+    crossLinkIds = await claimQueuedForUserTurn(user.id, conversation.id);
+  }
+
   // Durable first submissions consumed quota inside their acceptance
   // transaction. Every legacy caller retains the existing quota path.
   if (!consumed) {
     consumed = await consumeMessage(user.id, plan);
     if (!consumed.allowed) {
       if (userMessageId) await prisma.message.delete({ where: { id: userMessageId } }).catch(() => {});
+      if (crossLinkIds.length) await releaseCrossClaims(user.id, crossLinkIds).catch(() => {});
       if (clarificationAssistantRollback) {
         await prisma.message
           .update({
@@ -663,6 +690,8 @@ export async function acceptTurn({
     consumed,
     roomTurnId,
     roomMessageId,
+    crossLinkIds,
+    crossTrigger,
   };
 }
 
