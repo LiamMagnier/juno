@@ -1913,6 +1913,10 @@ export class SubagentManager {
         tools: task.toolSpecs,
         signal: task.aborter.signal,
         maxSteps: task.maxSteps,
+        // Its own key: a child's system prompt and transcript share nothing
+        // with the parent's, so routing it with the parent would only crowd
+        // the parent's cache.
+        cacheKey: `agent-${task.id}`,
         ...(task.route.effort ?? this.host.reasoningEffort ? { reasoningEffort: task.route.effort ?? this.host.reasoningEffort } : {}),
         takeQueuedUserText: () => task.steer.splice(0),
         executeToolCall: async (call) => {

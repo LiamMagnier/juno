@@ -16,8 +16,8 @@ import {
   type HostedSearchDialect,
 } from "@/lib/hosted-web-search";
 import {
-  openAIPromptCacheRequestFields,
   openAIResponsesSystemInput,
+  responsesPromptCacheRequestFields,
 } from "@/lib/openai-prompt-cache";
 import type { ModelInfo } from "@/lib/models";
 import type { ReasoningEffort } from "@/types/chat";
@@ -247,7 +247,8 @@ export async function* streamOpenAIResponses(
    * prompt travels as a system input message (the form every xAI example
    * uses); `reasoning.effort` goes only to a model with an effort ladder
    * (low|medium|high, xhigh on grok-4.6+; docs.x.ai reasoning guide) and no
-   * summary is asked for; no OpenAI prompt-cache fields; no PDF bytes (the
+   * summary is asked for; `prompt_cache_key` but no other OpenAI prompt-cache
+   * fields; no PDF bytes (the
    * route was told `providerReceivesDocumentBytes` is false for Grok); and a
    * model that takes no function tools (grok-4.20-multi-agent) is sent none.
    */
@@ -448,8 +449,9 @@ export async function* streamOpenAIResponses(
       // also stops the search, which is what a final answer means.
       if (wireTools) params.tool_choice = isFinalRound ? "none" : "auto";
     }
-    // Official OpenAI prompt caching (key + GPT-5.6 options / retention).
-    Object.assign(params, openAIPromptCacheRequestFields(model, cacheKey));
+    // Prompt caching per host: OpenAI's full set (key + GPT-5.6 options /
+    // retention); `prompt_cache_key` on xAI and Meta, plus Meta's 24h retention.
+    Object.assign(params, responsesPromptCacheRequestFields(model, host, cacheKey));
     // OpenAI priority processing (premium latency). The route gates fastMode to
     // priority-eligible models, so relaying it straight through is safe.
     // "priority" (Fast) or "ultrafast" (GPT-6.1 Sol / GPT-6 Astra, Responses only).

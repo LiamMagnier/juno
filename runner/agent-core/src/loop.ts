@@ -98,6 +98,8 @@ export interface AgentLoopOptions {
   maxSteps: number;
   /** How hard to think, when the provider can be asked. Absent means Instant. */
   reasoningEffort?: ReasoningEffort;
+  /** The conversation's prompt-cache routing key; see ProviderRequest.cacheKey. */
+  cacheKey?: string;
   /**
    * Text a person sent while this turn was running, taken at the top of the
    * next step.
@@ -668,6 +670,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentLoopRes
           tools: opts.tools,
           signal: turn.signal,
           ...(opts.reasoningEffort ? { reasoningEffort: opts.reasoningEffort } : {}),
+          ...(opts.cacheKey ? { cacheKey: opts.cacheKey } : {}),
         })) {
           listen();
           if (ev.type === 'text_delta') {

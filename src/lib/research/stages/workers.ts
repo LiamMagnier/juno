@@ -965,6 +965,7 @@ export function createWorkerStage(ctx: EngineContext) {
       const auditLines = renderGapAudit(audit.entries, questionOf);
       const reviewInput: ReviewRoundInput = {
         userId: current.userId,
+        runId: current.id,
         goal: current.goal,
         brief: researchBriefText(latestPlan),
         constraints: latestPlan.constraints,

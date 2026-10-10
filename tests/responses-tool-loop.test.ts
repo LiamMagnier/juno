@@ -457,6 +457,7 @@ test("xAI: web_search only — never search_parameters, never x_search — with 
     toolset: fakeToolset(["calculate"]),
     batch,
     loop: createLoopController({ budget: 10 }),
+    cacheKey: "conv-x",
   });
   const { bodies, events } = await run(
     req,
@@ -476,7 +477,9 @@ test("xAI: web_search only — never search_parameters, never x_search — with 
     const tools = body.tools as Array<{ type: string }>;
     assert.deepEqual(tools.map((t) => t.type), ["function", "web_search"]);
     assert.deepEqual(tools.at(-1), { type: "web_search" });
-    assert.equal("prompt_cache_key" in body, false);
+    // xAI's Responses API takes the key in the body (docs.x.ai "Maximizing cache hits").
+    assert.equal(body.prompt_cache_key, "conv-x");
+    assert.equal("prompt_cache_retention" in body, false);
     assert.deepEqual(body.reasoning, { effort: "high" });
   }
   assert.equal(bodies[0].max_turns, 10);

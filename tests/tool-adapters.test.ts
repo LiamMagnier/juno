@@ -552,3 +552,53 @@ test("OpenAI-compatible: the labs' own web search goes out as documented and its
   const qwenOff = await run("qwen:qwen3.8-flash", [COMPAT_ANSWER], false);
   assert.equal(qwenOff.body.enable_search, undefined);
 });
+
+/* ── Prompt caching on the wire (2026-10-10) ── */
+
+test("OpenAI-compatible: Qwen 3.7 Plus carries explicit cache markers that move with the tool round", async () => {
+  const toolset = fakeTurnToolset();
+  const { requests, transport } = compatTransport([COMPAT_TOOL_ROUND, COMPAT_ANSWER]);
+  const { error } = await collect(
+    streamOpenAICompat(model("qwen:qwen3.7-plus"), "sys", HISTORY, 4_000, undefined, undefined, false, createToolLoop(toolset), undefined, "conv_1", false, transport),
+  );
+  assert.equal(error, null);
+  const markedRoles = (body: unknown) =>
+    ((body as { messages: Array<{ role: string; content?: unknown }> }).messages)
+      .filter((m) => Array.isArray(m.content) && (m.content as Array<{ cache_control?: unknown }>).some((p) => p.cache_control))
+      .map((m) => m.role);
+  assert.deepEqual(markedRoles(requests[0]), ["system", "user"]);
+  // Round 2: the marker moved to the newest tool result; the system one stays.
+  assert.deepEqual(markedRoles(requests[1]), ["system", "tool"]);
+});
+
+test("OpenAI-compatible: a utility prompt (promptCache none) sends Qwen no markers; Meta gets prompt_cache_key", async () => {
+  const send = async (id: string, cacheKey: string | undefined, promptCache?: "none" | "short") => {
+    const { requests, transport } = compatTransport([COMPAT_ANSWER]);
+    const { error } = await collect(
+      streamOpenAICompat(model(id), "sys", HISTORY, 4_000, undefined, undefined, false, undefined, undefined, cacheKey, false, transport, promptCache),
+    );
+    assert.equal(error, null, id);
+    return requests[0] as unknown as { messages: Array<{ content?: unknown }>; prompt_cache_key?: string };
+  };
+  const utility = await send("qwen:qwen3.7-plus", undefined, "none");
+  assert.ok(utility.messages.every((m) => typeof m.content === "string"), "no array content, no markers");
+  const implicitQwen = await send("qwen:qwen3.5-flash", "conv_1");
+  assert.ok(implicitQwen.messages.every((m) => typeof m.content === "string"), "implicit-only models are left alone");
+  assert.equal((await send("meta:muse-spark-1.3", "conv_1")).prompt_cache_key, "conv_1");
+});
+
+test("Anthropic: a utility prompt sends no cache markers; short marks the system prompt at 5m only", async () => {
+  const run = async (promptCache?: "none" | "short") => {
+    const { requests, transport } = anthropicTransport([ANTHROPIC_ANSWER]);
+    const { error } = await collect(
+      streamAnthropic(model("claude-sonnet-5"), "sys", HISTORY, 4_000, undefined, undefined, false, undefined, undefined, false, undefined, transport, promptCache),
+    );
+    assert.equal(error, null);
+    return JSON.stringify(requests[0]);
+  };
+  const markers = (body: string) => body.match(/"cache_control":\{[^}]*\}/g) ?? [];
+  assert.deepEqual(markers(await run("none")), []);
+  assert.deepEqual(markers(await run("short")), ['"cache_control":{"type":"ephemeral"}']);
+  // The chat default is unchanged: a 1h system marker and a 5m conversation marker.
+  assert.deepEqual(markers(await run()), ['"cache_control":{"type":"ephemeral","ttl":"1h"}', '"cache_control":{"type":"ephemeral"}']);
+});

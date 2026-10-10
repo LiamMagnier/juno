@@ -20,7 +20,7 @@ import type { ModelInfo } from "@/lib/models";
 import type { ReasoningEffort } from "@/types/chat";
 import type { AdapterRequest } from "@/lib/llm/types";
 import { undispatchedToolsetReason } from "@/lib/llm/tool-round";
-import type { LlmEvent, MessageForModel } from "@/types/llm";
+import type { LlmEvent, MessageForModel, PromptCacheMode } from "@/types/llm";
 
 export { clampMaxTokens };
 
@@ -68,6 +68,8 @@ export async function* streamChat(opts: {
    * of `system`; anything else is ignored.
    */
   systemStablePrefix?: string;
+  /** Explicit prompt-cache markers (`PromptCacheMode`). Omit for chat turns. */
+  promptCache?: PromptCacheMode;
   /** Premium "fast mode": Anthropic speed:"fast" / OpenAI service_tier:"priority".
    *  The route only sets this on models that support it. */
   fastMode?: FastMode;
@@ -190,7 +192,7 @@ export async function* streamChat(opts: {
           // yield* streamAnthropic(request)
           yield* streamAnthropic(
             model, system, history, maxTokens, signal, reasoningEffort, webSearch,
-            tools, dynamicContext, fastMode === true, opts.systemStablePrefix
+            tools, dynamicContext, fastMode === true, opts.systemStablePrefix, undefined, opts.promptCache
           );
           return;
         case "gemini-native":
@@ -226,7 +228,7 @@ export async function* streamChat(opts: {
         case "openai-compatible":
           yield* streamOpenAICompat(
             model, system, history, maxTokens, signal, reasoningEffort, webSearch,
-            tools, dynamicContext, cacheKey, fastMode
+            tools, dynamicContext, cacheKey, fastMode, undefined, opts.promptCache
           );
           return;
         default: {

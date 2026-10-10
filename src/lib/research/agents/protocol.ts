@@ -449,6 +449,8 @@ export interface ReviewRoundInput {
   today?: string;
   /** The run's lead model id, frozen on its envelope (§9.5.1). Absent: the strongest configured. */
   leadModelId?: string;
+  /** The run, so its reviews share one prompt-cache key (`prompt_cache_key` routing). */
+  runId?: string;
   signal?: AbortSignal;
 }
 

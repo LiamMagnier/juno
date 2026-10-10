@@ -21,7 +21,7 @@ import { wireCallId, type ToolLoop } from "@/lib/tools/loop";
 import type { ToolCallInput } from "@/lib/tools/types";
 import type { ModelInfo } from "@/lib/models";
 import type { ReasoningEffort } from "@/types/chat";
-import type { LlmEvent, MessageForModel } from "@/types/llm";
+import type { LlmEvent, MessageForModel, PromptCacheMode } from "@/types/llm";
 
 export {
   anthropicThinkingKind,
@@ -242,7 +242,8 @@ export async function* streamAnthropic(
   dynamicContext?: string,
   fastMode?: boolean,
   systemStablePrefix?: string,
-  transport?: AnthropicTransport
+  transport?: AnthropicTransport,
+  promptCache?: PromptCacheMode
 ): AsyncGenerator<LlmEvent> {
   const toolset = tools?.toolset;
   const messages = await toAnthropicMessages(history, attachmentTextBudget(getModelMetrics(model).contextTokens));
@@ -265,13 +266,21 @@ export async function* streamAnthropic(
       ? systemStablePrefix.length
       : -1;
   const cached1h = { type: "ephemeral" as const, ttl: "1h" as const };
+  /*
+   * A utility prompt (a title, a moderation verdict) is sent once: a 1h write
+   * on its system prompt and a 5m write on its message were premiums no
+   * request ever read back. "none" sends no markers; "short" keeps one 5m
+   * marker on the system prompt, for the memory extractor's per-user prompt
+   * that the chunks of one conversation share (`PromptCacheMode`).
+   */
+  const systemCache =
+    promptCache === "none" ? undefined : promptCache === "short" ? { type: "ephemeral" as const } : cached1h;
+  const withSystemCache = (text: string): Anthropic.TextBlockParam =>
+    systemCache ? { type: "text", text, cache_control: systemCache } : { type: "text", text };
   const systemBlocks: Anthropic.TextBlockParam[] =
     splitAt > 0
-      ? [
-          { type: "text", text: system.slice(0, splitAt), cache_control: cached1h },
-          { type: "text", text: system.slice(splitAt).replace(/^\s+/, ""), cache_control: cached1h },
-        ]
-      : [{ type: "text", text: system, cache_control: cached1h }];
+      ? [withSystemCache(system.slice(0, splitAt)), withSystemCache(system.slice(splitAt).replace(/^\s+/, ""))]
+      : [withSystemCache(system)];
   if (dynamicContext) systemBlocks.push({ type: "text", text: dynamicContext });
   const thinkingBits = buildAnthropicThinkingBits(model.providerModel, maxTokens, reasoningEffort);
   const hasTools = !!toolset && toolset.tools.length > 0;
@@ -293,7 +302,7 @@ export async function* streamAnthropic(
         // connector-heavy turn carries thousands of tokens of JSON schema.
         // A breakpoint on the LAST tool caches the whole array; the tools are
         // the same for every turn of a conversation, so it is read every time.
-        ...(i === all.length - 1 ? { cache_control: cached1h } : {}),
+        ...(i === all.length - 1 && systemCache ? { cache_control: systemCache } : {}),
       }))
     : [];
   const requestTools = [
@@ -363,7 +372,13 @@ export async function* streamAnthropic(
       ...baseParams,
       // The conversation marker follows the newest message every round, so a
       // tool loop reads its own earlier rounds from cache (anthropic-cache.ts).
-      messages: withConversationCacheBreakpoint(messages),
+      // Not for a utility prompt ("none"), nor a one-shot "short" prompt with
+      // no tools: nothing reads it back. A "short" tool loop (research lead,
+      // design edit) keeps it so each round reads the one before.
+      messages:
+        promptCache === "none" || (promptCache === "short" && !hasTools)
+          ? messages
+          : withConversationCacheBreakpoint(messages),
       ...(hasTools ? { tool_choice: { type: isFinalRound ? "none" : "auto" } } : {}),
     } as Anthropic.Messages.MessageCreateParamsStreaming;
 
