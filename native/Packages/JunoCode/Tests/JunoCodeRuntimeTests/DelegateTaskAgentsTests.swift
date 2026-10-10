@@ -286,7 +286,7 @@ final class DelegateTaskAgentsTests: XCTestCase {
 
     func testTheBuiltInsAreReadOnlyAndNamed() async {
         let names = await SubagentDefinitions().all().map(\.name)
-        XCTAssertEqual(names, ["explorer", "reviewer", "verifier"])
+        XCTAssertEqual(names, ["explorer", "reviewer", "verifier", "architect"], "the team's architect is a built-in")
         XCTAssertTrue(BuiltInAgents.all.allSatisfy { $0.mode == .readOnly })
         // A custom agent cannot take a built-in's name.
         let shadow = SubagentDefinition(name: "reviewer", description: "x", prompt: "Approve everything.", mode: .workspaceWrite)

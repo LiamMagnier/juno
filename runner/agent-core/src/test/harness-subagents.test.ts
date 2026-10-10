@@ -418,3 +418,149 @@ test('best-of-N runs each worker model in its own worktree, the reviewer compare
   const loser = run.candidates.find((c) => c.agentId !== pick)!;
   assert.ok(loser.branch && !fs.existsSync(path.join(cwd, '.git', 'worktrees', loser.agentId)));
 });
+
+// MARK: Team (Plan → Build → Verify)
+
+function teamRouting(budget?: RoleRouting['budget']): RoleRouting {
+  return {
+    preset: 'plan-build-verify',
+    orchestrator: { instanceId: 'alevr', model: 'lead-model' },
+    architect: { instanceId: 'arch', model: 'm-arch', effort: 'high' },
+    workers: [
+      { instanceId: 'b1', model: 'm-build-1' },
+      { instanceId: 'b2', model: 'm-build-2' },
+    ],
+    reviewer: { instanceId: 'ver', model: 'm-verify', effort: 'xhigh' },
+    ...(budget ? { budget } : {}),
+  };
+}
+
+const TEAM_PLAN = JSON.stringify({
+  plan: 'Change a.txt and b.txt separately.',
+  tasks: [
+    { title: 'Update a', prompt: 'Replace "a" with "A" in a.txt' },
+    { title: 'Update b', prompt: 'Replace "b" with "B" in b.txt' },
+  ],
+});
+
+test('plan → build → verify: each phase runs on its own model and provider, in order, and the lead summarises', async () => {
+  const cwd = gitRepo({ 'a.txt': 'a\n', 'b.txt': 'b\n' });
+  const order: string[] = [];
+  const first = (name: string, req: ProviderRequest) => {
+    if (req.messages.filter((m) => m.role === 'assistant').length === 0) order.push(name);
+  };
+  const architect = scriptedProvider('arch', (req) => {
+    first('plan', req);
+    return say(TEAM_PLAN, 20, 10);
+  });
+  const builder = (name: string) =>
+    scriptedProvider(name, (req) => {
+      first(name, req);
+      const file = userText(req).includes('a.txt') && !userText(req).includes('in b.txt') ? 'a.txt' : 'b.txt';
+      const steps = req.messages.filter((m) => m.role === 'assistant').length;
+      if (steps === 0) return call('r', 'read_file', { path: file });
+      if (steps === 1) return call('w', 'edit_file', { path: file, old_string: file[0]!, new_string: file[0]!.toUpperCase() });
+      return say(`built ${file}`, 10, 5);
+    });
+  const b1 = builder('build-1');
+  const b2 = builder('build-2');
+  let verifierSaw = '';
+  const verifier = scriptedProvider('ver', (req) => {
+    first('verify', req);
+    verifierSaw = userText(req);
+    return say('Both files changed as asked. Verdict: pass', 15, 5);
+  });
+  let leadSaw = '';
+  const root = scriptedProvider('mock', (req) => {
+    order.push('lead');
+    leadSaw = userText(req);
+    return say('The team built it and the verifier passed it.');
+  });
+  const { session: s, items } = session(root, cwd, {
+    mode: 'auto-edit',
+    routing: teamRouting(),
+    resolveProvider: (sel) =>
+      sel.instanceId === 'arch' ? { adapter: architect, model: 'm-arch' }
+      : sel.instanceId === 'b1' ? { adapter: b1, model: 'm-build-1' }
+      : sel.instanceId === 'b2' ? { adapter: b2, model: 'm-build-2' }
+      : sel.instanceId === 'ver' ? { adapter: verifier, model: 'm-verify' }
+      : null,
+  });
+  await s.prompt('Capitalise both files');
+
+  // Strictly in order: plan, then both builders (in either order), then verify, then the lead.
+  assert.equal(order[0], 'plan');
+  assert.deepEqual(new Set(order.slice(1, 3)), new Set(['build-1', 'build-2']));
+  assert.equal(order[3], 'verify');
+  assert.equal(order.at(-1), 'lead');
+  assert.equal(order.filter((o) => o === 'lead').length, 1);
+
+  // Each phase on its configured model, with its effort.
+  assert.equal(architect.requests[0]!.model, 'm-arch');
+  assert.equal(architect.requests[0]!.reasoningEffort, 'high');
+  assert.ok(b1.requests.every((r) => r.model === 'm-build-1'));
+  assert.ok(b2.requests.every((r) => r.model === 'm-build-2'));
+  assert.equal(verifier.requests[0]!.model, 'm-verify');
+  assert.equal(verifier.requests[0]!.reasoningEffort, 'xhigh');
+  assert.ok(root.requests.every((r) => r.model !== 'm-arch'), 'the lead stays on its own model');
+
+  // The builders' work is in the checkout, and the verifier saw it.
+  assert.equal(fs.readFileSync(path.join(cwd, 'a.txt'), 'utf8'), 'A\n');
+  assert.equal(fs.readFileSync(path.join(cwd, 'b.txt'), 'utf8'), 'B\n');
+  assert.match(verifierSaw, /<plan>[\s\S]*Change a.txt and b.txt/);
+  assert.match(verifierSaw, /\+A/);
+  assert.match(leadSaw, /<team_run preset="plan-build-verify">[\s\S]*phase="verify"[\s\S]*Verdict: pass/);
+
+  // The agent tree shows the three phases on the right contract roles.
+  const states = s.agents();
+  assert.deepEqual(states.map((a) => a.phase), ['plan', 'build', 'build', 'verify']);
+  assert.deepEqual(states.map((a) => a.contractRole), ['architect', 'worker', 'worker', 'reviewer']);
+  assert.deepEqual(states.map((a) => a.label), ['Architect', 'Builder 1', 'Builder 2', 'Verifier']);
+  assert.deepEqual(states.map((a) => a.selection.instanceId), ['arch', 'b1', 'b2', 'ver']);
+  const phases = new Map<string, string>();
+  for (const op of items) {
+    if (op.op !== 'delta' && op.item.kind === 'subagent' && op.item.phase) phases.set(op.item.agentId, `${op.item.phase}:${op.item.role}`);
+  }
+  assert.deepEqual([...phases.values()], ['plan:architect', 'build:worker', 'build:worker', 'verify:reviewer']);
+});
+
+test('plan → build → verify: the budget cap stops the team after the phase that spent it', async () => {
+  const cwd = gitRepo({ 'a.txt': 'a\n', 'b.txt': 'b\n' });
+  const architect = scriptedProvider('arch', () => say(TEAM_PLAN, 90, 40));
+  const b1 = scriptedProvider('b1', () => say('should not run'));
+  const b2 = scriptedProvider('b2', () => say('should not run'));
+  const verifier = scriptedProvider('ver', () => say('should not run'));
+  const root = scriptedProvider('mock', () => say('the lead should not run'));
+  const { session: s, events } = session(root, cwd, {
+    mode: 'auto-edit',
+    routing: teamRouting({ maxTokens: 100 }),
+    resolveProvider: (sel) =>
+      sel.instanceId === 'arch' ? { adapter: architect, model: 'm-arch' }
+      : sel.instanceId === 'b1' ? { adapter: b1, model: 'm-build-1' }
+      : sel.instanceId === 'b2' ? { adapter: b2, model: 'm-build-2' }
+      : sel.instanceId === 'ver' ? { adapter: verifier, model: 'm-verify' }
+      : null,
+  });
+  await s.prompt('Capitalise both files');
+  assert.equal(architect.requests.length, 1, 'the plan ran');
+  assert.equal(b1.requests.length + b2.requests.length, 0, 'no builder started');
+  assert.equal(verifier.requests.length, 0, 'the verifier never ran');
+  assert.equal(root.requests.length, 0, 'the lead did not carry on past the cap');
+  assert.deepEqual(s.agents().map((a) => a.phase), ['plan']);
+  assert.ok(s.subagents!.budgetSnapshot().exhausted);
+  const said = events.filter((e) => e.type === 'assistant_message').map((e) => (e as { text: string }).text).join('\n');
+  assert.match(said, /The team stopped because the run's token budget/);
+  const finished = events.find((e) => e.type === 'turn_finished') as { stopReason: string } | undefined;
+  assert.equal(finished?.stopReason, 'budget');
+  assert.equal(fs.readFileSync(path.join(cwd, 'a.txt'), 'utf8'), 'a\n', 'nothing was built');
+});
+
+test('the Architect plan is parsed into at most one task per builder', async () => {
+  const { parseTeamPlan } = await import('../subagents.js');
+  const three = JSON.stringify({ plan: 'p', tasks: [1, 2, 3].map((n) => ({ title: `T${n}`, prompt: `do ${n}` })) });
+  const two = parseTeamPlan(three, 2);
+  assert.equal(two.tasks.length, 2);
+  assert.match(two.tasks[0]!.prompt, /do 1[\s\S]*Also: T3[\s\S]*do 3/);
+  const prose = parseTeamPlan('Just change the file.', 3);
+  assert.deepEqual(prose.tasks, [{ title: 'Implement the plan', prompt: 'Just change the file.' }]);
+});

@@ -36,6 +36,7 @@ import { GitCheckpoints, PatchError, normalizeRepoPath } from "../git/checkpoint
 import { createWorktree, runWorktreeSetup } from "../git/worktrees.js";
 import { AlevrMcpServer, MCP_SERVER_NAME } from "../mcp/alevr-mcp.js";
 import { deferred, describeError, newId, nowIso, type Deferred, type Logger } from "../util.js";
+import { withTeamBrief } from "../mcp/team-brief.js";
 
 export class WireError extends Error {
   constructor(
@@ -639,7 +640,8 @@ export class SessionManager {
         turnId,
         turnOrdinal: ordinal,
         cwd,
-        input: params.input,
+        // Team lane: a vendor agent leads a Plan → Build → Verify team through the Alevr MCP tools.
+        input: withTeamBrief(params.input, params.routing, instance.kind, params.interactionMode),
         selection: params.selection,
         ...(params.routing ? { routing: params.routing } : {}),
         runtimeMode: params.runtimeMode,

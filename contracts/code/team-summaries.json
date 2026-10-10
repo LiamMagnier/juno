@@ -1,0 +1,94 @@
+{
+  "about": "The Team chip's words, shared by src/lib/code-v2/team.ts (teamSummary, shortModelName) and native CodeV2Team.swift. Both test suites read this file.",
+  "names": [
+    ["anthropic:claude-opus-5-5", "Opus"],
+    ["claude-sonnet-5-5", "Sonnet"],
+    ["anthropic:claude-haiku-4-5", "Haiku"],
+    ["openai:gpt-6.1-sol", "GPT"],
+    ["gpt-6.1-codex", "GPT"],
+    ["google:gemini-3.8-pro", "Gemini"],
+    ["google:gemini-3.8-flash", "Flash"],
+    ["xai:grok-5", "Grok"],
+    ["deepseek:deepseek-v4", "DeepSeek"],
+    ["acme:zephyr-2", "Zephyr"]
+  ],
+  "summaries": [
+    {
+      "routing": { "preset": "solo", "orchestrator": { "instanceId": "alevr", "model": "anthropic:claude-opus-5-5" } },
+      "summary": null
+    },
+    {
+      "routing": {
+        "preset": "plan-build-verify",
+        "orchestrator": { "instanceId": "alevr", "model": "anthropic:claude-sonnet-5-5" },
+        "architect": { "instanceId": "claude-agent:default", "model": "claude-opus-5-5" },
+        "workers": [
+          { "instanceId": "alevr", "model": "anthropic:claude-sonnet-5-5" },
+          { "instanceId": "alevr", "model": "anthropic:claude-sonnet-5-5" }
+        ],
+        "reviewer": { "instanceId": "codex:default", "model": "gpt-6.1-sol" }
+      },
+      "summary": "Opus plans · Sonnet ×2 builds · GPT verifies"
+    },
+    {
+      "routing": {
+        "preset": "plan-build-verify",
+        "orchestrator": { "instanceId": "alevr", "model": "anthropic:claude-opus-5-5" },
+        "workers": [{ "instanceId": "alevr", "model": "google:gemini-3.8-flash" }]
+      },
+      "summary": "Opus plans · Flash builds · Opus verifies"
+    },
+    {
+      "routing": {
+        "preset": "plan-build-verify",
+        "orchestrator": { "instanceId": "alevr", "model": "anthropic:claude-opus-5-5" },
+        "architect": { "instanceId": "alevr", "model": "deepseek:deepseek-v4" },
+        "workers": [
+          { "instanceId": "alevr", "model": "deepseek:deepseek-v4" },
+          { "instanceId": "alevr", "model": "deepseek:deepseek-v4" },
+          { "instanceId": "alevr", "model": "deepseek:deepseek-v4" }
+        ],
+        "reviewer": { "instanceId": "alevr", "model": "deepseek:deepseek-v4" }
+      },
+      "summary": "DeepSeek · DeepSeek ×3 · DeepSeek"
+    },
+    {
+      "routing": {
+        "preset": "plan-build-verify",
+        "orchestrator": { "instanceId": "alevr", "model": "anthropic:claude-opus-5-5" },
+        "architect": { "instanceId": "alevr", "model": "deepseek:deepseek-v4" },
+        "workers": [
+          { "instanceId": "alevr", "model": "deepseek:deepseek-v4" },
+          { "instanceId": "alevr", "model": "deepseek:deepseek-v4" }
+        ],
+        "reviewer": { "instanceId": "alevr", "model": "deepseek:deepseek-v4" }
+      },
+      "max": 24,
+      "summary": "Team of 4"
+    },
+    {
+      "routing": {
+        "preset": "lead-workers",
+        "orchestrator": { "instanceId": "alevr", "model": "anthropic:claude-opus-5-5" },
+        "workers": [
+          { "instanceId": "alevr", "model": "anthropic:claude-sonnet-5-5" },
+          { "instanceId": "alevr", "model": "anthropic:claude-sonnet-5-5" },
+          { "instanceId": "alevr", "model": "anthropic:claude-sonnet-5-5" }
+        ]
+      },
+      "summary": "Opus leads · Sonnet ×3 builds"
+    },
+    {
+      "routing": {
+        "preset": "best-of-n",
+        "orchestrator": { "instanceId": "alevr", "model": "anthropic:claude-opus-5-5" },
+        "workers": [
+          { "instanceId": "alevr", "model": "anthropic:claude-opus-5-5" },
+          { "instanceId": "codex:default", "model": "gpt-6.1-sol" },
+          { "instanceId": "acp:gemini", "model": "gemini-3.8-pro" }
+        ]
+      },
+      "summary": "Best of 3"
+    }
+  ]
+}

@@ -15,6 +15,7 @@ import { isRuntimeMode } from "../contracts/code-v2.js";
 import type { SessionManager } from "../sessions/session-manager.js";
 import { stricterMode } from "../sessions/session-manager.js";
 import { text, type AlevrMcpServer, type McpScope, type McpToolResult } from "./alevr-mcp.js";
+import { phaseOfRole } from "./team-brief.js";
 import { newId, nowIso, truncateMiddle } from "../util.js";
 
 const topLevel = (scope: McpScope) => scope.depth === 0;
@@ -46,6 +47,8 @@ interface ChildRecord {
   selection: ModelSelection;
   /** The parent turn that spawned it; the parent's item stays attached to that turn. */
   turnId?: string;
+  /** How the agent tree names it ("Architect", "Builder 2", "Verifier"), for a team. */
+  label?: string;
 }
 
 export function registerSubagentTools(mcp: AlevrMcpServer, sessions: SessionManager): () => void {
@@ -85,6 +88,8 @@ export function registerSubagentTools(mcp: AlevrMcpServer, sessions: SessionMana
       model: rec.selection,
       status,
       task: rec.task,
+      ...(phaseOfRole(rec.role) && sessions.log(rec.parentId).meta.routing?.preset === "plan-build-verify" ? { phase: phaseOfRole(rec.role)! } : {}),
+      ...(rec.label ? { label: rec.label } : {}),
       ...(status === "completed" ? { closingText: truncateMiddle(closingText(childId), 4000) } : {}),
       ...(usage ? { tokens: { input: usage.inputTokens, output: usage.outputTokens, ...(usage.cachedInputTokens ? { cachedInput: usage.cachedInputTokens } : {}) } } : {}),
     };
@@ -137,7 +142,12 @@ export function registerSubagentTools(mcp: AlevrMcpServer, sessions: SessionMana
         type: "object",
         properties: {
           task: { type: "string", description: "Everything the subagent needs to know; it cannot see this conversation." },
-          role: { type: "string", enum: ["worker", "explorer", "reviewer"], default: "worker" },
+          role: {
+            type: "string",
+            enum: ["worker", "explorer", "reviewer", "architect"],
+            default: "worker",
+            description: "architect plans, worker builds, reviewer verifies, explorer searches. Each runs on the model the person chose for that role.",
+          },
           instanceId: { type: "string", description: "Provider instance id from Alevr (optional)." },
           model: { type: "string", description: "Model id on that instance (optional)." },
           effort: { type: "string", enum: ["low", "medium", "high", "xhigh", "max"] },
@@ -156,8 +166,31 @@ export function registerSubagentTools(mcp: AlevrMcpServer, sessions: SessionMana
         if (runningChildren(scope.sessionId).length >= MAX_RUNNING_SUBAGENTS) {
           return text(`${MAX_RUNNING_SUBAGENTS} subagents are already running. Wait for one (wait_subagent) before starting another.`, true);
         }
-        const role: AgentRole = args.role === "explorer" || args.role === "reviewer" ? args.role : "worker";
-        const routed = role === "reviewer" ? meta.routing?.reviewer : role === "explorer" ? meta.routing?.explorer : meta.routing?.workers?.[0];
+        const role: AgentRole = args.role === "explorer" || args.role === "reviewer" || args.role === "architect" ? args.role : "worker";
+        // Builders go round the routing's workers, so a team of N runs on its N choices.
+        const parentTurnId = sessions.activeTurnId(scope.sessionId);
+        const workerOrdinal = [...children.values()].filter((r) => r.parentId === scope.sessionId && r.turnId === parentTurnId && r.role === "worker").length;
+        const workers = meta.routing?.workers ?? [];
+        const routed =
+          role === "reviewer"
+            ? meta.routing?.reviewer
+            : role === "explorer"
+              ? meta.routing?.explorer
+              : role === "architect"
+                ? (meta.routing?.architect ?? meta.routing?.orchestrator)
+                : workers.length
+                  ? workers[workerOrdinal % workers.length]
+                  : undefined;
+        const team = meta.routing?.preset === "plan-build-verify";
+        const label = !team
+          ? undefined
+          : role === "architect"
+            ? "Architect"
+            : role === "reviewer"
+              ? "Verifier"
+              : role === "worker"
+                ? (workers.length > 1 ? `Builder ${workerOrdinal + 1}` : "Builder")
+                : "Explorer";
         const selection: ModelSelection = {
           ...(routed ?? meta.selection),
           ...(typeof args.instanceId === "string" && args.instanceId ? { instanceId: args.instanceId } : {}),
@@ -174,7 +207,7 @@ export function registerSubagentTools(mcp: AlevrMcpServer, sessions: SessionMana
         const child = await sessions.open({ cwd: meta.cwd, selection, parentSessionId: scope.sessionId, runtimeMode });
         const itemId = newId("agent");
         const parentTurn = sessions.activeTurnId(scope.sessionId);
-        children.set(child.id, { parentId: scope.sessionId, itemId, role, task, selection, ...(parentTurn ? { turnId: parentTurn } : {}) });
+        children.set(child.id, { parentId: scope.sessionId, itemId, role, task, selection, ...(parentTurn ? { turnId: parentTurn } : {}), ...(label ? { label } : {}) });
         const parentId = scope.sessionId;
         const unwatch = child.subscribe((envelope) => {
           if (envelope.event.type === "usage.updated" || envelope.event.type === "turn.completed") enforceBudget(parentId, parentTurn);
@@ -192,8 +225,8 @@ export function registerSubagentTools(mcp: AlevrMcpServer, sessions: SessionMana
         }
         syncParent(child.id);
         return {
-          content: [{ type: "text", text: `Started subagent ${child.id} on ${selection.instanceId} · ${selection.model}. Call wait_subagent with this agentId for its answer.` }],
-          structuredContent: { agentId: child.id, instanceId: selection.instanceId, model: selection.model },
+          content: [{ type: "text", text: `Started ${label ? `${label} ` : "subagent "}${child.id} on ${selection.instanceId} · ${selection.model}. Call wait_subagent with this agentId for its answer.` }],
+          structuredContent: { agentId: child.id, instanceId: selection.instanceId, model: selection.model, role, ...(label ? { label } : {}) },
         };
       },
     }),

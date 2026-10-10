@@ -9,6 +9,8 @@ import Foundation
 public struct CodeV2RoleDraft: Equatable, Sendable {
     public var preset: CodeV2.RolePreset
     public var lead: CodeV2.ModelSelection
+    /// Plan → Build → Verify: who plans. Nil plans on the lead's model.
+    public var architect: CodeV2.ModelSelection?
     public var workerCount: Int
     public var worker: CodeV2.ModelSelection
     public var reviewer: CodeV2.ModelSelection?
@@ -32,10 +34,12 @@ public struct CodeV2RoleDraft: Equatable, Sendable {
         explorer: CodeV2.ModelSelection? = nil,
         utility: CodeV2.ModelSelection? = nil,
         candidates: [CodeV2.ModelSelection]? = nil,
-        budgetUsd: Double? = defaultBudgetUsd
+        budgetUsd: Double? = defaultBudgetUsd,
+        architect: CodeV2.ModelSelection? = nil
     ) {
         self.preset = preset
         self.lead = lead
+        self.architect = architect
         self.workerCount = workerCount
         self.worker = worker ?? lead
         self.reviewer = reviewer
@@ -56,7 +60,8 @@ public struct CodeV2RoleDraft: Equatable, Sendable {
             explorer: routing.explorer,
             utility: routing.compaction,
             candidates: routing.preset == .bestOfN ? routing.workers : nil,
-            budgetUsd: routing.budget?.maxUsd
+            budgetUsd: routing.budget?.maxUsd,
+            architect: routing.architect
         )
     }
 
@@ -98,6 +103,17 @@ public struct CodeV2RoleDraft: Equatable, Sendable {
             return CodeV2.RoleRouting(
                 orchestrator: lead, workers: candidates, compaction: utility, preset: .bestOfN, budget: budget
             )
+        case .planBuildVerify:
+            return CodeV2.RoleRouting(
+                orchestrator: lead,
+                workers: Array(repeating: worker, count: workerCount),
+                reviewer: reviewer ?? lead,
+                explorer: explorer,
+                compaction: utility,
+                preset: .planBuildVerify,
+                budget: budget,
+                architect: architect ?? lead
+            )
         }
     }
 
@@ -107,6 +123,7 @@ public struct CodeV2RoleDraft: Equatable, Sendable {
         case .solo: "Solo"
         case .leadWorkers: "Lead + \(workerCount)"
         case .bestOfN: "Best of \(candidates.count)"
+        case .planBuildVerify: "Team"
         }
     }
 
@@ -120,6 +137,8 @@ public struct CodeV2RoleDraft: Equatable, Sendable {
                 + (reviewer == nil ? "" : " The reviewer reads every diff before you do.")
         case .bestOfN:
             "One prompt goes to \(candidates.count) models at once. Each runs in its own worktree. You pick one; the others are deleted."
+        case .planBuildVerify:
+            "The architect plans the structure first. Builders implement the plan in parallel. The verifier reviews and tests the result before you see it."
         }
     }
 
@@ -130,6 +149,8 @@ public struct CodeV2RoleDraft: Equatable, Sendable {
         case .leadWorkers:
             [lead] + Array(repeating: worker, count: workerCount) + [reviewer, explorer].compactMap { $0 }
         case .bestOfN: candidates
+        case .planBuildVerify:
+            [lead, architect ?? lead] + Array(repeating: worker, count: workerCount) + [reviewer ?? lead] + [explorer].compactMap { $0 }
         }
     }
 }
@@ -174,6 +195,12 @@ public enum CodeV2RunEstimate {
             return total
         case .bestOfN:
             return draft.candidates.reduce(0) { $0 + cost($1, leadShape) }
+        case .planBuildVerify:
+            var total = cost(draft.lead, reviewerShape) + cost(draft.architect ?? draft.lead, leadShape)
+            total += Double(draft.workerCount) * cost(draft.worker, workerShape)
+            total += cost(draft.reviewer ?? draft.lead, reviewerShape)
+            if let explorer = draft.explorer { total += cost(explorer, explorerShape) }
+            return total
         }
     }
 

@@ -32,6 +32,8 @@ import type {
 } from "@/lib/code-v2/contracts";
 import type { DockTab } from "@/lib/code-v2/dock";
 import { splitPath } from "@/lib/code-v2/diff";
+import { TEAM_PHASE_VALUES } from "@/lib/code-v2/contracts";
+import { TEAM_PHASE_LABELS } from "@/lib/code-v2/team";
 import { formatTokens } from "@/lib/code-v2/tier-view";
 import { describeItem, formatDuration, groupTurns, stepItems, turnHeader, turnMarks, turnVisibility, type DetailLevel, type Turn } from "@/lib/code-v2/turns";
 import { Glyph, useNow } from "./primitives";
@@ -241,6 +243,9 @@ function ReadsRow({ items, forceOpen, onOpenDock }: { items: Extract<TurnItem, {
 export const isCandidate = (a: SubagentItem) => /^Candidate\b/.test(a.label ?? "") || !!a.candidate?.kept || !!a.candidate?.testsLine;
 
 export function teamHead(items: readonly SubagentItem[]): string {
+  // Team lane: a Plan → Build → Verify run says which phases it reached.
+  const phases = TEAM_PHASE_VALUES.filter((p) => items.some((i) => i.phase === p));
+  if (phases.length) return phases.map((p) => TEAM_PHASE_LABELS[p]).join(" → ");
   const candidates = items.filter(isCandidate).length;
   const workers = items.filter((i) => i.role === "worker" && !isCandidate(i)).length;
   const others = items.filter((i) => i.role !== "worker");
@@ -261,6 +266,13 @@ export function agentStep(a: SubagentItem): { text: string; needs: boolean } {
   return { text: a.closingText ?? a.title ?? "Done", needs: false };
 }
 
+/** Plan, then Build, then Verify; agents with no phase keep their order after. */
+function phaseOrdered(items: SubagentItem[]): SubagentItem[] {
+  if (!items.some((i) => i.phase)) return items;
+  const rank = (i: SubagentItem) => (i.phase ? TEAM_PHASE_VALUES.indexOf(i.phase) : TEAM_PHASE_VALUES.length);
+  return [...items].sort((a, b) => rank(a) - rank(b));
+}
+
 function TeamGroup({ items, props, forceOpen }: { items: SubagentItem[]; props: ThreadProps; forceOpen: boolean }) {
   const live = items.some((i) => i.status === "running" || i.status === "waiting");
   const [open, setOpen] = React.useState<boolean | null>(null);
@@ -274,9 +286,12 @@ function TeamGroup({ items, props, forceOpen }: { items: SubagentItem[]; props: 
         {elapsed > 0 && <span className="t">{formatDuration(elapsed)}</span>}
       </button>
       {shown &&
-        items.map((a) => {
+        phaseOrdered(items).map((a, index, list) => {
           const step = agentStep(a);
+          const phaseHead = a.phase && a.phase !== list[index - 1]?.phase ? TEAM_PHASE_LABELS[a.phase] : null;
           return (
+            <React.Fragment key={a.id}>
+            {phaseHead && <div className="cv2-phase-head" role="heading" aria-level={4}>{phaseHead}</div>}
             <button
               key={a.id}
               type="button"
@@ -287,10 +302,11 @@ function TeamGroup({ items, props, forceOpen }: { items: SubagentItem[]; props: 
                 props.onOpenDock?.({ tab: "agents", target: a.agentId });
               }}
             >
-              <span className="who">{a.label ?? (a.role === "explorer" ? "Explorer" : a.role === "reviewer" ? "Reviewer" : "Worker")}</span>
+              <span className="who">{a.label ?? (a.role === "explorer" ? "Explorer" : a.role === "reviewer" ? "Reviewer" : a.role === "architect" ? "Architect" : "Worker")}</span>
               <span className={cn("what", step.needs && "cv2-sig", a.status === "running" && "cv2-shine")}>{step.text}</span>
               <span className="t">{a.elapsedMs !== undefined ? formatDuration(a.elapsedMs) : ""}</span>
             </button>
+            </React.Fragment>
           );
         })}
     </div>

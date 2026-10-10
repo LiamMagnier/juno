@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { teamSummary } from "@/lib/code-v2/team";
 import { test } from "node:test";
 import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -183,16 +184,18 @@ test("the streaming state is calm: no glow, a stop button, the queue as one cont
   assert.match(html, /Changed 3 files/);
 });
 
-test("the composer at rest shows +, the model trigger, the options menu and send; mode, plan and permissions only when not default", () => {
+test("the composer at rest shows +, the model trigger, the Team chip, the options menu and send; plan and permissions only when not default", () => {
   const f = fixture("model-picker");
   const html = renderToStaticMarkup(React.createElement(CodeWorkspace, { model: { ...f.model }, ui: {} }));
   const foot = html.slice(html.indexOf('class="cv2-cfoot"'), html.indexOf('class="cv2-strip"'));
   assert.match(foot, /aria-label="Add"/);
   assert.match(foot, /aria-label="Model: Opus 5\.5, High"/);
   assert.match(foot, /aria-label="More options"/);
+  // Team lane: the Team chip is always there; Solo shows nothing extra.
+  assert.match(foot, /aria-label="Team"/);
   assert.doesNotMatch(foot, /Lead \+|Best of|Auto-edit|>Plan</);
   const team = renderToStaticMarkup(React.createElement(CodeWorkspace, { model: { ...f.model, runtimeMode: "full", interactionMode: "plan", routing: fixture("needs-you").model.routing }, ui: {} }));
-  assert.match(team, /Lead \+ 3/);
+  assert.ok(team.includes(`aria-label="Team: ${teamSummary(fixture("needs-you").model.routing)}"`), "the chip names the team");
   assert.match(team, /Full access/);
   assert.match(team, />Plan</);
 });

@@ -352,6 +352,8 @@ public enum CodeV2 {
         case solo
         case leadWorkers = "lead-workers"
         case bestOfN = "best-of-n"
+        // team lane (additive): the Architect plans, Builders build, the Verifier checks.
+        case planBuildVerify = "plan-build-verify"
     }
 
     // contract: AGENT_ROLE_VALUES
@@ -361,6 +363,16 @@ public enum CodeV2 {
         case reviewer
         case explorer
         case compaction
+        // team lane (additive): plans the structure before anyone builds.
+        case architect
+    }
+
+    /// The phases of a Plan → Build → Verify run, in the order they run.
+    // contract: TEAM_PHASE_VALUES
+    public enum TeamPhase: String, Codable, Sendable, CaseIterable, Hashable {
+        case plan
+        case build
+        case verify
     }
 
     public struct RunBudget: Codable, Sendable, Hashable {
@@ -375,6 +387,8 @@ public enum CodeV2 {
 
     public struct RoleRouting: Codable, Sendable, Hashable {
         public var orchestrator: ModelSelection
+        /// team lane (additive): the Architect; nil = the orchestrator plans.
+        public var architect: ModelSelection?
         public var workers: [ModelSelection]?
         public var reviewer: ModelSelection?
         public var explorer: ModelSelection?
@@ -389,9 +403,11 @@ public enum CodeV2 {
             explorer: ModelSelection? = nil,
             compaction: ModelSelection? = nil,
             preset: RolePreset = .solo,
-            budget: RunBudget? = nil
+            budget: RunBudget? = nil,
+            architect: ModelSelection? = nil
         ) {
             self.orchestrator = orchestrator
+            self.architect = architect
             self.workers = workers
             self.reviewer = reviewer
             self.explorer = explorer
@@ -1009,6 +1025,8 @@ public enum CodeV2 {
         public var costUsd: Double?
         public var worktreeBranch: String?
         public var candidate: Candidate?
+        // team lane (additive): the Plan → Build → Verify phase it belongs to.
+        public var phase: TeamPhase?
 
         public struct Candidate: Codable, Sendable, Hashable {
             public var additions: Int?
@@ -1031,8 +1049,10 @@ public enum CodeV2 {
             model: CodeV2.ModelSelection, status: CodeV2.SubagentStatus, task: String? = nil,
             closingText: String? = nil, tokens: CodeV2.TokenCount? = nil,
             title: String? = nil, label: String? = nil, liveLine: String? = nil, elapsedMs: Double? = nil,
-            costUsd: Double? = nil, worktreeBranch: String? = nil, candidate: Candidate? = nil
+            costUsd: Double? = nil, worktreeBranch: String? = nil, candidate: Candidate? = nil,
+            phase: CodeV2.TeamPhase? = nil
         ) {
+            self.phase = phase
             self.id = id
             self.turnId = turnId
             self.createdAt = createdAt

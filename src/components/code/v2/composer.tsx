@@ -21,12 +21,13 @@
 import * as React from "react";
 import type { ApprovalDecision, ApprovalRequestItem, PlanItem, ProviderInstance, TurnItem, UserInputRequestItem } from "@/lib/code-v2/contracts";
 import { SLASH_COMMANDS, applyTrigger, composerKeyIntent, detectTrigger, escPress, filterByQuery, rankFiles, sendButtonMode, type Trigger } from "@/lib/code-v2/composer";
-import { orchestrateLabel, withPreset } from "@/lib/code-v2/orchestrate";
+import { orchestrateLabel } from "@/lib/code-v2/orchestrate";
 import { displayName } from "@/lib/code-v2/providers-view";
 import { formatReset, formatTokens, tightestWindow } from "@/lib/code-v2/tier-view";
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
 import { EFFORT_LABELS, RUNTIME_MODES, currentTier, effectiveEffort, effortLevelsOf, findInstance, runtimeModeInfo } from "./model-info";
-import { ContextRing, ModelPicker, TeamPopover, triggerWords, type RoleTab } from "./pickers";
+import { ContextRing, ModelPicker, triggerWords, type RoleTab } from "./pickers";
+import { ComposerTeam } from "./team";
 import { ComposerPopover, Glyph, MenuList, ModelMark, useIsMac, type MenuEntry } from "./primitives";
 import type { WorkspaceModel } from "./types";
 import { cn } from "@/lib/utils";
@@ -414,20 +415,7 @@ export const Composer = React.forwardRef<
       : []),
     ...(tier ? [{ id: "context", label: "Context window", icon: <Glyph name="layers" size={16} />, trail: formatTokens(tier.tokens), onSelect: () => setTimeout(() => setPopover("context"), 0) }] : []),
     { kind: "sep", id: "s1" },
-    {
-      id: "mode",
-      label: "Mode",
-      icon: <Glyph name="agents" size={16} />,
-      trail: orchestrateLabel(routing),
-      sub: {
-        title: "Mode",
-        entries: [
-          { id: "m:solo", label: "Solo", l2: "One model does the whole run", checked: routing.preset === "solo", onSelect: () => actions.setRouting(withPreset(routing, "solo")) },
-          { id: "m:team", label: "Team", l2: "A lead plans, workers build in parallel", checked: routing.preset === "lead-workers", onSelect: () => actions.setRouting(withPreset(routing, "lead-workers")) },
-          { id: "m:best", label: "Best of N", l2: "Several attempts, you keep one", checked: routing.preset === "best-of-n", onSelect: () => actions.setRouting(withPreset(routing, "best-of-n")) },
-        ],
-      },
-    },
+    { id: "team", label: "Team…", icon: <Glyph name="agents" size={16} />, trail: orchestrateLabel(routing), onSelect: () => setTimeout(() => setPopover("team"), 0) },
     {
       id: "perm",
       label: "Permissions",
@@ -574,12 +562,22 @@ export const Composer = React.forwardRef<
                   {words.effort && <span className="eff">{words.effort}</span>}
                   <Glyph name="chevron-down" size={12} className="chev" />
                 </button>
-                {routing.preset !== "solo" && (
-                  <button type="button" className="cv2-ctl cv2-hide-narrow" aria-haspopup="dialog" aria-expanded={popover === "team"} onClick={() => toggle("team")}>
-                    {orchestrateLabel(routing)}
-                    <Glyph name="chevron-down" size={12} className="chev" />
-                  </button>
-                )}
+                {/* Team lane: always on the composer, Solo or not (team.tsx). */}
+                <ComposerTeam
+                  routing={routing}
+                  lead={selection}
+                  instances={instances}
+                  scope={{ session: model.thread.id, project: model.thread.repo }}
+                  fresh={model.items.length === 0}
+                  setRouting={actions.setRouting}
+                  popover={popover}
+                  setPopover={setPopover}
+                  onPickRole={(t) => {
+                    setRoleTab(t);
+                    setPopover("catalog");
+                  }}
+                  anchorRef={footRef}
+                />
                 {model.interactionMode === "plan" && (
                   <button type="button" className="cv2-ctl cv2-hide-narrow" aria-haspopup="menu" title="Plan first: nothing changes until you approve" onClick={() => actions.setInteractionMode("default")}>
                     Plan
@@ -658,19 +656,6 @@ export const Composer = React.forwardRef<
                 actions.compact?.();
                 actions.setSelection(sel);
               }}
-            />
-            <TeamPopover
-              open={popover === "team"}
-              onClose={() => setPopover(null)}
-              instances={instances}
-              routing={routing}
-              lead={selection}
-              onChange={actions.setRouting}
-              onPickRole={(t) => {
-                setRoleTab(t);
-                setPopover("catalog");
-              }}
-              anchorRef={footRef}
             />
           </div>
         )}

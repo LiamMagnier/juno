@@ -122,6 +122,8 @@ public final class CodeV2ComposerModel {
     public var escape = CodeV2DoubleEscape()
     /// "Press Esc again to stop" is showing.
     public var escapeHintVisible = false
+    /// The + menu asked the Team chip to open its editor (team lane).
+    public var teamEditorRequested = false
 
     @ObservationIgnored private let defaultsKey: String?
 

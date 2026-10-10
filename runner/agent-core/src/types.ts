@@ -233,8 +233,12 @@ export interface SubagentSnapshot {
   applied?: boolean;
   startedAt?: string;
   completedAt?: string;
-  /** Contract role (worker / reviewer / explorer). */
+  /** Contract role (worker / reviewer / explorer / architect). */
   contractRole?: string;
+  /** Plan → Build → Verify: the phase it runs in (team lane). */
+  phase?: 'plan' | 'build' | 'verify';
+  /** How the agent tree names it ("Architect", "Builder 2", "Verifier"). */
+  label?: string;
   /** The provider instance and model the child actually runs on. */
   selection?: ModelSelection;
   provider?: string;

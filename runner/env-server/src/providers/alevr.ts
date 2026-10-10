@@ -17,12 +17,15 @@ import type {
   ProviderModel,
   ProviderSetupAction,
   ProviderSetupStep,
+  RoleRouting,
+  ModelSelection,
   RuntimeMode,
   InteractionMode,
   SubagentItem,
   TurnItem,
 } from "../contracts/code-v2.js";
-import { resolveModelAlias } from "../contracts/code-v2.js";
+import { instanceKindOf, resolveModelAlias } from "../contracts/code-v2.js";
+import { phaseOfRole } from "../mcp/team-brief.js";
 import type {
   EnvSecrets,
   OpenSessionOptions,
@@ -70,6 +73,10 @@ export interface EngineSessionOptions {
   mode?: EnginePermissionMode;
   callbacks: { onEvent(event: EngineEvent): void; requestApproval(request: EngineApprovalRequest): Promise<EngineDecision> };
   reasoningEffort?: string;
+  /** Team lane: the thread's role routing, so the engine runs Plan → Build → Verify itself. */
+  routing?: RoleRouting;
+  /** How a role's selection becomes an engine adapter (Alevr and BYOK selections; others inherit). */
+  resolveProvider?: (selection: ModelSelection) => { adapter: unknown; model: string; billable?: boolean } | null;
 }
 
 export interface AlevrEngine {
@@ -106,6 +113,16 @@ export async function loadAgentCoreEngine(): Promise<AlevrEngine> {
       return new core.OpenAICompatAdapter(key.baseUrl ? { ...config, baseUrl: key.baseUrl } : config, { apiKey: key.apiKey });
     },
   };
+}
+
+/** The contract role an engine child reports as (the engine sends `contractRole`; older builds only `role`). */
+export function contractRoleOfEngine(role: string): SubagentItem["role"] {
+  if (role === "explorer" || role === "reviewer" || role === "architect" || role === "orchestrator" || role === "compaction") return role;
+  return phaseOfRole(role) === "plan" ? "architect" : "worker";
+}
+
+function isSelection(v: unknown): v is ModelSelection {
+  return !!v && typeof v === "object" && typeof (v as ModelSelection).instanceId === "string" && typeof (v as ModelSelection).model === "string";
 }
 
 /** "anthropic:claude-opus-5-5" → { lab: "anthropic", model: "claude-opus-5-5" }; aliases resolved first. */
@@ -217,6 +234,8 @@ class EngineBackedSession implements ProviderSession {
   #engineSessionId: string | undefined;
   #turn: EngineTurn | undefined;
   #model: string | undefined;
+  /** The routing the live engine session was built with; a change rebuilds it. */
+  #routingKey = "";
   readonly #logger: Logger;
 
   constructor(
@@ -236,7 +255,8 @@ class EngineBackedSession implements ProviderSession {
 
   #ensure(request: TurnRequest): EngineSession {
     const model = splitModel(request.selection.model);
-    if (this.#session && this.#model === request.selection.model) {
+    const routingKey = request.routing && request.routing.preset !== "solo" ? JSON.stringify(request.routing) : "";
+    if (this.#session && this.#model === request.selection.model && this.#routingKey === routingKey) {
       this.#session.setMode(engineMode(request.runtimeMode, request.interactionMode));
       return this.#session;
     }
@@ -250,6 +270,7 @@ class EngineBackedSession implements ProviderSession {
         requestApproval: (r) => this.#approve(r),
       },
       ...(request.selection.effort ? { reasoningEffort: request.selection.effort } : {}),
+      ...(routingKey && request.routing ? { routing: request.routing, resolveProvider: (sel: ModelSelection) => this.#resolve(sel) } : {}),
     };
     let session: EngineSession;
     if (this.#engineSessionId) {
@@ -263,7 +284,25 @@ class EngineBackedSession implements ProviderSession {
     this.#session = session;
     this.#engineSessionId = session.sessionId;
     this.#model = request.selection.model;
+    this.#routingKey = routingKey;
     return session;
+  }
+
+  /**
+   * A role's selection as an engine adapter. Alevr's engine serves Alevr and
+   * BYOK selections; a subscription selection (Claude, Codex) cannot run
+   * inside it, so that role inherits the lead's model and the engine says so.
+   */
+  #resolve(selection: ModelSelection): { adapter: unknown; model: string; billable?: boolean } | null {
+    const kind = instanceKindOf(selection.instanceId);
+    if (kind !== "alevr" && kind !== "byok") return null;
+    try {
+      const instance = selection.instanceId === this.instance.id ? this.instance : ({ ...this.instance, id: selection.instanceId, kind } as ProviderInstance);
+      return { adapter: this.engine.providerFor(instance, selection.model, this.secrets), model: splitModel(selection.model).model, billable: kind === "alevr" };
+    } catch (error) {
+      this.#logger.warn(`team role ${selection.instanceId} · ${selection.model}: ${describeError(error)}`);
+      return null;
+    }
   }
 
   async runTurn(request: TurnRequest): Promise<TurnResult> {
@@ -460,11 +499,13 @@ class EngineBackedSession implements ProviderSession {
           turnId: turn.turnId,
           createdAt: sink.now(),
           agentId,
-          role: str(a.role) === "explorer" ? "explorer" : str(a.role) === "reviewer" ? "reviewer" : "worker",
-          model: { instanceId: this.instance.id, model: str(a.model) || this.#model || "default" },
+          role: contractRoleOfEngine(str(a.contractRole) || str(a.role)),
+          model: isSelection(a.selection) ? a.selection : { instanceId: this.instance.id, model: str(a.model) || this.#model || "default" },
           status: st === "completed" || st === "done" ? "completed" : st === "failed" ? "failed" : st === "cancelled" || st === "interrupted" ? "interrupted" : st === "queued" ? "waiting" : "running",
           task: str(a.title),
           ...(typeof a.summary === "string" ? { closingText: a.summary } : {}),
+          ...(a.phase === "plan" || a.phase === "build" || a.phase === "verify" ? { phase: a.phase } : {}),
+          ...(str(a.label) ? { label: str(a.label), title: str(a.title) } : {}),
         };
         sink.item(item);
         return;

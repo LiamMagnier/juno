@@ -11,6 +11,8 @@ public struct CodeV2AgentNode: Identifiable, Equatable, Sendable {
     public var agentId: String
     public var role: CodeV2.AgentRole
     public var roleLabel: String
+    /// Plan → Build → Verify: the phase it ran in.
+    public var phase: CodeV2.TeamPhase?
     public var selection: CodeV2.ModelSelection
     public var status: CodeV2.SubagentStatus
     public var title: String
@@ -22,6 +24,7 @@ public struct CodeV2AgentNode: Identifiable, Equatable, Sendable {
     public init(subagent: CodeV2.Subagent, items: [CodeV2.TurnItem], now: Date = Date(), ordinal: Int? = nil) {
         agentId = subagent.agentId
         role = subagent.role
+        phase = subagent.phase
         selection = subagent.model
         status = subagent.status
         let task = subagent.task ?? "Subagent"
@@ -42,12 +45,14 @@ public struct CodeV2AgentNode: Identifiable, Equatable, Sendable {
         }
         let index = ordinal ?? Int(subagent.agentId.filter(\.isNumber)) ?? 1
         switch subagent.role {
-        case .worker: roleLabel = "Worker \(index)"
+        case .worker: roleLabel = subagent.phase == .build ? "Builder \(index)" : "Worker \(index)"
         case .explorer: roleLabel = "Explorer"
-        case .reviewer: roleLabel = "Reviewer"
+        case .reviewer: roleLabel = subagent.phase == .verify ? "Verifier" : "Reviewer"
         case .orchestrator: roleLabel = "Lead"
         case .compaction: roleLabel = "Compaction"
+        case .architect: roleLabel = "Architect"
         }
+        if let label = subagent.label, !label.isEmpty { roleLabel = label }
         if let start = CodeV2Dates.parse(subagent.createdAt) {
             if subagent.status == .running || subagent.status == .waiting {
                 elapsedSeconds = max(0, Int(now.timeIntervalSince(start)))
@@ -75,6 +80,11 @@ public struct CodeV2AgentNode: Identifiable, Equatable, Sendable {
 enum CodeV2AgentCopy {
     /// "3 workers and an explorer", "2 agents".
     static func headline(_ children: [CodeV2AgentNode]) -> String {
+        // A Plan → Build → Verify team says what it did, phase by phase.
+        if children.contains(where: { $0.phase != nil }) {
+            let phases = CodeV2.TeamPhase.allCases.filter { phase in children.contains { $0.phase == phase } }
+            return phases.map(CodeV2Team.phaseTitle).joined(separator: " → ")
+        }
         let workers = children.filter { $0.role == .worker }.count
         let others = children.filter { $0.role != .worker }.map { node -> String in
             switch node.role {
@@ -129,8 +139,27 @@ struct CodeV2AgentGroup: View {
             .onHover { hovering = $0 }
             if open {
                 VStack(alignment: .leading, spacing: 0) {
-                    ForEach(children) { child in
-                        CodeV2AgentLine(node: child, isSelected: selected == child.agentId) { select(child.agentId) }
+                    if children.contains(where: { $0.phase != nil }) {
+                        ForEach(CodeV2.TeamPhase.allCases, id: \.self) { phase in
+                            let members = children.filter { $0.phase == phase }
+                            if !members.isEmpty {
+                                Text(CodeV2Team.phaseTitle(phase))
+                                    .studioType(.small)
+                                    .foregroundStyle(Studio.Ink.secondary)
+                                    .padding(.top, phase == .plan ? 0 : JunoSpace.tight)
+                                    .accessibilityAddTraits(.isHeader)
+                                ForEach(members) { child in
+                                    CodeV2AgentLine(node: child, isSelected: selected == child.agentId) { select(child.agentId) }
+                                }
+                            }
+                        }
+                        ForEach(children.filter { $0.phase == nil }) { child in
+                            CodeV2AgentLine(node: child, isSelected: selected == child.agentId) { select(child.agentId) }
+                        }
+                    } else {
+                        ForEach(children) { child in
+                            CodeV2AgentLine(node: child, isSelected: selected == child.agentId) { select(child.agentId) }
+                        }
                     }
                 }
                 .padding(.leading, 22)

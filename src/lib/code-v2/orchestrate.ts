@@ -10,6 +10,7 @@ export const PRESET_LABELS: Record<RolePreset, string> = {
   solo: "Solo",
   "lead-workers": "Lead + workers",
   "best-of-n": "Best of N",
+  "plan-build-verify": "Plan, build, verify",
 };
 
 export const PRESET_SENTENCES: Record<RolePreset, string> = {
@@ -17,6 +18,8 @@ export const PRESET_SENTENCES: Record<RolePreset, string> = {
   "lead-workers":
     "The lead plans and delegates. Workers run in parallel, each on its own branch of the plan. The reviewer reads every diff before you do.",
   "best-of-n": "The same prompt runs once per candidate, each in its own worktree. You compare them and keep one.",
+  "plan-build-verify":
+    "The architect plans the structure first. Builders implement the plan in parallel. The verifier reviews and tests the result before you see it.",
 };
 
 export const ROLE_COPY = {
@@ -38,6 +41,7 @@ export const DEFAULT_BUDGET_USD = 4;
 export function orchestrateLabel(routing: RoleRouting | undefined): string {
   if (!routing || routing.preset === "solo") return "Solo";
   const n = routing.workers?.length ?? 0;
+  if (routing.preset === "plan-build-verify") return n > 1 ? `Team of ${n + 2}` : "Team";
   return routing.preset === "best-of-n" ? `Best of ${Math.max(CANDIDATES_MIN, n)}` : `Lead + ${n}`;
 }
 
@@ -45,6 +49,17 @@ export function orchestrateLabel(routing: RoleRouting | undefined): string {
 export function withPreset(routing: RoleRouting, preset: RolePreset): RoleRouting {
   const lead = routing.orchestrator;
   if (preset === "solo") return { orchestrator: lead, preset, budget: routing.budget };
+  if (preset === "plan-build-verify") {
+    const count = clampCount(routing.workers?.length ?? 2, WORKERS_MIN, WORKERS_MAX);
+    return {
+      ...routing,
+      preset,
+      architect: routing.architect ?? lead,
+      workers: Array.from({ length: count }, (_, i) => routing.workers?.[i] ?? routing.workers?.[0] ?? lead),
+      reviewer: routing.reviewer ?? lead,
+      budget: routing.budget ?? { maxUsd: DEFAULT_BUDGET_USD },
+    };
+  }
   const workerModel = routing.workers?.[0] ?? lead;
   if (preset === "lead-workers") {
     const count = clampCount(routing.workers?.length ?? 3, WORKERS_MIN, WORKERS_MAX) || 3;
@@ -79,7 +94,7 @@ export function withCount(routing: RoleRouting, count: number): RoleRouting {
   return { ...routing, workers: Array.from({ length: n }, (_, i) => routing.workers?.[i] ?? first) };
 }
 
-export type RoleSlot = "orchestrator" | "workers" | "reviewer" | "explorer" | "compaction" | { candidate: number };
+export type RoleSlot = "orchestrator" | "architect" | "workers" | "reviewer" | "explorer" | "compaction" | { candidate: number };
 
 /** Set one role's model. For workers, every worker takes it (one model per role). */
 export function withRoleModel(routing: RoleRouting, slot: RoleSlot, selection: ModelSelection): RoleRouting {
@@ -149,7 +164,8 @@ export function estimateRunUsd(routing: RoleRouting, rates: RateLookup): { usd: 
     if (!r) return;
     usd += (profile.input * r.inputPerMTok + profile.output * r.outputPerMTok) / 1_000_000;
   };
-  add(routing.orchestrator, ROLE_TOKEN_PROFILE.orchestrator);
+  add(routing.orchestrator, routing.preset === "plan-build-verify" ? ROLE_TOKEN_PROFILE.reviewer : ROLE_TOKEN_PROFILE.orchestrator);
+  if (routing.preset === "plan-build-verify") add(routing.architect ?? routing.orchestrator, ROLE_TOKEN_PROFILE.orchestrator);
   if (routing.preset !== "solo") {
     for (const w of routing.workers ?? []) add(w, routing.preset === "best-of-n" ? ROLE_TOKEN_PROFILE.orchestrator : ROLE_TOKEN_PROFILE.worker);
     add(routing.reviewer, ROLE_TOKEN_PROFILE.reviewer);

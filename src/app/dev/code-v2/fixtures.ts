@@ -237,6 +237,29 @@ const ROUTING_BEST: RoleRouting = {
   budget: { maxUsd: 6 },
 };
 
+// Team lane: Opus plans on the Claude plan, two Sonnet builders, GPT verifies on Codex.
+const ROUTING_TEAM: RoleRouting = {
+  preset: "plan-build-verify",
+  orchestrator: { instanceId: "claude-agent:default", model: "claude-opus-5-5", effort: "high", contextTokens: 1_000_000 },
+  architect: { instanceId: "claude-agent:default", model: "claude-opus-5-5", effort: "high" },
+  workers: [
+    { instanceId: "claude-agent:default", model: "claude-sonnet-5-5", effort: "medium" },
+    { instanceId: "claude-agent:default", model: "claude-sonnet-5-5", effort: "medium" },
+  ],
+  reviewer: { instanceId: "codex:default", model: "gpt-6.1-sol", effort: "high" },
+  budget: { maxUsd: 4 },
+};
+
+function teamRun(): TurnItem[] {
+  const b = { turnId: "turn9", createdAt: at(5) };
+  return [
+    { id: "u9", turnId: "turn9", kind: "user_message", text: "Move checkout totals to the server and cover them with tests.", createdAt: at(6), delivery: "send" },
+    { ...b, id: "t1", kind: "subagent", agentId: "ar", role: "architect", phase: "plan", label: "Architect", title: "Plan", model: ROUTING_TEAM.architect!, status: "completed", closingText: "Two parts: a server route for the total, then the client reads it. Tests with each.", elapsedMs: 56_000 },
+    { ...b, id: "t2", kind: "subagent", agentId: "b1", role: "worker", phase: "build", label: "Builder 1", title: "Server route for the total", model: ROUTING_TEAM.workers![0]!, status: "completed", closingText: "Added /api/cart/total with tax before coupon. 9 tests pass.", elapsedMs: 130_000, worktreeBranch: "alevr/b1-server-total" },
+    { ...b, id: "t3", kind: "subagent", agentId: "b2", role: "worker", phase: "build", label: "Builder 2", title: "Client reads the server total", model: ROUTING_TEAM.workers![1]!, status: "running", liveLine: "Editing src/cart/useCartTotal.ts", elapsedMs: 161_000, worktreeBranch: "alevr/b2-client-total" },
+  ] as TurnItem[];
+}
+
 function agents(): SubagentItem[] {
   const base = { turnId: "turn3", createdAt: at(3) };
   return [
@@ -488,6 +511,23 @@ export const STATES: GalleryState[] = [
     label: "Settings: Orchestration",
     model: base({ items: workedTurn(), routing: ROUTING_LEAD }),
     ui: { settings: "orchestration" },
+  },
+  {
+    id: "team-solo",
+    label: "Team chip (Solo)",
+    model: base({ items: workedTurn() }),
+  },
+  {
+    id: "team-editor",
+    label: "Team editor",
+    model: base({ items: workedTurn(), routing: ROUTING_TEAM }),
+    ui: { popover: "team" },
+  },
+  {
+    id: "team-running",
+    label: "Team: Plan, Build, Verify running",
+    model: base({ items: teamRun(), state: "running", routing: ROUTING_TEAM }),
+    ui: { dockOpen: true, dockTab: "agents" },
   },
   {
     id: "no-provider",

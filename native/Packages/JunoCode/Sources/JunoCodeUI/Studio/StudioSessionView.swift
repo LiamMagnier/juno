@@ -309,6 +309,7 @@ public struct StudioSessionView: View {
                     threadTokens: controller.contextTokens ?? 0, computerUse: computerUseBinding,
                     openConnections: v2.openConnections, setup: v2.setup
                 )
+                    .codeV2TeamScope(session: controller.sessionID.value, project: controller.workspaceDisplayName)
                     .onChange(of: v2.composer.selection) { _, _ in syncV2(v2.composer) }
                     .onChange(of: v2.composer.runtimeMode) { _, _ in syncV2(v2.composer) }
                     .onChange(of: v2.composer.routing) { _, _ in syncV2(v2.composer) }

@@ -346,6 +346,8 @@ export class TurnItemProjector {
       model: agent.selection ?? { instanceId: 'alevr', model: agent.model },
       status: subagentStatus(agent.status),
       ...(agent.task ? { task: agent.task } : { task: agent.title }),
+      ...(agent.phase ? { phase: agent.phase, title: agent.title } : {}),
+      ...(agent.label ? { label: agent.label } : {}),
       ...(terminal && (agent.summary || agent.error) ? { closingText: agent.summary ?? agent.error } : {}),
       tokens: { input: agent.usage.inputTokens, output: agent.usage.outputTokens, ...(agent.usage.cacheReadTokens ? { cachedInput: agent.usage.cacheReadTokens } : {}) },
     };

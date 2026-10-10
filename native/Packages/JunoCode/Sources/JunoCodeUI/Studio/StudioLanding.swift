@@ -228,6 +228,7 @@ public struct StudioLanding: View {
                     model: v2.composer, directory: v2.directory, isEnabled: !isRemote,
                     openConnections: v2.openConnections, setup: v2.setup
                 )
+                .codeV2TeamScope(session: nil, project: project?.descriptor.displayName)
             } else {
                 StudioModelChip(
                     models: workbench.availableModels,

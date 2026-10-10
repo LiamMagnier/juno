@@ -28,12 +28,8 @@ struct CodeV2PlusMenuItems: View {
                 set: { model.interactionMode = $0 ? .plan : .default }
             ))
         }
-        Picker("Mode", selection: Binding(get: { model.roles.preset }, set: { setPreset($0) })) {
-            Text("Solo").tag(CodeV2.RolePreset.solo)
-            Text("Team").tag(CodeV2.RolePreset.leadWorkers)
-            Text("Best of N").tag(CodeV2.RolePreset.bestOfN)
-        }
-        .pickerStyle(.menu)
+        // Team lane: the role editor, also on the composer's Team chip (⇧⌘O).
+        Button("Team…") { model.teamEditorRequested = true }
         Picker("Permissions", selection: $model.runtimeMode) {
             ForEach(modes, id: \.self) { mode in
                 Text(CodeV2PermissionCopy.title(mode)).tag(mode)
@@ -45,12 +41,6 @@ struct CodeV2PlusMenuItems: View {
         }
     }
 
-    private func setPreset(_ preset: CodeV2.RolePreset) {
-        model.roles.preset = preset
-        if preset == .bestOfN, model.roles.candidates.count < CodeV2RoleDraft.candidateRange.lowerBound {
-            model.roles.setCandidateCount(3)
-        }
-    }
 }
 
 /// Permission names as the menu and the composer say them.
@@ -69,8 +59,8 @@ enum CodeV2PermissionCopy {
 // MARK: - Leading: the model trigger and what is not on its default
 
 /// The composer's left side after `+` (TARGET §7.1): the model trigger (mark,
-/// model, effort), then only the controls whose setting is not the default:
-/// `Lead + 3`, `Best of 3`, `Plan`, the permission when it is not Auto-edit,
+/// model, effort), the Team chip (always), then only the controls whose
+/// setting is not the default: `Plan`, the permission when it is not Auto-edit,
 /// `Computer` while computer use is on. Used by both engines.
 struct CodeV2ComposerLeading: View {
     @Bindable var model: CodeV2ComposerModel
@@ -94,9 +84,8 @@ struct CodeV2ComposerLeading: View {
             openConnections: openConnections, setup: setup,
             choose: { id, choice in model.choose(instanceId: id, model: choice) }
         )
-        if model.roles.preset != .solo {
-            CodeV2OrchestrateControl(directory: directory, draft: $model.roles, isEnabled: isEnabled)
-        }
+        // Team lane: always on the composer, Solo or not.
+        CodeV2TeamChip(model: model, directory: directory, isEnabled: isEnabled)
         if model.interactionMode == .plan {
             Menu {
                 Button("Turn Off Plan Mode") { model.interactionMode = .default }

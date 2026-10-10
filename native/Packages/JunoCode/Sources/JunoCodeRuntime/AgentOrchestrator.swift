@@ -102,6 +102,10 @@ public actor AgentOrchestrator {
         /// in a row, earns a reminder on its result (SPEC §3.10). Empty turns
         /// the guard off.
         public var repeatCallThresholds: [Int]
+        /// Team lane: a Plan → Build → Verify team that runs, through the
+        /// registry's `delegate_task`, before the lead's loop on each message
+        /// from the reader. Nil runs the lead alone.
+        public var team: TeamPipeline?
 
         public init(
             maximumIterations: Int = 200,
@@ -120,8 +124,10 @@ public actor AgentOrchestrator {
             retrySleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
             retryJitter: @escaping @Sendable () -> Double = { Double.random(in: 0..<1) },
             autonomy: AutonomyConfiguration? = nil,
-            repeatCallThresholds: [Int] = RepeatCallGuard.defaultThresholds
+            repeatCallThresholds: [Int] = RepeatCallGuard.defaultThresholds,
+            team: TeamPipeline? = nil
         ) {
+            self.team = team
             self.repeatCallThresholds = repeatCallThresholds
             self.compactionSummary = compactionSummary
             self.maximumIterations = maximumIterations
@@ -550,8 +556,13 @@ public actor AgentOrchestrator {
         runTokens = 0
         runCost = nil
         await noteGoalTurn()
+        let team = configuration.team
+        let teamPrompt = prompt
         let task = Task { [weak self] in
             guard let self else { return }
+            if let team {
+                await self.runTeam(team, prompt: teamPrompt, conversationIndex: conversationIndex, promptEventID: promptEvent.id)
+            }
             await self.runLoop()
         }
         runTask = task
@@ -560,6 +571,28 @@ public actor AgentOrchestrator {
         if stoppedDuringAdmission {
             task.cancel()
         }
+    }
+
+    /// Team lane: runs the Plan → Build → Verify phases, then folds the
+    /// team's report into the reader's message so the lead's loop reads it.
+    /// Without a `delegate_task` in the registry the lead runs alone.
+    private func runTeam(_ team: TeamPipeline, prompt: String, conversationIndex: Int, promptEventID: String) async {
+        guard let tool = registry.allTools.lazy.compactMap({ $0 as? DelegateTaskTool }).first,
+              conversation.indices.contains(conversationIndex)
+        else { return }
+        guard let run = try? await team.run(
+            prompt: prompt, tool: tool, sessionID: sessionID, callPrefix: "team-\(promptEventID)"
+        ) else { return }
+        let report = TeamPipeline.report(run)
+        switch conversation[conversationIndex] {
+        case let .user(text):
+            conversation[conversationIndex] = .user(text + "\n\n" + report)
+        case let .userWithImages(text, images):
+            conversation[conversationIndex] = .userWithImages(text + "\n\n" + report, images)
+        default:
+            return
+        }
+        try? await store.saveConversation(sessionID: sessionID, messages: conversation)
     }
 
     /// Amends the active execution at the next safe boundary. If a model turn

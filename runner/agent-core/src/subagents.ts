@@ -28,6 +28,7 @@ import type {
   ModelSelection,
   RoleRouting,
   RunBudget,
+  TeamPhase,
 } from './contracts/code-v2.js';
 import { resolveModelAlias } from './contracts/code-v2.js';
 import {
@@ -79,7 +80,7 @@ export type SubagentStatus =
 export type SubagentIsolation = 'shared_read_only' | 'git_worktree';
 
 /** How the child came to exist. */
-export type SubagentSource = 'delegate' | 'spawn' | 'workflow' | 'best_of_n';
+export type SubagentSource = 'delegate' | 'spawn' | 'workflow' | 'best_of_n' | 'team';
 
 export interface SubagentToolFilter {
   /** Tool names the child keeps; everything else is removed. */
@@ -107,6 +108,10 @@ export interface SubagentSpec {
   /** The final answer must be JSON matching this schema. */
   outputSchema?: JsonSchema;
   source?: SubagentSource;
+  /** Plan → Build → Verify: the phase this child runs in. */
+  phase?: TeamPhase;
+  /** How the agent tree names it ("Architect", "Builder 2", "Verifier"). */
+  label?: string;
 }
 
 /** The durable, surface-facing snapshot of one child task. */
@@ -114,8 +119,12 @@ export interface SubagentPublicState {
   id: string;
   title: string;
   role: SubagentRole;
-  /** The contract role (worker / reviewer / explorer) this child reports as. */
+  /** The contract role (worker / reviewer / explorer / architect) this child reports as. */
   contractRole: AgentRole;
+  /** Plan → Build → Verify: the phase it runs in. */
+  phase?: TeamPhase;
+  /** How the agent tree names it ("Architect", "Builder 2", "Verifier"). */
+  label?: string;
   model: string;
   /** The provider instance and model it actually runs on. */
   selection: ModelSelection;
@@ -534,6 +543,97 @@ export interface BestOfNRun {
   review?: { recommended?: string; ranking: string[]; notes: string; model: string };
   status: 'running' | 'awaiting_pick' | 'applied' | 'discarded';
   pickedAgentId?: string;
+}
+
+// MARK: Team records (Plan → Build → Verify)
+
+/** One phase of a team run, as the lead is told it. */
+export interface TeamPhaseRecord {
+  phase: TeamPhase;
+  agents: Array<{ agentId: string; label: string; model: string; instanceId: string; status: SubagentStatus; summary?: string; error?: string; filesChanged: string[] }>;
+}
+
+export interface TeamRun {
+  /** The Architect's plan, as it wrote it. */
+  plan?: string;
+  /** The implementation tasks the plan was split into. */
+  tasks: Array<{ title: string; prompt: string }>;
+  phases: TeamPhaseRecord[];
+  /** Why the team stopped before the Verifier finished (the budget, Stop, no repository). */
+  stoppedBy?: 'budget' | 'aborted' | 'no-repository' | 'plan-mode';
+  stopNote?: string;
+}
+
+const TEAM_ARCHITECT_PROMPT = (task: string, builders: number) => `You are the ARCHITECT of a team: you plan, ${builders} builder${builders === 1 ? '' : 's'} will implement your plan in parallel, then a verifier checks the result.
+
+Read enough of the repository to plan well, then reply with ONE JSON object and nothing else:
+{"plan": "<the structure and approach, in a few short paragraphs: the files, the interfaces, the order>", "tasks": [{"title": "<short imperative title>", "prompt": "<everything one builder needs: files, exact behaviour, how to check it>"}]}
+Give at most ${builders} task${builders === 1 ? '' : 's'}, independent enough to build in parallel without touching the same lines. Do not write code yourself.
+
+<request>
+${task}
+</request>`;
+
+const TEAM_BUILDER_PROMPT = (task: string, plan: string, slice: { title: string; prompt: string }) => `You are a BUILDER on a team. The architect planned the work; you implement your part of it, completely, and check it builds or passes its tests where you can.
+
+<request>
+${task}
+</request>
+
+<plan>
+${plan}
+</plan>
+
+<your_part title="${escapeAttr(slice.title)}">
+${slice.prompt}
+</your_part>
+
+Only change what your part needs; other builders are working on the rest in parallel.`;
+
+const TEAM_VERIFIER_PROMPT = (task: string, plan: string, built: string, diff: string) => `You are the VERIFIER of a team. The architect planned, the builders implemented, and their changes are now in the working tree. Review and test the result: read the changes, run the project's checks or tests when you can, and decide whether the request is met.
+
+Report each requirement as met, not met or failing, with the evidence. Never claim something works that you did not see work. End with one line: "Verdict: pass" or "Verdict: needs work".
+
+<request>
+${task}
+</request>
+
+<plan>
+${plan}
+</plan>
+
+<builders>
+${built}
+</builders>
+
+<diff>
+${diff}
+</diff>`;
+
+/** The plan JSON the Architect returns, or a single task carrying its whole answer. */
+export function parseTeamPlan(text: string, builders: number): { plan: string; tasks: Array<{ title: string; prompt: string }> } {
+  const parsed = extractJson(text) as { plan?: unknown; tasks?: unknown } | undefined;
+  const plan = typeof parsed?.plan === 'string' && parsed.plan.trim() ? parsed.plan.trim() : text.trim();
+  const raw = Array.isArray(parsed?.tasks) ? parsed!.tasks : [];
+  let tasks = raw
+    .map((t) => (t && typeof t === 'object' ? (t as Record<string, unknown>) : {}))
+    .map((t, i) => ({
+      title: (typeof t.title === 'string' && t.title.trim() ? t.title.trim() : `Part ${i + 1}`).slice(0, 80),
+      prompt: typeof t.prompt === 'string' ? t.prompt.trim() : '',
+    }))
+    .filter((t) => t.prompt);
+  if (tasks.length === 0) tasks = [{ title: 'Implement the plan', prompt: plan }];
+  const n = Math.max(1, builders);
+  if (tasks.length > n) {
+    // More parts than builders: fold the extras round-robin so every part is built.
+    const merged = tasks.slice(0, n).map((t) => ({ ...t }));
+    tasks.slice(n).forEach((t, i) => {
+      const into = merged[i % n]!;
+      into.prompt += `\n\nAlso: ${t.title}\n${t.prompt}`;
+    });
+    tasks = merged;
+  }
+  return { plan, tasks };
 }
 
 // MARK: Manager
@@ -1379,6 +1479,143 @@ export class SubagentManager {
     this.host.emit({ type: 'best_of_n', run: this.bestOfNRuns().find((r) => r.id === runId)! });
   }
 
+  // MARK: team (Plan → Build → Verify)
+
+  /**
+   * One team run (routing preset `plan-build-verify`): the Architect plans on
+   * its own model, one Builder per routing worker implements a part of the
+   * plan in its own worktree (imported into the checkout as each finishes),
+   * then the Verifier reviews and tests the result. Phases run strictly in
+   * order; the run budget is checked before each one, and a spent budget or
+   * Stop ends the run where it is. The lead writes the summary afterwards.
+   */
+  async runTeam(input: { prompt: string; turnIndex?: number; signal?: AbortSignal }): Promise<TeamRun> {
+    const routing = this.host.routing;
+    if (!routing || routing.preset !== 'plan-build-verify') throw new Error('The session has no Plan, build, verify team.');
+    const turnIndex = input.turnIndex ?? this.currentTurn;
+    const builders = Math.max(1, routing.workers?.length ?? 1);
+    const run: TeamRun = { tasks: [], phases: [] };
+    const stopped = (): boolean => {
+      if (input.signal?.aborted) {
+        run.stoppedBy = 'aborted';
+        return true;
+      }
+      const refusal = this.budgetRefusal();
+      if (refusal) {
+        run.stoppedBy = 'budget';
+        run.stopNote = this.budget.reason ?? 'the run budget was reached';
+        return true;
+      }
+      return false;
+    };
+    const runPhase = async (phase: TeamPhase, tasks: SubagentTask[]): Promise<TeamPhaseRecord> => {
+      for (const task of tasks) this.register(task);
+      const stop = () => tasks.forEach((t) => this.cancel(t.id, 'Stopped by user'));
+      input.signal?.addEventListener('abort', stop, { once: true });
+      // A budget spent mid-phase stops this phase's agents too.
+      const offBudget = this.budget.onExhausted(() => tasks.forEach((t) => this.cancel(t.id, `Stopped: ${this.budget.reason ?? 'the run budget was reached'}`)));
+      this.startEligible();
+      await Promise.all(tasks.map((t) => t.done));
+      input.signal?.removeEventListener('abort', stop);
+      offBudget();
+      const record: TeamPhaseRecord = {
+        phase,
+        agents: tasks.map((t) => ({
+          agentId: t.id,
+          label: t.spec.label ?? t.spec.title,
+          model: t.route.model,
+          instanceId: t.route.selection.instanceId,
+          status: t.status,
+          ...(t.summary ? { summary: t.summary.slice(0, 4_000) } : {}),
+          ...(t.error ? { error: t.error } : {}),
+          filesChanged: [...t.filesChanged],
+        })),
+      };
+      run.phases.push(record);
+      return record;
+    };
+    const options = { notify: false, maxSteps: this.config.maxStepsPerSpawnedChild };
+
+    // 1. Plan.
+    if (stopped()) return run;
+    const architect = this.createTask(
+      { title: 'Plan', prompt: TEAM_ARCHITECT_PROMPT(input.prompt, builders), role: 'architect', writes: false, dependencies: [], source: 'team', phase: 'plan', label: 'Architect' },
+      turnIndex,
+      options,
+    );
+    const planned = await runPhase('plan', [architect]);
+    const { plan, tasks } = parseTeamPlan(planned.agents[0]?.summary ?? '', builders);
+    run.plan = plan;
+    run.tasks = tasks;
+    if (stopped()) return run;
+
+    // 2. Build: writing children need a worktree each.
+    if (this.host.mode === 'plan') {
+      run.stoppedBy = 'plan-mode';
+      run.stopNote = 'Plan mode is read-only, so the builders did not run.';
+      return run;
+    }
+    const isRepo = await git(this.host.cwd, ['rev-parse', '--is-inside-work-tree']).then(() => true).catch(() => false);
+    if (!isRepo) {
+      run.stoppedBy = 'no-repository';
+      run.stopNote = 'This folder is not a git repository, so builders cannot work in parallel worktrees. Build the plan yourself, then check it.';
+      return run;
+    }
+    const builderTasks = tasks.map((slice, index) =>
+      this.createTask(
+        {
+          title: slice.title,
+          prompt: TEAM_BUILDER_PROMPT(input.prompt, plan, slice),
+          role: 'builder',
+          writes: true,
+          dependencies: [],
+          source: 'team',
+          phase: 'build',
+          label: tasks.length > 1 ? `Builder ${index + 1}` : 'Builder',
+        },
+        turnIndex,
+        { ...options, workerOrdinal: index },
+      ),
+    );
+    const built = await runPhase('build', builderTasks);
+    if (stopped()) return run;
+
+    // 3. Verify, against what is now in the checkout.
+    const diff = await git(this.host.cwd, ['diff', 'HEAD']).catch(() => '');
+    const builtText = built.agents
+      .map((a) => `## ${a.label} (${a.model}) · ${a.status}${a.filesChanged.length ? ` · ${a.filesChanged.join(', ')}` : ''}\n${(a.summary ?? a.error ?? '').slice(0, 3_000)}`)
+      .join('\n\n');
+    const verifier = this.createTask(
+      { title: 'Verify', prompt: TEAM_VERIFIER_PROMPT(input.prompt, plan, builtText, diff.slice(0, 30_000)), role: 'reviewer', writes: false, dependencies: [], source: 'team', phase: 'verify', label: 'Verifier' },
+      turnIndex,
+      options,
+    );
+    await runPhase('verify', [verifier]);
+    stopped();
+    return run;
+  }
+
+  /** What the lead is told after the team ran, so it can check and summarise. */
+  teamReport(run: TeamRun): string {
+    const lines = ['<team_run preset="plan-build-verify">'];
+    if (run.plan) lines.push(`<plan>\n${run.plan.slice(0, 6_000)}\n</plan>`);
+    for (const phase of run.phases) {
+      for (const agent of phase.agents) {
+        lines.push(
+          `<agent phase="${phase.phase}" label="${escapeAttr(agent.label)}" model="${escapeAttr(agent.model)}" status="${agent.status}"${agent.filesChanged.length ? ` files="${escapeAttr(agent.filesChanged.join(', '))}"` : ''}>\n${(agent.summary ?? agent.error ?? '').slice(0, 4_000)}\n</agent>`,
+        );
+      }
+    }
+    if (run.stoppedBy) lines.push(`<stopped reason="${run.stoppedBy}">${run.stopNote ?? ''}</stopped>`);
+    lines.push('</team_run>');
+    lines.push(
+      run.stoppedBy === 'no-repository' || run.stoppedBy === 'plan-mode'
+        ? 'The team could only plan. Carry out the plan yourself, then check it and summarise for the user.'
+        : 'Your team has finished: the architect planned, the builders implemented (their changes are applied to the checkout) and the verifier checked. Read the verifier\'s verdict. Fix anything small it found yourself, then tell the user what was built, by whom, and what was verified. Do not redo work that passed.',
+    );
+    return lines.join('\n');
+  }
+
   // MARK: Creation and scheduling
 
   private parentRoute() {
@@ -1391,7 +1628,7 @@ export class SubagentManager {
     };
   }
 
-  private routeFor(spec: SubagentSpec): ChildRoute {
+  private routeFor(spec: SubagentSpec, workerOrdinal?: number): ChildRoute {
     const role = contractRoleOf(spec.role);
     const resolver = this.host.resolveProvider;
     if (spec.instanceId && spec.model && resolver) {
@@ -1413,7 +1650,7 @@ export class SubagentManager {
         };
       }
     }
-    const ordinal = role === 'worker' ? this.workerOrdinal++ : 0;
+    const ordinal = role === 'worker' ? (workerOrdinal ?? this.workerOrdinal++) : 0;
     const route = resolveChildRoute({
       ...(spec.model ? { requested: spec.model } : {}),
       role,
@@ -1430,10 +1667,10 @@ export class SubagentManager {
   private createTask(
     spec: SubagentSpec,
     turnIndex: number,
-    options: { notify: boolean; maxSteps: number; holdImport?: boolean; ledger?: BudgetLedger },
+    options: { notify: boolean; maxSteps: number; holdImport?: boolean; ledger?: BudgetLedger; workerOrdinal?: number },
   ): SubagentTask {
     const id = randomUUID().slice(0, 8);
-    const route = this.routeFor(spec);
+    const route = this.routeFor(spec, options.workerOrdinal);
     const isolation: SubagentIsolation = spec.writes ? 'git_worktree' : 'shared_read_only';
     const task: SubagentTask = {
       id,
@@ -2233,6 +2470,8 @@ ${isolation}
       title: task.spec.title,
       role: task.spec.role,
       contractRole: contractRoleOf(task.spec.role),
+      ...(task.spec.phase ? { phase: task.spec.phase } : {}),
+      ...(task.spec.label ? { label: task.spec.label } : {}),
       model: task.route.model,
       selection: task.route.selection,
       provider: task.route.adapter.id,

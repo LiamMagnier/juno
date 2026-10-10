@@ -236,11 +236,20 @@ export interface ModelSelection {
   fast?: boolean;
 }
 
-export const ROLE_PRESET_VALUES = ["solo", "lead-workers", "best-of-n"] as const;
+// team lane (additive): `plan-build-verify` runs the Architect, then the Builders, then the Verifier.
+export const ROLE_PRESET_VALUES = ["solo", "lead-workers", "best-of-n", "plan-build-verify"] as const;
 export type RolePreset = (typeof ROLE_PRESET_VALUES)[number];
 
-export const AGENT_ROLE_VALUES = ["orchestrator", "worker", "reviewer", "explorer", "compaction"] as const;
+// team lane (additive): `architect` plans the structure before anyone builds.
+export const AGENT_ROLE_VALUES = ["orchestrator", "worker", "reviewer", "explorer", "compaction", "architect"] as const;
 export type AgentRole = (typeof AGENT_ROLE_VALUES)[number];
+
+/**
+ * The phases of a Plan → Build → Verify run (team lane), in the order they
+ * run: the Architect plans, the Builders implement, the Verifier checks.
+ */
+export const TEAM_PHASE_VALUES = ["plan", "build", "verify"] as const;
+export type TeamPhase = (typeof TEAM_PHASE_VALUES)[number];
 
 export interface RunBudget {
   maxTokens?: number;
@@ -250,10 +259,15 @@ export interface RunBudget {
 /**
  * Role-based routing (SPEC §3.4). `solo` uses only the orchestrator;
  * `lead-workers` delegates to `workers`; `best-of-n` runs the prompt once per
- * entry of `workers` (each in its own worktree) and the reviewer compares.
+ * entry of `workers` (each in its own worktree) and the reviewer compares;
+ * `plan-build-verify` runs the `architect` (plan), then one Builder per entry
+ * of `workers` (build), then the `reviewer` as the Verifier (verify), and the
+ * orchestrator writes the summary.
  */
 export interface RoleRouting {
   orchestrator: ModelSelection;
+  // team lane (additive): the Architect; absent = the orchestrator plans.
+  architect?: ModelSelection;
   workers?: ModelSelection[];
   reviewer?: ModelSelection;
   explorer?: ModelSelection;
@@ -567,6 +581,8 @@ export interface SubagentItem extends TurnItemBase {
   worktreeBranch?: string;
   /** Best of N: the candidate's result summary. */
   candidate?: { additions?: number; deletions?: number; filesChanged?: number; testsLine?: string; kept?: boolean };
+  // team lane (additive): which phase of a Plan → Build → Verify run it belongs to.
+  phase?: TeamPhase;
 }
 export interface ComputerActionItem extends TurnItemBase {
   kind: "computer_action";

@@ -71,8 +71,9 @@ export function engineEffort(effort: EffortLevel | undefined): ReasoningEffort |
 export function contractRoleOf(role: string): AgentRole {
   switch (role) {
     case 'explorer':
-    case 'architect':
       return 'explorer';
+    case 'architect':
+      return 'architect';
     case 'reviewer':
       return 'reviewer';
     case 'orchestrator':
@@ -119,6 +120,9 @@ export function routingSelectionFor(
       return routing.compaction;
     case 'orchestrator':
       return routing.orchestrator;
+    // team lane: the Architect plans on its own model, else the lead's.
+    case 'architect':
+      return routing.architect ?? routing.orchestrator;
     case 'worker': {
       const workers = routing.workers ?? [];
       return workers.length > 0 ? workers[ordinal % workers.length] : undefined;

@@ -59,7 +59,8 @@
       "enum": [
         "solo",
         "lead-workers",
-        "best-of-n"
+        "best-of-n",
+        "plan-build-verify"
       ]
     },
     "AgentRole": {
@@ -69,7 +70,8 @@
         "worker",
         "reviewer",
         "explorer",
-        "compaction"
+        "compaction",
+        "architect"
       ]
     },
     "TurnItemKind": {
@@ -152,6 +154,14 @@
         "completed",
         "failed",
         "interrupted"
+      ]
+    },
+    "TeamPhase": {
+      "type": "string",
+      "enum": [
+        "plan",
+        "build",
+        "verify"
       ]
     },
     "SessionState": {
@@ -667,6 +677,9 @@
         },
         "preset": {
           "$ref": "#/definitions/RolePreset"
+        },
+        "architect": {
+          "$ref": "#/definitions/ModelSelection"
         },
         "workers": {
           "type": "array",
@@ -1636,6 +1649,9 @@
         },
         "tokens": {
           "$ref": "#/definitions/TokenCount"
+        },
+        "phase": {
+          "$ref": "#/definitions/TeamPhase"
         }
       },
       "required": [

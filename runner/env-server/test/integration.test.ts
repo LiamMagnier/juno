@@ -381,6 +381,62 @@ test("mcp: the routing budget is a hard stop for vendor subagents", async () => 
   assert.match(JSON.stringify(second.result), /token budget/);
 });
 
+test("mcp: a Plan → Build → Verify team routes the architect, the builders round-robin and the verifier, and the thread shows the phases", async () => {
+  const { server, client } = await boot();
+  await client.command("provider.probe", { instanceId: "codex:default" });
+  const selection = { instanceId: "codex:default", model: "gpt-6.1-codex" };
+  const parent = await openSession(client, tempDir("cwd"), selection);
+  const routing = {
+    preset: "plan-build-verify",
+    orchestrator: selection,
+    architect: { instanceId: "codex:default", model: "arch-model", effort: "high" },
+    workers: [
+      { instanceId: "codex:default", model: "build-1" },
+      { instanceId: "codex:default", model: "build-2" },
+    ],
+    reviewer: { instanceId: "codex:default", model: "verify-model" },
+    budget: { maxUsd: 4 },
+  };
+  const t = await client.command<{ turnId: string }>("turn.start", { sessionId: parent, input: { text: "capitalise the files" }, selection, routing, ...ask });
+  await client.turnCompleted(parent, t.turnId);
+  // The vendor agent leads: it is told the three phases and which model each runs on.
+  const told = lastAssistant(client, parent)?.text ?? "";
+  assert.match(told, /<alevr_team>[\s\S]*role "architect" \(it runs on arch-model[\s\S]*2 builders on build-1[\s\S]*role "reviewer" \(it runs on verify-model[\s\S]*capitalise the files/);
+  // The person's own message is unchanged in the thread.
+  assert.ok(items(client, parent).some((i) => i.kind === "user_message" && i.text === "capitalise the files"));
+
+  const token = server.mcp.issueToken({ sessionId: parent, depth: 0 });
+  const spawn = async (role: string, task: string, id: number) => {
+    const r = await mcpCall(server, token, "tools/call", { name: "spawn_subagent", arguments: { task, role } }, id);
+    const s = r.result?.structuredContent as { agentId: string; model: string; label?: string; role: string };
+    assert.ok(s?.agentId, JSON.stringify(r));
+    await mcpCall(server, token, "tools/call", { name: "wait_subagent", arguments: { agentId: s.agentId } }, id + 100);
+    return s;
+  };
+  const architect = await spawn("architect", "plan it", 1);
+  const b1 = await spawn("worker", "build part 1", 2);
+  const b2 = await spawn("worker", "build part 2", 3);
+  const verifier = await spawn("reviewer", "verify it", 4);
+  assert.deepEqual(
+    [architect, b1, b2, verifier].map((s) => [s.role, s.model, s.label]),
+    [
+      ["architect", "arch-model", "Architect"],
+      ["worker", "build-1", "Builder 1"],
+      ["worker", "build-2", "Builder 2"],
+      ["reviewer", "verify-model", "Verifier"],
+    ],
+  );
+  const tree = await client.waitFor(
+    () => {
+      const agents = items(client, parent).filter((i) => i.kind === "subagent");
+      return agents.length === 4 && agents.every((a) => a.kind === "subagent" && a.status === "completed") ? agents : undefined;
+    },
+    5000,
+    "four finished agents",
+  );
+  assert.deepEqual(tree.map((a) => (a.kind === "subagent" ? `${a.phase}:${a.role}` : "")), ["plan:architect", "build:worker", "build:worker", "verify:reviewer"]);
+});
+
 // ── Persistence and reconnect ────────────────────────────────────────────────
 
 test("reconnect: afterSequence replays exactly the missed events; restart restores the log", async () => {

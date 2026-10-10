@@ -71,6 +71,12 @@ public struct DelegateTaskTool: CodeTool {
     private let budget: RunBudgetLedger?
     /// How many children of one call run at once (1…``maximumConfigurableConcurrent``).
     public let concurrency: Int
+    /// The run budget every child is charged to, for a caller that runs
+    /// several calls in phases (the team) and stops between them.
+    public var runBudget: RunBudgetLedger? { budget }
+    /// Whether a task may ask for `workspace_write`: the host can make an
+    /// isolated worktree for it.
+    public var canWrite: Bool { executionFactory != nil }
     /// How many tasks one call may ask for: at least ``maximumPerCall``, and
     /// never fewer than may run at once.
     public var perCallLimit: Int { max(Self.maximumPerCall, concurrency) }
@@ -304,6 +310,9 @@ public struct DelegateTaskTool: CodeTool {
         /// The agent the task names, if any; resolved when the call runs.
         var agentName: String? = nil
         var background = false
+        /// The team's builder index: builder i runs on the routing's worker i
+        /// rather than the next in the round-robin.
+        var teamOrdinal: Int? = nil
         /// The resolved agent, set before the task starts.
         var agent: SubagentDefinition? = nil
     }
@@ -360,7 +369,8 @@ public struct DelegateTaskTool: CodeTool {
                     let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
                     return trimmed.isEmpty ? nil : trimmed
                 },
-                background: entry["background"]?.boolValue ?? false
+                background: entry["background"]?.boolValue ?? false,
+                teamOrdinal: entry["team_ordinal"]?.intValue
             )
         }
     }
@@ -885,7 +895,12 @@ public struct DelegateTaskTool: CodeTool {
     /// routing for the task's role, then the parent.
     func route(for spec: Spec) async -> SubagentRoute {
         let role = SubagentRouting.contractRole(agentName: spec.agent?.name ?? spec.agentName, role: spec.role)
-        let ordinal = role == .worker || role == .explorer ? await ordinals.next() : 0
+        let ordinal: Int
+        if role == .worker, let teamOrdinal = spec.teamOrdinal {
+            ordinal = teamOrdinal
+        } else {
+            ordinal = role == .worker || role == .explorer ? await ordinals.next() : 0
+        }
         let routing = self.routing ?? SubagentRouting(routing: nil)
         return routing.route(
             requestedModelID: spec.modelID ?? spec.agent?.model,
