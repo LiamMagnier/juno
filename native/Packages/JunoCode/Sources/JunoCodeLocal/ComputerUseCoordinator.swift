@@ -49,9 +49,9 @@ public struct ComputerUseSnapshot: Sendable {
 /// Juno Code's adapter onto the app-wide screen-control service
 /// (CODE_AGENT_SPEC §3.2).
 ///
-/// It keeps the part only Code has: the explicit per-session consent — never
-/// activated without the reader's Start, both TCC grants checked first —
-/// and the session snapshot the window reads. Capture, input, grants, the
+/// It checks both TCC grants before registration, through the reader's Start
+/// or a model's app-access request. Per-app consent still precedes capture
+/// and input. It also supplies the session snapshot the window reads. Grants, the
 /// floor, the lock and the stop are the service's, shared with Juno Work;
 /// the service re-proves the session's grant after every suspension point.
 public actor ComputerUseCoordinator: ScreenControlling {
@@ -61,6 +61,7 @@ public actor ComputerUseCoordinator: ScreenControlling {
     private let preferences: @Sendable () -> ScreenControlPreferences
     private var journal: [ComputerUseJournalEntry] = []
     private var journalTask: Task<Void, Never>?
+    private var startedSessions: Set<String> = []
 
     public init(
         service: ScreenControlService,
@@ -110,10 +111,12 @@ public actor ComputerUseCoordinator: ScreenControlling {
             throw ComputerUseError.heldElsewhere(holder)
         }
         startJournalIfNeeded()
+        startedSessions.insert(sessionID.value)
     }
 
     public func deactivate(sessionID: CodeSessionID) async {
         await service.deactivate(sessionID: sessionID.value)
+        startedSessions.remove(sessionID.value)
     }
 
     /// The kill switch: every session, every Work task, at once.
@@ -197,7 +200,23 @@ public actor ComputerUseCoordinator: ScreenControlling {
         clipboardRead: Bool,
         clipboardWrite: Bool
     ) async throws -> GrantProposal {
-        try await service.proposeGrants(
+        // Asking for an app grant is the model's entry point. Registration
+        // starts no capture or input: applying the user's grant is still
+        // required before any app can be observed or controlled.
+        if case .off = await service.state(sessionID: sessionID) {
+            guard !startedSessions.contains(sessionID) else { throw ScreenControlError.stoppedByReader }
+            guard permissions.screenCapturePermission() == .granted else {
+                throw ComputerUseError.screenCapturePermissionMissing
+            }
+            guard permissions.accessibilityPermission() == .granted else {
+                throw ComputerUseError.accessibilityPermissionMissing
+            }
+            await service.setPreferences(preferences())
+            try await service.activate(sessionID: sessionID, title: reason ?? "Use Mac apps", kind: .codeSession)
+            startedSessions.insert(sessionID)
+            startJournalIfNeeded()
+        }
+        return try await service.proposeGrants(
             sessionID: sessionID, apps: apps, reason: reason,
             clipboardRead: clipboardRead, clipboardWrite: clipboardWrite
         )
@@ -212,7 +231,12 @@ public actor ComputerUseCoordinator: ScreenControlling {
     }
 
     public func release(sessionID: String, apps: [String]) async -> [String] {
-        await service.release(sessionID: sessionID, apps: apps)
+        if apps.isEmpty {
+            let names = await service.grants(sessionID: sessionID).map(\.displayName)
+            await deactivate(sessionID: CodeSessionID(value: sessionID))
+            return names
+        }
+        return await service.release(sessionID: sessionID, apps: apps)
     }
 
     public func open(sessionID: String, app: String) async throws -> ScreenActionResult {

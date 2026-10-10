@@ -1043,6 +1043,11 @@ export class AgentSession {
       cwd: this.cwd,
       env: this.env,
       containerSandbox: this.containerSandbox,
+      callId: call.id,
+      signal: this.aborter?.signal,
+      model: this.model,
+      supportsVision: this.provider.capabilities(this.model).vision,
+      permissionMode: this.mode,
       ...(this.spillDir ? { readOnlyRoots: [this.spillDir, this.offloadDir] } : {}),
     };
     // Contain every path the tool says it will mutate before anything is
@@ -1070,12 +1075,14 @@ export class AgentSession {
     let isError = false;
     let exitCode: number | undefined;
     let backgroundJob: string | undefined;
+    let images: import('./tools/types.js').ToolResult['images'];
     try {
       const result = await tool.execute(call.input, ctx);
       output = result.output;
       isError = result.isError ?? false;
       exitCode = result.exitCode;
       backgroundJob = result.background?.jobId;
+      images = result.images;
     } catch (err) {
       output = `Tool crashed: ${err instanceof Error ? err.message : String(err)}`;
       isError = true;
@@ -1104,7 +1111,9 @@ export class AgentSession {
       content = `${content}\n\n${reminder}`;
     }
     const result: UserContent = { type: 'tool_result', toolCallId: call.id, content, isError };
-    return image ? [result, image] : result;
+    // A failed UI action may return the current screen for recovery too.
+    const attached = (images ?? []).map((img): UserContent => ({ type: 'image', ...img }));
+    return image ? [result, image, ...attached] : attached.length ? [result, ...attached] : result;
   }
 
   /**

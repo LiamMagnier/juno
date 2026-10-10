@@ -21,7 +21,9 @@ public struct DelegateTaskTool: CodeTool {
     private let model: any AgentModelClient
     private let registry: ToolRegistry
     private let store: CodeSessionStore
-    private let workspaceID: WorkspaceID
+    private let workspaceID: WorkspaceID?
+    private let computerTools: (@Sendable (PermissionCoordinator, String) async -> [any CodeTool])?
+    private let computerFinished: (@Sendable (CodeSessionID) async -> Void)?
     private let workspaceName: String
     private let modelID: String
     private let reasoningEffort: ReasoningEffort?
@@ -133,12 +135,14 @@ public struct DelegateTaskTool: CodeTool {
         model: any AgentModelClient,
         registry: ToolRegistry,
         store: CodeSessionStore,
-        workspaceID: WorkspaceID,
+        workspaceID: WorkspaceID?,
         workspaceName: String,
         modelID: String,
         reasoningEffort: ReasoningEffort?,
         parentSystemPrompt: String,
         sessionState: (@Sendable () async -> [SessionStateSection])? = nil,
+        computerTools: (@Sendable (PermissionCoordinator, String) async -> [any CodeTool])? = nil,
+        computerFinished: (@Sendable (CodeSessionID) async -> Void)? = nil,
         executionFactory: SubagentExecutionFactory? = nil,
         controls: SubagentControlRegistry? = nil,
         fallbackResolver: (any ModelFallbackResolver)? = nil,
@@ -166,6 +170,8 @@ public struct DelegateTaskTool: CodeTool {
         self.parentSystemPrompt = parentSystemPrompt
         self.sessionState = sessionState
         self.executionFactory = executionFactory
+        self.computerTools = computerTools
+        self.computerFinished = computerFinished
         self.controls = controls
         self.fallbackResolver = fallbackResolver
         self.parentRules = parentRules
@@ -604,7 +610,7 @@ public struct DelegateTaskTool: CodeTool {
             role: spec.role,
             permissionMode: environment.permissionMode,
             location: .local,
-            computerUseEnabled: false
+            computerUseEnabled: mode == .workspaceWrite && computerTools != nil
         )
 
         let child: CodeSession
@@ -670,13 +676,21 @@ public struct DelegateTaskTool: CodeTool {
         case .readOnly:
             childInstruction = "You are a read-only Juno Code sub-agent. Do not modify files, run commands with side effects, commit, or control the computer."
         case .workspaceWrite:
-            childInstruction = "You are a write-capable Juno Code sub-agent working only in an isolated Git worktree. Implement the delegated task there, run appropriate verification, and do not merge or modify the parent checkout."
+            childInstruction = environment.executionRootPath == nil
+                ? "You are a Juno Code sub-agent. Complete the delegated task using only the supplied tools; no filesystem or shell tools are available."
+                : "You are a write-capable Juno Code sub-agent working only in an isolated Git worktree. Implement the delegated task there, run appropriate verification, and do not merge or modify the parent checkout."
         }
         if let agent = spec.agent {
             childInstruction += "\n\n" + agent.prompt
         }
         // The agent's tool list narrows the environment's, never adds to it.
-        let childRegistry = spec.agent?.narrowing(environment.registry) ?? environment.registry
+        var childTools = environment.registry.allTools
+        if mode == .workspaceWrite, let computerTools {
+            childTools += await computerTools(permissions, childModelID)
+            childInstruction += "\n\n" + screenControlRules
+        }
+        let available = ToolRegistry(tools: childTools)
+        let childRegistry = spec.agent?.narrowing(available) ?? available
         let orchestrator = AgentOrchestrator(
             sessionID: child.id,
             model: route.client,
@@ -835,6 +849,7 @@ public struct DelegateTaskTool: CodeTool {
         _ = try? await store.recordUsage(childUsage, for: parentSessionID)
         await orchestrator.release()
         await endApprovalRelay()
+        await computerFinished?(child.id)
         await controls?.unregister(childSessionID: child.id)
 
         var finalizationError: String?

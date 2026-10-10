@@ -13,7 +13,7 @@ public enum AppCategory: String, Hashable, Codable, Sendable, CaseIterable {
     /// IDEs: click only, for the same reason (their terminals, their task
     /// runners).
     case ide
-    /// Browsers: view only. Web work goes through the Preview browser.
+    /// Browsers: navigation and input in the user's existing session.
     case browser
     /// Finance, trading and crypto: view only, and denied by default.
     case finance
@@ -29,8 +29,8 @@ public enum AppCategory: String, Hashable, Codable, Sendable, CaseIterable {
         switch self {
         case .refused: nil
         case .terminal, .ide: .click
-        case .browser, .finance: .view
-        case .systemReach, .messaging, .other: .full
+        case .finance: .view
+        case .browser, .systemReach, .messaging, .other: .full
         }
     }
 
@@ -192,7 +192,7 @@ public enum AppCategories {
         case .refused: "Juno never controls this app."
         case .terminal: "Juno uses its own shell for commands, where your command rules apply."
         case .ide: "Typing into an editor's terminal or task runner would get past your command rules."
-        case .browser: "Juno uses its Preview browser for web pages."
+        case .browser: "Can navigate and interact with your browser session. Sending, buying, deleting and signing in ask first."
         case .finance: "Only if you allow it in Settings."
         case .systemReach: nil
         case .messaging: "Sending a message always asks first."

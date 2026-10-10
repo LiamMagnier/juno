@@ -612,9 +612,7 @@ final class WorkbenchModelTests: XCTestCase {
         let controller = try XCTUnwrap(loadedController)
 
         XCTAssertFalse(controller.currentModelSupportsVision)
-        XCTAssertTrue(
-            controller.computerUseUnavailableReason?.contains("vision") == true
-        )
+        XCTAssertNil(controller.computerUseUnavailableReason)
         controller.composerText = "First turn"
         await controller.send()
         for _ in 0..<100 {
@@ -623,16 +621,16 @@ final class WorkbenchModelTests: XCTestCase {
             }
             try await Task.sleep(for: .milliseconds(10))
         }
-        XCTAssertFalse(
+        XCTAssertTrue(
             try XCTUnwrap(client.requests.first).tools.contains {
-                $0.name.hasPrefix("computer_")
+                $0.name == "computer_use"
             }
         )
 
         // The signed-in manifest can gain detail after a controller already
         // exists. The next turn must rebuild its tool contract even though the
-        // routing model ID did not change. Vision is necessary but not
-        // sufficient: Computer Use is a separate, explicit per-session grant.
+        // routing model ID did not change. Text models use accessibility;
+        // tool discovery never replaces the app's explicit grant approval.
         await workbench.setAvailableModels([ModelOption(catalog: visionDescriptor)])
         XCTAssertTrue(controller.currentModelSupportsVision)
         XCTAssertNil(controller.computerUseUnavailableReason)
@@ -644,11 +642,10 @@ final class WorkbenchModelTests: XCTestCase {
             }
             try await Task.sleep(for: .milliseconds(10))
         }
-        XCTAssertFalse(
+        XCTAssertTrue(
             try XCTUnwrap(client.requests.last).tools.contains {
                 $0.name.hasPrefix("computer_")
-            },
-            "vision must not expose screen-control tools before the user starts the grant"
+            }
         )
 
         await controller.setComputerUseEnabled(true)
@@ -657,11 +654,9 @@ final class WorkbenchModelTests: XCTestCase {
         // loading state. It must not leave the last vision catalog active.
         await workbench.setAvailableModels([])
         XCTAssertFalse(controller.currentModelSupportsVision)
-        XCTAssertFalse(controller.session.configuration.computerUseEnabled)
+        XCTAssertTrue(controller.session.configuration.computerUseEnabled)
         XCTAssertFalse(controller.computerUseActive)
-        XCTAssertTrue(
-            controller.transientError?.contains("no longer advertises vision") == true
-        )
+        XCTAssertNil(controller.transientError)
     }
 
     func testPausingGoalStopsActiveRunAndBlocksNewTurns() async throws {

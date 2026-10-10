@@ -101,10 +101,13 @@ public protocol CodeTool: Sendable {
     /// proposed for approval.
     func precheck(input: JSONValue) -> ToolError?
     func execute(input: JSONValue, context: ToolContext) async throws -> ToolResult
+    /// Release session resources before the run's terminal event is published.
+    func finishRun(sessionID: CodeSessionID) async
 }
 
 public extension CodeTool {
     func precheck(input: JSONValue) -> ToolError? { nil }
+    func finishRun(sessionID: CodeSessionID) async {}
     var approvalPolicy: ApprovalPolicy { .byRisk }
     func approvalPolicy(input _: JSONValue) -> ApprovalPolicy { approvalPolicy }
 }

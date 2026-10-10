@@ -1970,6 +1970,8 @@ export class SubagentManager {
       }
     }
 
+    await Promise.all(this.host.tools.map((tool) => tool.finishSubagent?.(task.id)?.catch(() => undefined)));
+
     // Children are REAL model calls: record their tokens under their own model
     // (the parent turn's single reservation already happened — children never
     // reserve; a zero-token child records nothing). Not billed when the child
@@ -2130,12 +2132,19 @@ export class SubagentManager {
     let isError = false;
     let exitCode: number | undefined;
     let backgroundJob: string | undefined;
+    let images: import('./tools/types.js').ToolResult['images'];
     try {
-      const result = await tool.execute(call.input, ctx);
+      const result = await tool.execute(call.input, {
+        ...ctx, callId: call.id, signal: task.aborter.signal,
+        agentId: task.id, model: task.route.model,
+        supportsVision: task.route.adapter.capabilities(task.route.model).vision,
+        permissionMode: task.spec.writes && roleAllowsWrites(task.spec.role) ? task.mode : 'plan',
+      });
       output = result.output;
       isError = result.isError ?? false;
       exitCode = result.exitCode;
       backgroundJob = result.background?.jobId;
+      images = result.images;
     } catch (err) {
       output = `Tool crashed: ${err instanceof Error ? err.message : String(err)}`;
       isError = true;
@@ -2161,7 +2170,8 @@ export class SubagentManager {
     }
     if (reminder) content = `${content}\n\n${reminder}`;
     const result: UserContent = { type: 'tool_result', toolCallId: call.id, content, isError };
-    return image ? [result, image] : result;
+    const attached = (images ?? []).map((img): UserContent => ({ type: 'image', ...img }));
+    return image ? [result, image, ...attached] : attached.length ? [result, ...attached] : result;
   }
 
   private childTools(task: SubagentTask): ToolDefinition[] {

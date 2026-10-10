@@ -129,6 +129,26 @@ private struct EphemeralImageTool: CodeTool {
     }
 }
 
+private actor RunResource {
+    private(set) var held = false
+    func acquire() { held = true }
+    func release() { held = false }
+}
+
+private struct RunResourceTool: CodeTool {
+    let resource: RunResource
+    let name = "test_computer_resource"
+    let description = "Use a resource for this run"
+    let inputSchema: JSONValue = ["type": "object", "properties": [:]]
+    func assessRisk(input: JSONValue) -> ActionRisk { .read }
+    func summary(input: JSONValue) -> String { "Use resource" }
+    func execute(input: JSONValue, context: ToolContext) async throws -> ToolResult {
+        await resource.acquire()
+        return ToolResult(content: "Resource acquired.")
+    }
+    func finishRun(sessionID: CodeSessionID) async { await resource.release() }
+}
+
 private actor BlockingAgentHooks: AgentLifecycleHooks {
     private(set) var started = 0
     private(set) var beforeCalls = 0
@@ -168,6 +188,28 @@ final class AgentOrchestratorTests: XCTestCase {
     private var store: CodeSessionStore!
     private var registry: ToolRegistry!
     private var session: CodeSession!
+
+    func testRunResourcesReleaseOnCompletionAndStop() async throws {
+        for stop in [false, true] {
+            let resource = RunResource()
+            let gate = ScriptedModelGate()
+            registry = ToolRegistry(tools: [RunResourceTool(resource: resource)])
+            let model = ScriptedModelClient(steps: [
+                .toolCalls([("resource", "test_computer_resource", [:])], text: ""),
+                .gatedEvents([.textDelta("Done."), .turnCompleted(.endTurn)], gate: gate),
+            ])
+            let (orchestrator, _) = makeOrchestrator(model: model)
+            try await orchestrator.submit(prompt: "Use the app resource")
+            await gate.waitUntilArrived()
+            let held = await resource.held
+            XCTAssertTrue(held)
+            if stop { await orchestrator.stop() }
+            await gate.release()
+            await orchestrator.awaitCompletion()
+            let stillHeld = await resource.held
+            XCTAssertFalse(stillHeld, "a completed or stopped run must free its computer resource")
+        }
+    }
 
     override func setUp() async throws {
         let base = URL(fileURLWithPath: NSTemporaryDirectory())

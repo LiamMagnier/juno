@@ -3,6 +3,7 @@ import Observation
 import JunoCodeCore
 import JunoCodeLocal
 import JunoCodeRuntime
+import JunoScreenControl
 
 /// One tracked file change in the Changes/Diff tabs, aggregated from
 /// transcript events.
@@ -303,11 +304,9 @@ public final class SessionController {
         /// Capability changes arrive with the signed-in model manifest and must
         /// rebuild the tool contract even when the routing model ID is stable.
         let supportsVision: Bool
-        /// Screen control is a live, per-session grant. A vision-capable model
-        /// may understand screenshots, but it must not be shown input tools
-        /// until the reader has explicitly started Computer Use for this
-        /// session. This also makes a stopped grant take effect on the next
-        /// turn instead of leaving a stale tool contract behind.
+        /// Whether this local Code route can request per-app access. Tool
+        /// discovery does not grant capture or input; the coordinator enforces
+        /// permission, app consent and Stop when each tool executes.
         let computerUseActive: Bool
         /// Rebuilds the orchestrator when the hooks that would run change: one
         /// allowed or switched off in Settings, or a settings file edited.
@@ -578,6 +577,29 @@ public final class SessionController {
     private var isCompactingOnRequest = false
     private var isWritingCompactionSummary = false
     public private(set) var computerUseActive = false
+    private let projectlessComputer: ComputerUseCoordinator? = {
+        #if os(macOS)
+        ComputerUseCoordinator()
+        #else
+        nil
+        #endif
+    }()
+
+    private var localComputer: ComputerUseCoordinator? {
+        live?.context?.computerUse ?? projectlessComputer
+    }
+
+    nonisolated private static func appTools(
+        computer: ComputerUseCoordinator, permissions: PermissionCoordinator,
+        modelID: String, seesImages: Bool,
+        recorder: ComputerActionRecorder? = nil, frames: PortableFrameMemory = PortableFrameMemory()
+    ) -> [any CodeTool] {
+        let budget: ImageBudget = ComputerUseRoutes.imageBudget(forModelID: modelID)?.coordinates == .normalized1000
+            ? .portableNormalized : .portable
+        var apps = ComputerAppsTool(computer: computer, permissions: permissions, budget: budget)
+        apps.sendsImages = seesImages
+        return [apps, PortableComputerTool(computer: computer, permissions: permissions, budget: budget, seesImages: seesImages, recorder: recorder, frames: frames)]
+    }
     public private(set) var computerUseScreenPermission: ComputerUsePermissionState =
         .notDetermined
     public private(set) var computerUseAccessibilityPermission:
@@ -746,11 +768,9 @@ public final class SessionController {
         let behavior = session.configuration.behavior
         let permissions = PermissionCoordinator(
             sessionID: session.id,
-            // Nothing to permit without a workspace, and a stated
-            // permission level the tools cannot honour is worse than none.
-            mode: context == nil
-                ? .readOnly
-                : (behavior == .code ? session.configuration.permissionMode : .readOnly)
+            // Projectless Code still has app tools. Its registry withholds
+            // filesystem and shell access; the mode governs app approvals.
+            mode: behavior == .code ? session.configuration.permissionMode : .readOnly
         )
         self.live = Live(
             context: context,
@@ -816,9 +836,9 @@ public final class SessionController {
                 ? session.configuration.reasoningEffort
                 : nil,
             supportsVision: live.modelSupportsVision(session.configuration.modelID),
-            // Declared while turned on, not only while running, so Start
-            // mid-run needs no rebuild; the service refuses until then (CU-15).
-            computerUseActive: computerUseActive || session.configuration.computerUseEnabled,
+            // Discoverable without a menu gesture; app access remains an
+            // approval handled by the coordinator at execution time.
+            computerUseActive: session.configuration.location == .local && session.configuration.behavior == .code && localComputer != nil,
             hookPolicyFingerprint: Self.hookPolicyFingerprint(activeHooks),
             customAgentID: session.configuration.customAgentID,
             extensionsFingerprint: Self.extensionsFingerprint(),
@@ -978,7 +998,7 @@ public final class SessionController {
                 )
             )
         )
-        if !contract.supportsVision || !contract.computerUseActive {
+        if !contract.computerUseActive {
             tools.removeAll { $0.name.hasPrefix("computer_") }
         }
         tools = Self.visionAdjusted(tools, supportsVision: contract.supportsVision)
@@ -1036,6 +1056,12 @@ public final class SessionController {
                 reasoningEffort: contract.reasoningEffort,
                 parentSystemPrompt: systemPrompt,
                 sessionState: childSessionState,
+                computerTools: { [weak self, computer = context.computerUse] permissions, modelID in
+                    let seesImages = await MainActor.run { self?.live?.modelSupportsVision(modelID) ?? false }
+                    return Self.appTools(computer: computer, permissions: permissions, modelID: modelID,
+                                         seesImages: seesImages)
+                },
+                computerFinished: { [computer = context.computerUse] child in await computer.deactivate(sessionID: child) },
                 executionFactory: { [
                     permissions = live.permissions,
                     supportsVision = contract.supportsVision,
@@ -1326,6 +1352,7 @@ public final class SessionController {
             standingInstructions: standingInstructions,
             repositorySettingsInstructions: settings.repositoryInstructions
         ) + customAgentSystemPrompt(customAgentID: contract.customAgentID)
+            + (contract.computerUseActive ? "\n\n" + screenControlRules : "")
         systemPromptMemo = (key, prompt)
         return prompt
     }
@@ -1365,20 +1392,9 @@ public final class SessionController {
         }
     }
 
-    /// A conversation with no project: the model, the transcript, and nothing
-    /// else.
-    ///
-    /// The registry is genuinely empty rather than merely unused. Juno Code's
-    /// stated contract to the model is that it works *inside* a workspace and
-    /// must never leave it; with no workspace that sentence has no referent,
-    /// and a tool list the agent could call but that has nowhere to act is the
-    /// exact shape of a security bug. An empty registry makes "no filesystem"
-    /// a property of the type, the way `Live == nil` makes preview mode inert.
-    ///
-    /// Goal tools are dropped for the same reason: Goal Mode's completion
-    /// contract is defined by verification evidence gathered from a working
-    /// tree, and a goal that can never be verified is a goal that can never be
-    /// closed.
+    /// A conversation with no project can use Mac apps and delegate app tasks.
+    /// Filesystem, shell, Git and workspace goal tools require a project and
+    /// are absent from both the lead's and the child's registries.
     private func makeProjectlessOrchestrator(
         _ contract: TurnContract,
         live: Live
@@ -1394,22 +1410,44 @@ public final class SessionController {
             roleInstruction =
                 "Answer as a patient technical explainer: make the code and decisions easy to understand."
         }
+        var tools: [any CodeTool] = []
+        if contract.computerUseActive, let computer = localComputer {
+            tools = Self.appTools(computer: computer, permissions: live.permissions,
+                                  modelID: contract.modelID, seesImages: contract.supportsVision,
+                                  recorder: screen.actionRecorder, frames: screen.frameMemory)
+            tools.append(DelegateTaskTool(
+                model: live.modelClient, registry: ToolRegistry(tools: []), store: live.store,
+                workspaceID: nil, workspaceName: "Mac apps", modelID: contract.modelID,
+                reasoningEffort: contract.reasoningEffort, parentSystemPrompt: screenControlRules,
+                computerTools: { [weak self] permissions, modelID in
+                    let seesImages = await MainActor.run { self?.live?.modelSupportsVision(modelID) ?? false }
+                    return Self.appTools(computer: computer, permissions: permissions, modelID: modelID,
+                                         seesImages: seesImages)
+                },
+                computerFinished: { child in await computer.deactivate(sessionID: child) },
+                executionFactory: { [permissions = live.permissions] _ in
+                    SubagentExecutionEnvironment(registry: ToolRegistry(tools: []), workspaceName: "Mac apps",
+                        permissionMode: PermissionMode.workspaceWrite.capped(at: await permissions.permissionMode))
+                },
+                controls: live.subagentControls, parentRules: { [permissions = live.permissions] in await permissions.permissionRules }
+            ))
+        }
         let systemPrompt = """
         You are Juno Code, a coding agent on macOS. This conversation has no \
-        project open, so you have no tools: no filesystem, no shell, no Git, \
-        no computer control. \(roleInstruction)
+        project open, so filesystem, shell and Git tools require opening a project. \
+        \(tools.isEmpty ? "Computer tools are unavailable in this mode." : "You can use the supplied computer tools for Mac apps and browser tasks.") \(roleInstruction)
 
         Answer from the conversation itself — the reader's description, and any \
         code they paste. Reason about designs, explain and review code, write \
         snippets and whole files inline, and plan work. Where an answer really \
         does depend on reading the reader's actual code, say so plainly and \
         tell them to open a project; never guess at file contents, and never \
-        claim to have run, read, or changed anything.
-        """
+        claim to have run commands or read or changed project files without tools.
+        """ + (tools.isEmpty ? "" : "\n\n" + screenControlRules)
         return AgentOrchestrator(
             sessionID: sessionID,
             model: live.modelClient,
-            registry: ToolRegistry(tools: []),
+            registry: ToolRegistry(tools: tools),
             permissions: live.permissions,
             store: live.store,
             configuration: orchestratorConfiguration(
@@ -1596,7 +1634,7 @@ public final class SessionController {
                 self?.apply(update, own: sessionID)
             }
         }
-        screen.bind(sessionID: sessionID, coordinator: live.context?.computerUse, store: live.store, permissions: live.permissions)
+        screen.bind(sessionID: sessionID, coordinator: localComputer, store: live.store, permissions: live.permissions)
         let restored = await live.store.events(for: sessionID)
         usageLedger = await live.store.usageLedger(for: sessionID)
         let delivered = eventsDeliveredWhileRestoring ?? []
@@ -1630,7 +1668,7 @@ public final class SessionController {
     public func detach() async {
         autoOpenerStorage?.cancelAll()
         guard let live else { return }
-        await live.context?.computerUse.deactivate(sessionID: sessionID)
+        await localComputer?.deactivate(sessionID: sessionID)
         computerUseActive = false
         computerUseLatestCapture = nil
         computerUseStartBlocked = false
@@ -2088,6 +2126,7 @@ public final class SessionController {
         approvedPlanHandoff = nil
         // Stop means every child and every loop too (Lane F).
         await commands.stopEverything(sessionID: sessionID)
+        await localComputer?.emergencyStop()
         await orchestrator?.stop()
         await live?.questions.cancelAll()
         liveAssistantText = ""
@@ -2218,7 +2257,7 @@ public final class SessionController {
         await live.permissions.setMode(mode)
         await live.subagentControls.capModes(ownedBy: sessionID, at: mode)
         if behavior != .code {
-            await live.context?.computerUse.deactivate(sessionID: sessionID)
+            await localComputer?.deactivate(sessionID: sessionID)
             computerUseLatestCapture = nil
         }
         _ = try? await live.store.updateSession(id: sessionID) { session in
@@ -2233,9 +2272,7 @@ public final class SessionController {
     }
 
     /// The reader's Start Screen Control, from the session menu or the
-    /// notice: allows it for this session, then starts it. Both halves are the
-    /// same gesture, so the session's switch is never turned on by anything
-    /// but the reader asking for screen control.
+    /// notice. Models may also request app access directly through the tools.
     public func startComputerUse() async {
         if let reason = computerUseUnavailableReason {
             transientError = reason
@@ -2248,18 +2285,18 @@ public final class SessionController {
     }
 
     /// Called only from the visible Computer Use control. This is the explicit
-    /// per-session consent boundary; creating or reopening a session never
-    /// starts screen capture or input control on its own.
+    /// shortcut to start the session. Capture and input still require app
+    /// grants; creating or reopening a session does not grant them.
     public func activateComputerUse() async {
         if let reason = computerUseUnavailableReason {
             transientError = reason
             return
         }
-        guard let live, let context = live.context,
+        guard live != nil, let computer = localComputer,
               session.configuration.computerUseEnabled
         else { return }
         do {
-            try await context.computerUse.activate(
+            try await computer.activate(
                 sessionID: sessionID,
                 userConsented: true,
                 title: session.title
@@ -2295,27 +2332,21 @@ public final class SessionController {
     }
 
     public func stopComputerUse() async {
-        guard let context = live?.context else { return }
-        await context.computerUse.emergencyStop()
+        guard live != nil, let computer = localComputer else { return }
+        await computer.emergencyStop()
         computerUseLatestCapture = nil
         await refreshComputerUse()
     }
 
-    /// Changes only this session's explicit capability setting. Enabling the
-    /// setting does not start capture; the reader must still activate Computer
-    /// Use with a separate visible gesture.
+    /// Changes the session's manual start setting. Automatic tool discovery
+    /// still requires per-app consent before capture or input.
     public func setComputerUseEnabled(_ enabled: Bool) async {
-        if enabled, !currentModelSupportsVision {
-            transientError =
-                "The selected model does not advertise vision support. Choose a vision-capable model first."
-            return
-        }
         guard let live else {
             session.configuration.computerUseEnabled = enabled
             return
         }
         if !enabled {
-            await live.context?.computerUse.deactivate(sessionID: sessionID)
+            await localComputer?.deactivate(sessionID: sessionID)
             computerUseLatestCapture = nil
         }
         _ = try? await live.store.updateSession(id: sessionID) { session in
@@ -2325,8 +2356,8 @@ public final class SessionController {
     }
 
     public func refreshComputerUse() async {
-        guard let context = live?.context else { return }
-        let snapshot = await context.computerUse.snapshot()
+        guard live != nil, let computer = localComputer else { return }
+        let snapshot = await computer.snapshot()
         computerUseActive = snapshot.activeSessionID == sessionID
         computerUseScreenPermission = snapshot.screenCapturePermission
         computerUseAccessibilityPermission = snapshot.accessibilityPermission
@@ -2664,57 +2695,24 @@ public final class SessionController {
                 }
             }
         }
-        let supportsVision = live.modelSupportsVision(modelID)
         if modelID != session.configuration.modelID {
             // App grants lapse on a model change (§3.3); screen control stays on.
-            await live.context?.computerUse.revokeGrants(sessionID: sessionID)
-        }
-        if !supportsVision, session.configuration.computerUseEnabled {
-            await live.context?.computerUse.deactivate(sessionID: sessionID)
-            computerUseLatestCapture = nil
+            await localComputer?.revokeGrants(sessionID: sessionID)
         }
         _ = try? await live.store.updateSession(id: sessionID) { session in
             session.configuration.modelID = modelID
-            if !supportsVision {
-                session.configuration.computerUseEnabled = false
-            }
         }
-        if !supportsVision {
-            await refreshComputerUse()
-        }
+        computerUseLatestCapture = nil
+        await refreshComputerUse()
     }
 
     /// Enforces the latest signed-in model manifest against a persisted
-    /// session. A capability can disappear without the model ID changing, so
-    /// filtering tools on the next turn is insufficient: any live screen-control
-    /// grant must be revoked immediately and the stale setting cleared.
+    /// session. If vision disappears, revoke existing grants and rebuild the
+    /// next turn with accessibility text rather than sending unsupported images.
     public func reconcileModelCapabilities() async {
         guard !currentModelSupportsVision else { return }
-        guard session.configuration.computerUseEnabled || computerUseActive else {
-            return
-        }
-        guard let live else {
-            session.configuration.computerUseEnabled = false
-            computerUseActive = false
-            computerUseLatestCapture = nil
-            return
-        }
-
-        await live.context?.computerUse.deactivate(sessionID: sessionID)
+        await localComputer?.revokeGrants(sessionID: sessionID)
         computerUseLatestCapture = nil
-        do {
-            session = try await live.store.updateSession(id: sessionID) { session in
-                session.configuration.computerUseEnabled = false
-            }
-            transientError =
-                "Computer Use was disabled because the selected model no longer advertises vision support."
-        } catch {
-            // Preserve the safety invariant in memory even if the durable store
-            // cannot be updated. The next attach retries this reconciliation.
-            session.configuration.computerUseEnabled = false
-            transientError =
-                "Computer Use was stopped, but its setting could not be saved: \(error)"
-        }
         await refreshComputerUse()
     }
 
@@ -3985,14 +3983,8 @@ public final class SessionController {
         if session.configuration.location != .local {
             return "Screen control runs on the Mac the session runs on."
         }
-        if live?.context == nil {
-            return "Open a project to use screen control."
-        }
         if session.configuration.behavior != .code {
             return "Ask and Plan sessions cannot control the computer."
-        }
-        if !currentModelSupportsVision {
-            return "The selected model does not advertise vision support."
         }
         return nil
     }
@@ -4507,8 +4499,15 @@ public final class SessionController {
             // agent's own screen actions are tool calls. Re-reading as each
             // call finishes keeps the capture the reader sees in step with the
             // machine, without polling while nothing is happening.
-            if computerUseActive {
-                Task { @MainActor [weak self] in await self?.refreshComputerUse() }
+            let isComputerTool = proposedTool(completed.toolCallID)?.toolName.hasPrefix("computer") == true
+            if isComputerTool || computerUseActive || screen.isThisSessionActive {
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    await refreshComputerUse()
+                    if isComputerTool, completed.status != .succeeded, !computerUsePermissions.isReady {
+                        computerUseStartBlocked = true
+                    }
+                }
             }
         case let .toolOutput(output):
             appendTerminalChunk(

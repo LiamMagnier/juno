@@ -24,13 +24,13 @@ extension ScreenControlService: ScreenControlSessionHosting {}
 
 /// The reader's settings for connected agents, persisted beside the lock.
 public struct ComputerUseBridgeSettings: Codable, Hashable, Sendable {
-    /// "Let connected agents use apps": off until the reader turns it on.
+    /// Tools are discoverable by default; session and app consent still ask.
     public var connectedAgentsEnabled: Bool
     /// Apps whose ordinary input runs without a card in Auto-edit and Auto
     /// (never the floor, never in Ask). Bundle ids, lowercased.
     public var allowlist: Set<String>
 
-    public init(connectedAgentsEnabled: Bool = false, allowlist: Set<String> = []) {
+    public init(connectedAgentsEnabled: Bool = true, allowlist: Set<String> = []) {
         self.connectedAgentsEnabled = connectedAgentsEnabled
         self.allowlist = Set(allowlist.map { $0.lowercased() })
     }
@@ -69,6 +69,7 @@ public actor ComputerBridgeExecutor: ComputerBridgeHandling {
     private let lockHolder: @Sendable () -> CodeV2.DesktopLockRecord?
     private let now: @Sendable () -> Date
     private var frames: [String: PixelSize] = [:]
+    private var startedSessions: Set<String> = []
 
     public init(
         service: any ScreenControlSessionHosting,
@@ -108,6 +109,7 @@ public actor ComputerBridgeExecutor: ComputerBridgeHandling {
         case .release:
             let screenID = Self.screenSessionID(request.sessionId)
             await service.deactivate(sessionID: screenID)
+            startedSessions.remove(screenID)
             frames[screenID] = nil
             return .init(id: request.id, ok: true, text: "Released.")
         case .call:
@@ -129,7 +131,7 @@ public actor ComputerBridgeExecutor: ComputerBridgeHandling {
     }
 
     static let disabledSentence =
-        "Connected agents can't use apps on this Mac yet. In Alevr, open Settings › Computer use and turn on Let connected agents use apps."
+        "Computer use is disabled for connected agents. In Alevr, open Settings › Permissions › Screen control and turn on Let connected agents use apps."
 
     private func status(_ request: CodeV2.ComputerBridgeRequest) -> CodeV2.ComputerBridgeResponse {
         let grants = permissions()
@@ -189,17 +191,19 @@ public actor ComputerBridgeExecutor: ComputerBridgeHandling {
         let grants = permissions()
         guard grants.isReady else { throw Refusal(text: Self.permissionSentence(grants), status: .failed, endsTurn: true) }
         guard settings().connectedAgentsEnabled else { throw Refusal(text: Self.disabledSentence, endsTurn: true) }
-        if await service.isActive(sessionID: screenID) {
-            if case let .stopped(reason) = await service.state(sessionID: screenID) {
-                throw Refusal(text: reason.sentence + " Stop using the computer.", status: .interrupted, endsTurn: true)
-            }
-            return
+        if startedSessions.contains(screenID), case let .stopped(reason) = await service.state(sessionID: screenID) {
+            throw Refusal(text: reason.sentence + " Stop using the computer.", status: .interrupted, endsTurn: true)
+        }
+        if await service.isActive(sessionID: screenID) { return }
+        guard !startedSessions.contains(screenID) else {
+            throw Refusal(text: "Screen control stopped. Stop using the computer until the reader starts a new task.", status: .interrupted, endsTurn: true)
         }
         let title = request.title?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty ?? "a connected agent"
         guard await approver.allowAgent(sessionID: request.sessionId, title: title) else {
             throw Refusal(text: "The reader did not let this agent use apps.", endsTurn: true)
         }
         try await service.activate(sessionID: screenID, title: title, kind: .connectedAgent)
+        startedSessions.insert(screenID)
     }
 
     /// An app named in the call that is not granted yet gets a grant card.
