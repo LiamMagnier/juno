@@ -97,12 +97,14 @@ public enum CodeV2TeamGallery {
             best.candidates = [CodeV2Fixtures.claudeSelection, CodeV2Fixtures.codexSelection, CodeV2Fixtures.alevrSelection]
             return popover(CodeV2TeamEditor(directory: directory, draft: .constant(best), lead: CodeV2Fixtures.claudeSelection))
         case .windowEditor:
+            // As AppKit shows it: the popover above the composer, its arrow on the Team chip.
             return AnyView(CodeV2WindowPreview(title: "Move checkout totals to the server", subtitle: "storefront", selected: "s1", inspectorOpen: false) {
-                CodeV2EnvSessionView(session: CodeV2EnvSession(preview: CodeV2Fixtures.newSnapshot), composer: composer(team),
+                CodeV2EnvSessionView(session: CodeV2EnvSession(preview: CodeV2Fixtures.settledSnapshot), composer: composer(team),
                                      directory: directory, openConnections: {}, place: place)
                     .overlay(alignment: .bottom) {
-                        floating(CodeV2TeamEditor(directory: directory, draft: .constant(team), lead: CodeV2Fixtures.claudeSelection))
-                            .offset(x: -40, y: -128)
+                        anchored(CodeV2TeamEditor(directory: directory, draft: .constant(team), lead: CodeV2Fixtures.claudeSelection),
+                                 arrowX: editorArrowX)
+                            .offset(x: editorOffset.width, y: editorOffset.height)
                     }
             } inspector: { EmptyView() })
         case .windowRunning:
@@ -114,6 +116,21 @@ public enum CodeV2TeamGallery {
             } inspector: {
                 CodeV2EnvDockView(session: session, dock: dock, close: {})
             })
+        }
+    }
+
+    /// Where the snapshot puts the editor (measured from the composer's layout).
+    static let editorOffset = CGSize(width: 0, height: -150)
+    static let editorArrowX: CGFloat = 248
+
+    private static func anchored<Content: View>(_ content: Content, arrowX: CGFloat) -> some View {
+        VStack(alignment: .leading, spacing: -1) {
+            floating(content)
+            PopoverArrow()
+                .fill(Studio.Surface.popover)
+                .overlay(PopoverArrow().stroke(Studio.Surface.hairline))
+                .frame(width: 18, height: 9)
+                .offset(x: arrowX - 9)
         }
     }
 
@@ -131,5 +148,16 @@ public enum CodeV2TeamGallery {
             Studio.Surface.canvas
             floating(content)
         })
+    }
+}
+
+/// The popover's arrow, pointing down at its anchor.
+private struct PopoverArrow: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.midX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+        return path
     }
 }

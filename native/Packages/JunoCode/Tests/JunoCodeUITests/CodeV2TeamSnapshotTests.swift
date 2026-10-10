@@ -64,3 +64,43 @@ final class CodeV2TeamSnapshotTests: XCTestCase {
         window.contentView = nil
     }
 }
+
+/// What offscreen pictures cannot show (the app's asset catalogue is not in
+/// the test bundle): each role's model control carries the lab's real mark
+/// and an open-me chevron, and the builders' stepper its minus and plus,
+/// all drawn from assets the Mac app ships.
+final class CodeV2TeamAssetTests: XCTestCase {
+    private var resources: URL {
+        var root = URL(fileURLWithPath: #filePath)
+        for _ in 0..<6 { root.deleteLastPathComponent() }
+        return root.appendingPathComponent("native/macOS/JunoDesktop/Resources")
+    }
+
+    @MainActor
+    func testRoleControlsUseTheRealProviderMarksAndTheWebGlyphs() {
+        let team = CodeV2TeamGallery.team
+        let marks = CodeV2Team.Role.allCases.compactMap { team.selection(for: $0) }.map {
+            CodeV2TeamModelLabel(directory: CodeV2Fixtures.directory, selection: $0).markID
+        }
+        XCTAssertEqual(marks, ["anthropic", "anthropic", "openai"], "Opus and Sonnet on Claude, GPT on Codex")
+        for mark in Set(marks) {
+            let asset = resources.appendingPathComponent("Assets.xcassets/Providers/provider-\(mark).imageset")
+            XCTAssertTrue(FileManager.default.fileExists(atPath: asset.path), "the app ships provider-\(mark)")
+        }
+        XCTAssertEqual(CodeV2TeamModelLabel.affordance, .chevronDown)
+        for icon in [CodeV2TeamModelLabel.affordance, JunoIcon.minus, JunoIcon.plus] {
+            let set = resources.appendingPathComponent("Icons.xcassets/\(icon.assetName(.regular)).symbolset")
+            XCTAssertTrue(FileManager.default.fileExists(atPath: set.path), "the app ships \(icon.assetName(.regular))")
+        }
+    }
+
+    func testTheBudgetFieldTakesWhatPeopleType() {
+        XCTAssertEqual(CodeV2TeamBudgetField.parse("$4"), .some(4))
+        XCTAssertEqual(CodeV2TeamBudgetField.parse("2.505"), .some(2.51))
+        XCTAssertEqual(CodeV2TeamBudgetField.parse(" "), .some(nil), "empty is no cap")
+        XCTAssertNil(CodeV2TeamBudgetField.parse("abc"), "not an amount: unchanged")
+        XCTAssertNil(CodeV2TeamBudgetField.parse("-1"))
+        XCTAssertEqual(CodeV2TeamBudgetField.format(4), "$4.00")
+        XCTAssertEqual(CodeV2TeamBudgetField.format(nil), "")
+    }
+}

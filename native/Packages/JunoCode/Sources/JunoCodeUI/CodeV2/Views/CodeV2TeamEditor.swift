@@ -182,29 +182,15 @@ struct CodeV2TeamEditor: View {
 
     private var footer: some View {
         HStack(spacing: JunoSpace.snug) {
-            Menu {
-                ForEach([1.0, 2, 4, 8, 16], id: \.self) { value in
-                    Button(CodeV2ContextMath.dollars(value)) { draft.budgetUsd = value }
-                }
-                Divider()
-                Button("No Cap") { draft.budgetUsd = nil }
-            } label: {
-                CodeV2TextControlLabel(
-                    title: draft.budgetUsd.map { "Stop at \(CodeV2ContextMath.dollars($0))" } ?? "No budget cap"
-                )
-            }
-            .menuStyle(.button).menuIndicator(.hidden)
-            .buttonStyle(CodeV2FooterButtonStyle(compact: true)).fixedSize()
-            .help("The run stops once its Alevr spend reaches the cap. Subscriptions count against their own plans.")
-            .accessibilityLabel("Budget cap")
-            .contentShape(.rect)
+            CodeV2TeamBudgetField(budgetUsd: $draft.budgetUsd)
             Spacer(minLength: 0)
             if let costLine {
                 Text(costLine).studioType(.small).monospacedDigit().foregroundStyle(Studio.Ink.secondary)
             }
         }
-        .padding(.horizontal, JunoSpace.snug)
-        .frame(height: 40)
+        // On the role rows' text edge.
+        .padding(.horizontal, JunoSpace.snug + JunoSpace.tight + 2)
+        .frame(height: 44)
     }
 }
 
@@ -233,7 +219,7 @@ struct CodeV2TeamRoleRow: View {
             .layoutPriority(1)
             Spacer(minLength: JunoSpace.tight)
             if let count {
-                CodeV2Stepper(value: count.value, range: count.range, set: count.set)
+                CodeV2TeamStepper(value: count.value, range: count.range, set: count.set)
                     .accessibilityLabel("Builders")
                     .accessibilityValue("\(count.value)")
             }
@@ -350,13 +336,112 @@ struct CodeV2TeamModelLabel: View {
             ?? CodeV2Formatting.modelName(selection.model)
     }
 
+    /// The lab's own mark (`provider-<id>` in the app's asset catalogue).
+    var markID: String { CodeV2Marks.markID(model: selection.model, instanceId: selection.instanceId) }
+
+    /// The open-me glyph after the effort, as on the composer's model chip.
+    static let affordance: JunoIcon = .chevronDown
+
     var body: some View {
         CodeV2ModelControlLabel(isOpen: isOpen) {
-            CodeV2Mark(id: CodeV2Marks.markID(model: selection.model, instanceId: selection.instanceId), size: 14)
+            CodeV2Mark(id: markID, size: 14)
             Text(CodeV2ModelNames.short(name)).foregroundStyle(Studio.Ink.primary).lineLimit(1)
             if let effort = selection.effort {
                 Text(effort.title).foregroundStyle(Studio.Ink.secondary).lineLimit(1)
             }
         }
+        // A control at rest, not only on hover: the role's model reads as a button.
+        .overlay(
+            RoundedRectangle(cornerRadius: Studio.Radius.control, style: .continuous)
+                .strokeBorder(Studio.Surface.hairline)
+        )
+    }
+}
+
+/// "− ×2 +": the builders' count, as the web draws it. The buttons carry a
+/// hairline ring so they read as controls at rest.
+struct CodeV2TeamStepper: View {
+    let value: Int
+    let range: ClosedRange<Int>
+    let set: (Int) -> Void
+
+    var body: some View {
+        HStack(spacing: JunoSpace.tight) {
+            step(.minus, to: value - 1, label: "Fewer builders", enabled: value > range.lowerBound)
+            Text("×\(value)")
+                .studioType(.text).monospacedDigit()
+                .foregroundStyle(Studio.Ink.primary)
+                .frame(minWidth: 22)
+                .contentTransition(.numericText())
+            step(.plus, to: value + 1, label: "More builders", enabled: value < range.upperBound)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Builders")
+        .accessibilityValue("\(value)")
+    }
+
+    private func step(_ icon: JunoIcon, to next: Int, label: String, enabled: Bool) -> some View {
+        Button { set(next) } label: {
+            JunoIconView(icon, size: 11)
+                .frame(width: 22, height: 22)
+                .overlay(Circle().strokeBorder(Studio.Surface.hairline))
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(enabled ? Studio.Ink.primary : Studio.Ink.tertiary)
+        .disabled(!enabled)
+        .accessibilityLabel(label)
+    }
+}
+
+/// "Stop at [$4.00] of Alevr spend": an editable cap, as on the web. Empty
+/// means no cap; a value that is not a positive amount is left as it was.
+struct CodeV2TeamBudgetField: View {
+    @Binding var budgetUsd: Double?
+    @State private var text = ""
+    @FocusState private var focused: Bool
+
+    static func parse(_ text: String) -> Double?? {
+        let cleaned = text.replacingOccurrences(of: "$", with: "")
+            .replacingOccurrences(of: ",", with: "")
+            .trimmingCharacters(in: .whitespaces)
+        if cleaned.isEmpty { return .some(nil) }
+        guard let value = Double(cleaned), value > 0, value <= 10_000 else { return nil }
+        return .some((value * 100).rounded() / 100)
+    }
+
+    static func format(_ usd: Double?) -> String {
+        usd.map { String(format: "$%.2f", $0) } ?? ""
+    }
+
+    var body: some View {
+        HStack(spacing: JunoSpace.tight + 2) {
+            Text("Stop at").foregroundStyle(Studio.Ink.secondary)
+            TextField("No cap", text: $text)
+                .textFieldStyle(.plain)
+                .monospacedDigit()
+                .multilineTextAlignment(.leading)
+                .focused($focused)
+                .frame(width: 64)
+                .padding(.horizontal, JunoSpace.tight + 2)
+                .frame(height: 24)
+                .background(
+                    RoundedRectangle(cornerRadius: Studio.Radius.control, style: .continuous)
+                        .strokeBorder(focused ? Studio.Ink.tertiary : Studio.Surface.hairline)
+                )
+                .onSubmit(commit)
+                .onChange(of: focused) { _, isFocused in if !isFocused { commit() } }
+                .accessibilityLabel("Budget cap in dollars")
+            Text("of Alevr spend").foregroundStyle(Studio.Ink.secondary)
+        }
+        .studioType(.small)
+        .onAppear { text = Self.format(budgetUsd) }
+        .onChange(of: budgetUsd) { _, value in if !focused { text = Self.format(value) } }
+        .help("The run stops once its Alevr spend reaches the cap. Subscriptions count against their own plans.")
+    }
+
+    private func commit() {
+        if let parsed = Self.parse(text) { budgetUsd = parsed }
+        text = Self.format(budgetUsd)
     }
 }
