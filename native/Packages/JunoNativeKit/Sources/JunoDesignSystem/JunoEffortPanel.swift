@@ -524,7 +524,7 @@ public struct JunoEffortSpeedButton: View {
                     .opacity(tier == .ultra ? 1 : 0)
             }
             .animation(
-                reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.62),
+                JunoMotion.reduced(JunoMotion.spring, when: reduceMotion),
                 value: tier
             )
         }
