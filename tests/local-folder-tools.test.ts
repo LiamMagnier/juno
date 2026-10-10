@@ -21,7 +21,8 @@ import {
   pendingLocalToolCalls,
 } from "@/lib/chat/local-folder-bridge";
 import { createLocalFolderTools } from "@/lib/chat/local-folder-tools";
-import { resolvedNativeTool } from "@/lib/tools/toolset";
+import { resolvedNativeTool, withNativeChatTools } from "@/lib/tools/toolset";
+import { executeToolBatch } from "@/lib/tools/dispatch";
 import { UNTRUSTED_OPEN } from "@/lib/untrusted-content";
 import type { StreamChunk } from "@/types/chat";
 import { turnModule } from "./chat-turn-source";
@@ -222,4 +223,34 @@ test("the wait always ends: timeout and Stop", async () => {
   controller.abort();
   assert.deepEqual(await waiting, { outcome: "failed", output: LOCAL_TOOL_CANCELLED_OUTPUT });
   assert.equal(pendingLocalToolCalls(), 0);
+});
+
+test("the dispatcher's queued act names the action and the file, before the Mac answers", async () => {
+  const tools = createLocalFolderTools({
+    folder: { name: "Invoices", access: "read_write" },
+    userId: "user-1",
+    generationId: "generation-1",
+    send: () => {},
+    newCallId: () => "lft_00000000-0000-0000-0000-000000000003",
+  });
+  const toolset = withNativeChatTools(undefined, tools)!;
+  const controller = new AbortController();
+  const batch = executeToolBatch(
+    [{ name: "folder_read_file", callId: "c1", round: 0, index: 0, argsText: JSON.stringify({ path: "2026/march.csv" }) }],
+    controller.signal,
+    { toolset }
+  );
+  const first = await batch.next();
+  assert.deepEqual(first.value, {
+    type: "tool",
+    phase: "status",
+    server: "Read a file",
+    name: "folder_read_file",
+    callId: "c1",
+    status: "queued",
+    present: { action: "read", path: "2026/march.csv" },
+    argsText: "{\"path\":\"2026/march.csv\"}",
+  });
+  controller.abort();
+  await batch.return([]);
 });
