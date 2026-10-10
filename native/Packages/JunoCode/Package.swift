@@ -27,6 +27,10 @@ let package = Package(
         // machine, frame capture and the capability advertisement. No SwiftUI —
         // the pane lives in JunoCodeUI, so this stays testable headlessly.
         .library(name: "JunoSimulator", targets: ["JunoSimulator"]),
+        // The iPhone's remote for Mac Alevr Code over the v2 device link
+        // (docs/code-v2/REMOTE-CONTROL.md). No AppKit or UIKit: it builds and
+        // tests on the Mac and ships in the iPhone app.
+        .library(name: "JunoCodeRemote", targets: ["JunoCodeRemote"]),
     ],
     dependencies: [
         .package(path: "../JunoNativeKit"),
@@ -86,6 +90,28 @@ let package = Package(
                 .product(name: "JunoAuth", package: "JunoNativeKit"),
                 .product(name: "JunoSync", package: "JunoNativeKit"),
                 .product(name: "JunoChatKit", package: "JunoNativeKit"),
+            ]
+        ),
+        .target(
+            name: "JunoCodeRemote",
+            dependencies: [
+                "JunoCodeCore",
+                .product(name: "JunoCore", package: "JunoNativeKit"),
+                .product(name: "JunoAPI", package: "JunoNativeKit"),
+                .product(name: "JunoAuth", package: "JunoNativeKit"),
+                .product(name: "JunoSync", package: "JunoNativeKit"),
+                .product(name: "JunoCodeKit", package: "JunoNativeKit"),
+            ]
+        ),
+        .testTarget(
+            name: "JunoCodeRemoteTests",
+            dependencies: [
+                "JunoCodeCore", "JunoCodeRemote",
+                .product(name: "JunoCore", package: "JunoNativeKit"),
+                .product(name: "JunoAPI", package: "JunoNativeKit"),
+                .product(name: "JunoAuth", package: "JunoNativeKit"),
+                .product(name: "JunoSync", package: "JunoNativeKit"),
+                .product(name: "JunoCodeKit", package: "JunoNativeKit"),
             ]
         ),
         .testTarget(
