@@ -5,6 +5,16 @@ import JunoCore
 import JunoSync
 import Observation
 
+/// The app's own per-thread sync (one poller for Chat and Code). When set on
+/// the model, drafts and prefs go through it and the app follows the thread's
+/// key, handing remote states to ``CodeLinkRemoteModel/applyRemote(_:)``.
+@MainActor
+public protocol CodeLinkThreadSyncing: AnyObject {
+    func draftChanged(_ key: String, text: String)
+    func sent(_ key: String)
+    func writePrefs(_ key: String, _ prefs: ThreadSyncPrefs, at date: Date)
+}
+
 /// A Mac this iPhone may drive, and what it said about itself.
 public struct CodeLinkMac: Identifiable, Equatable, Sendable {
     public enum Reachability: Equatable, Sendable {
@@ -108,6 +118,8 @@ public final class CodeLinkRemoteModel {
     @ObservationIgnored private var draftSyncer: ThreadDraftSyncer?
     @ObservationIgnored private let sleep: @Sendable (Duration) async throws -> Void
     @ObservationIgnored private let now: @Sendable () -> Date
+    /// The app's thread sync; nil uses the model's own (tests, other hosts).
+    @ObservationIgnored public weak var externalSync: (any CodeLinkThreadSyncing)?
     /// Device name for the draft echo guard.
     public static let syncDevice = "iphone"
 
@@ -295,7 +307,7 @@ public final class CodeLinkRemoteModel {
     }
 
     public func close() {
-        if let key = threadKey, let syncer = draftSyncer { Task { await syncer.flush(key) } }
+        if externalSync == nil, let key = threadKey, let syncer = draftSyncer { Task { await syncer.flush(key) } }
         openSessionID = nil
         draftApplied = ""
         applyingRemote = true
@@ -619,7 +631,7 @@ public final class CodeLinkRemoteModel {
             composer.adopt(snapshot)
             applyingRemote = false
         }
-        guard let sender, let accountID, let key = threadKey else { return }
+        guard externalSync == nil, let sender, let accountID, let key = threadKey else { return }
         if let state = try? await ThreadSyncClient(sender: sender).thread(key, for: accountID) {
             await applyRemote(state)
         }
@@ -627,7 +639,7 @@ public final class CodeLinkRemoteModel {
 
     /// Long-polls this thread's shared state while the thread is open.
     public func runThreadSync() async {
-        guard let sender, let accountID else { return }
+        guard externalSync == nil, let sender, let accountID else { return }
         let client = ThreadSyncClient(sender: sender)
         var cursor: String?
         var backoff: Duration = .seconds(2)
@@ -648,14 +660,22 @@ public final class CodeLinkRemoteModel {
 
     /// Another device's prefs win only when newer; its draft only when this
     /// device has nothing unsent and it is not our own echo.
-    func applyRemote(_ state: ThreadSyncState) async {
+    public func applyRemote(_ state: ThreadSyncState) async {
         if let stamp = state.prefsUpdatedAt, !state.prefs.isEmpty, prefsChangedAt.map({ stamp > $0 }) ?? true {
             applyingRemote = true
             composer.apply(state.prefs, catalogue: catalogue)
             applyingRemote = false
             prefsChangedAt = stamp
         }
-        if let syncer = draftSyncer, await syncer.shouldApply(state), state.draft != draft {
+        let fresh: Bool
+        if externalSync != nil {
+            fresh = true // the app's follower already dropped echoes and unsent typing
+        } else if let syncer = draftSyncer {
+            fresh = await syncer.shouldApply(state)
+        } else {
+            fresh = false
+        }
+        if fresh, state.draft != draft {
             applyingRemote = true
             draft = state.draft
             draftApplied = state.draft
@@ -668,14 +688,23 @@ public final class CodeLinkRemoteModel {
     }
 
     private func writePrefs() {
-        guard let sender, let accountID, let key = threadKey else { return }
+        guard let key = threadKey else { return }
         let stamp = now()
         prefsChangedAt = stamp
+        if let externalSync {
+            externalSync.writePrefs(key, composer.prefs, at: stamp)
+            return
+        }
+        guard let sender, let accountID else { return }
         let update = ThreadSyncUpdate(prefs: composer.prefs, prefsUpdatedAt: stamp, device: Self.syncDevice)
         Task { try? await ThreadSyncClient(sender: sender).write(key, update, for: accountID) }
     }
 
     private func draftChanged() {
+        if let key = threadKey, let externalSync {
+            externalSync.draftChanged(key, text: draft)
+            return
+        }
         guard let key = threadKey, let syncer = draftSyncer else { return }
         let text = draft
         let stamp = now()
@@ -686,6 +715,10 @@ public final class CodeLinkRemoteModel {
         applyingRemote = true
         draft = ""
         applyingRemote = false
+        if let key = threadKey, let externalSync {
+            externalSync.sent(key)
+            return
+        }
         if let key = threadKey, let syncer = draftSyncer { await syncer.cleared(key, at: now()) }
     }
 

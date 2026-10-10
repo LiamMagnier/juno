@@ -202,6 +202,32 @@ final class CodeLinkRemoteModelTests: XCTestCase {
         XCTAssertEqual(model.openSessionID, "s1")
     }
 
+    final class RecordingSync: CodeLinkThreadSyncing {
+        var log: [String] = []
+        func draftChanged(_ key: String, text: String) { log.append("draft \(key) \(text)") }
+        func sent(_ key: String) { log.append("sent \(key)") }
+        func writePrefs(_ key: String, _ prefs: ThreadSyncPrefs, at date: Date) { log.append("prefs \(key) \(prefs.mode ?? "")") }
+    }
+
+    func testTheAppsThreadSyncCarriesDraftsPrefsAndSends() async throws {
+        let script = Script()
+        let (model, _) = makeModel(script)
+        let sync = RecordingSync()
+        model.externalSync = sync
+        await model.refreshMacs()
+        await model.select("mac1")
+        await model.open("s1")
+        model.receive([try decode(snapshotEvent(4, state: "idle"))], deviceID: "mac1")
+        model.draft = "hi"
+        model.composer.runtimeMode = .full
+        await model.send("hi")
+        XCTAssertEqual(sync.log, ["draft code:mac1:s1 hi", "prefs code:mac1:s1 full", "sent code:mac1:s1"])
+        XCTAssertEqual(model.draft, "")
+        await model.applyRemote(ThreadSyncState(key: "code:mac1:s1", draft: "from the Mac", prefs: ThreadSyncPrefs(mode: "ask"), prefsUpdatedAt: Date().addingTimeInterval(60), updatedAt: Date()))
+        XCTAssertEqual(model.draft, "from the Mac")
+        XCTAssertEqual(model.composer.runtimeMode, .ask)
+    }
+
     // MARK: Helpers
 
     private func decode(_ object: [String: Any]) throws -> CodeV2.ServerEventEnvelope {
