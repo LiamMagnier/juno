@@ -135,6 +135,11 @@ export function useApp(): AppContextValue {
   return ctx;
 }
 
+/** The app context where there may be none (a gallery, a test render): null outside a provider. */
+export function useOptionalApp(): AppContextValue | null {
+  return React.useContext(AppContext);
+}
+
 export function AppProvider({ bootstrap, children }: { bootstrap: AppBootstrap; children: React.ReactNode }) {
   const router = useRouter();
   const [settings, setSettingsState] = React.useState(bootstrap.settings);

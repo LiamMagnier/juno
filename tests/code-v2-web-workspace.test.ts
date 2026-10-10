@@ -183,18 +183,21 @@ test("the streaming state is calm: no glow, a stop button, the queue as one cont
   assert.match(html, /Changed 3 files/);
 });
 
-test("the composer at rest shows +, the model trigger, the options menu and send; mode, plan and permissions only when not default", () => {
+test("the composer at rest shows +, the model trigger, the mode, the options menu, the mic and send; the team only when not solo", () => {
   const f = fixture("model-picker");
   const html = renderToStaticMarkup(React.createElement(CodeWorkspace, { model: { ...f.model }, ui: {} }));
   const foot = html.slice(html.indexOf('class="cv2-cfoot"'), html.indexOf('class="cv2-strip"'));
   assert.match(foot, /aria-label="Add"/);
   assert.match(foot, /aria-label="Model: Opus 5\.5, High"/);
+  assert.match(foot, /aria-label="Mode: Accept edits"/);
   assert.match(foot, /aria-label="More options"/);
-  assert.doesNotMatch(foot, /Lead \+|Best of|Auto-edit|>Plan</);
-  const team = renderToStaticMarkup(React.createElement(CodeWorkspace, { model: { ...f.model, runtimeMode: "full", interactionMode: "plan", routing: fixture("needs-you").model.routing }, ui: {} }));
+  assert.match(foot, /aria-label="Dictate"/);
+  assert.doesNotMatch(foot, /Lead \+|Best of/);
+  const team = renderToStaticMarkup(React.createElement(CodeWorkspace, { model: { ...f.model, interactionMode: "plan", routing: fixture("needs-you").model.routing }, ui: {} }));
   assert.match(team, /Lead \+ 3/);
-  assert.match(team, /Full access/);
-  assert.match(team, />Plan</);
+  assert.match(team, /aria-label="Mode: Plan"/);
+  const full = renderToStaticMarkup(React.createElement(CodeWorkspace, { model: { ...f.model, runtimeMode: "full" }, ui: {} }));
+  assert.match(full, /aria-label="Mode: Full access"/);
 });
 
 test("the sidebar is a list of work: needs you first, then working, project and branch under each title, the rest settled", () => {

@@ -6,7 +6,7 @@ import { Loader2, Send } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { ScrollFade } from "@/components/ui/scroll-fade";
 import { RealtimeVoice } from "@/components/voice/realtime-voice";
-import { useApp } from "@/components/app/app-provider";
+import { useOptionalApp } from "@/components/app/app-provider";
 import { useRealtimeVoice } from "@/hooks/use-realtime-voice";
 import { ActionIcons } from "@/lib/app-icons";
 import { PLANS } from "@/lib/plans";
@@ -71,13 +71,15 @@ export function useCodeVoice({ disabled = false }: { disabled?: boolean } = {}):
   /** Hand to the panel's `onClose`. */
   close: () => void;
 } {
-  const { quota } = useApp();
+  // Optional: the Code v2 composer also renders in galleries and tests with no
+  // app provider, where there is no plan to ask and so no voice.
+  const plan = useOptionalApp()?.quota.plan;
   const [open, setOpen] = React.useState(false);
   // Read as a whole member expression: Next inlines NEXT_PUBLIC_* at build
   // time by textual substitution, so destructuring `process.env` first would
   // leave nothing to substitute and voice would be off in every build.
   const configured = Boolean(process.env.NEXT_PUBLIC_VOICE_RELAY_URL);
-  const available = configured && PLANS[quota.plan].voice;
+  const available = configured && !!plan && PLANS[plan].voice;
 
   const openVoice = React.useCallback(() => setOpen(true), []);
   const close = React.useCallback(() => setOpen(false), []);
