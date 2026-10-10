@@ -931,6 +931,9 @@ struct ChatComposer: View {
     @State private var showingFileImporter = false
     @State private var showingLibrary = false
     @State private var showingNewProject = false
+    /// The tray's Skills and Apps lists, opened from an armed mark too.
+    @State private var showingTraySkills = false
+    @State private var showingTrayApps = false
     /// The dictation in progress, if the reader is dictating. Dropping it is
     /// what tears the recognizer down.
     @State private var dictation: ComposerDictationSession?
@@ -1665,6 +1668,22 @@ struct ChatComposer: View {
         }
     }
 
+    /// What the tray on screen carries, so `+` leaves those rows out.
+    private var trayCoverage: ComposerTrayCoverage {
+        ComposerTrayCoverage(
+            showsTray: showsTray,
+            isNewChat: isNewChatDraft,
+            hasMediaLine: trayMedia != nil,
+            hasProjects: trayProjects != nil,
+            hasApps: trayApps != nil,
+            hasSkills: traySkills != nil
+        )
+    }
+
+    private var trayCarriesProject: Bool { trayCoverage.project }
+    private var trayCarriesApps: Bool { trayCoverage.apps }
+    private var trayCarriesSkills: Bool { trayCoverage.skills }
+
     /// True while a `trayLeading`/`trayTrailing` item applies to an existing
     /// conversation too, so the tray is drawn in a thread with a chat model:
     /// the folder belongs to a conversation as well as a draft. Only where
@@ -1693,7 +1712,15 @@ struct ChatComposer: View {
     private var trayProjects: NativeComposerTrayProjects? {
         guard fixedProjectID == nil, let projectModel else { return nil }
         return NativeComposerTrayProjects(
-            items: projectModel.projects.map { NativeComposerTrayProject(id: $0.id, name: $0.name) },
+            items: projectModel.projects.map { project in
+                NativeComposerTrayProject(
+                    id: project.id,
+                    name: project.name,
+                    updatedAt: project.updatedAt,
+                    starred: project.starred,
+                    parentName: project.parentID.flatMap { parent in projectModel.projects.first { $0.id == parent }?.name }
+                )
+            },
             selectedID: selectedProjectID,
             select: { chooseProject($0) },
             create: { showingNewProject = true }
@@ -1713,18 +1740,29 @@ struct ChatComposer: View {
                 }
             },
             manage: manageConnections,
-            isLoading: connectorModel.phase == .loading
+            isLoading: connectorModel.phase == .loading,
+            limit: ComposerPlusMenuModel.connectorLimit,
+            isPresented: $showingTrayApps
         )
     }
 
     private var traySkills: NativeComposerTraySkills? {
         guard skillsAvailable, let skillLibrary else { return nil }
         return NativeComposerTraySkills(
-            items: skillLibrary.chooseable.map { NativeComposerTraySkill(slug: $0.slug, name: $0.name) },
+            items: skillLibrary.chooseable.map {
+                NativeComposerTraySkill(
+                    slug: $0.slug,
+                    name: $0.name,
+                    description: $0.description,
+                    origin: $0.isYours ? .yours : .installed,
+                    source: $0.sourceLabel
+                )
+            },
             armed: skillSlug,
             arm: { skillSlug = $0 },
             browse: manageSkills,
-            isLoading: skillLibrary.isLoading
+            isLoading: skillLibrary.isLoading,
+            isPresented: $showingTraySkills
         )
     }
 
@@ -1812,6 +1850,7 @@ struct ChatComposer: View {
                     mark: mark,
                     showsLabel: showsLabels,
                     disarm: { disarm(mark.id) },
+                    open: markOpener(mark.id),
                     menu: { ComposerPlusMenu(menu: plusMenuModel) }
                 )
             }
@@ -1826,6 +1865,17 @@ struct ChatComposer: View {
             }
         }
         .fixedSize()
+    }
+
+    /// The skill's mark opens the tray's Skills list, an app's mark its Apps
+    /// list, where the tray carries them; nil keeps `+` (a thread, steering,
+    /// dictating, every other mark).
+    private func markOpener(_ id: String) -> (() -> Void)? {
+        switch trayCoverage.target(forMark: id) {
+        case .traySkills: { showingTraySkills = true }
+        case .trayApps: { showingTrayApps = true }
+        case .plusMenu: nil
+        }
     }
 
     private func disarm(_ id: String) {
@@ -1855,16 +1905,21 @@ struct ChatComposer: View {
             takeScreenshot: voiceActive ? nil : { takeScreenshot() },
             addFromLibrary: libraryModel == nil ? nil : { showingLibrary = true },
             canAddFromLibrary: canAttach && !voiceActive,
-            projects: fixedProjectID == nil && !isPrivate && !voiceActive
+            // Project, Apps and Skills live in the tray (owner, Oct 10: "from
+            // the plus button remove skills and app since it's already in the
+            // bottom of the composer"); `+` keeps each only where the tray does
+            // not carry it: a thread, a media model's line (Apps, Skills), or
+            // while the tray steps aside (steering, dictating).
+            projects: fixedProjectID == nil && !isPrivate && !voiceActive && !trayCarriesProject
                 ? projectModel?.projects : nil,
             currentProjectID: isDraft ? selectedProjectID : model.selectedConversation?.projectId,
             chooseProject: { chooseProject($0) },
             newProject: isDraft && projectModel != nil ? { showingNewProject = true } : nil,
-            connectors: connectorModel == nil || isPrivate || voiceActive ? nil : connectedConnectors,
+            connectors: connectorModel == nil || isPrivate || voiceActive || trayCarriesApps ? nil : connectedConnectors,
             connectorsLoading: connectorModel?.phase == .loading,
             selectedConnectors: $selectedConnectors,
             manageConnections: manageConnections,
-            skills: skillsAvailable ? skillLibrary?.chooseable : nil,
+            skills: skillsAvailable && !trayCarriesSkills ? skillLibrary?.chooseable : nil,
             skillsLoading: skillLibrary?.isLoading == true,
             skillSlug: $skillSlug,
             manageSkills: manageSkills,
