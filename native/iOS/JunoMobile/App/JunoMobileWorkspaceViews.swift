@@ -386,13 +386,15 @@ enum JunoMobileFilePreview {
     case .remote(let url):
       return url
     case .downloaded(let data):
-      let ext = URL(fileURLWithPath: fileName).pathExtension
-        .filter { $0.isLetter || $0.isNumber }
-      let name =
-        "juno-preview-\(UUID().uuidString)"
-        + (ext.isEmpty ? "" : ".\(ext)")
-      let url = FileManager.default.temporaryDirectory
-        .appendingPathComponent(name)
+      // In a folder of its own under the file's real name, so QuickLook's
+      // title reads "Launch brief.pdf" rather than a temporary UUID. The name
+      // came off the wire: only its last path component is used.
+      let safeName = URL(fileURLWithPath: fileName).lastPathComponent
+        .replacingOccurrences(of: ":", with: "-")
+      let folder = FileManager.default.temporaryDirectory
+        .appendingPathComponent("juno-preview-\(UUID().uuidString)", isDirectory: true)
+      try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+      let url = folder.appendingPathComponent(safeName.isEmpty || safeName == "/" ? "file" : safeName)
       try data.write(to: url, options: [.atomic])
       return url
     }
