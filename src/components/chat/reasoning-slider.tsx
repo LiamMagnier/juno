@@ -435,7 +435,7 @@ function EffortPanel({
   const head = panelStop(index, count);
   const canReset = defaultValue !== undefined && current?.value !== defaultValue;
   const iconButton =
-    "pressable grid size-8 place-items-center rounded-full text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-35 coarse:size-11";
+    "pressable grid size-8 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-35 coarse:size-11";
   return (
     <div className={cn("select-none", className)}>
       {/* One line: the speed control and Pro on the left, the rung and its
@@ -478,7 +478,7 @@ function EffortPanel({
                   className={cn(
                     // A capsule beside the bolt, in the same group: filled ink
                     // when on, a hairline when off.
-                    "pressable inline-flex h-8 items-center rounded-full border px-2.5 text-caption font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-35 coarse:h-9 motion-reduce:active:scale-100",
+                    "pressable inline-flex h-8 shrink-0 items-center rounded-full border px-2.5 text-caption font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-35 coarse:h-9 motion-reduce:active:scale-100",
                     proMode
                       ? "border-primary bg-primary text-primary-foreground"
                       : "border-border text-muted-foreground hover:bg-accent hover:text-foreground",

@@ -628,6 +628,19 @@ button.cv2-set-row:hover { background: hsl(var(--accent) / 0.6); }
 
 /* The Team orchestrator (team lane): the composer chip and the role editor. */
 .cv2-team-chip .v { max-width: 340px; }
+/* On a narrow row the team summary gives way first, so the model and the mode keep their words. */
+.cv2-cfoot > .cv2-ctl { flex-shrink: 0; }
+.cv2-cfoot > .cv2-team-chip { flex-shrink: 1; min-width: 96px; }
+/* A narrow composer (a docked pane, a small window): the team and the mode
+   keep their glyphs (their names stay in the labels and tooltips), the effort
+   word goes, and the model keeps its name. */
+.cv2-cfoot { container: cv2foot / inline-size; }
+@container cv2foot (max-width: 520px) {
+  .cv2-cfoot .cv2-ctl .eff { display: none; }
+  .cv2-cfoot > .cv2-ctl { flex-shrink: 1; }
+  .cv2-cfoot > .cv2-team-chip { min-width: 0; }
+  .cv2-cfoot .cv2-team-chip .v, .cv2-cfoot .cv2-ctl[data-mode] .v { display: none; }
+}
 @media (max-width: 720px) { .cv2-team-chip .v { max-width: 150px; } }
 .cv2-team-chip[data-team="solo"] .v { color: hsl(var(--muted-foreground)); }
 
