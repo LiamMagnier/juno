@@ -432,6 +432,37 @@ final class ComputerActionOverlayPanelTests: XCTestCase {
 
 // MARK: - Antigravity: install and sign in through the env server
 
+/// A sign-in finished in Terminal must show up in Connections without the
+/// user pressing anything (Mac 1.10.4 kept "Sign-in expired" until restart).
+@MainActor
+final class CodeV2SetupWatchTests: XCTestCase {
+    func testASignInFinishedInTerminalIsPickedUpByTheWatch() async throws {
+        let id = "claude-agent:default"
+        let server = FakeEnvServer()
+        var probes = 0
+        server.handle = { command in
+            guard command.type == "provider.probe" else { return .init() }
+            probes += 1
+            let status = probes >= 2 ? "ready" : "signed-out"
+            return .init(result: .object(["instance": .object([
+                "id": .string(id), "kind": .string("claude-agent"), "label": .string("Claude"), "status": .string(status),
+            ])]))
+        }
+        let connection = EnvServerConnection(transport: server, commandTimeout: .seconds(5))
+        let hub = EnvServerHub(connection: connection, launcher: TerminalCommandLauncher(opener: { _ in }))
+        hub.setupWatchInterval = .milliseconds(50)
+        hub.setupWatchLimit = .seconds(5)
+
+        await hub.openSetup(for: id, action: .login)
+        XCTAssertTrue(hub.isWatchingSetup(id), "opening the sign-in terminal starts watching")
+        let ready = await eventually { hub.instances?.first(where: { $0.id == id })?.status == .ready }
+        XCTAssertTrue(ready, "the watch re-probes until the sign-in shows up")
+        let stopped = await eventually { !hub.isWatchingSetup(id) }
+        XCTAssertTrue(stopped, "the watch stops once the instance is ready")
+        await connection.close()
+    }
+}
+
 @MainActor
 final class CodeV2ManagedRuntimeTests: XCTestCase {
     private let id = "acp:antigravity"

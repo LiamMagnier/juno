@@ -61,6 +61,9 @@ public struct CodeV2ConnectionsView: View {
         .background(Studio.Surface.canvas)
         .task {
             hub.start()
+            // Opening Connections re-checks anything not ready (a sign-in done
+            // in Terminal since the last check shows up here).
+            hub.recheckUnready()
             await keys.reload()
         }
     }
@@ -164,7 +167,7 @@ public struct CodeV2ConnectionsView: View {
                 parts.append("\(Int(used.rounded()))% of \(window.label.lowercased()) window")
             }
             return parts.isEmpty ? "Connected" : parts.joined(separator: " · ")
-        case .signedOut: return instance.statusMessage == nil ? "Not signed in" : "Sign-in expired"
+        case .signedOut: return instance.statusMessage?.localizedCaseInsensitiveContains("expired") == true ? "Sign-in expired" : "Not signed in"
         case .notInstalled: return "Not installed"
         case .error, .unknown: return "Not responding"
         }
@@ -245,7 +248,7 @@ public struct CodeV2ConnectionsView: View {
 
     @ViewBuilder
     private func subscriptionAction(_ instance: CodeV2.ProviderInstance) -> some View {
-        let expired = instance.status == .signedOut && instance.statusMessage != nil
+        let expired = instance.status == .signedOut && instance.statusMessage?.localizedCaseInsensitiveContains("expired") == true
         if hub.probing.contains(instance.id) || hub.openingSetup.contains(instance.id) {
             ProgressView().controlSize(.small)
         } else {
@@ -255,6 +258,9 @@ public struct CodeV2ConnectionsView: View {
                     .help("Alevr opens a terminal with the install command so you can read it first.")
                     .contentShape(.rect)
             case .signedOut:
+                Button("Re-check") { Task { await hub.probe(instance.id) } }
+                    .help("Signed in already? Alevr checks again.")
+                    .contentShape(.rect)
                 Button(expired ? "Sign In Again" : "Sign In") { Task { await hub.openSetup(for: instance.id, action: .login) } }
                     .contentShape(.rect)
             case .error, .unknown:

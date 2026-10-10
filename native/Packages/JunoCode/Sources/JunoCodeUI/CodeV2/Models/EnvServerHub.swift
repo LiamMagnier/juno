@@ -35,6 +35,13 @@ public final class EnvServerHub {
     /// Opens the vendor's sign-in page (the browser on this Mac).
     @ObservationIgnored public var openURL: @MainActor (URL) -> Void = { NSWorkspace.shared.open($0) }
     @ObservationIgnored private var setupTask: Task<Void, Never>?
+    /// Re-probes an instance while its sign-in / install terminal is open, so
+    /// a login finished in Terminal shows up without pressing anything.
+    @ObservationIgnored private var setupWatches: [String: Task<Void, Never>] = [:]
+    @ObservationIgnored private var activeObserver: NSObjectProtocol?
+    /// How often, and for how long, a setup is watched.
+    @ObservationIgnored var setupWatchInterval: Duration = .seconds(4)
+    @ObservationIgnored var setupWatchLimit: Duration = .seconds(300)
 
     @ObservationIgnored private let sidecar: EnvServerSidecar
     @ObservationIgnored private let makeTransport: @Sendable (EnvServerLaunch) -> any EnvServerTransport
@@ -65,6 +72,13 @@ public final class EnvServerHub {
         self.sidecar = sidecar
         self.launcher = launcher
         self.makeTransport = makeTransport
+        // Coming back to Alevr (after signing in or installing elsewhere)
+        // re-checks every connection that is not ready yet.
+        activeObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.recheckUnready() }
+        }
     }
 
     /// For tests and previews: a hub already connected over `transport`.
@@ -233,6 +247,40 @@ public final class EnvServerHub {
         }
     }
 
+    /// Re-checks every instance that is not ready or limited (app became
+    /// active, or Connections appeared).
+    public func recheckUnready() {
+        guard connection != nil, let list = instances else { return }
+        for instance in list where instance.status != .ready && instance.status != .limited {
+            guard !probing.contains(instance.id) else { continue }
+            Task { await self.probe(instance.id) }
+        }
+    }
+
+    /// Probes `instanceId` every few seconds until it is ready (or limited),
+    /// or the watch times out. Replaces any earlier watch of the same id.
+    func watchSetup(_ instanceId: String) {
+        setupWatches[instanceId]?.cancel()
+        let interval = setupWatchInterval
+        let limit = setupWatchLimit
+        setupWatches[instanceId] = Task { [weak self] in
+            let deadline = ContinuousClock.now + limit
+            while ContinuousClock.now < deadline, !Task.isCancelled {
+                try? await Task.sleep(for: interval)
+                guard let self, !Task.isCancelled else { return }
+                await self.probe(instanceId)
+                if let status = self.instances?.first(where: { $0.id == instanceId })?.status,
+                   status == .ready || status == .limited {
+                    break
+                }
+            }
+            self?.setupWatches[instanceId] = nil
+        }
+    }
+
+    /// Whether a sign-in / install is being watched (for tests).
+    func isWatchingSetup(_ instanceId: String) -> Bool { setupWatches[instanceId] != nil }
+
     /// The command for Install / Sign in: the server's, else the known one.
     public func setupStep(for instanceId: String, action: CodeV2.ProviderSetupAction) async -> CodeV2.ProviderSetupStep? {
         if let connection, let step = try? await connection.providerSetup(instanceId, action: action) {
@@ -258,6 +306,7 @@ public final class EnvServerHub {
         }
         do {
             try launcher.open(command: step.command, title: step.label)
+            watchSetup(instanceId)
         } catch {
             lastError = "Alevr could not open Terminal: \(error.localizedDescription)"
         }
