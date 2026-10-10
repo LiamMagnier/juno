@@ -34,6 +34,7 @@ public struct JunoModelSelector: View {
     private let metrics: JunoModelSelectorMetrics
     private let favorites: Set<String>
     private let toggleFavorite: ((String) -> Void)?
+    private let mediaSections: Bool
     private let select: (JunoModelDescriptor) -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -64,6 +65,7 @@ public struct JunoModelSelector: View {
         metrics: JunoModelSelectorMetrics = .standard,
         favorites: Set<String> = [],
         toggleFavorite: ((String) -> Void)? = nil,
+        mediaSections: Bool = false,
         select: @escaping (JunoModelDescriptor) -> Void
     ) {
         self.models = models
@@ -71,6 +73,7 @@ public struct JunoModelSelector: View {
         self.metrics = metrics
         self.favorites = favorites
         self.toggleFavorite = toggleFavorite
+        self.mediaSections = mediaSections
         self.select = select
     }
 
@@ -522,7 +525,8 @@ public struct JunoModelSelector: View {
             filter: filter,
             query: query,
             favorites: favorites,
-            recents: JunoModelRecents.ids(in: recentsRaw)
+            recents: JunoModelRecents.ids(in: recentsRaw),
+            mediaSections: mediaSections
         )
     }
 

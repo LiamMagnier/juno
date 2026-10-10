@@ -170,6 +170,24 @@ struct ModelPickerSnapshotTests {
         }
     }
 
+    /// The chat composer's catalogue with the picture and video models in
+    /// sections of their own after the labs (owner, Oct 10: "montre les
+    /// modèles image et vidéo aussi"), each row with its lab's mark; opened on
+    /// an image model, then on a video model, so each section is in view.
+    @Test
+    func picturesAndVideoHaveTheirOwnSections() async throws {
+        let groups = JunoModelSelectorCatalog.groups(
+            models: ModelPickerWebFixtures.models, filter: .all, query: "", mediaSections: true
+        )
+        #expect(groups.contains { $0.label == "Images" })
+        #expect(groups.contains { $0.label == "Video" })
+        for (name, selected) in [("catalog-images", Self.image), ("catalog-video", "google:gemini-omni-1.1-flash")] {
+            try await render(name: name, width: JunoModelSelectorMetrics.standard.width) {
+                catalogue(selected: selected, mediaSections: true)
+            }
+        }
+    }
+
     /// The chip: words only, the effort when it is not the model's usual one,
     /// one chevron; at rest and open.
     @Test
@@ -199,13 +217,14 @@ struct ModelPickerSnapshotTests {
 
     // MARK: Rendering
 
-    private func catalogue(selected: String) -> some View {
+    private func catalogue(selected: String, mediaSections: Bool = false) -> some View {
         JunoModelSelector(
             models: ModelPickerWebFixtures.models,
             selectedModelID: selected,
             metrics: .standard,
             favorites: [],
             toggleFavorite: { _ in },
+            mediaSections: mediaSections,
             select: { _ in }
         )
     }

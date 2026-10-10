@@ -839,8 +839,25 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         modelCatalog.filter(\.isAvailable)
     }
 
+    /// The picture and video models (`/api/generate`), kept apart from
+    /// ``modelCatalog`` because everything else that reads the catalogue —
+    /// the default-model setting, Code, Work, Compare, regenerate — wants a
+    /// model that can hold a conversation. Only the chat composers' model
+    /// pickers offer these, under their own Images and Video sections.
+    public private(set) var generationModels: [NativeChatModelOption] = []
+
+    /// What a chat composer's model picker lists: the chat catalogue, then
+    /// the picture and video models.
+    public var composerCatalog: [NativeChatModelOption] { modelCatalog + generationModels }
+
+    /// What a chat composer may keep selected: ``selectableModels`` and the
+    /// available picture and video models.
+    public var composerSelectableModels: [NativeChatModelOption] {
+        selectableModels + generationModels.filter(\.isAvailable)
+    }
+
     public func model(withID id: String) -> NativeChatModelOption? {
-        modelCatalog.first { $0.id == id }
+        modelCatalog.first { $0.id == id } ?? generationModels.first { $0.id == id }
     }
     public private(set) var chatPhase: NativeChatGenerationPhase = .idle
     public private(set) var chatErrorDescription: String?
@@ -1746,6 +1763,7 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         conflictedMutationCount = 0
         lastErrorDescription = nil
         modelCatalog = []
+        generationModels = []
         modelCatalogErrorDescription = nil
         chatPhase = .idle
         chatErrorDescription = nil
@@ -2170,7 +2188,8 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         do {
             let catalog = try await chatClient.modelCatalog(for: accountID)
             guard self.accountID == accountID else { return }
-            modelCatalog = catalog.models.filter(\.isChatCapable)
+            modelCatalog = catalog.models.filter { $0.isChatCapable && !$0.isMediaGeneration }
+            generationModels = catalog.models.filter(\.isMediaGeneration)
             modelCatalogErrorDescription = nil
         } catch {
             guard self.accountID == accountID else { return }
@@ -2184,7 +2203,7 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
     /// for a model this build has never heard of — an unknown model goes down the
     /// chat path, which is what every previous build did for every model.
     private func mediaModality(of modelID: String) -> NativeMediaProgress.Modality? {
-        guard let model = modelCatalog.first(where: { $0.id == modelID }) else { return nil }
+        guard let model = generationModels.first(where: { $0.id == modelID }) else { return nil }
         return NativeMediaProgress.Modality(rawValue: model.modality)
     }
 
@@ -3775,11 +3794,13 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         effort: NativeReasoningEffort?
     ) -> Bool {
         guard !modelID.isEmpty, modelID.utf8.count <= 200 else { return false }
-        guard let model = modelCatalog.first(where: { $0.id == modelID }) else {
+        guard let model = model(withID: modelID) else {
             // An unknown id is only tolerated when the catalog never loaded —
             // otherwise the server has told us this model does not exist.
             return modelCatalog.isEmpty
         }
+        // A picture or video model takes no thinking effort.
+        if model.isMediaGeneration { return model.isAvailable && effort == nil }
         // The catalog now carries plan-gated and coming-soon models so they can
         // be explained in the picker; they are still never sendable.
         guard model.isAvailable else { return false }

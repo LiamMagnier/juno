@@ -126,6 +126,13 @@ public actor PreviewSender: NativeChatRequestSending {
     ) async throws -> HTTPByteStreamResponse {
         streamRequestCount += 1
         if fails { throw URLError(.notConnectedToInternet) }
+        if let generated = PreviewChatStream.generateBytes(for: request) {
+            return HTTPByteStreamResponse(
+                statusCode: 200,
+                headers: try HTTPHeaders(["content-type": "text/event-stream"]),
+                bytes: generated
+            )
+        }
         if let paced = PreviewChatStream.bytes(for: request) {
             return HTTPByteStreamResponse(
                 statusCode: 200,
@@ -438,9 +445,10 @@ public enum PreviewModelCatalog {
             context: 400_000, cost: "standard", speed: 6, intelligence: 9,
             efforts: ["minimal", "low", "medium", "high", "xhigh", "max"],
             canDisable: true, reasoning: true,
-            // The only line with both, so the preview shows the two toggles
-            // side by side — the layout most likely to clip.
-            proMode: true, fastRateMultiplier: 2
+            // The only line with all three speed and depth modes, so the
+            // preview shows Fast, Ultra fast and Pro side by side — the
+            // layout most likely to clip.
+            proMode: true, fastRateMultiplier: 2, ultraFastRateMultiplier: 6
         )),
         \(model(
             id: "openai:gpt-5-4-pro", provider: "openai", providerName: "OpenAI · GPT",
@@ -495,6 +503,34 @@ public enum PreviewModelCatalog {
             description: "An open-weight reasoner.",
             context: 128_000, cost: "economy", speed: 6, intelligence: 8,
             efforts: ["low", "medium", "high"], canDisable: true, reasoning: true
+        )),
+        \(model(
+            id: "openai:gpt-image-2.5-flare", provider: "openai", providerName: "OpenAI · GPT",
+            name: "GPT Image 2.5 Flare",
+            description: "The everyday default: GPT Image 2 quality at half the latency.",
+            context: nil, cost: nil, efforts: [], canDisable: true, reasoning: false,
+            modality: "image"
+        )),
+        \(model(
+            id: "google:gemini-nano-banana-2.1", provider: "google", providerName: "Google · Gemini",
+            name: "Nano Banana 2.1",
+            description: "Sharper text and layouts, 1K to 4K, up to 14 references.",
+            context: nil, cost: nil, efforts: [], canDisable: true, reasoning: false,
+            modality: "image"
+        )),
+        \(model(
+            id: "xai:grok-imagine-image-2.0", provider: "xai", providerName: "xAI · Grok",
+            name: "Grok Imagine 2.0",
+            description: "xAI's latest image generation and editing model.",
+            context: nil, cost: nil, efforts: [], canDisable: true, reasoning: false,
+            modality: "image"
+        )),
+        \(model(
+            id: "google:gemini-omni-1.1-flash", provider: "google", providerName: "Google · Gemini",
+            name: "Gemini Omni Flash",
+            description: "Short clips with sound, from a prompt or a still.",
+            context: nil, cost: nil, efforts: [], canDisable: true, reasoning: false,
+            modality: "video"
         ))
       ]
     }
@@ -523,7 +559,8 @@ public enum PreviewModelCatalog {
         legacy: Bool = false,
         released: String? = nil,
         proMode: Bool = false,
-        fastRateMultiplier: Double? = nil
+        fastRateMultiplier: Double? = nil,
+        ultraFastRateMultiplier: Double? = nil
     ) -> String {
         let highlightsJSON = highlights.isEmpty
             ? "null"
@@ -561,9 +598,10 @@ public enum PreviewModelCatalog {
           },
           "capabilities": {
             "tools": true, "vision": true, "webSearch": true,
-            "attachments": true, "streaming": true
+            "attachments": true, "streaming": \(modality == "chat")
           },
           "fastMode": \(fastRateMultiplier.map { "{\"rateMultiplier\": \($0)}" } ?? "null"),
+          "ultraFastMode": \(ultraFastRateMultiplier.map { "{\"rateMultiplier\": \($0)}" } ?? "null"),
           "deprecationNote": null
         }
         """

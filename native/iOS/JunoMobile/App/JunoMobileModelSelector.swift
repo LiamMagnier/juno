@@ -48,12 +48,6 @@ struct JunoMobileModelSelectorView: View {
     selectedModelID: String,
     onSelect: @escaping (NativeChatModelOption) -> Void
   ) {
-    var models = models
-    #if DEBUG
-    if JunoComposerPreviewFlags.isSet("--juno-preview-model-media") {
-      models += JunoMobileModelSelectorFixtures.media
-    }
-    #endif
     self.models = models
     self.selectedModelID = selectedModelID
     self.onSelect = onSelect
@@ -147,26 +141,45 @@ struct JunoMobileModelSelectorView: View {
       }
     }
 
-    JunoMobileModelSection(title: "Labs") {
-      LazyVGrid(
-        columns: Array(
-          repeating: GridItem(.flexible(), spacing: JunoSpace.snug, alignment: .top),
-          count: JunoMobileModelSelectorMetrics.labColumns
-        ),
-        spacing: JunoSpace.snug
-      ) {
-        ForEach(labs) { lab in
-          NavigationLink(value: lab.id) {
-            JunoMobileLabTile(
-              lab: lab,
-              inUse: selectedLabID == lab.id ? selected?.displayName : nil
-            )
+    if modality == nil || modality == .chat {
+      JunoMobileModelSection(title: "Labs") {
+        LazyVGrid(
+          columns: Array(
+            repeating: GridItem(.flexible(), spacing: JunoSpace.snug, alignment: .top),
+            count: JunoMobileModelSelectorMetrics.labColumns
+          ),
+          spacing: JunoSpace.snug
+        ) {
+          ForEach(labs) { lab in
+            NavigationLink(value: lab.id) {
+              JunoMobileLabTile(
+                lab: lab,
+                inUse: selectedLabID == lab.id ? selected?.displayName : nil
+              )
+            }
+            .buttonStyle(.junoQuietPress)
+            .accessibilityIdentifier("juno.mobile.model-lab.\(lab.id)")
           }
-          .buttonStyle(.junoQuietPress)
-          .accessibilityIdentifier("juno.mobile.model-lab.\(lab.id)")
+        }
+        .accessibilityIdentifier("juno.mobile.model-labs")
+      }
+    }
+
+    // Pictures and video in sections of their own, across every lab, each
+    // row with its lab's mark (owner, Oct 10). Picking one sends the turn
+    // through /api/generate, as the web's composer does.
+    ForEach(JunoModelSelectorCatalog.mediaGroups(visible)) { group in
+      JunoMobileModelSection(title: group.label) {
+        JunoMobileModelCard {
+          JunoMobileModelRows(
+            rows: group.current + group.legacy,
+            selectedModelID: selectedModelID,
+            showsMark: true,
+            choose: choose
+          )
         }
       }
-      .accessibilityIdentifier("juno.mobile.model-labs")
+      .accessibilityIdentifier("juno.mobile.model-section.\(group.id)")
     }
   }
 
@@ -224,7 +237,7 @@ struct JunoMobileModelSelectorView: View {
   private var selected: JunoModelDescriptor? { descriptors.first { $0.id == selectedModelID } }
 
   private var selectedLabID: String? {
-    guard let selected, !JunoModelSelectorCatalog.isAuto(selected) else { return nil }
+    guard let selected, !JunoModelSelectorCatalog.isAuto(selected), selected.modality == .chat else { return nil }
     return selected.providerID
   }
 
@@ -238,11 +251,14 @@ struct JunoMobileModelSelectorView: View {
     return [JunoModelModality.chat, .image, .video, .audio].filter(kinds.contains)
   }
 
+  /// The labs grid: the labs' text models; pictures and video have their
+  /// own sections below it.
   private var labs: [JunoModelSelectorCatalog.Lab] {
-    JunoModelSelectorCatalog.labs(in: visible)
+    JunoModelSelectorCatalog.labs(in: visible.filter { $0.modality == .chat })
   }
 
   private func lab(_ id: String) -> JunoModelSelectorCatalog.Lab? {
+    // Every kind the lab ships counts on its own page.
     JunoModelSelectorCatalog.labs(in: descriptors).first { $0.id == id }
   }
 
@@ -756,37 +772,3 @@ struct JunoMobileModalityBar: View {
     .accessibilityIdentifier("juno.mobile.model-modality.\(value?.rawValue ?? "all")")
   }
 }
-
-#if DEBUG
-/// Image and video entries for the preview harness only
-/// (`--juno-preview-model-media`). The account catalogue the app loads keeps
-/// chat models alone (`NativeConversationStore.reloadModelCatalog` filters on
-/// `isChatCapable`), so these show what the kind filter does once the
-/// catalogue carries generation models.
-enum JunoMobileModelSelectorFixtures {
-  static let media: [NativeChatModelOption] = [
-    entry("openai:gpt-image-2", "openai", "OpenAI · GPT", "GPT Image 2", "image", "Images from a description, with text that reads."),
-    entry("google:imagen-5", "google", "Google · Gemini", "Imagen 5", "image", "Photoreal images and fine detail."),
-    entry("google:veo-3.1", "google", "Google · Gemini", "Veo 3.1", "video", "Short clips with sound, from a prompt or a still."),
-    entry("xai:grok-imagine-video", "xai", "xAI · Grok", "Grok Imagine Video", "video", "Six-second clips, fast."),
-  ]
-
-  private static func entry(
-    _ id: String, _ provider: String, _ providerName: String, _ name: String, _ modality: String, _ summary: String
-  ) -> NativeChatModelOption {
-    NativeChatModelOption(
-      id: id,
-      providerID: provider,
-      providerName: providerName,
-      displayName: name,
-      summary: summary,
-      minimumPlan: "free",
-      availability: "available",
-      modality: modality,
-      supportedReasoningEfforts: [],
-      canDisableReasoning: false,
-      supportsStreaming: false
-    )
-  }
-}
-#endif

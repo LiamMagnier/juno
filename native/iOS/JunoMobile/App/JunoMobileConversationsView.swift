@@ -474,9 +474,9 @@ private struct JunoMobileDraftChat: View {
       current: userPickedModel ? selectedModelID : "",
       conversationModel: "",
       accountDefault: accountDefaultModelID,
-      selectable: model.selectableModels
+      selectable: model.composerSelectableModels
     )
-    guard let selected = model.modelCatalog.first(where: { $0.id == selectedModelID }) else {
+    guard let selected = model.model(withID: selectedModelID) else {
       reasoningEffort = nil
       return
     }
@@ -899,7 +899,7 @@ private struct JunoMobileConversationDetail: View {
   }
 
   private var selectedModel: NativeChatModelOption? {
-    model.modelCatalog.first { $0.id == selectedModelID }
+    model.model(withID: selectedModelID)
   }
 
   /// Whether the greeting is standing in for the transcript. It owns the bloom
@@ -1622,7 +1622,7 @@ private struct JunoMobileConversationDetail: View {
       current: userPickedModel ? selectedModelID : "",
       conversationModel: conversation.model,
       accountDefault: accountDefaultModelID,
-      selectable: model.selectableModels
+      selectable: model.composerSelectableModels
     )
     guard let selectedModel else {
       reasoningEffort = nil
