@@ -116,7 +116,11 @@ extension View {
   /// The surface's one primary action, accent-tinted glass (Upload, New chat,
   /// New project).
   func junoMobileCapsulePrimary() -> some View {
-    buttonStyle(.glassProminent)
+    // The label takes the accent's own pairing: the accent is ink in light
+    // and paper in dark, and the style's default white label vanishes on the
+    // latter.
+    foregroundStyle(Color.junoOnAccent)
+      .buttonStyle(.glassProminent)
       .buttonBorderShape(.capsule)
       .tint(Color.junoAccent)
       .controlSize(.large)
