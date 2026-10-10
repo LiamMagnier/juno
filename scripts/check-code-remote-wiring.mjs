@@ -101,7 +101,7 @@ const required = [
   // The live start path, end to end: one entry point that chooses a target,
   // both client calls it can choose between, and the two app surfaces that
   // reach it. A run a person can actually start needs all four.
-  [nativeCodeModel, "public func startTask(prompt: String)"],
+  [nativeCodeModel, "public func startTask(prompt: String, permissionMode: String? = nil)"],
   [nativeCodeModel, "createCloudTask("],
   [nativeCodeModel, "createDeviceTask("],
   [mobileCode, "model.startTask(prompt:"],
