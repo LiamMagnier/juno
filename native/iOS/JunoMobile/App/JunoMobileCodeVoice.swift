@@ -155,6 +155,12 @@ struct JunoMobileCodeComposer<Accessories: View>: View {
     var startVoice: (() -> Void)?
     /// Opens with this dictation showing: the offscreen snapshots only.
     var previewDictation: JunoMobileDictationSession?
+    /// Starts dictating as it appears (the home's microphone opened it).
+    var dictateOnAppear = false
+    /// Controls on the row's right, before the microphone (the effort gauge).
+    var trailing: AnyView? = nil
+    /// Over the field: the next message's attachments.
+    var header: AnyView? = nil
     @ViewBuilder var accessories: () -> Accessories
 
     @State private var dictation: JunoMobileDictationSession?
@@ -165,6 +171,7 @@ struct JunoMobileCodeComposer<Accessories: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            if let header { header }
             field
             row
                 .padding(.horizontal, JunoSpace.tight)
@@ -187,7 +194,13 @@ struct JunoMobileCodeComposer<Accessories: View>: View {
             }
         }
         .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: dictation == nil)
-        .onAppear { if let previewDictation { dictation = previewDictation } }
+        .onAppear {
+            if let previewDictation {
+                dictation = previewDictation
+            } else if dictateOnAppear, dictation == nil, JunoSpeechService.isSupported {
+                beginDictation()
+            }
+        }
         .onDisappear { dictation?.cancel() }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(voice == nil ? Text("Message composer") : Text("Voice call"))
@@ -261,6 +274,7 @@ struct JunoMobileCodeComposer<Accessories: View>: View {
             } else {
                 accessories()
                 Spacer(minLength: JunoSpace.hairline)
+                if let trailing { trailing }
                 if JunoSpeechService.isSupported {
                     Button(action: beginDictation) {
                         JunoIconView(.mic, size: 20)

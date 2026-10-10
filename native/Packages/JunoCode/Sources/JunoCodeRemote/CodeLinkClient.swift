@@ -367,6 +367,15 @@ public extension CodeLinkClient {
         return try await request(.hostCapture, params: P(target: target), as: CodeV2.HostCapture.self, to: deviceID)
     }
 
+    /// Hands the Mac a file attached on this device; its answer's `ref` is the path the agent reads.
+    func hostUpload(_ deviceID: String, name: String, mediaType: String, data: Data) async throws -> CodeV2.HostUpload {
+        struct P: Encodable { let name: String; let mediaType: String; let data: String }
+        return try await request(
+            .hostUpload, params: P(name: name, mediaType: mediaType, data: data.base64EncodedString()),
+            as: CodeV2.HostUpload.self, to: deviceID
+        )
+    }
+
     func gitStatus(_ deviceID: String, sessionId: String) async throws -> CodeV2.GitStatusResult {
         struct P: Encodable { let sessionId: String }
         return try await request(.gitStatus, params: P(sessionId: sessionId), as: CodeV2.GitStatusResult.self, to: deviceID)

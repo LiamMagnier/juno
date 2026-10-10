@@ -24,13 +24,10 @@ final class JunoMobileLinkSnapshotTests: XCTestCase {
     let model = Self.model()
     try await shoot("link-sessions") {
       NavigationStack {
-        VStack(spacing: 0) {
-          JunoMobileCodeHostsStrip(hosts: [], linkMacs: model.macs, selection: .constant(.host("mac1")), onPair: {})
-          JunoMobileLinkSessionsView(model: model, mac: model.macs[0], newSession: {})
-        }
-        .junoScreenCanvas()
-        .navigationTitle("Code")
-        .navigationBarTitleDisplayMode(.inline)
+        JunoMobileLinkSessionsView(model: model, mac: model.macs[0], newSession: {})
+          .junoScreenCanvas()
+          .navigationTitle("Code")
+          .navigationBarTitleDisplayMode(.inline)
       }
     }
   }
@@ -71,11 +68,103 @@ final class JunoMobileLinkSnapshotTests: XCTestCase {
     }
   }
 
-  func testNewSessionFolders() async throws {
+  // MARK: New session, Codex's way: the empty thread itself
+
+  func testNewSessionEmptyWithKeyboard() async throws {
     let model = Self.model()
     model.beginNewSession()
-    try await shoot("link-new-session") {
-      JunoMobileLinkNewSessionSheet(model: model) { _ in }
+    model.composer.selection = Self.sonnet
+    try await shoot("new-session-empty", settle: 1.6, keyboard: true) {
+      NavigationStack { JunoMobileLinkThreadView(model: model) }
+    }
+  }
+
+  func testNewSessionWithAttachments() async throws {
+    let model = Self.model()
+    model.beginNewSession()
+    model.composer.selection = Self.sonnet
+    let image = UIGraphicsImageRenderer(size: CGSize(width: 120, height: 120)).image { context in
+      UIColor(red: 0.85, green: 0.45, blue: 0.35, alpha: 1).setFill()
+      context.fill(CGRect(x: 0, y: 0, width: 120, height: 120))
+    }
+    model.attach([
+      CodeLinkDraftAttachment(name: "checkout.png", mediaType: "image/png", data: image.pngData() ?? Data()),
+      CodeLinkDraftAttachment(name: "spec.pdf", mediaType: "application/pdf", data: Data([1, 2, 3])),
+    ])
+    model.setPreviewDraft("Match the checkout to this")
+    try await shoot("new-session-attached") {
+      NavigationStack { JunoMobileLinkThreadView(model: model) }
+    }
+  }
+
+  func testNewSessionComputerPicker() async throws {
+    let model = Self.model(macs: 2)
+    model.beginNewSession()
+    model.composer.selection = Self.sonnet
+    try await shoot("new-session-computer") {
+      NavigationStack { JunoMobileLinkThreadView(model: model, previewPanel: .computer) }
+    }
+  }
+
+  func testNewSessionProjectPicker() async throws {
+    let model = Self.model()
+    model.beginNewSession()
+    model.composer.selection = Self.sonnet
+    try await shoot("new-session-project") {
+      NavigationStack { JunoMobileLinkThreadView(model: model, previewPanel: .project) }
+    }
+  }
+
+  func testNewSessionModeMenu() async throws {
+    let model = Self.model()
+    model.beginNewSession()
+    model.composer.selection = Self.sonnet
+    try await shoot("new-session-mode") {
+      NavigationStack { JunoMobileLinkThreadView(model: model, previewPanel: .mode) }
+    }
+  }
+
+  func testNewSessionEffort() async throws {
+    let model = Self.model()
+    model.beginNewSession()
+    model.composer.selection = Self.sonnet
+    try await shoot("new-session-effort") {
+      NavigationStack { JunoMobileLinkThreadView(model: model, previewPanel: .effort) }
+    }
+  }
+
+  func testNewSessionFirstMessageSent() async throws {
+    let model = Self.model()
+    model.beginNewSession()
+    model.composer.selection = Self.sonnet
+    model.setPreviewStarting("Add a dark mode toggle to the settings page")
+    try await shoot("new-session-sent") {
+      NavigationStack { JunoMobileLinkThreadView(model: model) }
+    }
+  }
+
+  func testNewSessionBecameTheThread() async throws {
+    let t = CodeV2Dates.string(Date())
+    let snapshot = CodeV2.SessionSnapshot(
+      id: "s9", cwd: "/Users/liam/code/shop", title: "Add a dark mode toggle to the settings page", selection: Self.sonnet,
+      runtimeMode: .ask, state: .running, activeTurnId: "t1", items: [
+        .userMessage(CodeV2.UserMessage(id: "u1", turnId: "t1", createdAt: t, text: "Add a dark mode toggle to the settings page")),
+        .reasoning(CodeV2.Reasoning(id: "r1", turnId: "t1", createdAt: t, text: "Looking at how settings are laid out.", streaming: false)),
+        .search(CodeV2.Search(id: "f1", turnId: "t1", createdAt: t, callId: "c0", query: "SettingsPage", scope: .content, matches: 3, status: .completed)),
+      ]
+    )
+    let model = Self.model(snapshot: snapshot)
+    try await shoot("new-session-live") {
+      NavigationStack { JunoMobileLinkThreadView(model: model) }
+    }
+  }
+
+  func testNewSessionNothingPaired() async throws {
+    let model = CodeLinkRemoteModel.preview(macs: [])
+    model.beginNewSession()
+    model.composer.selection = Self.sonnet
+    try await shoot("new-session-not-paired") {
+      NavigationStack { JunoMobileLinkThreadView(model: model) }
     }
   }
 
@@ -96,7 +185,8 @@ final class JunoMobileLinkSnapshotTests: XCTestCase {
   static let sonnet = CodeV2.ModelSelection(instanceId: "claude-agent:default", model: "claude-opus-5-5", effort: .high)
 
   static func model(
-    open: Bool = false, approval: Bool = true, terminal: Bool = false, linkError: CodeLinkError? = nil
+    open: Bool = false, approval: Bool = true, terminal: Bool = false, linkError: CodeLinkError? = nil,
+    macs count: Int = 1, snapshot custom: CodeV2.SessionSnapshot? = nil
   ) -> CodeLinkRemoteModel {
     let pair = RemotePair(
       id: "p1", kind: .phone, name: "iPhone", platform: "ios", deviceId: "mac1", deviceName: "Studio",
@@ -189,28 +279,53 @@ final class JunoMobileLinkSnapshotTests: XCTestCase {
       files: [CodeV2.GitFileStatus(path: "src/cart/total.ts", status: " M"), CodeV2.GitFileStatus(path: "src/cart/total.test.ts", status: " M")],
       isRepo: true, canOpenPr: true
     )
+    var macs = [mac]
+    if count > 1 {
+      macs.append(CodeLinkMac(
+        pair: RemotePair(id: "p2", kind: .phone, name: "iPhone", platform: "ios", deviceId: "mac2", deviceName: "mac.home", createdAt: Date(), lastUsedAt: Date()),
+        info: CodeV2.HostInfo(name: "mac.home", sharedFolders: ["/Users/liam/Developer"], terminal: false, captures: []),
+        reachability: .offline("mac.home is asleep.")
+      ))
+    }
     return CodeLinkRemoteModel.preview(
-      macs: [mac], sessions: sessions, open: open ? snapshot : nil, providers: providers,
+      macs: macs, sessions: sessions, open: custom ?? (open ? snapshot : nil), providers: providers,
       diff: diff, terminal: terminal ? "$ npm test -- cart\r\n\r\n PASS  src/cart/total.test.ts\r\n  total\r\n    \u{2713} sums in cents (3 ms)\r\n    \u{2713} rounds to the cent (1 ms)\r\n\r\nTests: 2 passed, 2 total\r\n$ " : nil,
       git: git, linkError: linkError
     )
   }
 
-  private func shoot<V: View>(_ name: String, settle: Double = 0.9, @ViewBuilder _ make: () -> V) async throws {
+  func shoot<V: View>(_ name: String, settle: Double = 0.9, keyboard: Bool = false, @ViewBuilder _ make: () -> V) async throws {
+    try await Self.shoot(name, settle: settle, keyboard: keyboard, make)
+  }
+
+  /// Draws `make()` in a window of the hosted app, light then dark. With
+  /// `keyboard`, the window is made key so a field that focuses itself
+  /// raises the keyboard, and the keyboard's own windows are drawn on top.
+  static func shoot<V: View>(
+    _ name: String, settle: Double = 0.9, keyboard: Bool = false, size: CGSize = CGSize(width: 402, height: 874),
+    @ViewBuilder _ make: () -> V
+  ) async throws {
     guard let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first
     else { throw XCTSkip("No window scene in the host app") }
     for style in [UIUserInterfaceStyle.light, .dark] {
       let window = UIWindow(windowScene: scene)
-      window.frame = CGRect(origin: .zero, size: Self.size)
+      window.frame = CGRect(origin: .zero, size: size)
       window.overrideUserInterfaceStyle = style
       let host = UIHostingController(rootView: make().tint(Color.junoAccent))
       window.rootViewController = host
-      window.isHidden = false
+      if keyboard { window.makeKeyAndVisible() } else { window.isHidden = false }
       try await Task.sleep(for: .seconds(settle))
       let renderer = UIGraphicsImageRenderer(bounds: window.bounds)
       let image = renderer.image { _ in
         window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        if keyboard {
+          for other in scene.windows where other !== window && !other.isHidden
+            && String(describing: type(of: other)).contains("Keyboard") {
+            other.drawHierarchy(in: other.frame, afterScreenUpdates: false)
+          }
+        }
       }
+      window.endEditing(true)
       window.isHidden = true
       window.rootViewController = nil
       let data = try XCTUnwrap(image.pngData())

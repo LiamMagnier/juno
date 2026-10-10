@@ -481,6 +481,7 @@ function buildSchema() {
   params["git.pr"] = obj({ ...sid, title: nonEmpty }, { body: str, draft: bool, base: nonEmpty });
   params["host.info"] = obj({});
   params["host.capture"] = obj({ target: ref("RemoteCaptureTarget") });
+  params["host.upload"] = obj({ name: nonEmpty, mediaType: nonEmpty, data: nonEmpty });
   for (const t of C.CLIENT_COMMAND_TYPE_VALUES) if (!params[t]) throw new Error(`no params schema for ${t}`);
   definitions.ClientCommand = {
     oneOf: C.CLIENT_COMMAND_TYPE_VALUES.map((t) => obj({ id: nonEmpty, type: { const: t }, params: params[t] })),

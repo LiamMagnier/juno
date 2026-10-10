@@ -969,6 +969,9 @@ export const CLIENT_COMMAND_TYPE_VALUES = [
   "git.pr",
   "host.info",
   "host.capture",
+  // remote lane (additive): a file the phone attaches to a message, kept by the Mac app in its own
+  // uploads folder (never inside a shared folder) and referred to by its absolute path.
+  "host.upload",
 ] as const;
 export type ClientCommandType = (typeof CLIENT_COMMAND_TYPE_VALUES)[number];
 
@@ -1062,6 +1065,8 @@ export interface ClientCommandParams {
   "host.info": Record<string, never>;
   /** Answered by the Mac app: a PNG of its preview pane or of the booted Simulator. */
   "host.capture": { target: RemoteCaptureTarget };
+  /** Answered by the Mac app: keeps a file sent from a paired device (`data` is base64) for a message's attachments. */
+  "host.upload": { name: string; mediaType: string; data: string };
 }
 
 // remote lane (additive)
@@ -1244,6 +1249,8 @@ export interface ClientCommandResults {
   "host.info": HostInfo;
   /** `data` is base64 PNG. */
   "host.capture": { mime: "image/png"; data: string; width: number; height: number; at: string };
+  /** `ref` is the file's absolute path on the Mac: an `Attachment.ref` the env server resolves. */
+  "host.upload": { ref: string; name: string; mediaType: string; size: number };
 }
 
 export const WIRE_ERROR_CODE_VALUES = [

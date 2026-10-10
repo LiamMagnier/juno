@@ -500,6 +500,7 @@ export async function dispatchCommand(deps: ConnectionDeps, cmd: ClientCommand, 
       return gitPullRequest(remoteCwd(sessions, cmd.params), cmd.params);
     case "host.info":
     case "host.capture":
+    case "host.upload":
       throw new WireError("unsupported", "Alevr on your Mac answers that, not its local environment.");
     case "conversation.toggle":
       if (!deps.conversations) throw new WireError("unsupported", "Conversations cannot message each other here.");

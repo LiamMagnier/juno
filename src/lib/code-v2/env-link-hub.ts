@@ -80,6 +80,8 @@ export const LINK_RELAYED_COMMANDS: ReadonlySet<ClientCommandType> = new Set<Cli
   "git.pr",
   "host.info",
   "host.capture",
+  // A file attached to a message from the phone, kept by the Mac app.
+  "host.upload",
 ]);
 
 /**
