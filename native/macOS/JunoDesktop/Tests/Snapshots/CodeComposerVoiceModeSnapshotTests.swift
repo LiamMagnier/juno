@@ -94,8 +94,10 @@ struct CodeComposerVoiceModeSnapshotTests {
             .appendingPathComponent("code-voice", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         let size = shot == .modeMenu ? CGSize(width: 520, height: 420) : Self.size
-        let content = try await Self.view(shot)
         for dark in [false, true] {
+            // A fresh view per picture: the first picture's dictation take
+            // is finished when its window lets it go.
+            let content = try await Self.view(shot)
             let hosting = NSHostingView(
                 rootView: content
                     .frame(width: size.width, height: size.height)
