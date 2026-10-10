@@ -148,14 +148,15 @@ struct PreviewPaneView: View {
         Menu {
             let configurations = lease.catalog.configurations
             if !configurations.isEmpty {
-                Section("Configurations") {
+                Section(lease.catalog.isDiscovered ? "Found in this project" : "Configurations") {
                     ForEach(configurations) { configuration in
                         Button {
-                            lease.selectedName = configuration.name
+                            lease.startConfiguration(configuration.name)
                         } label: {
                             Text(configuration.name)
-                            Text(PreviewConfigurationDescription.commandText(configuration))
+                            Text(PreviewConfigurationDescription.menuDetail(configuration))
                         }
+                        .accessibilityIdentifier("juno.code.preview.server.\(configuration.name)")
                     }
                 }
             }
@@ -167,6 +168,11 @@ struct PreviewPaneView: View {
                     }
                 }
             }
+            if lease.catalog.hasXcodeProject, let openSimulator = lease.simulatorOpener {
+                Section("App") {
+                    Button("Open the Simulator") { openSimulator() }
+                }
+            }
             Divider()
             Button("Start") { lease.requestStart() }
                 .disabled(lease.selectedConfiguration == nil || lease.selectedSnapshot?.phase.isLive == true)
@@ -175,11 +181,11 @@ struct PreviewPaneView: View {
             Button("Stop") { lease.stop() }
                 .disabled(lease.selectedSnapshot?.phase.isLive != true)
             Divider()
-            if lease.catalog.hasJunoFile, let url = lease.launchFileURL {
-                Button("Edit .juno/launch.json") { NSWorkspace.shared.open(url) }
-            } else {
-                Button("Save as .juno/launch.json") { lease.saveDiscoveredConfiguration() }
-                    .disabled(lease.catalog.configurations.isEmpty)
+            if let selected = lease.selectedConfiguration, selected.source == .discovered {
+                Button("Save \(selected.name) to \(lease.catalog.editableFileRelativePath)") { lease.saveConfiguration(selected.name) }
+            }
+            if lease.hasEditableFile, let url = lease.launchFileURL {
+                Button("Edit \(lease.catalog.editableFileRelativePath)") { NSWorkspace.shared.open(url) }
             }
         } label: {
             StudioChipLabel(title: lease.selectedName ?? "No server")
@@ -202,8 +208,8 @@ struct PreviewPaneView: View {
         } else {
             Button("Start") { lease.requestStart() }
                 .buttonStyle(StudioQuietButtonStyle(tint: Studio.Ink.primary))
-                .disabled(lease.selectedConfiguration == nil)
-                .help(lease.selectedConfiguration.map { "Run \(PreviewConfigurationDescription.commandText($0))" } ?? "No configuration to start")
+                .disabled(lease.selectedConfiguration == nil && lease.catalog.defaultConfiguration == nil)
+                .help(lease.selectedConfiguration.map { "Run \(PreviewConfigurationDescription.commandText($0))" } ?? "No server to start")
                 .accessibilityIdentifier("juno.code.preview.start")
         }
     }
@@ -340,6 +346,8 @@ struct PreviewPaneView: View {
             )
         } else if let notice = lease.notice {
             PreviewBannerRow(text: notice, tint: Studio.Ink.danger, actions: [])
+        } else if let message = lease.message {
+            PreviewBannerRow(text: message, actions: [])
         }
     }
 
@@ -473,7 +481,9 @@ struct PreviewEmptyState: View {
 
     @ViewBuilder
     private var idle: some View {
-        if let configuration = lease.selectedConfiguration {
+        if lease.catalog.isDiscovered, lease.catalog.configurations.count > 1 || lease.fileProblem != nil {
+            PreviewDiscoveredList(lease: lease)
+        } else if let configuration = lease.selectedConfiguration {
             Text("Start \(configuration.name)")
                 .font(Studio.Font.labelEmphasis)
             Text("Runs \(PreviewConfigurationDescription.commandText(configuration)) in \(configuration.workingDirectoryDisplay == "." ? "the project" : configuration.workingDirectoryDisplay) and opens the page it serves. The server belongs to this session and keeps running when you look at another one.")
@@ -483,7 +493,7 @@ struct PreviewEmptyState: View {
             HStack {
                 Button("Start") { lease.requestStart() }.buttonStyle(StudioQuietButtonStyle(tint: Studio.Ink.primary))
                 if configuration.source == .discovered {
-                    Button("Save as .juno/launch.json") { lease.saveDiscoveredConfiguration() }
+                    Button("Save to \(lease.catalog.editableFileRelativePath)") { lease.saveConfiguration(configuration.name) }
                         .buttonStyle(StudioQuietButtonStyle())
                 }
             }
@@ -494,14 +504,79 @@ struct PreviewEmptyState: View {
                     .multilineTextAlignment(.center)
             }
         } else {
-            Text("No launch configuration")
+            Text(lease.catalog.hasXcodeProject ? "This project is an app" : "No server found")
                 .font(Studio.Font.labelEmphasis)
-            Text(lease.catalog.issues.first?.message
-                ?? "Add .juno/launch.json to say how this project's server starts. For the iOS Simulator, use the Simulator pane.")
+            Text(lease.fileProblem
+                ?? (lease.catalog.hasXcodeProject
+                    ? "Run it in the Simulator. For a website, add .juno/launch.json to say how its server starts."
+                    : "Alevr looked for a dev server, a static site and common frameworks and found none. Add .juno/launch.json to say how this project's server starts."))
                 .font(Studio.Font.meta)
-                .foregroundStyle(Studio.Ink.secondary)
+                .foregroundStyle(lease.fileProblem == nil ? Studio.Ink.secondary : Studio.Ink.danger)
                 .multilineTextAlignment(.center)
+                .textSelection(.enabled)
+                .accessibilityIdentifier("juno.code.preview.file-problem")
+            HStack {
+                if lease.catalog.hasXcodeProject, let openSimulator = lease.simulatorOpener {
+                    Button("Open the Simulator") { openSimulator() }
+                        .buttonStyle(StudioQuietButtonStyle(tint: Studio.Ink.primary))
+                }
+                if lease.hasEditableFile, let url = lease.launchFileURL {
+                    Button("Edit \(lease.catalog.editableFileRelativePath)") { NSWorkspace.shared.open(url) }
+                        .buttonStyle(StudioQuietButtonStyle())
+                }
+            }
         }
+    }
+}
+
+/// What discovery found, one row each with a one-click Start, when the
+/// project's file names none (or did not read).
+struct PreviewDiscoveredList: View {
+    @Bindable var lease: PreviewLeaseModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.snug) {
+            Text("Servers found in this project")
+                .font(Studio.Font.labelEmphasis)
+            if let problem = lease.fileProblem {
+                Text(problem)
+                    .font(Studio.Font.meta)
+                    .foregroundStyle(Studio.Ink.danger)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("juno.code.preview.file-problem")
+            }
+            VStack(spacing: 0) {
+                ForEach(Array(lease.catalog.configurations.enumerated()), id: \.element.id) { index, configuration in
+                    if index > 0 { Divider().overlay(Studio.Surface.hairline) }
+                    HStack(alignment: .center, spacing: JunoSpace.snug) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(configuration.name)
+                                .font(Studio.Font.label)
+                                .foregroundStyle(Studio.Ink.primary)
+                            Text(PreviewConfigurationDescription.menuDetail(configuration))
+                                .font(Studio.Font.monoSmall)
+                                .foregroundStyle(Studio.Ink.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        Button("Start") { lease.startConfiguration(configuration.name) }
+                            .buttonStyle(StudioQuietButtonStyle(tint: Studio.Ink.primary))
+                            .accessibilityIdentifier("juno.code.preview.start.\(configuration.name)")
+                    }
+                    .padding(.horizontal, JunoSpace.cozy)
+                    .padding(.vertical, JunoSpace.snug)
+                }
+            }
+            .background(Studio.Surface.raised, in: RoundedRectangle(cornerRadius: Studio.Radius.card, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Studio.Radius.card, style: .continuous).strokeBorder(Studio.Surface.hairline))
+            Text("Starting one asks first, then opens its page here. Save it to \(lease.catalog.editableFileRelativePath) from the server menu to keep it.")
+                .font(Studio.Font.caption)
+                .foregroundStyle(Studio.Ink.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

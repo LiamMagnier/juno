@@ -48,21 +48,43 @@ public enum LaunchConfigurationDiscovery {
             let manager = package == root ? (lockfileManager(in: package) ?? "npm") : (rootManager ?? lockfileManager(in: package) ?? "npm")
             let relative = relativePath(of: package, under: root)
             let servers = scripts
-                .filter { DevServerCommandDiscovery.looksLikeServer(name: $0.key, script: $0.value) }
+                .filter { DevServerCommandDiscovery.looksLikeServer(name: $0.key, script: $0.value) && !isOneShot(name: $0.key, script: $0.value) }
                 .sorted { DevServerCommandDiscovery.rank(of: $0.key) < DevServerCommandDiscovery.rank(of: $1.key)
                     || (DevServerCommandDiscovery.rank(of: $0.key) == DevServerCommandDiscovery.rank(of: $1.key) && $0.key < $1.key) }
-            for (script, _) in servers {
+            for (script, body) in servers {
                 let name = relative == "." ? script : "\(relative) \(script)"
+                let hint = NodeServerHint.read(script: body, package: package)
+                var arguments = manager == "yarn" ? [script] : ["run", script]
+                if hint.appendsPortFlag {
+                    // npm needs `--` to pass flags to the script; pnpm, yarn
+                    // and bun pass them as they are (pnpm would hand a `--`
+                    // on to the script, where it ends the options).
+                    arguments += (manager == "npm" ? ["--"] : []) + ["--port", "${port}"]
+                }
                 result.append(PreviewLaunchConfiguration(
                     name: name,
                     runtimeExecutable: manager,
-                    runtimeArgs: manager == "yarn" ? [script] : ["run", script],
+                    runtimeArgs: arguments,
                     cwd: relative == "." ? nil : relative,
-                    autoPort: true
+                    port: hint.port,
+                    // A port the script or config pins is the server's own:
+                    // when it is taken, the pane asks rather than guessing.
+                    autoPort: hint.isPinned ? nil : true
                 ))
             }
         }
         return result
+    }
+
+    /// A build, test or lint script that mentions a server's binary
+    /// (`vite build`, `next lint`) but finishes rather than serves.
+    static func isOneShot(name: String, script: String) -> Bool {
+        let lowered = name.lowercased()
+        let prefixes = ["build", "test", "lint", "typecheck", "type-check", "format", "check", "clean", "deploy", "export"]
+        if prefixes.contains(where: { lowered == $0 || lowered.hasPrefix($0 + ":") }) { return true }
+        let body = script.lowercased()
+        return [" build", " lint", " export", " test"].contains { body.hasPrefix(String($0.dropFirst())) || body.contains($0) }
+            && !["dev", "serve", "start", "preview", "watch"].contains(where: { body.contains($0) })
     }
 
     static func scripts(in package: URL) -> [String: String]? {
@@ -140,7 +162,9 @@ public enum LaunchConfigurationDiscovery {
                 )]
             }
         }
-        if dependencies.contains("flask"), exists(root, "app.py") || exists(root, "wsgi.py") {
+        let importsFlask = (try? String(contentsOf: root.appendingPathComponent("app.py"), encoding: .utf8))
+            .map { $0.contains("from flask") || $0.contains("import flask") } ?? false
+        if dependencies.contains("flask") || importsFlask, exists(root, "app.py") || exists(root, "wsgi.py") {
             return [PreviewLaunchConfiguration(
                 name: "flask",
                 runtimeExecutable: runner.executable,
@@ -260,6 +284,27 @@ public enum LaunchConfigurationDiscovery {
         return nil
     }
 
+    // MARK: - Xcode
+
+    /// An Xcode project or workspace at the top or one level down: an app
+    /// for the Simulator, which the Preview offers to open instead.
+    public static func hasXcodeProject(root: URL) -> Bool {
+        let manager = FileManager.default
+        func hasProject(_ url: URL) -> Bool {
+            let names = (try? manager.contentsOfDirectory(atPath: url.path)) ?? []
+            return names.contains { $0.hasSuffix(".xcodeproj") || $0.hasSuffix(".xcworkspace") }
+        }
+        if hasProject(root) { return true }
+        let children = (try? manager.contentsOfDirectory(
+            at: root, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]
+        )) ?? []
+        return children.prefix(40).contains { child in
+            !ignoredDirectoryNames.contains(child.lastPathComponent)
+                && (try? child.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
+                && hasProject(child)
+        }
+    }
+
     // MARK: - Helpers
 
     static func exists(_ root: URL, _ relative: String) -> Bool {
@@ -271,5 +316,106 @@ public enum LaunchConfigurationDiscovery {
         guard path != root.path else { return "." }
         if path.hasPrefix(root.path + "/") { return String(path.dropFirst(root.path.count + 1)) }
         return folder.lastPathComponent
+    }
+}
+
+/// What a `package.json` script says about its server's port: a port the
+/// script or the framework's config pins, else the framework's default, and
+/// whether `--port ${port}` can be appended so Alevr chooses a free one.
+struct NodeServerHint: Equatable {
+    var port: Int?
+    /// The script or a config file names the port.
+    var isPinned: Bool
+    var appendsPortFlag: Bool
+
+    struct Framework {
+        let tokens: [String]
+        let defaultPort: Int
+        /// Takes `--port N`. False for servers that read `PORT` instead,
+        /// which Alevr sets.
+        let takesPortFlag: Bool
+        let configFiles: [String]
+    }
+
+    /// Most specific first: `vite preview` before `vite`.
+    static let frameworks: [Framework] = [
+        Framework(tokens: ["vite preview"], defaultPort: 4173, takesPortFlag: true, configFiles: []),
+        Framework(tokens: ["astro dev", "astro preview", "astro"], defaultPort: 4321, takesPortFlag: true,
+                  configFiles: ["astro.config.mjs", "astro.config.ts", "astro.config.js", "astro.config.mts"]),
+        Framework(tokens: ["vite", "svelte-kit dev", "remix vite:dev", "react-router dev"], defaultPort: 5173, takesPortFlag: true,
+                  configFiles: ["vite.config.ts", "vite.config.js", "vite.config.mjs", "vite.config.mts", "vite.config.cjs"]),
+        Framework(tokens: ["next dev", "next start", "next"], defaultPort: 3000, takesPortFlag: false, configFiles: []),
+        Framework(tokens: ["nuxi dev", "nuxt dev", "nuxt start", "nuxi preview"], defaultPort: 3000, takesPortFlag: false, configFiles: []),
+        Framework(tokens: ["react-scripts start"], defaultPort: 3000, takesPortFlag: false, configFiles: []),
+        Framework(tokens: ["remix dev", "remix-serve"], defaultPort: 3000, takesPortFlag: false, configFiles: []),
+        Framework(tokens: ["ng serve"], defaultPort: 4200, takesPortFlag: true, configFiles: []),
+        Framework(tokens: ["gatsby develop"], defaultPort: 8000, takesPortFlag: true, configFiles: []),
+        Framework(tokens: ["docusaurus start"], defaultPort: 3000, takesPortFlag: true, configFiles: []),
+        Framework(tokens: ["storybook dev", "start-storybook"], defaultPort: 6006, takesPortFlag: true, configFiles: []),
+        Framework(tokens: ["vue-cli-service serve"], defaultPort: 8080, takesPortFlag: true, configFiles: []),
+        Framework(tokens: ["webpack serve", "webpack-dev-server"], defaultPort: 8080, takesPortFlag: true, configFiles: []),
+        Framework(tokens: ["eleventy --serve", "@11ty/eleventy --serve"], defaultPort: 8080, takesPortFlag: true, configFiles: []),
+        Framework(tokens: ["parcel"], defaultPort: 1234, takesPortFlag: true, configFiles: []),
+    ]
+
+    static func read(script: String, package: URL) -> NodeServerHint {
+        let body = script.trimmingCharacters(in: .whitespaces)
+        if let port = explicitPort(in: body) {
+            return NodeServerHint(port: port, isPinned: true, appendsPortFlag: false)
+        }
+        guard let framework = framework(of: body) else {
+            return NodeServerHint(port: nil, isPinned: false, appendsPortFlag: false)
+        }
+        for file in framework.configFiles {
+            if let text = try? String(contentsOf: package.appendingPathComponent(file), encoding: .utf8),
+               let port = configuredPort(in: text)
+            {
+                return NodeServerHint(port: port, isPinned: true, appendsPortFlag: false)
+            }
+        }
+        return NodeServerHint(
+            port: framework.defaultPort,
+            isPinned: false,
+            appendsPortFlag: framework.takesPortFlag && isSingleCommand(body)
+        )
+    }
+
+    static func framework(of body: String) -> Framework? {
+        let lowered = " " + body.lowercased() + " "
+        return frameworks.first { framework in
+            framework.tokens.contains { token in
+                lowered.range(of: "(^|[\\s/])\(NSRegularExpression.escapedPattern(for: token))(\\s|$)", options: .regularExpression) != nil
+            }
+        }
+    }
+
+    /// `--port 4000`, `--port=4000`, `-p 4000`, or `PORT=4000 next dev`.
+    static func explicitPort(in body: String) -> Int? {
+        let patterns = [#"(?:^|\s)--port[= ](\d{2,5})\b"#, #"(?:^|\s)-p[= ]?(\d{2,5})\b"#, #"(?:^|\s)PORT=(\d{2,5})\b"#]
+        for pattern in patterns {
+            guard let expression = try? NSRegularExpression(pattern: pattern),
+                  let match = expression.firstMatch(in: body, range: NSRange(body.startIndex..., in: body)),
+                  let range = Range(match.range(at: 1), in: body),
+                  let port = Int(body[range]), (1...65_535).contains(port)
+            else { continue }
+            return port
+        }
+        return nil
+    }
+
+    /// `server: { port: 3001 }` in a Vite or Astro config.
+    static func configuredPort(in text: String) -> Int? {
+        guard let expression = try? NSRegularExpression(pattern: #"server\s*:\s*\{[^}]*?\bport\s*:\s*(\d{2,5})"#),
+              let match = expression.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+              let range = Range(match.range(at: 1), in: text)
+        else { return nil }
+        return Int(text[range])
+    }
+
+    /// One command, so a flag appended after it reaches the server.
+    static func isSingleCommand(_ body: String) -> Bool {
+        let lowered = body.lowercased()
+        if ["&&", "||", "|", ";", "&"].contains(where: { lowered.contains($0) }) { return false }
+        return !["concurrently", "run-p", "run-s", "npm-run-all", "turbo", "nx ", "lerna"].contains { lowered.contains($0) }
     }
 }

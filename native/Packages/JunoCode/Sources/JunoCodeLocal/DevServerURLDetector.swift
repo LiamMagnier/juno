@@ -37,6 +37,10 @@ public enum DevServerURLDetector {
         if let port = firstCapturedPort(in: line, pattern: spokenPort) {
             return URL(string: "http://localhost:\(port)")
         }
+        // Go and Rust servers: "listening on :8080", "serving on [::]:3000".
+        if let port = firstCapturedPort(in: line, pattern: spokenAddress) {
+            return URL(string: "http://localhost:\(port)")
+        }
         return nil
     }
 
@@ -91,6 +95,10 @@ public enum DevServerURLDetector {
 
     private static let spokenPort = expression(
         #"\b(?:listening|running|serving|started|starting|available|ready|bound)\b[^\n]{0,60}?\bport\s*[:=]?\s*(\d{2,5})\b"#
+    )
+
+    private static let spokenAddress = expression(
+        #"\b(?:listening|running|serving|started|server)\b[^\n]{0,30}?\b(?:on|at)\s+(?:\[::\]|\*|0\.0\.0\.0)?:(\d{2,5})\b"#
     )
 
     private static func expression(_ pattern: String) -> NSRegularExpression? {

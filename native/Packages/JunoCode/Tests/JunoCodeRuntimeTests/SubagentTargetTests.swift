@@ -56,6 +56,16 @@ final class SubagentTargetTests: XCTestCase {
         ToolContext(sessionID: session.id, toolCallID: id, emitOutput: { _, _ in })
     }
 
+    // MARK: - When to delegate
+
+    func testTheDescriptionSaysWhenDelegatingPaysOff() {
+        let description = tool(model: RequestRecorder()).description
+        XCTAssertTrue(description.contains("independent investigations in parallel"))
+        XCTAssertTrue(description.contains("a large codebase (explorer)"))
+        XCTAssertTrue(description.contains("(reviewer, verifier)"))
+        XCTAssertTrue(description.contains("Not for small edits or sequential steps"))
+    }
+
     // MARK: - Narrowing
 
     func testAnAgentNarrowsToolsModeAndModelAndCannotWidenThem() async throws {

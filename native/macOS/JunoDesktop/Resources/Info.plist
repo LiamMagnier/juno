@@ -69,6 +69,18 @@
     -->
     <key>NSAppleEventsUsageDescription</key>
     <string>Juno Code uses Apple Events to open and control apps you work with, such as a Simulator or an app it built. Your permission mode decides when it asks first.</string>
+    <!--
+      The Code Preview loads the project's own dev server over plain HTTP on
+      loopback (http://localhost:5173, http://127.0.0.1:8000). ATS already
+      exempts bare IP addresses and unqualified names, but this states the
+      intent so a WebKit or ATS change can never block the Preview. It does
+      not relax ATS for any internet host.
+    -->
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsLocalNetworking</key>
+        <true/>
+    </dict>
     <key>ITSAppUsesNonExemptEncryption</key>
     <false/>
     <key>ATSApplicationFontsPath</key>

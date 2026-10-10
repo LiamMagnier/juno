@@ -71,7 +71,10 @@ public struct ShellStartTool: CodeTool {
         Read its output with shell_output (new output since your last read, \
         or the last lines); send it input with shell_write. Give it a short \
         "name" to tell several apart. Do not add a trailing '&'. For a finite \
-        command whose result you need now, use run_command instead.
+        command whose result you need now, use run_command instead. For a \
+        web project's dev server prefer preview_server start; a server you \
+        start here opens in the Preview pane once its process listens on a \
+        loopback address it printed (or attach it with preview_server).
         """
     public var inputSchema: JSONValue {
         [

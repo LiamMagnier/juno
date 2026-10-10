@@ -346,6 +346,7 @@ struct StudioScopedToggle: View {
 
 struct StudioGeneralSettings: View {
     let workbench: WorkbenchModel?
+    @AppStorage(CodeAutoOpenSettings.defaultsKey) private var autoOpenPanes = true
     @Bindable private var defaults = CodeDefaults.shared
     @Bindable private var preferences = StudioPreferences.shared
 
@@ -400,6 +401,9 @@ struct StudioGeneralSettings: View {
             Toggle("Keep this Mac awake", isOn: $preferences.keepAwakeWhileRunning)
             Toggle("Resume interrupted runs when Alevr opens", isOn: $preferences.resumeInterruptedOnLaunch)
                 .help("Off: a run Alevr quit in the middle of waits for you to press Resume.")
+            Toggle("Open the Preview and Simulator when Alevr runs them", isOn: $autoOpenPanes)
+                .help("On: the Preview opens when Alevr starts a dev server or uses the Preview, and the Simulator opens when it builds or runs an app. Off: open them yourself.")
+                .accessibilityIdentifier("juno.code.settings.auto-open-panes")
         }
         Section("Composer") {
             Picker("Send with", selection: $preferences.commandReturnSends) {
