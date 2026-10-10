@@ -38,6 +38,7 @@ export const RESERVED_USERNAMES: ReadonlySet<string> = new Set([
   "orbit",
   "continuum",
   "support",
+  "pair",
   "help",
   "helpdesk",
   "api",

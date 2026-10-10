@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
 import {
   DESKTOP_APP_DOWNLOAD_PATH,
   decideMacAppOpen,
@@ -40,7 +39,6 @@ export type MacAppLauncher = {
 };
 
 export function useMacAppLauncher({ checkAccount = true }: { checkAccount?: boolean } = {}): MacAppLauncher {
-  const router = useRouter();
   const [env, setEnv] = React.useState<{ isMac: boolean; inShell: boolean } | null>(null);
   const [accountHasMac, setAccountHasMac] = React.useState(false);
   const [openedHereBefore, setOpenedHereBefore] = React.useState(false);
@@ -73,13 +71,13 @@ export function useMacAppLauncher({ checkAccount = true }: { checkAccount?: bool
         : "download";
       if (now === "hidden") return;
       if (now === "download") {
-        router.push(DESKTOP_APP_DOWNLOAD_PATH);
+        window.location.assign(DESKTOP_APP_DOWNLOAD_PATH);
         return;
       }
       cancel.current?.();
       cancel.current = probeDesktopApp({
         url: desktopAppURL(path),
-        fallback: () => router.push(DESKTOP_APP_DOWNLOAD_PATH),
+        fallback: () => window.location.assign(DESKTOP_APP_DOWNLOAD_PATH),
         onResult: (outcome) => {
           const { remember } = macAppProbeResult(outcome);
           writeOpenedHereBefore(remember);
@@ -87,7 +85,7 @@ export function useMacAppLauncher({ checkAccount = true }: { checkAccount?: bool
         },
       });
     },
-    [env, accountHasMac, openedHereBefore, router],
+    [env, accountHasMac, openedHereBefore],
   );
 
   return { visible: decision !== "hidden", installedLikely: decision === "try-app", open };
