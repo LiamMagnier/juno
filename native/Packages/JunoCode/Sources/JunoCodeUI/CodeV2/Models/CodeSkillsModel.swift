@@ -184,6 +184,8 @@ public final class CodeSkillsModel {
     ) {
         self.defaults = defaults
         self.choices = choices
+        // A list handed in (a fixture) is the list; nothing to read.
+        self.loaded = !choices.isEmpty
         bind(threadKey: threadKey)
         if let selectedIDs { self.selectedIDs = selectedIDs }
     }

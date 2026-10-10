@@ -378,4 +378,31 @@ public enum CodeV2Fixtures {
                                    summary: "Running pnpm test", isFinished: false),
         ]
     }
+
+    // MARK: Skills lane
+
+    /// The owner's kinds of skills: Claude Code's, a plugin's, Codex's, the
+    /// project's and two of the account's.
+    static let localSkills: [CodeV2.LocalSkillSummary] = [
+        .init(name: "design-taste-frontend", description: "Anti-slop frontend skill for landing pages, portfolios and redesigns. Reads the brief, infers the direction, ships interfaces that do not look templated.", source: .user, origin: .claude, path: "/Users/liam/.claude/skills/design-taste-frontend/SKILL.md"),
+        .init(name: "high-end-visual-design", description: "Designs like a high-end agency: the fonts, spacing, shadows and motion that make a site feel expensive.", source: .user, origin: .claude, path: "/Users/liam/.claude/skills/high-end-visual-design/SKILL.md"),
+        .init(name: "swiftui-design-skill", description: "SwiftUI visual design for iOS and macOS: direction, layout, type, colour and review.", source: .user, origin: .claude, path: "/Users/liam/.claude/skills/swiftui-design-skill/SKILL.md"),
+        .init(name: "impeccable", description: "Design, redesign, critique, audit and polish a frontend interface.", source: .plugin, origin: .claude, path: "/Users/liam/.claude/plugins/cache/impeccable/impeccable/4.3.1/skills/impeccable/SKILL.md", plugin: "impeccable"),
+        .init(name: "release-notes", description: "Draft release notes from merged pull requests since the last tag.", source: .user, origin: .codex, path: "/Users/liam/.codex/skills/release-notes/SKILL.md"),
+        .init(name: "storefront-conventions", description: "How this repo names components, writes tests and handles money.", source: .project, origin: .alevr, path: "/Users/liam/code/storefront/.alevr/skills/storefront-conventions/SKILL.md"),
+    ]
+
+    static let accountSkills: [CodeAccountSkill] = [
+        .init(id: "sk_tidy", slug: "tidy-commits", name: "Tidy commits", description: "Squash fixups and write one message per change before a pull request."),
+        .init(id: "sk_review", slug: "pr-review", name: "PR review", description: "Review a pull request the way the team does: risk first, then tests, then style.", sourceLabel: "anthropics/skills"),
+    ]
+
+    @MainActor
+    static func skills(selected: [String] = [], once: String? = nil) -> CodeSkillsModel {
+        let choices = CodeSkillsModel.ordered(accountSkills.map(CodeSkillChoice.init(account:)) + localSkills.map(CodeSkillChoice.init(local:)))
+        let ids = selected.compactMap { name in choices.first { $0.name == name }?.id }
+        let model = CodeSkillsModel(threadKey: nil, defaults: UserDefaults(suiteName: "code-skills-gallery") ?? .standard, choices: choices, selectedIDs: ids)
+        model.once = choices.first { $0.name == once }
+        return model
+    }
 }
