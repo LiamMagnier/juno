@@ -83,8 +83,6 @@ struct JunoMobileChatDetailScreen: View {
   var agentsModel: NativeAgentsModel?
   /// Opens an agent's page by id: the thread header's way back to it.
   var openAgent: ((String) -> Void)?
-  /// Opens Orbit (the agents) from the composer's "+" menu.
-  var openOrbit: (() -> Void)? = nil
 
   /// Fetches and caches the transcript's pictures for the life of the screen.
   @State private var imageLoader: NativeChatImageLoader?
@@ -154,8 +152,7 @@ struct JunoMobileChatDetailScreen: View {
           pendingPrompt: pendingPrompt,
           threadAgent: threadAgent,
           agentsModel: agentsModel,
-          openAgent: openAgent,
-          openOrbit: openOrbit
+          openAgent: openAgent
         )
       } else {
         JunoMobileDraftChat(
@@ -174,8 +171,7 @@ struct JunoMobileChatDetailScreen: View {
           tools: tools,
           sendSwell: sendSwell,
           pendingPrompt: pendingPrompt,
-          startDictation: startDictation,
-          openOrbit: openOrbit
+          startDictation: startDictation
         )
       }
     }
@@ -257,7 +253,6 @@ private struct JunoMobileDraftChat: View {
   /// A Dictate shortcut always begins from a blank draft, where the resulting
   /// transcript is unambiguously the message being composed.
   var startDictation: Binding<Bool> = .constant(false)
-  var openOrbit: (() -> Void)? = nil
 
   @State private var prompt = ""
   @State private var selectedModelID = ""
@@ -470,8 +465,7 @@ private struct JunoMobileDraftChat: View {
       // The greeting holds the bloom whenever it is on screen, so
       // the composer must not draw a second one.
       greetingVisible: voiceMessages.isEmpty,
-      startDictation: startDictation,
-      openOrbit: openOrbit
+      startDictation: startDictation
     )
   }
 
@@ -533,7 +527,6 @@ private struct JunoMobileConversationDetail: View {
   /// profile, its computer and its menu in place.
   var agentsModel: NativeAgentsModel? = nil
   var openAgent: ((String) -> Void)? = nil
-  var openOrbit: (() -> Void)? = nil
   /// The artifact the reader tapped in the transcript, presented over it.
   @State private var openArtifact: NativeArtifact?
   /// A message's text on its way to the system share sheet.
@@ -1468,8 +1461,7 @@ private struct JunoMobileConversationDetail: View {
           openVoiceMode: openVoiceMode,
           composerFocused: $composerFocused,
           sendSwell: sendSwell,
-          greetingVisible: greetingVisible,
-          openOrbit: openOrbit
+          greetingVisible: greetingVisible
         )
       }
       // After the inset, never before it — see the note in the draft screen.
