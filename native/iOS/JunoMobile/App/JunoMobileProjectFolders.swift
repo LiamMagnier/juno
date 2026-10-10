@@ -9,14 +9,15 @@ import SwiftUI
 
 // Project folders on iPhone and iPad — the web's project subfolders
 // (src/components/projects/project-folders.tsx). Breadcrumbs over a folder's
-// page, a Folders tab with New folder, what a folder inherits from the
-// projects above it, Move to…, and a Delete that asks where the subfolders go.
-// Plain List / Form / sheets / confirmationDialog and the SF Symbol folder.
+// page, the folders as compact tiles with New folder, what a folder inherits
+// from the projects above it, Move to…, and a Delete that asks where the
+// subfolders go.
 
 // MARK: - Breadcrumbs
 
-/// "Atlas launch / Research / Notes". Each ancestor opens its own page on the
-/// projects stack; the current project is plain text.
+/// "BUT-2 › Semestre 3 › Notes": each ancestor a link that opens its own page
+/// on the projects stack, the current folder plain. Scrolls sideways rather
+/// than wrapping when the path is long.
 struct JunoMobileProjectBreadcrumbs: View {
   let crumbs: [NativeProjectCrumb]
   let current: String
@@ -28,25 +29,29 @@ struct JunoMobileProjectBreadcrumbs: View {
   var body: some View {
     ScrollView(.horizontal) {
       HStack(spacing: JunoSpace.hairline) {
+        JunoIconView(.folderOpen, size: 14)
+          .foregroundStyle(Color.junoTertiaryInk)
+          .padding(.trailing, JunoSpace.hairline)
+          .accessibilityHidden(true)
         ForEach(crumbs) { crumb in
           NavigationLink {
             destination(crumb.id)
           } label: {
             Text(crumb.name)
-              .foregroundStyle(Color.junoMutedForeground)
-              .frame(minHeight: 32)
+              .foregroundStyle(Color.junoSecondaryInk)
+              .frame(minHeight: JunoLayout.touchTarget)
               .contentShape(.rect)
           }
           .buttonStyle(.plain)
           .accessibilityHint("Opens \(crumb.name)")
-          Text("/")
-            .foregroundStyle(Color.junoMutedForeground)
+          JunoIconView(.chevronRight, size: 11)
+            .foregroundStyle(Color.junoTertiaryInk)
             .accessibilityHidden(true)
         }
         Text(current)
-          .foregroundStyle(.primary)
+          .foregroundStyle(Color.junoForeground)
       }
-      .font(.subheadline)
+      .junoFont(size: 14, relativeTo: .subheadline, weight: .medium)
       .lineLimit(1)
     }
     .scrollIndicators(.hidden)
@@ -57,16 +62,20 @@ struct JunoMobileProjectBreadcrumbs: View {
   }
 }
 
-// MARK: - Folders tab
+// MARK: - Folders
 
-/// The project page's Folders section: one row per folder (the folder symbol,
-/// its name, what it holds), then New Folder. Nothing at all when the project
-/// has no folders and cannot take one.
+/// The folders directly inside a project as compact tiles — the web's
+/// `ProjectTile compact`, the Mac's folder tile — each opening its own page,
+/// above the chats as the web orders them. Empty, it says what a folder is
+/// for, with New folder beside it. Nothing at all when the project has no
+/// folders and cannot take one.
 struct JunoMobileProjectFolderSection: View {
   @Bindable var model: NativeProjectModel<SQLiteAccountRepository>
   let project: NativeProject
+  /// The content column's width, for the grid's column count.
+  var width: CGFloat
   let create: () -> Void
-  /// The folder page a row opens (see JunoMobileProjectBreadcrumbs.destination).
+  /// The folder page a tile opens (see JunoMobileProjectBreadcrumbs.destination).
   let destination: (String) -> AnyView
 
   private var folders: [NativeProject] { model.children(of: project.id) }
@@ -74,46 +83,46 @@ struct JunoMobileProjectFolderSection: View {
 
   var body: some View {
     if !folders.isEmpty || refusal == nil {
-      Section {
-        ForEach(folders) { folder in
-          NavigationLink {
-            destination(folder.id)
-          } label: {
-            HStack(spacing: JunoSpace.cozy) {
-              JunoSymbol(.projects)
-                .font(.title3)
-                .foregroundStyle(.secondary)
-                .frame(width: 32)
-                .accessibilityHidden(true)
-              VStack(alignment: .leading, spacing: JunoSpace.micro) {
-                Text(folder.name)
-                  .font(.body)
-                  .foregroundStyle(.primary)
-                  .lineLimit(1)
-                Text(JunoMobileProjectFolderLine.summary(folder, model: model))
-                  .font(.subheadline)
-                  .foregroundStyle(.secondary)
-                  .lineLimit(1)
-              }
+      VStack(alignment: .leading, spacing: JunoSpace.snug) {
+        JunoMobilePageSectionHeader("Folders", count: folders.count) {
+          if !folders.isEmpty, refusal == nil {
+            Button(action: create) {
+              JunoMobileCapsuleLabel(String(localized: "New folder"), icon: .folderPlus)
             }
-            .frame(minHeight: 44)
-            .accessibilityElement(children: .combine)
+            .junoMobileCapsuleAction()
+            .contentShape(Capsule())
+            .controlSize(.regular)
+            .disabled(project.isPending || model.isMutating)
           }
-          .accessibilityIdentifier("juno.mobile.project-folder-\(folder.id)")
         }
-        if refusal == nil {
-          Button(action: create) {
-            Label("New Folder", image: JunoIcon.plus.assetName(.regular))
-          }
-          .disabled(project.isPending || model.isMutating)
-        }
-      } header: {
-        Text("Folders")
-      } footer: {
         if folders.isEmpty {
-          Text("A folder keeps one part of \(project.name) together. Its chats follow this project’s instructions and read its files.")
+          JunoMobileProjectInvitation(
+            icon: .folderOpen,
+            text: "A folder keeps one part of \(project.name) together. Its chats follow this project’s instructions and read its files.",
+            actionTitle: String(localized: "New folder"),
+            actionIcon: .folderPlus,
+            action: (project.isPending || model.isMutating) ? nil : Optional(create)
+          )
+        } else {
+          LazyVGrid(columns: JunoMobileProjectTileMetrics.columns(forWidth: width), spacing: JunoSpace.cozy) {
+            ForEach(folders) { folder in
+              NavigationLink {
+                destination(folder.id)
+              } label: {
+                JunoMobileProjectTile(
+                  summary: JunoMobileProjectSummary(folder, model: model),
+                  compact: true,
+                  loadCover: { await model.accessFile(id: $0) }
+                )
+              }
+              .buttonStyle(NativeFilePreviewPressStyle())
+              .contentShape(.rect(cornerRadius: JunoRadius.card))
+              .accessibilityIdentifier("juno.mobile.project-folder-\(folder.id)")
+            }
+          }
         }
       }
+      .accessibilityElement(children: .contain)
       .accessibilityIdentifier("juno.mobile.project-folders")
     }
   }
@@ -126,12 +135,7 @@ enum JunoMobileProjectFolderLine {
     _ project: NativeProject,
     model: NativeProjectModel<SQLiteAccountRepository>
   ) -> String {
-    let chats = model.conversationsByProject[project.id]?.count ?? 0
-    let files = model.filesByProject[project.id]?.count ?? 0
-    let folders = model.children(of: project.id).count
-    var parts = [plural(chats, "chat"), plural(files, "file")]
-    if folders > 0 { parts.append(plural(folders, "folder")) }
-    return parts.joined(separator: " · ")
+    JunoMobileProjectSummary(project, model: model).countsLine
   }
 
   static func plural(_ count: Int, _ noun: String) -> String {
@@ -141,36 +145,67 @@ enum JunoMobileProjectFolderLine {
 
 // MARK: - Inherited context
 
-/// Read-only sections for the instructions tab: what this folder's chats also
-/// receive from each project above it.
+/// What this folder's chats also receive from each project above it, read-only:
+/// "From BUT-2", its instructions, how many of its files are read, and the way
+/// to its page.
 struct JunoMobileInheritedSections: View {
   let inherited: [NativeProjectInheritance]
   /// The project page "Open …" leads to (see JunoMobileProjectBreadcrumbs.destination).
   let destination: (String) -> AnyView
 
   var body: some View {
-    ForEach(inherited) { source in
-      Section {
-        let instructions = source.instructions.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !instructions.isEmpty {
-          Text(instructions)
-            .font(.subheadline)
-            .foregroundStyle(.secondary)
-            .lineLimit(8)
-            .textSelection(.enabled)
+    if !inherited.isEmpty {
+      VStack(alignment: .leading, spacing: JunoSpace.snug) {
+        JunoMobilePageSectionHeader("Inherited")
+        ForEach(inherited) { source in
+          NavigationLink {
+            destination(source.id)
+          } label: {
+            VStack(alignment: .leading, spacing: JunoSpace.snug) {
+              HStack(spacing: JunoSpace.tight) {
+                JunoIconView(.cornerDownRight, size: 14)
+                  .foregroundStyle(Color.junoTertiaryInk)
+                  .accessibilityHidden(true)
+                Text("From \(source.name)")
+                  .font(JunoSerif.font(size: 17, relativeTo: .headline, face: .medium))
+                  .foregroundStyle(Color.junoForeground)
+                  .lineLimit(1)
+                Spacer(minLength: 0)
+                JunoIconView(.chevronRight, size: 12)
+                  .foregroundStyle(Color.junoTertiaryInk)
+                  .accessibilityHidden(true)
+              }
+              let instructions = source.instructions.trimmingCharacters(in: .whitespacesAndNewlines)
+              if !instructions.isEmpty {
+                Text(instructions)
+                  .junoFont(size: 14, relativeTo: .subheadline)
+                  .foregroundStyle(Color.junoSecondaryInk)
+                  .lineLimit(4)
+                  .multilineTextAlignment(.leading)
+              }
+              if source.fileCount > 0 {
+                Text("Reads \(JunoMobileProjectFolderLine.plural(source.fileCount, "file"))")
+                  .junoFont(size: 12, relativeTo: .caption)
+                  .monospacedDigit()
+                  .foregroundStyle(Color.junoTertiaryInk)
+              }
+            }
+            .padding(JunoLayout.Page.cardPadding)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+              RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
+                .fill(Color.junoCard)
+            )
+            .overlay(
+              RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
+                .strokeBorder(Color.junoBorder.opacity(0.8), lineWidth: 1)
+            )
+            .contentShape(.rect(cornerRadius: JunoRadius.card))
+          }
+          .buttonStyle(NativeFilePreviewPressStyle())
+          .contentShape(.rect(cornerRadius: JunoRadius.card))
+          .accessibilityHint("Opens \(source.name)")
         }
-        if source.fileCount > 0 {
-          Text("Reads \(JunoMobileProjectFolderLine.plural(source.fileCount, "file"))")
-            .font(.subheadline)
-            .foregroundStyle(.secondary)
-        }
-        NavigationLink {
-          destination(source.id)
-        } label: {
-          Text("Open \(source.name)")
-        }
-      } header: {
-        Text("From \(source.name)")
       }
     }
   }

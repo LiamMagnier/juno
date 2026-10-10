@@ -42,10 +42,9 @@ final class JunoMobileWorkspaceScreensUITests: XCTestCase {
     /// the clamp and its toggle are both exercised.
     private func openFirstProject(_ app: XCUIApplication) {
         require(app.descendants(matching: .any)["juno.mobile.project-list"].firstMatch, app)
-        // The row combines title, pin state, counts and date into one
-        // accessible label ("Astro research, Pinned · 1 chat · …"). Since the
-        // round-2 native List the row reports as text rather than a button,
-        // so match the label on any element type.
+        // The tile combines name, pin state and counts into one accessible
+        // label ("Astro research, Pinned · 1 chat · …"), so match the label on
+        // any element type.
         let card = app.descendants(matching: .any).matching(
             NSPredicate(format: "label BEGINSWITH %@", "Astro research,")
         ).firstMatch
@@ -85,23 +84,20 @@ final class JunoMobileWorkspaceScreensUITests: XCTestCase {
             ).firstMatch
         }
         let showAll = toggle("Show all")
-        // The round-2 native List puts New Chat, Chats, Folders and Files
-        // first and the instructions near the foot, so scroll down to them.
-        // Bounded rather than `while`: a list that stopped scrolling should
-        // fail this test, not hang it.
-        let list = app.collectionViews.firstMatch
+        // The page puts the cover, Folders, Chats and Files first and the
+        // instructions below them, so scroll down to them. Bounded rather
+        // than `while`: a page that stopped scrolling should fail this test,
+        // not hang it.
         for _ in 0..<6 where !(showAll.exists && showAll.isHittable) {
-            list.swipeUp()
+            app.swipeUp()
         }
         // No skip: the fixture instructions typeset to 405pt against a 145pt
         // clamp, so the control must be there. Skipping here is what hid the
         // measurement being broken through two earlier attempts.
         require(showAll, app, timeout: 10)
 
-        // The toggle sits under the text in the same row, so it is what an
-        // expansion pushes down. (The sections below it are no use as a
-        // marker any more: in the lazy native List they scroll out of
-        // existence as the row grows.)
+        // The toggle sits under the text in the same card, so it is what an
+        // expansion pushes down.
         let toggleBefore = showAll.frame.minY
         showAll.tap()
 
@@ -147,6 +143,38 @@ final class JunoMobileWorkspaceScreensUITests: XCTestCase {
             "Pin and the menu are too far apart to be sharing one capsule."
         )
         XCTAssertEqual(pin.frame.midY, menu.frame.midY, accuracy: 2)
+    }
+
+    // MARK: - Library
+
+    /// The Library opens on the grid of previews, with the type filter and the
+    /// List / Grid switch as controls on the page — and List is one tap away.
+    @MainActor
+    func testLibraryOpensAsAGridAndSwitchesToAList() {
+        let app = launch(tab: "library")
+        require(app.descendants(matching: .any)["juno.mobile.file-list"].firstMatch, app)
+        require(app.descendants(matching: .any)["juno.mobile.library-filter"].firstMatch, app, timeout: 5)
+        let list = app.buttons.matching(NSPredicate(format: "label == %@", "List")).firstMatch
+        require(list, app, timeout: 5)
+        list.tap()
+        XCTAssertTrue(
+            list.waitForExistence(timeout: 2) && list.isSelected,
+            "List did not become the selected view. On screen:\n\(app.debugDescription)"
+        )
+        // Back to the default for the next run: the choice is remembered.
+        app.buttons.matching(NSPredicate(format: "label == %@", "Grid")).firstMatch.tap()
+    }
+
+    /// A folder opens as its own page with the path above its name, from a
+    /// tile on its project's page.
+    @MainActor
+    func testFolderOpensAsItsOwnPageWithBreadcrumbs() {
+        let app = launch(tab: "projects")
+        openFirstProject(app)
+        let folder = app.descendants(matching: .any)["juno.mobile.project-folder-proj-1-obs"].firstMatch
+        require(folder, app, timeout: 10)
+        folder.tap()
+        require(app.descendants(matching: .any)["juno.mobile.project-breadcrumbs"].firstMatch, app, timeout: 10)
     }
 
     // MARK: - Artifact detail
