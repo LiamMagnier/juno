@@ -16,7 +16,8 @@ import { PremiumGallery } from "./gallery";
  *   agents     bot avatars on the roster, idle and working
  *   upgrade    the one liquid-metal CTA
  *
- * `?only=<section>` renders one section. Not linked from anywhere and 404s
+ * `?only=<section>` renders one section; `?dictation=demo` makes every mic
+ * open a staged take (no microphone). Not linked from anywhere and 404s
  * outside development, the same contract as /dev/controls.
  */
 export default async function PremiumDevPage({
@@ -25,6 +26,12 @@ export default async function PremiumDevPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   if (process.env.NODE_ENV === "production") notFound();
-  const { only, peak } = await searchParams;
-  return <PremiumGallery only={typeof only === "string" ? only : undefined} voicePeak={peak === "1"} />;
+  const { only, peak, dictation } = await searchParams;
+  return (
+    <PremiumGallery
+      only={typeof only === "string" ? only : undefined}
+      voicePeak={peak === "1"}
+      dictation={typeof dictation === "string" ? dictation : undefined}
+    />
+  );
 }

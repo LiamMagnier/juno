@@ -7,16 +7,14 @@ import { AppProvider } from "@/components/app/app-provider";
 import { ApprovalCard } from "@/components/chat/approval-card";
 import { Composer } from "@/components/chat/composer";
 import { MessageItem } from "@/components/chat/message-item";
-import { Button } from "@/components/ui/button";
-import { composerFieldClass, composerIconButtonClass } from "@/components/ui/composer-shell";
-import { Check, Send } from "@/components/ui/icons";
+import { DictationControls } from "@/components/chat/composer-dictation";
+import { composerFieldClass } from "@/components/ui/composer-shell";
 import { VoiceCallNotices, voiceCallParts } from "@/components/voice/realtime-voice";
 import { JunoVoiceGlow, glowModeFor } from "@/components/voice/voice-composer-glow";
 import type { GlowMode } from "@/components/voice/voice-glow-engine";
 import type { GlowVariant } from "@/components/voice/voice-glow-renderer";
 import { VoiceGlowStageContext, type GlowClock, type VoiceGlowProps, type VoiceGlowStage } from "@/components/voice/voice-glow-stage";
 import type { ClientActionApproval } from "@/lib/action-approval";
-import { ActionIcons } from "@/lib/app-icons";
 import { AUTO_MODEL_ID } from "@/lib/auto-model";
 import type { ModelId } from "@/lib/models";
 import { cn } from "@/lib/utils";
@@ -323,7 +321,7 @@ function CallComposer({ scene, clock }: { scene: Scene; clock: GlowClock }) {
 
 /**
  * Dictation, in the composer's own geometry (composer-dictation.tsx: the same
- * field class, the same controls row, the same light). A stand-in for the
+ * field class, the same ✕ · waveform · ✓ row, the same light). A stand-in for the
  * real component, which opens the microphone and the recogniser on mount.
  */
 function DictationComposer({ scene, clock }: { scene: Scene; clock: GlowClock }) {
@@ -336,28 +334,13 @@ function DictationComposer({ scene, clock }: { scene: Scene; clock: GlowClock })
             Book a table for four on Friday, somewhere quiet near the office
           </p>
         </div>
-        <div className="flex flex-nowrap items-center gap-1 px-2.5 pb-2.5 pt-0.5">
-          <Button type="button" variant="ghost" size="icon-sm" aria-label="Cancel dictation" className={composerIconButtonClass}>
-            <ActionIcons.dismiss className="size-4" />
-          </Button>
-          <span role="status" aria-live="polite" className={cn("min-w-0 truncate pl-1.5 text-ui text-muted-foreground", d.transcribing && "shimmer-text")}>
-            {d.transcribing ? "Transcribing" : "Listening"}
-          </span>
-          <div className="ml-auto flex shrink-0 items-center gap-1">
-            <Button type="button" variant="ghost" size="sm" disabled={d.transcribing} aria-label="Stop dictation and edit the text">
-              <Check className="size-4" />
-              Done
-            </Button>
-            <button
-              type="button"
-              disabled={d.transcribing}
-              aria-label="Send what you dictated"
-              className="pressable grid size-8 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground disabled:bg-secondary disabled:text-muted-foreground/70 coarse:size-11"
-            >
-              <Send weight="bold" aria-hidden="true" className="size-4" />
-            </button>
-          </div>
-        </div>
+        <DictationControls
+          level={() => scene.you(clock.now())}
+          listening={!d.transcribing && !d.closing}
+          doneDisabled={d.transcribing}
+          onCancel={noop}
+          onDone={noop}
+        />
       </div>
     </JunoVoiceGlow>
   );

@@ -2,11 +2,18 @@
 
 import * as React from "react";
 import { useTheme } from "next-themes";
-import { JunoVoiceGlow } from "@/components/voice/voice-composer-glow";
 
 import { AppProvider } from "@/components/app/app-provider";
 import { Composer } from "@/components/chat/composer";
 import { CodeComposer } from "@/components/code/code-composer";
+import { ComposerDictation } from "@/components/chat/composer-dictation";
+import {
+  DictationStageContext,
+  demoDictationSeed,
+  demoSpeechLoudness,
+  dictationStageFromParam,
+  type DictationStage,
+} from "@/components/chat/composer-dictation-stage";
 import { EmptyGreeting } from "@/components/chat/empty-state";
 import { GenerationPlaceholder } from "@/components/chat/generation-placeholder";
 import { MessageItem } from "@/components/chat/message-item";
@@ -206,23 +213,26 @@ function CallComposerDemo({
   );
 }
 
+/** The real dictation, on a staged take: the demo voice, the words, no microphone. */
 function VoiceDemo({ processing }: { processing: boolean }) {
-  const level = useDemoLevel();
+  const stage = React.useMemo<DictationStage>(
+    () => ({
+      final: "Book a table for four on Friday, somewhere quiet near the office",
+      level: demoSpeechLoudness,
+      seed: demoDictationSeed(),
+      transcribing: processing,
+    }),
+    [processing]
+  );
   return (
-    <JunoVoiceGlow level={level} processing={processing} className="w-full rounded-composer">
-      <div className="composer-surface relative flex w-full flex-col rounded-composer">
-        <p className="voice-glow-content block min-h-[3.25rem] px-4 pb-2 pt-3.5 text-body-lg text-foreground">
-          Book a table for four on Friday, somewhere quiet near the office
-        </p>
-        <p className="voice-glow-content px-4 pb-3 text-caption text-muted-foreground">
-          {processing ? "Transcribing" : "Listening"}
-        </p>
-      </div>
-    </JunoVoiceGlow>
+    <DictationStageContext.Provider value={stage}>
+      <ComposerDictation onCancel={() => {}} onStop={() => {}} onSend={() => {}} />
+    </DictationStageContext.Provider>
   );
 }
 
-export function PremiumGallery({ only, voicePeak = false }: { only?: string; voicePeak?: boolean }) {
+export function PremiumGallery({ only, voicePeak = false, dictation }: { only?: string; voicePeak?: boolean; dictation?: string }) {
+  const dictationStage = React.useMemo(() => dictationStageFromParam(dictation ?? null), [dictation]);
   const { resolvedTheme, setTheme } = useTheme();
   const [model, setModel] = React.useState<ModelId>(AUTO_MODEL_ID);
   const [effort, setEffort] = React.useState<ReasoningEffort | null>(null);
@@ -242,6 +252,7 @@ export function PremiumGallery({ only, voicePeak = false }: { only?: string; voi
 
   return (
     <AppProvider bootstrap={BOOTSTRAP}>
+      <DictationStageContext.Provider value={dictationStage}>
       <main className="app-main-canvas min-h-dvh bg-background pb-24 text-foreground">
         <div className="page-gutter mx-auto w-full max-w-3xl py-12">
           <h1 className="font-serif text-page-title">Premium pass</h1>
@@ -403,6 +414,7 @@ export function PremiumGallery({ only, voicePeak = false }: { only?: string; voi
           )}
         </div>
       </main>
+      </DictationStageContext.Provider>
     </AppProvider>
   );
 }
