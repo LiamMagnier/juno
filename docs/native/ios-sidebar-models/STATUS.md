@@ -36,9 +36,11 @@ Owner: "oui, montre les modèles image et vidéo aussi", and "move the ultra fas
 - Screenshots: `.claude/handoff/ios-sidebar-models/media-speed/` (`iphone/`, `iphone-offscreen/`, `mac/`).
 - Tests: iOS unit tests pass; JunoChatKit + JunoDesignSystem pass except the known design-token failures (12 cases: the 11 known plus `testHandTypedColourLiteralsAreOnlyTheRegisteredOnes`, which flags CodeV2 fixture files this branch does not touch); Mac `ModelPickerSnapshotTests` and `DesktopCodeModelMappingTests` pass (Mac app builds); design gates hold.
 
+- Merged polish/model-sync 864326d11 (the filled on state): the bolt draws its 32pt ink circle inside a 44pt target on iOS (`JunoEffortSpeedButton(hitSide:)`), Pro is the bolt's 32pt height inside a 44pt row (`hitHeight`), and the iOS header sizes the rung and model name first, as the Mac's does, so "GPT-5.6 Sol" is never cut. Speed screenshots retaken after the merge.
+
 ## What remains
 
-- Merge the next polish/model-sync tip (stronger on state for the bolt and Pro) and retake the iOS speed screenshots.
+- The owner's look on a device; the UI test suite once the machine is free.
 - Run the UI test suite (`JunoMobileUITests`) once the machine is free.
 - Owner's on-device look at the motion (simulator frames only).
 - Locked models are inert rows with their plan; there is no upgrade jump from the sheet (iOS purchases go through StoreKit, not the web's /upgrade).
