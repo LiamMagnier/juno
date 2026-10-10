@@ -1083,13 +1083,19 @@ struct DesktopCodeWorkspace: View {
     /// mic steps aside during a call (one microphone), and the voice button
     /// while one is live.
     private var speech: CodeComposerSpeech {
-        CodeComposerSpeech(
-            dictate: JunoSpeechService.isSupported && voiceSession == nil && !isDictating
-                ? { withAnimation(JunoMotion.fast) { isDictating = true } }
-                : nil,
-            talk: voiceSession == nil && !isDictating ? startCodeVoice : nil,
-            heard: heard
-        )
+        let idle = voiceSession == nil && !isDictating
+        var speech = CodeComposerSpeech(heard: heard)
+        if idle, JunoSpeechService.isSupported {
+            speech.dictate = beginDictation
+        }
+        if idle {
+            speech.talk = startCodeVoice
+        }
+        return speech
+    }
+
+    private func beginDictation() {
+        withAnimation(JunoMotion.fast) { isDictating = true }
     }
 
     /// A sentence spoken in the call: the thread's next turn.
