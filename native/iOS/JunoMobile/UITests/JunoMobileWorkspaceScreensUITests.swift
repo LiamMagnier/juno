@@ -164,7 +164,14 @@ final class JunoMobileWorkspaceScreensUITests: XCTestCase {
         require(card, app)
         card.tap()
 
-        require(app.buttons["juno.mobile.artifact-menu"], app, timeout: 10)
+        // The artifact's menu, or the system's overflow "More" that folds it in
+        // when Version and Share already fill a narrow bar.
+        let menu = app.buttons["juno.mobile.artifact-menu"]
+        let overflow = app.buttons["OverflowBarButtonItem"]
+        XCTAssertTrue(
+            menu.waitForExistence(timeout: 10) || overflow.waitForExistence(timeout: 2),
+            "Neither the artifact menu nor the bar's overflow is on screen."
+        )
 
         // Preview/Source is the system segmented control again (round 2): it
         // reports as two selectable buttons inside one identified container.
@@ -179,7 +186,7 @@ final class JunoMobileWorkspaceScreensUITests: XCTestCase {
         // The page states where it came from in its actions menu ("Open Chat")
         // and its kind in the navigation bar's secondary line on the sheet.
         XCTAssertTrue(
-            app.buttons["juno.mobile.artifact-menu"].exists,
+            menu.exists || overflow.exists,
             "The artifact page lost its actions menu. On screen:\n\(app.debugDescription)"
         )
 

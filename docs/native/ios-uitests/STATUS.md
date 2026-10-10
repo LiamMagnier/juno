@@ -1,5 +1,13 @@
 # iOS UI tests vs the round-2 iPhone design: status (2026-10-10)
 
+**Update (resumed 2026-10-10):** app bugs A (main a28e2442e), B and C (4262d7075)
+are fixed. Full run on this branch: JunoMobileTests 100 pass (3 skipped);
+JunoMobileUITests 54 of 56 pass after the artifact-menu test accepts the bar's
+overflow "More". The one remaining failure, testLaunchShowsRealSignInGate, is
+finding D below (a signed-out launch after preview launches on the same
+install cannot unlock the local store). It passes on a fresh install.
+
+
 Branch `polish/ios-uitests` (worktree `.claude/worktrees/ios-uitests`, from
 `polish/native-practice` 83da9dc4d). Only `native/iOS/JunoMobile/UITests/**` and
 this file changed; no app code. Not pushed.
