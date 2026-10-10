@@ -82,7 +82,7 @@ enum StudioScreenControlNotice: Equatable {
     case ready
 
     /// `isAvailable` is false once the session can no longer use screen
-    /// control at all — switched to Plan, or to a model that cannot see —
+    /// control at all — switched to Plan or moved to a remote session —
     /// when a waiting notice would offer a Start that can only fail.
     init?(
         isActive: Bool,
@@ -467,7 +467,7 @@ enum StudioCaptureImage {
 /// and the apps the reader narrowed (Settings → Screen control).
 ///
 /// Every claim in the copy is one the code keeps: grants are per app and per
-/// session (D-021); terminals and IDEs are click-only, browsers view-only,
+/// session (D-021); terminals and IDEs are click-only, browsers allow input,
 /// Juno and password or system prompts never; clicks, typing and keys ask
 /// unless the session has Full access; sending, buying, deleting and signing
 /// in always ask; a project's files cannot change any of it.
@@ -490,7 +490,7 @@ struct StudioScreenControlSettings: View {
 
     var body: some View {
         Section {
-            Text("Lets Alevr use the Mac apps you grant, one session at a time, when you choose Let Alevr Use Apps from the More menu. Each app is granted for the session only: terminals and editors for clicks, browsers for looking, and never Alevr itself, password managers or system prompts. Clicks, typing and keys ask first unless the session has Full access; sending, buying, deleting, signing in and changes in System Settings always ask. Press Esc anywhere to stop.")
+            Text("Alevr can choose computer use for Mac app and browser tasks, including chats with no project. It asks for access to each app when needed. Browsers support navigation, clicks and typing; terminals and editors allow clicks. Password managers, protected system prompts and Alevr itself are excluded. Clicks, typing and keys ask first unless the session has Full access; sending, buying, deleting, signing in and changes in System Settings always ask. Press Esc anywhere to stop.")
                 .font(Studio.Font.meta)
                 .foregroundStyle(Studio.Ink.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -507,7 +507,7 @@ struct StudioScreenControlSettings: View {
         } header: {
             Text("Screen control")
         } footer: {
-            Text("Available in sessions on this Mac, in a mode that can make changes, with a model that can see images. It stops when you press Stop or Esc, switch sessions or switch to Plan. macOS reports only whether Alevr has each permission, and may ask you to reopen Alevr after you allow Screen Recording.")
+            Text("Available in local Code sessions. Models that can see use screenshots; other models use accessibility controls. Screen Recording and Accessibility must both be allowed in macOS. It stops when you press Stop or Esc, switch sessions or switch to Plan. macOS may ask you to reopen Alevr after allowing Screen Recording.")
         }
         // The window appearing and the app coming back to the front are the
         // two moments a grant can have changed: the reader was in System

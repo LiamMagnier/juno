@@ -102,6 +102,38 @@ final class DelegateTaskToolTests: XCTestCase {
     private var store: CodeSessionStore!
     private var probe: ConcurrencyProbe!
 
+    func testProjectlessChildReceivesAppToolsAndReleasesItsResource() async throws {
+        let parent = try await store.createSession(workspaceID: nil, workspaceName: nil, title: "Mac task",
+            configuration: AgentConfiguration(modelID: "test-model"), gitBranch: nil)
+        let log = ReadLog()
+        let cleanup = ReadLog()
+        let model = ScriptedModelClient(steps: [
+            .toolCalls([("app", "computer_use", ["app": "Safari"])], text: ""),
+            .text("Observed Safari."),
+        ])
+        let tool = DelegateTaskTool(
+            model: model, registry: ToolRegistry(tools: []), store: store, workspaceID: nil,
+            workspaceName: "Mac apps", modelID: "test-model", reasoningEffort: nil,
+            parentSystemPrompt: "Complete the app task.",
+            computerTools: { _, _ in [RecordingAppTool(log: log)] },
+            computerFinished: { child in await cleanup.record(child.value) },
+            executionFactory: { _ in
+                SubagentExecutionEnvironment(registry: ToolRegistry(tools: []), workspaceName: "Mac apps", permissionMode: .askBeforeChanges)
+            }
+        )
+        let result = try await tool.execute(input: ["task": "Observe Safari", "mode": "workspace_write"],
+            context: ToolContext(sessionID: parent.id, toolCallID: "delegate-app", emitOutput: { _, _ in }))
+        XCTAssertFalse(result.isError)
+        let apps = await log.paths
+        let ended = await cleanup.paths
+        XCTAssertEqual(apps, ["Safari"])
+        XCTAssertEqual(ended.count, 1)
+        let child = try await store.session(id: CodeSessionID(value: ended[0]))
+        XCTAssertNil(child.workspaceID)
+        XCTAssertEqual(child.parentSessionID, parent.id)
+        XCTAssertTrue(child.configuration.computerUseEnabled)
+    }
+
     override func setUp() async throws {
         let root = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("juno-delegate-\(UUID().uuidString)")
@@ -524,5 +556,18 @@ final class DelegateTaskToolTests: XCTestCase {
             guard case let .subagentUpdated(update) = event.payload else { return nil }
             return update
         }
+    }
+}
+
+private struct RecordingAppTool: CodeTool {
+    let log: ReadLog
+    let name = "computer_use"
+    let description = "Observe an app"
+    let inputSchema: JSONValue = ["type": "object", "properties": ["app": ["type": "string"]]]
+    func assessRisk(input: JSONValue) -> ActionRisk { .read }
+    func summary(input: JSONValue) -> String { "Observe app" }
+    func execute(input: JSONValue, context: ToolContext) async throws -> ToolResult {
+        await log.record(input["app"]?.stringValue ?? "")
+        return ToolResult(content: "App observed.")
     }
 }

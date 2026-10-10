@@ -2803,6 +2803,7 @@ public actor AgentOrchestrator {
         // next prompt in this session reads the same prefix from the cache;
         // the store keeps only their text. See ``ImageRetention``.
         conversation = ConversationIntegrity.repaired(conversation)
+        for tool in registry.allTools { await tool.finishRun(sessionID: sessionID) }
         await saveUsage()
         emitLiveText("", force: true)
         emitLiveReasoning("", force: true)

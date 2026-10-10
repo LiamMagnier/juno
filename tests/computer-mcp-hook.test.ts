@@ -59,7 +59,7 @@ const resolve = (scope: ComputerMcpScope) =>
 test("registers one shared computer_use tool, visible only to sessions the resolver knows", async () => {
   const mcp = new FakeMcp();
   const hook = registerComputerUseOnAlevrMcp(mcp, { bridge: new FakeBridge(), lock: new DesktopLock({ path: lockFile() }), session: resolve });
-  assert.deepEqual(mcp.visible({ sessionId: "s1", depth: 0 }), [ALEVR_COMPUTER_TOOL_NAME]);
+  assert.deepEqual(mcp.visible({ sessionId: "s1", depth: 0 }), [ALEVR_COMPUTER_TOOL_NAME, "computer_release"]);
   assert.deepEqual(mcp.visible({ sessionId: "nope", depth: 0 }), []);
   const tool = mcp.tools.get(ALEVR_COMPUTER_TOOL_NAME)!;
   assert.match(tool.description, /normalized_1000/);
@@ -69,10 +69,80 @@ test("registers one shared computer_use tool, visible only to sessions the resol
 
 test("subagents can be kept out", async () => {
   const mcp = new FakeMcp();
-  const hook = registerComputerUseOnAlevrMcp(mcp, { bridge: new FakeBridge(), lock: new DesktopLock({ path: lockFile() }), session: resolve, subagents: false });
+  const bridge = new FakeBridge();
+  const hook = registerComputerUseOnAlevrMcp(mcp, { bridge, lock: new DesktopLock({ path: lockFile() }), session: resolve, subagents: false });
   assert.deepEqual(mcp.visible({ sessionId: "s1", depth: 1 }), []);
-  assert.deepEqual(mcp.visible({ sessionId: "s1", depth: 0 }), [ALEVR_COMPUTER_TOOL_NAME]);
+  assert.deepEqual(mcp.visible({ sessionId: "s1", depth: 0 }), [ALEVR_COMPUTER_TOOL_NAME, "computer_release"]);
+  const [use] = hook.engineTools({ sessionId: "s1", depth: 0 }) as { execute(args: Record<string, unknown>, ctx: Record<string, unknown>): Promise<{ isError?: boolean }> }[];
+  assert.equal((await use!.execute({ action: "screenshot" }, { agentId: "child" })).isError, true);
+  assert.equal(bridge.sent.length, 0);
   await hook.dispose();
+});
+
+test("built-in engine and children receive images, current permissions and separate desktop ownership", async () => {
+  const mcp = new FakeMcp();
+  const bridge = new FakeBridge();
+  let mode: "full" | "read-only" = "full";
+  const hook = registerComputerUseOnAlevrMcp(mcp, {
+    bridge, lock: new DesktopLock({ path: lockFile() }),
+    session: () => ({ id: "lead", title: "App task", runtimeMode: mode, images: true }),
+  });
+  type Tool = { spec: { name: string }; execute(args: Record<string, unknown>, ctx: Record<string, unknown>): Promise<{ output: string; isError?: boolean; images?: unknown[] }>; finishSubagent?(id: string): Promise<void> };
+  const tools = hook.engineTools({ sessionId: "lead", depth: 0 }) as Tool[];
+  const use = tools.find((t) => t.spec.name === "computer_use")!;
+  const release = tools.find((t) => t.spec.name === "computer_release")!;
+  const first = await use.execute({ action: "screenshot", app: "Safari" }, { callId: "first", permissionMode: "full" });
+  assert.ok(first.images?.length);
+  mode = "read-only";
+  await use.execute({ action: "screenshot" }, { callId: "next", permissionMode: "plan" });
+  assert.equal(bridge.sent.at(-1)?.runtimeMode, "read-only");
+  await release.execute({}, {});
+  mode = "full";
+  const child = await use.execute({ action: "screenshot" }, { callId: "child-shot", agentId: "child", model: "gemini-3.8", permissionMode: "ask" });
+  assert.ok(!child.isError);
+  assert.equal(bridge.sent.at(-1)?.sessionId, "lead:agent:child");
+  assert.equal(bridge.sent.at(-1)?.args?.coordinate_space, "normalized_1000");
+  assert.equal(bridge.sent.at(-1)?.runtimeMode, "ask");
+  await hook.finishTurn("lead");
+  assert.ok(hook.activeSessions().includes("lead:agent:child"), "background children survive the lead's turn end");
+  const competing = await use.execute({ action: "screenshot" }, { callId: "lead-competes" });
+  assert.ok(competing.isError, "a parent cannot steal a child's active desktop");
+  await use.finishSubagent!("child");
+  assert.ok(!(await use.execute({ action: "screenshot" }, { callId: "lead-resumes" })).isError);
+  await hook.dispose();
+});
+
+test("text models receive current accessibility controls and routed vision children receive images", async () => {
+  const mcp = new FakeMcp();
+  const sent: ComputerBridgeRequest[] = [];
+  const bridge: ComputerBridge = {
+    async send(request) {
+      sent.push(request);
+      return { id: "reply", ok: true, text: request.args?.action === "ax_find" ? "e12 AXButton Play" : "Screenshot of Safari",
+        image: { data: "AAAA", mediaType: "image/png" } };
+    },
+  };
+  const hook = registerComputerUseOnAlevrMcp(mcp, {
+    bridge, lock: new DesktopLock({ path: lockFile() }),
+    session: () => ({ id: "lead", title: "App task", runtimeMode: "full", images: false }),
+  });
+  type Tool = { execute(input: Record<string, unknown>, ctx: Record<string, unknown>): Promise<{ output: string; images: unknown[] }>; finishSubagent?(id: string): Promise<void> };
+  const [use, release] = hook.engineTools({ sessionId: "lead", depth: 0 }) as Tool[];
+  try {
+    const text = await use!.execute({ action: "open_app", app: "Safari" }, { callId: "open", supportsVision: false });
+    assert.match(text.output, /e12 AXButton Play/);
+    assert.deepEqual(text.images, []);
+    assert.deepEqual(sent.map((request) => request.args?.action), ["open_app", "ax_find"]);
+    await use!.execute({ action: "ax_find", app: "Safari" }, { callId: "find", supportsVision: false });
+    assert.equal(sent.length, 3, "an explicit accessibility read is not repeated");
+    await release!.execute({}, {});
+    const child = await use!.execute({ action: "screenshot", app: "Safari" }, { callId: "shot", agentId: "vision", supportsVision: true });
+    assert.equal(child.images.length, 1);
+    assert.equal(sent.at(-1)?.sessionId, "lead:agent:vision");
+    await use!.finishSubagent!("vision");
+  } finally {
+    await hook.dispose();
+  }
 });
 
 test("the shared schema is flat, compiles, and lets a call pick its coordinate space", () => {

@@ -40,6 +40,7 @@ import type {
 import { classifyUsageLimit } from "./limits.js";
 import { describeError, type Logger } from "../util.js";
 import { CROSS_CONVERSATION_PROMPT_SECTION } from "../conversations/policy.js";
+import { COMPUTER_TOOL_RULES } from "../mcp/computer-tools.js";
 
 // ── The slice of agent-core this adapter uses (structural, so no build-time dependency) ──
 
@@ -284,7 +285,7 @@ class EngineBackedSession implements ProviderSession {
       ...(routingKey && request.routing ? { routing: request.routing, resolveProvider: (sel: ModelSelection) => this.#resolve(sel) } : {}),
       ...(this.#extraTools?.length ? { extraTools: this.#extraTools } : {}),
     };
-    const appendix = [this.#extraTools?.length ? CROSS_CONVERSATION_PROMPT_SECTION : "", skillText].filter(Boolean).join("\n\n");
+    const appendix = [this.#extraTools?.length ? `${CROSS_CONVERSATION_PROMPT_SECTION}\n\n${COMPUTER_TOOL_RULES}` : "", skillText].filter(Boolean).join("\n\n");
     if (appendix) opts.systemAppendix = appendix;
     let session: EngineSession;
     if (this.#engineSessionId) {

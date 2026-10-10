@@ -8,6 +8,52 @@ import JunoScreenControl
 final class ComputerUseCoordinatorTests: XCTestCase {
     private let sessionID = CodeSessionID()
 
+    func testAppGrantRequestStartsWithoutMenuButDoesNotGrantAnApp() async throws {
+        let coordinator = ComputerUseCoordinator(service: makeTestScreenService(), permissions: FakePermissions())
+        let proposal = try await coordinator.proposeGrants(
+            sessionID: sessionID.value, apps: ["TextEdit"], reason: "Edit a note",
+            clipboardRead: false, clipboardWrite: false
+        )
+        XCTAssertTrue(proposal.hasOffer)
+        let active = await coordinator.isActive(sessionID: sessionID)
+        let grants = await coordinator.grants(sessionID: sessionID.value)
+        XCTAssertTrue(active)
+        XCTAssertTrue(grants.isEmpty, "an unapproved proposal never grants capture or input")
+        let screenshot = await coordinator.snapshot().latestCapture
+        XCTAssertNil(screenshot)
+    }
+
+    func testAutomaticGrantRequestRequiresPermissionsAndCannotRestartAfterStop() async throws {
+        let missing = ComputerUseCoordinator(service: makeTestScreenService(), permissions: FakePermissions(accessibility: .denied))
+        do {
+            _ = try await missing.proposeGrants(sessionID: sessionID.value, apps: ["TextEdit"], reason: nil, clipboardRead: false, clipboardWrite: false)
+            XCTFail("missing Accessibility must refuse")
+        } catch let error as ComputerUseError {
+            XCTAssertEqual(error, .accessibilityPermissionMissing)
+        }
+        let coordinator = ComputerUseCoordinator(service: makeTestScreenService(), permissions: FakePermissions())
+        _ = try await coordinator.proposeGrants(sessionID: sessionID.value, apps: ["TextEdit"], reason: nil, clipboardRead: false, clipboardWrite: false)
+        await coordinator.emergencyStop()
+        for _ in 0..<2 {
+            do {
+                _ = try await coordinator.proposeGrants(sessionID: sessionID.value, apps: ["TextEdit"], reason: nil, clipboardRead: false, clipboardWrite: false)
+                XCTFail("a model must not restart after Stop")
+            } catch is ScreenControlError {}
+        }
+    }
+
+    func testReleaseAllFreesDesktopForAnotherAgent() async throws {
+        let coordinator = ComputerUseCoordinator(service: makeTestScreenService(), permissions: FakePermissions())
+        let proposal = try await coordinator.proposeGrants(sessionID: sessionID.value, apps: ["TextEdit"], reason: nil, clipboardRead: false, clipboardWrite: false)
+        _ = try await coordinator.applyGrants(sessionID: sessionID.value, proposalID: proposal.id)
+        let names = await coordinator.release(sessionID: sessionID.value, apps: [])
+        XCTAssertEqual(names, ["TextEdit"])
+        let child = CodeSessionID()
+        _ = try await coordinator.proposeGrants(sessionID: child.value, apps: ["TextEdit"], reason: nil, clipboardRead: false, clipboardWrite: false)
+        let active = await coordinator.isActive(sessionID: child)
+        XCTAssertTrue(active)
+    }
+
     func testActivationRequiresExplicitConsent() async {
         let coordinator = ComputerUseCoordinator(service: makeTestScreenService(), permissions: FakePermissions())
         do {

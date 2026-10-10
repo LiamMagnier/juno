@@ -46,7 +46,7 @@ import { AlevrMcpServer } from "./mcp/alevr-mcp.js";
 import { registerSubagentTools } from "./mcp/subagent-tools.js";
 import { registerComputerUseOnAlevrMcp, type ComputerMcpScope } from "./mcp/computer-mcp-hook.js";
 import { createUnixSocketBridge, DEFAULT_BRIDGE_SOCKET_PATH, type ComputerBridge } from "./mcp/computer-bridge.js";
-import type { ComputerToolSession } from "./mcp/computer-tools.js";
+import { coordinateSpaceForModel, type ComputerToolSession } from "./mcp/computer-tools.js";
 import type { DesktopLock } from "./mcp/desktop-lock.js";
 import { TerminalManager } from "./terminal/terminals.js";
 import { describeError, newToken, nowIso, stderrLogger, type Logger } from "./util.js";
@@ -193,9 +193,13 @@ export async function startEnvServer(options: EnvServerOptions = {}): Promise<En
     ...(options.conversationsFetch ? { fetch: options.conversationsFetch } : {}),
   });
   const removeConversationTools = registerConversationTools(mcp, conversations);
-  sessions.setEngineTools((sessionId) => (conversations.enabledFor(sessionId) ? conversationEngineTools(conversations, sessionId) : []));
   const computer = computerUseEnabled(options) ? registerComputerUse(mcp, sessions, options.computerUse || {}) : undefined;
+  sessions.setEngineTools((sessionId) => [
+    ...(conversations.enabledFor(sessionId) ? conversationEngineTools(conversations, sessionId) : []),
+    ...(computer?.engineTools({ sessionId, depth: sessions.log(sessionId).meta.parentSessionId ? 1 : 0 }) ?? []),
+  ]);
   const removeComputerClose = computer ? sessions.onSessionClosed((id) => computer.disposeSession(id)) : undefined;
+  const removeComputerEnded = computer ? sessions.onTurnEnded((id) => { void computer.finishTurn(id); }) : undefined;
   const terminals = new TerminalManager(
     {
       output: (terminalId, data) => broadcast({ type: "terminal.output", terminalId, data }),
@@ -286,6 +290,7 @@ export async function startEnvServer(options: EnvServerOptions = {}): Promise<En
       await sessions.shutdown();
       await antigravity.shutdown();
       await computer?.dispose();
+      removeComputerEnded?.();
       await new Promise<void>((resolve) => wss.close(() => resolve()));
       await new Promise<void>((resolve) => server.close(() => resolve()));
     },
@@ -311,8 +316,7 @@ export function computerSessionFor(sessions: SessionManager, scope: ComputerMcpS
     id: scope.sessionId,
     title: meta.title ?? "Alevr Code",
     runtimeMode: meta.runtimeMode,
-    // Gemini-family models point in 0-999 on each axis.
-    coordinateSpace: model.includes("gemini") ? "normalized_1000" : "pixels",
+    coordinateSpace: coordinateSpaceForModel(model),
     images: true,
   };
 }

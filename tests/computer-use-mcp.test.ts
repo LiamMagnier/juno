@@ -308,6 +308,25 @@ test("registerComputerTools adds one tool and routes calls with a call id", asyn
   await tools.dispose();
 });
 
+test("parallel calls execute in order and queued input is refused after Esc", async () => {
+  const path = join(scratch(), "desktop.lock");
+  const session = { id: "lead", title: "Browser task", runtimeMode: "full" as const };
+  const entered: string[] = [];
+  const bridge = new FakeBridge((r) => {
+    entered.push(r.callId!);
+    return { id: "r", ok: false, text: "You pressed Esc.", endsTurn: true };
+  });
+  const tools = createComputerTools({ bridge, lock: new DesktopLock({ path }), session });
+  const results = await Promise.all([
+    tools.call({ action: "screenshot" }, { callId: "first" }),
+    tools.call({ action: "type", text: "must not run" }, { callId: "queued" }),
+  ]);
+  assert.deepEqual(entered, ["first"]);
+  assert.ok(results.every((r) => r.isError));
+  assert.match((results[1].content[0] as { text: string }).text, /Computer use stopped/);
+  await tools.dispose();
+});
+
 // ── Socket bridge ───────────────────────────────────────────────────────────
 
 test("the unix-socket bridge sends one JSON line with the token and reads the matching answer", async () => {

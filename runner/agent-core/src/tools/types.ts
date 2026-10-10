@@ -19,6 +19,11 @@ export interface ToolContext {
   callId?: string;
   /** The turn's signal: Stop or the run's ceiling. Set by the Work session. */
   signal?: AbortSignal;
+  /** The child making this call, for tools that share a host resource. */
+  agentId?: string;
+  model?: string;
+  supportsVision?: boolean;
+  permissionMode?: import('../types.js').PermissionMode;
   /**
    * Directories outside the workspace that read_file may still read — the
    * session's spill directory, where oversized tool outputs are saved whole.
@@ -66,4 +71,6 @@ export interface ToolDefinition {
    * every other non-read tool is withheld.
    */
   messaging?: boolean;
+  /** Release a resource owned by a child before publishing its settlement. */
+  finishSubagent?(agentId: string): Promise<void>;
 }

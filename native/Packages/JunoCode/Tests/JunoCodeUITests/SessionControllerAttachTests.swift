@@ -49,6 +49,25 @@ final class SessionControllerAttachTests: XCTestCase {
     private var store: CodeSessionStore!
     private var session: CodeSession!
 
+    func testProjectlessCodeDiscoversComputerToolsWithoutMenuOrVision() async throws {
+        let model = ProjectlessToolProbe()
+        let controller = SessionController(session: session, context: nil, store: store, modelClient: model)
+        await controller.attach()
+        controller.composerText = "Open YouTube in Safari"
+        await controller.send()
+        try await waitUntil { model.request != nil }
+        let request = try XCTUnwrap(model.request)
+        let names = Set(request.tools.map(\.name))
+        XCTAssertTrue(names.contains("computer_use"))
+        XCTAssertTrue(names.contains("computer_apps"))
+        XCTAssertTrue(names.contains("delegate_task"))
+        XCTAssertFalse(names.contains("read_file"))
+        XCTAssertFalse(names.contains("bash"))
+        XCTAssertTrue(request.systemPrompt.contains("Choose computer tools yourself"))
+        XCTAssertFalse(request.systemPrompt.contains("no computer control"))
+        await controller.detach()
+    }
+
     override func setUp() async throws {
         let root = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("juno-code-attach-\(UUID().uuidString)")
@@ -219,6 +238,27 @@ final class SessionControllerAttachTests: XCTestCase {
                 throw CancellationError()
             }
             try await Task.sleep(for: .milliseconds(5))
+        }
+    }
+}
+
+private final class ProjectlessToolProbe: AgentModelClient, @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: ModelTurnRequest?
+    var request: ModelTurnRequest? {
+        lock.lock()
+        defer { lock.unlock() }
+        return stored
+    }
+
+    func streamTurn(_ request: ModelTurnRequest) -> AsyncThrowingStream<ModelStreamEvent, Error> {
+        lock.lock()
+        stored = request
+        lock.unlock()
+        return AsyncThrowingStream { continuation in
+            continuation.yield(.textDelta("Ready to use apps."))
+            continuation.yield(.turnCompleted(.endTurn))
+            continuation.finish()
         }
     }
 }

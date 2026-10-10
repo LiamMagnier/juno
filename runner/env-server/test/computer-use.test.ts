@@ -13,6 +13,7 @@ import { ALEVR_COMPUTER_TOOL_NAME, type ComputerBridgeRequest, type ComputerBrid
 import type { ComputerBridge } from "../src/mcp/computer-bridge.js";
 import { DesktopLock } from "../src/mcp/desktop-lock.js";
 import { TestClient, fakeBinDir, tempDir } from "./helpers.js";
+import type { AlevrEngine, EngineSessionOptions, EngineSession } from "../src/providers/alevr.js";
 
 const servers: EnvServer[] = [];
 const clients: TestClient[] = [];
@@ -29,7 +30,7 @@ class FakeBridge implements ComputerBridge {
   }
 }
 
-async function boot(available: { up: boolean }) {
+async function boot(available: { up: boolean }, alevrEngine?: AlevrEngine) {
   const bridge = new FakeBridge();
   const server = await startEnvServer({
     dataDir: tempDir("data"),
@@ -38,6 +39,7 @@ async function boot(available: { up: boolean }) {
     probeOnStart: false,
     coalesceMs: 5,
     computerUse: { bridge, available: () => available.up, lock: new DesktopLock({ path: path.join(tempDir("lock"), "desktop.lock") }) },
+    ...(alevrEngine ? { alevrEngine } : {}),
   });
   servers.push(server);
   const client = await TestClient.connect(server.url, server.token);
@@ -97,4 +99,37 @@ test("computer_use: the session's model picks the coordinate convention", async 
   assert.equal(computerSessionFor(server.sessions, { sessionId: gemini, depth: 0 })?.coordinateSpace, "normalized_1000");
   assert.equal(computerSessionFor(server.sessions, { sessionId: codex, depth: 0 })?.coordinateSpace, "pixels");
   assert.equal(computerSessionFor(server.sessions, { sessionId: "missing", depth: 0 }), undefined);
+});
+
+test("Alevr engine gets native computer tools and guidance and frees the desktop at turn end", async () => {
+  const options: EngineSessionOptions[] = [];
+  let imageCount = 0;
+  const makeSession = (o: EngineSessionOptions): EngineSession => {
+    options.push(o);
+    return {
+      sessionId: "engine-app-task", abort() {}, setMode() {}, queueUserMessage: async () => {},
+      async prompt() {
+        type Tool = { spec: { name: string }; execute(input: Record<string, unknown>, ctx: Record<string, unknown>): Promise<{ output: string; images?: unknown[] }> };
+        const tool = (o.extraTools as Tool[]).find((t) => t.spec.name === "computer_use")!;
+        assert.ok(tool, "the engine receives the tool without MCP injection");
+        const result = await tool.execute({ action: "open_app", app: "Safari" }, { callId: "open-safari", permissionMode: "full" });
+        imageCount = result.images?.length ?? 0;
+        o.callbacks.onEvent({ type: "assistant_delta", text: "Opened Safari." });
+        o.callbacks.onEvent({ type: "turn_finished", usage: { inputTokens: 1, outputTokens: 1 } });
+      },
+    };
+  };
+  const engine: AlevrEngine = { createSession: makeSession, resumeSession: (_id, o) => makeSession(o), providerFor: () => ({}) };
+  const { server, client, bridge } = await boot({ up: true }, engine);
+  await client.command("env.configure", { backend: { baseUrl: "https://alevr.example/api/agent", authorization: "Bearer test", models: [] } });
+  await client.command("provider.probe", { instanceId: "alevr" });
+  const selection = { instanceId: "alevr", model: "openai:gpt-test" };
+  const { sessionId } = await client.command<{ sessionId: string }>("session.open", { cwd: tempDir("cwd"), selection });
+  await client.command("turn.start", { sessionId, input: { text: "Open YouTube in Safari" }, selection, runtimeMode: "full", interactionMode: "default" });
+  await client.waitFor(() => client.snapshot(sessionId).items.find((i) => i.kind === "assistant_message" && i.text === "Opened Safari."), 4000, "engine answer");
+  await client.waitFor(() => bridge.sent.some((r) => r.type === "computer.release"), 4000, "automatic desktop release");
+  assert.equal(imageCount, 1);
+  assert.match(options[0].systemAppendix!, /Choose computer use yourself/);
+  assert.ok(client.snapshot(sessionId).items.some((i) => i.kind === "computer_action"));
+  assert.equal(server.mcp.tools({ sessionId, depth: 0 }).filter((t) => t.name === "computer_use").length, 1);
 });

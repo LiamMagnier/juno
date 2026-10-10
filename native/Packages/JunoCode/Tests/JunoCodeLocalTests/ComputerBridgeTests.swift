@@ -103,7 +103,7 @@ final class ComputerBridgeTests: XCTestCase {
         XCTAssertEqual(noGrant.missingPermissions, ["accessibility"])
         XCTAssertEqual(action(noGrant)?.status, .failed)
 
-        let off = await executor(approver: approver, settings: .init()).handle(call("c2", .init(action: .screenshot)))
+        let off = await executor(approver: approver, settings: .init(connectedAgentsEnabled: false)).handle(call("c2", .init(action: .screenshot)))
         XCTAssertEqual(off.endsTurn, true)
         XCTAssertTrue(approver.agentAsks.isEmpty, "the reader's switch comes before any card")
 
@@ -154,6 +154,38 @@ final class ComputerBridgeTests: XCTestCase {
         XCTAssertTrue(released.ok)
         let active = await service.isActive(sessionID: ComputerBridgeExecutor.screenSessionID("claude:t7"))
         XCTAssertFalse(active)
+    }
+
+    func testStopCannotBeRestartedByTheNextConnectedAgentCall() async throws {
+        let approver = Approver()
+        let service = makeTestScreenService()
+        let bridge = executor(approver: approver, service: service)
+        let opened = await bridge.handle(call("first", .init(action: .screenshot, app: "com.apple.TextEdit")))
+        XCTAssertTrue(opened.ok)
+        await service.stopAll(reason: .escapeKey)
+        let asks = approver.agentAsks.count
+        let cards = approver.cards.count
+        for id in ["retry1", "retry2"] {
+            let stopped = await bridge.handle(call(id, .init(action: .screenshot, app: "com.apple.TextEdit")))
+            XCTAssertFalse(stopped.ok)
+            XCTAssertEqual(stopped.endsTurn, true)
+            XCTAssertEqual(action(stopped)?.status, .interrupted)
+            XCTAssertNil(stopped.image)
+        }
+        // An in-flight operation may already have consumed the service's
+        // one-shot stop notice. The bridge must still refuse reactivation.
+        _ = try? await service.prepare(sessionID: ComputerBridgeExecutor.screenSessionID("claude:t7"), action: .init(kind: .screenshot))
+        let afterNotice = await bridge.handle(call("retry3", .init(action: .screenshot, app: "com.apple.TextEdit")))
+        XCTAssertFalse(afterNotice.ok)
+        XCTAssertEqual(afterNotice.endsTurn, true)
+        XCTAssertEqual(approver.agentAsks.count, asks)
+        XCTAssertEqual(approver.cards.count, cards)
+        let active = await service.isActive(sessionID: ComputerBridgeExecutor.screenSessionID("claude:t7"))
+        XCTAssertFalse(active)
+        _ = await bridge.handle(.init(id: "end", type: .release, token: "t", sessionId: "claude:t7"))
+        let next = await bridge.handle(call("next-task", .init(action: .screenshot, app: "com.apple.TextEdit")))
+        XCTAssertTrue(next.ok, "a new task can ask for fresh consent after the stopped task releases")
+        XCTAssertEqual(approver.agentAsks.count, asks + 1)
     }
 
     func testTheRuntimeModeDecidesWhetherInputAsks() async throws {
