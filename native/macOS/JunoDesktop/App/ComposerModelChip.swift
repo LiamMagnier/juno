@@ -69,6 +69,9 @@ struct ComposerModelChip: View {
                 isLoading: isLoading,
                 accessibilityID: "juno.desktop.chat-model",
                 stage: $stage,
+                // Picture and video models in their own Images and Video
+                // sections; the composer sends them through /api/generate.
+                mediaSections: true,
                 select: { choose($0.id) }
             )
             .desktopPreviewOverlays(popover: { stage = .first(for: ladder) })

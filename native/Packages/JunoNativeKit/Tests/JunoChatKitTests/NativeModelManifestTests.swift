@@ -169,6 +169,35 @@ final class NativeModelManifestTests: XCTestCase {
         XCTAssertEqual(NativeModelPresentation.unavailabilityReason(model), "Requires Max ×5")
     }
 
+    /// A picture or video model does not stream, and is still something the
+    /// chat composer can send to (through `/api/generate`); an audio model is
+    /// not, on the native side, and stays "not available in chat".
+    func testPictureAndVideoModelsAreSendableAndAudioIsNot() async throws {
+        func generation(_ id: String, _ modality: String) -> String {
+            fullModel
+                .replacingOccurrences(of: #""id": "moonshot:kimi-k3""#, with: #""id": "\#(id)""#)
+                .replacingOccurrences(of: #""lifecycle": "active","#, with: #""lifecycle": "active", "modality": "\#(modality)","#)
+                .replacingOccurrences(of: #""streaming":true"#, with: #""streaming":false"#)
+        }
+        let catalog = try await client(body: manifest(models: [
+            generation("openai:gpt-image-2.5-flare", "image"),
+            generation("google:gemini-omni-1.1-flash", "video"),
+            generation("google:lyria-3", "audio"),
+        ])).modelCatalog(for: accountID)
+        let byID = Dictionary(uniqueKeysWithValues: catalog.models.map { ($0.id, $0) })
+
+        for id in ["openai:gpt-image-2.5-flare", "google:gemini-omni-1.1-flash"] {
+            let model = try XCTUnwrap(byID[id])
+            XCTAssertFalse(model.isChatCapable)
+            XCTAssertTrue(model.isMediaGeneration)
+            XCTAssertTrue(model.isAvailable)
+            XCTAssertNil(model.unavailability)
+        }
+        let audio = try XCTUnwrap(byID["google:lyria-3"])
+        XCTAssertFalse(audio.isAvailable)
+        XCTAssertEqual(audio.unavailability, .notAChatModel)
+    }
+
     func testAMidModelLockedToLiteNamesLite() async throws {
         let lite = gatedModel.replacingOccurrences(of: #""requiredPlan": "max""#, with: #""requiredPlan": "lite""#)
         let catalog = try await client(body: manifest(models: [lite])).modelCatalog(for: accountID)

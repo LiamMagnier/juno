@@ -60,6 +60,25 @@ final class JunoMobileNavigationTests: XCTestCase {
         )
     }
 
+    /// The phone drawer drops only what the chat's top bar already reaches
+    /// (Code, through the Chat | Code switch), keeps the shared order, and
+    /// still lists every host of a folded destination except those the bar
+    /// reaches — so Work stays one tap away, through Code.
+    func testThePhoneDrawerDropsOnlyWhatTheTopBarReaches() {
+        let phone = JunoMobileSection.phoneDrawerDestinations
+        XCTAssertFalse(phone.contains(.code))
+        XCTAssertEqual(
+            phone,
+            JunoMobileSection.drawerDestinations.filter { $0 != .code }
+        )
+        for host in JunoMobileSection.foldedDestinations.values {
+            XCTAssertTrue(
+                phone.contains(host) || JunoMobileSection.phoneTopBarDestinations.contains(host),
+                "\(host) hosts a folded destination but the phone cannot reach it"
+            )
+        }
+    }
+
     /// The drawer draws `junoIcon` when a destination has one and falls back to
     /// an SF Symbol when it does not. One system glyph in a column of the web's
     /// own marks reads as a row borrowed from another product — the exact drift

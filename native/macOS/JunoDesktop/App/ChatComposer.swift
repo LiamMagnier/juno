@@ -1789,7 +1789,7 @@ struct ChatComposer: View {
         ComposerModelChip(
             selectedModel: selectedModel,
             selectedModelID: selectedModelID,
-            catalog: model.modelCatalog,
+            catalog: model.composerCatalog,
             catalogError: model.modelCatalogErrorDescription,
             scale: thinkingScale,
             stopID: Binding(
@@ -2206,7 +2206,10 @@ struct ChatComposer: View {
         selectedModelID = DesktopChatSelection.resolvedModelID(
             current: selectedModelID,
             conversationModel: model.selectedConversation?.model ?? "",
-            selectable: model.selectableModels
+            // The picture and video models too: picking one is a choice the
+            // composer keeps, and a conversation that last made a picture
+            // reopens on its picture model.
+            selectable: model.composerSelectableModels
         )
         // A project's preference is written into the chip, not only onto the
         // wire: an assistant configured for Sonnet shows "Sonnet" before Send

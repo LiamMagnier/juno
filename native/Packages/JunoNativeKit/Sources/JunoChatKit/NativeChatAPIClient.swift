@@ -159,6 +159,17 @@ public struct NativeChatModelOption: Identifiable, Equatable, Sendable {
     /// here, and are not "unavailable" either; they are a different product.
     public var isChatCapable: Bool { supportsStreaming }
 
+    /// A picture or video model: the chat composer runs it through
+    /// `/api/generate` (``NativeChatAPIClient/mediaGenerationEvents(_:for:)``),
+    /// as the web's composer does, rather than through `/api/chat`. The server
+    /// lists a video model only where it can actually generate one
+    /// (`isVideoGenSupported`), so the manifest's word is enough.
+    public var isMediaGeneration: Bool { modality == "image" || modality == "video" }
+
+    /// What a chat composer can send a turn to: a streaming chat model, or a
+    /// picture or video model.
+    public var isComposerSendable: Bool { supportsStreaming || isMediaGeneration }
+
     /// Whether the provider offers a premium serving tier for this model.
     public var supportsFastMode: Bool { fastModeRateMultiplier != nil }
 
@@ -166,11 +177,11 @@ public struct NativeChatModelOption: Identifiable, Equatable, Sendable {
     public var supportsUltraFastMode: Bool { ultraFastRateMultiplier != nil }
 
     public var isAvailable: Bool {
-        availability == "available" && supportsStreaming
+        availability == "available" && isComposerSendable
     }
 
     public var unavailability: NativeModelUnavailability? {
-        if !supportsStreaming { return .notAChatModel }
+        if !isComposerSendable { return .notAChatModel }
         switch availability {
         case "available": return nil
         case "coming_soon": return .comingSoon

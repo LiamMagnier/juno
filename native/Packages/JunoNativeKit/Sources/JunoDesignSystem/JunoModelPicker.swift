@@ -242,6 +242,7 @@ public struct JunoModelPicker: View {
     private let proMode: Binding<Bool>?
     private let favorites: Set<String>
     private let toggleFavorite: ((String) -> Void)?
+    private let mediaSections: Bool
     private let select: (JunoModelDescriptor) -> Void
     private let fallbackName: String
     private let isLoading: Bool
@@ -280,8 +281,10 @@ public struct JunoModelPicker: View {
         arrowEdge: Edge = .bottom,
         accessibilityID: String = "juno.model-picker",
         stage: Binding<JunoModelPickerStage?>? = nil,
+        mediaSections: Bool = false,
         select: @escaping (JunoModelDescriptor) -> Void
     ) {
+        self.mediaSections = mediaSections
         self.models = models
         self.selectedModelID = selectedModelID
         self.ladder = ladder
@@ -340,6 +343,7 @@ public struct JunoModelPicker: View {
                 metrics: fittedMetrics,
                 favorites: favorites,
                 toggleFavorite: toggleFavorite,
+                mediaSections: mediaSections,
                 select: { model in
                     select(model)
                     close()

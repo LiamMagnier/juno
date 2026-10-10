@@ -69,14 +69,16 @@ struct JunoMobileComposer: View {
   /// A one-shot request from a shortcut. The owner resets it as soon as the
   /// composer has claimed the microphone.
   var startDictation: Binding<Bool> = .constant(false)
-  /// Opens Orbit, the account's agents — the "+" menu's Orbit row. Nil hides it.
-  var openOrbit: (() -> Void)? = nil
   /// The draft's placeholder. A private chat says so where the reader types.
   var placeholder: LocalizedStringKey = "Ask Alevr"
 
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  /// The thinking dial, open in place of the control row.
+  /// The Thinking panel, open above the card.
   @State private var thinkingOpen = false
+  /// Where the "+" and the dial sit on the card, so their panels grow out of
+  /// them (`JunoMobileBloomTransition`).
+  @State private var plusOrigin: CGPoint?
+  @State private var dialOrigin: CGPoint?
   /// The "+" panel, drawn above the card in the composer's glass container.
   @State private var plusOpen = false
   /// The "+" panel's frame on screen, so Camera and Photos can grow out of it.
@@ -85,7 +87,8 @@ struct JunoMobileComposer: View {
   /// then fades where it stands while the new surface opens out of its frame,
   /// instead of shrinking back into the button.
   @State private var plusMorphing = false
-  /// The model picker, from the top of "+" or a long press on the dial.
+  /// The model picker: the Thinking panel's model name, a tap on the dial
+  /// for a model without levels, or a long press on the dial.
   @State private var showingModelPicker = false
   /// Send, stop and voice answer in the hand. See `JunoMobileHaptic`.
   @State private var sendHaptic = JunoMobileHapticTrigger()
@@ -122,7 +125,7 @@ struct JunoMobileComposer: View {
   @State private var draftExpanded = false
 
   private var selectedModel: NativeChatModelOption? {
-    model.modelCatalog.first { $0.id == selectedModelID }
+    model.model(withID: selectedModelID)
   }
 
   /// The "/" commands this composer can honour. Rows whose surface the
@@ -340,18 +343,6 @@ struct JunoMobileComposer: View {
         .transition(.opacity)
       }
 
-      // The dial's level, named over the composer while the dial is open —
-      // ChatGPT's "Instant" above its slider.
-      if thinkingOpen, let thinkingScale {
-        Text(verbatim: thinkingScale.stops.first { $0.effort == reasoningEffort }?.label ?? "Off")
-          .junoFont(size: 15, relativeTo: .subheadline, weight: .semibold)
-          .foregroundStyle(Color.junoForeground)
-          .contentTransition(.opacity)
-          .frame(maxWidth: .infinity)
-          .transition(.opacity.combined(with: .offset(y: 4)))
-          .accessibilityHidden(true)
-      }
-
       // The composer is the call now (the web's `voiceCallParts`): no dock
       // above it. What is left above is the call's one plain line of news,
       // and the camera's own preview while Juno is looking through it.
@@ -362,106 +353,94 @@ struct JunoMobileComposer: View {
 
         JunoGlass(spacing: JunoSpace.snug) {
           VStack(alignment: .leading, spacing: 0) {
-            if thinkingOpen, let thinkingScale, voiceSession == nil {
-              JunoMobileThinkingDialSlider(
-                scale: thinkingScale,
-                effort: $reasoningEffort,
-                proMode: $tools.proMode,
-                close: closeThinking
+            if !attachments.isEmpty, let attachmentModel {
+              JunoMobileAttachmentChips(
+                attachments: attachments,
+                onRemove: { attachmentModel.remove($0) },
+                onRetry: { attachmentModel.retry($0, conversationID: conversation?.id) }
               )
-              .padding(.horizontal, JunoSpace.tight)
-              .padding(.vertical, JunoSpace.tight)
-              .transition(.opacity)
-            } else {
-              if !attachments.isEmpty, let attachmentModel {
-                JunoMobileAttachmentChips(
-                  attachments: attachments,
-                  onRemove: { attachmentModel.remove($0) },
-                  onRetry: { attachmentModel.retry($0, conversationID: conversation?.id) }
-                )
-                .padding(.horizontal, JunoSpace.cozy)
-                .padding(.top, JunoSpace.cozy)
-                .transition(.opacity.combined(with: .move(edge: .bottom)))
-              }
+              .padding(.horizontal, JunoSpace.cozy)
+              .padding(.top, JunoSpace.cozy)
+              .transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
 
-              if let slashQuery = JunoMobileSlashPalette.query(in: prompt), !showsCollapsedDraft {
-                JunoMobileSlashPalette(
-                  commands: slashCommands,
-                  query: slashQuery,
-                  pick: runSlashCommand
-                )
-                .padding(.horizontal, JunoSpace.snug)
-                .padding(.top, JunoSpace.snug)
-                .transition(.opacity.combined(with: .move(edge: .bottom)))
-              }
+            if let slashQuery = JunoMobileSlashPalette.query(in: prompt), !showsCollapsedDraft {
+              JunoMobileSlashPalette(
+                commands: slashCommands,
+                query: slashQuery,
+                pick: runSlashCommand
+              )
+              .padding(.horizontal, JunoSpace.snug)
+              .padding(.top, JunoSpace.snug)
+              .transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
 
-              if voiceSession == nil, !armedTokens.isEmpty {
-                ScrollView(.horizontal) {
-                  HStack(spacing: JunoSpace.cozy) {
-                    ForEach(armedTokens) { token in
-                      JunoMobileComposerToken(
-                        icon: token.icon, title: token.title, remove: token.remove
-                      )
-                    }
+            if voiceSession == nil, !armedTokens.isEmpty {
+              ScrollView(.horizontal) {
+                HStack(spacing: JunoSpace.cozy) {
+                  ForEach(armedTokens) { token in
+                    JunoMobileComposerToken(
+                      icon: token.icon, title: token.title, remove: token.remove
+                    )
                   }
                 }
-                .scrollIndicators(.hidden)
-                .padding(.horizontal, JunoSpace.regular)
-                .padding(.top, JunoSpace.snug)
-                .transition(.opacity)
               }
+              .scrollIndicators(.hidden)
+              .padding(.horizontal, JunoSpace.regular)
+              .padding(.top, JunoSpace.snug)
+              .transition(.opacity)
+            }
 
-              if let dictation {
-                JunoMobileDictationTranscript(session: dictation, draft: prompt)
-                  .padding(.horizontal, JunoSpace.regular)
-                  .padding(.top, JunoSpace.comfy)
-                  .padding(.bottom, JunoSpace.tight)
-                  .transition(.opacity)
-              } else if showsCollapsedDraft {
-                collapsedDraftCard
-                  .padding(JunoSpace.snug)
-                  .transition(.opacity)
-              } else {
-                // The placeholder in secondary ink, not the system's paler
-                // placeholder grey: ChatGPT's "Ask ChatGPT" reads at a glance.
-                TextField(
-                  text: $prompt,
-                  prompt: Text(voiceActive ? "Type while you talk…" : placeholder)
-                    .foregroundStyle(Color.secondary),
-                  axis: .vertical
-                ) {
-                  Text(voiceActive ? "Type while you talk…" : placeholder)
-                }
-                .junoFont(size: 17, relativeTo: .body)
-                .lineLimit(1...6)
-                .textFieldStyle(.plain)
-                .focused(composerFocused)
+            if let dictation {
+              JunoMobileDictationTranscript(session: dictation, draft: prompt)
                 .padding(.horizontal, JunoSpace.regular)
                 .padding(.top, JunoSpace.comfy)
                 .padding(.bottom, JunoSpace.tight)
-                .accessibilityIdentifier("juno.mobile.chat-composer")
-
-                if isLongDraft {
-                  attachAsFileOffer
-                }
+                .transition(.opacity)
+            } else if showsCollapsedDraft {
+              collapsedDraftCard
+                .padding(JunoSpace.snug)
+                .transition(.opacity)
+            } else {
+              // The placeholder in secondary ink, not the system's paler
+              // placeholder grey: ChatGPT's "Ask ChatGPT" reads at a glance.
+              TextField(
+                text: $prompt,
+                prompt: Text(voiceActive ? "Type while you talk…" : placeholder)
+                  .foregroundStyle(Color.secondary),
+                axis: .vertical
+              ) {
+                Text(voiceActive ? "Type while you talk…" : placeholder)
               }
-
-              Group {
-                if let dictation {
-                  JunoMobileDictationRow(
-                    session: dictation,
-                    onCancel: cancelDictation,
-                    onDone: finishDictation
-                  )
-                  .transition(Self.dictationRowTransition(reduceMotion))
-                } else {
-                  controlRow
-                    .transition(Self.dictationRowTransition(reduceMotion))
-                }
-              }
-              .padding(.horizontal, JunoSpace.tight)
+              .junoFont(size: 17, relativeTo: .body)
+              .lineLimit(1...6)
+              .textFieldStyle(.plain)
+              .focused(composerFocused)
+              .padding(.horizontal, JunoSpace.regular)
+              .padding(.top, JunoSpace.comfy)
               .padding(.bottom, JunoSpace.tight)
+              .accessibilityIdentifier("juno.mobile.chat-composer")
+
+              if isLongDraft {
+                attachAsFileOffer
+              }
             }
+
+            Group {
+              if let dictation {
+                JunoMobileDictationRow(
+                  session: dictation,
+                  onCancel: cancelDictation,
+                  onDone: finishDictation
+                )
+                .transition(Self.dictationRowTransition(reduceMotion))
+              } else {
+                controlRow
+                  .transition(Self.dictationRowTransition(reduceMotion))
+              }
+            }
+            .padding(.horizontal, JunoSpace.tight)
+            .padding(.bottom, JunoSpace.tight)
           }
           // In a call the glow carries the phase, so the words go here: the
           // composer is named as the call and its value is what it is doing.
@@ -495,38 +474,58 @@ struct JunoMobileComposer: View {
           }
           .animation(JunoMotion.reduced(JunoMotion.chatControl, when: reduceMotion), value: thinkingOpen)
           .animation(JunoMotion.reduced(JunoMotion.chatControl, when: reduceMotion), value: dictating)
-          // The "+" panel grows up out of the composer's leading corner, its
-          // foot 8pt above the card: it never covers the field, and it shares
-          // the card's glass container so the two read as one material.
+          // The two panels stand on the card's top edge, 8pt above the field,
+          // in the card's glass container so they read as one material with
+          // it: the "+" panel from the leading corner, the Thinking panel
+          // across the card's width. Each grows out of its own control and
+          // folds back into it (`JunoMobileBloomTransition`).
           .overlay(alignment: .top) {
-            // A zero-height shelf on the card's top edge; the panel stands on
-            // it, so its foot is always 8pt above the field.
+            // A zero-height shelf on the card's top edge; the panels stand
+            // on it, so their foot is always 8pt above the field.
             Color.clear
               .frame(maxWidth: .infinity)
               .frame(height: 0)
               .overlay(alignment: .bottomLeading) {
                 if plusOpen, voiceSession == nil {
-                  plusPanel
+                  // Its own glass container: glass the card's container
+                  // draws follows layout, not render transforms, so the bloom
+                  // would only fade the rows inside a full-size pane.
+                  GlassEffectContainer {
+                    plusPanel.junoMobilePanelGlass(interactive: true)
+                  }
                     .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
                       plusPanelFrame = $0
                     }
                     .padding(.bottom, JunoSpace.snug)
                     .fixedSize()
                     .transition(
-                      reduceMotion || plusMorphing
-                        ? .opacity
-                        : .scale(scale: 0.2, anchor: .bottomLeading).combined(with: .opacity)
+                      plusMorphing
+                        ? AnyTransition.opacity
+                        : AnyTransition(JunoMobileBloomTransition(origin: plusOrigin, reduceMotion: reduceMotion))
                     )
                 }
               }
+              .overlay(alignment: .bottom) {
+                if thinkingOpen, voiceSession == nil, let thinkingScale {
+                  GlassEffectContainer {
+                    thinkingPanel(thinkingScale).junoMobilePanelGlass()
+                  }
+                    .padding(.bottom, JunoSpace.snug)
+                    .transition(JunoMobileBloomTransition(origin: dialOrigin, reduceMotion: reduceMotion))
+                }
+              }
           }
-          // Anywhere else on the screen closes it.
+          .coordinateSpace(.named(JunoMobileComposerSpace.card))
+          // Anywhere else on the screen closes either panel.
           .background {
-            if plusOpen {
+            if plusOpen || thinkingOpen {
               Color.clear
                 .frame(width: 4_000, height: 4_000)
                 .contentShape(.rect)
-                .onTapGesture { closePlus() }
+                .onTapGesture {
+                  closePlus()
+                  closeThinking()
+                }
                 .accessibilityHidden(true)
             }
           }
@@ -579,16 +578,14 @@ struct JunoMobileComposer: View {
     .task { await applyPreviewFlags() }
     .sheet(isPresented: $showingModelPicker) {
       JunoMobileModelSelectorView(
-        models: model.modelCatalog,
+        models: model.composerCatalog,
         selectedModelID: selectedModelID,
-        layout: .compact,
         onSelect: { option in
           selectedModelID = option.id
           showingModelPicker = false
         }
       )
-      // Full height: a list of labs and models reads as a page, and at the
-      // medium detent only Auto and one lab were visible.
+      // Full height: Auto, Recent and every lab's tile on one screen.
       .presentationDetents([.large])
       .presentationDragIndicator(.visible)
     }
@@ -596,36 +593,63 @@ struct JunoMobileComposer: View {
       if focused { closeThinking(); closePlus() }
     }
     .onChange(of: plusOpen) { _, open in
-      if open { plusMorphing = false }
+      if open {
+        plusMorphing = false
+        closeThinking()
+      }
     }
   }
 
   // MARK: Thinking dial
 
   private func closePlus() {
+    guard plusOpen else { return }
     plusMorphing = false
-    withAnimation(JunoMotion.reduced(JunoMotion.chatControl, when: reduceMotion)) {
+    withAnimation(JunoMotion.panelClose(reduceMotion: reduceMotion)) {
       plusOpen = false
     }
   }
 
   private func openThinking() {
     composerFocused.wrappedValue = false
-    withAnimation(JunoMotion.reduced(JunoMotion.chatControl, when: reduceMotion)) {
+    closePlus()
+    withAnimation(JunoMotion.panelOpen(reduceMotion: reduceMotion)) {
       thinkingOpen = true
     }
   }
 
+  private func toggleThinking() {
+    if thinkingOpen { closeThinking() } else { openThinking() }
+  }
+
   private func closeThinking() {
     guard thinkingOpen else { return }
-    withAnimation(JunoMotion.reduced(JunoMotion.chatControl, when: reduceMotion)) {
+    withAnimation(JunoMotion.panelClose(reduceMotion: reduceMotion)) {
       thinkingOpen = false
     }
   }
 
   private func chooseModel() {
     composerFocused.wrappedValue = false
+    closeThinking()
+    closePlus()
     showingModelPicker = true
+  }
+
+  /// The dial, open: the Thinking panel over the card's width, its model
+  /// name the way to the catalogue.
+  private func thinkingPanel(_ scale: NativeThinkingScale) -> some View {
+    JunoMobileThinkingPanel(
+      scale: scale,
+      effort: $reasoningEffort,
+      fastMode: $tools.fastMode,
+      ultraFast: $tools.ultraFast,
+      proMode: $tools.proMode,
+      modelName: selectedModel?.displayName ?? junoDisplayModelName(conversation?.model ?? selectedModelID),
+      providerID: selectedModel?.providerID ?? "juno",
+      providerName: selectedModel?.providerName ?? "Alevr",
+      openModels: chooseModel
+    )
   }
 
   // MARK: Armed tools
@@ -649,7 +673,10 @@ struct JunoMobileComposer: View {
       })
     }
     if tools.fastMode {
-      tokens.append(ArmedToken(id: "flash", icon: .work, title: "Flash") { tools.fastMode = false })
+      tokens.append(ArmedToken(id: "flash", icon: .zap, title: "Fast") { tools.fastMode = false })
+    }
+    if tools.ultraFast {
+      tokens.append(ArmedToken(id: "ultra-fast", icon: .zap, title: JunoUltraFastMode.title) { tools.ultraFast = false })
     }
     if tools.proMode {
       tokens.append(ArmedToken(id: "pro", icon: .sparkles, title: "Pro") { tools.proMode = false })
@@ -797,10 +824,10 @@ struct JunoMobileComposer: View {
       if let forced = JunoComposerPreviewFlags.forcedModelID {
         // The catalog arrives asynchronously; without waiting, a scripted
         // screenshot silently lands on whatever was selected by default.
-        for _ in 0..<20 where !model.modelCatalog.contains(where: { $0.id == forced }) {
+        for _ in 0..<20 where model.model(withID: forced) == nil {
           try? await Task.sleep(nanoseconds: 100_000_000)
         }
-        if model.modelCatalog.contains(where: { $0.id == forced }) {
+        if model.model(withID: forced) != nil {
           selectedModelID = forced
         }
       }
@@ -894,9 +921,10 @@ struct JunoMobileComposer: View {
         JunoMobileThinkingDialButton(
           scale: thinkingScale,
           effort: reasoningEffort,
-          open: openThinking,
+          open: toggleThinking,
           chooseModel: chooseModel
         )
+        .junoMobileComposerOrigin($dialOrigin)
       }
 
       if canDictate {
@@ -907,7 +935,10 @@ struct JunoMobileComposer: View {
   }
 
   /// The `+`, in an ordinary chat.
-  private var addMenu: some View { composerActions(rendersPanel: false) }
+  private var addMenu: some View {
+    composerActions(rendersPanel: false)
+      .junoMobileComposerOrigin($plusOrigin)
+  }
 
   /// The "+" panel itself: the same menu, drawn as the glass surface above
   /// the card.
@@ -945,10 +976,6 @@ struct JunoMobileComposer: View {
       },
       startCanvas: startCanvas,
       openPlugins: { openPlugins?() },
-      openOrbit: openOrbit,
-      modelName: selectedModel?.displayName ?? junoDisplayModelName(conversation?.model ?? ""),
-      chooseModel: chooseModel,
-      thinkingScale: thinkingScale,
       isPresented: $plusOpen,
       rendersPanel: rendersPanel
     )
@@ -1602,4 +1629,12 @@ struct JunoComposerGlassCircle: ViewModifier {
   }
 }
 
-
+extension View {
+  /// A composer panel's Liquid Glass: the system material in the panels'
+  /// concentric rounded rectangle. Applied by the composer, inside its glass
+  /// container, never by a panel itself.
+  func junoMobilePanelGlass(interactive: Bool = false) -> some View {
+    let shape = RoundedRectangle(cornerRadius: JunoMobileComposerPanelMetrics.radius, style: .continuous)
+    return glassEffect(interactive ? .regular.interactive() : .regular, in: shape)
+  }
+}

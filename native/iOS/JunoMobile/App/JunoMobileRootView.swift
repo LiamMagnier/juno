@@ -117,8 +117,6 @@ struct JunoMobileRootView: View {
   @State private var incognito = false
   /// Asked before a private chat with turns in it is thrown away.
   @State private var confirmingEndPrivate = false
-  /// The drawer's Research row: a new chat with deep research armed.
-  @State private var pendingResearch = false
   /// The iPad split's columns. Collapsing the sidebar is a reading choice the
   /// shell respects until the reader opens it again.
   @State private var padColumns: NavigationSplitViewVisibility = .all
@@ -1143,20 +1141,8 @@ struct JunoMobileRootView: View {
       layout: layout,
       isDrafting: !incognito && conversationModel?.selectedConversationID == nil,
       statuses: sidebarStatuses,
-      incognito: incognito,
-      startResearch: layout == .drawer ? researchAction : nil
+      incognito: incognito
     )
-  }
-
-  /// The drawer's Research row. A typed property for the reason the voice
-  /// and memory actions are: an inline closure-or-nil in that initializer is
-  /// more than the type checker will solve.
-  private var researchAction: (() -> Void)? {
-    {
-      if incognito { endIncognito() }
-      startNewChat()
-      pendingResearch = true
-    }
   }
 
   // MARK: Attention
@@ -1373,10 +1359,8 @@ struct JunoMobileRootView: View {
         requestSender: requestSender,
         pendingPrompt: $pendingAskPrompt,
         startDictation: $pendingDictation,
-        startResearch: $pendingResearch,
         agentsModel: agentsModel,
-        openAgent: openAgent,
-        openOrbit: { openSidebarDestination(.agents) }
+        openAgent: openAgent
       )
       .transition(.opacity)
     } else {

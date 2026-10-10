@@ -125,10 +125,13 @@ struct JunoMobileIncognitoChat: View {
     // than wrong — and clearing it would make a sticky preference un-sticky the
     // moment someone browsed the model list.
     @State private var fastMode = false
+    @State private var ultraFast = false
     @State private var proMode = false
     @State private var showingCloseWarning = false
     @State private var showingModelPicker = false
     @State private var thinkingOpen = false
+    /// The dial's centre on the card, so the Thinking panel grows out of it.
+    @State private var dialOrigin: CGPoint?
     @State private var scrollPosition = ScrollPosition(edge: .bottom)
     @FocusState private var composerFocused: Bool
 
@@ -274,13 +277,12 @@ struct JunoMobileIncognitoChat: View {
                 JunoMobileModelSelectorView(
                     models: selectableModels,
                     selectedModelID: selectedModelID,
-                    layout: .compact,
                     onSelect: { option in
                         selectedModelID = option.id
                         showingModelPicker = false
                     }
                 )
-                .presentationDetents([.medium, .large])
+                .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
             }
     }
@@ -290,48 +292,96 @@ struct JunoMobileIncognitoChat: View {
     /// as ChatGPT's temporary composer is.
     private var composerCapsule: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if thinkingOpen, let scale = thinkingScale {
-                JunoMobileThinkingDialSlider(
-                    scale: scale,
-                    effort: $reasoningEffort,
-                    proMode: $proMode,
-                    close: { withAnimation(JunoMotion.reduced(JunoMotion.chatControl, when: reduceMotion)) { thinkingOpen = false } }
-                )
-                .padding(JunoSpace.tight)
-            } else {
-                TextField("Private chat", text: $prompt, axis: .vertical)
-                    .junoFont(size: 17, relativeTo: .body)
-                    .lineLimit(1...6)
-                    .textFieldStyle(.plain)
-                    .focused($composerFocused)
-                    .padding(.horizontal, JunoSpace.regular)
-                    .padding(.top, JunoSpace.comfy)
-                    .padding(.bottom, JunoSpace.tight)
-                    .accessibilityIdentifier("juno.mobile.incognito-composer")
-
-                HStack(spacing: 0) {
-                    Spacer(minLength: 0)
-                    JunoMobileThinkingDialButton(
-                        scale: thinkingScale,
-                        effort: reasoningEffort,
-                        open: {
-                            composerFocused = false
-                            withAnimation(JunoMotion.reduced(JunoMotion.chatControl, when: reduceMotion)) { thinkingOpen = true }
-                        },
-                        chooseModel: { showingModelPicker = true }
-                    )
-                    JunoMobileComposerPrimaryButton(
-                        face: model.isStreaming ? .stop : .send(enabled: !sendDisabled)
-                    ) {
-                        if model.isStreaming { model.stopGeneration() } else { send() }
-                    }
-                    .accessibilityIdentifier(model.isStreaming ? "juno.mobile.chat-stop" : "juno.mobile.incognito-send")
-                }
-                .padding(.horizontal, JunoSpace.tight)
+            TextField("Private chat", text: $prompt, axis: .vertical)
+                .junoFont(size: 17, relativeTo: .body)
+                .lineLimit(1...6)
+                .textFieldStyle(.plain)
+                .focused($composerFocused)
+                .padding(.horizontal, JunoSpace.regular)
+                .padding(.top, JunoSpace.comfy)
                 .padding(.bottom, JunoSpace.tight)
+                .accessibilityIdentifier("juno.mobile.incognito-composer")
+
+            HStack(spacing: 0) {
+                Spacer(minLength: 0)
+                JunoMobileThinkingDialButton(
+                    scale: thinkingScale,
+                    effort: reasoningEffort,
+                    open: {
+                        composerFocused = false
+                        withAnimation(
+                            thinkingOpen
+                                ? JunoMotion.panelClose(reduceMotion: reduceMotion)
+                                : JunoMotion.panelOpen(reduceMotion: reduceMotion)
+                        ) { thinkingOpen.toggle() }
+                    },
+                    chooseModel: openModels
+                )
+                .junoMobileComposerOrigin($dialOrigin)
+                JunoMobileComposerPrimaryButton(
+                    face: model.isStreaming ? .stop : .send(enabled: !sendDisabled)
+                ) {
+                    if model.isStreaming { model.stopGeneration() } else { send() }
+                }
+                .accessibilityIdentifier(model.isStreaming ? "juno.mobile.chat-stop" : "juno.mobile.incognito-send")
             }
+            .padding(.horizontal, JunoSpace.tight)
+            .padding(.bottom, JunoSpace.tight)
         }
         .junoGlass(in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        // The saved chat's Thinking panel, standing on the card's top edge
+        // and growing out of the dial.
+        .overlay(alignment: .top) {
+            Color.clear
+                .frame(maxWidth: .infinity)
+                .frame(height: 0)
+                .overlay(alignment: .bottom) {
+                    if thinkingOpen, let scale = thinkingScale {
+                        JunoMobileThinkingPanel(
+                            scale: scale,
+                            effort: $reasoningEffort,
+                            fastMode: $fastMode,
+                            ultraFast: $ultraFast,
+                            proMode: $proMode,
+                            modelName: selectedModel?.displayName ?? junoDisplayModelName(selectedModelID),
+                            providerID: selectedModel?.providerID ?? "juno",
+                            providerName: selectedModel?.providerName ?? "Alevr",
+                            openModels: openModels
+                        )
+                        .junoMobilePanelGlass()
+                        .padding(.bottom, JunoSpace.snug)
+                        .transition(JunoMobileBloomTransition(origin: dialOrigin, reduceMotion: reduceMotion))
+                    }
+                }
+        }
+        .coordinateSpace(.named(JunoMobileComposerSpace.card))
+        .background {
+            if thinkingOpen {
+                Color.clear
+                    .frame(width: 4_000, height: 4_000)
+                    .contentShape(.rect)
+                    .onTapGesture { closeThinking() }
+                    .accessibilityHidden(true)
+            }
+        }
+        .onChange(of: composerFocused) { _, focused in
+            if focused { closeThinking() }
+        }
+    }
+
+    private var selectedModel: NativeChatModelOption? {
+        selectableModels.first { $0.id == selectedModelID }
+    }
+
+    private func closeThinking() {
+        guard thinkingOpen else { return }
+        withAnimation(JunoMotion.panelClose(reduceMotion: reduceMotion)) { thinkingOpen = false }
+    }
+
+    private func openModels() {
+        composerFocused = false
+        closeThinking()
+        showingModelPicker = true
     }
 
     private var sendDisabled: Bool {
@@ -358,6 +408,7 @@ struct JunoMobileIncognitoChat: View {
             modelID: selectedModelID.isEmpty ? initialModelID : selectedModelID,
             reasoningEffort: reasoningEffort,
             fastMode: fastMode,
+            ultraFast: ultraFast,
             proMode: proMode
         )
     }

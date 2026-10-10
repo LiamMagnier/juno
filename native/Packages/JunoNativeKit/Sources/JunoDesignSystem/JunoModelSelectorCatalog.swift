@@ -89,11 +89,13 @@ public enum JunoModelSelectorCatalog {
 
     // MARK: - Rows
 
-    /// The web's `MODALITY_LABEL`: "Text", not "Chat", over a lab's chat rows.
+    /// The web's `MODALITY_LABEL`: "Text", not "Chat", over a lab's chat rows;
+    /// "Images" over the picture models (owner, Oct 10: their own "Images"
+    /// and "Video" sections).
     public static func modalityLabel(_ modality: JunoModelModality) -> String {
         switch modality {
         case .chat: "Text"
-        case .image: "Image"
+        case .image: "Images"
         case .video: "Video"
         case .audio: "Audio"
         }
@@ -214,12 +216,19 @@ public enum JunoModelSelectorCatalog {
     /// modality under their own headings. In Favorites: the starred models,
     /// grouped by lab. Typing searches every lab whatever the rail says.
     /// Superseded generations fold behind "Past models" in every lab group.
+    ///
+    /// `mediaSections`: in the All view, the picture, video and audio models
+    /// leave their labs for sections of their own after every lab — "Images",
+    /// "Video", "Audio" — each row carrying its lab's mark. A chat composer
+    /// that can generate media turns this on; a lab's own view and a search
+    /// keep them under their lab.
     public static func groups(
         models: [JunoModelDescriptor],
         filter: Filter,
         query: String,
         favorites: Set<String> = [],
-        recents: [String] = []
+        recents: [String] = [],
+        mediaSections: Bool = false
     ) -> [Group] {
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
         let searching = !needle.isEmpty
@@ -264,8 +273,10 @@ public enum JunoModelSelectorCatalog {
             }
         }
 
-        for lab in labs(in: visible) {
-            let mine = visible.filter { $0.providerID == lab.id }
+        let splitsMedia = mediaSections && filter == .all && !searching
+        let inLabs = splitsMedia ? visible.filter { $0.modality == .chat } : visible
+        for lab in labs(in: inLabs) {
+            let mine = inLabs.filter { $0.providerID == lab.id }
             out.append(Group(
                 id: lab.id,
                 label: lab.name,
@@ -275,7 +286,35 @@ public enum JunoModelSelectorCatalog {
                 legacy: rows(mine.filter(\.isLegacy), prefix: "legacy:", headingPrefix: lab.id + "/legacy:", byModality: true)
             ))
         }
+        if splitsMedia {
+            out.append(contentsOf: mediaGroups(visible))
+        }
         return out
+    }
+
+    /// The All view's "Images", "Video" and "Audio" sections: each kind's
+    /// models across every lab, in the rail's lab order, current first.
+    public static func mediaGroups(_ models: [JunoModelDescriptor]) -> [Group] {
+        modalityOrder.dropFirst().compactMap { modality in
+            let mine = models
+                .filter { $0.modality == modality && !isAuto($0) }
+                .enumerated()
+                .sorted { lhs, rhs in
+                    let l = labRank(lhs.element.providerID), r = labRank(rhs.element.providerID)
+                    return l == r ? lhs.offset < rhs.offset : l < r
+                }
+                .map(\.element)
+            guard !mine.isEmpty else { return nil }
+            let key = "modality:\(modality.rawValue)"
+            return Group(
+                id: key,
+                label: modalityLabel(modality),
+                showsLabel: true,
+                count: mine.count,
+                current: rows(mine.filter { !$0.isLegacy }, prefix: key + "/", byModality: false),
+                legacy: rows(mine.filter(\.isLegacy), prefix: key + "/legacy:", byModality: false)
+            )
+        }
     }
 
     /// The old entry point: a lab id or nil for every lab.

@@ -310,17 +310,22 @@ final class JunoMobileChatChromeUITests: XCTestCase {
     @MainActor
     func testTheComposerOpensOnTheAccountDefaultModelNotAuto() {
         let app = launch()
-        // The composer lost its model chip: the model is named, and chosen,
-        // on the "Model" row at the foot of the "+" panel.
-        let plus = app.buttons["juno.mobile.chat-plus"]
-        require(plus, app)
-        plus.tap()
-        let row = app.descendants(matching: .any)["juno.mobile.composer-model"].firstMatch
+        // The model is named, and chosen, on the Thinking panel the dial
+        // opens. Settings load asynchronously, so the composer legitimately
+        // sits on Auto for a moment — and Auto's dial opens the catalogue,
+        // not the panel — so wait for the dial to name a level first.
+        let dial = app.buttons["juno.mobile.chat-thinking"]
+        require(dial, app)
+        let leftAuto = expectation(
+            for: NSPredicate(format: "value != 'Chosen automatically for each message'"),
+            evaluatedWith: dial
+        )
+        _ = XCTWaiter().wait(for: [leftAuto], timeout: 15)
+        dial.tap()
+        let row = app.descendants(matching: .any)["juno.mobile.thinking-models"].firstMatch
         require(row, app, timeout: 5)
 
-        // The fixture account's default is Claude Opus 4.8; the row shows the
-        // short name ("Opus 4.8"). Settings load asynchronously, so the row
-        // legitimately shows Auto for a moment.
+        // The fixture account's default is Claude Opus 4.8.
         let settled = expectation(
             for: NSPredicate(format: "label CONTAINS 'Opus' OR value CONTAINS 'Opus'"),
             evaluatedWith: row

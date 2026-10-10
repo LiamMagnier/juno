@@ -185,4 +185,28 @@ final class JunoModelSelectorCatalogTests: XCTestCase {
         for id in ["a", "b", "c", "d", "b"] { raw = JunoModelRecents.recording(id, in: raw) }
         XCTAssertEqual(JunoModelRecents.ids(in: raw), ["b", "d", "c"])
     }
+
+    /// The chat composer's All view: picture and video models leave their
+    /// labs for "Images" and "Video" sections after every lab, in the rail's
+    /// lab order; a lab's own view and a search keep them under their lab.
+    func testMediaSectionsCollectPicturesAndVideoAfterTheLabs() {
+        let models = [
+            model("gpt", provider: "openai", name: "OpenAI"),
+            model("veo", provider: "google", name: "Google", modality: .video),
+            model("nano", provider: "google", name: "Google", modality: .image),
+            model("gemini", provider: "google", name: "Google"),
+            model("gpt-image", provider: "openai", name: "OpenAI", modality: .image),
+        ]
+        let groups = JunoModelSelectorCatalog.groups(models: models, filter: .all, query: "", mediaSections: true)
+        XCTAssertEqual(groups.map(\.id), ["openai", "google", "modality:image", "modality:video"])
+        XCTAssertEqual(groups.map(\.label).suffix(2), ["Images", "Video"])
+        XCTAssertEqual(groups[2].current.compactMap(\.model?.id), ["gpt-image", "nano"])
+        XCTAssertEqual(groups[1].current.compactMap(\.model?.id), ["gemini"])
+
+        let lab = JunoModelSelectorCatalog.groups(models: models, filter: .lab("google"), query: "", mediaSections: true)
+        XCTAssertEqual(lab.flatMap { $0.current.compactMap(\.model?.id) }, ["gemini", "nano", "veo"])
+
+        let plain = JunoModelSelectorCatalog.groups(models: models, filter: .all, query: "")
+        XCTAssertEqual(plain.map(\.id), ["openai", "google"])
+    }
 }

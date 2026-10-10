@@ -86,5 +86,55 @@ enum PreviewChatStream {
             continuation.onTermination = { @Sendable _ in task.cancel() }
         }
     }
+
+    /// `POST /api/generate`: a picture made in the harness, as the route
+    /// streams one — `meta`, `progress` stages, then `done` with the file on
+    /// the answer (`PreviewImageFixtures.generatedID`, served at
+    /// `/api/files/<id>`). `--juno-preview-generate-hold` stops at the
+    /// generating stage so the placeholder can be captured.
+    static func generateBytes(for request: NativeBearerRequest) -> AsyncThrowingStream<UInt8, any Error>? {
+        guard request.method == .post, request.path == "/api/generate" else { return nil }
+        let body = request.body.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+        let conversationID = body?["conversationId"] as? String ?? "preview-generate"
+        let modelID = body?["model"] as? String ?? "openai:gpt-image-2.5-flare"
+        let hold = CommandLine.arguments.contains("--juno-preview-generate-hold")
+        return AsyncThrowingStream { continuation in
+            let task = Task {
+                func frame(_ object: [String: Any]) {
+                    guard let data = try? JSONSerialization.data(withJSONObject: object) else { return }
+                    for byte in Array("data: ".utf8) + Array(data) + Array("\n\n".utf8) {
+                        continuation.yield(byte)
+                    }
+                }
+                frame(["type": "meta", "conversationId": conversationID, "title": "", "userMessageId": "preview-gen-user"])
+                for (stage, pct) in [("queued", 0.0), ("generating", 0.35), ("generating", 0.7)] {
+                    try? await Task.sleep(for: .milliseconds(900))
+                    frame(["type": "progress", "stage": stage, "pct": pct])
+                }
+                if hold { return }
+                try? await Task.sleep(for: .milliseconds(900))
+                let formatter = ISO8601DateFormatter()
+                formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                let id = PreviewImageFixtures.generatedID
+                frame([
+                    "type": "done",
+                    "message": [
+                        "id": "preview-gen-answer",
+                        "role": "ASSISTANT",
+                        "content": "",
+                        "model": modelID,
+                        "createdAt": formatter.string(from: Date()),
+                        "attachments": [[
+                            "id": id, "kind": "IMAGE", "fileName": "generated.png",
+                            "mimeType": "image/png", "size": 182_000,
+                            "width": 1024, "height": 1024, "url": "/api/files/\(id)",
+                        ]],
+                    ],
+                ])
+                continuation.finish()
+            }
+            continuation.onTermination = { @Sendable _ in task.cancel() }
+        }
+    }
 }
 #endif

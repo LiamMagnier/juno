@@ -111,6 +111,19 @@ enum JunoMobileSection: String, CaseIterable, Hashable, Identifiable {
         .library, .projects, .code, .agents, .tasks, .connections,
     ]
 
+    /// The phone drawer's column: ``drawerDestinations`` without Code.
+    ///
+    /// On iPhone the chat's top bar carries the Chat | Code switch, so a Code
+    /// row in the drawer was a second door to the same room (owner, Oct 10:
+    /// "remove the research and code since you can switch directly in the
+    /// chat window"). The iPad sidebar has no such switch and keeps the row.
+    static let phoneDrawerDestinations: [JunoMobileSection] = drawerDestinations.filter {
+        !phoneTopBarDestinations.contains($0)
+    }
+
+    /// Destinations the phone reaches from the chat's top bar.
+    static let phoneTopBarDestinations: Set<JunoMobileSection> = [.code]
+
     /// Destinations reached from inside another rather than from the drawer:
     /// the value is where the way in lives.
     static let foldedDestinations: [JunoMobileSection: JunoMobileSection] = [

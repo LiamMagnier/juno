@@ -55,9 +55,6 @@ struct JunoMobileSidebarDrawer: View {
   /// An incognito chat is open: no saved conversation is the current one,
   /// whatever the list last had selected.
   var incognito: Bool = false
-  /// The drawer's Research row: a new chat with deep research armed. Nil
-  /// hides the row (the iPad sidebar has the composer's own menu for it).
-  var startResearch: (() -> Void)? = nil
 
   enum Layout { case drawer, sidebar }
 
@@ -437,8 +434,8 @@ struct JunoMobileSidebarDrawer: View {
   private var list: some View {
     List {
       Group {
-        ForEach(Array(drawerRows.enumerated()), id: \.element.id) { index, row in
-          drawerRow(row)
+        ForEach(Array(JunoMobileSection.phoneDrawerDestinations.enumerated()), id: \.element) { index, destination in
+          drawerRow(destination)
             .junoMobileDrawerStagger(index: index)
         }
         Rectangle()
@@ -496,28 +493,6 @@ struct JunoMobileSidebarDrawer: View {
     .contentMargins(.bottom, 12, for: .scrollContent)
   }
 
-  /// One entry in the drawer's destination column.
-  struct DrawerRow: Identifiable {
-    enum Kind: Hashable {
-      case destination(JunoMobileSection)
-      case research
-    }
-    let kind: Kind
-    var id: Kind { kind }
-  }
-
-  /// The column, in ChatGPT's order mapped onto Alevr: where your things are
-  /// (Library, Projects, Artifacts), what works for you (Research, Code, Orbit,
-  /// Work), what runs on a schedule (Routines), and what Alevr can reach (Apps).
-  private var drawerRows: [DrawerRow] {
-    var rows = JunoMobileSection.drawerDestinations.map { DrawerRow(kind: .destination($0)) }
-    // Research sits with the things that work for you, before Code.
-    if startResearch != nil {
-      rows.insert(DrawerRow(kind: .research), at: 2)
-    }
-    return rows
-  }
-
   /// Code's row speaks for Work too, which is reached from Code on the phone.
   private func phoneStatus(for destination: JunoMobileSection) -> JunoMobileSidebarStatus? {
     guard destination == .code else { return statuses[destination] }
@@ -529,34 +504,26 @@ struct JunoMobileSidebarDrawer: View {
     return merged.isEmpty ? nil : merged
   }
 
-  @ViewBuilder
-  private func drawerRow(_ row: DrawerRow) -> some View {
-    switch row.kind {
-    case .destination(let destination):
-      JunoMobileDrawerRow(
-        icon: destination.junoIcon,
-        title: destination.title,
-        selected: selection == destination,
-        status: phoneStatus(for: destination)
-      ) {
-        selectionHaptic.fire()
-        openDestination(destination)
-      }
-      .accessibilityIdentifier("juno.mobile.sidebar-\(destination.rawValue)")
-    case .research:
-      JunoMobileDrawerRow(icon: .research, title: "Research", selected: false) {
-        selectionHaptic.fire()
-        startResearch?()
-      }
-      .accessibilityIdentifier("juno.mobile.sidebar-research")
+  /// One destination in the phone column. Research and Code are not here:
+  /// the composer arms research and the chat's top bar switches to Code.
+  private func drawerRow(_ destination: JunoMobileSection) -> some View {
+    JunoMobileDrawerRow(
+      icon: destination.junoIcon,
+      title: destination.title,
+      selected: selection == destination,
+      status: phoneStatus(for: destination)
+    ) {
+      selectionHaptic.fire()
+      openDestination(destination)
     }
+    .accessibilityIdentifier("juno.mobile.sidebar-\(destination.rawValue)")
   }
 
   // MARK: - Header
 
-  /// "Alevr" and a round search button — the drawer's whole header. The name
-  /// is set in the UI face at the bar's title weight; the brand is in the
-  /// app, not in a logo stamped on every surface.
+  /// The Continuum mark and a round search button — the drawer's whole
+  /// header (owner, Oct 10: the logo in place of the name, and no Chat | Code
+  /// switch here, since the chat's top bar has it).
   private var header: some View {
     // Top-aligned so the search button's centre sits on the same line as the
     // pushed card's sidebar button: the first row is the bar's own 44pt row.
@@ -597,23 +564,15 @@ struct JunoMobileSidebarDrawer: View {
           .tint(Color.primary)
           .transition(.opacity)
       } else {
-        VStack(alignment: .leading, spacing: 0) {
-          Text(verbatim: "Alevr")
-            .font(.title3.weight(.semibold))
-            .foregroundStyle(Color.junoForeground)
-            .frame(minHeight: JunoMobileTopBarMetrics.buttonDiameter)
-            .accessibilityAddTraits(.isHeader)
-          // The web sidebar's product orbit under the name: Chat and Code at
-          // the two ends, the trail on the one in use.
-          JunoProductOrbit(
-            active: selection == .code ? .code : .chat,
-            locked: JunoMobilePlanStore.shared.allows(.code) ? [] : [.code]
-          ) { product in
-            selectionHaptic.fire()
-            if product == .code { openDestination(.code) } else { newChat() }
-          }
-          .offset(x: -6)
-        }
+        // The Continuum alone, on the bar's 44pt row: the brand's mark where
+        // the word was. Chat | Code lives in the chat's own top bar.
+        JunoMark(size: JunoMobileDrawerMetrics.brandMark)
+          .foregroundStyle(Color.junoForeground)
+          .frame(minHeight: JunoMobileTopBarMetrics.buttonDiameter)
+          .accessibilityElement()
+          .accessibilityLabel(Text(verbatim: "Alevr"))
+          .accessibilityAddTraits(.isHeader)
+          .accessibilityIdentifier("juno.mobile.sidebar-brand")
         .transition(.opacity)
         Spacer(minLength: 0)
         Button {
@@ -756,8 +715,11 @@ struct JunoMobileSidebarDrawer: View {
 
   // MARK: - Footer
 
-  /// New chat as the one ink capsule on the screen, settings as a round glass
-  /// button opposite it. The account lives in Settings, one tap from here.
+  /// New chat as the one ink capsule on the screen, wearing the website
+  /// sidebar's own new-chat mark (MessageSquarePlus); the inbox, and the
+  /// account's photo in a glass ring where the gear was, as the Claude app
+  /// puts the profile in its drawer. The photo opens Settings, which is
+  /// where the account lives.
   private var footer: some View {
     GlassEffectContainer(spacing: JunoLayout.Control.gap) {
       HStack(spacing: JunoLayout.Control.gap) {
@@ -766,7 +728,7 @@ struct JunoMobileSidebarDrawer: View {
           newChat()
         } label: {
           HStack(spacing: JunoLayout.Control.labelGap) {
-            JunoIconView(.compose, size: JunoLayout.Control.glyph)
+            JunoIconView(.newChat, size: JunoLayout.Control.glyph)
             Text("Chat")
               .junoFont(size: 16, relativeTo: .body, weight: .semibold)
           }
@@ -785,19 +747,25 @@ struct JunoMobileSidebarDrawer: View {
 
         Spacer(minLength: 0)
 
-        // The inbox, beside settings: the header stays ChatGPT's — the name
-        // and one search button.
+        // The inbox stays: it is the one way in to notifications on the
+        // phone, and a bell beside the photo is the account's corner.
         JunoMobileInboxBell()
           .frame(width: JunoLayout.Control.height, height: JunoLayout.Control.height)
           .glassEffect(.regular.interactive(), in: Circle())
 
         Button(action: { openDestination(.settings) }) {
-          JunoIconView(.settings, size: JunoLayout.Bar.glyph)
-            .foregroundStyle(Color.primary)
-            .frame(width: JunoLayout.Control.height, height: JunoLayout.Control.height)
-            .contentShape(Circle())
+          JunoAvatar(
+            imageData: avatarData,
+            imageURL: session.profile.imageURL,
+            name: profileName,
+            size: JunoMobileDrawerMetrics.avatar
+          )
+          .frame(width: JunoLayout.Control.height, height: JunoLayout.Control.height)
+          .contentShape(Circle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.junoQuietPress)
+        // The photo sits inside the system's glass ring, so it reads as a
+        // control of the same family as the bell beside it.
         .glassEffect(.regular.interactive(), in: Circle())
         .accessibilityLabel("Open settings for \(profileName)")
         .accessibilityIdentifier("juno.mobile.sidebar-profile")
@@ -1187,6 +1155,11 @@ enum JunoMobileDrawerMetrics {
   static let gap: CGFloat = JunoLayout.Row.glyphGap
   /// The phone's row glyph: 18 in the 20pt slot.
   static let glyph: CGFloat = JunoLayout.Row.touchGlyph
+  /// The header's Continuum: 26pt on the 44pt bar row, the optical weight of
+  /// the bar's title it replaces.
+  static let brandMark: CGFloat = 26
+  /// The footer's avatar: a 40pt photo inside the 44pt glass ring.
+  static let avatar: CGFloat = 40
   /// The drawer's list insets, which put a row's fill 8pt in from its edge.
   static let rowInsets = EdgeInsets(top: 0, leading: inset, bottom: 0, trailing: inset)
 }
