@@ -25,9 +25,14 @@ enum DesktopSidebarMetrics {
     static let radius: CGFloat = JunoLayout.Row.compactFillRadius
     /// The fill's distance from the panel's edge.
     static let fillInset: CGFloat = JunoLayout.Row.fillInset
-    /// Where every glyph, and every glyph-less text, starts.
-    static let glyphEdge: CGFloat = JunoLayout.Row.edge
-    /// Where every label after a glyph starts: 16 + 20 + 10.
+    /// How much further in than the web's 16pt edge the column's content
+    /// starts (owner, Oct 11: the sidebar sat "way too on the left").
+    static let leadingShift: CGFloat = JunoSpace.close
+    /// Where every glyph, and every glyph-less text, starts: 16 + 10.
+    static let glyphEdge: CGFloat = JunoLayout.Row.edge + leadingShift
+    /// Where a row's trailing content ends: the web's 16pt edge.
+    static let trailingEdge: CGFloat = JunoLayout.Row.edge
+    /// Where every label after a glyph starts: 26 + 20 + 10.
     static var labelEdge: CGFloat { glyphEdge + glyphSlot + gap }
     /// Where a row's own content starts inside the panel once the list's row
     /// insets are zeroed: the source list keeps this much margin of its own,
@@ -35,6 +40,11 @@ enum DesktopSidebarMetrics {
     static let listOrigin: CGFloat = JunoSpace.regular
 
     static let labelSize: CGFloat = 14
+    /// The prominent first row (New chat, New session): 40pt tall, an 18pt
+    /// glyph in the same 20pt slot and a 15pt label.
+    static let prominentRowHeight: CGFloat = JunoSpace.expanse
+    static let prominentGlyphSize: CGFloat = JunoLayout.Row.touchGlyph
+    static let prominentLabelSize: CGFloat = 15
     /// The web's `.shell-annot`: mono 11px, tracked 0.02em.
     static let headingSize: CGFloat = 11
     static let headingTracking: CGFloat = headingSize * 0.02
@@ -86,7 +96,10 @@ private struct DesktopSidebarRowFrame: ViewModifier {
                     .fill(selected ? Color.junoSelectedFill : (hovered ? Color.junoSidebarHover : Color.clear))
                     // The row's background spans the panel's full width (its
                     // content does not), so the fill's 8pt is measured from
-                    // the panel's edge.
+                    // the panel's edge. It stays on 8 when the content moves
+                    // in: the fill has to cover the platform's own selection,
+                    // which the list draws about 10pt in, or that shows past
+                    // the fill's leading edge.
                     .padding(.horizontal, DesktopSidebarMetrics.fillInset)
                     .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint), value: hovered)
                     .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint), value: selected)
@@ -106,12 +119,21 @@ struct DesktopSidebarNavRow<Trailing: View>: View {
     /// A row that acts (New chat, Search) rather than being selected: the
     /// row itself is the button, so the list's row metrics land on it.
     var action: (() -> Void)? = nil
+    /// The column's first action (New chat, New session): a taller row with a
+    /// larger glyph and label (owner, Oct 11: "make the chat button bigger").
+    var prominent = false
     @ViewBuilder var trailing: () -> Trailing
 
     @State private var hovered = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var lit: Bool { selected || hovered }
+    private var height: CGFloat {
+        prominent ? DesktopSidebarMetrics.prominentRowHeight : DesktopSidebarMetrics.rowHeight
+    }
+    private var glyphSize: CGFloat {
+        prominent ? DesktopSidebarMetrics.prominentGlyphSize : DesktopSidebarMetrics.glyphSize
+    }
 
     var body: some View {
         Group {
@@ -124,7 +146,7 @@ struct DesktopSidebarNavRow<Trailing: View>: View {
             }
         }
         .onHover { hovered = $0 }
-        .desktopSidebarRow(selected: selected, hovered: hovered)
+        .desktopSidebarRow(selected: selected, hovered: hovered, height: height)
     }
 
     private var face: some View {
@@ -132,7 +154,10 @@ struct DesktopSidebarNavRow<Trailing: View>: View {
             glyph
                 .frame(width: DesktopSidebarMetrics.glyphSlot, height: DesktopSidebarMetrics.glyphSlot)
             Text(title)
-                .junoFont(size: DesktopSidebarMetrics.labelSize, relativeTo: .body)
+                .junoFont(
+                    size: prominent ? DesktopSidebarMetrics.prominentLabelSize : DesktopSidebarMetrics.labelSize,
+                    relativeTo: .body
+                )
                 .lineLimit(1)
                 .truncationMode(.tail)
             Spacer(minLength: 0)
@@ -140,9 +165,9 @@ struct DesktopSidebarNavRow<Trailing: View>: View {
         }
         .foregroundStyle(lit ? Color.junoForeground : Color.junoSidebarInk)
         .padding(.leading, DesktopSidebarMetrics.glyphEdge - DesktopSidebarMetrics.listOrigin)
-        .padding(.trailing, DesktopSidebarMetrics.glyphEdge - DesktopSidebarMetrics.listOrigin)
+        .padding(.trailing, DesktopSidebarMetrics.trailingEdge - DesktopSidebarMetrics.listOrigin)
         .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint), value: lit)
-        .frame(maxWidth: .infinity, minHeight: DesktopSidebarMetrics.rowHeight, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: height, alignment: .leading)
         .contentShape(.rect)
         .accessibilityElement(children: .combine)
     }
@@ -152,15 +177,15 @@ struct DesktopSidebarNavRow<Trailing: View>: View {
         let moving = hovered && !reduceMotion
         switch gesture {
         case .folderOpens:
-            JunoIconView(moving ? .folderOpen : icon, size: DesktopSidebarMetrics.glyphSize)
+            JunoIconView(moving ? .folderOpen : icon, size: glyphSize)
                 .contentTransition(.opacity)
                 .animation(JunoMotion.fast, value: moving)
         case .tilts:
-            JunoIconView(icon, size: DesktopSidebarMetrics.glyphSize)
+            JunoIconView(icon, size: glyphSize)
                 .rotationEffect(.degrees(moving ? -12 : 0))
                 .animation(JunoMotion.fast, value: moving)
         case .none:
-            JunoIconView(icon, size: DesktopSidebarMetrics.glyphSize)
+            JunoIconView(icon, size: glyphSize)
         }
     }
 }
@@ -171,9 +196,12 @@ extension DesktopSidebarNavRow where Trailing == EmptyView {
         title: String,
         selected: Bool = false,
         gesture: DesktopSidebarGesture = .none,
-        action: (() -> Void)? = nil
+        action: (() -> Void)? = nil,
+        prominent: Bool = false
     ) {
-        self.init(icon: icon, title: title, selected: selected, gesture: gesture, action: action) { EmptyView() }
+        self.init(
+            icon: icon, title: title, selected: selected, gesture: gesture, action: action, prominent: prominent
+        ) { EmptyView() }
     }
 }
 
@@ -210,7 +238,7 @@ struct DesktopSidebarHeadingRow<Trailing: View>: View {
             trailing()
         }
         .padding(.leading, DesktopSidebarMetrics.glyphEdge - DesktopSidebarMetrics.listOrigin)
-        .padding(.trailing, DesktopSidebarMetrics.glyphEdge - DesktopSidebarMetrics.listOrigin)
+        .padding(.trailing, DesktopSidebarMetrics.trailingEdge - DesktopSidebarMetrics.listOrigin)
         .frame(height: DesktopSidebarMetrics.headingHeight)
         .padding(.top, isFirst ? 0 : DesktopSidebarMetrics.headingGap)
         .frame(maxWidth: .infinity, alignment: .bottomLeading)
@@ -285,7 +313,7 @@ struct DesktopSidebarAgentRow: View {
         }
         .foregroundStyle(selected || hovered ? Color.junoForeground : Color.junoSidebarInk)
         .padding(.leading, DesktopSidebarMetrics.glyphEdge - DesktopSidebarMetrics.listOrigin)
-        .padding(.trailing, DesktopSidebarMetrics.glyphEdge - DesktopSidebarMetrics.listOrigin)
+        .padding(.trailing, DesktopSidebarMetrics.trailingEdge - DesktopSidebarMetrics.listOrigin)
         .onHover { hovered = $0 }
         .desktopSidebarRow(selected: selected, hovered: hovered)
     }

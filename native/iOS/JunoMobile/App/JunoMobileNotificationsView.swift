@@ -13,6 +13,8 @@ import SwiftUI
 /// `bell.badge` in the ink colour while something is unread. The count rides
 /// the accessibility value, where a glyph cannot say it.
 struct JunoMobileInboxBell: View {
+  /// The bell's size: 19 on a 44pt control, larger in the drawer's 52pt one.
+  var glyph: CGFloat = 19
   @Environment(\.junoFeatureHub) private var hub
   @State private var isPresented = false
 
@@ -23,7 +25,7 @@ struct JunoMobileInboxBell: View {
       } label: {
         // One mark, read or unread: the count rides the accessibility
         // value, never a badge dot.
-        JunoIconView(.bell, size: 19)
+        JunoIconView(.bell, size: glyph)
           .foregroundStyle(Color.primary)
           .frame(minWidth: 44, minHeight: 44)
           .contentShape(.rect)

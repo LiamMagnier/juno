@@ -28,6 +28,37 @@ struct DesktopChatShellTests {
         #expect(DesktopChatMeasure.gutter(forColumnWidth: 1600) == 32)
     }
 
+    // MARK: - The sidebar's edges
+
+    /// The owner's inset (Oct 11): glyphs and glyph-less text start 26pt in,
+    /// labels after a glyph at 56, and trailing content still ends 16pt from
+    /// the panel's edge. New chat is the one taller row.
+    @Test
+    func theSidebarSitsTenPointsFurtherIn() {
+        #expect(DesktopSidebarMetrics.glyphEdge == 26)
+        #expect(DesktopSidebarMetrics.labelEdge == 56)
+        #expect(DesktopSidebarMetrics.trailingEdge == 16)
+        #expect(DesktopSidebarMetrics.prominentRowHeight > DesktopSidebarMetrics.rowHeight)
+    }
+
+    /// Recent is one list, newest first, with no date folds: pinned chats and
+    /// Needs you stay out of it.
+    @Test
+    func recentIsOneListNewestFirst() {
+        func chat(_ id: String, hoursAgo: Double, pinned: Bool = false) -> NativeConversation {
+            conversation(id, minutesAgo: hoursAgo * 60, pinned: pinned)
+        }
+        let all = DesktopChatSidebarContent.chats(from: [
+            chat("old", hoursAgo: 24 * 40),
+            chat("today", hoursAgo: 1),
+            chat("pinned", hoursAgo: 2, pinned: true),
+            chat("yesterday", hoursAgo: 26),
+            chat("waiting", hoursAgo: 3),
+        ])
+        let recent = DesktopChatSidebarContent.recent(from: all, excluding: ["waiting"])
+        #expect(recent.map(\.id) == ["today", "yesterday", "old"])
+    }
+
     // MARK: - The column's data
 
     /// Errata 6: Code's conversations stay in the store — `sendMessage`

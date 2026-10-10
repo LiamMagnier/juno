@@ -20,7 +20,7 @@ import SwiftUI
 ///
 /// Top to bottom, as the brief lays it out: brand, search, New chat, the
 /// product's destinations, Projects (collapsible, the five most recent and a
-/// way to the rest), Pinned, Recents grouped by day, and a footer that says who
+/// way to the rest), Pinned, one Recent list newest first, and a footer that says who
 /// is signed in and on what plan.
 struct JunoMobileSidebarDrawer: View {
   @Binding var selection: JunoMobileSection
@@ -102,8 +102,14 @@ struct JunoMobileSidebarDrawer: View {
     groups.first { $0.bucket == .pinned }?.conversations ?? []
   }
 
-  private var recentGroups: [NativeConversationGroup] {
-    groups.filter { $0.bucket != .pinned }
+  /// Every chat that is neither pinned nor archived, as one Recent list,
+  /// newest first (owner, Oct 11: "Recent" in place of Yesterday, Previous
+  /// 7 days and the rest of the date folds).
+  private var recentChats: [NativeConversation] {
+    groups
+      .filter { $0.bucket != .pinned }
+      .flatMap(\.conversations)
+      .sorted { $0.lastMessageAt > $1.lastMessageAt }
   }
 
   private var attentionItems: [JunoRecentItem] {
@@ -411,18 +417,6 @@ struct JunoMobileSidebarDrawer: View {
     .disabled(conversation.isPending)
   }
 
-  private static func title(for bucket: NativeConversationBucket) -> LocalizedStringKey {
-    switch bucket {
-    case .pinned: "sidebar.pinned"
-    case .today: "Today"
-    case .yesterday: "Yesterday"
-    case .previous7Days: "Previous 7 days"
-    case .previous30Days: "Previous 30 days"
-    case .older: "Older"
-    case .archived: "Archived"
-    }
-  }
-
   // MARK: - List (phone drawer)
 
   /// The phone drawer, laid out as ChatGPT's: a header with the name and a
@@ -450,7 +444,7 @@ struct JunoMobileSidebarDrawer: View {
       .listRowSeparator(.hidden)
       .listRowBackground(Color.clear)
 
-      if pinnedChats.isEmpty && recentGroups.isEmpty {
+      if pinnedChats.isEmpty && recentChats.isEmpty {
         Text("No recent conversations")
           .junoFont(size: 15, relativeTo: .body)
           .foregroundStyle(Color.junoSecondaryInk)
@@ -472,11 +466,11 @@ struct JunoMobileSidebarDrawer: View {
         .listRowBackground(Color.clear)
       }
 
-      ForEach(recentGroups) { group in
+      if !recentChats.isEmpty {
         Section {
-          ForEach(group.conversations) { conversationRow($0, pinned: false) }
+          ForEach(recentChats) { conversationRow($0, pinned: false) }
         } header: {
-          sectionLabel(Self.title(for: group.bucket))
+          sectionLabel("Recent")
         }
         .listRowInsets(JunoMobileDrawerMetrics.rowInsets)
         .listRowSeparator(.hidden)
@@ -687,7 +681,12 @@ struct JunoMobileSidebarDrawer: View {
           .contentShape(Rectangle())
         }
         .buttonStyle(JunoSidebarPressStyle())
-        .listRowInsets(EdgeInsets(top: JunoSpace.snug, leading: JunoMobileDrawerMetrics.inset, bottom: 0, trailing: JunoMobileDrawerMetrics.inset))
+        .listRowInsets(EdgeInsets(
+          top: JunoSpace.snug,
+          leading: JunoMobileDrawerMetrics.rowInsets.leading,
+          bottom: 0,
+          trailing: JunoMobileDrawerMetrics.rowInsets.trailing
+        ))
         .listRowSeparator(.hidden)
         .listRowBackground(Color.clear)
         .accessibilityIdentifier("juno.mobile.sidebar-search-all")
@@ -727,14 +726,17 @@ struct JunoMobileSidebarDrawer: View {
           selectionHaptic.fire()
           newChat()
         } label: {
-          HStack(spacing: JunoLayout.Control.labelGap) {
-            JunoIconView(.newChat, size: JunoLayout.Control.glyph)
+          HStack(spacing: JunoSpace.snug) {
+            JunoIconView(.newChat, size: JunoMobileDrawerMetrics.footerGlyph)
             Text("Chat")
-              .junoFont(size: 16, relativeTo: .body, weight: .semibold)
+              .junoFont(size: JunoMobileDrawerMetrics.footerLabel, relativeTo: .body, weight: .semibold)
           }
           .foregroundStyle(Color.junoCanvas)
-          .padding(.horizontal, JunoLayout.Control.capsulePadding)
-          .frame(minWidth: JunoLayout.Control.height, minHeight: JunoLayout.Control.height)
+          .padding(.horizontal, JunoMobileDrawerMetrics.footerCapsulePadding)
+          .frame(
+            minWidth: JunoMobileDrawerMetrics.footerControl,
+            minHeight: JunoMobileDrawerMetrics.footerControl
+          )
           .contentShape(Capsule())
         }
         .buttonStyle(.plain)
@@ -749,8 +751,8 @@ struct JunoMobileSidebarDrawer: View {
 
         // The inbox stays: it is the one way in to notifications on the
         // phone, and a bell beside the photo is the account's corner.
-        JunoMobileInboxBell()
-          .frame(width: JunoLayout.Control.height, height: JunoLayout.Control.height)
+        JunoMobileInboxBell(glyph: JunoMobileDrawerMetrics.bellGlyph)
+          .frame(width: JunoMobileDrawerMetrics.footerControl, height: JunoMobileDrawerMetrics.footerControl)
           .glassEffect(.regular.interactive(), in: Circle())
 
         Button(action: { openDestination(.settings) }) {
@@ -760,7 +762,7 @@ struct JunoMobileSidebarDrawer: View {
             name: profileName,
             size: JunoMobileDrawerMetrics.avatar
           )
-          .frame(width: JunoLayout.Control.height, height: JunoLayout.Control.height)
+          .frame(width: JunoMobileDrawerMetrics.footerControl, height: JunoMobileDrawerMetrics.footerControl)
           .contentShape(Circle())
         }
         .buttonStyle(.junoQuietPress)
@@ -828,7 +830,7 @@ extension JunoMobileSidebarDrawer {
         }
         if !Self.sidebarOverflow.isEmpty { moreMenu }
       }
-      .listRowInsets(JunoMobileDrawerMetrics.rowInsets)
+      .listRowInsets(JunoMobileDrawerMetrics.sidebarRowInsets)
       .listRowSeparator(.hidden)
       .listRowBackground(Color.clear)
 
@@ -841,7 +843,7 @@ extension JunoMobileSidebarDrawer {
         } header: {
           sidebarSectionLabel("Pinned projects")
         }
-        .listRowInsets(JunoMobileDrawerMetrics.rowInsets)
+        .listRowInsets(JunoMobileDrawerMetrics.sidebarRowInsets)
         .listRowSeparator(.hidden)
         .listRowBackground(Color.clear)
       }
@@ -852,19 +854,19 @@ extension JunoMobileSidebarDrawer {
         } header: {
           sidebarSectionLabel("Pinned chats")
         }
-        .listRowInsets(JunoMobileDrawerMetrics.rowInsets)
+        .listRowInsets(JunoMobileDrawerMetrics.sidebarRowInsets)
         .listRowSeparator(.hidden)
         .listRowBackground(Color.clear)
       }
 
-      let recent = recentGroups.flatMap(\.conversations)
+      let recent = recentChats
       if !recent.isEmpty {
         Section {
           ForEach(recent) { conversationRow($0, pinned: false) }
         } header: {
           sidebarSectionLabel("Recent")
         }
-        .listRowInsets(JunoMobileDrawerMetrics.rowInsets)
+        .listRowInsets(JunoMobileDrawerMetrics.sidebarRowInsets)
         .listRowSeparator(.hidden)
         .listRowBackground(Color.clear)
       }
@@ -1144,13 +1146,19 @@ enum JunoMobileTopBarMetrics {
   static let rowTop: CGFloat = 0
 }
 
-/// The drawer's two edges, in one place: 8pt list inset + 8pt row padding puts
-/// glyphs and glyph-less text on 16pt; a 20pt slot and a 10pt gap put labels
-/// on 46pt.
+/// The drawer's two edges, in one place. The owner moved the phone drawer's
+/// content in from the web's 16pt edge (Oct 11: "way too on the left"): the
+/// 8pt list inset, a 10pt shift and the 8pt row padding put glyphs and
+/// glyph-less text on 26pt, and a 20pt slot and a 10pt gap put labels on
+/// 56pt. The trailing edge stays on 16pt, the top bar's own edge. The iPad
+/// column keeps the web's 16pt edges.
 enum JunoMobileDrawerMetrics {
   static let inset: CGFloat = JunoLayout.Row.fillInset
   static let rowPadding: CGFloat = JunoLayout.Row.fillPadding
-  static let edge: CGFloat = inset + rowPadding
+  /// How much further in than the web's edge the phone drawer's content sits.
+  static let leadingShift: CGFloat = JunoSpace.close
+  /// The phone drawer's leading text and glyph edge: 26pt.
+  static let edge: CGFloat = inset + leadingShift + rowPadding
   static let slot: CGFloat = JunoLayout.Row.glyphSlot
   static let gap: CGFloat = JunoLayout.Row.glyphGap
   /// The phone's row glyph: 18 in the 20pt slot.
@@ -1158,10 +1166,22 @@ enum JunoMobileDrawerMetrics {
   /// The header's Continuum: 26pt on the 44pt bar row, the optical weight of
   /// the bar's title it replaces.
   static let brandMark: CGFloat = 26
-  /// The footer's avatar: a 40pt photo inside the 44pt glass ring.
-  static let avatar: CGFloat = 40
-  /// The drawer's list insets, which put a row's fill 8pt in from its edge.
-  static let rowInsets = EdgeInsets(top: 0, leading: inset, bottom: 0, trailing: inset)
+  /// The footer's one line of controls: Chat, the bell and the photo, each
+  /// 52pt tall (owner, Oct 11: bigger than the 44pt bar buttons).
+  static let footerControl: CGFloat = 52
+  /// The Chat capsule's glyph, label size and horizontal pad.
+  static let footerGlyph: CGFloat = JunoSpace.roomy
+  static let footerLabel: CGFloat = 17
+  static let footerCapsulePadding: CGFloat = JunoSpace.roomy
+  /// The bell's glyph inside its 52pt circle.
+  static let bellGlyph: CGFloat = 22
+  /// The footer's avatar: a 46pt photo inside the 52pt glass ring.
+  static let avatar: CGFloat = 46
+  /// The phone drawer's list insets: a row's fill starts 18pt in (8 + the
+  /// shift) and ends 8pt from the drawer's trailing edge.
+  static let rowInsets = EdgeInsets(top: 0, leading: inset + leadingShift, bottom: 0, trailing: inset)
+  /// The iPad column's list insets: the fill 8pt in from both edges.
+  static let sidebarRowInsets = EdgeInsets(top: 0, leading: inset, bottom: 0, trailing: inset)
 }
 
 extension EnvironmentValues {

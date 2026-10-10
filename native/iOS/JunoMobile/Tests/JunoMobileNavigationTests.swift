@@ -116,7 +116,20 @@ final class JunoMobileNavigationTests: XCTestCase {
     func testTheDrawerHeaderButtonIsTheTopBarButton() {
         XCTAssertEqual(JunoMobileTopBarMetrics.buttonDiameter, 44)
         XCTAssertEqual(JunoMobileTopBarMetrics.glyph, 20)
-        XCTAssertEqual(JunoMobileDrawerMetrics.edge, 16)
-        XCTAssertEqual(JunoMobileDrawerMetrics.edge + JunoMobileDrawerMetrics.slot + JunoMobileDrawerMetrics.gap, 46)
+        // The phone drawer sits 10pt further in than the web's 16pt edge
+        // (owner, Oct 11); the iPad column keeps the web's edges.
+        XCTAssertEqual(JunoMobileDrawerMetrics.edge, 26)
+        XCTAssertEqual(JunoMobileDrawerMetrics.edge + JunoMobileDrawerMetrics.slot + JunoMobileDrawerMetrics.gap, 56)
+        XCTAssertEqual(
+            JunoMobileDrawerMetrics.rowInsets.leading + JunoMobileDrawerMetrics.rowPadding,
+            JunoMobileDrawerMetrics.edge
+        )
+        XCTAssertEqual(JunoMobileDrawerMetrics.sidebarRowInsets.leading + JunoMobileDrawerMetrics.rowPadding, 16)
+    }
+
+    /// The drawer's footer: Chat, the bell and the photo on one 52pt line.
+    func testTheDrawerFooterControlsShareOneHeight() {
+        XCTAssertEqual(JunoMobileDrawerMetrics.footerControl, 52)
+        XCTAssertLessThan(JunoMobileDrawerMetrics.avatar, JunoMobileDrawerMetrics.footerControl)
     }
 }

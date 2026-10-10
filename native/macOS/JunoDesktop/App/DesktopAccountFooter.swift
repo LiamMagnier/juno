@@ -74,7 +74,8 @@ struct DesktopAccountFooter: View {
                 settingsButton
             }
         }
-        .padding(.horizontal, DesktopSidebarMetrics.fillInset)
+        .padding(.leading, DesktopSidebarMetrics.fillInset + DesktopSidebarMetrics.leadingShift)
+        .padding(.trailing, DesktopSidebarMetrics.fillInset)
         .padding(.bottom, DesktopSidebarMetrics.fillInset)
         .task(id: session.profile.id) { await readPlan() }
         // The popover shows the meter, so a fresh read is worth its request
@@ -133,7 +134,7 @@ struct DesktopAccountFooter: View {
                     imageData: configuration.avatarModel?.imageData,
                     imageURL: session.profile.imageURL,
                     name: name,
-                    size: 28
+                    size: 32
                 )
                 VStack(alignment: .leading, spacing: 0) {
                     Text(name)
@@ -152,8 +153,8 @@ struct DesktopAccountFooter: View {
                 JunoIconView(.chevronsUpDown, size: 12)
                     .foregroundStyle(Color.junoSecondaryInk)
             }
-            // The avatar on the 16pt glyph edge: 8 from the fill, which sits
-            // 8 in from the panel.
+            // The avatar on the 26pt glyph edge: 8 from the fill, which sits
+            // 18 in from the panel (8 and the column's 10pt shift).
             .padding(.horizontal, DesktopSidebarMetrics.fillInset)
             .frame(height: DesktopSidebarMetrics.accountHeight)
             .background(
@@ -191,9 +192,9 @@ struct DesktopAccountFooter: View {
                 DesktopSettingsRouter.open(.general, using: openSettings)
             }
         } label: {
-            JunoIconView(.settings, size: 16)
+            JunoIconView(.settings, size: 18)
                 .foregroundStyle(Color.junoSidebarInk)
-                .frame(width: 36, height: 36)
+                .frame(width: 40, height: 40)
                 .contentShape(.rect)
         }
         .buttonStyle(.borderless)

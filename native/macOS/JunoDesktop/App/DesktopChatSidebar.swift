@@ -186,20 +186,14 @@ struct DesktopChatSidebar: View {
                 }
 
                 if !recent.isEmpty {
-                    // Recent, folded by day as the web's date buckets fold
-                    // it: Today, Yesterday, Previous 7 days, Previous 30
-                    // days, then month by month. Paged before it is folded,
-                    // so a long history still lays out one page at a time.
-                    let groups = DesktopChatSidebarContent.recentGroups(
-                        from: Array(recent.prefix(recentLimit)),
-                        now: Date()
-                    )
-                    ForEach(groups) { group in
-                        DesktopSidebarHeadingRow(group.title)
-                        ForEach(group.chats) { conversation in
-                            conversationRow(conversation)
-                                .onAppear { loadMoreIfLast(conversation, in: recent) }
-                        }
+                    // One Recent list, newest first, under one heading (owner,
+                    // Oct 11: "Recent" in place of Yesterday, Previous 7 days
+                    // and the other date folds). Paged, so a long history
+                    // still lays out one page at a time.
+                    DesktopSidebarHeadingRow(JunoShellChatSidebar.Heading.recent.label)
+                    ForEach(Array(recent.prefix(recentLimit))) { conversation in
+                        conversationRow(conversation)
+                            .onAppear { loadMoreIfLast(conversation, in: recent) }
                     }
                 } else if isBootstrapping {
                     DesktopSidebarLoadingRows()
@@ -257,7 +251,12 @@ struct DesktopChatSidebar: View {
         // conversation, so the draft it starts selects nothing (§2.3).
         // The web's new-chat glyph (MessageSquarePlus), the contract's
         // `new` action as the web draws it in this column.
-        DesktopSidebarNavRow(icon: .newChat, title: JunoShellChatSidebar.Action.new.label, action: newChat)
+        DesktopSidebarNavRow(
+            icon: .newChat,
+            title: JunoShellChatSidebar.Action.new.label,
+            action: newChat,
+            prominent: true
+        )
         .help(JunoShortcutRegistry.help(JunoShellChatSidebar.Action.new.label, .newChat))
         .accessibilityIdentifier("juno.desktop.sidebar.new-chat")
 
@@ -363,7 +362,7 @@ struct DesktopChatSidebar: View {
             filterToNeedsYou.toggle()
         }
         .padding(.leading, DesktopSidebarMetrics.glyphEdge - DesktopSidebarMetrics.listOrigin)
-        .padding(.trailing, DesktopSidebarMetrics.glyphEdge - DesktopSidebarMetrics.listOrigin)
+        .padding(.trailing, DesktopSidebarMetrics.trailingEdge - DesktopSidebarMetrics.listOrigin)
         .frame(height: DesktopSidebarMetrics.headingHeight)
         .padding(.top, DesktopSidebarMetrics.headingGap)
         .listRowInsets(EdgeInsets())
@@ -621,7 +620,8 @@ enum DesktopChatSidebarContent {
         chats.filter { $0.pinned && !needsYou.contains($0.id) }
     }
 
-    /// One flat list with no date folds. Project chats stay here as well as
+    /// One flat list with no date folds, newest first, under one Recent
+    /// heading. Project chats stay here as well as
     /// under their project, as on the web: a project is a workspace rather than
     /// a filing.
     static func recent(
@@ -629,47 +629,6 @@ enum DesktopChatSidebarContent {
         excluding needsYou: Set<String> = []
     ) -> [NativeConversation] {
         chats.filter { !$0.pinned && !needsYou.contains($0.id) }
-    }
-
-    /// One day-fold of Recent: its heading and its chats, newest first.
-    struct RecentGroup: Identifiable, Equatable {
-        let title: String
-        let chats: [NativeConversation]
-        var id: String { title }
-    }
-
-    /// Recent folded by day, the way ChatGPT, Notes and Mail fold a history:
-    /// Today, Yesterday, Previous 7 Days, Previous 30 Days, then one fold per
-    /// month ("September", or "September 2025" outside this year). Empty folds
-    /// are left out; the order inside each fold is the list's own.
-    static func recentGroups(
-        from chats: [NativeConversation],
-        now: Date,
-        calendar: Calendar = .current
-    ) -> [RecentGroup] {
-        var order: [String] = []
-        var buckets: [String: [NativeConversation]] = [:]
-        let startOfToday = calendar.startOfDay(for: now)
-        for chat in chats {
-            let title = foldTitle(for: chat.lastMessageAt, startOfToday: startOfToday, now: now, calendar: calendar)
-            if buckets[title] == nil { order.append(title) }
-            buckets[title, default: []].append(chat)
-        }
-        return order.map { RecentGroup(title: $0, chats: buckets[$0] ?? []) }
-    }
-
-    static func foldTitle(for date: Date, startOfToday: Date, now: Date, calendar: Calendar = .current) -> String {
-        let day = calendar.startOfDay(for: date)
-        let days = calendar.dateComponents([.day], from: day, to: startOfToday).day ?? 0
-        switch days {
-        case ..<1: return "Today"
-        case 1: return "Yesterday"
-        case 2...7: return "Previous 7 days"
-        case 8...30: return "Previous 30 days"
-        default:
-            let sameYear = calendar.component(.year, from: date) == calendar.component(.year, from: now)
-            return date.formatted(sameYear ? .dateTime.month(.wide) : .dateTime.month(.wide).year())
-        }
     }
 
     /// The chats whose titles hold every word of `query`, ignoring case and

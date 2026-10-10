@@ -36,6 +36,34 @@ final class JunoMobileOwnerSnapshotTests: XCTestCase {
     }
   }
 
+  /// The phone drawer as the push drawer lays it out: four fifths of the
+  /// screen on the drawer's ground, the header, the destinations, Recent and
+  /// the footer's Chat, bell and photo.
+  func testSidebarDrawer() async throws {
+    try await shoot("sidebar", settle: 1.6) { world in
+      ZStack(alignment: .leading) {
+        JunoMobileDrawerGround()
+        JunoMobileSidebarDrawer(
+          selection: .constant(.chat),
+          conversationModel: world.conversationModel,
+          projectModel: world.projectModel,
+          workModel: world.workModel,
+          codeModel: world.codeModel,
+          session: world.session,
+          openDestination: { _ in },
+          openConversation: { _ in },
+          openRecent: { _ in },
+          newChat: {}
+        )
+        .frame(width: Self.size.width * 0.8)
+        .safeAreaPadding(.top, 62)
+        .safeAreaPadding(.bottom, 34)
+      }
+      .environment(\.junoFeatureHub, JunoMobileFeatureHub(sender: world.requestSender))
+      .ignoresSafeArea()
+    }
+  }
+
   private func shoot<V: View>(
     _ name: String,
     settle: Double = 1.0,

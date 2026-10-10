@@ -71,7 +71,8 @@ struct DesktopNotificationsRow: View {
             }
         }
         .foregroundStyle(Color.junoSidebarInk)
-        .padding(.horizontal, DesktopSidebarMetrics.glyphEdge - DesktopSidebarMetrics.listOrigin)
+        .padding(.leading, DesktopSidebarMetrics.glyphEdge - DesktopSidebarMetrics.listOrigin)
+        .padding(.trailing, DesktopSidebarMetrics.trailingEdge - DesktopSidebarMetrics.listOrigin)
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(.rect)
     }

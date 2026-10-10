@@ -606,7 +606,8 @@ struct DesktopCodeSidebar: View {
         DesktopSidebarNavRow(
             icon: JunoShellCodeSidebar.Action.new.icon,
             title: JunoShellCodeSidebar.Action.new.label,
-            action: { newSession(projectFilter) }
+            action: { newSession(projectFilter) },
+            prominent: true
         )
         .help(JunoShortcutRegistry.help(JunoShellCodeSidebar.Action.new.title, .newChat))
         .accessibilityIdentifier("juno.code.new-conversation")
@@ -1005,7 +1006,7 @@ private struct DesktopCodeProjectsHeading<Items: View>: View {
             Spacer(minLength: 0)
         }
         .padding(.leading, DesktopSidebarMetrics.glyphEdge - DesktopSidebarMetrics.listOrigin)
-        .padding(.trailing, DesktopSidebarMetrics.glyphEdge - DesktopSidebarMetrics.listOrigin)
+        .padding(.trailing, DesktopSidebarMetrics.trailingEdge - DesktopSidebarMetrics.listOrigin)
         .padding(.top, DesktopSidebarMetrics.headingGap)
         .frame(maxWidth: .infinity, alignment: .bottomLeading)
         .listRowInsets(EdgeInsets())
@@ -1091,7 +1092,7 @@ struct DesktopCodeSessionRow: View {
             .foregroundStyle(Color.junoSecondaryInk)
         }
         .padding(.leading, DesktopSidebarMetrics.glyphEdge - DesktopSidebarMetrics.listOrigin)
-        .padding(.trailing, DesktopSidebarMetrics.glyphEdge - DesktopSidebarMetrics.listOrigin + JunoSpace.micro)
+        .padding(.trailing, DesktopSidebarMetrics.trailingEdge - DesktopSidebarMetrics.listOrigin + JunoSpace.micro)
         .onHover { hovered = $0 }
         .desktopSidebarRow(selected: isSelected, hovered: hovered, height: JunoLayout.Row.height)
         .help("\(run.title)\n\(run.caption)")
