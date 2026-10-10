@@ -8,7 +8,7 @@ import { BOOTSTRAP } from "@/app/dev/composer-landing/fixture";
 import { ReasoningSlider } from "@/components/chat/reasoning-slider";
 import { GEN_MODELS, MODEL_LIST, resolveModel, type ModelId } from "@/lib/models";
 import { clampReasoningEffort, defaultReasoning, reasoningOptions, supportsProMode, withSupersededMarked } from "@/lib/model-metrics";
-import { supportsFastMode } from "@/lib/pricing";
+import { fastModeMultiplier, supportsFastMode, ultraFastMultiplier } from "@/lib/pricing";
 import { PROVIDER_LIST } from "@/lib/providers";
 import type { AppBootstrap } from "@/types/app";
 import type { ReasoningEffort } from "@/lib/model-metrics";
@@ -17,7 +17,7 @@ const ModelSelector = nextDynamic(() => import("@/components/chat/model-selector
   ssr: false,
 });
 
-const CATALOG = withSupersededMarked([...MODEL_LIST, ...GEN_MODELS], "2026-10-09");
+const CATALOG = withSupersededMarked([...MODEL_LIST, ...GEN_MODELS], "2026-10-10");
 
 /** Every lab configured, a Pro plan: the account the Mac fixture describes. */
 const FIXTURE_BOOTSTRAP = {
@@ -52,6 +52,9 @@ function Stage() {
   );
   const [fast, setFast] = React.useState(params.get("fast") === "1");
   const [pro, setPro] = React.useState(params.get("pro") === "1");
+  // ?ultra=1 with ?model=openai:gpt-6.1-sol: the Ultra fast switch on.
+  const [ultra, setUltra] = React.useState(params.get("ultra") === "1");
+  const ultraRate = resolved ? ultraFastMultiplier(resolved) : null;
   const thinking =
     !resolved || options.length < 2 ? null : (
       <ReasoningSlider
@@ -60,8 +63,12 @@ function Stage() {
         options={options}
         value={clampReasoningEffort(resolved, effort)}
         onChange={setEffort}
-        fastMode={fast}
-        onFastModeChange={supportsFastMode(resolved) ? setFast : undefined}
+        fastMode={fast && !(ultra && ultraRate != null)}
+        fastModeMultiplier={fastModeMultiplier(resolved) ?? undefined}
+        onFastModeChange={supportsFastMode(resolved) ? (v) => { setFast(v); if (v) setUltra(false); } : undefined}
+        ultraFast={ultra && ultraRate != null}
+        ultraFastMultiplier={ultraRate ?? undefined}
+        onUltraFastChange={ultraRate != null ? (v) => { setUltra(v); if (v) setFast(false); } : undefined}
         proMode={pro}
         onProModeChange={supportsProMode(resolved) ? setPro : undefined}
       />

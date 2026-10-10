@@ -9,10 +9,63 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Switch } from "@/components/ui/switch";
 
 /** Pro, said once wherever the switch is drawn, in the settings' words for effort. */
 export const PRO_MODE_HELP = "The model's deeper reasoning mode. Slower and costs more.";
+
+/** The Ultrafast tier's description, naming the premium the reader agrees to. */
+export function ultraFastHelp(multiplier?: number): string {
+  return multiplier ? `OpenAI's fastest tier, at ${multiplier}x the standard price.` : "OpenAI's fastest tier, at a premium.";
+}
+
+/** Where the speed control is: off, the lab's fast tier, or OpenAI's Ultrafast. */
+export type SpeedTier = "off" | "fast" | "ultra";
+
+/**
+ * The speed control's one-line name for a tier, with the price it costs:
+ * the tooltip and the accessible label ("Ultra fast · 6× standard price").
+ */
+export function speedTierLabel(tier: SpeedTier, multiplier?: number): string {
+  const price = multiplier ? ` · ${+multiplier.toFixed(2)}× standard price` : "";
+  if (tier === "ultra") return `Ultra fast${price}`;
+  if (tier === "fast") return `Fast${price}`;
+  return "Standard speed";
+}
+
+/**
+ * The next tier one press of the speed control lands on: Off → Fast → Ultra
+ * fast → Off, skipping a tier the model does not have.
+ */
+export function nextSpeedTier(tier: SpeedTier, has: { fast: boolean; ultra: boolean }): SpeedTier {
+  const order: SpeedTier[] = ["off", ...(has.fast ? (["fast"] as const) : []), ...(has.ultra ? (["ultra"] as const) : [])];
+  const at = order.indexOf(tier);
+  return order[(at < 0 ? 0 : at + 1) % order.length];
+}
+
+/**
+ * The speed control's glyph: one web bolt for Fast, the same bolt twice,
+ * overlapped about 3px, for Ultra fast. The second bolt springs in and out
+ * (transform + opacity only), and holds still under reduced motion.
+ */
+function SpeedGlyph({ tier }: { tier: SpeedTier }) {
+  const two = tier === "ultra";
+  return (
+    <span aria-hidden className="relative inline-flex size-4 items-center justify-center">
+      <Zap
+        className={cn(
+          "absolute size-4 transition-transform duration-base ease-spring motion-reduce:transition-none",
+          two ? "-translate-x-[2px]" : "translate-x-0",
+        )}
+      />
+      <Zap
+        className={cn(
+          "absolute size-4 transition-[transform,opacity] duration-base ease-spring motion-reduce:transition-none",
+          two ? "translate-x-[3px] opacity-100" : "translate-x-0 opacity-0",
+        )}
+      />
+    </span>
+  );
+}
 
 /**
  * Thinking effort, as a slider.
@@ -95,9 +148,13 @@ export function ReasoningSlider({
   disabled,
   className,
   fastMode = false,
+  fastModeMultiplier,
   onFastModeChange,
   proMode = false,
   onProModeChange,
+  ultraFast = false,
+  ultraFastMultiplier,
+  onUltraFastChange,
   defaultValue,
   variant = "inline",
 }: {
@@ -111,9 +168,15 @@ export function ReasoningSlider({
   disabled?: boolean;
   className?: string;
   fastMode?: boolean;
+  /** The fast tier's price multiple, for the speed control's label. */
+  fastModeMultiplier?: number;
   onFastModeChange?: (value: boolean) => void;
   proMode?: boolean;
   onProModeChange?: (value: boolean) => void;
+  /** OpenAI Ultrafast: the speed control's third step, only where the model has it. */
+  ultraFast?: boolean;
+  ultraFastMultiplier?: number;
+  onUltraFastChange?: (value: boolean) => void;
 }) {
   const count = options.length;
   const found = options.findIndex((option) => option.value === value);
@@ -131,9 +194,13 @@ export function ReasoningSlider({
         disabled={disabled}
         className={className}
         fastMode={fastMode}
+        fastModeMultiplier={fastModeMultiplier}
         onFastModeChange={onFastModeChange}
         proMode={proMode}
         onProModeChange={onProModeChange}
+        ultraFast={ultraFast}
+        ultraFastMultiplier={ultraFastMultiplier}
+        onUltraFastChange={onUltraFastChange}
         defaultValue={defaultValue}
       />
     );
@@ -234,17 +301,28 @@ export function ReasoningSlider({
           </button>
         ))}
       </div>
-      {(onFastModeChange || onProModeChange) && (
+      {(onFastModeChange || onProModeChange || onUltraFastChange) && (
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
-          {onFastModeChange && (
-            <ModeChip
-              label="Flash"
-              help="Prefer faster generation when the selected model supports it."
-              pressed={fastMode}
-              disabled={disabled}
-              onPress={() => onFastModeChange(!fastMode)}
-            />
-          )}
+          {(onFastModeChange || onUltraFastChange) && (() => {
+            // One chip for speed, cycling like the panel's bolt.
+            const has = { fast: !!onFastModeChange, ultra: !!onUltraFastChange };
+            const tier: SpeedTier = ultraFast && has.ultra ? "ultra" : fastMode && has.fast ? "fast" : "off";
+            const next = nextSpeedTier(tier, has);
+            return (
+              <ModeChip
+                label={tier === "ultra" ? "Ultra fast" : "Flash"}
+                help={speedTierLabel(tier === "off" ? "fast" : tier, tier === "ultra" ? ultraFastMultiplier : fastModeMultiplier)}
+                pressed={tier !== "off"}
+                disabled={disabled}
+                onPress={() => {
+                  if (next === "fast") onFastModeChange?.(true);
+                  else if (next === "ultra") onUltraFastChange?.(true);
+                  else if (tier === "ultra") onUltraFastChange?.(false);
+                  else onFastModeChange?.(false);
+                }}
+              />
+            );
+          })()}
           {onProModeChange && (
             <ModeChip
               label="Pro"
@@ -313,9 +391,13 @@ function EffortPanel({
   disabled,
   className,
   fastMode,
+  fastModeMultiplier,
   onFastModeChange,
   proMode = false,
   onProModeChange,
+  ultraFast = false,
+  ultraFastMultiplier,
+  onUltraFastChange,
   defaultValue,
 }: {
   options: ReasoningOption[];
@@ -324,13 +406,29 @@ function EffortPanel({
   disabled?: boolean;
   className?: string;
   fastMode: boolean;
+  fastModeMultiplier?: number;
   onFastModeChange?: (value: boolean) => void;
-  /** Absent where the model has no Pro mode: the row is not drawn at all. */
+  /** Absent where the model has no Pro mode: the capsule is not drawn at all. */
   proMode?: boolean;
   onProModeChange?: (value: boolean) => void;
+  ultraFast?: boolean;
+  ultraFastMultiplier?: number;
+  onUltraFastChange?: (value: boolean) => void;
   defaultValue?: ReasoningOption["value"];
 }) {
-  const proID = React.useId();
+  // The speed control: hidden without a fast tier, Ultra only where it exists.
+  const hasFast = !!onFastModeChange;
+  const hasUltra = !!onUltraFastChange;
+  const showsSpeed = hasFast || hasUltra;
+  const speedTier: SpeedTier = ultraFast && hasUltra ? "ultra" : fastMode && hasFast ? "fast" : "off";
+  const speedMultiplier = speedTier === "ultra" ? ultraFastMultiplier : speedTier === "fast" ? fastModeMultiplier : undefined;
+  const cycleSpeed = () => {
+    const next = nextSpeedTier(speedTier, { fast: hasFast, ultra: hasUltra });
+    if (next === "fast") onFastModeChange?.(true);
+    else if (next === "ultra") onUltraFastChange?.(true);
+    else if (speedTier === "ultra") onUltraFastChange?.(false);
+    else onFastModeChange?.(false);
+  };
   const panel = React.useContext(EffortPanelContext);
   const count = options.length;
   const current = options[index];
@@ -340,22 +438,53 @@ function EffortPanel({
     "pressable grid size-8 place-items-center rounded-full text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-35 coarse:size-11";
   return (
     <div className={cn("select-none", className)}>
-      <div className="grid grid-cols-[2rem_minmax(0,1fr)_2rem] items-center gap-2">
-        {onFastModeChange ? (
-          <button
-            type="button"
-            aria-pressed={fastMode}
-            aria-label={fastMode ? "Flash on: faster replies" : "Flash: faster replies"}
-            title="Flash: prefer faster generation"
-            disabled={disabled}
-            onClick={() => onFastModeChange(!fastMode)}
-            className={cn(iconButton, fastMode && "bg-foreground text-background hover:bg-foreground/90 hover:text-background")}
-          >
-            <Zap className="size-4" />
-          </button>
-        ) : (
-          <span />
-        )}
+      {/* One line: the speed control and Pro on the left, the rung and its
+          model in the middle, reset on the right. The side columns share a
+          width so the rung stays centred whichever controls the model has. */}
+      <div className="grid grid-cols-[4.75rem_minmax(0,1fr)_4.75rem] items-center gap-2">
+        <div className="flex items-center gap-1">
+          {showsSpeed ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  aria-label={speedTierLabel(speedTier, speedMultiplier)}
+                  aria-pressed={speedTier !== "off"}
+                  disabled={disabled}
+                  onClick={cycleSpeed}
+                  className={cn(iconButton, speedTier !== "off" && "text-foreground hover:text-foreground")}
+                >
+                  <SpeedGlyph tier={speedTier} />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>{speedTierLabel(speedTier, speedMultiplier)}</TooltipContent>
+            </Tooltip>
+          ) : null}
+          {onProModeChange ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  aria-pressed={proMode}
+                  aria-label={proMode ? "Pro on: deeper reasoning" : "Pro: deeper reasoning"}
+                  disabled={disabled}
+                  onClick={() => onProModeChange(!proMode)}
+                  className={cn(
+                    // A capsule beside the bolt, in the same group: filled ink
+                    // when on, a hairline when off.
+                    "pressable inline-flex h-6 items-center rounded-full border px-2 text-caption font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-35 coarse:h-9 motion-reduce:active:scale-100",
+                    proMode
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-border text-muted-foreground hover:bg-accent hover:text-foreground",
+                  )}
+                >
+                  Pro
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>{PRO_MODE_HELP}</TooltipContent>
+            </Tooltip>
+          ) : null}
+        </div>
         <div className="flex min-w-0 flex-col items-center">
           <span key={current?.label} className="text-body font-medium text-foreground motion-safe:animate-fade-in">
             {current?.label}
@@ -371,6 +500,7 @@ function EffortPanel({
             </button>
           ) : null}
         </div>
+        <div className="flex justify-end">
         <button
           type="button"
           aria-label="Reset to the model's default"
@@ -381,6 +511,7 @@ function EffortPanel({
         >
           <RotateCcw className="size-4" />
         </button>
+        </div>
       </div>
 
       <div className={cn("relative mt-3 h-9 w-full", disabled && "opacity-55")}>
@@ -440,15 +571,6 @@ function EffortPanel({
       {/* Pro: a separate axis from the rung (the GPT-5.6 line reasons in a
           deeper mode on the same model), so a switch under the track rather
           than another stop on it. Only drawn where the model has the mode. */}
-      {onProModeChange ? (
-        <div className="mt-3 flex items-center justify-between gap-3 border-t border-border/60 pt-3">
-          <label htmlFor={proID} className="flex min-w-0 cursor-pointer flex-col">
-            <span className="text-ui font-medium text-foreground">Pro</span>
-            <span className="text-caption text-muted-foreground">{PRO_MODE_HELP}</span>
-          </label>
-          <Switch id={proID} checked={proMode} disabled={disabled} onCheckedChange={onProModeChange} />
-        </div>
-      ) : null}
     </div>
   );
 }

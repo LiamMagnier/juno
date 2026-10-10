@@ -216,6 +216,9 @@ interface UseChatOptions {
   /** Premium fast mode (Anthropic speed / OpenAI priority). Honored server-side
    *  only on models that support it. */
   fastMode?: boolean;
+  /** OpenAI's Ultrafast tier (service_tier "ultrafast"). Honored server-side
+   *  only on models that have it; takes precedence over fastMode. */
+  ultraFast?: boolean;
   /** GPT-5.6 pro execution (reasoning.mode:"pro"). Honored server-side only on
    *  models that support it. */
   proMode?: boolean;
@@ -1348,6 +1351,7 @@ export function useChat(opts: UseChatOptions) {
           voiceMode: opts.voiceMode,
           webSearch: opts.webSearch,
           fastMode: opts.fastMode,
+          ultraFast: opts.ultraFast || undefined,
           proMode: opts.proMode,
           // Per-send, never sticky — and never in private mode (research
           // persists sources/activity, which private chats don't do).
@@ -1410,6 +1414,7 @@ export function useChat(opts: UseChatOptions) {
       opts.webSearch,
       opts.reasoningEffort,
       opts.fastMode,
+      opts.ultraFast,
       opts.proMode,
       opts.connectors,
       opts.projectId,
@@ -1743,12 +1748,13 @@ export function useChat(opts: UseChatOptions) {
         voiceMode: opts.voiceMode,
         reasoningEffort: opts.reasoningEffort,
         fastMode: opts.fastMode,
+          ultraFast: opts.ultraFast || undefined,
         proMode: opts.proMode,
         connectors: opts.connectors,
       },
       assistantTempId
     );
-  }, [status, runGeneration, startGeneration, resendUnsent, reconnect, opts.model, opts.voiceMode, opts.reasoningEffort, opts.fastMode, opts.proMode, opts.connectors]);
+  }, [status, runGeneration, startGeneration, resendUnsent, reconnect, opts.model, opts.voiceMode, opts.reasoningEffort, opts.fastMode, opts.ultraFast, opts.proMode, opts.connectors]);
 
   /**
    * A room's follow-up turn (src/lib/agents/rooms.ts): the next planned or
@@ -1834,13 +1840,14 @@ export function useChat(opts: UseChatOptions) {
           model: opts.model,
           reasoningEffort: opts.reasoningEffort,
           fastMode: opts.fastMode,
+          ultraFast: opts.ultraFast || undefined,
           proMode: opts.proMode,
           connectors: opts.connectors,
         },
         assistantTempId
       );
     },
-    [status, runGeneration, opts.model, opts.reasoningEffort, opts.fastMode, opts.proMode, opts.connectors]
+    [status, runGeneration, opts.model, opts.reasoningEffort, opts.fastMode, opts.ultraFast, opts.proMode, opts.connectors]
   );
 
   const stop = React.useCallback(() => {
