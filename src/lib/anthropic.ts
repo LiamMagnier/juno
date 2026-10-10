@@ -363,7 +363,7 @@ export async function* streamAnthropic(
   // end a turn with `pause_turn` (its internal iteration cap) on a turn that
   // carries no connector tools at all, and continuing that turn is another
   // request — with maxRounds pinned at 1 there was nowhere to continue to.
-  const maxRounds = hasTools || webSearch ? MAX_TOOL_ROUNDS + 1 : 1;
+  const maxRounds = hasTools || webSearch ? (tools?.maxRounds ?? MAX_TOOL_ROUNDS) + 1 : 1;
   let lastStopReason: string | null = null;
 
   for (let roundIndex = 0; roundIndex < maxRounds; roundIndex++) {

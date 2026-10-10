@@ -139,6 +139,23 @@ test("a person's latest pick wins over the option that rules it out", () => {
   assert.equal(next.resolution, "720p");
 });
 
+test("a picked resolution is kept: the aspect only moves to a ratio that has it, the closest one", () => {
+  const gpt = "openai:gpt-image-2.5-sunburst";
+  // 1:1 caps at 2K; 2:3 and 3:2 cap at 1K. The escape is 16:9 (the first of the two equally close wides).
+  const at4K = applyParamChange(gpt, defaultParams(gpt), "resolution", "4K");
+  assert.equal(at4K.resolution, "4K");
+  assert.equal(at4K.aspect, "16:9");
+  assert.ok(capabilitiesFor(gpt)!.composed!.table[`${at4K.aspect}|4K`], "the kept pair is a real size");
+  // From portrait 2:3, 2K moves to the closest portrait-ish ratio that has 2K: 1:1, not 16:9.
+  const portrait2K = applyParamChange(gpt, { ...defaultParams(gpt), aspect: "2:3" }, "resolution", "2K");
+  assert.deepEqual([portrait2K.aspect, portrait2K.resolution], ["1:1", "2K"]);
+  // From 2:3, 4K moves to 9:16 (tall stays tall), not 16:9.
+  const portrait4K = applyParamChange(gpt, { ...defaultParams(gpt), aspect: "2:3" }, "resolution", "4K");
+  assert.deepEqual([portrait4K.aspect, portrait4K.resolution], ["9:16", "4K"]);
+  const landscape4K = applyParamChange(gpt, { ...defaultParams(gpt), aspect: "3:2" }, "resolution", "4K");
+  assert.deepEqual([landscape4K.aspect, landscape4K.resolution], ["16:9", "4K"]);
+});
+
 test("options that a model does not have are absent, not disabled", () => {
   assert.equal(capabilitiesFor("google:veo-3.1-lite-generate-preview")!.options.resolution!.kind, "select");
   assert.ok(!optionValues(capabilitiesFor("google:veo-3.1-lite-generate-preview")!.options.resolution!).includes("4K"));

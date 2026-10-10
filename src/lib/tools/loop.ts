@@ -18,6 +18,12 @@ import type { LlmEvent } from "@/types/llm";
 
 export interface ToolLoop {
   readonly toolset: ChatToolset;
+  /**
+   * How many tool rounds the turn may take before its forced final answer.
+   * Absent: each adapter's own default (6). Raised only for a turn that
+   * works in the Mac's folder (src/lib/chat/local-folder.ts).
+   */
+  readonly maxRounds?: number;
   /** The Alevr id for a call the provider streamed (src/lib/tools/call-ids.ts). */
   issueCallId(providerCallId: string | undefined, round: number, index: number): string;
   /**
@@ -31,12 +37,13 @@ export interface ToolLoop {
   ): AsyncGenerator<LlmEvent, BatchResult[]>;
 }
 
-export function createToolLoop(toolset: ChatToolset, opts: { now?: () => number } = {}): ToolLoop {
+export function createToolLoop(toolset: ChatToolset, opts: { now?: () => number; maxRounds?: number } = {}): ToolLoop {
   const issue = createCallIdIssuer();
   const cache = new Map<string, ToolOutcome>();
   const never = new AbortController().signal;
   return {
     toolset,
+    ...(opts.maxRounds && opts.maxRounds > 0 ? { maxRounds: Math.min(Math.floor(opts.maxRounds), 40) } : {}),
     issueCallId: issue,
     async *run(calls, signal, runOpts) {
       if (calls.length === 0) return [];

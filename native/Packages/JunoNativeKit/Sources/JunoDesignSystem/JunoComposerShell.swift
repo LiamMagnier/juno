@@ -84,6 +84,7 @@ public struct JunoComposerShell<
     Disclosure: View,
     Controls: View,
     Edge: View,
+    Tray: View,
     CaptionBelow: View
 >: View {
     private let accessory: Accessory
@@ -93,6 +94,7 @@ public struct JunoComposerShell<
     private let disclosure: Disclosure
     private let controls: Controls
     private let edge: Edge
+    private let tray: Tray
     private let captionBelow: CaptionBelow
 
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
@@ -107,6 +109,7 @@ public struct JunoComposerShell<
         @ViewBuilder disclosure: () -> Disclosure,
         @ViewBuilder controls: () -> Controls,
         @ViewBuilder edge: () -> Edge,
+        @ViewBuilder tray: () -> Tray,
         @ViewBuilder captionBelow: () -> CaptionBelow
     ) {
         self.accessory = accessory()
@@ -116,6 +119,7 @@ public struct JunoComposerShell<
         self.disclosure = disclosure()
         self.controls = controls()
         self.edge = edge()
+        self.tray = tray()
         self.captionBelow = captionBelow()
     }
 
@@ -127,7 +131,13 @@ public struct JunoComposerShell<
             VStack(spacing: JunoComposerMetrics.clusterSpacing) {
                 accessory
                 captionAbove
-                shell
+                // The tray (the web's grey shelf: project, apps, skills, or a
+                // media model's choices) sits attached under the shell, tucked
+                // behind its lower edge — no gap, so it reads as one object.
+                VStack(spacing: 0) {
+                    shell
+                    tray
+                }
                 captionBelow
             }
         }
@@ -181,10 +191,10 @@ public struct JunoComposerShell<
 }
 
 public extension JunoComposerShell
-where Accessory == EmptyView, Disclosure == EmptyView {
-    /// A shell with no cluster accessory and no disclosure line — every
-    /// composer until Phase 2 adds Scroll to latest and Phase 5 adds the task
-    /// disclosure.
+where Accessory == EmptyView, Disclosure == EmptyView, Tray == EmptyView {
+    /// A shell with no cluster accessory, no disclosure line and no tray —
+    /// Quick Entry, and every composer until Phase 2 adds Scroll to latest and
+    /// Phase 5 adds the task disclosure.
     init(
         @ViewBuilder captionAbove: () -> CaptionAbove,
         @ViewBuilder above: () -> Above,
@@ -201,6 +211,34 @@ where Accessory == EmptyView, Disclosure == EmptyView {
             disclosure: { EmptyView() },
             controls: controls,
             edge: edge,
+            tray: { EmptyView() },
+            captionBelow: captionBelow
+        )
+    }
+}
+
+public extension JunoComposerShell
+where Accessory == EmptyView, Disclosure == EmptyView {
+    /// The chat composer's shell: the same slots and the tray under the card
+    /// (`NativeComposerTray` — the web's `composer-tray.tsx`).
+    init(
+        @ViewBuilder captionAbove: () -> CaptionAbove,
+        @ViewBuilder above: () -> Above,
+        @ViewBuilder field: () -> Field,
+        @ViewBuilder controls: () -> Controls,
+        @ViewBuilder edge: () -> Edge,
+        @ViewBuilder tray: () -> Tray,
+        @ViewBuilder captionBelow: () -> CaptionBelow
+    ) {
+        self.init(
+            accessory: { EmptyView() },
+            captionAbove: captionAbove,
+            above: above,
+            field: field,
+            disclosure: { EmptyView() },
+            controls: controls,
+            edge: edge,
+            tray: tray,
             captionBelow: captionBelow
         )
     }

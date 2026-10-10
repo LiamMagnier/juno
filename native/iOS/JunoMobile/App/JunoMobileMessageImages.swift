@@ -3,6 +3,42 @@ import JunoDesignSystem
 import SwiftUI
 import UIKit
 
+/// The tracks on an answer (a music model's result): the shared player card
+/// with its waveform, fed a local file written from the attachment's bytes.
+struct JunoMobileMessageTracks: View {
+  let tracks: [NativeChatAttachment]
+  let loader: NativeChatImageLoader?
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: JunoSpace.snug) {
+      ForEach(tracks) { track in
+        NativeGeneratedAudioCard(attachment: track) {
+          try await Self.fileURL(for: track, loader: loader)
+        }
+      }
+    }
+  }
+
+  /// The attachment's bytes (`/api/attachments/<id>`, the loader every
+  /// picture uses) written once to the caches folder, where AVPlayer can
+  /// read and seek them.
+  @MainActor
+  static func fileURL(for track: NativeChatAttachment, loader: NativeChatImageLoader?) async throws -> URL {
+    let folder = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+      .appendingPathComponent("juno-tracks", isDirectory: true)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    let safeID = String(track.id.unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) || $0 == "-" || $0 == "_" })
+    let ext = track.fileExtension.isEmpty ? "m4a" : track.fileExtension
+    let url = folder.appendingPathComponent("\(safeID.isEmpty ? "track" : safeID).\(ext)")
+    if FileManager.default.fileExists(atPath: url.path) { return url }
+    guard let loader else { throw NativeTranscriptFileError.unavailable }
+    await loader.load(track.id)
+    guard case .loaded(let data) = loader.state(for: track.id) else { throw NativeTranscriptFileError.unavailable }
+    try data.write(to: url, options: .atomic)
+    return url
+  }
+}
+
 /// The pictures on a message: the reader's photos on a question, the
 /// generated picture on an answer.
 ///

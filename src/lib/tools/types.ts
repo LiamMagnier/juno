@@ -388,6 +388,21 @@ export interface NativeChatTool {
   /** The name the activity row and the thought-process panel show for it. */
   label: string;
   access: ToolAccess;
+  /** The canonical id its calls are recorded under. Absent: `start_task`, as before. */
+  canonical?: CanonicalToolId;
+  /** The arguments its row may show (`ToolCallRecord.args`). Absent: none. */
+  present?(args: Record<string, unknown>): ToolPresentArgs;
+  /**
+   * Its bound once running. Absent: the native default (a minute). A tool
+   * that waits on the person's own machine — the folder tools — sets its own.
+   */
+  timeoutMs?: number;
+  /**
+   * Whether an identical call in the same turn is answered from the first.
+   * Absent: yes. The folder tools say no — reading a file again after
+   * editing it must read the new file.
+   */
+  dedupe?: boolean;
   execute(args: Record<string, unknown>, signal?: AbortSignal, opts?: ToolExecuteOptions): Promise<ToolExecution>;
 }
 

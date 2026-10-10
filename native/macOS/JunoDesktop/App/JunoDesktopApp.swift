@@ -613,6 +613,7 @@ struct JunoDesktopApp: App {
             // at its narrowest; the window opens at 1240×800.
             JunoDesktopRootView(configuration: configuration)
                 .frame(minWidth: 820, minHeight: 560)
+                .environment(\.desktopChatFolders, configuration.chatFolderStore)
         } else {
             // Unreachable outside the preview harness: `configuration` is only
             // nil when the preview branch above is taken.

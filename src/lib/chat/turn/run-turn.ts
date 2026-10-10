@@ -81,6 +81,7 @@ import type { TurnSkill } from "./skills";
 import { recordTurnSpend } from "./spend";
 import { buildNativeTools, type TurnTools } from "./tools";
 import type { CrossTurn } from "./cross";
+import { LOCAL_FOLDER_MAX_TOOL_ROUNDS } from "@/lib/chat/local-folder";
 import { emptyTurnOutcome, type TurnOutcome } from "./finalize";
 import type { TurnTraceFinish, TurnTraceRecorder } from "./trace";
 import { traceUsage } from "./trace";
@@ -228,7 +229,7 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
     useProMode,
     skill: { skillOutcome, appliedSkill },
     untrustedContentInTurn,
-    approvals: { taskToolOn, agentConfigToolsOn, agentContext },
+    approvals: { taskToolOn, agentConfigToolsOn, agentContext, localFolder },
     tools: { toolProviderSessions },
     system,
     baseSystemSections,
@@ -546,6 +547,7 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
       clarificationVisibleContent,
       preflightVisibleContent,
       crossConversation: turn.crossConversation ?? null,
+      localFolder,
     });
 
     try {
@@ -632,6 +634,9 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
         // `start_task` and `hand_off_to_teammate`, when this turn may carry
         // them (`taskToolOn` and the agent context's `handoff` above).
         nativeTools: nativeTools.length > 0 ? nativeTools : undefined,
+        // A folder job is many small steps (list, read, write, check), so a
+        // turn working in the Mac's folder may take more of them.
+        ...(localFolder ? { maxToolRounds: LOCAL_FOLDER_MAX_TOOL_ROUNDS } : {}),
         // The execution and skill tools this turn was granted
         // (`executionEntitlements` above), run behind the runtime broker.
         toolSpecs:

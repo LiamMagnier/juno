@@ -76,6 +76,7 @@
     "request.skillSlug": "native",
     "request.generationId": "native",
     "request.workHandoff": "native",
+    "request.localFolder": "native",
     "request.roomTurn": {
       "status": "planned",
       "note": "A follow-up agent turn in a room (src/lib/agents/rooms.ts): the web asks the next planned or asked member to answer the room's newest message. The apps do not show rooms yet, so they never send it."
@@ -119,6 +120,11 @@
     "stream.approval.approval": "native",
     "stream.work": "native",
     "stream.work.session": "native",
+    "stream.local_tool": "native",
+    "stream.local_tool.call": "native",
+    "ClientLocalToolCall.id": "native",
+    "ClientLocalToolCall.tool": "native",
+    "ClientLocalToolCall.args": "native",
     "stream.sources": "native",
     "stream.sources.sources": "native",
     "stream.reasoning": "native",
@@ -697,9 +703,20 @@
         "file": "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeChatAPIClient.swift",
         "function": "decodeWorkFrame",
         "ignoreExtraKeys": "It also reads the session's own keys, which ClientWorkSession covers."
+      },
+      {
+        "file": "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeLocalFolderWire.swift",
+        "struct": "LocalToolFrameWire",
+        "ignoreExtraKeys": "The `local_tool` frame's own reader: it reads `call` and nothing else."
       }
     ],
     "defs": {
+      "ClientLocalToolCall": [
+        {
+          "file": "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeLocalFolderWire.swift",
+          "struct": "LocalToolFrameWire.Call"
+        }
+      ],
       "ClientMessage": [
         {
           "file": "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeChatAPIClient.swift",

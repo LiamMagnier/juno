@@ -20,10 +20,21 @@ public enum PreviewImageFixtures {
     public static let generatedID = "img-gen-1"
     /// The showcase Library's app screenshot ("Onboarding, screen 2.png").
     public static let screenID = "sc-file-4"
+    /// A picture generated at a non-default frame (`/api/generate` with
+    /// `params.aspect`): `img-gen-<w>x<h>`, drawn at that size.
+    public static func generatedID(width: Int, height: Int) -> String { "img-gen-\(width)x\(height)" }
+    /// The track a music model made (`PreviewAudioFixtures`).
+    public static let generatedAudioID = "aud-gen-1"
 
     /// Answers `/api/attachments/<id>` with PNG bytes, or nil for an id this
     /// fixture does not draw.
     public static func png(for id: String) -> Data? {
+        if id.hasPrefix("img-gen-"), id != generatedID {
+            let size = id.dropFirst("img-gen-".count).split(separator: "x").compactMap { Int($0) }
+            if size.count == 2, (64...4096).contains(size[0]), (64...4096).contains(size[1]) {
+                return cached(id) { draw(width: size[0], height: size[1], kind: .generated) }
+            }
+        }
         switch id {
         case userPhotoID: return cached(id) { draw(width: 1200, height: 800, kind: .photo) }
         case generatedID: return cached(id) { draw(width: 1024, height: 1024, kind: .generated) }
@@ -102,11 +113,11 @@ public enum PreviewImageFixtures {
             }
             let centre = CGPoint(x: Double(width) * 0.5, y: Double(height) * 0.46)
             for ring in stride(from: 6, through: 1, by: -1) {
-                let radius = Double(width) * 0.06 * Double(ring)
+                let radius = Double(min(width, height)) * 0.06 * Double(ring)
                 context.setFillColor(CGColor(red: 1, green: 0.86, blue: 0.62, alpha: 0.07 + 0.02 * Double(7 - ring)))
                 context.fillEllipse(in: CGRect(x: centre.x - radius, y: centre.y - radius, width: radius * 2, height: radius * 2))
             }
-            let sun = Double(width) * 0.13
+            let sun = Double(min(width, height)) * 0.13
             context.setFillColor(CGColor(red: 1, green: 0.92, blue: 0.74, alpha: 1))
             context.fillEllipse(in: CGRect(x: centre.x - sun, y: centre.y - sun, width: sun * 2, height: sun * 2))
             // The skyline: blocks of varying height along the lower third.

@@ -46,6 +46,7 @@ import { clampChars, singleLine, type SourceRegistry } from "@/lib/chat/source-r
 import type { GenerationAccumulator } from "@/lib/chat/stream-accumulator";
 import { START_TASK_TOOL_ID, isTaskApproval, taskActivityTitle, taskTitleFromArgs } from "@/lib/chat/task-tool";
 import { closeToolDetail, createToolDetailBudget, openToolDetail } from "@/lib/chat/tool-detail";
+import { LOCAL_FOLDER_TOOLS, isLocalFolderToolId } from "@/lib/chat/local-folder";
 import type { ResolvedTool } from "@/lib/tools/types";
 import type { TaintSource, TurnTaint } from "@/lib/web/taint";
 import type { LazyUrlLedger, UrlLedgerKind } from "@/lib/web/types";
@@ -137,6 +138,7 @@ const FALLBACK_TOOL_TITLES: Readonly<Record<CanonicalToolId, string>> = {
   find_in_page: "Find in page",
   provider_web_search: "Web search",
   provider_x_search: "X search",
+  local_folder: "Folder on your Mac",
   mcp: "Connector tool",
 };
 
@@ -494,6 +496,9 @@ export class TurnStream {
     if (resolved) return resolved;
     if (name === START_TASK_TOOL_ID) {
       return { canonical: "start_task", origin: "juno", title: FALLBACK_TOOL_TITLES.start_task };
+    }
+    if (isLocalFolderToolId(name)) {
+      return { canonical: "local_folder", origin: "juno", title: LOCAL_FOLDER_TOOLS[name].label };
     }
     const juno = junoToolIdOf(name);
     if (juno) return { canonical: juno, origin: "juno", title: FALLBACK_TOOL_TITLES[juno] };

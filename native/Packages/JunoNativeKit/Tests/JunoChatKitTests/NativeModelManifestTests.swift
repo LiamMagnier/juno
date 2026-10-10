@@ -169,33 +169,41 @@ final class NativeModelManifestTests: XCTestCase {
         XCTAssertEqual(NativeModelPresentation.unavailabilityReason(model), "Requires Max ×5")
     }
 
-    /// A picture or video model does not stream, and is still something the
-    /// chat composer can send to (through `/api/generate`); an audio model is
-    /// not, on the native side, and stays "not available in chat".
-    func testPictureAndVideoModelsAreSendableAndAudioIsNot() async throws {
-        func generation(_ id: String, _ modality: String) -> String {
+    /// A picture, video or music model does not stream, and is still something
+    /// the chat composer can send to (through `/api/generate`). Its generation
+    /// choices (`mediaParams`) decode on their own: a shape this build cannot
+    /// read is no choices, never an empty catalogue.
+    func testPictureVideoAndMusicModelsAreSendableWithTheirChoices() async throws {
+        func generation(_ id: String, _ modality: String, params: String = "null") -> String {
             fullModel
                 .replacingOccurrences(of: #""id": "moonshot:kimi-k3""#, with: #""id": "\#(id)""#)
-                .replacingOccurrences(of: #""lifecycle": "active","#, with: #""lifecycle": "active", "modality": "\#(modality)","#)
+                .replacingOccurrences(
+                    of: #""lifecycle": "active","#,
+                    with: #""lifecycle": "active", "modality": "\#(modality)", "mediaParams": \#(params),"#
+                )
                 .replacingOccurrences(of: #""streaming":true"#, with: #""streaming":false"#)
         }
+        let lyria = #"{"kind":"audio","options":[{"key":"instrumental","control":"toggle","kind":"toggle","label":"Instrumental","default":false},{"key":"outputFormat","control":"menu","kind":"select","label":"Format","default":"mp3","choices":[{"value":"mp3","label":"MP3"},{"value":"wav","label":"WAV","detail":"Lossless, much larger"}]}],"rules":[],"facts":[]}"#
         let catalog = try await client(body: manifest(models: [
-            generation("openai:gpt-image-2.5-flare", "image"),
+            generation("openai:gpt-image-2.5-flare", "image", params: #"{"kind":"image","options":"not an array"}"#),
             generation("google:gemini-omni-1.1-flash", "video"),
-            generation("google:lyria-3", "audio"),
+            generation("google:lyria-3.5", "audio", params: lyria),
         ])).modelCatalog(for: accountID)
         let byID = Dictionary(uniqueKeysWithValues: catalog.models.map { ($0.id, $0) })
 
-        for id in ["openai:gpt-image-2.5-flare", "google:gemini-omni-1.1-flash"] {
+        for id in ["openai:gpt-image-2.5-flare", "google:gemini-omni-1.1-flash", "google:lyria-3.5"] {
             let model = try XCTUnwrap(byID[id])
             XCTAssertFalse(model.isChatCapable)
             XCTAssertTrue(model.isMediaGeneration)
             XCTAssertTrue(model.isAvailable)
             XCTAssertNil(model.unavailability)
         }
-        let audio = try XCTUnwrap(byID["google:lyria-3"])
-        XCTAssertFalse(audio.isAvailable)
-        XCTAssertEqual(audio.unavailability, .notAChatModel)
+        XCTAssertNil(byID["openai:gpt-image-2.5-flare"]?.mediaParams, "an unreadable schema is no choices")
+        XCTAssertNil(byID["google:gemini-omni-1.1-flash"]?.mediaParams)
+        let audio = try XCTUnwrap(byID["google:lyria-3.5"]?.mediaParams)
+        XCTAssertEqual(audio.kind, "audio")
+        XCTAssertEqual(audio.options.map(\.key), ["instrumental", "outputFormat"])
+        XCTAssertEqual(audio.defaults(), ["instrumental": .bool(false), "outputFormat": .string("mp3")])
     }
 
     func testAMidModelLockedToLiteNamesLite() async throws {

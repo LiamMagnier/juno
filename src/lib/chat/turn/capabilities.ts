@@ -86,6 +86,8 @@ export function turnCarriesUntrustedContent(signals: {
   documentTool: boolean;
   historyHasToolNotes: boolean;
   contextTokensUntrusted: boolean;
+  /** The client named a folder on the Mac for this turn. */
+  localFolder?: boolean;
 }): boolean {
   // Any of these can put text Juno did not author into context: a connector
   // tool result, provider-side web search, a fetched research page, a project
@@ -115,6 +117,9 @@ export function turnCarriesUntrustedContent(signals: {
     // Notes of earlier tool calls ride the envelope too (history-notes.ts).
     signals.historyHasToolNotes ||
     // A chat excerpt, an artifact or a project's documents the message named.
-    signals.contextTokensUntrusted
+    signals.contextTokensUntrusted ||
+    // The Mac's folder tools read files and command output into the turn,
+    // inside the envelope (src/lib/chat/local-folder-tools.ts).
+    !!signals.localFolder
   );
 }

@@ -109,6 +109,7 @@ public enum NativeToolPresentation {
         case "current_time": return single("Checking the time")
         case "calculate": return single("Calculating")
         case "start_task": return single("Handing this to a task")
+        case "local_folder": return NativeLocalFolderPresentation.runningLine(call)
         case "suggest_research": return single("Suggested research")
         case "create_agent": return single("Creating an agent")
         case "update_agent", "agent_profile": return single("Updating its profile")
@@ -158,6 +159,7 @@ public enum NativeToolPresentation {
         case "start_task":
             if let title = call.args["title"], !title.isEmpty { return line(["Started a task"], .quote(title)) }
             return single("Started a task")
+        case "local_folder": return NativeLocalFolderPresentation.doneLine(call)
         case "suggest_research": return single("Suggested research")
         case "create_agent": return single("Created an agent")
         case "update_agent", "agent_profile": return single("Updated its profile")
@@ -338,6 +340,7 @@ public enum NativeToolPresentation {
         case "current_time": "clock"
         case "calculate": "calculator"
         case "start_task": "task"
+        case "local_folder": NativeLocalFolderPresentation.iconName(call)
         case "suggest_research": "research"
         case "update_agent", "agent_profile": "agents"
         case "manage_agent_goal", "agent_goals": "listChecks"
@@ -370,6 +373,7 @@ public enum NativeToolPresentation {
         case "current_time": "Checking the time"
         case "calculate": "Calculating"
         case "start_task": "Starting a task"
+        case "local_folder": "Working in a folder on this Mac"
         case "suggest_research": "Suggesting research"
         case "update_agent", "agent_profile": "Updating agent profile"
         case "manage_agent_goal", "agent_goals": "Managing agent goals"

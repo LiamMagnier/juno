@@ -153,18 +153,23 @@ public struct NativeChatModelOption: Identifiable, Equatable, Sendable {
     /// rather than a `Date`: it is a calendar day, and parsing it into an
     /// instant would shift it across a timezone and show the wrong one.
     public let retiresOn: String?
+    /// An image, video or music model's generation choices (the catalogue's
+    /// `mediaParams`, built from the web's `media-params.ts`): what the
+    /// composer tray offers and `/api/generate` takes as `params`. Nil for
+    /// chat models and from an older server.
+    public let mediaParams: NativeMediaParamSchema?
 
     /// A streaming chat model — the only kind this composer can send to. Image
     /// and video generation entries share the manifest but are not selectable
     /// here, and are not "unavailable" either; they are a different product.
     public var isChatCapable: Bool { supportsStreaming }
 
-    /// A picture or video model: the chat composer runs it through
+    /// A picture, video or music model: the chat composer runs it through
     /// `/api/generate` (``NativeChatAPIClient/mediaGenerationEvents(_:for:)``),
     /// as the web's composer does, rather than through `/api/chat`. The server
     /// lists a video model only where it can actually generate one
     /// (`isVideoGenSupported`), so the manifest's word is enough.
-    public var isMediaGeneration: Bool { modality == "image" || modality == "video" }
+    public var isMediaGeneration: Bool { modality == "image" || modality == "video" || modality == "audio" }
 
     /// What a chat composer can send a turn to: a streaming chat model, or a
     /// picture or video model.
@@ -226,8 +231,10 @@ public struct NativeChatModelOption: Identifiable, Equatable, Sendable {
         retiresOn: String? = nil,
         contextTiers: [JunoModelContextTier] = [],
         codeAgentic: Bool? = nil,
-        codeRank: Int? = nil
+        codeRank: Int? = nil,
+        mediaParams: NativeMediaParamSchema? = nil
     ) {
+        self.mediaParams = mediaParams
         self.contextTiers = contextTiers
         self.codeAgentic = codeAgentic
         self.codeRank = codeRank
@@ -604,6 +611,10 @@ public enum NativeChatServerEvent: Equatable, Sendable {
     /// has left `draft`. Not terminal — the reply goes on to say so in a
     /// sentence. The app's task follower adopts it.
     case work(NativeChatWorkStart)
+    /// A folder call for this Mac to run (`local_folder` turns only,
+    /// ``NativeLocalToolHosting``). Not terminal: the turn waits for the
+    /// outcome and carries on.
+    case localTool(NativeLocalToolCall)
     /// The SSE `id:` of the frame just delivered: the generation's frame
     /// sequence number, which a reconnect resumes after
     /// (`/api/chat/stream/{id}?after=seq`). Not a frame of its own.
@@ -749,19 +760,26 @@ public struct NativeMediaGenerationRequest: Equatable, Sendable {
     public let modality: NativeMediaProgress.Modality
     /// Present only when this is an edit of an existing image.
     public let edit: Edit?
+    /// The person's generation choices (aspect, resolution, quality, length,
+    /// sound, count, background, format): the web's `params`, in canonical
+    /// values the server cleans against the model. Empty sends none, which
+    /// the route reads as the model's defaults.
+    public let params: NativeMediaParams
 
     public init(
         conversationID: String?,
         prompt: String,
         modelID: String,
         modality: NativeMediaProgress.Modality,
-        edit: Edit? = nil
+        edit: Edit? = nil,
+        params: NativeMediaParams = [:]
     ) {
         self.conversationID = conversationID
         self.prompt = prompt
         self.modelID = modelID
         self.modality = modality
         self.edit = edit
+        self.params = params
     }
 }
 
@@ -818,6 +836,10 @@ public struct NativeChatGenerationRequest: Equatable, Sendable {
     /// (`src/lib/chat/request.ts`), which never parses the message for a
     /// leading slash. Nil is not encoded.
     public let skillSlug: String?
+    /// The folder on this Mac the chat works in (`localFolder` on the
+    /// route). Present, it also adds `local_folder` to `clientFeatures`, so
+    /// the server offers the folder tools. Nil is not encoded.
+    public let localFolder: NativeLocalFolderContext?
 
     /// The route's cap on ``regenerateInstruction``, in characters.
     public static let regenerateInstructionLimit = 400
@@ -848,8 +870,10 @@ public struct NativeChatGenerationRequest: Equatable, Sendable {
         regenerateInstruction: String? = nil,
         workHandoff: Bool = false,
         skillSlug: String? = nil,
-        context: [NativeContextToken] = []
+        context: [NativeContextToken] = [],
+        localFolder: NativeLocalFolderContext? = nil
     ) {
+        self.localFolder = localFolder
         self.context = Array(context.prefix(16))
         self.workHandoff = workHandoff
         self.skillSlug = skillSlug
@@ -1134,7 +1158,8 @@ public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
                     .filter { $0.tokens > 0 && $0.inputPerMTok >= 0 && $0.outputPerMTok >= 0 }
                     .sorted { $0.tokens < $1.tokens },
                 codeAgentic: model.code?.agentic,
-                codeRank: model.code?.rank
+                codeRank: model.code?.rank,
+                mediaParams: model.mediaParams?.schema
             )
         }
         return NativeChatModelCatalog(
@@ -1328,7 +1353,8 @@ public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
             workHandoff: request.workHandoff ? true : nil,
             skillSlug: request.skillSlug,
             context: request.context.isEmpty ? nil : request.context,
-            clientFeatures: NativeChatClientFeatures.declared,
+            localFolder: request.localFolder,
+            clientFeatures: NativeChatClientFeatures.declared(localFolder: request.localFolder),
             timeZone: NativeChatClientFeatures.timeZone,
             locale: NativeChatClientFeatures.locale
         )
@@ -1380,7 +1406,9 @@ public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
                     },
                     maskDataUrl: edit.maskDataURL
                 )
-            }
+            },
+            // The server takes at most 16 keys; a model has at most ten options.
+            params: request.params.isEmpty ? nil : request.params
         )
         return try await streamEvents(
             path: "/api/generate",
@@ -1552,6 +1580,7 @@ public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
         }
         guard Self.decodedFrameTypes.contains(frame.type) else { return .ping }
         if frame.type == "work" { return try decodeWorkFrame(payload) }
+        if frame.type == "local_tool" { return decodeLocalToolFrame(payload) }
         let envelope: EventEnvelopeWire
         do { envelope = try JSONDecoder().decode(EventEnvelopeWire.self, from: payload) }
         catch { throw NativeChatAPIError.malformedResponse }
@@ -1691,7 +1720,7 @@ public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
     /// type is skipped as a ``NativeChatServerEvent/ping``.
     private static let decodedFrameTypes: Set<String> = [
         "meta", "title", "delta", "reasoning", "sources", "done", "error",
-        "activity", "approval", "progress", "resume", "handoff", "work", "ping",
+        "activity", "approval", "progress", "resume", "handoff", "work", "local_tool", "ping",
     ]
 
     /// `{type: "work", session: ClientWorkSession}` (`serializers.ts`
@@ -2004,6 +2033,16 @@ private struct ModelCatalogWire: Decodable {
         let ultraFastMode: FastMode?
         let deprecationNote: String?
         let retiresOn: String?
+        /// Decoded on its own: a shape this build cannot read means no
+        /// choices, never an empty catalogue (the body decodes in one do/catch).
+        let mediaParams: LossyMediaParams?
+    }
+    /// The catalogue's `mediaParams`, or nil when this build cannot read it.
+    struct LossyMediaParams: Decodable {
+        let schema: NativeMediaParamSchema?
+        init(from decoder: any Decoder) throws {
+            schema = try? NativeMediaParamSchema(from: decoder)
+        }
     }
     let manifestVersion: String
     let contractDigest: String
@@ -2042,6 +2081,8 @@ private struct MediaGenerationRequestWire: Encodable {
     /// Omitted for a plain generation, so its body is byte-identical to what it
     /// was before editing existed.
     let edit: MediaEditWire?
+    /// The web's `params` (`media-params.ts`), omitted when there are none.
+    let params: NativeMediaParams?
 }
 
 private struct MediaEditWire: Encodable {
@@ -2094,6 +2135,8 @@ private struct GenerationRequestWire: Encodable {
     /// The armed skill's slash name, or absent.
     let skillSlug: String?
     let context: [NativeContextToken]?
+    /// The folder this turn works in, by name and access. Absent unless set.
+    let localFolder: NativeLocalFolderContext?
     /// The grammar this client renders (the rework's `clientFeatures`), with
     /// the zone and locale `current_time` and research read. Always sent: the
     /// route's schema is NOT strict (`chatBodySchema` is a plain `z.object`,

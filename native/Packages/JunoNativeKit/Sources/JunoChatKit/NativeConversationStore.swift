@@ -846,6 +846,20 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
     /// pickers offer these, under their own Images and Video sections.
     public private(set) var generationModels: [NativeChatModelOption] = []
 
+    /// The composer trays' generation choices, remembered per model on this
+    /// device (the web's `alevr.mediaParams.v1`). Read at send time when a
+    /// caller passes none, so every composer sends what its tray shows.
+    public let mediaParamsMemory: NativeMediaParamsMemory
+
+    /// The choices a turn to `modelID` would carry now: the tray's, cleaned
+    /// against the model's schema; empty for a chat model or a model the
+    /// catalogue publishes no choices for.
+    public func currentMediaParams(for modelID: String) -> NativeMediaParams {
+        guard let schema = generationModels.first(where: { $0.id == modelID })?.mediaParams, !schema.options.isEmpty
+        else { return [:] }
+        return schema.request(mediaParamsMemory.params(for: modelID, schema: schema))
+    }
+
     /// What a chat composer's model picker lists: the chat catalogue, then
     /// the picture and video models.
     public var composerCatalog: [NativeChatModelOption] { modelCatalog + generationModels }
@@ -1248,6 +1262,35 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
     /// yet, and a client that claimed it and drew nothing would start runs the
     /// reader never sees. Private chats and Compare never carry it.
     public var claimsWorkHandoff = false
+
+    // MARK: Work in a folder
+
+    /// Runs the folder calls a turn sends (`local_tool` frames) and names the
+    /// folder each conversation works in. The Mac sets it; the phone never
+    /// does, so a phone neither names a folder nor runs a call.
+    @ObservationIgnored public weak var localToolHost: (any NativeLocalToolHosting)?
+
+    /// Calls already handed to the host, by id. A resumed stream replays the
+    /// frames after its last seen sequence, and a call must run once.
+    @ObservationIgnored private var startedLocalToolCalls: Set<String> = []
+
+    /// Hands one folder call to the host and posts how it ended. Off the
+    /// stream's own loop: the turn keeps reading frames (pings, the approval
+    /// it may be waiting on) while the call runs.
+    private func runLocalTool(_ call: NativeLocalToolCall, conversationID: String, generationID: String, accountID: AccountID) {
+        guard startedLocalToolCalls.insert(call.id).inserted, let chatClient else { return }
+        let host = localToolHost
+        Task { @MainActor in
+            let result = await host?.perform(call, conversationID: conversationID)
+                ?? .failed("This app cannot work in folders, so nothing was done.")
+            try? await chatClient.submitLocalToolResult(
+                callID: call.id,
+                result: result,
+                generationID: generationID,
+                for: accountID
+            )
+        }
+    }
 
     /// The newest task the model started in each conversation, from the
     /// stream's `work` frame, by conversation id. The app's follower adopts it
@@ -1741,6 +1784,10 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         /// source attachment and the area, sent to `/api/generate` with the
         /// instructions.
         var edit: NativeMediaGenerationRequest.Edit? = nil
+        /// A picture, video or music turn's generation choices, carried
+        /// through retries for the reason the tool flags are: a retry is the
+        /// request the reader made, at the size and length they chose.
+        var mediaParams: NativeMediaParams = [:]
     }
 
     /// Where a forked turn belongs in the tree.
@@ -1761,8 +1808,10 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         syncModel: NativeSyncModel<Repository>,
         chatClient: NativeChatAPIClient? = nil,
         titleClient: NativeConversationTitleClient? = nil,
-        opensMostRecentConversationOnLoad: Bool = true
+        opensMostRecentConversationOnLoad: Bool = true,
+        mediaParamsMemory: NativeMediaParamsMemory? = nil
     ) {
+        self.mediaParamsMemory = mediaParamsMemory ?? NativeMediaParamsMemory()
         store = NativeConversationStore(repository: repository, outbox: outbox)
         self.outbox = outbox
         self.drainer = drainer
@@ -2345,7 +2394,10 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         // The skill the composer armed (`skillSlug` on the route). Defaulted
         // for the call sites with no skill UI.
         skillSlug: String? = nil,
-        contextTokens: [NativeContextToken] = []
+        contextTokens: [NativeContextToken] = [],
+        // A picture, video or music model's choices (`/api/generate`'s
+        // `params`). Nil reads the tray's, from ``mediaParamsMemory``.
+        mediaParams: NativeMediaParams? = nil
     ) -> Bool {
         sendMessage(
             conversationID: conversationID,
@@ -2363,7 +2415,8 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
             branchPlacement: nil,
             attachments: attachments,
             skillSlug: skillSlug,
-            contextTokens: contextTokens
+            contextTokens: contextTokens,
+            mediaParams: mediaParams
         )
     }
 
@@ -2388,7 +2441,8 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         branchPlacement: BranchPlacement?,
         attachments: [NativeChatAttachment] = [],
         skillSlug: String? = nil,
-        contextTokens: [NativeContextToken] = []
+        contextTokens: [NativeContextToken] = [],
+        mediaParams: NativeMediaParams? = nil
     ) -> Bool {
         guard !chatPhase.isActive, let accountID, chatClient != nil,
             let conversation = conversations.first(where: { $0.id == conversationID }),
@@ -2461,7 +2515,11 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
             // Not on a picture or video turn: `/api/generate` takes no files,
             // so showing them on the question would claim they went with it.
             attachments: mediaModality(of: modelID) == nil
-                ? attachments.filter { attachmentIDs.contains($0.id) } : []
+                ? attachments.filter { attachmentIDs.contains($0.id) } : [],
+            // What the tray shows, unless the caller said otherwise; nothing
+            // on a chat turn.
+            mediaParams: mediaModality(of: modelID) == nil
+                ? [:] : (mediaParams ?? currentMediaParams(for: modelID))
         )
         retryContexts.removeValue(forKey: conversationID)
         chatErrorDescription = nil
@@ -2768,6 +2826,9 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         needsAppend: Bool
     ) async {
         guard let chatClient, accountID == initialContext.accountID else { return }
+        // However the turn ends — done, failed, stopped, replaced — nothing is
+        // waiting for an answer to a folder card it raised any more.
+        defer { localToolHost?.turnEnded(conversationID: initialContext.conversationID) }
         var context = initialContext
         // The generation this run is, once it has one, and the last frame of
         // it this client has handled — what a reconnect resumes after.
@@ -2815,7 +2876,8 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
                         prompt: context.prompt,
                         modelID: context.modelID,
                         modality: modality,
-                        edit: context.edit
+                        edit: context.edit,
+                        params: context.mediaParams
                     ),
                     for: context.accountID
                 )
@@ -2844,7 +2906,8 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
                         regenerateInstruction: context.regenerateInstruction,
                         workHandoff: claimsWorkHandoff,
                         skillSlug: context.skillSlug,
-                        context: context.contextTokens
+                        context: context.contextTokens,
+                        localFolder: localToolHost?.folderContext(for: context.conversationID)
                     ),
                     for: context.accountID
                 )
@@ -3018,6 +3081,15 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
                 // The model started a task from this turn. Not terminal: the
                 // reply goes on to say so. The app's follower adopts it.
                 adoptWorkStart(start, conversationID: context.conversationID)
+            case .localTool(let call):
+                // A folder call for this Mac. Not terminal: the turn waits on
+                // the outcome the host posts, and the stream goes on.
+                runLocalTool(
+                    call,
+                    conversationID: context.conversationID,
+                    generationID: generationID,
+                    accountID: context.accountID
+                )
             case .handoff(let handoff):
                 // The turn became a research run: no answer is written, so the
                 // placeholder goes, and the run's row takes its place.

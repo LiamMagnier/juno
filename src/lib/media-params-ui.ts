@@ -290,3 +290,67 @@ export function formatFramePixels(px: FramePixels | null): string | null {
   if (!px) return null;
   return `${px.exact ? "" : "≈ "}${px.width} × ${px.height}`;
 }
+
+// ---------------------------------------------------------------------------
+// The native contract: what /api/v1/models publishes per media model
+// ---------------------------------------------------------------------------
+
+/** One option as a native composer draws it: the same control, values and words the web row uses. */
+export interface NativeMediaOption {
+  key: MediaParamKey;
+  /** Which control the web draws (`paramControls`); the native tray draws the same one. */
+  control: ControlKind;
+  kind: MediaOption["kind"];
+  label: string;
+  default: string | number | boolean;
+  /** Select options: every value, in the source's order. */
+  choices?: Array<{ value: string | number; label: string; detail?: string }>;
+  /** Range options: the bounds, and the word for "the model decides" where there is one. */
+  range?: { min: number; max: number; step: number; unit: "s" | "outputs"; auto?: string };
+}
+
+/**
+ * A media model's generation choices for a native client: the `mediaParams`
+ * key on every image, video and music model in /api/v1/models. Built from
+ * media-params.ts, the one source of truth, so the Mac and the iPhone offer
+ * exactly the controls, values, defaults and cross-option rules the web row
+ * does. Provider wire details (fields, wire literals, sources) stay server
+ * side: a client sends canonical values as `/api/generate`'s `params` and the
+ * server cleans them with normalizeParams, as it does for the web.
+ */
+export interface NativeMediaParams {
+  kind: MediaCapabilities["kind"];
+  options: NativeMediaOption[];
+  rules: Array<{ when: { key: MediaParamKey; in: Array<string | number> }; allow: { key: MediaParamKey; in: Array<string | number> } }>;
+  /** Plain facts the person cannot change ("With sound", "30s clip"), as the web row prints them. */
+  facts: string[];
+}
+
+/** The native contract for one model, or null for a model with nothing to choose. */
+export function nativeMediaParams(modelId: string): NativeMediaParams | null {
+  const caps = capabilitiesFor(modelId);
+  if (!caps) return null;
+  const options: NativeMediaOption[] = [];
+  for (const key of PARAM_ORDER) {
+    const option = caps.options[key];
+    if (!option) continue;
+    const base = { key, control: controlKind(key, option), kind: option.kind, label: option.label, default: option.default };
+    if (option.kind === "select") {
+      options.push({
+        ...base,
+        choices: option.choices.map((c) => ({ value: c.value, label: c.label, ...(c.detail ? { detail: c.detail } : {}) })),
+      });
+    } else if (option.kind === "range") {
+      const range = { min: option.min, max: option.max, step: option.step, unit: option.unit };
+      options.push({ ...base, range: option.auto ? { ...range, auto: option.auto.label } : range });
+    } else {
+      options.push(base);
+    }
+  }
+  return {
+    kind: caps.kind,
+    options,
+    rules: (caps.rules ?? []).map((r) => ({ when: { key: r.when.key, in: [...r.when.in] }, allow: { key: r.allow.key, in: [...r.allow.in] } })),
+    facts: fixedFacts(caps),
+  };
+}

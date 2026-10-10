@@ -52,6 +52,8 @@
     "native:consumption:test": "JUNO_SWIFT_FILTER='JunoDesignSystemTests\\.(JunoTokenConsumptionTests|JunoColorConsumptionTests|JunoTypeLadderTests|JunoBrandTests)' bash scripts/native-test.sh JunoNativeKit",
     "native:wire": "tsx scripts/generate-chat-wire-contract.ts",
     "native:wire:check": "tsx scripts/generate-chat-wire-contract.ts --check",
+    "native:media-params": "tsx scripts/generate-native-media-params-fixtures.ts",
+    "native:media-params:check": "tsx scripts/generate-native-media-params-fixtures.ts --check",
     "native:parity": "node scripts/parity-ledger.mjs",
     "native:parity:check": "node scripts/parity-ledger.mjs --check",
     "native:register:check": "node scripts/check-design-register.mjs",

@@ -102,6 +102,35 @@ describe("native model catalog", () => {
     );
   });
 
+  it("publishes each media model's generation choices from media-params, in the web row's order", () => {
+    const catalog = nativeModelCatalog([
+      fakeModel(),
+      fakeModel({ id: "openai:gpt-image-2.5-sunburst", provider: "openai", providerModel: "gpt-image-2.5-sunburst", modality: "image", reasoning: false, agenticTools: false }),
+      fakeModel({ id: "google:gemini-omni-1.1-flash", provider: "google", providerModel: "gemini-omni-1.1-flash", modality: "video", reasoning: false, agenticTools: false }),
+      fakeModel({ id: "google:lyria-3.5", provider: "google", providerModel: "lyria-3.5", modality: "audio", reasoning: false, agenticTools: false }),
+    ]);
+    assert.equal(entry(catalog, "anthropic:claude-sonnet-4-6").mediaParams, null, "chat models choose nothing");
+
+    const image = entry(catalog, "openai:gpt-image-2.5-sunburst").mediaParams;
+    assert.ok(image);
+    assert.equal(image.kind, "image");
+    assert.deepEqual(image.options.map((o) => o.key), ["aspect", "resolution", "quality", "count", "background", "outputFormat"]);
+    assert.deepEqual(image.options.map((o) => o.control), ["aspect", "segmented", "menu", "menu", "menu", "menu"]);
+    const resolution = image.options.find((o) => o.key === "resolution");
+    assert.deepEqual(resolution?.choices?.map((c) => c.value), ["1K", "2K", "4K"]);
+    assert.equal(image.options.find((o) => o.key === "count")?.range?.max, 10);
+    assert.ok(image.rules.some((r) => r.when.key === "background" && r.allow.key === "outputFormat"));
+    // Wire details stay server-side.
+    assert.ok(!JSON.stringify(image).includes("output_format"));
+
+    const video = entry(catalog, "google:gemini-omni-1.1-flash").mediaParams;
+    assert.deepEqual(video?.options.map((o) => o.key), ["aspect", "resolution"]);
+    assert.deepEqual(video?.facts, ["With sound"]);
+
+    const audio = entry(catalog, "google:lyria-3.5").mediaParams;
+    assert.deepEqual(audio?.options.map((o) => [o.key, o.control]), [["instrumental", "toggle"], ["outputFormat", "menu"]]);
+  });
+
   it("keeps non-chat models out of the streaming set", () => {
     const catalog = nativeModelCatalog([fakeModel({ id: "google:imagen-4", modality: "image", reasoning: false })]);
     const image = entry(catalog, "google:imagen-4");

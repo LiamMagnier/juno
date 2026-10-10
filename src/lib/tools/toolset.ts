@@ -97,14 +97,14 @@ const NATIVE_TIMEOUT_MS = 60_000;
 export function resolvedNativeTool(native: NativeChatTool): ResolvedTool {
   return {
     name: native.tool.function.name,
-    canonical: "start_task",
+    canonical: native.canonical ?? "start_task",
     origin: "juno",
     title: native.label,
     risk: native.access === "read" ? "read" : "external",
     parallelSafe: false,
-    timeoutMs: NATIVE_TIMEOUT_MS,
-    dedupe: true,
-    present: () => ({}),
+    timeoutMs: native.timeoutMs ?? NATIVE_TIMEOUT_MS,
+    dedupe: native.dedupe ?? true,
+    present: (args) => native.present?.(args) ?? {},
   };
 }
 

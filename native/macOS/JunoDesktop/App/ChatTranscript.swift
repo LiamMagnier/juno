@@ -6,6 +6,7 @@ import JunoCore
 import JunoDesignSystem
 import JunoStorage
 import JunoSync
+import JunoWorkRuntime
 import SwiftUI
 
 /// The chat column's reading measure — **one number, read by both halves of it**.
@@ -86,6 +87,8 @@ struct TranscriptColumn: ViewModifier {
 
 struct DesktopTranscript: View {
     @Bindable var model: NativeConversationModel<SQLiteAccountRepository>
+    /// The folder this chat works in, and its cards (Work in a folder).
+    @Environment(\.desktopChatFolders) private var chatFolders
     /// Turns this column shows that have no row in the store: a private chat's
     /// (§5.8), or the stand-in for a new chat's first turn while the store is
     /// still creating it (§10.1). Drawn by the same row as everything else.
@@ -777,9 +780,13 @@ struct DesktopTranscript: View {
         let approvals = model.chatApprovals(for: conversationID).filter {
             $0.isPending || $0.createdAt >= asked
         }
-        guard !approvals.isEmpty else { return MessageRowApprovals() }
+        let folderApprovals = chatFolders?.approvals(for: conversationID) ?? []
+        guard !approvals.isEmpty || !folderApprovals.isEmpty else { return MessageRowApprovals() }
+        let folders = chatFolders
         return MessageRowApprovals(
             approvals: approvals,
+            folder: folderApprovals,
+            decideFolder: { id, decision in folders?.answer(id, decision) },
             inFlightID: model.chatApprovalInFlightID,
             error: { model.chatApprovalError(for: $0) },
             canAllowScope: { model.canAllowChatApprovalScope($0) },

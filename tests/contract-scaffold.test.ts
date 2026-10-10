@@ -391,7 +391,11 @@ test("parseClientFeatures keeps known features once, drops the rest, never rejec
   assert.ok(flood.list.length <= 16);
   assert.deepEqual(parseClientFeatures([...CLIENT_FEATURES, ...CLIENT_FEATURES]).list, [...CLIENT_FEATURES]);
   assert.deepEqual(parseClientFeatures(["resume", 7 as unknown as string, null as unknown as string]).list, ["resume"]);
-  assert.deepEqual([...WEB_CLIENT_FEATURES], [...CLIENT_FEATURES]);
+  assert.deepEqual(
+    [...WEB_CLIENT_FEATURES],
+    CLIENT_FEATURES.filter((feature) => feature !== "local_folder"),
+    "the web claims everything but the Mac-only folder tools"
+  );
 });
 
 // ── The loop controller (SPEC §4.1, §4.6) ─────────────────────────────────────

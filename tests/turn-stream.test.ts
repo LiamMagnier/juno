@@ -763,3 +763,23 @@ test("the turn stream keeps server-only out of its static import graph", () => {
   assert.doesNotMatch(source, /^import "server-only";/m);
   assert.doesNotMatch(source, /from "@\/lib\/(prisma|llm|mcp|action-approval-store|tool-audit|serializers)"/);
 });
+
+test("a Mac folder call is recorded as local_folder, with its action and location on the row", () => {
+  const h = harness(TIMELINE);
+  h.turn.apply(call("toolu_f", "folder_read_file", 0, 0));
+  h.turn.apply({
+    type: "tool",
+    phase: "status",
+    callId: "toolu_f",
+    status: "queued",
+    present: { action: "read", path: "2026/march.csv" },
+    argsText: "{\"path\":\"2026/march.csv\"}",
+  });
+  h.turn.apply({ type: "tool", phase: "status", callId: "toolu_f", status: "running", timeoutMs: 720_000 });
+  const rows = activities(h.frames).filter((event) => event.call);
+  const last = rows[rows.length - 1];
+  assert.equal(last.call!.tool, "local_folder");
+  assert.equal(last.call!.origin, "juno");
+  assert.deepEqual(last.call!.args, { action: "read", path: "2026/march.csv" });
+  assert.equal(last.call!.status, "running");
+});

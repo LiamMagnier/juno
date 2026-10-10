@@ -28,6 +28,23 @@ final class JunoMobileComposerToolsTests: XCTestCase {
         defaults.removePersistentDomain(forName: suiteName)
     }
 
+    // MARK: - The tray
+
+    /// A skill armed from the tray goes with one message, as on the web; the
+    /// draft's project is the tray's until the chat is filed.
+    func testTheTraysSkillIsPerSendAndTheDraftProjectIsKept() {
+        let tools = JunoMobileComposerTools(defaults: defaults)
+        tools.skillSlug = "brief"
+        tools.draftProjectID = "p1"
+        XCTAssertEqual(tools.consumeForSend().skillSlug, "brief")
+        XCTAssertNil(tools.skillSlug)
+        XCTAssertNil(tools.consumeForSend().skillSlug)
+        XCTAssertEqual(tools.draftProjectID, "p1")
+        tools.skillSlug = "brief"
+        tools.resetForConversationChange()
+        XCTAssertNil(tools.skillSlug)
+    }
+
     // MARK: - Defaults
 
     func testWebSearchAndCanvasBothStartOn() {

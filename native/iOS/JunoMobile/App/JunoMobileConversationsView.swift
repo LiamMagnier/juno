@@ -456,8 +456,10 @@ private struct JunoMobileDraftChat: View {
       openPlugins: openPlugins,
       openVoiceMode: openVoiceMode,
       startConversation: {
+        // Filed where the tray's Project control says (the web's landing tray).
         await model.createConversationResolvingID(
-          model: selectedModelID.isEmpty ? nil : selectedModelID
+          model: selectedModelID.isEmpty ? nil : selectedModelID,
+          projectID: tools.draftProjectID
         )
       },
       composerFocused: $composerFocused,
@@ -2179,6 +2181,13 @@ private struct JunoMobileMessageRow: View {
           alignment: .leading
         )
         .padding(.top, JunoSpace.hairline)
+      }
+
+      // A music model's track: a player with its waveform.
+      let tracks = message.attachments.filter { $0.viewerKind == .audio }
+      if !tracks.isEmpty {
+        JunoMobileMessageTracks(tracks: tracks, loader: imageLoader)
+          .padding(.top, JunoSpace.hairline)
       }
 
       // While the answer has no words yet, say what is happening — the

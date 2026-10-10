@@ -387,16 +387,31 @@ struct AssistantAttachments: View {
     /// while a reply is being written, and with an image model that edits.
     let canEditImages: Bool
 
+    @Environment(\.junoTranscriptMedia) private var transcriptMedia
+    @Environment(\.junoTranscriptMediaActions) private var actions
+
     private var files: [NativeChatAttachment] {
-        attachments.filter { !$0.isImageKind && !$0.isVideo }
+        attachments.filter { !$0.isImageKind && !$0.isVideo && $0.viewerKind != .audio }
     }
 
     private var media: [NativeChatAttachment] {
         attachments.filter { $0.isImageKind || $0.isVideo }
     }
 
+    /// A track a music model made: a player with its waveform, not a file tile.
+    private var tracks: [NativeChatAttachment] {
+        attachments.filter { $0.viewerKind == .audio }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: JunoSpace.hairline) {
+            ForEach(tracks) { track in
+                NativeGeneratedAudioCard(attachment: track) {
+                    guard let transcriptMedia else { throw NativeTranscriptFileError.unavailable }
+                    return try await transcriptMedia.fileURL(for: track)
+                }
+                .contextMenu { TranscriptFileMenu(attachment: track, actions: actions) }
+            }
             if !files.isEmpty {
                 JunoChipFlow(spacing: JunoSpace.snug, lineSpacing: JunoSpace.snug) {
                     ForEach(files) { FileTile(attachment: $0) }
