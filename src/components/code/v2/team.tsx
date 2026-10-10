@@ -41,7 +41,6 @@ import { formatUsd } from "@/lib/code-v2/tier-view";
 import { EFFORT_LABELS, effectiveEffort, findInstance, modelLabel, ratesFor, shortLabel } from "./model-info";
 import { ComposerPopover, Glyph, ModelMark, Segmented } from "./primitives";
 import type { RoleTab } from "./pickers";
-import "./team.css";
 
 const ROLE_TAB: Record<TeamRole, RoleTab> = { architect: "architect", builder: "workers", verifier: "reviewer", explorer: "explorer" };
 
