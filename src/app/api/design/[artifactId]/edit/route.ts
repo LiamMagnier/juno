@@ -216,6 +216,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ artifac
       history: [{ role: "USER", content: prompt, attachments: [] }],
       maxTokens: MAX_OUTPUT_TOKENS,
       signal: req.signal,
+      // The system prompt holds the document at this version and the
+      // selection: only a retry of the same edit reads it back. One 5-minute
+      // marker on it rather than the chat's 1h one, none on the request, and
+      // the artifact as the key so OpenAI-family hosts route its edits together.
+      cacheKey: `design-${artifactId}`,
+      promptCache: "short",
     })) {
       if (event.type === "text") raw += event.text;
       else if (event.type === "usage") tokens = mergeUsage(tokens, event);
@@ -244,7 +250,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ artifac
       userId: user.id,
       model: model.id,
       kind: "chat",
-      promptTokens: usage.totalInput || undefined,
+      promptTokens: usage.billedPromptTokens || undefined,
       completionTokens: usage.output || undefined,
       reasoningTokens: usage.reasoning || undefined,
       totalTokens: tokens.total || undefined,

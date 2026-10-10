@@ -41,6 +41,15 @@ export interface GenerationUsage {
   cost: number;
   costMicroUsd: number;
   totalInput: number;
+  /**
+   * The prompt count in the provider's own convention (Anthropic: fresh input
+   * only; OpenAI-style: cache included), which is what `recordSpend` re-prices
+   * alongside the cache fields. `totalInput` adds the cache on top, so a
+   * ledger write that passed it billed every cached token twice: once at the
+   * full input rate and again at its cache rate (a cached Sonnet turn
+   * recorded at ~6x its real cost).
+   */
+  billedPromptTokens: number;
   output: number;
   reasoning: number;
   toolFeesUsd: number;
@@ -117,6 +126,7 @@ export function buildUsage(
     cost: billed.costUsd,
     costMicroUsd: Math.max(0, Math.round(billed.costUsd * 1_000_000)),
     totalInput,
+    billedPromptTokens: billed.promptTokens,
     output: billed.completionTokens,
     reasoning: Math.max(0, raw.reasoning ?? 0),
     toolFeesUsd: billed.toolFeesUsd,

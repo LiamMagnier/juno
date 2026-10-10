@@ -4,7 +4,10 @@ import test from "node:test";
 import { WORKER_CONTEXT_CHARS } from "@/lib/research/domain";
 import type { RunWorkerInput, WorkerTools } from "@/lib/research/agents/protocol";
 import {
+  anthropicWorkerRequest,
+  ELIDE_STEP,
   MAX_IDLE_TURNS,
+  nextElidedCount,
   RESULTS_KEPT_IN_FULL,
   resultsToKeep,
   runWorkerLoop,
@@ -148,14 +151,60 @@ test("the transcript is compacted by characters, not only by count", () => {
   assert.equal(resultsToKeep([{ text: "x".repeat(WORKER_CONTEXT_CHARS + 1) }]), 1, "the newest result is never elided");
 });
 
-test("the loop elides old page digests as soon as the context cap is reached", async () => {
+test("the loop elides old page digests as soon as the context cap is reached, a batch at a time", async () => {
   // Each digest is truncated to MAX_RESULT_CHARS plus a marker, 14,012
-  // characters; five fit the 80,000 cap and a sixth does not.
+  // characters; five fit the 80,000 cap and a sixth does not. The sixth
+  // elides the oldest ELIDE_STEP at once, so the transcript's prefix (what
+  // the provider caches) does not change again until the tenth.
   const tools = fakeTools(30_000);
-  const opens = Array.from({ length: 7 }, (_, i) => turn([{ name: "open_page", args: { url: `https://example.org/${i}` } }]));
+  const opens = Array.from({ length: 10 }, (_, i) => turn([{ name: "open_page", args: { url: `https://example.org/${i}` } }]));
   const { adapter, elides } = scriptedAdapter([...opens, turn([{ name: "done", args: { summary: "Read enough." } }])]);
   await runWorkerLoop(loopInput(tools), adapter, { label: "test" });
-  assert.deepEqual(elides.slice(0, 7), [1, 2, 3, 4, 5, 5, 5]);
+  assert.equal(ELIDE_STEP, 4);
+  assert.deepEqual(elides, [6 - 4, 10 - 8], "elided at the 6th result (4 old) and the 10th (8 old), never in between");
+});
+
+test("elision moves in steps, keeps the cap, and never reaches the newest result", () => {
+  assert.equal(nextElidedCount(5, 5, 0), 0, "nothing over the cap, nothing elided");
+  assert.equal(nextElidedCount(6, 5, 0), 4, "one over: a whole step");
+  assert.equal(nextElidedCount(7, 5, 4), 4, "inside the step: unchanged, so the prefix is too");
+  assert.equal(nextElidedCount(10, 5, 4), 8);
+  assert.equal(nextElidedCount(3, 1, 0), 2, "the newest result stays");
+  assert.equal(nextElidedCount(12, 10, 8), 8, "never un-elides");
+});
+
+test("the worker's Anthropic request caches tools, system and the newest message", () => {
+  const history = [
+    { role: "user" as const, content: "brief" },
+    { role: "assistant" as const, content: [{ type: "tool_use" as const, id: "t1", name: "search", input: { query: "q" } }] },
+    { role: "user" as const, content: [{ type: "tool_result" as const, tool_use_id: "t1", content: "hits" }] },
+  ];
+  const request = anthropicWorkerRequest({ providerModel: "claude-haiku-4-5" }, "system rules", history);
+  const tools = request.tools as Array<{ cache_control?: unknown }>;
+  assert.deepEqual(tools.at(-1)?.cache_control, { type: "ephemeral" });
+  assert.equal(tools.filter((tool) => tool.cache_control).length, 1);
+  assert.deepEqual(request.system, [{ type: "text", text: "system rules", cache_control: { type: "ephemeral" } }]);
+  const last = request.messages.at(-1)!.content as Array<{ cache_control?: unknown }>;
+  assert.deepEqual(last[0]!.cache_control, { type: "ephemeral" });
+  assert.equal(typeof history[0]!.content, "string", "the adapter's own transcript is not marked");
+  assert.equal((history[2]!.content[0] as { cache_control?: unknown }).cache_control, undefined);
+});
+
+test("cache hits and writes reach the worker's outcome for billing", async () => {
+  const tools = fakeTools();
+  const cached = (t: Turn): Turn => ({ ...t, cache: { read: 100, write: 0, write5m: 20, write1h: 0 } });
+  const { adapter } = scriptedAdapter([
+    cached(turn([{ name: "search", args: { query: "q" } }])),
+    cached(turn([{ name: "done", args: { summary: "ok" } }])),
+  ]);
+  const outcome = await runWorkerLoop(loopInput(tools), adapter, { label: "test" });
+  assert.deepEqual(outcome.cache, { read: 200, write: 0, write5m: 40, write1h: 0 });
+});
+
+test("the worker bills its cache counters", () => {
+  const worker = readFileSync("src/lib/research/agents/worker.ts", "utf8");
+  assert.match(worker, /cacheRead: loop\.cache\.read/);
+  assert.match(worker, /anthropicWorkerRequest\(model, system, messages\)/);
 });
 
 test("the PM2 worker adopts only working runs, never a plan waiting at the card (B1)", () => {

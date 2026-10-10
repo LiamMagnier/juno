@@ -303,6 +303,10 @@ export async function POST(
   } else {
     headers["authorization"] = `Bearer ${key}`;
   }
+  // xAI routes a conversation to the server that holds its cached prefix by
+  // this header; the clients send their session id.
+  const grokConversation = provider === "xai" ? req.headers.get("x-grok-conv-id") : null;
+  if (grokConversation) headers["x-grok-conv-id"] = grokConversation.slice(0, 128);
 
   const upstreamAbort = createUpstreamAbort(req.signal, upstreamTimeoutsFor(request.streamed));
   let upstream: Response;

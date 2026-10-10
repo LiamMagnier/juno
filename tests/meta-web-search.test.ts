@@ -139,7 +139,11 @@ test("the request carries Meta's web_search tool, its results include, and no to
   assert.deepEqual(body.include, ["reasoning.encrypted_content", "web_search_call.results"]);
   assert.deepEqual(body.reasoning, { effort: "high" }, "no summary: Meta keeps reasoning private");
   assert.equal("tool_choice" in body, false, "Meta's ToolChoiceParam is 'auto' only");
-  assert.equal("prompt_cache_key" in body, false, "OpenAI cache fields stay OpenAI's");
+  // Meta's own caching fields (dev.meta.ai/docs/prompt-caching); the GPT-5.6
+  // options stay OpenAI's.
+  assert.equal(body.prompt_cache_key, "conv-1");
+  assert.equal(body.prompt_cache_retention, "24h");
+  assert.equal("prompt_cache_options" in body, false);
   assert.equal("service_tier" in body, false);
 
   // The search row, then the sources: results first (with snippets), then the

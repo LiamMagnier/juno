@@ -58,7 +58,7 @@ import {
   type CompatToolCallDelta,
   type CompatUsagePayload,
 } from "@/lib/openai-compat-round";
-import { openAIPromptCacheRequestFields } from "@/lib/openai-prompt-cache";
+import { compatPromptCacheRequestFields, openAIPromptCacheRequestFields } from "@/lib/openai-prompt-cache";
 import type { Provider } from "@/lib/providers";
 import { sendableToolImages, toDataUrl, toolImageIntro, withheldImagesNote } from "@/lib/tool-result-images";
 import type { BatchResult, executeToolBatch, ToolCallInput } from "@/lib/tools/dispatch";
@@ -477,7 +477,7 @@ export function buildCompatRequest(
   // asked. xAI routes by header (the transport's). The rest cache stable
   // prefixes on their own.
   if (model.provider === "openai") Object.assign(params, openAIPromptCacheRequestFields(model, req.cacheKey));
-  else if (model.provider === "mistral" && req.cacheKey) params.prompt_cache_key = req.cacheKey;
+  else Object.assign(params, compatPromptCacheRequestFields(model, req.cacheKey));
 
   const toolsOn = shape.wire.tools.length > 0 && (!step.final || caps.finalRound === "tool_choice_none");
   if (toolsOn) {

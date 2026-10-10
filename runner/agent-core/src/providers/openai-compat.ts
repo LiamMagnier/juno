@@ -10,6 +10,7 @@ import type { ChatMessage, Usage } from '../types.js';
 import { resolveKey } from './credentials.js';
 import { classifyProviderError } from './errors.js';
 import { DEFAULT_REQUEST_TIMEOUT_MS } from './timeouts.js';
+import { markQwenCache, promptCachePlan, sortedTools } from './prompt-cache.js';
 
 /**
  * One adapter for every OpenAI-compatible lab. Each configured provider gets
@@ -239,26 +240,45 @@ export class OpenAICompatAdapter implements ProviderAdapter {
     // whatever it could make of the response body — for an empty 429 that is the
     // literal string "429 status code (no body)", which is what a user was shown
     // as the reason their task failed. See providers/errors.ts.
+    // Prompt caching, in each lab's own spelling; see prompt-cache.ts.
+    const cachePlan = promptCachePlan({
+      providerId: this.config.id,
+      model: req.model,
+      wire: 'chat',
+      ...(req.cacheKey ? { cacheKey: req.cacheKey } : {}),
+      ...(req.cache === false ? { cache: false } : {}),
+    });
+    const messages = toCompatMessages(req.system, req.messages);
+    if (cachePlan.systemBreakpoint && req.system) {
+      // GPT-5.6+: the static system text writes its own cache entry, so the
+      // instructions stay warm while the conversation behind them moves.
+      messages[0] = {
+        role: 'system',
+        content: [{ type: 'text', text: req.system, prompt_cache_breakpoint: { mode: 'explicit' } }],
+      } as unknown as OpenAI.Chat.Completions.ChatCompletionSystemMessageParam;
+    }
+    if (cachePlan.qwenMarkers) markQwenCache(messages as unknown as Array<{ role: string; content?: unknown }>);
     let stream;
     try {
       stream = await this.client.chat.completions.create(
         {
           model: req.model,
-          messages: toCompatMessages(req.system, req.messages),
+          messages,
           stream: true,
           stream_options: { include_usage: true },
           ...(isOpenAI ? { max_completion_tokens: maxTokens } : { max_tokens: maxTokens }),
           ...(req.reasoningEffort && this.config.reasoningEffortParam
             ? { reasoning_effort: toOpenAIEffort(req.reasoningEffort) }
             : {}),
+          ...cachePlan.fields,
           tools: req.tools.length
-            ? req.tools.map((t) => ({
+            ? sortedTools(req.tools).map((t) => ({
                 type: 'function' as const,
                 function: { name: t.name, description: t.description, parameters: t.inputSchema },
               }))
             : undefined,
         },
-        { signal: req.signal },
+        { signal: req.signal, ...(cachePlan.headers ? { headers: cachePlan.headers } : {}) },
       );
     } catch (err) {
       // A stop the user asked for is not a provider failure. The loop checks the
@@ -298,14 +318,23 @@ export class OpenAICompatAdapter implements ProviderAdapter {
           // convention Usage keeps; the cached share is broken out beside it.
           // Most compatible labs report it where OpenAI does, and some (GLM,
           // DeepSeek) put it at the top level instead.
+          // Writes are reported only where a lab bills them apart: OpenAI
+          // GPT-5.6+ as `cache_write_tokens`, Qwen's explicit cache as
+          // `cache_creation_input_tokens`, both beside `cached_tokens`.
+          const details = chunk.usage.prompt_tokens_details as
+            | { cached_tokens?: number; cache_write_tokens?: number; cache_creation_input_tokens?: number }
+            | null
+            | undefined;
           const cached =
-            chunk.usage.prompt_tokens_details?.cached_tokens ??
+            details?.cached_tokens ??
             (chunk.usage as { prompt_cache_hit_tokens?: number }).prompt_cache_hit_tokens ??
             0;
+          const written = details?.cache_write_tokens ?? details?.cache_creation_input_tokens ?? 0;
           usage = {
             inputTokens: chunk.usage.prompt_tokens ?? usage.inputTokens,
             outputTokens: chunk.usage.completion_tokens ?? usage.outputTokens,
             ...(cached > 0 ? { cacheReadTokens: cached } : {}),
+            ...(written > 0 ? { cacheWriteTokens: written } : {}),
           };
         }
       }

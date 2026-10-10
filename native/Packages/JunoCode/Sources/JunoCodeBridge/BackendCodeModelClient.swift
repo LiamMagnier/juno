@@ -212,11 +212,14 @@ public struct BackendCodeModelClient: AgentModelClient {
     public var sentRoutingHeaders: [String: String] { routingHeaders }
 
     /// Anthropic reads the prefix up to the breakpoints this client marks;
-    /// OpenAI caches any long prefix on its own. The other labs' caching, where
-    /// they have any, is not something Juno can count on.
+    /// OpenAI, xAI, DeepSeek, Zhipu, Moonshot, MiniMax, Qwen, Mistral, MiMo and
+    /// LongCat cache a long prefix on their own or with the routing
+    /// `PromptCacheWire` sends. Google's and Meta's caching is not something
+    /// Juno can count on.
     public func cachesPromptPrefix(for modelID: String) -> Bool {
         guard let route = resolver.route(for: modelID) else { return false }
-        return route.wireProtocol == .anthropicMessages || route.providerID == "openai"
+        return route.wireProtocol == .anthropicMessages
+            || PromptCacheWire.cachingProviders.contains(route.providerID.lowercased())
     }
 
     public func streamTurn(
@@ -266,26 +269,35 @@ public struct BackendCodeModelClient: AgentModelClient {
                             path: "/api/agent/\(route.providerID)/v1/messages",
                             method: .post,
                             headers: try HTTPHeaders(headers),
-                            body: try JSONEncoder().encode(body)
+                            body: try PromptCacheWire.encode(body)
                         )
                     case .openAIChat:
+                        let cacheKey = PromptCacheWire.key(for: request)
                         bearer = try NativeBearerRequest(
                             path: "/api/agent/\(route.providerID)/chat/completions",
                             method: .post,
-                            headers: try HTTPHeaders(routingHeaders.merging([
-                                "Accept": "text/event-stream",
-                                "Content-Type": "application/json",
-                            ]) { _, fixed in fixed }),
-                            body: try JSONEncoder().encode(
-                                ComputerToolWire.openAI(
-                                    OpenAIChatRequestBuilder.body(
-                                        for: request,
-                                        providerModelID: route.providerModelID,
+                            headers: try HTTPHeaders(routingHeaders.merging(
+                                PromptCacheWire.chatHeaders(providerID: route.providerID, key: cacheKey)
+                                    .merging([
+                                        "Accept": "text/event-stream",
+                                        "Content-Type": "application/json",
+                                    ]) { _, fixed in fixed }
+                            ) { _, fixed in fixed }),
+                            body: try PromptCacheWire.encode(
+                                PromptCacheWire.chat(
+                                    ComputerToolWire.openAI(
+                                        OpenAIChatRequestBuilder.body(
+                                            for: request,
+                                            providerModelID: route.providerModelID,
+                                            providerID: route.providerID,
+                                            maxTokens: maxTokens
+                                        ),
                                         providerID: route.providerID,
-                                        maxTokens: maxTokens
+                                        wire: .openAIChat
                                     ),
                                     providerID: route.providerID,
-                                    wire: .openAIChat
+                                    providerModelID: route.providerModelID,
+                                    key: cacheKey
                                 )
                             )
                         )
@@ -297,15 +309,19 @@ public struct BackendCodeModelClient: AgentModelClient {
                                 "Accept": "text/event-stream",
                                 "Content-Type": "application/json",
                             ]) { _, fixed in fixed }),
-                            body: try JSONEncoder().encode(
-                                ComputerToolWire.openAI(
-                                    OpenAIResponsesRequestBuilder.body(
-                                        for: request,
-                                        providerModelID: route.providerModelID,
-                                        maxTokens: maxTokens
+                            body: try PromptCacheWire.encode(
+                                PromptCacheWire.responses(
+                                    ComputerToolWire.openAI(
+                                        OpenAIResponsesRequestBuilder.body(
+                                            for: request,
+                                            providerModelID: route.providerModelID,
+                                            maxTokens: maxTokens
+                                        ),
+                                        providerID: route.providerID,
+                                        wire: .openAIResponses
                                     ),
                                     providerID: route.providerID,
-                                    wire: .openAIResponses
+                                    key: PromptCacheWire.key(for: request)
                                 )
                             )
                         )
@@ -1186,8 +1202,11 @@ func replayableToolInput(_ input: JSONValue) -> JSONValue {
     return .object([:])
 }
 
+/// A replayed call's arguments as a string. Sorted keys: the string is part
+/// of the cached prefix, so the same arguments must be the same bytes on
+/// every request.
 private func jsonString(_ value: JSONValue) -> String {
-    guard let data = try? JSONEncoder().encode(value),
+    guard let data = try? PromptCacheWire.encode(value),
           let string = String(data: data, encoding: .utf8)
     else { return "{}" }
     return string
@@ -1666,11 +1685,13 @@ struct OpenAIChatStreamDecoder {
                 outputTokens: usage["completion_tokens"]?.intValue
             ))
             // Inside `prompt_tokens`: OpenAI's and most compatible labs'
-            // cached share, or DeepSeek's own name for it.
-            if let cached = usage["prompt_tokens_details"]?["cached_tokens"]?.intValue
+            // cached share, or DeepSeek's own name for it; and what Qwen's
+            // explicit cache wrote this turn.
+            let cached = usage["prompt_tokens_details"]?["cached_tokens"]?.intValue
                 ?? usage["prompt_cache_hit_tokens"]?.intValue
-            {
-                events.append(.cacheUsage(readTokens: cached, writeTokens: nil))
+            let written = usage["prompt_tokens_details"]?["cache_creation_input_tokens"]?.intValue
+            if cached != nil || written != nil {
+                events.append(.cacheUsage(readTokens: cached, writeTokens: written))
             }
         }
         guard let choice = root["choices"]?.arrayValue?.first else { return events }

@@ -54,6 +54,7 @@ export function createSynthesisStage(ctx: EngineContext) {
         () =>
           deps.synthesize!({
             userId: run.userId,
+            runId: run.id,
             goal: run.goal,
             plan,
             sources,

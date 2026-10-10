@@ -13,7 +13,7 @@ import {
   unattributedDailyCeilingMicroUsd,
   wavSeconds,
 } from "@/lib/metering/unit-prices";
-import { capOutputTokens } from "@/lib/agent-proxy";
+import { capOutputTokens, steppedThinkingBudget } from "@/lib/agent-proxy";
 import { workRunPricing } from "@/lib/metering/work-pricing";
 import { resolveModel } from "@/lib/models";
 import { tokenRate } from "@/lib/pricing";
@@ -161,7 +161,9 @@ test("proxy: a request cannot ask for more output than the remainder buys", () =
     capOutputTokens("anthropic", JSON.stringify({ model: "m", max_tokens: 64_000, thinking: { type: "enabled", budget_tokens: 32_000 } }), 4_096)
   );
   assert.equal(anthropic.max_tokens, 4_096);
-  assert.equal(anthropic.thinking.budget_tokens, 3_072);
+  // 4,096 − 1,024 = 3,072, stepped down to a power of two so the cached
+  // messages survive the next request's slightly smaller cap.
+  assert.equal(anthropic.thinking.budget_tokens, 2_048);
 
   const chat = JSON.parse(capOutputTokens("openai-chat", JSON.stringify({ model: "m" }), 4_096, "max_completion_tokens"));
   assert.equal(chat.max_completion_tokens, 4_096);
@@ -220,4 +222,17 @@ test("voice: a GPT-Live delegation is charged an effort-scaled estimate, topped 
   assert.ok(low > 0.01 && xhigh > low);
   assert.equal(gptLiveDelegationUsageUsd(null), null);
   assert.ok(Math.abs(gptLiveDelegationUsageUsd({ input_tokens: 1_000_000, output_tokens: 0 }, 1)! - 2.01) < 1e-9);
+});
+
+test("Code: the capped thinking budget moves in steps, so nearby caps keep the same prompt cache", () => {
+  const budgetAt = (cap: number) =>
+    JSON.parse(
+      capOutputTokens("anthropic", JSON.stringify({ model: "m", max_tokens: 64_000, thinking: { type: "enabled", budget_tokens: 32_000 } }), cap)
+    ).thinking.budget_tokens as number;
+  assert.equal(budgetAt(6_000), 4_096);
+  assert.equal(budgetAt(8_000), 4_096, "a cap that shrank by 2,000 tokens sends the same budget");
+  assert.equal(budgetAt(2_048), 1_024);
+  assert.equal(steppedThinkingBudget(500), 1_024);
+  assert.equal(steppedThinkingBudget(8_192), 8_192);
+  for (const cap of [2_048, 5_000, 33_000]) assert.ok(budgetAt(cap) < cap, "stays below max_tokens");
 });

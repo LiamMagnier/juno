@@ -762,6 +762,7 @@ export class AgentSession {
       signal,
       maxSteps: MAX_STEPS_PER_TURN,
       ...(this.reasoningEffort ? { reasoningEffort: this.reasoningEffort } : {}),
+      cacheKey: this.store.id,
       takeQueuedUserText: () => this.takeStepInput(),
       ...(compaction ? { compaction } : {}),
       onAssistantDelta: (delta) => this.emitLive({ type: 'assistant_delta', text: delta }),

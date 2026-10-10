@@ -1,3 +1,5 @@
+import type Anthropic from "@anthropic-ai/sdk";
+import { withConversationCacheBreakpoint } from "@/lib/anthropic-cache";
 import { WORKER_CONTEXT_CHARS } from "@/lib/research/domain";
 import {
   parseToolArgs,
@@ -7,6 +9,7 @@ import {
   type RunWorkerInput,
   type WorkerFinishReason,
   type WorkerStopReason,
+  WORKER_TOOLS,
 } from "@/lib/research/agents/protocol";
 import { timeboxSignal } from "@/lib/research/agents/scheduler";
 import { truncate } from "@/lib/utils";
@@ -39,6 +42,22 @@ export interface Turn {
   text: string;
   inputTokens: number;
   outputTokens: number;
+  /** Prompt-cache hits, when the provider reports them (see `WorkerCacheUsage`). */
+  cache?: WorkerCacheUsage;
+}
+
+/**
+ * Prompt-cache counters for one call, in the provider's own convention:
+ * Anthropic's `input_tokens` excludes both, an OpenAI-compatible
+ * `prompt_tokens` includes them. `normalizeUsage` reconciles the two when the
+ * caller prices the worker, so the loop only adds them up.
+ */
+export interface WorkerCacheUsage {
+  read: number;
+  /** A write whose TTL the provider did not split. */
+  write: number;
+  write5m: number;
+  write1h: number;
 }
 
 /**
@@ -60,6 +79,8 @@ export const RESULTS_KEPT_IN_FULL = 10;
 export const MAX_RESULT_CHARS = 14_000;
 /** Turns in a row that produced no tool call before the worker is stopped. */
 export const MAX_IDLE_TURNS = 2;
+/** Results elided at a time: the transcript's prefix changes once per batch, not once per step. */
+export const ELIDE_STEP = 4;
 
 export function elided(call: ToolCall): string {
   const arg = typeof call.args.query === "string" ? call.args.query : typeof call.args.url === "string" ? call.args.url : "";
@@ -92,6 +113,24 @@ export function resultsToKeep(results: ReadonlyArray<{ text: string }>): number 
   return Math.max(1, keep);
 }
 
+/**
+ * How many of the oldest results should be elided, given how many already are.
+ *
+ * In batches of `ELIDE_STEP`. Eliding a result rewrites a message in the
+ * middle of the transcript, and every provider caches a prompt by its prefix:
+ * when one more result was elided on every step, each request differed from
+ * the previous one at the newest elided result and re-billed everything after
+ * it as fresh input. Rounding the boundary UP to the next multiple keeps the
+ * character cap true (at least `total - keep` are elided) while the prefix
+ * stays byte-identical for the next few steps, so they read it from cache.
+ * Never elides the newest result, and never un-elides one.
+ */
+export function nextElidedCount(total: number, keep: number, elided: number): number {
+  const required = Math.max(0, total - keep);
+  if (required <= elided) return elided;
+  return Math.max(elided, Math.min(Math.max(0, total - 1), Math.ceil(required / ELIDE_STEP) * ELIDE_STEP));
+}
+
 /** What the loop established, before the caller prices it. */
 export interface WorkerLoopOutcome {
   summary: string;
@@ -102,6 +141,7 @@ export interface WorkerLoopOutcome {
   elapsedMs: number;
   inputTokens: number;
   outputTokens: number;
+  cache: WorkerCacheUsage;
   /** Characters of tool output shown to the model, for pricing a worker whose provider reported no usage. */
   resultChars: number;
 }
@@ -116,6 +156,15 @@ export async function runWorkerLoop(
   let toolCalls = 0;
   let inputTokens = 0;
   let outputTokens = 0;
+  const cache: WorkerCacheUsage = { read: 0, write: 0, write5m: 0, write1h: 0 };
+  const addCache = (turn: Turn) => {
+    if (!turn.cache) return;
+    cache.read += turn.cache.read;
+    cache.write += turn.cache.write;
+    cache.write5m += turn.cache.write5m;
+    cache.write1h += turn.cache.write1h;
+  };
+  let elidedCount = 0;
   let idleTurns = 0;
   let reason: WorkerFinishReason = "error";
   let summary = "";
@@ -148,6 +197,7 @@ export async function runWorkerLoop(
       }
       inputTokens += turn.inputTokens;
       outputTokens += turn.outputTokens;
+      addCache(turn);
 
       if (turn.calls.length === 0) {
         /*
@@ -250,7 +300,11 @@ export async function runWorkerLoop(
       }
       resultLog.push(...results);
       adapter.pushToolResults(results);
-      adapter.elideOldResults(resultsToKeep(resultLog));
+      const elideTo = nextElidedCount(resultLog.length, resultsToKeep(resultLog), elidedCount);
+      if (elideTo > elidedCount) {
+        elidedCount = elideTo;
+        adapter.elideOldResults(resultLog.length - elideTo);
+      }
       if (finished) break;
       if (stop) {
         // One more turn so the model can say what it established, then out.
@@ -263,6 +317,7 @@ export async function runWorkerLoop(
         if (last) {
           inputTokens += last.inputTokens;
           outputTokens += last.outputTokens;
+          addCache(last);
           const done = last.calls.find((call) => call.name === "done");
           const parsed = done ? parseToolArgs("done", done.args) : null;
           if (parsed?.ok && parsed.parsed.name === "done") {
@@ -290,7 +345,41 @@ export async function runWorkerLoop(
     elapsedMs: Date.now() - startedAt,
     inputTokens,
     outputTokens,
+    cache,
     resultChars: resultLog.reduce((n, r) => n + r.text.length, 0),
+  };
+}
+
+/**
+ * The worker's Anthropic request, cached. Here rather than in worker.ts so a
+ * test can check its shape (that file is `server-only`).
+ *
+ * A worker makes dozens of calls that each re-send the whole transcript, so
+ * without breakpoints every call paid full input for every earlier page
+ * digest. Three markers: the last tool and the system block (the same for
+ * every worker, so parallel workers share them), and the newest message,
+ * moved every request so call N+1 reads what call N wrote. 5-minute TTL: the
+ * calls are seconds apart. The loop elides old results in batches
+ * (`nextElidedCount`) so the prefix holds between jumps.
+ */
+export function anthropicWorkerRequest(
+  model: { providerModel: string },
+  system: string,
+  messages: readonly Anthropic.MessageParam[]
+): Anthropic.MessageCreateParamsNonStreaming {
+  const ephemeral = { type: "ephemeral" as const };
+  return {
+    model: model.providerModel,
+    max_tokens: 2_048,
+    system: [{ type: "text" as const, text: system, cache_control: ephemeral }],
+    messages: withConversationCacheBreakpoint(messages),
+    tools: WORKER_TOOLS.map((tool, i, all) => ({
+      name: tool.name,
+      description: tool.description,
+      input_schema: tool.parameters as { type: "object"; [key: string]: unknown },
+      ...(i === all.length - 1 ? { cache_control: ephemeral } : {}),
+    })),
+    tool_choice: { type: "auto" as const },
   };
 }
 

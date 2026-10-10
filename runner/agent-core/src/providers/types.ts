@@ -85,6 +85,14 @@ export interface ProviderRequest {
    * summary — passes false, because nothing will read what it would write.
    */
   cache?: boolean;
+  /**
+   * A stable id for the conversation this request continues — the session,
+   * Work run or child agent — so the labs that route by one (OpenAI, Mistral
+   * and Meta's `prompt_cache_key`, xAI's `x-grok-conv-id`) send every step of
+   * it to the server that already holds its prefix. Adapters whose lab has no
+   * such field ignore it. See providers/prompt-cache.ts.
+   */
+  cacheKey?: string;
 }
 
 export interface ProviderAdapter {

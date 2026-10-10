@@ -509,6 +509,8 @@ export interface ResearchDeps {
   /** Writes the report. Optional: the chat path streams synthesis itself. */
   synthesize?(input: {
     userId: string;
+    /** The run, so the writer's attempts share one prompt-cache key. */
+    runId?: string;
     goal: string;
     plan: ResearchPlan;
     sources: ResearchSourceRow[];

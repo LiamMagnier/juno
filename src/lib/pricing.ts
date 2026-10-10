@@ -38,7 +38,12 @@ export interface RawUsage {
  * portion on this API family (see `normalizeUsage`).
  */
 export interface CompatPromptCacheFields {
-  prompt_tokens_details?: { cached_tokens?: number; cache_write_tokens?: number };
+  prompt_tokens_details?: {
+    cached_tokens?: number;
+    cache_write_tokens?: number;
+    /** Qwen (Model Studio) explicit-cache writes, inside prompt_tokens. */
+    cache_creation_input_tokens?: number;
+  };
   /** DeepSeek: its disk cache, hits and misses. Both are INSIDE prompt_tokens. */
   prompt_cache_hit_tokens?: number;
   prompt_cache_miss_tokens?: number;
@@ -49,14 +54,16 @@ export interface CompatPromptCacheFields {
 /**
  * Cache read/write token counts from a compat usage chunk.
  *
- * The write count is ONLY an explicit `cache_write_tokens` (OpenAI GPT-5.6+).
+ * The write count is ONLY an explicit write counter: `cache_write_tokens`
+ * (OpenAI GPT-5.6+) or `cache_creation_input_tokens` (Qwen explicit cache,
+ * alibabacloud.com/help/en/model-studio/context-cache). Both sit INSIDE
+ * `prompt_tokens`, like the reads.
  * DeepSeek's `prompt_cache_miss_tokens` used to be taken as a write for every
  * non-OpenAI provider — but a miss is just the uncached remainder of
  * `prompt_tokens`, already billed as fresh input by `normalizeUsage`, so it was
  * charged twice: once at the input rate and again as a "write" at the same
  * rate (`tokenRate`'s default branch). Uncached DeepSeek input cost double.
- * No compat provider Juno routes to bills a cache-write premium through that
- * field, so dropping it is the whole fix.
+ * A miss is not a write, so dropping it was the whole fix.
  */
 export function compatPromptCacheTokens(
   u: CompatPromptCacheFields
@@ -64,8 +71,27 @@ export function compatPromptCacheTokens(
   // `undefined` when no dialect reported a read count at all, so a caller
   // keeping "last chunk wins" state can tell "not reported" from zero.
   const read = u.prompt_tokens_details?.cached_tokens ?? u.prompt_cache_hit_tokens ?? u.cached_tokens;
-  const cacheWrite = u.prompt_tokens_details?.cache_write_tokens ?? 0;
+  const cacheWrite =
+    u.prompt_tokens_details?.cache_write_tokens ?? u.prompt_tokens_details?.cache_creation_input_tokens ?? 0;
   return { cacheRead: read == null ? undefined : Math.max(0, read), cacheWrite: Math.max(0, cacheWrite) };
+}
+
+/** A generation's prompt-cache counters, as `usage` events report them. */
+export type CacheUsage = Pick<RawUsage, "cacheRead" | "cacheWrite" | "cacheWrite5m" | "cacheWrite1h">;
+
+/**
+ * Fold one `usage` event's cache counters into the running ones, keeping the
+ * previous value where the event omits a field (the events are cumulative).
+ * For callers that price a generation themselves: without these, a cached
+ * Anthropic call billed only its fresh input and never its writes.
+ */
+export function cacheUsageFrom(event: CacheUsage, previous: CacheUsage = {}): CacheUsage {
+  return {
+    cacheRead: event.cacheRead ?? previous.cacheRead,
+    cacheWrite: event.cacheWrite ?? previous.cacheWrite,
+    cacheWrite5m: event.cacheWrite5m ?? previous.cacheWrite5m,
+    cacheWrite1h: event.cacheWrite1h ?? previous.cacheWrite1h,
+  };
 }
 
 /** Provider token conventions reconciled into one additive shape. */
@@ -116,8 +142,12 @@ export function normalizeUsage(provider: string, u: RawUsage): NormalizedUsage {
       output,
     };
   }
-  // OpenAI-compatible: prompt_tokens already includes cacheRead.
-  const freshInput = Math.max(0, input - cacheRead);
+  // OpenAI-compatible: prompt_tokens already includes cacheRead AND the cache
+  // writes (OpenAI GPT-5.6+ `cache_write_tokens`, Qwen
+  // `cache_creation_input_tokens`; both providers' docs compute uncached input
+  // as prompt − cached − written). Subtracting only the reads billed every
+  // written token twice: at the input rate and again at the write rate.
+  const freshInput = Math.max(0, input - cacheRead - cacheWrite);
   return {
     totalInput: input,
     freshInput,
@@ -367,6 +397,16 @@ export function supportsFastMode(model: ModelInfo): boolean {
 }
 
 /**
+ * Qwen models Juno sends explicit `cache_control` markers to (openai-compat.ts).
+ * Model Studio supports explicit cache on more of the line; these are the
+ * ones checked against its list (alibabacloud.com/help/en/model-studio/context-cache).
+ */
+export function qwenExplicitCacheModel(model: Pick<ModelInfo, "provider" | "providerModel">): boolean {
+  if (model.provider !== "qwen") return false;
+  return /^qwen3\.(7-plus|8-max|8-flash)($|-)/.test(model.providerModel.toLowerCase());
+}
+
+/**
  * Full rate incl. cache multipliers.
  * Anthropic: read 0.1× (0.025× on Fable/Mythos 5.1, 0.05× on Opus 5.5),
  * 5m write 1.25×, 1h write 2×.
@@ -516,6 +556,60 @@ export function tokenRate(model: ModelInfo, fastMode = false, at: Date | number 
       cacheWrite: input,
       cacheWrite5m: input,
       cacheWrite1h: input,
+    };
+  }
+  if (model.provider === "minimax") {
+    // platform.minimax.io/docs/guides/pricing-paygo (2026-10-10): cache read
+    // $0.06 on M3 ($0.30) and M2.7 ($0.30), $0.06 on M2.7-highspeed ($0.60),
+    // $0.03 on M2.5 ($0.30). M2.x writes are $0.375, 1.25x the standard tier
+    // and 0.625x highspeed; M3 lists no write price, so writes cost input.
+    // M3.1 Flash Preview is not on the page and keeps the 0.25x fallback.
+    const pm = model.providerModel.toLowerCase();
+    const highspeed = pm.includes("highspeed");
+    const m3 = /^minimax-m3($|-)/.test(pm);
+    const m27 = pm.includes("m2.7");
+    const m25 = pm.includes("m2.5");
+    const ratio = m3 ? 0.2 : m27 ? (highspeed ? 0.1 : 0.2) : m25 ? (highspeed ? 0.05 : 0.1) : 0.25;
+    const write = (m27 || m25) && !m3 ? (highspeed ? 0.625 : 1.25) : 1;
+    return {
+      input,
+      output,
+      cacheRead: input * ratio,
+      cacheWrite: input * write,
+      cacheWrite5m: input * write,
+      cacheWrite1h: input * write,
+    };
+  }
+  if (model.provider === "mistral") {
+    // docs.mistral.ai prompt caching: cached tokens bill at 10% of input. Juno
+    // opts in with `prompt_cache_key` (openai-compat.ts); no write premium.
+    return { input, output, cacheRead: input * 0.1, cacheWrite: input, cacheWrite5m: input, cacheWrite1h: input };
+  }
+  if (model.provider === "longcat") {
+    // longcat.chat/platform/docs/pricing: a cache hit is 2% of input.
+    return { input, output, cacheRead: input * 0.02, cacheWrite: input, cacheWrite5m: input, cacheWrite1h: input };
+  }
+  if (model.provider === "qwen") {
+    /*
+     * Model Studio context cache (alibabacloud.com/help/en/model-studio/context-cache):
+     * an EXPLICIT hit is 10% of input and an explicit write 125%; an implicit
+     * hit is 20%. Juno marks qwen3.7-plus, qwen3.8-max and qwen3.8-flash
+     * explicitly (openai-compat.ts), so their writes carry the premium. Reads
+     * cannot be told apart in usage, so a model Juno marks bills at the
+     * explicit rate; qwen3.8-max/flash are excluded from the 10% by the doc
+     * ("check the console") and keep the 0.25x fallback until verified. Other
+     * Qwen models are implicit-only: 0.2x is the doc's "most models" figure,
+     * still unverified per model, so they keep the fallback too.
+     */
+    const explicitWrite = qwenExplicitCacheModel(model) ? 1.25 : 1;
+    const ratio = model.providerModel.toLowerCase().startsWith("qwen3.7-plus") ? 0.1 : 0.25;
+    return {
+      input,
+      output,
+      cacheRead: input * ratio,
+      cacheWrite: input * explicitWrite,
+      cacheWrite5m: input * explicitWrite,
+      cacheWrite1h: input * explicitWrite,
     };
   }
   // Others: cached input is typically a fraction of full; writes carry no premium.

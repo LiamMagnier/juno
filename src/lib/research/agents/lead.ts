@@ -4,7 +4,7 @@ import { utilityModelCandidates } from "@/lib/memory";
 import { MODEL_LIST } from "@/lib/models";
 import { isProviderConfigured } from "@/lib/providers";
 import { researchLeadModel } from "@/lib/research/agents/worker";
-import { estimateGenerationCostUsd } from "@/lib/pricing";
+import { cacheUsageFrom, estimateGenerationCostUsd, type CacheUsage } from "@/lib/pricing";
 import { recordSpend } from "@/lib/spend";
 import { truncate } from "@/lib/utils";
 import { wrapUntrusted } from "@/lib/untrusted-content";
@@ -242,6 +242,7 @@ export async function reviewResearchRound(input: ReviewRoundInput): Promise<Revi
   let out = "";
   let inputTokens: number | undefined;
   let outputTokens: number | undefined;
+  let cache: CacheUsage = {};
   try {
     for await (const event of streamChat({
       model,
@@ -249,11 +250,16 @@ export async function reviewResearchRound(input: ReviewRoundInput): Promise<Revi
       history: [{ role: "USER", content: prompt, attachments: [] }],
       maxTokens: REVIEW_OUTPUT_TOKENS,
       signal: box.signal,
+      // LEAD_SYSTEM is the same for every review, so it is the one thing worth
+      // caching; each round's prompt is new and a marker on it went unread.
+      promptCache: "short",
+      ...(input.runId ? { cacheKey: `research-${input.runId}` } : {}),
     })) {
       if (event.type === "text") out += event.text;
       else if (event.type === "usage") {
         inputTokens = event.input ?? inputTokens;
         outputTokens = event.output ?? outputTokens;
+        cache = cacheUsageFrom(event, cache);
       }
     }
   } catch (error) {
@@ -268,6 +274,7 @@ export async function reviewResearchRound(input: ReviewRoundInput): Promise<Revi
   const billed = estimateGenerationCostUsd(model, {
     promptTokens: inputTokens,
     completionTokens: outputTokens,
+    ...cache,
     promptChars: LEAD_SYSTEM.length + prompt.length,
     completionChars: out.length,
   });
@@ -278,6 +285,7 @@ export async function reviewResearchRound(input: ReviewRoundInput): Promise<Revi
     source: "web",
     promptTokens: billed.promptTokens,
     completionTokens: billed.completionTokens,
+    ...cache,
     costUsd: billed.costUsd || undefined,
     promptChars: LEAD_SYSTEM.length + prompt.length,
     completionChars: out.length,

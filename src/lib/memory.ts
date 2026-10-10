@@ -1,6 +1,7 @@
 import { cache } from "react";
 import { prisma, prismaUnguarded } from "@/lib/prisma";
 import { decryptMessageText } from "@/lib/message-crypto";
+import type { PromptCacheMode } from "@/types/llm";
 import { decryptField, encryptField } from "@/lib/field-crypto";
 import { streamChat } from "@/lib/llm";
 import { MODEL_LIST, getModel, type ModelInfo } from "@/lib/models";
@@ -62,7 +63,7 @@ import { configuredEmbeddingModels, embedQuery, embedTexts } from "@/lib/knowled
 // through, deliberately: a second way of turning usage into money is how an
 // estimate and a bill drift apart, and this number is about to be compared
 // against a reservation by the research engine.
-import { estimateGenerationCostUsd } from "@/lib/pricing";
+import { cacheUsageFrom, estimateGenerationCostUsd, type CacheUsage } from "@/lib/pricing";
 import { checkBudget, recordSpend } from "@/lib/spend";
 import { getUserPlan } from "@/lib/usage";
 import { createUnattributedSpendMeter, unattributedDailyCeilingMicroUsd } from "@/lib/metering/unit-prices";
@@ -315,6 +316,12 @@ export async function runUtilityPrompt<T>(opts: {
    * as a chat turn would be (docs/pricing/USAGE_METERING_AUDIT.md).
    */
   budgetExempt?: boolean;
+  /**
+   * Prompt-cache markers (`PromptCacheMode`). Defaults to "none": a utility
+   * prompt is sent once, so a cache write is a premium nobody reads. "short"
+   * for a system prompt the caller is about to reuse within minutes.
+   */
+  promptCache?: PromptCacheMode;
 }): Promise<{
   result: T | null;
   transient: boolean;
@@ -423,6 +430,9 @@ export async function runUtilityPrompt<T>(opts: {
     let out = "";
     let inputTokens: number | undefined;
     let outputTokens: number | undefined;
+    // Only a "short" extraction prompt writes or reads the cache; priced at
+    // its own rates rather than left out (Anthropic's input excludes it).
+    let cacheUsage: CacheUsage = {};
     try {
       for await (const ev of streamChat({
         model,
@@ -430,6 +440,7 @@ export async function runUtilityPrompt<T>(opts: {
         history: [{ role: "USER", content: opts.userMsg, attachments: [] }],
         maxTokens: opts.maxTokens,
         signal: ctrl.signal,
+        promptCache: opts.promptCache ?? "none",
       })) {
         if (ev.type === "text") out += ev.text;
         // The provider's own counts, which beat the character floor below.
@@ -438,6 +449,7 @@ export async function runUtilityPrompt<T>(opts: {
         else if (ev.type === "usage") {
           inputTokens = ev.input ?? inputTokens;
           outputTokens = ev.output ?? outputTokens;
+          cacheUsage = cacheUsageFrom(ev, cacheUsage);
         }
       }
     } catch (e) {
@@ -459,6 +471,7 @@ export async function runUtilityPrompt<T>(opts: {
       const billed = estimateGenerationCostUsd(model, {
         promptTokens: inputTokens,
         completionTokens: outputTokens,
+        ...cacheUsage,
         promptChars: opts.system.length + opts.userMsg.length,
         completionChars: out.length,
       });
@@ -491,6 +504,7 @@ export async function runUtilityPrompt<T>(opts: {
           kind: "utility",
           promptTokens: billed.promptTokens,
           completionTokens: billed.completionTokens,
+          ...cacheUsage,
           costUsd: billed.costUsd || undefined,
           promptChars: opts.system.length + opts.userMsg.length,
           completionChars: out.length,
@@ -1237,6 +1251,10 @@ export async function extractConversationMemory(opts: {
       policy,
       conversationProvider,
       purpose: "memory_extraction",
+      // One per-user system prompt for every chunk of the conversation: a
+      // 5-minute marker lets chunk 2 onward read it. A single chunk would
+      // only pay the write.
+      ...(toProcess.length > 1 ? { promptCache: "short" as const } : {}),
       onDecision: opts.onDecision,
       llm: opts.llm,
     });

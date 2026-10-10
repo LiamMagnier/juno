@@ -10,6 +10,7 @@ import type { ChatMessage, Usage } from '../types.js';
 import { classifyProviderError } from './errors.js';
 import { DEFAULT_REQUEST_TIMEOUT_MS } from './timeouts.js';
 import type { CompatAdapterOptions, CompatProviderConfig } from './openai-compat.js';
+import { promptCachePlan, sortedTools } from './prompt-cache.js';
 
 /**
  * OpenAI's Responses API, for the models that speak only it (the Pro and Codex
@@ -145,10 +146,32 @@ export class OpenAIResponsesAdapter implements ProviderAdapter {
 
   async *stream(req: ProviderRequest): AsyncGenerator<ProviderStreamEvent> {
     const maxTokens = (req.maxTokens ?? 8192) + (req.reasoningEffort ? REASONING_HEADROOM[req.reasoningEffort] : 0);
+    // Prompt caching, in each lab's own spelling; see prompt-cache.ts.
+    const cachePlan = promptCachePlan({
+      providerId: this.config.id,
+      model: req.model,
+      wire: 'responses',
+      ...(req.cacheKey ? { cacheKey: req.cacheKey } : {}),
+      ...(req.cache === false ? { cache: false } : {}),
+    });
+    // GPT-5.6+: the system prompt moves from `instructions` into the input as
+    // a system message whose text part carries an explicit breakpoint, so the
+    // static instructions keep their own cache entry (as the website does).
+    const systemInput: InputItem[] =
+      cachePlan.systemBreakpoint && req.system
+        ? [
+            {
+              type: 'message',
+              role: 'system',
+              content: [{ type: 'input_text', text: req.system, prompt_cache_breakpoint: { mode: 'explicit' } }],
+            } as unknown as InputItem,
+          ]
+        : [];
     const params: OpenAI.Responses.ResponseCreateParamsStreaming = {
       model: req.model,
-      ...(req.system ? { instructions: req.system } : {}),
-      input: toResponsesInput(req.messages, req.model),
+      ...(req.system && systemInput.length === 0 ? { instructions: req.system } : {}),
+      input: [...systemInput, ...toResponsesInput(req.messages, req.model)],
+      ...(cachePlan.fields as Partial<OpenAI.Responses.ResponseCreateParamsStreaming>),
       stream: true,
       // Nothing is kept at OpenAI; the reasoning comes back sealed instead.
       store: false,
@@ -166,7 +189,7 @@ export class OpenAIResponsesAdapter implements ProviderAdapter {
         : {}),
       ...(req.tools.length > 0
         ? {
-            tools: req.tools.map((tool) => ({
+            tools: sortedTools(req.tools).map((tool) => ({
               type: 'function' as const,
               name: tool.name,
               description: tool.description,
@@ -179,7 +202,10 @@ export class OpenAIResponsesAdapter implements ProviderAdapter {
 
     let stream: AsyncIterable<OpenAI.Responses.ResponseStreamEvent>;
     try {
-      stream = await this.client.responses.create(params, { signal: req.signal });
+      stream = await this.client.responses.create(params, {
+        signal: req.signal,
+        ...(cachePlan.headers ? { headers: cachePlan.headers } : {}),
+      });
     } catch (err) {
       if (req.signal?.aborted) throw err;
       throw classifyProviderError(err, this.name, { viaJunoProxy: this.viaJunoProxy });
@@ -254,7 +280,8 @@ export class OpenAIResponsesAdapter implements ProviderAdapter {
               : 'other';
     // `input_tokens` already includes the cached share, as Usage does.
     const cached = final?.usage?.input_tokens_details?.cached_tokens ?? 0;
-    const written = (final?.usage?.input_tokens_details as { cache_write_tokens?: number } | undefined)?.cache_write_tokens ?? 0;
+    const details = final?.usage?.input_tokens_details as { cache_write_tokens?: number; cache_creation_tokens?: number } | undefined;
+    const written = details?.cache_write_tokens ?? details?.cache_creation_tokens ?? 0;
     const usage: Usage = {
       inputTokens: final?.usage?.input_tokens ?? 0,
       outputTokens: final?.usage?.output_tokens ?? 0,

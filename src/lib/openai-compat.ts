@@ -4,10 +4,16 @@ import { getObjectBytes } from "@/lib/storage";
 import { providerApiKey, providerBaseUrl, PROVIDERS, type Provider } from "@/lib/providers";
 import { normalizeFinishReason } from "@/lib/finish-reason";
 import { getModelMetrics, reasoningCaps } from "@/lib/model-metrics";
-import { openAIPromptCacheRequestFields, openAISystemMessage } from "@/lib/openai-prompt-cache";
+import {
+  compatPromptCacheRequestFields,
+  openAIPromptCacheRequestFields,
+  openAISystemMessage,
+  withQwenCacheMarkers,
+} from "@/lib/openai-prompt-cache";
+import { qwenExplicitCacheModel } from "@/lib/pricing";
 import type { ModelInfo } from "@/lib/models";
 import type { ReasoningEffort } from "@/types/chat";
-import type { LlmEvent, MessageForModel } from "@/types/llm";
+import type { LlmEvent, MessageForModel, PromptCacheMode } from "@/types/llm";
 import { toWireTools } from "@/lib/mcp";
 import { wireCallId, type ToolLoop } from "@/lib/tools/loop";
 import type { ToolCallInput } from "@/lib/tools/types";
@@ -301,7 +307,8 @@ export async function* streamOpenAICompat(
   dynamicContext?: string,
   cacheKey?: string,
   fastMode?: boolean,
-  transport?: CompatTransport
+  transport?: CompatTransport,
+  promptCache?: PromptCacheMode
 ): AsyncGenerator<LlmEvent> {
   const toolset = tools?.toolset;
   const messages = await toOpenAIMessages(system, history, model.vision, model);
@@ -309,6 +316,7 @@ export async function* streamOpenAICompat(
   // conversation history — providers cache the longest stable prefix, so
   // nothing that changes per request may sit before the history. It lands as
   // a system message just before the newest user turn.
+  let dynamicMessage: OpenAI.Chat.Completions.ChatCompletionMessageParam | undefined;
   if (dynamicContext) {
     let lastUser = messages.length;
     for (let i = messages.length - 1; i >= 0; i--) {
@@ -317,7 +325,8 @@ export async function* streamOpenAICompat(
         break;
       }
     }
-    messages.splice(lastUser, 0, { role: "system", content: dynamicContext });
+    dynamicMessage = { role: "system", content: dynamicContext };
+    messages.splice(lastUser, 0, dynamicMessage);
   }
   const modelId = model.providerModel.toLowerCase();
   const isZhipuThinking = model.provider === "zhipu" && model.reasoning;
@@ -473,13 +482,17 @@ export async function* streamOpenAICompat(
   // - OpenAI: full guide (prompt_cache_key + GPT-5.6 breakpoints/options +
   //   extended retention on older GPT-5.x). See openai-prompt-cache.ts.
   // - Mistral: caching is OPT-IN and only happens when prompt_cache_key is set.
+  // - Meta: automatic; prompt_cache_key keeps a conversation on one backend.
   // - xAI: header below (no body field).
+  // - Qwen 3.7 Plus / 3.8: explicit cache_control markers, placed per round
+  //   below (withQwenCacheMarkers); the rest of Qwen is implicit.
   // - Zhipu/DeepSeek/Moonshot: implicit on stable prefixes only.
   if (model.provider === "openai") {
     Object.assign(params, openAIPromptCacheRequestFields(model, cacheKey));
-  } else if (model.provider === "mistral" && cacheKey) {
-    params.prompt_cache_key = cacheKey;
+  } else {
+    Object.assign(params, compatPromptCacheRequestFields(model, cacheKey));
   }
+  const qwenExplicitCache = qwenExplicitCacheModel(model);
   // xAI Grok "Live Search" — a request-body extension that returns citations.
   if (webSearch && model.provider === "xai") {
     params.search_parameters = { mode: "auto", return_citations: true };
@@ -524,7 +537,11 @@ export async function* streamOpenAICompat(
   const maxRounds = hasTools ? MAX_TOOL_ROUNDS + 1 : 1;
   for (let round = 0; round < maxRounds; round++) {
     const isFinalRound = round === maxRounds - 1;
-    params.messages = messages;
+    // Qwen's markers move with the newest message, on a copy: the loop's own
+    // history stays unmarked, so last round's marker is never re-sent.
+    params.messages = qwenExplicitCache
+      ? withQwenCacheMarkers(messages, { dynamic: dynamicMessage, mode: promptCache })
+      : messages;
     if (hasTools) (params as Record<string, unknown>).tool_choice = isFinalRound ? "none" : "auto";
     // xAI routes same-conversation requests to the same cache via this header
     // (its chat.completions API has no prompt_cache_key).

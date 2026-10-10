@@ -9,6 +9,22 @@ import type {
   ToolWebDetail,
 } from "@/types/run";
 
+/**
+ * Explicit prompt-cache markers for one request, on the providers that take
+ * them (Anthropic; Qwen's explicit cache). Omitted: the chat behaviour, a
+ * cached system prompt plus a marker on the newest message. "short": one
+ * 5-minute marker on the system prompt only, for a system prompt reused by a
+ * burst of calls whose user messages differ. "none": no markers, for one-off
+ * prompts where a write would never be read and only adds its premium.
+ */
+/**
+ * Prompt-cache markers for a request that is not a chat turn. Unset: the chat
+ * markers (1h tools and system, a 5m conversation marker). "none": no markers,
+ * for one-off utility prompts. "short": 5m markers only, and the conversation
+ * marker only when the request runs a tool loop.
+ */
+export type PromptCacheMode = "none" | "short";
+
 /** A persisted message reduced to what model adapters need. */
 export type MessageForModel = {
   role: Role;

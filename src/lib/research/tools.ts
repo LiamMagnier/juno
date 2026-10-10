@@ -2,7 +2,7 @@ import "server-only";
 import { streamChat } from "@/lib/llm";
 import { utilityModelCandidates } from "@/lib/memory";
 import { recordSpend } from "@/lib/spend";
-import { estimateGenerationCostUsd } from "@/lib/pricing";
+import { cacheUsageFrom, estimateGenerationCostUsd, type CacheUsage } from "@/lib/pricing";
 import { truncate } from "@/lib/utils";
 import { wrapUntrusted } from "@/lib/untrusted-content";
 import type { ModelInfo } from "@/lib/models";
@@ -258,6 +258,7 @@ async function utilityCompletion(opts: {
   let out = "";
   let input: number | undefined;
   let output: number | undefined;
+  let cache: CacheUsage = {};
   try {
     for await (const ev of streamChat({
       model: opts.model,
@@ -265,6 +266,9 @@ async function utilityCompletion(opts: {
       history: [{ role: "USER", content: opts.prompt, attachments: [] }],
       maxTokens: opts.maxTokens,
       signal: box.signal,
+      // A plan, a brief, a clarification: each sent once, so a cache write
+      // would be a premium nothing reads back.
+      promptCache: "none",
       ...(opts.responseSchema ? { responseSchema: opts.responseSchema } : {}),
       ...(opts.reasoningEffort ? { reasoningEffort: opts.reasoningEffort } : {}),
     })) {
@@ -272,6 +276,7 @@ async function utilityCompletion(opts: {
       else if (ev.type === "usage") {
         input = ev.input ?? input;
         output = ev.output ?? output;
+        cache = cacheUsageFrom(ev, cache);
       }
     }
   } catch (e) {
@@ -289,6 +294,7 @@ async function utilityCompletion(opts: {
   const billed = estimateGenerationCostUsd(opts.model, {
     promptTokens: input,
     completionTokens: output,
+    ...cache,
     promptChars: opts.system.length + opts.prompt.length,
     completionChars: out.length,
   });
@@ -302,6 +308,7 @@ async function utilityCompletion(opts: {
     source: "web",
     promptTokens: billed.promptTokens,
     completionTokens: billed.completionTokens,
+    ...cache,
     costUsd: billed.costUsd || undefined,
     promptChars: opts.system.length + opts.prompt.length,
     completionChars: out.length,
@@ -934,6 +941,7 @@ const WRITER_TIMEBOX_DEFAULT_MS = 6 * 60_000;
  */
 export const writeResearchReport: NonNullable<ResearchDeps["synthesize"]> = async ({
   userId,
+  runId,
   goal,
   plan,
   sources,
@@ -965,23 +973,24 @@ export const writeResearchReport: NonNullable<ResearchDeps["synthesize"]> = asyn
   // The packer keeps a prefix of the findings; the ledger keeps their objectives.
   const keptLedger = ledger.slice(0, packed.findings.length);
   const structured = !!plan.scope;
+  const corpus = buildResearchCorpus(
+    goal,
+    plan,
+    packed.sources,
+    keptLedger,
+    structured
+      ? {
+          contract: "report",
+          dateLine: plan.today ?? null,
+          languageLine: plan.language ? researchLanguageLine(languageName(plan.language)) : null,
+          ...(footprint ? { footprint } : {}),
+        }
+      : footprint
+        ? { footprint }
+        : {}
+  );
   const system = [
-    buildResearchCorpus(
-      goal,
-      plan,
-      packed.sources,
-      keptLedger,
-      structured
-        ? {
-            contract: "report",
-            dateLine: plan.today ?? null,
-            languageLine: plan.language ? researchLanguageLine(languageName(plan.language)) : null,
-            ...(footprint ? { footprint } : {}),
-          }
-        : footprint
-          ? { footprint }
-          : {}
-    ),
+    corpus,
     ...(revision
       ? [
           `# Citation-driven revision (round ${revision.round})
@@ -999,6 +1008,7 @@ Rewrite the draft below into a complete replacement report for the original requ
   let out = "";
   let input: number | undefined;
   let output: number | undefined;
+  let cache: CacheUsage = {};
   try {
     for await (const ev of streamChat({
       model,
@@ -1006,11 +1016,22 @@ Rewrite the draft below into a complete replacement report for the original requ
       history: [{ role: "USER", content: historyContent, attachments: [] }],
       maxTokens: SYNTHESIS_OUTPUT_TOKENS,
       signal: box.signal,
+      /*
+       * The corpus is the large part, and the citation-driven revision sends
+       * it again with its instruction AFTER it: the corpus is its own cached
+       * tier (`systemStablePrefix`), so the revision reads it. 5-minute, not
+       * the chat's 1h: a report that is never revised paid 2x on its whole
+       * corpus for a read that never came.
+       */
+      systemStablePrefix: corpus,
+      promptCache: "short",
+      ...(runId ? { cacheKey: `research-${runId}` } : {}),
     })) {
       if (ev.type === "text") out += ev.text;
       else if (ev.type === "usage") {
         input = ev.input ?? input;
         output = ev.output ?? output;
+        cache = cacheUsageFrom(ev, cache);
       }
     }
   } catch (e) {
@@ -1025,6 +1046,7 @@ Rewrite the draft below into a complete replacement report for the original requ
   const billed = estimateGenerationCostUsd(model, {
     promptTokens: input,
     completionTokens: output,
+    ...cache,
     promptChars: system.length + goal.length,
     completionChars: out.length,
   });
@@ -1035,6 +1057,7 @@ Rewrite the draft below into a complete replacement report for the original requ
     source: "web",
     promptTokens: billed.promptTokens,
     completionTokens: billed.completionTokens,
+    ...cache,
     costUsd: billed.costUsd || undefined,
     promptChars: system.length + goal.length,
     completionChars: out.length,
