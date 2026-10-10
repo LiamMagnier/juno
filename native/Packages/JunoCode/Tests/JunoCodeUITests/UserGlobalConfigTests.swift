@@ -152,7 +152,7 @@ struct UserGlobalConfigTests {
         let custom = CustomAgentDiscovery(access: f.access, user: f.user).discoverEnabled(imports: f.imports)
         let targets = SubagentDefinitions(custom: CustomSubagentTargets(custom))
         let all = await targets.all()
-        #expect(Set(all.map(\.name)) == ["explorer", "reviewer", "scribe", "verifier"])
+        #expect(Set(all.map(\.name)) == ["architect", "explorer", "reviewer", "scribe", "verifier"])
         // The built-ins keep their names, whoever's file claims one: the
         // reviewer's JSON findings and the verifier are how Juno checks its
         // own work (integration rule; Lane F let the reader's own replace one).
