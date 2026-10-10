@@ -2,6 +2,7 @@ import JunoChatKit
 import JunoDesignSystem
 import JunoStorage
 import JunoVoiceKit
+import JunoWorkKit
 import SwiftUI
 
 #if DEBUG
@@ -368,6 +369,9 @@ struct JunoMobileComposer: View {
         )
         .transition(.opacity.combined(with: .move(edge: .bottom)))
       } else {
+        // The card, and the grey tray attached under it (the web's
+        // composer tray): one object, the tray tucked behind the card.
+        VStack(spacing: 0) {
         JunoGlass(spacing: JunoSpace.snug) {
           VStack(alignment: .leading, spacing: 0) {
             if !attachments.isEmpty, let attachmentModel {
@@ -417,11 +421,11 @@ struct JunoMobileComposer: View {
               // placeholder grey: ChatGPT's "Ask ChatGPT" reads at a glance.
               TextField(
                 text: $prompt,
-                prompt: Text(voiceActive ? "Type while you talk…" : placeholder)
+                prompt: fieldPrompt
                   .foregroundStyle(Color.secondary),
                 axis: .vertical
               ) {
-                Text(voiceActive ? "Type while you talk…" : placeholder)
+                fieldPrompt
               }
               .junoFont(size: 17, relativeTo: .body)
               .lineLimit(1...6)
@@ -509,6 +513,8 @@ struct JunoMobileComposer: View {
             }
           }
         }
+        tray
+        }
         .transition(.opacity)
       }
     }
@@ -555,6 +561,13 @@ struct JunoMobileComposer: View {
       if ended { voiceTurnError = nil }
     }
     .task { await applyPreviewFlags() }
+    // The tray's generation choices follow the model: one switched to
+    // inherits what still fits from the one before (the web's carry).
+    .onChange(of: selectedModelID, initial: true) { _, id in
+      if let schema = model.model(withID: id)?.mediaParams, !schema.isEmpty {
+        model.mediaParamsMemory.activate(id, schema: schema)
+      }
+    }
     .sheet(isPresented: $showingModelPicker) {
       JunoMobileModelSelectorView(
         models: model.composerCatalog,
@@ -577,6 +590,105 @@ struct JunoMobileComposer: View {
         closeThinking()
       }
     }
+  }
+
+  // MARK: Tray
+
+  /// The web's `showTray`: never in a call or while dictating. (A private
+  /// chat has its own composer, with no tray.)
+  private var showsTray: Bool {
+    voiceSession == nil && !dictating
+  }
+
+  /// The field's words, per model kind, as the web's composer says them.
+  private var fieldPrompt: Text {
+    if voiceActive { return Text("Type while you talk…") }
+    switch selectedModel?.modality {
+    case "image": return Text("Describe an image to generate…")
+    case "video": return Text("Describe a video to generate…")
+    case "audio": return Text("Describe a song or a sound to generate…")
+    default: return Text(placeholder)
+    }
+  }
+
+  /// The grey shelf under the card (`NativeComposerTray`, the web's
+  /// `composer-tray.tsx`): Project · Apps · Skills on a new chat; an image,
+  /// video or music model's choices (and Project on a new chat) whenever one
+  /// is selected. In a conversation a chat model has no tray, as on the web.
+  @ViewBuilder
+  private var tray: some View {
+    if showsTray {
+      if conversation == nil {
+        NativeComposerTray(
+          projects: trayProjects,
+          apps: trayApps,
+          skills: traySkills,
+          media: trayMedia
+        )
+        .task { await startSkillsIfNeeded() }
+        .transition(.opacity)
+      } else if let trayMedia {
+        NativeComposerTray(projects: nil, media: trayMedia)
+          .transition(.opacity)
+      }
+    }
+  }
+
+  private var trayProjects: NativeComposerTrayProjects {
+    NativeComposerTrayProjects(
+      items: projects.map { NativeComposerTrayProject(id: $0.id, name: $0.name) },
+      selectedID: tools.draftProjectID,
+      select: { tools.draftProjectID = $0 }
+    )
+  }
+
+  private var trayApps: NativeComposerTrayApps? {
+    guard openPlugins != nil || !connectors.isEmpty else { return nil }
+    return NativeComposerTrayApps(
+      connectors: connectors,
+      enabled: Set(tools.connectors),
+      toggle: { tools.toggleConnector($0) },
+      manage: openPlugins.map { open in
+        {
+          composerFocused.wrappedValue = false
+          open()
+        }
+      }
+    )
+  }
+
+  @Environment(\.junoFeatureHub) private var hub
+
+  private var traySkills: NativeComposerTraySkills? {
+    guard let skills = hub?.skills else { return nil }
+    return NativeComposerTraySkills(
+      items: skills.chooseable.map { NativeComposerTraySkill(slug: $0.slug, name: $0.name) },
+      armed: tools.skillSlug,
+      arm: { tools.skillSlug = $0 },
+      isLoading: skills.isLoading
+    )
+  }
+
+  /// The hub starts the skills library with the account; this only covers a
+  /// tray drawn before that start has run.
+  private func startSkillsIfNeeded() async {
+    guard let skills = hub?.skills, skills.library == nil, !skills.isLoading else { return }
+    _ = await skills.refresh()
+  }
+
+  /// The selected image, video or music model's choices, remembered per
+  /// model in the store, which is also where Send reads them.
+  private var trayMedia: NativeComposerTrayMedia? {
+    guard let selectedModel, selectedModel.isMediaGeneration,
+      let schema = selectedModel.mediaParams, !schema.isEmpty
+    else { return nil }
+    let memory = model.mediaParamsMemory
+    let id = selectedModel.id
+    return NativeComposerTrayMedia(
+      schema: schema,
+      params: memory.params(for: id, schema: schema),
+      set: { memory.set($0, $1, for: id, schema: schema) }
+    )
   }
 
   // MARK: Thinking dial
@@ -821,6 +933,21 @@ struct JunoMobileComposer: View {
         }
         if model.model(withID: forced) != nil {
           selectedModelID = forced
+        }
+      }
+      // `--juno-preview-media-params aspect=16:9,resolution=2K` picks tray
+      // choices for the forced media model, as taps on the tray would.
+      if let raw = JunoComposerPreviewFlags.value("--juno-preview-media-params"),
+        let schema = model.model(withID: selectedModelID)?.mediaParams
+      {
+        for pair in raw.split(separator: ",") {
+          let parts = pair.split(separator: "=", maxSplits: 1).map(String.init)
+          guard parts.count == 2 else { continue }
+          let value: NativeMediaParamValue =
+            parts[1] == "true" ? .bool(true)
+            : parts[1] == "false" ? .bool(false)
+            : Double(parts[1]).map { .number($0) } ?? .string(parts[1])
+          model.mediaParamsMemory.set(parts[0], value, for: selectedModelID, schema: schema)
         }
       }
       if let level = JunoComposerPreviewFlags.forcedThinkingLevel {
@@ -1316,6 +1443,8 @@ struct JunoMobileComposer: View {
       let created = await startConversation()
       isStarting = false
       guard let created else { return }
+      // Filed; the next draft starts unfiled, as a new chat on the web does.
+      tools.draftProjectID = nil
       deliver(
         conversationID: created,
         attachmentIDs: attachmentIDs,
@@ -1345,6 +1474,7 @@ struct JunoMobileComposer: View {
       fastMode: options.fastMode,
       ultraFast: options.ultraFast,
       proMode: options.proMode,
+      skillSlug: options.skillSlug,
       contextTokens: contextTokens.filter { prompt.contains("@" + $0.label) }
     )
     guard sent else { return }

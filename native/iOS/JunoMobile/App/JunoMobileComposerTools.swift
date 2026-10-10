@@ -90,6 +90,15 @@ final class JunoMobileComposerTools {
     /// Per-conversation, in the order they were picked.
     var connectors: [String] = []
 
+    /// Where a brand-new chat will be filed: the tray's Project control on a
+    /// draft (the web's landing tray). A conversation that exists keeps its
+    /// own project, moved from the "+" panel.
+    var draftProjectID: String?
+
+    /// The skill armed from the tray for the next message (`skillSlug` on the
+    /// chat route). Per-send, as on the web.
+    var skillSlug: String?
+
     private let defaults: UserDefaults
 
     init(defaults: UserDefaults = .standard) {
@@ -138,6 +147,7 @@ final class JunoMobileComposerTools {
     func resetForConversationChange() {
         connectors = []
         deepResearch = false
+        skillSlug = nil
     }
 
     /// The flags for the message being sent, and the reset that has to happen
@@ -156,12 +166,14 @@ final class JunoMobileComposerTools {
             connectors: connectors,
             fastMode: fastMode,
             ultraFast: ultraFast,
-            proMode: proMode
+            proMode: proMode,
+            skillSlug: skillSlug
         )
-        // Only deepResearch is cleared. Flash and Pro are preferences, not
-        // instructions about one question, so they survive the send exactly as
-        // web search and canvas do.
+        // Only deepResearch and the skill are cleared. Flash and Pro are
+        // preferences, not instructions about one question, so they survive
+        // the send exactly as web search and canvas do.
         deepResearch = false
+        skillSlug = nil
         return sent
     }
 
@@ -173,5 +185,6 @@ final class JunoMobileComposerTools {
         let fastMode: Bool
         let ultraFast: Bool
         let proMode: Bool
+        var skillSlug: String? = nil
     }
 }
