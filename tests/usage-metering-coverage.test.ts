@@ -97,6 +97,7 @@ const METERED: Record<string, string> = {
   "scripts/check-provider-keys.ts": "OPERATOR: manual diagnostic",
   "scripts/check-search-providers.ts": "OPERATOR: manual diagnostic",
   "scripts/probes/wire.ts": "OPERATOR: manual probe",
+  "scripts/model-sync/lab-apis.ts": "OPERATOR: models:sync reads each lab's free model-list API with the operator's key; no completion, no user",
   // ── the voice relay (reports to /api/voice/spend every 5s)
   "relay/src/providers/registry.ts": "per-minute rates; session reports to /api/voice/spend",
   "relay/src/providers/gemini-live.ts": "audio seconds + thinking tokens + delegate cost → /api/voice/spend",

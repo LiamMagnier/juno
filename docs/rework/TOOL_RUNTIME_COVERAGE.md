@@ -45,14 +45,14 @@ JSON as `catalogAgenticTools` for context, and never counts as evidence. The cap
 ## Models
 
 <!-- coverage:models:start -->
-50 current chat models; 0 compatible. Every other cell is untested until a live probe or acceptance run records evidence.
+52 current chat models; 0 compatible. Every other cell is untested until a live probe or acceptance run records evidence.
 
 | Model | Adapter | roundTrip | parallel | toolImages | runCodeE2E | skillE2E | Compatible |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `anthropic:claude-fable-5-1` | anthropic-native | untested | untested | untested | untested | untested | no |
 | `anthropic:claude-opus-5-5` | anthropic-native | untested | untested | untested | untested | untested | no |
 | `anthropic:claude-sonnet-5-5` | anthropic-native | untested | untested | untested | untested | untested | no |
-| `anthropic:claude-haiku-4-5` | anthropic-native | untested | untested | untested | untested | untested | no |
+| `anthropic:claude-haiku-5-5` | anthropic-native | untested | untested | untested | untested | untested | no |
 | `openai:gpt-6-astra` | openai-responses | untested | untested | untested | untested | untested | no |
 | `openai:gpt-6.1-sol` | openai-responses | untested | untested | untested | untested | untested | no |
 | `openai:gpt-6-luna` | openai-responses | untested | untested | untested | untested | untested | no |
@@ -77,6 +77,7 @@ JSON as `catalogAgenticTools` for context, and never counts as evidence. The cap
 | `deepseek:deepseek-flash` | openai-compatible | untested | untested | n/a | untested | untested | no |
 | `deepseek:deepseek-v4-pro` | openai-compatible | untested | untested | n/a | untested | untested | no |
 | `mistral:mistral-medium-latest` | openai-compatible | untested | untested | untested | untested | untested | no |
+| `mistral:mistral-large-4` | openai-compatible | untested | untested | untested | untested | untested | no |
 | `mistral:mistral-large-latest` | openai-compatible | untested | untested | untested | untested | untested | no |
 | `mistral:mistral-small-latest` | openai-compatible | untested | untested | untested | untested | untested | no |
 | `mistral:codestral-latest` | openai-compatible | untested | untested | n/a | untested | untested | no |
@@ -95,6 +96,7 @@ JSON as `catalogAgenticTools` for context, and never counts as evidence. The cap
 | `mimo:mimo-v2.6-flash` | openai-compatible | untested | untested | untested | untested | untested | no |
 | `qwen:qwen3.8-max` | openai-compatible | untested | untested | untested | untested | untested | no |
 | `qwen:qwen3.7-plus` | openai-compatible | untested | untested | untested | untested | untested | no |
+| `qwen:qwen3.8-omni-flash` | openai-compatible | untested | untested | untested | untested | untested | no |
 | `qwen:qwen3.8-flash` | openai-compatible | untested | untested | untested | untested | untested | no |
 | `qwen:qwen-long` | openai-compatible | untested | untested | n/a | untested | untested | no |
 | `longcat:LongCat-2.0` | openai-compatible | untested | untested | n/a | untested | untested | no |

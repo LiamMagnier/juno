@@ -150,7 +150,7 @@ function ModeChip({
           ))}
           {target === "cloud" && (
             <p className="px-2.5 pb-1.5 pt-1 text-caption text-muted-foreground">
-              A cloud run works in a sandbox and opens a pull request, so it offers Plan, Accept edits and Full access.
+              A cloud run works in a sandbox, so it offers Plan, Accept edits and Full access.
             </p>
           )}
         </div>

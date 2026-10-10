@@ -109,7 +109,7 @@
       }
     },
     {
-      "id": "anthropic:claude-haiku-4-5",
+      "id": "anthropic:claude-haiku-5-5",
       "provider": "anthropic",
       "adapter": "anthropic-native",
       "vision": true,
@@ -741,6 +741,31 @@
       }
     },
     {
+      "id": "mistral:mistral-large-4",
+      "provider": "mistral",
+      "adapter": "openai-compatible",
+      "vision": true,
+      "catalogAgenticTools": true,
+      "compatible": false,
+      "verdicts": {
+        "roundTrip": {
+          "verdict": "untested"
+        },
+        "parallel": {
+          "verdict": "untested"
+        },
+        "toolImages": {
+          "verdict": "untested"
+        },
+        "runCodeE2E": {
+          "verdict": "untested"
+        },
+        "skillE2E": {
+          "verdict": "untested"
+        }
+      }
+    },
+    {
       "id": "mistral:mistral-large-latest",
       "provider": "mistral",
       "adapter": "openai-compatible",
@@ -1172,6 +1197,31 @@
     },
     {
       "id": "qwen:qwen3.7-plus",
+      "provider": "qwen",
+      "adapter": "openai-compatible",
+      "vision": true,
+      "catalogAgenticTools": true,
+      "compatible": false,
+      "verdicts": {
+        "roundTrip": {
+          "verdict": "untested"
+        },
+        "parallel": {
+          "verdict": "untested"
+        },
+        "toolImages": {
+          "verdict": "untested"
+        },
+        "runCodeE2E": {
+          "verdict": "untested"
+        },
+        "skillE2E": {
+          "verdict": "untested"
+        }
+      }
+    },
+    {
+      "id": "qwen:qwen3.8-omni-flash",
       "provider": "qwen",
       "adapter": "openai-compatible",
       "vision": true,

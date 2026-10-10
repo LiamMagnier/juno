@@ -91,7 +91,10 @@ test("only the three Flash chat models are on the schedule", () => {
   // Models without a scheduled change price the same on both sides.
   for (const id of ["google:gemini-3.5-flash", "google:gemini-3.1-flash-lite"]) {
     const m = resolveModel(id);
-    if (!m) continue;
+    // A retired model resolves to its replacement (models:sync), which may be
+    // on the schedule: only a model still in the catalogue under its own id
+    // is checked here.
+    if (!m || m.id !== id) continue;
     assert.deepEqual(
       { i: tokenRate(m, false, PROMO_DAY).input, o: tokenRate(m, false, PROMO_DAY).output },
       { i: tokenRate(m, false, PRICED_DAY).input, o: tokenRate(m, false, PRICED_DAY).output },

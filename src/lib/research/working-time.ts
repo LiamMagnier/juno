@@ -1,5 +1,5 @@
 import "server-only";
-import { prisma } from "@/lib/prisma";
+import { prisma, prismaUnguarded } from "@/lib/prisma";
 import type { ResearchPlan } from "@/lib/research/domain";
 import { refreshResearchFactsWith, type ResearchRunLookup } from "@/lib/research/message-time";
 import { activeWorkingMs, workingMsOf } from "@/lib/research/view";
@@ -65,8 +65,12 @@ export async function runWorkingMs(run: RunClockRow, plan: ResearchPlan, now: Da
   }
 }
 
+// Unguarded on purpose: the run is pinned to the message's own conversation
+// (id AND conversationId), and `serializeMessage` only runs on messages its
+// caller already loaded under that conversation's access check, including a
+// shared view whose reader is not the run's owner. Only timing facts are read.
 const lookupRun: ResearchRunLookup = (runId, conversationId) =>
-  prisma.researchRun.findFirst({
+  prismaUnguarded.researchRun.findFirst({
     where: { id: runId, conversationId },
     select: { id: true, userId: true, createdAt: true, startedAt: true, finishedAt: true, state: true, plan: true },
   });
