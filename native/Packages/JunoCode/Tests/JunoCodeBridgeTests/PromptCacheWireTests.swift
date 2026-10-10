@@ -115,12 +115,42 @@ final class PromptCacheWireTests: XCTestCase {
 
     // MARK: Routing
 
-    func testOpenAIAndMistralChatSendTheSessionAsPromptCacheKey() async throws {
-        for model in ["openai:gpt-5.4", "mistral:mistral-large-3"] {
+    func testOpenAIMistralAndMetaChatSendTheSessionAsPromptCacheKey() async throws {
+        for model in ["openai:gpt-5.4", "mistral:mistral-large-3", "meta:muse-spark"] {
             let sent = try await recordedBodies(model, times: 1)[0]
             XCTAssertEqual(try json(sent.body)["prompt_cache_key"]?.stringValue, "session-cache-1", model)
             XCTAssertNil(sent.headers["x-grok-conv-id"], model)
         }
+    }
+
+    func testOpenAIModernModelsGetCacheOptionsAndASystemBreakpoint() async throws {
+        let body = try json(try await recordedBodies("openai:gpt-5.6", times: 1)[0].body)
+        XCTAssertEqual(body["prompt_cache_options"]?["mode"]?.stringValue, "implicit")
+        XCTAssertEqual(body["prompt_cache_options"]?["ttl"]?.stringValue, "30m")
+        XCTAssertNil(body["prompt_cache_retention"])
+        let system = try XCTUnwrap(body["messages"]?.arrayValue?.first)
+        XCTAssertEqual(system["role"]?.stringValue, "system")
+        let part = try XCTUnwrap(system["content"]?.arrayValue?.last)
+        XCTAssertEqual(part["text"]?.stringValue, "You are a careful coding agent.")
+        XCTAssertEqual(part["prompt_cache_breakpoint"]?["mode"]?.stringValue, "explicit")
+    }
+
+    func testOnlyOpenAIsListedOlderModelsGet24hRetention() async throws {
+        for model in ["openai:gpt-5.4", "openai:gpt-4.1-2025-04-14"] {
+            let body = try json(try await recordedBodies(model, times: 1)[0].body)
+            XCTAssertEqual(body["prompt_cache_retention"]?.stringValue, "24h", model)
+            XCTAssertNil(body["prompt_cache_options"], model)
+            XCTAssertEqual(body["messages"]?.arrayValue?.first?["content"]?.stringValue, "You are a careful coding agent.", model)
+        }
+        XCTAssertTrue(PromptCacheWire.usesOpenAIRetention("gpt-5.1-codex-max"))
+        for model in ["gpt-5.4-mini", "gpt-5-mini", "gpt-5.3-codex", "gpt-5.6", "gpt-6.1-sol"] {
+            XCTAssertFalse(PromptCacheWire.usesOpenAIRetention(model), model)
+        }
+        XCTAssertTrue(PromptCacheWire.isOpenAIModernCacheModel("gpt-6.1-sol"))
+        XCTAssertFalse(PromptCacheWire.isOpenAIModernCacheModel("gpt-5.5"))
+        let mistral = try json(try await recordedBodies("mistral:mistral-large-3", times: 1)[0].body)
+        XCTAssertNil(mistral["prompt_cache_retention"])
+        XCTAssertNil(mistral["prompt_cache_options"])
     }
 
     func testXAIChatRoutesByHeaderNotBody() async throws {
