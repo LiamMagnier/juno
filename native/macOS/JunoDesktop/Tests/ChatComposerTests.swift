@@ -412,4 +412,90 @@ struct ChatComposerTests {
         #expect(received == ["Use euros"])
     }
 
+
+    // MARK: - The tray and the + menu
+
+    /// Owner, Oct 10: "from the plus button remove skills in app since it's
+    /// already in the bottom of the composer. Same for add to a project."
+    /// `+` drops a row exactly where the tray on screen carries it.
+    @Test
+    func plusLeavesOutWhatTheTrayCarries() {
+        let newChat = ComposerTrayCoverage(
+            showsTray: true, isNewChat: true, hasMediaLine: false,
+            hasProjects: true, hasApps: true, hasSkills: true
+        )
+        #expect(newChat.project && newChat.apps && newChat.skills)
+
+        // A media model's line keeps Project only, so Apps and Skills stay in `+`.
+        var media = newChat
+        media.hasMediaLine = true
+        #expect(media.project)
+        #expect(!media.apps && !media.skills)
+
+        // A thread's tray holds the folder alone: `+` keeps all three.
+        var thread = newChat
+        thread.isNewChat = false
+        #expect(!thread.project && !thread.apps && !thread.skills)
+
+        // Steering or dictating hides the tray: `+` keeps all three.
+        var hidden = newChat
+        hidden.showsTray = false
+        #expect(!hidden.project && !hidden.apps && !hidden.skills)
+
+        // A project overview's composer has no Project control in its tray.
+        var filed = newChat
+        filed.hasProjects = false
+        #expect(!filed.project && filed.apps)
+    }
+
+    /// The tray's lists: "No project" first, starred then recent newest
+    /// first, "New project…" under them; skills grouped Yours then
+    /// Installed; apps say how they are connected and go quiet at five.
+    @Test
+    @MainActor
+    func theTrayListsGroupAndWordTheirRows() {
+        let now = Date(timeIntervalSince1970: 1_791_000_000)
+        let projects = NativeComposerTrayProjects(
+            items: [
+                .init(id: "old", name: "Old", updatedAt: now.addingTimeInterval(-9 * 86_400)),
+                .init(id: "new", name: "New", updatedAt: now.addingTimeInterval(-3_600)),
+                .init(id: "star", name: "Star", updatedAt: now.addingTimeInterval(-30 * 86_400), starred: true, parentName: "Work"),
+            ],
+            selectedID: "new", select: { _ in }, create: {}
+        )
+        #expect(NativeComposerTrayPickers.edited(now.addingTimeInterval(-10), now: now) == "Edited just now")
+        #expect(NativeComposerTrayPickers.edited(now.addingTimeInterval(-2 * 86_400), now: now) == "Edited 2 days ago")
+        let projectList = NativeComposerTrayPickers.projects(projects, now: now, close: {})
+        #expect(projectList.pinnedIDs == ["none"])
+        #expect(projectList.sectionTitles == ["Starred", "Recent"])
+        #expect(projectList.rowIDs == ["none", "star", "new", "old"])
+        #expect(projectList.subtitle(of: "star")?.hasPrefix("In Work \u{00B7} edited ") == true)
+        #expect(projectList.actionTitles == ["New project…"])
+
+        let skills = NativeComposerTraySkills(
+            items: [
+                .init(slug: "pdf", name: "PDF", description: "Reads PDFs.", origin: .installed, source: "anthropics/skills"),
+                .init(slug: "brief", name: "Brief", description: ""),
+            ],
+            armed: "pdf", arm: { _ in }, browse: {}
+        )
+        let skillList = NativeComposerTrayPickers.skills(skills, close: {})
+        #expect(skillList.sectionTitles == ["Yours", "Installed"])
+        #expect(skillList.rowIDs == ["none", "brief", "pdf"])
+        #expect(skillList.subtitle(of: "brief") == "/brief")
+        #expect(skillList.actionTitles == ["Manage skills…"])
+
+        let connectors = (1...6).map {
+            NativeConnector(id: "app\($0)", source: .native, kind: "oauth_app", label: "App \($0)", detail: "", connected: true,
+                            accountLabel: $0 == 1 ? "liam" : nil)
+        }
+        let full = NativeComposerTrayPickers.apps(
+            NativeComposerTrayApps(connectors: connectors, enabled: ["app1", "app2", "app3", "app4", "app5"], toggle: { _ in }, manage: {}, limit: 5),
+            close: {}
+        )
+        #expect(full.subtitle(of: "app1") == "Connected as liam")
+        #expect(full.subtitle(of: "app2") == "Connected")
+        #expect(full.isEnabled("app6") == false)
+        #expect(full.actionTitles == ["Connect more…"])
+    }
 }

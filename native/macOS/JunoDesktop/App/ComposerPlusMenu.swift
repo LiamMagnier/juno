@@ -65,6 +65,27 @@ struct ComposerPlusMenuModel {
     static let connectorLimit = 5
 }
 
+/// Which of `+`'s Project, Apps and Skills rows the composer tray already
+/// carries (owner, Oct 10: "from the plus button remove skills and app since
+/// it's already in the bottom of the composer. Same for add to a project").
+///
+/// The tray draws Project · Apps · Skills on a new chat's chat line, and
+/// Project alone beside a media model's choices. In a thread the tray holds
+/// only the folder control (and a media model's choices), and while steering
+/// or dictating it steps aside, so there `+` keeps the rows.
+struct ComposerTrayCoverage: Equatable {
+    var showsTray: Bool
+    var isNewChat: Bool
+    var hasMediaLine: Bool
+    var hasProjects: Bool
+    var hasApps: Bool
+    var hasSkills: Bool
+
+    var project: Bool { showsTray && isNewChat && hasProjects }
+    var apps: Bool { showsTray && isNewChat && !hasMediaLine && hasApps }
+    var skills: Bool { showsTray && isNewChat && !hasMediaLine && hasSkills }
+}
+
 /// The composer's `+` menu (§5.4): a native `Menu`, three groups separated by
 /// dividers, no headings, Title Case in the web's words. The rows' words and
 /// marks are the shell contract's (`JunoShellPlusRow`, from `composer.tsx`),
