@@ -37,7 +37,46 @@ Branch `polish/ios-library-projects` (from origin/main e3c6f6b6d). Not pushed, n
 - `npm run native:design:check`: all 9 gates hold. sficons is 0, spacing holds, and targets is back to 169
   after adding `.contentShape` to the new controls.
 
-## State at pause (2026-10-10, ~14:50, coordinator PAUSE for memory pressure)
+## Resumed and finished (2026-10-10, afternoon)
+
+Polish after reviewing the screenshots:
+- Document previews are cropped to their first lines, not their middle.
+- A tile never grows past 4:3.
+- Cover orbits are drawn as true dotted circles; quantising them to the grid made them read as rounded squares.
+- Section capsules (New folder, Add file, Edit) use the regular size.
+- Primary capsules use `junoOnAccent` for the label. The accent is light in dark mode, so the old white label was unreadable.
+- QuickLook titles a file by its real name, not a temporary UUID.
+- The preview harness resets Grid or List on each launch, so one capture's view does not carry into the next.
+
+Screenshots, all in `.claude/handoff/ios-library-projects/`:
+- `before/`: iPhone Library and Projects (light and dark), project page, folder page (light); iPad Library, Projects and project page (light).
+  Both iPhone page shots are blank: under that load the old build never drew its project or folder page before the
+  capture. The new build loaded fine under the same harness.
+- `after/`: iPhone and iPad, each in light and dark, with 12 screens per set:
+  - Library: grid, list, Images filter, QuickLook preview, Recently deleted, empty.
+  - Projects: grid (showcase), grid (folder world), empty.
+  - Pages: project page, folder page with breadcrumbs, project page with nothing in it.
+
+Tests:
+- iOS unit tests (`-only-testing:JunoMobileTests`): 100 executed, 3 skipped, 0 failed.
+- `JunoMobileWorkspaceScreensUITests`: 6 of 6 pass, including the new Library Grid→List test and the folder-breadcrumbs test.
+- JunoNativeKit (`npm run native:test JunoNativeKit`):
+  - It now compiles. `NativeProjectFoldersTests` hit a `-warnings-as-errors` failure on `XCTUnwrapAsync(await …)` at
+    lines 136, 147 and 171. That file is unchanged from origin/main on this branch, so main is broken the same way. The trivial fix is
+    to await first and unwrap after.
+  - It runs with 12 failures, all in `JunoDesignSystemTests`, which is a target this branch does not touch: Accent, DesignTokens ×5,
+    Foundations segmented track, TokenConsumption ×2, TypeLadder ×3. The brief allowed 11 known failures. The 12th
+    is in this same untouched target. Before this fix, the package's tests did not compile at all, so there is no earlier count to compare against.
+- `npm run native:design:check`: all 9 gates hold.
+- The Mac app builds.
+
+Left open:
+- QuickLook draws a blank thumbnail for the fixture CSV on the simulator, so that tile is an empty grey card.
+  PDFs and images are fine.
+- In an empty Library, Upload appears twice: in the header (primary) and in the empty state (secondary).
+  The Mac hides the header copy in this case. Consider doing the same.
+
+## Earlier: state at pause (2026-10-10, ~14:50, coordinator PAUSE for memory pressure)
 
 - All code is committed. Both simulators I created (LibProj iPhone E70C2D4A…, LibProj iPad 177C73D5…) are shut down.
 - **No "after" screenshots yet.** CoreSimulator was very slow while other agents were building:
