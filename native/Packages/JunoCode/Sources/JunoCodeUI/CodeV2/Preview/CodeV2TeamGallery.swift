@@ -17,8 +17,8 @@ public enum CodeV2TeamGallery {
         public var size: CGSize {
             switch self {
             case .chipSolo, .chipTeam: CGSize(width: 760, height: 150)
-            case .editor: CGSize(width: 500, height: 400)
-            case .editorBestOfN: CGSize(width: 500, height: 330)
+            case .editor: CGSize(width: 540, height: 400)
+            case .editorBestOfN: CGSize(width: 540, height: 330)
             case .windowEditor, .windowRunning: CGSize(width: 1280, height: 800)
             }
         }

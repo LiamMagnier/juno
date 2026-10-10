@@ -13,7 +13,7 @@ struct CodeV2TeamEditor: View {
     /// The composer's model: the lead, who runs the phases and writes the summary.
     let lead: CodeV2.ModelSelection
 
-    static let width: CGFloat = 440
+    static let width: CGFloat = 480
 
     private var preset: Binding<CodeV2Team.Preset> {
         Binding(get: { draft.teamPreset }, set: { choice in
@@ -227,7 +227,8 @@ struct CodeV2TeamRoleRow: View {
                         Text(CodeV2Team.phaseTitle(phase)).studioType(.small).foregroundStyle(Studio.Ink.tertiary)
                     }
                 }
-                Text(role.duty).studioType(.small).foregroundStyle(Studio.Ink.secondary).lineLimit(1)
+                Text(role.duty).studioType(.small).foregroundStyle(Studio.Ink.secondary).lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .layoutPriority(1)
             Spacer(minLength: JunoSpace.tight)
