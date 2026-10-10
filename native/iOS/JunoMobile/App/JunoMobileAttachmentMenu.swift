@@ -78,14 +78,6 @@ struct JunoMobileComposerActions: View {
     /// Seeds the draft with an artifact request, as the web's `startCanvas` does.
     var startCanvas: (() -> Void)?
     let openPlugins: () -> Void
-    /// Opens Orbit — the agents. Nil hides the row.
-    var openOrbit: (() -> Void)? = nil
-    /// The selected model's name, for the menu's Model row.
-    var modelName: String = ""
-    /// Opens the model picker. Nil hides the row (the voice menu has none).
-    var chooseModel: (() -> Void)? = nil
-    /// The selected model's thinking ladder, for the Flash and Pro switches.
-    var thinkingScale: NativeThinkingScale? = nil
 
     /// Whether the panel is open. Owned by the composer, which draws the
     /// panel itself — above its card, in the same glass container — so the
@@ -96,6 +88,9 @@ struct JunoMobileComposerActions: View {
     var rendersPanel = false
     @State private var pickHaptic = JunoMobileHapticTrigger()
     @State private var openHaptic = JunoMobileHapticTrigger()
+    /// Flipped on the panel's first frame, so its rows arrive just behind
+    /// the glass blooming out of the "+".
+    @State private var rowsIn = false
 
     private var presented: Bool {
         get { isPresented.wrappedValue }
@@ -117,7 +112,11 @@ struct JunoMobileComposerActions: View {
         } else {
             Button {
                 openHaptic.fire()
-                withAnimation(JunoMotion.reduced(JunoMotion.chatControl, when: reduceMotion)) {
+                withAnimation(
+                    presented
+                        ? JunoMotion.panelClose(reduceMotion: reduceMotion)
+                        : JunoMotion.panelOpen(reduceMotion: reduceMotion)
+                ) {
                     presented.toggle()
                 }
             } label: {
@@ -135,18 +134,30 @@ struct JunoMobileComposerActions: View {
         }
     }
 
-    /// The popover's rows. Plain rows — glyph, label, a check when a tool is
-    /// on — at ChatGPT's size, with the rarer choices one level down in a
-    /// native menu so the first screen stays short.
+    /// The panel's rows, in the web composer's order (`composer.tsx`'s
+    /// `plusSections`): what to add, then how this message is answered, then
+    /// where it can reach. Plain rows — glyph, label, a check when a tool is
+    /// on — at ChatGPT's size, with the rarer choices one level down under
+    /// More so the first screen stays short.
+    ///
+    /// Not here any more (owner, Oct 10): the model, which is chosen from the
+    /// Thinking panel the dial opens, as on the Mac and the web; Flash and
+    /// Pro, which live on that panel beside the effort they modify; and
+    /// Orbit, which is a destination in the drawer, not something a message
+    /// carries.
     private var panel: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Camera and Photos leave the panel to the composer, which morphs
             // its glass into the viewfinder or the grid.
             row("attachments.camera", icon: .camera, enabled: canAttach, closes: false) { open(.camera) }
+                .junoMobileBloomRow(0, shown: rowsIn)
             row("attachments.photos", icon: .photos, enabled: canAttach, closes: false) { open(.photos) }
+                .junoMobileBloomRow(1, shown: rowsIn)
             row("attachments.files", icon: .attach, enabled: canAttach) { open(.files) }
+                .junoMobileBloomRow(2, shown: rowsIn)
             if let openLibrary {
                 row("attachments.library", icon: .library, enabled: canAttach, action: openLibrary)
+                    .junoMobileBloomRow(3, shown: rowsIn)
             }
 
             groupGap
@@ -154,34 +165,34 @@ struct JunoMobileComposerActions: View {
             row("composer.deep-research", icon: .research, checked: tools.deepResearch) {
                 tools.deepResearch.toggle()
             }
+            .junoMobileBloomRow(4, shown: rowsIn)
             if modelSupportsWebSearch {
                 row("composer.web-search", icon: .web, checked: tools.webSearch) {
                     tools.webSearch.toggle()
                 }
-            }
-            if connectors.isEmpty {
-                row("Apps", icon: .connections, enabled: canOpenPlugins, action: openPlugins)
-            } else {
-                menuRow(connectorLabel, icon: .connections) { connectorRows }
-            }
-            if let openOrbit {
-                row("Orbit", icon: .agents, action: openOrbit)
+                .junoMobileBloomRow(5, shown: rowsIn)
             }
 
             groupGap
 
-            if let chooseModel {
-                row("Model", icon: .models, detail: JunoMobileModelControl.shortName(modelName), action: chooseModel)
-                    .accessibilityIdentifier("juno.mobile.composer-model")
+            Group {
+                if connectors.isEmpty {
+                    row("Apps", icon: .connections, enabled: canOpenPlugins, action: openPlugins)
+                } else {
+                    menuRow(connectorLabel, icon: .connections) { connectorRows }
+                }
             }
+            .junoMobileBloomRow(6, shown: rowsIn)
             menuRow(String(localized: "More"), icon: .ellipsis) { moreRows }
                 .accessibilityIdentifier("juno.mobile.composer-tools")
+                .junoMobileBloomRow(7, shown: rowsIn)
         }
         .padding(.vertical, JunoSpace.close)
-        .frame(width: 264)
-        // Real Liquid Glass, the system's own material: no fill under it and
-        // no shadow of ours — what is behind shows through, as in ChatGPT.
-        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 30, style: .continuous))
+        .frame(width: JunoMobileComposerPanelMetrics.plusWidth)
+        // Real Liquid Glass, the system's own material, laid on by the
+        // composer inside the card's glass container (`junoMobilePanelGlass`):
+        // no fill under it and no shadow of ours.
+        .onAppear { rowsIn = true }
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isModal)
         .accessibilityIdentifier("juno.mobile.plus-panel")
@@ -206,7 +217,7 @@ struct JunoMobileComposerActions: View {
             // A toggle stays open so a second tool can be armed; anything
             // that goes somewhere closes the popover first.
             if checked == nil, closes {
-                withAnimation(JunoMotion.reduced(JunoMotion.chatControl, when: reduceMotion)) {
+                withAnimation(JunoMotion.panelClose(reduceMotion: reduceMotion)) {
                     presented = false
                 }
             }
@@ -296,16 +307,10 @@ struct JunoMobileComposerActions: View {
         .disabled(!canOpenPlugins)
     }
 
-    /// Flash and Pro (where the model has them), the project, and the standing
-    /// preferences — on by default and rarely touched.
+    /// The project, and the standing preferences — on by default and rarely
+    /// touched.
     @ViewBuilder
     private var moreRows: some View {
-        if thinkingScale?.fastModeRateMultiplier != nil {
-            Toggle(isOn: $tools.fastMode) { Label("Flash", image: JunoIcon.work.assetName(.regular)) }
-        }
-        if thinkingScale?.supportsProMode == true {
-            Toggle(isOn: $tools.proMode) { Label("Pro", image: JunoIcon.sparkles.assetName(.regular)) }
-        }
         if canPickProject {
             projectMenu
         }
@@ -492,9 +497,14 @@ struct JunoMobileComposerActions: View {
     /// content, so the touch target collapses to the plus glyph — 13.3pt on a
     /// control that looks 32pt.
     /// A bare "+", as ChatGPT draws it: the card's glass is the only glass.
+    ///
+    /// Open, it turns an eighth of a turn into an ×: the panel came out of
+    /// it, and this is where it goes back.
     private var plus: some View {
         JunoIconView(.plus, size: 21)
             .foregroundStyle(Color.primary)
+            .rotationEffect(.degrees(presented ? 45 : 0))
+            .animation(JunoMotion.reduced(JunoMotion.chatControl, when: reduceMotion), value: presented)
             .frame(width: 44, height: 44)
             .modifier(JunoMobileOptionalGlassID(id: "composer.plus", namespace: nil))
             .contentShape(Rectangle())
@@ -549,8 +559,13 @@ struct JunoMobileComposerActions: View {
     private func applyPreviewFlags() async {
         #if DEBUG
         if JunoComposerPreviewFlags.opensPlus {
-            try? await Task.sleep(for: .milliseconds(600))
-            presented = true
+            // `--juno-preview-plus-delay <ms>` holds the open until the
+            // screen has settled, so a screen recording catches the bloom.
+            let delay = JunoComposerPreviewFlags.value("--juno-preview-plus-delay").flatMap(Int.init) ?? 600
+            try? await Task.sleep(for: .milliseconds(delay))
+            withAnimation(JunoMotion.panelOpen(reduceMotion: reduceMotion)) {
+                presented = true
+            }
             // With a picker flag too: the "+" panel morphing into it.
             if let raw = JunoComposerPreviewFlags.opensPicker,
                let surface = JunoAttachmentSurface(rawValue: raw)

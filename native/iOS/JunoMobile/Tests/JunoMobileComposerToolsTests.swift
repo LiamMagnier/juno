@@ -207,14 +207,18 @@ final class JunoMobileThinkingProTests: XCTestCase {
         }
         let root = URL(fileURLWithPath: path, isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        let size = CGSize(width: 390, height: 190)
+        let size = CGSize(width: 390, height: 260)
         for on in [false, true] {
             for dark in [false, true] {
-                let view = JunoMobileThinkingDialSlider(
+                let view = JunoMobileThinkingPanel(
                     scale: scale(pro: true),
                     effort: .constant(.high),
+                    fastMode: .constant(on),
                     proMode: .constant(on),
-                    close: {}
+                    modelName: "GPT-5.6 Sol",
+                    providerID: "openai",
+                    providerName: "OpenAI · GPT",
+                    openModels: {}
                 )
                 .padding(JunoSpace.cozy)
                 .background(Color.junoCanvas)

@@ -518,19 +518,33 @@ final class JunoMobileComposerUITests: XCTestCase {
         XCTAssertGreaterThanOrEqual(plus.frame.height, 44, "+ hit area collapsed to the glyph")
     }
 
-    /// The model is chosen from the top of "+" since the composer lost its
-    /// model chip: the row opens the native model list.
+    /// The model is chosen from the Thinking panel, as on the Mac and the
+    /// web: the dial opens the panel, and the model's name in it opens the
+    /// catalogue. The "+" panel no longer carries a Model row.
     @MainActor
-    func testTheModelRowInPlusOpensTheModelList() {
+    func testTheThinkingPanelsModelNameOpensTheModelList() {
+        let app = launch(["--juno-preview-model", "openai:gpt-5-6"])
+
+        let chip = thinkingChip(app)
+        require(chip, app)
+        chip.tap()
+        let models = app.descendants(matching: .any)["juno.mobile.thinking-models"].firstMatch
+        require(models, app, timeout: 5)
+        models.tap()
+        require(app.descendants(matching: .any)["juno.mobile.model-list"].firstMatch, app, timeout: 5)
+    }
+
+    /// "+" carries what a message can take and the tools it can use — not the
+    /// model, which lives on the Thinking panel.
+    @MainActor
+    func testThePlusPanelHasNoModelRow() {
         let app = launch([])
 
         let plus = app.buttons["juno.mobile.chat-plus"]
         require(plus, app)
         plus.tap()
-        let model = app.descendants(matching: .any)["juno.mobile.composer-model"].firstMatch
-        require(model, app, timeout: 5)
-        model.tap()
-        require(app.descendants(matching: .any)["juno.mobile.model-list"].firstMatch, app, timeout: 5)
+        require(app.descendants(matching: .any)["juno.mobile.plus-panel"].firstMatch, app, timeout: 5)
+        XCTAssertFalse(app.descendants(matching: .any)["juno.mobile.composer-model"].firstMatch.exists)
     }
 
     /// The primary action owns one slot. On an empty chat that slot is the

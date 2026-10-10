@@ -1,4 +1,5 @@
 import JunoChatKit
+import JunoDesignSystem
 import XCTest
 @testable import JunoMobile
 
@@ -84,6 +85,34 @@ final class JunoMobileComposerSelectionTests: XCTestCase {
             "Anthropic"
         )
         XCTAssertEqual(JunoMobileModelSelectorView.shortProviderName("Juno"), "Juno")
+    }
+
+    /// The lab tile drops the vendor word its mark already says, and leaves a
+    /// name whose vendor *is* the name alone.
+    func testALabTileNamesTheModelInUseWithoutTheVendorWord() {
+        XCTAssertEqual(JunoMobileModelSelectorView.compactName("Claude Opus 4.8"), "Opus 4.8")
+        XCTAssertEqual(JunoMobileModelSelectorView.compactName("GPT-5.6"), "GPT-5.6")
+    }
+
+    /// The kind filter offers only the kinds the catalogue carries, in the
+    /// web's order, and never counts Auto as a kind of its own.
+    func testTheKindFilterOffersOnlyTheKindsTheCatalogueCarries() {
+        func model(_ id: String, _ provider: String, _ modality: JunoModelModality) -> JunoModelDescriptor {
+            JunoModelDescriptor(id: id, providerID: provider, providerName: provider, displayName: id, modality: modality)
+        }
+        XCTAssertEqual(
+            JunoMobileModelSelectorView.modalities(in: [
+                model("juno:auto", "juno", .chat),
+                model("google:veo", "google", .video),
+                model("openai:gpt", "openai", .chat),
+                model("openai:image", "openai", .image),
+            ]),
+            [.chat, .image, .video]
+        )
+        XCTAssertEqual(
+            JunoMobileModelSelectorView.modalities(in: [model("openai:gpt", "openai", .chat)]),
+            [.chat]
+        )
     }
     // MARK: - The account's default model
 
