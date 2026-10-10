@@ -142,7 +142,7 @@ export function ResearchRunPanel({
               />
             )}
             <SourceDeck sources={run.sources} />
-            <RunTimeline events={events} live={false} />
+            <RunTimeline events={events} live={false} workerModel={run.models?.worker?.label ?? null} />
           </div>
         }
       />

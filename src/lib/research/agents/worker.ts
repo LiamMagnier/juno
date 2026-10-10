@@ -6,6 +6,8 @@ import type { Plan } from "@prisma/client";
 import { MODEL_LIST, trainsOnPrompts, type ModelInfo } from "@/lib/models";
 import { researchLeadCandidates, type ResearchLeadCandidate } from "@/lib/research/envelope";
 import { getModelMetrics } from "@/lib/model-metrics";
+import { canUseModel } from "@/lib/plans";
+import type { ResearchWorkerNote } from "@/types/research";
 import { estimateGenerationCostUsd } from "@/lib/pricing";
 import { providerAdapterFor } from "@/lib/provider-routing";
 import { isProviderConfigured, providerApiKey, providerBaseUrl } from "@/lib/providers";
@@ -184,6 +186,92 @@ export function researchStepDownModel(opts: { plan: Plan; preferred?: string | n
   );
   const { stepDown } = researchLeadCandidates(usable.map(leadCandidate), opts);
   return stepDown ? usable.find((model) => model.id === stepDown.id) ?? null : null;
+}
+
+// ---------------------------------------------------------------------------
+// The person's own model runs the run
+// ---------------------------------------------------------------------------
+
+/**
+ * The model the person picked in the composer, when it can lead a run: in the
+ * catalogue, a configured chat model, not retired, and one their plan can use.
+ *
+ * Nothing here filters on price class, cheapness or training terms. Those
+ * filters exist for the models Juno picks on the person's behalf; a model the
+ * person chose by name is the one they asked to do the work, and quietly
+ * handing their question to a stronger or cheaper model is exactly the
+ * dishonesty this function exists to end.
+ */
+export function chosenResearchModel(id: string | null | undefined, plan?: Plan | null): ModelInfo | null {
+  if (!id) return null;
+  const model = MODEL_LIST.find((candidate) => candidate.id === id);
+  if (!model) return null;
+  if (model.modality !== "chat" || model.comingSoon || model.status === "deprecated") return null;
+  if (!isProviderConfigured(model.provider)) return null;
+  if (plan && !canUseModel(plan, model.id)) return null;
+  return model;
+}
+
+/**
+ * Why a model cannot drive the researchers' tool loop, or null when it can.
+ * The loop needs function calling, on the Anthropic SDK or on OpenAI's
+ * chat-completions surface (see the header of this file).
+ */
+export function researchToolLimit(model: ModelInfo): ResearchWorkerNote | null {
+  if (!model.agenticTools) return "no_tools";
+  if (model.api === "responses") return "responses_api";
+  return null;
+}
+
+export interface ResearchRunModelChoice {
+  /** Plans, reviews each round, writes the report and checks its citations. */
+  lead: ModelInfo | null;
+  /** Searches and reads. */
+  worker: ModelInfo | null;
+  /** Set only when the person chose the lead and the workers could not run on it. */
+  workerNote: ResearchWorkerNote | null;
+  /** The lead is the person's own pick. */
+  chosen: boolean;
+  /** One class down, for a thin month. Never offered when the person chose the lead. */
+  stepDown: ModelInfo | null;
+}
+
+/**
+ * Which models run a research run, decided once at sizing and frozen on the
+ * envelope.
+ *
+ * With a model chosen in the composer, that model does everything: the plan,
+ * every researcher, every round review, the report and the citation check.
+ * The one exception is a model that physically cannot run the researchers'
+ * tool loop (no function calling, or a Responses-only API); the researchers
+ * then run on the default worker model and the envelope records why, so the
+ * progress view can say so in so many words. There is no step-down: a thin
+ * month shrinks the run, it never swaps the person's model for another.
+ *
+ * With Auto (no choice), the strong-lead, fast-worker split this module has
+ * always made, and the views name both models.
+ */
+export function researchRunModels(opts: { plan: Plan; preferred?: string | null }): ResearchRunModelChoice {
+  const chosen = chosenResearchModel(opts.preferred, opts.plan);
+  if (chosen) {
+    const limit = researchToolLimit(chosen);
+    if (!limit) return { lead: chosen, worker: chosen, workerNote: null, chosen: true, stepDown: null };
+    return { lead: chosen, worker: researchWorkerModel(), workerNote: limit, chosen: true, stepDown: null };
+  }
+  return {
+    lead: researchLeadModel({ plan: opts.plan }),
+    worker: researchWorkerModel(),
+    workerNote: null,
+    chosen: false,
+    stepDown: researchStepDownModel({ plan: opts.plan }),
+  };
+}
+
+/** A recorded model id back to a configured model, or null when it is gone. */
+export function configuredResearchModel(id: string | null | undefined): ModelInfo | null {
+  if (!id) return null;
+  const model = MODEL_LIST.find((candidate) => candidate.id === id);
+  return model && isProviderConfigured(model.provider) ? model : null;
 }
 
 function leadCandidate(model: ModelInfo): ResearchLeadCandidate {
@@ -491,7 +579,10 @@ function compatAdapter(model: ModelInfo, system: string, user: string): Adapter 
  * whatever it had already noted through the tools.
  */
 export async function runResearchWorker(input: RunWorkerInput): Promise<WorkerResult> {
-  const model = researchWorkerModel();
+  // The run's own researcher model when it is still configured; the default
+  // worker only for runs sized before the envelope recorded one.
+  const pinned = configuredResearchModel(input.workerModelId);
+  const model = pinned && !researchToolLimit(pinned) ? pinned : researchWorkerModel();
   const empty = (reason: WorkerFinishReason): WorkerResult => ({
     summary: "",
     openQuestions: [],

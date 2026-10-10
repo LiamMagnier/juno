@@ -61,10 +61,58 @@ export interface ResearchEnvelope {
   judgeCalls: number;
   /** Model id of the lead: the planner and the writer (§9.5.1). */
   leadModel: string;
+  /**
+   * Model id the researchers (search and read) run on. Absent on runs sized
+   * before it was recorded, whose worker is unknown and is shown as nothing.
+   */
+  workerModel?: string;
+  /**
+   * Why the researchers run on a different model than the lead the person
+   * chose: it has no tool calling, or its API cannot drive the search loop.
+   * Absent when they share the lead's model, or the person chose none.
+   */
+  workerNote?: ResearchWorkerNote;
+  /** True when the lead is the model the person picked in the composer. */
+  chosen?: boolean;
+  /** Per-token rates of the run's own models, for the engine's reservations. */
+  rates?: { lead: ResearchModelRatesLite; worker: ResearchModelRatesLite };
   limitedBy: "scope" | "plan" | "month" | "window";
   estimate: ResearchEstimate;
   /** What the client needs to recompute the estimate. */
   caps: ResearchEstimateCaps;
+}
+
+/** Why the researchers run on a model other than the chosen lead. */
+export type ResearchWorkerNote = "no_tools" | "responses_api";
+
+/** Micro-USD per token, as `ResearchModelRates` in the engine. */
+export interface ResearchModelRatesLite {
+  inputMicroUsdPerToken: number;
+  outputMicroUsdPerToken: number;
+}
+
+/** One model as the views show it: its id and its catalogue name. */
+export interface ResearchModelLabel {
+  id: string;
+  label: string;
+}
+
+/**
+ * Which models did the work, as recorded on the run (never guessed). Absent
+ * on runs from before it was recorded: those show no model at all rather
+ * than a name that may not be the truth.
+ */
+export interface ResearchRunModels {
+  /** Planned, reviewed and (unless `writer` says otherwise) wrote. */
+  lead: ResearchModelLabel;
+  /** Searched and read. */
+  worker: ResearchModelLabel | null;
+  /** Set when `worker` differs from a chosen `lead`, with the reason. */
+  workerNote: ResearchWorkerNote | null;
+  /** The model that wrote the report; null until written, or for an evidence digest. */
+  writer: ResearchModelLabel | null;
+  /** The lead is the model the person picked. */
+  chosen: boolean;
 }
 
 /**
@@ -161,7 +209,13 @@ export interface ResearchRunViewAdditions {
   /** Excludes gates and paused time. */
   workingMs?: number;
   assistantMessageId?: string | null;
+  /**
+   * The model that wrote the report, for "Written by". Null when it is not
+   * recorded (runs from before models were recorded, an evidence digest).
+   */
   leadModel?: { id: string; label: string } | null;
+  /** Every model the run used, recorded per stage. Null on older runs. */
+  models?: ResearchRunModels | null;
   /** ≤ 5, newest first. */
   latestFindings?: ResearchFinding[];
   /** One per question with evidence, in the plan's order; live runs only. */

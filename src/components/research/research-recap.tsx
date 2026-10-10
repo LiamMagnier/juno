@@ -4,7 +4,9 @@ import * as React from "react";
 import { ArrowRight, ArrowUpRight, ChevronDown, RotateCcw, ShieldCheck } from "@/components/ui/icons";
 import { ActionIcons } from "@/lib/app-icons";
 import { auditHeadline } from "@/components/chat/citation-audit";
-import { formatMicroUsd, runDuration } from "@/components/research/run-format";
+import { completedDuration, formatMicroUsd } from "@/components/research/run-format";
+import { headerModelLabel, modelsLine } from "@/components/research/research-view";
+import { PhraseWithArgs } from "@/lib/i18n-phrase";
 import { reportTitleOf } from "@/components/research/report-structure";
 import { Button } from "@/components/ui/button";
 import { Collapse } from "@/components/ui/collapse";
@@ -79,7 +81,10 @@ export function ResearchRecap({
   const [seeded, setSeeded] = React.useState<string | null>(null);
   const state: ResearchState = isResearchState(run.state) ? run.state : "failed";
   const model = React.useMemo(() => researchWorkspace(run, []), [run]);
-  const elapsed = runDuration(run.createdAt ?? "", run.finishedAt ?? null);
+  // Worked time (gate, pauses and idle stretches left out), never wall clock.
+  const elapsed = completedDuration(run);
+  const modelName = headerModelLabel(run.models);
+  const models = modelsLine(run.models, true);
   const title = (run.report ? reportTitleOf(run.report) : null) ?? run.title ?? run.goal;
   const subtitle = title.trim() !== run.goal.trim() ? run.goal : null;
   const audit = run.auditSummary;
@@ -104,7 +109,8 @@ export function ResearchRecap({
             <span aria-hidden>·</span>
             <span className="rf-verdict" data-tone={tone}>{verdict}</span>
           </span>
-          <span className="flex shrink-0 items-center gap-3 tabular-nums">
+          <span className="flex min-w-0 shrink-0 items-center gap-3 tabular-nums">
+            {modelName && <span translate="no" className="max-w-[14rem] truncate" title={modelName}>{modelName}</span>}
             {elapsed && <span>{elapsed}</span>}
             <span>{formatMicroUsd(run.costMicroUsd)}</span>
             {onDismiss && (
@@ -122,6 +128,7 @@ export function ResearchRecap({
         </div>
         <h3 lang={run.language ?? undefined} className="rf-title mt-3">{title}</h3>
         {subtitle && <p lang={run.language ?? undefined} className="mt-2 max-w-[38rem] text-pretty text-ui text-muted-foreground">{subtitle}</p>}
+        {models && <PhraseWithArgs spec={models} className="rf-annot rf-models mt-3 block" />}
       </header>
 
       {run.sources.length > 0 && (

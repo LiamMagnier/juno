@@ -294,8 +294,61 @@ a.rf-label:hover { color: hsl(var(--foreground)); }
   letter-spacing: -0.016em;
 }
 .research-document h3 { font-size: 26px; }
-.research-document :is(h4, h5) { font-size: 22px; }
-.research-document-reader h3:first-child { font-size: clamp(30px, 4vw, 40px); line-height: 1.15; }
+.research-document :is(h4, h5) { font-size: 21px; line-height: 1.3; }
+
+/*
+ * The report's rhythm and its edges (report-document.tsx, report-fullscreen.tsx).
+ *
+ * The document is rendered as many small Markdown blocks (one per cited
+ * group, so each can carry its support mark), which is why the spacing lives
+ * here rather than in `.prose-juno`: the prose's own `> * + *` margins never
+ * reach across two blocks, and the gaps between them were a flat 12 px, so
+ * headings, paragraphs and lists all read as one compacted run.
+ *
+ * Long tokens (URLs, identifiers, an unbroken run of maths) wrap or scroll in
+ * their own box; nothing may widen the column over the sources rail.
+ */
+.research-document {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+/* The article sets the measure (70ch); the prose's own 75ch cap would fight it. */
+.research-document .prose-juno { max-inline-size: none; }
+.research-document-reader .prose-juno { font-size: 1.0625rem; line-height: 1.75; }
+
+/* Sections, then the groups inside them. */
+.research-document .report-section + .report-section { margin-top: 3.5rem; }
+.research-document .report-group + .report-group { margin-top: 1.25rem; }
+/* A heading sits close to what it introduces, and far from what came before. */
+.research-document .report-group:has(> .prose-juno > :is(h3, h4, h5):last-child) + .report-group { margin-top: 0.75rem; }
+.research-document .prose-juno.prose-juno > :is(h3, h4, h5) + * { margin-top: 0.75rem; }
+.research-document .prose-juno.prose-juno > :is(h4, h5):not(:first-child) { margin-top: 2rem; }
+.research-document .report-section > .report-group:not(:first-child) > .prose-juno > :is(h4, h5):first-child { margin-top: 1rem; }
+
+/* Lists breathe: one item is one claim with its sources. */
+.research-document .prose-juno :is(ul, ol) { padding-left: 1.35em; }
+.research-document .prose-juno li { margin-block: 0.6em; padding-left: 0.2em; }
+.research-document .prose-juno li > p + p { margin-top: 0.5em; }
+
+/* Code, display maths and tables scroll inside their own box, never over a rail. */
+.research-document .prose-juno pre,
+.research-document .prose-juno .aicss-cb { max-width: 100%; overflow-x: auto; }
+.research-document .prose-juno pre code { white-space: pre; overflow-wrap: normal; word-break: normal; }
+.research-document .katex-display { max-width: 100%; overflow-x: auto; overflow-y: hidden; padding-block: 0.35em; }
+.research-document .katex { overflow-wrap: normal; }
+.research-document .prose-juno :is(th, td) { overflow-wrap: break-word; }
+.research-document .prose-juno table { min-width: 34rem; }
+.research-document .prose-juno td:first-child { min-width: 9rem; }
+.research-document .prose-juno code:not(pre code) { overflow-wrap: anywhere; }
+
+/* A support mark belongs to the group above it. */
+.research-document .report-group > .prose-juno + p { margin-top: 0.4rem; }
+
+/*
+ * The reader's rails: sticky in the scroller, scrolling on their own, and
+ * never taller than the window under the reader's header.
+ */
+.report-rail { max-height: calc(100dvh - 3.5rem - 4rem); scrollbar-width: thin; }
 
 /* The dev gallery's reduced-motion switch, honoured like the system setting. */
 [data-motion="reduce"] :is(.rf-rise, .rf-point, .rf-label, .rf-finding, .rf-known-row, .rf-recovery, .rf-next-arrow, .rf-view-enter, .rf-mark, .rf-tabs button::after) { animation: none; transition: none; }

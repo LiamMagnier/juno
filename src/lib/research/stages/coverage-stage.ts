@@ -181,6 +181,7 @@ export function createCoverageStage(ctx: EngineContext, stages: Pick<ReturnType<
             // seed list it was told about last round.
             alreadyIssued: [...nextPlan.queries, ...(plan.issuedQueries ?? []), ...(plan.workerQueries ?? [])],
             limit: availableSlots,
+            modelId: plan.envelope?.leadModel || plan.preferredLead || null,
             signal,
           }),
         heartbeat

@@ -3243,6 +3243,10 @@
   .prose-juno th, .prose-juno td { word-break: normal; }
   /* Display math can be arbitrarily wide (long equations); scroll it in place. */
   .prose-juno .katex-display { overflow-x: auto; overflow-y: hidden; padding-bottom: 2px; }
+  /* A run of citation chips stays on the line of the word it cites
+     (markdown.tsx `glueCitations`): no "today" at a line's end with its
+     chips alone on the next, and no run split between two lines. */
+  .prose-juno .cite-glue { white-space: nowrap; }
   .prose-juno hr { border: none; border-top: 1px solid hsl(var(--border)); }
   .prose-juno.prose-juno > hr { margin-block: 1.75em; }
 

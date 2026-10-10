@@ -406,3 +406,45 @@ export function stoppedEarlyReason(events: readonly Pick<ResearchEventDTO, "kind
   }
   return null;
 }
+
+// ── Which models did the work ────────────────────────────────────────────────
+
+/**
+ * The models line, beside the spend and under the report title: only what the
+ * run recorded, so a run from before models were recorded says nothing.
+ *
+ *   chosen, all stages   "Running on Claude Opus 4.5"
+ *   chosen, no tools     "Running on GPT-5 Pro · Search by Claude Haiku 4.5 · GPT-5 Pro has no tool calling"
+ *   Auto, two models     "Led by Claude Opus 4.5 · Researchers on Claude Haiku 4.5"
+ *
+ * The writer is named only when it is not the lead (a chat that streamed the
+ * report through its own model).
+ */
+export function modelsLine(models: ResearchRunView["models"], done: boolean): PhraseLine | null {
+  if (!models) return null;
+  const M = RESEARCH_COPY.models;
+  const label = (value: string) => ({ kind: "label" as const, value });
+  const line: PhraseSpec[] = [];
+  const worker = models.worker;
+  if (!worker || worker.id === models.lead.id || models.chosen) {
+    line.push({ parts: [{ phrase: done ? M.ranOn : M.runningOn }, label(models.lead.label)] });
+    if (worker && worker.id !== models.lead.id) {
+      line.push({ parts: [{ phrase: M.searchBy }, label(worker.label)] });
+      if (models.workerNote) {
+        line.push({ parts: [label(models.lead.label), { phrase: models.workerNote === "no_tools" ? M.noTools : M.noLoop }] });
+      }
+    }
+  } else {
+    line.push({ parts: [{ phrase: M.ledBy }, label(models.lead.label)] });
+    line.push({ parts: [{ phrase: M.researchersOn }, label(worker.label)] });
+  }
+  if (models.writer && models.writer.id !== models.lead.id) {
+    line.push({ parts: [{ phrase: RESEARCH_COPY.report.writtenBy }, label(models.writer.label)] });
+  }
+  return line;
+}
+
+/** The one model name beside the spend: the run's lead, or nothing when unrecorded. */
+export function headerModelLabel(models: ResearchRunView["models"]): string | null {
+  return models?.lead.label ?? null;
+}

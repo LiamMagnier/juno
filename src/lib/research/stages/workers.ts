@@ -607,8 +607,12 @@ export function createWorkerStage(ctx: EngineContext) {
        * could overshoot its ceiling by a full round of worker calls. Without
        * rates (the tests) the vendor fees are the floor.
        */
-      const perWorkerEstimate = deps.modelRates?.worker
-        ? workerEstimateMicroUsd(budget, deps.modelRates.worker)
+      // The run's own researcher rates when its envelope recorded them: a
+      // run on the person's chosen model is priced at that model, not at the
+      // default worker's.
+      const workerRates = plan.envelope?.rates?.worker ?? deps.modelRates?.worker;
+      const perWorkerEstimate = workerRates
+        ? workerEstimateMicroUsd(budget, workerRates)
         : budget.toolCallsPerWorker * Math.max(SEARCH_FEE_MICRO_USD, PAGE_FETCH_FEE_MICRO_USD) * VENDOR_ESTIMATE_MARGIN;
       // B8: the round is priced with the writer's and the audit's reservation
       // held back, so investigation can never starve the report.
@@ -670,6 +674,7 @@ export function createWorkerStage(ctx: EngineContext) {
             );
             return deps.runWorker!({
               userId: current.userId,
+              ...(plan.envelope?.workerModel ? { workerModelId: plan.envelope.workerModel } : {}),
               brief: {
                 delegation,
                 round,
@@ -873,9 +878,14 @@ export function createWorkerStage(ctx: EngineContext) {
           })),
           findings: shown.map((finding, i) => ({ index: i + 1, objectiveId: finding.objectiveId, claim: finding.claim, quote: finding.quote, url: finding.url })),
           issued: [...issuedSoFar, ...leads.map((lead) => lead.query)],
+          ...(latestPlan.envelope?.workerModel ? { modelId: latestPlan.envelope.workerModel } : {}),
           signal,
         };
-        const estimate = modelCallEstimateMicroUsd(AUDIT_ASSIST_PROMPT_CHARS + AUDIT_ASSIST_SYSTEM.length, AUDIT_ASSIST_OUTPUT_TOKENS, deps.modelRates?.worker);
+        const estimate = modelCallEstimateMicroUsd(
+          AUDIT_ASSIST_PROMPT_CHARS + AUDIT_ASSIST_SYSTEM.length,
+          AUDIT_ASSIST_OUTPUT_TOKENS,
+          latestPlan.envelope?.rates?.worker ?? deps.modelRates?.worker
+        );
         if (shouldAssist(assistInput) && (await affordableCount(current, estimate, 1, writerReserve(latestPlan))) > 0) {
           try {
             const answer = await beat(() => deps.auditAssist!(assistInput), heartbeat);
@@ -971,8 +981,8 @@ export function createWorkerStage(ctx: EngineContext) {
         ...(latestPlan.envelope?.leadModel ? { leadModelId: latestPlan.envelope.leadModel } : {}),
         signal,
       };
-      const leadAffordable =
-        !deps.modelRates?.lead || (await affordable(current, reviewEstimateMicroUsd(deps.modelRates.lead)));
+      const leadRates = latestPlan.envelope?.rates?.lead ?? deps.modelRates?.lead;
+      const leadAffordable = !leadRates || (await affordable(current, reviewEstimateMicroUsd(leadRates)));
       let review: ReviewRoundOutput;
       try {
         review =

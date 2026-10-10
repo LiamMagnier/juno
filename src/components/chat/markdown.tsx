@@ -5,6 +5,7 @@ import nextDynamic from "next/dynamic";
 import ReactMarkdown, { type Components, type Options } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
+import { protectCurrency, remarkRestoreCurrency } from "@/components/chat/markdown-currency";
 import { useContentPlugins } from "@/components/chat/markdown-plugins";
 import { AicssCodeBlock, CodeCopyButton, splitHighlightedLines } from "@/components/aicss/code-block";
 import { FileDiff, parseUnifiedDiff } from "@/components/aicss/file-diff";
@@ -458,6 +459,51 @@ function splitCitations(value: string, sourceCount: number): MdNode[] | null {
   }
   if (out.length === 0) return null;
   if (last < value.length) out.push({ type: "text", value: value.slice(last) });
+  return glueCitations(out);
+}
+
+/** The class that keeps a citation run on the line of the word it cites. */
+export const CITE_GLUE_CLASS = "cite-glue";
+
+/**
+ * Keeps each run of chips with the word before it.
+ *
+ * A chip is an inline box, and a line may break before one, between two, or
+ * after the word they cite, so "today [1][2][3]" used to wrap as "today [1]"
+ * over "[2][3]", or leave "today" at the end of a line with its chips alone
+ * at the start of the next. Each run of adjacent chips is wrapped, with the
+ * last word before it, in a no-wrap span. The text is unchanged (the space
+ * stays a space), so a block read back for the citation audit says exactly
+ * what it said before.
+ */
+function glueCitations(nodes: MdNode[]): MdNode[] {
+  const out: MdNode[] = [];
+  for (let i = 0; i < nodes.length; ) {
+    if (nodes[i].type !== "junoCitation") {
+      out.push(nodes[i]);
+      i++;
+      continue;
+    }
+    const run: MdNode[] = [];
+    while (i < nodes.length && nodes[i].type === "junoCitation") run.push(nodes[i++]);
+    const before = out[out.length - 1];
+    const lead: MdNode[] = [];
+    if (before?.type === "text" && typeof before.value === "string") {
+      // Only an ordinary word: gluing a 90-character identifier to its chips
+      // would make one unbreakable run wider than the column.
+      const word = before.value.match(/\S{1,24}\s*$/);
+      if (word && word.index !== undefined && (word.index === 0 || /\s/.test(before.value[word.index - 1]))) {
+        before.value = before.value.slice(0, word.index);
+        if (!before.value) out.pop();
+        lead.push({ type: "text", value: word[0] });
+      }
+    }
+    out.push({
+      type: "junoCitationGroup",
+      data: { hName: "span", hProperties: { className: CITE_GLUE_CLASS } },
+      children: [...lead, ...run],
+    });
+  }
   return out;
 }
 
@@ -502,7 +548,9 @@ function remarkCitations(sourceCount: number) {
   };
 }
 
-const REMARK_PLUGINS = [remarkGfm, remarkMath, remarkFenceFilename] satisfies Options["remarkPlugins"];
+// `remarkRestoreCurrency` gives back the dollars `protectCurrency` hid from
+// remark-math (see markdown-currency.ts): prices are prose, not formulas.
+const REMARK_PLUGINS = [remarkGfm, remarkMath, remarkRestoreCurrency, remarkFenceFilename] satisfies Options["remarkPlugins"];
 /*
  * `rehypeHighlight` and `rehypeKatex` are NOT here.
  *
@@ -917,7 +965,7 @@ export const Markdown = React.memo(function Markdown({
   // fence, so every block starts with fence state closed exactly as the whole
   // document did.
   const blocks = React.useMemo(
-    () => splitIntoBlocks(content).map((block) => ({ ...block, text: normalizeMathDelimiters(block.text) })),
+    () => splitIntoBlocks(content).map((block) => ({ ...block, text: normalizeMathDelimiters(protectCurrency(block.text)) })),
     [content],
   );
   const imageKeys = React.useMemo(

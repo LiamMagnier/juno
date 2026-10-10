@@ -24,10 +24,22 @@ import { FEATURE_NAMES } from "@/lib/brand/names";
 
 /*
  * The full-screen reader (SPEC §9.12): a full-bleed dialog with no route of
- * its own. At 1100 px and wider, three columns — the contents (sections by
- * marker), the text at a 68ch measure, and the cited sources with the
- * citation being read highlighted; narrower, one column with the contents
- * behind a button. Esc closes it and focus goes back to what opened it.
+ * its own. From 1280 px, three columns: the contents (sections by marker),
+ * the text at a 70ch measure, and the cited sources with the citation being
+ * read highlighted. From 1024 px the contents move behind the header button
+ * and the cited rail stays; narrower, one column. Esc closes it and focus
+ * goes back to what opened it.
+ *
+ * Layout rules this file keeps (the report could not be scrolled to its end
+ * and its text ran under the sources rail):
+ *   - the dialog is a flex column, never a grid: a grid's auto row sizes to
+ *     the content, so the scroller grew as tall as the report, the dialog
+ *     clipped it and the last screen could not be reached;
+ *   - the middle column is `minmax(0, 1fr)` and the article caps at 70ch, so
+ *     nothing in it can widen the track over a rail;
+ *   - the rails are sticky inside the scroller and scroll on their own;
+ *   - the article ends with real bottom padding, so its last line clears the
+ *     window edge.
  *
  * It is also the PDF: its article is the page's `data-print-document`, the
  * global print rule prints links with their addresses, and the tab title
@@ -100,10 +112,10 @@ export function ReportFullscreen({ run, model, open, onOpenChange, printOnOpen }
           event.preventDefault();
           (event.currentTarget as HTMLElement | null)?.querySelector<HTMLElement>("[data-report-title]")?.focus({ preventScroll: true });
         }}
-        className="inset-0 left-0 top-0 h-dvh max-h-none w-screen max-w-none gap-0 overflow-hidden rounded-none p-0 [translate:none] sm:p-0 print:static print:h-auto print:overflow-visible print:shadow-none"
+        className="inset-0 left-0 top-0 flex h-dvh max-h-none w-screen max-w-none flex-col gap-0 overflow-hidden rounded-none p-0 [translate:none] sm:p-0 print:static print:block print:h-auto print:overflow-visible print:shadow-none"
       >
         <DialogTitle className="sr-only">{title}</DialogTitle>
-        <div className="flex h-full flex-col print:block">
+        <div className="flex min-h-0 flex-1 flex-col print:block">
           <header className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-border/70 px-4 print:hidden">
             <div className="flex items-center gap-3">
               <span className="rf-annot hidden whitespace-nowrap ps-1 sm:inline">
@@ -112,7 +124,7 @@ export function ReportFullscreen({ run, model, open, onOpenChange, printOnOpen }
               {toc.length >= 2 && (
                 <Popover open={tocOpen} onOpenChange={setTocOpen}>
                   <PopoverTrigger asChild>
-                    <Button variant="ghost" size="sm" className="gap-1.5 px-2.5 text-caption min-[1100px]:hidden" aria-label={contentsName}>
+                    <Button variant="ghost" size="sm" className="gap-1.5 px-2.5 text-caption xl:hidden" aria-label={contentsName}>
                       <List className="size-3.5" />
                       <Phrase text={RESEARCH_COPY.report.contents} />
                     </Button>
@@ -136,34 +148,43 @@ export function ReportFullscreen({ run, model, open, onOpenChange, printOnOpen }
             </div>
           </header>
 
-          <div className="app-page-scroll min-h-0 flex-1 overflow-y-auto print:overflow-visible">
-            <div className="mx-auto grid max-w-[96rem] gap-8 px-5 py-8 min-[1100px]:grid-cols-[14rem_minmax(0,1fr)_18rem] print:block print:p-0">
+          <div className="app-page-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain print:overflow-visible">
+            <div
+              className={cn(
+                "report-reader-grid mx-auto grid max-w-[96rem] gap-x-10 px-5 pb-0 pt-10 sm:px-8 print:block print:p-0",
+                model.sections.cited.length > 0
+                  ? "lg:grid-cols-[minmax(0,1fr)_16rem] xl:grid-cols-[13rem_minmax(0,1fr)_17rem]"
+                  : "xl:grid-cols-[13rem_minmax(0,1fr)_17rem]",
+              )}
+            >
               {toc.length >= 2 ? (
-                <nav aria-label={contentsName} className="sticky top-0 hidden max-h-[calc(100dvh-8rem)] self-start overflow-y-auto min-[1100px]:block print:hidden">
+                <nav aria-label={contentsName} className="report-rail sticky top-8 hidden self-start overflow-y-auto overscroll-contain xl:block print:hidden">
                   <p className="rf-annot mb-3 px-2 text-foreground">
                     <Phrase text={RESEARCH_COPY.report.contents} />
                   </p>
                   <Contents toc={toc} anchorPrefix={anchorPrefix} />
                 </nav>
               ) : (
-                <span className="hidden min-[1100px]:block" />
+                <span className="hidden xl:block" />
               )}
 
-              <article data-print-document="" className="mx-auto w-full min-w-0 max-w-[68ch] space-y-6">
-                <header className="space-y-2 pb-2">
-                  <h1 data-report-title tabIndex={-1} lang={run.language ?? undefined} className="research-title text-foreground outline-none">
+              <article data-print-document="" className="report-article mx-auto w-full min-w-0 max-w-[70ch] pb-32 print:pb-0">
+                <header className="space-y-3 pb-10">
+                  <h1 data-report-title tabIndex={-1} lang={run.language ?? undefined} className="research-title text-balance text-foreground outline-none">
                     {title}
                   </h1>
                   <PhraseWithArgs spec={provenanceLine(run, model.sections.cited.length)} className="rf-annot block pt-1" />
                 </header>
-                <ReportDocument run={run} model={model} anchorPrefix={anchorPrefix} onActiveCitation={setActive} />
-                <ReportSources sections={model.sections} />
+                <ReportDocument run={run} model={model} anchorPrefix={anchorPrefix} onActiveCitation={setActive} className="research-document-reader" />
+                <div className="pt-14">
+                  <ReportSources sections={model.sections} />
+                </div>
               </article>
 
               {model.sections.cited.length > 0 && (
                 <aside
                   aria-label={formatPhrase(RESEARCH_COPY.sources.cited)}
-                  className="sticky top-0 hidden max-h-[calc(100dvh-8rem)] self-start overflow-y-auto min-[1100px]:block print:hidden"
+                  className="report-rail sticky top-8 hidden self-start overflow-y-auto overscroll-contain lg:block print:hidden"
                 >
                   <p className="rf-annot mb-3 px-2 text-foreground">
                     <Phrase text={RESEARCH_COPY.sources.cited} />

@@ -55,6 +55,23 @@ final class JunoMathMarkupTests: XCTestCase {
         XCTAssertFalse(JunoMathMarkup.containsMath(source))
     }
 
+    func testTheResearchReportPriceStringsStayProse() {
+        // The exact strings a Deep Field report rendered as italic maths on the web.
+        let band = "$100–$250 price band, Claude Max 5x ($100/month)"
+        let alternative = "ChatGPT Pro $100 ($100/month) is the alternative when ecosystem breadth matters more than raw coding throughput, and $200 buys the higher tier."
+        for source in [band, alternative, band + "\n" + alternative] {
+            XCTAssertEqual(JunoMathMarkup.segments(in: source), [.text(source)])
+        }
+    }
+
+    func testProseOpeningOnAFigureIsMoney() {
+        let source = "Plans run from $5 a month to 10$ in some regions."
+        XCTAssertEqual(JunoMathMarkup.segments(in: source), [.text(source)])
+        // Maths that opens on a figure still renders.
+        XCTAssertEqual(JunoMathMarkup.segments(in: "$2^{10}$"), [.math("2^{10}", display: false)])
+        XCTAssertEqual(JunoMathMarkup.segments(in: "$2$"), [.math("2", display: false)])
+    }
+
     func testClosingDollarFollowedByADigitIsRejected() {
         let source = "from $100 to $200"
         XCTAssertEqual(JunoMathMarkup.segments(in: source), [.text(source)])

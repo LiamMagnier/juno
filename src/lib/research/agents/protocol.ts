@@ -396,6 +396,11 @@ export interface WorkerResult {
 
 export interface RunWorkerInput {
   userId: string;
+  /**
+   * The run's researcher model, frozen on its envelope. Absent (older runs,
+   * tests): the default worker model.
+   */
+  workerModelId?: string;
   brief: WorkerBrief;
   tools: WorkerTools;
   limits: WorkerLimits;

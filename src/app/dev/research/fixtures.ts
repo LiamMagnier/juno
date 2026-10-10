@@ -50,6 +50,7 @@ export const GALLERY_STATES = [
   "digest",
   "own-sources-scope",
   "own-sources-report",
+  "report-stress",
 ] as const;
 
 export type GalleryState = (typeof GALLERY_STATES)[number];
@@ -131,6 +132,100 @@ const REPORT = [
   "<!-- juno:section=method -->",
   "## Method",
   "Four researchers read 14 pages over two rounds.",
+].join("\n");
+
+
+/*
+ * The reader under stress (the report the owner screenshotted, 2026-10-10):
+ * the exact price strings that rendered as KaTeX, long tokens that ran under
+ * the sources rail, real maths, code, a wide table, and 45 cited sources, so
+ * the reader's measure, wrapping, rails and bottom padding can be checked.
+ */
+const STRESS_HOSTS = [
+  "www.anthropic.com", "openai.com", "help.openai.com", "docs.anthropic.com", "support.claude.com", "www.theverge.com",
+  "techcrunch.com", "arstechnica.com", "news.ycombinator.com", "www.reddit.com", "github.com", "platform.openai.com",
+  "ai.google.dev", "cloud.google.com", "x.ai", "docs.x.ai", "mistral.ai", "www.cursor.com", "docs.cursor.com",
+  "windsurf.com", "www.bloomberg.com", "www.ft.com", "www.wsj.com", "www.nytimes.com", "stratechery.com",
+  "simonwillison.net", "www.latent.space", "artificialanalysis.ai", "lmarena.ai", "www.swebench.com",
+  "epoch.ai", "www.semianalysis.com", "www.businessinsider.com", "www.cnbc.com", "venturebeat.com",
+  "www.zdnet.com", "www.wired.com", "www.engadget.com", "9to5mac.com", "www.macrumors.com", "status.anthropic.com",
+  "status.openai.com", "community.openai.com", "www.anthropic.com/pricing", "openai.com/chatgpt/pricing",
+];
+
+export const STRESS_SOURCES: ResearchSourceView[] = STRESS_HOSTS.map((host, i) => ({
+  ...source(`x${i + 1}`, host.split("/")[0], `Pricing and limits for frontier coding plans, part ${i + 1}: what the ${host.split("/")[0]} page says`, true),
+  citedIndex: i + 1,
+}));
+
+const cite = (...ns: number[]) => ns.map((n) => `[${n}]`).join("");
+
+export const STRESS_REPORT = [
+  "<!-- juno:report title=\"Frontier coding plans: what $100 to $250 a month buys\" -->",
+  "# Frontier coding plans: what $100 to $250 a month buys",
+  "",
+  "<!-- juno:section=bottom-line -->",
+  "## Bottom line",
+  `For heavy agentic coding the $100–$250 price band, Claude Max 5x ($100/month), is the best value today ${cite(1, 2, 3)}. Rate limits, not model quality, decide which plan a team outgrows first ${cite(4, 5)}.`,
+  "",
+  `ChatGPT Pro $100 ($100/month) is the alternative when ecosystem breadth matters more than raw coding throughput, and the $200 tier removes most caps ${cite(6, 7, 8)}. Both vendors changed their weekly limits twice in the last quarter ${cite(9, 10)}.`,
+  "",
+  "<!-- juno:section=findings -->",
+  "## Key findings",
+  `- Claude Max 5x gives roughly five times the Pro allowance for $100 a month, and Max 20x costs $200 ${cite(1, 11)}.`,
+  `- ChatGPT Pro costs $200 a month; the newer $100 tier keeps the same models with a lower message cap ${cite(6, 12)}.`,
+  `- A team of five on Max 5x spends $500 a month, against $1,000 on ChatGPT Pro at the higher tier ${cite(13, 14, 15)}.`,
+  `- Weekly limits reset every seven days from first use, not on a calendar boundary ${cite(16)}.`,
+  "",
+  "<!-- juno:section=question:q1 -->",
+  "## How do the plans compare on throughput?",
+  `Measured over a working week, Max 5x sustained about 40 agentic sessions before throttling, against 28 on ChatGPT Pro $100 ${cite(17, 18, 19)}. The cost per completed task works out at $0.42 versus $0.61 ${cite(20)}.`,
+  "",
+  `The throughput model most analysts use is a simple queue: with arrival rate $\\lambda$ and service rate $\\mu$, utilisation is $\\rho = \\lambda / \\mu$ and the expected wait is`,
+  "",
+  "$$",
+  "W_q = \\frac{\\rho}{\\mu (1 - \\rho)} \\quad \\text{for } \\rho < 1, \\qquad \\text{and the long-run cost is } C = \\sum_{i=1}^{n} p_i \\cdot t_i \\cdot \\$_{\\text{per hour}} + \\int_0^{T} \\lambda(t)\\,dt \\cdot \\kappa",
+  "$$",
+  "",
+  `Inline maths still renders where it is maths: $x^2 + y^2 = r^2$ and $2^{10} = 1024$ ${cite(21)}.`,
+  "",
+  "<!-- juno:section=question:q2 -->",
+  "## What do the limits look like in practice?",
+  `The limits are documented on long, unbroken URLs such as https://support.claude.com/en/articles/11145838-using-claude-code-with-your-pro-or-max-plan-and-understanding-the-weekly-usage-limits-for-heavy-agentic-coding-sessions ${cite(22, 23)}, and some reports quote identifiers like claude-max-5x-weekly-usage-limit-agentic-coding-sessions-reset-window-2026-10-01-europe-west ${cite(24)}.`,
+  "",
+  "A typical rate-limit header looks like this:",
+  "",
+  "```http",
+  "HTTP/1.1 429 Too Many Requests",
+  "anthropic-ratelimit-unified-status: rejected",
+  "anthropic-ratelimit-unified-reset: 2026-10-09T17:00:00Z; window=weekly; plan=max_5x; organisation=org_01HZX3Q8W9Y2K7N4M5P6R7S8T9; retry-after-seconds=86400",
+  "```",
+  "",
+  "| Plan | Monthly price | Weekly agentic sessions (measured) | Cost per completed task | Notes on limits and resets |",
+  "| --- | --- | --- | --- | --- |",
+  `| Claude Max 5x | $100 | 40 | $0.42 | Resets seven days after first use ${cite(25)} |`,
+  `| Claude Max 20x | $200 | 150 | $0.31 | Opus capped separately ${cite(26)} |`,
+  `| ChatGPT Pro $100 | $100 | 28 | $0.61 | Message cap per three hours ${cite(27)} |`,
+  `| ChatGPT Pro | $200 | 120 | $0.38 | Near-unlimited, fair-use policy ${cite(28)} |`,
+  "",
+  "<!-- juno:section=question:q3 -->",
+  "## Which teams should pick which plan?",
+  `Solo developers who live in the terminal get the most from Max 5x ${cite(29, 30, 31)}. Teams that already pay for ChatGPT Enterprise should price the $200 tier first ${cite(32, 33)}.`,
+  "",
+  `1. Start on the $100 tier for a month and log the throttling events ${cite(34)}.`,
+  `2. Move up only when more than two days a week hit the limit ${cite(35, 36)}.`,
+  `3. Re-check prices each quarter: both vendors moved them in 2026 ${cite(37, 38, 39)}.`,
+  "",
+  "<!-- juno:section=conflicts -->",
+  "## Where sources disagree",
+  `Press coverage puts the ChatGPT Pro cap at 250 messages per three hours ${cite(40)}; the help centre says the cap is dynamic and unpublished ${cite(41)}.`,
+  "",
+  "<!-- juno:section=gaps -->",
+  "## What could not be established",
+  `No source published team-level usage data for the $100 tiers ${cite(42, 43)}.`,
+  "",
+  "<!-- juno:section=method -->",
+  "## Method",
+  `Six researchers read 50 pages over three rounds; 45 are cited ${cite(44, 45)}. The last paragraph is here so the end of the report must scroll fully into view above the bottom edge.`,
 ].join("\n");
 
 const CITED = [SOURCES[0], SOURCES[1], SOURCES[2], SOURCES[3]];
@@ -261,7 +356,16 @@ function base(id: string, patch: Partial<ResearchRunView> = {}): ResearchRunView
     questions: QUESTIONS.map((q, i) => ({ ...q, status: i === 0 ? "covered" : i === 1 ? "searching" : "pending" })),
     counts: { found: 14, read: 6, cited: 0, searches: 5, pages: 6 },
     workingMs: 6 * 60_000 + 12_000,
-    leadModel: { id: "dev-lead", label: "Lead model" },
+    leadModel: null,
+    // The person chose GPT-5 Pro, which has no tool calling: it plans, reviews
+    // and writes, and the researchers say who searched instead and why.
+    models: {
+      lead: { id: "gpt-5-pro", label: "GPT-5 Pro" },
+      worker: { id: "claude-haiku-4-5", label: "Claude Haiku 4.5" },
+      workerNote: "no_tools",
+      writer: null,
+      chosen: true,
+    },
     latestFindings: [
       {
         id: "f1",
@@ -620,6 +724,31 @@ export function fixturesFor(state: GalleryState): Record<string, FixtureRun> {
             ev("query_issued", 2.1, { query: "air to water heat pump installed cost", results: 0, withheld: "private" }),
             ...DONE_EVENTS.slice(2),
           ],
+        },
+      };
+    case "report-stress":
+      return {
+        [id]: {
+          ...done(id, {
+            title: "Frontier coding plans: what $100 to $250 a month buys",
+            goal: "Which $100 to $250 a month coding plan is the best value for agentic coding?",
+            report: STRESS_REPORT,
+            assistantMessageId: null,
+            auditSummary: null,
+            createdAt: "2026-10-09T08:12:00.000Z",
+            finishedAt: "2026-10-09T08:29:00.000Z",
+            workingMs: 16 * 60_000 + 40_000,
+            counts: { found: 64, read: 50, cited: 45, searches: 31, pages: 50 },
+            sources: [...STRESS_SOURCES, ...SOURCES.slice(4)],
+            leadModel: { id: "claude-opus-4-5", label: "Claude Opus 4.5" },
+            models: {
+              lead: { id: "claude-opus-4-5", label: "Claude Opus 4.5" },
+              worker: { id: "claude-opus-4-5", label: "Claude Opus 4.5" },
+              workerNote: null,
+              writer: { id: "claude-opus-4-5", label: "Claude Opus 4.5" },
+              chosen: true,
+            },
+          }),
         },
       };
     case "two-live-runs":

@@ -19,15 +19,25 @@ export function formatMicroUsd(microUsd: string): string {
 }
 
 /**
- * Wall-clock span of a FINISHED run, or null while it is still going. The
- * live figure is `workingElapsedMs` in run-clock.ts, which counts only the
- * time the run spent working; this is the receipt's number, first ask to last
- * word, and the two are different facts on purpose.
+ * How long a FINISHED run worked, or null while it is still going.
+ *
+ * This used to be the wall-clock span from the request to the finish, "first
+ * ask to last word". That span counts the night a plan waited at the gate and
+ * every hour a run sat with nobody driving it, which is how a run that worked
+ * for a quarter of an hour came to say "30h 27m". The figure is now the
+ * server's `workingMs`: completedAt − startedAt with the gate, pauses and idle
+ * stretches left out (`activeWorkingMs` in src/lib/research/view.ts). A run
+ * without that figure shows no time at all rather than a wrong one.
  */
-export function runDuration(createdAt: string, finishedAt: string | null): string | null {
-  if (!finishedAt) return null;
-  const ms = new Date(finishedAt).getTime() - new Date(createdAt).getTime();
-  if (!Number.isFinite(ms) || ms < 0) return null;
+export function completedDuration(run: { finishedAt?: string | null; workingMs?: number | null }): string | null {
+  if (!run.finishedAt) return null;
+  const ms = run.workingMs;
+  if (typeof ms !== "number" || !Number.isFinite(ms) || ms <= 0) return null;
+  return formatWorkedMs(ms);
+}
+
+/** "42s", "12 min", "1h 4m". */
+export function formatWorkedMs(ms: number): string {
   const seconds = Math.round(ms / 1000);
   if (seconds < 60) return `${Math.max(1, seconds)}s`;
   const minutes = Math.round(seconds / 60);

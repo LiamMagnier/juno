@@ -102,12 +102,16 @@ export function createSynthesisStage(ctx: EngineContext) {
     // A failed rewrite must not erase the already audited report.
     const report = parts.report.trim() || revision?.report || "";
     const latestPlan = parsePlan(fresh.plan);
+    // The writer, recorded as it wrote: "Written by" reads this and nothing
+    // else. A revision that kept the audited draft keeps that draft's writer.
+    const writtenBy = parts.report.trim() && written.model ? written.model : undefined;
     const planPatch =
-      parts.summary || parts.title
+      parts.summary || parts.title || writtenBy
         ? {
             ...latestPlan,
             ...(parts.summary ? { summary: parts.summary } : {}),
             ...(parts.title ? { title: parts.title } : {}),
+            ...(writtenBy ? { writtenBy } : {}),
           }
         : undefined;
     const moved = await advance(fresh, "validating_citations", { report, ...(planPatch ? { plan: planPatch } : {}) }, [
@@ -154,7 +158,8 @@ export function createSynthesisStage(ctx: EngineContext) {
     const moved = await advance(
       run,
       "validating_citations",
-      { report: parts.report, plan: { ...plan, digest: true, ...(parts.title && !plan.title ? { title: parts.title } : {}) } },
+      // No model wrote a digest, so no writer is recorded for it.
+      { report: parts.report, plan: { ...plan, digest: true, writtenBy: undefined, ...(parts.title && !plan.title ? { title: parts.title } : {}) } },
       [
         { kind: "error", payload: { scope: "writer", recoverable: true, message: "The report could not be written. Delivering the evidence the researchers gathered instead." } },
         { kind: "report_ready", payload: { chars: parts.report.length, digest: true } },

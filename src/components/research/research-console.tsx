@@ -17,7 +17,7 @@ import { DeepField, Figure, QuestionRail } from "./deep-field";
 import { EmergingAnswers } from "./emerging-answers";
 import { recoveryLine } from "./next-steps";
 import { formatMicroUsd } from "./run-format";
-import { panelControls, researchClock, rowLine } from "./research-view";
+import { headerModelLabel, modelsLine, panelControls, researchClock, rowLine } from "./research-view";
 import { phaseOfRun } from "@/lib/research/phase";
 import { readingHost, researchWorkspace } from "./workspace-model";
 import { isWorkingResearchState, type ResearchEventDTO, type ResearchState } from "@/lib/research/domain";
@@ -96,6 +96,9 @@ export function ResearchConsole({ run, state, events, busy, notice, post, classN
   // The engine recovering (a second planner, wider searches, a retried step), in its own words.
   const recovery = recoveryLine(events, isWorkingResearchState(state) && !disconnected && !failed);
   const subtitle = run.title && run.title.trim() !== run.goal.trim() ? run.goal : null;
+  // Which models are doing the work, beside what it costs (recorded, never guessed).
+  const modelName = headerModelLabel(run.models);
+  const models = modelsLine(run.models, false);
 
   return (
     <section aria-label={FEATURE_NAMES.research.accessibleLabel} data-research-workspace data-state={state} className={cn("rf min-w-0", className)}>
@@ -108,7 +111,8 @@ export function ResearchConsole({ run, state, events, busy, notice, post, classN
               {controls.finishing ? WORKSPACE_COPY.finishing : <PhraseWithArgs spec={rowLine(phase, run)} />}
             </span>
           </span>
-          <span className="flex shrink-0 items-center gap-3 tabular-nums">
+          <span className="flex min-w-0 shrink-0 items-center gap-3 tabular-nums">
+            {modelName && <span translate="no" className="max-w-[14rem] truncate" title={modelName}>{modelName}</span>}
             <RunClock elapsedMs={clock.elapsedMs} since={disconnected || failed ? null : clock.since} showAfterMs={0} />
             {/* Spend only: a run has no per-run limit any more; the usage windows bound it (RESEARCH_V2 §6). */}
             <span>{formatMicroUsd(run.costMicroUsd)}</span>
@@ -118,6 +122,7 @@ export function ResearchConsole({ run, state, events, busy, notice, post, classN
           {run.title || run.goal}
         </h3>
         {subtitle && <p lang={run.language ?? undefined} className="mt-2 max-w-[38rem] text-pretty text-ui text-muted-foreground">{subtitle}</p>}
+        {models && <PhraseWithArgs spec={models} className="rf-annot rf-models mt-3 block" />}
         {recovery && (
           <p key={recovery} role="status" className="rf-annot rf-recovery mt-3">
             <GalaxyMark phase="working" size={12} />
@@ -239,12 +244,15 @@ export function ResearchConsole({ run, state, events, busy, notice, post, classN
               <div key={tab} id={`${detailsId}-panel`} role="tabpanel" className="rf-view-enter min-w-0 pt-5">
                 {tab === "sources" && <SourceDeck sources={run.sources} />}
                 {tab === "evidence" && <EvidencePanel objectives={run.plan.objectives ?? []} coverage={run.plan.coverage ?? []} conflicts={(run.plan.conflicts ?? []).filter(item => !item.resolved)} sources={run.sources} empty={<p className="text-ui text-muted-foreground">{WORKSPACE_COPY.noEvidence}</p>} />}
-                {tab === "activity" && <RunTimeline events={events} live={run.live} empty={<p className="text-ui text-muted-foreground">{WORKSPACE_COPY.noActivity}</p>} />}
+                {tab === "activity" && <RunTimeline events={events} live={run.live} workerModel={run.models?.worker?.label ?? null} empty={<p className="text-ui text-muted-foreground">{WORKSPACE_COPY.noActivity}</p>} />}
                 {tab === "researchers" && (model.workers.length ? (
                   <ul className="rf-rows">
                     {model.workers.map((worker, index) => (
                       <li key={worker.id}>
-                        <span className="min-w-0">{worker.label === "Researcher" ? `Researcher ${index + 1}` : worker.label}</span>
+                        <span className="min-w-0">
+                          {worker.label === "Researcher" ? `Researcher ${index + 1}` : worker.label}
+                          {run.models?.worker && <span translate="no" className="rf-annot ms-2">{run.models.worker.label}</span>}
+                        </span>
                         <span className="rf-annot shrink-0">{worker.state === "finished" ? WORKSPACE_COPY.finished : state === "paused" ? WORKSPACE_COPY.waiting : working ? WORKSPACE_COPY.working : WORKSPACE_COPY.idle}</span>
                       </li>
                     ))}

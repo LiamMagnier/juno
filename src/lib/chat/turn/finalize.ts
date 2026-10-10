@@ -154,6 +154,8 @@ export async function finalizeOutputs({
         userId: user.id,
         report: audit?.report ?? outcome.assistantFull,
         partial: !audit || outcome.researchGenerationPartial,
+        // The chat streamed the report through this turn's model.
+        writtenBy: modelInfo.id,
       }).catch((err) => {
         console.error("[chat] could not finalize research run", {
           runId: input.runId,

@@ -233,6 +233,22 @@ export const RESEARCH_COPY = {
     limitedWindow: "Sized to your current usage window",
   },
 
+  /**
+   * Which models did the work, beside the spend and in the report header.
+   * Each line is phrase + model name; the reason a stage ran elsewhere is
+   * its own unit after the separator ("Search by X · Y has no tool calling").
+   */
+  models: {
+    runningOn: "Running on",
+    ranOn: "Ran on",
+    searchBy: "Search by",
+    noTools: "has no tool calling",
+    noLoop: "can't run the search tools",
+    ledBy: "Led by",
+    researchersOn: "Researchers on",
+    searchedBy: "Searched by",
+  },
+
   /** The Details tab: the one place money shows (DECISIONS §4b). */
   details: {
     leadModel: "Written by",
