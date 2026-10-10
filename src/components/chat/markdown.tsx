@@ -5,6 +5,7 @@ import nextDynamic from "next/dynamic";
 import ReactMarkdown, { type Components, type Options } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
+import { protectCurrency, remarkRestoreCurrency } from "@/components/chat/markdown-currency";
 import { useContentPlugins } from "@/components/chat/markdown-plugins";
 import { AicssCodeBlock, CodeCopyButton, splitHighlightedLines } from "@/components/aicss/code-block";
 import { FileDiff, parseUnifiedDiff } from "@/components/aicss/file-diff";
@@ -502,7 +503,9 @@ function remarkCitations(sourceCount: number) {
   };
 }
 
-const REMARK_PLUGINS = [remarkGfm, remarkMath, remarkFenceFilename] satisfies Options["remarkPlugins"];
+// `remarkRestoreCurrency` gives back the dollars `protectCurrency` hid from
+// remark-math (see markdown-currency.ts): prices are prose, not formulas.
+const REMARK_PLUGINS = [remarkGfm, remarkMath, remarkRestoreCurrency, remarkFenceFilename] satisfies Options["remarkPlugins"];
 /*
  * `rehypeHighlight` and `rehypeKatex` are NOT here.
  *
@@ -917,7 +920,7 @@ export const Markdown = React.memo(function Markdown({
   // fence, so every block starts with fence state closed exactly as the whole
   // document did.
   const blocks = React.useMemo(
-    () => splitIntoBlocks(content).map((block) => ({ ...block, text: normalizeMathDelimiters(block.text) })),
+    () => splitIntoBlocks(content).map((block) => ({ ...block, text: normalizeMathDelimiters(protectCurrency(block.text)) })),
     [content],
   );
   const imageKeys = React.useMemo(
