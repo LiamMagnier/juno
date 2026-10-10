@@ -7,6 +7,7 @@
 
 import {
   isTerminalResearchState,
+  isWorkingResearchState,
   planIsConfirmed,
   planIsRevising,
   type ResearchPlan,
@@ -22,7 +23,9 @@ import type {
   ResearchPhase,
   ResearchQuestionStatus,
   ResearchQuestionView,
+  ResearchModelLabel,
   ResearchRunCounts,
+  ResearchRunModels,
   ResearchRunSummary,
 } from "@/types/research";
 
@@ -159,8 +162,102 @@ export function pagesReadOf(plan: ResearchPlan): number {
 }
 
 /**
+ * The longest silence that still counts as work.
+ *
+ * Every stage writes events as it goes: a researcher's every search and page,
+ * a round's review, the report. The longest single quiet stretch in a healthy
+ * run is the writer's call, timeboxed at six minutes. A longer silence is not
+ * work: it is a run nobody was driving (a restart, a deploy, a lease waiting
+ * to be adopted), and counting it is how a run that worked for fifteen
+ * minutes came to read "30 h 27 min".
+ */
+export const RESEARCH_IDLE_GAP_MS = 8 * 60_000;
+
+/** One event as the clock reads it: when, and the state it moved to if it moved one. */
+export interface ResearchClockEvent {
+  at: Date;
+  /** The new state, for a `state_changed` event; absent for every other kind. */
+  state?: string | null;
+}
+
+/**
+ * Time the run actually spent working (§9.4), from its own event log.
+ *
+ * From `startedAt` to `end` (the finish, or now while it runs), it counts only
+ * the stretches spent in a working state (so the plan gate, a pause and the
+ * queue before a driver claimed the run are left out), and caps each quiet
+ * stretch between two events at `RESEARCH_IDLE_GAP_MS` (so time with nobody
+ * driving the run is left out too). Completed duration is therefore
+ * completedAt − startedAt with the waiting removed, never wall-clock time
+ * since the run was created.
+ */
+export function activeWorkingMs(input: {
+  startedAt: Date;
+  end: Date;
+  /** Oldest first. */
+  events: readonly ResearchClockEvent[];
+  /** The state at `startedAt`; runs are created `accepted`. */
+  initialState?: string;
+  idleGapMs?: number;
+}): number {
+  const cap = input.idleGapMs ?? RESEARCH_IDLE_GAP_MS;
+  const endMs = input.end.getTime();
+  let state = input.initialState ?? "accepted";
+  let since = input.startedAt.getTime();
+  let total = 0;
+  const span = (until: number) => {
+    if (!isWorkingResearchState(state)) return;
+    const gap = Math.min(until, endMs) - since;
+    if (gap > 0) total += Math.min(gap, cap);
+  };
+  for (const event of input.events) {
+    const at = event.at.getTime();
+    if (!Number.isFinite(at) || at < since) {
+      if (event.state) state = event.state;
+      continue;
+    }
+    span(at);
+    since = Math.min(at, endMs);
+    if (event.state) state = event.state;
+  }
+  span(endMs);
+  return Math.max(0, Math.round(total));
+}
+
+/**
+ * Which models did the work, as the run recorded them (never guessed).
+ *
+ * `leadModel` is the "Written by" line: the model recorded as having written
+ * the report, and nothing else. A run sized before the envelope recorded its
+ * models, or a report that is the evidence digest, has no recorded writer and
+ * shows none; a wrong name is worse than no name.
+ */
+export function runModelsOf(
+  plan: ResearchPlan,
+  labelOf: (id: string) => string
+): { leadModel: ResearchModelLabel | null; models: ResearchRunModels | null } {
+  const label = (id: string | null | undefined): ResearchModelLabel | null => (id ? { id, label: labelOf(id) } : null);
+  const writer = plan.digest ? null : label(plan.writtenBy);
+  const envelope = plan.envelope;
+  if (!envelope?.workerModel || !envelope.leadModel) return { leadModel: writer, models: null };
+  return {
+    leadModel: writer,
+    models: {
+      lead: { id: envelope.leadModel, label: labelOf(envelope.leadModel) },
+      worker: label(envelope.workerModel),
+      workerNote: envelope.workerNote ?? null,
+      writer,
+      chosen: !!envelope.chosen,
+    },
+  };
+}
+
+/**
  * Working time (§9.4): from creation to now (or the finish), less the time
  * the plan waited at the gate for a person and less every pause (B13).
+ *
+ * The fallback for a run whose event log could not be read; `activeWorkingMs`
+ * is the figure every view shows.
  */
 export function workingMsOf(
   run: { createdAt: Date; finishedAt: Date | null; state: string },

@@ -81,6 +81,7 @@ export function createPlanningStage(ctx: EngineContext) {
             userId: run.userId,
             goal: run.goal,
             effort: plan.effort ?? DEFAULT_RESEARCH_EFFORT,
+            modelId: plan.envelope?.leadModel || plan.preferredLead || null,
             signal,
           }),
         heartbeat
@@ -202,6 +203,7 @@ export function createPlanningStage(ctx: EngineContext) {
             dateLine,
             languageName: plan.language ? languageName(plan.language) : null,
             leadModel: plan.envelope?.leadModel ?? null,
+            preferredLead: plan.preferredLead ?? null,
             signal,
             // Each step down the planner's ladder is narrated, so the line
             // reads "trying another model" instead of sitting still (F3).
@@ -321,6 +323,7 @@ export function createPlanningStage(ctx: EngineContext) {
           constraints: plan.constraints,
           effort: plan.effort,
           pinnedSources: plan.pinnedSources,
+          modelId: plan.envelope?.leadModel || plan.preferredLead || null,
           signal,
         }),
       heartbeat

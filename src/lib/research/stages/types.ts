@@ -430,6 +430,8 @@ export interface ResearchDeps {
     userId: string;
     goal: string;
     effort: ResearchEffort;
+    /** The run's lead model (the envelope's, else the person's choice); absent: the strongest configured. */
+    modelId?: string | null;
     signal?: AbortSignal;
   }): Promise<{ questions: ResearchClarification[]; costMicroUsd: number }>;
   /** Turns the goal (plus any steering constraints) into sub-questions. */
@@ -439,6 +441,8 @@ export interface ResearchDeps {
     constraints: string[];
     effort?: import("@/lib/research/domain").ResearchEffort;
     pinnedSources?: string[];
+    /** The run's lead model (the envelope's, else the person's choice); absent: the strongest configured. */
+    modelId?: string | null;
     signal?: AbortSignal;
   }): Promise<{
     queries: string[];
@@ -484,6 +488,8 @@ export interface ResearchDeps {
     gaps: Array<{ question: string; status: string; missingReason?: string }>;
     alreadyIssued: string[];
     limit: number;
+    /** The run's lead model (the envelope's, else the person's choice); absent: the strongest configured. */
+    modelId?: string | null;
     signal?: AbortSignal;
   }): Promise<{ queries: string[]; costMicroUsd: number }>;
   /**
@@ -529,7 +535,12 @@ export interface ResearchDeps {
     corpusScale?: number;
     /** The writer's timebox: a quarter of the run's clock, at most six minutes. */
     timeoutMs?: number;
-  }): Promise<{ report: string; costMicroUsd: number }>;
+  }): Promise<{
+    report: string;
+    costMicroUsd: number;
+    /** The model that wrote it, recorded on the plan as `writtenBy`. */
+    model?: string;
+  }>;
   /**
    * The merged clarify-and-plan call (SPEC §9.5, B5): one structured reply
    * with the questions, up to three optional clarifications, the searches,
@@ -559,6 +570,11 @@ export interface ResearchDeps {
     revision?: { questions: string[]; answers: Array<{ question: string; answer: string }> } | null;
     /** The lead model the run was sized for, when it has been. */
     leadModel?: string | null;
+    /**
+     * The model the person chose in the composer, for a run not sized yet:
+     * the planner runs on it when the account can use it.
+     */
+    preferredLead?: string | null;
     signal?: AbortSignal;
     /** Each step down the planner's ladder (F3, F4), for the live narration. */
     onFallback?: (step: "second_model" | "lines") => Promise<void> | void;
@@ -834,6 +850,8 @@ export interface AuditAssistInput {
   findings: Array<{ index: number; objectiveId: string | null; claim: string; quote: string; url: string }>;
   /** Searches already made, so leads do not repeat them. */
   issued: string[];
+  /** The run's researcher model, frozen on its envelope; absent on older runs. */
+  modelId?: string;
   signal?: AbortSignal;
 }
 

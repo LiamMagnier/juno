@@ -133,7 +133,13 @@ export function provenanceLine(run: ResearchRunView, cited: number): PhraseLine 
   const line: PhraseSpec[] = [];
   if (run.createdAt) line.push({ parts: [{ phrase: RESEARCH_COPY.report.researched }, { kind: "date", iso: run.createdAt, style: "medium" }] });
   line.push(sourcesCount(cited));
+  // The recorded writer only (`leadModel` is null when none was recorded),
+  // and who searched when that was a different model.
   if (run.leadModel) line.push({ parts: [{ phrase: RESEARCH_COPY.report.writtenBy }, { kind: "label", value: run.leadModel.label }] });
+  const worker = run.models?.worker;
+  if (worker && worker.id !== run.leadModel?.id) {
+    line.push({ parts: [{ phrase: RESEARCH_COPY.models.searchedBy }, { kind: "label", value: worker.label }] });
+  }
   return line;
 }
 

@@ -1183,8 +1183,16 @@ export interface ResearchPlan {
   pausedFrom?: string;
   /** The writer's cited summary, kept beside the report until the completion message is written (§9.6.3). */
   summary?: string;
-  /** The chat's selected model, preferred as the lead when the plan's class allows it (§9.5.1). */
+  /**
+   * The chat's selected model. When it is set and the account can use it, it
+   * runs every stage of the run (see `researchRunModels`).
+   */
   preferredLead?: string;
+  /**
+   * Model id that wrote the report, recorded when the report is written.
+   * Absent until then, for an evidence digest, and on older runs.
+   */
+  writtenBy?: string;
   /**
    * How the run was handed its report's reader (SPEC §9.6.1). `background`:
    * an app's chat turn handed the run off (the `handoff` frame) and ended;
@@ -1662,6 +1670,7 @@ export function parseEnvelope(value: unknown): ResearchEnvelope | undefined {
     judgeCalls: positiveInt(raw.judgeCalls),
   };
   if (ceiling === null || !reserve || !estimate || !caps) return undefined;
+  const rates = parseEnvelopeRates(raw.rates);
   if (Object.values(numbers).some((n) => n === null)) return undefined;
   const limitedBy =
     raw.limitedBy === "plan" || raw.limitedBy === "month" || raw.limitedBy === "window" ? raw.limitedBy : "scope";
@@ -1683,10 +1692,32 @@ export function parseEnvelope(value: unknown): ResearchEnvelope | undefined {
     workerWallClockMs: numbers.workerWallClockMs!,
     judgeCalls: numbers.judgeCalls!,
     leadModel: typeof raw.leadModel === "string" ? raw.leadModel.slice(0, 120) : "",
+    ...(oneLine(raw.workerModel, 120) ? { workerModel: oneLine(raw.workerModel, 120) } : {}),
+    ...(raw.workerNote === "no_tools" || raw.workerNote === "responses_api" ? { workerNote: raw.workerNote } : {}),
+    ...(raw.chosen === true ? { chosen: true } : {}),
+    ...(rates ? { rates } : {}),
     limitedBy,
     estimate: { minutesUpTo: count(estimate.minutesUpTo), pagesUpTo: count(estimate.pagesUpTo) },
     caps,
   };
+}
+
+function parseRate(value: unknown): { inputMicroUsdPerToken: number; outputMicroUsdPerToken: number } | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const raw = value as Record<string, unknown>;
+  const input = raw.inputMicroUsdPerToken;
+  const output = raw.outputMicroUsdPerToken;
+  if (typeof input !== "number" || typeof output !== "number" || !Number.isFinite(input) || !Number.isFinite(output)) return null;
+  if (input < 0 || output < 0) return null;
+  return { inputMicroUsdPerToken: input, outputMicroUsdPerToken: output };
+}
+
+function parseEnvelopeRates(value: unknown): NonNullable<ResearchEnvelope["rates"]> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const raw = value as Record<string, unknown>;
+  const lead = parseRate(raw.lead);
+  const worker = parseRate(raw.worker);
+  return lead && worker ? { lead, worker } : undefined;
 }
 
 export function parseEstimateCaps(value: unknown): ResearchEstimateCaps | undefined {
@@ -1797,6 +1828,7 @@ function parseReworkFields(raw: Record<string, unknown>): Partial<ResearchPlan> 
     ...(typeof raw.pausedFrom === "string" && isResearchState(raw.pausedFrom) ? { pausedFrom: raw.pausedFrom } : {}),
     ...(typeof raw.summary === "string" && raw.summary.trim() ? { summary: raw.summary.trim().slice(0, MAX_PLAN_SUMMARY_CHARS) } : {}),
     ...(oneLine(raw.preferredLead, 120) ? { preferredLead: oneLine(raw.preferredLead, 120) } : {}),
+    ...(oneLine(raw.writtenBy, 120) ? { writtenBy: oneLine(raw.writtenBy, 120) } : {}),
     ...(raw.delivery === "background" ? { delivery: "background" as const } : {}),
     ...(typeof raw.pausedMs === "number" && Number.isFinite(raw.pausedMs) && raw.pausedMs > 0
       ? { pausedMs: Math.floor(raw.pausedMs) }

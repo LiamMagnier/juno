@@ -350,6 +350,12 @@ export function researchBudgetFor(input: {
   leadModel?: string;
   /** One class down, for a month too thin for the lead (§9.2). Additive. */
   stepDown?: { leadModel: string; rates: ResearchModelRates } | null;
+  /**
+   * The researchers' model, why it differs from a chosen lead, and whether
+   * the lead is the person's own pick. Recorded on the envelope so every
+   * view shows the models that really ran. Additive.
+   */
+  models?: { workerModel?: string | null; workerNote?: ResearchEnvelope["workerNote"] | null; chosen?: boolean };
 }): ResearchEnvelope | ResearchBudgetRefusal {
   const caps = RESEARCH_PLAN_CAPS[input.plan];
   if (!caps.entitled) return { refused: true, reason: "plan", params: {} };
@@ -451,6 +457,10 @@ export function researchBudgetFor(input: {
     workerWallClockMs: clamp(Math.floor(wallClockMs / shape.rounds), MIN_WORKER_CLOCK_MS, MAX_WORKER_CLOCK_MS),
     judgeCalls,
     leadModel,
+    ...(input.models?.workerModel ? { workerModel: input.models.workerModel } : {}),
+    ...(input.models?.workerNote ? { workerNote: input.models.workerNote } : {}),
+    ...(input.models?.chosen ? { chosen: true } : {}),
+    rates: { lead: pricing.lead, worker: input.rates.worker },
     limitedBy,
     estimate: estimateFor(scope, estimateCaps),
     caps: estimateCaps,

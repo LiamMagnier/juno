@@ -677,7 +677,7 @@ function NoteRow({ step }: { step: NoteStep & { durationMs: number | null } }) {
  * (`w<round>-<n>`), so a later round's lane is "2.1" and the tooltip says
  * so in words.
  */
-function WorkerLane({ step, live }: { step: WorkerStep & { durationMs: number | null }; live: boolean }) {
+function WorkerLane({ step, live, model }: { step: WorkerStep & { durationMs: number | null }; live: boolean; model?: string | null }) {
   const working = live && step.status === "working";
   const index = step.workerId.replace(/^w\d+-/, "");
   const badge = step.round > 1 ? `${step.round}.${index}` : index;
@@ -697,7 +697,11 @@ function WorkerLane({ step, live }: { step: WorkerStep & { durationMs: number | 
         </span>
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-ui text-foreground/85">{step.objective}</span>
+        <span className="flex min-w-0 items-baseline gap-2">
+          <span className="min-w-0 truncate text-ui text-foreground/85">{step.objective}</span>
+          {/* The model this researcher runs on, as the run recorded it. */}
+          {model && <span translate="no" className="shrink-0 text-caption text-muted-foreground">{model}</span>}
+        </span>
         <span
           key={step.lastAction ?? step.summary ?? "idle"}
           className={cn(
@@ -721,6 +725,7 @@ export function RunTimeline({
   events,
   live,
   empty = null,
+  workerModel = null,
   className,
 }: {
   events: ResearchEventDTO[];
@@ -732,6 +737,8 @@ export function RunTimeline({
    * sentence, because an empty tab region reads as a broken tab.
    */
   empty?: React.ReactNode;
+  /** The researchers' model name, shown on each researcher's lane. Absent: none recorded. */
+  workerModel?: string | null;
   className?: string;
 }) {
   // A run still working opens itself: the whole point is that the gather phase
@@ -849,7 +856,7 @@ export function RunTimeline({
                   )}
                 </li>
               ) : step.kind === "worker" ? (
-                <WorkerLane key={step.key} step={step} live={live} />
+                <WorkerLane key={step.key} step={step} live={live} model={workerModel} />
               ) : (
                 <NoteRow key={step.key} step={step} />
               )

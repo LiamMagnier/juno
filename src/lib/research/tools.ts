@@ -148,6 +148,15 @@ function timeboxSignal(
  * belongs to the chat turn that reads the report, and a job resumed three hours
  * later may be running while the user has switched models twice.
  */
+/**
+ * The run's lead for a planning-side call: the model recorded on the run (the
+ * envelope's lead, else the person's choice) while it is still configured,
+ * else the strongest configured model for a run that recorded none.
+ */
+export function runLeadModel(modelId: string | null | undefined): ModelInfo | null {
+  return configuredModel(modelId) ?? researchPlannerModel();
+}
+
 export function researchPlannerModel(): ModelInfo | null {
   // The plan is the one model call whose quality every later call inherits: a
   // planner that writes vague sub-questions sends eight workers after vague
@@ -238,6 +247,24 @@ Write 120-200 words of plain prose covering, in this order:
 - Where the genuine disagreement or uncertainty is likely to be, and which communities or disciplines would argue about it.
 
 Do not answer the question. Do not speculate about facts you would need to look up — describe what must be found, not what it might say. Do not use headings or bullets. Output only the brief.`;
+
+/**
+ * One completion on a model the caller names, billed as research spend. For
+ * stages outside this file that must run on the run's own model (the
+ * citation judge). Returns empty text on any failure.
+ */
+export async function researchModelCompletion(opts: {
+  userId: string;
+  model: ModelInfo;
+  system: string;
+  prompt: string;
+  maxTokens: number;
+  label: string;
+  timeoutMs?: number;
+  signal?: AbortSignal;
+}): Promise<{ text: string; costMicroUsd: number }> {
+  return utilityCompletion({ ...opts, timeoutMs: opts.timeoutMs ?? PLAN_TIMEOUT_MS });
+}
 
 /** One utility-model completion, billed. Returns empty text on any failure. */
 async function utilityCompletion(opts: {
@@ -345,7 +372,9 @@ export function plannerReasoningEffort(model: ModelInfo): ReasoningEffort | unde
  * work rather than a frozen line.
  */
 export const draftResearchPlanWithModel: NonNullable<ResearchDeps["draftPlan"]> = async (input) => {
-  const candidates = plannerCandidates(input.leadModel);
+  // The person's own model plans alone: no second model is tried behind it.
+  const strict = !!input.leadModel && input.leadModel === input.preferredLead;
+  const candidates = plannerCandidates(input.leadModel, { strict });
   let costMicroUsd = 0;
   for (const [index, model] of candidates.entries()) {
     if (index > 0) await input.onFallback?.("second_model");
@@ -398,7 +427,7 @@ export const draftResearchPlanWithModel: NonNullable<ResearchDeps["draftPlan"]> 
     languageLine: input.languageName ? researchLanguageLine(input.languageName) : null,
   });
   const prompt = plannerRequest(input);
-  for (const model of linesPlannerCandidates(candidates)) {
+  for (const model of linesPlannerCandidates(candidates, { strict })) {
     if (input.signal?.aborted) break;
     await input.onFallback?.("lines");
     const reply = await utilityCompletion({
@@ -420,8 +449,12 @@ export const draftResearchPlanWithModel: NonNullable<ResearchDeps["draftPlan"]> 
   return { ok: false, reason: "planner_invalid", costMicroUsd };
 };
 
-/** The plain-text planner's models: the fastest configured one first, then the lead. */
-export function linesPlannerCandidates(tried: readonly ModelInfo[]): ModelInfo[] {
+/**
+ * The plain-text planner's models: the fastest configured one first, then the
+ * lead. `strict` (the person chose the lead): the lead alone.
+ */
+export function linesPlannerCandidates(tried: readonly ModelInfo[], opts: { strict?: boolean } = {}): ModelInfo[] {
+  if (opts.strict) return tried.slice(0, 1);
   const out: ModelInfo[] = [];
   for (const model of [utilityModelCandidates()[0], ...tried]) {
     if (model && !out.some((m) => m.id === model.id)) out.push(model);
@@ -430,8 +463,16 @@ export function linesPlannerCandidates(tried: readonly ModelInfo[]): ModelInfo[]
   return out;
 }
 
-/** The lead model, then one fallback: the strongest other configured model. */
-export function plannerCandidates(leadId: string | null | undefined): ModelInfo[] {
+/**
+ * The lead model, then one fallback: the strongest other configured model.
+ * `strict` (the person chose the lead): the lead alone, so no stage is ever
+ * quietly handed to a model the person did not pick.
+ */
+export function plannerCandidates(leadId: string | null | undefined, opts: { strict?: boolean } = {}): ModelInfo[] {
+  if (opts.strict) {
+    const lead = configuredModel(leadId);
+    return lead ? [lead] : [];
+  }
   const out: ModelInfo[] = [];
   for (const model of [configuredModel(leadId), researchPlannerModel(), ...utilityModelCandidates()]) {
     if (model && !out.some((m) => m.id === model.id)) out.push(model);
@@ -502,8 +543,8 @@ Rules:
 - "skippable" is false only when the research genuinely cannot start without it.`;
 
 /** The questions a run asks before planning. Never throws; empty means "do not ask". */
-export const clarifyResearchGoal: NonNullable<ResearchDeps["clarify"]> = async ({ userId, goal, effort, signal }) => {
-  const model = researchLeadModel();
+export const clarifyResearchGoal: NonNullable<ResearchDeps["clarify"]> = async ({ userId, goal, effort, modelId, signal }) => {
+  const model = runLeadModel(modelId);
   if (!model) return { questions: [], costMicroUsd: 0 };
   // The quick tier is for "look this up now": stopping to ask is against the
   // point of choosing it.
@@ -568,9 +609,10 @@ export const planResearchQueries: ResearchDeps["plan"] = async ({
   constraints,
   effort,
   pinnedSources = [],
+  modelId,
   signal,
 }) => {
-  const planner = researchPlannerModel();
+  const planner = runLeadModel(modelId);
   if (!planner) return { queries: [], costMicroUsd: 0 };
 
   // Constraints reach the planner as part of the request, not as a separate
@@ -857,9 +899,10 @@ export const expandResearchQueries: NonNullable<ResearchDeps["expandQueries"]> =
   gaps,
   alreadyIssued,
   limit,
+  modelId,
   signal,
 }) => {
-  const planner = researchPlannerModel();
+  const planner = runLeadModel(modelId);
   if (!planner || gaps.length === 0 || limit <= 0) return { queries: [], costMicroUsd: 0 };
 
   const prompt = [
@@ -899,7 +942,8 @@ export const expandResearchQueries: NonNullable<ResearchDeps["expandQueries"]> =
  * answer on any failure, and the deterministic audit stands as it was.
  */
 export const assistResearchAudit: NonNullable<ResearchDeps["auditAssist"]> = async (input) => {
-  const model = researchWorkerModel() ?? utilityModelCandidates()[0] ?? null;
+  // The run's own researcher model, the one that gathered these findings.
+  const model = configuredModel(input.modelId) ?? researchWorkerModel() ?? utilityModelCandidates()[0] ?? null;
   if (!model) return { confirmed: [], leads: [], costMicroUsd: 0 };
   const done = await utilityCompletion({
     userId: input.userId,
@@ -947,7 +991,9 @@ export const writeResearchReport: NonNullable<ResearchDeps["synthesize"]> = asyn
   // The one retry after an unusable report (B6) runs on the second
   // candidate as well as a smaller corpus (F6): an outage or a refusal on
   // the lead fails the same way twice on the same model.
-  const pool = plannerCandidates(plan.envelope?.leadModel);
+  // A run on the person's chosen model retries on that same model: the
+  // smaller corpus is the retry, never a different writer.
+  const pool = plannerCandidates(plan.envelope?.leadModel, { strict: !!plan.envelope?.chosen });
   const model = (corpusScale < 1 ? pool[1] : undefined) ?? pool[0] ?? null;
   // The same function the citation audit numbers against — see `citableSources`.
   const readable = citableSources(sources);
@@ -1039,5 +1085,5 @@ Rewrite the draft below into a complete replacement report for the original requ
     promptChars: system.length + goal.length,
     completionChars: out.length,
   });
-  return { report: out.trim(), costMicroUsd: Math.round(billed.costUsd * 1_000_000) };
+  return { report: out.trim(), costMicroUsd: Math.round(billed.costUsd * 1_000_000), model: model.id };
 };

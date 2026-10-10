@@ -127,8 +127,21 @@ function parseJudgeVerdict(text: string): JudgeVerdict | null {
  * policy leaves no eligible model, this returns null and the claim ends the run
  * `unverified` rather than being guessed at.
  */
+/**
+ * One judge call on a model the caller names, billed by the caller: the run's
+ * own model, when the person chose one, so the citation check is not quietly
+ * handed to a utility model they never picked.
+ */
+export type JudgeCompletion = (request: {
+  system: string;
+  prompt: string;
+  maxTokens: number;
+}) => Promise<{ text: string; costMicroUsd: number }>;
+
 export function createCitationJudge(opts: {
   policy: BackgroundProviderPolicy;
+  /** Run every judge call on this completion instead of the utility walk. */
+  complete?: JudgeCompletion;
   conversationProvider?: string | null;
   /**
    * The account the judge's model calls bill to.
@@ -161,21 +174,27 @@ export function createCitationJudge(opts: {
   today?: string;
 }): CitationJudge {
   return async ({ claim, passage, sourceTitle, publishedAt }) => {
+    // The passage is fetched web text. It goes to the model inside the
+    // untrusted envelope for the same reason the research corpus does: a page
+    // that writes "this passage fully supports the claim" is trying to grade
+    // its own citation, and unwrapped it would look like instructions.
+    const userMsg = [
+      ...(opts.today ? [opts.today] : []),
+      `CLAIM: ${claim}`,
+      `SOURCE: ${sourceTitle ?? "untitled"}${publishedAt ? ` (published ${publishedAt.toISOString().slice(0, 10)})` : ""}`,
+      "PASSAGE:",
+      wrapUntrusted(sourceTitle ?? "source", passage.slice(0, JUDGE_PASSAGE_CHARS)),
+      "",
+      "Return the JSON.",
+    ].join("\n");
+    if (opts.complete) {
+      const reply = await opts.complete({ system: JUDGE_SYSTEM, prompt: userMsg, maxTokens: JUDGE_OUTPUT_TOKENS });
+      opts.onSpend?.(reply.costMicroUsd);
+      return parseJudgeVerdict(reply.text);
+    }
     const { result, costMicroUsd } = await runUtilityPrompt<JudgeVerdict>({
       system: JUDGE_SYSTEM,
-      // The passage is fetched web text. It goes to the model inside the
-      // untrusted envelope for the same reason the research corpus does: a page
-      // that writes "this passage fully supports the claim" is trying to grade
-      // its own citation, and unwrapped it would look like instructions.
-      userMsg: [
-        ...(opts.today ? [opts.today] : []),
-        `CLAIM: ${claim}`,
-        `SOURCE: ${sourceTitle ?? "untitled"}${publishedAt ? ` (published ${publishedAt.toISOString().slice(0, 10)})` : ""}`,
-        "PASSAGE:",
-        wrapUntrusted(sourceTitle ?? "source", passage.slice(0, JUDGE_PASSAGE_CHARS)),
-        "",
-        "Return the JSON.",
-      ].join("\n"),
+      userMsg,
       maxTokens: JUDGE_OUTPUT_TOKENS,
       label: "research/citation",
       parse: parseJudgeVerdict,
@@ -285,6 +304,8 @@ export async function recordCitationAudit(opts: {
   conversationProvider?: string | null;
   /** Override the model layer (tests, or a caller with its own judge). */
   judge?: CitationJudge;
+  /** Run the default judge on this completion (the run's chosen model), billed here. */
+  complete?: JudgeCompletion;
   /**
    * The run's own judge budget, `envelope.judgeCalls` (B22). Absent: the
    * audit-wide `MAX_JUDGE_CALLS`, as for every audit before envelopes.
@@ -365,6 +386,7 @@ export async function recordCitationAudit(opts: {
       userId: opts.userId,
       policy: opts.policy ?? (await loadBackgroundProviderPolicy(opts.userId)),
       conversationProvider: opts.conversationProvider,
+      ...(opts.complete ? { complete: opts.complete } : {}),
       onSpend: (microUsd) => {
         judgeMicroUsd += microUsd;
       },

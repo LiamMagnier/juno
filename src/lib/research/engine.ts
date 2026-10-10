@@ -714,6 +714,7 @@ export function createResearchEngine(deps: ResearchDeps): ResearchEngine {
           languageName: plan.language ? languageName(plan.language) : null,
           revision,
           leadModel: plan.envelope?.leadModel ?? null,
+          preferredLead: plan.preferredLead ?? null,
           signal,
         });
       } catch (error) {

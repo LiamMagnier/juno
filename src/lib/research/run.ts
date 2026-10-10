@@ -48,13 +48,15 @@ import {
   fetchResearchPage,
   clarifyResearchGoal,
   planResearchQueries,
+  researchModelCompletion,
   searchTheWeb,
   writeResearchReport,
 } from "@/lib/research/tools";
 import { recordCitationAudit } from "@/lib/research/claims";
 import {
+  configuredResearchModel,
   researchLeadModel,
-  researchStepDownModel,
+  researchRunModels,
   researchWorkerModel,
   runResearchWorker,
 } from "@/lib/research/agents/worker";
@@ -93,9 +95,11 @@ import {
   questionViews,
   researchPhaseFor,
   revisingOf,
+  runModelsOf,
   runTitleOf,
   summaryOf,
   workingMsOf,
+  activeWorkingMs,
   type LatestPhaseEvent,
 } from "@/lib/research/view";
 import type { ResearchPlan } from "@/lib/research/domain";
@@ -734,9 +738,13 @@ export async function sizeResearchRun(input: {
   purpose: "preview" | "confirm";
 }): Promise<ResearchEnvelope | ResearchBudgetRefusal> {
   const userPlan = await getUserPlan(input.run.userId);
-  const lead = researchLeadModel({ plan: userPlan, preferred: input.plan.preferredLead ?? null });
+  // One decision for every stage: the person's chosen model runs the whole
+  // run, and the envelope records which models will work (and why, when the
+  // researchers cannot run on the chosen one).
+  const models = researchRunModels({ plan: userPlan, preferred: input.plan.preferredLead ?? null });
+  const lead = models.lead;
   if (!lead) return { refused: true, reason: "not_configured", params: {} };
-  const stepDown = researchStepDownModel({ plan: userPlan, preferred: input.plan.preferredLead ?? null });
+  const stepDown = models.stepDown;
   const now = new Date();
   const [budget, windows, liveRuns, startsToday] = await Promise.all([
     checkBudget(input.run.userId, userPlan, undefined, undefined, { reap: false }),
@@ -744,7 +752,10 @@ export async function sizeResearchRun(input: {
     liveRunCount(input.run.userId, input.run.id),
     startsSince(input.run.userId, startOfLocalDay(now, input.plan.timeZone), input.run.id),
   ]);
-  const worker = ratesOf(researchWorkerModel()) ?? REFERENCE_RATES;
+  const worker = ratesOf(models.worker) ?? REFERENCE_RATES;
+  // The citation judge runs on the lead when the person chose it, else on the
+  // researchers' model, as it always has.
+  const judge = models.chosen ? ratesOf(lead) ?? REFERENCE_RATES : worker;
   const stepDownRates = stepDown ? ratesOf(stepDown) : undefined;
   return researchBudgetFor({
     scope: input.scope,
@@ -757,13 +768,14 @@ export async function sizeResearchRun(input: {
       windowMicroUsd: windows.capDisabled ? null : windows.allowed ? windows.remainingMicroUsd : 0,
       windowResetsAtMs: windows.resetsAtMs,
     },
-    rates: { worker, lead: ratesOf(lead) ?? REFERENCE_RATES, judge: worker },
+    rates: { worker, lead: ratesOf(lead) ?? REFERENCE_RATES, judge },
     roster: researchRoster(searchProviderStatus().keyed, ROSTER_RESULTS_PER_QUERY),
     liveRuns,
     startsToday,
     eurPerUsd: eurPerUsd(),
     leadModel: lead.id,
     stepDown: stepDown && stepDownRates && stepDown.id !== lead.id ? { leadModel: stepDown.id, rates: stepDownRates } : null,
+    models: { workerModel: models.worker?.id ?? null, workerNote: models.workerNote, chosen: models.chosen },
   });
 }
 
@@ -774,11 +786,51 @@ export async function sizeResearchRun(input: {
 const draftPlanForRun: NonNullable<ResearchDeps["draftPlan"]> = async (input) => {
   let leadModel = input.leadModel ?? null;
   if (!leadModel) {
+    // Not sized yet: the same decision sizing will make, so the plan is drafted
+    // by the model the person chose rather than by whichever the plan class
+    // would have picked.
     const userPlan = await getUserPlan(input.userId).catch(() => null);
-    leadModel = userPlan ? researchLeadModel({ plan: userPlan })?.id ?? null : null;
+    leadModel = userPlan ? researchRunModels({ plan: userPlan, preferred: input.preferredLead ?? null }).lead?.id ?? null : null;
   }
   return draftResearchPlanWithModel({ ...input, leadModel });
 };
+
+/**
+ * Time the run spent working, from its own event log (`activeWorkingMs`):
+ * startedAt to the finish (or now), with the plan gate, pauses and every
+ * stretch nobody was driving it left out. Falls back to the plan's clock only
+ * when the log cannot be read.
+ */
+export async function runWorkingMs(run: ResearchRunRow, plan: ResearchPlan, now: Date): Promise<number> {
+  const end = run.finishedAt ?? now;
+  try {
+    const [stamps, moves] = await Promise.all([
+      prisma.researchEvent.findMany({
+        where: { runId: run.id, userId: run.userId },
+        orderBy: { seq: "asc" },
+        select: { seq: true, createdAt: true },
+      }),
+      prisma.researchEvent.findMany({
+        where: { runId: run.id, userId: run.userId, kind: "state_changed" },
+        select: { seq: true, payload: true },
+      }),
+    ]);
+    if (stamps.length === 0) return workingMsOf(run, plan, now);
+    const moved = new Map<number, string>();
+    for (const move of moves) {
+      const payload = move.payload && typeof move.payload === "object" && !Array.isArray(move.payload) ? (move.payload as Record<string, unknown>) : {};
+      if (typeof payload.state === "string") moved.set(move.seq, payload.state);
+    }
+    return activeWorkingMs({
+      startedAt: run.startedAt ?? run.createdAt,
+      end,
+      events: stamps.map((stamp) => ({ at: stamp.createdAt, state: moved.get(stamp.seq) ?? null })),
+    });
+  } catch (error) {
+    console.error("[research] working time from events failed", { runId: run.id, error });
+    return workingMsOf(run, plan, now);
+  }
+}
 
 /**
  * The web completion (§9.6.3): the summary and the report renumbered so
@@ -805,8 +857,9 @@ async function completeResearchRun(input: {
     to: input.to,
     from: [input.run.state],
     error: input.error,
-    leadModel: input.plan.envelope?.leadModel || researchLeadModel()?.id || "",
-    workedMs: workingMsOf({ createdAt: input.run.createdAt, finishedAt: now, state: input.run.state }, input.plan, now),
+    // The model that wrote it, as recorded; never a guess at the strongest one.
+    leadModel: input.plan.writtenBy || input.plan.envelope?.leadModel || "",
+    workedMs: await runWorkingMs({ ...input.run, finishedAt: now }, input.plan, now),
     pages: pagesReadOf(input.plan),
   });
   const result = await finalizeResearchRun(write);
@@ -932,11 +985,19 @@ export function researchEngine(): ResearchEngine {
     modelRates: researchModelRates(),
     synthesize: writeResearchReport,
     validateReport: async ({ userId, runId, goal, plan, report, sources }) => {
+      // A run on the person's chosen model checks its citations on that model.
+      const judgeModel = plan.envelope?.chosen ? configuredResearchModel(plan.envelope.leadModel) : null;
       const audit = await recordCitationAudit({
         userId,
         runId,
         goal,
         report,
+        ...(judgeModel
+          ? {
+              complete: (request: { system: string; prompt: string; maxTokens: number }) =>
+                researchModelCompletion({ userId, model: judgeModel, label: "citation", ...request }),
+            }
+          : {}),
         // The run's own judge budget and claim count (B22); older runs keep
         // the audit-wide caps.
         maxJudgeCalls: plan.envelope?.judgeCalls,
@@ -1338,7 +1399,8 @@ export async function readResearchRun(input: {
   const phase = researchPhaseFor(state, latest, !!run.report?.trim());
   const readCount = sources.filter((source) => source.read).length;
   const cited = run.report ? citationOrder([run.report]).filter((n) => n >= 1 && n <= readCount).length : 0;
-  const leadId = plan.envelope?.leadModel || null;
+  const recorded = runModelsOf(plan, (id) => MODEL_LIST.find((model) => model.id === id)?.name ?? id);
+  const workingMs = await runWorkingMs(run, plan, now);
   const additions: ResearchRunViewAdditions = {
     title: runTitleOf(plan, run.goal),
     scope: plan.scope ?? null,
@@ -1350,9 +1412,11 @@ export async function readResearchRun(input: {
     counts: countsOf({ plan, sources, cited }),
     phase,
     phaseDetail: phaseDetailFor(phase, latest),
-    workingMs: workingMsOf(run, plan, now),
+    workingMs,
     assistantMessageId: run.assistantMessageId ?? null,
-    leadModel: leadId ? { id: leadId, label: MODEL_LIST.find((model) => model.id === leadId)?.name ?? leadId } : null,
+    // "Written by" is the recorded writer only; older runs show no model.
+    leadModel: recorded.leadModel,
+    models: recorded.models,
     latestFindings: latestFindingsOf(
       findings.map((finding) => ({ ...finding, url: finding.source?.url ?? "" })),
       sources
@@ -1523,6 +1587,8 @@ export async function finalizeChatResearchRun(input: {
   report: string;
   partial?: boolean;
   error?: string | null;
+  /** The chat model that streamed the report, recorded for "Written by". */
+  writtenBy?: string | null;
 }): Promise<ResearchRunRow | null> {
   const store = createPrismaResearchStore();
   let run = await store.loadRun(input.runId, input.userId);
@@ -1552,7 +1618,11 @@ export async function finalizeChatResearchRun(input: {
     userId: input.userId,
     from: [run.state as ResearchState],
     to: target,
-    patch: { report: input.report, error: input.error ?? null },
+    patch: {
+      report: input.report,
+      error: input.error ?? null,
+      ...(input.writtenBy ? { plan: { ...parsePlan(run.plan), writtenBy: input.writtenBy } } : {}),
+    },
   });
   if (!ended) return store.loadRun(input.runId, input.userId);
   await store.appendEvents({

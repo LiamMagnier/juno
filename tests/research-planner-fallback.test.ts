@@ -36,8 +36,19 @@ test("F2: the planner thinks lightly â€” the model's low tier, else its floor â€
   assert.equal(fn.match(/reasoningEffort: /g)?.length, 2, "the structured attempts and the plain-text planner");
 });
 
-test("F6: the writer's retry runs on the second candidate model", () => {
+test("F6: the writer's retry runs on the second candidate model, unless the person chose the lead", () => {
   const writer = tools.slice(tools.indexOf("export const writeResearchReport"));
-  assert.match(writer, /const pool = plannerCandidates\(plan\.envelope\?\.leadModel\)/);
+  assert.match(writer, /const pool = plannerCandidates\(plan\.envelope\?\.leadModel, \{ strict: !!plan\.envelope\?\.chosen \}\)/);
   assert.match(writer, /\(corpusScale < 1 \? pool\[1\] : undefined\) \?\? pool\[0\]/);
+  // The model that wrote is reported, so "Written by" is recorded, not guessed.
+  assert.match(writer, /model: model\.id/);
+});
+
+test("a chosen lead plans and writes alone: no second model behind it", () => {
+  const candidates = tools.slice(tools.indexOf("export function plannerCandidates"), tools.indexOf("export function plannerReplyShape"));
+  assert.match(candidates, /if \(opts\.strict\) \{\n    const lead = configuredModel\(leadId\);\n    return lead \? \[lead\] : \[\];/);
+  const lines = tools.slice(tools.indexOf("export function linesPlannerCandidates"), tools.indexOf("export function plannerCandidates"));
+  assert.match(lines, /if \(opts\.strict\) return tried\.slice\(0, 1\)/);
+  const fn = tools.slice(tools.indexOf("export const draftResearchPlanWithModel"), tools.indexOf("export function linesPlannerCandidates"));
+  assert.match(fn, /const strict = !!input\.leadModel && input\.leadModel === input\.preferredLead/);
 });
