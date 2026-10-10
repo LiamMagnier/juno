@@ -779,6 +779,19 @@ struct JunoMobileRootView: View {
         )
         JunoMobileLiveActivityCoordinator.shared.resolveApproval(requestID: requestID)
       }
+    case .pairRemote(let token):
+      JunoMobileRemoteRouting.shared.pairing = .init(token: token)
+    case let .openLinkSession(deviceID, sessionID):
+      showingSettings = false
+      show(.code)
+      JunoMobileRemoteRouting.shared.linkSession = .init(deviceID: deviceID, sessionID: sessionID)
+    case let .respondToLinkApproval(deviceID, sessionID, requestID, approved):
+      showingSettings = false
+      show(.code)
+      JunoMobileRemoteRouting.shared.linkApproval = .init(
+        deviceID: deviceID, sessionID: sessionID, requestID: requestID, approved: approved
+      )
+      JunoMobileRemoteRouting.shared.linkSession = .init(deviceID: deviceID, sessionID: sessionID)
     }
   }
 
