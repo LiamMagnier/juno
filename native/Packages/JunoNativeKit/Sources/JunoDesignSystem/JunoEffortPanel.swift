@@ -60,7 +60,7 @@ public enum JunoEffortPanelMetrics {
 
     /// The header's side columns: the speed control and the Pro capsule on
     /// the left, reset on the right, one width so the rung stays centred.
-    public static let sideColumn: CGFloat = 76
+    public static let sideColumn: CGFloat = 80
 
     /// Where stop `index` of `count` sits along a track `width` wide: the
     /// knob's centre, 18pt in from either end (the web's `panelStop`).
@@ -381,7 +381,7 @@ public struct JunoEffortPanel: View {
 
     private var header: some View {
         HStack(spacing: JunoSpace.snug) {
-            HStack(spacing: JunoSpace.micro) {
+            HStack(spacing: JunoSpace.tight) {
                 if showsFlash || showsUltra {
                     JunoEffortSpeedButton(
                         tier: speedTier,
@@ -393,7 +393,7 @@ public struct JunoEffortPanel: View {
                     JunoEffortProCapsule(isOn: proMode)
                 }
             }
-            .frame(width: JunoEffortPanelMetrics.sideColumn, alignment: .leading)
+            .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
 
             VStack(spacing: 0) {
                 Text(current?.label ?? "")
@@ -407,7 +407,10 @@ public struct JunoEffortPanel: View {
                     JunoEffortModelButton(name: modelName, action: openModels)
                 }
             }
-            .frame(maxWidth: .infinity)
+            // Sized to the rung and the model name; the side groups share
+            // what is left, so the name is not cut for the controls' sake.
+            .fixedSize(horizontal: true, vertical: false)
+            .layoutPriority(1)
 
             Button {
                 if let defaultStopID = ladder.defaultStopID { stopID = defaultStopID }
@@ -416,7 +419,7 @@ public struct JunoEffortPanel: View {
             }
             .buttonStyle(JunoEffortIconButton(isOn: false))
             .contentShape(Circle())
-            .frame(width: JunoEffortPanelMetrics.sideColumn, alignment: .trailing)
+            .frame(minWidth: 0, maxWidth: .infinity, alignment: .trailing)
             .disabled(!canReset || !isEnabled)
             .help("Reset to the model's default")
             .accessibilityLabel("Reset to the model's default")
@@ -437,10 +440,10 @@ public struct JunoEffortProCapsule: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// - Parameters:
-    ///   - height: the drawn capsule; the Mac's 24pt by default.
+    ///   - height: the drawn capsule; the bolt's 32pt by default.
     ///   - hitHeight: the target around it, at least `height` (a phone
     ///     passes the 44pt touch target).
-    public init(isOn: Binding<Bool>, height: CGFloat = 24, hitHeight: CGFloat? = nil) {
+    public init(isOn: Binding<Bool>, height: CGFloat = JunoEffortIconButton.side, hitHeight: CGFloat? = nil) {
         _isOn = isOn
         self.height = height
         self.hitHeight = max(hitHeight ?? height, height)
@@ -454,6 +457,8 @@ public struct JunoEffortProCapsule: View {
                 .junoType(.caption.weight(.medium))
                 .foregroundStyle(isOn ? Color.junoCanvas : (hovered ? Color.junoForeground : Color.junoSecondaryInk))
                 .padding(.horizontal, JunoSpace.snug)
+                // The bolt's height by default, so a filled bolt and a filled
+                // Pro read as one pair.
                 .frame(height: height)
                 .background {
                     Capsule(style: .continuous).fill(isOn ? Color.junoForeground : Color.junoGlassHover.opacity(hovered ? 1 : 0))
@@ -510,27 +515,28 @@ private struct JunoEffortModelButton: View {
     }
 }
 
-/// The speed control: the web's bolt, muted when off and ink when on; for
+/// The speed control: the web's bolt, muted when off and filled ink when on; for
 /// Ultra fast the same bolt twice, overlapped 3pt, the second springing in
 /// (held still under Reduce Motion). Each press moves one tier.
 public struct JunoEffortSpeedButton: View {
     let tier: JunoSpeedTier
     let multiplier: Double?
-    let side: CGFloat
+    let hitSide: CGFloat?
     let action: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    /// - Parameter side: the round target; the Mac's 32pt by default, a
-    ///   phone passes the 44pt touch target.
+    /// - Parameter hitSide: the round target around the drawn 32pt circle;
+    ///   nil is the circle itself (the Mac), a phone passes the 44pt touch
+    ///   target.
     public init(
         tier: JunoSpeedTier,
         multiplier: Double?,
-        side: CGFloat = JunoEffortIconButton.side,
+        hitSide: CGFloat? = nil,
         action: @escaping () -> Void
     ) {
         self.tier = tier
         self.multiplier = multiplier
-        self.side = side
+        self.hitSide = hitSide
         self.action = action
     }
 
@@ -548,7 +554,9 @@ public struct JunoEffortSpeedButton: View {
                 value: tier
             )
         }
-        .buttonStyle(JunoEffortIconButton(isOn: false, tinted: tier != .off, side: side))
+        // On: the inverted ink pair the Pro capsule wears, for Fast and Ultra
+        // alike (the bolt count tells them apart); off, a quiet glyph.
+        .buttonStyle(JunoEffortIconButton(isOn: tier != .off, hitSide: hitSide))
         .contentShape(Circle())
         .help(tier.label(multiplier: multiplier))
         .accessibilityLabel(tier.label(multiplier: multiplier))
@@ -563,19 +571,20 @@ public struct JunoEffortSpeedButton: View {
 public struct JunoEffortIconButton: ButtonStyle {
     public static let side: CGFloat = 32
     let isOn: Bool
-    /// On through tint alone: full ink, no fill (the speed control).
+    /// On through tint alone: full ink, no fill.
     var tinted: Bool = false
-    var side: CGFloat = JunoEffortIconButton.side
+    /// The target around the drawn circle; nil is the circle itself.
+    var hitSide: CGFloat? = nil
 
     public func makeBody(configuration: Configuration) -> some View {
-        Face(configuration: configuration, isOn: isOn, tinted: tinted, side: side)
+        Face(configuration: configuration, isOn: isOn, tinted: tinted, hitSide: hitSide)
     }
 
     private struct Face: View {
         let configuration: Configuration
         let isOn: Bool
         let tinted: Bool
-        let side: CGFloat
+        let hitSide: CGFloat?
         @State private var hovered = false
         @Environment(\.isEnabled) private var isEnabled
         @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -583,7 +592,7 @@ public struct JunoEffortIconButton: ButtonStyle {
         var body: some View {
             configuration.label
                 .foregroundStyle(isOn ? Color.junoCanvas : (hovered || tinted ? Color.junoForeground : Color.junoSecondaryInk))
-                .frame(width: side, height: side)
+                .frame(width: JunoEffortIconButton.side, height: JunoEffortIconButton.side)
                 .background {
                     Circle().fill(
                         isOn
@@ -592,6 +601,10 @@ public struct JunoEffortIconButton: ButtonStyle {
                     )
                 }
                 .opacity(isEnabled ? 1 : 0.35)
+                .frame(
+                    width: max(hitSide ?? JunoEffortIconButton.side, JunoEffortIconButton.side),
+                    height: max(hitSide ?? JunoEffortIconButton.side, JunoEffortIconButton.side)
+                )
                 .contentShape(Circle())
                 .onHover { hovered = $0 }
                 .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint), value: hovered)
