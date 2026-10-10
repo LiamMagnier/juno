@@ -60,20 +60,20 @@ struct ChatFolderControl: View {
 
     private func chosen(_ folder: DesktopChatFolderStore.Folder, store: DesktopChatFolderStore) -> some View {
         HStack(spacing: 0) {
-            Menu {
-                Section(folder.isReachable ? "Alevr works only inside this folder" : "This folder can't be found") {
-                    Picker("Access", selection: Binding(
-                        get: { folder.access },
-                        set: { store.setAccess($0, for: conversationID) }
-                    )) {
-                        Text("Read and Write").tag(ChatFolderAccess.readWrite)
-                        Text("Read Only").tag(ChatFolderAccess.read)
-                    }
-                    .pickerStyle(.inline)
-                }
-                Divider()
-                Button("Choose Another Folder…") { store.choose(for: conversationID, access: folder.access) }
-                Button("Stop Working in \(folder.name)") { store.remove(for: conversationID) }
+            NativeTrayPopoverChip(
+                accessibilityLabel: "Working in \(folder.name)",
+                identifier: "juno.desktop.chat.folder",
+                help: folder.access == .read
+                    ? "\(folder.name) \u{00B7} read only. Alevr can look, not change."
+                    : "\(folder.name) \u{00B7} Alevr can read and change files here, and asks first before deleting, replacing, running or opening anything."
+            ) { close in
+                Self.accessList(
+                    folder,
+                    setAccess: { store.setAccess($0, for: conversationID) },
+                    chooseAnother: { store.choose(for: conversationID, access: folder.access) },
+                    stop: { store.remove(for: conversationID) },
+                    close: close
+                )
             } label: {
                 HStack(spacing: JunoSpace.tight) {
                     JunoIconView(folder.isReachable ? .folderOpen : .warning, size: 16)
@@ -87,21 +87,9 @@ struct ChatFolderControl: View {
                             .foregroundStyle(Color.junoSecondaryInk)
                             .accessibilityLabel("Read only")
                     }
-                    JunoIconView(.chevronDown, size: 12)
-                        .foregroundStyle(Color.junoSecondaryInk)
-                        .accessibilityHidden(true)
                 }
             }
-            .menuStyle(.button)
-            .buttonStyle(NativeComposerTrayPillStyle())
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .help(folder.access == .read
-                ? "\(folder.name) · read only. Alevr can look, not change."
-                : "\(folder.name) · Alevr can read and change files here, and asks first before deleting, replacing, running or opening anything.")
-            .accessibilityLabel("Working in \(folder.name)")
             .accessibilityValue(folder.access == .read ? "Read only" : "Read and write")
-            .accessibilityIdentifier("juno.desktop.chat.folder")
 
             Button {
                 store.remove(for: conversationID)
@@ -119,5 +107,43 @@ struct ChatFolderControl: View {
             .accessibilityIdentifier("juno.desktop.chat.folder.remove")
         }
         .fixedSize()
+    }
+
+    /// The folder's list: how far Alevr may go in it, another folder, or stop.
+    static func accessList(
+        _ folder: DesktopChatFolderStore.Folder,
+        setAccess: @escaping (ChatFolderAccess) -> Void,
+        chooseAnother: @escaping () -> Void,
+        stop: @escaping () -> Void,
+        cursor: String? = nil,
+        close: @escaping () -> Void
+    ) -> NativeTrayPicker {
+        let rows: [(ChatFolderAccess, String, String, JunoIcon)] = [
+            (.readWrite, "Read and write", "Edits files, asks before deleting", .pencil),
+            (.read, "Read only", "Looks, never changes anything", .eye),
+        ]
+        return NativeTrayPicker(
+            identifier: "juno.desktop.chat.folder.list",
+            header: folder.isReachable ? "Alevr works only inside \(folder.name)" : "\(folder.name) can\u{2019}t be found",
+            searchPrompt: "Search…",
+            sections: [NativeTrayPickerSection(id: "access", items: rows.map { access, title, subtitle, icon in
+                NativeTrayPickerItem(
+                    id: access == .read ? "read" : "readWrite",
+                    title: title,
+                    subtitle: subtitle,
+                    accessory: .check(folder.access == access),
+                    action: { if folder.access != access { setAccess(access) } }
+                ) {
+                    NativeTrayPickerTile(icon, isOn: folder.access == access)
+                }
+            })],
+            actions: [
+                NativeTrayPickerAction(id: "choose", title: "Choose another folder…", icon: .folderOpen, action: chooseAnother),
+                NativeTrayPickerAction(id: "stop", title: "Stop working in \(folder.name)", icon: .close, action: stop),
+            ],
+            emptyMessage: "",
+            cursor: cursor,
+            close: close
+        )
     }
 }

@@ -175,6 +175,26 @@ private final class JunoDesktopAppDelegate: NSObject, NSApplicationDelegate, UNU
         }
     }
 
+    /// URLs and files the system hands the app: "Open in Mac app" on the
+    /// website (``DesktopOpenLink``).
+    ///
+    /// Implementing this also takes the event from SwiftUI, whose default for
+    /// a URL no scene claims is to open another window of the first
+    /// `WindowGroup` (builds up to 1.10.5 had no handler). Anything that is not an `open` link (a sign-in
+    /// callback, a file dropped on the icon, a bare launch argument) is
+    /// ignored here exactly as before; sign-in's callback is caught by
+    /// `ASWebAuthenticationSession` and never arrives at all.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        guard !JunoTestHost.isActive else { return }
+        guard let link = urls.lazy.compactMap({ DesktopOpenLink(url: $0) }).first else { return }
+        // A turn later, so a link that launched the app lands after
+        // `applicationDidFinishLaunching` has built the menu the
+        // no-window fallback reads.
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated { link.perform() }
+        }
+    }
+
     func application(
         _ application: NSApplication,
         didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data

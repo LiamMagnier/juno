@@ -27,6 +27,23 @@ final class NativeResearchModelsLineTests: XCTestCase {
         )
     }
 
+    func testRefusedChoiceIsNamedFirstNeverSwappedInSilence() {
+        XCTAssertEqual(
+            NativeResearchRun.modelsLine(lead: "Claude Fable 5.1", leadID: "fable", worker: "Claude Haiku 4.5", workerID: "haiku",
+                                         workerNote: nil, chosen: false, done: false,
+                                         refusedModel: "Gemini 3.5 Flash-Lite", refusedModelID: "google:gemini-3.5-flash-lite",
+                                         refusedReason: "plan"),
+            "Gemini 3.5 Flash-Lite isn't available on your plan \u{00B7} Led by Claude Fable 5.1 \u{00B7} Researchers on Claude Haiku 4.5"
+        )
+        XCTAssertEqual(
+            NativeResearchRun.modelsLine(lead: "Claude Fable 5.1", leadID: "fable", worker: "Claude Haiku 4.5", workerID: "haiku",
+                                         workerNote: nil, chosen: false, done: true,
+                                         refusedModel: "Gemini 3.5 Flash-Lite", refusedModelID: "google:gemini-3.5-flash-lite",
+                                         refusedReason: "not_configured"),
+            "Gemini 3.5 Flash-Lite isn't available right now \u{00B7} Led by Claude Fable 5.1 \u{00B7} Researchers on Claude Haiku 4.5"
+        )
+    }
+
     /// The server recalculates "Researched for" from the run and sends 0 when
     /// the run is gone; a zero says "Researched", never "Researched for 0s".
     func testResearchLeadHidesAMissingTime() {

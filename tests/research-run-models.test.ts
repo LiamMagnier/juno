@@ -175,3 +175,46 @@ test("every stage of a run reads the model the run recorded (source contract)", 
   // The completion names the recorded writer, never "the strongest configured".
   assert.doesNotMatch(run, /researchLeadModel\(\)\?\.id \|\| ""/);
 });
+
+test("a chosen model that could not lead is named first, with why, never swapped in silence", () => {
+  const LABELLED: Record<string, string> = { ...LABELS, "google:gemini-3.5-flash-lite": "Gemini 3.5 Flash-Lite" };
+  const recorded = runModelsOf(
+    plan({
+      envelope: {
+        ...ENVELOPE,
+        leadModel: "claude-fable",
+        workerModel: "claude-haiku",
+        chosenRefused: { model: "google:gemini-3.5-flash-lite", reason: "plan" },
+      },
+    }),
+    (id) => LABELLED[id] ?? id
+  );
+  assert.deepEqual(recorded.models?.chosenRefused, { model: { id: "google:gemini-3.5-flash-lite", label: "Gemini 3.5 Flash-Lite" }, reason: "plan" });
+  assert.deepEqual(modelsLine(recorded.models, false), [
+    { parts: [{ kind: "label", value: "Gemini 3.5 Flash-Lite" }, { phrase: "isn't available on your plan" }] },
+    { parts: [{ phrase: "Led by" }, { kind: "label", value: "Claude Fable 5.1" }] },
+    { parts: [{ phrase: "Researchers on" }, { kind: "label", value: "Claude Haiku 4.5" }] },
+  ]);
+  const unconfigured = runModelsOf(
+    plan({ envelope: { ...ENVELOPE, leadModel: "claude-fable", workerModel: "claude-haiku", chosenRefused: { model: "gpt-5-pro", reason: "not_configured" } } }),
+    labelOf
+  );
+  assert.deepEqual(modelsLine(unconfigured.models, true)?.[0], { parts: [{ kind: "label", value: "GPT-5 Pro" }, { phrase: "isn't available right now" }] });
+});
+
+test("the refused choice survives the plan's round trip, and a malformed one is dropped", () => {
+  const kept = parsePlan({ ...EMPTY_PLAN, envelope: { ...ENVELOPE, chosenRefused: { model: "google:gemini-3.5-flash-lite", reason: "not_configured" } } });
+  assert.deepEqual(kept.envelope?.chosenRefused, { model: "google:gemini-3.5-flash-lite", reason: "not_configured" });
+  const dropped = parsePlan({ ...EMPTY_PLAN, envelope: { ...ENVELOPE, chosenRefused: { model: "x", reason: "because" } } });
+  assert.equal(dropped.envelope?.chosenRefused, undefined);
+  assert.ok(dropped.envelope, "the envelope itself is still trusted");
+});
+
+test("the web's in-chat research passes the chosen model, as the hand-off does (source contract)", () => {
+  const stage = readFileSync("src/lib/chat/turn/research-stage.ts", "utf8");
+  const preferred = stage.match(/preferredModel: isAutoModelId\(requestedId\) \? null : modelInfo\.id/g) ?? [];
+  assert.equal(preferred.length, 2, "both runDeepResearch and startBackgroundResearch carry it");
+  const deep = readFileSync("src/lib/deep-research.ts", "utf8");
+  const confirms = deep.match(/decision: "confirm", preferredModel: opts\.preferredModel \?\? null/g) ?? [];
+  assert.equal(confirms.length, 2, "a yes in chat confirms on the model chosen then");
+});

@@ -8,7 +8,7 @@ import { MODEL_LIST, trainsOnPrompts, type ModelInfo } from "@/lib/models";
 import { researchLeadCandidates, type ResearchLeadCandidate } from "@/lib/research/envelope";
 import { getModelMetrics } from "@/lib/model-metrics";
 import { canUseModel } from "@/lib/plans";
-import type { ResearchWorkerNote } from "@/types/research";
+import type { ResearchChosenRefusal, ResearchWorkerNote } from "@/types/research";
 import { compatPromptCacheTokens, estimateGenerationCostUsd, type CompatPromptCacheFields } from "@/lib/pricing";
 import { providerAdapterFor } from "@/lib/provider-routing";
 import { isProviderConfigured, providerApiKey, providerBaseUrl } from "@/lib/providers";
@@ -204,13 +204,31 @@ export function researchStepDownModel(opts: { plan: Plan; preferred?: string | n
  * dishonesty this function exists to end.
  */
 export function chosenResearchModel(id: string | null | undefined, plan?: Plan | null): ModelInfo | null {
+  const verdict = chosenResearchVerdict(id, plan);
+  return verdict && "model" in verdict ? verdict.model : null;
+}
+
+/**
+ * The same decision as `chosenResearchModel`, with the reason when the
+ * person's model cannot lead. Null when no model was chosen, or when the id
+ * is not in the catalogue at all (Auto, or a row that no longer exists):
+ * there is no model to name, so there is nothing honest to say about it.
+ *
+ * Deprecated is not retired: a deprecated model is still served (the chat
+ * itself answers on it), so it leads research too. Retired rows are not in
+ * MODEL_LIST at all.
+ */
+export function chosenResearchVerdict(
+  id: string | null | undefined,
+  plan?: Plan | null
+): { model: ModelInfo } | { refused: ResearchChosenRefusal; id: string } | null {
   if (!id) return null;
   const model = MODEL_LIST.find((candidate) => candidate.id === id);
   if (!model) return null;
-  if (model.modality !== "chat" || model.comingSoon || model.status === "deprecated") return null;
-  if (!isProviderConfigured(model.provider)) return null;
-  if (plan && !canUseModel(plan, model.id)) return null;
-  return model;
+  if (model.modality !== "chat" || model.comingSoon) return { refused: "unavailable", id: model.id };
+  if (!isProviderConfigured(model.provider)) return { refused: "not_configured", id: model.id };
+  if (plan && !canUseModel(plan, model.id)) return { refused: "plan", id: model.id };
+  return { model };
 }
 
 /**
@@ -235,6 +253,12 @@ export interface ResearchRunModelChoice {
   chosen: boolean;
   /** One class down, for a thin month. Never offered when the person chose the lead. */
   stepDown: ModelInfo | null;
+  /**
+   * The person chose a model and it cannot lead, with the reason. The run then
+   * goes on the Auto pair, and the views say so in words rather than quietly
+   * naming a model nobody picked.
+   */
+  refused?: { model: string; reason: ResearchChosenRefusal } | null;
 }
 
 /**
@@ -253,7 +277,8 @@ export interface ResearchRunModelChoice {
  * always made, and the views name both models.
  */
 export function researchRunModels(opts: { plan: Plan; preferred?: string | null }): ResearchRunModelChoice {
-  const chosen = chosenResearchModel(opts.preferred, opts.plan);
+  const verdict = chosenResearchVerdict(opts.preferred, opts.plan);
+  const chosen = verdict && "model" in verdict ? verdict.model : null;
   if (chosen) {
     const limit = researchToolLimit(chosen);
     if (!limit) return { lead: chosen, worker: chosen, workerNote: null, chosen: true, stepDown: null };
@@ -265,6 +290,7 @@ export function researchRunModels(opts: { plan: Plan; preferred?: string | null 
     workerNote: null,
     chosen: false,
     stepDown: researchStepDownModel({ plan: opts.plan }),
+    refused: verdict && "refused" in verdict ? { model: verdict.id, reason: verdict.refused } : null,
   };
 }
 

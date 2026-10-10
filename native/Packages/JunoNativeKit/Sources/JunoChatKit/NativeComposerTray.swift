@@ -452,6 +452,66 @@ struct NativeTrayChoiceMenu<Glyph: View>: View {
     }
 
     var body: some View {
+        #if os(macOS)
+        NativeTrayPopoverChip(
+            accessibilityLabel: "\(control.option.label): \(control.chip)",
+            identifier: identifier
+        ) { close in
+            list(close: close)
+        } label: {
+            glyph()
+            Text(control.chip)
+        }
+        #else
+        menu
+        #endif
+    }
+
+    /// The Mac's list: each value with its note on a second line, the aspect
+    /// ratios each drawn as their own frame.
+    func list(query: String = "", cursor: String? = nil, close: @escaping () -> Void) -> NativeTrayPicker {
+        let current = control.value ?? .auto
+        let items = choices.map { choice in
+            let chosen = choice.value == current
+            let pick = { if !chosen { pick(choice.value) } }
+            if control.key == "aspect" {
+                return NativeTrayPickerItem(
+                    id: choice.value.description,
+                    title: words(choice),
+                    subtitle: note(choice),
+                    accessory: .check(chosen),
+                    action: pick
+                ) {
+                    NativeTrayAspectGlyph(value: choice.value)
+                        .frame(width: NativeTrayPickerMetrics.tile, height: NativeTrayPickerMetrics.tile)
+                        .background {
+                            RoundedRectangle(cornerRadius: JunoRadius.control, style: .continuous)
+                                .fill(Color.junoForeground.opacity(0.06))
+                        }
+                }
+            }
+            return NativeTrayPickerItem(
+                id: choice.value.description,
+                title: words(choice),
+                subtitle: note(choice),
+                accessory: .check(chosen),
+                action: pick
+            )
+        }
+        return NativeTrayPicker(
+            identifier: "\(identifier).list",
+            header: control.option.label,
+            searchPrompt: "Search \(control.option.label.lowercased())…",
+            sections: [NativeTrayPickerSection(id: control.key, items: items)],
+            emptyMessage: "Nothing to choose",
+            width: NativeTrayPickerMetrics.compactWidth,
+            query: query,
+            cursor: cursor,
+            close: close
+        )
+    }
+
+    private var menu: some View {
         NativeTrayMenu(
             accessibilityLabel: "\(control.option.label): \(control.chip)",
             identifier: identifier
@@ -601,9 +661,19 @@ struct NativeTrayLengthControl: View {
 public struct NativeComposerTrayProject: Identifiable, Hashable, Sendable {
     public let id: String
     public let name: String
-    public init(id: String, name: String) {
+    /// When it last changed, for the Mac's "Edited 2 days ago".
+    public let updatedAt: Date?
+    /// Starred projects head the Mac's list under their own heading.
+    public let starred: Bool
+    /// The project folder it sits in, named on its second line.
+    public let parentName: String?
+
+    public init(id: String, name: String, updatedAt: Date? = nil, starred: Bool = false, parentName: String? = nil) {
         self.id = id
         self.name = name
+        self.updatedAt = updatedAt
+        self.starred = starred
+        self.parentName = parentName
     }
 }
 
@@ -638,30 +708,65 @@ public struct NativeComposerTrayApps {
     public var toggle: (String) -> Void
     public var manage: (() -> Void)?
     public var isLoading: Bool
+    /// How many may be on for one message (the web's five), or nil for no cap.
+    public var limit: Int?
+    /// Whether the Mac's Apps list is open, when the owner opens it from
+    /// elsewhere (an app's mark in the field); nil keeps it the chip's own.
+    public var isPresented: Binding<Bool>?
 
     public init(
         connectors: [NativeConnector],
         enabled: Set<String>,
         toggle: @escaping (String) -> Void,
         manage: (() -> Void)? = nil,
-        isLoading: Bool = false
+        isLoading: Bool = false,
+        limit: Int? = nil,
+        isPresented: Binding<Bool>? = nil
     ) {
         self.connectors = connectors
         self.enabled = enabled
         self.toggle = toggle
         self.manage = manage
         self.isLoading = isLoading
+        self.limit = limit
+        self.isPresented = isPresented
     }
 }
 
 /// One skill the tray can arm for the next message.
 public struct NativeComposerTraySkill: Identifiable, Hashable, Sendable {
+    /// Where a skill comes from: the Mac's list groups by it, in this order.
+    public enum Origin: String, CaseIterable, Hashable, Sendable {
+        /// Written by the reader.
+        case yours
+        /// Shipped with the product.
+        case builtIn
+        /// Imported from a repository.
+        case installed
+
+        public var title: String {
+            switch self {
+            case .yours: "Yours"
+            case .builtIn: "Built-in"
+            case .installed: "Installed"
+            }
+        }
+    }
+
     public let slug: String
     public let name: String
+    public let description: String
+    public let origin: Origin
+    /// "owner/repo" for an installed skill.
+    public let source: String?
     public var id: String { slug }
-    public init(slug: String, name: String) {
+
+    public init(slug: String, name: String, description: String = "", origin: Origin = .yours, source: String? = nil) {
         self.slug = slug
         self.name = name
+        self.description = description
+        self.origin = origin
+        self.source = source
     }
 }
 
@@ -671,19 +776,25 @@ public struct NativeComposerTraySkills {
     public var arm: (String?) -> Void
     public var browse: (() -> Void)?
     public var isLoading: Bool
+    /// Whether the Mac's Skills list is open, when the owner opens it from
+    /// elsewhere (the armed skill's mark in the field); nil keeps it the
+    /// chip's own.
+    public var isPresented: Binding<Bool>?
 
     public init(
         items: [NativeComposerTraySkill],
         armed: String?,
         arm: @escaping (String?) -> Void,
         browse: (() -> Void)? = nil,
-        isLoading: Bool = false
+        isLoading: Bool = false,
+        isPresented: Binding<Bool>? = nil
     ) {
         self.items = items
         self.armed = armed
         self.arm = arm
         self.browse = browse
         self.isLoading = isLoading
+        self.isPresented = isPresented
     }
 }
 
@@ -779,12 +890,18 @@ public struct NativeComposerTray<Leading: View, Trailing: View>: View {
 
     // MARK: Project
 
+    @ViewBuilder
     private func projectMenu(_ projects: NativeComposerTrayProjects, compact: Bool) -> some View {
         let name = projects.selectedName
-        return NativeTrayMenu(
-            accessibilityLabel: name.map { "Project: \($0)" } ?? "Select project",
-            identifier: "juno.composer-tray.project"
-        ) {
+        let label = name.map { "Project: \($0)" } ?? "Select project"
+        #if os(macOS)
+        NativeTrayPopoverChip(accessibilityLabel: label, identifier: "juno.composer-tray.project") { close in
+            NativeComposerTrayPickers.projects(projects, close: close)
+        } label: {
+            projectLabel(name: name, compact: compact)
+        }
+        #else
+        NativeTrayMenu(accessibilityLabel: label, identifier: "juno.composer-tray.project") {
             Picker(
                 "Project",
                 selection: Binding(get: { projects.selectedID ?? "" }, set: { projects.select($0.isEmpty ? nil : $0) })
@@ -800,25 +917,37 @@ public struct NativeComposerTray<Leading: View, Trailing: View>: View {
                 Button("New project…", action: create)
             }
         } label: {
-            JunoIconView(.projects, size: 16)
-                .foregroundStyle(Color.junoSecondaryInk)
-            if !compact || NativeComposerTrayMetrics.showsCompactProjectWord {
-                Text(name ?? (compact ? "Project" : "Select project"))
-                    .truncationMode(.tail)
-                    .frame(maxWidth: compact ? 120 : 200, alignment: .leading)
-                    .fixedSize(horizontal: name == nil, vertical: false)
-            }
+            projectLabel(name: name, compact: compact)
+        }
+        #endif
+    }
+
+    @ViewBuilder
+    private func projectLabel(name: String?, compact: Bool) -> some View {
+        JunoIconView(.projects, size: 16)
+            .foregroundStyle(Color.junoSecondaryInk)
+        if !compact || NativeComposerTrayMetrics.showsCompactProjectWord {
+            Text(name ?? (compact ? "Project" : "Select project"))
+                .truncationMode(.tail)
+                .frame(maxWidth: compact ? 120 : 200, alignment: .leading)
+                .fixedSize(horizontal: name == nil, vertical: false)
         }
     }
 
     // MARK: Apps
 
+    @ViewBuilder
     private func appsMenu(_ apps: NativeComposerTrayApps) -> some View {
         let on = apps.connectors.filter { apps.enabled.contains($0.id) }
-        return NativeTrayMenu(
-            accessibilityLabel: on.isEmpty ? "Apps" : "Apps, \(on.count) on",
-            identifier: "juno.composer-tray.apps"
-        ) {
+        let label = on.isEmpty ? "Apps" : "Apps, \(on.count) on"
+        #if os(macOS)
+        NativeTrayPopoverChip(accessibilityLabel: label, identifier: "juno.composer-tray.apps", isPresented: apps.isPresented) { close in
+            NativeComposerTrayPickers.apps(apps, close: close)
+        } label: {
+            appsLabel(on)
+        }
+        #else
+        NativeTrayMenu(accessibilityLabel: label, identifier: "juno.composer-tray.apps") {
             if apps.connectors.isEmpty {
                 Text(apps.isLoading ? "Loading apps…" : "No apps connected")
             } else {
@@ -836,30 +965,42 @@ public struct NativeComposerTray<Leading: View, Trailing: View>: View {
                 Button(apps.connectors.isEmpty ? "Connect apps…" : "Manage apps…", action: manage)
             }
         } label: {
-            if on.isEmpty {
-                JunoIconView(.connections, size: 16)
-                    .foregroundStyle(Color.junoSecondaryInk)
-            } else {
-                HStack(spacing: -JunoSpace.micro) {
-                    ForEach(on.prefix(3)) { connector in
-                        JunoConnectorMark(connectorID: connector.id, connectorName: connector.label, logoURL: connector.logoURL, size: 15)
-                            .padding(1)
-                            .background(Circle().fill(Color.junoCard))
-                    }
+            appsLabel(on)
+        }
+        #endif
+    }
+
+    @ViewBuilder
+    private func appsLabel(_ on: [NativeConnector]) -> some View {
+        if on.isEmpty {
+            JunoIconView(.connections, size: 16)
+                .foregroundStyle(Color.junoSecondaryInk)
+        } else {
+            HStack(spacing: -JunoSpace.micro) {
+                ForEach(on.prefix(3)) { connector in
+                    JunoConnectorMark(connectorID: connector.id, connectorName: connector.label, logoURL: connector.logoURL, size: 15)
+                        .padding(1)
+                        .background(Circle().fill(Color.junoCard))
                 }
             }
-            Text("Apps")
         }
+        Text("Apps")
     }
 
     // MARK: Skills
 
+    @ViewBuilder
     private func skillsMenu(_ skills: NativeComposerTraySkills) -> some View {
         let armed = skills.items.first { $0.slug == skills.armed }
-        return NativeTrayMenu(
-            accessibilityLabel: armed.map { "Skill: \($0.name)" } ?? "Skills",
-            identifier: "juno.composer-tray.skills"
-        ) {
+        let label = armed.map { "Skill: \($0.name)" } ?? "Skills"
+        #if os(macOS)
+        NativeTrayPopoverChip(accessibilityLabel: label, identifier: "juno.composer-tray.skills", isPresented: skills.isPresented) { close in
+            NativeComposerTrayPickers.skills(skills, close: close)
+        } label: {
+            skillsLabel(armed)
+        }
+        #else
+        NativeTrayMenu(accessibilityLabel: label, identifier: "juno.composer-tray.skills") {
             if skills.items.isEmpty {
                 Text(skills.isLoading ? "Loading skills…" : "No skills yet")
             } else {
@@ -879,13 +1020,19 @@ public struct NativeComposerTray<Leading: View, Trailing: View>: View {
                 Button("Browse skills…", action: browse)
             }
         } label: {
-            JunoIconView(.skills, size: 16)
-                .foregroundStyle(Color.junoSecondaryInk)
-            Text(armed?.name ?? "Skills")
-                .truncationMode(.tail)
-                .frame(maxWidth: 160, alignment: .leading)
-                .fixedSize(horizontal: armed == nil, vertical: false)
+            skillsLabel(armed)
         }
+        #endif
+    }
+
+    @ViewBuilder
+    private func skillsLabel(_ armed: NativeComposerTraySkill?) -> some View {
+        JunoIconView(.skills, size: 16)
+            .foregroundStyle(Color.junoSecondaryInk)
+        Text(armed?.name ?? "Skills")
+            .truncationMode(.tail)
+            .frame(maxWidth: 160, alignment: .leading)
+            .fixedSize(horizontal: armed == nil, vertical: false)
     }
 }
 
@@ -965,5 +1112,27 @@ struct NativeTrayFittingLine<Items: View, Trailing: View>: View {
                 }
             }
         }
+    }
+}
+
+extension NativeComposerTrayPickers {
+    /// One generation choice's list (aspect, quality, count…), as its chip
+    /// opens it on the Mac.
+    public static func choices(
+        schema: NativeMediaParamSchema,
+        params: NativeMediaParams,
+        key: String,
+        query: String = "",
+        cursor: String? = nil,
+        pick: @escaping (NativeMediaParamValue) -> Void = { _ in },
+        close: @escaping () -> Void
+    ) -> NativeTrayPicker {
+        guard let control = schema.controls(params).first(where: { $0.key == key }) else {
+            return NativeTrayPicker(identifier: "juno.composer-tray.\(key).list", searchPrompt: "", sections: [], emptyMessage: "Nothing to choose", close: close)
+        }
+        return NativeTrayChoiceMenu(control: control, identifier: "juno.composer-tray.\(key)", pick: pick) {
+            EmptyView()
+        }
+        .list(query: query, cursor: cursor, close: close)
     }
 }

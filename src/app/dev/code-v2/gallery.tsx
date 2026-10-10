@@ -3,6 +3,7 @@
 import * as React from "react";
 import { useTheme } from "next-themes";
 import { useSearchParams } from "next/navigation";
+import { DictationStageContext, dictationStageFromParam } from "@/components/chat/composer-dictation-stage";
 import { CodeWorkspace } from "@/components/code/v2/workspace";
 import { ConnectionsPanel } from "@/components/code/v2/connections";
 import type { WorkspaceModel } from "@/components/code/v2/types";
@@ -16,7 +17,8 @@ import { useFixtureSkills } from "./skills-fixture";
  * The /dev/code-v2 gallery: every workspace state over fixture data, live
  * enough to click through (sending appends a turn, approvals resolve, pickers
  * change the selection). `?state=` picks one, `?bare=1` hides this chrome for
- * screenshots, `?theme=dark|light`, `?motion=reduced`.
+ * screenshots, `?theme=dark|light`, `?motion=reduced`, `?dictation=demo` (the
+ * mic opens a staged take).
  */
 export function CodeV2Gallery() {
   const params = useSearchParams();
@@ -24,6 +26,8 @@ export function CodeV2Gallery() {
   const bare = params.get("bare") === "1";
   const stateId = params.get("state") ?? "streaming";
   const reduced = params.get("motion") === "reduced";
+  // `?dictation=demo|silent|transcribing`: the mic opens a staged take (no microphone).
+  const dictation = React.useMemo(() => dictationStageFromParam(params.get("dictation")), [params]);
   const [log, setLog] = React.useState<string[]>([]);
   React.useEffect(() => {
     const t = params.get("theme");
@@ -47,12 +51,14 @@ export function CodeV2Gallery() {
     );
   }
   return (
+    <DictationStageContext.Provider value={dictation}>
     <div style={{ height: "100dvh", display: "flex", flexDirection: "column" }}>
       {!bare && <Chrome current={stateId} theme={resolvedTheme} setTheme={setTheme} log={log} />}
       <div style={{ flex: 1, minHeight: 0 }}>
         <LiveState key={stateId} id={stateId} reduced={reduced} onLog={(l) => setLog((x) => [l, ...x].slice(0, 6))} />
       </div>
     </div>
+    </DictationStageContext.Provider>
   );
 }
 

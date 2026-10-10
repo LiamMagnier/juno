@@ -48,3 +48,20 @@ Screenshots: `.claude/handoff/composer-tray/` in the main checkout (`mac/`, `iph
 - Mac: `ComposerTraySnapshotTests` (offscreen) pass and render every tray.
 - iPhone: `JunoMobileTests` pass; simulator screenshots of the real app in preview mode.
 - `npm run native:design:check`: all 9 gates hold (glass and targets counts went down).
+
+## Mac tray lists (Oct 10, branch `mac/tray-submenus`)
+
+Owner: "rework completely the UI and UX of submenus on the macOS app. For example, skills uh, select a project it doesn't look great. … Same for app. You don't have the icons with the app. Um, and from the plus button remove skills in app since it's already in the bottom of the composer. Same for add to a project."
+
+| Piece | Where |
+|---|---|
+| The list | `JunoChatKit/NativeTrayPicker.swift`: `NativeTrayPicker` in the system popover (Liquid Glass on macOS 26; nothing inside draws glass), the model selector's row language: an icon on a quiet tile, a title, one secondary line, a quiet check (never the system's blue highlight), the hover tone as the one cursor. A search field above 7 rows; ↑↓ / Home / End walk rows and the footer, Return picks, Esc clears the search then closes, typing searches (or jumps to the first match in a short list). Sized to its rows, 360pt at most, scrolling past that and opening on the chosen row. `NativeTrayPopoverChip` is the tray pill that opens one. |
+| Lists | `NativeComposerTrayPickers`: **Project** ("No project" pinned, Starred then Recent newest first, "Edited 2 days ago" / "In {folder} · edited …", "New project…"); **Skills** ("No skill", grouped Yours / Built-in / Installed, the description on the second line, else the source or `/slug`, "Manage skills…"); **Apps** (each app's own mark through `JunoConnectorMark`: the installed Mac app's icon, bundled artwork, or the catalogue's logo URL; "Connected as …" in words; a stock switch per app for this chat; five at most, the rest quiet with the reason; "Connect more…"); **media values** (`choices(schema:params:key:)`: aspect ratios each drawn as their frame, quality / count / format with their notes). |
+| Folder | `ChatFolderControl.accessList`: Read and write / Read only with what each means, "Choose another folder…", "Stop working in {folder}". |
+| Marks | Linear and Slack marks added to the Mac's `Assets.xcassets/Connectors` from the web's `connector-logos.tsx` (GitHub, Notion, Figma were there). |
+| `+` menu | `ComposerTrayCoverage` (ComposerPlusMenu.swift): `+` leaves out Add to Project, Apps and Use a Skill exactly where the tray on screen carries them (a new chat's chat line; Project only beside a media model's choices). In a thread the tray holds only the folder pill (and a media model's choices), and while steering or dictating it steps aside, so there `+` keeps those rows. Clicking the armed skill's mark opens the tray's Skills list (an app's mark the Apps list) wherever the tray carries it (`ComposerTrayCoverage.target(forMark:)`, the lists' `isPresented` bindings); elsewhere it opens `+` as before. |
+| iPhone | Unchanged: the phone keeps the platform menus (`#if os(macOS)` around the popovers). The shared model types gained optional fields with defaults. |
+
+Snapshots: `TraySubmenuSnapshotTests` → `tray-submenus/tray-<list>-<light|dark>.png` (project, project-search, project-none, skills, skills-search, skills-empty, apps, apps-search, apps-full, folder, aspect, quality).
+
+Not mapped: no "Built-in" skills exist in the native library yet (the section appears when one does); a project's file count is not in the synced record, so the second line says when it was last edited.

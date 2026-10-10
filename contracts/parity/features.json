@@ -1243,6 +1243,10 @@
           "status": "internal",
           "note": "Where the browser's CSP sends violation reports."
         },
+        "/api/devices/mac-app": {
+          "status": "web-only",
+          "note": "Whether the account has a Mac seen in the last 30 days, so the website's Open in Mac app tries the app's URL scheme instead of the download page. The apps never need to ask whether they are installed."
+        },
         "/api/downloads": "native",
         "/api/github/webhook": {
           "status": "internal",

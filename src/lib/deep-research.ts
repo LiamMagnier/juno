@@ -317,7 +317,7 @@ export async function startBackgroundResearch(opts: {
   if (pendingRun) {
     const reply = goal.toLowerCase();
     if (CONFIRM_REPLY.test(reply)) {
-      const decided = await engine.decidePlan({ runId: pendingRun.id, userId: opts.userId, decision: "confirm" });
+      const decided = await engine.decidePlan({ runId: pendingRun.id, userId: opts.userId, decision: "confirm", preferredModel: opts.preferredModel ?? null });
       if (decided.ok) {
         drive({ runId: pendingRun.id, userId: opts.userId });
         return { kind: "handoff", runId: pendingRun.id };
@@ -451,7 +451,7 @@ export async function runDeepResearch(opts: {
     if (pendingRun) {
       const reply = prompt.toLowerCase();
       if (CONFIRM_REPLY.test(reply)) {
-        await engine.decidePlan({ runId: pendingRun.id, userId: opts.userId, decision: "confirm" });
+        await engine.decidePlan({ runId: pendingRun.id, userId: opts.userId, decision: "confirm", preferredModel: opts.preferredModel ?? null });
         runId = pendingRun.id;
       } else if (REJECT_REPLY.test(reply)) {
         await engine.decidePlan({ runId: pendingRun.id, userId: opts.userId, decision: "cancel" });

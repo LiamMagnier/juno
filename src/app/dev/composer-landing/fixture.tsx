@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { AppProvider } from "@/components/app/app-provider";
+import { DictationStageContext, dictationStageFromParam, type DictationStage } from "@/components/chat/composer-dictation-stage";
 import { Composer } from "@/components/chat/composer";
 import { EmptyGreeting, HomeField, PrivateGreeting } from "@/components/chat/empty-state";
 import { PrivateChatToggle } from "@/components/chat/private-chat-toggle";
@@ -329,7 +330,10 @@ export function ComposerLandingFixture() {
   const [model, setModel] = React.useState<ModelId>(AUTO_MODEL_ID);
   const [effort, setEffort] = React.useState<ReasoningEffort | null>(null);
   const [view, setView] = React.useState<"all" | "home" | "dock" | "tasks" | "private" | "clarify">("all");
+  // `?dictation=demo|silent|transcribing`: the mic opens a staged take (no microphone).
+  const [dictation, setDictation] = React.useState<DictationStage | null>(null);
   React.useEffect(() => {
+    setDictation(dictationStageFromParam(new URLSearchParams(window.location.search).get("dictation")));
     const wanted = new URLSearchParams(window.location.search).get("view");
     if (wanted === "home" || wanted === "dock" || wanted === "tasks" || wanted === "private" || wanted === "clarify") setView(wanted);
     // `?model=<id>` opens on a named model, so the effort dial can be checked.
@@ -355,6 +359,7 @@ export function ComposerLandingFixture() {
 
   return (
     <AppProvider bootstrap={BOOTSTRAP}>
+      <DictationStageContext.Provider value={dictation}>
       <main className="app-main-canvas min-h-dvh bg-background text-foreground">
         {view === "all" || view === "home" ? <HomeView {...common} /> : null}
         {view === "private" ? <PrivateView {...common} /> : null}
@@ -372,6 +377,7 @@ export function ComposerLandingFixture() {
           </section>
         ) : null}
       </main>
+      </DictationStageContext.Provider>
     </AppProvider>
   );
 }

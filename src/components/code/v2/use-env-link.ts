@@ -24,6 +24,8 @@ import type { TerminalSession } from "./types";
 
 export interface EnvLink {
   ready: boolean;
+  /** The probe has settled (answered or failed) for the current Mac. */
+  probed: boolean;
   status: TransportStatus | "none";
   client: EnvClient | null;
   instances: ProviderInstance[];
@@ -54,6 +56,7 @@ function explicitEnvUrl(): string | null {
 export function useEnvLink(device: { id: string; online: boolean } | null, initialSessionId: string | null): EnvLink {
   const [client, setClient] = React.useState<EnvClient | null>(null);
   const [ready, setReady] = React.useState(false);
+  const [probed, setProbed] = React.useState(false);
   const [status, setStatus] = React.useState<TransportStatus | "none">("none");
   const [instances, setInstances] = React.useState<ProviderInstance[]>([]);
   const [terminals, setTerminals] = React.useState<TerminalSession[]>([]);
@@ -89,8 +92,13 @@ export function useEnvLink(device: { id: string; online: boolean } | null, initi
         if (!live) return;
         setInstances(list);
         setReady(true);
+        setProbed(true);
       })
-      .catch(() => live && setReady(false));
+      .catch(() => {
+        if (!live) return;
+        setReady(false);
+        setProbed(true);
+      });
     return () => {
       live = false;
       offStatus();
@@ -100,6 +108,7 @@ export function useEnvLink(device: { id: string; online: boolean } | null, initi
       c.close();
       setClient(null);
       setReady(false);
+      setProbed(false);
     };
   }, [deviceId, online]);
 
@@ -183,5 +192,5 @@ export function useEnvLink(device: { id: string; online: boolean } | null, initi
     [client],
   );
 
-  return { ready, status, client, instances, terminals, view, sessionId, open, probe, openTerminal, writeTerminal, resizeTerminal, closeTerminal };
+  return { ready, probed, status, client, instances, terminals, view, sessionId, open, probe, openTerminal, writeTerminal, resizeTerminal, closeTerminal };
 }
