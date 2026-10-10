@@ -625,7 +625,7 @@ struct PremiumVoiceSnapshotTests {
 
     nonisolated static let names = [
         "voice-listening", "voice-speaking", "voice-thinking", "voice-muted", "voice-typing",
-        "voice-window-speaking", "voice-chat-empty", "voice-code-empty",
+        "voice-window-speaking", "voice-chat-empty", "voice-code-empty", "voice-dictating",
     ]
 
     @Test(arguments: names)
@@ -653,6 +653,13 @@ struct PremiumVoiceSnapshotTests {
                         draft: "And the photo I just added, what do you make of it?"
                     )
                 )
+            case "voice-dictating":
+                let take = ComposerDictationSession()
+                take.beginPreview(
+                    final: "Can you move the design review to Thursday afternoon and",
+                    partial: "let the team know"
+                )
+                view = AnyView(VoiceShots.dictatingComposer(world: world, session: take))
             case "voice-window-speaking":
                 world.showConversation()
                 size = PremiumFrame.size
@@ -753,6 +760,39 @@ enum VoiceShots {
             EmptyView()
         }
         .junoVoiceCall(call)
+        .padding(.top, JunoSpace.region)
+        .frame(width: 880, height: 220, alignment: .top)
+        .background(Color.junoCanvas)
+        .environment(\.junoSnapshotOpaqueGlass, true)
+        .environment(\.locale, Locale(identifier: "en_US"))
+        .junoAccentTint()
+    }
+
+    /// The Chat composer, docked, dictating mid-sentence.
+    static func dictatingComposer(world: SnapshotPreviewWorld, session: ComposerDictationSession) -> some View {
+        ChatComposerDock(
+            lift: ChatComposerLift.resting,
+            gutter: JunoSpace.roomy
+        ) {
+            EmptyView()
+        } composer: {
+            ChatComposer(
+                model: world.world.conversationModel,
+                attachmentModel: world.world.attachmentModel,
+                libraryModel: world.world.libraryModel,
+                projectModel: world.world.projectModel,
+                workspaceModel: nil,
+                documentIndex: nil,
+                connectorModel: world.world.connectorModel,
+                memorySettings: world.world.memorySettingsModel,
+                draftProjectID: .constant(nil),
+                draftPrompt: .constant(nil),
+                openVoiceMode: { _ in }
+            )
+        } footer: {
+            EmptyView()
+        }
+        .environment(\.junoPreviewDictation, session)
         .padding(.top, JunoSpace.region)
         .frame(width: 880, height: 220, alignment: .top)
         .background(Color.junoCanvas)

@@ -43,8 +43,21 @@ final class JunoMobileVoiceAudioSession {
       ) { [weak self] notification in
         let raw = (notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt) ?? 0
         let options = (notification.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt) ?? 0
+        let suspended = (notification.userInfo?[AVAudioSessionInterruptionWasSuspendedKey] as? Bool) ?? false
         Task { @MainActor [weak self] in
-          self?.handleInterruption(typeRaw: raw, optionsRaw: options)
+          self?.handleInterruption(typeRaw: raw, optionsRaw: options, wasSuspended: suspended)
+        }
+      }
+    )
+    // The media server restarting takes every engine in the process with it.
+    observers.append(
+      center.addObserver(
+        forName: AVAudioSession.mediaServicesWereResetNotification,
+        object: AVAudioSession.sharedInstance(),
+        queue: .main
+      ) { [weak self] _ in
+        Task { @MainActor [weak self] in
+          self?.apply(.resume(unmute: false))
         }
       }
     )
@@ -64,24 +77,31 @@ final class JunoMobileVoiceAudioSession {
     for observer in observers { center.removeObserver(observer) }
   }
 
-  private func handleInterruption(typeRaw: UInt, optionsRaw: UInt) {
+  private func handleInterruption(typeRaw: UInt, optionsRaw: UInt, wasSuspended: Bool) {
     guard let type = AVAudioSession.InterruptionType(rawValue: typeRaw) else { return }
-    switch type {
-    case .began:
-      guard !interrupted else { return }
+    let action = JunoMobileVoiceInterruptionPolicy.action(
+      began: type == .began,
+      wasSuspended: wasSuspended,
+      interrupted: interrupted,
+      mutedBefore: wasMutedBeforeInterruption
+    )
+    apply(action)
+  }
+
+  private func apply(_ action: JunoMobileVoiceInterruptionPolicy.Action) {
+    switch action {
+    case .ignore:
+      break
+    case .pause:
       interrupted = true
       wasMutedBeforeInterruption = controller.muted
       // Mute rather than end: the relay keeps the conversation, and the
       // reader comes back to the call they were in.
       controller.setMuted(true)
-    case .ended:
+    case .resume(let unmute):
       interrupted = false
-      let options = AVAudioSession.InterruptionOptions(rawValue: optionsRaw)
-      if options.contains(.shouldResume), !wasMutedBeforeInterruption {
-        controller.setMuted(false)
-      }
-    @unknown default:
-      break
+      controller.resumeAudioAfterInterruption()
+      if unmute { controller.setMuted(false) }
     }
   }
 
@@ -103,5 +123,43 @@ final class JunoMobileVoiceAudioSession {
       outputRouteName = output.portName
       isExternalRoute = true
     }
+  }
+}
+
+/// What an audio-session interruption does to a call.
+///
+/// **Three rules, each one a way the iPhone call went deaf.**
+///
+/// - A "began" that carries `wasSuspended` is not an interruption happening
+///   now: iOS reports, on the way back from suspension (and sometimes as a
+///   session activates), one that happened while the app was not running.
+///   Muting on it left a live call muted with nothing on screen to say why.
+/// - An "ended" always brings the audio back, whether or not it says
+///   `shouldResume`. iOS stops the engine when an interruption begins and
+///   restarts nothing; the flag is advice to media players about resuming
+///   playback, and a call that waits for it can stay silent forever.
+/// - The microphone is only turned back on if the interruption turned it off.
+///   A call muted on purpose stays muted.
+enum JunoMobileVoiceInterruptionPolicy {
+  enum Action: Equatable {
+    case ignore
+    /// Mute the uplink until the interruption ends.
+    case pause
+    /// Re-activate the session and rebuild the graph; unmute if the
+    /// interruption was what muted it.
+    case resume(unmute: Bool)
+  }
+
+  static func action(
+    began: Bool,
+    wasSuspended: Bool,
+    interrupted: Bool,
+    mutedBefore: Bool
+  ) -> Action {
+    if began {
+      if wasSuspended || interrupted { return .ignore }
+      return .pause
+    }
+    return .resume(unmute: interrupted && !mutedBefore)
   }
 }

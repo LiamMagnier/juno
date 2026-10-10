@@ -9,6 +9,28 @@ import JunoSync
 import JunoVoiceKit
 import SwiftUI
 
+// A voice call, in the composer's own shell (the website's design: the call
+// is the composer, not a strip or a window of its own).
+//
+// Host usage, for any composer with a field, a controls row and an edge
+// overlay (Chat's `ChatComposer` is the reference):
+//
+//     // placeholder while in a call: "Type while you talk…"
+//     // controls row, replacing the host's own row (never beside it):
+//     DesktopVoiceCallBar(
+//         column: call, hangUp: hangUp, hasDraft: !draft.isEmpty,
+//         leading: { plusMenu },          // the host's `+`
+//         primary: { sendDisc }           // the host's Send, shown once typed
+//     )
+//     // edge overlay on the shell:
+//     DesktopVoiceComposerGlow(controller: call.controller)
+//     // one quiet line above the shell, when there is news:
+//     DesktopVoiceCallNotices(column: call, hangUp: hangUp)
+//
+// The bar draws `+ · [stop] · mic · screen · settings · End`, End in the
+// primary slot until something is typed. Nothing is drawn outside the shell
+// except the light on its edge.
+
 /// One spoken conversation, owned by the screen that started it.
 ///
 /// `id` doubles as the save's idempotency key. It used to be `@State` on the
@@ -213,16 +235,16 @@ enum DesktopVoiceCallPhase: Equatable {
         }
     }
 
-    /// Whose light the glow shows: the glow is the call's status (there is
-    /// no meter and no phase label). Warm while the floor is yours, cool while
-    /// Juno speaks, the whole palette gathered into a beam while it thinks,
-    /// grey when the microphone is off, held low otherwise.
-    var glowTone: JunoVoiceGlowTone {
+    /// Who holds the floor, as the voice light draws it: ember for you,
+    /// presence ink for Alevr, the handoff beam while it thinks, graphite
+    /// when muted, no light while there is no call to follow.
+    var glowMode: JunoVoiceGlowMode {
         switch self {
-        case .listening, .interrupting: .caller
-        case .speaking: .juno
+        case .listening, .interrupting: .you
+        case .speaking: .alevr
+        case .thinking: .thinking
         case .muted: .muted
-        case .thinking, .connecting, .reconnecting, .ended, .failed: .mixed
+        case .connecting, .reconnecting, .ended, .failed: .off
         }
     }
 
@@ -807,15 +829,15 @@ struct DesktopVoiceCallEnd: View {
 /// invalidate this view and nothing else.
 struct DesktopVoiceComposerGlow: View {
     let controller: JunoRealtimeVoiceController
+    /// The shell's own radius, so the light runs on its edge.
+    var cornerRadius: CGFloat = JunoComposerMetrics.cornerRadius
 
     var body: some View {
-        let phase = DesktopVoiceCallText.phase(controller)
         JunoVoiceGlow(
-            level: { [controller] in controller.muted ? 0 : controller.level },
-            bands: { [controller] in controller.muted ? .silent : controller.glowBands },
-            processing: phase == .thinking,
-            paused: phase.holdsGlowStill,
-            tone: phase.glowTone
+            mode: DesktopVoiceCallText.phase(controller).glowMode,
+            you: { [controller] in controller.micLoudness },
+            alevr: { [controller] in controller.replyLoudness },
+            cornerRadius: cornerRadius
         )
     }
 }

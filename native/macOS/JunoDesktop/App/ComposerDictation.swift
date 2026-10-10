@@ -2,6 +2,29 @@ import JunoDesignSystem
 import JunoVoiceKit
 import SwiftUI
 
+// Dictation, in the composer's own shell: the Mac's half of the shared design
+// (the iPhone's is `JunoMobileDictation.swift`).
+//
+// Host usage, for any composer with a field slot, a controls row and an edge
+// overlay (Chat's `ChatComposer` is the reference):
+//
+//     @State private var dictation: ComposerDictationSession?
+//
+//     // start
+//     let take = ComposerDictationSession(); dictation = take
+//     Task { await take.begin() }
+//
+//     // field slot
+//     ComposerDictationField(session: take)
+//     // controls row, replacing the host's own row (never beside it)
+//     ComposerDictationControls(session: take, cancel: {...}, done: {...})
+//     // edge overlay on the shell
+//     ComposerDictationGlow(session: take)
+//
+// `take.finish()` returns the words heard and stops the microphone;
+// `take.cancel()` drops them. The row has exactly two exits, ✕ and ✓ Done,
+// so the host's own Send disc must not be drawn while dictating.
+
 /// A dictation in progress: the recognizer, and where it stands (§5.8,
 /// Dictating).
 ///
@@ -25,7 +48,7 @@ final class ComposerDictationSession {
     }
 
     let speech = JunoSpeechService()
-    private(set) var phase: Phase = .starting
+    fileprivate(set) var phase: Phase = .starting
 
     /// Whether the microphone or recognizer was refused rather than failing
     /// some other way — the one failure the status names.
@@ -68,6 +91,23 @@ final class ComposerDictationSession {
         !speech.transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 }
+
+#if DEBUG
+extension ComposerDictationSession {
+    /// A take with no microphone behind it, already listening: the snapshot
+    /// harness's dictation (see `JunoSpeechService.beginPreviewSession`).
+    func beginPreview(final: String = "", partial: String = "") {
+        speech.beginPreviewSession(final: final, partial: partial, speaking: !(final.isEmpty && partial.isEmpty))
+        speech.seedPreviewHistory()
+        phase = .listening
+    }
+}
+
+extension EnvironmentValues {
+    /// Hands the composer a dictation in progress, for snapshots only.
+    @Entry var junoPreviewDictation: ComposerDictationSession?
+}
+#endif
 
 // MARK: - The field slot
 
@@ -132,17 +172,19 @@ struct ComposerDictationField: View {
 
 // MARK: - The controls row
 
-/// The controls row while dictating: ✕ where `+` was, the meter and what it
-/// is doing, then Done and the send disc where the disc was (§5.8).
+/// The controls row while dictating: ✕ where `+` was, the live waveform
+/// across the middle, ✓ Done in the primary disc's place (§5.8). One way
+/// out each side and nothing else: no status word, and no second send disc
+/// (Return still sends what was heard, from the field).
 ///
 /// The row keeps the composer's own geometry, so the swap moves nothing but
-/// what the controls say: the ✕ lands exactly on the `+`, and the disc is the
-/// same 28pt circle in the same place.
-struct ComposerDictationControls<Disc: View>: View {
+/// what the controls say: the ✕ lands exactly on the `+`, and ✓ is the same
+/// ink disc in the same place.
+struct ComposerDictationControls: View {
     let session: ComposerDictationSession
     let cancel: () -> Void
-    let stop: () -> Void
-    @ViewBuilder let disc: () -> Disc
+    /// ✓: stop, and put the words in the field to edit or send.
+    let done: () -> Void
 
     var body: some View {
         HStack(spacing: JunoComposerMetrics.controlSpacing) {
@@ -157,58 +199,52 @@ struct ComposerDictationControls<Disc: View>: View {
             .accessibilityLabel("Cancel dictation")
             .accessibilityIdentifier("juno.desktop.dictation-cancel")
 
-            HStack(spacing: JunoSpace.snug) {
-                if session.phase != .finished, !isFailed {
-                    ComposerLevelMeter(level: session.speech.level, active: session.isListening)
+            JunoDictationWaveform(
+                samples: session.speech.loudnessHistory,
+                active: session.isListening
+            )
+            .frame(maxWidth: .infinity)
+            .frame(height: JunoComposerMetrics.controlHeight)
+            .padding(.horizontal, JunoSpace.snug)
+
+            // The primary disc's ink circle, with the check: the same object
+            // in the same place as Send, so the hand already knows it.
+            Button(action: done) {
+                ZStack {
+                    Circle().fill(Color.junoForeground)
+                    JunoIconView(.check, size: 15, weight: .bold)
+                        .foregroundStyle(Color.junoCanvas)
                 }
-                if let status {
-                    Text(status)
-                        .junoType(.ui)
-                        .foregroundStyle(Color.junoSecondaryInk)
-                        .lineLimit(1)
-                }
+                .frame(width: JunoComposerMetrics.controlHeight, height: JunoComposerMetrics.controlHeight)
+                .contentShape(Circle())
             }
-            .padding(.leading, JunoSpace.tight)
-            .accessibilityElement(children: .combine)
-            .accessibilityAddTraits(.updatesFrequently)
-
-            Spacer(minLength: JunoSpace.snug)
-
-            Button(action: stop) {
-                Label {
-                    Text("Done")
-                } icon: {
-                    JunoIconView(.check, size: 14, weight: .bold)
-                }
-                .labelStyle(.titleAndIcon)
-                .junoType(JunoType.ui.weight(.medium))
-                .foregroundStyle(Color.junoForeground)
-                .padding(.horizontal, JunoSpace.snug)
-                .frame(height: JunoComposerMetrics.controlHeight)
-                .contentShape(.rect)
-            }
-            .buttonStyle(ComposerControlStyle())
-            .disabled(!session.isListening)
-            .help("Stop and edit")
-            .accessibilityLabel("Stop dictation and edit the text")
-            .accessibilityIdentifier("juno.desktop.dictation-stop")
-
-            disc()
+            .buttonStyle(ComposerDiscStyle())
+            .disabled(isFailed)
+            .help("Done  stop and edit")
+            .accessibilityLabel("Done dictating")
+            .accessibilityIdentifier("juno.desktop.dictation-done")
         }
     }
 
     private var isFailed: Bool {
         if case .failed = session.phase { true } else { false }
     }
+}
 
-    /// The one status word, which never claims more than is known: "Listening"
-    /// only while the microphone is open.
-    private var status: String? {
-        switch session.phase {
-        case .listening: "Listening"
-        case .failed: session.wasDenied ? "Microphone blocked" : nil
-        case .starting, .finished: nil
-        }
+// MARK: - The light
+
+/// The voice light on the shell while dictating: ember, following the
+/// microphone, gone the moment the take is finished (the web's dictation
+/// wears the same `JunoVoiceGlow`, tone "you").
+struct ComposerDictationGlow: View {
+    let session: ComposerDictationSession
+
+    var body: some View {
+        JunoVoiceGlow(
+            mode: session.isListening ? .you : .off,
+            you: { [session] in session.speech.loudness },
+            cornerRadius: JunoComposerMetrics.cornerRadius
+        )
     }
 }
 

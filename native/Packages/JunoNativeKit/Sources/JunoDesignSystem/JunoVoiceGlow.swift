@@ -1,238 +1,164 @@
 import SwiftUI
 
-/// Juno's voice glow: the one light a voice call draws, and the call's status.
+/// The voice light: the one light every voice surface draws, on iPhone, iPad
+/// and Mac — the composer in a call, dictation, the full-screen call.
 ///
-/// The native half of the web's `JunoVoiceGlow`
-/// (`src/components/voice/voice-composer-glow.tsx`, over Libraries.dev's
-/// `voice-glow`): a soft band of colour along the bottom edge of the composer
-/// that rises and blooms with the voice, and, while the reply is being thought
-/// through, gathers into one beam that travels side to side. The host clips it
-/// to its own shape (the composer's `ContainerRelativeShape`), so the light
-/// follows the shell's corners exactly and never spills onto the page.
+/// A port of the website's light (`src/components/voice/voice-glow-engine.ts`,
+/// `voice-glow-renderer.ts`, `voice-glow-palette.ts`), not a reinterpretation:
+/// the same state model, the same timings, the same two inks, the same shape.
 ///
-/// **The glow is the status.** There is no meter and no phase label beside it:
-/// whose turn it is, is the colour, and what is happening, is the motion.
-/// - ``JunoVoiceGlowTone/caller``: you talking or listening. The warm dawn
-///   hues (apricot, gold, clay, rose), rising with your level.
-/// - ``JunoVoiceGlowTone/juno``: Juno speaking. The cool dusk hues (sky,
-///   teal, sage, periwinkle), rising with Juno's level.
-/// - ``JunoVoiceGlowTone/mixed`` with `processing`: thinking. The whole palette
-///   gathered into one beam travelling side to side, not level-driven.
-/// - ``JunoVoiceGlowTone/muted``: a still, low, grey band.
-/// - `paused` (connecting, ended): held still and low.
-/// A change of tone cross-fades over the slow rung (`--dur-slow`), and keeps
-/// that fade under Reduce Motion: it is a change of colour, not travel.
+/// **The light lives on the edge, never over the field.** The surface's own
+/// outline takes the speaker's ink where it is lit, a short falloff blooms
+/// outward from it, and inside there is nothing but a hairline rim — the
+/// words and the controls stay exactly as crisp as at rest. It replaces the
+/// old multi-hue band that rose up through the glass (and the orb and aura
+/// of the full-screen call), which read as a wash over the composer.
 ///
-/// **What it is not.** Not glass and not a material: it is light drawn over
-/// the shell, like the border beam. No aura, no wash of the window.
+/// **State is the light.** Ember while you speak, presence ink while Alevr
+/// speaks, one beam handed from your end to Alevr's while it thinks (the
+/// Continuum handoff, ember to presence), graphite held still when muted.
+/// Each voice follows its own audio, so talking over Alevr shows both, parted
+/// toward their own sides. Silence is still: whoever holds the floor keeps a
+/// faint, unmoving light, and it never breathes.
 ///
-/// - INPUT. `level` is a getter, read once per frame by the timeline, never
-///   state: at display rate, state would re-render the composer to move light.
-///   `bands`, when the host can measure them, makes the light articulate: the
-///   centre lobe follows the lows, its neighbours the mids, the outer pair the
-///   highs, so a vowel swells the middle and an "s" flicks the edges — the
-///   motion follows the words, not a volume knob. Without them the lobes are
-///   synthesised from the level, as before.
-/// - REDUCE MOTION. A still, low band that brightens with the level. No flow,
-///   no travel, no breathing.
-/// - REDUCE TRANSPARENCY. The same band, quieter and without additive light.
+/// - Reduce Motion: every level is ignored and each state is a static pose,
+///   reached by a 120 ms fade.
+/// - Reduce Transparency: the lit stretch of the edge, solid and crisp, with
+///   no falloff.
 ///
-/// Decorative to assistive technology: the host announces each phase in words.
+/// Decorative to assistive technology: the host says each state in words.
 public struct JunoVoiceGlow: View {
-    private let level: () -> Double
-    private let bands: (() -> JunoVoiceGlowBands)?
-    private let processing: Bool
-    private let paused: Bool
-    private let tone: JunoVoiceGlowTone
-    private let edgeInset: CGFloat
+    private let mode: JunoVoiceGlowMode
+    private let you: () -> Double
+    private let alevr: () -> Double
+    private let cornerRadius: CGFloat
+    private let margin: CGFloat
 
     /// - Parameters:
-    ///   - level: The live level (0...1) of whoever is talking, read per frame.
-    ///   - processing: The reply is being thought through: gather into a beam.
-    ///   - paused: No live audio (connecting, ended, muted): hold still and low.
-    ///   - tone: Whose light it is. Defaults to the whole palette, the web's.
-    ///   - edgeInset: How far above the view's bottom the glow's ground line
-    ///     (the host's bottom edge) sits. The bloom spills into that strip and
-    ///     fades there, so on a phone the light never ends on a hard cut.
+    ///   - mode: Who holds the floor (see ``JunoVoiceGlowMode``).
+    ///   - you: Your microphone, 0...1 on the speech-loudness window
+    ///     (``RealtimeLoudness``: -52...-12 dBFS), read once per frame.
+    ///   - alevr: Alevr's voice as heard, the same scale.
+    ///   - cornerRadius: The surface's radius. A circle passes half its side.
+    ///   - margin: How far outside the surface the light may reach.
     public init(
-        level: @escaping () -> Double,
-        bands: (() -> JunoVoiceGlowBands)? = nil,
-        processing: Bool = false,
-        paused: Bool = false,
-        tone: JunoVoiceGlowTone = .mixed,
-        edgeInset: CGFloat = 0
+        mode: JunoVoiceGlowMode,
+        you: @escaping () -> Double,
+        alevr: @escaping () -> Double = { 0 },
+        cornerRadius: CGFloat,
+        margin: CGFloat = JunoVoiceGlowRenderer.margin
     ) {
-        self.level = level
-        self.bands = bands
-        self.processing = processing
-        self.paused = paused
-        self.tone = tone
-        self.edgeInset = edgeInset
-    }
-
-    /// A still level (previews, a level held by the caller).
-    public init(
-        level: Double,
-        processing: Bool = false,
-        paused: Bool = false,
-        tone: JunoVoiceGlowTone = .mixed,
-        edgeInset: CGFloat = 0
-    ) {
-        self.init(level: { level }, processing: processing, paused: paused, tone: tone, edgeInset: edgeInset)
+        self.mode = mode
+        self.you = you
+        self.alevr = alevr
+        self.cornerRadius = cornerRadius
+        self.margin = margin
     }
 
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
-    /// The light's own memory: smoothed level, the processing morph, the flow,
-    /// the colour fade. A reference, not state, because it moves every frame
-    /// and nothing but the canvas reads it.
+    /// The light's memory. A reference, not state: it moves every frame and
+    /// nothing but the canvas reads it.
     @State private var engine = JunoVoiceGlowEngine()
 
     public var body: some View {
-        // Still light (held, or under Reduce Motion) only has a level and a
-        // colour fade to follow, so the timeline drops to a calm rate.
-        let calm = reduceMotion || paused
-        TimelineView(.animation(minimumInterval: calm ? 1.0 / 30 : nil)) { timeline in
+        TimelineView(.animation(minimumInterval: reduceMotion ? 1.0 / 30 : nil)) { timeline in
             Canvas(opaque: false, rendersAsynchronously: true) { context, size in
-                let isDark = colorScheme == .dark
                 let frame = engine.step(
                     to: timeline.date,
-                    level: paused ? 0 : level(),
-                    bands: paused ? nil : bands?(),
-                    processing: processing && !paused,
-                    still: reduceMotion || paused,
-                    palette: JunoVoiceGlowPalette.palette(for: tone, dark: isDark)
+                    input: JunoVoiceGlowInput(
+                        mode: mode,
+                        you: mode == .off ? 0 : you(),
+                        alevr: mode == .off ? 0 : alevr(),
+                        reduced: reduceMotion
+                    )
+                )
+                let rect = CGRect(
+                    x: margin, y: margin,
+                    width: max(0, size.width - margin * 2),
+                    height: max(0, size.height - margin * 2)
                 )
                 JunoVoiceGlowRenderer(
-                    isDark: isDark,
-                    reduceMotion: reduceMotion,
-                    reduceTransparency: reduceTransparency
-                ).draw(
-                    frame,
-                    in: &context,
-                    size: CGSize(width: size.width, height: max(0, size.height - edgeInset))
+                    palette: colorScheme == .dark ? .dark : .light,
+                    solid: reduceTransparency
                 )
+                .draw(frame, in: &context, rect: rect, radius: cornerRadius)
             }
         }
+        .padding(-margin)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }
 }
 
-/// The voice's low / mid / high bands, each 0...1 (see the web's
-/// `voice-glow` `bands`). The lobes follow these when the host has them.
-public struct JunoVoiceGlowBands: Equatable, Sendable {
-    public var low: Double
-    public var mid: Double
-    public var high: Double
-
-    public init(low: Double, mid: Double, high: Double) {
-        self.low = low
-        self.mid = mid
-        self.high = high
+extension View {
+    /// Lays the voice light on this view's edge. The view must be the
+    /// surface (the composer card, the call disc) and `cornerRadius` its own.
+    public func junoVoiceGlow(
+        _ mode: JunoVoiceGlowMode,
+        you: @escaping () -> Double,
+        alevr: @escaping () -> Double = { 0 },
+        cornerRadius: CGFloat
+    ) -> some View {
+        overlay {
+            JunoVoiceGlow(mode: mode, you: you, alevr: alevr, cornerRadius: cornerRadius)
+        }
     }
-
-    public static let silent = JunoVoiceGlowBands(low: 0, mid: 0, high: 0)
 }
 
-/// Whose light the glow is showing.
-public enum JunoVoiceGlowTone: Equatable, Sendable {
-    /// You: listening, or you talking. Warm.
-    case caller
-    /// Juno speaking. Cool.
-    case juno
-    /// The whole palette: thinking, and the web's default.
-    case mixed
-    /// The microphone is off. Grey.
+/// Who holds the floor: the web's `GlowMode`.
+public enum JunoVoiceGlowMode: Equatable, Sendable {
+    /// You are speaking, or it is your turn. Ember.
+    case you
+    /// Alevr is speaking. Presence ink.
+    case alevr
+    /// The gap between your turn and Alevr's: the handoff beam.
+    case thinking
+    /// The microphone is off. Graphite, held still.
     case muted
+    /// Connecting, reconnecting, ended, a closing dictation: no light.
+    case off
 }
 
 // MARK: - Palette
 
-/// The web's `junoVoicePalette` (`src/components/effects/use-effect-theme.ts`).
+/// The web's `GLOW_PALETTE`, kept as hex so parity is a string compare.
 ///
-/// `colors` is centre first, then the pairs outward, the package's order.
-/// `core`, `above`, `mid` and `below` are the contour band's light and its
-/// fringes. Kept as hex strings so the parity with the web is a string compare.
+/// Alevr is presence ink, the brand's one live colour; you are ember, a burnt
+/// orange chosen opposite it (OKLCH hue 50, between danger's red and
+/// attention's amber), matched in chroma so the two voices weigh the same.
+/// `line` paints the edge, `glow` the falloff outside it, `hot` the core of a
+/// lit edge at a peak on charcoal (on ivory a peak is deeper, never whiter).
 public struct JunoVoiceGlowPalette: Equatable, Sendable {
-    public let colors: [String]
-    public let core: String
-    public let above: String
-    public let mid: String
-    public let below: String
-    /// The web's `strength`: fuller on the dark ground, a notch softer on paper.
-    public let strength: Double
+    public struct Voice: Equatable, Sendable {
+        public let line: String
+        public let glow: String
+        public let hot: String
+    }
+
+    public let you: Voice
+    public let alevr: Voice
+    public let muted: String
+    public let dark: Bool
 
     public static let light = JunoVoiceGlowPalette(
-        colors: ["#f07f52", "#f2ad3f", "#ec6f5f", "#6fb383", "#e8839b", "#6f9fd8", "#5fb3ab"],
-        core: "#ffd9bf", above: "#f07f52", mid: "#6fb383", below: "#6f9fd8",
-        strength: 0.8
+        you: Voice(line: "#bc5806", glow: "#f69147", hot: "#bc5806"),
+        alevr: Voice(line: "#2d49c9", glow: "#6782f2", hot: "#2d49c9"),
+        muted: "#9a9ca0",
+        dark: false
     )
 
     public static let dark = JunoVoiceGlowPalette(
-        colors: ["#ff9a6b", "#ffc15f", "#ff7f73", "#86d19a", "#f59bb0", "#86b9f2", "#79d0c8"],
-        core: "#fff1e4", above: "#ff9a6b", mid: "#86d19a", below: "#86b9f2",
-        strength: 0.95
+        you: Voice(line: "#f3a26b", glow: "#fba962", hot: "#fdcfa6"),
+        alevr: Voice(line: "#97a6e6", glow: "#90a6f7", hot: "#ced7fb"),
+        muted: "#84868a",
+        dark: true
     )
-
-    /// You: the dawn hues, apricot at the centre, then gold, clay and rose.
-    public static let warmLight = JunoVoiceGlowPalette(
-        colors: ["#f07f52", "#f2ad3f", "#ec6f5f", "#e8839b", "#f2ad3f", "#ec6f5f", "#e8839b"],
-        core: "#ffd9bf", above: "#f07f52", mid: "#f2ad3f", below: "#e8839b",
-        strength: 0.8
-    )
-
-    public static let warmDark = JunoVoiceGlowPalette(
-        colors: ["#ff9a6b", "#ffc15f", "#ff7f73", "#f59bb0", "#ffc15f", "#ff7f73", "#f59bb0"],
-        core: "#fff1e4", above: "#ff9a6b", mid: "#ffc15f", below: "#f59bb0",
-        strength: 0.95
-    )
-
-    /// Juno: the dusk hues, sky at the centre, then teal, sage and periwinkle.
-    public static let coolLight = JunoVoiceGlowPalette(
-        colors: ["#6f9fd8", "#5fb3ab", "#6fb383", "#8e97dc", "#5fb3ab", "#6fb383", "#8e97dc"],
-        core: "#dce9fa", above: "#6f9fd8", mid: "#5fb3ab", below: "#8e97dc",
-        strength: 0.8
-    )
-
-    public static let coolDark = JunoVoiceGlowPalette(
-        colors: ["#86b9f2", "#79d0c8", "#86d19a", "#a8aef5", "#79d0c8", "#86d19a", "#a8aef5"],
-        core: "#eef5ff", above: "#86b9f2", mid: "#79d0c8", below: "#a8aef5",
-        strength: 0.95
-    )
-
-    /// The microphone off: one quiet grey.
-    public static let mutedLight = JunoVoiceGlowPalette(
-        colors: Array(repeating: "#a8a29a", count: 7),
-        core: "#d6d2cc", above: "#a8a29a", mid: "#a8a29a", below: "#a8a29a",
-        strength: 0.55
-    )
-
-    public static let mutedDark = JunoVoiceGlowPalette(
-        colors: Array(repeating: "#8c877f", count: 7),
-        core: "#bdb8b0", above: "#8c877f", mid: "#8c877f", below: "#8c877f",
-        strength: 0.55
-    )
-
-    public static func palette(for tone: JunoVoiceGlowTone, dark: Bool) -> JunoVoiceGlowPalette {
-        switch tone {
-        case .caller: dark ? warmDark : warmLight
-        case .juno: dark ? coolDark : coolLight
-        case .mixed: dark ? .dark : .light
-        case .muted: dark ? mutedDark : mutedLight
-        }
-    }
-
-    /// Every colour of this palette as linear components, in the renderer's
-    /// order: the seven lobes, then core, above, below.
-    var components: [JunoVoiceGlowRGB] {
-        (colors + [core, above, below]).map(JunoVoiceGlowRGB.init(hex:))
-    }
 }
 
-/// One colour, as sRGB components, so a fade between palettes is arithmetic.
+/// One colour as sRGB components, so the hot-core mix is arithmetic.
 struct JunoVoiceGlowRGB: Equatable {
     var red: Double
     var green: Double
@@ -244,8 +170,6 @@ struct JunoVoiceGlowRGB: Equatable {
         self.blue = blue
     }
 
-    /// A `#rrggbb` string. Invalid strings are black, which draws as nothing
-    /// under additive light and as a shadow otherwise, so a test would see it.
     init(hex: String) {
         let digits = hex.hasPrefix("#") ? String(hex.dropFirst()) : hex
         let value = digits.count == 6 ? UInt32(digits, radix: 16) ?? 0 : 0
@@ -265,392 +189,565 @@ struct JunoVoiceGlowRGB: Equatable {
     var color: Color { Color(.sRGB, red: red, green: green, blue: blue) }
 }
 
-// MARK: - Engine
+// MARK: - State model
 
-/// One frame's worth of the glow's state.
-struct JunoVoiceGlowFrame: Equatable {
-    /// How lit the glow is, 0...1, with the idle breath and the processing hold.
-    var lit: Double
-    /// 0 = spread along the edge, 1 = gathered into the travelling beam.
-    var gathered: Double
-    /// The spectrum's sideways drift, in fractions of the range.
-    var flow: Double
-    /// The beam's place across the range, -1...1.
-    var beam: Double
-    /// Seconds on the glow's own clock, for the lobes' ripple.
-    var clock: Double
-    /// The seven lobes, then core, above and below, mid-fade if a tone is
-    /// changing.
-    var colors: [JunoVoiceGlowRGB]
-    /// The palette's strength, faded with its colours.
-    var strength: Double
-    /// Each lobe's lift, 0...~1.2, centre first then the pairs outward. The
-    /// renderer multiplies the rise by it.
-    var lobes: [Double] = []
-    /// How much of `lobes` is real audio (1) rather than synthesised (0):
-    /// the ripple that fakes articulation fades out as real bands take over.
-    var articulated: Double = 0
-    /// The band's bell leans toward the highs on a sibilant and back on a
-    /// vowel, -1...1 of a small offset.
-    var lean: Double = 0
+/// What one frame is given.
+public struct JunoVoiceGlowInput: Equatable, Sendable {
+    public var mode: JunoVoiceGlowMode
+    public var you: Double
+    public var alevr: Double
+    public var reduced: Bool
+
+    public init(mode: JunoVoiceGlowMode, you: Double, alevr: Double, reduced: Bool) {
+        self.mode = mode
+        self.you = you
+        self.alevr = alevr
+        self.reduced = reduced
+    }
 }
 
-/// Smooths the raw level into light: a quick rise, a slower settle, the way
-/// the web's composer glow (`attack` 0.06s, `release` 0.18s), and eases the
-/// processing morph in and out over its `processingEase` 0.6s.
-public final class JunoVoiceGlowEngine {
-    static let attack: Double = 0.06
-    static let release: Double = 0.18
-    static let processingEase: Double = 0.6
-    /// `idle`: a soft presence while nobody is talking, so the call never
-    /// looks dead.
-    static let idle: Double = 0.06
-    /// `processingLevel`: how lit the glow is held while it thinks.
-    static let processingLevel: Double = 0.55
-    /// `processingDuration`: seconds per pass of the beam.
-    static let passDuration: Double = 1.1
-    /// `processingCurve`: how the beam eases into each turn.
-    static let turnCurve: Double = 2.1
-    /// `flow` at full level, as a fraction of the range per second.
-    static let flowRate: Double = 0.16
+/// What the renderer draws: the web's `GlowFrame`.
+public struct JunoVoiceGlowFrame: Equatable, Sendable {
+    public struct Voice: Equatable, Sendable {
+        /// 0...1 brightness.
+        public var amp: Double
+        /// 0...1 spread and bloom, from the voice's own envelope.
+        public var lift: Double
+    }
 
-    private(set) var level: Double = 0
-    private(set) var gathered: Double = 0
-    /// Smoothed bands and how much they are in use.
-    private var low: Double = 0
-    private var mid: Double = 0
-    private var high: Double = 0
-    private var articulated: Double = 0
-    private var flow: Double = 0
-    private var travel: Double = 0
-    private var clock: Double = 0
-    private var lastDate: Date?
-    private var stepped = false
-    /// The colour fade: where it started from, where it is going, how far.
-    private var fromColors: [JunoVoiceGlowRGB] = []
-    private var fromStrength: Double = 0
-    private var target: JunoVoiceGlowPalette?
-    private var fade: Double = 1
+    public struct Beam: Equatable, Sendable {
+        public var amp: Double
+        /// 0 = your end of the edge, 1 = Alevr's end.
+        public var pos: Double
+        /// 0 = ember, 1 = presence.
+        public var mix: Double
+    }
 
-    /// A tone change cross-fades over the slow rung, `--dur-slow`.
-    static let toneFade = JunoMotion.Duration.slow
+    public var you: Voice
+    public var alevr: Voice
+    public var muted: Double
+    public var beams: [Beam]
 
-    /// Each lobe's response to one level when there are no bands: the centre
-    /// loudest, the outer pair quietest.
-    static let lobeGain: [Double] = [1, 0.82, 0.82, 0.66, 0.66, 0.5, 0.5]
-    /// Bands are already smoothed by the meter; this only hides its 30 Hz
-    /// steps at display rate.
-    static let bandSmoothing: Double = 0.035
+    /// Nothing lit: the canvas is left empty.
+    public var isDark: Bool {
+        you.amp < 1e-3 && alevr.amp < 1e-3 && muted < 1e-3
+            && beams.allSatisfy { $0.amp < 1e-3 }
+    }
+}
 
-    func step(
-        to date: Date,
-        level target: Double,
-        bands: JunoVoiceGlowBands? = nil,
-        processing: Bool,
-        still: Bool,
-        palette: JunoVoiceGlowPalette
-    ) -> JunoVoiceGlowFrame {
-        let reduceMotion = still
-        let dt = lastDate.map { min(0.1, max(0, date.timeIntervalSince($0))) } ?? 0
-        lastDate = date
-        let heard = min(1, max(0, target.isFinite ? target : 0))
+/// The web's `voice-glow-engine.ts`, line for line. Pure: a frame is a function
+/// of the previous state, the input and the time step, so tests can drive any
+/// moment exactly.
+public struct JunoVoiceGlowState: Equatable, Sendable {
+    /// Brightness envelopes: they follow the syllables.
+    var envYou = 0.0
+    var envAlevr = 0.0
+    /// Extent envelopes: slower, they follow the phrase.
+    var liftYou = 0.0
+    var liftAlevr = 0.0
+    /// Rest weights: who holds the floor, muted, thinking.
+    var wYou = 0.0
+    var wAlevr = 0.0
+    var wMuted = 0.0
+    var wThink = 0.0
+    /// The whole light's presence: 0 when off.
+    var on = 0.0
+    /// Seconds spent in the current thinking spell; -1 outside one.
+    var thinkT = -1.0
 
-        if !stepped {
-            stepped = true
-            level = heard
-            gathered = processing ? 1 : 0
+    public init() {}
+
+    /// V3 timings and the Continuum handoff, in seconds.
+    public enum Timing {
+        public static let fast = 0.12
+        public static let base = 0.22
+        public static let slow = 0.36
+        public static let exit = 0.16
+        public static let handoffTone = 0.22
+        public static let handoffStagger = 0.07
+        public static let handoffSegments = 6.0
+        public static let repass = 1.6
+        /// One pass end to end: the last segment starts 5 × 70 ms in.
+        public static let handoffPass = (handoffSegments - 1) * handoffStagger + handoffTone
+    }
+
+    /// The still light whoever holds the floor keeps while silent.
+    public static let restAmp = 0.3
+    static let mutedAmp = 0.55
+    static let beamRest = 0.42
+    static let staticAmp = 0.62
+    static let staticLift = 0.28
+
+    /// Speech loudness to light: below the floor is a room, not a voice, and
+    /// a soft knee lets a word's onset rise rather than switch on.
+    public static func gate(_ raw: Double) -> Double {
+        let floor = 0.16, ceil = 0.84, knee = 0.08
+        guard raw > floor else { return 0 }
+        let x = raw - floor
+        let span = ceil - floor
+        let y = x < knee ? (x * x) / (2 * knee) : x - knee / 2
+        return min(1, y / (span - knee / 2))
+    }
+
+    /// Exponential approach landing on the target within `duration`.
+    static func approach(_ value: Double, _ target: Double, _ dt: Double, _ duration: Double) -> Double {
+        guard duration > 0 else { return target }
+        let next = target + (value - target) * exp(-3 * dt / duration)
+        return abs(next - target) < 1e-3 ? target : next
+    }
+
+    /// Fast attack, slower release, snapped to exactly 0 in silence.
+    static func envelope(
+        _ value: Double, _ target: Double, _ dt: Double,
+        attack: Double = 0.045, release: Double = 0.15
+    ) -> Double {
+        let tau = target > value ? attack : release
+        let next = target + (value - target) * exp(-dt / tau)
+        if target == 0, next < 0.004 { return 0 }
+        return abs(next - target) < 1e-4 ? target : next
+    }
+
+    /// One step. `dt` in seconds, clamped to 0.1.
+    public mutating func step(_ input: JunoVoiceGlowInput, dt rawDT: Double) {
+        let dt = min(max(rawDT, 0), 0.1)
+        let mode = input.mode
+        let reduced = input.reduced
+        let fade = reduced ? Timing.fast : Timing.base
+
+        on = Self.approach(
+            on, mode == .off ? 0 : 1, dt,
+            mode == .off ? Timing.exit : (reduced ? Timing.fast : Timing.slow)
+        )
+        wYou = Self.approach(wYou, mode == .you ? 1 : 0, dt, fade)
+        wAlevr = Self.approach(wAlevr, mode == .alevr ? 1 : 0, dt, fade)
+        wMuted = Self.approach(wMuted, mode == .muted ? 1 : 0, dt, fade)
+        wThink = Self.approach(wThink, mode == .thinking ? 1 : 0, dt, fade)
+
+        let youTarget = reduced || mode == .muted || mode == .off ? 0 : Self.gate(input.you)
+        let alevrTarget = reduced || mode == .off ? 0 : Self.gate(input.alevr)
+        envYou = Self.envelope(envYou, youTarget, dt)
+        envAlevr = Self.envelope(envAlevr, alevrTarget, dt)
+        liftYou = Self.envelope(liftYou, youTarget, dt, attack: 0.08, release: 0.3)
+        liftAlevr = Self.envelope(liftAlevr, alevrTarget, dt, attack: 0.08, release: 0.3)
+
+        if mode == .thinking {
+            thinkT = thinkT < 0 ? 0 : thinkT + dt
+        } else if wThink == 0 {
+            thinkT = -1
+        } else if thinkT >= 0 {
+            thinkT += dt
+        }
+    }
+
+    private static func voice(
+        rest: Double, env: Double, lift: Double, on: Double, reduced: Bool
+    ) -> JunoVoiceGlowFrame.Voice {
+        if reduced { return .init(amp: on * rest * staticAmp, lift: rest * staticLift) }
+        let restLight = restAmp * rest
+        let shaped = env > 0 ? pow(env, 0.8) : 0
+        return .init(amp: on * (restLight + (1 - restLight) * shaped), lift: lift)
+    }
+
+    /// The beams of a thinking spell `t` seconds in: the pass under way, and
+    /// the previous one resting at Alevr's end, fading as the next leaves.
+    public static func handoffBeams(_ t: Double) -> [JunoVoiceGlowFrame.Beam] {
+        let cycle = (t / Timing.repass).rounded(.down)
+        let u = t - cycle * Timing.repass
+        let travel = min(1, u / Timing.handoffPass)
+        let pos = JunoVoiceGlowCurve.easeInOut(travel)
+        let mix = JunoVoiceGlowCurve.easeOutSoft(
+            min(1, max(0, (u - Timing.handoffStagger) / Timing.handoffTone))
+        )
+        let amp: Double
+        if u < Timing.handoffTone {
+            amp = JunoVoiceGlowCurve.easeOutSoft(u / Timing.handoffTone)
+        } else if u < Timing.handoffPass {
+            amp = 1
         } else {
-            let tau = heard > level ? Self.attack : Self.release
-            level += (heard - level) * (1 - exp(-dt / tau))
-            gathered += ((processing ? 1 : 0) - gathered) * (1 - exp(-dt / (Self.processingEase / 3)))
+            amp = 1 - (1 - beamRest) * JunoVoiceGlowCurve.easeOutSoft(
+                min(1, (u - Timing.handoffPass) / Timing.slow)
+            )
         }
+        let previous: JunoVoiceGlowFrame.Beam = cycle > 0
+            ? .init(
+                amp: beamRest * (1 - JunoVoiceGlowCurve.easeOutSoft(min(1, u / Timing.handoffTone))),
+                pos: 1, mix: 1
+            )
+            : .init(amp: 0, pos: 1, mix: 1)
+        return [.init(amp: amp, pos: pos, mix: mix), previous]
+    }
 
-        if !reduceMotion {
-            clock += dt
-            flow = (flow + dt * Self.flowRate * level).truncatingRemainder(dividingBy: 1)
-            if gathered > 0.001 { travel += dt } else { travel = 0 }
+    /// The frame the renderer draws.
+    public func frame(reduced: Bool) -> JunoVoiceGlowFrame {
+        let you = Self.voice(rest: wYou, env: envYou, lift: liftYou, on: on, reduced: reduced)
+        let alevr = Self.voice(rest: wAlevr, env: envAlevr, lift: liftAlevr, on: on, reduced: reduced)
+        let beams: [JunoVoiceGlowFrame.Beam]
+        if wThink == 0 {
+            beams = [.init(amp: 0, pos: 0, mix: 0), .init(amp: 0, pos: 1, mix: 1)]
+        } else if reduced {
+            let a = on * wThink * Self.beamRest
+            beams = [.init(amp: a, pos: 0, mix: 0), .init(amp: a, pos: 1, mix: 1)]
+        } else {
+            let k = on * wThink
+            beams = Self.handoffBeams(max(0, thinkT)).map {
+                .init(amp: $0.amp * k, pos: $0.pos, mix: $0.mix)
+            }
         }
-
-        let (colors, strength) = fadeColors(toward: palette, dt: dt)
-        let breath = reduceMotion ? 0 : 0.008 * sin(clock * 1.3)
-        let spoken = max(Self.idle + breath, level)
-        let lit = spoken + (Self.processingLevel - spoken) * gathered
-
-        // Bands: eased toward what was heard, and the share of real
-        // articulation eased in and out so a call that loses its bands (muted,
-        // paused) slides back to the synthesised lobes instead of snapping.
-        let k = dt == 0 ? 1 : 1 - exp(-dt / Self.bandSmoothing)
-        let heardBands = bands ?? .silent
-        low += (clamp(heardBands.low) - low) * k
-        mid += (clamp(heardBands.mid) - mid) * k
-        high += (clamp(heardBands.high) - high) * k
-        let wantsBands: Double = bands != nil && !reduceMotion ? 1 : 0
-        articulated += (wantsBands - articulated) * (dt == 0 ? 1 : 1 - exp(-dt / 0.25))
-        let real = articulated * (1 - gathered)
-        let perLobe = [low, mid, mid, (mid + high) / 2, (mid + high) / 2, high, high]
-        let lobes = Self.lobeGain.indices.map { index -> Double in
-            let synthetic = lit * Self.lobeGain[index]
-            // A floor of the overall level keeps every lobe lit while anyone
-            // talks; the band on top is what makes one side of the glow move
-            // without the other.
-            let measured = min(1.2, 0.3 * lit + 0.85 * perLobe[index] * (0.6 + 0.4 * Self.lobeGain[index]) + 0.1)
-            return synthetic + (max(synthetic * 0.6, measured) - synthetic) * real
-        }
-        let lean = (high - low) * real
-
         return JunoVoiceGlowFrame(
-            lit: min(1, max(0, lit)),
-            gathered: gathered,
-            flow: flow,
-            beam: reduceMotion ? 0 : Self.beamPosition(at: travel),
-            clock: clock,
-            colors: colors,
-            strength: strength,
-            lobes: lobes,
-            articulated: real,
-            lean: lean
+            you: you, alevr: alevr, muted: on * wMuted * Self.mutedAmp, beams: beams
         )
     }
 
-    private func clamp(_ value: Double) -> Double {
-        value.isFinite ? min(1, max(0, value)) : 0
-    }
-
-    /// Moves the colour fade on by `dt`, restarting it from wherever it is
-    /// when the palette changes mid-fade, so a quick turn never snaps.
-    private func fadeColors(toward palette: JunoVoiceGlowPalette, dt: Double) -> ([JunoVoiceGlowRGB], Double) {
-        if target == nil {
-            target = palette
-            fromColors = palette.components
-            fromStrength = palette.strength
-            fade = 1
-        } else if target != palette, let current = target {
-            let (now, strength) = blend(from: fromColors, fromStrength, to: current, fade)
-            fromColors = now
-            fromStrength = strength
-            target = palette
-            fade = 0
+    /// Runs from silence for `seconds` at 60 Hz: a deterministic still, the
+    /// same picture every time (snapshots, previews).
+    public static func simulated(
+        seconds: Double,
+        _ input: (Double) -> JunoVoiceGlowInput
+    ) -> JunoVoiceGlowState {
+        var state = JunoVoiceGlowState()
+        let step = 1.0 / 60
+        var t = step
+        while t <= seconds + 1e-6 {
+            state.step(input(t), dt: step)
+            t += step
         }
-        fade = min(1, fade + dt / Self.toneFade)
-        return blend(from: fromColors, fromStrength, to: palette, fade)
+        return state
+    }
+}
+
+/// The shell's motion curves, as functions of progress.
+enum JunoVoiceGlowCurve {
+    /// A CSS `cubic-bezier(x1, y1, x2, y2)`.
+    static func cubicBezier(_ x1: Double, _ y1: Double, _ x2: Double, _ y2: Double) -> @Sendable (Double) -> Double {
+        let ax = 3 * x1 - 3 * x2 + 1, bx = 3 * x2 - 6 * x1, cx = 3 * x1
+        let ay = 3 * y1 - 3 * y2 + 1, by = 3 * y2 - 6 * y1, cy = 3 * y1
+        return { t in
+            if t <= 0 { return 0 }
+            if t >= 1 { return 1 }
+            var u = t
+            for _ in 0..<6 {
+                let x = ((ax * u + bx) * u + cx) * u - t
+                let slope = (3 * ax * u + 2 * bx) * u + cx
+                if abs(x) < 1e-5 || abs(slope) < 1e-6 { break }
+                u -= x / slope
+            }
+            u = min(1, max(0, u))
+            return ((ay * u + by) * u + cy) * u
+        }
     }
 
-    private func blend(
-        from colors: [JunoVoiceGlowRGB],
-        _ strength: Double,
-        to palette: JunoVoiceGlowPalette,
-        _ t: Double
-    ) -> ([JunoVoiceGlowRGB], Double) {
-        let eased = t * t * (3 - 2 * t)
-        let goal = palette.components
-        let mixed = zip(colors, goal).map { $0.mixed(with: $1, eased) }
-        return (mixed, strength + (palette.strength - strength) * eased)
-    }
+    /// `--ease-out-soft` and `--ease-in-out`.
+    static let easeOutSoft = cubicBezier(0.33, 1, 0.68, 1)
+    static let easeInOut = cubicBezier(0.65, 0, 0.35, 1)
+}
 
-    /// Left to right and back, eased into each turn: `voice-glow`'s travelling
-    /// line, as a pure function of time so it can be checked without a view.
-    public static func beamPosition(at time: Double) -> Double {
-        // Half a pass in, so the first frame of thinking starts at the centre
-        // rather than jumping the light to the left edge.
-        let pass = (max(0, time) / passDuration + 0.5).truncatingRemainder(dividingBy: 2)
-        let along = pass < 1 ? pass : 2 - pass
-        let a = pow(along, turnCurve)
-        let b = pow(1 - along, turnCurve)
-        let eased = a + b == 0 ? 0.5 : a / (a + b)
-        return eased * 2 - 1
+/// The state and its clock, held by a view across frames.
+@MainActor
+public final class JunoVoiceGlowEngine {
+    public private(set) var state = JunoVoiceGlowState()
+    private var lastDate: Date?
+
+    public init() {}
+
+    public func step(to date: Date, input: JunoVoiceGlowInput) -> JunoVoiceGlowFrame {
+        let dt = lastDate.map { date.timeIntervalSince($0) } ?? (1.0 / 60)
+        lastDate = date
+        state.step(input, dt: dt)
+        return state.frame(reduced: input.reduced)
     }
 }
 
 // MARK: - Renderer
 
-/// Draws one frame: blurred lobes rising from the bottom edge, and the
-/// contour band over them.
-struct JunoVoiceGlowRenderer {
-    let isDark: Bool
-    let reduceMotion: Bool
-    let reduceTransparency: Bool
+/// Draws a frame around a rounded rectangle: a 1px tone on the edge, a short
+/// falloff outside it, and a hairline rim inside. The web draws the same thing
+/// with a distance field; here the outline is walked by arc length, so the
+/// light hugs the corners exactly the same way.
+public struct JunoVoiceGlowRenderer {
+    /// How far outside the surface the light may reach.
+    public static let margin: CGFloat = 32
+    /// Where the falloff is spent: the web's 40 px cut, a little inside the
+    /// margin so no frame ever draws to the canvas edge.
+    static let reach: CGFloat = 28
 
-    func draw(_ frame: JunoVoiceGlowFrame, in context: inout GraphicsContext, size: CGSize) {
-        guard size.width > 8, size.height > 8 else { return }
-        let width = size.width
-        let height = size.height
-        let centre = width / 2
-        // `rangeWidth` 0.75: the glow owns the middle three quarters, and fades
-        // into the corners past that.
-        let range = width * 0.75 / 2
-        // Rise: a low band at rest, about 52pt at a loud syllable, never more
-        // than half the host, so the light stays on the bottom edge.
-        let rise = min(height * 0.5, 52)
-        guard frame.colors.count == 10 else { return }
-        let strength = frame.strength * (reduceTransparency ? 0.6 : 1)
-        let lit = frame.lit
-        let colors = frame.colors.prefix(7).map(\.color)
+    let palette: JunoVoiceGlowPalette
+    let solid: Bool
 
-        var lobes = context
-        if isDark, !reduceTransparency { lobes.blendMode = .plusLighter }
-        lobes.addFilter(.blur(radius: 14))
-        // A notch quieter on paper, where the same light reads louder.
-        // Gathered, the seven lobes overlap in one place; without easing off
-        // they add up to a white-hot spot on the dark ground.
-        lobes.opacity = strength * (isDark ? 1 : 0.85) * (1 - 0.4 * frame.gathered)
-            * (reduceMotion ? 0.35 + 0.65 * lit : 0.5 + 0.5 * lit)
-
-        let spacing = range / 3 * 0.85
-        let beamX = centre + frame.beam * range * 0.8
-        for index in colors.indices {
-            // Centre first, then the pairs outward: 0, -1, +1, -2, +2, -3, +3.
-            let pair = (index + 1) / 2
-            let side: Double = index == 0 ? 0 : (index % 2 == 1 ? -1 : 1)
-            var slot = side * Double(pair) * spacing
-            if !reduceMotion {
-                // The spectrum drifts sideways with the voice, wrapping at the
-                // range's ends, so every colour takes a turn at the centre.
-                let span = range * 2
-                slot = (slot + frame.flow * span + range).truncatingRemainder(dividingBy: span)
-                if slot < 0 { slot += span }
-                slot -= range
-            }
-            let spread = centre + slot
-            let gatheredX = beamX + side * Double(pair) * spacing * 0.16
-            let x = spread + (gatheredX - spread) * frame.gathered
-
-            // Fade at the range's ends so a wrapping lobe never pops.
-            let edge = smoothstep(range, range * 0.72, abs(x - centre))
-            // The ripple fakes articulation when all there is is a level; with
-            // real bands it drops to a shimmer so the voice leads.
-            let rippleDepth = 0.22 - 0.16 * frame.articulated
-            let ripple = reduceMotion
-                ? 1
-                : 1 - rippleDepth + rippleDepth * sin(frame.clock * (2.4 + Double(pair) * 0.9) + Double(index) * 1.7)
-            let lift = index < frame.lobes.count ? frame.lobes[index] : lit * JunoVoiceGlowEngine.lobeGain[index]
-            let lobeHeight = (10 + rise * lift * ripple) * (1 - 0.25 * frame.gathered)
-            // A loud band also widens its lobe a touch, so a vowel reads as
-            // the light opening rather than only climbing.
-            let swell = 1 + 0.22 * frame.articulated * max(0, lift - lit)
-            let lobeWidth = spacing * 1.35 * swell * (1 - 0.45 * frame.gathered)
-            let rect = CGRect(
-                x: x - lobeWidth,
-                y: height - lobeHeight,
-                width: lobeWidth * 2,
-                height: lobeHeight * 2
-            )
-            let color = colors[index]
-            lobes.fill(
-                Path(ellipseIn: rect),
-                with: .radialGradient(
-                    Gradient(colors: [color.opacity(0.95 * edge), color.opacity(0.45 * edge), color.opacity(0)]),
-                    center: CGPoint(x: x, y: height),
-                    startRadius: 0,
-                    endRadius: max(lobeWidth, lobeHeight)
-                )
-            )
-        }
-
-        drawBand(frame, in: context, width: width, height: height, centre: centre, range: range, rise: rise, strength: strength)
+    public init(palette: JunoVoiceGlowPalette, solid: Bool = false) {
+        self.palette = palette
+        self.solid = solid
     }
 
-    /// The light along the glow's contour: an organic bell,
-    /// `exp(-(|x| / spread)^curve)`, flattening onto the edge at both ends, with
-    /// a warm fringe above and a cool one below. Fades while the beam gathers.
-    private func drawBand(
+    private struct Light {
+        var amp: Double
+        /// Brightness along the outline at signed arc length `s`.
+        var along: (Double) -> Double
+        /// Falloff length outside the edge, in points.
+        var falloff: Double
+        var line: JunoVoiceGlowRGB
+        var glow: JunoVoiceGlowRGB
+        var hot: JunoVoiceGlowRGB
+        var haloK: Double
+        var lineK: Double
+    }
+
+    public func draw(
         _ frame: JunoVoiceGlowFrame,
-        in context: GraphicsContext,
-        width: Double,
-        height: Double,
-        centre: Double,
-        range: Double,
-        rise: Double,
-        strength: Double
+        in context: inout GraphicsContext,
+        rect: CGRect,
+        radius: CGFloat
     ) {
-        let presence = (1 - frame.gathered) * (0.2 + 0.8 * frame.lit)
-        guard presence > 0.02 else { return }
-        let peak = 4 + rise * 0.55 * frame.lit
-        let bellSpread = range * 0.87
-        // Sibilants pull the crest a little to the right, vowels back.
-        let crest = centre + frame.lean * range * 0.12
-        let steps = 64
-        var points: [CGPoint] = []
-        points.reserveCapacity(steps + 1)
-        for step in 0...steps {
-            let t = Double(step) / Double(steps)
-            let x = centre - range + t * range * 2
-            let bell = exp(-pow(abs(x - crest) / bellSpread, 1.75))
-            points.append(CGPoint(x: x, y: height - 2 - peak * bell))
-        }
-        var curve = Path()
-        curve.addLines(points)
+        guard !frame.isDark, rect.width > 2, rect.height > 2 else { return }
+        let outline = JunoVoiceGlowOutline(rect: rect, radius: radius)
+        let width = Double(rect.width)
+        let dark = palette.dark
+        let haloK = dark ? 0.6 : 0.5
+        let lineK = dark ? 1.0 : 0.92
+        let f0 = dark ? 3.0 : 2.5
+        let f1 = dark ? 11.0 : 10.0
 
-        var band = context
-        if isDark, !reduceTransparency { band.blendMode = .plusLighter }
-        band.addFilter(.blur(radius: 1.6))
-        band.opacity = strength * presence * 0.7
-        let thickness = 1.2 + 1.4 * frame.lit
-        let split = 1 + 2.5 * frame.lit
-        let fade = Gradient(stops: [
-            .init(color: .white.opacity(0), location: 0),
-            .init(color: .white, location: 0.28),
-            .init(color: .white, location: 0.72),
-            .init(color: .white.opacity(0), location: 1),
-        ])
-        band.drawLayer { layer in
-            layer.stroke(
-                curve.offsetBy(dx: 0, dy: -split),
-                with: .color(frame.colors[8].color.opacity(0.55)),
-                lineWidth: thickness
-            )
-            layer.stroke(
-                curve.offsetBy(dx: 0, dy: split),
-                with: .color(frame.colors[9].color.opacity(0.55)),
-                lineWidth: thickness
-            )
-            layer.stroke(curve, with: .color(frame.colors[7].color), lineWidth: thickness)
-            // Flatten onto the edge at both ends.
-            layer.blendMode = .destinationIn
-            layer.fill(
-                Path(CGRect(x: centre - range, y: 0, width: range * 2, height: height)),
-                with: .linearGradient(
-                    fade,
-                    startPoint: CGPoint(x: centre - range, y: 0),
-                    endPoint: CGPoint(x: centre + range, y: 0)
-                )
-            )
+        let you = rgb(palette.you)
+        let alevr = rgb(palette.alevr)
+        let muted = JunoVoiceGlowRGB(hex: palette.muted)
+
+        // One voice is centred; two at once part toward their own sides.
+        let both = smoothstep(0.04, 0.3, min(frame.you.amp, frame.alevr.amp))
+        let aYou = both * 0.21 * width
+        let aAlevr = -aYou
+        let sMuted = 0.32 * width
+        let sAlevr = width * (0.08 + 0.30 * frame.alevr.lift)
+        let sYou = width * (0.08 + 0.30 * frame.you.lift)
+        let beamFrom = outline.straightHalf
+        let beamTo = -outline.straightHalf
+        let beamWidth = max(0.075 * width, 20)
+
+        var lights: [Light] = [
+            Light(
+                amp: frame.muted, along: { gauss($0 / sMuted) }, falloff: 3,
+                line: muted, glow: muted, hot: muted, haloK: 0.18, lineK: 0.9
+            ),
+            Light(
+                amp: frame.alevr.amp, along: { gauss(($0 - aAlevr) / sAlevr) },
+                falloff: f0 + f1 * frame.alevr.lift,
+                line: alevr.line, glow: alevr.glow, hot: alevr.hot, haloK: haloK, lineK: lineK
+            ),
+            Light(
+                amp: frame.you.amp, along: { gauss(($0 - aYou) / sYou) },
+                falloff: f0 + f1 * frame.you.lift,
+                line: you.line, glow: you.glow, hot: you.hot, haloK: haloK, lineK: lineK
+            ),
+        ]
+        // The previous beam first, the travelling one over it. Ember trails
+        // the presence head by a beam's width, so the handoff reads as one
+        // light passing to the next rather than two mixing.
+        for beam in frame.beams.reversed() {
+            let head = beamFrom + (beamTo - beamFrom) * beam.pos
+            let tail = beamFrom + (beamTo - beamFrom) * max(beam.pos - 0.12, 0)
+            lights.append(Light(
+                amp: beam.amp * (1 - beam.mix), along: { gauss(($0 - tail) / beamWidth) },
+                falloff: f0 + 0.4 * f1,
+                line: you.line, glow: you.glow, hot: you.hot, haloK: haloK, lineK: lineK
+            ))
+            lights.append(Light(
+                amp: beam.amp * beam.mix, along: { gauss(($0 - head) / beamWidth) },
+                falloff: f0 + 0.4 * f1,
+                line: alevr.line, glow: alevr.glow, hot: alevr.hot, haloK: haloK, lineK: lineK
+            ))
+        }
+
+        let segments = outline.segments()
+        for light in lights where light.amp > 0.0005 {
+            draw(light, segments: segments, outline: outline, in: &context)
         }
     }
 
-    private func smoothstep(_ edge0: Double, _ edge1: Double, _ x: Double) -> Double {
-        let t = min(1, max(0, (x - edge0) / (edge1 - edge0)))
-        return t * t * (3 - 2 * t)
+    private func draw(
+        _ light: Light,
+        segments: [JunoVoiceGlowOutline.Segment],
+        outline: JunoVoiceGlowOutline,
+        in context: inout GraphicsContext
+    ) {
+        let lit: [(segment: JunoVoiceGlowOutline.Segment, k: Double)] = segments.compactMap {
+            let k = light.amp * light.along($0.arc)
+            return k > 0.003 ? ($0, k) : nil
+        }
+        guard !lit.isEmpty else { return }
+        let dark = palette.dark
+
+        if solid {
+            // Reduced transparency: the lit stretch of the edge, solid.
+            for (segment, k) in lit where k >= 0.32 {
+                context.stroke(segment.inner, with: .color(light.line.color), lineWidth: 1)
+            }
+            return
+        }
+
+        let blend: GraphicsContext.BlendMode = dark ? .plusLighter : .normal
+
+        // The falloff, outside the edge only: a tight core that reads as the
+        // edge emitting, and a short shoulder that reads as light in the air.
+        // The web's profile (`0.7·e^(−d/F) + 0.3·gauss(d / 2.2F)`, gone by
+        // 40 px): the blurs are sized so the light hugs the edge and is spent
+        // well inside the margin, never a wash under the surface.
+        let reach = outline.rect.insetBy(dx: -Self.reach, dy: -Self.reach)
+        context.drawLayer { layer in
+            layer.clip(to: outline.outside, style: FillStyle(eoFill: true))
+            layer.clip(to: Path(roundedRect: reach, cornerRadius: outline.radius + Self.reach, style: .continuous))
+            layer.blendMode = blend
+            layer.drawLayer { core in
+                core.addFilter(.blur(radius: light.falloff * 0.45))
+                for (segment, k) in lit {
+                    core.stroke(
+                        segment.path,
+                        with: .color(light.glow.color.opacity(min(1, k * light.haloK * 0.7))),
+                        style: StrokeStyle(lineWidth: light.falloff * 1.1, lineCap: .round)
+                    )
+                }
+            }
+            layer.drawLayer { shoulder in
+                shoulder.addFilter(.blur(radius: light.falloff * 1.0))
+                for (segment, k) in lit {
+                    shoulder.stroke(
+                        segment.path,
+                        with: .color(light.glow.color.opacity(min(1, k * light.haloK * 0.2))),
+                        style: StrokeStyle(lineWidth: light.falloff * 2.2, lineCap: .round)
+                    )
+                }
+            }
+        }
+
+        // The rim: a hairline of light just inside, never a haze.
+        context.drawLayer { layer in
+            layer.clip(to: outline.shape)
+            layer.blendMode = blend
+            layer.addFilter(.blur(radius: 1.5))
+            for (segment, k) in lit {
+                layer.stroke(
+                    segment.path,
+                    with: .color(light.glow.color.opacity(min(1, k * (dark ? 0.32 : 0.26)))),
+                    style: StrokeStyle(lineWidth: 5, lineCap: .round)
+                )
+            }
+        }
+
+        // The edge itself, 1pt, on the border band. A peak on charcoal runs
+        // hot; on ivory it only deepens.
+        context.drawLayer { layer in
+            layer.blendMode = blend
+            for (segment, k) in lit {
+                let hot = dark ? smoothstep(0.5, 1, k) : 0
+                let ink = light.line.mixed(with: light.hot, hot * 0.8)
+                layer.stroke(
+                    segment.inner,
+                    with: .color(ink.color.opacity(min(1, k * light.lineK))),
+                    style: StrokeStyle(lineWidth: 1, lineCap: .butt)
+                )
+            }
+        }
+    }
+
+    private func rgb(_ voice: JunoVoiceGlowPalette.Voice) -> (line: JunoVoiceGlowRGB, glow: JunoVoiceGlowRGB, hot: JunoVoiceGlowRGB) {
+        (JunoVoiceGlowRGB(hex: voice.line), JunoVoiceGlowRGB(hex: voice.glow), JunoVoiceGlowRGB(hex: voice.hot))
     }
 }
 
-#Preview("Voice glow") {
-    struct Harness: View {
-        @State private var processing = false
-        let start = Date()
-
-        var body: some View {
-            VStack(spacing: 24) {
-                JunoVoiceGlow(
-                    level: {
-                        let t = Date().timeIntervalSince(start)
-                        let syllable = max(0, sin(t * 5.2))
-                        return min(1, syllable * syllable * (0.55 + 0.45 * (0.5 + 0.5 * sin(t * 21))))
-                    },
-                    bands: {
-                        let t = Date().timeIntervalSince(start)
-                        let vowel = max(0, sin(t * 5.2))
-                        let sibilant = max(0, sin(t * 9.1 + 1)) * max(0, sin(t * 1.3))
-                        return JunoVoiceGlowBands(low: vowel, mid: vowel * 0.8, high: sibilant)
-                    },
-                    processing: processing
-                )
-                .frame(width: 560, height: 110)
-                .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-                .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(.background))
-                Toggle("Thinking", isOn: $processing)
-            }
-            .padding(40)
-        }
+/// The surface's outline, walked from the bottom centre: right is positive arc
+/// length, left negative, so a light can be placed and spread by distance
+/// along the edge the way the web's `arcPos` does.
+struct JunoVoiceGlowOutline {
+    struct Segment {
+        /// Signed arc length at the segment's middle.
+        let arc: Double
+        /// On the outline.
+        let path: Path
+        /// Half a point inside: the 1pt border band.
+        let inner: Path
     }
-    return Harness()
+
+    let rect: CGRect
+    let radius: CGFloat
+
+    init(rect: CGRect, radius: CGFloat) {
+        self.rect = rect
+        self.radius = min(radius, rect.width / 2, rect.height / 2)
+    }
+
+    /// From the bottom centre to where the bottom edge meets its corner.
+    var straightHalf: Double { Double(rect.width / 2 - radius) }
+
+    var halfLength: Double {
+        let hx = Double(rect.width / 2 - radius)
+        let hy = Double(rect.height / 2 - radius)
+        return 2 * hx + 2 * hy + .pi * Double(radius)
+    }
+
+    var shape: Path {
+        Path(roundedRect: rect, cornerRadius: radius, style: .circular)
+    }
+
+    /// Everything outside the surface, as an even-odd clip.
+    var outside: Path {
+        var path = Path(rect.insetBy(dx: -200, dy: -200))
+        path.addPath(shape)
+        return path
+    }
+
+    /// One half of the outline, bottom centre to top centre, on `side` (+1
+    /// right, -1 left), inset by `inset`.
+    func half(side: CGFloat, inset: CGFloat) -> Path {
+        let r = max(0, radius - inset)
+        let box = rect.insetBy(dx: inset, dy: inset)
+        let mid = box.midX
+        let edgeX = side > 0 ? box.maxX : box.minX
+        let cornerX = edgeX - side * r
+        var path = Path()
+        path.move(to: CGPoint(x: mid, y: box.maxY))
+        path.addLine(to: CGPoint(x: cornerX, y: box.maxY))
+        path.addArc(
+            center: CGPoint(x: cornerX, y: box.maxY - r), radius: r,
+            startAngle: .degrees(90), endAngle: .degrees(side > 0 ? 0 : 180),
+            clockwise: side > 0
+        )
+        path.addLine(to: CGPoint(x: edgeX, y: box.minY + r))
+        path.addArc(
+            center: CGPoint(x: cornerX, y: box.minY + r), radius: r,
+            startAngle: .degrees(side > 0 ? 0 : 180), endAngle: .degrees(270),
+            clockwise: side > 0
+        )
+        path.addLine(to: CGPoint(x: mid, y: box.minY))
+        return path
+    }
+
+    /// The outline cut into short pieces, each tagged with where it sits.
+    func segments() -> [Segment] {
+        let length = halfLength
+        guard length > 0 else { return [] }
+        // About one piece per 5pt: fine enough that a gaussian a beam wide
+        // reads as smooth, coarse enough to stay cheap per frame.
+        let count = max(24, min(160, Int(length / 5)))
+        var result: [Segment] = []
+        result.reserveCapacity(count * 2)
+        for side in [CGFloat(1), -1] {
+            let outer = half(side: side, inset: 0)
+            let inner = half(side: side, inset: 0.5)
+            for index in 0..<count {
+                let from = CGFloat(index) / CGFloat(count)
+                let to = CGFloat(index + 1) / CGFloat(count)
+                let arc = (Double(index) + 0.5) / Double(count) * length * Double(side)
+                result.append(Segment(
+                    arc: arc,
+                    path: outer.trimmedPath(from: from, to: to),
+                    inner: inner.trimmedPath(from: from, to: to)
+                ))
+            }
+        }
+        return result
+    }
+}
+
+private func gauss(_ x: Double) -> Double { exp(-x * x) }
+
+private func smoothstep(_ edge0: Double, _ edge1: Double, _ x: Double) -> Double {
+    let t = min(1, max(0, (x - edge0) / (edge1 - edge0)))
+    return t * t * (3 - 2 * t)
 }

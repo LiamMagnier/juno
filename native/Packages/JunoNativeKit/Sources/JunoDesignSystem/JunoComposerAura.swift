@@ -24,7 +24,7 @@ import SwiftUI
 /// all the way to the rim, which is the same fix the CSS makes when it refuses
 /// `transparent`.
 ///
-/// **Why this is not a `Canvas`.** ``JunoVoiceAura`` earns its
+/// **Why this is not a `Canvas`.** The old voice aura earned its
 /// `TimelineView(.animation)` because its shape genuinely changes every frame.
 /// This one does not: it is a static gradient whose *scalars* move, so it is
 /// driven by `withAnimation` over a handful of `@State` doubles and by a
@@ -199,7 +199,7 @@ public struct JunoComposerAura: View {
         // The idle breathe is *removed* under Reduce Motion rather than frozen —
         // the web drops the whole keyframe rule behind a
         // `prefers-reduced-motion: no-preference` query. This is deliberately
-        // unlike JunoVoiceAura, which keeps its field and only stops the travel:
+        // unlike the old voice aura, which kept its field and only stops the travel:
         // there the motion carries information (someone is talking), here it
         // carries none, so under the preference there is nothing to preserve.
         .onChange(of: reduceMotion, initial: true) { _, reduced in

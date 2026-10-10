@@ -110,8 +110,11 @@ struct JunoMobileComposer: View {
   /// Why the last spoken turn was refused. Shown in the same notice row as the
   /// attachment errors, because it is the same kind of news.
   @State private var voiceTurnError: String?
-  /// Whether Dictate Mode has taken over the composer.
-  @State private var dictating = false
+  /// The dictation take in progress, if any. While there is one the card's
+  /// field shows the words being heard and its accessory row is the
+  /// dictation row: the composer listening, in place.
+  @State private var dictation: JunoMobileDictationSession?
+  private var dictating: Bool { dictation != nil }
   /// Whether a very large draft has been opened back up for editing. Huge
   /// pastes stay in `prompt` and are sent in full either way — this only
   /// decides whether they are live in the text field. See
@@ -357,26 +360,6 @@ struct JunoMobileComposer: View {
         JunoMobileVoiceSelfView(camera: voiceSession.camera) { voiceSession.camera.stop() }
       }
 
-      // Dictation REPLACES the composer rather than sitting beside it: it
-      // owns the microphone, the transcript and the send action for as long
-      // as it is up, and leaving the text field visible underneath invited
-      // typing into a field whose contents were about to be overwritten.
-      if dictating {
-        JunoMobileDictation(
-          onCancel: { setDictating(false) },
-          onStop: { transcript in
-            setDictating(false)
-            appendDictated(transcript)
-            composerFocused.wrappedValue = true
-          },
-          onSend: { transcript in
-            setDictating(false)
-            appendDictated(transcript)
-            send()
-          }
-        )
-        .transition(.opacity.combined(with: .move(edge: .bottom)))
-      } else {
         JunoGlass(spacing: JunoSpace.snug) {
           VStack(alignment: .leading, spacing: 0) {
             if thinkingOpen, let thinkingScale, voiceSession == nil {
@@ -428,7 +411,13 @@ struct JunoMobileComposer: View {
                 .transition(.opacity)
               }
 
-              if showsCollapsedDraft {
+              if let dictation {
+                JunoMobileDictationTranscript(session: dictation, draft: prompt)
+                  .padding(.horizontal, JunoSpace.regular)
+                  .padding(.top, JunoSpace.comfy)
+                  .padding(.bottom, JunoSpace.tight)
+                  .transition(.opacity)
+              } else if showsCollapsedDraft {
                 collapsedDraftCard
                   .padding(JunoSpace.snug)
                   .transition(.opacity)
@@ -457,9 +446,21 @@ struct JunoMobileComposer: View {
                 }
               }
 
-              controlRow
-                .padding(.horizontal, JunoSpace.tight)
-                .padding(.bottom, JunoSpace.tight)
+              Group {
+                if let dictation {
+                  JunoMobileDictationRow(
+                    session: dictation,
+                    onCancel: cancelDictation,
+                    onDone: finishDictation
+                  )
+                  .transition(Self.dictationRowTransition(reduceMotion))
+                } else {
+                  controlRow
+                    .transition(Self.dictationRowTransition(reduceMotion))
+                }
+              }
+              .padding(.horizontal, JunoSpace.tight)
+              .padding(.bottom, JunoSpace.tight)
             }
           }
           // In a call the glow carries the phase, so the words go here: the
@@ -474,7 +475,26 @@ struct JunoMobileComposer: View {
           .junoGlass(
             in: RoundedRectangle(cornerRadius: 24, style: .continuous)
           )
+          // In a call the card's own edge carries the voice light: on the
+          // edge and outside it, never over the field.
+          .overlay {
+            if let voiceSession {
+              JunoMobileVoiceComposerGlow(session: voiceSession)
+                .transition(.opacity)
+            } else if let dictation {
+              // Dictation wears the call's light in your ink, as the website's
+              // dictation does: the one thing on the card that moves with
+              // your voice besides the waveform.
+              JunoVoiceGlow(
+                mode: dictation.isListening ? .you : .off,
+                you: { [dictation] in dictation.level },
+                cornerRadius: 24
+              )
+              .transition(.opacity)
+            }
+          }
           .animation(JunoMotion.reduced(JunoMotion.chatControl, when: reduceMotion), value: thinkingOpen)
+          .animation(JunoMotion.reduced(JunoMotion.chatControl, when: reduceMotion), value: dictating)
           // The "+" panel grows up out of the composer's leading corner, its
           // foot 8pt above the card: it never covers the field, and it shares
           // the card's glass container so the two read as one material.
@@ -511,8 +531,6 @@ struct JunoMobileComposer: View {
             }
           }
         }
-        .transition(.opacity)
-      }
     }
     .padding(.horizontal, JunoSpace.regular)
     .padding(.vertical, JunoSpace.tight)
@@ -521,9 +539,6 @@ struct JunoMobileComposer: View {
     // field, which stays as wide as the screen it lights.
     .frame(maxWidth: JunoMobileMeasure.reading)
     .frame(maxWidth: .infinity)
-    // Voice is the one ambient field with semantic meaning. It remains mounted
-    // here so it tracks the keyboard with the safe-area composer.
-    .background(alignment: .bottom) { voiceGlowLayer }
     .junoHaptic(JunoMobileHaptic.send, trigger: sendHaptic)
     .junoHaptic(JunoMobileHaptic.stop, trigger: stopHaptic)
     .junoHaptic(JunoMobileHaptic.send, trigger: voiceStartHaptic)
@@ -548,14 +563,19 @@ struct JunoMobileComposer: View {
       // to this view after a send must not immediately reopen it.
       startDictation.wrappedValue = false
       composerFocused.wrappedValue = false
-      setDictating(true)
+      beginDictation()
     }
     // A refusal explains a turn that is no longer being attempted, so it
     // goes with the call it belonged to rather than sitting over the next
     // typed message.
     .onChange(of: voiceSession == nil) { _, ended in
       if ended { voiceTurnError = nil }
+      // A call takes the microphone; a take still open would fight it.
+      if !ended, dictating { cancelDictation() }
     }
+    // A take outlives nothing: a composer that leaves the screen closes the
+    // microphone with it.
+    .onDisappear { if dictating { cancelDictation() } }
     .task { await applyPreviewFlags() }
     .sheet(isPresented: $showingModelPicker) {
       JunoMobileModelSelectorView(
@@ -641,19 +661,6 @@ struct JunoMobileComposer: View {
       })
     }
     return tokens
-  }
-
-  // MARK: Voice glow
-
-  /// Libraries.dev Voice, "mobile": the light pooled at the foot of the
-  /// screen and rising through the composer's glass. Mounted only during a
-  /// call, so an ordinary composer pays nothing for it.
-  @ViewBuilder
-  private var voiceGlowLayer: some View {
-    if let voiceSession {
-      JunoMobileVoiceComposerGlow(session: voiceSession)
-        .transition(.opacity)
-    }
   }
 
   /// The quiet offer under a long draft: "That's a long one — attach it as a
@@ -818,6 +825,9 @@ struct JunoMobileComposer: View {
       // <text>` types it and sends it, against the harness's paced stream.
       if let typed = JunoComposerPreviewFlags.value("--juno-preview-prompt") {
         prompt = typed
+      }
+      if JunoComposerPreviewFlags.value("--juno-preview-dictation") != nil {
+        beginDictation()
       }
       if JunoComposerPreviewFlags.focusesComposer {
         composerFocused.wrappedValue = true
@@ -1016,11 +1026,11 @@ struct JunoMobileComposer: View {
       // keyboard still on its way out while it arrives is the layout jump
       // the attachment surfaces already learned to avoid.
       composerFocused.wrappedValue = false
-      setDictating(true)
+      beginDictation()
     } label: {
       JunoIconView(.mic, size: 19)
         .foregroundStyle(Color.primary)
-        .frame(width: 40, height: 44)
+        .frame(width: 44, height: 44)
         .contentShape(Rectangle())
     }
     .buttonStyle(.junoQuietPress)
@@ -1028,10 +1038,39 @@ struct JunoMobileComposer: View {
     .accessibilityIdentifier("juno.mobile.chat-dictate")
   }
 
-  private func setDictating(_ active: Bool) {
-    withAnimation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion)) {
-      dictating = active
+  /// Opens the microphone in place: the field shows the words as they are
+  /// heard and the accessory row becomes ✕, the waveform and ✓.
+  private func beginDictation() {
+    guard dictation == nil else { return }
+    let take = JunoMobileDictationSession()
+    withAnimation(JunoMotion.reduced(JunoMotion.chatControl, when: reduceMotion)) {
+      dictation = take
     }
+    Task { await take.start() }
+  }
+
+  /// ✕: the words are dropped and the draft is as it was.
+  private func cancelDictation() {
+    dictation?.cancel()
+    withAnimation(JunoMotion.reduced(JunoMotion.chatControl, when: reduceMotion)) {
+      dictation = nil
+    }
+  }
+
+  /// ✓: the words join the draft, ready to edit or send.
+  private func finishDictation() {
+    let heard = dictation?.finish() ?? ""
+    withAnimation(JunoMotion.reduced(JunoMotion.chatControl, when: reduceMotion)) {
+      dictation = nil
+      appendDictated(heard)
+    }
+    composerFocused.wrappedValue = true
+  }
+
+  /// The rows trade places: the new one rises a few points into place as the
+  /// old one leaves. Reduce Motion keeps only the fade.
+  static func dictationRowTransition(_ reduceMotion: Bool) -> AnyTransition {
+    reduceMotion ? .opacity : .opacity.combined(with: .offset(y: 6))
   }
 
   /// Puts a dictated passage into the draft without discarding what was already
@@ -1119,19 +1158,8 @@ struct JunoMobileComposer: View {
   @ViewBuilder
   private var composerActionButton: some View {
     if !generatingHere, showsEndAction, let voiceSession {
-      Button {
-        endHaptic.fire()
-        voiceSession.hangUp()
-      } label: {
-        endLabel(saving: voiceSession.isSaving)
-      }
-      .buttonStyle(.plain)
-      .disabled(voiceSession.isSaving)
-      .transition(.scale.combined(with: .opacity))
-      .accessibilityLabel("voice.end")
-      .accessibilityIdentifier("juno.mobile.voice-end")
-      .frame(minWidth: 44, minHeight: 44)
-      .contentShape(.rect)
+      JunoMobileVoiceCallEnd(session: voiceSession) { endHaptic.fire() }
+        .transition(.scale.combined(with: .opacity))
     } else {
       JunoMobileComposerPrimaryButton(face: primaryFace) {
         switch primaryFace {
@@ -1177,25 +1205,6 @@ struct JunoMobileComposer: View {
     voiceActive
       && prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
       && attachments.isEmpty
-  }
-
-  /// End, as the primary slot's red face. The glyph takes the canvas ink, which
-  /// inverts with the appearance, so it clears contrast on the light red and
-  /// on the dark appearance's lifted red alike.
-  private func endLabel(saving: Bool) -> some View {
-    Group {
-      if saving {
-        ProgressView().tint(Color.junoCanvas)
-      } else {
-        JunoIconView(.phoneOff, size: 16)
-      }
-    }
-    .foregroundStyle(Color.junoCanvas)
-    .frame(width: 34, height: 34)
-    .modifier(JunoComposerSendBackground(active: true, tint: Color.junoDanger))
-    .junoGlassID("composer.action", in: glassNamespace)
-    .frame(minWidth: 44, minHeight: 44)
-    .contentShape(Rectangle())
   }
 
   private func actionLabel<Glyph: View>(

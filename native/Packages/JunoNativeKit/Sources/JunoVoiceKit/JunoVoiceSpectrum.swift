@@ -187,10 +187,3 @@ public struct JunoVoicePlaybackEnvelope: Sendable {
         splitter.reset()
     }
 }
-
-extension JunoRealtimeVoiceController {
-    /// The live bands, shaped for ``JunoVoiceGlow``'s `bands` input.
-    public var glowBands: JunoVoiceGlowBands {
-        JunoVoiceGlowBands(low: spectrum.low, mid: spectrum.mid, high: spectrum.high)
-    }
-}
