@@ -251,7 +251,7 @@ struct JunoMobileSidebarDrawer: View {
           .foregroundStyle(Color.junoSidebarForeground)
           .frame(width: JunoMobileDrawerMetrics.slot)
         Text(project.name)
-          .junoFont(size: layout == .sidebar ? 15 : 16, relativeTo: .body)
+          .junoFont(size: JunoMobileDrawerMetrics.rowLabel(sidebar: layout == .sidebar), relativeTo: .body)
           .foregroundStyle(.primary)
           .lineLimit(1)
           .truncationMode(.tail)
@@ -672,7 +672,7 @@ struct JunoMobileSidebarDrawer: View {
             JunoIconView(.fileSearch, size: JunoMobileDrawerMetrics.glyph)
               .frame(width: JunoMobileDrawerMetrics.slot)
             Text("Search messages and files for “\(trimmedQuery)”")
-              .junoFont(size: 16, relativeTo: .body)
+              .junoFont(size: JunoMobileDrawerMetrics.rowLabel, relativeTo: .body)
               .lineLimit(2)
           }
           .foregroundStyle(Color.junoForeground)
@@ -1018,7 +1018,7 @@ struct JunoMobileSidebarRow: View {
           .frame(width: JunoMobileDrawerMetrics.slot)
           .foregroundStyle(selected ? Color.junoForeground : Color.junoSidebarForeground)
         Text(title)
-          .junoFont(size: 16, relativeTo: .body, weight: selected ? .semibold : .regular)
+          .junoFont(size: JunoMobileDrawerMetrics.rowLabel, relativeTo: .body, weight: selected ? .semibold : .regular)
           .foregroundStyle(selected ? Color.junoForeground : Color.junoSidebarForeground)
         Spacer(minLength: 0)
       }
@@ -1057,7 +1057,7 @@ struct JunoMobileConversationRow: View {
             .foregroundStyle(Color.junoTertiaryInk)
         }
         Text(title)
-          .junoFont(size: sidebar ? 15 : 16, relativeTo: .body)
+          .junoFont(size: JunoMobileDrawerMetrics.rowLabel(sidebar: sidebar), relativeTo: .body)
           .foregroundStyle(.primary)
           .lineLimit(1)
           .truncationMode(.tail)
@@ -1091,9 +1091,10 @@ struct JunoMobileConversationRow: View {
 /// and — only when something is waiting — a few plain words in the attention
 /// colour. No tile, no chevron, no badge.
 ///
-/// The web's two text edges: the glyph starts 16pt from the drawer's edge in a
-/// 20pt slot, and the label starts at 46pt (slot + 10pt). Rows without a glyph
-/// — recents, section labels — sit on the 16pt edge.
+/// The drawer's two text edges: the glyph starts 26pt from the drawer's edge
+/// in a 20pt slot, and the label starts at 56pt (slot + 10pt). Rows without a
+/// glyph (recents, section labels) sit on the 26pt edge. The label is the
+/// chat titles' size, ``JunoMobileDrawerMetrics/rowLabel``.
 struct JunoMobileDrawerRow: View {
   let icon: JunoIcon
   let title: LocalizedStringKey
@@ -1108,7 +1109,7 @@ struct JunoMobileDrawerRow: View {
           .foregroundStyle(Color.junoForeground)
           .frame(width: JunoMobileDrawerMetrics.slot)
         Text(title)
-          .junoFont(size: 16, relativeTo: .body)
+          .junoFont(size: JunoMobileDrawerMetrics.rowLabel, relativeTo: .body)
           .foregroundStyle(Color.junoForeground)
           .lineLimit(1)
         Spacer(minLength: JunoSpace.snug)
@@ -1161,8 +1162,17 @@ enum JunoMobileDrawerMetrics {
   static let edge: CGFloat = inset + leadingShift + rowPadding
   static let slot: CGFloat = JunoLayout.Row.glyphSlot
   static let gap: CGFloat = JunoLayout.Row.glyphGap
-  /// The phone's row glyph: 18 in the 20pt slot.
-  static let glyph: CGFloat = JunoLayout.Row.touchGlyph
+  /// Every drawer row's glyph: 20pt, filling the 20pt slot so it sits on
+  /// the same 26/56 edges (owner, Oct 11: the destination icons read small
+  /// beside the chat titles).
+  static let glyph: CGFloat = JunoSpace.roomy
+  /// The one label size for every row in the column: destinations (Library,
+  /// Projects, Orbit...), projects and chat titles share it so they cannot
+  /// drift apart. 16 on the phone, 15 in the iPad's Mac-grammar column, both
+  /// regular weight.
+  static let rowLabel: CGFloat = 16
+  static let sidebarRowLabel: CGFloat = 15
+  static func rowLabel(sidebar: Bool) -> CGFloat { sidebar ? sidebarRowLabel : rowLabel }
   /// The header's Continuum: 26pt on the 44pt bar row, the optical weight of
   /// the bar's title it replaces.
   static let brandMark: CGFloat = 26

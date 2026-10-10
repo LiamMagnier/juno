@@ -127,6 +127,14 @@ final class JunoMobileNavigationTests: XCTestCase {
         XCTAssertEqual(JunoMobileDrawerMetrics.sidebarRowInsets.leading + JunoMobileDrawerMetrics.rowPadding, 16)
     }
 
+    /// Destinations and chat titles share one label size, and the glyph
+    /// fills its slot so the label edge does not move.
+    func testDestinationsAndChatTitlesShareOneLabelSize() {
+        XCTAssertEqual(JunoMobileDrawerMetrics.rowLabel(sidebar: false), JunoMobileDrawerMetrics.rowLabel)
+        XCTAssertEqual(JunoMobileDrawerMetrics.rowLabel(sidebar: true), JunoMobileDrawerMetrics.sidebarRowLabel)
+        XCTAssertEqual(JunoMobileDrawerMetrics.glyph, JunoMobileDrawerMetrics.slot)
+    }
+
     /// The drawer's footer: Chat, the bell and the photo on one 52pt line.
     func testTheDrawerFooterControlsShareOneHeight() {
         XCTAssertEqual(JunoMobileDrawerMetrics.footerControl, 52)

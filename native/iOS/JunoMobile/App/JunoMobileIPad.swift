@@ -103,7 +103,7 @@ struct JunoMobileSidebarStatus: Equatable {
   var isEmpty: Bool { running == 0 && needsYou == 0 }
 }
 
-/// A sidebar row's face: 16pt monochrome glyph, label, optional trailing
+/// A sidebar row's face: 20pt monochrome glyph, label, optional trailing
 /// status, and the selected wash. The Mac's row, at a touch height.
 struct JunoMobileIPadSidebarRowLabel: View {
   let icon: JunoIcon
@@ -116,7 +116,7 @@ struct JunoMobileIPadSidebarRowLabel: View {
         .frame(width: JunoMobileDrawerMetrics.slot)
         .foregroundStyle(Color.junoForeground)
       Text(title)
-        .junoFont(size: 15, relativeTo: .body)
+        .junoFont(size: JunoMobileDrawerMetrics.sidebarRowLabel, relativeTo: .body)
         .foregroundStyle(Color.junoForeground)
         .lineLimit(1)
       Spacer(minLength: JunoSpace.hairline)
