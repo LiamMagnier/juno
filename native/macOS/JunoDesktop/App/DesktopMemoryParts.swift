@@ -39,16 +39,23 @@ struct DesktopMemorySummaryPanel: View {
                 headerRow(hasSummary: !sections.isEmpty)
                 if !sections.isEmpty {
                     DesktopMemorySections(sections: Array(sections.prefix(previewCount)))
-                        .overlay(alignment: .bottom) {
+                        // Folded, the preview fades out at its foot. A mask
+                        // rather than a colour laid over it, so the fade is
+                        // right on the card's translucent fill in both
+                        // appearances.
+                        .mask {
                             if previewCount < sections.count, !expanded {
                                 LinearGradient(
-                                    colors: [Color.junoCard.opacity(0), Color.junoCard],
+                                    stops: [
+                                        .init(color: .black, location: 0),
+                                        .init(color: .black, location: 0.72),
+                                        .init(color: .black.opacity(0), location: 1),
+                                    ],
                                     startPoint: .top,
                                     endPoint: .bottom
                                 )
-                                .frame(height: 40)
-                                .allowsHitTesting(false)
-                                .accessibilityHidden(true)
+                            } else {
+                                Rectangle()
                             }
                         }
                     if previewCount < sections.count {
@@ -66,7 +73,7 @@ struct DesktopMemorySummaryPanel: View {
                                 Text(expanded ? "Show less" : "Read the whole summary")
                                 JunoIconView(expanded ? .chevronUp : .chevronDown, size: 12)
                             }
-                            .junoType(JunoType.ui.weight(.medium))
+                            .junoType(.ui)
                             .foregroundStyle(Color.junoSecondaryInk)
                             .frame(minHeight: 28)
                             .contentShape(.rect)
@@ -101,13 +108,10 @@ struct DesktopMemorySummaryPanel: View {
                     .padding(JunoSpace.snug)
             }
         }
+        // The grouped form's card, as every other group on the page.
         .background(
-            RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
-                .fill(Color.junoCard)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
-                .strokeBorder(Color.junoBorder, lineWidth: 1)
+            .fill.quaternary,
+            in: RoundedRectangle(cornerRadius: DesktopSettingsMetrics.cardRadius, style: .continuous)
         )
         .accessibilityElement(children: .contain)
         .accessibilityLabel(project == nil ? "Summary" : "Project summary")
@@ -116,7 +120,7 @@ struct DesktopMemorySummaryPanel: View {
     private func headerRow(hasSummary: Bool) -> some View {
         HStack(spacing: JunoSpace.snug) {
             Text(project == nil ? "Summary" : "Project summary")
-                .junoType(JunoType.ui.weight(.medium))
+                .junoType(JunoType.ui.weight(.semibold))
                 .foregroundStyle(Color.junoSecondaryInk)
                 .accessibilityAddTraits(.isHeader)
             Spacer(minLength: JunoSpace.snug)

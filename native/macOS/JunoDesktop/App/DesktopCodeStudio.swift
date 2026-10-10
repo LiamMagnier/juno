@@ -652,11 +652,11 @@ struct DesktopCodeSidebar: View {
         .accessibilityIdentifier("juno.code.add-project")
 
         // Customize wears the web's sliders, as Chat's row does, and opens
-        // the settings for the product on screen.
+        // the settings for the product on screen. No glyph gesture: the
+        // row answers the pointer with the quiet hover fill alone.
         DesktopSidebarNavRow(
             icon: .sliders,
             title: JunoShellDestination.customize.label,
-            gesture: .turns,
             action: openSettings
         )
         .help("Customize Code")

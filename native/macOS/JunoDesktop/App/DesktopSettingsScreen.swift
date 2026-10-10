@@ -25,86 +25,148 @@ struct DesktopSettingsScreen: View {
     let context: DesktopSettingsContext
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            DesktopSettingsPaneHeader(section: section)
-            pane
-        }
-        // One readable measure, centred: rows never stretch to a wide
-        // window's full width, so a label and its control stay in one glance.
-        .frame(maxWidth: DesktopSettingsMetrics.paneMeasure)
-        .frame(maxWidth: .infinity)
-        // A conflict, or a save queued behind the network, in the Settings
-        // window's toast host (§7.7).
-        .junoToastStatus(id: "settings.status", context.statusKey) { _ in context.statusToast }
-        .accessibilityIdentifier("juno.desktop.settings")
+        // The pane's form is the column's only child: it takes the column's
+        // height and scrolls (see ``DesktopSettingsShell``). The hero card
+        // reaches the form through the environment, as its first section.
+        pane
+            .environment(\.desktopSettingsLead, .section(section))
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // A conflict, or a save queued behind the network, in the Settings
+            // window's toast host (§7.7).
+            .junoToastStatus(id: "settings.status", context.statusKey) { _ in context.statusToast }
+            .accessibilityIdentifier("juno.desktop.settings")
     }
 
     @ViewBuilder
     private var pane: some View {
-        Group {
-            switch section {
-            case .general: DesktopSettingsGeneralPane(context: context)
-            case .personalization: DesktopSettingsPersonalizationPane(context: context)
-            case .memory: DesktopSettingsMemoryPane(context: context)
-            case .models: DesktopSettingsModelsPane(context: context)
-            case .connectors: DesktopSettingsConnectorsPane(context: context)
-            case .devices: DesktopSettingsDevicesPane(context: context)
-            case .voice: DesktopSettingsVoicePane(context: context)
-            case .data: DesktopSettingsDataPane(context: context)
-            case .account: DesktopSettingsAccountPane(context: context)
-            case .billing: DesktopSettingsPlanPane(context: context)
-            case .code:
-                DesktopCodeSettingsScreen(
-                    workbench: context.services.codeWorkbench,
-                    availableModels: context.services.codeModels,
-                    codeHostModel: context.services.codeHostModel
-                )
-            }
+        switch section {
+        case .general: DesktopSettingsGeneralPane(context: context)
+        case .personalization: DesktopSettingsPersonalizationPane(context: context)
+        case .memory: DesktopSettingsMemoryPane(context: context)
+        case .models: DesktopSettingsModelsPane(context: context)
+        case .connectors: DesktopSettingsConnectorsPane(context: context)
+        case .devices: DesktopSettingsDevicesPane(context: context)
+        case .voice: DesktopSettingsVoicePane(context: context)
+        case .data: DesktopSettingsDataPane(context: context)
+        case .account: DesktopSettingsAccountPane(context: context)
+        case .billing: DesktopSettingsPlanPane(context: context)
+        case .code:
+            DesktopCodeSettingsScreen(
+                workbench: context.services.codeWorkbench,
+                availableModels: context.services.codeModels,
+                codeHostModel: context.services.codeHostModel
+            )
         }
     }
 }
 
-/// The pane's opening: the section's tile at hero size, its name, and one
-/// sentence on what it holds — System Settings' pane header, so the reader
-/// knows where they are before the first row.
-struct DesktopSettingsPaneHeader: View {
+/// What a settings form opens on, above its own sections.
+enum DesktopSettingsLead: Equatable {
+    /// A Settings section: its hero card (tile, name, one sentence).
+    case section(DesktopSettingsSection)
+    /// A page in the main window that reuses a pane (Customize ›
+    /// Instructions): the page's title and lede, unboxed.
+    case page(title: String, lede: String)
+}
+
+extension EnvironmentValues {
+    /// The lead the next ``DesktopSettingsForm`` down draws first. Nil draws
+    /// none.
+    @Entry var desktopSettingsLead: DesktopSettingsLead? = nil
+}
+
+/// The pane's opening, as System Settings opens a pane: the section's tile
+/// on the accent, its name and one sentence on what it holds, in a card of
+/// its own at the top of the form. It scrolls with the rows, so it can never
+/// sit under the toolbar's title.
+struct DesktopSettingsPaneHero: View {
     let section: DesktopSettingsSection
 
     var body: some View {
         HStack(alignment: .center, spacing: JunoSpace.cozy) {
-            DesktopSettingsSectionTile(icon: section.icon, selected: true, size: 40)
-            VStack(alignment: .leading, spacing: JunoSpace.hairline) {
+            DesktopSettingsSectionTile(icon: section.icon)
+            VStack(alignment: .leading, spacing: JunoSpace.micro) {
                 Text(section.label)
-                    .junoType(.title)
+                    .junoType(JunoType.ui.weight(.semibold))
                     .foregroundStyle(Color.junoForeground)
                     .accessibilityAddTraits(.isHeader)
                 Text(section.summary)
-                    .junoType(.ui)
+                    .junoType(JunoType.label.weight(.regular))
                     .foregroundStyle(Color.junoSecondaryInk)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, JunoSpace.section)
-        .padding(.top, JunoSpace.roomy)
-        .padding(.bottom, JunoSpace.tight)
+        .padding(.vertical, JunoSpace.tight)
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("juno.desktop.settings.pane-header")
+        .desktopLayoutProbe("settings.lead")
+    }
+}
+
+/// A page's title and lede above a reused pane's rows, on the rows' own
+/// leading edge.
+struct DesktopSettingsPageLead: View {
+    let title: String
+    let lede: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.tight) {
+            Text(title)
+                .junoType(.title)
+                .foregroundStyle(Color.junoForeground)
+                .accessibilityAddTraits(.isHeader)
+            Text(lede)
+                .junoType(.ui)
+                .foregroundStyle(Color.junoSecondaryInk)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .textCase(nil)
+        .accessibilityIdentifier("juno.desktop.settings.page-lead")
+        .desktopLayoutProbe("page.lead")
     }
 }
 
 /// The grouped form every pane is drawn in: the platform's grouped `Form`,
-/// its own background hidden so the window's warm canvas shows through, and
-/// nothing else painted behind it.
+/// its own background hidden so the window's canvas shows through, its lead
+/// first, and its cards held to a readable measure, centred, however wide
+/// the window gets.
 struct DesktopSettingsForm<Content: View>: View {
     @ViewBuilder let content: Content
 
+    @Environment(\.desktopSettingsLead) private var lead
+    @State private var width: CGFloat = 0
+
+    /// The side margin that keeps the cards at ``DesktopSettingsMetrics/paneMeasure``.
+    private var sideMargin: CGFloat {
+        max(0, (width - DesktopSettingsMetrics.paneMeasure) / 2)
+    }
+
     var body: some View {
         Form {
+            switch lead {
+            case .section(let section):
+                Section {
+                    DesktopSettingsPaneHero(section: section)
+                }
+            case .page(let title, let lede):
+                Section {
+                } header: {
+                    DesktopSettingsPageLead(title: title, lede: lede)
+                }
+            case nil:
+                EmptyView()
+            }
+            // A sheet opened from a row is not this pane: it draws no lead.
             content
+                .environment(\.desktopSettingsLead, nil)
         }
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
+        .contentMargins(.horizontal, sideMargin, for: .scrollContent)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
     }
 }
 
@@ -454,15 +516,21 @@ final class DesktopSettingsContext {
 // MARK: - Shared furniture
 
 enum DesktopSettingsMetrics {
-    /// The sections column's resize range.
-    static let railMinimum: CGFloat = 200
-    static let railWidth: CGFloat = 220
-    static let railMaximum: CGFloat = 260
-    /// The ⌘, window: opens at 820 × 600, never smaller than 680 × 480 (§C1).
-    static let windowMinimum = CGSize(width: 720, height: 520)
+    /// The sections column: the web sidebar's 260, resizable a little either
+    /// way.
+    static let railMinimum: CGFloat = JunoSidebarMetrics.minimum
+    static let railWidth: CGFloat = JunoSidebarMetrics.ideal
+    static let railMaximum: CGFloat = 300
+    /// The ⌘, window: opens at 900 × 660, never smaller than 760 × 520, so
+    /// the sidebar keeps its 260 and a pane keeps 500 for a label and its
+    /// control.
+    static let windowMinimum = CGSize(width: 760, height: 520)
     static let windowIdeal = CGSize(width: 900, height: 660)
-    /// The pane's readable measure: header and rows never run wider.
+    /// The pane's readable measure: cards never run wider, however wide the
+    /// window.
     static let paneMeasure: CGFloat = 720
+    /// A grouped card's corner, as the grouped form draws its sections.
+    static let cardRadius: CGFloat = 10
     /// The signed-in account's photo in Account.
     static let avatarSize: CGFloat = 56
     /// A presented surface's size. Explicit: a sheet that negotiates its own
@@ -475,6 +543,11 @@ enum DesktopSettingsMetrics {
     static let editorMinHeight: CGFloat = 132
     /// An accent swatch.
     static let swatchSize: CGFloat = 24
+    /// The text size slider's track, wide enough for six ticks to read as
+    /// six stops.
+    static let sliderWidth: CGFloat = 168
+    /// A trailing value beside a slider ("16 pt").
+    static let valueWidth: CGFloat = 40
     /// A provider mark beside a model's name.
     static let providerMark: CGFloat = 20
     /// A trailing control's width in a wide row (the web's `w-52`).

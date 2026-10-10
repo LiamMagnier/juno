@@ -77,6 +77,7 @@ struct DesktopCustomizeTabs: View {
         )
         .frame(maxWidth: .infinity)
         .accessibilityIdentifier("juno.desktop.customize.tabs")
+        .desktopLayoutProbe("customize.tabs")
     }
 }
 
@@ -90,23 +91,26 @@ struct DesktopInstructionsScreen: View {
     let context: DesktopSettingsContext
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            JunoPageHeader(
-                "Instructions",
-                lede: "How Alevr responds, and what it should know about you before you say a word."
+        // The pane's form is the page's only child, with the page's title and
+        // lede as its first section. This page used to stack a header over
+        // the form in a `VStack`; the header's lede, measured at the narrow
+        // width the column's minimum size is taken at, asked for far more
+        // height than the window had, so the page was laid out taller than
+        // its column and centred. Its top hung up under the toolbar and the
+        // Customize tabs, and what showed of it was blank. Inside the form's
+        // scrolling content the lede never counts toward that minimum.
+        DesktopSettingsPersonalizationPane(context: context)
+            .environment(
+                \.desktopSettingsLead,
+                .page(
+                    title: "Instructions",
+                    lede: "How Alevr responds, and what it should know about you before you say a word."
+                )
             )
-            .padding(.top, JunoSpace.wide)
-            // On the rows' own edge: the grouped form insets its cards and
-            // their labels, and the title lines up with the labels.
-            .padding(.horizontal, 54)
-            .frame(maxWidth: (JunoPageMeasure.reading.maxWidth ?? 720) + JunoSpace.section, alignment: .leading)
-            .frame(maxWidth: .infinity)
-            DesktopSettingsPersonalizationPane(context: context)
-                .frame(maxWidth: (JunoPageMeasure.reading.maxWidth ?? 720) + JunoSpace.section, alignment: .top)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        }
-        .junoToastHost(context.toasts)
-        .task { await context.loadServerSettings() }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .junoToastHost(context.toasts)
+            .task { await context.loadServerSettings() }
+            .accessibilityIdentifier("juno.desktop.instructions")
     }
 }
 

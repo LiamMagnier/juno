@@ -101,9 +101,10 @@ enum DesktopSettingsSection: String, CaseIterable, Identifiable {
     /// answers; what it knows and reaches; your data, account and plan; then
     /// Code. Flattened, it is `allCases` exactly (a test holds it), so
     /// grouping changes the rail's rhythm and never its order.
-    /// What each rail group is, said quietly above it (round 3): the
-    /// sections read as three places, not eleven loose rows.
-    static let railGroupTitles: [String] = ["Alevr", "Intelligence", "Account", "Developer"]
+    /// What each rail group is, said quietly above it in sentence case: the
+    /// sections read as places, not eleven loose rows. The first group is
+    /// the window's own and has no heading.
+    static let railGroupTitles: [String?] = [nil, "Intelligence", "Account", "Developer"]
 
     /// One sentence under the pane's name, saying what the section holds.
     var summary: String {
@@ -224,12 +225,7 @@ struct DesktopSettingsWindow: View {
                 )
             }
         }
-        .frame(
-            minWidth: DesktopSettingsMetrics.windowMinimum.width,
-            idealWidth: DesktopSettingsMetrics.windowIdeal.width,
-            minHeight: DesktopSettingsMetrics.windowMinimum.height,
-            idealHeight: DesktopSettingsMetrics.windowIdeal.height
-        )
+        .desktopSettingsWindowFrame()
         .containerBackground(Color.junoCanvas, for: .window)
         .preferredColorScheme(Self.colorScheme((configuration ?? resolved?.0)?.memorySettingsModel?.settings?.theme))
         .junoAccentTint()
@@ -309,11 +305,26 @@ private struct DesktopSettingsSignedInWindow: View {
 /// The shape of Settings: System Settings' shape, in the ⌘, window.
 ///
 /// A `NavigationSplitView` (the window's one): the sections are a real source
-/// list on the left, so arrow keys, type-select, the focus ring and Increase
-/// Contrast are the platform's, and the selected section's name is the
-/// window's title rather than a heading painted into the pane (decision 17:
-/// no subtitle). The sidebar toggle is removed because a settings window with
-/// its sections hidden is a window nobody can use.
+/// list in the full-height glass sidebar, so arrow keys, type-select, the
+/// focus ring and Increase Contrast are the platform's. The selected
+/// section's name is the window's title, in the toolbar; the pane opens on
+/// a hero card that scrolls with the rows, so nothing is ever painted where
+/// the toolbar draws. The sidebar toggle is the system's own, in the
+/// sidebar's titlebar beside the window controls.
+///
+/// **The detail column must never ask for more height than the window has.**
+/// The pane used to stack a header (its tile, its name, and a sentence set
+/// `fixedSize(vertical:)`) above the grouped `Form` in a `VStack`. When the
+/// split view measures a column's minimum size it proposes a narrow width,
+/// and that sentence, measured there a word per line, made the column's
+/// minimum height several hundred points taller than the window (992pt in a
+/// 640pt window). AppKit laid the split view out at that height, centred on
+/// the window's safe area, so it hung off both edges: the sidebar's first
+/// rows slid up under the traffic lights and the sidebar toggle, the
+/// toolbar's title landed on the header's sentence, and the header's tile was
+/// cut off at the top. The opening is now the form's first section, inside
+/// the scrolling content, which never counts toward the column's minimum
+/// (`SettingsChromeSnapshotTests` holds all of this in a real titled window).
 struct DesktopSettingsShell: View {
     @Binding var section: DesktopSettingsSection
     let context: DesktopSettingsContext
@@ -329,17 +340,17 @@ struct DesktopSettingsShell: View {
                 .junoToastHost(context.toasts)
                 .navigationTitle(section.label)
         }
-        .toolbar(removing: .sidebarToggle)
     }
 }
 
-/// The sections, as the platform's own source list, with the web's glyphs and
-/// a search field that also finds a section by the rows it holds ("accent"
-/// finds General, "digest" finds Account) — P3-1.
+/// The sections, as the platform's own source list on the web sidebar's
+/// numbers (260 wide, 32pt rows, the web's 16pt glyphs on the 16pt edge and
+/// labels on the 46pt edge), with the same hover and selected fills as the
+/// main window's sidebar, and a search field that also finds a section by the
+/// rows it holds ("accent" finds General, "digest" finds Account).
 struct DesktopSettingsSidebar: View {
     @Binding var selection: DesktopSettingsSection
     @Binding var query: String
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var visible: [DesktopSettingsSection] {
         DesktopSettingsSection.matching(query)
@@ -363,22 +374,20 @@ struct DesktopSettingsSidebar: View {
 
     var body: some View {
         List(selection: listSelection) {
-            // Grouped with the system's own section gap, no headers: the
-            // rhythm says which sections belong together without a label
-            // to read.
-            ForEach(Array(visibleGroups.enumerated()), id: \.offset) { _, group in
-                Section {
-                    ForEach(group) { section in
-                        row(section)
-                    }
-                } header: {
-                    if let title = Self.title(for: group) {
-                        Text(title)
-                    }
+            ForEach(Array(visibleGroups.enumerated()), id: \.offset) { index, group in
+                if let title = Self.title(for: group) {
+                    DesktopSidebarHeadingRow(title, isFirst: index == 0)
+                }
+                ForEach(group) { section in
+                    DesktopSidebarNavRow(icon: section.icon, title: section.label, selected: selection == section)
+                        .tag(section)
+                        .accessibilityIdentifier("juno.desktop.settings.section.\(section.rawValue)")
                 }
             }
         }
         .listStyle(.sidebar)
+        // The web's 32pt rows, set once, as the main sidebar does.
+        .environment(\.defaultMinListRowHeight, 0)
         .junoSidebarSelectionTint()
         .searchable(text: $query, placement: .sidebar, prompt: "Search settings")
         .overlay {
@@ -397,8 +406,9 @@ struct DesktopSettingsSidebar: View {
         .accessibilityIdentifier("juno.desktop.settings.rail")
     }
 
-    /// A group's title, found by its first section so a search that hides
-    /// part of a group keeps the group's name.
+    /// A group's heading, found by its first section so a search that hides
+    /// part of a group keeps the group's name. The first group (General,
+    /// Personalization) has none: it is the window's own.
     static func title(for group: [DesktopSettingsSection]) -> String? {
         guard let first = group.first,
               let index = DesktopSettingsSection.railGroups.firstIndex(where: { $0.contains(first) }),
@@ -406,52 +416,33 @@ struct DesktopSettingsSidebar: View {
         else { return nil }
         return DesktopSettingsSection.railGroupTitles[index]
     }
-
-    private func row(_ section: DesktopSettingsSection) -> some View {
-        // The ink is stated on the mark as well as on the label: a `Label` in a
-        // `.sidebar` list resolves its icon slot against the system accent.
-        let selected = selection == section
-        let ink = selected ? Color.junoForeground : Color.junoSidebarForeground
-
-        return Label {
-            Text(section.label)
-        } icon: {
-            DesktopSettingsSectionTile(icon: section.icon, selected: selected)
-        }
-        .foregroundStyle(ink)
-        .animation(
-            JunoMotion.reduced(JunoMotion.standard, when: reduceMotion, tier: .tint),
-            value: selected
-        )
-        .junoSidebarRowSelection(selected)
-        .tag(section)
-        .accessibilityIdentifier("juno.desktop.settings.section.\(section.rawValue)")
-    }
 }
 
-/// A section's mark in its tile: the web's glyph at 13pt in a small circle,
-/// monochrome at rest. The selected section's tile fills with the accent —
-/// the one accent-coloured thing in the rail (brief rule 1) — its glyph in
-/// the on-accent ink, as System Settings lights the pane you are in.
+/// A section's mark in its tile, for the pane's hero card: the web's glyph in
+/// the canvas ink on a foreground-ink circle. Ink, not the accent: the accent
+/// is the reader's choice and coral means working or needs-you, so a tile
+/// that only says where you are wears neither. The sidebar's rows wear the
+/// bare glyph, as the main sidebar does.
 struct DesktopSettingsSectionTile: View {
     let icon: JunoIcon
-    let selected: Bool
     var size: CGFloat = DesktopSettingsSectionTile.size
 
-    static let size: CGFloat = 24
+    static let size: CGFloat = 36
 
     var body: some View {
-        JunoIconView(icon, size: size * 0.55)
-            .foregroundStyle(selected ? Color.junoOnAccent : Color.junoSidebarForeground)
+        JunoIconView(icon, size: size * 0.5)
+            .foregroundStyle(Color.junoCanvas)
             .frame(width: size, height: size)
-            .background(selected ? Color.junoAccent : Color.junoSecondary, in: Circle())
-            .overlay(Circle().strokeBorder(Color.junoBorder.opacity(selected ? 0 : 0.6), lineWidth: 0.5))
+            .background(Color.junoForeground, in: Circle())
             .accessibilityHidden(true)
     }
 }
 
-/// The Code section of Settings: a way into Juno Code's own settings window.
-/// This Mac's Work switch moved to Devices (§C2).
+/// The Code section of Settings: the ways into Alevr Code's own settings
+/// window, each opening it on its page. Code keeps its settings in a window
+/// of its own (and in its settings files), so this pane points rather than
+/// copies: two editors for one value is how they drift. This Mac's Work
+/// switch moved to Devices (§C2).
 struct DesktopCodeSettingsScreen: View {
     let workbench: WorkbenchModel?
     let availableModels: [ModelOption]
@@ -459,19 +450,62 @@ struct DesktopCodeSettingsScreen: View {
 
     @Environment(\.openWindow) private var openWindow
 
+    /// Code's pages this pane opens, in Code's own order.
+    static let destinations: [(page: StudioSettingsSection, title: String, description: String)] = [
+        (
+            .general,
+            "Models and defaults",
+            "The model, thinking and environment new sessions start with, and the generation models Code uses for images, video and music."
+        ),
+        (
+            .connections,
+            "Connections",
+            "The accounts and keys Alevr Code runs on, and the agents it can start on this Mac."
+        ),
+        (
+            .permissions,
+            "Permissions",
+            "What Code may do without asking, and whether your other devices can run sessions on this Mac."
+        ),
+        (
+            .tools,
+            "Tools and MCP",
+            "The tools and MCP servers Code can call."
+        ),
+    ]
+
     var body: some View {
         DesktopSettingsForm {
             Section {
-                DesktopSettingRow(
-                    title: "Alevr Code has its own settings",
-                    description: "Permissions and rules, environment, instructions, the agent, Git, tools and MCP, appearance and notifications."
-                ) {
-                    DesktopOutlineButton(title: "Open Code Settings") {
-                        openWindow(id: JunoDesktopWindow.codeSettingsID)
+                ForEach(Self.destinations, id: \.page) { destination in
+                    DesktopSettingRow(title: destination.title, description: destination.description) {
+                        DesktopOutlineButton(title: "Open") { open(destination.page) }
+                            .accessibilityLabel("Open \(destination.title)")
+                            .accessibilityIdentifier("juno.desktop.settings.code.\(destination.page.rawValue)")
                     }
+                }
+            } header: {
+                DesktopSettingsGroupHeader(
+                    title: "Alevr Code",
+                    note: "Code keeps its settings in a window of its own, beside your projects’ settings files."
+                )
+            }
+
+            Section {
+                DesktopSettingRow(
+                    title: "All Code settings",
+                    description: "Instructions, the agent, Git, appearance, notifications and keyboard."
+                ) {
+                    DesktopOutlineButton(title: "Open Code Settings") { open(nil) }
+                        .accessibilityIdentifier("juno.desktop.settings.open-code-settings")
                 }
             }
         }
+    }
+
+    private func open(_ page: StudioSettingsSection?) {
+        if let page { StudioSettingsRouter.shared.requested = page }
+        openWindow(id: JunoDesktopWindow.codeSettingsID)
     }
 }
 
@@ -665,5 +699,18 @@ struct DesktopCodeHostRevokeSection: View {
                 )
             }
         }
+    }
+}
+
+extension View {
+    /// The Settings window's size range: never smaller than the floor, opening
+    /// at the ideal.
+    func desktopSettingsWindowFrame() -> some View {
+        frame(
+            minWidth: DesktopSettingsMetrics.windowMinimum.width,
+            idealWidth: DesktopSettingsMetrics.windowIdeal.width,
+            minHeight: DesktopSettingsMetrics.windowMinimum.height,
+            idealHeight: DesktopSettingsMetrics.windowIdeal.height
+        )
     }
 }

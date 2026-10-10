@@ -68,23 +68,26 @@ struct DesktopSettingsGeneralPane: View {
 
     private func themeRow(_ settings: NativeAccountSettings) -> some View {
         DesktopSettingRow(title: "Theme", status: context.saves.status("theme")) {
-            JunoSegmented(
-                options: [
-                    JunoSegmentedOption(NativeThemePreference.light, "Light", icon: .sun),
-                    JunoSegmentedOption(NativeThemePreference.dark, "Dark", icon: .moon),
-                    JunoSegmentedOption(NativeThemePreference.system, "System", icon: .monitor),
-                ],
+            // The platform's own segmented control, words only, as System
+            // Settings draws a three-way choice.
+            Picker(
+                "Theme",
                 selection: Binding(
                     get: { settings.theme },
                     set: { theme in
                         guard theme != settings.theme else { return }
                         context.save("theme", NativeSettingsPatch(theme: theme))
                     }
-                ),
-                accessibilityLabel: "Theme",
-                optionAccessibilityIdentifier: { "juno.desktop.settings.theme.\($0.rawValue.lowercased())" }
-            )
+                )
+            ) {
+                Text("Light").tag(NativeThemePreference.light)
+                Text("Dark").tag(NativeThemePreference.dark)
+                Text("System").tag(NativeThemePreference.system)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
             .fixedSize()
+            .accessibilityIdentifier("juno.desktop.settings.theme")
         }
     }
 
@@ -116,28 +119,22 @@ struct DesktopSettingsGeneralPane: View {
             description: "Scales the whole interface on this device.",
             status: context.saves.status("fontSize")
         ) {
-            HStack(spacing: JunoSpace.cozy) {
+            HStack(alignment: .center, spacing: JunoSpace.snug) {
                 Text("A")
                     .junoType(.caption)
                     .foregroundStyle(Color.junoSecondaryInk)
                     .accessibilityHidden(true)
-                Slider(
+                DesktopTickSlider(
                     value: Binding(
-                        get: { Double(textSize.step) },
-                        set: { storedTextSize = DesktopTextSize(step: Int($0.rounded())).rawValue }
+                        get: { textSize.step },
+                        set: { storedTextSize = DesktopTextSize(step: $0).rawValue }
                     ),
-                    in: 0...Double(DesktopTextSize.allCases.count - 1),
-                    step: 1,
-                    onEditingChanged: { editing in
-                        if !editing { context.saves.mark("fontSize", ok: true) }
-                    }
-                ) {
-                    Text("Text size")
-                }
-                .labelsHidden()
-                .tint(Color.junoAccent)
-                .frame(width: 148)
-                .accessibilityValue("\(textSize.px) points")
+                    steps: DesktopTextSize.allCases.count,
+                    accessibilityLabel: "Text size",
+                    accessibilityValue: "\(textSize.px) points",
+                    committed: { context.saves.mark("fontSize", ok: true) }
+                )
+                .frame(width: DesktopSettingsMetrics.sliderWidth)
                 .accessibilityIdentifier("juno.desktop.settings.text-size")
                 Text("A")
                     .junoType(.bodyLarge)
@@ -147,7 +144,7 @@ struct DesktopSettingsGeneralPane: View {
                     .junoType(.ui)
                     .monospacedDigit()
                     .foregroundStyle(Color.junoSecondaryInk)
-                    .frame(width: 40, alignment: .trailing)
+                    .frame(width: DesktopSettingsMetrics.valueWidth, alignment: .trailing)
                     .accessibilityHidden(true)
             }
         }
