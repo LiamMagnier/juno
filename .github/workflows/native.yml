@@ -53,7 +53,7 @@ jobs:
     outputs:
       native: ${{ steps.diff.outputs.native }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - id: diff
@@ -103,7 +103,7 @@ jobs:
     # GitHub's 360-minute default and starve the 5 macOS slots.
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.sha }}
       - uses: actions/setup-node@v4
@@ -190,7 +190,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.sha }}
       - uses: actions/setup-node@v4
@@ -222,7 +222,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.sha }}
       - uses: actions/setup-node@v4
@@ -278,7 +278,7 @@ jobs:
         # (the lock, the stop, grants and the always-confirm floor).
         package: [JunoNativeKit, JunoCode, JunoWork, JunoScreenControl]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.sha }}
 
@@ -312,7 +312,7 @@ jobs:
     # Observed max 17m25s, so 30 would leave under a 2x margin.
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.sha }}
 
@@ -400,7 +400,7 @@ jobs:
     # Observed 6m25s–11m15s.
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.sha }}
 
