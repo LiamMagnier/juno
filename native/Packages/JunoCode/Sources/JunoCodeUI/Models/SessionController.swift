@@ -615,6 +615,15 @@ public final class SessionController {
     public let screen = ScreenControlModel()
     /// The session's Preview lease and dev server. Lane D.
     public let previewLease = PreviewLeaseModel()
+    /// Opens the Preview or Simulator pane when the agent's tool calls call
+    /// for it (a dev server, the Preview tools, a Simulator build).
+    @ObservationIgnored private var autoOpenerStorage: CodeAutoOpener?
+    var autoOpener: CodeAutoOpener {
+        if let autoOpenerStorage { return autoOpenerStorage }
+        let opener = CodeAutoOpener(sessionID: sessionID)
+        autoOpenerStorage = opener
+        return opener
+    }
     /// Line comments, inline findings and the CI bar. Lane E. Named apart from
     /// ``review``, the document-review state that predates it.
     public let reviewQueue = ReviewQueueModel()
@@ -1592,6 +1601,7 @@ public final class SessionController {
     }
 
     public func detach() async {
+        autoOpenerStorage?.cancelAll()
         guard let live else { return }
         await live.context?.computerUse.deactivate(sessionID: sessionID)
         computerUseActive = false
@@ -4402,6 +4412,15 @@ public final class SessionController {
         }
     }
 
+    /// The proposal of a call, read back from the newest events first: the
+    /// completion arrives just after it.
+    private func proposedTool(_ toolCallID: String) -> ToolProposedEvent? {
+        for event in events.reversed().prefix(400) {
+            if case let .toolProposed(proposed) = event.payload, proposed.toolCallID == toolCallID { return proposed }
+        }
+        return nil
+    }
+
     private func integrate(_ event: SessionEvent) {
         projection.apply(event: event)
         integrateAutonomy(event)
@@ -4415,6 +4434,16 @@ public final class SessionController {
         case let .toolCompleted(completed):
             if openToolCallID == completed.toolCallID {
                 openToolCallID = nil
+            }
+            if let proposed = proposedTool(completed.toolCallID) {
+                autoOpener.toolFinished(
+                    name: proposed.toolName,
+                    input: proposed.input,
+                    resultSummary: completed.resultSummary,
+                    succeeded: completed.status == .succeeded,
+                    workspaceRoot: context?.access.rootURL,
+                    shells: context?.shells
+                )
             }
             // Nothing pushes the coordinator's state into the window, and the
             // agent's own screen actions are tool calls. Re-reading as each

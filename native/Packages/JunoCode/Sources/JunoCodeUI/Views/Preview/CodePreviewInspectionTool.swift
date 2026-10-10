@@ -178,11 +178,14 @@ struct PreviewServerTool: CodeTool {
 
     let name = "preview_server"
     let description = """
-        Manage this session's local preview servers from .juno/launch.json (or .claude/launch.json, or what Juno \
-        found in the project). list shows configurations and their state; start runs one and returns only when it \
-        answers or fails, with the address, or the reason and the last 40 log lines; stop, restart; logs reads the \
-        server's output (level error, search, and since a cursor from the previous logs result); attach uses a \
-        durable shell's server (shell_id) when that shell's process listens on a loopback address. Servers belong to \
+        Run and manage this session's local dev servers for web UI work; use it to check visible changes \
+        before you say they work. Configurations come from .juno/launch.json, .alevr/launch.json or \
+        .claude/launch.json, else from what Alevr found in the project (package.json dev scripts, Vite, Next, \
+        Astro, Django, Flask, Rails, Go, a static site). list shows them and their state; start runs one and \
+        returns only when it answers or fails, with the address, or the reason and the last 40 log lines; the \
+        Preview pane opens on it by itself. stop, restart; logs reads the server's output (level error, search, \
+        and since a cursor from the previous logs result); attach uses a durable shell's server (shell_id) when \
+        that shell's process listens on a loopback address. Then look with preview_browser. Servers belong to \
         the session and keep running when the reader looks at another one. Loopback only.
         """
 
@@ -216,7 +219,7 @@ struct PreviewServerTool: CodeTool {
                 let names = catalog.configurations.map(\.name)
                 let issues = catalog.issues.map(\.message)
                 return .invalidInput(message: names.isEmpty
-                    ? "This project has no launch configuration\(issues.isEmpty ? "" : " (\(issues.joined(separator: "; ")))"). Write .juno/launch.json with a configuration (name, runtimeExecutable, runtimeArgs, cwd, port, autoPort)."
+                    ? "This project has no launch configuration\(issues.isEmpty ? "" : " (\(issues.joined(separator: "; ")))"). Write .juno/launch.json as an object with a configurations list, for example { \"version\": \"0.0.1\", \"configurations\": [ { \"name\": \"web\", \"runtimeExecutable\": \"npm\", \"runtimeArgs\": [\"run\", \"dev\"], \"autoPort\": true } ] }, or start the server with shell_start and use preview_server attach."
                     : "No configuration named \(input["name"]?.stringValue ?? ""). Configurations: \(names.joined(separator: ", ")).")
             }
         }
@@ -367,6 +370,7 @@ struct PreviewServerTool: CodeTool {
     }
 
     private func notifyPane(key: PreviewKey, session: CodeSessionID) async {
+        guard CodeAutoOpenSettings.isEnabled else { return }
         await MainActor.run {
             NotificationCenter.default.post(
                 name: .junoCodePreviewOpenRequested,
@@ -404,36 +408,18 @@ struct PreviewServerTool: CodeTool {
         guard let shells = services.shells else {
             throw ToolError.executionFailed(message: "This workspace has no durable shells.")
         }
-        guard let info = shells.info(id: shellID) else {
-            throw ToolError.executionFailed(message: "No shell \(shellID).")
-        }
-        guard info.ownerSessionID == session else {
-            throw ToolError.denied(reason: "Shell \(shellID) belongs to another session.")
-        }
-        guard case let .running(pid) = info.state else {
-            throw ToolError.executionFailed(message: "Shell \(shellID) is not running.")
-        }
-        let chunk = try await shells.output(
-            id: shellID, ownerSessionID: session, since: nil, tailLines: 400, maximumBytes: 64 * 1_024, waitSeconds: 0
-        )
-        let candidates = chunk.text.split(separator: "\n").flatMap { DevServerURLDetector.detectAll(in: String($0)) }
-        let group = ListeningSocketOwnership.processGroup(of: pid) ?? pid
-        guard let url = candidates.first(where: { candidate in
-            PreviewOrigin.isLoopback(candidate) && candidate.port.map { ListeningSocketOwnership.groupListens(port: $0, processGroup: group) } == true
-        }) ?? candidates.first(where: PreviewOrigin.isLoopback) else {
-            throw ToolError.executionFailed(message: "Shell \(shellID) has not printed a loopback address its process listens on.")
-        }
-        let outcome = await services.registry.attachShell(
-            shellID: shellID, url: url, processGroup: group, checkoutRoot: services.workspaceRoot, session: session
-        )
-        switch outcome.result {
-        case let .ready(ready, _):
-            await MainActor.run { _ = services.openPage(key: outcome.snapshot.key, url: ready, configuration: nil) }
-            return ToolResult(content: "Using shell \(shellID)'s server at \(ready.absoluteString) as the preview \"\(outcome.snapshot.key.name)\". Alevr did not start it and will not stop it; stop it with shell_kill.")
+        switch await PreviewShellAttach.attach(
+            shellID: shellID, session: session, workspaceRoot: services.workspaceRoot, shells: shells, registry: services.registry
+        ) {
+        case let .ready(ready, key):
+            await MainActor.run { _ = services.openPage(key: key, url: ready, configuration: nil) }
+            await notifyPane(key: key, session: session)
+            return ToolResult(content: "Using shell \(shellID)'s server at \(ready.absoluteString) as the preview \"\(key.name)\". Alevr did not start it and will not stop it; stop it with shell_kill.")
+        case let .notYet(reason):
+            throw ToolError.executionFailed(message: reason + " Wait for it with shell_output wait_seconds, then attach again.")
         case let .failed(reason):
-            return ToolResult(content: reason, isError: true)
-        case .timedOut:
-            return ToolResult(content: "Shell \(shellID)'s server did not answer.", isError: true)
+            if reason.contains("belongs to another session") { throw ToolError.denied(reason: reason) }
+            throw ToolError.executionFailed(message: reason)
         }
     }
 }
@@ -452,6 +438,19 @@ enum PreviewConfigurationDescription {
         case .staticSite: return "Alevr's static server for \(visible(configuration.workingDirectoryDisplay))"
         case .command: return visible(ShellWords.join(configuration.displayArgv))
         }
+    }
+
+    /// One line for a menu or a list: the command, its folder when not the
+    /// root, and the port it is expected on.
+    static func menuDetail(_ configuration: ResolvedPreviewConfiguration) -> String {
+        var parts = [commandText(configuration)]
+        if configuration.workingDirectoryDisplay != ".", !configuration.isStatic {
+            parts.append("in \(visible(configuration.workingDirectoryDisplay))")
+        }
+        if let port = configuration.port, !configuration.isAttach, !parts[0].contains(String(port)) {
+            parts.append("port \(port)")
+        }
+        return parts.joined(separator: " · ")
     }
 
     /// `text` with every control character spelled out.

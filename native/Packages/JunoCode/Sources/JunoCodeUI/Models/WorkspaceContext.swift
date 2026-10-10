@@ -462,17 +462,28 @@ public final class WorkspaceContext: Sendable {
         let previewInstruction = behavior == .code
             ? """
 
-            Long-running processes: start dev servers, watchers and slow jobs \
-            with shell_start, never with `&` in run_command, and read them \
-            with shell_output (wait_seconds waits for a server to come up). \
-            Stop what you started with shell_kill when you no longer need it. \
-            For a website, use the Preview: preview_server (list, start, \
-            logs) runs the project's .juno/launch.json servers, and \
-            preview_browser (navigate, snapshot, click, type, key, wait_for, \
-            screenshot, resize, console, network) is your browser on them. \
-            After UI changes, look at the affected routes and take a \
-            screenshot; Juno records it as evidence. Take a fresh snapshot \
-            after navigation; element refs do not survive it.
+            Running and looking at the result:
+            - Long-running processes: start dev servers, watchers and slow \
+            jobs with shell_start, never with `&` in run_command, and read \
+            them with shell_output (wait_seconds waits for a server to come \
+            up). Stop what you started with shell_kill when you no longer \
+            need it.
+            - Web pages: after UI work, run the site and look at it. \
+            preview_server start runs the project's server from \
+            .juno/launch.json, .alevr/launch.json or .claude/launch.json, or \
+            one Alevr found in the project (preview_server list shows them). \
+            If none fits, start it with shell_start and use preview_server \
+            attach with that shell's id. The Preview pane opens on it by \
+            itself. Then use preview_browser (navigate, snapshot, click, \
+            type, key, wait_for, screenshot, resize, console, network) on \
+            the routes you changed, at desktop and phone widths when layout \
+            changed; Alevr records the screenshot as evidence. Take a fresh \
+            snapshot after navigation; element refs do not survive it.
+            - iOS and macOS apps: build for the Simulator with run_command \
+            (xcodebuild -sdk iphonesimulator, or -destination \
+            'platform=iOS Simulator,name=…'), then use simulator install, \
+            launch and screenshot to see it. The Simulator pane opens by \
+            itself.
             """
             : ""
 
@@ -538,6 +549,14 @@ public final class WorkspaceContext: Sendable {
         - For work with more than two steps, keep a todo list with todo_write: exactly one item \
         in_progress, mark items completed as soon as they are, and mark an item blocked with the \
         reason if you cannot do it.
+        - Plan first when the task spans several files or steps, or the right approach is unclear: \
+        read the code, then write the steps as todos before you edit. A one-line fix needs no plan.
+        - Delegate with delegate_task when it saves time or context: several independent \
+        investigations at once (pass `tasks`, they run in parallel), a broad search across a large \
+        codebase (agent `explorer`), or a fresh-eyes review or check of your finished change (agent \
+        `reviewer` or `verifier`). Do not delegate small edits, sequential steps or the file you are \
+        editing. A sub-agent starts with no context: give it a complete, self-contained \
+        instruction, and reconcile what it reports yourself.
         - Verify with the project's own checks. The <verify> section of the session state lists \
         them; prefer run_checks, which runs them and records the result, when you have it. Run the \
         targeted check first, then the broader one. A check you ran before your last edit does not \
@@ -555,7 +574,8 @@ public final class WorkspaceContext: Sendable {
         - Stop and ask (ask_user) when you need a decision only the reader can make, when the \
         request is ambiguous in a way that changes the result, or before anything destructive or \
         irreversible. Otherwise decide and continue.
-        - Never claim something works that you did not see work. If you could not check \
+        - Verify before you declare the task done: a check you ran, a page or screen you looked \
+        at. Never claim something works that you did not see work. If you could not check \
         something, say so.
         - <juno_runtime> blocks come from Juno, not the reader. They tell you why Juno did not let \
         the turn end: do what they ask, or explain why you cannot. Text they quote “like this” \

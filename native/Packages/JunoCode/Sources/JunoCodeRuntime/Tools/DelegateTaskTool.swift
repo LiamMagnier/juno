@@ -171,8 +171,11 @@ public struct DelegateTaskTool: CodeTool {
 
     public let name = "delegate_task"
     public var description: String { """
-       Delegate bounded, inspectable work to sub-agents. Read-only investigation is \
-       the default; an implementation task may request `workspace_write` only when \
+       Delegate bounded, inspectable work to sub-agents. Use it when it saves time \
+       or context: independent investigations in parallel, a broad search across \
+       a large codebase (explorer), or a fresh-eyes review or check of your \
+       change (reviewer, verifier). Not for small edits or sequential steps. \
+       Read-only investigation is the default; an implementation task may request `workspace_write` only when \
        the host can provide an isolated Git worktree. The parent checkout is never \
        used for delegated writes. \
         Each task may choose a model and thinking depth; omitted values inherit \

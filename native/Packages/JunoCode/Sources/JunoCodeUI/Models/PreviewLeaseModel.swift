@@ -25,6 +25,11 @@ public final class PreviewLeaseModel {
     public private(set) var pendingApproval: ResolvedPreviewConfiguration?
     /// A problem from the last reader action, in words.
     public private(set) var notice: String?
+    /// What the last reader action did, in words (a saved file).
+    public private(set) var message: String?
+    /// Opens the Simulator pane, for a project that is an app rather than a
+    /// site. Set by the workbench; the pane offers it only when it is.
+    @ObservationIgnored public var simulatorOpener: (@MainActor () -> Void)?
     /// Annotate mode (§5.15): the reader is picking an element.
     public var isAnnotating = false
     /// The element picked, waiting for the reader's note.
@@ -129,8 +134,8 @@ public final class PreviewLeaseModel {
         if let configuration = selectedConfiguration {
             return "Not running · \(PreviewConfigurationDescription.commandText(configuration))"
         }
-        if let issue = catalog.issues.first { return issue.message }
-        return "No launch configuration in this project"
+        if !catalog.issues.isEmpty { return "The launch file did not read" }
+        return "No server found in this project"
     }
 
     public func needsApproval(_ configuration: ResolvedPreviewConfiguration) -> Bool {
@@ -179,9 +184,18 @@ public final class PreviewLeaseModel {
     /// card first (PV-33, PV-35).
     public func requestStart(_ name: String? = nil) {
         notice = nil
+        message = nil
         refreshCatalog()
-        guard let configuration = (name ?? selectedName).flatMap({ catalog.configuration(named: $0) }) else {
-            notice = "There is no configuration to start."
+        guard let configuration = (name ?? selectedName).flatMap({ catalog.configuration(named: $0) })
+            ?? (name == nil ? catalog.defaultConfiguration : nil)
+        else {
+            if catalog.configurations.isEmpty {
+                notice = fileProblem != nil
+                    ? "Fix the launch file to start a server; Alevr found no other server to start in the project."
+                    : "Alevr found no server to start in this project. Add .juno/launch.json to say how it starts."
+            } else {
+                notice = "There is no configuration named \(name ?? selectedName ?? "")."
+            }
             return
         }
         selectedName = configuration.name
@@ -276,27 +290,55 @@ public final class PreviewLeaseModel {
         page.reload()
     }
 
-    /// Writes what discovery found as `.juno/launch.json`, for the reader to
-    /// review in Changes (§4.2).
-    public func saveDiscoveredConfiguration() {
+    /// One click in the servers menu: shows that configuration and starts
+    /// it, unless it already runs. A new configuration still shows its
+    /// approval card first.
+    public func startConfiguration(_ name: String) {
+        selectedName = name
+        if snapshots.first(where: { $0.key.name == name })?.phase.isLive == true {
+            syncPage()
+            return
+        }
+        requestStart(name)
+    }
+
+    /// Writes a configuration discovery found into the project's launch
+    /// file, for the reader to review in Changes (§4.2). The selected one
+    /// when no name is given.
+    public func saveConfiguration(_ name: String? = nil) {
         guard let workspaceRoot else { return }
-        let target = workspaceRoot.appendingPathComponent(LaunchConfigurationStore.junoRelativePath)
-        guard !FileManager.default.fileExists(atPath: target.path) else {
-            notice = ".juno/launch.json already exists."
+        notice = nil
+        message = nil
+        let wanted = name ?? selectedName
+        let proposed = LaunchConfigurationDiscovery.propose(workspaceRoot: workspaceRoot).configurations
+        guard let configuration = proposed.first(where: { $0.name == wanted }) ?? (wanted == nil ? proposed.first : nil) else {
+            notice = "There is no server found in the project named \(wanted ?? "")."
             return
         }
         do {
-            let data = try LaunchConfigurationDiscovery.propose(workspaceRoot: workspaceRoot).encoded()
-            try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try data.write(to: target, options: .atomic)
+            message = try LaunchConfigurationStore.save(configuration, workspaceRoot: workspaceRoot)
             refreshCatalog()
         } catch {
-            notice = "Could not write .juno/launch.json: \(error.localizedDescription)"
+            notice = "Could not write \(catalog.editableFileRelativePath): \(error.localizedDescription)"
         }
     }
 
+    /// The older name for ``saveConfiguration(_:)`` on the selection.
+    public func saveDiscoveredConfiguration() {
+        saveConfiguration(nil)
+    }
+
+    /// Whether the project has an Alevr launch file to edit.
+    public var hasEditableFile: Bool { catalog.hasJunoFile || catalog.hasAlevrFile }
+
     public var launchFileURL: URL? {
-        workspaceRoot.map { $0.appendingPathComponent(LaunchConfigurationStore.junoRelativePath) }
+        workspaceRoot.map { $0.appendingPathComponent(catalog.editableFileRelativePath) }
+    }
+
+    /// A launch file that did not read, in words, while the pane offers what
+    /// it found in the project instead.
+    public var fileProblem: String? {
+        catalog.issues.first { $0.source != .discovered }?.message
     }
 
     // MARK: - Annotate

@@ -63,6 +63,14 @@ final class SimulatorToolsTests: XCTestCase {
         return asked
     }
 
+    /// The description says when to use it and how to get an app onto it.
+    func testTheDescriptionSaysWhenAndHowToUseTheSimulator() {
+        let (tool, _) = tool(FakeSimulator(), mode: .fullAccess)
+        XCTAssertTrue(tool.description.contains("to see an iOS app you changed before you say it works"))
+        XCTAssertTrue(tool.description.contains("xcodebuild -sdk iphonesimulator"))
+        XCTAssertTrue(tool.description.contains("the Simulator pane opens by itself"))
+    }
+
     func testEachDeviceIsConsentedOncePerSession() async throws {
         let simulator = FakeSimulator()
         let (tool, permissions) = tool(simulator, mode: .fullAccess)

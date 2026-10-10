@@ -306,6 +306,39 @@ final class WorkbenchModelTests: XCTestCase {
         })
     }
 
+    /// The Code prompt says when to run and look (Preview for pages,
+    /// Simulator for apps), when to plan, when to delegate, and to verify
+    /// before declaring done.
+    func testCodeSystemPromptGuidesToolUse() async throws {
+        let addedRecord = await model.addWorkspace(grantedURL: workspaceURL)
+        let record = try XCTUnwrap(addedRecord)
+        let loadedContext = await model.context(for: record.id)
+        let context = try XCTUnwrap(loadedContext)
+        let prompt = await context.systemPrompt(behavior: .code)
+
+        for phrase in [
+            "Running and looking at the result:",
+            "Web pages: after UI work, run the site and look at it.",
+            "preview_server start runs the project's server",
+            ".alevr/launch.json or .claude/launch.json",
+            "use preview_server attach with that shell's id",
+            "The Preview pane opens on it by itself.",
+            "iOS and macOS apps: build for the Simulator",
+            "xcodebuild -sdk iphonesimulator",
+            "The Simulator pane opens by itself.",
+            "Plan first when the task spans several files or steps",
+            "Delegate with delegate_task when it saves time or context",
+            "a broad search across a large codebase (agent `explorer`)",
+            "(agent `reviewer` or `verifier`)",
+            "Do not delegate small edits, sequential steps",
+            "Verify before you declare the task done",
+        ] {
+            XCTAssertTrue(prompt.contains(phrase), "missing: \(phrase)")
+        }
+        // Static: the cached prefix stays byte-stable.
+        XCTAssertTrue(WorkspaceContext.codeWorkflow.contains("Delegate with delegate_task"))
+    }
+
     func testSystemPromptIncludesBoundedRepositoryInstructions() async throws {
         let oversizedInstructions =
             "Use the project formatter.\n"

@@ -705,7 +705,9 @@ final class CodePreviewHarnessTests: XCTestCase {
 
         let catalog = LaunchConfigurationStore.load(workspaceRoot: root)
         let web = try XCTUnwrap(catalog.configuration(named: "apps/web dev"))
-        XCTAssertEqual(web.commandLine(), "pnpm run dev")
+        // Vite's port goes through its flag (pnpm passes it on as it is),
+        // so Alevr can choose a free one; 5173 is what it shows until then.
+        XCTAssertEqual(web.commandLine(), "pnpm run dev --port 5173")
         XCTAssertEqual(web.workingDirectoryDisplay, "apps/web")
         XCTAssertEqual(catalog.defaultConfiguration?.name, web.name)
         XCTAssertFalse(catalog.configurations.contains { $0.workingDirectory.path.contains("node_modules") })

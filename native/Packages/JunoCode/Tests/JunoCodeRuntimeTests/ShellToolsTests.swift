@@ -61,6 +61,12 @@ final class ShellToolsTests: XCTestCase {
 
     // MARK: - run_command's folder
 
+    func testShellStartPointsWebServersAtThePreview() throws {
+        let start = try XCTUnwrap(registry.tool(named: "shell_start"))
+        XCTAssertTrue(start.description.contains("prefer preview_server start"))
+        XCTAssertTrue(start.description.contains("opens in the Preview pane"))
+    }
+
     func testALoneCdMovesLaterCommandsAndACdInsideACommandDoesNot() async throws {
         let moved = try await invoke("run_command", ["command": "cd app/src"])
         XCTAssertTrue(moved.content.contains("now app/src"), moved.content)

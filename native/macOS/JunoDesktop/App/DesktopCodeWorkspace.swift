@@ -376,15 +376,31 @@ struct DesktopCodeWorkspace: View {
         .task(id: selection.wrappedValue) { await followSelectedRemoteSession() }
         .onReceive(NotificationCenter.default.publisher(for: .junoCodePreviewOpenRequested)) { notification in
             guard let target = notification.object as? CodePreviewTarget,
-                  target.sessionID == controller?.sessionID,
-                  target.workspaceRootPath == controller?.context?.access.rootURL.path,
-                  previewTarget == nil
+                  let controller,
+                  target.sessionID == controller.sessionID,
+                  Self.samePath(target.workspaceRootPath, controller.context?.access.rootURL.path)
             else { return }
+            bindPreviewAnnotations()
+            if let name = target.configurationName { controller.previewLease.selectedName = name }
+            if envBinding != nil {
+                // Env sessions show the Preview as a tab of their dock.
+                if !(envDock.isOpen && envDock.tab == .preview) { envDock.show(.preview) }
+                return
+            }
+            guard previewTarget == nil else { return }
             withAnimation(JunoMotion.reduced(JunoMotion.canvasEnter, when: reduceMotion)) {
                 simulatorHost.closePane()
-                bindPreviewAnnotations()
                 previewTarget = target
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .junoCodeSimulatorOpenRequested)) { notification in
+            guard let target = notification.object as? CodePreviewTarget,
+                  let controller,
+                  target.sessionID == controller.sessionID,
+                  Self.samePath(target.workspaceRootPath, controller.context?.access.rootURL.path),
+                  !simulatorHost.isOpen
+            else { return }
+            openSimulator()
         }
         .onChange(of: selectedSessionID) { _, _ in
             simulatorHost.tearDown()
@@ -947,8 +963,17 @@ struct DesktopCodeWorkspace: View {
         registry.consume(request)
     }
 
+    /// Two spellings of one folder (a trailing slash, a symlink) are one.
+    static func samePath(_ left: String?, _ right: String?) -> Bool {
+        guard let left, let right else { return false }
+        if left == right { return true }
+        let resolve = { (path: String) in URL(fileURLWithPath: path).resolvingSymlinksInPath().standardizedFileURL.path }
+        return resolve(left) == resolve(right)
+    }
+
     private func openPreview() {
         if envBinding != nil, controller?.context != nil {
+            bindPreviewAnnotations()
             envDock.toggle(.preview)
             return
         }
@@ -966,6 +991,8 @@ struct DesktopCodeWorkspace: View {
     /// crop as an image, the element and the note as text (§5.15).
     private func bindPreviewAnnotations() {
         guard let controller else { return }
+        // The Preview offers the Simulator for a project that is an app.
+        controller.previewLease.simulatorOpener = { openSimulator() }
         controller.previewLease.annotationSink = { [weak controller] annotation in
             guard let controller else { return }
             if let image = annotation.screenshot {

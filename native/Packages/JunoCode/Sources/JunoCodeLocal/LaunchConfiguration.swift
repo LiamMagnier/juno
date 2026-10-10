@@ -115,6 +115,8 @@ public struct PreviewLaunchFile: Codable, Hashable, Sendable {
 public enum PreviewConfigurationSource: String, Codable, Sendable {
     /// `.juno/launch.json`.
     case juno
+    /// `.alevr/launch.json`, the same file under the product's new name.
+    case alevr
     /// `.claude/launch.json`, imported read-only.
     case claude
     /// Proposed by discovery; no file names it yet.
@@ -123,6 +125,7 @@ public enum PreviewConfigurationSource: String, Codable, Sendable {
     public var displayName: String {
         switch self {
         case .juno: ".juno/launch.json"
+        case .alevr: ".alevr/launch.json"
         case .claude: ".claude/launch.json"
         case .discovered: "found in the project"
         }
@@ -235,19 +238,39 @@ public struct PreviewLaunchCatalog: Hashable, Sendable {
     public var autoVerify: Bool
     public var hasJunoFile: Bool
     public var hasClaudeFile: Bool
+    public var hasAlevrFile: Bool
+    /// An Xcode project or workspace at the top or one level down: an app
+    /// for the Simulator rather than a page for the Preview.
+    public var hasXcodeProject: Bool
 
     public init(
         configurations: [ResolvedPreviewConfiguration],
         issues: [PreviewLaunchIssue] = [],
         autoVerify: Bool = true,
         hasJunoFile: Bool = false,
-        hasClaudeFile: Bool = false
+        hasClaudeFile: Bool = false,
+        hasAlevrFile: Bool = false,
+        hasXcodeProject: Bool = false
     ) {
         self.configurations = configurations
         self.issues = issues
         self.autoVerify = autoVerify
         self.hasJunoFile = hasJunoFile
         self.hasClaudeFile = hasClaudeFile
+        self.hasAlevrFile = hasAlevrFile
+        self.hasXcodeProject = hasXcodeProject
+    }
+
+    /// Whether every configuration was found in the project rather than
+    /// read from a file.
+    public var isDiscovered: Bool {
+        !configurations.isEmpty && configurations.allSatisfy { $0.source == .discovered }
+    }
+
+    /// The Alevr file the reader edits: `.juno/launch.json`, or
+    /// `.alevr/launch.json` when only that one exists.
+    public var editableFileRelativePath: String {
+        hasAlevrFile && !hasJunoFile ? LaunchConfigurationStore.alevrRelativePath : LaunchConfigurationStore.junoRelativePath
     }
 
     public func configuration(named name: String) -> ResolvedPreviewConfiguration? {
@@ -264,11 +287,23 @@ public struct PreviewLaunchCatalog: Hashable, Sendable {
 /// Reads the launch files of a workspace.
 public enum LaunchConfigurationStore {
     public static let junoRelativePath = ".juno/launch.json"
+    public static let alevrRelativePath = ".alevr/launch.json"
     public static let claudeRelativePath = ".claude/launch.json"
 
-    /// The catalog for `workspaceRoot`: `.juno/launch.json`, then any name
-    /// only `.claude/launch.json` defines; discovery when neither file
-    /// exists. Never throws: a broken file is an issue in words.
+    /// The files read, in precedence order: a name the first defines hides
+    /// the same name in the later ones.
+    public static let sources: [(PreviewConfigurationSource, String)] = [
+        (.juno, junoRelativePath),
+        (.alevr, alevrRelativePath),
+        (.claude, claudeRelativePath),
+    ]
+
+    /// The catalog for `workspaceRoot`: `.juno/launch.json`, then
+    /// `.alevr/launch.json`, then `.claude/launch.json`, each adding the
+    /// names the earlier ones do not define. When the files give nothing
+    /// that can run (none exist, or each is broken), discovery proposes
+    /// what the project looks like it runs, so a broken file is never a dead
+    /// end. Never throws: a broken file is an issue in words.
     public static func load(
         workspaceRoot: URL,
         discover: Bool = true
@@ -276,37 +311,24 @@ public enum LaunchConfigurationStore {
         let root = workspaceRoot.resolvingSymlinksInPath().standardizedFileURL
         var issues: [PreviewLaunchIssue] = []
         var configurations: [ResolvedPreviewConfiguration] = []
-        var autoVerify = true
+        var autoVerify: Bool?
+        var present: Set<PreviewConfigurationSource> = []
 
-        let junoURL = root.appendingPathComponent(junoRelativePath)
-        let claudeURL = root.appendingPathComponent(claudeRelativePath)
-        let hasJuno = FileManager.default.fileExists(atPath: junoURL.path)
-        let hasClaude = FileManager.default.fileExists(atPath: claudeURL.path)
-
-        if hasJuno {
-            switch read(junoURL) {
-            case let .success(file):
-                autoVerify = file.autoVerify ?? true
-                let resolved = resolve(file.configurations, source: .juno, workspaceRoot: root)
-                configurations += resolved.configurations
-                issues += resolved.issues
-            case let .failure(message):
-                issues.append(PreviewLaunchIssue(source: .juno, message: message))
-            }
+        for (source, relative) in sources {
+            let url = root.appendingPathComponent(relative)
+            guard FileManager.default.fileExists(atPath: url.path) else { continue }
+            present.insert(source)
+            let result = read(url, displayName: relative)
+            issues += result.issues.map { PreviewLaunchIssue(source: source, message: $0) }
+            guard let file = result.file else { continue }
+            if source != .claude, autoVerify == nil { autoVerify = file.autoVerify }
+            let taken = Set(configurations.map(\.name))
+            let added = file.configurations.filter { !taken.contains($0.name.trimmingCharacters(in: .whitespacesAndNewlines)) }
+            let resolved = resolve(added, source: source, workspaceRoot: root)
+            configurations += resolved.configurations
+            issues += resolved.issues
         }
-        if hasClaude {
-            switch read(claudeURL) {
-            case let .success(file):
-                let taken = Set(configurations.map(\.name))
-                let imported = file.configurations.filter { !taken.contains($0.name) }
-                let resolved = resolve(imported, source: .claude, workspaceRoot: root)
-                configurations += resolved.configurations
-                issues += resolved.issues
-            case let .failure(message):
-                issues.append(PreviewLaunchIssue(source: .claude, message: message))
-            }
-        }
-        if !hasJuno, !hasClaude, discover {
+        if configurations.isEmpty, discover {
             let proposed = LaunchConfigurationDiscovery.propose(workspaceRoot: root)
             let resolved = resolve(proposed.configurations, source: .discovered, workspaceRoot: root)
             configurations = resolved.configurations
@@ -315,35 +337,60 @@ public enum LaunchConfigurationStore {
         return PreviewLaunchCatalog(
             configurations: configurations,
             issues: issues,
-            autoVerify: autoVerify,
-            hasJunoFile: hasJuno,
-            hasClaudeFile: hasClaude
+            autoVerify: autoVerify ?? true,
+            hasJunoFile: present.contains(.juno),
+            hasClaudeFile: present.contains(.claude),
+            hasAlevrFile: present.contains(.alevr),
+            hasXcodeProject: discover && LaunchConfigurationDiscovery.hasXcodeProject(root: root)
         )
     }
 
-    enum ReadResult {
-        case success(PreviewLaunchFile)
-        case failure(String)
-    }
-
-    static func read(_ url: URL) -> ReadResult {
+    static func read(_ url: URL, displayName: String) -> LaunchFileParser.Result {
         guard let data = try? Data(contentsOf: url) else {
-            return .failure("\(url.lastPathComponent) could not be read.")
+            return LaunchFileParser.Result(file: nil, issues: ["\(displayName) could not be read."])
         }
-        return decode(data, name: url.deletingLastPathComponent().lastPathComponent + "/" + url.lastPathComponent)
+        return LaunchFileParser.parse(data, fileName: displayName)
     }
 
-    static func decode(_ data: Data, name: String) -> ReadResult {
-        do {
-            return .success(try JSONDecoder().decode(PreviewLaunchFile.self, from: data))
-        } catch let DecodingError.keyNotFound(key, _) {
-            return .failure("\(name) is missing \"\(key.stringValue)\".")
-        } catch let DecodingError.typeMismatch(_, context) {
-            let path = context.codingPath.map(\.stringValue).joined(separator: ".")
-            return .failure("\(name) has the wrong type at \"\(path)\".")
-        } catch {
-            return .failure("\(name) is not valid JSON.")
+    /// Writes `configuration` into the project's Alevr launch file, for the
+    /// reader to review in Changes, and says what happened in words.
+    ///
+    /// No file: one is created. A file that reads: the configuration is
+    /// added unless its name is taken. A file that does not read: it is kept
+    /// beside the new one as `launch.json.bak` and a new file is written, so
+    /// nothing the reader wrote is lost.
+    @discardableResult
+    public static func save(_ configuration: PreviewLaunchConfiguration, workspaceRoot: URL) throws -> String {
+        let root = workspaceRoot.resolvingSymlinksInPath().standardizedFileURL
+        let catalog = load(workspaceRoot: root, discover: false)
+        let relative = catalog.editableFileRelativePath
+        let target = root.appendingPathComponent(relative)
+        let manager = FileManager.default
+        try manager.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+
+        guard manager.fileExists(atPath: target.path) else {
+            try PreviewLaunchFile(configurations: [configuration]).encoded().write(to: target, options: .atomic)
+            return "Saved \(configuration.name) as \(relative)."
         }
+        let existing = read(target, displayName: relative)
+        if var file = existing.file {
+            if file.configurations.contains(where: { $0.name == configuration.name }) {
+                return "\(relative) already has a configuration named \(configuration.name)."
+            }
+            file.configurations.append(configuration)
+            if file.version == nil { file.version = "0.0.1" }
+            try file.encoded().write(to: target, options: .atomic)
+            return "Added \(configuration.name) to \(relative)."
+        }
+        var backup = target.appendingPathExtension("bak")
+        var counter = 2
+        while manager.fileExists(atPath: backup.path) {
+            backup = target.deletingLastPathComponent().appendingPathComponent("launch.json.bak\(counter)")
+            counter += 1
+        }
+        try manager.moveItem(at: target, to: backup)
+        try PreviewLaunchFile(configurations: [configuration]).encoded().write(to: target, options: .atomic)
+        return "Saved \(configuration.name) as \(relative). The file that did not read is kept as \(backup.lastPathComponent)."
     }
 
     /// Checks each configuration and resolves it against `workspaceRoot`.
@@ -395,6 +442,7 @@ public enum LaunchConfigurationStore {
         let name = configuration.name
         func expand(_ value: String) -> String {
             value.replacingOccurrences(of: "${workspaceFolder}", with: root.path)
+                .replacingOccurrences(of: "${workspaceRoot}", with: root.path)
         }
 
         // Working directory: inside the workspace, always.
