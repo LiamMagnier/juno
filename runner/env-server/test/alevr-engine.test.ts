@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { startEnvServer, type EnvServer } from "../src/server.js";
 import { silentLogger } from "../src/util.js";
 import type { AlevrEngine, EngineSessionOptions, EngineSession } from "../src/providers/alevr.js";
-import type { ApprovalRequestItem, ProviderInstance, TurnItem } from "../src/contracts/code-v2.js";
+import type { ApprovalRequestItem, ProviderInstance, RoleRouting, SubagentItem, TurnItem } from "../src/contracts/code-v2.js";
 import { TestClient, tempDir } from "./helpers.js";
 
 const servers: EnvServer[] = [];
@@ -21,6 +21,8 @@ after(async () => {
 interface Recorded {
   providers: { instance: string; model: string; authorization?: string }[];
   modes: string[];
+  routings: (RoleRouting | undefined)[];
+  resolved: (string | null)[];
 }
 
 function fakeEngine(rec: Recorded): AlevrEngine {
@@ -39,6 +41,7 @@ function fakeEngine(rec: Recorded): AlevrEngine {
     let aborted = false;
     const queued: string[] = [];
     rec.modes.push(o.mode ?? "?");
+    rec.routings.push(o.routing);
     const emit = o.callbacks.onEvent;
     return {
       sessionId: id,
@@ -63,6 +66,19 @@ function fakeEngine(rec: Recorded): AlevrEngine {
           if (d === "deny") emit({ type: "tool_denied", callId: "c1" });
           else emit({ type: "tool_finished", callId: "c1", output: "ok\n", exitCode: 0, durationMs: 3 });
         }
+        if (/team/.test(text) && o.routing) {
+          // The engine runs the team; each role resolves through the env server.
+          const roles = [
+            { id: "a1", role: "architect", phase: "plan", label: "Architect", sel: o.routing.architect! },
+            { id: "b1", role: "builder", contractRole: "worker", phase: "build", label: "Builder 1", sel: o.routing.workers![0]! },
+            { id: "v1", role: "reviewer", phase: "verify", label: "Verifier", sel: o.routing.reviewer! },
+          ];
+          for (const r of roles) {
+            const resolved = o.resolveProvider?.(r.sel);
+            rec.resolved.push(resolved ? `${r.sel.instanceId}:${resolved.model}` : null);
+            emit({ type: "subagent_update", agent: { id: r.id, title: r.label, role: r.role, contractRole: r.contractRole ?? r.role, phase: r.phase, label: r.label, model: r.sel.model, selection: r.sel, status: "completed", summary: `${r.label} done` } });
+          }
+        }
         if (/slow/.test(text)) {
           for (let i = 0; i < 300 && !aborted && queued.length === 0; i++) {
             emit({ type: "assistant_delta", text: "." });
@@ -79,7 +95,7 @@ function fakeEngine(rec: Recorded): AlevrEngine {
 }
 
 async function boot() {
-  const rec: Recorded = { providers: [], modes: [] };
+  const rec: Recorded = { providers: [], modes: [], routings: [], resolved: [] };
   const server = await startEnvServer({ dataDir: tempDir("data"), searchDirs: [], logger: silentLogger, probeOnStart: false, coalesceMs: 5, alevrEngine: fakeEngine(rec) });
   servers.push(server);
   const client = await TestClient.connect(server.url, server.token);
@@ -151,4 +167,44 @@ test("alevr engine: approvals, streaming, steering, interrupt and plan limits", 
   const t4 = await client.command<{ turnId: string }>("turn.start", { sessionId: sid, input: { text: "limit" }, selection, ...ask });
   assert.equal((await client.turnCompleted(sid, t4.turnId)).outcome, "limited");
   assert.equal(client.snapshot(sid).state, "limited");
+});
+
+test("alevr engine: a Plan → Build → Verify routing reaches the engine, roles resolve to their own adapters, and the thread shows the phases", async () => {
+  const { client, rec } = await boot();
+  await client.command("env.configure", { backend: { baseUrl: "https://alevr.example/api/agent", authorization: "Bearer s", models: [] } });
+  await client.command("provider.probe", { instanceId: "alevr" });
+  const selection = { instanceId: "alevr", model: "anthropic:claude-sonnet-5-5" };
+  const routing: RoleRouting = {
+    preset: "plan-build-verify",
+    orchestrator: selection,
+    architect: { instanceId: "alevr", model: "anthropic:claude-opus-5-5", effort: "high" },
+    workers: [{ instanceId: "alevr", model: "google:gemini-3.8-flash" }],
+    reviewer: { instanceId: "codex:default", model: "gpt-6.1-sol" },
+    budget: { maxUsd: 4 },
+  };
+  const { sessionId: sid } = await client.command<{ sessionId: string }>("session.open", { cwd: tempDir("cwd"), selection });
+  await client.waitFor(() => client.snapshots.get(sid), 4000, "snapshot");
+  const t = await client.command<{ turnId: string }>("turn.start", { sessionId: sid, input: { text: "team: build it" }, selection, routing, ...ask });
+  await client.turnCompleted(sid, t.turnId);
+
+  assert.deepEqual(rec.routings.at(-1), routing, "the engine session is built with the routing");
+  assert.deepEqual(rec.resolved, ["alevr:claude-opus-5-5", "alevr:gemini-3.8-flash", null], "Alevr roles get their own adapters; a subscription role inherits");
+  const agents = items(client, sid).filter((i): i is SubagentItem => i.kind === "subagent");
+  assert.deepEqual(agents.map((a) => [a.role, a.phase, a.label]), [
+    ["architect", "plan", "Architect"],
+    ["worker", "build", "Builder 1"],
+    ["reviewer", "verify", "Verifier"],
+  ]);
+  assert.equal(agents[0]!.model.model, "anthropic:claude-opus-5-5");
+  const msg = [...items(client, sid)].reverse().find((i) => i.kind === "assistant_message");
+  assert.ok(msg && msg.kind === "assistant_message" && !msg.text.includes("<alevr_team>"), "Alevr's own engine leads without the vendor brief");
+
+  // The same routing on the next turn keeps the engine session; Solo rebuilds it without one.
+  const again = await client.command<{ turnId: string }>("turn.start", { sessionId: sid, input: { text: "more" }, selection, routing, ...ask });
+  await client.turnCompleted(sid, again.turnId);
+  assert.equal(rec.routings.length, 1);
+  const solo = await client.command<{ turnId: string }>("turn.start", { sessionId: sid, input: { text: "solo" }, selection, ...ask });
+  await client.turnCompleted(sid, solo.turnId);
+  assert.equal(rec.routings.length, 2);
+  assert.equal(rec.routings.at(-1), undefined);
 });

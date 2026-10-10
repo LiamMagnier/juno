@@ -198,3 +198,18 @@ test("worktree setup scripts never inherit Alevr's own variables (the env server
   const env = scriptEnv({ PATH: "/bin", HOME: "/Users/x", ALEVR_ENV_TOKEN: "secret", JUNO_X: "1" });
   assert.deepEqual(env, { PATH: "/bin", HOME: "/Users/x" });
 });
+
+test("team brief: only a vendor agent leading a Plan → Build → Verify team gets it, and never in plan mode", async () => {
+  const { teamBrief, withTeamBrief, phaseOfRole } = await import("../src/mcp/team-brief.js");
+  const lead = { instanceId: "claude-agent:default", model: "claude-opus-5-5" };
+  const routing = { preset: "plan-build-verify" as const, orchestrator: lead, workers: [lead, lead, lead], reviewer: { instanceId: "codex:default", model: "gpt-6.1-sol" }, budget: { maxUsd: 2 } };
+  const brief = teamBrief(routing, "claude-agent") ?? "";
+  assert.match(brief, /role "architect"[\s\S]*3 builders[\s\S]*gpt-6.1-sol \(codex:default\)[\s\S]*\$2\.00/);
+  assert.equal(teamBrief(routing, "alevr"), undefined, "Alevr's engine runs the team itself");
+  assert.equal(teamBrief({ ...routing, preset: "lead-workers" }, "codex"), undefined);
+  assert.equal(teamBrief(undefined, "codex"), undefined);
+  const input = { text: "do it" };
+  assert.equal(withTeamBrief(input, routing, "codex", "plan"), input);
+  assert.ok(withTeamBrief(input, routing, "codex", "default").text.endsWith("\n\ndo it"));
+  assert.deepEqual(["architect", "worker", "reviewer", "explorer"].map(phaseOfRole), ["plan", "build", "verify", undefined]);
+});
