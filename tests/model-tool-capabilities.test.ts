@@ -168,9 +168,6 @@ const TABLE = [
   "qwen:qwen3-235b-a22b no-tools cc parallel:opt_in final:none replay:should/reasoning_content max:128",
   "qwen:qwen3-30b-a3b no-tools cc parallel:opt_in final:none replay:should/reasoning_content max:128",
   "qwen:qwen-max no-tools cc parallel:opt_in final:none replay:should/reasoning_content max:128",
-  "qwen:qwen-turbo no-tools cc parallel:opt_in final:none replay:should/reasoning_content max:128",
-  "qwen:qwen-vl-max no-tools cc parallel:opt_in final:none replay:should/reasoning_content max:128",
-  "qwen:qwq-plus no-tools cc parallel:opt_in final:none replay:should/reasoning_content max:128",
   "longcat:LongCat-2.0 tools cc parallel:unknown final:omit max:128",
   "longcat:LongCat-2.5-Preview tools cc parallel:unknown final:omit max:128",
 ];

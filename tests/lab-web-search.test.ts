@@ -81,7 +81,8 @@ test("the labs' searching models say so; the excepted Qwen rows do not", () => {
     assert.equal(model.webSearch, true, id);
     assert.equal(providerSearchAvailable(model), true, id);
   }
-  for (const id of ["qwen:qwen3-vl-plus", "qwen:qwq-plus", "moonshot:kimi-k3"]) {
+  // qwq-plus retired on 2026-10-09; getModel now resolves it to its replacement.
+  for (const id of ["qwen:qwen3-vl-plus", "moonshot:kimi-k3"]) {
     assert.equal(getModel(id)!.webSearch, false, id);
   }
 });
