@@ -293,6 +293,23 @@ public final class CodeSkillsModel {
         persist()
     }
 
+    /// Another device chose these skills for the thread (remote control's
+    /// sync, by name): each becomes the listed choice of that name, a choice
+    /// already selected under that name, or, when nothing is loaded yet, this
+    /// Mac's own skill of that name.
+    public func adoptRemote(names: [String]) {
+        var next: [String] = []
+        for name in names {
+            let id = choices.first { $0.name == name }?.id
+                ?? selectedIDs.first { $0.split(separator: ":", maxSplits: 1).last.map(String.init) == name }
+                ?? "\(CodeV2.SkillSource.user.rawValue):\(name)"
+            if !next.contains(id) { next.append(id) }
+        }
+        guard next != selectedIDs else { return }
+        selectedIDs = next
+        persist()
+    }
+
     /// The chip's words: "Skills", one skill's name, or "2 skills".
     public var chipTitle: String {
         let names = selected.map(\.title) + (once.map { ["/" + $0.name] } ?? [])
