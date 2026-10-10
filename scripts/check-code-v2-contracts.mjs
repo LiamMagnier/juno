@@ -460,6 +460,7 @@ function buildSchema() {
   params["conversation.read"] = obj(sid, { lastN: { type: "integer", minimum: 1 } });
   params["conversation.toggle"] = obj({ ...sid, enabled: { type: ["boolean", "null"] } });
   params["skills.list"] = obj({}, { cwd: nonEmpty, sessionId: nonEmpty });
+  params["skills.select"] = obj({ ...sid, skills: arr(ref("SkillActivation")) });
   for (const t of C.CLIENT_COMMAND_TYPE_VALUES) if (!params[t]) throw new Error(`no params schema for ${t}`);
   definitions.ClientCommand = {
     oneOf: C.CLIENT_COMMAND_TYPE_VALUES.map((t) => obj({ id: nonEmpty, type: { const: t }, params: params[t] })),
@@ -491,6 +492,8 @@ function buildSchema() {
     "terminal.output": { terminalId: nonEmpty, data: str },
     "terminal.exited": [{ terminalId: nonEmpty }, { exitCode: { type: "integer" } }],
     "session.scheduled": [{}, { scheduledResume: ref("ScheduledResume") }],
+    "session.skills": { skills: arr(ref("SkillActivation")) },
+    "skills.updated": [{}, { cwd: nonEmpty }],
   };
   for (const t of C.SERVER_EVENT_TYPE_VALUES) if (!payloads[t]) throw new Error(`no payload schema for ${t}`);
   definitions.ServerEvent = {

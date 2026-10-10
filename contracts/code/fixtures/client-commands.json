@@ -38,6 +38,8 @@
     {"id": "35", "type": "conversation.toggle", "params": {"sessionId": "s_cart", "enabled": null}},
     {"id": "36", "type": "skills.list", "params": {"cwd": "/repo"}},
     {"id": "37", "type": "skills.list", "params": {}},
-    {"id": "38", "type": "turn.start", "params": {"sessionId": "s1", "input": {"text": "Redesign the pricing page", "skills": [{"name": "design-taste-frontend", "source": "user", "path": "/Users/me/.claude/skills/design-taste-frontend/SKILL.md"}, {"name": "tidy-commits", "source": "account", "title": "Tidy commits", "instructions": "Squash fixups before a PR.", "once": true}]}, "selection": {"instanceId": "alevr", "model": "anthropic:claude-opus-5-5"}, "runtimeMode": "auto-edit", "interactionMode": "default"}}
+    {"id": "38", "type": "turn.start", "params": {"sessionId": "s1", "input": {"text": "Redesign the pricing page", "skills": [{"name": "design-taste-frontend", "source": "user", "path": "/Users/me/.claude/skills/design-taste-frontend/SKILL.md"}, {"name": "tidy-commits", "source": "account", "title": "Tidy commits", "instructions": "Squash fixups before a PR.", "once": true}]}, "selection": {"instanceId": "alevr", "model": "anthropic:claude-opus-5-5"}, "runtimeMode": "auto-edit", "interactionMode": "default"}},
+    {"id": "39", "type": "skills.select", "params": {"sessionId": "s1", "skills": [{"name": "design-taste-frontend", "source": "user", "path": "/Users/me/.claude/skills/design-taste-frontend/SKILL.md"}]}},
+    {"id": "40", "type": "skills.select", "params": {"sessionId": "s1", "skills": []}}
   ]
 }
