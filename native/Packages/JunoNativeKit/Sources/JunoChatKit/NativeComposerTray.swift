@@ -217,8 +217,16 @@ struct NativeTraySegmented: View {
     @Namespace private var thumb
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.colorScheme) private var colorScheme
 
     private static let pad: CGFloat = JunoSpace.micro
+    #if os(iOS)
+    // A phone's line is narrow: segments sit a little closer so a music
+    // model's "Vocals | Instrumental" and "MP3 | WAV" fit without scrolling.
+    private static let segmentPadding: CGFloat = JunoSpace.snug
+    #else
+    private static let segmentPadding: CGFloat = JunoSpace.close
+    #endif
 
     var body: some View {
         HStack(spacing: 0) {
@@ -239,12 +247,14 @@ struct NativeTraySegmented: View {
                             on ? Color.junoForeground
                                 : Color.junoForeground.opacity(segment.conflict ? 0.42 : 0.68)
                         )
-                        .padding(.horizontal, JunoSpace.close)
+                        .padding(.horizontal, Self.segmentPadding)
                         .frame(height: NativeComposerTrayMetrics.pillHeight - Self.pad * 2)
                         .background {
                             if on {
+                                // The raised card in light; in dark a lifted
+                                // tone, since the card is darker than the track.
                                 Capsule()
-                                    .fill(Color.junoCard)
+                                    .fill(colorScheme == .dark ? Color.junoForeground.opacity(0.17) : Color.junoCard)
                                     .shadow(color: Color.black.opacity(0.08), radius: 1.5, y: 0.5)
                                     .matchedGeometryEffect(id: "thumb", in: thumb)
                             }

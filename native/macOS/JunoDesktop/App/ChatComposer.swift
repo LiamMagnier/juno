@@ -1644,13 +1644,25 @@ struct ChatComposer: View {
                 )
                 .disabled(quota != nil)
                 .transition(.opacity)
-            } else if let trayMedia {
-                NativeComposerTray(projects: nil, media: trayMedia)
-                    .disabled(quota != nil)
-                    .transition(.opacity)
+            } else if trayMedia != nil || trayShowsInThreads {
+                // In a thread: a media model's choices, and any extension
+                // item that belongs to an existing chat (the folder control).
+                NativeComposerTray(
+                    projects: nil,
+                    media: trayMedia,
+                    leading: { trayLeading },
+                    trailing: { trayTrailing }
+                )
+                .disabled(quota != nil)
+                .transition(.opacity)
             }
         }
     }
+
+    /// EXTENSION POINT: true once `trayLeading`/`trayTrailing` hold an item
+    /// that applies to an existing conversation too (the local-folder
+    /// control), so the tray is drawn in a thread with a chat model.
+    private var trayShowsInThreads: Bool { false }
 
     /// EXTENSION POINT (docs/native/composer-tray/STATUS.md): tray items other
     /// features add on a new chat's line, before Project — the Mac's "work in
