@@ -5,14 +5,16 @@ import { Loader2, Send } from "@/components/ui/icons";
 
 import { Button } from "@/components/ui/button";
 import { ScrollFade } from "@/components/ui/scroll-fade";
-import { RealtimeVoice } from "@/components/voice/realtime-voice";
-import { useApp } from "@/components/app/app-provider";
+import { RealtimeVoice, voiceCallParts, type VoiceCallParts } from "@/components/voice/realtime-voice";
+import { useOptionalApp } from "@/components/app/app-provider";
 import { useRealtimeVoice } from "@/hooks/use-realtime-voice";
 import { ActionIcons } from "@/lib/app-icons";
 import { PLANS } from "@/lib/plans";
 import {
   buildCodeVoiceBriefing,
+  codeVoiceAutoSendQueue,
   codeVoiceCatchUp,
+  codeVoiceReadBack,
   type CodeVoiceBriefingInput,
 } from "@/components/code/code-voice-briefing";
 import { PRODUCT_NAME } from "@/lib/brand/names";
@@ -71,13 +73,15 @@ export function useCodeVoice({ disabled = false }: { disabled?: boolean } = {}):
   /** Hand to the panel's `onClose`. */
   close: () => void;
 } {
-  const { quota } = useApp();
+  // Optional: the Code v2 composer also renders in galleries and tests with no
+  // app provider, where there is no plan to ask and so no voice.
+  const plan = useOptionalApp()?.quota.plan;
   const [open, setOpen] = React.useState(false);
   // Read as a whole member expression: Next inlines NEXT_PUBLIC_* at build
   // time by textual substitution, so destructuring `process.env` first would
   // leave nothing to substitute and voice would be off in every build.
   const configured = Boolean(process.env.NEXT_PUBLIC_VOICE_RELAY_URL);
-  const available = configured && PLANS[quota.plan].voice;
+  const available = configured && !!plan && PLANS[plan].voice;
 
   const openVoice = React.useCallback(() => setOpen(true), []);
   const close = React.useCallback(() => setOpen(false), []);
@@ -117,17 +121,29 @@ export interface CodeVoiceSend {
   onSend: (text: string) => Promise<boolean>;
 }
 
+/** The session's side of the call: whether a run is working, and its newest reply. */
+export interface CodeVoiceReply {
+  running: boolean;
+  /** The newest assistant text in the thread, or null before there is one. */
+  latest: string | null;
+}
+
 export interface CodeVoicePanelProps {
   briefing: CodeVoiceBriefingInput;
   /** Omit to offer no way in at all: the call is then read-only. */
   send?: CodeVoiceSend;
+  /**
+   * The thread, so a finished run's reply is spoken back. Omit where there is
+   * no thread yet (the landing, which hands over and ends the call).
+   */
+  reply?: CodeVoiceReply;
   /** Ends the call and unmounts this. Always offered; never automatic. */
   onClose: () => void;
 }
 
 function intentSentence(send: CodeVoiceSend): string {
   return send.intent === "start"
-    ? "Nothing has started yet — sending starts the session and hands it this message"
+    ? "Nothing has started yet. Sending starts the session and hands it this message"
     : "This goes to the session as its next instruction";
 }
 
@@ -150,7 +166,7 @@ function sendButtonLabel(send: CodeVoiceSend): string {
  * nothing, because `useRealtimeVoice` publishes for every surface that runs a
  * call.
  */
-export function CodeVoicePanel({ briefing, send, onClose }: CodeVoicePanelProps) {
+export function CodeVoicePanel({ briefing, send, reply, onClose }: CodeVoicePanelProps) {
   const voice = useRealtimeVoice();
 
   /** The digest of what the model has actually been told, briefing or catch-up. */
@@ -230,6 +246,67 @@ export function CodeVoicePanel({ briefing, send, onClose }: CodeVoicePanelProps)
     return null;
   }, [lines, sentLineIds]);
 
+  const close = React.useCallback(() => {
+    voiceRef.current.end();
+    onClose();
+  }, [onClose]);
+  const closeRef = React.useRef(close);
+  closeRef.current = close;
+
+  /*
+   * AUTO-SEND (the owner's choice, 2026-10-10): every sentence the reader
+   * finishes becomes the session's next turn on its own, like a voice call
+   * with ChatGPT, through the page's own send (a new turn, or a steer or
+   * queued follow-up while a run works). A line that does not land stays on
+   * screen with a retry, so nothing said is lost.
+   */
+  const handled = React.useRef<Set<number>>(new Set());
+  const sendRef = React.useRef(send);
+  sendRef.current = send;
+  React.useEffect(() => {
+    const current = sendRef.current;
+    if (!current || current.blockedReason) return;
+    const queue = codeVoiceAutoSendQueue(lines, handled.current);
+    if (!queue.length) return;
+    for (const line of queue) handled.current.add(line.id);
+    void (async () => {
+      for (const line of queue) {
+        setSending(true);
+        try {
+          const landed = await current.onSend(line.text);
+          if (landed) {
+            setSentLineIds((ids) => [...ids, line.id]);
+            setSendFailed(false);
+            if (current.endsCall) {
+              closeRef.current();
+              return;
+            }
+          } else setSendFailed(true);
+        } finally {
+          setSending(false);
+        }
+      }
+    })();
+  }, [lines]);
+
+  /*
+   * READ THE REPLY BACK. When a run this call can see finishes, its newest
+   * reply goes to the voice model to say out loud. The push travels as a user
+   * line and is kept out of the transcript and out of auto-send.
+   */
+  const wasRunning = React.useRef(reply?.running ?? false);
+  const lastSpoken = React.useRef<string | null>(reply?.latest ?? null);
+  React.useEffect(() => {
+    const was = wasRunning.current;
+    wasRunning.current = reply?.running ?? false;
+    if (!reply || !was || reply.running) return;
+    const latest = reply.latest?.trim();
+    if (!latest || latest === lastSpoken.current) return;
+    lastSpoken.current = latest;
+    const text = codeVoiceReadBack(latest);
+    if (voiceRef.current.sendText(text)) contextPushes.current.add(text.trim());
+  }, [reply?.running, reply?.latest, reply]);
+
   /*
    * FOLLOW THE CONVERSATION.
    *
@@ -254,16 +331,13 @@ export function CodeVoicePanel({ briefing, send, onClose }: CodeVoicePanelProps)
     if (el) el.scrollTop = el.scrollHeight;
   }, [lines.length, tail]);
 
-  const close = React.useCallback(() => {
-    voiceRef.current.end();
-    onClose();
-  }, [onClose]);
 
   const submit = React.useCallback(async () => {
     if (!send || !sendable || sending || send.sending || send.blockedReason) return;
     setSending(true);
     setSendFailed(false);
     try {
+      handled.current.add(sendable.id);
       const landed = await send.onSend(sendable.text.trim());
       if (!landed) {
         // Deliberately still live. A refusal is the one case where the words
@@ -306,10 +380,11 @@ export function CodeVoicePanel({ briefing, send, onClose }: CodeVoicePanelProps)
             decides whether to believe what they just heard, and at the moment
             they decide whether it is safe to hang up. */}
         <p className="text-caption leading-relaxed text-muted-foreground">
-          {`${PRODUCT_NAME} was told where this runs`}
-          {briefing.turns.length > 0 ? " and how the session has gone so far" : ""} when you started
-          talking. This is a separate conversation about the work: it can&rsquo;t see your code, it
-          can&rsquo;t run anything, and nothing said here is kept — only the one line you send.
+          {send
+            ? send.endsCall
+              ? "Say what you want built. When you finish a sentence it starts the session, and this call ends."
+              : `Each sentence you finish goes to the session as its next instruction, and ${PRODUCT_NAME} reads the reply back when the run is done.`
+            : `${PRODUCT_NAME} was told where this runs${briefing.turns.length > 0 ? " and how the session has gone so far" : ""}. It can\u2019t see your code or run anything.`}
         </p>
 
         {staleBy && (
@@ -354,7 +429,7 @@ export function CodeVoicePanel({ briefing, send, onClose }: CodeVoicePanelProps)
           </ScrollFade>
         )}
 
-        {send && sendable && (
+        {send && sendable && (sendFailed || !!send.blockedReason) && (
           <div className="flex flex-col gap-2 rounded-control border border-border/60 bg-accent p-2.5">
             {/* What the press does, before the press: starting a session and
                 steering a running one are not the same event, and finding out
@@ -404,4 +479,93 @@ export function CodeVoicePanel({ briefing, send, onClose }: CodeVoicePanelProps)
       </section>
     </>
   );
+}
+
+/**
+ * A Code call drawn the way Chat's is (owner, 2026-10-10): inside the
+ * composer, not as a panel. The composer takes the returned parts as Chat's
+ * does (`voiceCall`: "Type while you talk…", the call's controls in the row,
+ * End in Send's place while nothing is typed, the glow along its edge).
+ *
+ * What makes it Code's: every sentence the reader finishes goes to the thread
+ * on its own (a new turn, or a steer or queued follow-up while a run works),
+ * and when a run finishes its reply is handed to the voice model to say back.
+ * Nothing said is filed as a chat: the thread is the record.
+ */
+export function useCodeVoiceCall({
+  open,
+  onClose,
+  briefing,
+  send,
+  reply,
+}: {
+  open: boolean;
+  onClose: () => void;
+  briefing: CodeVoiceBriefingInput;
+  send: CodeVoiceSend;
+  reply?: CodeVoiceReply;
+}): VoiceCallParts | undefined {
+  const voice = useRealtimeVoice();
+  const voiceRef = React.useRef(voice);
+  voiceRef.current = voice;
+  const briefingRef = React.useRef(briefing);
+  briefingRef.current = briefing;
+  const sendRef = React.useRef(send);
+  sendRef.current = send;
+  /** Read-back pushes travel as user lines; they are never sent to the thread. */
+  const pushes = React.useRef<Set<string>>(new Set());
+  const handled = React.useRef<Set<number>>(new Set());
+
+  // Start once per opening, with the briefing as it stands; end on close.
+  React.useEffect(() => {
+    if (!open) return;
+    handled.current = new Set();
+    pushes.current = new Set();
+    const built = buildCodeVoiceBriefing(briefingRef.current);
+    void voiceRef.current.start(undefined, built.entries);
+    return () => voiceRef.current.end();
+  }, [open]);
+
+  const close = React.useCallback(() => {
+    voiceRef.current.end();
+    onClose();
+  }, [onClose]);
+  const closeRef = React.useRef(close);
+  closeRef.current = close;
+
+  // Auto-send each finished sentence.
+  React.useEffect(() => {
+    if (!open) return;
+    const current = sendRef.current;
+    if (current.blockedReason) return;
+    const lines = voice.transcript.filter((line) => !pushes.current.has(line.text.trim()));
+    const queue = codeVoiceAutoSendQueue(lines, handled.current);
+    if (!queue.length) return;
+    for (const line of queue) handled.current.add(line.id);
+    void (async () => {
+      for (const line of queue) {
+        const landed = await current.onSend(line.text);
+        if (landed && current.endsCall) {
+          closeRef.current();
+          return;
+        }
+      }
+    })();
+  }, [open, voice.transcript]);
+
+  // Read the reply back when a run finishes.
+  const wasRunning = React.useRef(reply?.running ?? false);
+  const lastSpoken = React.useRef<string | null>(reply?.latest ?? null);
+  React.useEffect(() => {
+    const was = wasRunning.current;
+    wasRunning.current = reply?.running ?? false;
+    if (!open || !reply || !was || reply.running) return;
+    const latest = reply.latest?.trim();
+    if (!latest || latest === lastSpoken.current) return;
+    lastSpoken.current = latest;
+    const text = codeVoiceReadBack(latest);
+    if (voiceRef.current.sendText(text)) pushes.current.add(text.trim());
+  }, [open, reply?.running, reply?.latest, reply]);
+
+  return open ? voiceCallParts({ voice, onClose: close }) : undefined;
 }

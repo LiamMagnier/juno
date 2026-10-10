@@ -15,7 +15,12 @@
  *    item awaiting the user and is denied; AskUserQuestion becomes a
  *    user_input_request whose answers go back as updatedInput;
  *  - runtime modes: plan→plan, ask→default, auto-edit→acceptEdits,
- *    auto→auto, full→bypassPermissions;
+ *    auto→auto. Full access runs the CLI in acceptEdits with `canUseTool`
+ *    answering every prompt itself (allow, unless the full-access guard says
+ *    the call reaches outside the project), not bypassPermissions: bypass
+ *    never consults `canUseTool`, so it would also wave through sudo, ssh
+ *    and deletes outside the folder. The mode is read per call, so a thread
+ *    switched to Full access between turns stops asking at once;
  *  - per-instance CLAUDE_CONFIG_DIR, never HOME (the keychain lives under HOME);
  *  - the health probe is a query whose prompt never yields: the CLI answers
  *    initialize (account, models) without ever calling the API; hooks and MCP
@@ -49,6 +54,7 @@ import type {
 import { RUNTIME_MODE_VENDOR_MAP } from "../contracts/code-v2.js";
 import { classifyUsageLimit, earliestExhaustedReset, normalizeReset } from "./limits.js";
 import { claudeSetup } from "./presets.js";
+import { fullAccessGuardReason } from "./full-access-guard.js";
 import { readVersion } from "./detect.js";
 import { vendorEnv } from "./vendor-env.js";
 import type {
@@ -81,6 +87,15 @@ async function loadQuery(): Promise<ClaudeQueryFn> {
 export function claudePermissionMode(runtime: RuntimeMode, interaction: InteractionMode): ClaudePermissionMode {
   if (interaction === "plan" || runtime === "read-only") return "plan";
   return RUNTIME_MODE_VENDOR_MAP[runtime].claudePermissionMode;
+}
+
+/**
+ * The mode the CLI itself runs in. Full access is acceptEdits on the CLI's
+ * side, with Alevr's `canUseTool` allowing the rest (see the header).
+ */
+export function claudeSdkMode(runtime: RuntimeMode, interaction: InteractionMode): ClaudePermissionMode {
+  const mode = claudePermissionMode(runtime, interaction);
+  return mode === "bypassPermissions" ? "acceptEdits" : mode;
 }
 
 export function claudeEffort(effort: EffortLevel | undefined): "low" | "medium" | "high" | "xhigh" | "max" | undefined {
@@ -277,6 +292,10 @@ class ClaudeSession implements ProviderSession {
   /** last assistant message uuid at the end of each turn, by ordinal - 1. */
   #turnEnds: string[] = [];
   #mode: ClaudePermissionMode | undefined;
+  /** The thread's runtime mode as of the latest turn, read by every `canUseTool` call. */
+  #runtimeMode: RuntimeMode = "ask";
+  #interactionMode: InteractionMode = "default";
+  #cwd: string;
   #model: string | undefined;
   readonly #logger: Logger;
 
@@ -286,6 +305,7 @@ class ClaudeSession implements ProviderSession {
     private readonly queryFn: ClaudeQueryFn,
   ) {
     this.#logger = options.logger;
+    this.#cwd = options.cwd;
     const s = options.resumeState ?? {};
     if (typeof s.claudeSessionId === "string") this.#claudeSessionId = s.claudeSessionId;
     if (Array.isArray(s.turnEnds)) this.#turnEnds = s.turnEnds.filter((t): t is string => typeof t === "string");
@@ -302,7 +322,7 @@ class ClaudeSession implements ProviderSession {
 
   #ensureQuery(request: TurnRequest): void {
     if (this.#q) return;
-    const mode = claudePermissionMode(request.runtimeMode, request.interactionMode);
+    const mode = claudeSdkMode(request.runtimeMode, request.interactionMode);
     const prompts = new AsyncQueue<SDKUserMessage>();
     const abort = new AbortController();
     const effort = claudeEffort(request.selection.effort);
@@ -313,7 +333,6 @@ class ClaudeSession implements ProviderSession {
       abortController: abort,
       includePartialMessages: true,
       permissionMode: mode,
-      ...(mode === "bypassPermissions" ? { allowDangerouslySkipPermissions: true } : {}),
       canUseTool: this.#canUseTool,
       ...(request.selection.model && request.selection.model !== "default" ? { model: request.selection.model } : {}),
       ...(effort ? { effort } : {}),
@@ -338,7 +357,10 @@ class ClaudeSession implements ProviderSession {
     if (this.#turn) throw new Error("a Claude turn is already running");
     this.#ensureQuery(request);
     const q = this.#q!;
-    const mode = claudePermissionMode(request.runtimeMode, request.interactionMode);
+    this.#runtimeMode = request.runtimeMode;
+    this.#interactionMode = request.interactionMode;
+    this.#cwd = request.cwd;
+    const mode = claudeSdkMode(request.runtimeMode, request.interactionMode);
     if (mode !== this.#mode) {
       await q.setPermissionMode(mode).catch((e) => this.#logger.warn(`setPermissionMode: ${describeError(e)}`));
       this.#mode = mode;
@@ -366,6 +388,22 @@ class ClaudeSession implements ProviderSession {
     } finally {
       request.signal.removeEventListener("abort", onAbort);
       this.#turn = undefined;
+    }
+  }
+
+  /**
+   * The thread's mode, applied to the next `canUseTool` call at once (the
+   * CLI's own mode follows at the next turn, or now through `setPermissionMode`
+   * while a query is live).
+   */
+  setRuntimeMode(runtimeMode: RuntimeMode, interactionMode: InteractionMode, cwd?: string): void {
+    this.#runtimeMode = runtimeMode;
+    this.#interactionMode = interactionMode;
+    if (cwd) this.#cwd = cwd;
+    const mode = claudeSdkMode(runtimeMode, interactionMode);
+    if (this.#q && mode !== this.#mode) {
+      this.#mode = mode;
+      void this.#q.setPermissionMode(mode).catch((e) => this.#logger.warn(`setPermissionMode: ${describeError(e)}`));
     }
   }
 
@@ -469,12 +507,22 @@ class ClaudeSession implements ProviderSession {
       return { behavior: "allow", updatedInput: { ...input, answers } };
     }
 
+    // Full access: everything inside the project runs without asking; only
+    // the guard's few cases (sudo, another machine, outside the folder) ask,
+    // and the prompt says why.
+    let guard: string | undefined;
+    if (this.#runtimeMode === "full" && this.#interactionMode !== "plan") {
+      guard = fullAccessGuardReason(toolName, input, this.#cwd);
+      if (!guard) return { behavior: "allow", updatedInput: input };
+    }
+
     const entry = turn.tools.get(toolUseId);
+    const decisionReason = guard ?? (options as { decisionReason?: string }).decisionReason;
     const answer = await sink.requestApproval({
       callId: toolUseId,
       action: approvalAction(toolName),
       summary: summarizeTool(toolName, input),
-      ...(typeof (options as { decisionReason?: string }).decisionReason === "string" ? { justification: (options as { decisionReason?: string }).decisionReason } : {}),
+      ...(typeof decisionReason === "string" ? { justification: decisionReason } : {}),
       ...(typeof input.description === "string" && !entry ? { detail: input.description } : {}),
       options: options.suggestions?.length ? ["accept", "acceptForSession", "decline", "cancel"] : ["accept", "decline", "cancel"],
     });

@@ -420,6 +420,32 @@ final class EnvServerTests: XCTestCase {
         XCTAssertNotNil(reason)
     }
 
+    /// The mode a reader picks on the web (Full access included) reaches this
+    /// Mac's env server as sent: the link checks folders and sessions, never
+    /// the mode, so the composer's choice is what the runtime enforces.
+    func testLinkForwardsTheWebsRuntimeModeUnchanged() async {
+        let seen = ParamsLog()
+        let link = EnvServerDeviceLink(
+            allowedRoots: { ["/Users/maya/code/shop"] },
+            forward: { type, params in
+                seen.append(type, params)
+                if type == .sessionOpen { return .object(["sessionId": .string("s-new")]) }
+                return .object(["turnId": .string("t1")])
+            }
+        )
+        _ = await link.run(.init(id: "1", type: "session.open", params: .object(["cwd": .string("/Users/maya/code/shop")])))
+        let started = await link.run(.init(id: "2", type: "turn.start", params: .object([
+            "sessionId": .string("s-new"),
+            "input": .object(["text": .string("ship it")]),
+            "runtimeMode": .string("full"),
+            "interactionMode": .string("default"),
+        ])))
+        XCTAssertEqual(started.ok, true)
+        guard case let .object(params)? = seen.last(.turnStart) else { return XCTFail("turn.start not forwarded") }
+        XCTAssertEqual(params["runtimeMode"], .string("full"))
+        XCTAssertEqual(params["interactionMode"], .string("default"))
+    }
+
     func testLinkReopensAFollowedSessionForAReplay() async {
         let forwarded = ForwardLog()
         let link = makeLink(forwarded: forwarded)
@@ -562,6 +588,13 @@ final class ForwardLog: @unchecked Sendable {
     private var stored: [CodeV2.ClientCommandType] = []
     func append(_ type: CodeV2.ClientCommandType) { lock.withLock { stored.append(type) } }
     var types: [CodeV2.ClientCommandType] { lock.withLock { stored } }
+}
+
+final class ParamsLog: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: [(CodeV2.ClientCommandType, JSONValue)] = []
+    func append(_ type: CodeV2.ClientCommandType, _ params: JSONValue) { lock.withLock { stored.append((type, params)) } }
+    func last(_ type: CodeV2.ClientCommandType) -> JSONValue? { lock.withLock { stored.last(where: { $0.0 == type })?.1 } }
 }
 
 final class PostLog: @unchecked Sendable {

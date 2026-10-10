@@ -158,14 +158,14 @@ test("the composer's tray holds where it runs, the project and the permission; t
   const traySlot = composer.slice(tray, shell);
   assert.match(traySlot, /<CodeEnvironmentChip/, "the environment chip is in the tray");
   assert.match(traySlot, /<CodeTargetPicker/, "the repository chip is in the tray");
-  assert.match(traySlot, /<PermissionChip/, "the permission mode is in the tray");
+  assert.match(traySlot, /<ModeChip/, "the mode is in the tray");
   const field = composer.indexOf("field={", shell);
   const leading = composer.indexOf("leading={", shell);
   const trailing = composer.indexOf("trailing={", shell);
   assert.ok(field > shell && leading > field && trailing > leading, "the shell's slots are in order");
   const leadingSlot = composer.slice(leading, trailing);
   assert.match(leadingSlot, /<ComposerAddMenu/, "`+` is on the left of the controls row");
-  assert.ok(!/<PermissionChip/.test(leadingSlot), "the permission chip is not drawn twice");
+  assert.ok(!/<ModeChip/.test(leadingSlot), "the mode chip is not drawn twice");
   assert.match(composer.slice(trailing), /<ModelSelector/, "the model chip is on the right");
 });
 
@@ -193,17 +193,23 @@ test("what a run may do is said once, and the two places that say it agree", () 
       `the ${target} permission sentence is written out again — it has one home`,
     );
   }
-  for (const file of [COMPOSER, "src/components/code/code-customize.tsx"]) {
+  for (const file of ["src/components/code/code-customize.tsx"]) {
     assert.match(read(file), /CODE_PERMISSIONS/, `${file} must read the permission vocabulary, not restate it`);
   }
 });
 
-test("the permission chip explains the mode and does not pretend to set it", () => {
+test("the mode chip is a real choice: the five rungs, carried by the run it starts", () => {
+  // Owner, 2026-10-10: the landing gets the same mode picker as every Code
+  // composer. It decides something on both targets: a cloud run carries it as
+  // `CodeTask.permissionMode` (which the runner-context route resolves), and a
+  // run on a Mac starts its thread on it through the v2 route's prefs.
   const composer = read(COMPOSER);
-  const chip = composer.slice(composer.indexOf("function PermissionChip"), composer.indexOf("* THE CODE COMPOSER"));
-  // Nothing between this browser and a runner carries a permission choice:
-  // `CodeTask` has no column for one. A picker here would decide nothing.
-  assert.ok(!/onValueChange|onSelect|useState/.test(chip), "the permission chip must not offer a choice");
+  const chip = composer.slice(composer.indexOf("function ModeChip"), composer.indexOf("* WHAT A LINK ASKED FOR"));
+  assert.match(chip, /COMPOSER_MODES/, "a Mac run offers all five rungs");
+  assert.match(chip, /availableComposerModes\(CLOUD_RUNTIME_APPROVALS/, "a cloud run offers what its sandbox enforces");
+  assert.match(chip, /m\.description/, "each rung says what it does");
+  assert.match(composer, /permissionMode: cloudPermissionMode\(mode\)/, "the cloud task carries the choice");
+  assert.match(composer, /seedThreadMode\(conversation\.id\)/, "a Mac thread starts on the choice");
 });
 
 /* ───────────────── The Environments card, pinned to its sources ─────────── */

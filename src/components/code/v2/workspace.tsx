@@ -17,7 +17,8 @@ import { DETAIL_LEVELS, DETAIL_LEVEL_LABELS, groupTurns, nextDetailLevel, type D
 import { Composer, pendingRequests, type ComposerHandle, type PopoverName } from "./composer";
 import { ConnectionsPanel, type ConnectionsProps } from "./connections";
 import { Dock, type DockFocus } from "./dock";
-import { cycleEffort, cycleRuntimeMode, findInstance } from "./model-info";
+import { cycleEffort, findInstance } from "./model-info";
+import { composerModeInfo, composerModeOf, cycleComposerMode, setComposerMode } from "@/lib/code-v2/composer-mode";
 import { ComposerPopover, Glyph, Kbd, MenuList, useIsMac, type MenuEntry } from "./primitives";
 import { CodeWorkList } from "@/components/app/code-work-list";
 import { SettingsContent, SettingsSidebar, type SettingsPane } from "./settings";
@@ -275,9 +276,13 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
         case "composer.cycleEffort":
           a.setSelection(cycleEffort(model.instances, model.selection));
           return true;
-        case "composer.cycleMode":
-          a.setRuntimeMode(cycleRuntimeMode(model.runtimeMode, findInstance(model.instances, model.selection.instanceId)?.capabilities?.approvals));
+        case "composer.cycleMode": {
+          const caps = findInstance(model.instances, model.selection.instanceId)?.capabilities;
+          const next = cycleComposerMode(composerModeOf(model.runtimeMode, model.interactionMode), caps?.approvals, caps?.planMode ?? true);
+          setComposerMode(a, next, model.runtimeMode);
+          setToast(`Mode: ${composerModeInfo(next).label}`);
           return true;
+        }
         case "thread.cycleDetail":
           setDetail((d) => {
             const n = nextDetailLevel(d);

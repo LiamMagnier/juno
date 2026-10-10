@@ -8,9 +8,11 @@
  * ComposerPendingApprovalPanel: approvals replace the composer body in place).
  *
  * At rest: "+" (attach, mention, commands), the model trigger (model and
- * effort, one control), "…" (effort, context, mode, permissions, plan), the
- * mic and send. A control for mode, plan or permissions appears only while
- * that setting is not its default. Working is shown by the live work-log row
+ * effort, one control), the mode (Ask, Accept edits, Auto, Plan, Full access:
+ * always on the row, ⇧⌘A cycles it), "…" (effort, context, orchestrate), the
+ * mic, voice and send. The mic is Chat's dictation (`DictationSwap`) and voice
+ * is Code's call (`CodeVoicePanel`), whose handed-over line goes through the
+ * same send, queue or steer as a typed one. Working is shown by the live work-log row
  * and the sidebar spinner, never by the composer: no glow, no ring. When the
  * agent needs you, the body becomes the request and the edge turns coral.
  *
@@ -24,8 +26,12 @@ import { SLASH_COMMANDS, applyTrigger, composerKeyIntent, detectTrigger, escPres
 import { orchestrateLabel } from "@/lib/code-v2/orchestrate";
 import { displayName } from "@/lib/code-v2/providers-view";
 import { formatReset, formatTokens, tightestWindow } from "@/lib/code-v2/tier-view";
-import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
-import { EFFORT_LABELS, RUNTIME_MODES, currentTier, effectiveEffort, effortLevelsOf, findInstance, runtimeModeInfo } from "./model-info";
+import { DictationSwap } from "@/components/ui/dictation-swap";
+import { useCodeVoice, useCodeVoiceCall, type CodeVoiceSend } from "@/components/code/code-voice";
+import { VoiceComposerGlow } from "@/components/voice/voice-composer-glow";
+import type { CodeVoiceBriefingInput } from "@/components/code/code-voice-briefing";
+import { availableComposerModes, composerModeInfo, composerModeOf, setComposerMode } from "@/lib/code-v2/composer-mode";
+import { EFFORT_LABELS, currentTier, effectiveEffort, effortLevelsOf, findInstance } from "./model-info";
 import { ContextRing, ModelPicker, triggerWords, type RoleTab } from "./pickers";
 import { ComposerTeam } from "./team";
 import { ComposerPopover, Glyph, MenuList, ModelMark, useIsMac, type MenuEntry } from "./primitives";
@@ -33,7 +39,7 @@ import type { WorkspaceModel } from "./types";
 import { cn } from "@/lib/utils";
 
 /** `model` opens the model chip on its effort stage; `catalog` on the model list. */
-export type PopoverName = "model" | "catalog" | "context" | "team" | "overflow" | "attach" | "queue" | "device" | null;
+export type PopoverName = "model" | "catalog" | "context" | "team" | "overflow" | "attach" | "queue" | "device" | "mode" | null;
 
 type Pending = ApprovalRequestItem | UserInputRequestItem;
 
@@ -287,7 +293,64 @@ export const Composer = React.forwardRef<
   }, [trigger, model.files]);
   const menuOpen = !!trigger && menuItems.length > 0;
 
-  const speech = useSpeechRecognition({ onFinal: (t) => setDraft((d) => `${d}${d && !d.endsWith(" ") ? " " : ""}${t.trim()}`) });
+  const [dictating, setDictating] = React.useState(false);
+  const voice = useCodeVoice({ disabled: dictating || !connected });
+
+  /** A finished line, as the send button would send it: send, or queue / steer while a turn runs. */
+  const dispatch = (text: string): boolean => {
+    const t = text.trim();
+    if (!t) return false;
+    if (!running) {
+      if (!ready) return false;
+      void actions.send(t);
+    } else if (canQueue) actions.queue(t);
+    else void actions.steer(t);
+    return true;
+  };
+
+  /** Dictation's close: the words join the draft, and "send" sends the whole draft. */
+  const closeDictation = (transcript: string, sendNow: boolean) => {
+    setDictating(false);
+    const merged = [draft.trim(), transcript.trim()].filter(Boolean).join(" ");
+    if (sendNow && dispatch(merged)) {
+      setDraft("");
+      return;
+    }
+    setDraft(merged);
+    requestAnimationFrame(() => textarea.current?.focus());
+  };
+
+  const voiceBriefing: CodeVoiceBriefingInput = {
+    stage: model.items.length ? "session" : "new",
+    target: model.device ? "device" : "cloud",
+    place: model.thread.repo || null,
+    baseRef: model.thread.branch ?? null,
+    turns: voice.open
+      ? model.items.flatMap((i): { role: "user" | "assistant"; text: string }[] => (i.kind === "user_message" ? [{ role: "user", text: i.text }] : i.kind === "assistant_message" ? [{ role: "assistant", text: i.text }] : []))
+      : [],
+    blocked: !connected ? "Connect a subscription or add a key to start" : model.offline ? "The Mac this runs on is offline" : null,
+  };
+  /** A spoken line becomes this thread's next turn: sent, or a steer while it runs (a queued follow-up where steering is not offered). */
+  const voiceSend: CodeVoiceSend = {
+    intent: model.items.length ? "send" : "start",
+    blockedReason: voiceBriefing.blocked,
+    sending: !!model.starting,
+    onSend: async (text) => {
+      if (!running) return dispatch(text);
+      if (canSteer) void actions.steer(text);
+      else actions.queue(text);
+      return true;
+    },
+  };
+
+  /** The thread's side of the call: a finished run's newest reply is read back. */
+  const voiceReply = {
+    running,
+    latest: voice.open ? ([...model.items].reverse().find((i) => i.kind === "assistant_message") as { text?: string } | undefined)?.text ?? null : null,
+  };
+
+  /** The call, drawn in this composer as Chat draws its own. */
+  const call = useCodeVoiceCall({ open: voice.open, onClose: voice.close, briefing: voiceBriefing, send: voiceSend, reply: voiceReply });
 
   React.useImperativeHandle(ref, () => ({
     focus: () => textarea.current?.focus(),
@@ -378,7 +441,6 @@ export const Composer = React.forwardRef<
 
   const mode = sendButtonMode({ running, hasDraft, canQueue, canSteer }, ready);
   const words = triggerWords(instances, selection);
-  const runtime = runtimeModeInfo(model.runtimeMode);
   const routing = model.routing;
   const tightest = tightestWindow(instance?.limits);
   const threadTokens = model.usage?.contextTokens ?? 0;
@@ -416,23 +478,17 @@ export const Composer = React.forwardRef<
     ...(tier ? [{ id: "context", label: "Context window", icon: <Glyph name="layers" size={16} />, trail: formatTokens(tier.tokens), onSelect: () => setTimeout(() => setPopover("context"), 0) }] : []),
     { kind: "sep", id: "s1" },
     { id: "team", label: "Team…", icon: <Glyph name="agents" size={16} />, trail: orchestrateLabel(routing), onSelect: () => setTimeout(() => setPopover("team"), 0) },
-    {
-      id: "perm",
-      label: "Permissions",
-      icon: <Glyph name="shield" size={16} />,
-      trail: runtime.label,
-      sub: {
-        title: "Permissions",
-        entries: RUNTIME_MODES.map((m) => {
-          const disabled = !!caps?.approvals?.length && !caps.approvals.includes(m.mode);
-          return { id: `p:${m.mode}`, label: m.label, l2: disabled ? "This runtime cannot enforce it" : m.description, checked: m.mode === model.runtimeMode, disabled, onSelect: () => actions.setRuntimeMode(m.mode) };
-        }),
-      },
-    },
-    ...((caps?.planMode ?? true)
-      ? [{ id: "plan", label: "Plan first", icon: <Glyph name="plan" size={16} />, checked: model.interactionMode === "plan", keepOpen: true, onSelect: () => actions.setInteractionMode(model.interactionMode === "plan" ? "default" : "plan") }]
-      : []),
   ];
+  const composerMode = composerModeOf(model.runtimeMode, model.interactionMode);
+  const modeInfo = composerModeInfo(composerMode);
+  const modeEntries: MenuEntry[] = availableComposerModes(caps?.approvals, caps?.planMode ?? true).map((m) => ({
+    id: `mode:${m.mode}`,
+    label: m.label,
+    l2: m.description,
+    icon: <Glyph name={m.glyph} size={16} />,
+    checked: m.mode === composerMode,
+    onSelect: () => setComposerMode(actions, m.mode, model.runtimeMode),
+  }));
   const attach: MenuEntry[] = [
     { id: "file", label: "Attach files", icon: <Glyph name="attach" size={16} />, onSelect: () => fileInput.current?.click() },
     { id: "mention", label: "Mention a file", icon: <Glyph name="at" size={16} />, trail: "@", onSelect: () => (setDraft((d) => `${d}${d && !d.endsWith(" ") ? " " : ""}@`), textarea.current?.focus()) },
@@ -496,7 +552,7 @@ export const Composer = React.forwardRef<
         rows={1}
         value={draft}
         disabled={!connected}
-        placeholder={!connected ? "Connect a subscription or add a key to start" : revising ? "What should change in the plan?" : placeholder(running)}
+        placeholder={!connected ? "Connect a subscription or add a key to start" : call ? "Type while you talk\u2026" : revising ? "What should change in the plan?" : placeholder(running)}
         aria-label="Message"
         onChange={(e) => {
           setDraft(e.target.value);
@@ -516,7 +572,9 @@ export const Composer = React.forwardRef<
 
   return (
     <div className="cv2-cstack">
-      <div className={cn("cv2-composer", tone)} data-state={tone || (running ? "running" : "idle")}>
+      <DictationSwap active={dictating} draft={draft} onCancel={() => setDictating(false)} onClose={closeDictation}>
+      <VoiceComposerGlow call={call}>
+      <div className={cn("cv2-composer", tone, call && "voice-glow-host")} data-state={tone || (running ? "running" : "idle")}>
         {menuOpen && trigger && (
           <div className="cv2-menu-anchor">
             <div className="cv2-pop" role="listbox" aria-label={trigger.kind === "slash" ? "Commands" : "Mentions"}>
@@ -578,18 +636,20 @@ export const Composer = React.forwardRef<
                   }}
                   anchorRef={footRef}
                 />
-                {model.interactionMode === "plan" && (
-                  <button type="button" className="cv2-ctl cv2-hide-narrow" aria-haspopup="menu" title="Plan first: nothing changes until you approve" onClick={() => actions.setInteractionMode("default")}>
-                    Plan
-                    <Glyph name="close" size={12} className="chev" />
-                  </button>
-                )}
-                {model.runtimeMode !== DEFAULT_RUNTIME_MODE && (
-                  <button type="button" className="cv2-ctl" aria-haspopup="menu" aria-expanded={popover === "overflow"} title={runtime.description} onClick={() => toggle("overflow")}>
-                    <Glyph name="shield" size={14} />
-                    <span className="cv2-wide">{runtime.label}</span>
-                  </button>
-                )}
+                <button
+                  type="button"
+                  className="cv2-ctl"
+                  data-mode={composerMode}
+                  aria-haspopup="menu"
+                  aria-expanded={popover === "mode"}
+                  aria-label={`Mode: ${modeInfo.label}`}
+                  title={`${modeInfo.description} ${mac ? "⇧⌘A" : "Ctrl+Shift+A"} cycles`}
+                  onClick={() => toggle("mode")}
+                >
+                  <Glyph name={modeInfo.glyph} size={14} />
+                  <span className="v cv2-trunc">{modeInfo.label}</span>
+                  <Glyph name="chevron-down" size={12} className="chev" />
+                </button>
                 <button type="button" className="cv2-ctl icon" aria-label="More options" title="Effort, context, mode and permissions" aria-haspopup="menu" aria-expanded={popover === "overflow"} onClick={() => toggle("overflow")}>
                   <Glyph name="more" size={16} />
                 </button>
@@ -608,28 +668,58 @@ export const Composer = React.forwardRef<
               </button>
             )}
             {connected && <ContextRing usage={model.usage} onOpen={() => toggle("context")} expanded={popover === "context"} />}
-            {connected && speech.supported && (
-              <button type="button" className="cv2-ctl icon" aria-label={speech.listening ? "Stop dictation" : "Dictate"} aria-pressed={speech.listening} onClick={() => (speech.listening ? speech.stop() : speech.start())}>
-                <Glyph name={speech.listening ? "mic-off" : "mic"} size={16} />
-              </button>
+            {call ? (
+              <>
+                {call.controls}
+                {!hasDraft ? (
+                  call.end
+                ) : (
+                  <button type="button" className="cv2-send" data-mode={mode} disabled={mode === "disabled"} aria-label="Send" onClick={() => submit(running ? (canQueue ? "queue" : "steer") : "send")}>
+                    <span className="glyph">
+                      <Glyph name="arrow-up" size={16} />
+                    </span>
+                    <span className="stop" />
+                  </button>
+                )}
+              </>
+            ) : (
+              <>
+                {connected && (
+                  <button type="button" className="cv2-ctl icon" aria-label="Dictate" title="Dictate" aria-pressed={dictating} onClick={() => setDictating(true)}>
+                    <Glyph name="mic" size={16} />
+                  </button>
+                )}
+                {/* One primary slot, as on the web's Chat composer: voice while nothing is typed, then Send, Stop while it runs. */}
+                {!hasDraft && !running && voice.onOpenVoiceMode ? (
+                  <button type="button" className="cv2-send" data-mode="voice" aria-label="Voice conversation" title="Voice conversation" onClick={voice.onOpenVoiceMode}>
+                    <span className="glyph">
+                      <Glyph name="voice" size={16} />
+                    </span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="cv2-send"
+                    data-mode={mode}
+                    disabled={mode === "disabled"}
+                    aria-label={mode === "stop" ? "Stop" : mode === "queue" ? "Queue" : "Send"}
+                    title={mode === "stop" ? "Stop (Esc Esc)" : undefined}
+                    onClick={() => (mode === "stop" ? actions.stop() : submit(running ? (canQueue ? "queue" : "steer") : "send"))}
+                  >
+                    <span className="glyph">
+                      <Glyph name="arrow-up" size={16} />
+                    </span>
+                    <span className="stop" />
+                  </button>
+                )}
+              </>
             )}
-            <button
-              type="button"
-              className="cv2-send"
-              data-mode={mode}
-              disabled={mode === "disabled"}
-              aria-label={mode === "stop" ? "Stop" : mode === "queue" ? "Queue" : "Send"}
-              title={mode === "stop" ? "Stop (Esc Esc)" : undefined}
-              onClick={() => (mode === "stop" ? actions.stop() : submit(running ? (canQueue ? "queue" : "steer") : "send"))}
-            >
-              <span className="glyph">
-                <Glyph name="arrow-up" size={16} />
-              </span>
-              <span className="stop" />
-            </button>
 
             <ComposerPopover open={popover === "attach"} onClose={() => setPopover(null)} width={240} align="left" offset={0} label="Add" anchorRef={footRef} role="menu">
               <MenuList entries={attach} onClose={() => setPopover(null)} label="Add" />
+            </ComposerPopover>
+            <ComposerPopover open={popover === "mode"} onClose={() => setPopover(null)} width={300} align="left" offset={0} label="Mode" anchorRef={footRef} role="menu">
+              <MenuList entries={modeEntries} onClose={() => setPopover(null)} label="Mode" />
             </ComposerPopover>
             <ComposerPopover open={popover === "overflow"} onClose={() => setPopover(null)} width={280} align="left" offset={0} label="Options" anchorRef={footRef} role="menu">
               <div className="cv2-pop-grab" aria-hidden />
@@ -661,6 +751,8 @@ export const Composer = React.forwardRef<
         )}
         {escArmed !== null && running && <div className="cv2-esc-hint">Press Esc again to stop</div>}
       </div>
+      </VoiceComposerGlow>
+      </DictationSwap>
       <div className="cv2-strip" ref={stripRef}>
         <span className="s" title={model.thread.cwd ?? model.thread.repo}>
           <Glyph name="folder" size={12} />

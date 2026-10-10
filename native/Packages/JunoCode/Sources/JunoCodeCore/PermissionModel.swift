@@ -107,6 +107,19 @@ public enum ApprovalPolicy: String, Codable, CaseIterable, Sendable {
     /// It does not *raise* authority: a mode that refuses the action outright
     /// still refuses it, rather than offering a prompt that would carry it out.
     case alwaysRequiresApproval
+    /// Asks in every mode below Full access, and proceeds in Full access
+    /// while the action stays inside the project (a destructive one still
+    /// asks there, as the ladder says).
+    ///
+    /// For the tools the reader wants to see in the supervised modes but not
+    /// once they chose Full access (2026-10-10): `git_commit`, `run_tests`,
+    /// MCP tools and the consent to drive a simulator. Full access means
+    /// "never ask me inside this project"; pinning these to
+    /// `alwaysRequiresApproval` made it ask every few steps. Screen control
+    /// keeps `alwaysRequiresApproval` (it acts on the reader's whole Mac), and
+    /// so does a recipe command the stop check would run on its own, since no
+    /// model asked for it.
+    case asksUnlessFullAccess
 }
 
 public enum PermissionRuling: Equatable, Sendable {
@@ -131,7 +144,8 @@ public enum PermissionPolicy {
         approvalPolicy: ApprovalPolicy = .byRisk
     ) -> PermissionRuling {
         let ladder = ladderRuling(mode: mode, risk: risk)
-        guard approvalPolicy == .alwaysRequiresApproval else { return ladder }
+        if approvalPolicy == .byRisk { return ladder }
+        if approvalPolicy == .asksUnlessFullAccess, mode == .fullAccess { return ladder }
         switch ladder {
         // A refusal outranks the pin. Read-only promises that nothing executes;
         // turning its denial into a prompt would offer the user a button that
@@ -178,6 +192,38 @@ public enum PermissionPolicy {
     }
 }
 
+public extension PermissionPolicy {
+    /// What the prompt says about why it asks, for the outside-project guard:
+    /// running as administrator, acting on another machine, or touching a path
+    /// outside the project. Nil when the action is not destructive.
+    static func guardReason(mode: PermissionMode, risk: ActionRisk, subject: PermissionRuleSubject?) -> String? {
+        guard risk == .destructive else { return nil }
+        let lead = mode == .fullAccess ? "Full access still asks: " : "Alevr asks in every mode: "
+        switch subject {
+        case let .command(line)?:
+            if case let .permitted(_, why) = CommandClassifier().classify(line) {
+                return lead + plain(why)
+            }
+            return lead + "this command reaches outside the project."
+        case let .path(path)?:
+            return lead + "this touches \(path), outside the project folder."
+        case let .paths(paths)?:
+            return lead + "this touches \(paths.first ?? "a path") outside the project folder."
+        case let .domain(host)?:
+            return lead + "this reaches \(host)."
+        case nil:
+            return lead + "this reaches outside the project."
+        }
+    }
+
+    /// The classifier's reason, as a clause.
+    private static func plain(_ why: String) -> String {
+        let trimmed = why.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let first = trimmed.first else { return "this reaches outside the project." }
+        return first.lowercased() + trimmed.dropFirst()
+    }
+}
+
 public enum ApprovalDecision: String, Codable, Sendable {
     case approved
     case denied
@@ -202,6 +248,10 @@ public struct ApprovalRequest: Hashable, Codable, Sendable {
     /// knows exactly how wide a yes they are giving. Nil when the action can
     /// only be approved once — a destructive one.
     public let suggestedRule: PermissionRule?
+    /// Why this asks when the reader might expect it not to: a destructive
+    /// action (the outside-project guard), said plainly on the prompt. Nil
+    /// for an ordinary ask.
+    public let reason: String?
 
     public init(
         id: String = UUID().uuidString.lowercased(),
@@ -213,7 +263,8 @@ public struct ApprovalRequest: Hashable, Codable, Sendable {
         approvalPolicy: ApprovalPolicy = .byRisk,
         requestedAt: Date,
         expiresAt: Date,
-        suggestedRule: PermissionRule? = nil
+        suggestedRule: PermissionRule? = nil,
+        reason: String? = nil
     ) {
         self.id = id
         self.sessionID = sessionID
@@ -225,6 +276,7 @@ public struct ApprovalRequest: Hashable, Codable, Sendable {
         self.requestedAt = requestedAt
         self.expiresAt = expiresAt
         self.suggestedRule = suggestedRule
+        self.reason = reason
     }
 
     public func authorizes(digest: String, at date: Date) -> Bool {

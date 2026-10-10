@@ -3,6 +3,7 @@ import JunoChatKit
 import JunoCodeKit
 import JunoCore
 import JunoDesignSystem
+import JunoVoiceKit
 import SwiftUI
 import UIKit
 
@@ -462,6 +463,8 @@ struct JunoMobileCodeRemoteThreadView: View {
   @Bindable var model: CodeRemoteBrowserModel
   let session: CodeRemoteSessionSummary
   var modelCatalog: [NativeChatModelOption] = []
+  /// Opens with this dictation showing: the offscreen snapshots only.
+  var previewDictation: JunoMobileCodeDictation? = nil
 
   private enum Surface: String, CaseIterable, Identifiable {
     case thread, changes, terminal, tests
@@ -487,6 +490,8 @@ struct JunoMobileCodeRemoteThreadView: View {
   @State private var scrollPosition = ScrollPosition(edge: .bottom)
   @FocusState private var composerFocused: Bool
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.junoStartCodeVoice) private var startCodeVoice
+  @Environment(\.junoCodeVoiceSession) private var codeVoice
 
   private var thread: CodeRemoteThread { model.thread }
   private var isRunning: Bool { thread.isRunning || (thread.status == nil && session.isRunning) }
@@ -704,80 +709,69 @@ struct JunoMobileCodeRemoteThreadView: View {
         .transition(.opacity.combined(with: .move(edge: .bottom)))
       }
 
-      // One glass container, as Chat's composer has, so the capsule samples
-      // once and can morph.
-      JunoGlass(spacing: JunoSpace.snug) {
-        VStack(alignment: .leading, spacing: JunoSpace.snug) {
-          TextField(
-            isRunning ? "Steer this session" : "Reply to this session",
-            text: $followUp, axis: .vertical
-          )
-          .lineLimit(1...6)
-          .textFieldStyle(.plain)
-          .focused($composerFocused)
-          .padding(.horizontal, JunoSpace.snug)
-          .padding(.top, JunoSpace.hairline)
-          .accessibilityIdentifier("juno.mobile.code-remote-followup")
-
-          HStack(spacing: JunoSpace.hairline) {
-            settingMenu(junoDisplayModelName(session.modelID), accessibility: "Model") {
-              Section("Model") {
-                ForEach(modelChoices, id: \.self) { id in
-                  Button {
-                    Task { await model.patchSession(deviceID: session.deviceID, sessionID: session.sessionID, modelID: id) }
-                  } label: {
-                    if id == session.modelID {
-                      Label(junoDisplayModelName(id), image: JunoIcon.check.assetName(.regular))
-                    } else {
-                      Text(junoDisplayModelName(id))
-                    }
-                  }
+      // The iOS Chat composer's anatomy: one glass card, the field, one row.
+      // The model (with its effort inside) and the mode as two quiet chips,
+      // then the microphone and the one primary circle: voice while nothing
+      // is typed, Send once something is, Stop while it works.
+      JunoMobileCodeComposer(
+        text: $followUp,
+        placeholder: isRunning ? "Steer this session" : "Reply to this session",
+        focused: $composerFocused,
+        voice: codeVoice,
+        canSend: canSend,
+        isRunning: isRunning,
+        send: send,
+        stop: {
+          stopHaptic.fire()
+          Task { await model.stopGeneration(deviceID: session.deviceID, sessionID: session.sessionID) }
+        },
+        startVoice: startCodeVoice.map { begin in
+          { begin(JunoMobileCodeVoiceRelay.briefing(place: session.title, turns: spokenTurns)) }
+        },
+        previewDictation: previewDictation
+      ) {
+        settingMenu(Self.shortModelName(junoDisplayModelName(session.modelID)), accessibility: "Model") {
+          Section("Model") {
+            ForEach(modelChoices, id: \.self) { id in
+              Button {
+                Task { await model.patchSession(deviceID: session.deviceID, sessionID: session.sessionID, modelID: id) }
+              } label: {
+                if id == session.modelID {
+                  Label(junoDisplayModelName(id), image: JunoIcon.check.assetName(.regular))
+                } else {
+                  Text(junoDisplayModelName(id))
                 }
               }
             }
-            .layoutPriority(1)
-            settingMenu(session.reasoningEffort?.capitalized ?? "Effort", accessibility: "Effort") {
-              Section("Effort") {
-                ForEach(["low", "medium", "high", "max"], id: \.self) { effort in
-                  Button {
-                    Task { await model.patchSession(deviceID: session.deviceID, sessionID: session.sessionID, reasoningEffort: effort) }
-                  } label: {
-                    if effort == session.reasoningEffort {
-                      Label(effort.capitalized, image: JunoIcon.check.assetName(.regular))
-                    } else {
-                      Text(effort.capitalized)
-                    }
-                  }
-                }
-              }
-            }
-            settingMenu(permissionLabel, accessibility: "Permissions") {
-              Section("Permissions") {
-                ForEach(
-                  [("approvalRequired", "Ask before changes"), ("auto", "Auto"), ("readOnly", "Read only")],
-                  id: \.0
-                ) { mode, title in
-                  Button {
-                    Task { await model.patchSession(deviceID: session.deviceID, sessionID: session.sessionID, permissionMode: mode) }
-                  } label: {
-                    if mode == session.permissionMode {
-                      Label(title, image: JunoIcon.check.assetName(.regular))
-                    } else {
-                      Text(title)
-                    }
-                  }
-                }
-              }
-            }
-            Spacer(minLength: JunoSpace.hairline)
-            primaryAction
           }
-          .accessibilityIdentifier("juno.mobile.code-remote-options")
+          Section("Effort") {
+            ForEach(["low", "medium", "high", "max"], id: \.self) { effort in
+              Button {
+                Task { await model.patchSession(deviceID: session.deviceID, sessionID: session.sessionID, reasoningEffort: effort) }
+              } label: {
+                if effort == session.reasoningEffort {
+                  Label(effort.capitalized, image: JunoIcon.check.assetName(.regular))
+                } else {
+                  Text(effort.capitalized)
+                }
+              }
+            }
+          }
         }
-        .padding(.horizontal, JunoSpace.cozy)
-        .padding(.vertical, JunoSpace.snug)
-        .junoGlass(in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        JunoMobileCodeModeChip(
+          mode: CodeComposerModeLadder(remoteName: session.permissionMode),
+          offered: CodeComposerModeLadder.remote,
+          note: "The phone can lower this session's mode. Raising it past what the Mac set is done on the Mac.",
+          isEnabled: !model.isSendingCommand
+        ) { mode in
+          Task {
+            await model.patchSession(
+              deviceID: session.deviceID, sessionID: session.sessionID, permissionMode: mode.remoteName
+            )
+          }
+        }
       }
+      .accessibilityIdentifier("juno.mobile.code-remote-options")
 
       if isRunning {
         Text("Messages you send now are read between steps.")
@@ -796,50 +790,29 @@ struct JunoMobileCodeRemoteThreadView: View {
     .animation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion), value: thread.pendingApproval)
     .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: showsStop)
     .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: isRunning)
+    // Each sentence of a Code call is this session's next message (a steer
+    // while it works, as typed ones are); the reply is read back when it stops.
+    .junoCodeVoiceLink(codeVoice, isRunning: isRunning, latestReply: latestReply) { sentence in
+      Task { await model.send(deviceID: session.deviceID, sessionID: session.sessionID, text: sentence) }
+    }
   }
+
+  /// The thread's turns, for the call's briefing and its read-back.
+  private var spokenTurns: [(role: JunoVoiceTranscriptRole, text: String)] {
+    thread.items.compactMap { item in
+      switch item {
+      case let .userMessage(_, text, _): (.user, text)
+      case let .assistantText(_, text): (.assistant, text)
+      default: nil
+      }
+    }
+  }
+
+  private var latestReply: String? { spokenTurns.last(where: { $0.role == .assistant })?.text }
 
   /// Stop while the agent works and the field is empty; otherwise Send.
   private var showsStop: Bool {
     isRunning && followUp.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-  }
-
-  @ViewBuilder
-  private var primaryAction: some View {
-    if showsStop {
-      Button(role: .destructive) {
-        stopHaptic.fire()
-        Task { await model.stopGeneration(deviceID: session.deviceID, sessionID: session.sessionID) }
-      } label: {
-        JunoIconView(.stop, size: 14)
-          .foregroundStyle(Color.junoOnAccent)
-          .frame(width: 34, height: 34)
-          .modifier(JunoComposerSendBackground(active: true))
-          .frame(minWidth: 44, minHeight: 44)
-          .contentShape(Circle())
-      }
-      .buttonStyle(.plain)
-      .disabled(model.isSendingCommand)
-      .transition(.scale(scale: 0.8).combined(with: .opacity))
-      .accessibilityLabel("code.stop")
-      .accessibilityIdentifier("juno.mobile.code-remote-stop")
-    } else {
-      Button {
-        send()
-      } label: {
-        JunoIconView(.send, size: 15)
-          .foregroundStyle(canSend ? Color.junoOnAccent : Color.junoMutedForeground)
-          .frame(width: 34, height: 34)
-          .modifier(JunoComposerSendBackground(active: canSend))
-          .scaleEffect(canSend ? 1 : 0.92)
-          .frame(minWidth: 44, minHeight: 44)
-          .contentShape(Circle())
-      }
-      .buttonStyle(.plain)
-      .disabled(!canSend)
-      .transition(.scale(scale: 0.8).combined(with: .opacity))
-      .accessibilityLabel(isRunning ? "Queue message" : "Send")
-      .accessibilityIdentifier("juno.mobile.code-remote-send")
-    }
   }
 
   /// One of the session's settings, as plain text with a chevron that opens
@@ -871,12 +844,10 @@ struct JunoMobileCodeRemoteThreadView: View {
     .accessibilityLabel("\(accessibility), \(title)")
   }
 
-  private var permissionLabel: String {
-    switch session.permissionMode {
-    case "auto": "Auto"
-    case "readOnly", "read_only": "Read only"
-    default: "Ask first"
-    }
+  /// "Claude Opus 4.8" reads "Opus 4.8" on the chip: the lab is the menu's.
+  static func shortModelName(_ name: String) -> String {
+    let words = name.split(separator: " ")
+    return words.count >= 3 ? words.dropFirst().joined(separator: " ") : name
   }
 
   private var canSend: Bool {

@@ -87,7 +87,7 @@ struct StudioApprovalPrompt: View {
             if request.risk == .destructive, !ComputerUseToolName.isScreenTool(request.toolName) {
                 Text(Self.isFileTool(request.toolName)
                     ? "This changes what Alevr itself may do in this project, so Alevr always asks."
-                    : "This reaches outside the project, so Alevr always asks.")
+                    : request.reason ?? "This reaches outside the project, so Alevr always asks.")
                     .studioType(.small)
                     .foregroundStyle(Studio.Ink.secondary)
             }

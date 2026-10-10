@@ -41,7 +41,7 @@ public struct MCPCodeTool: CodeTool {
 
     public func assessRisk(input _: JSONValue) -> ActionRisk { .critical }
 
-    public var approvalPolicy: ApprovalPolicy { .alwaysRequiresApproval }
+    public var approvalPolicy: ApprovalPolicy { .asksUnlessFullAccess }
 
     public func summary(input: JSONValue) -> String {
         "MCP \(reference.serverID)/\(reference.definition.name)"

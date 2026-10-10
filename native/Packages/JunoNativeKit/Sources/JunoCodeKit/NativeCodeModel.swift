@@ -305,7 +305,7 @@ public final class NativeCodeModel {
     /// Dispatches the composed prompt to the selected target and opens the
     /// resulting session.
     @discardableResult
-    public func startTask(prompt: String) async -> NativeCodeTask? {
+    public func startTask(prompt: String, permissionMode: String? = nil) async -> NativeCodeTask? {
         guard let accountID, !isTargetless, startBlockedReason == nil else { return nil }
         let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
@@ -320,7 +320,8 @@ public final class NativeCodeModel {
                     prompt: trimmed,
                     repository: repository,
                     baseRef: repository.defaultBranch,
-                    for: accountID
+                    for: accountID,
+                    permissionMode: permissionMode
                 )
             case .device:
                 guard let device = selectedDevice, let workspace = selectedWorkspace else {

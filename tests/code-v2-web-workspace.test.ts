@@ -184,20 +184,23 @@ test("the streaming state is calm: no glow, a stop button, the queue as one cont
   assert.match(html, /Changed 3 files/);
 });
 
-test("the composer at rest shows +, the model trigger, the Team chip, the options menu and send; plan and permissions only when not default", () => {
+test("the composer at rest shows +, the model trigger, the Team chip, the mode, the options menu, the mic and send", () => {
   const f = fixture("model-picker");
   const html = renderToStaticMarkup(React.createElement(CodeWorkspace, { model: { ...f.model }, ui: {} }));
   const foot = html.slice(html.indexOf('class="cv2-cfoot"'), html.indexOf('class="cv2-strip"'));
   assert.match(foot, /aria-label="Add"/);
   assert.match(foot, /aria-label="Model: Opus 5\.5, High"/);
+  assert.match(foot, /aria-label="Mode: Accept edits"/);
   assert.match(foot, /aria-label="More options"/);
+  assert.match(foot, /aria-label="Dictate"/);
   // Team lane: the Team chip is always there; Solo shows nothing extra.
   assert.match(foot, /aria-label="Team"/);
   assert.doesNotMatch(foot, /Lead \+|Best of|Auto-edit|>Plan</);
-  const team = renderToStaticMarkup(React.createElement(CodeWorkspace, { model: { ...f.model, runtimeMode: "full", interactionMode: "plan", routing: fixture("needs-you").model.routing }, ui: {} }));
+  const team = renderToStaticMarkup(React.createElement(CodeWorkspace, { model: { ...f.model, interactionMode: "plan", routing: fixture("needs-you").model.routing }, ui: {} }));
   assert.ok(team.includes(`aria-label="Team: ${teamSummary(fixture("needs-you").model.routing)}"`), "the chip names the team");
-  assert.match(team, /Full access/);
-  assert.match(team, />Plan</);
+  assert.match(team, /aria-label="Mode: Plan"/);
+  const full = renderToStaticMarkup(React.createElement(CodeWorkspace, { model: { ...f.model, runtimeMode: "full" }, ui: {} }));
+  assert.match(full, /aria-label="Mode: Full access"/);
 });
 
 test("the sidebar is a list of work: needs you first, then working, project and branch under each title, the rest settled", () => {

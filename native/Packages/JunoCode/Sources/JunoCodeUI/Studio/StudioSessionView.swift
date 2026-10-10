@@ -11,6 +11,8 @@ public struct StudioSessionView: View {
     let models: [ModelOption]
     let openReview: (String?) -> Void
     let beginDictation: (() -> Void)?
+    /// Dictation and voice from the host. Takes the place of `beginDictation`.
+    let speech: CodeComposerSpeech?
     /// The Code v2 composer footer (model rail, traits, orchestrate, gauge)
     /// and the hand-off to the env server. Nil keeps the classic chips.
     let v2: CodeV2StudioContext?
@@ -25,12 +27,14 @@ public struct StudioSessionView: View {
         models: [ModelOption],
         openReview: @escaping (String?) -> Void,
         beginDictation: (() -> Void)? = nil,
+        speech: CodeComposerSpeech? = nil,
         v2: CodeV2StudioContext? = nil
     ) {
         self.controller = controller
         self.models = models
         self.openReview = openReview
         self.beginDictation = beginDictation
+        self.speech = speech
         self.v2 = v2
     }
 
@@ -60,6 +64,43 @@ public struct StudioSessionView: View {
     private var handsOff: Bool {
         guard let v2 else { return false }
         return v2.composer.engine == .envServer
+    }
+
+    private var effectiveSpeech: CodeComposerSpeech? {
+        speech ?? beginDictation.map { CodeComposerSpeech(dictate: $0) }
+    }
+
+    /// What the host heard: dictation joins the draft (and may send it), a
+    /// spoken request in a call is sent on its own, by the same road as a
+    /// typed message (a new turn, or a steer or queued follow-up while Alevr
+    /// works), and the draft is put back afterwards.
+    private func take(_ heard: CodeHeardText) {
+        switch heard.disposition {
+        case .append:
+            controller.composerText = heard.joined(to: controller.composerText)
+            composerFocused = true
+        case .appendAndSend:
+            controller.composerText = heard.joined(to: controller.composerText)
+            sendOrHandOff()
+        case .sendAlone:
+            let spoken = heard.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !spoken.isEmpty else { return }
+            let saved = controller.composerText
+            controller.composerText = spoken
+            if handsOff {
+                sendOrHandOff()
+                controller.composerText = saved
+            } else {
+                Task {
+                    await controller.send()
+                    // Delivered: the draft comes back. Refused: the words stay,
+                    // after the draft, so nothing said or typed is lost.
+                    controller.composerText = controller.composerText.isEmpty
+                        ? saved
+                        : heard.joined(to: saved)
+                }
+            }
+        }
     }
 
     private func sendOrHandOff() {
@@ -106,6 +147,12 @@ public struct StudioSessionView: View {
         let autoReview = composer.runtimeMode == .auto
         if controller.autoReviewEnabled != autoReview {
             Task { await controller.setAutoReview(autoReview) }
+        }
+        // Plan on the mode control plans on this engine too. A thread in an
+        // answer-only behaviour (`/ask`) is left as it is.
+        let behavior: AgentBehavior = composer.interactionMode == .plan ? .plan : .code
+        if configuration.behavior != behavior, configuration.behavior == .code || configuration.behavior == .plan {
+            Task { await controller.setBehavior(behavior) }
         }
     }
 
@@ -181,6 +228,16 @@ public struct StudioSessionView: View {
         }
         // The sheets, questions and side answers slash verbs open (Lane F).
         .studioCommandCenter(controller: controller, models: models)
+        .onChange(of: speech?.heard) { _, heard in
+            if let heard { take(heard) }
+        }
+        .onChange(of: controller.session.configuration.behavior) { _, behavior in
+            // An approved plan hands the thread to building: the mode control
+            // follows, so it does not put the thread back into planning.
+            guard let composer = v2?.composer else { return }
+            if behavior == .code, composer.interactionMode == .plan { composer.interactionMode = .default }
+            if behavior == .plan, composer.interactionMode != .plan { composer.interactionMode = .plan }
+        }
         .onChange(of: isRunning) { _, running in
             if running { controller.activeInstructionKind = preferences.followUp.instructionKind }
         }
@@ -301,7 +358,8 @@ public struct StudioSessionView: View {
             plusMenu: v2.map { v2 in
                 AnyView(CodeV2PlusMenuItems(model: v2.composer, directory: v2.directory, computerUse: computerUseBinding))
             },
-            contextStrip: place.map { AnyView(CodeV2ContextStrip(place: $0)) }
+            contextStrip: place.map { AnyView(CodeV2ContextStrip(place: $0)) },
+            speech: effectiveSpeech
         ) {
             if let v2 {
                 CodeV2ComposerLeading(
@@ -312,6 +370,7 @@ public struct StudioSessionView: View {
                     .codeV2TeamScope(session: controller.sessionID.value, project: controller.workspaceDisplayName)
                     .onChange(of: v2.composer.selection) { _, _ in syncV2(v2.composer) }
                     .onChange(of: v2.composer.runtimeMode) { _, _ in syncV2(v2.composer) }
+                    .onChange(of: v2.composer.interactionMode) { _, _ in syncV2(v2.composer) }
                     .onChange(of: v2.composer.routing) { _, _ in syncV2(v2.composer) }
                     .onChange(of: v2.composer.lean) { _, _ in syncV2(v2.composer) }
                     .onChange(of: v2.directory.instances) { _, _ in syncV2(v2.composer) }
@@ -364,13 +423,7 @@ public struct StudioSessionView: View {
                 isEnabled: !isBusy
             )
             }
-            if let beginDictation {
-                Button(action: beginDictation) { JunoIconView(.mic, size: 15) }
-                    .buttonStyle(StudioIconButtonStyle())
-                    .help("Dictate")
-                    .accessibilityLabel("Dictate")
-                    .accessibilityIdentifier("juno.code.composer.dictate")
-            }
+            CodeComposerSpeechButtons(speech: effectiveSpeech)
         }
     }
 

@@ -22,6 +22,7 @@ import type {
   TurnItem,
   UserInput,
 } from "../contracts/code-v2.js";
+import { commandGuardReason, isOutside } from "./full-access-guard.js";
 import { AcpClient, AcpError, scrubEnvironment, type LaunchCommand } from "./acp/client.js";
 import {
   EmptyResponseSchema,
@@ -478,7 +479,10 @@ class AcpSession implements ProviderSession {
     const turn = this.#turn;
     if (!turn) return { outcome: "cancelled" };
     const kind = request.toolCall.kind ?? undefined;
-    const auto = autoDecision(turn.runtimeMode, kind);
+    // Full access accepts everything inside the project; the guard's few
+    // cases (sudo, another machine, outside the folder) still ask, with why.
+    const guard = turn.runtimeMode === "full" ? acpGuardReason(request.toolCall, this.options.cwd) : undefined;
+    const auto = guard ? undefined : autoDecision(turn.runtimeMode, kind);
     let decision: ApprovalDecision;
     if (auto) decision = auto;
     else {
@@ -487,6 +491,7 @@ class AcpSession implements ProviderSession {
         callId: request.toolCall.toolCallId,
         action: kind === "execute" ? "command" : kind === "edit" || kind === "delete" || kind === "move" ? "file_change" : "tool",
         summary: request.toolCall.title ?? "Allow this action",
+        ...(guard ? { justification: guard } : {}),
         options: allowAlways ? ["accept", "acceptForSession", "decline", "cancel"] : ["accept", "decline", "cancel"],
       });
       decision = answer.decision;
@@ -498,6 +503,18 @@ class AcpSession implements ProviderSession {
     const option = pickOption(request.options, decision);
     return option ? { outcome: "selected", optionId: option.optionId } : { outcome: "cancelled" };
   }
+}
+
+/** Why a call must still ask under Full access: the shared guard over the call's raw input and paths. */
+export function acpGuardReason(toolCall: { rawInput?: unknown; locations?: { path: string }[] | null }, cwd: string): string | undefined {
+  const raw = toolCall.rawInput && typeof toolCall.rawInput === "object" ? (toolCall.rawInput as Record<string, unknown>) : {};
+  if (typeof raw.command === "string" || Array.isArray(raw.command)) {
+    const command = Array.isArray(raw.command) ? raw.command.join(" ") : (raw.command as string);
+    const reason = commandGuardReason(command, cwd);
+    if (reason) return reason;
+  }
+  const outside = (toolCall.locations ?? []).map((l) => l.path).find((p) => isOutside(p, cwd));
+  return outside ? `Full access still asks: this reaches ${outside}, outside the project folder.` : undefined;
 }
 
 /** Host-side answers for modes the agent itself does not enforce. */

@@ -58,6 +58,8 @@ export interface WorkspaceActions {
   setRouting(routing: RoleRouting): void;
   setRuntimeMode(mode: RuntimeMode): void;
   setInteractionMode(mode: InteractionMode): void;
+  /** Both at once, from the composer's mode menu (one write, one remembered default). */
+  setModes?(pair: { runtimeMode: RuntimeMode; interactionMode: InteractionMode }): void;
   editQueued(id: string, text: string): void;
   removeQueued(id: string): void;
   moveQueued(id: string, to: number): void;

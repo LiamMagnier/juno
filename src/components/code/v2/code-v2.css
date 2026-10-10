@@ -653,3 +653,4 @@ button.cv2-set-row:hover { background: hsl(var(--accent) / 0.6); }
   .cv2-team-role .who .d { display: none; }
 }
 .cv2-phase-head { padding: 8px 0 2px 22px; font-size: 12px; line-height: 16px; color: hsl(var(--muted-foreground)); }
+.cv2-send[data-mode="voice"] { background: hsl(var(--foreground)); color: hsl(var(--background)); }

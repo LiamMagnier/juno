@@ -126,6 +126,8 @@ struct JunoMobileRootView: View {
   /// chat column through the environment. Held here rather than in the chat
   /// screen so a call survives the screen re-rendering underneath it.
   @State private var voiceSession: JunoMobileVoiceSession?
+  /// The call, when Code started it: only that one is joined to a Code thread.
+  @State private var codeVoiceSessionID: UUID?
   /// This phone's local document index — files read through
   /// ``DocumentIngestionPipeline`` and ranked by `JunoSearch`.
   ///
@@ -859,6 +861,35 @@ struct JunoMobileRootView: View {
   /// lives in the chat column now, so it can appear a second time over the
   /// same session — and `start()` is legal from `ended`, which would make that
   /// second appearance silently redial a call the reader had hung up.
+  /// A call for Code: every finished sentence goes to the thread on screen
+  /// (the Code composers join it), the reply is read back, and nothing is
+  /// filed as a chat: the thread is the record.
+  private func startCodeVoice(history: [JunoVoiceHistoryEntry]) {
+    guard JunoMobilePlanStore.shared.require(.voice) else { return }
+    guard voiceSession == nil, let requestSender, let session = currentSession else { return }
+    let started = JunoMobileVoiceSession(
+      controller: JunoRealtimeVoiceController(
+        authorization: JunoMobileVoiceAuthorization(
+          sender: requestSender,
+          accountID: session.profile.id,
+          conversationID: nil
+        )
+      ),
+      accountID: session.profile.id,
+      attachmentContextClient: nil,
+      saveTranscript: nil,
+      close: {
+        JunoMobileLiveActivityCoordinator.shared.endVoice()
+        voiceSession = nil
+        codeVoiceSessionID = nil
+      }
+    )
+    voiceSession = started
+    codeVoiceSessionID = started.id
+    JunoMobileLiveActivityCoordinator.shared.beginVoice()
+    Task { await started.controller.start(history: history) }
+  }
+
   private func startVoice() {
     // Voice is Pro and up: a plan without it gets the plans page instead.
     guard JunoMobilePlanStore.shared.require(.voice) else { return }
@@ -1509,6 +1540,8 @@ struct JunoMobileRootView: View {
           // folds them in — see `JunoMobileSection.foldedDestinations`).
           openWork: { pushDestination(.work) }
         )
+        .environment(\.junoStartCodeVoice, requestSender == nil || currentSession == nil || voiceSession != nil ? nil : startCodeVoice)
+        .environment(\.junoCodeVoiceSession, voiceSession.flatMap { $0.id == codeVoiceSessionID ? $0 : nil })
       } else {
         unavailable
       }
