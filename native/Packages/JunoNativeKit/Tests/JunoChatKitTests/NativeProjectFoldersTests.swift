@@ -133,7 +133,8 @@ final class NativeProjectFoldersClientTests: XCTestCase {
         let client = NativeProjectFoldersClient(sender: sender)
         let id = try await client.createFolder(name: "  Drafts ", parentID: "atlas", for: account)
         XCTAssertEqual(id, "new-folder")
-        let request = try await XCTUnwrapAsync(await sender.requests.first)
+        let first = await sender.requests.first
+        let request = try XCTUnwrap(first)
         XCTAssertEqual(request.method, .post)
         let body = try JSONSerialization.jsonObject(with: try XCTUnwrap(request.body)) as? [String: Any]
         XCTAssertEqual(body?["name"] as? String, "Drafts")
@@ -144,7 +145,8 @@ final class NativeProjectFoldersClientTests: XCTestCase {
         let sender = FolderRouteSender(routes: ["PATCH /api/projects/research": (200, #"{"ok":true}"#)])
         let client = NativeProjectFoldersClient(sender: sender)
         try await client.move(id: "research", to: nil, for: account)
-        let request = try await XCTUnwrapAsync(await sender.requests.first)
+        let first = await sender.requests.first
+        let request = try XCTUnwrap(first)
         XCTAssertEqual(String(decoding: try XCTUnwrap(request.body), as: UTF8.self), #"{"parentId":null}"#)
     }
 
@@ -168,7 +170,8 @@ final class NativeProjectFoldersClientTests: XCTestCase {
         let client = NativeProjectFoldersClient(sender: sender)
         let result = try await client.delete(id: "atlas", children: .cascade, for: account)
         XCTAssertEqual(result, NativeProjectDeleteResult(deleted: 4, moved: 0))
-        let request = try await XCTUnwrapAsync(await sender.requests.first)
+        let first = await sender.requests.first
+        let request = try XCTUnwrap(first)
         XCTAssertEqual(request.queryItems, [URLQueryItem(name: "children", value: "cascade")])
     }
 

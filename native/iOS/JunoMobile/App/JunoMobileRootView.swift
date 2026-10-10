@@ -1595,7 +1595,8 @@ struct JunoMobileRootView: View {
           madeModel: madeModel(),
           artifactModel: artifactModel,
           workClient: workClient,
-          openArtifacts: { pushDestination(.artifacts) }
+          openArtifacts: { pushDestination(.artifacts) },
+          libraryClient: requestSender.map { NativeLibraryClient(sender: $0) }
         )
       } else {
         unavailable

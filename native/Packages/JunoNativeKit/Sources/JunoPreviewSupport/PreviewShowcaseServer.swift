@@ -14,7 +14,12 @@ enum PreviewShowcaseServer {
 
     static func body(path: String, method: String, query: [URLQueryItem] = []) -> Data? {
         guard isActive, method == "GET" else { return nil }
-        if path == "/api/library" { return Data(library.utf8) }
+        if path == "/api/library" {
+            // Recently deleted (`includeDeleted=true`) is its own short list,
+            // so the phone's trash page has rows to restore in a capture.
+            if query.contains(where: { $0.name == "includeDeleted" }) { return Data(deleted.utf8) }
+            return Data(library.utf8)
+        }
         if path == "/api/agents" { return Data(agents.utf8) }
         if path == "/api/research" {
             // The research chat's own list (and the completion watcher's live
@@ -45,6 +50,18 @@ enum PreviewShowcaseServer {
             #"{"id":"\#(file.0)","fileName":"\#(file.1)","mimeType":"\#(file.2)","size":\#(file.3),"kind":"FILE","createdAt":"\#(iso(file.4))","conversationId":null,"projectId":null}"#
         }.joined(separator: ",")
         return #"{"items":[\#(items)],"attachments":[],"counts":{"all":7,"IMAGE":0,"FILE":7},"total":7,"storage":{"usedBytes":18816400,"quotaBytes":5368709120}}"#
+    }
+
+    private static var deleted: String {
+        let files: [(String, String, String, Int, TimeInterval)] = [
+            ("del-1", "Old pitch deck v2.pdf", "application/pdf", 3_210_000, -4 * 86_400),
+            ("del-2", "Moodboard draft.png", "image/png", 820_000, -6 * 86_400),
+        ]
+        let items = files.map { file in
+            let kind = file.2.hasPrefix("image/") ? "IMAGE" : "FILE"
+            return #"{"id":"\#(file.0)","fileName":"\#(file.1)","mimeType":"\#(file.2)","size":\#(file.3),"kind":"\#(kind)","createdAt":"\#(iso(file.4 - 86_400))","deletedAt":"\#(iso(file.4))","conversationId":null,"projectId":null}"#
+        }.joined(separator: ",")
+        return #"{"items":[\#(items)],"attachments":[],"counts":{"all":2,"IMAGE":1,"FILE":1},"total":2}"#
     }
 
     private static var agents: String {

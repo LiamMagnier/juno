@@ -93,6 +93,16 @@ public actor PreviewSender: NativeChatRequestSending {
                     body: png
                 )
             }
+            if let document = PreviewDocumentFixtures.document(for: id) {
+                return HTTPResponse(
+                    statusCode: 200,
+                    headers: try HTTPHeaders([
+                        "content-type": document.contentType,
+                        "content-length": String(document.data.count),
+                    ]),
+                    body: document.data
+                )
+            }
             return HTTPResponse(
                 statusCode: 404,
                 headers: try HTTPHeaders(["content-type": "application/json"]),
