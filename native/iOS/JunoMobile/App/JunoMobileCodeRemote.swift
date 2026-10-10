@@ -464,7 +464,7 @@ struct JunoMobileCodeRemoteThreadView: View {
   let session: CodeRemoteSessionSummary
   var modelCatalog: [NativeChatModelOption] = []
   /// Opens with this dictation showing: the offscreen snapshots only.
-  var previewDictation: JunoMobileCodeDictation? = nil
+  var previewDictation: JunoMobileDictationSession? = nil
 
   private enum Surface: String, CaseIterable, Identifiable {
     case thread, changes, terminal, tests

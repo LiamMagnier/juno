@@ -126,110 +126,10 @@ extension View {
 
 // MARK: - The composer
 
-/// A dictation in a Code composer: Chat's recogniser (`JunoSpeechService`),
-/// owned while the reader dictates. The row it draws is Code-side for now
-/// (``JunoMobileCodeDictationRow``), the seam the shared in-composer row from
-/// the voice lane drops into.
-@MainActor
-@Observable
-final class JunoMobileCodeDictation {
-    let speech = JunoSpeechService()
-    private(set) var failure: String?
-    /// Words and levels to draw instead of the recogniser's: the offscreen
-    /// snapshots only, which must never open the microphone.
-    private var preview: (text: String, levels: [Double])?
-
-    init() {}
-
-    init(previewText: String, levels: [Double]) {
-        preview = (previewText, levels)
-    }
-
-    var transcript: String { preview?.text ?? speech.transcript }
-    var levels: [Double] { preview?.levels ?? speech.levelHistory }
-
-    func begin() async {
-        guard preview == nil else { return }
-        guard await speech.requestPermission() else {
-            failure = "Allow the microphone and speech recognition in Settings to dictate."
-            return
-        }
-        do { try speech.start() } catch {
-            failure = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-        }
-    }
-
-    func cancel() { if preview == nil { speech.cancel() } }
-
-    func finish() -> String { preview?.text ?? speech.stopAndFreeze() }
-}
-
-/// The composer's accessory row while dictating, as ChatGPT and Claude draw it
-/// on iOS: cancel, the live level across the width, done. Drawn in place of
-/// the row; nothing leaves the composer.
-struct JunoMobileCodeDictationRow: View {
-    let levels: [Double]
-    let onCancel: () -> Void
-    let onDone: () -> Void
-
-    var body: some View {
-        HStack(spacing: JunoSpace.tight) {
-            Button(action: onCancel) {
-                JunoIconView(.close, size: 15, weight: .bold)
-                    .foregroundStyle(.primary)
-                    .frame(width: 36, height: 36)
-                    .modifier(JunoComposerGlassCircle())
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Cancel dictation")
-            .accessibilityIdentifier("juno.mobile.code-dictation-cancel")
-
-            JunoMobileCodeLevelBars(levels: levels)
-                .frame(maxWidth: .infinity)
-                .frame(height: 28)
-                .accessibilityHidden(true)
-
-            Button(action: onDone) {
-                JunoIconView(.check, size: 16, weight: .bold)
-                    .foregroundStyle(Color.junoCanvas)
-                    .frame(width: 36, height: 36)
-                    .modifier(JunoComposerSendBackground(active: true, tint: Color.primary))
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Done dictating")
-            .accessibilityIdentifier("juno.mobile.code-dictation-done")
-        }
-    }
-}
-
-/// The live level, newest on the right, as quiet rounded bars in the ink.
-struct JunoMobileCodeLevelBars: View {
-    let levels: [Double]
-
-    var body: some View {
-        Canvas { context, size in
-            let bar: CGFloat = 3
-            let gap: CGFloat = 3
-            let count = max(1, Int((size.width + gap) / (bar + gap)))
-            let recent = Array(levels.suffix(count))
-            let padded = Array(repeating: 0.0, count: max(0, count - recent.count)) + recent
-            for (index, level) in padded.enumerated() {
-                let height = max(bar, CGFloat(min(1, max(0, level))) * size.height)
-                let rect = CGRect(
-                    x: CGFloat(index) * (bar + gap),
-                    y: (size.height - height) / 2,
-                    width: bar,
-                    height: height
-                )
-                context.fill(Path(roundedRect: rect, cornerRadius: bar / 2), with: .color(.secondary))
-            }
-        }
-    }
-}
+// Dictation is Chat's own (`JunoMobileDictation.swift`): one
+// `JunoMobileDictationSession` per take, `JunoMobileDictationTranscript` in
+// the field's slot, `JunoMobileDictationRow` in the accessory row's slot and
+// `JunoVoiceGlow` in your ink on the card's edge, so Chat and Code are one.
 
 /// A Code composer in the iOS Chat composer's anatomy (the one the owner
 /// approved): one Liquid Glass card, radius 24, the field on top and one
@@ -254,10 +154,10 @@ struct JunoMobileCodeComposer<Accessories: View>: View {
     var stop: (() -> Void)?
     var startVoice: (() -> Void)?
     /// Opens with this dictation showing: the offscreen snapshots only.
-    var previewDictation: JunoMobileCodeDictation?
+    var previewDictation: JunoMobileDictationSession?
     @ViewBuilder var accessories: () -> Accessories
 
-    @State private var dictation: JunoMobileCodeDictation?
+    @State private var dictation: JunoMobileDictationSession?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var isEmpty: Bool { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
@@ -271,10 +171,19 @@ struct JunoMobileCodeComposer<Accessories: View>: View {
                 .padding(.bottom, JunoSpace.tight)
         }
         .junoGlass(in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .background(alignment: .bottom) {
+        // The card's own edge carries the light, as Chat's composer does: the
+        // call's while one is live, your ink while you dictate.
+        .overlay {
             if let voice {
                 JunoMobileVoiceComposerGlow(session: voice)
                     .transition(.opacity)
+            } else if let dictation {
+                JunoVoiceGlow(
+                    mode: dictation.isListening ? .you : .off,
+                    you: { [dictation] in dictation.level },
+                    cornerRadius: 24
+                )
+                .transition(.opacity)
             }
         }
         .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: dictation == nil)
@@ -287,16 +196,11 @@ struct JunoMobileCodeComposer<Accessories: View>: View {
     @ViewBuilder
     private var field: some View {
         if let dictation {
-            let heard = dictation.failure ?? dictation.transcript
-            Text(heard.isEmpty ? "Listening" : heard)
-                .junoFont(size: 17, relativeTo: .body)
-                .foregroundStyle(heard.isEmpty || dictation.failure != nil ? Color.secondary : Color.primary)
-                .lineLimit(1...6)
-                .frame(maxWidth: .infinity, alignment: .topLeading)
+            JunoMobileDictationTranscript(session: dictation, draft: text)
                 .padding(.horizontal, JunoSpace.regular)
                 .padding(.top, JunoSpace.comfy)
                 .padding(.bottom, JunoSpace.tight)
-                .accessibilityIdentifier("juno.mobile.code-dictation-transcript")
+                .transition(.opacity)
         } else {
             TextField(
                 text: $text,
@@ -321,8 +225,8 @@ struct JunoMobileCodeComposer<Accessories: View>: View {
     private var row: some View {
         HStack(spacing: JunoSpace.hairline) {
             if let dictation {
-                JunoMobileCodeDictationRow(
-                    levels: dictation.levels,
+                JunoMobileDictationRow(
+                    session: dictation,
                     onCancel: {
                         dictation.cancel()
                         self.dictation = nil
@@ -333,6 +237,7 @@ struct JunoMobileCodeComposer<Accessories: View>: View {
                         focused.wrappedValue = true
                     }
                 )
+                .transition(JunoMobileComposer.dictationRowTransition(reduceMotion))
             } else if let voice {
                 Spacer(minLength: 0)
                 JunoMobileVoiceCallControls(session: voice)
@@ -387,9 +292,9 @@ struct JunoMobileCodeComposer<Accessories: View>: View {
 
     private func beginDictation() {
         focused.wrappedValue = false
-        let session = JunoMobileCodeDictation()
-        dictation = session
-        Task { await session.begin() }
+        let take = JunoMobileDictationSession()
+        dictation = take
+        Task { await take.start() }
     }
 }
 

@@ -86,15 +86,10 @@ final class JunoMobileCodeVoiceTests: XCTestCase {
       attachmentContextClient: nil, saveTranscript: nil, close: {}
     )
 
-    var levels: [Double] = []
-    for index in 0..<60 {
-      let x = Double(index)
-      let wave: Double = abs(sin(x * 0.45))
-      let swell: Double = 0.5 + 0.5 * cos(x * 0.13)
-      levels.append(0.15 + 0.7 * wave * swell)
-    }
-    func dictation() -> JunoMobileCodeDictation {
-      JunoMobileCodeDictation(previewText: "Run the cart suite and fix whatever fails", levels: levels)
+    func dictation() -> JunoMobileDictationSession {
+      let take = JunoMobileDictationSession()
+      take.startPreview("transcribed")
+      return take
     }
     func thread(dictating: Bool = false, call: JunoMobileVoiceSession? = nil) -> some View {
       NavigationStack {

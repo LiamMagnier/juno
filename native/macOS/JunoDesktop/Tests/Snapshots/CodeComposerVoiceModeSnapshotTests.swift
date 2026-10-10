@@ -12,8 +12,8 @@ import Testing
 ///
 /// The mode menu is the system's own menu, which only the window server
 /// draws, so `mode-menu` draws what that menu holds (the five rungs, each
-/// with its line) as a stand-in. Dictation is drawn in its starting phase,
-/// with the microphone never opened.
+/// with its line) as a stand-in. Dictation is Chat's take in preview, with
+/// the microphone never opened.
 @MainActor
 @Suite(
     .enabled(
@@ -54,7 +54,13 @@ struct CodeComposerVoiceModeSnapshotTests {
     }
 
     private static var dictating: CodeComposerSpeech {
-        CodeComposerSpeech(dictation: AnyView(DesktopCodeDictation(onCancel: {}, onStop: { _ in }, onSend: { _ in }, listens: false)))
+        // Chat's own take, already listening, with no microphone behind it.
+        let take = ComposerDictationSession()
+        take.beginPreview(final: "Run the cart suite and", partial: "fix whatever fails")
+        return CodeComposerSpeech(
+            dictation: AnyView(DesktopCodeDictation(session: take, onCancel: {}, onStop: { _ in }, onSend: { _ in })),
+            callGlow: AnyView(ComposerDictationGlow(session: take, cornerRadius: Studio.Radius.composer))
+        )
     }
 
     private static var inCall: CodeComposerSpeech {
@@ -64,7 +70,7 @@ struct CodeComposerVoiceModeSnapshotTests {
             callRow: { hasDraft, send in
                 AnyView(DesktopVoiceCallBar(column: column, hangUp: hangUp, hasDraft: hasDraft, leading: { EmptyView() }, primary: { send }))
             },
-            callGlow: AnyView(DesktopVoiceComposerGlow(controller: column.controller))
+            callGlow: AnyView(DesktopVoiceComposerGlow(controller: column.controller, cornerRadius: Studio.Radius.composer))
         )
     }
 

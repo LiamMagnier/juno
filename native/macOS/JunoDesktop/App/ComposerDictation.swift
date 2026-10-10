@@ -238,12 +238,14 @@ struct ComposerDictationControls: View {
 /// wears the same `JunoVoiceGlow`, tone "you").
 struct ComposerDictationGlow: View {
     let session: ComposerDictationSession
+    /// The shell's radius: Chat's composer by default, Code's own (22) there.
+    var cornerRadius: CGFloat = JunoComposerMetrics.cornerRadius
 
     var body: some View {
         JunoVoiceGlow(
             mode: session.isListening ? .you : .off,
             you: { [session] in session.speech.loudness },
-            cornerRadius: JunoComposerMetrics.cornerRadius
+            cornerRadius: cornerRadius
         )
     }
 }

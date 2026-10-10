@@ -70,7 +70,7 @@ struct JunoMobileCodeView: View {
   @FocusState private var composerFocused: Bool
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   /// Opens the start composer dictating: the offscreen snapshots only.
-  var previewDictation: JunoMobileCodeDictation? = nil
+  var previewDictation: JunoMobileDictationSession? = nil
   /// Opens the start composer with this typed: the offscreen snapshots only.
   var previewPrompt: String? = nil
   /// The mode the next cloud run starts on, remembered per repository.

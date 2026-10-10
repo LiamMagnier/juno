@@ -55,7 +55,9 @@ struct DesktopCodeWorkspace: View {
     @State private var pendingPrompt: String?
     @State private var pendingEnvironment: CodeEnvironmentChoice?
     @State private var simulatorHost = DesktopSimulatorHost()
-    @State private var isDictating = false
+    /// The dictation take while the Code composer listens (Chat's
+    /// ``ComposerDictationSession``): its field, row and glow all read it.
+    @State private var dictation: ComposerDictationSession?
     @State private var previewTarget: CodePreviewTarget?
     @State private var voiceSession: DesktopVoiceSession?
     /// Hangs a Code call up (and files nothing: the thread is the record).
@@ -1149,8 +1151,9 @@ struct DesktopCodeWorkspace: View {
         if idle {
             speech.talk = startCodeVoice
         }
-        if isDictating {
+        if let dictation {
             speech.dictation = AnyView(DesktopCodeDictation(
+                session: dictation,
                 onCancel: { endDictation() },
                 onStop: { words in
                     heard = CodeHeardText(text: words, disposition: .append)
@@ -1161,6 +1164,9 @@ struct DesktopCodeWorkspace: View {
                     endDictation()
                 }
             ))
+            // Dictation wears the call's light in your ink, on the shell's
+            // own edge, as Chat's composer does.
+            speech.callGlow = AnyView(ComposerDictationGlow(session: dictation, cornerRadius: Studio.Radius.composer))
         }
         // The call, inside the composer as on the web: its controls in the
         // row with End in Send's place, the glow along the bottom edge.
@@ -1169,17 +1175,22 @@ struct DesktopCodeWorkspace: View {
             speech.callRow = { hasDraft, send in
                 AnyView(DesktopVoiceCallBar(column: column, hangUp: hangUp, hasDraft: hasDraft, leading: { EmptyView() }, primary: { send }))
             }
-            speech.callGlow = AnyView(DesktopVoiceComposerGlow(controller: column.controller))
+            speech.callGlow = AnyView(DesktopVoiceComposerGlow(controller: column.controller, cornerRadius: Studio.Radius.composer))
         }
         return speech
     }
 
+    private var isDictating: Bool { dictation != nil }
+
     private func endDictation() {
-        withAnimation(JunoMotion.fast) { isDictating = false }
+        withAnimation(JunoMotion.fast) { dictation = nil }
     }
 
     private func beginDictation() {
-        withAnimation(JunoMotion.fast) { isDictating = true }
+        guard dictation == nil else { return }
+        let take = ComposerDictationSession()
+        withAnimation(JunoMotion.fast) { dictation = take }
+        Task { await take.begin() }
     }
 
     /// A sentence spoken in the call: the thread's next turn.
@@ -1268,7 +1279,8 @@ struct DesktopCodeWorkspace: View {
         )
         voiceSession = started
         // A call and a dictation cannot share the microphone.
-        isDictating = false
+        dictation?.cancel()
+        dictation = nil
         Task { await started.controller.start(provider: provider, history: history) }
     }
 

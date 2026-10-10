@@ -9,20 +9,23 @@ import SwiftUI
 /// Dictation for Code's composers, built from Chat's own parts.
 ///
 /// Chat dictates inside its composer's shell (``ComposerDictationField`` in the
-/// field slot, ``ComposerDictationControls`` in the controls row). Code's
-/// composer takes this as `CodeComposerSpeech.dictation` and draws it in its
-/// shell in place of both, so Code dictates exactly where Chat does. Same
-/// words, same meter, same exits and the same keys: Esc cancels, Return sends
-/// what was heard, Done puts it in the draft.
+/// field slot, ``ComposerDictationControls`` in the controls row,
+/// ``ComposerDictationGlow`` on the edge). Code's composer takes this as
+/// `CodeComposerSpeech.dictation` and draws it in its shell in place of both,
+/// and the host hands the glow in as the shell's edge light, so Code dictates
+/// exactly where and as Chat does: no second card, nothing over the composer.
+/// Same words, same meter, same exits (✕ and ✓ Done, no second send disc) and
+/// the same keys: Esc cancels, Return sends what was heard, Done puts it in
+/// the draft.
+///
+/// The host owns the take (``ComposerDictationSession``) and starts it, so the
+/// field, the row and the glow all read the one recogniser.
 struct DesktopCodeDictation: View {
+    let session: ComposerDictationSession
     let onCancel: () -> Void
     let onStop: (String) -> Void
     let onSend: (String) -> Void
-    /// False only in the offscreen snapshots, which must never open the
-    /// microphone.
-    var listens = true
 
-    @State private var session = ComposerDictationSession()
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -33,15 +36,8 @@ struct DesktopCodeDictation: View {
                 .padding(.horizontal, JunoSpace.regular)
                 .padding(.top, JunoSpace.cozy + 2)
                 .padding(.bottom, JunoSpace.snug)
-            ComposerDictationControls(session: session, cancel: cancel, stop: stop) {
-                ComposerPrimaryDisc(
-                    face: session.hasWords ? .send : .disabled("Send what you dictated"),
-                    label: "Send what you dictated",
-                    identifier: "juno.code.dictation-send",
-                    action: send
-                )
-            }
-            .padding(.horizontal, JunoSpace.snug)
+            ComposerDictationControls(session: session, cancel: cancel, done: stop)
+                .padding(.horizontal, JunoSpace.snug)
             .padding(.bottom, JunoSpace.snug)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -57,7 +53,6 @@ struct DesktopCodeDictation: View {
             return .handled
         }
         .onAppear { focused = true }
-        .task { if listens { await session.begin() } }
         // A recogniser left running with nothing on screen is a live
         // microphone nobody can see.
         .onDisappear { if session.phase != .finished { session.cancel() } }
