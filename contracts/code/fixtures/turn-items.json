@@ -41,6 +41,9 @@
     { "id": "i17", "turnId": "t2", "kind": "interrupt", "createdAt": "2026-10-08T20:10:02Z", "reason": "limit", "message": "Weekly limit reached", "resumeAt": "2026-10-10T00:00:00Z" },
     { "id": "i18", "kind": "system_notice", "createdAt": "2026-10-08T20:10:03Z", "level": "warning", "text": "Context is 80% full; compacting soon.", "code": "context_high" },
     { "id": "i19", "turnId": "t2", "kind": "error", "createdAt": "2026-10-08T20:10:04Z", "message": "The model stopped responding.", "code": "timeout", "retryable": true },
-    { "id": "i20", "turnId": "t3", "kind": "assistant_message", "createdAt": "2026-10-08T20:11:00Z", "text": "Look", "streaming": true, "agentId": "agent_2" }
+    { "id": "i20", "turnId": "t3", "kind": "assistant_message", "createdAt": "2026-10-08T20:11:00Z", "text": "Look", "streaming": true, "agentId": "agent_2" },
+    { "id": "i21", "turnId": "t4", "kind": "conversation_message", "createdAt": "2026-10-10T09:00:00Z", "direction": "received", "peerRef": "chat:c_release", "peerTitle": "Release prep", "peerProduct": "chat", "text": "Is the cart total fix merged?", "hop": 0, "chainId": "ch_1", "linkId": "l_1" },
+    { "id": "i22", "kind": "conversation_message", "createdAt": "2026-10-10T09:01:00Z", "direction": "sent", "peerRef": "env:s_cart", "peerTitle": "Fix the cart total", "peerProduct": "code", "text": "Merged in 4f2a.", "hop": 1, "chainId": "ch_1", "status": "queued" },
+    { "id": "i23", "kind": "conversation_message", "createdAt": "2026-10-10T09:05:00Z", "direction": "notice", "peerRef": "code:r_9", "peerTitle": "Fix the cart total", "peerProduct": "code", "text": "Idle again.", "hop": 1 }
   ]
 }

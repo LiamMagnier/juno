@@ -444,6 +444,14 @@ public enum CodeV2 {
         case handoff
         case subagent
         case computerAction = "computer_action"
+        case conversationMessage = "conversation_message"
+    }
+
+    // contract: CONVERSATION_MESSAGE_DIRECTION_VALUES
+    public enum ConversationMessageDirection: String, Codable, Sendable, CaseIterable, Hashable {
+        case received
+        case sent
+        case notice
     }
 
     // contract: ITEM_STATUS_VALUES
@@ -514,10 +522,41 @@ public enum CodeV2 {
     public struct UserInput: Codable, Sendable, Hashable {
         public var text: String
         public var attachments: [Attachment]?
+        /// Set when the input is a message from another of the user's conversations.
+        public var conversation: ConversationDelivery?
 
-        public init(text: String, attachments: [Attachment]? = nil) {
+        public init(text: String, attachments: [Attachment]? = nil, conversation: ConversationDelivery? = nil) {
             self.text = text
             self.attachments = attachments
+            self.conversation = conversation
+        }
+    }
+
+    /// A message from another of the user's conversations (`conversation.deliver`).
+    public struct ConversationDelivery: Codable, Sendable, Hashable {
+        public var fromRef: String
+        public var fromTitle: String
+        public var fromProduct: ConversationMessage.Product
+        public var text: String
+        public var hop: Int
+        public var chainId: String
+        public var linkId: String?
+        public var notifyWhenIdle: Bool?
+        public var notice: Bool?
+
+        public init(
+            fromRef: String, fromTitle: String, fromProduct: ConversationMessage.Product, text: String, hop: Int,
+            chainId: String, linkId: String? = nil, notifyWhenIdle: Bool? = nil, notice: Bool? = nil
+        ) {
+            self.fromRef = fromRef
+            self.fromTitle = fromTitle
+            self.fromProduct = fromProduct
+            self.text = text
+            self.hop = hop
+            self.chainId = chainId
+            self.linkId = linkId
+            self.notifyWhenIdle = notifyWhenIdle
+            self.notice = notice
         }
     }
 
@@ -972,6 +1011,45 @@ public enum CodeV2 {
         }
     }
 
+    /// A message between two of the user's conversations. Never a user
+    /// message: it cannot answer an approval or change a mode.
+    public struct ConversationMessage: Codable, Sendable, Hashable {
+        public enum Product: String, Codable, Sendable, Hashable { case chat, code }
+        public enum Status: String, Codable, Sendable, Hashable { case delivered, queued, failed }
+        public var id: String
+        public var turnId: String?
+        public var createdAt: String
+        public var direction: ConversationMessageDirection
+        /// The other conversation, as the tools name it (chat:…, code:…, env:…).
+        public var peerRef: String
+        public var peerTitle: String
+        public var peerProduct: Product
+        public var text: String
+        public var hop: Int
+        public var chainId: String?
+        public var linkId: String?
+        public var status: Status?
+
+        public init(
+            id: String, turnId: String? = nil, createdAt: String, direction: ConversationMessageDirection, peerRef: String,
+            peerTitle: String, peerProduct: Product, text: String, hop: Int = 0, chainId: String? = nil,
+            linkId: String? = nil, status: Status? = nil
+        ) {
+            self.id = id
+            self.turnId = turnId
+            self.createdAt = createdAt
+            self.direction = direction
+            self.peerRef = peerRef
+            self.peerTitle = peerTitle
+            self.peerProduct = peerProduct
+            self.text = text
+            self.hop = hop
+            self.chainId = chainId
+            self.linkId = linkId
+            self.status = status
+        }
+    }
+
     public struct Handoff: Codable, Sendable, Hashable {
         public var id: String
         public var turnId: String?
@@ -1308,6 +1386,7 @@ public enum CodeV2 {
         case handoff(Handoff)
         case subagent(Subagent)
         case computerAction(ComputerAction)
+        case conversationMessage(ConversationMessage)
         /// A kind this build does not know; carries its raw kind and id.
         case unknown(kind: String, id: String)
 
@@ -1340,6 +1419,7 @@ public enum CodeV2 {
             case .handoff: self = .handoff(try Handoff(from: decoder))
             case .subagent: self = .subagent(try Subagent(from: decoder))
             case .computerAction: self = .computerAction(try ComputerAction(from: decoder))
+            case .conversationMessage: self = .conversationMessage(try ConversationMessage(from: decoder))
             }
         }
 
@@ -1377,6 +1457,7 @@ public enum CodeV2 {
             case .handoff: TurnItemKind.handoff.rawValue
             case .subagent: TurnItemKind.subagent.rawValue
             case .computerAction: TurnItemKind.computerAction.rawValue
+            case .conversationMessage: TurnItemKind.conversationMessage.rawValue
             case let .unknown(kind, _): kind
             }
         }
@@ -1402,6 +1483,7 @@ public enum CodeV2 {
             case let .handoff(v): v.id
             case let .subagent(v): v.id
             case let .computerAction(v): v.id
+            case let .conversationMessage(v): v.id
             case let .unknown(_, id): id
             }
         }
@@ -1427,6 +1509,7 @@ public enum CodeV2 {
             case let .handoff(v): v
             case let .subagent(v): v
             case let .computerAction(v): v
+            case let .conversationMessage(v): v
             case let .unknown(kind, id): ["kind": kind, "id": id]
             }
         }
@@ -1468,6 +1551,9 @@ public enum CodeV2 {
         case turnUnschedule = "turn.unschedule"
         case providerInstall = "provider.install"
         case providerAuth = "provider.auth"
+        case conversationDeliver = "conversation.deliver"
+        case conversationRead = "conversation.read"
+        case conversationToggle = "conversation.toggle"
     }
 
     /// The git worktree a session runs in (`SessionSnapshot.worktree`).

@@ -101,6 +101,7 @@ export class SessionManager {
   #closed = new Set<(sessionId: string) => void | Promise<void>>();
   /** Armed resume-at-reset timers, by session. */
   #scheduleTimers = new Map<string, { id: string; timer: NodeJS.Timeout }>();
+  #engineTools: ((sessionId: string) => unknown[]) | undefined;
 
   constructor(options: SessionManagerOptions) {
     this.#o = options;
@@ -248,13 +249,13 @@ export class SessionManager {
       runtimeMode: params.runtimeMode,
       interactionMode: params.interactionMode,
       ...(params.routing ? { routing: params.routing } : {}),
-      ...(log.meta.title ? {} : { title: titleFrom(params.input.text) }),
+      ...(log.meta.title ? {} : { title: params.input.conversation ? titleFrom(`From ${params.input.conversation.fromTitle}`) : titleFrom(params.input.text) }),
     });
     // Any new turn supersedes a resume-at-reset waiting for this session.
     if (log.snapshot.scheduledResume) this.#clearSchedule(live);
     const turnId = newId("t");
     const ordinal = log.meta.turnCount + 1;
-    this.#addItem(live, { id: newId("u"), kind: "user_message", turnId, createdAt: nowIso(), text: params.input.text, ...(params.input.attachments?.length ? { attachments: params.input.attachments } : {}), delivery: "send" });
+    this.#addItem(live, inputItem(turnId, params.input, "send"));
     log.emit({ type: "turn.started", turnId, selection: params.selection });
     const abort = new AbortController();
     const done = deferred<TurnOutcome>();
@@ -280,7 +281,7 @@ export class SessionManager {
     const instance = live.providerInstanceId ? this.#o.registry.get(live.providerInstanceId) : undefined;
     const caps = instance ? this.#o.registry.adapterFor(instance.kind)?.capabilities(instance) : undefined;
     if (caps?.steering && live.provider?.steer && (await live.provider.steer(params.input))) {
-      this.#addItem(live, { id: newId("u"), kind: "user_message", turnId: active.turnId, createdAt: nowIso(), text: params.input.text, ...(params.input.attachments?.length ? { attachments: params.input.attachments } : {}), delivery: "steer" });
+      this.#addItem(live, inputItem(active.turnId, params.input, "steer"));
       return { accepted: true };
     }
     this.queue({ sessionId: params.sessionId, input: params.input });
@@ -751,6 +752,7 @@ export class SessionManager {
       selection,
       ...(resumeState ? { resumeState } : {}),
       ...(mcp ? { mcp } : {}),
+      ...(!mcp && this.#engineTools ? { extraTools: this.#engineTools(live.log.id) } : {}),
       logger: this.#o.logger,
     });
     if ((live.generation ?? 0) !== generation) {
@@ -847,6 +849,14 @@ export class SessionManager {
   }
 
   /** Adds an item to a session from outside a turn (subagent tracking in the parent). */
+  /**
+   * Tools the built-in Alevr engine gets on top of its own, per session (the
+   * cross-conversation tools). Vendor runtimes get the same tools over MCP.
+   */
+  setEngineTools(factory: ((sessionId: string) => unknown[]) | undefined): void {
+    this.#engineTools = factory;
+  }
+
   upsertItem(sessionId: string, item: TurnItem): void {
     this.#addItem(this.#get(sessionId), item);
   }
@@ -882,6 +892,32 @@ function titleFrom(text: string): string {
 function matches(title: string, items: TurnItem[], query: string): boolean {
   if (title.toLowerCase().includes(query)) return true;
   return items.some((i) => (i.kind === "user_message" || i.kind === "assistant_message") && i.text.toLowerCase().includes(query));
+}
+
+/**
+ * The item an input becomes: the user's message, or, when it is a message from
+ * another of the user's conversations, a conversation_message. Never both: a
+ * cross-conversation message must never read as something the user typed.
+ */
+function inputItem(turnId: string, input: UserInput, delivery: "send" | "steer"): TurnItem {
+  const c = input.conversation;
+  if (c) {
+    return {
+      id: newId("cm"),
+      kind: "conversation_message",
+      turnId,
+      createdAt: nowIso(),
+      direction: c.notice ? "notice" : "received",
+      peerRef: c.fromRef,
+      peerTitle: c.fromTitle,
+      peerProduct: c.fromProduct,
+      text: c.text,
+      hop: c.hop,
+      chainId: c.chainId,
+      ...(c.linkId ? { linkId: c.linkId } : {}),
+    };
+  }
+  return { id: newId("u"), kind: "user_message", turnId, createdAt: nowIso(), text: input.text, ...(input.attachments?.length ? { attachments: input.attachments } : {}), delivery };
 }
 
 export type { ApprovalDecision, FileChangeEntry, UserInput };

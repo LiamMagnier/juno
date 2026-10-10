@@ -15,6 +15,7 @@
  */
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { newToken, describeError, type Logger } from "../util.js";
+import { CROSS_CONVERSATION_PROMPT_SECTION } from "../conversations/policy.js";
 
 export const MCP_SERVER_NAME = "alevr";
 export const MCP_PROTOCOL_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
@@ -149,7 +150,8 @@ export class AlevrMcpServer {
           capabilities: { tools: { listChanged: false } },
           serverInfo: { name: MCP_SERVER_NAME, title: "Alevr", version: "1.0.0" },
           instructions:
-            "Alevr tools: start subagents on any model the user connected (spawn_subagent, then wait_subagent for its closing text), list or cancel them, message a running one, and search the user's earlier Alevr Code threads.",
+            "Alevr tools: start subagents on any model the user connected (spawn_subagent, then wait_subagent for its closing text), list or cancel them, message a running one, and search the user's earlier Alevr Code threads.\n\n" +
+            CROSS_CONVERSATION_PROMPT_SECTION,
         });
       }
       case "ping":

@@ -93,7 +93,8 @@
         "compaction",
         "handoff",
         "subagent",
-        "computer_action"
+        "computer_action",
+        "conversation_message"
       ]
     },
     "ItemStatus": {
@@ -189,7 +190,10 @@
         "turn.schedule",
         "turn.unschedule",
         "provider.install",
-        "provider.auth"
+        "provider.auth",
+        "conversation.deliver",
+        "conversation.read",
+        "conversation.toggle"
       ]
     },
     "ServerEventType": {
@@ -725,6 +729,9 @@
           "items": {
             "$ref": "#/definitions/Attachment"
           }
+        },
+        "conversation": {
+          "$ref": "#/definitions/ConversationDelivery"
         }
       },
       "required": [
@@ -1740,6 +1747,81 @@
         "status"
       ]
     },
+    "ConversationMessageItem": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "const": "conversation_message"
+        },
+        "createdAt": {
+          "type": "string",
+          "minLength": 10
+        },
+        "direction": {
+          "type": "string",
+          "enum": [
+            "received",
+            "sent",
+            "notice"
+          ]
+        },
+        "peerRef": {
+          "type": "string",
+          "minLength": 1
+        },
+        "peerTitle": {
+          "type": "string"
+        },
+        "peerProduct": {
+          "type": "string",
+          "enum": [
+            "chat",
+            "code"
+          ]
+        },
+        "text": {
+          "type": "string"
+        },
+        "hop": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "turnId": {
+          "type": "string"
+        },
+        "chainId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "linkId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "delivered",
+            "queued",
+            "failed"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "createdAt",
+        "direction",
+        "peerRef",
+        "peerTitle",
+        "peerProduct",
+        "text",
+        "hop"
+      ]
+    },
     "TurnItem": {
       "oneOf": [
         {
@@ -1798,6 +1880,9 @@
         },
         {
           "$ref": "#/definitions/ComputerActionItem"
+        },
+        {
+          "$ref": "#/definitions/ConversationMessageItem"
         }
       ]
     },
@@ -2245,6 +2330,13 @@
         },
         "scheduledResume": {
           "$ref": "#/definitions/ScheduledResume"
+        },
+        "crossMessages": {
+          "type": "string",
+          "enum": [
+            "on",
+            "off"
+          ]
         }
       },
       "required": [
@@ -2256,6 +2348,55 @@
         "state",
         "items",
         "queue"
+      ]
+    },
+    "ConversationDelivery": {
+      "type": "object",
+      "properties": {
+        "fromRef": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fromTitle": {
+          "type": "string"
+        },
+        "fromProduct": {
+          "type": "string",
+          "enum": [
+            "chat",
+            "code"
+          ]
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1
+        },
+        "hop": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "chainId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "linkId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "notifyWhenIdle": {
+          "type": "boolean"
+        },
+        "notice": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "fromRef",
+        "fromTitle",
+        "fromProduct",
+        "text",
+        "hop",
+        "chainId"
       ]
     },
     "ClientCommand": {
@@ -2938,6 +3079,13 @@
                           "available"
                         ]
                       }
+                    },
+                    "deviceId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "crossMessages": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
@@ -3156,6 +3304,108 @@
               "required": [
                 "instanceId",
                 "action"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "type",
+            "params"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": {
+              "const": "conversation.deliver"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "sessionId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "message": {
+                  "$ref": "#/definitions/ConversationDelivery"
+                }
+              },
+              "required": [
+                "sessionId",
+                "message"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "type",
+            "params"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": {
+              "const": "conversation.read"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "sessionId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "lastN": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "required": [
+                "sessionId"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "type",
+            "params"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": {
+              "const": "conversation.toggle"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "sessionId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "enabled": {
+                  "type": [
+                    "boolean",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "sessionId",
+                "enabled"
               ]
             }
           },

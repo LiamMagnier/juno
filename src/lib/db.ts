@@ -44,6 +44,8 @@ import { PrismaClient } from "@prisma/client";
  */
 export const OWNER_COLUMN = new Map<string, "userId" | "accountId">([
   ["Conversation", "userId"],
+  // Messages between the user's conversations (src/lib/cross-conversation).
+  ["ConversationMessageLink", "userId"],
   ["Folder", "userId"],
   ["Project", "userId"],
   // A project's custom-assistant config: persona, tool whitelist, which of the

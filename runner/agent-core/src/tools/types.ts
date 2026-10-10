@@ -59,4 +59,11 @@ export interface ToolDefinition {
   mutatedPaths?(input: Record<string, unknown>, ctx: ToolContext): string[];
   /** One-line human-readable summary shown in approval prompts. */
   summarize(input: Record<string, unknown>): string;
+  /**
+   * A message to another of the user's conversations (send_to_conversation).
+   * Its own rung on the ladder: it asks in Plan, Ask and Auto-edit, and runs
+   * without asking only in Full access. It is offered in Plan mode too, where
+   * every other non-read tool is withheld.
+   */
+  messaging?: boolean;
 }

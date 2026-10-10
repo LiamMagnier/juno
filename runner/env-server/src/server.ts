@@ -31,6 +31,7 @@ import {
   type ServerEvent,
   type ServerEventEnvelope,
   type ServerResponse,
+  type UserInput,
 } from "./contracts/code-v2.js";
 import { ProviderRegistry } from "./providers/registry.js";
 import type { EnvSecrets, ProviderAdapter } from "./providers/types.js";
@@ -48,8 +49,12 @@ import type { ComputerToolSession } from "./mcp/computer-tools.js";
 import type { DesktopLock } from "./mcp/desktop-lock.js";
 import { TerminalManager } from "./terminal/terminals.js";
 import { describeError, newToken, nowIso, stderrLogger, type Logger } from "./util.js";
+import { ConversationHub, conversationEngineTools, type BackendLink } from "./conversations/hub.js";
+import { registerConversationTools } from "./mcp/conversation-tools.js";
 
 export interface EnvServerOptions {
+  /** Tests: the fetch the cross-conversation tools reach Alevr's backend with. */
+  conversationsFetch?: typeof fetch;
   /** Default ~/.alevr/env. */
   dataDir?: string;
   /** 0 = any free port. */
@@ -103,6 +108,7 @@ export interface EnvServer {
   readonly terminals: TerminalManager;
   readonly secrets: EnvSecrets;
   readonly antigravity: AntigravityService;
+  readonly conversations: ConversationHub;
   close(): Promise<void>;
 }
 
@@ -171,6 +177,15 @@ export async function startEnvServer(options: EnvServerOptions = {}): Promise<En
     ...(options.coalesceMs !== undefined ? { coalesceMs: options.coalesceMs } : {}),
   });
   const removeSubagentTools = registerSubagentTools(mcp, sessions);
+  const conversations = new ConversationHub({
+    sessions,
+    dataDir,
+    logger,
+    backend: () => backendLink(secrets),
+    ...(options.conversationsFetch ? { fetch: options.conversationsFetch } : {}),
+  });
+  const removeConversationTools = registerConversationTools(mcp, conversations);
+  sessions.setEngineTools((sessionId) => (conversations.enabledFor(sessionId) ? conversationEngineTools(conversations, sessionId) : []));
   const computer = computerUseEnabled(options) ? registerComputerUse(mcp, sessions, options.computerUse || {}) : undefined;
   const removeComputerClose = computer ? sessions.onSessionClosed((id) => computer.disposeSession(id)) : undefined;
   const terminals = new TerminalManager(
@@ -216,7 +231,7 @@ export async function startEnvServer(options: EnvServerOptions = {}): Promise<En
       return;
     }
     wss.handleUpgrade(req, socket, head, (ws) => {
-      const connection = new Connection(ws, { sessions, registry, terminals, secrets, logger, antigravity });
+      const connection = new Connection(ws, { sessions, registry, terminals, secrets, logger, antigravity, conversations });
       connections.add(connection);
       ws.on("close", () => {
         connection.dispose();
@@ -249,8 +264,11 @@ export async function startEnvServer(options: EnvServerOptions = {}): Promise<En
     terminals,
     secrets,
     antigravity,
+    conversations,
     close: async () => {
       removeSubagentTools();
+      removeConversationTools();
+      conversations.dispose();
       removeComputerClose?.();
       for (const c of connections) c.dispose();
       for (const ws of wss.clients) ws.terminate();
@@ -334,6 +352,7 @@ interface ConnectionDeps {
   secrets: EnvSecrets;
   logger: Logger;
   antigravity?: AntigravityService;
+  conversations?: ConversationHub;
 }
 
 /** One client connection: command dispatch, session subscriptions, global stream. */
@@ -418,12 +437,26 @@ export async function dispatchCommand(deps: ConnectionDeps, cmd: ClientCommand, 
     case "session.close":
       await sessions.close(cmd.params.sessionId);
       return {};
+    // A person's own input ends any chain a cross-conversation message started,
+    // and a client can never pass one off as such a message.
     case "turn.start":
-      return sessions.startTurn(cmd.params);
+      deps.conversations?.noteUserInput(cmd.params.sessionId);
+      return sessions.startTurn({ ...cmd.params, input: userOnly(cmd.params.input) });
     case "turn.steer":
-      return sessions.steer(cmd.params);
+      deps.conversations?.noteUserInput(cmd.params.sessionId);
+      return sessions.steer({ ...cmd.params, input: userOnly(cmd.params.input) });
     case "turn.queue":
-      return sessions.queue(cmd.params);
+      deps.conversations?.noteUserInput(cmd.params.sessionId);
+      return sessions.queue({ ...cmd.params, input: userOnly(cmd.params.input) });
+    case "conversation.deliver":
+      if (!deps.conversations) throw new WireError("unsupported", "Conversations cannot message each other here.");
+      return deps.conversations.deliver(cmd.params.sessionId, cmd.params.message);
+    case "conversation.read":
+      if (!deps.conversations) throw new WireError("unsupported", "Conversations cannot message each other here.");
+      return deps.conversations.readLocal(cmd.params.sessionId, cmd.params.lastN);
+    case "conversation.toggle":
+      if (!deps.conversations) throw new WireError("unsupported", "Conversations cannot message each other here.");
+      return deps.conversations.toggle(cmd.params.sessionId, cmd.params.enabled);
     case "turn.interrupt":
       await sessions.interrupt(cmd.params);
       return {};
@@ -476,7 +509,13 @@ export async function dispatchCommand(deps: ConnectionDeps, cmd: ClientCommand, 
       if (cmd.params.backend) {
         const b = cmd.params.backend;
         if (!/^https?:\/\//.test(b.baseUrl)) throw new WireError("bad_request", "backend.baseUrl must be http(s).");
-        secrets.backend = { baseUrl: b.baseUrl.replace(/\/+$/, ""), authorization: b.authorization, ...(b.models ? { models: b.models } : {}) };
+        secrets.backend = {
+          baseUrl: b.baseUrl.replace(/\/+$/, ""),
+          authorization: b.authorization,
+          ...(b.models ? { models: b.models } : {}),
+          ...(b.deviceId ? { deviceId: b.deviceId } : {}),
+          ...(typeof b.crossMessages === "boolean" ? { crossMessages: b.crossMessages } : {}),
+        };
       }
       if (cmd.params.byok) {
         const keys: ByokKey[] = cmd.params.byok;
@@ -550,4 +589,24 @@ async function providerAuth(deps: ConnectionDeps, params: ClientCommandParams["p
 function labLabel(provider: string): string {
   const names: Record<string, string> = { anthropic: "Anthropic", openai: "OpenAI", google: "Google", xai: "xAI", deepseek: "DeepSeek", openrouter: "OpenRouter" };
   return names[provider] ?? provider;
+}
+
+/** Strips a `conversation` marker from a client's own input: only conversation.deliver may set one. */
+function userOnly(input: UserInput): UserInput {
+  if (!input.conversation) return input;
+  const { conversation: _dropped, ...rest } = input;
+  return rest;
+}
+
+/** The backend the cross-conversation tools call, from what env.configure handed over. */
+export function backendLink(secrets: EnvSecrets): BackendLink | undefined {
+  const b = secrets.backend;
+  if (!b) return undefined;
+  let origin: string;
+  try {
+    origin = new URL(b.baseUrl).origin;
+  } catch {
+    return undefined;
+  }
+  return { origin, authorization: b.authorization, ...(b.deviceId ? { deviceId: b.deviceId } : {}), ...(typeof b.crossMessages === "boolean" ? { crossMessages: b.crossMessages } : {}) };
 }
