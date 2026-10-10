@@ -543,7 +543,8 @@ public struct NativeCodeTaskClient: Sendable {
         repository: NativeCodeRepository,
         baseRef: String?,
         for accountID: AccountID,
-        conversationID: String? = nil
+        conversationID: String? = nil,
+        permissionMode: String? = nil
     ) async throws -> NativeCodeTask {
         try await createTask(
             body: CreateTaskWire(
@@ -558,7 +559,8 @@ public struct NativeCodeTaskClient: Sendable {
                 origin: "remote",
                 idempotencyKey: UUID().uuidString,
                 conversationID: conversationID,
-                createsNewSession: conversationID == nil ? nil : false
+                createsNewSession: conversationID == nil ? nil : false,
+                permissionMode: permissionMode
             ),
             for: accountID
         )
@@ -1307,10 +1309,13 @@ private struct CreateTaskWire: Encodable {
     let idempotencyKey: String
     let conversationID: String?
     let createsNewSession: Bool?
+    /// A cloud run's mode (`plan`, `auto-edit` or `full`); nil keeps the
+    /// server's default. The API refuses it for a run on a computer.
+    var permissionMode: String? = nil
 
     enum CodingKeys: String, CodingKey {
         case target, prompt, repo, baseRef, deviceId, workspacePath, workspaceName,
-             workspaceKey, origin, idempotencyKey
+             workspaceKey, origin, idempotencyKey, permissionMode
         case conversationID = "conversationId"
         case createsNewSession
     }
@@ -1329,6 +1334,7 @@ private struct CreateTaskWire: Encodable {
         try container.encode(idempotencyKey, forKey: .idempotencyKey)
         try container.encodeIfPresent(conversationID, forKey: .conversationID)
         try container.encodeIfPresent(createsNewSession, forKey: .createsNewSession)
+        try container.encodeIfPresent(permissionMode, forKey: .permissionMode)
     }
 }
 

@@ -113,11 +113,12 @@ public enum ApprovalPolicy: String, Codable, CaseIterable, Sendable {
     ///
     /// For the tools the reader wants to see in the supervised modes but not
     /// once they chose Full access (2026-10-10): `git_commit`, `run_tests`,
-    /// MCP tools, a recipe command that is not a plain check, and the consent
-    /// to drive a simulator. Full access means "never ask me inside this
-    /// project"; pinning these to `alwaysRequiresApproval` made it ask every
-    /// few steps. Screen control keeps `alwaysRequiresApproval`: it acts on
-    /// the reader's whole Mac, not the project.
+    /// MCP tools and the consent to drive a simulator. Full access means
+    /// "never ask me inside this project"; pinning these to
+    /// `alwaysRequiresApproval` made it ask every few steps. Screen control
+    /// keeps `alwaysRequiresApproval` (it acts on the reader's whole Mac), and
+    /// so does a recipe command the stop check would run on its own, since no
+    /// model asked for it.
     case asksUnlessFullAccess
 }
 

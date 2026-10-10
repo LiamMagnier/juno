@@ -3,6 +3,7 @@ import JunoChatKit
 import JunoCodeKit
 import JunoCore
 import JunoDesignSystem
+import JunoVoiceKit
 import SwiftUI
 import UIKit
 
@@ -462,6 +463,8 @@ struct JunoMobileCodeRemoteThreadView: View {
   @Bindable var model: CodeRemoteBrowserModel
   let session: CodeRemoteSessionSummary
   var modelCatalog: [NativeChatModelOption] = []
+  /// Opens with dictation already showing: the offscreen snapshots only.
+  var opensDictating = false
 
   private enum Surface: String, CaseIterable, Identifiable {
     case thread, changes, terminal, tests
@@ -487,6 +490,9 @@ struct JunoMobileCodeRemoteThreadView: View {
   @State private var scrollPosition = ScrollPosition(edge: .bottom)
   @FocusState private var composerFocused: Bool
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @State private var dictating = false
+  @Environment(\.junoStartCodeVoice) private var startCodeVoice
+  @Environment(\.junoCodeVoiceSession) private var codeVoice
 
   private var thread: CodeRemoteThread { model.thread }
   private var isRunning: Bool { thread.isRunning || (thread.status == nil && session.isRunning) }
@@ -704,10 +710,31 @@ struct JunoMobileCodeRemoteThreadView: View {
         .transition(.opacity.combined(with: .move(edge: .bottom)))
       }
 
+      if let codeVoice {
+        JunoMobileCodeCallBar(session: codeVoice)
+          .transition(.opacity)
+      }
+
       // One glass container, as Chat's composer has, so the capsule samples
       // once and can morph.
       JunoGlass(spacing: JunoSpace.snug) {
         VStack(alignment: .leading, spacing: JunoSpace.snug) {
+          if dictating {
+            JunoMobileDictation(
+              onCancel: { dictating = false },
+              onStop: { words in
+                dictating = false
+                followUp = JunoMobileCodeView.joined(followUp, words)
+                composerFocused = true
+              },
+              onSend: { words in
+                dictating = false
+                followUp = JunoMobileCodeView.joined(followUp, words)
+                send()
+              }
+            )
+            .frame(minWidth: 0, maxWidth: .infinity)
+          } else {
           TextField(
             isRunning ? "Steer this session" : "Reply to this session",
             text: $followUp, axis: .vertical
@@ -718,6 +745,7 @@ struct JunoMobileCodeRemoteThreadView: View {
           .padding(.horizontal, JunoSpace.snug)
           .padding(.top, JunoSpace.hairline)
           .accessibilityIdentifier("juno.mobile.code-remote-followup")
+          }
 
           HStack(spacing: JunoSpace.hairline) {
             settingMenu(junoDisplayModelName(session.modelID), accessibility: "Model") {
@@ -751,25 +779,26 @@ struct JunoMobileCodeRemoteThreadView: View {
                 }
               }
             }
-            settingMenu(permissionLabel, accessibility: "Permissions") {
-              Section("Permissions") {
-                ForEach(
-                  [("approvalRequired", "Ask before changes"), ("auto", "Auto"), ("readOnly", "Read only")],
-                  id: \.0
-                ) { mode, title in
-                  Button {
-                    Task { await model.patchSession(deviceID: session.deviceID, sessionID: session.sessionID, permissionMode: mode) }
-                  } label: {
-                    if mode == session.permissionMode {
-                      Label(title, image: JunoIcon.check.assetName(.regular))
-                    } else {
-                      Text(title)
-                    }
-                  }
-                }
+            JunoMobileCodeModeChip(
+              mode: CodeComposerModeLadder(remoteName: session.permissionMode),
+              offered: CodeComposerModeLadder.remote,
+              note: "The phone can lower this session's mode. Raising it past what the Mac set is done on the Mac.",
+              isEnabled: !model.isSendingCommand
+            ) { mode in
+              Task {
+                await model.patchSession(
+                  deviceID: session.deviceID, sessionID: session.sessionID, permissionMode: mode.remoteName
+                )
               }
             }
             Spacer(minLength: JunoSpace.hairline)
+            JunoMobileCodeSpeechButtons(
+              dictate: JunoSpeechService.isSupported && codeVoice == nil && !dictating
+                ? { composerFocused = false; dictating = true } : nil,
+              talk: startCodeVoice.map { start in
+                { start(JunoMobileCodeVoiceRelay.briefing(place: session.title, turns: spokenTurns)) }
+              }
+            )
             primaryAction
           }
           .accessibilityIdentifier("juno.mobile.code-remote-options")
@@ -796,7 +825,26 @@ struct JunoMobileCodeRemoteThreadView: View {
     .animation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion), value: thread.pendingApproval)
     .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: showsStop)
     .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: isRunning)
+    // Each sentence of a Code call is this session's next message (a steer
+    // while it works, as typed ones are); the reply is read back when it stops.
+    .onAppear { if opensDictating { dictating = true } }
+    .junoCodeVoiceLink(codeVoice, isRunning: isRunning, latestReply: latestReply) { sentence in
+      Task { await model.send(deviceID: session.deviceID, sessionID: session.sessionID, text: sentence) }
+    }
   }
+
+  /// The thread's turns, for the call's briefing and its read-back.
+  private var spokenTurns: [(role: JunoVoiceTranscriptRole, text: String)] {
+    thread.items.compactMap { item in
+      switch item {
+      case let .userMessage(_, text, _): (.user, text)
+      case let .assistantText(_, text): (.assistant, text)
+      default: nil
+      }
+    }
+  }
+
+  private var latestReply: String? { spokenTurns.last(where: { $0.role == .assistant })?.text }
 
   /// Stop while the agent works and the field is empty; otherwise Send.
   private var showsStop: Bool {
@@ -869,14 +917,6 @@ struct JunoMobileCodeRemoteThreadView: View {
     .frame(minWidth: 44, minHeight: 44)
     .contentShape(.rect)
     .accessibilityLabel("\(accessibility), \(title)")
-  }
-
-  private var permissionLabel: String {
-    switch session.permissionMode {
-    case "auto": "Auto"
-    case "readOnly", "read_only": "Read only"
-    default: "Ask first"
-    }
   }
 
   private var canSend: Bool {

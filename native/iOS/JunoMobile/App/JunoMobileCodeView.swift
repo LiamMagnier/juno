@@ -4,6 +4,7 @@ import JunoCodeKit
 import JunoCore
 import JunoDesignSystem
 import JunoSync
+import JunoVoiceKit
 import SwiftUI
 
 /// **Juno Code** on the phone: start a coding task and watch it run.
@@ -68,6 +69,12 @@ struct JunoMobileCodeView: View {
   @Namespace private var zoom
   @FocusState private var composerFocused: Bool
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  /// Dictation over the start composer (Chat's capsule).
+  @State private var dictating = false
+  /// The mode the next cloud run starts on, remembered per repository.
+  @State private var startMode: CodeComposerModeLadder = .full
+  @Environment(\.junoStartCodeVoice) private var startCodeVoice
+  @Environment(\.junoCodeVoiceSession) private var codeVoice
 
   var body: some View {
     Group {
@@ -173,6 +180,8 @@ struct JunoMobileCodeView: View {
       )
     ) {
       JunoMobileCodeSessionView(model: model)
+        .environment(\.junoCodeVoiceSession, codeVoice)
+        .environment(\.junoStartCodeVoice, startCodeVoice)
     }
     // The remote thread. Pushed the moment the session summary is known —
     // which for a notification tap or a preview flag can be a beat after the
@@ -187,6 +196,8 @@ struct JunoMobileCodeView: View {
         JunoMobileCodeRemoteThreadView(
           model: remoteModel, session: session, modelCatalog: modelCatalog
         )
+        .environment(\.junoCodeVoiceSession, codeVoice)
+        .environment(\.junoStartCodeVoice, startCodeVoice)
         .modifier(JunoMobileZoomTransitionSource(id: session.sessionID, namespace: zoom))
       }
     }
@@ -424,32 +435,69 @@ struct JunoMobileCodeView: View {
           .padding(.horizontal, JunoSpace.tight)
           .transition(.opacity)
       }
+      if let codeVoice {
+        JunoMobileCodeCallBar(session: codeVoice)
+          .transition(.opacity)
+      }
       VStack(spacing: JunoSpace.snug) {
-        TextField(
-          model.isTargetless
-            ? "code.composer.placeholder.none"
-            : "code.composer.placeholder",
-          text: $prompt,
-          axis: .vertical
-        )
-        .lineLimit(1...3)
-        .textFieldStyle(.plain)
-        .focused($composerFocused)
-        .padding(.horizontal, JunoSpace.snug)
-        .frame(minHeight: 38, alignment: .top)
-        .accessibilityIdentifier("juno.mobile.code-composer")
+        if dictating {
+          JunoMobileDictation(
+            onCancel: { dictating = false },
+            onStop: { words in
+              dictating = false
+              prompt = Self.joined(prompt, words)
+              composerFocused = true
+            },
+            onSend: { words in
+              dictating = false
+              prompt = Self.joined(prompt, words)
+              start()
+            }
+          )
+          .frame(minWidth: 0, maxWidth: .infinity)
+        } else {
+          TextField(
+            model.isTargetless
+              ? "code.composer.placeholder.none"
+              : "code.composer.placeholder",
+            text: $prompt,
+            axis: .vertical
+          )
+          .lineLimit(1...3)
+          .textFieldStyle(.plain)
+          .focused($composerFocused)
+          .padding(.horizontal, JunoSpace.snug)
+          .frame(minHeight: 38, alignment: .top)
+          .accessibilityIdentifier("juno.mobile.code-composer")
+        }
 
         // Target context, the three-way destination switch and Send share one
         // compact control row. The old stacked arrangement made the composer
         // cover the last run on a phone and made the destination feel like a
         // settings form instead of a launch control.
-        HStack(alignment: .center, spacing: JunoSpace.tight) {
-          if !model.isTargetless {
+        // Where it runs and its mode on one row; the destination switch,
+        // the microphone, voice and Send on the next, so neither row has to
+        // squeeze a control into a glyph on a phone.
+        if !model.isTargetless {
+          HStack(alignment: .center, spacing: JunoSpace.tight) {
             JunoMobileCodeTargetChip(model: model)
               .frame(maxWidth: .infinity, alignment: .leading)
+            startModeChip
+              .fixedSize(horizontal: true, vertical: false)
           }
+        }
+        HStack(alignment: .center, spacing: JunoSpace.tight) {
           JunoMobileCodeTargetSwitch(model: model)
             .fixedSize(horizontal: true, vertical: false)
+          Spacer(minLength: 0)
+          JunoMobileCodeSpeechButtons(
+            dictate: JunoSpeechService.isSupported && codeVoice == nil && !dictating
+              ? { composerFocused = false; dictating = true } : nil,
+            talk: startCodeVoice.map { start in
+              { start(JunoMobileCodeVoiceRelay.briefing(place: startPlace, turns: [])) }
+            },
+            isEnabled: !model.isMutating
+          )
           Button {
             start()
           } label: {
@@ -474,6 +522,64 @@ struct JunoMobileCodeView: View {
     .padding(.horizontal, JunoSpace.cozy)
     .padding(.vertical, JunoSpace.tight)
     .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: canStart)
+    .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: dictating)
+    // A spoken sentence on the home screen starts the run with it; once a
+    // thread is open, that thread's composer takes the sentences instead.
+    .junoCodeVoiceLink(
+      codeVoice, isRunning: false, latestReply: nil,
+      enabled: model.openTask == nil && remoteModel?.openSessionID == nil
+    ) { sentence in
+      prompt = Self.joined(prompt, sentence)
+      start()
+    }
+    .task(id: startModeProject) { startMode = rememberedStartMode }
+  }
+
+  // MARK: Voice and the mode
+
+  static func joined(_ draft: String, _ words: String) -> String {
+    let spoken = words.trimmingCharacters(in: .whitespacesAndNewlines)
+    let existing = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+    if spoken.isEmpty { return draft }
+    return existing.isEmpty ? spoken : "\(existing) \(spoken)"
+  }
+
+  /// Where a run would start, for the call's briefing.
+  private var startPlace: String? {
+    model.target == .cloud ? model.selectedRepository?.fullName : model.selectedWorkspace?.name
+  }
+
+  /// What the mode is remembered against: the repository a cloud run uses.
+  private var startModeProject: String? {
+    model.target == .cloud ? model.selectedRepository?.fullName : nil
+  }
+
+  private var rememberedStartMode: CodeComposerModeLadder {
+    CodeComposerModeLadder.remembered(project: startModeProject, offered: CodeComposerModeLadder.cloud) ?? .full
+  }
+
+  /// The mode chip: a cloud run carries the choice (Plan, Accept edits, Full
+  /// access, all its sandbox enforces); a run on a Mac uses the Mac's.
+  @ViewBuilder
+  private var startModeChip: some View {
+    if model.target == .cloud {
+      JunoMobileCodeModeChip(
+        mode: startMode,
+        offered: CodeComposerModeLadder.cloud,
+        note: "A cloud run works in a sandbox and opens a pull request.",
+        isEnabled: !model.isMutating
+      ) { mode in
+        startMode = mode
+        mode.remember(project: startModeProject)
+      }
+    } else {
+      JunoMobileCodeModeChip(
+        mode: .ask,
+        offered: [.ask],
+        note: "A run on your Mac asks there first. Change the mode on the Mac, or in the session.",
+        isEnabled: !model.isMutating
+      ) { _ in }
+    }
   }
 
   private var canStart: Bool {
@@ -490,7 +596,8 @@ struct JunoMobileCodeView: View {
         await startConversation(text)
         return
       }
-      if await model.startTask(prompt: text) != nil { prompt = "" }
+      let mode = model.target == .cloud ? startMode.cloudPermissionMode : nil
+      if await model.startTask(prompt: text, permissionMode: mode) != nil { prompt = "" }
     }
   }
 }
@@ -1065,8 +1172,43 @@ private struct JunoMobileCodeSessionView: View {
   @State private var isNearBottom = true
   @State private var followUp = ""
   @FocusState private var followUpFocused: Bool
+  @State private var dictating = false
+  @Environment(\.junoStartCodeVoice) private var startCodeVoice
+  @Environment(\.junoCodeVoiceSession) private var codeVoice
 
   private let bottomAnchor = "juno.code.bottom"
+
+  /// The run is working (a follow-up waits until it stops).
+  private var runIsActive: Bool { !(model.openTask?.status.isTerminal ?? true) }
+
+  /// The thread's turns, for the call's briefing and its read-back.
+  private var spokenTurns: [(role: JunoVoiceTranscriptRole, text: String)] {
+    var turns: [(role: JunoVoiceTranscriptRole, text: String)] = []
+    for event in model.events {
+      switch event.kind {
+      case .user:
+        turns.append((.user, event.title))
+      case .text:
+        if let last = turns.last, last.role == .assistant {
+          turns[turns.count - 1] = (.assistant, last.text + event.title)
+        } else {
+          turns.append((.assistant, event.title))
+        }
+      default:
+        break
+      }
+    }
+    return turns
+  }
+
+  private var latestReply: String? { spokenTurns.last(where: { $0.role == .assistant })?.text }
+
+  /// A sentence from the call: a follow-up once the run has stopped, else
+  /// it waits in the field, said, for when it can go.
+  private func hear(_ sentence: String) {
+    followUp = JunoMobileCodeView.joined(followUp, sentence)
+    if canSendFollowUp { sendFollowUp() }
+  }
 
   var body: some View {
     ScrollViewReader { proxy in
@@ -1719,11 +1861,30 @@ private struct JunoMobileCodeSessionView: View {
   /// drop.
   private var followUpComposer: some View {
     VStack(alignment: .leading, spacing: JunoSpace.snug) {
+      if let codeVoice {
+        JunoMobileCodeCallBar(session: codeVoice)
+      }
       if let blocked = followUpBlockedReason {
         Text(blocked)
           .junoCaption()
           .frame(maxWidth: .infinity, alignment: .leading)
       }
+      if dictating {
+        JunoMobileDictation(
+          onCancel: { dictating = false },
+          onStop: { words in
+            dictating = false
+            followUp = JunoMobileCodeView.joined(followUp, words)
+            followUpFocused = true
+          },
+          onSend: { words in
+            dictating = false
+            followUp = JunoMobileCodeView.joined(followUp, words)
+            if canSendFollowUp { sendFollowUp() }
+          }
+        )
+        .frame(minWidth: 0, maxWidth: .infinity)
+      } else {
       HStack(alignment: .bottom, spacing: JunoSpace.snug) {
         TextField(
           String(
@@ -1739,6 +1900,14 @@ private struct JunoMobileCodeSessionView: View {
         .disabled(followUpBlockedReason != nil)
         .frame(minHeight: 44)
         .accessibilityIdentifier("juno.mobile.code-followup")
+        JunoMobileCodeSpeechButtons(
+          dictate: JunoSpeechService.isSupported && codeVoice == nil
+            ? { followUpFocused = false; dictating = true } : nil,
+          talk: startCodeVoice.map { start in
+            { start(JunoMobileCodeVoiceRelay.briefing(place: model.openTask?.whereItRuns, turns: spokenTurns)) }
+          },
+          isEnabled: !model.isMutating
+        )
         Button {
           sendFollowUp()
         } label: {
@@ -1758,11 +1927,19 @@ private struct JunoMobileCodeSessionView: View {
         )
         .accessibilityIdentifier("juno.mobile.code-followup-send")
       }
+      }
     }
     .animation(
       JunoMotion.reduced(JunoMotion.fast, when: reduceMotion),
       value: canSendFollowUp
     )
+    .junoCodeVoiceLink(codeVoice, isRunning: runIsActive, latestReply: latestReply, deliver: hear)
+    .onChange(of: runIsActive) { _, active in
+      // Words said while the run worked go once it stops.
+      if !active, !followUp.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, codeVoice != nil, canSendFollowUp {
+        sendFollowUp()
+      }
+    }
   }
 
   /// Why a follow-up cannot be sent right now, in the reader's terms.

@@ -172,7 +172,7 @@ public struct CheckRunner: Sendable {
     /// `npm publish` someone put in it is shown to the reader every time,
     /// Full Access included, unless they saved a rule for that exact command.
     func approvalPolicy(for commandLine: String) -> ApprovalPolicy {
-        classifier.checkKind(of: commandLine) != nil ? .byRisk : .asksUnlessFullAccess
+        classifier.checkKind(of: commandLine) != nil ? .byRisk : .alwaysRequiresApproval
     }
 
     /// Whether `check` can run on `executor` at all.
