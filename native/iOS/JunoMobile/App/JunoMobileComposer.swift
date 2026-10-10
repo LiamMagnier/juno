@@ -494,7 +494,7 @@ struct JunoMobileComposer: View {
             }
           }
           .animation(JunoMotion.reduced(JunoMotion.chatControl, when: reduceMotion), value: thinkingOpen)
-          .animation(Self.dictationMotion(reduceMotion), value: dictating)
+          .animation(JunoMotion.reduced(JunoMotion.chatControl, when: reduceMotion), value: dictating)
           // The "+" panel grows up out of the composer's leading corner, its
           // foot 8pt above the card: it never covers the field, and it shares
           // the card's glass container so the two read as one material.
@@ -1030,7 +1030,7 @@ struct JunoMobileComposer: View {
     } label: {
       JunoIconView(.mic, size: 19)
         .foregroundStyle(Color.primary)
-        .frame(width: 40, height: 44)
+        .frame(width: 44, height: 44)
         .contentShape(Rectangle())
     }
     .buttonStyle(.junoQuietPress)
@@ -1043,7 +1043,7 @@ struct JunoMobileComposer: View {
   private func beginDictation() {
     guard dictation == nil else { return }
     let take = JunoMobileDictationSession()
-    withAnimation(Self.dictationMotion(reduceMotion)) {
+    withAnimation(JunoMotion.reduced(JunoMotion.chatControl, when: reduceMotion)) {
       dictation = take
     }
     Task { await take.start() }
@@ -1052,7 +1052,7 @@ struct JunoMobileComposer: View {
   /// ✕: the words are dropped and the draft is as it was.
   private func cancelDictation() {
     dictation?.cancel()
-    withAnimation(Self.dictationMotion(reduceMotion)) {
+    withAnimation(JunoMotion.reduced(JunoMotion.chatControl, when: reduceMotion)) {
       dictation = nil
     }
   }
@@ -1060,17 +1060,11 @@ struct JunoMobileComposer: View {
   /// ✓: the words join the draft, ready to edit or send.
   private func finishDictation() {
     let heard = dictation?.finish() ?? ""
-    withAnimation(Self.dictationMotion(reduceMotion)) {
+    withAnimation(JunoMotion.reduced(JunoMotion.chatControl, when: reduceMotion)) {
       dictation = nil
       appendDictated(heard)
     }
     composerFocused.wrappedValue = true
-  }
-
-  /// The swap is a short spring (0.3 s, no bounce); Reduce Motion makes it a
-  /// plain cross-fade.
-  static func dictationMotion(_ reduceMotion: Bool) -> Animation {
-    reduceMotion ? .easeInOut(duration: 0.2) : .spring(duration: 0.3, bounce: 0)
   }
 
   /// The rows trade places: the new one rises a few points into place as the

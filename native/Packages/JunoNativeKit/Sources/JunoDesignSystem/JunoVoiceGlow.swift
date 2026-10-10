@@ -466,6 +466,9 @@ public final class JunoVoiceGlowEngine {
 public struct JunoVoiceGlowRenderer {
     /// How far outside the surface the light may reach.
     public static let margin: CGFloat = 32
+    /// Where the falloff is spent: the web's 40 px cut, a little inside the
+    /// margin so no frame ever draws to the canvas edge.
+    static let reach: CGFloat = 28
 
     let palette: JunoVoiceGlowPalette
     let solid: Bool
@@ -582,27 +585,32 @@ public struct JunoVoiceGlowRenderer {
         let blend: GraphicsContext.BlendMode = dark ? .plusLighter : .normal
 
         // The falloff, outside the edge only: a tight core that reads as the
-        // edge emitting, and a wider shoulder that reads as light in the air.
+        // edge emitting, and a short shoulder that reads as light in the air.
+        // The web's profile (`0.7·e^(−d/F) + 0.3·gauss(d / 2.2F)`, gone by
+        // 40 px): the blurs are sized so the light hugs the edge and is spent
+        // well inside the margin, never a wash under the surface.
+        let reach = outline.rect.insetBy(dx: -Self.reach, dy: -Self.reach)
         context.drawLayer { layer in
             layer.clip(to: outline.outside, style: FillStyle(eoFill: true))
+            layer.clip(to: Path(roundedRect: reach, cornerRadius: outline.radius + Self.reach, style: .continuous))
             layer.blendMode = blend
             layer.drawLayer { core in
-                core.addFilter(.blur(radius: light.falloff * 0.75))
+                core.addFilter(.blur(radius: light.falloff * 0.45))
                 for (segment, k) in lit {
                     core.stroke(
                         segment.path,
-                        with: .color(light.glow.color.opacity(min(1, k * light.haloK * 0.9))),
-                        style: StrokeStyle(lineWidth: light.falloff * 1.6, lineCap: .round)
+                        with: .color(light.glow.color.opacity(min(1, k * light.haloK * 0.7))),
+                        style: StrokeStyle(lineWidth: light.falloff * 1.1, lineCap: .round)
                     )
                 }
             }
             layer.drawLayer { shoulder in
-                shoulder.addFilter(.blur(radius: light.falloff * 1.9))
+                shoulder.addFilter(.blur(radius: light.falloff * 1.0))
                 for (segment, k) in lit {
                     shoulder.stroke(
                         segment.path,
-                        with: .color(light.glow.color.opacity(min(1, k * light.haloK * 0.4))),
-                        style: StrokeStyle(lineWidth: light.falloff * 3, lineCap: .round)
+                        with: .color(light.glow.color.opacity(min(1, k * light.haloK * 0.2))),
+                        style: StrokeStyle(lineWidth: light.falloff * 2.2, lineCap: .round)
                     )
                 }
             }

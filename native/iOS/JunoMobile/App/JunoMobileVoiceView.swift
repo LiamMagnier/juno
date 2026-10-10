@@ -441,7 +441,7 @@ struct JunoMobileVoiceCallControls: View {
                 }
             } else {
                 if controller.assistantSpeaking && session.isLive {
-                    round(icon: .stop, size: 12, label: "Stop Alevr speaking", identifier: "juno.mobile.voice-stop") {
+                    round(icon: .stop, size: 12, weight: .fill, label: "Stop Alevr speaking", identifier: "juno.mobile.voice-stop") {
                         stopHaptic.fire()
                         controller.interrupt()
                     }
@@ -557,13 +557,14 @@ struct JunoMobileVoiceCallControls: View {
     private func round(
         icon: JunoIcon,
         size: CGFloat = 16,
+        weight: JunoIcon.Weight? = nil,
         label: LocalizedStringKey,
         identifier: String,
         pressed: Bool = false,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            glyph(icon, size: size, pressed: pressed)
+            glyph(icon, size: size, weight: weight, pressed: pressed)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(label)
@@ -577,8 +578,10 @@ struct JunoMobileVoiceCallControls: View {
     /// own glass, in a 44pt target. Pressed (muted, sharing) is a 36pt ink
     /// disc with the glyph in the canvas colour, so the one state worth
     /// noticing is the one that changes shape.
-    private func glyph(_ icon: JunoIcon, size: CGFloat, pressed: Bool) -> some View {
-        JunoIconView(icon, size: size)
+    private func glyph(
+        _ icon: JunoIcon, size: CGFloat, weight: JunoIcon.Weight? = nil, pressed: Bool
+    ) -> some View {
+        JunoIconView(icon, size: size, weight: weight)
             .foregroundStyle(pressed ? Color.junoCanvas : Color.junoMutedForeground)
             .frame(width: 36, height: 36)
             .background(Circle().fill(Color.junoForeground).opacity(pressed ? 1 : 0))

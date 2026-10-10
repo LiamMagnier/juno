@@ -1,5 +1,31 @@
 # Native voice: status
 
+**Updated 2026-10-10 (branch `ios/voice-dictation`).** Supersedes the paused
+notes below.
+
+- **Voice bug, root cause (confirmed by `JunoMobileVoiceAudioTests` on the
+  simulator's real audio stack):** on iOS the voice-processing unit finishes
+  configuring a few ms after `engine.start()`; `AVAudioEngine` stops itself on
+  that configuration change, and recovery only ran once the call was `live`.
+  The graph is built while the call is still `connecting`, so the engine stayed
+  stopped for the whole call. Fixed in `scheduleAudioRouteRecovery` +
+  `RealtimeGraphRecoveryPolicy` (recover in every phase that wants audio,
+  restart in place first, plain input after repeated stops).
+- Also fixed: uplink converts every sample layout (`RealtimeUplinkEncoder`);
+  interruptions (`JunoMobileVoiceInterruptionPolicy`); one microphone owner
+  (`JunoMicrophoneArbiter`), one engine per dictation take.
+- UI: the call stays in the composer (website design); the full-screen voice
+  screen is deleted. Dictation is in place: field shows the words, the row is
+  ✕ · waveform · ✓ (`JunoMobileDictationSession` / `JunoMobileDictationRow` /
+  `JunoMobileDictationTranscript` on iOS; `ComposerDictation*` on the Mac;
+  shared `JunoDictationWaveform`). Host usage notes are at the top of each
+  component file.
+- Still open: check on a real iPhone (the simulator's microphone is the Mac's);
+  the voice light's falloff was tuned by eye against the web gallery.
+
+---
+
+
 Branch `polish/native-voice` (from `origin/main` e3c6f6b6d). Two jobs, from the
 owner: make iOS chat voice mode work (the model neither hears nor speaks on the
 iPhone, while the Mac works), and replace the old voice-mode and dictation

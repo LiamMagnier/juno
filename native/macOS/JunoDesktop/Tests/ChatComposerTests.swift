@@ -98,24 +98,26 @@ struct ChatComposerTests {
 
     // MARK: - Voice
 
-    /// The glow's palette is the web's `junoVoicePalette`, hex for hex.
+    /// The light's two inks are the web's `GLOW_PALETTE`, hex for hex: ember
+    /// for you, presence for Alevr, graphite when muted.
     @Test
     func theVoiceGlowPaletteIsTheWebs() {
-        #expect(JunoVoiceGlowPalette.light.colors == ["#f07f52", "#f2ad3f", "#ec6f5f", "#6fb383", "#e8839b", "#6f9fd8", "#5fb3ab"])
-        #expect(JunoVoiceGlowPalette.dark.colors == ["#ff9a6b", "#ffc15f", "#ff7f73", "#86d19a", "#f59bb0", "#86b9f2", "#79d0c8"])
-        #expect(JunoVoiceGlowPalette.light.core == "#ffd9bf")
-        #expect(JunoVoiceGlowPalette.dark.core == "#fff1e4")
-        #expect(JunoVoiceGlowPalette.light.strength == 0.8)
-        #expect(JunoVoiceGlowPalette.dark.strength == 0.95)
+        #expect(JunoVoiceGlowPalette.light.you.line == "#bc5806")
+        #expect(JunoVoiceGlowPalette.light.alevr.line == "#2d49c9")
+        #expect(JunoVoiceGlowPalette.dark.you.hot == "#fdcfa6")
+        #expect(JunoVoiceGlowPalette.dark.alevr.glow == "#90a6f7")
+        #expect(JunoVoiceGlowPalette.light.muted == "#9a9ca0")
+        #expect(JunoVoiceGlowPalette.dark.dark)
     }
 
-    /// Thinking starts the beam at the centre, and it stays within the range.
+    /// Thinking hands one beam from your end to Alevr's, inside the edge.
     @Test
-    func theThinkingBeamStartsCentredAndStaysInRange() {
-        #expect(abs(JunoVoiceGlowEngine.beamPosition(at: 0)) < 0.001)
+    func theThinkingBeamStaysOnTheEdge() {
         for step in 0..<200 {
-            let x = JunoVoiceGlowEngine.beamPosition(at: Double(step) * 0.05)
-            #expect((-1...1).contains(x))
+            for beam in JunoVoiceGlowState.handoffBeams(Double(step) * 0.05) {
+                #expect((0...1).contains(beam.mix))
+                #expect(beam.amp >= 0)
+            }
         }
     }
 
@@ -147,11 +149,6 @@ struct ChatComposerTests {
         #expect(DesktopVoiceCallPhase.muted.holdsGlowStill)
         #expect(DesktopVoiceCallPhase.connecting.holdsGlowStill)
         #expect(!DesktopVoiceCallPhase.speaking.holdsGlowStill)
-        #expect(JunoVoiceGlowPalette.palette(for: .caller, dark: false).colors.first == "#f07f52")
-        #expect(JunoVoiceGlowPalette.palette(for: .caller, dark: true).colors.first == "#ff9a6b")
-        #expect(JunoVoiceGlowPalette.palette(for: .juno, dark: false).colors.prefix(3) == ["#6f9fd8", "#5fb3ab", "#6fb383"])
-        #expect(JunoVoiceGlowPalette.palette(for: .juno, dark: true).colors.prefix(3) == ["#86b9f2", "#79d0c8", "#86d19a"])
-        #expect(JunoVoiceGlowPalette.palette(for: .mixed, dark: false) == .light)
     }
 
     // MARK: - Quota
