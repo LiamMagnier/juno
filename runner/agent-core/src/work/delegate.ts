@@ -211,6 +211,8 @@ export interface DelegationDeps {
   /** The parent's abort signal: a Stop or a ceiling ends the child too. */
   signal: AbortSignal;
   reasoningEffort?: ReasoningEffort;
+  /** The child's own prompt-cache routing key; see ProviderRequest.cacheKey. */
+  cacheKey?: string;
   silenceTimeoutMs?: number;
   maxSteps?: number;
   /** Progress, as the run's own transcript records it. */
@@ -255,6 +257,7 @@ export async function runDelegation(
       signal: deps.signal,
       maxSteps: deps.maxSteps ?? MAX_STEPS_PER_DELEGATION,
       ...(deps.reasoningEffort ? { reasoningEffort: deps.reasoningEffort } : {}),
+      ...(deps.cacheKey ? { cacheKey: deps.cacheKey } : {}),
       ...(deps.silenceTimeoutMs === undefined ? {} : { silenceTimeoutMs: deps.silenceTimeoutMs }),
       executeToolCall: (call) => deps.executeToolCall(call),
       onStep: deps.onStep,

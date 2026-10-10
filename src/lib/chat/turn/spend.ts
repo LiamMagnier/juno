@@ -34,7 +34,7 @@ export function recordTurnSpend(input: {
     kind: "chat",
     source: input.source,
     ref: input.generationId,
-    promptTokens: usage.totalInput || undefined,
+    promptTokens: usage.billedPromptTokens || undefined,
     completionTokens: usage.output || undefined,
     reasoningTokens: acc.tokens.reasoningTokens || undefined,
     totalTokens: acc.tokens.totalTokens || undefined,

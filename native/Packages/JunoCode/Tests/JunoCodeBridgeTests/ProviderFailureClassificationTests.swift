@@ -192,7 +192,11 @@ final class ProviderFailureClassificationTests: XCTestCase {
         )
         XCTAssertTrue(client.cachesPromptPrefix(for: "anthropic:claude-opus-5-5"))
         XCTAssertTrue(client.cachesPromptPrefix(for: "openai:gpt-6"))
-        XCTAssertFalse(client.cachesPromptPrefix(for: "deepseek:deepseek-v4"))
+        XCTAssertTrue(client.cachesPromptPrefix(for: "deepseek:deepseek-v4"))
+        XCTAssertTrue(client.cachesPromptPrefix(for: "qwen:qwen3.8-max"))
+        XCTAssertTrue(client.cachesPromptPrefix(for: "xai:grok-4.7"))
+        XCTAssertFalse(client.cachesPromptPrefix(for: "google:gemini-3-pro"))
+        XCTAssertFalse(client.cachesPromptPrefix(for: "meta:llama-5"))
     }
 }
 

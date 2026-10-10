@@ -706,6 +706,7 @@ export class WorkAgentSession {
         ],
         signal: this.aborter.signal,
         maxSteps: this.options.maxSteps ?? MAX_STEPS_PER_RUN,
+        cacheKey: this.runId,
         ...(this.options.reasoningEffort
           ? { reasoningEffort: this.options.reasoningEffort }
           : {}),
@@ -1099,6 +1100,7 @@ export class WorkAgentSession {
         model: this.options.model,
         goal: this.goal,
         tools: this.tools,
+        cacheKey: `${this.runId}:${agentId}`,
         // The parent's executor, with the four tools a child may not reach
         // taken off it. The child is never handed their specs, so this only
         // fires on a name the model invented — which is exactly when a

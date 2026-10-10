@@ -41,7 +41,7 @@ import { REASONING_TIERS, reasoningCaps, supportsProMode, type ReasoningTier } f
 import { providerRequestModel } from "@/lib/model-request";
 import { hostedSearchAllowedAt, toolCapabilitiesFor } from "@/lib/model-tools";
 import type { ModelInfo } from "@/lib/models";
-import { openAIPromptCacheRequestFields, openAIResponsesSystemInput } from "@/lib/openai-prompt-cache";
+import { openAIResponsesSystemInput, responsesPromptCacheRequestFields } from "@/lib/openai-prompt-cache";
 import { sendableToolImages, toDataUrl, toolImageIntro, withheldImagesNote } from "@/lib/tool-result-images";
 import type { BatchResult, executeToolBatch, ToolCallInput } from "@/lib/tools/dispatch";
 import type { ClientSource, ReasoningEffort } from "@/types/chat";
@@ -265,9 +265,10 @@ function buildResponsesRequest(
       format: { type: "json_schema", name: req.responseSchema.name, schema: req.responseSchema.schema, strict: false },
     };
   }
+  // Prompt caching: OpenAI's full set, and `prompt_cache_key` on xAI, whose
+  // Responses API routes a conversation to its cache by it.
+  Object.assign(params, responsesPromptCacheRequestFields(model, dialect, req.cacheKey));
   if (dialect === "openai") {
-    // Official OpenAI prompt caching (key + GPT-5.6 options / retention).
-    Object.assign(params, openAIPromptCacheRequestFields(model, req.cacheKey));
     // Priority processing; the route gates fastMode to eligible models.
     const tier = serviceTierFor(req.fastMode);
     if (tier) params.service_tier = tier;

@@ -2,13 +2,14 @@ import "server-only";
 import { isPrivateSourceUrl } from "@/lib/research/private-sources";
 import OpenAI from "openai";
 import { getAnthropic } from "@/lib/anthropic";
+import { emptyAnthropicUsage, foldAnthropicUsage, type RawAnthropicUsage } from "@/lib/anthropic-round";
 import type { Plan } from "@prisma/client";
 import { MODEL_LIST, trainsOnPrompts, type ModelInfo } from "@/lib/models";
 import { researchLeadCandidates, type ResearchLeadCandidate } from "@/lib/research/envelope";
 import { getModelMetrics } from "@/lib/model-metrics";
 import { canUseModel } from "@/lib/plans";
 import type { ResearchWorkerNote } from "@/types/research";
-import { estimateGenerationCostUsd } from "@/lib/pricing";
+import { compatPromptCacheTokens, estimateGenerationCostUsd, type CompatPromptCacheFields } from "@/lib/pricing";
 import { providerAdapterFor } from "@/lib/provider-routing";
 import { isProviderConfigured, providerApiKey, providerBaseUrl } from "@/lib/providers";
 import { recordSpend } from "@/lib/spend";
@@ -19,7 +20,7 @@ import {
   type WorkerFinishReason,
   type WorkerResult,
 } from "@/lib/research/agents/protocol";
-import { elided, runWorkerLoop, type Adapter, type ToolCall } from "@/lib/research/agents/worker-loop";
+import { anthropicWorkerRequest, elided, runWorkerLoop, type Adapter, type ToolCall } from "@/lib/research/agents/worker-loop";
 
 /**
  * One research worker: a model driving the five worker tools against the run.
@@ -353,11 +354,21 @@ function workerUserMessage(input: RunWorkerInput): string {
  */
 async function runLoop(input: RunWorkerInput, adapter: Adapter, model: ModelInfo): Promise<WorkerResult> {
   const loop = await runWorkerLoop(input, adapter, { label: model.id });
+  // Cache hits and writes priced at their own rates, as the chat adapters do.
+  // Anthropic's input count excludes both, so leaving them out under-billed a
+  // cached worker; `normalizeUsage` reconciles each provider's convention.
+  const cache = {
+    cacheRead: loop.cache.read || undefined,
+    cacheWrite: loop.cache.write || undefined,
+    cacheWrite5m: loop.cache.write5m || undefined,
+    cacheWrite1h: loop.cache.write1h || undefined,
+  };
   const billed = estimateGenerationCostUsd(model, {
     promptTokens: loop.inputTokens || undefined,
     completionTokens: loop.outputTokens || undefined,
     promptChars: loop.inputTokens ? undefined : loop.resultChars + WORKER_SYSTEM.length,
     completionChars: loop.outputTokens ? undefined : loop.summary.length,
+    ...cache,
   });
   await recordSpend({
     userId: input.userId,
@@ -366,6 +377,7 @@ async function runLoop(input: RunWorkerInput, adapter: Adapter, model: ModelInfo
     source: "web",
     promptTokens: billed.promptTokens,
     completionTokens: billed.completionTokens,
+    ...cache,
     costUsd: billed.costUsd || undefined,
   }).catch(() => {});
 
@@ -390,28 +402,13 @@ type AnthropicMessage = Parameters<ReturnType<typeof getAnthropic>["messages"]["
 function anthropicAdapter(model: ModelInfo, system: string, user: string): Adapter {
   const client = getAnthropic();
   const messages: AnthropicMessage[] = [{ role: "user", content: user }];
-  const tools = WORKER_TOOLS.map((tool) => ({
-    name: tool.name,
-    description: tool.description,
-    input_schema: tool.parameters as { type: "object"; [key: string]: unknown },
-  }));
   /** Which message index holds each tool result, so old ones can be elided. */
   const resultSlots: Array<{ index: number; callId: string }> = [];
   let pendingResults: AnthropicMessage | null = null;
 
   return {
     async next(signal) {
-      const response = await client.messages.create(
-        {
-          model: model.providerModel,
-          max_tokens: 2_048,
-          system,
-          messages,
-          tools,
-          tool_choice: { type: "auto" },
-        },
-        { signal }
-      );
+      const response = await client.messages.create(anthropicWorkerRequest(model, system, messages), { signal });
       const calls: ToolCall[] = [];
       let text = "";
       for (const block of response.content) {
@@ -426,11 +423,21 @@ function anthropicAdapter(model: ModelInfo, system: string, user: string): Adapt
       }
       messages.push({ role: "assistant", content: response.content });
       pendingResults = null;
+      const usage = emptyAnthropicUsage();
+      foldAnthropicUsage(usage, response.usage as RawAnthropicUsage | undefined);
       return {
         calls,
         text,
-        inputTokens: response.usage?.input_tokens ?? 0,
-        outputTokens: response.usage?.output_tokens ?? 0,
+        inputTokens: usage.input,
+        outputTokens: usage.output,
+        // Every marker the worker sends is 5-minute, so a write the API did
+        // not split by TTL is a 5-minute one.
+        cache: {
+          read: usage.cacheRead,
+          write: 0,
+          write5m: usage.cacheWrite5m || usage.cacheWrite1h ? usage.cacheWrite5m : usage.cacheWrite,
+          write1h: usage.cacheWrite1h,
+        },
       };
     },
     pushToolResults(results) {
@@ -540,11 +547,14 @@ function compatAdapter(model: ModelInfo, system: string, user: string): Adapter 
             }
           : {}),
       });
+      // `prompt_tokens` includes the cached part here; pricing subtracts it.
+      const cached = compatPromptCacheTokens((response.usage ?? {}) as CompatPromptCacheFields);
       return {
         calls: turnCalls,
         text: typeof message?.content === "string" ? message.content : "",
         inputTokens: response.usage?.prompt_tokens ?? 0,
         outputTokens: response.usage?.completion_tokens ?? 0,
+        cache: { read: cached.cacheRead ?? 0, write: cached.cacheWrite, write5m: 0, write1h: 0 },
       };
     },
     pushToolResults(results) {

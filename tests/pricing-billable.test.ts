@@ -308,10 +308,11 @@ test("DeepSeek cache misses are uncached input, never a cache write (no double b
   const cost = estimateCostUsd(deepseekFlash, usage);
   assert.ok(Math.abs(cost - expected) < 1e-12, `expected ${expected}, got ${cost}`);
 
-  // The old arithmetic, for the record: 600 more input-rate tokens.
-  const doubleBilled = estimateCostUsd(deepseekFlash, { ...usage, cacheWrite: 600 });
-  assert.ok(doubleBilled > cost, "the regression this pins would charge the misses twice");
-  assert.ok(Math.abs(doubleBilled - expected - (600 * rate.cacheWrite) / 1_000_000) < 1e-12);
+  // Taking the misses as a write no longer double-bills either: a compat
+  // write is inside prompt_tokens (normalizeUsage subtracts it), and DeepSeek
+  // writes cost plain input. Before Oct 10 this added 600 input-rate tokens.
+  const asWrite = estimateCostUsd(deepseekFlash, { ...usage, cacheWrite: 600 });
+  assert.ok(Math.abs(asWrite - expected) < 1e-12, `expected ${expected}, got ${asWrite}`);
 });
 
 test("an explicit cache_write_tokens is still a write, and an absent read is undefined", () => {
@@ -423,4 +424,80 @@ test("Muse Spark cache hits use Meta's published rate, not the generic 0.25x", (
 test("neither Muse tier has a premium serving mode to bill for", () => {
   assert.equal(tokenRate(museStandard, true).input, tokenRate(museStandard).input);
   assert.equal(tokenRate(museContributor, true).input, tokenRate(museContributor).input);
+});
+
+/* ── Prompt-cache writes inside prompt_tokens, and the Oct 10 cache rates ── */
+
+const compatModel = (provider: string, providerModel: string) =>
+  ({ ...kimi, id: providerModel, provider, providerModel, name: providerModel }) as ModelInfo;
+
+test("an OpenAI-style cache write is part of prompt_tokens, so it is not billed again as fresh input", () => {
+  // GPT-5.6+: uncached = input − cached − written (developers.openai.com prompt caching).
+  const n = normalizeUsage("openai", { input: 10_000, cacheRead: 6_000, cacheWrite: 3_000 });
+  assert.equal(n.totalInput, 10_000);
+  assert.equal(n.freshInput, 1_000);
+  assert.equal(n.cacheWrite, 3_000);
+  // Never negative when a host reports overlapping counters.
+  assert.equal(normalizeUsage("qwen", { input: 100, cacheRead: 80, cacheWrite: 50 }).freshInput, 0);
+  // Anthropic's input_tokens already excludes the cache: unchanged.
+  assert.equal(normalizeUsage("anthropic", { input: 1_000, cacheRead: 6_000, cacheWrite5m: 3_000 }).freshInput, 1_000);
+
+  const sol = compatModel("openai", "gpt-5.6-sol");
+  const r = tokenRate(sol);
+  const cost = estimateCostUsd(sol, { input: 10_000, output: 0, cacheRead: 6_000, cacheWrite: 3_000 });
+  const expected = (1_000 * r.input + 6_000 * r.cacheRead + 3_000 * r.cacheWrite) / 1_000_000;
+  assert.ok(Math.abs(cost - expected) < 1e-12, `${cost} vs ${expected}`);
+});
+
+test("Qwen explicit-cache writes are read from prompt_tokens_details.cache_creation_input_tokens", () => {
+  const read = compatPromptCacheTokens({ prompt_tokens_details: { cached_tokens: 2_000, cache_creation_input_tokens: 1_500 } });
+  assert.deepEqual(read, { cacheRead: 2_000, cacheWrite: 1_500 });
+  // OpenAI's own spelling still wins when both appear.
+  assert.equal(compatPromptCacheTokens({ prompt_tokens_details: { cache_write_tokens: 7, cache_creation_input_tokens: 9 } }).cacheWrite, 7);
+});
+
+test("Qwen cache rates: explicit 10% hit and 125% write on qwen3.7-plus, fallback hit elsewhere", () => {
+  const plus = tokenRate(compatModel("qwen", "qwen3.7-plus"));
+  assert.ok(Math.abs(plus.cacheRead - plus.input * 0.1) < 1e-12);
+  assert.ok(Math.abs(plus.cacheWrite - plus.input * 1.25) < 1e-12);
+  const max = tokenRate(compatModel("qwen", "qwen3.8-max"));
+  assert.ok(Math.abs(max.cacheRead - max.input * 0.25) < 1e-12, "3.8 explicit hit rate is not the 10% (unverified)");
+  assert.ok(Math.abs(max.cacheWrite - max.input * 1.25) < 1e-12);
+  const implicitOnly = tokenRate(compatModel("qwen", "qwen3.5-flash"));
+  assert.equal(implicitOnly.cacheWrite, implicitOnly.input, "no explicit markers, no write premium");
+});
+
+test("published cache-hit rates for Mistral, MiniMax and LongCat replace the 0.25x fallback", () => {
+  const ratio = (provider: string, id: string) => {
+    const r = tokenRate(compatModel(provider, id));
+    return Number((r.cacheRead / r.input).toFixed(4));
+  };
+  assert.equal(ratio("mistral", "mistral-medium-latest"), 0.1);
+  assert.equal(ratio("minimax", "MiniMax-M3"), 0.2);
+  assert.equal(ratio("minimax", "MiniMax-M2.7"), 0.2);
+  assert.equal(ratio("minimax", "MiniMax-M2.7-highspeed"), 0.1);
+  assert.equal(ratio("minimax", "MiniMax-M2.5"), 0.1);
+  assert.equal(ratio("minimax", "MiniMax-M3.1-Flash-Preview"), 0.25, "not on the price page: fallback");
+  assert.equal(ratio("longcat", "LongCat-2.0"), 0.02);
+  // MiniMax M2.x writes are $0.375 whatever the tier.
+  assert.equal(Number(tokenRate(compatModel("minimax", "MiniMax-M2.7-highspeed")).cacheWrite.toFixed(4)), 0.375);
+  assert.equal(Number(tokenRate(compatModel("minimax", "MiniMax-M2.7")).cacheWrite.toFixed(4)), 0.375);
+});
+
+test("the chat ledger re-prices a cached turn at its real cost, not the cache on top of full input", async () => {
+  const { buildUsage } = await import("@/lib/chat-usage");
+  const raw = { input: 500, output: 300, cacheRead: 40_000, cacheWrite5m: 2_000 };
+  const usage = buildUsage(sonnet5, raw);
+  assert.equal(usage.totalInput, 42_500, "display total still includes the cache");
+  assert.equal(usage.billedPromptTokens, 500);
+  // What recordSpend recomputes from the fields recordTurnSpend passes it.
+  const ledger = estimateGenerationCostUsd(sonnet5, {
+    promptTokens: usage.billedPromptTokens,
+    completionTokens: usage.output,
+    cacheRead: usage.cacheRead,
+    cacheWrite: usage.cacheWrite,
+    cacheWrite5m: usage.cacheWrite5m,
+    cacheWrite1h: usage.cacheWrite1h,
+  });
+  assert.ok(Math.abs(ledger.costUsd - usage.cost) < 1e-9, `${ledger.costUsd} vs ${usage.cost}`);
 });

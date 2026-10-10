@@ -118,7 +118,11 @@ test("a Grok turn through streamChat goes to api.x.ai with the xAI key, in xAI's
   assert.equal("instructions" in body, false, "xAI: the system prompt is an input message");
   assert.deepEqual((body.input as unknown[])[0], { role: "system", content: "sys" });
   assert.deepEqual(body.reasoning, { effort: "high" }, "no summary request on xAI");
-  assert.equal("prompt_cache_key" in body, false, "OpenAI cache fields stay OpenAI's");
+  // xAI's Responses API routes a conversation to its cache by this body field
+  // (docs.x.ai "Maximizing cache hits"); the other OpenAI fields stay OpenAI's.
+  assert.equal(body.prompt_cache_key, "conv-1");
+  assert.equal("prompt_cache_retention" in body, false);
+  assert.equal("prompt_cache_options" in body, false);
   assert.equal("tools" in body, false, "no search unless the toggle is on");
   assert.equal(events.filter((e) => e.type === "text").map((e) => (e as { text: string }).text).join(""), "Hi");
 });

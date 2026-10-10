@@ -403,13 +403,28 @@ export function inspectAgentRequest(wire: ProviderWire, raw: string): AgentReque
  * cents left — and the provider bills every one. When `cap` is below what the
  * request asks for (or it asks for nothing), the allowance is lowered to `cap`:
  *  - anthropic: `max_tokens`, and an extended-thinking `budget_tokens` that no
- *    longer fits under it is lowered to `cap - 1024` (it must stay below
- *    max_tokens and at least 1,024), so pass a cap of at least 2,048;
+ *    longer fits under it is lowered to at most `cap - 1024` (it must stay
+ *    below max_tokens and at least 1,024), so pass a cap of at least 2,048.
+ *    Lowered in power-of-two steps (`steppedThinkingBudget`): a thinking
+ *    budget is part of what Anthropic caches messages under, and one that
+ *    followed the shrinking cap request by request re-wrote the session's
+ *    whole cached history every time;
  *  - openai-chat: whichever of `max_completion_tokens` / `max_tokens` is set,
  *    or `missingField` when neither is;
  *  - openai-responses: `max_output_tokens`.
  * Returns the body unchanged when nothing needed lowering.
  */
+/**
+ * The largest power of two at or below `budget`, and never under 1,024 (the
+ * API's minimum). A budget that moved with every request would invalidate the
+ * cached messages on each one; stepped, it changes only when the account's
+ * headroom halves.
+ */
+export function steppedThinkingBudget(budget: number): number {
+  if (!Number.isFinite(budget) || budget <= 1_024) return 1_024;
+  return 2 ** Math.floor(Math.log2(budget));
+}
+
 export function capOutputTokens(
   wire: ProviderWire,
   body: string,
@@ -435,7 +450,7 @@ export function capOutputTokens(
     const thinking = isRecord(parsed.thinking) ? parsed.thinking : null;
     const maxTokens = parsed.max_tokens as number;
     if (thinking && typeof thinking.budget_tokens === "number" && thinking.budget_tokens >= maxTokens) {
-      parsed.thinking = { ...thinking, budget_tokens: Math.max(1_024, maxTokens - 1_024) };
+      parsed.thinking = { ...thinking, budget_tokens: steppedThinkingBudget(maxTokens - 1_024) };
       changed = true;
     }
   } else if (wire === "openai-chat") {
