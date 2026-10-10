@@ -3399,3 +3399,20 @@ You are charged for input tokens and output tokens.
 
           <td style={{ verticalAlign: "top" }}>
       </Tab>
+
+### Qwen-Omni <span id="ea2cc071fdn3e" />
+
+Pricing rule: billed by input tokens and output tokens. For the token calculation rules of different modalities, see [Billing and rate limits](/help/en/model-studio/qwen-omni#12db7427b94qt).
+
+<Note>
+  The Qwen3.5-Omni, Qwen3-Omni, and Qwen-Omni-Turbo series offer a free quota only in Singapore. No free quota is available in other regions.
+</Note>
+
+<Tabs>
+  <Tab title="Singapore">
+| Model ID             | Deployment scope | Input price (per million tokens) | Cache-hit input price (per million tokens) | Output price (per million tokens) |
+| -------------------- | ---------------- | -------------------------------- | ------------------------------------------ | --------------------------------- |
+| `qwen3.8-omni-flash` | International    | USD 0.15                         | USD 0.016                                  | USD 0.47                          |
+
+  </Tab>
+</Tabs>

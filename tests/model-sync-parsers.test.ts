@@ -9,6 +9,7 @@ import { MINIMAX_PAGES, minimax, MOONSHOT_PAGES, moonshot, QWEN_PAGES, qwen, ZHI
 import { DEEPSEEK_PAGES, deepseek } from "../scripts/model-sync/labs/deepseek";
 import { GOOGLE_PAGES, google, priceCell } from "../scripts/model-sync/labs/google";
 import { lastFullDayBefore, MIMO_PAGES, mimo } from "../scripts/model-sync/labs/mimo";
+import { MISTRAL_PAGES, mistral, mistralModelPage, mistralSlugs } from "../scripts/model-sync/labs/mistral";
 import { OPENAI_PAGES, openai, openaiModelPage } from "../scripts/model-sync/labs/openai";
 import { XAI_PAGES, xai } from "../scripts/model-sync/labs/xai";
 import { discover, type OrModel } from "../scripts/model-sync/openrouter";
@@ -169,6 +170,8 @@ test("Z.ai, Kimi, MiniMax, Qwen: one table each, free and promo prices never wri
 
   const q = byId(qwen.parse({ pricing: page(QWEN_PAGES.pricing) }, DAY));
   assert.deepEqual(q.get("qwen3.8-max")!.rates, { input: 2, output: 6 });
+  // Qwen-Omni's Singapore price is a Markdown table with "USD" cells.
+  assert.deepEqual(q.get("qwen3.8-omni-flash")!.rates, { input: 0.15, output: 0.47, cacheRead: 0.016 });
   const plus = q.get("qwen3.7-plus")!;
   assert.deepEqual(plus.rates, { input: 0.4, output: 1.6 }, "the list price, with the limited-time discount reported");
   assert.ok(plus.notes?.some((n) => /limited-time 20% off/.test(n)));
@@ -181,4 +184,25 @@ test("OpenRouter is discovery only: recent ids from Juno's labs that nothing alr
   assert.ok(slugs.includes("mistralai/mistral-large-4-0"));
   assert.ok(!slugs.includes("anthropic/claude-haiku-5.5"), "known ids are not news");
   assert.ok(!slugs.some((s) => s.startsWith("stepfun/")), "only labs Juno integrates");
+});
+
+test("Mistral: the card's API names settle the alias; list price, not a sale price, is the rate", () => {
+  const overview = page(MISTRAL_PAGES.models);
+  const slugs = mistralSlugs(overview);
+  assert.ok(slugs.includes("mistral-large-4-0") && slugs.includes("mistral-large-3-25-12"));
+  assert.ok(!slugs.some((s) => /embed|moderation/.test(s)));
+  const pages: Record<string, string> = { models: overview };
+  for (const slug of ["mistral-large-4-0", "mistral-large-3-25-12"]) pages[mistralModelPage(slug).key] = page(mistralModelPage(slug).url);
+  const facts = byId(mistral.parse(pages, DAY));
+  const large4 = facts.get("mistral-large-4")!;
+  assert.equal(large4.name, "Mistral Large 4");
+  assert.deepEqual(large4.rates, { input: 1.36, output: 4.18, cacheRead: 0.14 });
+  assert.ok(large4.notes?.some((n) => /on sale at \$0.68 \/ \$2.09/.test(n)));
+  assert.ok(large4.notes?.includes("public preview"));
+  assert.equal(large4.contextWindow, 1_000_000);
+  assert.ok(facts.has("mistral-large-4-0"), "both names on the card");
+  // `mistral-large-latest` is on Large 3's card, not Large 4's.
+  assert.equal(facts.get("mistral-large-latest")!.name, "Mistral Large 3");
+  assert.deepEqual(facts.get("mistral-large-latest")!.rates, { input: 0.5, output: 1.5 });
+  assert.equal(facts.get("mistral-large-latest")!.contextWindow, 256_000);
 });

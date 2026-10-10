@@ -30,6 +30,7 @@ import { minimax, moonshot, qwen, zhipu } from "./labs/compat-labs";
 import { deepseek } from "./labs/deepseek";
 import { google } from "./labs/google";
 import { mimo } from "./labs/mimo";
+import { mistral, mistralModelPage, mistralSlugs } from "./labs/mistral";
 import { openai, openaiModelPage } from "./labs/openai";
 import { xai } from "./labs/xai";
 import { discover, OPENROUTER_URL, skeleton, type Discovery, type OrModel } from "./openrouter";
@@ -44,9 +45,9 @@ const opt = (name: string) => {
   return i >= 0 ? args[i + 1] : undefined;
 };
 
-export const LABS: LabParser[] = [anthropic, openai, google, xai, deepseek, mimo, zhipu, moonshot, minimax, qwen];
+export const LABS: LabParser[] = [anthropic, openai, google, xai, deepseek, mimo, zhipu, moonshot, minimax, qwen, mistral];
 /** Labs whose pages this run cannot parse (JS-rendered or unpublished); API listing only. */
-const API_ONLY: Provider[] = ["mistral", "meta", "longcat", "seedance"];
+const API_ONLY: Provider[] = ["meta", "longcat", "seedance"];
 
 async function main(): Promise<number> {
   const today = opt("today") ?? new Date().toISOString().slice(0, 10);
@@ -78,7 +79,9 @@ async function main(): Promise<number> {
               .map((f) => openaiModelPage(f.id))
           : lab.provider === "anthropic"
             ? parsed.filter((f) => f.lifecycle === "active" && !catalogueIds.has(`anthropic:${f.id}`)).map((f) => anthropicModelPage(f.id))
-            : [];
+            : lab.provider === "mistral"
+              ? mistralSlugs(pages.models).map(mistralModelPage)
+              : [];
       if (extra.length) {
         for (const p of extra) {
           try {

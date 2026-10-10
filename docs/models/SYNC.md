@@ -37,9 +37,10 @@ disagrees with another, the catalogue keeps its value and the report says so.
    | Moonshot | chat pricing (`platform.kimi.ai/docs/pricing/chat.md`) |
    | MiniMax | pay-as-you-go pricing (`platform.minimax.io/docs/guides/pricing-paygo.md`) |
    | Qwen | Model Studio pricing, Singapore tabs (`alibabacloud.com/help/en/model-studio/model-pricing.md`) |
+   | Mistral | each current model card (`docs.mistral.ai/models/<slug>`): the API names, which settle the `-latest` aliases, the list price (a sale is reported, not billed) and the context |
 
-   Mistral's, Meta's and LongCat's docs are rendered client-side and are not
-   parsed; those labs are checked through their model-list API only.
+   Meta's and LongCat's docs are rendered client-side and are not parsed;
+   those labs are checked through their model-list API only.
 3. **OpenRouter's keyless catalogue**, as a discovery signal only. A recent id
    from one of Alevr's labs that nothing knows becomes a "check the lab's page"
    line. Its prices are never used.

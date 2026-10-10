@@ -169,6 +169,32 @@ export const qwen: LabParser = {
     const tabs = [...pages.pricing.matchAll(/<Tab title="Singapore">([\s\S]*?)<\/Tab>/g)].map((m) => m[1]);
     if (!tabs.length) throw new Error("qwen pricing: no Singapore tabs");
     for (const tab of tabs) {
+      // A few sections (Qwen-Omni) write the Singapore price as a Markdown
+      // table with "USD 0.15" cells rather than an HTML one.
+      for (const t of parseMarkdownTables(tab)) {
+        const m = col(t, /^Model ID$/i);
+        const scope = col(t, /Deployment scope/i);
+        const input = col(t, /^Input price/i);
+        const hit = col(t, /^Cache-hit input price/i);
+        const output = col(t, /^Output price/i);
+        if (m < 0 || input < 0 || output < 0) continue;
+        const usdCell = (cell: string | undefined) => usd(cellText(cell ?? "").replace(/^USD\s*/i, "$"));
+        for (const row of t.rows) {
+          const id = cellText(row[m]).split(" ")[0];
+          if (!/^(qwen|qwq)/.test(id) || facts.get(id)?.rates) continue;
+          if (scope >= 0 && !/international/i.test(row[scope])) continue;
+          const i = usdCell(row[input]);
+          const o = usdCell(row[output]);
+          if (i == null || o == null) continue;
+          const f = fact(facts, "qwen", id);
+          const c = hit >= 0 ? usdCell(row[hit]) : null;
+          f.rates = { input: i, output: o, ...(c != null ? { cacheRead: c } : {}) };
+          f.sources.rates = src;
+          f.sources.listed = src;
+          f.longContext = null;
+          f.sources.longContext = src;
+        }
+      }
       for (const t of parseHtmlTables(tab)) {
         const m = col(t, /^Model ID$/i);
         const scope = col(t, /Deployment scope/i);
