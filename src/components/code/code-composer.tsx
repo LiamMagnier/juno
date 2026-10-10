@@ -56,7 +56,7 @@ import {
 import { Icon } from "@/components/ui/juno-icons";
 import { resolveModel, DEFAULT_MODEL } from "@/lib/models";
 import { isAutoModelId } from "@/lib/auto-model";
-import { defaultReasoning, reasoningOptions, type ReasoningEffort } from "@/lib/model-metrics";
+import { clampReasoningEffort, defaultReasoning, reasoningOptions, type ReasoningEffort } from "@/lib/model-metrics";
 import { setPendingCodePrompt } from "@/lib/code-session-handoff";
 import type { CodePrefill, CodePrefillNote } from "@/lib/code-prefill";
 import { cn } from "@/lib/utils";
@@ -748,13 +748,22 @@ export function CodeComposer({
   // Effort lives inside the model chip's popover, as every composer mounts it.
   const thinkingControl =
     isAuto || !modelInfo || effortOptions.length < 2 ? null : (
+      // The panel, as Chat's composer mounts it: the rung named large with
+      // the model name under it, which opens the full catalogue.
       <ReasoningSlider
+        variant="panel"
+        defaultValue={defaultReasoning(modelInfo)}
         options={effortOptions}
-        value={reasoningEffort}
+        value={clampReasoningEffort(modelInfo, reasoningEffort)}
         onChange={changeReasoning}
         disabled={submitting}
       />
     );
+  /** The effort in words, only when it is not the model's usual one (as Chat's chip). */
+  const effortLabel =
+    thinkingControl && modelInfo && reasoningEffort !== defaultReasoning(modelInfo)
+      ? effortOptions.find((option) => option.value === clampReasoningEffort(modelInfo, reasoningEffort))?.label
+      : undefined;
 
   return (
     <div className={cn("relative isolate w-full", className)}>
@@ -869,6 +878,8 @@ export function CodeComposer({
                   onChange={changeModel}
                   disabled={submitting}
                   thinking={thinkingControl}
+                  effortLabel={effortLabel}
+                  inComposer
                 />
               </div>
             }
