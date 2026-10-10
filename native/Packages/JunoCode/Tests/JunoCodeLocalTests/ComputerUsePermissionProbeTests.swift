@@ -158,7 +158,7 @@ final class ComputerUsePermissionProbeTests: XCTestCase {
         XCTAssertTrue(status.accessibilityTrustLostAfterUpdate)
         XCTAssertEqual(
             ComputerUsePermissionStatus.trustLostAdvice,
-            "macOS no longer trusts this build of Juno. Remove Juno from the Accessibility list and add it again."
+            "macOS no longer trusts this build of Alevr. Remove Alevr from the Accessibility list and add it again."
         )
         // Re-added: trusted again, nothing to say.
         XCTAssertFalse(trustMemory(build: "1.9.4 (95)", suite: suite).observe(.granted))
