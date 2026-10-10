@@ -22,7 +22,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 
 ## Summary
 
-333 routes: 213 native, 52 planned, 55 web only, 13 internal. 50 pages: on the Mac 37 native, 2 partial, 2 planned, 9 web only; on iOS 24 native, 9 partial, 8 planned, 9 web only.
+334 routes: 213 native, 52 planned, 56 web only, 13 internal. 50 pages: on the Mac 37 native, 2 partial, 2 planned, 9 web only; on iOS 24 native, 9 partial, 8 planned, 9 web only.
 
 | Feature | Pages (Mac) | Pages (iOS) | Routes native | Planned | Web only | Internal |
 |---|---|---|---|---|---|---|
@@ -49,7 +49,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 | [Plans and billing](#billing) | 1/2 | 0/2 | 7 | 0 | 0 | 1 |
 | [Roadmap and Compare](#community) | 0/3 | 0/3 | 0 | 0 | 4 | 0 |
 | [Owner tools](#admin) | 0/6 | 0/6 | 0 | 0 | 15 | 0 |
-| [Platform endpoints](#platform) | – | – | 1 | 0 | 0 | 10 |
+| [Platform endpoints](#platform) | – | – | 1 | 0 | 1 | 10 |
 | [Conversations messaging each other](#cross-conversation) | – | – | 6 | 0 | 0 | 0 |
 
 <a id="auth"></a>
@@ -663,6 +663,7 @@ Health, reports, webhooks and runner endpoints no client screen calls, and the d
 | `/api/code/tasks/[id]/controls` | GET | Internal |  | Control events for the host or cloud runner, not a client screen. |
 | `/api/code/tasks/[id]/runner-context` | GET | Internal |  | Served once to the GitHub Actions runner (OIDC only). |
 | `/api/csp-report` | POST | Internal |  | Where the browser's CSP sends violation reports. |
+| `/api/devices/mac-app` | GET | Web only |  | Whether the account has a Mac seen in the last 30 days, so the website's Open in Mac app tries the app's URL scheme instead of the download page. The apps never need to ask whether they are installed. |
 | `/api/downloads` | GET | Native | JunoCore |  |
 | `/api/github/webhook` | POST | Internal |  | The GitHub App's webhook. |
 | `/api/health` | GET | Internal |  | Liveness for the uptime monitor. |

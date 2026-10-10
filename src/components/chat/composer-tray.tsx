@@ -2,7 +2,6 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { ChevronDown, Monitor } from "@/components/ui/icons";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { MENU_W_WIDE } from "@/components/ui/menu-recipe";
@@ -10,7 +9,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { COMPOSER_MENU_COLLISION_PADDING, composerMenuClass, MenuGlide } from "@/components/chat/composer-menu";
 import { ConnectorMark } from "@/components/connections/connector-logos";
 import { AppIcons } from "@/lib/app-icons";
-import { DESKTOP_APP_DOWNLOAD_PATH, isDesktopShell, openDesktopApp } from "@/lib/desktop-app-link";
+import { DESKTOP_APP_DOWNLOAD_PATH } from "@/lib/desktop-app-link";
+import { useMacAppLauncher } from "@/hooks/use-mac-app";
 import { cn } from "@/lib/utils";
 
 /*
@@ -62,22 +62,15 @@ export function ComposerTray({
   params?: React.ReactNode;
 }) {
   const [open, setOpen] = React.useState<Panel | null>(null);
-  // The desktop link is for the browser only; inside the Mac app it would point at itself.
-  const [inDesktopApp, setInDesktopApp] = React.useState(true);
-  React.useEffect(() => {
-    setInDesktopApp(isDesktopShell(navigator.userAgent));
-  }, []);
-  const router = useRouter();
-  const cancelProbe = React.useRef<(() => void) | null>(null);
-  React.useEffect(() => () => cancelProbe.current?.(), []);
-  // Open the installed app; the download page only when nothing answers
-  // (src/lib/desktop-app-link.ts). A modified click keeps the plain link, so
-  // ⌘-click still opens the download page in a new tab.
+  // The desktop link is for the browser only; inside the Mac app it would point
+  // at itself. The app opens when there is evidence it is installed, else the
+  // download page (src/hooks/use-mac-app.ts). A modified click keeps the plain
+  // link, so ⌘-click still opens the download page in a new tab.
+  const macApp = useMacAppLauncher();
   const openMacApp = (event: React.MouseEvent<HTMLAnchorElement>) => {
     if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     event.preventDefault();
-    cancelProbe.current?.();
-    cancelProbe.current = openDesktopApp({ fallback: () => router.push(DESKTOP_APP_DOWNLOAD_PATH) });
+    macApp.open(null);
   };
 
   const change = (panel: Panel, next: boolean) => {
@@ -155,7 +148,7 @@ export function ComposerTray({
           </TrayMenu>
         ) : null}
 
-        {!inDesktopApp ? (
+        {macApp.visible ? (
           <Link
             href={DESKTOP_APP_DOWNLOAD_PATH}
             onClick={openMacApp}

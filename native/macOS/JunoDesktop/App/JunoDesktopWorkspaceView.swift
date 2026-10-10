@@ -79,7 +79,7 @@ struct JunoDesktopWorkspaceView: View {
                 case .newChat(let prompt, let isPrivate):
                     requestChat(prompt: prompt, isPrivate: isPrivate)
                     registry.consume(request)
-                case .newCodeTask, .openSession:
+                case .newCodeTask, .openSession, .showCode:
                     product = .code
                 }
             }

@@ -1000,6 +1000,8 @@ struct DesktopCodeWorkspace: View {
             newSession()
         case .openSession(let id):
             selection.wrappedValue = .session(id)
+        case .showCode:
+            break
         case .newChat:
             return
         }

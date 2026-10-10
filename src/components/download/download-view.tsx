@@ -10,6 +10,7 @@ import { staggerDelay } from "@/lib/motion";
 import { formatBytes } from "@/lib/utils";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 import { Construction } from "@/components/home/construction";
+import { OpenMacAppButton } from "@/components/download/open-mac-app-button";
 import "@/components/home/alv-base.css";
 
 /**
@@ -55,18 +56,21 @@ export function DownloadView({ downloads }: { downloads: AppDownload[] }) {
             {`Chat and ${PRODUCT_NAME} Code in one native app. Same account, same conversations, same projects.`}
           </p>
           <div style={staggerDelay(2, "loose")} className={`mt-8 flex flex-col items-start ${ENTER}`}>
-            {macLink ? (
-              <Button asChild size="lg">
-                <a {...macLink}>
-                  <ActionIcons.download aria-hidden />
-                  Download for Mac
-                </a>
-              </Button>
-            ) : (
-              <span className="text-body text-muted-foreground">
-                {mac?.note ?? "Mac build not published yet"}
-              </span>
-            )}
+            <div className="flex flex-wrap items-center gap-3">
+              {macLink ? (
+                <Button asChild size="lg">
+                  <a {...macLink}>
+                    <ActionIcons.download aria-hidden />
+                    Download for Mac
+                  </a>
+                </Button>
+              ) : (
+                <span className="text-body text-muted-foreground">
+                  {mac?.note ?? "Mac build not published yet"}
+                </span>
+              )}
+              <OpenMacAppButton />
+            </div>
             {macFacts && <div className="alevr-release-facts mt-4">{macFacts.map(fact => <p key={String(fact)} className="text-caption text-muted-foreground">{fact}</p>)}</div>}
           </div>
           {blocked && (

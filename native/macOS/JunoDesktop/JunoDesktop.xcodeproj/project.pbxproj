@@ -151,6 +151,7 @@
 		8310677A6AAE302AE3966EC4 /* TranscriptSnapshotRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A28B403D61B804B430DDBD8 /* TranscriptSnapshotRenderer.swift */; };
 		83BB06BAF059BBACE3D022A2 /* ChatWorkDeliverables.swift in Sources */ = {isa = PBXBuildFile; fileRef = 264FAF90F6E2043DF6C36633 /* ChatWorkDeliverables.swift */; };
 		83FAF15E31CE0F7B821D8D4C /* DesktopChatShellTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 235EB2B1D38AE1D98186CB62 /* DesktopChatShellTests.swift */; };
+		8512905E77A6A5D369FCB5B0 /* DesktopOpenLinkTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F7E19BEBE2EE486C95B4524 /* DesktopOpenLinkTests.swift */; };
 		854004E3DF4CCFC51F568301 /* CrossConversationSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A383E2C42DE23E4E1E93756E /* CrossConversationSnapshotTests.swift */; };
 		85A26B3244EC323030C1CA79 /* DesktopTextSize.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41C418867E612C2D52050E4C /* DesktopTextSize.swift */; };
 		8720C196D5BF2EFC0FAAC65B /* DesktopMemoryScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2DF7FFE1EC6A9530C61AC39 /* DesktopMemoryScreen.swift */; };
@@ -213,6 +214,7 @@
 		C917589E60977BDC8C43A192 /* TranscriptFind.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE596BBD2A1CAB56B9B12250 /* TranscriptFind.swift */; };
 		CBB4BD27838C4A5BFD3E602E /* ActivityRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8B34413F0127AAC467881DF /* ActivityRow.swift */; };
 		CC729B2D03913866ED985973 /* DesktopMemoryParts.swift in Sources */ = {isa = PBXBuildFile; fileRef = B69DCB61A4ACB6EB7FDC281A /* DesktopMemoryParts.swift */; };
+		CCEAB5DFECCC763D7D5ACF2D /* DesktopOpenLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CF6CE46E511323DF2BBB887 /* DesktopOpenLink.swift */; };
 		CD71F94B36814E1839FFCBD0 /* DesktopAssistantsScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 152ED7A417D11102BB53A467 /* DesktopAssistantsScreen.swift */; };
 		CDAAEE7013A4C16CE2FDE470 /* DesktopResearchCompletions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90CE3C31E292DD588747BB51 /* DesktopResearchCompletions.swift */; };
 		CF031665979D62647C1AAB27 /* DesktopDesignLauncherTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FFFE5490F5C28D155449527 /* DesktopDesignLauncherTests.swift */; };
@@ -307,6 +309,7 @@
 		0BCD0C57F737A1BCE0B8D622 /* DesktopShortcutsWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopShortcutsWindow.swift; sourceTree = "<group>"; };
 		0EE1E0953DB557168BCCD800 /* ResearchStageBSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResearchStageBSnapshotTests.swift; sourceTree = "<group>"; };
 		0F6F78E25A138CC03095B9BF /* DesktopWorkExecutorAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopWorkExecutorAdapter.swift; sourceTree = "<group>"; };
+		0F7E19BEBE2EE486C95B4524 /* DesktopOpenLinkTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopOpenLinkTests.swift; sourceTree = "<group>"; };
 		100B2440F5F7CCED5325E68F /* RealWindowRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealWindowRenderer.swift; sourceTree = "<group>"; };
 		10C11FBACF6699002E8F6ADD /* ChatWorkPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatWorkPanel.swift; sourceTree = "<group>"; };
 		1119D7536EE20866204309D4 /* DesktopMemoryList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopMemoryList.swift; sourceTree = "<group>"; };
@@ -373,6 +376,7 @@
 		49E24C4F4F709CAE49626242 /* SettingsWindowsSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsWindowsSnapshotTests.swift; sourceTree = "<group>"; };
 		4AE1C5CC35CCBED724E4B5EB /* DesktopFirstRunPresenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopFirstRunPresenter.swift; sourceTree = "<group>"; };
 		4C61EDFFB61392831EDE140B /* Newsreader24pt-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Newsreader24pt-Regular.ttf"; sourceTree = "<group>"; };
+		4CF6CE46E511323DF2BBB887 /* DesktopOpenLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopOpenLink.swift; sourceTree = "<group>"; };
 		4ED2FBB798AB98CCA730E5D0 /* PageSnapshotTestsStageB.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PageSnapshotTestsStageB.swift; sourceTree = "<group>"; };
 		4F537465D9B5D8E7D650DE7B /* DesktopUsernameRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopUsernameRow.swift; sourceTree = "<group>"; };
 		50B52B2ED47181984DAA60FA /* DesktopAccountScreens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopAccountScreens.swift; sourceTree = "<group>"; };
@@ -738,6 +742,7 @@
 				1D761D62521F5AD37C751FF3 /* DesktopNeedsYouSignals.swift */,
 				70505E2FA8E8E6A50849A99E /* DesktopNotificationsPopover.swift */,
 				1BB68F845B134A22CF22F250 /* DesktopOnboardingSheet.swift */,
+				4CF6CE46E511323DF2BBB887 /* DesktopOpenLink.swift */,
 				EC83ECC39C2207A97E53D692 /* DesktopOutputsPopover.swift */,
 				D4B42E2760C84585101A59D2 /* DesktopPageRoute.swift */,
 				038709F8E14ED2BC2D3821B8 /* DesktopPermissionsScreen.swift */,
@@ -889,6 +894,7 @@
 				ABC1B347386C32ED7FFEF4BE /* DesktopIconCatalogTests.swift */,
 				87DDC6F2406B896D29731CCE /* DesktopNavigationStateTests.swift */,
 				59E50A4A1C871748E2CB2675 /* DesktopNeedsYouSignalsTests.swift */,
+				0F7E19BEBE2EE486C95B4524 /* DesktopOpenLinkTests.swift */,
 				6400E63E4081AB6DCB4BB1DF /* DesktopOverlaysTests.swift */,
 				9B0ECC77883B14192B1AE77E /* DesktopPagesStageATests.swift */,
 				E5AD20DE1876D97569C7D309 /* DesktopSettingsParityTests.swift */,
@@ -1217,6 +1223,7 @@
 				C02847C1D3C0506612C0393C /* DesktopNeedsYouSignals.swift in Sources */,
 				156EE666048F050D4CA9EC60 /* DesktopNotificationsPopover.swift in Sources */,
 				2C4BE9261B26A864EDB3F65B /* DesktopOnboardingSheet.swift in Sources */,
+				CCEAB5DFECCC763D7D5ACF2D /* DesktopOpenLink.swift in Sources */,
 				1B7D6D0F7C1A299C4BA4FA7C /* DesktopOutputsPopover.swift in Sources */,
 				5B27F40C0884B6290391AD46 /* DesktopPageRoute.swift in Sources */,
 				87C41069F1FBFE4E920F5F45 /* DesktopPermissionsScreen.swift in Sources */,
@@ -1337,6 +1344,7 @@
 				54A9F697317E666A1C2154DB /* DesktopIconCatalogTests.swift in Sources */,
 				A30222FE187C44D417955604 /* DesktopNavigationStateTests.swift in Sources */,
 				55A5561D9C0B6C1BEA7BF5A2 /* DesktopNeedsYouSignalsTests.swift in Sources */,
+				8512905E77A6A5D369FCB5B0 /* DesktopOpenLinkTests.swift in Sources */,
 				72129798E50562C9759167CD /* DesktopOverlaysTests.swift in Sources */,
 				2FFB809CE9BDCF7AF2183954 /* DesktopPagesStageATests.swift in Sources */,
 				399D13D7F5A2095F1C105BD4 /* DesktopSettingsParityTests.swift in Sources */,

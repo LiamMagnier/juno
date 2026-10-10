@@ -37,6 +37,10 @@ final class DesktopWorkbenchRegistry {
             case newChat(prompt: String?, isPrivate: Bool = false)
             /// Open Code on this session.
             case openSession(CodeSessionID)
+            /// Switch to Code and change nothing in it: a web Code session
+            /// opened from the website (``DesktopOpenLink``), which is not one
+            /// of this Mac's local sessions.
+            case showCode
         }
 
         let id = UUID()

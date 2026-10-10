@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Loader2 } from "@/components/ui/icons";
+import { Loader2, Monitor } from "@/components/ui/icons";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import {
   DropdownMenu,
@@ -15,6 +15,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { detectPlatform, downloadLink, type AppDownload, type DownloadPlatform } from "@/lib/app-downloads";
 import { cn, formatBytes } from "@/lib/utils";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { useMacAppLauncher } from "@/hooks/use-mac-app";
 
 /**
  * Get Juno as an app, from wherever you happen to be reading this.
@@ -33,6 +34,8 @@ import { PRODUCT_NAME } from "@/lib/brand/names";
 export function DownloadMenu({ className }: { className?: string }) {
   const [downloads, setDownloads] = React.useState<AppDownload[] | null>(null);
   const [open, setOpen] = React.useState(false);
+  // Already on this Mac (src/hooks/use-mac-app.ts): opening it comes first.
+  const macApp = useMacAppLauncher();
 
   // Fetched on first open rather than on mount: nobody reading the page it sits
   // on needs a GitHub round trip until they ask for a build.
@@ -121,6 +124,16 @@ export function DownloadMenu({ className }: { className?: string }) {
           </p>
         </div>
         <DropdownMenuSeparator />
+
+        {macApp.installedLikely && (
+          <>
+            <DropdownMenuItem className="gap-2.5 px-2.5" onSelect={() => macApp.open(null)}>
+              <Monitor className="size-4 shrink-0" />
+              {`Open ${PRODUCT_NAME}`}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+          </>
+        )}
 
         {/* The two non-list states share one anatomy — a 14px glyph at
             `gap-1.5` before a caption — so the menu does not re-shape when the

@@ -2,10 +2,11 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import Image from "next/image";
 import { requiresViewerCredentials } from "@/lib/image-source";
 import { signOutToSignIn } from "@/lib/sign-out";
-import { Archive, ArrowUpCircle, Keyboard, LogOut, ShieldCheck, User } from "@/components/ui/icons";
+import { Archive, ArrowUpCircle, Keyboard, LogOut, Monitor, ShieldCheck, User } from "@/components/ui/icons";
 import { ActionIcons, AppIcons } from "@/lib/app-icons";
 import {
   DropdownMenu,
@@ -26,6 +27,8 @@ import { menuEntranceClass, menuInsetSeparatorClass } from "@/components/chat/co
 import { Pressable } from "@/components/ui/pressable";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useModifierKeyLabel } from "@/components/ui/platform";
+import { useMacAppLauncher } from "@/hooks/use-mac-app";
+import { macAppDeepLinkPath } from "@/lib/desktop-app-link";
 
 /*
  * Account menu: the menu recipe's row, unaltered, so every item lines up with
@@ -142,6 +145,12 @@ export function UserMenu({
      stayed open, and Settings and the shortcuts sheet opened over it. At a
      desktop width the drawer is already shut and this does nothing. */
   const leave = () => setSidebarOpen(false);
+  // "Open in Mac app": only on a Mac with evidence the app is there (the
+  // account's Mac, or this browser opened it before); otherwise "Get the
+  // apps" is the way. In a conversation or a Code session it opens that one.
+  const macApp = useMacAppLauncher();
+  const pathname = usePathname();
+  const macAppPath = macAppDeepLinkPath(pathname);
   // Offered only when a plan above this one can actually be bought: a tier
   // whose price is not configured has no checkout behind it (types/app.ts).
   const canUpgrade =
@@ -309,6 +318,16 @@ export function UserMenu({
             icon={<ActionIcons.download className="size-4" />}
             label="Get the apps"
           />
+          {macApp.installedLikely && (
+            <MenuRow
+              onSelect={() => {
+                leave();
+                macApp.open(macAppPath);
+              }}
+              icon={<Monitor className="size-4" />}
+              label="Open in Mac app"
+            />
+          )}
           <MenuRow
             onSelect={() => {
               leave();
