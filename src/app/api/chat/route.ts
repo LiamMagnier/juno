@@ -27,6 +27,8 @@ import { failDurableReceiptAtStart } from "@/lib/chat/turn/durable-receipt";
 import { createTurnTrace } from "@/lib/chat/turn/trace";
 import { emitTurnTrace } from "@/lib/chat/turn/trace-sink";
 import { isRefusal } from "@/lib/chat/turn/types";
+import { resolveCrossConversation, withCrossConversationSection } from "@/lib/chat/turn/cross";
+import { markCrossAnswered } from "@/lib/cross-conversation/store";
 
 export const runtime = "nodejs";
 // Self-hosted (a plain `next start` Node process on the VM) has NO per-request
@@ -258,7 +260,14 @@ async function handleChat(req: Request) {
     // regenerated body (src/lib/artifact-ops.ts).
     const semanticArtifactSection =
       canvasOn && !artifactEditTarget ? await semanticArtifactContext(conversation.id, user.id) : null;
-    const { system, baseSystemSections } = composeTurnSystem({
+    // Conversations messaging each other (src/lib/cross-conversation).
+    const crossConversation = await resolveCrossConversation({
+      userId: user.id,
+      conversationId: conversation.id,
+      crossTrigger: accepted.crossTrigger,
+      crossLinkIds: accepted.crossLinkIds,
+    });
+    const { system: composedSystem, baseSystemSections } = composeTurnSystem({
       user,
       input,
       settings,
@@ -278,6 +287,7 @@ async function handleChat(req: Request) {
       roomSetup,
       roomMessageId,
     });
+    const system = withCrossConversationSection(composedSystem, crossConversation);
 
     const trace = createTurnTrace({
       runId: generationId,
@@ -361,13 +371,14 @@ async function handleChat(req: Request) {
       system,
       baseSystemSections,
       trace,
+      crossConversation,
     });
 
     // `after` runs once the response is settled — including when the client
     // disconnects. finalizeOutputs awaits the detached generation before any
     // work that needs its answer.
-    after(() =>
-      finalizeOutputs({
+    after(async () => {
+      await finalizeOutputs({
         user,
         moderate: request.moderate,
         moderationTexts: request.moderationTexts,
@@ -377,8 +388,15 @@ async function handleChat(req: Request) {
         conversationId: conversation.id,
         outcome: run.outcome,
         generation: run.generation,
-      })
-    );
+      });
+      // The turn that handled messages from other conversations has ended:
+      // their senders see "answered", and one that asked gets its idle notice.
+      if (crossConversation.linkIds.length) {
+        await markCrossAnswered(user.id, crossConversation.linkIds).catch((error) =>
+          console.error("[chat] cross-conversation answer report failed", error instanceof Error ? error.message : error)
+        );
+      }
+    });
 
     return run.response;
   } catch (error) {

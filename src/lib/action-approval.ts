@@ -121,6 +121,12 @@ const JunoRules: Readonly<Record<string, ActionRiskClass>> = {
   // takes the same class as a task for the same reasons: it asks under every
   // policy short of `block`, and it is never a standing approval.
   "juno_work:hand_off_to_teammate": "external_write",
+  // One of the person's conversations messaging another of theirs
+  // (src/lib/chat/cross-conversation-tools.ts). It writes into the person's
+  // own conversation, so it is a reversible write: it asks under "ask for any
+  // change" (the chat's Ask), and a person may allow it standing (the chat's
+  // Full access).
+  "juno_conversations:send_to_conversation": "reversible_write",
   // Juno's own readers of files the person attached to this conversation
   // (src/lib/agent/document.ts, image.ts). They reach nothing outside the
   // turn, so they never ask. Without an exact rule they classified as

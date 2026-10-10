@@ -123,6 +123,16 @@ export function groupTurns(items: readonly TurnItem[], options: GroupTurnsOption
       groups.push(startsTurn(item) ? { user: item, items: [] } : { items: [item] });
       continue;
     }
+    // A message from another conversation that started its own turn opens a
+    // new group, with no user message: it is not the person speaking.
+    if (item.kind === "conversation_message" && item.direction !== "sent" && item.turnId) {
+      const current = groups[groups.length - 1];
+      const currentTurn = current.user?.turnId ?? current.items.find((i) => i.turnId)?.turnId;
+      if (currentTurn !== item.turnId) {
+        groups.push({ items: [item] });
+        continue;
+      }
+    }
     groups[groups.length - 1].items.push(item);
   }
 
@@ -391,6 +401,7 @@ export function describeItem(item: TurnItem, now = Date.now()): StepRow | null {
     case "compaction":
     case "system_notice":
     case "subagent":
+    case "conversation_message":
       return null;
   }
 }

@@ -79,6 +79,7 @@ import { pumpTurnStream, sendReasoningAndSearch, sendSelectedModel } from "./run
 import type { TurnSkill } from "./skills";
 import { recordTurnSpend } from "./spend";
 import { buildNativeTools, type TurnTools } from "./tools";
+import type { CrossTurn } from "./cross";
 import { emptyTurnOutcome, type TurnOutcome } from "./finalize";
 import type { TurnTraceFinish, TurnTraceRecorder } from "./trace";
 import { traceUsage } from "./trace";
@@ -161,6 +162,8 @@ export interface SavedTurnPlan {
   system: string;
   baseSystemSections: ReturnType<typeof buildSystemPromptSections>;
   trace: TurnTraceRecorder;
+  /** Conversations messaging each other (src/lib/cross-conversation), when on for this conversation. */
+  crossConversation?: CrossTurn | null;
 }
 
 export async function runTurn(turn: SavedTurnPlan): Promise<{
@@ -540,6 +543,7 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
       roomMessageId,
       clarificationVisibleContent,
       preflightVisibleContent,
+      crossConversation: turn.crossConversation ?? null,
     });
 
     try {

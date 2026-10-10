@@ -16,6 +16,8 @@ import { createHandoffTool } from "@/lib/chat/handoff-tool";
 import { createAgentConfigTools } from "@/lib/chat/agent-config-tools";
 import { createSetupChangeTool } from "@/lib/chat/setup-change-tool";
 import { createAskRoomMemberTool, createCreateRoomTool } from "@/lib/chat/room-tools";
+import { createCrossConversationTools } from "@/lib/chat/cross-conversation-tools";
+import type { CrossTurn } from "./cross";
 import { isAgentComputerConfigured } from "@/lib/computer/provider";
 import { agentApprovalMode } from "@/lib/agents/domain";
 import type { RoomTurnSetup } from "@/lib/agents/room-store";
@@ -172,6 +174,7 @@ export async function buildNativeTools({
   roomMessageId,
   clarificationVisibleContent,
   preflightVisibleContent,
+  crossConversation,
 }: {
   user: TurnUser;
   input: ChatRequestBody;
@@ -194,6 +197,7 @@ export async function buildNativeTools({
   roomMessageId: string | null;
   clarificationVisibleContent: string | null;
   preflightVisibleContent: string | null;
+  crossConversation?: CrossTurn | null;
 }): Promise<NativeChatTool[]> {
   let taskAnnounced = false;
   const taskTool =
@@ -338,6 +342,21 @@ export async function buildNativeTools({
           },
         })
       : null;
+  // Conversations messaging each other: on only where the person (or their
+  // account setting) let this conversation, never in a room's agent turn.
+  const crossTools = crossConversation?.enabled && !roomSetup
+    ? createCrossConversationTools({
+        user,
+        conversation: { id: conversationId, projectId: conversation.projectId },
+        trigger: crossConversation.trigger,
+        untrustedContent: untrustedContentInTurn || allAttachments.length > 0,
+        generationId,
+        onApprovalRequest: requestApproval,
+        onSent: (sent) => {
+          sendActivity({ kind: "tool", title: `Sent to ${sent.title}` });
+        },
+      })
+    : [];
   const nativeTools = [
     taskTool,
     handoffTool,
@@ -345,6 +364,7 @@ export async function buildNativeTools({
     setupChangeTool,
     createRoomTool,
     askRoomMemberTool,
+    ...crossTools,
   ].filter(
     (tool): tool is NativeChatTool => tool !== null
   );

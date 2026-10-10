@@ -160,6 +160,8 @@ export async function getAppBootstrap(user: SessionUser): Promise<AppBootstrap> 
     // nothing here rather than render as a switch this build cannot name.
     memorySensitiveTopics: normalizeSensitiveTopics(settings?.memorySensitiveTopics),
     memoryBackgroundLearning: settings?.memoryBackgroundLearning ?? true,
+    crossMessagesChat: settings?.crossMessagesChat ?? false,
+    crossMessagesCode: settings?.crossMessagesCode ?? true,
     // Read through the normalizer rather than cast: the column is TEXT, and a
     // value this build does not recognise must show as the safe mode rather
     // than as a blank control the user cannot reason about.

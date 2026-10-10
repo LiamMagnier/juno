@@ -14,6 +14,7 @@ import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Switch } from "@/components/ui/switch";
 import { useModifierKeyLabel } from "@/components/ui/platform";
 import { SettingRow, SettingsGroup } from "@/components/settings/setting-row";
+import { CrossConversationGroup } from "@/components/settings/sections/cross-conversation";
 import { useSettingsSave } from "@/components/settings/use-settings-save";
 import { useSaveStates } from "@/components/settings/save-status";
 import { openSettings } from "@/components/settings/settings-sections";
@@ -143,6 +144,7 @@ export function CapabilitiesSection() {
           control={<Switch id="cap-codewrap" checked={codeWrap} onCheckedChange={setCodeWrap} />}
         />
       </SettingsGroup>
+      <CrossConversationGroup />
       <SettingsGroup title="Tools" description="Turn tools on for a single message from the composer's + menu.">
         {[
           { id: "memory", label: "Memory", description: "What the assistant remembers between chats." },

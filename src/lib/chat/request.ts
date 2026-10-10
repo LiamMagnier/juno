@@ -275,6 +275,15 @@ export const chatBodySchema = z
      * it to add turns past the cap or loop an agent back.
      */
     roomTurn: z.object({ agentId: z.string().cuid() }).optional(),
+    /**
+     * The reply to a message from another of the person's conversations
+     * (src/lib/cross-conversation): sent with `regenerate: true` by an open
+     * client of the account. The server runs it only after claiming that
+     * message for this conversation (one reply, never two), answers it as a
+     * new reply, and gives the turn no acting authority: the message is data
+     * from another conversation, not something the person said.
+     */
+    crossReply: z.object({ linkId: z.string().min(1).max(64) }).optional(),
     privateMode: z.boolean().optional(),
     // Which surface sent the request — tags the spend ledger so admin can split
     // website vs native-app spending. Defaults to "web".
@@ -296,6 +305,13 @@ export const chatBodySchema = z
       .optional(),
   })
   .superRefine((input, ctx) => {
+    if (input.crossReply && (!input.regenerate || !input.conversationId || input.message?.trim() || input.privateMode)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["crossReply"],
+        message: "A reply to another conversation's message is a regenerate of a saved conversation with no message of its own.",
+      });
+    }
     if (
       input.artifactEdit &&
       (!input.message?.trim() ||

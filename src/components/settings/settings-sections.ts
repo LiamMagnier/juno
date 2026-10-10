@@ -72,7 +72,7 @@ export const SETTINGS_KEYWORDS: Record<SettingsSectionId, string> = {
   notifications: "notify notification alert sound chime email budget digest background reply",
   personalization: "name instructions custom personality style tone response language about you",
   keyboard: "shortcuts keys hotkeys keyboard send enter",
-  capabilities: "tools follow-up suggestions code wrap memory apps models voice",
+  capabilities: "tools follow-up suggestions code wrap memory apps models voice conversations message each other cross",
   memory: "memory remember saved memories sensitive learn background",
   models: "model default favourite favorite fast mode pinned",
   connectors: "apps connectors integrations mcp permissions github google",

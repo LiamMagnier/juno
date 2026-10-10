@@ -20,6 +20,14 @@ import type { LinkReply } from "@/lib/code-v2/env-link-hub";
 /** Commands the browser may never send (they carry secrets meant for the local app only). */
 export const LOCAL_ONLY_COMMANDS = new Set(["env.configure"]);
 
+/**
+ * Commands only Alevr's backend sends over the link, never a browser: a
+ * message from another conversation is written by the cross-conversation hub
+ * (src/lib/cross-conversation/store.ts) after its ownership, hop and rate
+ * checks, so a page cannot forge one.
+ */
+export const BACKEND_ONLY_COMMANDS = new Set(["conversation.deliver"]);
+
 export type LinkRequest =
   | { kind: "rpc"; command: ClientCommand }
   | { kind: "poll"; cursors: Record<string, number>; globalCursor: number };
@@ -36,6 +44,7 @@ export function parseLinkRequest(body: unknown): LinkParse {
       return { ok: false, status: 400, error: "Invalid command" };
     }
     if (LOCAL_ONLY_COMMANDS.has(c.type)) return { ok: false, status: 403, error: "That command only runs inside the Mac app." };
+    if (BACKEND_ONLY_COMMANDS.has(c.type)) return { ok: false, status: 403, error: "Only another conversation can send that." };
     return { ok: true, request: { kind: "rpc", command: c as unknown as ClientCommand } };
   }
   if (body.kind === "poll") {

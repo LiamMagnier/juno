@@ -93,6 +93,8 @@ import { Pressable } from "@/components/ui/pressable";
 import { announceReplyFinished } from "@/lib/ui-prefs";
 import { cachedJson } from "@/lib/client-cache";
 import { useLatestHandler } from "@/hooks/use-latest-handler";
+import { CrossMessageRow } from "@/components/chat/cross-message-row";
+import { useCrossMessages } from "@/components/chat/use-cross-messages";
 
 interface ChatViewProps {
   conversationId: string | null;
@@ -578,6 +580,13 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
    * rows for a `WorkSession.conversationId` to point at.
    */
   const workTasks = useConversationWorkSessions(privateMode ? null : currentConversationId);
+  // Messages to and from the person's other conversations, as compact rows,
+  // and the reply this chat owes one of them (src/lib/cross-conversation).
+  const crossMessages = useCrossMessages(currentConversationId, {
+    busy: chat.isBusy,
+    privateMode,
+    continueCrossReply: chat.continueCrossReply,
+  });
   adoptWorkRef.current = workTasks.adopt;
   const [taskWork, setTaskWork] = React.useState<Record<string, ConversationWork>>({});
   const reportTask = React.useCallback((id: string, next: ConversationWork | null) => {
@@ -2470,6 +2479,11 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                   // Every task, stacked by its own createdAt, newest last.
                   // A task another crew member (or the person) owns speaks as
                   // Juno here rather than as this thread's member.
+                  ...crossMessages.messages.map((row) => ({
+                    id: `cross-${row.id}`,
+                    createdAt: row.createdAt,
+                    node: <CrossMessageRow row={row} />,
+                  })),
                   ...workTasks.sessions.map((session) => ({
                     id: session.id,
                     createdAt: session.createdAt,

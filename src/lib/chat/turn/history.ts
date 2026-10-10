@@ -8,6 +8,8 @@ import { labelRoomHistory } from "@/lib/agents/rooms";
 import { compactHistoryWindow } from "@/lib/chat/history-summary-store";
 import { getModelMetrics } from "@/lib/model-metrics";
 import type { ModelInfo } from "@/lib/models";
+import { crossHistoryEntries } from "@/lib/cross-conversation/store";
+import { mergeCrossHistory } from "@/lib/cross-conversation/history";
 
 /*
  * Pipeline — the conversation window a saved turn reads: the most recent
@@ -61,9 +63,14 @@ export async function resolveHistory({
   // A held re-emit is saved as an empty tag (the body waits in its
   // suggestion); the model reads a line that says so instead, or it would take
   // the empty tag for "I wrote nothing" or for a change that landed.
-  const decryptedHistory = recent
+  const ownHistory = recent
     .filter((m) => m.id !== staleAssistantId)
     .map((m) => ({ ...m, content: describeHeldArtifactsForModel(m.content) }));
+  // Messages from the person's other conversations (src/lib/cross-conversation),
+  // read where they arrived, fenced as data and never as the person's own words.
+  const decryptedHistory = mergeCrossHistory(ownHistory, await crossHistoryEntries(userId, conversationId), {
+    fromStart: countStart === 0 && recent.length === countWindow.length,
+  });
   // In a room, every other member's reply reads "[Scout] …", so the answering
   // agent can tell its own words from a colleague's.
   const history = roomSetup
