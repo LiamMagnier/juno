@@ -1,10 +1,30 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { DEFAULT_MODEL, MODEL_LIST, GEN_MODELS, hasRetired, migrateModelId, resolveModel, RETIRED_MODELS } from "../src/lib/models";
+import { CURATED_CHAT_MODELS, CURATED_GEN_MODELS, DEFAULT_MODEL, MODEL_LIST, GEN_MODELS, hasRetired, migrateModelId, resolveModel, RETIRED_MODELS } from "../src/lib/models";
 import { providerRequestModel } from "../src/lib/model-request";
 
 const ALL_MODELS = [...MODEL_LIST, ...GEN_MODELS];
+const CURATED_ROWS = new Map([...CURATED_CHAT_MODELS, ...CURATED_GEN_MODELS].map((model) => [model.id, model]));
+
+/**
+ * A model on its way out, checked so the assertion holds on every day of its
+ * life: while its row is curated it is deprecated and names its heir; once
+ * the date passes (MODEL_LIST drops it) or models:sync moves it into
+ * RETIRED_MODELS, a stored id lands on that heir. Asserting it through
+ * MODEL_LIST instead is what turned each retirement date into a failing
+ * deploy weeks after the commit that set it.
+ */
+function assertRetiring(id: string, heir: string) {
+  const row = CURATED_ROWS.get(id);
+  if (row) {
+    assert.equal(row.status, "deprecated", `${id} is retiring`);
+    assert.equal(row.replacedBy, heir, `${id} names ${heir}`);
+  } else {
+    assert.equal(RETIRED_MODELS[id], heir, `${id} retired into ${heir}`);
+  }
+  assert.equal(migrateModelId(id) === id ? row?.replacedBy : migrateModelId(id), heir, `${id} lands on ${heir}`);
+}
 
 test("GPT-6 Astra is selectable with the exact documented API id", () => {
   const astra = MODEL_LIST.find((model) => model.id === "openai:gpt-6-astra");
@@ -32,6 +52,8 @@ test("image catalog includes every active provider image variant", () => {
   // own (Nano Banana, google:gemini-2.5-flash-image, retired 2026-10-02), so it
   // is not listed here.
   const imageIds = new Set(GEN_MODELS.filter((model) => model.modality === "image").map((model) => model.id));
+  // Ids with a retirement date are expected only until that date passes.
+  const live = (id: string) => !CURATED_ROWS.get(id) || !hasRetired(CURATED_ROWS.get(id)!);
   for (const id of [
     "openai:gpt-image-2",
     "openai:gpt-image-1-mini",
@@ -46,7 +68,7 @@ test("image catalog includes every active provider image variant", () => {
     "zhipu:glm-image",
     "minimax:image-01",
     "minimax:image-01-live",
-  ]) {
+  ].filter((id) => CURATED_ROWS.has(id) && live(id))) {
     assert.equal(imageIds.has(id), true, `${id} should be selectable when its provider is configured`);
   }
 });
@@ -122,7 +144,7 @@ test("the September 2026 models carry the ids their providers actually serve", (
   assert.ok(lite, "Gemini 3.5 Flash-Lite is in the catalog");
   assert.equal(lite.contextWindow, 1_048_576);
   // Google's deprecations page: 3.1 Flash-Lite shuts down 2027-05-07.
-  assert.equal(byId.get("google:gemini-3.1-flash-lite")?.status, "deprecated");
+  assertRetiring("google:gemini-3.1-flash-lite", "google:gemini-3.5-flash-lite");
 
   // Gemini Omni Flash went GA as gemini-omni-1.1-flash on 27 Aug 2026: a
   // video model on the Interactions API.
@@ -193,10 +215,10 @@ test("the remaining seven labs carry their current ids", () => {
     assert.ok(model.reasoning, `${id} is a reasoning model`);
     assert.ok(model.vision, `${id} takes the full modality set`);
   }
-  // The generation it replaces still answers until Xiaomi switches it off on
-  // 2026-10-21 (mimo.mi.com "Model Deprecation"); V2 Flash is already gone.
-  assert.equal(byId.get("mimo:mimo-v2.5-pro")?.status, "deprecated", "V2.5 Pro is retiring");
-  assert.equal(byId.get("mimo:mimo-v2.5-pro")?.replacedBy, "mimo:mimo-v2.6-pro");
+  // The generation it replaces: Xiaomi answers it with V2.6 Pro from Oct 14
+  // and the name stops answering Oct 21 (mimo.mi.com "Model Deprecation");
+  // V2 Flash is already gone.
+  assertRetiring("mimo:mimo-v2.5-pro", "mimo:mimo-v2.6-pro");
   assert.equal(byId.get("mimo:mimo-v2-flash"), undefined, "V2 Flash retired 2026-06-30");
 
   // Delisted, and absent from Z.ai's international API (now the default host),
@@ -207,9 +229,11 @@ test("the remaining seven labs carry their current ids", () => {
   }
 
   // Xiaomi's omnimodal pair, and the window the Pro row had four times too small.
-  assert.ok(byId.get("mimo:mimo-v2.5"), "MiMo V2.5 is in the catalog");
-  assert.equal(byId.get("mimo:mimo-v2.5")?.contextWindow, 1_050_000);
-  assert.equal(byId.get("mimo:mimo-v2.5-pro")?.contextWindow, 1_050_000);
+  assertRetiring("mimo:mimo-v2.5", "mimo:mimo-v2.6-flash");
+  for (const id of ["mimo:mimo-v2.5", "mimo:mimo-v2.5-pro"]) {
+    const row = CURATED_ROWS.get(id);
+    if (row) assert.equal(row.contextWindow, 1_050_000, id);
+  }
 
   // Meta and ByteDance moved a generation.
   assert.ok(byId.get("meta:muse-spark-1.3"), "Muse Spark 1.3 is in the catalog");

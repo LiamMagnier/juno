@@ -4,7 +4,7 @@ import { buildAnthropicThinkingBits } from "@/lib/anthropic-thinking";
 import { defaultReasoning, getModelMetrics, reasoningCaps, reasoningOptions } from "@/lib/model-metrics";
 import { probeRequestFor } from "@/lib/model-capability-probe";
 import { providerRequestModel } from "@/lib/model-request";
-import { MODEL_LIST, RETIRED_MODELS, resolveModel, type ModelInfo } from "@/lib/models";
+import { CURATED_CHAT_MODELS, MODEL_LIST, RETIRED_MODELS, resolveModel, type ModelInfo } from "@/lib/models";
 import { nativeModelCatalog } from "@/lib/native-model-manifest";
 import { estimateCostUsd, fastModeMultiplier, tokenRate } from "@/lib/pricing";
 import { providerAdapterFor } from "@/lib/provider-routing";
@@ -140,8 +140,11 @@ test("stored ids that pointed at a Sol tier land on the current Sol, GPT-6.1 Sol
     assert.equal(RETIRED_MODELS[alias], "openai:gpt-6.1-sol", alias);
     assert.equal(model(alias).id, "openai:gpt-6.1-sol", `${alias} routes to GPT-6.1 Sol`);
   }
+  // Read from the curated row (or, once models:sync has moved it, from
+  // RETIRED_MODELS): after its date, resolving the id already lands on the heir.
   for (const retiring of ["openai:gpt-5", "openai:o3", "openai:o1", "openai:gpt-4-turbo"]) {
-    assert.equal(model(retiring).replacedBy, "openai:gpt-6.1-sol", `${retiring} retires into GPT-6.1 Sol`);
+    const row = CURATED_CHAT_MODELS.find((m) => m.id === retiring);
+    assert.equal(row ? row.replacedBy : RETIRED_MODELS[retiring], "openai:gpt-6.1-sol", `${retiring} retires into GPT-6.1 Sol`);
   }
 });
 

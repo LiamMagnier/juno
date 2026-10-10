@@ -64,6 +64,8 @@ export interface Plan {
   additions: Addition[];
   /** Rows past their retiresOn: removed from the curated list into RETIRED_MODELS. */
   expiries: { id: string; provider: Provider; replacedBy: string; retiresOn: string }[];
+  /** RETIRED_MODELS entries whose target stops being current: re-pointed at its successor. */
+  redirects: { from: string; was: string; to: string }[];
 }
 
 /** The company, as a deprecation note names it. */
@@ -382,6 +384,41 @@ export function compare(
     }
   }
 
+  // —— Redirects that would land on a model this plan demotes or retires ——
+  // validate:models wants every stored-id redirect (RETIRED_MODELS) and every
+  // replacedBy to land on a CURRENT model, so they follow it to its successor.
+  const successor = new Map<string, string>();
+  for (const a of additions) if (a.before) successor.set(a.before, `${a.provider}:${a.id}`);
+  for (const x of expiries) successor.set(x.id, x.replacedBy);
+  for (const e of edits) {
+    if (e.set.status !== "legacy" || successor.has(e.id)) continue;
+    const m = byId.get(e.id)!;
+    const heir = all.find((x) => x.provider === m.provider && x.family === m.family && x.modality === m.modality && x.status === "current" && x.id !== m.id && !x.retiresOn);
+    if (heir) successor.set(e.id, heir.id);
+  }
+  const follow = (id: string) => {
+    let cur = id;
+    for (let i = 0; i < 5 && successor.has(cur); i++) cur = successor.get(cur)!;
+    return cur;
+  };
+  const redirects: Plan["redirects"] = [];
+  for (const [from, was] of Object.entries(cat.retired)) {
+    const to = follow(was);
+    if (to !== was) {
+      redirects.push({ from, was, to });
+      findings.push({ severity: "change", kind: "retirement", model: from, message: `stored-id redirect ${was} -> ${to} (its target is superseded)`, applied: true });
+    }
+  }
+  for (const m of all) {
+    if (!m.replacedBy || expiries.some((x) => x.id === m.id)) continue;
+    const planned = edits.find((e) => e.id === m.id)?.set.replacedBy ?? m.replacedBy;
+    const to = follow(planned);
+    if (to !== planned) {
+      editFor(m).set.replacedBy = to;
+      findings.push({ severity: "change", kind: "retirement", model: m.id, message: `replacedBy ${planned} -> ${to} (its target is superseded)`, applied: true });
+    }
+  }
+
   // —— Lab model-list APIs (keys) ——
   for (const l of listings) {
     for (const m of all.filter((x) => x.provider === l.provider && !x.retiresOn && !x.comingSoon)) {
@@ -401,5 +438,5 @@ export function compare(
     findings.push({ severity: "info", kind: "discovery", model: `${d.provider}:${d.slug}`, message: `${d.name} (released ${d.released ?? "?"} on OpenRouter): check ${PROVIDERS[d.provider].label}'s own pages; not added from OpenRouter` });
   }
 
-  return { findings, rates, edits: edits.filter((e) => Object.keys(e.set).length), additions, expiries };
+  return { findings, rates, edits: edits.filter((e) => Object.keys(e.set).length), additions, expiries, redirects };
 }

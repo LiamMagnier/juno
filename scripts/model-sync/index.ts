@@ -150,7 +150,12 @@ async function main(): Promise<number> {
     writeFileSync(modelsPath, applyPlanToModels(readFileSync(modelsPath, "utf8"), plan, today));
     // The Mac picker's fixture is generated from the catalogue just written,
     // in a fresh process so it reads the new files, not this one's imports.
-    const fixture = execFileSync("npx", ["tsx", "scripts/export-model-picker-fixture.mts"], { cwd: ROOT, encoding: "utf8", env: { ...process.env, FIXTURE_DAY: today } });
+    // Its pinned day moves to today, so the drift test regenerates the same file.
+    const exporter = join(ROOT, "scripts/export-model-picker-fixture.mts");
+    writeFileSync(exporter, readFileSync(exporter, "utf8").replace(/DEFAULT_FIXTURE_DAY = "\d{4}-\d{2}-\d{2}"/, `DEFAULT_FIXTURE_DAY = "${today}"`));
+    const env = { ...process.env };
+    delete env.FIXTURE_DAY;
+    const fixture = execFileSync("npx", ["tsx", "scripts/export-model-picker-fixture.mts"], { cwd: ROOT, encoding: "utf8", env });
     writeFileSync(join(ROOT, "native/macOS/JunoDesktop/Tests/Snapshots/ModelPickerWebFixtures.swift"), fixture);
   }
 

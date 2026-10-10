@@ -131,8 +131,17 @@ export function applyExpiry(src: string, e: Plan["expiries"][number]): string {
   return src.slice(0, close) + entry + src.slice(close);
 }
 
+/** Re-point one RETIRED_MODELS entry. */
+export function applyRedirect(src: string, r: Plan["redirects"][number]): string {
+  const esc = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = new RegExp(`^(\\s*${esc(JSON.stringify(r.from))}: )${esc(JSON.stringify(r.was))}`, "m");
+  if (!re.test(src)) throw new Error(`models.ts: RETIRED_MODELS entry ${r.from} -> ${r.was} not found`);
+  return src.replace(re, `$1${JSON.stringify(r.to)}`);
+}
+
 export function applyPlanToModels(src: string, plan: Plan, today: string): string {
   // Expiries first (they delete rows other edits must not touch), then edits, then inserts.
+  for (const r of plan.redirects ?? []) src = applyRedirect(src, r);
   for (const e of plan.expiries) src = applyExpiry(src, e);
   const expired = new Set(plan.expiries.map((e) => e.id));
   for (const e of plan.edits) if (!expired.has(e.id)) src = applyEdit(src, e);

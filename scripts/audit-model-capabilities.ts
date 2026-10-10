@@ -47,15 +47,18 @@ for (const model of chatModels) {
   }
 }
 
-const gemini = chatModels.find((model) => model.id === "google:gemini-3.7-flash");
-if (!gemini) failures.push("google:gemini-3.7-flash: missing from selectable catalog");
+// The current Gemini Flash, whichever generation that is: pinning one id here
+// broke this audit the day Google routed 3.7 Flash to 3.8 and the sync
+// retired it. 3.7 and 3.8 share the contract below.
+const gemini = chatModels.find((model) => model.provider === "google" && model.family === "flash" && model.status === "current");
+if (!gemini) failures.push("google: no current Gemini Flash in the selectable catalog");
 else {
   const caps = reasoningCaps(gemini);
   if (JSON.stringify(caps.tiers) !== JSON.stringify(["low", "medium", "high"])) {
-    failures.push("google:gemini-3.7-flash: must expose exactly low, medium, high");
+    failures.push(`${gemini.id}: must expose exactly low, medium, high`);
   }
   if (caps.canDisable || caps.defaultLevel !== "medium") {
-    failures.push("google:gemini-3.7-flash: must be mandatory with medium default");
+    failures.push(`${gemini.id}: must be mandatory with medium default`);
   }
 }
 

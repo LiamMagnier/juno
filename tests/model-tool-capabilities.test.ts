@@ -57,6 +57,7 @@ const TABLE = [
   "anthropic:claude-opus-4-8 tools cc parallel:default final:none search ws:20250305 max:128",
   "anthropic:claude-sonnet-5-5 tools cc parallel:default final:none search ws:20260318 max:128",
   "anthropic:claude-sonnet-5 tools cc parallel:default final:none search ws:20260318 max:128",
+  "anthropic:claude-haiku-5-5 tools cc parallel:default final:none search ws:20250305 max:128",
   "anthropic:claude-haiku-4-5 tools cc parallel:default final:none search ws:20250305 max:128",
   "anthropic:claude-sonnet-4-6 tools cc parallel:default final:none search ws:20250305 max:128",
   "anthropic:claude-opus-4-7 tools cc parallel:default final:none search ws:20250305 max:128",
@@ -90,9 +91,7 @@ const TABLE = [
   "openai:gpt-4-turbo tools cc responses parallel:default final:none max:128",
   "openai:gpt-3.5-turbo tools cc responses parallel:default final:none max:128",
   "google:gemini-3.8-flash tools cc parallel:default final:none search max:128",
-  "google:gemini-3.7-flash tools cc parallel:default final:none search max:128",
   "google:gemini-3.6-flash tools cc parallel:default final:none search max:128",
-  "google:gemini-3.5-flash tools cc parallel:default final:none search max:128",
   "google:gemini-3.1-pro-preview tools cc parallel:default final:none search max:128",
   "google:gemini-3.5-flash-lite tools cc parallel:default final:none search max:128",
   "google:gemini-3.1-flash-lite tools cc parallel:default final:none search max:128",
@@ -172,10 +171,20 @@ const TABLE = [
   "longcat:LongCat-2.5-Preview tools cc parallel:unknown final:omit max:128",
 ];
 
+/*
+ * Pinned per model, not as one ordered list, and only for models still in
+ * MODEL_LIST. The ordered list broke a deploy on 2026-10-09: three Qwen rows
+ * reached their retiresOn, left MODEL_LIST by the clock, and the snapshot no
+ * longer matched although nothing had changed. A line for a model that has
+ * since retired is simply not checked; a live model without a line still
+ * fails, because adding a model is a change to this snapshot.
+ */
 test("every chat model in the catalog has a record, and the table is pinned", () => {
   const chat = MODEL_LIST.filter((model) => model.modality === "chat");
-  const actual = chat.map((model) => signature(model.id, toolCapabilitiesFor(model)));
-  assert.deepEqual(actual, TABLE);
+  const pinned = new Map(TABLE.map((line) => [line.split(" ")[0], line]));
+  for (const model of chat) {
+    assert.equal(signature(model.id, toolCapabilitiesFor(model)), pinned.get(model.id) ?? `${model.id} (no pinned line)`);
+  }
   for (const model of chat) {
     const caps = toolCapabilitiesFor(model);
     assert.ok(caps.maxTools > 0, model.id);
