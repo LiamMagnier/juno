@@ -86,9 +86,19 @@ final class JunoMobileCodeVoiceTests: XCTestCase {
       attachmentContextClient: nil, saveTranscript: nil, close: {}
     )
 
+    var levels: [Double] = []
+    for index in 0..<60 {
+      let x = Double(index)
+      let wave: Double = abs(sin(x * 0.45))
+      let swell: Double = 0.5 + 0.5 * cos(x * 0.13)
+      levels.append(0.15 + 0.7 * wave * swell)
+    }
+    func dictation() -> JunoMobileCodeDictation {
+      JunoMobileCodeDictation(previewText: "Run the cart suite and fix whatever fails", levels: levels)
+    }
     func thread(dictating: Bool = false, call: JunoMobileVoiceSession? = nil) -> some View {
       NavigationStack {
-        JunoMobileCodeRemoteThreadView(model: remote, session: session, opensDictating: dictating)
+        JunoMobileCodeRemoteThreadView(model: remote, session: session, previewDictation: dictating ? dictation() : nil)
       }
       .environment(\.junoStartCodeVoice, { _ in })
       .environment(\.junoCodeVoiceSession, call)
@@ -104,12 +114,41 @@ final class JunoMobileCodeVoiceTests: XCTestCase {
         try render(thread(dictating: dictating, call: live ? call : nil), name: "ios-\(name)-\(suffix)", style: style, into: out)
       }
       try render(ModeMenuStandIn(current: .full), name: "ios-mode-menu-\(suffix)", style: style, into: out)
+      remote.closeSession()
       try render(
         NavigationStack {
           JunoMobileCodeView(model: world.codeModel, remoteModel: remote, startConversation: { _ in })
         }
         .environment(\.junoStartCodeVoice, { _ in }),
         name: "ios-start-composer-\(suffix)", style: style, into: out
+      )
+      try render(
+        NavigationStack {
+          JunoMobileCodeView(
+            model: world.codeModel, remoteModel: remote, startConversation: { _ in },
+            previewDictation: dictation()
+          )
+        }
+        .environment(\.junoStartCodeVoice, { _ in }),
+        name: "ios-start-dictation-\(suffix)", style: style, into: out
+      )
+      try render(
+        NavigationStack {
+          JunoMobileCodeView(
+            model: world.codeModel, remoteModel: remote, startConversation: { _ in },
+            previewDictation: nil, previewPrompt: "Add a test for the cart totals"
+          )
+        }
+        .environment(\.junoStartCodeVoice, { _ in }),
+        name: "ios-start-typed-\(suffix)", style: style, into: out
+      )
+      try render(
+        NavigationStack {
+          JunoMobileCodeView(model: world.codeModel, remoteModel: remote, startConversation: { _ in })
+        }
+        .environment(\.junoStartCodeVoice, { _ in })
+        .environment(\.junoCodeVoiceSession, call),
+        name: "ios-start-voice-\(suffix)", style: style, into: out
       )
     }
     controller.end()

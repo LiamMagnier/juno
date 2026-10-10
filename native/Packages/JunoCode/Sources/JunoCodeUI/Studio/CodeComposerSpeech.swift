@@ -17,11 +17,30 @@ public struct CodeComposerSpeech {
     /// What was heard, for this composer to take. A new value (a new `id`) is
     /// taken once.
     public var heard: CodeHeardText?
+    /// While dictating: the host's dictation (the words where the field was,
+    /// the meter and the exits where the row was), drawn in the shell in
+    /// place of both.
+    public var dictation: AnyView?
+    /// While a call is live: the row the call takes, given whether something
+    /// is typed and the composer's own Send (which takes End's place then).
+    public var callRow: ((_ hasDraft: Bool, _ send: AnyView) -> AnyView)?
+    /// While a call is live: the light along the shell's bottom edge.
+    public var callGlow: AnyView?
 
-    public init(dictate: (() -> Void)? = nil, talk: (() -> Void)? = nil, heard: CodeHeardText? = nil) {
+    public init(
+        dictate: (() -> Void)? = nil,
+        talk: (() -> Void)? = nil,
+        heard: CodeHeardText? = nil,
+        dictation: AnyView? = nil,
+        callRow: ((_ hasDraft: Bool, _ send: AnyView) -> AnyView)? = nil,
+        callGlow: AnyView? = nil
+    ) {
         self.dictate = dictate
         self.talk = talk
         self.heard = heard
+        self.dictation = dictation
+        self.callRow = callRow
+        self.callGlow = callGlow
     }
 }
 
@@ -58,8 +77,8 @@ public struct CodeHeardText: Equatable, Identifiable {
     }
 }
 
-/// The microphone and the voice button, at the end of a Code composer's
-/// controls row, before Send: Chat's order (Dictate, then the voice chat).
+/// The microphone, at the end of a Code composer's controls row, before the
+/// primary disc (which is the voice button while nothing is typed).
 struct CodeComposerSpeechButtons: View {
     let speech: CodeComposerSpeech?
     var isEnabled = true
@@ -72,14 +91,6 @@ struct CodeComposerSpeechButtons: View {
                 .help("Dictate")
                 .accessibilityLabel("Dictate")
                 .accessibilityIdentifier("juno.code.composer.dictate")
-        }
-        if let talk = speech?.talk {
-            Button(action: talk) { JunoIconView(.audioLines, size: 15) }
-                .buttonStyle(StudioIconButtonStyle())
-                .disabled(!isEnabled)
-                .help("Voice conversation")
-                .accessibilityLabel("Start voice conversation")
-                .accessibilityIdentifier("juno.code.composer.voice")
         }
     }
 }

@@ -358,7 +358,8 @@ public struct StudioSessionView: View {
             plusMenu: v2.map { v2 in
                 AnyView(CodeV2PlusMenuItems(model: v2.composer, directory: v2.directory, computerUse: computerUseBinding))
             },
-            contextStrip: place.map { AnyView(CodeV2ContextStrip(place: $0)) }
+            contextStrip: place.map { AnyView(CodeV2ContextStrip(place: $0)) },
+            speech: effectiveSpeech
         ) {
             if let v2 {
                 CodeV2ComposerLeading(

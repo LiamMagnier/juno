@@ -30,6 +30,8 @@ struct CodeComposerVoiceModeSnapshotTests {
         case modeMenu = "mode-menu"
         case dictation = "dictation"
         case voice = "voice"
+        /// Chat's composer in a call, the reference the Code call matches.
+        case chatVoice = "chat-voice-reference"
     }
 
     private static let size = CGSize(width: 980, height: 620)
@@ -40,27 +42,43 @@ struct CodeComposerVoiceModeSnapshotTests {
         return model
     }
 
-    private static func thread(_ mode: CodeComposerMode) -> some View {
+    private static func thread(_ mode: CodeComposerMode, speech: CodeComposerSpeech = CodeComposerSpeech(dictate: {}, talk: {})) -> some View {
         CodeV2EnvSessionView(
             session: CodeV2EnvSession(preview: CodeV2Fixtures.settledSnapshot),
             composer: composer(mode),
             directory: CodeV2Fixtures.directory,
             openConnections: {},
             place: CodeV2SessionPlace(project: "storefront", branch: "alevr/server-totals", machine: "This Mac"),
-            speech: CodeComposerSpeech(dictate: {}, talk: {})
+            speech: speech
         )
     }
 
-    private static func view(_ shot: Shot) -> AnyView {
+    private static var dictating: CodeComposerSpeech {
+        CodeComposerSpeech(dictation: AnyView(DesktopCodeDictation(onCancel: {}, onStop: { _ in }, onSend: { _ in }, listens: false)))
+    }
+
+    private static var inCall: CodeComposerSpeech {
+        let column = VoiceShots.call(.speaking)
+        let hangUp = DesktopVoiceHangUp()
+        return CodeComposerSpeech(
+            callRow: { hasDraft, send in
+                AnyView(DesktopVoiceCallBar(column: column, hangUp: hangUp, hasDraft: hasDraft, leading: { EmptyView() }, primary: { send }))
+            },
+            callGlow: AnyView(DesktopVoiceComposerGlow(controller: column.controller))
+        )
+    }
+
+    private static func view(_ shot: Shot) async throws -> AnyView {
         switch shot {
-        case .composerFull: AnyView(thread(.full))
-        case .composerAsk: AnyView(thread(.ask))
-        case .composerPlan: AnyView(thread(.plan))
-        case .modeMenu: AnyView(ModeMenuStandIn(current: .full).frame(maxWidth: .infinity, maxHeight: .infinity))
-        case .dictation:
-            AnyView(thread(.full).modifier(DesktopCodeDictationLayer(isDictating: .constant(true), heard: .constant(nil), listens: false)))
-        case .voice:
-            AnyView(thread(.full).junoVoiceColumn(VoiceShots.call(.speaking)))
+        case .chatVoice:
+            let world = try await SnapshotPreviewWorld.shared()
+            return AnyView(VoiceShots.composer(world: world, call: VoiceShots.call(.speaking)).frame(maxHeight: .infinity, alignment: .bottom))
+        case .composerFull: return AnyView(thread(.full))
+        case .composerAsk: return AnyView(thread(.ask))
+        case .composerPlan: return AnyView(thread(.plan))
+        case .modeMenu: return AnyView(ModeMenuStandIn(current: .full).frame(maxWidth: .infinity, maxHeight: .infinity))
+        case .dictation: return AnyView(thread(.full, speech: dictating))
+        case .voice: return AnyView(thread(.full, speech: inCall))
         }
     }
 
@@ -70,9 +88,10 @@ struct CodeComposerVoiceModeSnapshotTests {
             .appendingPathComponent("code-voice", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         let size = shot == .modeMenu ? CGSize(width: 520, height: 420) : Self.size
+        let content = try await Self.view(shot)
         for dark in [false, true] {
             let hosting = NSHostingView(
-                rootView: Self.view(shot)
+                rootView: content
                     .frame(width: size.width, height: size.height)
                     .background(Color.junoCanvas)
                     .environment(\.colorScheme, dark ? .dark : .light)

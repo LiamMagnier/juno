@@ -5,7 +5,7 @@ import { Loader2, Send } from "@/components/ui/icons";
 
 import { Button } from "@/components/ui/button";
 import { ScrollFade } from "@/components/ui/scroll-fade";
-import { RealtimeVoice } from "@/components/voice/realtime-voice";
+import { RealtimeVoice, voiceCallParts, type VoiceCallParts } from "@/components/voice/realtime-voice";
 import { useOptionalApp } from "@/components/app/app-provider";
 import { useRealtimeVoice } from "@/hooks/use-realtime-voice";
 import { ActionIcons } from "@/lib/app-icons";
@@ -479,4 +479,93 @@ export function CodeVoicePanel({ briefing, send, reply, onClose }: CodeVoicePane
       </section>
     </>
   );
+}
+
+/**
+ * A Code call drawn the way Chat's is (owner, 2026-10-10): inside the
+ * composer, not as a panel. The composer takes the returned parts as Chat's
+ * does (`voiceCall`: "Type while you talk…", the call's controls in the row,
+ * End in Send's place while nothing is typed, the glow along its edge).
+ *
+ * What makes it Code's: every sentence the reader finishes goes to the thread
+ * on its own (a new turn, or a steer or queued follow-up while a run works),
+ * and when a run finishes its reply is handed to the voice model to say back.
+ * Nothing said is filed as a chat: the thread is the record.
+ */
+export function useCodeVoiceCall({
+  open,
+  onClose,
+  briefing,
+  send,
+  reply,
+}: {
+  open: boolean;
+  onClose: () => void;
+  briefing: CodeVoiceBriefingInput;
+  send: CodeVoiceSend;
+  reply?: CodeVoiceReply;
+}): VoiceCallParts | undefined {
+  const voice = useRealtimeVoice();
+  const voiceRef = React.useRef(voice);
+  voiceRef.current = voice;
+  const briefingRef = React.useRef(briefing);
+  briefingRef.current = briefing;
+  const sendRef = React.useRef(send);
+  sendRef.current = send;
+  /** Read-back pushes travel as user lines; they are never sent to the thread. */
+  const pushes = React.useRef<Set<string>>(new Set());
+  const handled = React.useRef<Set<number>>(new Set());
+
+  // Start once per opening, with the briefing as it stands; end on close.
+  React.useEffect(() => {
+    if (!open) return;
+    handled.current = new Set();
+    pushes.current = new Set();
+    const built = buildCodeVoiceBriefing(briefingRef.current);
+    void voiceRef.current.start(undefined, built.entries);
+    return () => voiceRef.current.end();
+  }, [open]);
+
+  const close = React.useCallback(() => {
+    voiceRef.current.end();
+    onClose();
+  }, [onClose]);
+  const closeRef = React.useRef(close);
+  closeRef.current = close;
+
+  // Auto-send each finished sentence.
+  React.useEffect(() => {
+    if (!open) return;
+    const current = sendRef.current;
+    if (current.blockedReason) return;
+    const lines = voice.transcript.filter((line) => !pushes.current.has(line.text.trim()));
+    const queue = codeVoiceAutoSendQueue(lines, handled.current);
+    if (!queue.length) return;
+    for (const line of queue) handled.current.add(line.id);
+    void (async () => {
+      for (const line of queue) {
+        const landed = await current.onSend(line.text);
+        if (landed && current.endsCall) {
+          closeRef.current();
+          return;
+        }
+      }
+    })();
+  }, [open, voice.transcript]);
+
+  // Read the reply back when a run finishes.
+  const wasRunning = React.useRef(reply?.running ?? false);
+  const lastSpoken = React.useRef<string | null>(reply?.latest ?? null);
+  React.useEffect(() => {
+    const was = wasRunning.current;
+    wasRunning.current = reply?.running ?? false;
+    if (!open || !reply || !was || reply.running) return;
+    const latest = reply.latest?.trim();
+    if (!latest || latest === lastSpoken.current) return;
+    lastSpoken.current = latest;
+    const text = codeVoiceReadBack(latest);
+    if (voiceRef.current.sendText(text)) pushes.current.add(text.trim());
+  }, [open, reply?.running, reply?.latest, reply]);
+
+  return open ? voiceCallParts({ voice, onClose: close }) : undefined;
 }

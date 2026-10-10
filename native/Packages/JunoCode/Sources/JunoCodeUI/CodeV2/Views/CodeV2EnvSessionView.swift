@@ -275,7 +275,8 @@ public struct CodeV2EnvSessionView: View {
             takeoverNeedsYou: !pending.isEmpty || !connected.isEmpty,
             plusMenu: AnyView(CodeV2PlusMenuItems(model: composer, directory: directory)),
             contextStrip: place.map { AnyView(CodeV2ContextStrip(place: $0)) },
-            minimumLines: snapshot.items.isEmpty ? 3 : 2
+            minimumLines: snapshot.items.isEmpty ? 3 : 2,
+            speech: speech
         ) {
             CodeV2ComposerLeading(
                 model: composer, directory: directory, isEnabled: enabled,

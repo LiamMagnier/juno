@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { AudioLines, Mic } from "@/components/ui/icons";
+import { Mic } from "@/components/ui/icons";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -33,7 +33,8 @@ import {
   ComposerDropOverlay,
   ComposerFileInputs,
 } from "@/components/code/code-composer-parts";
-import { CodeVoicePanel, useCodeVoice, type CodeVoiceSend } from "@/components/code/code-voice";
+import { useCodeVoice, useCodeVoiceCall, type CodeVoiceSend } from "@/components/code/code-voice";
+import { VoiceComposerGlow } from "@/components/voice/voice-composer-glow";
 import type { CodeVoiceBriefingInput } from "@/components/code/code-voice-briefing";
 import { useApp } from "@/components/app/app-provider";
 import { useUploads } from "@/hooks/use-uploads";
@@ -721,6 +722,9 @@ export function CodeComposer({
     [cloudBlocked, gateHint, prompt, submit, submitting],
   );
 
+  /** The call, inside this composer as Chat draws its own; the first sentence starts the session. */
+  const call = useCodeVoiceCall({ open: codeVoice.open, onClose: codeVoice.close, briefing: voiceBriefing, send: voiceSend });
+
   // A starting point under the landing seeds the field (code-starting-points):
   // the text lands with the caret at its end, and nothing is sent.
   React.useEffect(() => {
@@ -754,9 +758,6 @@ export function CodeComposer({
 
   return (
     <div className={cn("relative isolate w-full", className)}>
-      {codeVoice.open && (
-        <CodeVoicePanel briefing={voiceBriefing} send={voiceSend} onClose={codeVoice.close} />
-      )}
 
       <DictationSwap active={dictating} onCancel={() => setDictating(false)} onClose={closeDictation}>
         <div
@@ -801,8 +802,9 @@ export function CodeComposer({
               </span>
             </div>
           </div>
+          <VoiceComposerGlow call={call}>
           <ComposerShell
-            className={cn("max-h-[600px]", dragging && "border-primary/55 ring-2 ring-primary/20")}
+            className={cn("max-h-[600px]", call && "voice-glow-host", dragging && "border-primary/55 ring-2 ring-primary/20")}
             dimmed={submitting}
             above={canAttach ? <ComposerAttachmentTray uploads={uploads} onRemove={remove} /> : undefined}
             field={
@@ -820,7 +822,7 @@ export function CodeComposer({
                 // i.e. the WCAG 2.5.3 label-in-name failure the base-branch
                 // input in code-target-picker.tsx was already fixed for, and a
                 // field no voice user could address by the words inside it.
-                placeholder="Describe a task or ask a question…"
+                placeholder={call ? "Type while you talk\u2026" : "Describe a task or ask a question\u2026"}
                 className={composerFieldClass}
               />
             }
@@ -857,29 +859,11 @@ export function CodeComposer({
                   </Tooltip>
                 )}
 
-                {codeVoice.onOpenVoiceMode && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon-sm"
-                        onClick={codeVoice.onOpenVoiceMode}
-                        disabled={submitting || dictating || codeVoice.open}
-                        aria-label={`Talk this through with ${PRODUCT_NAME}`}
-                        className={composerIconButtonClass}
-                      >
-                        <AudioLines className="size-4" aria-hidden="true" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>Voice conversation</TooltipContent>
-                  </Tooltip>
-                )}
-
+                {call?.status}
               </>
             }
             trailing={
-              <div className={cn("min-w-0", submitting && "pointer-events-none")}>
+              call ? call.controls : <div className={cn("min-w-0", submitting && "pointer-events-none")}>
                 <ModelSelector
                   value={model}
                   onChange={changeModel}
@@ -889,6 +873,10 @@ export function CodeComposer({
               </div>
             }
             action={
+              call && !hasPayload ? call.end : !call && !hasPayload && !submitting && codeVoice.onOpenVoiceMode ? (
+                // Nothing to send: the slot is voice, as on Chat's composer.
+                <ComposerPrimaryAction face="voice" onClick={codeVoice.onOpenVoiceMode} aria-label={`Talk this through with ${PRODUCT_NAME}`} />
+              ) : (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <ComposerPrimaryAction
@@ -908,8 +896,10 @@ export function CodeComposer({
                 </TooltipTrigger>
                 <TooltipContent>{target === "cloud" ? "Start cloud run" : "Start session"}</TooltipContent>
               </Tooltip>
+              )
             }
           />
+          </VoiceComposerGlow>
 
           {dragging && <ComposerDropOverlay />}
 

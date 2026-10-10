@@ -58,6 +58,8 @@ struct DesktopCodeWorkspace: View {
     @State private var isDictating = false
     @State private var previewTarget: CodePreviewTarget?
     @State private var voiceSession: DesktopVoiceSession?
+    /// Hangs a Code call up (and files nothing: the thread is the record).
+    @State private var voiceHangUp = DesktopVoiceHangUp()
     /// What dictation or the call heard, for the composer on screen to take.
     @State private var heard: CodeHeardText?
     @State private var voiceUnavailable: String?
@@ -585,8 +587,6 @@ struct DesktopCodeWorkspace: View {
             openTask: { task in selection.wrappedValue = .task(task.id) }
         )
         .codeVoiceLink(voiceSession?.controller, isRunning: false, latestReply: nil, deliver: hearRequest)
-        .modifier(dictationLayer)
-        .junoVoiceColumn(voiceColumn)
     }
 
     @ViewBuilder
@@ -612,9 +612,7 @@ struct DesktopCodeWorkspace: View {
                 latestReply: DesktopCodeVoiceBriefing.latestReply(env.snapshot.items),
                 deliver: hearRequest
             )
-            .modifier(dictationLayer)
-            .junoVoiceColumn(voiceColumn)
-        } else {
+                } else {
             alevrSession(controller)
         }
     }
@@ -645,8 +643,6 @@ struct DesktopCodeWorkspace: View {
             latestReply: DesktopCodeVoiceBriefing.latestReply(controller.events),
             deliver: hearRequest
         )
-        .modifier(dictationLayer)
-        .junoVoiceColumn(voiceColumn)
         .overlay(alignment: .top) {
             // The stop while screen control runs, and the missing macOS grant
             // with its System Settings link when a start could not happen.
@@ -1126,7 +1122,33 @@ struct DesktopCodeWorkspace: View {
         if idle {
             speech.talk = startCodeVoice
         }
+        if isDictating {
+            speech.dictation = AnyView(DesktopCodeDictation(
+                onCancel: { endDictation() },
+                onStop: { words in
+                    heard = CodeHeardText(text: words, disposition: .append)
+                    endDictation()
+                },
+                onSend: { words in
+                    heard = CodeHeardText(text: words, disposition: .appendAndSend)
+                    endDictation()
+                }
+            ))
+        }
+        // The call, inside the composer as on the web: its controls in the
+        // row with End in Send's place, the glow along the bottom edge.
+        if let column = voiceColumn {
+            let hangUp = voiceHangUp
+            speech.callRow = { hasDraft, send in
+                AnyView(DesktopVoiceCallBar(column: column, hangUp: hangUp, hasDraft: hasDraft, leading: { EmptyView() }, primary: { send }))
+            }
+            speech.callGlow = AnyView(DesktopVoiceComposerGlow(controller: column.controller))
+        }
         return speech
+    }
+
+    private func endDictation() {
+        withAnimation(JunoMotion.fast) { isDictating = false }
     }
 
     private func beginDictation() {
@@ -1138,9 +1160,6 @@ struct DesktopCodeWorkspace: View {
         heard = CodeHeardText(text: text, disposition: .sendAlone)
     }
 
-    private var dictationLayer: DesktopCodeDictationLayer {
-        DesktopCodeDictationLayer(isDictating: $isDictating, heard: $heard)
-    }
 
     /// The composer button's voice: a call about the thread on screen, on its
     /// model, briefed with what the thread has done so far.

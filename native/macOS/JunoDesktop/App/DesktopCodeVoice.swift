@@ -10,11 +10,10 @@ import SwiftUI
 ///
 /// Chat dictates inside its composer's shell (``ComposerDictationField`` in the
 /// field slot, ``ComposerDictationControls`` in the controls row). Code's
-/// composer lives in the JunoCode package and cannot hold those app-side
-/// views, so this lays the same two parts in a shell of the composer's shape,
-/// over the composer, for as long as the reader dictates. Same words, same
-/// meter, same exits and the same keys: Esc cancels, Return sends what was
-/// heard, Done puts it in the draft.
+/// composer takes this as `CodeComposerSpeech.dictation` and draws it in its
+/// shell in place of both, so Code dictates exactly where Chat does. Same
+/// words, same meter, same exits and the same keys: Esc cancels, Return sends
+/// what was heard, Done puts it in the draft.
 struct DesktopCodeDictation: View {
     let onCancel: () -> Void
     let onStop: (String) -> Void
@@ -27,24 +26,25 @@ struct DesktopCodeDictation: View {
     @FocusState private var focused: Bool
 
     var body: some View {
-        JunoDesktopGlass(spacing: JunoSpace.hairline) {
-            VStack(alignment: .leading, spacing: JunoSpace.snug) {
-                ComposerDictationField(session: session)
-                    .padding(.horizontal, JunoSpace.tight)
-                    .padding(.top, JunoSpace.tight)
-                ComposerDictationControls(session: session, cancel: cancel, stop: stop) {
-                    ComposerPrimaryDisc(
-                        face: session.hasWords ? .send : .disabled("Send what you dictated"),
-                        label: "Send what you dictated",
-                        identifier: "juno.code.dictation-send",
-                        action: send
-                    )
-                }
+        // Inside the composer's own shell, in place of its field and its row,
+        // as Chat's composer dictates: no second card, nothing over the page.
+        VStack(alignment: .leading, spacing: 0) {
+            ComposerDictationField(session: session)
+                .padding(.horizontal, JunoSpace.regular)
+                .padding(.top, JunoSpace.cozy + 2)
+                .padding(.bottom, JunoSpace.snug)
+            ComposerDictationControls(session: session, cancel: cancel, stop: stop) {
+                ComposerPrimaryDisc(
+                    face: session.hasWords ? .send : .disabled("Send what you dictated"),
+                    label: "Send what you dictated",
+                    identifier: "juno.code.dictation-send",
+                    action: send
+                )
             }
-            .padding(JunoSpace.snug)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .junoGlass(in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .padding(.horizontal, JunoSpace.snug)
+            .padding(.bottom, JunoSpace.snug)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .focusable()
         .focused($focused)
         .focusEffectDisabled()
@@ -80,41 +80,6 @@ struct DesktopCodeDictation: View {
         } else {
             onSend(heard)
         }
-    }
-}
-
-/// Dictation over a Code surface's composer while the reader dictates. What
-/// was heard goes back to the composer as ``CodeHeardText``.
-struct DesktopCodeDictationLayer: ViewModifier {
-    @Binding var isDictating: Bool
-    @Binding var heard: CodeHeardText?
-    var listens = true
-
-    func body(content: Content) -> some View {
-        content.overlay(alignment: .bottom) {
-            if isDictating {
-                DesktopCodeDictation(
-                    onCancel: { close() },
-                    onStop: { words in
-                        heard = CodeHeardText(text: words, disposition: .append)
-                        close()
-                    },
-                    onSend: { words in
-                        heard = CodeHeardText(text: words, disposition: .appendAndSend)
-                        close()
-                    },
-                    listens: listens
-                )
-                .frame(maxWidth: Studio.Metrics.measure)
-                .padding(.horizontal, Studio.Metrics.gutter)
-                .padding(.bottom, JunoSpace.regular)
-                .transition(.opacity)
-            }
-        }
-    }
-
-    private func close() {
-        withAnimation(JunoMotion.fast) { isDictating = false }
     }
 }
 

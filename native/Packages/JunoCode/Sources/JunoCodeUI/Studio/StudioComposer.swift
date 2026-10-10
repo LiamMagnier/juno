@@ -69,6 +69,12 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
     var contextStrip: AnyView? = nil
     /// Lines the prompt reserves at rest: 2 in a thread, 3 on a new session.
     var minimumLines = 2
+    /// Dictation and voice from the host, drawn inside this shell as the web
+    /// and Chat draw them: dictating replaces the field and the row in place,
+    /// a call turns the row into the call's controls with End in Send's place
+    /// and lights the bottom edge, and with nothing typed Send is the voice
+    /// button.
+    var speech: CodeComposerSpeech? = nil
     @ViewBuilder var leading: () -> Leading
     @ViewBuilder var trailing: () -> Trailing
 
@@ -141,6 +147,18 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
             if let takeover {
                 takeover
                     .transition(.opacity)
+                // A live call stays mounted, and in reach, under an approval:
+                // the reader can answer it out loud or by hand.
+                if let callRow = speech?.callRow {
+                    HStack(spacing: JunoSpace.hairline) {
+                        callRow(false, AnyView(EmptyView()))
+                    }
+                    .padding(.horizontal, JunoSpace.snug)
+                    .padding(.bottom, JunoSpace.snug)
+                }
+            } else if let dictation = speech?.dictation {
+                dictation
+                    .transition(.opacity)
             } else {
                 if !attachments.isEmpty {
                     attachmentStrip
@@ -153,6 +171,16 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
         // card under Reduce Transparency), so both products type into one
         // surface — the owner's rule: native glass, never a rebuilt one.
         .junoComposerGlass(cornerRadius: Studio.Radius.composer)
+        // A call's glow along the shell's bottom edge, clipped to its corners
+        // (Chat's `DesktopVoiceComposerGlow`, as the web's composer does it).
+        .overlay(alignment: .bottom) {
+            if let glow = speech?.callGlow, takeover == nil {
+                glow
+                    .clipShape(RoundedRectangle(cornerRadius: Studio.Radius.composer, style: .continuous))
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            }
+        }
         .overlay {
             if isDropTargeted {
                 RoundedRectangle(cornerRadius: Studio.Radius.composer, style: .continuous)
@@ -194,7 +222,7 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
     }
 
     private var field: some View {
-        let field = TextField(placeholder, text: $text, axis: .vertical)
+        let field = TextField(speech?.callRow != nil ? "Type while you talk\u{2026}" : placeholder, text: $text, axis: .vertical)
             .textFieldStyle(.plain)
             .studioReadingFont()
             .lineLimit(minimumLines...12)
@@ -299,10 +327,14 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
                 .help("Attach, mention, plan mode, permissions and more")
                 .accessibilityLabel("Add").contentShape(.rect)
             }
-            leading()
-            Spacer(minLength: JunoSpace.snug)
-            trailing()
-            sendButton
+            if let callRow = speech?.callRow {
+                callRow(hasDraft, AnyView(sendButton))
+            } else {
+                leading()
+                Spacer(minLength: JunoSpace.snug)
+                trailing()
+                sendButton
+            }
         }
         .padding(.horizontal, JunoSpace.snug)
         .padding(.bottom, JunoSpace.snug)
@@ -311,9 +343,27 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
     /// Send / Stop: a 32pt ink disc (Code v2 DESIGN §5.6). Ink, not coral —
     /// coral is kept for working and needs-you; a quiet well while there is
     /// nothing to send.
+    private var hasDraft: Bool {
+        !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty
+    }
+
     @ViewBuilder
     private var sendButton: some View {
-        if let stop,
+        if !hasDraft, !isRunning, !isSending, speech?.callRow == nil, let talk = speech?.talk {
+            // Nothing to send: the slot is voice, as on the web and in Chat.
+            Button(action: talk) {
+                JunoIconView(.audioLines, size: 15, weight: .bold)
+                    .foregroundStyle(Studio.Surface.canvas)
+                    .frame(width: Studio.Metrics.sendButton, height: Studio.Metrics.sendButton)
+                    .background(Circle().fill(Studio.Ink.primary))
+                    .contentShape(Circle())
+            }
+            .buttonStyle(JunoPressButtonStyle())
+            .help("Voice conversation")
+            .accessibilityLabel("Start voice conversation")
+            .accessibilityIdentifier("juno.code.composer.voice")
+            .transition(.scale(scale: JunoMotion.scaleFrom(0.9, reduceMotion: reduceMotion)).combined(with: .opacity))
+        } else if let stop,
            isSending
             || (isRunning && text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachments.isEmpty)
         {

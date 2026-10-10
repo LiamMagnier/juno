@@ -625,3 +625,4 @@ button.cv2-set-row:hover { background: hsl(var(--accent) / 0.6); }
   .cv2 { --cv2-edge: hsl(var(--foreground) / 0.45); }
 }
 .cv2[data-hidden="true"] .cv2-spin, .cv2[data-hidden="true"] .cv2-shine { animation-play-state: paused !important; }
+.cv2-send[data-mode="voice"] { background: hsl(var(--foreground)); color: hsl(var(--background)); }

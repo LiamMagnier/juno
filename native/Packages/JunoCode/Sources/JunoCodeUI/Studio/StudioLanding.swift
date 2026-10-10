@@ -225,7 +225,8 @@ public struct StudioLanding: View {
             fieldIdentifier: "juno.code.launch-prompt",
             plusMenu: v2.map { AnyView(CodeV2PlusMenuItems(model: $0.composer, directory: $0.directory)) },
             contextStrip: AnyView(placeStrip),
-            minimumLines: 3
+            minimumLines: 3,
+            speech: speech
         ) {
             if let v2 {
                 CodeV2ComposerLeading(

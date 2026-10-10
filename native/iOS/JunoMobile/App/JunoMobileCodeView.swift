@@ -69,8 +69,10 @@ struct JunoMobileCodeView: View {
   @Namespace private var zoom
   @FocusState private var composerFocused: Bool
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  /// Dictation over the start composer (Chat's capsule).
-  @State private var dictating = false
+  /// Opens the start composer dictating: the offscreen snapshots only.
+  var previewDictation: JunoMobileCodeDictation? = nil
+  /// Opens the start composer with this typed: the offscreen snapshots only.
+  var previewPrompt: String? = nil
   /// The mode the next cloud run starts on, remembered per repository.
   @State private var startMode: CodeComposerModeLadder = .full
   @Environment(\.junoStartCodeVoice) private var startCodeVoice
@@ -435,94 +437,32 @@ struct JunoMobileCodeView: View {
           .padding(.horizontal, JunoSpace.tight)
           .transition(.opacity)
       }
-      if let codeVoice {
-        JunoMobileCodeCallBar(session: codeVoice)
-          .transition(.opacity)
-      }
-      VStack(spacing: JunoSpace.snug) {
-        if dictating {
-          JunoMobileDictation(
-            onCancel: { dictating = false },
-            onStop: { words in
-              dictating = false
-              prompt = Self.joined(prompt, words)
-              composerFocused = true
-            },
-            onSend: { words in
-              dictating = false
-              prompt = Self.joined(prompt, words)
-              start()
-            }
-          )
-          .frame(minWidth: 0, maxWidth: .infinity)
-        } else {
-          TextField(
-            model.isTargetless
-              ? "code.composer.placeholder.none"
-              : "code.composer.placeholder",
-            text: $prompt,
-            axis: .vertical
-          )
-          .lineLimit(1...3)
-          .textFieldStyle(.plain)
-          .focused($composerFocused)
-          .padding(.horizontal, JunoSpace.snug)
-          .frame(minHeight: 38, alignment: .top)
-          .accessibilityIdentifier("juno.mobile.code-composer")
-        }
-
-        // Target context, the three-way destination switch and Send share one
-        // compact control row. The old stacked arrangement made the composer
-        // cover the last run on a phone and made the destination feel like a
-        // settings form instead of a launch control.
-        // Where it runs and its mode on one row; the destination switch,
-        // the microphone, voice and Send on the next, so neither row has to
-        // squeeze a control into a glyph on a phone.
+      // The iOS Chat composer's anatomy: one glass card, the field, one row.
+      // Where it runs is one chip ("Cloud · juno"), the mode another, then
+      // the microphone and the one primary circle (voice while empty).
+      JunoMobileCodeComposer(
+        text: $prompt,
+        placeholder: model.isTargetless
+          ? String(localized: "code.composer.placeholder.none")
+          : String(localized: "code.composer.placeholder"),
+        focused: $composerFocused,
+        voice: codeVoice,
+        canSend: canStart,
+        send: start,
+        startVoice: startCodeVoice.map { begin in
+          { begin(JunoMobileCodeVoiceRelay.briefing(place: startPlace, turns: [])) }
+        },
+        previewDictation: previewDictation
+      ) {
+        JunoMobileCodeWhereChip(model: model)
         if !model.isTargetless {
-          HStack(alignment: .center, spacing: JunoSpace.tight) {
-            JunoMobileCodeTargetChip(model: model)
-              .frame(maxWidth: .infinity, alignment: .leading)
-            startModeChip
-              .fixedSize(horizontal: true, vertical: false)
-          }
-        }
-        HStack(alignment: .center, spacing: JunoSpace.tight) {
-          JunoMobileCodeTargetSwitch(model: model)
-            .fixedSize(horizontal: true, vertical: false)
-          Spacer(minLength: 0)
-          JunoMobileCodeSpeechButtons(
-            dictate: JunoSpeechService.isSupported && codeVoice == nil && !dictating
-              ? { composerFocused = false; dictating = true } : nil,
-            talk: startCodeVoice.map { start in
-              { start(JunoMobileCodeVoiceRelay.briefing(place: startPlace, turns: [])) }
-            },
-            isEnabled: !model.isMutating
-          )
-          Button {
-            start()
-          } label: {
-            JunoIconView(.send, size: 16)
-              .foregroundStyle(
-                canStart ? Color.junoOnAccent : Color.junoMutedForeground
-              )
-              .frame(width: 34, height: 34)
-              .modifier(JunoComposerSendBackground(active: canStart))
-              .frame(width: 44, height: 44)
-              .contentShape(Rectangle())
-          }
-          .buttonStyle(.plain)
-          .disabled(!canStart)
-          .accessibilityLabel("code.start")
-          .accessibilityIdentifier("juno.mobile.code-start")
+          startModeChip
         }
       }
-      .padding(JunoSpace.snug)
-      .glassEffect(.regular, in: .rect(cornerRadius: 24, style: .continuous))
     }
     .padding(.horizontal, JunoSpace.cozy)
     .padding(.vertical, JunoSpace.tight)
     .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: canStart)
-    .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: dictating)
     // A spoken sentence on the home screen starts the run with it; once a
     // thread is open, that thread's composer takes the sentences instead.
     .junoCodeVoiceLink(
@@ -533,6 +473,7 @@ struct JunoMobileCodeView: View {
       start()
     }
     .task(id: startModeProject) { startMode = rememberedStartMode }
+    .onAppear { if let previewPrompt { prompt = previewPrompt } }
   }
 
   // MARK: Voice and the mode
@@ -716,137 +657,120 @@ private struct JunoMobileCodeGreeting: View {
 /// row until the switch started truncating under the chip on a phone; splitting
 /// them is what let each keep its full width without either becoming a screen
 /// of its own.
-private struct JunoMobileCodeTargetSwitch: View {
-  @Bindable var model: NativeCodeModel
-
-  /// The three things the reader can aim the composer at.
-  ///
-  /// A local enum rather than a third `NativeCodeTarget` case: the wire
-  /// target is a fact about `/api/code/tasks`, which has exactly two, and
-  /// adding a third there would ripple into task decoding, the "where it
-  /// runs" caption, and a server enum that has no executor for it.
-  private enum Choice: Hashable {
-    case none
-    case cloud
-    case device
-  }
-
-  private var choice: Binding<Choice> {
-    Binding(
-      get: {
-        if model.isTargetless { return .none }
-        return model.target == .cloud ? .cloud : .device
-      },
-      set: { next in
-        switch next {
-        case .none:
-          model.isTargetless = true
-        case .cloud:
-          model.isTargetless = false
-          model.target = .cloud
-        case .device:
-          model.isTargetless = false
-          model.target = .device
-        }
-      }
-    )
-  }
-
-  var body: some View {
-    // Juno's own switch, not `.pickerStyle(.segmented)`: the system
-    // control fills its selected segment with the app tint, so "where
-    // does this run" sat in the composer as a coral slab — louder than
-    // the Send button beside it. The website's tabs are neutral.
-    JunoMobileSegmented(
-      options: [
-        JunoMobileSegmented<Choice>.Option(
-          Choice.none, String(localized: "code.target.none")
-        ),
-        JunoMobileSegmented<Choice>.Option(
-          Choice.cloud, String(localized: "code.target.cloud")
-        ),
-        JunoMobileSegmented<Choice>.Option(
-          Choice.device, String(localized: "code.target.remote")
-        ),
-      ],
-      selection: choice,
-      accessibilityLabel: String(localized: "code.target"),
-      compact: true
-    )
-    .accessibilityIdentifier("juno.mobile.code-target")
-  }
-}
-
-/// Which repository, or which folder on which computer. Opens the picker.
-private struct JunoMobileCodeTargetChip: View {
+/// Where the run goes, as one chip on the composer's row ("Cloud · juno"):
+/// the three destinations, then the repository or folder, which opens the
+/// picker. It replaces the destination switch and the separate target chip,
+/// which together took a row of their own on a phone.
+private struct JunoMobileCodeWhereChip: View {
   @Bindable var model: NativeCodeModel
   @State private var picking = false
 
-  @ViewBuilder
+  /// The three things the reader can aim the composer at. A local enum: the
+  /// wire target is a fact about `/api/code/tasks`, which has exactly two.
+  private enum Choice: Hashable, CaseIterable {
+    case none, cloud, device
+
+    var title: String {
+      switch self {
+      case .none: String(localized: "code.target.none")
+      case .cloud: String(localized: "code.target.cloud")
+      case .device: String(localized: "code.target.remote")
+      }
+    }
+
+    var icon: JunoIcon {
+      switch self {
+      case .none: .message
+      case .cloud: .cloud
+      case .device: .device
+      }
+    }
+  }
+
+  private var choice: Choice {
+    if model.isTargetless { return .none }
+    return model.target == .cloud ? .cloud : .device
+  }
+
+  private func choose(_ next: Choice) {
+    switch next {
+    case .none:
+      model.isTargetless = true
+    case .cloud:
+      model.isTargetless = false
+      model.target = .cloud
+    case .device:
+      model.isTargetless = false
+      model.target = .device
+    }
+  }
+
+  /// The repository or folder, short: the full identity is the
+  /// accessibility label and the picker's.
+  private var place: String? {
+    guard !model.isTargetless else { return nil }
+    switch model.target {
+    case .cloud: return model.selectedRepository?.name
+    case .device: return model.selectedWorkspace?.name ?? model.selectedDevice?.name
+    }
+  }
+
+  private var pickTitle: String {
+    model.target == .cloud
+      ? String(localized: "code.target.pick-repo")
+      : String(localized: "code.target.pick-device")
+  }
+
   var body: some View {
-    // Nothing to pick when there is no target: the chip would open a sheet
-    // of repositories for a conversation that will not use one.
-    if !model.isTargetless {
-      Button {
-        picking = true
-      } label: {
-        HStack(spacing: JunoSpace.tight) {
-          JunoIconView(model.target == .cloud ? .cloud : .device, size: 13)
-          Text(displayLabel)
-            .junoFont(size: 13, relativeTo: .footnote, weight: .medium)
-            .lineLimit(1)
-            .truncationMode(.middle)
-          Spacer(minLength: 4)
-          JunoIconView(.chevronDown, size: 9)
-            .junoSecondaryInk()
+    Menu {
+      Section {
+        ForEach(Choice.allCases, id: \.self) { option in
+          Button {
+            choose(option)
+          } label: {
+            if option == choice {
+              Label(option.title, image: JunoIcon.check.assetName(.regular))
+            } else {
+              Text(option.title)
+            }
+          }
         }
-        .foregroundStyle(.primary)
-        .padding(.horizontal, JunoSpace.cozy)
-        // A 36pt visual chip keeps the launch bar calm while the button's
-        // surrounding row still meets the 44pt touch target. The previous
-        // full-height chip stacked above the destination switch and made the
-        // composer feel like a settings form.
-        .frame(height: 36)
-        .frame(minWidth: 44, minHeight: 44)
-        .modifier(JunoGlassCapsule())
-        .contentShape(Capsule())
       }
-      .buttonStyle(.plain)
-      .accessibilityLabel(Text(label))
-      .sheet(isPresented: $picking) {
-        JunoMobileCodeTargetSheet(model: model)
-          .presentationDetents([.medium, .large])
-          .presentationDragIndicator(.visible)
+      if !model.isTargetless {
+        Section {
+          Button {
+            picking = true
+          } label: {
+            Text(place.map { "\(pickTitle): \($0)" } ?? pickTitle)
+          }
+        }
       }
+    } label: {
+      HStack(spacing: JunoSpace.hairline + 2) {
+        JunoIconView(choice.icon, size: 14)
+        Text(place.map { "\(choice.title) \u{00B7} \($0)" } ?? choice.title)
+          .lineLimit(1)
+          .truncationMode(.middle)
+        JunoIconView(.chevronDown, size: 10)
+          .foregroundStyle(Color.junoTertiaryInk)
+      }
+      .font(.subheadline.weight(.medium))
+      .foregroundStyle(Color.junoSecondaryInk)
+      .padding(.horizontal, JunoSpace.snug)
+      .frame(minHeight: 44)
+      .contentShape(.hoverEffect, .rect(cornerRadius: 10))
+      .hoverEffect(.highlight)
     }
-  }
-
-  private var label: String {
-    switch model.target {
-    case .cloud:
-      return model.selectedRepository?.fullName
-        ?? String(localized: "code.target.pick-repo")
-    case .device:
-      guard let device = model.selectedDevice else {
-        return String(localized: "code.target.pick-device")
-      }
-      return model.selectedWorkspace.map { "\(device.name) · \($0.name)" } ?? device.name
-    }
-  }
-
-  /// A short visual label leaves room for the target switch and Send. The full
-  /// repository or host/workspace identity remains the accessibility label and
-  /// is visible in the picker, so compactness never hides the selected target.
-  private var displayLabel: String {
-    switch model.target {
-    case .cloud:
-      return model.selectedRepository?.name
-        ?? String(localized: "code.target.pick-repo")
-    case .device:
-      guard let device = model.selectedDevice else {
-        return String(localized: "code.target.pick-device")
-      }
-      return model.selectedWorkspace?.name ?? device.name
+    .menuOrder(.fixed)
+    .tint(Color.primary)
+    .frame(minWidth: 44, minHeight: 44)
+    .contentShape(.rect)
+    .accessibilityLabel("Where it runs, \(choice.title)\(place.map { ", \($0)" } ?? "")")
+    .accessibilityIdentifier("juno.mobile.code-target")
+    .sheet(isPresented: $picking) {
+      JunoMobileCodeTargetSheet(model: model)
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
     }
   }
 }
@@ -1172,7 +1096,6 @@ private struct JunoMobileCodeSessionView: View {
   @State private var isNearBottom = true
   @State private var followUp = ""
   @FocusState private var followUpFocused: Bool
-  @State private var dictating = false
   @Environment(\.junoStartCodeVoice) private var startCodeVoice
   @Environment(\.junoCodeVoiceSession) private var codeVoice
 
@@ -1809,7 +1732,31 @@ private struct JunoMobileCodeSessionView: View {
   /// reason — and the composer under it, where the keyboard expects it.
   @State private var questionAnswer = ""
 
+  private var hasPendingCard: Bool {
+    model.pendingQuestion != nil || model.pendingPlan != nil || model.pendingApproval != nil
+  }
+
+  /// What the run waits on (a question, a plan, an approval) on a raised card,
+  /// then the composer, in the Chat composer's own glass card: one glass layer.
   private var footer: some View {
+    VStack(alignment: .leading, spacing: JunoSpace.snug) {
+      if hasPendingCard {
+        pendingCard
+          .padding(JunoSpace.comfy)
+          .junoMobileRaised(cornerRadius: 20)
+          .transition(.opacity.combined(with: .move(edge: .bottom)))
+      }
+      followUpComposer
+    }
+    .padding(.horizontal, JunoSpace.regular)
+    .padding(.bottom, JunoSpace.snug)
+    .animation(
+      JunoMotion.reduced(JunoMotion.standard, when: reduceMotion),
+      value: model.pendingApproval
+    )
+  }
+
+  private var pendingCard: some View {
     VStack(alignment: .leading, spacing: JunoSpace.cozy) {
       if let question = model.pendingQuestion {
         Text("Alevr needs your answer").font(.headline)
@@ -1833,18 +1780,8 @@ private struct JunoMobileCodeSessionView: View {
       }
       if let approval = model.pendingApproval {
         approvalPanel(approval)
-        Divider()
       }
-      followUpComposer
     }
-    .padding(JunoSpace.comfy)
-    .background(JunoGlassBackground(cornerRadius: 22))
-    .padding(.horizontal, JunoSpace.cozy)
-    .padding(.bottom, JunoSpace.snug)
-    .animation(
-      JunoMotion.reduced(JunoMotion.standard, when: reduceMotion),
-      value: model.pendingApproval
-    )
   }
 
   /// A second message to a session that already exists.
@@ -1860,79 +1797,30 @@ private struct JunoMobileCodeSessionView: View {
   /// the field says so plainly rather than accepting a message it would have to
   /// drop.
   private var followUpComposer: some View {
-    VStack(alignment: .leading, spacing: JunoSpace.snug) {
-      if let codeVoice {
-        JunoMobileCodeCallBar(session: codeVoice)
-      }
+    VStack(alignment: .leading, spacing: JunoSpace.tight) {
       if let blocked = followUpBlockedReason {
         Text(blocked)
           .junoCaption()
           .frame(maxWidth: .infinity, alignment: .leading)
+          .padding(.horizontal, JunoSpace.snug)
       }
-      if dictating {
-        JunoMobileDictation(
-          onCancel: { dictating = false },
-          onStop: { words in
-            dictating = false
-            followUp = JunoMobileCodeView.joined(followUp, words)
-            followUpFocused = true
-          },
-          onSend: { words in
-            dictating = false
-            followUp = JunoMobileCodeView.joined(followUp, words)
-            if canSendFollowUp { sendFollowUp() }
-          }
-        )
-        .frame(minWidth: 0, maxWidth: .infinity)
-      } else {
-      HStack(alignment: .bottom, spacing: JunoSpace.snug) {
-        TextField(
-          String(
-            localized: "code.followup.placeholder",
-            defaultValue: "Reply to this session"
-          ),
-          text: $followUp,
-          axis: .vertical
-        )
-        .lineLimit(1...5)
-        .textFieldStyle(.plain)
-        .focused($followUpFocused)
-        .disabled(followUpBlockedReason != nil)
-        .frame(minHeight: 44)
-        .accessibilityIdentifier("juno.mobile.code-followup")
-        JunoMobileCodeSpeechButtons(
-          dictate: JunoSpeechService.isSupported && codeVoice == nil
-            ? { followUpFocused = false; dictating = true } : nil,
-          talk: startCodeVoice.map { start in
-            { start(JunoMobileCodeVoiceRelay.briefing(place: model.openTask?.whereItRuns, turns: spokenTurns)) }
-          },
-          isEnabled: !model.isMutating
-        )
-        Button {
-          sendFollowUp()
-        } label: {
-          JunoIconView(.send, size: 16)
-            .foregroundStyle(
-              canSendFollowUp ? Color.junoOnAccent : Color.junoMutedForeground
-            )
-            .frame(width: 34, height: 34)
-            .modifier(JunoComposerSendBackground(active: canSendFollowUp))
-            .frame(width: 44, height: 44)
-            .contentShape(Rectangle())
+      JunoMobileCodeComposer(
+        text: $followUp,
+        placeholder: String(localized: "code.followup.placeholder", defaultValue: "Reply to this session"),
+        focused: $followUpFocused,
+        voice: codeVoice,
+        canSend: canSendFollowUp,
+        isRunning: runIsActive,
+        send: sendFollowUp,
+        stop: { Task { await model.cancelOpenTask() } },
+        startVoice: startCodeVoice.map { begin in
+          { begin(JunoMobileCodeVoiceRelay.briefing(place: model.openTask?.whereItRuns, turns: spokenTurns)) }
         }
-        .buttonStyle(.plain)
-        .disabled(!canSendFollowUp)
-        .accessibilityLabel(
-          Text(String(localized: "code.followup.send", defaultValue: "Send follow-up"))
-        )
-        .accessibilityIdentifier("juno.mobile.code-followup-send")
+      ) {
+        EmptyView()
       }
-      }
+      .accessibilityIdentifier("juno.mobile.code-followup")
     }
-    .animation(
-      JunoMotion.reduced(JunoMotion.fast, when: reduceMotion),
-      value: canSendFollowUp
-    )
     .junoCodeVoiceLink(codeVoice, isRunning: runIsActive, latestReply: latestReply, deliver: hear)
     .onChange(of: runIsActive) { _, active in
       // Words said while the run worked go once it stops.
