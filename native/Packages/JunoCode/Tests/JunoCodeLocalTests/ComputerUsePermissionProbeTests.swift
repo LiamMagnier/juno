@@ -168,7 +168,7 @@ final class ComputerUsePermissionProbeTests: XCTestCase {
     func testErrorsAreSentences() {
         XCTAssertEqual(
             ComputerUseError.accessibilityPermissionMissing.errorDescription,
-            "macOS has not given Juno Accessibility. Allow it in System Settings › Privacy & Security."
+            "macOS has not given Alevr Accessibility. Allow it in System Settings › Privacy & Security."
         )
         XCTAssertFalse(ComputerUseError.notActive.errorDescription!.contains("notActive"))
     }

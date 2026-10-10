@@ -61,7 +61,7 @@ struct CustomAgentDiscoveryTests {
         defer { try? FileManager.default.removeItem(at: root) }
         try write(".claude/agents/reviewer.md", "---\nname: Reviewer\n---\nClaude's reviewer.", in: root)
         try write(".claude/agents/planner.md", "Plan things.", in: root)
-        try write(".juno/agents/reviewer.md", "---\nname: Reviewer\n---\nJuno's reviewer.", in: root)
+        try write(".juno/agents/reviewer.md", "---\nname: Reviewer\n---\nAlevr's reviewer.", in: root)
         try write(".juno/agents/notes.txt", "not an agent", in: root)
 
         let agents = CustomAgentDiscovery(access: access).discover()

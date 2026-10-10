@@ -86,7 +86,7 @@ public struct ComputerUsePermissionStatus: Equatable, Sendable {
 
     /// What the notice says when the grant looks on but is not.
     public static let trustLostAdvice =
-        "macOS no longer trusts this build of Juno. Remove Juno from the Accessibility list and add it again."
+        "macOS no longer trusts this build of Alevr. Remove Alevr from the Accessibility list and add it again."
 }
 
 /// The last frame the agent was sent in a session.
@@ -162,7 +162,7 @@ public enum ComputerUseToolName {
 
     /// What a phone is told when it tries to allow one of those.
     public static let allowAtTheMacSentence =
-        "Screen actions are allowed on the Mac, where the card shows what Juno will click and Esc stops it. You can still decline from here."
+        "Screen actions are allowed on the Mac, where the card shows what Alevr will click and Esc stops it. You can still decline from here."
 
     /// Whether a tool is one of the screen tools.
     public static func isScreenTool(_ name: String) -> Bool {
@@ -218,9 +218,9 @@ public enum ComputerUseError: Error, Equatable, Sendable, LocalizedError {
         case .consentRequired:
             "Screen control starts only when you press Start."
         case .screenCapturePermissionMissing:
-            "macOS has not given Juno Screen Recording. Allow it in System Settings › Privacy & Security."
+            "macOS has not given Alevr Screen Recording. Allow it in System Settings › Privacy & Security."
         case .accessibilityPermissionMissing:
-            "macOS has not given Juno Accessibility. Allow it in System Settings › Privacy & Security."
+            "macOS has not given Alevr Accessibility. Allow it in System Settings › Privacy & Security."
         case .notActive:
             "Screen control is not running in this session."
         case let .heldElsewhere(sentence):
