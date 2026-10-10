@@ -32,6 +32,7 @@ import { managedCall, runtimeRequest, type ScheduledResume } from "@/lib/code-v2
 import { toast } from "sonner";
 import type { ClientMessage } from "@/types/chat";
 import { useEnvLink } from "./use-env-link";
+import { useCodeSkills } from "./use-code-skills";
 import type { WorkspaceModel } from "./types";
 import { CodeWorkspace } from "./workspace";
 import { initialModePair, projectModeKey, type ProjectModeDefault } from "@/lib/code-v2/composer-mode";
@@ -194,6 +195,19 @@ export function CodeV2Route({ conversation, initialMessages }: CodeV2RouteProps)
     return id;
   }
 
+  // Skills lane: the account's skills and, when this thread runs on a Mac,
+  // the Mac's and the project's (skills.list over the device link).
+  const envClient = useEnv ? env.client : null;
+  const envSessionId = env.view?.id ?? env.sessionId ?? null;
+  const listLocal = React.useMemo(
+    () =>
+      envClient
+        ? async () => (await envClient.request("skills.list", envSessionId ? { sessionId: envSessionId } : cwd ? { cwd } : {})).skills
+        : null,
+    [envClient, envSessionId, cwd],
+  );
+  const skills = useCodeSkills({ threadKey: conversation.id, snapshotSkills: env.view?.skills, listLocal });
+
   const persistRouting = (r: RoleRouting) => {
     setRoutingState(r);
     void fetch(`/api/code/routing/${conversation.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ routing: r }) }).catch(() => undefined);
@@ -203,12 +217,16 @@ export function CodeV2Route({ conversation, initialMessages }: CodeV2RouteProps)
     async send(text) {
       if (useEnv && env.client) {
         const sessionId = await ensureEnvSession();
-        return env.client.request("turn.start", { sessionId, input: { text }, selection, routing: effectiveRouting.preset === "solo" ? undefined : effectiveRouting, runtimeMode, interactionMode });
+        const active = await skills.take();
+        return env.client.request("turn.start", { sessionId, input: { text, ...(active ? { skills: active } : {}) }, selection, routing: effectiveRouting.preset === "solo" ? undefined : effectiveRouting, runtimeMode, interactionMode });
       }
       return sendLegacy(text);
     },
     queue(text) {
-      if (useEnv && env.client && env.view) void env.client.request("turn.queue", { sessionId: env.view.id, input: { text } });
+      if (useEnv && env.client && env.view) {
+        const { client, view } = { client: env.client, view: env.view };
+        void skills.take().then((active) => client.request("turn.queue", { sessionId: view.id, input: { text, ...(active ? { skills: active } : {}) } }));
+      }
       else setLocalQueue((q) => queueReducer(q, { type: "add", row: { id: `q${Date.now()}`, text } }));
     },
     async steer(text) {
@@ -376,6 +394,8 @@ export function CodeV2Route({ conversation, initialMessages }: CodeV2RouteProps)
     threads,
     starting: !meta.loaded ? null : session.status === "submitting" ? `Starting on ${presence.device?.name ?? "your Mac"}…` : null,
     offline: !meta.isCloud && presence.state === "offline",
+    // The account's skills work anywhere; a Mac adds its own.
+    skills,
     actions,
   };
 

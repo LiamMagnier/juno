@@ -20,6 +20,7 @@ import {
   type ScheduledResume,
   type SessionState,
   type SessionUsage,
+  type SkillActivation,
   type TurnItem,
   type TurnOutcome,
 } from "@/lib/code-v2/contracts";
@@ -49,6 +50,8 @@ export interface SessionView {
   lastOutcome?: TurnOutcome;
   /** A turn the env server will start at a usage window reset (turn.schedule). */
   scheduledResume?: ScheduledResume;
+  /** skills lane: the thread's selected skills, as the env server keeps them. */
+  skills?: SkillActivation[];
 }
 
 export function emptySessionView(id: string, selection: ModelSelection, cwd = ""): SessionView {
@@ -91,6 +94,7 @@ export function sessionViewFromSnapshot(snapshot: SessionSnapshot, sequence: num
     queue: snapshot.queue,
     usage: snapshot.usage,
     ...(snapshot.scheduledResume ? { scheduledResume: snapshot.scheduledResume } : {}),
+    ...(snapshot.skills?.length ? { skills: snapshot.skills } : {}),
     cursor: sequence,
     needsResync: false,
   };

@@ -10,6 +10,7 @@ import type { TurnItem } from "@/lib/code-v2/contracts";
 import { queueReducer } from "@/lib/code-v2/composer";
 import { STATES, makeActions, stateById, INSTANCES, DEVICE } from "./fixtures";
 import "@/components/code/v2/code-v2.css";
+import { useFixtureSkills } from "./skills-fixture";
 
 /**
  * The /dev/code-v2 gallery: every workspace state over fixture data, live
@@ -58,6 +59,7 @@ export function CodeV2Gallery() {
 function LiveState({ id, reduced, onLog }: { id: string; reduced: boolean; onLog: (l: string) => void }) {
   const fixture = stateById(id);
   const [model, setModel] = React.useState(fixture.model);
+  const skills = useFixtureSkills(fixture.skills);
   const patch = (f: (m: typeof model) => typeof model) => setModel((m) => f(m));
   const log = (name: string, ...args: unknown[]) => onLog(`${name}(${args.map((a) => JSON.stringify(a)).join(", ").slice(0, 80)})`);
   const base = makeActions(log);
@@ -135,7 +137,7 @@ function LiveState({ id, reduced, onLog }: { id: string; reduced: boolean; onLog
   };
   return (
     <CodeWorkspace
-      model={{ ...model, actions }}
+      model={{ ...model, ...(fixture.skills ? { skills } : {}), actions }}
       ui={{ ...fixture.ui, ...(typeof window !== "undefined" && window.innerWidth <= 760 ? { dockOpen: false } : {}), reducedMotion: reduced }}
       firstRun={false}
       onProbe={async () => undefined}

@@ -34,12 +34,14 @@ import { availableComposerModes, composerModeInfo, composerModeOf, setComposerMo
 import { EFFORT_LABELS, currentTier, effectiveEffort, effortLevelsOf, findInstance } from "./model-info";
 import { ContextRing, ModelPicker, triggerWords, type RoleTab } from "./pickers";
 import { ComposerTeam } from "./team";
+import { SkillsChip, SkillsPicker } from "./skills";
+import { matchSkills, readCodeSkillInvocation, type CodeSkillChoice } from "@/lib/code-v2/skills";
 import { ComposerPopover, Glyph, MenuList, ModelMark, useIsMac, type MenuEntry } from "./primitives";
 import type { WorkspaceModel } from "./types";
 import { cn } from "@/lib/utils";
 
 /** `model` opens the model chip on its effort stage; `catalog` on the model list. */
-export type PopoverName = "model" | "catalog" | "context" | "team" | "overflow" | "attach" | "queue" | "device" | "mode" | null;
+export type PopoverName = "model" | "catalog" | "context" | "team" | "overflow" | "attach" | "queue" | "device" | "mode" | "skills" | null;
 
 type Pending = ApprovalRequestItem | UserInputRequestItem;
 
@@ -284,13 +286,28 @@ export const Composer = React.forwardRef<
   const ready = !model.starting && connected && !model.offline;
   const hasDraft = draft.trim().length > 0;
   const trigger: Trigger | null = menuDismissed ? null : detectTrigger(draft, caret);
-  const menuItems = React.useMemo(() => {
+  const skills = model.skills;
+  const skillChoices = skills?.choices;
+  const slashing = trigger?.kind === "slash";
+  // The skills list is read the first time `/` is typed (it is lazy).
+  React.useEffect(() => {
+    if (slashing) skills?.load();
+  }, [slashing, skills]);
+  const menuItems = React.useMemo((): { key: string; name: string; sub: string; section: string; insert: string; skill?: CodeSkillChoice; trail?: string }[] => {
     if (!trigger) return [];
-    if (trigger.kind === "slash") return filterByQuery(SLASH_COMMANDS, trigger.query, (c) => c.name).map((c) => ({ key: c.name, name: `/${c.name}`, sub: c.description, section: c.section, insert: c.insert ?? `/${c.name} ` }));
+    if (trigger.kind === "slash") {
+      const commands = filterByQuery(SLASH_COMMANDS, trigger.query, (c) => c.name).map((c) => ({ key: c.name, name: `/${c.name}`, sub: c.description, section: c.section, insert: c.insert ?? `/${c.name} ` }));
+      // Skills lane: the thread's skills after the commands, a /name runs one for the next message.
+      const skillRows = matchSkills(skillChoices ?? [], trigger.query)
+        .slice(0, 24)
+        .map((c) => ({ key: `skill:${c.id}`, name: `/${c.name}`, sub: c.description, section: "Skills", insert: "", skill: c, trail: c.originLabel }));
+      const agents = commands.filter((c) => c.section === "Agents");
+      return [...commands.filter((c) => c.section !== "Agents"), ...skillRows, ...agents];
+    }
     const files = rankFiles(model.files ?? [], trigger.query, 8).map((p) => ({ key: p, name: p.split("/").pop() ?? p, sub: p.includes("/") ? p.slice(0, p.lastIndexOf("/")) : "", section: "Files", insert: `@${p} ` }));
     const agents = filterByQuery(["explorer", "reviewer"], trigger.query, (a) => a).map((a) => ({ key: a, name: `@${a}`, sub: a === "explorer" ? "Maps something, read-only" : "A second read of the changes", section: "Agents", insert: `@${a} ` }));
     return [...files, ...agents];
-  }, [trigger, model.files]);
+  }, [trigger, model.files, skillChoices]);
   const menuOpen = !!trigger && menuItems.length > 0;
 
   const [dictating, setDictating] = React.useState(false);
@@ -379,8 +396,18 @@ export const Composer = React.forwardRef<
   }, [draft, needs]);
 
   const submit = (intent: "send" | "queue" | "steer") => {
-    const text = draft.trim();
+    let text = draft.trim();
     if (!text) return;
+    // `/design-taste-frontend make the hero calmer`: that skill for this message, the rest as the message.
+    const invoked = skills ? readCodeSkillInvocation(text, skills.choices ?? []) : null;
+    if (invoked && skills) {
+      skills.arm(invoked.skill);
+      text = invoked.remainder;
+      if (!text) {
+        setDraft("");
+        return;
+      }
+    }
     if (intent === "send") void actions.send(text);
     else if (intent === "queue") actions.queue(text);
     else void actions.steer(text);
@@ -392,6 +419,15 @@ export const Composer = React.forwardRef<
   const pick = (i: number) => {
     const item = menuItems[i];
     if (!item || !trigger) return;
+    if (item.skill && skills) {
+      // A skill from the menu: armed for the next message, its `/name` taken out of the draft.
+      skills.arm(item.skill);
+      const next = applyTrigger(draft, caret, trigger, "");
+      setDraft(next.text.replace(/^\s+/, ""));
+      setCaret(0);
+      requestAnimationFrame(() => textarea.current?.focus());
+      return;
+    }
     const next = applyTrigger(draft, caret, trigger, item.insert);
     setDraft(next.text);
     setCaret(next.caret);
@@ -598,6 +634,7 @@ export const Composer = React.forwardRef<
                         {m.name}
                       </span>
                       {m.sub && <span className="cv2-small cv2-mute cv2-trunc">{m.sub}</span>}
+                      {m.trail && <span className="trail">{m.trail}</span>}
                     </button>
                   </React.Fragment>
                 ))}
@@ -650,6 +687,7 @@ export const Composer = React.forwardRef<
                   <span className="v cv2-trunc">{modeInfo.label}</span>
                   <Glyph name="chevron-down" size={12} className="chev" />
                 </button>
+                {skills && <SkillsChip skills={skills} open={popover === "skills"} onToggle={() => toggle("skills")} />}
                 <button type="button" className="cv2-ctl icon" aria-label="More options" title="Effort, context, mode and permissions" aria-haspopup="menu" aria-expanded={popover === "overflow"} onClick={() => toggle("overflow")}>
                   <Glyph name="more" size={16} />
                 </button>
@@ -725,6 +763,7 @@ export const Composer = React.forwardRef<
               <div className="cv2-pop-grab" aria-hidden />
               <MenuList entries={overflow} onClose={() => setPopover(null)} label="Options" />
             </ComposerPopover>
+            {skills && <SkillsPicker skills={skills} open={popover === "skills"} onClose={() => setPopover(null)} anchorRef={footRef} />}
             <ComposerPopover open={popover === "queue"} onClose={() => setPopover(null)} width={360} align="right" offset={0} label="Queued messages" anchorRef={footRef}>
               <QueueMenu model={model} canSteer={canSteer && running} mac={mac} onEdit={(text, id) => (actions.removeQueued(id), setDraft(text), setPopover(null), requestAnimationFrame(() => textarea.current?.focus()))} />
             </ComposerPopover>

@@ -347,6 +347,26 @@ button.cv2-wl:hover .verb { color: hsl(var(--foreground)); }
 .cv2-mi .l2 { display: block; font-size: 12px; line-height: 16px; color: hsl(var(--muted-foreground)); }
 .cv2-mi .l2.warn { color: hsl(var(--destructive-ink)); }
 
+/* Skills selector (skills lane): the model catalogue's anatomy, rows of name over a two-line description. */
+.cv2-skills { display: flex; flex-direction: column; min-height: 0; }
+.cv2-skills-list { max-height: 360px; padding: 4px 0 6px; }
+.cv2-skills-list > [role="group"]:first-child .cv2-pgroup { padding-top: 4px; }
+.cv2-skill-row { align-items: flex-start; padding-top: 7px; padding-bottom: 7px; }
+.cv2-skill-row .cv2-skill-mark { margin-top: 2px; color: hsl(var(--muted-foreground)); flex: none; }
+.cv2-skill-row[aria-selected="true"] .cv2-skill-mark { color: hsl(var(--foreground)); }
+.cv2-skill-row .ck { margin-top: 1px; }
+.cv2-skill-top { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.cv2-skill-top .nm { min-width: 0; }
+.cv2-skill-origin { margin-left: auto; flex: none; max-width: 45%; font-size: 12px; line-height: 16px; color: hsl(var(--muted-foreground) / 0.85); }
+.cv2-skill-note { flex: none; font-size: 12px; line-height: 16px; color: hsl(var(--muted-foreground)); }
+.cv2-skill-desc { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.cv2-skill-empty { display: flex; align-items: center; gap: 8px; padding: 14px; font-size: 13px; line-height: 18px; color: hsl(var(--muted-foreground)); }
+.cv2-skill-empty.col { flex-direction: column; align-items: flex-start; gap: 4px; }
+.cv2-skill-empty .t { color: hsl(var(--foreground)); }
+.cv2-skill-warn { min-height: 32px; }
+.cv2-ctl[data-active] .cv2-ic:first-child { color: hsl(var(--foreground)); }
+.cv2.cv2-landing-skills { background: transparent; }
+
 /* Model picker: a provider rail, search, two-line rows, two compact footer rows. */
 .cv2-picker { display: flex; min-height: 0; flex: 1; }
 .cv2-rail { width: 44px; flex: none; background: hsl(var(--muted) / 0.6); border-right: 1px solid hsl(var(--border) / 0.7); display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 0; overflow-y: auto; scrollbar-width: none; }

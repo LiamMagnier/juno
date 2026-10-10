@@ -20,6 +20,7 @@ import type { DiffFile, HunkDecision } from "@/lib/code-v2/diff";
 import type { DetailLevel } from "@/lib/code-v2/turns";
 import type { ThreadSummary } from "@/lib/code-v2/thread-sections";
 import type { ByokKeyRecord } from "@/lib/code-v2/byok-client";
+import type { CodeSkillsState } from "./use-code-skills";
 
 export interface TerminalSession {
   id: string;
@@ -125,6 +126,8 @@ export interface WorkspaceModel {
   offline?: boolean;
   /** Read-only child thread (a subagent opened in full view). */
   child?: { label: string; model: string; parentTitle: string } | null;
+  /** skills lane: the Skills chip and `/name` (absent: no Skills chip). */
+  skills?: CodeSkillsState;
   actions: WorkspaceActions;
 }
 

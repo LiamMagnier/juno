@@ -349,6 +349,8 @@ export interface GalleryState {
   label: string;
   model: Base;
   ui?: WorkspaceUiState;
+  /** skills lane: the composer's Skills chip (absent: no chip). */
+  skills?: { selected?: string[]; once?: string; empty?: boolean; loading?: boolean };
 }
 
 export const STATES: GalleryState[] = [
@@ -458,6 +460,26 @@ export const STATES: GalleryState[] = [
     label: "Context window (Alevr)",
     model: base({ items: workedTurn(), selection: { instanceId: "alevr", model: "openai:gpt-6.1-sol", effort: "high" }, usage: USAGE_ALEVR }),
     ui: { popover: "tier" },
+  },
+  {
+    id: "skills",
+    label: "Skills selector",
+    model: base({ items: workedTurn() }),
+    ui: { popover: "skills" },
+    skills: { selected: ["design-taste-frontend", "tidy-commits"] },
+  },
+  {
+    id: "skills-chip",
+    label: "Skills chip (one on, a /name armed)",
+    model: base({ items: workedTurn() }),
+    skills: { selected: ["impeccable"], once: "release-notes" },
+  },
+  {
+    id: "skills-empty",
+    label: "Skills selector (none yet)",
+    model: base({ items: [] }),
+    ui: { popover: "skills" },
+    skills: { empty: true },
   },
   {
     id: "overflow",

@@ -61,6 +61,7 @@ import { setPendingCodePrompt } from "@/lib/code-session-handoff";
 import type { CodePrefill, CodePrefillNote } from "@/lib/code-prefill";
 import { cn } from "@/lib/utils";
 import { CODE_COMPOSER_SEED_EVENT } from "@/components/code/code-seed";
+import { LandingSkillsChip, seedThreadSkills, useLandingSkills } from "@/components/code/code-landing-skills";
 import type { ClientAttachment, ClientConversation } from "@/types/chat";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 
@@ -304,6 +305,8 @@ export function CodeComposer({
 
   // —— Workspace / Repository Selection ——
   const [selectedWorkspace, setSelectedWorkspace] = React.useState<Workspace | null>(null);
+  // Skills lane: the run on a Mac starts under the skills chosen here.
+  const landingSkills = useLandingSkills(target === "device" ? selectedWorkspace : null);
   const [selectedRepo, setSelectedRepo] = React.useState<CloudRepo | null>(null);
   const [baseRef, setBaseRef] = React.useState("");
 
@@ -488,12 +491,12 @@ export function CodeComposer({
       if (!res.ok) throw new Error("conversation");
       const { conversation } = (await res.json()) as { conversation: ClientConversation };
       seedThreadMode(conversation.id);
-      setPendingCodePrompt(conversation.id, text, attachments);
+      setPendingCodePrompt(conversation.id, seedThreadSkills(landingSkills, conversation.id, text), attachments);
       upsertConversation({ ...conversation, model });
       router.push(`/chat/${conversation.id}`);
       return true;
     },
-    [model, router, seedThreadMode, upsertConversation],
+    [model, router, seedThreadMode, upsertConversation, landingSkills],
   );
 
   const startCloud = React.useCallback(
@@ -806,7 +809,8 @@ export function CodeComposer({
                 onBaseRefChange={setBaseRef}
                 disabled={submitting}
               />
-              <span className="ml-auto flex min-w-0">
+              <span className="ml-auto flex min-w-0 gap-1">
+                {target === "device" && <LandingSkillsChip skills={landingSkills} disabled={submitting} />}
                 <ModeChip target={target} mode={mode} onChange={chooseMode} disabled={submitting} />
               </span>
             </div>

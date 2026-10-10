@@ -51,7 +51,7 @@ function writeStored(key: string, value: string) {
 function popoverFromUi(p: string | null | undefined): PopoverName {
   if (p === "tier") return "context";
   if (p === "orchestrate") return "team";
-  if (p === "model" || p === "catalog" || p === "context" || p === "team" || p === "overflow" || p === "attach" || p === "queue" || p === "device") return p;
+  if (p === "model" || p === "catalog" || p === "context" || p === "team" || p === "overflow" || p === "attach" || p === "queue" || p === "device" || p === "skills") return p;
   return null;
 }
 
