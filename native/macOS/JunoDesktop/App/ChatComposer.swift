@@ -931,6 +931,9 @@ struct ChatComposer: View {
     @State private var showingFileImporter = false
     @State private var showingLibrary = false
     @State private var showingNewProject = false
+    /// The tray's Skills and Apps lists, opened from an armed mark too.
+    @State private var showingTraySkills = false
+    @State private var showingTrayApps = false
     /// The dictation in progress, if the reader is dictating. Dropping it is
     /// what tears the recognizer down.
     @State private var dictation: ComposerDictationSession?
@@ -1738,7 +1741,8 @@ struct ChatComposer: View {
             },
             manage: manageConnections,
             isLoading: connectorModel.phase == .loading,
-            limit: ComposerPlusMenuModel.connectorLimit
+            limit: ComposerPlusMenuModel.connectorLimit,
+            isPresented: $showingTrayApps
         )
     }
 
@@ -1757,7 +1761,8 @@ struct ChatComposer: View {
             armed: skillSlug,
             arm: { skillSlug = $0 },
             browse: manageSkills,
-            isLoading: skillLibrary.isLoading
+            isLoading: skillLibrary.isLoading,
+            isPresented: $showingTraySkills
         )
     }
 
@@ -1845,6 +1850,7 @@ struct ChatComposer: View {
                     mark: mark,
                     showsLabel: showsLabels,
                     disarm: { disarm(mark.id) },
+                    open: markOpener(mark.id),
                     menu: { ComposerPlusMenu(menu: plusMenuModel) }
                 )
             }
@@ -1859,6 +1865,17 @@ struct ChatComposer: View {
             }
         }
         .fixedSize()
+    }
+
+    /// The skill's mark opens the tray's Skills list, an app's mark its Apps
+    /// list, where the tray carries them; nil keeps `+` (a thread, steering,
+    /// dictating, every other mark).
+    private func markOpener(_ id: String) -> (() -> Void)? {
+        switch trayCoverage.target(forMark: id) {
+        case .traySkills: { showingTraySkills = true }
+        case .trayApps: { showingTrayApps = true }
+        case .plusMenu: nil
+        }
     }
 
     private func disarm(_ id: String) {

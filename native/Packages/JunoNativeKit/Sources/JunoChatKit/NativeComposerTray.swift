@@ -710,6 +710,9 @@ public struct NativeComposerTrayApps {
     public var isLoading: Bool
     /// How many may be on for one message (the web's five), or nil for no cap.
     public var limit: Int?
+    /// Whether the Mac's Apps list is open, when the owner opens it from
+    /// elsewhere (an app's mark in the field); nil keeps it the chip's own.
+    public var isPresented: Binding<Bool>?
 
     public init(
         connectors: [NativeConnector],
@@ -717,7 +720,8 @@ public struct NativeComposerTrayApps {
         toggle: @escaping (String) -> Void,
         manage: (() -> Void)? = nil,
         isLoading: Bool = false,
-        limit: Int? = nil
+        limit: Int? = nil,
+        isPresented: Binding<Bool>? = nil
     ) {
         self.connectors = connectors
         self.enabled = enabled
@@ -725,6 +729,7 @@ public struct NativeComposerTrayApps {
         self.manage = manage
         self.isLoading = isLoading
         self.limit = limit
+        self.isPresented = isPresented
     }
 }
 
@@ -771,19 +776,25 @@ public struct NativeComposerTraySkills {
     public var arm: (String?) -> Void
     public var browse: (() -> Void)?
     public var isLoading: Bool
+    /// Whether the Mac's Skills list is open, when the owner opens it from
+    /// elsewhere (the armed skill's mark in the field); nil keeps it the
+    /// chip's own.
+    public var isPresented: Binding<Bool>?
 
     public init(
         items: [NativeComposerTraySkill],
         armed: String?,
         arm: @escaping (String?) -> Void,
         browse: (() -> Void)? = nil,
-        isLoading: Bool = false
+        isLoading: Bool = false,
+        isPresented: Binding<Bool>? = nil
     ) {
         self.items = items
         self.armed = armed
         self.arm = arm
         self.browse = browse
         self.isLoading = isLoading
+        self.isPresented = isPresented
     }
 }
 
@@ -930,7 +941,7 @@ public struct NativeComposerTray<Leading: View, Trailing: View>: View {
         let on = apps.connectors.filter { apps.enabled.contains($0.id) }
         let label = on.isEmpty ? "Apps" : "Apps, \(on.count) on"
         #if os(macOS)
-        NativeTrayPopoverChip(accessibilityLabel: label, identifier: "juno.composer-tray.apps") { close in
+        NativeTrayPopoverChip(accessibilityLabel: label, identifier: "juno.composer-tray.apps", isPresented: apps.isPresented) { close in
             NativeComposerTrayPickers.apps(apps, close: close)
         } label: {
             appsLabel(on)
@@ -983,7 +994,7 @@ public struct NativeComposerTray<Leading: View, Trailing: View>: View {
         let armed = skills.items.first { $0.slug == skills.armed }
         let label = armed.map { "Skill: \($0.name)" } ?? "Skills"
         #if os(macOS)
-        NativeTrayPopoverChip(accessibilityLabel: label, identifier: "juno.composer-tray.skills") { close in
+        NativeTrayPopoverChip(accessibilityLabel: label, identifier: "juno.composer-tray.skills", isPresented: skills.isPresented) { close in
             NativeComposerTrayPickers.skills(skills, close: close)
         } label: {
             skillsLabel(armed)

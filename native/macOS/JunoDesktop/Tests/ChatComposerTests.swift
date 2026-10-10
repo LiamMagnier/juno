@@ -448,6 +448,35 @@ struct ChatComposerTests {
         #expect(!filed.project && filed.apps)
     }
 
+    /// The armed skill's mark opens the tray's Skills list (an app's mark its
+    /// Apps list) where the tray carries it, so the skill can be switched or
+    /// cleared there; in a thread, or while the tray steps aside, it opens
+    /// `+` as before. Other marks always open `+`.
+    @Test
+    func anArmedMarkOpensTheTraysListWhereTheTrayCarriesIt() {
+        let newChat = ComposerTrayCoverage(
+            showsTray: true, isNewChat: true, hasMediaLine: false,
+            hasProjects: true, hasApps: true, hasSkills: true
+        )
+        #expect(newChat.target(forMark: ChatComposerMark.skillID) == .traySkills)
+        #expect(newChat.target(forMark: ChatComposerMark.connectorPrefix + "github") == .trayApps)
+        #expect(newChat.target(forMark: ChatComposerMark.researchID) == .plusMenu)
+        #expect(newChat.target(forMark: ChatComposerMark.overflowID) == .plusMenu)
+
+        var thread = newChat
+        thread.isNewChat = false
+        #expect(thread.target(forMark: ChatComposerMark.skillID) == .plusMenu)
+        #expect(thread.target(forMark: ChatComposerMark.connectorPrefix + "github") == .plusMenu)
+
+        var hidden = newChat
+        hidden.showsTray = false
+        #expect(hidden.target(forMark: ChatComposerMark.skillID) == .plusMenu)
+
+        var media = newChat
+        media.hasMediaLine = true
+        #expect(media.target(forMark: ChatComposerMark.skillID) == .plusMenu)
+    }
+
     /// The tray's lists: "No project" first, starred then recent newest
     /// first, "New project…" under them; skills grouped Yours then
     /// Installed; apps say how they are connected and go quiet at five.

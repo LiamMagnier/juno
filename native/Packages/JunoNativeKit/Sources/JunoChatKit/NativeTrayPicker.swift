@@ -637,13 +637,17 @@ public struct NativeTrayPopoverChip<Label: View, Panel: View>: View {
     let help: String?
     let picker: (_ close: @escaping () -> Void) -> Panel
     let label: () -> Label
+    let isPresented: Binding<Bool>?
 
-    @State private var open = false
+    @State private var ownOpen = false
 
+    /// `isPresented` lets the owner open the list from elsewhere (the armed
+    /// skill's mark in the field opens the tray's Skills list).
     public init(
         accessibilityLabel: String,
         identifier: String,
         help: String? = nil,
+        isPresented: Binding<Bool>? = nil,
         @ViewBuilder picker: @escaping (_ close: @escaping () -> Void) -> Panel,
         @ViewBuilder label: @escaping () -> Label
     ) {
@@ -652,18 +656,21 @@ public struct NativeTrayPopoverChip<Label: View, Panel: View>: View {
         self.help = help
         self.picker = picker
         self.label = label
+        self.isPresented = isPresented
     }
+
+    private var open: Binding<Bool> { isPresented ?? $ownOpen }
 
     public var body: some View {
         Button {
-            open.toggle()
+            open.wrappedValue.toggle()
         } label: {
             HStack(spacing: JunoSpace.tight) {
                 label()
                 NativeTrayChevron()
             }
         }
-        .buttonStyle(NativeComposerTrayPillStyle(isOn: open))
+        .buttonStyle(NativeComposerTrayPillStyle(isOn: open.wrappedValue))
         .fixedSize()
         .accessibilityLabel(accessibilityLabel)
         .accessibilityHint("Opens a list")
@@ -674,9 +681,9 @@ public struct NativeTrayPopoverChip<Label: View, Panel: View>: View {
         // Torn down with the chip: a popover whose anchor leaves the hierarchy
         // while presented makes AppKit order a child window against one that
         // is going (the model chip's `NSRemoteView` lesson).
-        .onDisappear { open = false }
-        .popover(isPresented: $open, attachmentAnchor: .rect(.bounds), arrowEdge: .bottom) {
-            picker { open = false }
+        .onDisappear { open.wrappedValue = false }
+        .popover(isPresented: open, attachmentAnchor: .rect(.bounds), arrowEdge: .bottom) {
+            picker { open.wrappedValue = false }
         }
     }
 }

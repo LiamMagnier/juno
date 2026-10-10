@@ -84,6 +84,22 @@ struct ComposerTrayCoverage: Equatable {
     var project: Bool { showsTray && isNewChat && hasProjects }
     var apps: Bool { showsTray && isNewChat && !hasMediaLine && hasApps }
     var skills: Bool { showsTray && isNewChat && !hasMediaLine && hasSkills }
+
+    /// What clicking an armed mark opens. The skill's mark opens the tray's
+    /// Skills list and an app's mark the tray's Apps list, wherever the tray
+    /// carries them (owner, Oct 10, after `+` lost those rows); everywhere
+    /// else, and for every other mark, `+` as before.
+    enum MarkTarget: Equatable {
+        case traySkills
+        case trayApps
+        case plusMenu
+    }
+
+    func target(forMark id: String) -> MarkTarget {
+        if id == ChatComposerMark.skillID, skills { return .traySkills }
+        if id.hasPrefix(ChatComposerMark.connectorPrefix), apps { return .trayApps }
+        return .plusMenu
+    }
 }
 
 /// The composer's `+` menu (§5.4): a native `Menu`, three groups separated by
@@ -511,6 +527,9 @@ struct ComposerArmedMarkView<MenuContent: View>: View {
     let mark: ChatComposerMark
     let showsLabel: Bool
     let disarm: () -> Void
+    /// Opens something other than `+` (the tray's Skills or Apps list);
+    /// nil keeps the `+` menu.
+    var open: (() -> Void)? = nil
     @ViewBuilder let menu: () -> MenuContent
 
     @State private var hovered = false
@@ -518,32 +537,21 @@ struct ComposerArmedMarkView<MenuContent: View>: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            Menu {
-                menu()
-            } label: {
-                HStack(spacing: JunoSpace.hairline) {
-                    glyph
-                    if showsLabel {
-                        Text(mark.label)
-                            .junoType(JunoType.label.weight(.medium))
-                            .foregroundStyle(Color.junoForeground)
-                            .lineLimit(1)
-                        if let detail = mark.detail {
-                            Text("· \(detail)")
-                                .junoType(.label)
-                                .foregroundStyle(Color.junoSecondaryInk)
-                                .lineLimit(1)
-                        }
+            Group {
+                if let open {
+                    Button(action: open) { markLabel }
+                        .buttonStyle(.plain)
+                } else {
+                    Menu {
+                        menu()
+                    } label: {
+                        markLabel
                     }
+                    .menuStyle(.button)
+                    .buttonStyle(.plain)
+                    .menuIndicator(.hidden)
                 }
-                .padding(.leading, JunoSpace.tight)
-                .padding(.trailing, hovered ? 2 : JunoSpace.tight)
-                .padding(.vertical, JunoSpace.hairline)
-                .contentShape(.rect)
             }
-            .menuStyle(.button)
-            .buttonStyle(.plain)
-            .menuIndicator(.hidden)
             .fixedSize()
             .help(mark.help)
 
@@ -569,9 +577,31 @@ struct ComposerArmedMarkView<MenuContent: View>: View {
         .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint), value: hovered)
         .accessibilityElement(children: .combine)
         .accessibilityLabel([mark.label, mark.detail].compactMap { $0 }.joined(separator: ", "))
-        .accessibilityHint("Opens the add menu.")
+        .accessibilityHint(open == nil ? "Opens the add menu." : "Opens the list to change it.")
         .accessibilityAction(named: mark.removeLabel, disarm)
         .accessibilityIdentifier("juno.desktop.chat.mark.\(mark.id)")
+    }
+
+    private var markLabel: some View {
+        HStack(spacing: JunoSpace.hairline) {
+            glyph
+            if showsLabel {
+                Text(mark.label)
+                    .junoType(JunoType.label.weight(.medium))
+                    .foregroundStyle(Color.junoForeground)
+                    .lineLimit(1)
+                if let detail = mark.detail {
+                    Text("· \(detail)")
+                        .junoType(.label)
+                        .foregroundStyle(Color.junoSecondaryInk)
+                        .lineLimit(1)
+                }
+            }
+        }
+        .padding(.leading, JunoSpace.tight)
+        .padding(.trailing, hovered ? 2 : JunoSpace.tight)
+        .padding(.vertical, JunoSpace.hairline)
+        .contentShape(.rect)
     }
 
     @ViewBuilder
