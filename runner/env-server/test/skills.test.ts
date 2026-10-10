@@ -137,24 +137,92 @@ test("discovery: project > user > plugin, Codex and Alevr folders, enabled plugi
   assert.deepEqual(dedupeSkills([{ name: "a", n: 1 }, { name: "a", n: 2 }]), [{ name: "a", n: 1 }]);
 });
 
+/** Resolves on the catalog's next change (rejects after `ms`). */
+function nextChange(catalog: SkillCatalog, ms = 1000): Promise<{ cwd?: string; at: number }> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      off();
+      reject(new Error(`no skills change within ${ms} ms`));
+    }, ms);
+    const off = catalog.onChange((change) => {
+      clearTimeout(timer);
+      off();
+      resolve({ ...change, at: Date.now() });
+    });
+  });
+}
+
 test("discovery: the catalog is cached and a new skill shows up once its folder changes", async () => {
   const { home, cwd } = fixtureMac();
   const catalog = new SkillCatalog({ home, maxAgeMs: 60_000 });
   catalogs.push(catalog);
-  let changes = 0;
-  catalog.onChange(() => changes++);
   const before = await catalog.list(cwd);
   assert.ok(!before.some((s) => s.name === "fresh"));
+  const changed = nextChange(catalog, 2000);
   writeSkill(path.join(home, ".claude", "skills"), "fresh", "name: fresh\ndescription: just installed", "FRESH");
-  const deadline = Date.now() + 5000;
-  let after: LocalSkillSummary[] = before;
-  while (Date.now() < deadline) {
-    after = await catalog.list(cwd);
-    if (after.some((s) => s.name === "fresh")) break;
-    await new Promise((r) => setTimeout(r, 100));
-  }
+  await changed;
+  const after = await catalog.list(cwd);
   assert.ok(after.some((s) => s.name === "fresh"), "the watcher dropped the cached listing");
-  assert.ok(changes > 0);
+});
+
+test("instant edits: writing a SKILL.md is picked up within a second, an atomic replace too, again and again", async () => {
+  const { home, cwd } = fixtureMac();
+  // The fallback poll is far away: only the file watchers can make this pass.
+  const catalog = new SkillCatalog({ home, maxAgeMs: 10 * 60_000 });
+  catalogs.push(catalog);
+  const listed = await catalog.list(cwd);
+  const file = listed.find((s) => s.name === "design-taste-frontend")!.path;
+
+  // 1. An in-place write (an editor that saves over the file).
+  let changed = nextChange(catalog);
+  const started = Date.now();
+  fs.writeFileSync(file, "---\nname: design-taste-frontend\ndescription: Edited in place.\n---\n\nUSER TASTE BODY\n");
+  const first = await changed;
+  assert.ok(first.at - started < 1000, `picked up in ${first.at - started} ms`);
+  assert.equal((await catalog.list(cwd)).find((s) => s.name === "design-taste-frontend")?.description, "Edited in place.");
+
+  // 2. An atomic save (write a temporary file, rename it over SKILL.md): the
+  // old file's watcher is gone, the rescan watches the new one.
+  changed = nextChange(catalog);
+  const tmp = path.join(path.dirname(file), ".SKILL.md.tmp");
+  fs.writeFileSync(tmp, "---\nname: design-taste-frontend\ndescription: Saved atomically.\n---\n\nUSER TASTE BODY\n");
+  fs.renameSync(tmp, file);
+  await changed;
+  assert.equal((await catalog.list(cwd)).find((s) => s.name === "design-taste-frontend")?.description, "Saved atomically.");
+
+  // 3. And the replaced file is watched in turn.
+  await new Promise((r) => setTimeout(r, 300));
+  changed = nextChange(catalog);
+  fs.writeFileSync(file, "---\nname: design-taste-frontend\ndescription: Third edit.\n---\n\nUSER TASTE BODY\n");
+  await changed;
+  assert.equal((await catalog.list(cwd)).find((s) => s.name === "design-taste-frontend")?.description, "Third edit.");
+
+  // 4. A project skill's edit names its project.
+  const project = listed.find((s) => s.name === "repo-rules")!.path;
+  changed = nextChange(catalog);
+  fs.writeFileSync(project, "---\ndescription: The repo's rules, revised\n---\nREPO RULES BODY\n");
+  const scoped = await changed;
+  assert.equal(scoped.cwd, path.resolve(cwd));
+});
+
+test("instant edits: a burst of writes is one rescan, and the 60 s poll stays as the fallback", async () => {
+  const { home, cwd } = fixtureMac();
+  const catalog = new SkillCatalog({ home, maxAgeMs: 10 * 60_000 });
+  catalogs.push(catalog);
+  const file = (await catalog.list(cwd)).find((s) => s.name === "codex-only")!.path;
+  let changes = 0;
+  catalog.onChange(() => changes++);
+  for (let i = 0; i < 5; i++) fs.writeFileSync(file, `---\nname: codex-only\ndescription: burst ${i}\n---\nCODEX BODY\n`);
+  await new Promise((r) => setTimeout(r, 700));
+  assert.equal(changes, 1, "one notification for the burst");
+
+  // Unwatched: the poll alone notices a change, and only a real one.
+  const polled = new SkillCatalog({ home, maxAgeMs: 200, watch: false });
+  catalogs.push(polled);
+  assert.ok((await polled.list(cwd)).length > 0);
+  writeSkill(path.join(home, ".alevr", "skills"), "polled", "name: polled\ndescription: by poll", "POLLED");
+  const listed = await polled.list(cwd).then(async (first) => (first.some((s) => s.name === "polled") ? first : (await new Promise((r) => setTimeout(r, 250)), polled.list(cwd))));
+  assert.ok(listed.some((s) => s.name === "polled"), "a stale listing is re-read after maxAgeMs");
 });
 
 test("activation: resolved by name among discovered skills; a client's path never opens an arbitrary file", async () => {
@@ -208,11 +276,13 @@ function fakeEngine(rec: EngineRec): AlevrEngine {
   return { providerFor: () => ({}), createSession: make, resumeSession: (_id, o) => make(o) };
 }
 
-async function boot() {
+async function boot(options: { watch?: boolean } = {}) {
   const mac = fixtureMac();
   const rec: EngineRec = { prompts: [], appendix: [] };
   const record = { options: [] as unknown[], prompts: [] as string[], modes: [] as string[], toolResults: [] as string[] };
-  const skills = new SkillCatalog({ home: mac.home, watch: false, maxAgeMs: 0 });
+  const skills = options.watch
+    ? new SkillCatalog({ home: mac.home, maxAgeMs: 10 * 60_000 })
+    : new SkillCatalog({ home: mac.home, watch: false, maxAgeMs: 0 });
   catalogs.push(skills);
   const server = await startEnvServer({
     dataDir: tempDir("data"),
@@ -228,7 +298,7 @@ async function boot() {
   const client = await TestClient.connect(server.url, server.token);
   clients.push(client);
   await client.command("env.configure", { backend: { baseUrl: "https://alevr.example/api/agent", authorization: "Bearer s", models: [] } });
-  return { ...mac, rec, record, client };
+  return { ...mac, rec, record, client, server };
 }
 
 const ask = { runtimeMode: "ask", interactionMode: "default" } as const;
@@ -328,4 +398,88 @@ test("codex and ACP agents: skills are prepended to the message", async () => {
   const s2 = await open(client, tempDir("cwd"), acp);
   await turn(client, s2, acp, { text: "say hi", skills: [{ name: "design-taste-frontend", source: "user" }] });
   assert.match(lastAssistant(client, s2)?.text ?? "", /USER TASTE BODY[\s\S]*say hi/);
+});
+
+// ── Live selection and live listings ────────────────────────────────────────
+
+test("skills.select: the thread's selection is set without a message and every client sees session.skills", async () => {
+  const { client, rec, cwd, server } = await boot();
+  await client.command("provider.probe", { instanceId: "alevr" });
+  const selection = { instanceId: "alevr", model: "anthropic:claude-opus-5-5" };
+  const sid = await open(client, cwd, selection);
+  // A second device following the same thread.
+  const other = await TestClient.connect(server.url, server.token);
+  clients.push(other);
+  await other.command("session.open", { sessionId: sid, cwd });
+  await other.waitFor(() => other.snapshots.get(sid), 4000, "other snapshot");
+
+  const kept = await client.command<{ skills: { name: string; once?: boolean }[] }>("skills.select", {
+    sessionId: sid,
+    skills: [
+      { name: "design-taste-frontend", source: "user", path: "/ignored/SKILL.md", once: false },
+      { name: "tidy", source: "account", title: "Tidy", instructions: "ACCOUNT BODY" },
+      { name: "one-off", source: "user", once: true },
+      { bogus: true },
+    ],
+  });
+  assert.deepEqual(kept.skills.map((s) => s.name), ["design-taste-frontend", "tidy"], "once entries and junk are not kept");
+  assert.ok(kept.skills.every((s) => !("once" in s)));
+
+  const seen = await other.waitFor(
+    () => other.events.find((e) => e.sessionId === sid && e.event.type === "session.skills"),
+    1000,
+    "session.skills on the other device",
+  );
+  assert.equal(seen.stream, "session");
+  assert.deepEqual(other.snapshot(sid).skills?.map((s) => s.name), ["design-taste-frontend", "tidy"], "the other device's snapshot applies it");
+
+  // The same selection again: nothing to tell anyone.
+  const count = () => other.events.filter((e) => e.event.type === "session.skills").length;
+  const before = count();
+  await client.command("skills.select", { sessionId: sid, skills: [{ name: "design-taste-frontend", source: "user", path: "/ignored/SKILL.md" }, { name: "tidy", source: "account", title: "Tidy", instructions: "ACCOUNT BODY" }] });
+  await new Promise((r) => setTimeout(r, 100));
+  assert.equal(count(), before, "an unchanged selection emits nothing");
+
+  // The next message without skills runs under it.
+  await turn(client, sid, selection, { text: "Go" });
+  assert.match(rec.appendix.at(-1) ?? "", /USER TASTE BODY/);
+  assert.match(rec.appendix.at(-1) ?? "", /ACCOUNT BODY/);
+
+  // Cleared from the other device.
+  await other.command("skills.select", { sessionId: sid, skills: [] });
+  await client.waitFor(() => client.snapshot(sid).skills === undefined || undefined, 1000, "cleared on the first device");
+  await turn(client, sid, selection, { text: "Plain" });
+  assert.doesNotMatch(rec.appendix.at(-1) ?? "", /USER TASTE BODY/);
+
+  // A message that names its skills sets the selection, live, too.
+  await turn(client, sid, selection, { text: "With", skills: [{ name: "repo-rules", source: "project" }] });
+  await other.waitFor(() => other.snapshot(sid).skills?.[0]?.name === "repo-rules" || undefined, 1000, "selection from a message");
+
+  await assert.rejects(client.command("skills.select", { sessionId: sid, skills: "nope" }), /list/);
+  await assert.rejects(client.command("skills.select", { sessionId: "s_missing", skills: [] }));
+});
+
+test("skills.updated: editing a SKILL.md on this Mac reaches every connected client within a second", async () => {
+  const { client, home, cwd } = await boot({ watch: true });
+  const listed = await client.command<{ skills: LocalSkillSummary[] }>("skills.list", { cwd });
+  const file = listed.skills.find((s) => s.name === "design-taste-frontend")!.path;
+  const started = Date.now();
+  fs.writeFileSync(file, "---\nname: design-taste-frontend\ndescription: Edited live.\n---\n\nUSER TASTE BODY\n");
+  const event = await client.waitFor(() => client.events.find((e) => e.event.type === "skills.updated"), 1000, "skills.updated");
+  assert.equal(event.stream, "global");
+  assert.ok(Date.now() - started < 1000);
+  const again = await client.command<{ skills: LocalSkillSummary[] }>("skills.list", { cwd });
+  assert.equal(again.skills.find((s) => s.name === "design-taste-frontend")?.description, "Edited live.");
+
+  // A project skill's edit names the project.
+  const project = again.skills.find((s) => s.name === "repo-rules")!.path;
+  const count = client.events.length;
+  fs.writeFileSync(project, "---\ndescription: Revised\n---\nREPO RULES BODY\n");
+  const scoped = await client.waitFor(
+    () => client.events.slice(count).find((e) => e.event.type === "skills.updated" && "cwd" in e.event && e.event.cwd),
+    1000,
+    "a project's skills.updated",
+  );
+  assert.equal(scoped.event.type === "skills.updated" ? scoped.event.cwd : undefined, path.resolve(cwd));
+  void home;
 });
