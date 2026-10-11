@@ -1711,6 +1711,8 @@ public enum CodeV2 {
         case hostUpload = "host.upload"
         // project lane: stop and delete every session in a folder; the folder stays.
         case projectRemove = "project.remove"
+        // access lane: the composer's access picker, applied to the thread at once (mid-turn included).
+        case sessionSetMode = "session.setMode"
     }
 
     // MARK: Remote lane (docs/code-v2/REMOTE-CONTROL.md)

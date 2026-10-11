@@ -153,7 +153,7 @@ test("codex: approval, file change, checkpoint and per-turn diff", async () => {
   assert.deepEqual(client.gaps, [], "no sequence gaps on the wire");
 });
 
-test("codex: Full access runs never/dangerFullAccess, accepts forwarded approvals, and still asks for sudo", async () => {
+test("codex: Full access runs without a sandbox, accepts forwarded approvals, and still asks for sudo", async () => {
   const { client } = await boot();
   await client.command("provider.probe", { instanceId: "codex:default" });
   const repo = initRepo();
@@ -325,6 +325,59 @@ test("claude: Full access mid-session stops asking inside the project, and still
   await client.command("approval.respond", { sessionId: sid, requestId: guarded.requestId, decision: "decline" });
   await client.turnCompleted(sid, t3.turnId);
   assert.equal(record.toolResults.at(-1), "sudo rm -rf /etc/hosts:deny");
+});
+
+test("access: session.setMode answers what Full access would not ask (Claude, Codex, ACP), never the floor", async () => {
+  const { client, record } = await boot();
+  const full = { runtimeMode: "full", interactionMode: "default" } as const;
+  // Claude: asked under Ask, the picker moves to Full access while the prompt waits.
+  await client.command("provider.probe", { instanceId: "claude-agent:default" });
+  const claude = { instanceId: "claude-agent:default", model: "claude-opus-5-5" };
+  const c = await openSession(client, tempDir("cwd"), claude);
+  const t1 = await client.command<{ turnId: string }>("turn.start", { sessionId: c, input: { text: "run bash" }, selection: claude, ...ask });
+  const first = await pendingApproval(client, c);
+  const set1 = await client.command<{ approved: number }>("session.setMode", { sessionId: c, runtimeMode: "full" });
+  assert.equal(set1.approved, 1);
+  assert.equal((await client.turnCompleted(c, t1.turnId)).outcome, "completed");
+  assert.equal(record.toolResults.at(-1), "ls -la:allow");
+  assert.ok(items(client, c).some((i) => i.id === first.id && i.kind === "approval_request" && i.decision === "accept"));
+  assert.equal(record.modes.at(-1), "acceptEdits", "the live query follows the new mode at once");
+  // The next turn runs under the stored mode with no prompt at all.
+  const asked = items(client, c).filter((i) => i.kind === "approval_request").length;
+  const t2 = await client.command<{ turnId: string }>("turn.start", { sessionId: c, input: { text: "run bash" }, selection: claude, ...full });
+  await client.turnCompleted(c, t2.turnId);
+  assert.equal(items(client, c).filter((i) => i.kind === "approval_request").length, asked);
+  // sudo under Ask stays waiting when the picker moves to Full access: the floor is the person's.
+  await client.command("session.setMode", { sessionId: c, runtimeMode: "ask" });
+  const t3 = await client.command<{ turnId: string }>("turn.start", { sessionId: c, input: { text: "sudo bash" }, selection: claude, ...ask });
+  const sudo = await pendingApproval(client, c);
+  assert.equal((await client.command<{ approved: number }>("session.setMode", { sessionId: c, runtimeMode: "full" })).approved, 0);
+  assert.equal(items(client, c).find((i) => i.id === sudo.id)?.["status" as never], "pending");
+  await client.command("approval.respond", { sessionId: c, requestId: sudo.requestId, decision: "decline" });
+  await client.turnCompleted(c, t3.turnId);
+
+  // Codex: the same switch while a forwarded command waits.
+  await client.command("provider.probe", { instanceId: "codex:default" });
+  const codex = { instanceId: "codex:default", model: "gpt-6.1-codex" };
+  const x = await openSession(client, initRepo(), codex);
+  const t4 = await client.command<{ turnId: string }>("turn.start", { sessionId: x, input: { text: "approve" }, selection: codex, ...ask });
+  await pendingApproval(client, x);
+  assert.equal((await client.command<{ approved: number }>("session.setMode", { sessionId: x, runtimeMode: "full" })).approved, 1);
+  assert.equal((await client.turnCompleted(x, t4.turnId)).outcome, "completed");
+  assert.ok(items(client, x).some((i) => i.kind === "command_execution" && i.status === "completed"));
+
+  // ACP: Full access answers an in-project edit itself; a switch answers a waiting one.
+  await client.command("provider.probe", { instanceId: "acp:gemini" });
+  const acp = { instanceId: "acp:gemini", model: "default" };
+  const a = await openSession(client, tempDir("cwd"), acp);
+  const t5 = await client.command<{ turnId: string }>("turn.start", { sessionId: a, input: { text: "edit it" }, selection: acp, ...full });
+  assert.equal((await client.turnCompleted(a, t5.turnId)).outcome, "completed");
+  assert.ok(!items(client, a).some((i) => i.kind === "approval_request"), "ACP: nothing asked under Full access");
+  const t6 = await client.command<{ turnId: string }>("turn.start", { sessionId: a, input: { text: "edit it" }, selection: acp, ...ask });
+  await pendingApproval(client, a);
+  assert.equal((await client.command<{ approved: number }>("session.setMode", { sessionId: a, runtimeMode: "full" })).approved, 1);
+  assert.equal((await client.turnCompleted(a, t6.turnId)).outcome, "completed");
+  assert.deepEqual(client.gaps, [], "no sequence gaps on the wire");
 });
 
 test("claude: a rejected rate limit ends the turn as limited with the vendor's reset", async () => {

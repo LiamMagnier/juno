@@ -38,6 +38,7 @@ import type {
   TurnSink,
 } from "./types.js";
 import { classifyUsageLimit } from "./limits.js";
+import { fullAccessGuardReason } from "./full-access-guard.js";
 import { describeError, type Logger } from "../util.js";
 import { CROSS_CONVERSATION_PROMPT_SECTION } from "../conversations/policy.js";
 import { COMPUTER_TOOL_RULES } from "../mcp/computer-tools.js";
@@ -154,6 +155,17 @@ export function engineMode(runtime: RuntimeMode, interaction: InteractionMode): 
   }
 }
 
+/** The shared Full access guard over the engine's own tool names (bash, write_file, edit_file). */
+export function engineGuardReason(toolName: string, input: unknown, cwd: string): string | undefined {
+  const raw = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
+  if (!cwd) return "Full access still asks: the project folder is not known.";
+  if (toolName === "write_file" || toolName === "edit_file") {
+    const file = typeof raw.path === "string" ? raw.path : undefined;
+    return fullAccessGuardReason("Write", file ? { file_path: file } : {}, cwd);
+  }
+  return fullAccessGuardReason(toolName, raw, cwd);
+}
+
 export class AlevrEngineAdapter implements ProviderAdapter {
   readonly kind: "alevr" | "byok";
   #engine: AlevrEngine | undefined;
@@ -247,6 +259,10 @@ class EngineBackedSession implements ProviderSession {
   /** The routing the live engine session was built with; a change rebuilds it. */
   #routingKey = "";
   #skillText = "";
+  /** The thread's mode, read by every approval the engine sends up (Full access answers most itself). */
+  #runtimeMode: RuntimeMode = "ask";
+  #interactionMode: InteractionMode = "default";
+  #cwd = "";
   readonly #logger: Logger;
   readonly #extraTools: unknown[] | undefined;
 
@@ -328,6 +344,9 @@ class EngineBackedSession implements ProviderSession {
   async runTurn(request: TurnRequest): Promise<TurnResult> {
     if (this.#turn) throw new Error("a turn is already running");
     let session: EngineSession;
+    this.#runtimeMode = request.runtimeMode;
+    this.#interactionMode = request.interactionMode;
+    this.#cwd = request.cwd;
     try {
       session = this.#ensure(request);
     } catch (error) {
@@ -363,6 +382,14 @@ class EngineBackedSession implements ProviderSession {
       request.signal.removeEventListener("abort", onAbort);
       this.#turn = undefined;
     }
+  }
+
+  /** The thread's mode changed mid-turn: the engine's ladder and this adapter's guard follow at once. */
+  setRuntimeMode(runtimeMode: RuntimeMode, interactionMode: InteractionMode, cwd?: string): void {
+    this.#runtimeMode = runtimeMode;
+    this.#interactionMode = interactionMode;
+    if (cwd) this.#cwd = cwd;
+    this.#session?.setMode(engineMode(runtimeMode, interactionMode));
   }
 
   async steer(input: { text: string }): Promise<boolean> {
@@ -405,11 +432,25 @@ class EngineBackedSession implements ProviderSession {
   async #approve(r: EngineApprovalRequest): Promise<EngineDecision> {
     const turn = this.#turn;
     if (!turn) return "deny";
+    // Full access: the engine's own ladder still sends up its "sensitive"
+    // class (rm -rf, git reset --hard, reading .env) even inside the project.
+    // The shared guard decides instead, as it does for Claude, Codex and ACP:
+    // inside the folder runs; sudo, another machine or outside the folder asks.
+    // A subagent's own narrower mode is kept: only its sensitive asks are ruled here.
+    const eligible = !r.agentId || r.risk === "sensitive";
+    const reason = eligible ? engineGuardReason(r.toolName, r.input, this.#cwd) : "a subagent's own mode";
+    let guard: string | undefined;
+    if (this.#runtimeMode === "full" && this.#interactionMode !== "plan" && eligible) {
+      guard = reason;
+      if (!guard) return "allow";
+    }
     const action: ApprovalRequestItem["action"] = r.risk === "command" || r.toolName === "bash" ? "command" : r.risk === "edit" ? "file_change" : r.toolName.startsWith("computer") ? "computer" : "tool";
     const answer = await turn.sink.requestApproval({
+      fullAccessAllows: !reason,
       callId: r.callId,
       action,
       summary: r.summary || r.toolName,
+      ...(guard ? { justification: guard } : {}),
       ...(r.agentId ? { agentId: r.agentId } : {}),
       ...(r.agentLabel ? { agentLabel: r.agentLabel, detail: `Asked by ${r.agentLabel}` } : {}),
       options: ["accept", "acceptForSession", "decline", "cancel"],

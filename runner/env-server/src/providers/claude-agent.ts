@@ -522,16 +522,19 @@ class ClaudeSession implements ProviderSession {
 
     // Full access: everything inside the project runs without asking; only
     // the guard's few cases (sudo, another machine, outside the folder) ask,
-    // and the prompt says why.
+    // and the prompt says why. The guard runs in every mode so that a switch
+    // to Full access (session.setMode) answers a request that is waiting.
+    const reason = fullAccessGuardReason(toolName, input, this.#cwd);
     let guard: string | undefined;
     if (this.#runtimeMode === "full" && this.#interactionMode !== "plan") {
-      guard = fullAccessGuardReason(toolName, input, this.#cwd);
+      guard = reason;
       if (!guard) return { behavior: "allow", updatedInput: input };
     }
 
     const entry = turn.tools.get(toolUseId);
     const decisionReason = guard ?? (options as { decisionReason?: string }).decisionReason;
     const answer = await sink.requestApproval({
+      fullAccessAllows: !reason,
       callId: toolUseId,
       ...(agentCall ? { agentId: agentCall } : {}),
       action: approvalAction(toolName),

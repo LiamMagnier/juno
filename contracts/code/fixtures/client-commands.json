@@ -512,6 +512,22 @@
         "sessionId": "session-1",
         "agentId": "worker-1"
       }
+    },
+    {
+      "id": "set-mode",
+      "type": "session.setMode",
+      "params": {
+        "sessionId": "session-1",
+        "runtimeMode": "full"
+      }
+    },
+    {
+      "id": "open-with-mode",
+      "type": "session.open",
+      "params": {
+        "cwd": "/Users/me/Projects/storefront",
+        "runtimeMode": "full"
+      }
     }
   ]
 }

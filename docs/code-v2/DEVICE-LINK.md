@@ -35,6 +35,12 @@ Both routes authenticate as the signed-in Alevr user (`requireUser`: the web ses
 - Use a cursor of `-1` before the first snapshot. Events still go through `classifyEvent` on the client.
 - The hub renumbers global-stream events (`provider.updated` and others). A `globalCursor` from before a backend restart gets everything the hub still holds.
 
+### The push stream (the phone's fast path)
+
+`POST /api/code/v2/link/<deviceId>/stream {cursors, globalCursor}` answers `text/event-stream`: one `data: {"events":[...]}` frame per batch the moment the Mac pushes it, `: ping` every 15 s, `data: {"offline":true,...}` (then it ends) and `data: {"error":...}` when the pair is gone. The cursors advance inside the stream; the window is 55 s and the phone reopens at once (and whenever it follows another session, or after a gap so the replay is collected). The sign-in, device and pair are checked when it opens, and the pair again before events go out at most every 5 s, instead of two lookups per batch as with the poll. An older backend answers 404/405 and the phone falls back to `{kind:"poll"}` (`src/lib/code-v2/link-stream.ts`, `CodeLinkClient.stream`).
+
+`session.setMode {sessionId, runtimeMode, interactionMode?}` (access lane) applies the composer's access picker to the thread at once, mid-turn included; switching to Full access answers the waiting approvals Full access would not have asked about.
+
 ### What the web may NOT relay
 
 `env.configure`, because it carries secrets and the Mac supplies its own: the hub always refuses it with `unsupported`. `terminal.*` (a shell on the user's Mac) is relayed **only while the Mac's latest pull says `terminal: true`**, which it does only when the user turned on **Share this Mac's terminal** under Remote hosting (off by default; `LINK_TERMINAL_COMMANDS`). The allow-list is `LINK_RELAYED_COMMANDS`: session open/list/close, turn start/steer/queue/interrupt, approval.respond, checkpoint diff/rollback, provider list/probe/setup, plus the runtime lane's `checkpoint.applyPatch` (reject a hunk), `turn.schedule` / `turn.unschedule` (resume at reset), `provider.install` and `provider.auth` (Antigravity). The **Mac must enforce the same list** (defence in depth). `provider.setup` only returns the command to type, and the web shows it with "run this on your Mac".
@@ -54,12 +60,15 @@ loop:
   for command in reply.commands: run it on its own task through EnvServerDeviceLink.run(command)
       - the same allow-list as the hub; terminal.* only when the user shared the terminal; env.configure never
       - session.open / terminal.open only inside a folder this Mac shares with Remote
-      - turn/approval/checkpoint/close only for sessions opened through the link
+      - turn/approval/checkpoint/close/setMode only for sessions the link opened, or any session whose own
+        folder is shared (looked up once with session.list): a thread started on the Mac reaches the phone,
+        approval included, before the phone opens it, and after the app restarts
       - a session already followed may be re-opened (the hub's replay open carries cwd "/")
       → its response goes to the outbox
 every env-server event arrives through one ordered stream (EnvServerHub relay sink → AsyncStream → link.record):
-  provider.updated, and events of sessions opened through the link (terminal output only when shared) → outbox
-outbox: flushed ~50 ms after the first item, in arrival order, ≤1000 items per POST …/host {kind:"push", responses, events}
+  provider.updated, and events of those sessions (terminal output only when shared) → outbox
+outbox: the first item after a quiet spell leaves at once; one push on the wire at a time, everything that
+  arrives meanwhile rides the next (≥15 ms apart), in arrival order, ≤1000 items per POST …/host {kind:"push", responses, events}
 ```
 
 The relay uses the app's shared env-server connection (`EnvServerHub`), so the launch token, BYOK keys and the backend authorization never leave the Mac.

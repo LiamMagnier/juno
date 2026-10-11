@@ -30,6 +30,7 @@ import type {
   UserInputRequestItem,
   SkillActivation,
 } from "../contracts/code-v2.js";
+import { isRuntimeMode } from "../contracts/code-v2.js";
 import { SessionLog, type SessionMeta } from "../protocol/session-log.js";
 import type { ProviderRegistry } from "../providers/registry.js";
 import type { ApprovalAnswer, McpEndpoint, ProviderSession, TurnResult, TurnSink } from "../providers/types.js";
@@ -53,6 +54,8 @@ interface PendingRequest {
   itemId: string;
   kind: "approval" | "input";
   answer: Deferred<ApprovalAnswer>;
+  /** The adapter's word that Full access would not have asked this (inside the project). */
+  fullAccessAllows?: boolean;
 }
 
 interface ActiveTurn {
@@ -192,7 +195,7 @@ export class SessionManager {
       createdAt: nowIso(),
       updatedAt: nowIso(),
       selection,
-      runtimeMode: params.runtimeMode ?? "ask",
+      runtimeMode: params.runtimeMode && isRuntimeMode(params.runtimeMode) ? params.runtimeMode : "ask",
       interactionMode: "default",
       turnCount: 0,
       ...(params.parentSessionId ? { parentSessionId: params.parentSessionId } : {}),
@@ -253,8 +256,38 @@ export class SessionManager {
     await live.provider.interruptAgent(agentId);
   }
 
+  /**
+   * The composer's access picker changed (on the Mac or a paired phone). The
+   * thread's mode is stored at once, the running runtime follows it for every
+   * approval it raises from now on, and a switch to Full access answers the
+   * pending approvals Full access would never have asked (inside the project).
+   * Queued messages start under it too.
+   */
+  setMode(params: ClientCommandParams["session.setMode"]): ClientCommandResults["session.setMode"] {
+    const live = this.#get(params.sessionId);
+    if (!isRuntimeMode(params.runtimeMode)) throw new WireError("bad_request", `Unknown access mode "${String(params.runtimeMode)}".`);
+    const interactionMode = params.interactionMode === "plan" || params.interactionMode === "default" ? params.interactionMode : live.log.meta.interactionMode;
+    const runtimeMode = params.runtimeMode;
+    live.log.updateMeta({ runtimeMode, interactionMode });
+    try {
+      live.provider?.setRuntimeMode?.(runtimeMode, interactionMode, live.log.meta.cwd);
+    } catch (error) {
+      this.#o.logger.warn(`setRuntimeMode: ${describeError(error)}`);
+    }
+    let approved = 0;
+    if (runtimeMode === "full" && interactionMode !== "plan") {
+      for (const [requestId, pending] of [...live.pending]) {
+        if (pending.kind !== "approval" || pending.fullAccessAllows !== true) continue;
+        this.#resolvePending(live, requestId, { decision: "accept" });
+        approved++;
+      }
+    }
+    return { runtimeMode, interactionMode, approved };
+  }
+
   startTurn(params: ClientCommandParams["turn.start"]): ClientCommandResults["turn.start"] {
     const live = this.#get(params.sessionId);
+    if (!isRuntimeMode(params.runtimeMode)) throw new WireError("bad_request", `Unknown access mode "${String(params.runtimeMode)}".`);
     if (live.active) throw new WireError("conflict", "A turn is already running. Steer it or queue the message.");
     const instance = this.#o.registry.get(params.selection.instanceId);
     if (!instance) throw new WireError("not_found", `No provider instance ${params.selection.instanceId}.`);
@@ -931,7 +964,7 @@ export class SessionManager {
           options: request.options ?? ["accept", "decline", "cancel"],
           status: "pending",
         };
-        return this.#await(live, requestId, item, "approval");
+        return this.#await(live, requestId, item, "approval", request.fullAccessAllows);
       },
       requestUserInput: (request) => {
         const requestId = request.requestId ?? newId("q");
@@ -949,9 +982,9 @@ export class SessionManager {
     };
   }
 
-  #await(live: LiveSession, requestId: string, item: ApprovalRequestItem | UserInputRequestItem, kind: "approval" | "input"): Promise<ApprovalAnswer> {
+  #await(live: LiveSession, requestId: string, item: ApprovalRequestItem | UserInputRequestItem, kind: "approval" | "input", fullAccessAllows?: boolean): Promise<ApprovalAnswer> {
     const answer = deferred<ApprovalAnswer>();
-    live.pending.set(requestId, { itemId: item.id, kind, answer });
+    live.pending.set(requestId, { itemId: item.id, kind, answer, ...(fullAccessAllows ? { fullAccessAllows } : {}) });
     this.#addItem(live, item);
     live.log.emit({ type: "session.state", state: "waiting" });
     if (live.active?.abort.signal.aborted) this.#resolvePending(live, requestId, { decision: "cancel" });

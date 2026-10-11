@@ -250,13 +250,13 @@ final class EnvServerTests: XCTestCase {
 
         let unopened = await rpc("turn.start", ["sessionId": .string("someone-else")])
         XCTAssertEqual(unopened?.error?.code, .badRequest)
-        XCTAssertEqual(forwarded.types, [])
+        XCTAssertEqual(forwarded.driven, [])
 
         let opened = await rpc("session.open", ["cwd": .string("/Users/maya/code/shop/web")])
         XCTAssertEqual(opened?.ok, true)
         let started = await rpc("turn.start", ["sessionId": .string("s-new"), "input": .object(["text": .string("hi")])])
         XCTAssertEqual(started?.ok, true)
-        XCTAssertEqual(forwarded.types, [.sessionOpen, .turnStart])
+        XCTAssertEqual(forwarded.driven, [.sessionOpen, .turnStart])
     }
 
     func testLinkRelaysSkillsListOnlyForSharedFoldersAndLinkedSessions() async {
@@ -270,13 +270,13 @@ final class EnvServerTests: XCTestCase {
         XCTAssertEqual(unshared?.error?.code, .badRequest)
         let unlinked = await rpc("skills.list", ["sessionId": .string("someone-else")])
         XCTAssertEqual(unlinked?.error?.code, .badRequest)
-        XCTAssertEqual(forwarded.types, [])
+        XCTAssertEqual(forwarded.driven, [])
 
         let mine = await rpc("skills.list", [:])
         XCTAssertEqual(mine?.ok, true, "the Mac's own skills, no project")
         let shared = await rpc("skills.list", ["cwd": .string("/Users/maya/code/shop/web")])
         XCTAssertEqual(shared?.ok, true)
-        XCTAssertEqual(forwarded.types, [.skillsList, .skillsList])
+        XCTAssertEqual(forwarded.driven, [.skillsList, .skillsList])
     }
 
     func testLinkRelaysALinkedThreadsSkillSelectionAndSkillsUpdatedWithoutItsFolder() async {
@@ -288,11 +288,11 @@ final class EnvServerTests: XCTestCase {
         XCTAssertTrue(EnvServerDeviceLink.remoteCommands.contains(.skillsSelect))
         let unlinked = await rpc("skills.select", ["sessionId": .string("someone-else"), "skills": .array([])])
         XCTAssertEqual(unlinked?.error?.code, .badRequest)
-        XCTAssertEqual(forwarded.types, [])
+        XCTAssertEqual(forwarded.driven, [])
         _ = await rpc("session.open", ["cwd": .string("/Users/maya/code/shop/web")])
         let selected = await rpc("skills.select", ["sessionId": .string("s-new"), "skills": .array([])])
         XCTAssertEqual(selected?.ok, true)
-        XCTAssertEqual(forwarded.types, [.sessionOpen, .skillsSelect])
+        XCTAssertEqual(forwarded.driven, [.sessionOpen, .skillsSelect])
 
         // The env server's answers: the thread's selection for the linked
         // session, and a project's skills.updated, its folder left out.
@@ -523,7 +523,7 @@ final class EnvServerTests: XCTestCase {
         XCTAssertEqual(commitUnlinked?.error?.code, .badRequest)
         let statusOutside = await rpc("git.status", ["cwd": .string("/Users/maya/private")])
         XCTAssertEqual(statusOutside?.error?.code, .badRequest)
-        XCTAssertEqual(forwarded.types, [])
+        XCTAssertEqual(forwarded.driven, [])
 
         let browse = await rpc("fs.list", ["path": .string("/Users/maya/code/shop/web")])
         XCTAssertEqual(browse?.ok, true)
@@ -532,7 +532,7 @@ final class EnvServerTests: XCTestCase {
             let answer = await rpc(type, ["sessionId": .string("s-new"), "message": .string("m"), "title": .string("t")])
             XCTAssertEqual(answer?.ok, true, type)
         }
-        XCTAssertEqual(forwarded.types, [.fsList, .sessionOpen, .gitStatus, .gitCommit, .gitPush, .gitPr])
+        XCTAssertEqual(forwarded.driven, [.fsList, .sessionOpen, .gitStatus, .gitCommit, .gitPush, .gitPr])
     }
 
     func testHostCommandsAreAnsweredByTheAppNeverTheEnvServer() async {
@@ -599,6 +599,84 @@ final class EnvServerTests: XCTestCase {
         let last = posted.bodies.last.flatMap { $0 }.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
         let sequences = ((last?["events"] as? [[String: Any]]) ?? []).compactMap { $0["sequence"] as? Int }
         XCTAssertEqual(sequences, [1, 2])
+    }
+
+    // MARK: Approvals and latency on the phone (Oct 11)
+
+    /// A thread started on this Mac, in a shared folder, reaches the phone
+    /// without the phone opening it first (its approval included), and after
+    /// this app restarts. The phone may answer it, and set its access, from a
+    /// notification. A session outside the shared folders stays private.
+    func testASessionInASharedFolderIsRelayedWithoutBeingOpenedThroughTheLink() async {
+        let lists = SequenceLog()
+        let link = EnvServerDeviceLink(
+            allowedRoots: { ["/Users/maya/code/shop"] },
+            forward: { type, _ in
+                if type == .sessionList {
+                    lists.append(1)
+                    return .object(["sessions": .array([
+                        .object(["id": .string("s-mac"), "cwd": .string("/Users/maya/code/shop/web")]),
+                        .object(["id": .string("s-private"), "cwd": .string("/Users/maya/Documents")]),
+                    ])])
+                }
+                return .object([:])
+            }
+        )
+        let event = { (session: String) in
+            CodeV2.ServerEventEnvelope(sessionId: session, sequence: 1, at: "2026-10-11T10:00:00Z", event: .sessionState(state: .waiting, resumeAt: nil, message: nil))
+        }
+        let shared = await link.shareable(event("s-mac"))
+        let hidden = await link.shareable(event("s-private"))
+        XCTAssertTrue(shared, "a Mac-started thread in a shared folder reaches the phone")
+        XCTAssertFalse(hidden)
+        // Looked up once, then remembered (a private one for a while).
+        _ = await link.shareable(event("s-mac"))
+        _ = await link.shareable(event("s-private"))
+        XCTAssertEqual(lists.values.count, 2, "one session.list per session, not per event")
+
+        func rpc(_ type: String, _ params: [String: JSONValue]) async -> CodeV2.ServerResponse {
+            await link.run(.init(id: "1", type: type, params: .object(params)))
+        }
+        let answer = await rpc("approval.respond", ["sessionId": .string("s-mac"), "requestId": .string("ap1"), "decision": .string("accept")])
+        XCTAssertEqual(answer.ok, true, "answered from the notification without opening the thread")
+        let mode = await rpc("session.setMode", ["sessionId": .string("s-mac"), "runtimeMode": .string("full")])
+        XCTAssertEqual(mode.ok, true, "the phone's access picker reaches the thread")
+        let refused = await rpc("approval.respond", ["sessionId": .string("s-private"), "requestId": .string("ap2"), "decision": .string("accept")])
+        XCTAssertEqual(refused.error?.code, .badRequest)
+    }
+
+    /// The first event after a quiet spell leaves at once; while a push is on
+    /// the wire everything batches into the next one; never two pushes at once.
+    func testChannelPushesAtOnceKeepsOnePushInFlightAndBatchesTheRest() async throws {
+        let stats = PushStats()
+        let link = makeLink(forwarded: ForwardLog())
+        let channel = EnvServerDeviceLinkChannel(deviceId: "mac-1", link: link, flushDelay: .milliseconds(15)) { _, _, body in
+            stats.begin(body)
+            try? await Task.sleep(for: .milliseconds(120))
+            stats.end()
+            return (200, Data(#"{"accepted":1}"#.utf8))
+        }
+        let event = { (sequence: Int) in
+            CodeV2.ServerEventEnvelope(sessionId: "s1", sequence: sequence, at: "2026-10-11T10:00:00Z", event: .sessionState(state: .running, resumeAt: nil, message: nil))
+        }
+        let started = ContinuousClock.now
+        await channel.enqueue(.event(event(1)))
+        for _ in 0..<100 where stats.pushes == 0 { try await Task.sleep(for: .milliseconds(2)) }
+        let firstPush = ContinuousClock.now - started
+        XCTAssertLessThan(firstPush, .milliseconds(60), "a lone event is not held for a timer")
+        // A streamed answer: 50 deltas while the first push is on the wire.
+        for sequence in 2...51 { await channel.enqueue(.event(event(sequence))) }
+        for _ in 0..<200 where stats.sequences.count < 51 { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertEqual(stats.maxConcurrent, 1, "never two pushes at once (they could land out of order)")
+        XCTAssertEqual(stats.pushes, 2, "everything that arrived meanwhile rides one push")
+        XCTAssertEqual(stats.sequences, Array(1...51))
+    }
+
+    func testPushSpacing() {
+        let now = ContinuousClock.now
+        XCTAssertEqual(EnvServerDeviceLinkChannel.wait(since: nil, spacing: .milliseconds(15), now: now), .zero)
+        XCTAssertEqual(EnvServerDeviceLinkChannel.wait(since: now - .milliseconds(40), spacing: .milliseconds(15), now: now), .zero)
+        XCTAssertEqual(EnvServerDeviceLinkChannel.wait(since: now - .milliseconds(5), spacing: .milliseconds(15), now: now), .milliseconds(10))
     }
 
     // MARK: Node requirement (release: the app runs the bundle with the user's node)
@@ -732,6 +810,9 @@ final class ForwardLog: @unchecked Sendable {
     private var stored: [CodeV2.ClientCommandType] = []
     func append(_ type: CodeV2.ClientCommandType) { lock.withLock { stored.append(type) } }
     var types: [CodeV2.ClientCommandType] { lock.withLock { stored } }
+    /// What a remote drove, without the link's own `session.list` lookups
+    /// (it asks which folder an unknown session lives in before refusing it).
+    var driven: [CodeV2.ClientCommandType] { types.filter { $0 != .sessionList } }
 }
 
 final class ParamsLog: @unchecked Sendable {
@@ -747,6 +828,35 @@ final class Counter: @unchecked Sendable {
     init(_ count: Int) { remaining = count }
     /// True while any remain, counting one down.
     func take() -> Bool { lock.withLock { guard remaining > 0 else { return false }; remaining -= 1; return true } }
+}
+
+final class SequenceLog: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: [Int] = []
+    func append(_ value: Int) { lock.withLock { stored.append(value) } }
+    var values: [Int] { lock.withLock { stored } }
+}
+
+final class PushStats: @unchecked Sendable {
+    private let lock = NSLock()
+    private var current = 0
+    private var maximum = 0
+    private var count = 0
+    private var seen: [Int] = []
+    func begin(_ body: Data?) {
+        let object = body.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+        let sequences = ((object?["events"] as? [[String: Any]]) ?? []).compactMap { $0["sequence"] as? Int }
+        lock.withLock {
+            current += 1
+            maximum = max(maximum, current)
+            count += 1
+            seen += sequences
+        }
+    }
+    func end() { lock.withLock { current -= 1 } }
+    var maxConcurrent: Int { lock.withLock { maximum } }
+    var pushes: Int { lock.withLock { count } }
+    var sequences: [Int] { lock.withLock { seen } }
 }
 
 final class PostLog: @unchecked Sendable {

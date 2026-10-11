@@ -50,6 +50,12 @@ export interface TurnSink {
   requestApproval(
     request: Pick<ApprovalRequestItem, "callId" | "action" | "summary" | "justification" | "detail" | "options" | "agentId" | "agentLabel"> & {
       requestId?: string;
+      /**
+       * True when Full access would run this call without asking (inside the
+       * project). Kept by the session, never sent: a switch to Full access while
+       * the request waits answers it.
+       */
+      fullAccessAllows?: boolean;
     },
   ): Promise<ApprovalAnswer>;
   requestUserInput(request: Pick<UserInputRequestItem, "questions"> & { requestId?: string }): Promise<ApprovalAnswer>;
@@ -104,6 +110,12 @@ export interface ProviderSession {
   messageAgent?(agentId: string, text: string): Promise<{ accepted: boolean; message?: string }>;
   interruptAgent?(agentId: string): Promise<void>;
   interrupt(): Promise<void>;
+  /**
+   * The thread's mode changed while a turn may be running (the composer's
+   * access picker, on the Mac or a paired phone). Approvals raised from now on
+   * follow the new mode; the next turn passes it again through `runTurn`.
+   */
+  setRuntimeMode?(runtimeMode: RuntimeMode, interactionMode: InteractionMode, cwd?: string): void;
   /** Rewinds the vendor conversation so the next turn follows turn `ordinal` (0 = before the first turn). */
   rewindTo?(ordinal: number): Promise<boolean>;
   close(): Promise<void>;

@@ -23,6 +23,7 @@ interface Recorded {
   modes: string[];
   routings: (RoleRouting | undefined)[];
   resolved: (string | null)[];
+  decisions: string[];
 }
 
 function fakeEngine(rec: Recorded): AlevrEngine {
@@ -59,6 +60,15 @@ function fakeEngine(rec: Recorded): AlevrEngine {
         if (/limit/.test(text)) {
           emit({ type: "error", message: "You have used this month's Alevr allowance.", code: "plan_limit" });
           return;
+        }
+        if (/sensitive/.test(text)) {
+          // The engine's ladder sends its sensitive class up in every mode, Full access included.
+          const command = /sudo/.test(text) ? "sudo rm -rf /var/db/x" : "rm -rf dist && git reset --hard";
+          emit({ type: "tool_started", name: "bash", callId: "s1", input: { command } });
+          const d = await o.callbacks.requestApproval({ callId: "s1", toolName: "bash", input: { command }, risk: "sensitive", summary: command });
+          rec.decisions.push(`${command}:${d}`);
+          if (d === "deny") emit({ type: "tool_denied", callId: "s1" });
+          else emit({ type: "tool_finished", callId: "s1", output: "", exitCode: 0, durationMs: 1 });
         }
         if (/bash/.test(text)) {
           emit({ type: "tool_started", name: "bash", callId: "c1", input: { command: "npm test" } });
@@ -104,7 +114,7 @@ function fakeEngine(rec: Recorded): AlevrEngine {
 }
 
 async function boot() {
-  const rec: Recorded = { providers: [], modes: [], routings: [], resolved: [] };
+  const rec: Recorded = { providers: [], modes: [], routings: [], resolved: [], decisions: [] };
   const server = await startEnvServer({ dataDir: tempDir("data"), searchDirs: [], logger: silentLogger, probeOnStart: false, coalesceMs: 5, alevrEngine: fakeEngine(rec) });
   servers.push(server);
   const client = await TestClient.connect(server.url, server.token);
@@ -176,6 +186,42 @@ test("alevr engine: approvals, streaming, steering, interrupt and plan limits", 
   const t4 = await client.command<{ turnId: string }>("turn.start", { sessionId: sid, input: { text: "limit" }, selection, ...ask });
   assert.equal((await client.turnCompleted(sid, t4.turnId)).outcome, "limited");
   assert.equal(client.snapshot(sid).state, "limited");
+});
+
+test("alevr engine: Full access answers the engine's in-project asks, keeps the floor, and session.setMode applies mid-turn", async () => {
+  const { client, rec } = await boot();
+  await client.command("env.configure", { backend: { baseUrl: "https://alevr.example/api/agent", authorization: "Bearer s", models: [] } });
+  await client.command("provider.probe", { instanceId: "alevr" });
+  const selection = { instanceId: "alevr", model: "anthropic:claude-opus-5-5" };
+  const full = { runtimeMode: "full", interactionMode: "default" } as const;
+  const { sessionId: sid } = await client.command<{ sessionId: string }>("session.open", { cwd: tempDir("cwd"), selection, runtimeMode: "full" });
+  await client.waitFor(() => client.snapshots.get(sid), 4000, "snapshot");
+  assert.equal(client.snapshot(sid).runtimeMode, "full", "session.open carries the composer's access");
+
+  // rm -rf inside the project under Full access: no prompt.
+  const t1 = await client.command<{ turnId: string }>("turn.start", { sessionId: sid, input: { text: "sensitive" }, selection, ...full });
+  assert.equal((await client.turnCompleted(sid, t1.turnId)).outcome, "completed");
+  assert.ok(!items(client, sid).some((i) => i.kind === "approval_request"), "nothing asked inside the project");
+  assert.equal(rec.decisions.at(-1), "rm -rf dist && git reset --hard:allow");
+
+  // sudo still asks, with the reason.
+  const t2 = await client.command<{ turnId: string }>("turn.start", { sessionId: sid, input: { text: "sensitive sudo" }, selection, ...full });
+  const guarded = await client.waitFor(() => items(client, sid).find((i): i is ApprovalRequestItem => i.kind === "approval_request" && i.status === "pending"), 5000, "approval");
+  assert.match(guarded.justification ?? "", /administrator/);
+  await client.command("approval.respond", { sessionId: sid, requestId: guarded.requestId, decision: "decline" });
+  await client.turnCompleted(sid, t2.turnId);
+
+  // Asked under Ask, then the picker switches to Full access while the request waits: it is answered.
+  const t3 = await client.command<{ turnId: string }>("turn.start", { sessionId: sid, input: { text: "run bash" }, selection, ...ask });
+  const waiting = await client.waitFor(() => items(client, sid).find((i): i is ApprovalRequestItem => i.kind === "approval_request" && i.status === "pending"), 5000, "approval");
+  const set = await client.command<{ runtimeMode: string; approved: number }>("session.setMode", { sessionId: sid, runtimeMode: "full" });
+  assert.deepEqual([set.runtimeMode, set.approved], ["full", 1]);
+  assert.equal((await client.turnCompleted(sid, t3.turnId)).outcome, "completed");
+  const answered = items(client, sid).find((i) => i.id === waiting.id);
+  assert.ok(answered?.kind === "approval_request" && answered.status === "resolved" && answered.decision === "accept");
+  assert.equal(rec.modes.at(-1), "full", "the engine's own ladder follows at once");
+  assert.equal(client.snapshot(sid).runtimeMode, "full");
+  await assert.rejects(client.command("session.setMode", { sessionId: sid, runtimeMode: "fullAccess" }), /Unknown access mode/);
 });
 
 test("alevr engine: a Plan → Build → Verify routing reaches the engine, roles resolve to their own adapters, and the thread shows the phases", async () => {

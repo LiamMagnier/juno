@@ -979,12 +979,17 @@ export const CLIENT_COMMAND_TYPE_VALUES = [
   // project lane (additive): remove a project from Alevr. Every session in the folder is stopped and its log
   // deleted; the folder itself stays on disk (moving it to the Trash is the Mac app's own, local-only choice).
   "project.remove",
+  // access lane (additive): the composer's access picker changed (on the Mac or a paired phone). The
+  // thread's mode applies at once, mid-turn included; switching to Full access answers the pending
+  // approvals Full access would not have asked about.
+  "session.setMode",
 ] as const;
 export type ClientCommandType = (typeof CLIENT_COMMAND_TYPE_VALUES)[number];
 
 export interface ClientCommandParams {
   /** `worktree: true` on a new session creates a git worktree for it and runs the session there. */
-  "session.open": { sessionId?: string; cwd: string; selection?: ModelSelection; afterSequence?: number; worktree?: boolean };
+  /** `runtimeMode` (access lane, additive): the composer's access for a new session, so it holds before the first turn. */
+  "session.open": { sessionId?: string; cwd: string; selection?: ModelSelection; afterSequence?: number; worktree?: boolean; runtimeMode?: RuntimeMode };
   "turn.start": {
     sessionId: string;
     input: UserInput;
@@ -1037,6 +1042,8 @@ export interface ClientCommandParams {
    * and deletes their logs. Never touches the folder. Every client hears `project.removed`.
    */
   "project.remove": { cwd: string };
+  /** The thread's access mode now (`interactionMode` defaults to the thread's own). */
+  "session.setMode": { sessionId: string; runtimeMode: RuntimeMode; interactionMode?: InteractionMode };
   /**
    * Applies a unified diff (paths relative to the repository root) to the
    * session's working tree, or its reverse (`reverse: true`, a rejected hunk).
@@ -1274,6 +1281,8 @@ export interface ClientCommandResults {
   "host.upload": { ref: string; name: string; mediaType: string; size: number };
   /** The sessions that were removed (empty when the folder had none). */
   "project.remove": { sessionIds: string[] };
+  /** `approved`: pending approvals the new mode answered (Full access, inside the project). */
+  "session.setMode": { runtimeMode: RuntimeMode; interactionMode: InteractionMode; approved: number };
 }
 
 export const WIRE_ERROR_CODE_VALUES = [

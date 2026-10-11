@@ -82,6 +82,8 @@ export const LINK_RELAYED_COMMANDS: ReadonlySet<ClientCommandType> = new Set<Cli
   "host.capture",
   // A file attached to a message from the phone, kept by the Mac app.
   "host.upload",
+  // access lane: the phone's access picker, applied to the thread at once (a waiting approval included).
+  "session.setMode",
 ]);
 
 /**
