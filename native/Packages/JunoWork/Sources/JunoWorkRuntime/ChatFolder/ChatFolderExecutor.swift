@@ -103,6 +103,7 @@ public final class ChatFolderExecutor: Sendable {
             return .failed("\(call.tool) is not a folder tool this Mac knows.")
         }
         do {
+            try Task.checkCancellation()
             switch tool {
             case .listDir: return try await list(call)
             case .readFile: return try await read(call)
@@ -277,6 +278,9 @@ public final class ChatFolderExecutor: Sendable {
         guard access.mode.allowsWrite else {
             return .failed("This folder was shared read only, so commands can't run in it.")
         }
+        guard system.canRunContainedCommands else {
+            return .failed("This Mac can't restrict commands to the shared folder, so nothing was run.")
+        }
         guard let command = call.string("command")?.trimmingCharacters(in: .whitespacesAndNewlines), !command.isEmpty else {
             return .failed("command is empty.")
         }
@@ -298,8 +302,13 @@ public final class ChatFolderExecutor: Sendable {
             call, .command,
             title: "Run this command?",
             detail: "$ \(command)\nin \(place)",
-            explanation: "It runs on this Mac, starting in \(place). It can change files only inside this folder, can't reach the internet, and stops after \(timeout) seconds."
+            explanation: "It runs on this Mac, starting in \(place). It can read and change documents only inside this folder, can't use the network, and stops after \(timeout) seconds."
         )
+        try Task.checkCancellation()
+        _ = try rootURL()
+        guard system.canRunContainedCommands else {
+            return .failed("Command containment became unavailable, so nothing was run.")
+        }
         let outcome = try await system.run(
             ChatFolderCommandRequest(
                 command: command,
@@ -309,14 +318,15 @@ public final class ChatFolderExecutor: Sendable {
                 outputLimitBytes: Self.commandOutputLimitBytes
             )
         )
+        try Task.checkCancellation()
+        guard outcome.contained else {
+            return .failed("The command executor did not confirm mandatory containment. Its result is unverified.")
+        }
         var lines: [String] = []
         if outcome.timedOut {
             lines.append("Stopped after \(timeout) seconds.")
         } else if let code = outcome.exitCode {
             lines.append("Exit code \(code).")
-        }
-        if !outcome.contained {
-            lines.append("(This Mac could not sandbox the command; it ran with the user's own permissions.)")
         }
         let output = outcome.output.trimmingCharacters(in: .whitespacesAndNewlines)
         lines.append(output.isEmpty ? "(no output)" : output)
@@ -364,13 +374,18 @@ public final class ChatFolderExecutor: Sendable {
             )
         )
         if decision == .deny { throw ChatFolderRefusal.denied }
+        try Task.checkCancellation()
+        _ = try rootURL()
     }
 
     // MARK: Helpers
 
     private func rootURL() throws -> URL {
         // Read through the grant so a revoked folder refuses here too.
-        if let revocable = access as? GrantAccess { try revocable.requireActiveGrant() }
+        if let revocable = access as? GrantAccess {
+            try revocable.requireActiveGrant()
+            return revocable.canonicalRootURL
+        }
         return URL(fileURLWithPath: GrantAccess.canonicalPath(access.rootURL.path), isDirectory: true)
     }
 

@@ -67,6 +67,9 @@ public final class GrantAccess: GrantAccessing, @unchecked Sendable {
     /// root is fixed for the lifetime of the object; every *candidate* is
     /// canonicalized afresh.
     private let canonicalRootPath: String
+    /// The identity of the grant's path, captured when it was opened. Never
+    /// follow a replacement root symlink to a different folder.
+    public var canonicalRootURL: URL { URL(fileURLWithPath: canonicalRootPath, isDirectory: true) }
     private let securityScoped: Bool
 
     // `bookmarkNeedsRefresh` and the revocation date are the only mutable state,
@@ -237,6 +240,9 @@ public final class GrantAccess: GrantAccessing, @unchecked Sendable {
         if let revokedAt, Date() >= revokedAt {
             throw WorkGrantAccessError.grantRevoked(grantID: grantID)
         }
+        guard Self.canonicalPath(rootURL.path) == canonicalRootPath else {
+            throw WorkGrantAccessError.outsideGrant(path: rootURL.path)
+        }
     }
 
     // MARK: - Resolution
@@ -244,13 +250,14 @@ public final class GrantAccess: GrantAccessing, @unchecked Sendable {
     public func resolveForReading(_ path: GrantedPath) throws -> URL {
         try requireActiveGrant()
         let candidate = rootURL.appendingPathComponent(path.value, isDirectory: false)
-        guard realpath(candidate.path, nil) != nil else {
+        guard let resolved = realpath(candidate.path, nil) else {
             // A location that does not resolve is not a location inside the
             // grant. Failing closed keeps a dangling link from being treated as
             // a contained one; callers that need to tell "missing" from
             // "escaped" ask the filesystem *after* the refusal, never before it.
             throw WorkGrantAccessError.outsideGrant(path: path.value)
         }
+        free(resolved)
         let canonical = Self.canonicalPath(candidate.path)
         guard isContained(canonical) else {
             throw WorkGrantAccessError.symlinkEscapesGrant(path: path.value)

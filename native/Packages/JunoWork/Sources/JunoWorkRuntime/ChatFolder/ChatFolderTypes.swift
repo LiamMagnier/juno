@@ -184,8 +184,7 @@ public struct ChatFolderCommandOutcome: Equatable, Sendable {
     public let output: String
     public let timedOut: Bool
     public let truncated: Bool
-    /// False when the command ran without the kernel sandbox (no
-    /// `sandbox-exec` on this Mac); the model is told.
+    /// Must be true for Chat commands; an uncontained outcome is a failure.
     public let contained: Bool
 
     public init(exitCode: Int32?, output: String, timedOut: Bool, truncated: Bool, contained: Bool) {
@@ -201,9 +200,16 @@ public struct ChatFolderCommandOutcome: Equatable, Sendable {
 /// The app supplies the real one (a contained shell, Launch Services, PDFKit);
 /// tests supply a fake.
 public protocol ChatFolderSystem: Sendable {
+    /// Checked before an approval promises folder confinement. Implementations
+    /// must also refuse a command if containment disappears before launch.
+    var canRunContainedCommands: Bool { get }
     func run(_ request: ChatFolderCommandRequest) async throws -> ChatFolderCommandOutcome
     /// Opens the item in its default app, or reveals it in Finder.
     func open(_ url: URL, reveal: Bool) async -> Bool
     /// The text of a document that is not plain text (PDF, Word, RTF), or nil.
     func extractText(from url: URL) async -> String?
+}
+
+public extension ChatFolderSystem {
+    var canRunContainedCommands: Bool { false }
 }

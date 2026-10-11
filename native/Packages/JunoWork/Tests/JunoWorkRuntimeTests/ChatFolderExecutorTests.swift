@@ -36,6 +36,7 @@ final class ChatFolderExecutorTests: XCTestCase {
         private let lock = NSLock()
         private var asked: [ChatFolderApprovalRequest] = []
         let answer: ChatFolderApprovalDecision
+        var beforeAnswer: (@Sendable () -> Void)?
 
         init(_ answer: ChatFolderApprovalDecision) { self.answer = answer }
 
@@ -47,11 +48,13 @@ final class ChatFolderExecutorTests: XCTestCase {
 
         func decide(_ request: ChatFolderApprovalRequest) async -> ChatFolderApprovalDecision {
             lock.withLock { asked.append(request) }
+            beforeAnswer?()
             return answer
         }
     }
 
     private final class FakeSystem: ChatFolderSystem, @unchecked Sendable {
+        var canRunContainedCommands = true
         private let lock = NSLock()
         private(set) var commands: [ChatFolderCommandRequest] = []
         private(set) var opened: [(URL, Bool)] = []
@@ -391,6 +394,52 @@ final class ChatFolderExecutorTests: XCTestCase {
         let slow = await run.perform(call(.runCommand, ["command": .string("sleep 999")]))
         XCTAssertEqual(slow.outcome, .failed)
         XCTAssertTrue(slow.output.hasPrefix("Stopped after 60 seconds."))
+    }
+
+    func testUnavailableContainmentRefusesBeforeApprovalOrExecution() async throws {
+        let folder = try makeFolder()
+        let gate = RecordingGate(.allowOnce)
+        let system = FakeSystem()
+        system.canRunContainedCommands = false
+        let run = try executor(folder, gate: gate, system: system)
+        let result = await run.perform(call(.runCommand, ["command": .string("touch unsafe.txt")]))
+        XCTAssertEqual(result.outcome, .failed)
+        XCTAssertTrue(gate.requests.isEmpty)
+        XCTAssertTrue(system.commands.isEmpty)
+        XCTAssertFalse(folder.exists("unsafe.txt"))
+    }
+
+    func testUncontainedOutcomeCannotBeReportedAsSuccessful() async throws {
+        let folder = try makeFolder()
+        let system = FakeSystem()
+        system.commandOutcome = ChatFolderCommandOutcome(exitCode: 0, output: "Done", timedOut: false, truncated: false, contained: false)
+        let result = await (try executor(folder, system: system)).perform(call(.runCommand, ["command": .string("echo Done")]))
+        XCTAssertEqual(result.outcome, .failed)
+        XCTAssertTrue(result.output.contains("unverified"))
+    }
+
+    func testRevocationWhileApprovalIsOpenPreventsLaunch() async throws {
+        let folder = try makeFolder()
+        let grant = try GrantAccess(grantID: WorkGrantID(value: "revoke-in-approval"), mode: .readWrite, grantedURL: folder.grant)
+        let gate = RecordingGate(.allowOnce)
+        gate.beforeAnswer = { grant.revoke() }
+        let system = FakeSystem()
+        let executor = ChatFolderExecutor(access: grant, folderName: "Invoices", gate: gate, system: system)
+        let result = await executor.perform(call(.runCommand, ["command": .string("touch unsafe.txt")]))
+        XCTAssertEqual(result.outcome, .failed)
+        XCTAssertTrue(system.commands.isEmpty)
+    }
+
+    func testContainmentLossWhileApprovalIsOpenPreventsLaunch() async throws {
+        let folder = try makeFolder()
+        let gate = RecordingGate(.allowOnce)
+        let system = FakeSystem()
+        gate.beforeAnswer = { system.canRunContainedCommands = false }
+        let result = await (try executor(folder, gate: gate, system: system))
+            .perform(call(.runCommand, ["command": .string("touch unsafe.txt")]))
+        XCTAssertEqual(result.outcome, .failed)
+        XCTAssertEqual(gate.requests.count, 1)
+        XCTAssertTrue(system.commands.isEmpty)
     }
 
     func testOpenRevealsOrOpensInsideTheFolder() async throws {

@@ -185,6 +185,39 @@ struct DesktopChatFolderTests {
         #expect(DesktopChatFolderSystem.relativePath(of: root, in: root) == nil)
     }
 
+    @Test
+    func revokingAFolderStopsAnAlreadyRunningCommand() async throws {
+        try await verifyStoppedCommand { store in store.remove(for: "conv-1") }
+    }
+
+    @Test
+    func stoppingATurnStopsAnAlreadyRunningCommand() async throws {
+        try await verifyStoppedCommand { store in store.turnEnded(conversationID: "conv-1") }
+    }
+
+    private func verifyStoppedCommand(_ stop: (DesktopChatFolderStore) -> Void) async throws {
+        let fixture = try Fixture()
+        let store = fixture.store()
+        store.adopt(fixture.folder, for: "conv-1", access: .readWrite)
+        let request = call("folder_run_command", ["command": .string("printf started > started.txt; sleep 1; printf unsafe > after-stop.txt")])
+        let task = Task { await store.perform(request, conversationID: "conv-1") }
+        let approval = try await waitForCard(store, conversationID: "conv-1")
+        store.answer(approval.id, .allowOnce)
+        let started = fixture.folder.appendingPathComponent("started.txt")
+        for _ in 0..<100 {
+            if FileManager.default.fileExists(atPath: started.path) { break }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(FileManager.default.fileExists(atPath: started.path), "exercise revocation after launch")
+        let duplicate = await store.perform(request, conversationID: "conv-1")
+        #expect(duplicate.outcome == .failed, "an active call cannot launch twice")
+        stop(store)
+        let result = await task.value
+        #expect(result.outcome == .failed)
+        try await Task.sleep(for: .milliseconds(1100))
+        #expect(!FileManager.default.fileExists(atPath: fixture.folder.appendingPathComponent("after-stop.txt").path))
+    }
+
     private func waitForCard(_ store: DesktopChatFolderStore, conversationID: String) async throws -> DesktopChatFolderStore.PendingApproval {
         for _ in 0..<200 {
             if let pending = store.approvals(for: conversationID).first { return pending }
