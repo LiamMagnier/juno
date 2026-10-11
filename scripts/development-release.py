@@ -157,7 +157,7 @@ def main() -> int:
     try:
         run_steps(ROOT, output, manifest, steps, environment)
         for name, relative in (("mac-debug", "mac-debug/Build/Products/Debug/JunoDesktop.app"),
-                               ("mac-stable", "mac-stable/Build/Products/Stable/JunoDesktop.app"),
+                               ("mac-stable", "mac-stable/Build/Products/Stable/Alevr.app"),
                                ("ios-simulator", "ios/Build/Products/Debug-iphonesimulator/JunoMobile.app")):
             bundle = output / relative
             require_bundle_source(bundle, sha)
