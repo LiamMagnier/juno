@@ -245,7 +245,7 @@ struct DesktopRemoteHostResponderTests {
             name: "Liam's MacBook Pro", sharedFolders: ["/Users/liam/app"], terminal: true,
             captures: [.preview, .simulator], appVersion: "1.10.6"
         ))
-        let bare = try await responder().info()
+        let bare = await responder().info()
         #expect(bare.captures.isEmpty)
     }
 
