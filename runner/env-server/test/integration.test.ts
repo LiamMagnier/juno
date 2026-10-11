@@ -94,7 +94,43 @@ test("projectless conversations: refreshing Changes never reports a Git error", 
   assert.deepEqual(await client.command("checkpoint.diff", { sessionId: sid }), empty);
   assert.equal(client.snapshot(sid).state, "idle");
   assert.equal(fs.existsSync(path.join(cwd, ".git")), false);
-  await assert.rejects(client.command("checkpoint.diff", { sessionId: sid, checkpointId: "cp_1" }), /git repository/);
+  await assert.rejects(client.command("checkpoint.diff", { sessionId: sid, checkpointId: "cp_1" }), /No such checkpoint/);
+});
+
+test("a folder that is not a repository: Changes shows the session's files and counts, per turn and whole", async () => {
+  const { client } = await boot();
+  await client.command("provider.probe", { instanceId: "codex:default" });
+  const cwd = tempDir("portfolio");
+  fs.writeFileSync(path.join(cwd, "index.html"), "<h1>Hi</h1>\n");
+  const selection = { instanceId: "codex:default", model: "gpt-6.1-codex" };
+  const sid = await openSession(client, cwd, selection);
+  type Diff = { diff: string; files: { path: string; change: string; additions?: number; deletions?: number }[] };
+  const first = await client.command<{ turnId: string }>("turn.start", { sessionId: sid, input: { text: "write notes.md" }, selection, ...ask });
+  assert.equal((await client.turnCompleted(sid, first.turnId)).outcome, "completed");
+  const cp1 = items(client, sid).find((i) => i.kind === "checkpoint");
+  assert.ok(cp1?.kind === "checkpoint");
+  assert.equal(cp1.ref, undefined, "no git ref outside a repository");
+  assert.deepEqual([cp1.filesChanged, cp1.additions, cp1.deletions], [1, 1, 0]);
+  const turn1 = await client.command<Diff>("checkpoint.diff", { sessionId: sid, checkpointId: cp1.checkpointId });
+  assert.deepEqual(turn1.files, [{ path: "notes.md", change: "add", additions: 1, deletions: 0 }]);
+  assert.match(turn1.diff, /^diff --git a\/notes.md b\/notes.md\nnew file mode 100644\n--- \/dev\/null\n\+\+\+ b\/notes.md\n@@ -0,0 \+1 @@\n\+written by fake codex turn \d+\n$/);
+
+  const second = await client.command<{ turnId: string }>("turn.start", { sessionId: sid, input: { text: "write other.md" }, selection, ...ask });
+  await client.turnCompleted(sid, second.turnId);
+  const cp2 = items(client, sid).filter((i) => i.kind === "checkpoint").at(-1);
+  assert.ok(cp2?.kind === "checkpoint" && cp2.turnOrdinal === 2);
+  const turn2 = await client.command<Diff>("checkpoint.diff", { sessionId: sid, checkpointId: cp2.checkpointId });
+  assert.deepEqual(turn2.files.map((f) => f.path), ["other.md"], "one turn shows only that turn's files");
+  fs.writeFileSync(path.join(cwd, "index.html"), "<h1>Hello</h1>\n");
+  const whole = await client.command<Diff>("checkpoint.diff", { sessionId: sid });
+  assert.deepEqual(whole.files.map((f) => [f.path, f.additions, f.deletions]), [["index.html", 1, 1], ["notes.md", 1, 0], ["other.md", 1, 0]]);
+
+  // Undo the last turn: its file goes, the first turn's stays.
+  const { restoredFiles } = await client.command<{ restoredFiles: number }>("checkpoint.rollback", { sessionId: sid, checkpointId: cp1.checkpointId });
+  assert.equal(restoredFiles, 1);
+  assert.equal(fs.existsSync(path.join(cwd, "other.md")), false);
+  assert.ok(fs.existsSync(path.join(cwd, "notes.md")));
+  assert.equal(fs.existsSync(path.join(cwd, ".git")), false, "no repository is ever created");
 });
 
 test("codex: probe reads account, paged models and limit windows without a session", async () => {
@@ -132,6 +168,7 @@ test("codex: approval, file change, checkpoint and per-turn diff", async () => {
   const cp = snap.items.find((i) => i.kind === "checkpoint");
   assert.ok(cp && cp.kind === "checkpoint");
   assert.equal(cp.filesChanged, 1);
+  assert.match(cp.ref ?? "", /^refs\/alevr\/checkpoints\//, "a repository keeps using git checkpoints");
   const turnDiff = await client.command<{ diff: string; files: { path: string }[] }>("checkpoint.diff", { sessionId: sid, checkpointId: cp.checkpointId });
   assert.deepEqual(turnDiff.files.map((f) => f.path), ["notes.md"]);
   assert.match(turnDiff.diff, /written by fake codex/);

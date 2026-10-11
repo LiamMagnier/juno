@@ -249,9 +249,14 @@ struct DesktopQuickEntryView: View {
         .foregroundStyle(Color.junoForeground)
         .lineLimit(1...6)
         .focused($fieldFocused)
-        // ↩ sends and ⇧↩ breaks the line, as in every composer.
+        // ↩ sends and ⇧↩ / ⌥↩ break the line, as in every composer
+        // (`JunoComposerReturn`); an input method's ↩ stays its own.
         .onKeyPress(.return, phases: .down) { press in
-            if press.modifiers.contains(.shift) { return .ignored }
+            switch JunoComposerReturn.resolve(press) {
+            case .inputMethod: return .ignored
+            case .newline: return JunoTextEditing.insertLineBreak() ? .handled : .ignored
+            case .send: break
+            }
             send()
             return .handled
         }

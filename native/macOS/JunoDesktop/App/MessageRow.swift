@@ -539,14 +539,11 @@ struct DesktopMessageRow: View {
     /// Fourteen lines of 16pt at 1.7, plus the editor's own inset.
     private static let editorMaximumHeight: CGFloat = 381
 
-    /// Return sends, ⇧Return breaks the line, ⌘Return sends. A Return that
-    /// is committing an input method's marked text belongs to the input
-    /// method.
+    /// Return sends, ⇧Return and ⌥Return break the line (a `TextEditor`
+    /// does that itself), ⌘Return sends. A Return that is committing an input
+    /// method's marked text belongs to the input method.
     private func editorReturn(_ press: KeyPress) -> KeyPress.Result {
-        if let editor = NSApp.keyWindow?.firstResponder as? NSTextView, editor.hasMarkedText() {
-            return .ignored
-        }
-        if press.modifiers.contains(.shift) { return .ignored }
+        guard JunoComposerReturn.resolve(press) == .send else { return .ignored }
         submitEdit()
         return .handled
     }

@@ -32,6 +32,7 @@ import {
 import { MentionPalette, TokenPopover, markSource, tokenAccessibleName, type PaletteStatus } from "./context-composer-layers";
 import { ContextTokenMark } from "./context-token-mark";
 import { uiPref } from "@/lib/ui-prefs";
+import { enterIntent, enterKeyOf } from "@/lib/composer-keys";
 
 /*
  * THE COMPOSER'S FIELD: a contenteditable sentence with context tokens in it
@@ -708,7 +709,8 @@ export const ContextComposerField = React.forwardRef<HTMLTextAreaElement, Props>
     }
     if (selectedToken.current && event.key !== "Shift") selectToken(null);
 
-    if (event.key === "Enter" && event.shiftKey) {
+    // Shift+Enter and Option/Alt+Enter break the line (src/lib/composer-keys.ts).
+    if (enterIntent(enterKeyOf(event)) === "newline") {
       event.preventDefault();
       if (!editCommand(document, "insertText", "\n")) editCommand(document, "insertHTML", "<br>");
       publish();

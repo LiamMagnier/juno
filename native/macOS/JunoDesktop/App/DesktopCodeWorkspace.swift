@@ -1881,6 +1881,16 @@ private struct DesktopCodeRemoteCanvas: View {
                     .lineLimit(1...8)
                     .disabled(!canSend)
                     .onSubmit(send)
+                    // Shift-Return and Option-Return break the line, as in every composer.
+                    .onKeyPress(.return, phases: .down) { press in
+                        switch JunoComposerReturn.resolve(press) {
+                        case .inputMethod: return .ignored
+                        case .newline: return JunoTextEditing.insertLineBreak() ? .handled : .ignored
+                        case .send:
+                            send()
+                            return .handled
+                        }
+                    }
                     .accessibilityIdentifier("juno.code.remote-composer")
                 if summary?.isRunning == true {
                     Button {

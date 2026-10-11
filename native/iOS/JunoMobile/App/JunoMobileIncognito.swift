@@ -297,6 +297,17 @@ struct JunoMobileIncognitoChat: View {
                 .lineLimit(1...6)
                 .textFieldStyle(.plain)
                 .focused($composerFocused)
+                // A hardware keyboard: Return sends, Shift-Return and
+                // Option-Return break the line (`JunoComposerReturn`).
+                .onKeyPress(.return, phases: .down) { press in
+                    switch JunoComposerReturn.resolve(press) {
+                    case .inputMethod: return .ignored
+                    case .newline: return JunoTextEditing.insertLineBreak() ? .handled : .ignored
+                    case .send:
+                        if !sendDisabled { send() }
+                        return .handled
+                    }
+                }
                 .padding(.horizontal, JunoSpace.regular)
                 .padding(.top, JunoSpace.comfy)
                 .padding(.bottom, JunoSpace.tight)

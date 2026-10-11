@@ -34,6 +34,7 @@ import { SessionLog, type SessionMeta } from "../protocol/session-log.js";
 import type { ProviderRegistry } from "../providers/registry.js";
 import type { ApprovalAnswer, McpEndpoint, ProviderSession, TurnResult, TurnSink } from "../providers/types.js";
 import { GitCheckpoints, PatchError, normalizeRepoPath } from "../git/checkpoints.js";
+import { FolderCheckpoints, fileChangesDiff } from "../git/folder-checkpoints.js";
 import { createWorktree, runWorktreeSetup } from "../git/worktrees.js";
 import { AlevrMcpServer, MCP_SERVER_NAME } from "../mcp/alevr-mcp.js";
 import { deferred, describeError, newId, nowIso, type Deferred, type Logger } from "../util.js";
@@ -374,11 +375,10 @@ export class SessionManager {
     try {
       // Scoped to this session: only files its own turns changed after the checkpoint, inside its
       // folder. Another session's (or the user's) edits in the same repository are never reverted.
-      const result = await this.checkpoints.rollback(cwd, live.log.id, ordinal, {
-        subtree: cwd,
-        latestTurn: live.log.meta.turnCount,
-        paths: await this.#touchedPaths(live, item),
-      });
+      const scope = { subtree: cwd, latestTurn: live.log.meta.turnCount, paths: await this.#touchedPaths(live, item) };
+      const result = (await this.checkpoints.repoRoot(cwd))
+        ? await this.checkpoints.rollback(cwd, live.log.id, ordinal, scope)
+        : await this.#folders(live).rollback(cwd, live.log.id, ordinal, scope);
       restoredFiles = result.restoredFiles;
       skipped = result.skipped;
     } catch (error) {
@@ -397,11 +397,14 @@ export class SessionManager {
     return { restoredFiles };
   }
 
-  /** Repository-relative paths of the file_change items after a checkpoint (all of them for cp_0). */
+  /**
+   * Repository-relative paths of the file_change items after a checkpoint (all of them for cp_0);
+   * absolute when the session's folder is not a repository (the folder store resolves them).
+   */
   async #touchedPaths(live: LiveSession, checkpoint: CheckpointItem | undefined): Promise<string[]> {
     const cwd = live.log.meta.cwd;
     const root = await this.checkpoints.repoRoot(cwd);
-    if (!root) return [];
+    if (!root) return this.#editedPaths(live, checkpoint ? live.log.snapshot.items.indexOf(checkpoint) + 1 : 0);
     const items = live.log.snapshot.items;
     const start = checkpoint ? items.indexOf(checkpoint) + 1 : 0;
     const out = new Set<string>();
@@ -429,7 +432,11 @@ export class SessionManager {
     if (live.active && !params.checkOnly) throw new WireError("conflict", "Stop the running turn before changing its files.");
     let result: ClientCommandResults["checkpoint.applyPatch"];
     try {
-      result = await this.checkpoints.applyPatch(live.log.meta.cwd, params.patch, { reverse: params.reverse === true, checkOnly: params.checkOnly === true });
+      const cwd = live.log.meta.cwd;
+      const options = { reverse: params.reverse === true, checkOnly: params.checkOnly === true };
+      result = (await this.checkpoints.repoRoot(cwd))
+        ? await this.checkpoints.applyPatch(cwd, params.patch, options)
+        : this.#folders(live).applyPatch(cwd, params.patch, options);
     } catch (error) {
       if (error instanceof PatchError) throw new WireError(error.code, error.message);
       throw new WireError("internal", describeError(error));
@@ -571,14 +578,7 @@ export class SessionManager {
   async diff(params: ClientCommandParams["checkpoint.diff"]): Promise<ClientCommandResults["checkpoint.diff"]> {
     const live = this.#get(params.sessionId);
     const cwd = live.log.meta.cwd;
-    if (!(await this.checkpoints.repoRoot(cwd))) {
-      // The Changes pane refreshes after every turn, including projectless
-      // conversations and read-only subagents. No repository means no Git
-      // changes to display, not a failed conversation. Explicit checkpoint
-      // operations still require a repository.
-      if (params.checkpointId) throw new WireError("unsupported", "Diffs need a git repository.");
-      return { diff: "", files: [] };
-    }
+    if (!(await this.checkpoints.repoRoot(cwd))) return this.#folderDiff(live, params.checkpointId);
     const id = live.log.id;
     if (!params.checkpointId) {
       const base = await this.checkpoints.resolve(cwd, id, 0);
@@ -591,6 +591,43 @@ export class SessionManager {
     const from = item.turnOrdinal > 0 ? await this.checkpoints.resolve(cwd, id, item.turnOrdinal - 1) : undefined;
     if (!to || !from) return { diff: "", files: [] };
     return this.checkpoints.diff(cwd, from, to);
+  }
+
+  /**
+   * Changes for a folder that is not a git repository: the folder store's
+   * per-turn manifests, the same scopes as git (the whole session against
+   * the live folder, or one turn). A session from before the store existed
+   * has no manifests yet; its own file_change items stand in, so what the
+   * thread reports as changed is never shown as nothing.
+   */
+  #folderDiff(live: LiveSession, checkpointId: string | undefined): ClientCommandResults["checkpoint.diff"] {
+    const cwd = live.log.meta.cwd;
+    const id = live.log.id;
+    const folders = this.#folders(live);
+    const items = live.log.snapshot.items;
+    if (!checkpointId) return folders.diff(cwd, id, 0, "worktree", this.#editedPaths(live, 0)) ?? fileChangesDiff(cwd, items);
+    const item = this.#checkpointItem(live, checkpointId);
+    if (!item) throw new WireError("not_found", "No such checkpoint.");
+    const turn = item.turnOrdinal > 0 ? folders.diff(cwd, id, item.turnOrdinal - 1, item.turnOrdinal) : undefined;
+    return turn ?? fileChangesDiff(cwd, items.filter((i) => i.turnId === item.turnId));
+  }
+
+  /** The folder store for a session whose folder is not a repository; it lives (and is deleted) with the session. */
+  #folders(live: LiveSession): FolderCheckpoints {
+    return new FolderCheckpoints(path.join(live.log.dir, "folder-checkpoints"));
+  }
+
+  /** Paths the session's file_change items name from `start` on, as the runtime gave them. */
+  #editedPaths(live: LiveSession, start: number): string[] {
+    const out = new Set<string>();
+    for (const item of live.log.snapshot.items.slice(Math.max(0, start))) {
+      if (item.kind !== "file_change") continue;
+      for (const change of item.changes) {
+        if (change.path) out.add(change.path);
+        if (change.previousPath) out.add(change.previousPath);
+      }
+    }
+    return [...out];
   }
 
   /**
@@ -755,8 +792,13 @@ export class SessionManager {
     const generation = live.generation ?? 0;
     let result: TurnResult;
     try {
-      if (ordinal === 1 || !(await this.checkpoints.resolve(cwd, log.id, ordinal - 1).catch(() => undefined))) {
-        await this.checkpoints.create(cwd, log.id, ordinal - 1).catch((e) => this.#o.logger.debug(`baseline checkpoint: ${describeError(e)}`));
+      if (await this.checkpoints.repoRoot(cwd).catch(() => null)) {
+        if (ordinal === 1 || !(await this.checkpoints.resolve(cwd, log.id, ordinal - 1).catch(() => undefined))) {
+          await this.checkpoints.create(cwd, log.id, ordinal - 1).catch((e) => this.#o.logger.debug(`baseline checkpoint: ${describeError(e)}`));
+        }
+      } else if (ordinal === 1 || !this.#folders(live).has(log.id, ordinal - 1)) {
+        // Not a repository: the folder store takes the same baseline.
+        await this.#folders(live).create(cwd, log.id, ordinal - 1, this.#editedPaths(live, 0)).catch((e) => this.#o.logger.debug(`baseline folder checkpoint: ${describeError(e)}`));
       }
       // Stopped (or the session closed) while the baseline checkpoint was written: start nothing.
       if (abort.signal.aborted || (live.generation ?? 0) !== generation) throw new TurnStoppedEarly();
@@ -794,7 +836,9 @@ export class SessionManager {
     for (const [requestId] of live.pending) this.#resolvePending(live, requestId, { decision: "cancel" }, "expired");
 
     try {
-      const cp = await this.checkpoints.create(cwd, log.id, ordinal);
+      const cp = (await this.checkpoints.repoRoot(cwd).catch(() => null))
+        ? await this.checkpoints.create(cwd, log.id, ordinal)
+        : await this.#folders(live).create(cwd, log.id, ordinal, this.#editedPaths(live, 0));
       if (cp) {
         this.#addItem(live, {
           id: newId("cp"),
@@ -803,7 +847,8 @@ export class SessionManager {
           createdAt: nowIso(),
           checkpointId: `cp_${ordinal}_${turnId}`,
           turnOrdinal: ordinal,
-          ref: cp.ref,
+          // A folder that is not a repository has no git ref; its checkpoint lives in the folder store.
+          ...("ref" in cp && typeof cp.ref === "string" ? { ref: cp.ref } : {}),
           filesChanged: cp.filesChanged,
           additions: cp.additions,
           deletions: cp.deletions,

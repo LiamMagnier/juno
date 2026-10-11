@@ -40,9 +40,25 @@ public struct CodeV2HunkApplier: Sendable {
     }
 
     public func apply(_ operation: Operation, hunk: DiffHunk, path: String, in directory: URL) async throws {
+        // A folder that is not a repository has no index to stage into: the
+        // change is already in the file, so accepting it only records the
+        // decision. (Reject goes through the env server either way.)
+        if operation == .accept, !Self.isInsideRepository(directory) { return }
         let patch = CodeV2UnifiedDiff.patch(for: hunk, path: path)
         try await run(Self.arguments(operation, check: true), patch: patch, in: directory)
         try await run(Self.arguments(operation, check: false), patch: patch, in: directory)
+    }
+
+    /// True when the folder, or a folder above it, holds a `.git` (a
+    /// repository or a worktree's `.git` file).
+    public static func isInsideRepository(_ directory: URL) -> Bool {
+        var url = directory.standardizedFileURL
+        while true {
+            if FileManager.default.fileExists(atPath: url.appendingPathComponent(".git").path) { return true }
+            let parent = url.deletingLastPathComponent()
+            if parent.path == url.path || parent.path.isEmpty { return false }
+            url = parent
+        }
     }
 
     private func run(_ arguments: [String], patch: String, in directory: URL) async throws {
