@@ -141,7 +141,7 @@ def main() -> int:
         raise RuntimeError("Use Node 24, the repository's CI runtime")
     devices = json.loads(subprocess.check_output(["xcrun", "simctl", "list", "devices", "available", "--json"], env=environment))
     simulator = next((device["udid"] for runtime, group in sorted(devices["devices"].items()) if "iOS" in runtime
-                      for device in group if device["name"].startswith("iPhone")), None)
+                      for device in group if ".iPhone-" in device.get("deviceTypeIdentifier", "")), None)
     if not simulator:
         raise RuntimeError("An available iPhone simulator is required; no simulator test is silently skipped")
     output.mkdir(parents=True, exist_ok=False)
