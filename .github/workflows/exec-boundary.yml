@@ -1,0 +1,30 @@
+name: execution sandbox boundary
+
+on:
+  pull_request:
+    paths:
+      - 'deploy/exec-host/**'
+      - 'tests/test_exec_host.py'
+      - '.github/workflows/exec-boundary.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: exec-boundary-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  boundary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the actual execution image
+        run: docker build -t juno-exec:dev deploy/exec-host/image
+      - name: Exercise the service and real container boundary
+        run: python3 -m unittest discover -s tests -p 'test_exec_host.py'
+        env:
+          JUNO_EXEC_DOCKER_TESTS: "1"
+          PYTHONDONTWRITEBYTECODE: "1"

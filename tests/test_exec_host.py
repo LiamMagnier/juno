@@ -842,25 +842,65 @@ class RealSandboxBoundary(unittest.TestCase):
         config = {"token": TOKEN, "policy": policy, "dataRoot": data,
                   "broker": {"mode": "process", "argv": [sys.executable, str(ROOT / "deploy/exec-host/juno-exec-docker-broker.py")], "env": env}}
         self.service = service_module.Service(config)
+        self.workspace = os.path.join(policy["sessionsRoot"], SESSION, "work")
         self.server = service_module.ThreadingHTTPServer(("127.0.0.1", 0), service_module.make_handler(self.service, TOKEN))
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
         self.addCleanup(self.server.shutdown)
         self.base = "http://127.0.0.1:%d" % self.server.server_address[1]
 
-    def run_code(self, code, language="python", timeout_ms=60000):
+    def run_code(self, code, language="python", timeout_ms=60000, wait=True):
         request = urllib.request.Request(self.base + "/v1/runs", method="POST", data=json.dumps({
             "session": SESSION, "account": ACCOUNT, "language": language, "code": code, "timeoutMs": timeout_ms}).encode())
         request.add_header("Authorization", "Bearer " + TOKEN)
         request.add_header("Idempotency-Key", os.urandom(8).hex())
         with urllib.request.urlopen(request, timeout=30) as response:
             run = json.loads(response.read())
+        if not wait:
+            return run
+        return self.wait_for_terminal(run["id"])
+
+    def wait_for_terminal(self, run_id):
+        deadline = time.monotonic() + 90
         while True:
-            request = urllib.request.Request(self.base + "/v1/runs/%s?wait=25" % run["id"])
+            self.assertLess(time.monotonic(), deadline, "real container did not finish within its bounded test window")
+            request = urllib.request.Request(self.base + "/v1/runs/%s?wait=25" % run_id)
             request.add_header("Authorization", "Bearer " + TOKEN)
             with urllib.request.urlopen(request, timeout=60) as response:
                 run = json.loads(response.read())
             if run["status"] in service_module.TERMINAL:
                 return run
+
+    def test_private_metadata_and_worker_credentials_do_not_reach_program(self):
+        run = self.run_code("\n".join([
+            "import os, socket, errno, json",
+            "result = {'sensitiveEnvNames': [key for key in os.environ if any(part in key for part in ('API_KEY','AUTH_SECRET','DATABASE_URL','CLOUD_CODE_SECRET'))]}",
+            "for host in ('169.254.169.254', '172.30.0.1', '10.0.0.1'):",
+            "    try:",
+            "        socket.create_connection((host, 443), timeout=2); result[host] = 'open'",
+            "    except OSError as error:",
+            "        result[host] = errno.errorcode.get(error.errno)",
+            "print(json.dumps(result))",
+        ]))
+        self.assertEqual(run["status"], "succeeded", run)
+        result = json.loads(run["stdout"]["head"])
+        self.assertEqual(result["sensitiveEnvNames"], [])
+        for host in ("169.254.169.254", "172.30.0.1", "10.0.0.1"):
+            self.assertEqual(result[host], "ENETUNREACH", "no route, not merely a closed destination port")
+
+    def test_real_cancellation_prevents_delayed_mutation(self):
+        run = self.run_code("import time\nfrom pathlib import Path\nPath('/work/started').write_text('started')\ntime.sleep(6)\nPath('/work/after-stop').write_text('unauthorized-after-stop')\n", wait=False)
+        deadline = time.monotonic() + 20
+        while not os.path.isfile(os.path.join(self.workspace, "started")):
+            self.assertLess(time.monotonic(), deadline, "container never reached started marker")
+            time.sleep(0.05)
+        request = urllib.request.Request(self.base + "/v1/runs/%s/cancel" % run["id"], method="POST")
+        request.add_header("Authorization", "Bearer " + TOKEN)
+        with urllib.request.urlopen(request, timeout=30) as response:
+            self.assertEqual(response.status, 202)
+        final = self.wait_for_terminal(run["id"])
+        self.assertEqual(final["status"], "cancelled")
+        time.sleep(6.2)
+        self.assertFalse(os.path.exists(os.path.join(self.workspace, "after-stop")))
 
     def test_no_network_read_only_root_non_root_user(self):
         run = self.run_code("\n".join([
