@@ -114,9 +114,11 @@ test("the emergency path still runs the security check and leaves a record on bo
   assert.match(body, /GATES_BYPASS_B64='\$GATES_BYPASS_B64'/);
 });
 
-test("a push cannot reach a bypass: CI and the Mac release run the shared gates unconditionally", () => {
+test("a push cannot reach a bypass: CI runs all gates and Mac reuse requires a verified tree", () => {
   assert.match(DEPLOY_WORKFLOW, /run: bash scripts\/local-gates\.sh\n/);
   assert.doesNotMatch(DEPLOY_WORKFLOW, /SKIP_CHECKS|skip-checks|JUNO_EMERGENCY_SKIP_GATES/);
-  assert.match(code(RELEASE_MACOS), /\nbash scripts\/local-gates\.sh\n/);
+  const release = code(RELEASE_MACOS);
+  assert.match(release, /if node scripts\/gate-stamp\.mjs check HEAD; then\s+bash scripts\/local-gates\.sh --migrations-only HEAD\s+npm run security:check\s+else\s+bash scripts\/local-gates\.sh\s+fi/);
+  assert.doesNotMatch(code(LOCAL_GATES), /gate-stamp\.mjs check/, "the shared gates never read stamps or skip their own checks");
   assert.doesNotMatch(code(RELEASE_MACOS), /SKIP_CHECKS/);
 });

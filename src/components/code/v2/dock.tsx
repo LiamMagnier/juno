@@ -659,7 +659,7 @@ function AgentsPane({ model, selectedId, onSelect }: { model: WorkspaceModel; se
   const selected = agents.find((a) => a.agentId === selectedId);
   const [pick, setPick] = React.useState<string | null>(null);
   const best = model.routing.preset === "best-of-n" || agents.some(isCandidate);
-  if (selected && !best) return <AgentDetail key={selected.agentId} agent={selected} model={model} onBack={() => onSelect(null)} />;
+  if (selected) return <AgentDetail key={selected.agentId} agent={selected} model={model} onBack={() => onSelect(null)} />;
   if (!agents.length) return <div className="cv2-dock-empty">No agents in this session. Choose Team or Best of N under the composer&apos;s options to fan out.</div>;
   const elapsed = Math.max(0, ...agents.map((a) => a.elapsedMs ?? 0));
   const costs = agents.map((a) => a.costUsd).filter((c): c is number => c !== undefined);
@@ -708,6 +708,7 @@ function AgentsPane({ model, selectedId, onSelect }: { model: WorkspaceModel; se
           })}
         </div>
         <div className="cv2-mini" style={{ justifyContent: "flex-end" }}>
+          {chosen && <button type="button" className="cv2-link" onClick={() => onSelect(chosen.agentId)}>Open trace</button>}
           {kept ? (
             <span className="cv2-mute">Kept {String.fromCharCode(65 + agents.indexOf(kept))}. The other worktrees were removed.</span>
           ) : (

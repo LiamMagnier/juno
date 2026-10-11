@@ -20,7 +20,8 @@ export async function POST(req: Request) {
       where: { userId, OR: [{ workspacePath: cwd }, ...(key ? [{ workspaceKey: key }] : [])], status: { notIn: ["done", "failed", "cancelled"] } }, select: { id: true },
     })).map((t) => t.id),
     cancel: async (id) => {
-      const task = await prisma.codeTask.findUnique({ where: { id }, select: { status: true } });
+      const task = await prisma.codeTask.findFirst({ where: { id, userId: user.id }, select: { status: true } });
+      if (!task) return;
       await appendTaskEvents(id, [{ kind: "cancel_request", payload: {} }], task?.status === "queued" ? { status: "cancelled" } : {});
     },
     erase: async (userId, cwd, key, workspaceId) => {

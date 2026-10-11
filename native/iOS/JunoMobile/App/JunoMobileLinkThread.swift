@@ -910,7 +910,10 @@ struct JunoMobileLinkAgentsView: View {
                 }
               }
             }
-            if let result = selected.closingText { JunoMarkdownText(result).textSelection(.enabled) }
+            if let result = selected.closingText, !(model.openSnapshot?.items ?? []).contains(where: { item in
+              if case let .assistantMessage(message) = item { return message.agentId == selected.agentId && message.text == result }
+              return false
+            }) { JunoMarkdownText(result).textSelection(.enabled) }
             if model.canControlSubagents, selected.status == .running || selected.status == .waiting {
               Button("Stop agent") { Task { await model.interruptAgent(selected.agentId) } }
               HStack {
@@ -921,7 +924,8 @@ struct JunoMobileLinkAgentsView: View {
                   Task {
                     let accepted = await model.messageAgent(selected.agentId, text: text)
                     sending = false
-                    if accepted { message = ""; deliveryError = nil }
+                    guard selectedID == selected.agentId else { return }
+                    if accepted { if message == text { message = "" }; deliveryError = nil }
                     else { deliveryError = model.lastError ?? "Your message could not be delivered. It is still here." }
                   }
                 }.disabled(sending || message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -958,7 +962,7 @@ struct JunoMobileLinkAgentsView: View {
         VStack(alignment: .leading, spacing: JunoSpace.tight) {
           JunoMobileLinkSubagentRow(agent: agent)
           if let summary = agent.closingText { Text(summary).font(.footnote).foregroundStyle(.secondary).lineLimit(2) }
-          if let elapsed = agent.elapsedMs { Text("\(Int(max(0, elapsed / 1000)))s").font(.caption).foregroundStyle(.secondary) }
+          if let elapsed = agent.elapsedMs { Text(CodeV2Formatting.duration(seconds: Int(max(0, elapsed / 1000)))).font(.caption).foregroundStyle(.secondary) }
         }
       }
     }

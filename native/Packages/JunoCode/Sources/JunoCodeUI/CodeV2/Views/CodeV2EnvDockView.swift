@@ -100,11 +100,14 @@ public struct CodeV2EnvDockView: View {
                     .task(id: "\(dock.scope)-\(snapshot.items.count)") { await reload() }
                 )
             case .agents:
-                if snapshot.routing?.preset == .bestOfN, !bestOfN.isEmpty {
-                    AnyView(CodeV2BestOfNCompare(candidates: bestOfN, keep: { keepCandidate?($0) }))
+                if snapshot.routing?.preset == .bestOfN, !bestOfN.isEmpty, dock.selectedAgent == nil {
+                    AnyView(CodeV2BestOfNCompare(candidates: bestOfN, keep: { keepCandidate?($0) }, inspect: { dock.selectedAgent = $0 }))
                 } else {
                     AnyView(CodeV2AgentsPane(nodes: nodes, selected: $dock.selectedAgent, spend: spend,
-                        message: (CodeV2.instanceKind(of: snapshot.selection.instanceId) == .alevr || CodeV2.instanceKind(of: snapshot.selection.instanceId) == .byok) ? { id, text in Task { await session.messageAgent(id, text: text) } } : nil,
+                        message: (CodeV2.instanceKind(of: snapshot.selection.instanceId) == .alevr || CodeV2.instanceKind(of: snapshot.selection.instanceId) == .byok) ? { id, text in
+                            let accepted = await session.messageAgent(id, text: text)
+                            return accepted ? nil : (session.lastError ?? "Could not send this message. Try again.")
+                        } : nil,
                         stop: (CodeV2.instanceKind(of: snapshot.selection.instanceId) == .alevr || CodeV2.instanceKind(of: snapshot.selection.instanceId) == .byok) ? { id in Task { await session.interruptAgent(id) } } : nil))
                 }
             case .terminal:

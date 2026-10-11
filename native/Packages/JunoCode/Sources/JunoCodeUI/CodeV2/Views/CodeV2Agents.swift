@@ -234,14 +234,16 @@ public struct CodeV2AgentsPane: View {
     let nodes: [CodeV2AgentNode]
     @Binding var selected: String?
     var spend: (spent: Double, limit: Double)?
-    var message: ((String, String) -> Void)?
+    var message: ((String, String) async -> String?)?
     var stop: ((String) -> Void)?
 
     @State private var draft = ""
+    @State private var sending = false
+    @State private var deliveryError: String?
 
     public init(
         nodes: [CodeV2AgentNode], selected: Binding<String?>, spend: (spent: Double, limit: Double)? = nil,
-        message: ((String, String) -> Void)? = nil, stop: ((String) -> Void)? = nil
+        message: ((String, String) async -> String?)? = nil, stop: ((String) -> Void)? = nil
     ) {
         self.nodes = nodes
         self._selected = selected
@@ -356,7 +358,7 @@ public struct CodeV2AgentsPane: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(JunoSpace.regular)
             }
-            if let message {
+            if let message, node.status == .running || node.status == .waiting {
                 HStack(spacing: JunoSpace.snug) {
                     TextField("Message \(node.roleLabel)", text: $draft)
                         .textFieldStyle(.plain)
@@ -371,7 +373,7 @@ public struct CodeV2AgentsPane: View {
                             .contentShape(.rect)
                     }
                     .buttonStyle(.plain)
-                    .disabled(draft.isEmpty)
+                    .disabled(sending || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     .accessibilityLabel("Send to \(node.roleLabel)")
                 }
                 .padding(.leading, JunoSpace.cozy + 2)
@@ -379,15 +381,28 @@ public struct CodeV2AgentsPane: View {
                 .frame(height: 40)
                 .junoComposerGlass(cornerRadius: Studio.Radius.bubble)
                 .padding(JunoSpace.cozy)
+                if let deliveryError {
+                    Text(deliveryError).studioType(.small).foregroundStyle(Studio.Ink.secondary)
+                        .padding(.horizontal, JunoSpace.cozy).padding(.bottom, JunoSpace.cozy)
+                        .accessibilityAddTraits(.updatesFrequently)
+                }
             }
         }
+        .onChange(of: selected) { _, _ in draft = ""; deliveryError = nil }
     }
 
-    private func send(_ node: CodeV2AgentNode, _ message: (String, String) -> Void) {
+    private func send(_ node: CodeV2AgentNode, _ message: @escaping (String, String) async -> String?) {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
-        message(node.agentId, text)
-        draft = ""
+        guard !text.isEmpty, !sending else { return }
+        sending = true
+        deliveryError = nil
+        Task { @MainActor in
+            let error = await message(node.agentId, text)
+            sending = false
+            guard selected == node.agentId else { return }
+            deliveryError = error
+            if error == nil, draft.trimmingCharacters(in: .whitespacesAndNewlines) == text { draft = "" }
+        }
     }
 }
 
@@ -429,11 +444,13 @@ public struct CodeV2BestOfNCandidate: Identifiable, Equatable, Sendable {
 public struct CodeV2BestOfNCompare: View {
     let candidates: [CodeV2BestOfNCandidate]
     var keep: (String) -> Void
+    var inspect: ((String) -> Void)?
     @State private var chosen: String?
 
-    public init(candidates: [CodeV2BestOfNCandidate], keep: @escaping (String) -> Void) {
+    public init(candidates: [CodeV2BestOfNCandidate], keep: @escaping (String) -> Void, inspect: ((String) -> Void)? = nil) {
         self.candidates = candidates
         self.keep = keep
+        self.inspect = inspect
     }
 
     private func letter(_ index: Int) -> String { String(UnicodeScalar(UInt8(65 + index))) }
@@ -458,6 +475,9 @@ public struct CodeV2BestOfNCompare: View {
                 Text("The others' worktrees are removed.").studioType(.small).foregroundStyle(Studio.Ink.secondary)
                 Spacer()
                 if let index = candidates.firstIndex(where: { $0.id == selected }) {
+                    if let inspect {
+                        Button("Open trace") { inspect(candidates[index].id) }.buttonStyle(.borderless)
+                    }
                     Button("Keep \(letter(index))") { keep(candidates[index].id) }
                         .buttonStyle(CodeV2InkButtonStyle())
                         .disabled(!candidates[index].isFinished)

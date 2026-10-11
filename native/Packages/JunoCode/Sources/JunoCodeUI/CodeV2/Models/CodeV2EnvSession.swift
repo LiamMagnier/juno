@@ -74,13 +74,15 @@ public final class CodeV2EnvSession {
 
     // MARK: Commands
 
-    public func messageAgent(_ agentId: String, text: String) async {
+    @discardableResult
+    public func messageAgent(_ agentId: String, text: String) async -> Bool {
         await perform { connection in
             let reply = try await connection.send(.agentMessage, params: JSONValue.object(["sessionId": .string(self.sessionId), "agentId": .string(agentId), "text": .string(text)]))
             if reply?["accepted"]?.boolValue == false {
                 throw EnvServerConnectionError.server(.conflict, reply?["message"]?.stringValue ?? "This agent cannot receive a message right now.")
             }
         }
+        return lastError == nil
     }
 
     public func interruptAgent(_ agentId: String) async {

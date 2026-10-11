@@ -59,6 +59,27 @@ final class SubscriptionChatRegressionTests: XCTestCase {
         hub.stop()
     }
 
+    func testAgentMessageReportsRejectedDeliveryAndRecoversOnRetry() async {
+        let transport = FakeEnvServer()
+        transport.handle = { command in
+            guard command.kind == .agentMessage else { return .init() }
+            XCTAssertEqual(command.params["sessionId"]?.stringValue, "chat")
+            XCTAssertEqual(command.params["agentId"]?.stringValue, "worker")
+            return .init(result: .object(["accepted": .bool(false), "message": .string("Worker is busy.")]))
+        }
+        let hub = EnvServerHub(connection: EnvServerConnection(transport: transport))
+        let session = hub.session(id: "chat", cwd: "/tmp/chat", selection: .init(instanceId: "alevr", model: "sonnet"))
+        let rejected = await session.messageAgent("worker", text: "Check startup")
+        XCTAssertFalse(rejected)
+        XCTAssertEqual(session.lastError, "Worker is busy.")
+        transport.handle = { _ in .init(result: .object(["accepted": .bool(true)])) }
+        let accepted = await session.messageAgent("worker", text: "Check startup")
+        XCTAssertTrue(accepted)
+        XCTAssertNil(session.lastError)
+        XCTAssertEqual(transport.commands.filter { $0.kind == .agentMessage }.count, 2)
+        hub.stop()
+    }
+
     func testQuietRefreshIncludesReadyProvidersAndUsesCache() async {
         let transport = FakeEnvServer()
         transport.handle = { command in
