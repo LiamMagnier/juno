@@ -11,6 +11,7 @@
  * collapsed to an "N unmodified lines" bar, and no accept/reject per hunk).
  */
 import * as React from "react";
+import { Markdown } from "@/components/chat/markdown";
 import { ComputerTimeline } from "@/components/code/computer-timeline";
 import type { FileChangeEntry, ProviderInstance, SubagentItem, TurnItem } from "@/lib/code-v2/contracts";
 import { DOCK_TAB_LABELS, type DockState, type DockAction, type DockTab, nudgeDockWidth } from "@/lib/code-v2/dock";
@@ -557,6 +558,8 @@ function AgentDetail({ agent, model, onBack }: { agent: SubagentItem; model: Wor
   const instance = model.instances.find((i) => i.id === agent.model.instanceId);
   const trace = model.items.filter((i) => i.kind !== "subagent" && i.agentId === agent.agentId);
   const [msg, setMsg] = React.useState("");
+  const [sending, setSending] = React.useState(false);
+  const [deliveryError, setDeliveryError] = React.useState<string | null>(null);
   const live = agent.status === "running" || agent.status === "waiting";
   const step = agentStep(agent);
   const name = agent.title ?? agent.task?.split("\n")[0] ?? agent.label ?? "Agent";
@@ -607,8 +610,10 @@ function AgentDetail({ agent, model, onBack }: { agent: SubagentItem; model: Wor
             </div>
           )}
         </div>
-        {trace.map((item) => item.kind === "assistant_message" || item.kind === "reasoning" ? (
-          <div key={item.id} className="cv2-prose" style={{ whiteSpace: "pre-wrap" }}>{item.text}</div>
+        {trace.map((item) => item.kind === "assistant_message" ? (
+          <Markdown key={item.id} content={item.text} streaming={item.streaming} />
+        ) : item.kind === "reasoning" ? (
+          <details key={item.id}><summary className="cv2-mute cv2-small">Reasoning</summary><Markdown content={item.text} /></details>
         ) : (() => { const line = lineFor(item, Date.now()); return line ? <LogRow key={item.id} line={line} forceOpen /> : null; })())}
         {agent.tokens && (
           <div className="cv2-mute cv2-small cv2-tnum">
@@ -620,19 +625,29 @@ function AgentDetail({ agent, model, onBack }: { agent: SubagentItem; model: Wor
       {live && model.actions.messageAgent && (
         <form
           className="cv2-mini"
-          onSubmit={(e) => {
+          style={{ flexWrap: "wrap" }}
+          onSubmit={async (e) => {
             e.preventDefault();
-            if (!msg.trim()) return;
-            model.actions.messageAgent?.(agent.agentId, msg.trim());
-            setMsg("");
+            const submitted = msg.trim();
+            if (!submitted || sending) return;
+            setSending(true);
+            setDeliveryError(null);
+            try {
+              const accepted = await model.actions.messageAgent?.(agent.agentId, submitted);
+              if (accepted === false) throw new Error("This agent cannot receive a message right now.");
+              setMsg((current) => current.trim() === submitted ? "" : current);
+            } catch (error) {
+              setDeliveryError(error instanceof Error ? error.message : "Could not send this message. Try again.");
+            } finally { setSending(false); }
           }}
         >
           <input value={msg} onChange={(e) => setMsg(e.target.value)} placeholder={`Message ${name}`} aria-label={`Message ${name}`} />
-          <button type="submit" className="cv2-send" aria-label="Send" disabled={!msg.trim()}>
+          <button type="submit" className="cv2-send" aria-label="Send" disabled={sending || !msg.trim()}>
             <span className="glyph">
               <Glyph name="arrow-up" size={16} />
             </span>
           </button>
+          {deliveryError && <p role="alert" className="cv2-small" style={{ flexBasis: "100%" }}>{deliveryError}</p>}
         </form>
       )}
     </div>
@@ -644,7 +659,7 @@ function AgentsPane({ model, selectedId, onSelect }: { model: WorkspaceModel; se
   const selected = agents.find((a) => a.agentId === selectedId);
   const [pick, setPick] = React.useState<string | null>(null);
   const best = model.routing.preset === "best-of-n" || agents.some(isCandidate);
-  if (selected && !best) return <AgentDetail agent={selected} model={model} onBack={() => onSelect(null)} />;
+  if (selected && !best) return <AgentDetail key={selected.agentId} agent={selected} model={model} onBack={() => onSelect(null)} />;
   if (!agents.length) return <div className="cv2-dock-empty">No agents in this session. Choose Team or Best of N under the composer&apos;s options to fan out.</div>;
   const elapsed = Math.max(0, ...agents.map((a) => a.elapsedMs ?? 0));
   const costs = agents.map((a) => a.costUsd).filter((c): c is number => c !== undefined);

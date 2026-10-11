@@ -830,6 +830,8 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       setPrivateMode(false);
       setForkedFrom(null);
       setEnabledConnectors([]);
+      setActiveProjectId(null);
+      setProjectMeta(null);
       setActiveConversationId(null);
     };
     window.addEventListener("juno:new-chat", handler);

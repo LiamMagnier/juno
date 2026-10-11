@@ -33,6 +33,9 @@ test("provider refresh shares in-flight work, caches 30 seconds and respects Ret
 
 test("usage Retry-After handles structured 429 errors and bounded fallback", () => {
   assert.equal(usageRetryAfterMs({ status: 429, headers: { "retry-after": "120" } }), 120_000);
+  assert.equal(usageRetryAfterMs({ status: 429, headers: new Headers({ "retry-after": "120" }) }), 120_000);
+  const now = Date.parse("2026-10-11T00:00:00Z");
+  assert.equal(usageRetryAfterMs({ status: 429, headers: { "retry-after": "Sun, 11 Oct 2026 00:10:00 GMT" } }, now), 600_000);
   assert.equal(usageRetryAfterMs(new Error("429 Too Many Requests")), DEFAULT_RETRY_AFTER_MS);
   assert.equal(usageRetryAfterMs(new Error("rate limited, retry after 2 minutes")), 120_000);
   assert.equal(usageRetryAfterMs(new Error("network unavailable")), undefined);

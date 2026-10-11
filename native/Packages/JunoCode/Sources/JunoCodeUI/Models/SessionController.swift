@@ -534,7 +534,7 @@ public final class SessionController {
     public var delegatedAgents: [SubagentUpdateEvent] {
         SubagentDigest.runs(in: events).map { run in
             SubagentUpdateEvent(agentID: run.agentID, toolCallID: run.toolCallID, childSessionID: run.childSessionID,
-                title: run.title, task: run.task, role: run.role ?? .explorer, executionMode: run.executionMode,
+                title: run.title, task: run.task, role: run.role ?? .engineer, executionMode: run.executionMode,
                 status: run.status, currentActivity: run.currentActivity, startedAt: run.startedAt,
                 completedAt: run.completedAt, inputTokens: run.inputTokens, outputTokens: run.outputTokens,
                 summary: run.summary, error: run.error)

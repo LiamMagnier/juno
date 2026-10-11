@@ -167,6 +167,18 @@ final class StudioSnapshotTests: XCTestCase {
         }
     }
 
+    func testRenderNativeAgentSummary() async throws {
+        let controller = SessionController(previewFixture: CodePreviewData.fixture(for: .transcript))
+        XCTAssertFalse(controller.delegatedAgents.isEmpty)
+        for dark in [false, true] {
+            try await render(
+                StudioSidePanel(controller: controller, tab: .constant(.agents), createPullRequest: {}, close: {}),
+                size: CGSize(width: 360, height: 560), dark: dark,
+                name: "native-agents-summary-\(dark ? "dark" : "light")"
+            )
+        }
+    }
+
     func testRenderSidePanel() async throws {
         let controller = SessionController(previewFixture: CodePreviewData.fixture(for: .diffs))
         for dark in [false, true] {

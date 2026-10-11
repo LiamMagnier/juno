@@ -76,7 +76,7 @@ export interface WorkspaceActions {
   /** Cancels a scheduled resume (resume at reset). */
   cancelResume?(): void;
   commit?(): void;
-  messageAgent?(agentId: string, text: string): void;
+  messageAgent?(agentId: string, text: string): void | boolean | Promise<boolean | void>;
   stopAgent?(agentId: string): void;
   keepCandidate?(agentId: string): void;
   approvePlan?(itemId: string, approve: boolean): void;

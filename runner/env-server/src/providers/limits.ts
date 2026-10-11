@@ -136,17 +136,23 @@ export const DEFAULT_RETRY_AFTER_MS = 5 * 60_000;
  * asking again: the vendor's own "retry after" when it gave one, else
  * {@link DEFAULT_RETRY_AFTER_MS}. Undefined for any other failure.
  */
-export function usageRetryAfterMs(error: unknown): number | undefined {
+export function usageRetryAfterMs(error: unknown, now = Date.now()): number | undefined {
   if (error === undefined || error === null) return undefined;
   const record = typeof error === "object" ? (error as Record<string, unknown>) : {};
   const status = Number(record.status ?? record.statusCode ?? record.code);
   const message = error instanceof Error ? error.message : typeof error === "string" ? error : typeof record.message === "string" ? record.message : "";
   const throttled = status === 429 || /\b429\b|rate[- _]?limit(?:ed)?\b|too many requests/i.test(message);
   if (!throttled) return undefined;
-  const headers = record.headers as Record<string, unknown> | undefined;
-  const header = record.retryAfter ?? record.retry_after ?? headers?.["retry-after"];
+  const headers = record.headers;
+  const headerValue = headers instanceof Headers ? headers.get("retry-after")
+    : typeof headers === "object" && headers !== null ? (headers as Record<string, unknown>)["retry-after"] : undefined;
+  const header = record.retryAfter ?? record.retry_after ?? headerValue;
   const fromHeader = typeof header === "number" ? header : typeof header === "string" && /^\d+(?:\.\d+)?$/.test(header.trim()) ? Number(header) : undefined;
   if (fromHeader !== undefined && fromHeader > 0) return Math.round(fromHeader * 1000);
+  if (typeof header === "string") {
+    const date = Date.parse(header);
+    if (Number.isFinite(date) && date > now) return date - now;
+  }
   const said = message.match(/retry(?:[- ]after)?\D{0,12}(\d+)\s*(ms|milliseconds?|s|secs?|seconds?|m|mins?|minutes?)?\b/i);
   if (said) {
     const n = Number(said[1]);

@@ -145,6 +145,7 @@ final class JunoMobileComposerTools {
     /// Drops the per-conversation scope. Called when the reader moves to another
     /// thread — the apps chosen for one conversation are not a global setting.
     func resetForConversationChange() {
+        draftProjectID = nil
         connectors = []
         deepResearch = false
         skillSlug = nil

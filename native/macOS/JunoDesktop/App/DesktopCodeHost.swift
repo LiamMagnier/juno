@@ -5,6 +5,7 @@ import JunoCodeBridge
 import JunoCodeCore
 import JunoCore
 import JunoCodeKit
+import JunoCodeLocal
 import JunoCodeUI
 import JunoCodeRuntime
 import JunoSync
@@ -660,7 +661,7 @@ final class DesktopCodeHostModel {
             },
             hostHandler: { [weak self, responder = hostResponder] type, params in
                 if type == .projectRemove {
-                    guard let self else { throw CodeV2.WireError(code: .notReady, message: "This Mac is not ready.") }
+                    guard let self else { throw EnvServerConnectionError.server(.notReady, "This Mac is not ready.") }
                     return try await self.removeLinkedProject(params)
                 }
                 return try await responder.handle(type, params)
@@ -861,7 +862,7 @@ final class DesktopCodeHostModel {
             let response = try await sender.send(NativeBearerRequest(path: "/api/code/workspaces/remove", method: .post,
                 headers: HTTPHeaders(["content-type": "application/json"]), body: body), for: accountID)
             guard (200..<300).contains(response.statusCode) else {
-                throw CodeV2.WireError(code: .conflict, message: "Could not remove the synced project records (\(response.statusCode)). Try again once running sessions stop.")
+                throw EnvServerConnectionError.server(.conflict, "Could not remove the synced project records (\(response.statusCode)). Try again once running sessions stop.")
             }
         }
         let bridge = WorkbenchRemoteBridge(
@@ -1010,11 +1011,11 @@ final class DesktopCodeHostModel {
                 URL(fileURLWithPath: $0.descriptor.localPathHint).standardizedFileURL.resolvingSymlinksInPath().path
                     == URL(fileURLWithPath: cwd).standardizedFileURL.resolvingSymlinksInPath().path
             }), workspaces.contains(where: { $0.path == record.descriptor.localPathHint }) else {
-            throw CodeV2.WireError(code: .notFound, message: "This project is no longer shared by this Mac.")
+            throw EnvServerConnectionError.server(.notFound, "This project is no longer shared by this Mac.")
         }
         let ids = try await EnvServerHub.shared.removeProject(cwd: cwd)
         guard await workbench.removeProject(id: record.id) else {
-            throw CodeV2.WireError(code: .internal, message: workbench.lastError ?? "Could not remove this project.")
+            throw EnvServerConnectionError.server(.internal, workbench.lastError ?? "Could not remove this project.")
         }
         setWorkspaces(from: workbench.workspaces)
         return .object(["sessionIds": .array(ids.map(JSONValue.string))])

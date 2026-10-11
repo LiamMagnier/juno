@@ -1202,7 +1202,7 @@ struct DesktopCodeProjectRemovalView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: JunoSpace.regular) {
-            Text("Remove \(name) from Alevr?").junoType(.headline)
+            Text("Remove \(name) from Alevr?").junoType(.heading)
             Text(moveToTrash
                 ? "Running sessions will stop and this project's sessions will be removed. Its folder will move to the Trash."
                 : "Running sessions will stop and this project's sessions will be removed. The folder and its files stay on disk.")

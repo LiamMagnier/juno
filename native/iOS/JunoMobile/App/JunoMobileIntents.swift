@@ -19,6 +19,8 @@ final class JunoMobileLaunchRequests {
 
   enum Request: Equatable, Sendable {
     case newChat
+    case openSection(JunoMobileSection)
+    case openMemory
     case voice
     case dictate
     case code
@@ -48,6 +50,7 @@ final class JunoMobileLaunchRequests {
   /// screen (``Request/openResearch(_:)``). Cleared by the conversation that
   /// presents it.
   var pendingReportRunID: String?
+  var pendingMemoryPage = false
 
   private init() {}
 

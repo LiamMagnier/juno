@@ -64,6 +64,19 @@ struct DesktopChatFolderTests {
     }
 
     @Test
+    func aNewDraftDropsTheAbandonedFolderWithoutChangingExistingChats() throws {
+        let fixture = try Fixture()
+        let store = fixture.store()
+        store.adopt(fixture.folder, for: "existing-chat", access: .readWrite)
+        store.adopt(fixture.folder, for: nil, access: .readWrite)
+        #expect(store.folder(for: nil) != nil)
+        store.remove(for: nil)
+        #expect(store.folder(for: nil) == nil)
+        #expect(store.folder(for: "existing-chat")?.name == "Invoices")
+        #expect(FileManager.default.fileExists(atPath: fixture.folder.path))
+    }
+
+    @Test
     func closingThePanelChangesNothing() throws {
         let fixture = try Fixture()
         let store = fixture.store(panel: nil)

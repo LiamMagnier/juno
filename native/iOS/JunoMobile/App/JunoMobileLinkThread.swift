@@ -871,10 +871,10 @@ struct JunoMobileLinkQuestionCard: View {
 
 
 private struct JunoInspectSubagentKey: EnvironmentKey {
-  static let defaultValue: (String) -> Void = { _ in }
+  static let defaultValue: @MainActor @Sendable (String) -> Void = { _ in }
 }
 private extension EnvironmentValues {
-  var junoInspectSubagent: (String) -> Void {
+  var junoInspectSubagent: @MainActor @Sendable (String) -> Void {
     get { self[JunoInspectSubagentKey.self] }
     set { self[JunoInspectSubagentKey.self] = newValue }
   }

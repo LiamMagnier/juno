@@ -1333,6 +1333,7 @@ struct DesktopChatWorkspace: View {
 
     /// A new, empty, saved-when-sent draft. It selects nothing in the column.
     private func beginDraft() {
+        configuration.chatFolderStore?.remove(for: nil)
         draftProjectID = nil
         draftPrompt = nil
         requestedProjectID = nil

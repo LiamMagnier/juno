@@ -299,6 +299,7 @@ public final class CodeLinkRemoteModel {
             let instances = try await client.providerList(deviceID)
             var fresh = instances
             for (index, instance) in instances.enumerated() where instance.kind != .alevr && instance.kind != .byok {
+                guard !Task.isCancelled else { return }
                 fresh[index] = try await client.providerProbe(deviceID, instanceId: instance.id)
             }
             guard deviceID == selectedDeviceID, !Task.isCancelled else { return }

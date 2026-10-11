@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import JunoAPI
 import JunoAuth
 import JunoCore
@@ -14,6 +15,24 @@ import XCTest
 @MainActor
 final class NativeStreamResumeTests: XCTestCase {
     private let conversationID = "conv_12345678"
+
+    func testBurstOfDeltasCoalescesVisibleWritesAndFlushesAtCompletion() async throws {
+        let answer = String(repeating: "x", count: 100)
+        let metadata = "data: {\"type\":\"meta\",\"conversationId\":\"conv_12345678\",\"userMessageId\":null,\"title\":\"Streaming\",\"generationId\":null}\n\n"
+        let delta = "data: {\"type\":\"delta\",\"text\":\"x\",\"phase\":\"answer\",\"round\":0}\n\n"
+        let final = "data: {\"type\":\"done\",\"message\":{\"id\":\"assistant_stream\",\"role\":\"ASSISTANT\",\"content\":\"\(answer)\",\"reasoning\":null,\"model\":\"openai:gpt-5\",\"createdAt\":\"2099-01-01T00:00:00.000Z\",\"sources\":[]},\"finishReason\":\"stop\"}\n\n"
+        let streamer = ResumeStreamer(bodies: ["/api/chat": metadata + String(repeating: delta, count: 100) + final], frameDelay: .milliseconds(1))
+        let (model, _) = try await makeModel(streamer: streamer)
+        let observer = StreamContentObserver(model: model)
+        observer.start()
+        XCTAssertTrue(model.sendMessage(conversationID: conversationID, prompt: "Stream it", modelID: "openai:gpt-5", reasoningEffort: nil))
+        try await waitUntilIdle(model)
+        observer.stop()
+        XCTAssertEqual(model.selectedMessages.last?.content, answer, "the terminal event must flush all pending text")
+        XCTAssertTrue(observer.values.contains { !$0.isEmpty && $0.count < answer.count }, "intermediate text must become visible before the terminal event")
+        XCTAssertLessThan(observer.values.count, 75, "100 one-millisecond deltas must not cause 100 visible writes")
+        model.stop()
+    }
 
     /// The stream dies after two frames; the resume route is asked for what
     /// came after frame 2, and the answer completes through it.
@@ -413,9 +432,10 @@ private actor ResumeSender: NativeAuthenticatedRequestSending {
 /// One SSE body per route: `/api/chat`, and the resume route by prefix.
 private actor ResumeStreamer: NativeAuthenticatedByteStreaming {
     private let bodies: [String: String]
+    private let frameDelay: Duration
     private(set) var requests: [NativeBearerRequest] = []
 
-    init(bodies: [String: String]) { self.bodies = bodies }
+    init(bodies: [String: String], frameDelay: Duration = .zero) { self.bodies = bodies; self.frameDelay = frameDelay }
 
     func stream(_ request: NativeBearerRequest, for _: AccountID) async throws -> HTTPByteStreamResponse {
         requests.append(request)
@@ -427,13 +447,17 @@ private actor ResumeStreamer: NativeAuthenticatedByteStreaming {
                 bytes: AsyncThrowingStream { $0.finish() }
             )
         }
-        let data = Data(body.utf8)
+        let frames = body.components(separatedBy: "\n\n").filter { !$0.isEmpty }.map { Data(($0 + "\n\n").utf8) }
+        let delay = frameDelay
         return HTTPByteStreamResponse(
             statusCode: 200,
             headers: try HTTPHeaders(["content-type": "text/event-stream; charset=utf-8"]),
             bytes: AsyncThrowingStream { continuation in
                 Task {
-                    for byte in data { continuation.yield(byte) }
+                    for frame in frames {
+                        for byte in frame { continuation.yield(byte) }
+                        if delay != .zero { try? await Task.sleep(for: delay) }
+                    }
                     continuation.finish()
                 }
             }
@@ -448,5 +472,25 @@ private struct ResumeOfflineSender: NativeAuthenticatedRequestSending, NativeAut
 
     func stream(_: NativeBearerRequest, for _: AccountID) async throws -> HTTPByteStreamResponse {
         throw URLError(.notConnectedToInternet)
+    }
+}
+
+
+@MainActor
+private final class StreamContentObserver {
+    let model: NativeConversationModel<InMemoryTransactionalStore>
+    private(set) var values: [String] = []
+    private var active = false
+    init(model: NativeConversationModel<InMemoryTransactionalStore>) { self.model = model }
+    func start() { active = true; observe() }
+    func stop() { active = false }
+    private func observe() {
+        guard active else { return }
+        withObservationTracking {
+            let content = model.selectedMessages.last?.content ?? ""
+            if values.last != content { values.append(content) }
+        } onChange: { [weak self] in
+            Task { @MainActor [weak self] in self?.observe() }
+        }
     }
 }

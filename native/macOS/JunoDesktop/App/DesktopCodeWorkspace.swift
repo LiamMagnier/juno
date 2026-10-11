@@ -355,7 +355,9 @@ struct DesktopCodeWorkspace: View {
             .environment(\.codeAccountSkills, DesktopCodeSkills.account(configuration?.skillLibraryModel, manage: openSkills))
     }
 
-    private var content: some View {
+    private var content: some View { visibilityContent }
+
+    private var presentationContent: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             DesktopCodeSidebar(
                 workbench: workbenchModel,
@@ -383,9 +385,11 @@ struct DesktopCodeWorkspace: View {
                 // ⇧⌘G opens the panel's Agents tab. It lives here, not in the
                 // toolbar: a hidden toolbar button still draws an empty glass slot.
                 .background {
-                    Button { envDock.toggle(.agents) } label: { EmptyView() }
+                    Button {
+                        if envBinding != nil { envDock.toggle(.agents) } else { togglePanel(.agents) }
+                    } label: { EmptyView() }
                         .keyboardShortcut("g", modifiers: [.command, .shift])
-                        .disabled(envBinding == nil)
+                        .disabled(envBinding == nil && controller == nil)
                         .hidden()
                         .accessibilityHidden(true)
                 }
@@ -466,6 +470,10 @@ struct DesktopCodeWorkspace: View {
         } message: {
             Text(voiceUnavailable ?? "Alevr could not start voice mode.")
         }
+    }
+
+    private var lifecycleContent: some View {
+        presentationContent
         .task { await bootstrap() }
         // The env server lists the subscriptions the model picker's rail
         // shows; started with the Code window, never by the Chat window.
@@ -509,6 +517,10 @@ struct DesktopCodeWorkspace: View {
             else { return }
             openSimulator()
         }
+    }
+
+    private var sessionObservationContent: some View {
+        lifecycleContent
         .onChange(of: selectedSessionID) { _, _ in
             simulatorHost.tearDown()
             // Hides the pane only: the session's preview server is leased to
@@ -546,6 +558,10 @@ struct DesktopCodeWorkspace: View {
             else { return }
             selection.wrappedValue = nil
         }
+    }
+
+    private var visibilityContent: some View {
+        sessionObservationContent
         .onAppear {
             if storedColumnVisibility == "detailOnly" { columnVisibility = .detailOnly }
             PreviewHost.configureForApp()
@@ -694,7 +710,6 @@ struct DesktopCodeWorkspace: View {
                 directory: v2Directory,
                 dock: envDock,
                 openConnections: openConnections,
-                refreshSubscriptions: { envHub.requestRefresh() },
                 setup: { id, action in Task { await envHub.openSetup(for: id, action: action) } },
                 place: CodeV2SessionPlace(
                     project: controller.workspaceDisplayName,

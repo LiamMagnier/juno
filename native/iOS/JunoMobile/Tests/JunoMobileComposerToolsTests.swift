@@ -42,6 +42,7 @@ final class JunoMobileComposerToolsTests: XCTestCase {
         XCTAssertEqual(tools.draftProjectID, "p1")
         tools.skillSlug = "brief"
         tools.resetForConversationChange()
+        XCTAssertNil(tools.draftProjectID, "a new chat must start outside the previous project")
         XCTAssertNil(tools.skillSlug)
     }
 

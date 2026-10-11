@@ -45,6 +45,7 @@ public final class EnvServerHub {
     @ObservationIgnored private var lifecycleObservers: [NSObjectProtocol] = []
     @ObservationIgnored private var refreshTask: Task<Void, Never>?
     @ObservationIgnored private var refreshing = false
+    @ObservationIgnored private var pendingManualProbes: Set<String> = []
     @ObservationIgnored private var checking: Set<String> = []
     @ObservationIgnored private var refreshActive = false
     @ObservationIgnored var refreshInterval: Duration = .seconds(60)
@@ -260,13 +261,16 @@ public final class EnvServerHub {
         return try await connection.projectRemove(cwd: cwd)
     }
 
-    public func refreshProviders() async {
-        guard let connection else { return }
+    @discardableResult
+    public func refreshProviders(quiet: Bool = false) async -> Bool {
+        guard let connection else { return false }
         do {
             instances = try await connection.providerList()
-            lastError = nil
+            if !quiet { lastError = nil }
+            return true
         } catch {
-            lastError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            if !quiet { lastError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription }
+            return false
         }
     }
 
@@ -276,9 +280,13 @@ public final class EnvServerHub {
             start()
             return
         }
-        guard checking.insert(instanceId).inserted else { return }
+        guard !refreshing, checking.isEmpty else {
+            pendingManualProbes.insert(instanceId)
+            return
+        }
+        checking.insert(instanceId)
         probing.insert(instanceId)
-        defer { probing.remove(instanceId); checking.remove(instanceId) }
+        defer { probing.remove(instanceId); checking.remove(instanceId); drainManualProbes() }
         do {
             apply(try await connection.providerProbe(instanceId))
         } catch {
@@ -295,12 +303,13 @@ public final class EnvServerHub {
     /// Quiet refreshes never change the manual Re-check spinner. The env
     /// server shares a 30 second cache across the Mac, web and phone.
     public func refreshSubscriptions() async {
-        guard !refreshing else { return }
+        guard !refreshing, checking.isEmpty else { return }
         refreshing = true
-        defer { refreshing = false }
-        guard let connection = try? await ready() else { return }
-        await refreshProviders()
-        var failed = lastError != nil
+        defer { refreshing = false; drainManualProbes() }
+        let connection: EnvServerConnection
+        do { connection = try await ready() }
+        catch { refreshFailures = min(refreshFailures + 1, 5); return }
+        var failed = !(await refreshProviders(quiet: true))
         for instance in instances ?? [] where instance.kind != .alevr && instance.kind != .byok {
             guard !Task.isCancelled else { return }
             guard checking.insert(instance.id).inserted else { continue }
@@ -314,6 +323,12 @@ public final class EnvServerHub {
             checking.remove(instance.id)
         }
         refreshFailures = failed ? min(refreshFailures + 1, 5) : 0
+    }
+
+    private func drainManualProbes() {
+        guard !refreshing, checking.isEmpty, let id = pendingManualProbes.first else { return }
+        pendingManualProbes.remove(id)
+        Task { [weak self] in await self?.probe(id) }
     }
 
     public func requestRefresh() {

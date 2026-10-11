@@ -145,7 +145,11 @@ struct JunoMobileComposer: View {
     var rows: [NativeComposerCommand] = [
       .init("research", hint: "Run deep research on this message"),
       .init("search", hint: "Search the web for this message"),
-      .init("canvas", hint: "Answer as a canvas"),
+      .init("artifact", hint: "Ask for an artifact"),
+      .init("model", hint: "Switch the AI model"),
+      .init("new", hint: "Start a new chat"),
+      .init("projects", hint: "Open your projects", category: "Go to"),
+      .init("memory", hint: "Open memory", category: "Go to"),
     ]
     if openVoiceMode != nil {
       rows.append(.init("voice", hint: "Start voice mode"))
@@ -156,7 +160,8 @@ struct JunoMobileComposer: View {
     if openPlugins != nil {
       rows.append(.init("apps", hint: "Connected apps"))
     }
-    rows += (hub?.skills.chooseable ?? []).map { .init($0.slug, hint: $0.name, category: "Skills") }
+    rows += model.composerCatalog.map { .init("model:" + $0.id, hint: $0.providerName, category: "Models", label: $0.displayName) }
+    rows += (hub?.skills?.chooseable ?? []).map { .init($0.slug, hint: $0.name, category: "Skills") }
     return rows
   }
 
@@ -164,16 +169,25 @@ struct JunoMobileComposer: View {
   /// never lands in the sent message as literal text.
   private func runSlashCommand(_ command: NativeComposerCommand) {
     prompt = ""
+    if command.id.hasPrefix("model:") {
+      selectedModelID = String(command.id.dropFirst(6))
+      composerFocused.wrappedValue = true
+      return
+    }
     switch command.id {
+    case "model": prompt = "/model "
+    case "artifact": prompt = "Create an artifact that "
+    case "new": JunoMobileLaunchRequests.shared.request(.newChat)
+    case "projects": JunoMobileLaunchRequests.shared.request(.openSection(.projects))
+    case "memory": JunoMobileLaunchRequests.shared.request(.openMemory)
     case "research": tools.deepResearch = true
     case "search": tools.webSearch = true
-    case "canvas": tools.canvas = true
     case "voice": openVoiceMode?()
     case "library": openLibrary?()
     case "apps": openPlugins?()
     default: tools.skillSlug = command.id
     }
-    if ["research", "search", "canvas"].contains(command.id) {
+    if ["model", "artifact", "research", "search"].contains(command.id) {
       composerFocused.wrappedValue = true
     }
   }

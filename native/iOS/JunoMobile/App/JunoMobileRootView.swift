@@ -89,6 +89,7 @@ struct JunoMobileRootView: View {
   /// in the sidebar and this stays empty.
   @State private var chatPath: [JunoMobileSection] = []
   @State private var showingSettings = false
+  @State private var chatDraftRevision = 0
   #if DEBUG
     /// The report reader, opened by `--juno-preview-report`.
     @State private var previewReport: JunoMobileReportRoute?
@@ -763,6 +764,12 @@ struct JunoMobileRootView: View {
     launchRequests.pending = nil
     showingHistory = false
     switch request {
+    case .openMemory:
+      launchRequests.pendingMemoryPage = true
+      show(.settings)
+    case .openSection(let section):
+      showingSettings = false
+      show(section)
     case .newChat:
       showingSettings = false
       startNewChat()
@@ -1339,6 +1346,7 @@ struct JunoMobileRootView: View {
   /// row in the list. The conversation is created by the first send — see
   /// `NativeConversationModel.createConversationResolvingID`.
   private func startNewChat() {
+    chatDraftRevision += 1
     conversationModel?.isDraftingNewConversation = true
     conversationModel?.selectedConversationID = nil
     chatPath = []
@@ -1418,6 +1426,7 @@ struct JunoMobileRootView: View {
         agentsModel: agentsModel,
         openAgent: openAgent
       )
+      .id(chatDraftRevision)
       .transition(.opacity)
     } else {
       unavailable

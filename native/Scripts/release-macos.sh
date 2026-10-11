@@ -266,7 +266,7 @@ printf '  contract     %s\n' "$SOURCE_CONTRACT"
 step "Tests"
 rm -rf "$BUILD_DIR/test" "$BUILD_DIR/pkg"
 xattr -cr native/Packages "$BUILD_DIR" 2>/dev/null || true
-swift test -j 4 --package-path native/Packages/JunoNativeKit --filter JunoVoiceKitTests --scratch-path "$BUILD_DIR/pkg" >/dev/null
+swift test -j 2 --package-path native/Packages/JunoNativeKit --filter JunoVoiceKitTests --scratch-path "$BUILD_DIR/pkg" >/dev/null
 if [ -f runner/agent-core/package-lock.json ]; then
   if [ ! -d runner/agent-core/node_modules ]; then
     npm ci --prefix runner/agent-core >/dev/null
@@ -304,7 +304,7 @@ else
   bash scripts/local-gates.sh
 fi
 
-xcodebuild -project "$PROJECT" -scheme "$SCHEME" -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath "$BUILD_DIR/test" CODE_SIGNING_ALLOWED=NO -only-testing:JunoDesktopTests test >/dev/null
+xcodebuild -jobs 2 -project "$PROJECT" -scheme "$SCHEME" -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath "$BUILD_DIR/test" CODE_SIGNING_ALLOWED=NO -only-testing:JunoDesktopTests test >/dev/null
 
 # ── Build ──────────────────────────────────────────────────────────────────
 
@@ -347,7 +347,7 @@ if [ "$IDENTITY" != "-" ]; then
     OTHER_CODE_SIGN_FLAGS="--timestamp"
   )
 fi
-xcodebuild -project "$PROJECT" -scheme "$SCHEME" -configuration Stable \
+xcodebuild -jobs 2 -project "$PROJECT" -scheme "$SCHEME" -configuration Stable \
   -destination 'generic/platform=macOS' \
   -derivedDataPath "$BUILD_DIR/archive-dd" \
   -archivePath "$BUILD_DIR/archive.xcarchive" \

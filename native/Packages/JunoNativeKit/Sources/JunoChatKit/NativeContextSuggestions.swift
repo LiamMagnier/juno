@@ -23,22 +23,28 @@ public final class NativeSuggestionCursor {
     public private(set) var selectedIndex = 0
     public private(set) var query: String?
     public private(set) var dismissedQuery: String?
-    @ObservationIgnored private var actions: [() -> Void] = []
+    @ObservationIgnored private var actions: [(() -> Void)?] = []
     public init() {}
-    public func configure(query: String?, actions: [() -> Void]) {
+    public func configure(query: String?, actions: [(() -> Void)?]) {
         if self.query != query { selectedIndex = 0; dismissedQuery = nil }
         self.query = query
         self.actions = actions
         selectedIndex = min(selectedIndex, max(0, actions.count - 1))
+        if actions.indices.contains(selectedIndex), actions[selectedIndex] == nil {
+            selectedIndex = actions.firstIndex(where: { $0 != nil }) ?? 0
+        }
     }
     public func isOpen(for query: String?) -> Bool { query != nil && dismissedQuery != query }
     public func move(_ offset: Int) {
         guard !actions.isEmpty else { return }
-        selectedIndex = (selectedIndex + offset + actions.count) % actions.count
+        for step in 1...actions.count {
+            let candidate = (selectedIndex + (offset < 0 ? -step : step) + actions.count) % actions.count
+            if actions[candidate] != nil { selectedIndex = candidate; return }
+        }
     }
     @discardableResult public func pick() -> Bool {
-        guard actions.indices.contains(selectedIndex) else { return false }
-        actions[selectedIndex]()
+        guard actions.indices.contains(selectedIndex), let action = actions[selectedIndex] else { return false }
+        action()
         return true
     }
     public func dismiss(query: String?) { dismissedQuery = query }
@@ -48,6 +54,7 @@ public enum NativeSlashQuery {
     public static func query(in text: String) -> String? {
         guard text.hasPrefix("/") else { return nil }
         let token = text.dropFirst()
+        if token.lowercased().hasPrefix("model "), !token.contains("\n") { return token.lowercased() }
         guard token.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "-" }) else { return nil }
         return token.lowercased()
     }
@@ -57,8 +64,16 @@ public struct NativeComposerCommand: Identifiable {
     public let id: String
     public let hint: String
     public let category: String
-    public init(_ id: String, hint: String, category: String = "Commands") {
-        self.id = id; self.hint = hint; self.category = category
+    public let label: String?
+    public init(_ id: String, hint: String, category: String = "Commands", label: String? = nil) {
+        self.id = id; self.hint = hint; self.category = category; self.label = label
+    }
+    public static func matching(_ commands: [Self], query: String) -> [Self] {
+        if query.hasPrefix("model ") {
+            let term = String(query.dropFirst(6)).trimmingCharacters(in: .whitespaces)
+            return commands.filter { $0.id.hasPrefix("model:") && (term.isEmpty || ($0.label ?? "").lowercased().contains(term) || $0.hint.lowercased().contains(term)) }
+        }
+        return commands.filter { !$0.id.hasPrefix("model:") && ($0.id.hasPrefix(query) || (!query.isEmpty && $0.hint.lowercased().contains(query))) }
     }
 }
 
@@ -70,7 +85,7 @@ public struct NativeCommandSuggestions: View {
     public init(query: String?, commands: [NativeComposerCommand], cursor: NativeSuggestionCursor, select: @escaping (NativeComposerCommand) -> Void) {
         self.query = query; self.commands = commands; self.cursor = cursor; self.select = select
     }
-    private var rows: [NativeComposerCommand] { commands.filter { $0.id.hasPrefix(query ?? "") } }
+    private var rows: [NativeComposerCommand] { NativeComposerCommand.matching(commands, query: query ?? "") }
     public var body: some View {
         Group {
             if cursor.isOpen(for: query) {
@@ -83,7 +98,7 @@ public struct NativeCommandSuggestions: View {
                             }
                             Button { select(row) } label: {
                                 HStack {
-                                    Text("/" + row.id).fontWeight(.medium)
+                                    Text(row.label ?? ("/" + row.id)).fontWeight(.medium)
                                     Text(row.hint).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                                     Spacer(minLength: 0)
                                 }
@@ -127,15 +142,15 @@ public struct NativeContextSuggestions: View {
                         }
                         ForEach(Array(items.enumerated()), id: \.element.token.identity) { index, item in
                             if index == 0 || items[index - 1].kind != item.kind {
-                                Text(item.kind.rawValue.capitalized).font(.caption).foregroundStyle(.secondary).padding(.horizontal, 12).padding(.top, 6)
+                                Text(item.kind.suggestionCategory).font(.caption).foregroundStyle(.secondary).padding(.horizontal, 12).padding(.top, 6)
                             }
                             Button { select(item.token) } label: {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(item.label).fontWeight(.medium).foregroundStyle(.primary)
-                                    Text(item.subtitle ?? item.kind.rawValue.capitalized).font(.caption).foregroundStyle(.secondary)
+                                    Text(item.subtitle ?? (item.available == false ? "Not connected" : item.kind.suggestionCategory)).font(.caption).foregroundStyle(.secondary)
                                 }.frame(maxWidth: .infinity, minHeight: 44, alignment: .leading).padding(.horizontal, 12)
                                 .background(index == cursor.selectedIndex ? Color.primary.opacity(0.06) : Color.clear)
-                            }.buttonStyle(.plain).contentShape(.rect)
+                            }.buttonStyle(.plain).disabled(item.available == false).contentShape(.rect)
                         }
                     }
                 }.frame(maxHeight: min(240, CGFloat(max(1, items.count)) * 66))
@@ -150,14 +165,23 @@ public struct NativeContextSuggestions: View {
                 try await Task.sleep(for: .milliseconds(120))
                 let result = try await search(query)
                 guard !Task.isCancelled else { return }
-                items = Array(result.filter { $0.available != false }.prefix(12)).sorted { $0.kind.rawValue < $1.kind.rawValue }
+                items = result.sorted { $0.kind.suggestionOrder < $1.kind.suggestionOrder }
                 loading = false
-                cursor.configure(query: query, actions: items.map { item in { select(item.token) } })
+                cursor.configure(query: query, actions: items.map { item in item.available == false ? nil : { select(item.token) } })
             } catch is CancellationError {} catch {
                 guard !Task.isCancelled else { return }
                 loading = false
                 failure = "Context could not load. Edit the search to try again."
             }
         }
+    }
+}
+
+private extension NativeContextToken.Kind {
+    var suggestionOrder: Int {
+        switch self { case .file: 0; case .project: 1; case .chat: 2; case .app: 3; case .artifact: 4; case .skill: 5; case .crew: 6 }
+    }
+    var suggestionCategory: String {
+        switch self { case .file: "Files"; case .project: "Projects"; case .chat: "Conversations"; case .app: "Apps"; case .artifact: "Library"; case .skill: "Skills"; case .crew: "Agents" }
     }
 }

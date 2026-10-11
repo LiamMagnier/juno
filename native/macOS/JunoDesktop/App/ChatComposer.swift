@@ -1864,7 +1864,14 @@ struct ChatComposer: View {
     }
 
     private var slashCommands: [NativeComposerCommand] {
-        var rows: [NativeComposerCommand] = []
+        var rows: [NativeComposerCommand] = [
+            .init("model", hint: "Switch the AI model"),
+            .init("artifact", hint: "Ask for an artifact"),
+            .init("new", hint: "Start a new chat"),
+            .init("projects", hint: "Open your projects", category: "Go to"),
+            .init("memory", hint: "Open memory", category: "Go to")
+        ]
+        rows += model.composerCatalog.map { .init("model:" + $0.id, hint: $0.providerName, category: "Models", label: $0.displayName) }
         if researchAvailable { rows.append(.init("research", hint: "Deep research")) }
         if webSearchAvailable { rows.append(.init("search", hint: "Search the web")) }
         rows.append(.init("voice", hint: "Start voice mode"))
@@ -1878,7 +1885,18 @@ struct ChatComposer: View {
 
     private func runSlashCommand(_ command: NativeComposerCommand) {
         prompt = ""
+        if command.id.hasPrefix("model:") {
+            selectedModelID = String(command.id.dropFirst(6))
+            modelChosenByReader = true
+            focused = true
+            return
+        }
         switch command.id {
+        case "model": prompt = "/model "
+        case "artifact": prompt = "Create an artifact that "
+        case "new": DesktopWorkbenchRegistry.shared.request(.newChat(prompt: nil))
+        case "projects": DesktopPageRouter.shared.open(.projects)
+        case "memory": DesktopPageRouter.shared.open(.memory)
         case "research": deepResearch = true
         case "search": webSearch = true
         case "voice": startVoice()

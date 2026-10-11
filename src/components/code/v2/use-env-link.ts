@@ -72,6 +72,15 @@ export function useEnvLink(device: { id: string; online: boolean } | null, initi
   const sub = React.useRef<SessionSubscription | null>(null);
   const refreshNow = React.useRef<() => Promise<void>>(async () => {});
   const checking = React.useRef(new Set<string>());
+  const probeTail = React.useRef<Promise<void>>(Promise.resolve());
+  const serializedProbe = React.useCallback((connection: EnvClient, instanceId: string, maxAgeMs?: number, shouldRun: () => boolean = () => true) => {
+    const request = probeTail.current.then(() => {
+      if (!shouldRun()) throw new DOMException("Refresh stopped", "AbortError");
+      return connection.request("provider.probe", { instanceId, ...(maxAgeMs === undefined ? {} : { maxAgeMs }) });
+    });
+    probeTail.current = request.then(() => {}, () => {});
+    return request;
+  }, []);
   const deviceId = device?.id ?? null;
   const online = !!device?.online;
 
@@ -104,7 +113,7 @@ export function useEnvLink(device: { id: string; online: boolean } | null, initi
           if (instance.kind === "alevr" || instance.kind === "byok" || checking.current.has(instance.id)) continue;
           checking.current.add(instance.id);
           try {
-            const { instance: fresh } = await c.request("provider.probe", { instanceId: instance.id, maxAgeMs: 30_000 });
+            const { instance: fresh } = await serializedProbe(c, instance.id, 30_000, () => live && document.visibilityState !== "hidden");
             if (live) setInstances((rows) => [...rows.filter((i) => i.id !== fresh.id), fresh]);
             if (fresh.status === "error") throw new Error("Provider check failed");
           } finally { checking.current.delete(instance.id); }
@@ -161,7 +170,7 @@ export function useEnvLink(device: { id: string; online: boolean } | null, initi
       setProbed(false);
       setPairingRequired(null);
     };
-  }, [deviceId, online]);
+  }, [deviceId, online, serializedProbe]);
 
   const open = React.useCallback(
     async (params: ClientCommandParams["session.open"]) => {
@@ -189,12 +198,12 @@ export function useEnvLink(device: { id: string; online: boolean } | null, initi
       if (checking.current.has(instanceId)) return;
       checking.current.add(instanceId);
       try {
-        const { instance } = await client.request("provider.probe", { instanceId });
+        const { instance } = await serializedProbe(client, instanceId);
         setInstances((list) => [...list.filter((i) => i.id !== instance.id), instance]);
         return instance;
       } finally { checking.current.delete(instanceId); }
     },
-    [client],
+    [client, serializedProbe],
   );
 
   const openTerminal = React.useCallback(

@@ -114,6 +114,17 @@ struct JunoMobileSettingsView: View {
         page
       }
     }
+    .onAppear {
+      if JunoMobileLaunchRequests.shared.pendingMemoryPage {
+        JunoMobileLaunchRequests.shared.pendingMemoryPage = false
+        showMemoryPage = true
+      }
+    }
+    .onChange(of: JunoMobileLaunchRequests.shared.pendingMemoryPage) { _, requested in
+      guard requested else { return }
+      JunoMobileLaunchRequests.shared.pendingMemoryPage = false
+      showMemoryPage = true
+    }
     .navigationTitle("Settings")
     .navigationBarTitleDisplayMode(.inline)
     .navigationDestination(isPresented: $showMemoryPage) {

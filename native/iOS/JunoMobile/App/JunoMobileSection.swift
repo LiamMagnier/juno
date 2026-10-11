@@ -3,7 +3,7 @@ import SwiftUI
 
 /// Every top-level destination in the iOS/iPadOS app. Each case maps to a real,
 /// working surface — nothing here navigates to a placeholder.
-enum JunoMobileSection: String, CaseIterable, Hashable, Identifiable {
+enum JunoMobileSection: String, CaseIterable, Hashable, Identifiable, Sendable {
     case chat
     case search
     case code
