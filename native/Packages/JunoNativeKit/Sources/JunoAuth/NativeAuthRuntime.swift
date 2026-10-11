@@ -324,6 +324,25 @@ public actor NativeAuthRuntime {
         return retryResponse
     }
 
+    /// The `Authorization` value for same-origin calls made by a process this
+    /// app launched and owns (the Mac's local env server, which runs Alevr's
+    /// engine for a paired phone through `/api/agent`). The token is still
+    /// valid for at least `minimumValidity`; the caller hands over a newer one
+    /// before then. Never for another origin, never logged.
+    public func bearerAuthorization(
+        for accountID: AccountID,
+        minimumValidity: TimeInterval
+    ) async throws -> String {
+        let token: AccessToken
+        do {
+            token = try await coordinator.accessToken(for: accountID, minimumValidity: minimumValidity)
+        } catch {
+            try await purgeAfterTerminalRefresh(error, for: accountID)
+            throw error
+        }
+        return "Bearer \(token.reveal())"
+    }
+
     public func signOut() async throws {
         guard let stored = try await tokenStore.loadActive() else {
             return

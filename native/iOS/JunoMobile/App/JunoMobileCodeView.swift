@@ -205,7 +205,7 @@ struct JunoMobileCodeView: View {
       )
     ) {
       if let linkModel {
-        JunoMobileLinkThreadView(model: linkModel, dictateOnAppear: linkDictate)
+        JunoMobileLinkThreadView(model: linkModel, dictateOnAppear: linkDictate, chatModels: modelCatalog)
           .environment(\.junoCodeVoiceSession, codeVoice)
           .environment(\.junoStartCodeVoice, startCodeVoice)
       }

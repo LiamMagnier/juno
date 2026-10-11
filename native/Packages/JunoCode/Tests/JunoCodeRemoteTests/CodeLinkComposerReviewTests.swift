@@ -48,7 +48,7 @@ final class CodeLinkComposerReviewTests: XCTestCase {
         var composer = CodeLinkComposerState(selection: CodeV2.ModelSelection(instanceId: "claude-agent:default", model: "claude-opus-5-5", effort: .max))
         XCTAssertNil(composer.routing)
         composer.choose(instance: catalogue[0].instance, model: catalogue[0].models[0])
-        XCTAssertNil(composer.selection?.effort, "Max is not one of Alevr Sonnet's levels")
+        XCTAssertEqual(composer.selection?.effort, .high, "Max is not one of Alevr Sonnet's levels: High, the Mac's fallback")
         XCTAssertEqual(composer.effortLevels(in: catalogue), [.low, .medium, .high])
         XCTAssertNil(composer.turnStart(sessionId: "s", text: "x")?.input.skills)
     }

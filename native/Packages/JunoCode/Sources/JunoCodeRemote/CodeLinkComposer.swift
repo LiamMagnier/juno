@@ -74,7 +74,11 @@ public struct CodeLinkComposerState: Equatable, Sendable {
     /// Picks a model, keeping the effort when the new model offers it.
     public mutating func choose(instance: CodeV2.ProviderInstance, model: CodeV2.ProviderModel) {
         let levels = model.effortLevels ?? instance.capabilities?.effortLevels ?? []
-        let effort = selection?.effort.flatMap { levels.contains($0) ? $0 : nil } ?? model.defaultEffort
+        // The Mac's rule (CodeV2ComposerModel.choose): keep, else the model's
+        // default, else High, else the deepest it has.
+        let effort = selection?.effort.flatMap { levels.contains($0) ? $0 : nil }
+            ?? model.defaultEffort.flatMap { levels.isEmpty || levels.contains($0) ? $0 : nil }
+            ?? (levels.contains(.high) ? .high : levels.last)
         selection = CodeV2.ModelSelection(instanceId: instance.id, model: model.id, effort: effort)
     }
 

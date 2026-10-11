@@ -1,3 +1,4 @@
+import JunoChatKit
 import JunoCodeCore
 import JunoCodeKit
 import JunoCodeRemote
@@ -102,8 +103,8 @@ final class JunoMobileLinkSnapshotTests: XCTestCase {
         NavigationStack { JunoMobileLinkThreadView(model: model) }
       }
     }
-    // The largest accessibility sizes on the smallest phone: the thinking
-    // gauge moves into "+", the model name keeps what room is left.
+    // The largest accessibility sizes on the smallest phone: the same row,
+    // one gauge for the model and its thinking.
     let model = Self.composerRowModel()
     try await Self.shoot("composer-row-se-ax", size: CGSize(width: 375, height: 667)) {
       NavigationStack { JunoMobileLinkThreadView(model: model) }
@@ -112,9 +113,11 @@ final class JunoMobileLinkSnapshotTests: XCTestCase {
   }
 
   /// A running thread on Full access with the longest model name we offer.
-  static func composerRowModel() -> CodeLinkRemoteModel {
+  static func composerRowModel(
+    selection: CodeV2.ModelSelection? = nil, providers: [CodeV2.ProviderInstance]? = nil
+  ) -> CodeLinkRemoteModel {
     let t = CodeV2Dates.string(Date())
-    let long = CodeV2.ModelSelection(instanceId: "claude-agent:default", model: "claude-haiku-5-5-long", effort: .high)
+    let long = selection ?? CodeV2.ModelSelection(instanceId: "claude-agent:default", model: "claude-haiku-5-5-long", effort: .high)
     let snapshot = CodeV2.SessionSnapshot(
       id: "s1", cwd: "/Users/liam/Desktop/test", title: "Code the best looking portfolio", selection: long,
       runtimeMode: .full, state: .running, activeTurnId: "t1", items: [
@@ -123,7 +126,7 @@ final class JunoMobileLinkSnapshotTests: XCTestCase {
         .reasoning(CodeV2.Reasoning(id: "r2", turnId: "t1", createdAt: t, text: "Fixing the overflow first.", streaming: true)),
       ]
     )
-    let model = Self.model(snapshot: snapshot)
+    let model = Self.model(snapshot: snapshot, providers: providers)
     model.composer.selection = long
     model.composer.runtimeMode = .full
     model.setPreviewDraft("")
@@ -186,12 +189,93 @@ final class JunoMobileLinkSnapshotTests: XCTestCase {
     }
   }
 
-  func testNewSessionEffort() async throws {
+  func testNewSessionThinking() async throws {
     let model = Self.model()
     model.beginNewSession()
     model.composer.selection = Self.sonnet
-    try await shoot("new-session-effort") {
-      NavigationStack { JunoMobileLinkThreadView(model: model, previewPanel: .effort) }
+    try await shoot("new-session-thinking") {
+      NavigationStack { JunoMobileLinkThreadView(model: model, previewPanel: .thinking) }
+    }
+  }
+
+  // MARK: One model selector: Chat's, with Alevr's API models and the plans
+
+  /// What a Mac whose env server has the Alevr session reports.
+  static let pickerProviders: [CodeV2.ProviderInstance] = [
+    CodeV2.ProviderInstance(
+      id: "alevr", kind: .alevr, label: "Alevr", status: .ready,
+      capabilities: CodeV2.ProviderCapabilities(steering: true, effortLevels: [.low, .medium, .high, .xhigh]),
+      models: [
+        CodeV2.ProviderModel(id: "anthropic:claude-opus-5-5", label: "Claude Opus 5.5", effortLevels: [.low, .medium, .high, .max], defaultEffort: .high, isDefault: true),
+        CodeV2.ProviderModel(id: "anthropic:claude-sonnet-5-5", label: "Claude Sonnet 5.5", effortLevels: [.low, .medium, .high, .max]),
+        CodeV2.ProviderModel(id: "openai:gpt-6.1", label: "GPT-6.1", effortLevels: [.minimal, .low, .medium, .high, .xhigh]),
+        CodeV2.ProviderModel(id: "zhipu:glm-5", label: "GLM-5", effortLevels: [.none, .high]),
+        CodeV2.ProviderModel(id: "moonshot:kimi-k2.7", label: "Kimi K2.7"),
+        CodeV2.ProviderModel(id: "google:gemini-3.5-pro", label: "Gemini 3.5 Pro", effortLevels: [.low, .high]),
+      ]
+    ),
+    CodeV2.ProviderInstance(
+      id: "claude-agent:default", kind: .claudeAgent, label: "Claude (your subscription)", status: .ready,
+      capabilities: CodeV2.ProviderCapabilities(steering: true, effortLevels: [.low, .medium, .high, .max]),
+      models: [
+        CodeV2.ProviderModel(id: "claude-opus-5-5", label: "Claude Opus 5.5", defaultEffort: .high),
+        CodeV2.ProviderModel(id: "claude-sonnet-5-5", label: "Claude Sonnet 5.5"),
+      ]
+    ),
+    CodeV2.ProviderInstance(
+      id: "codex:default", kind: .codex, label: "ChatGPT (Codex)", status: .ready,
+      capabilities: CodeV2.ProviderCapabilities(steering: true, effortLevels: [.low, .medium, .high]),
+      models: [CodeV2.ProviderModel(id: "gpt-6.1-codex", label: "GPT-6.1 Codex")]
+    ),
+  ]
+
+  static let gpt = CodeV2.ModelSelection(instanceId: "alevr", model: "openai:gpt-6.1", effort: .xhigh)
+
+  static let pickerSizes: [(String, CGSize)] = [
+    ("se", CGSize(width: 375, height: 667)),
+    ("promax", CGSize(width: 440, height: 956)),
+  ]
+
+  /// A running thread on Alevr's GPT-6.1: the row is +, access, the gauge,
+  /// the microphone and Stop; nothing to overlap at any width.
+  func testRemotePickerClosed() async throws {
+    for (name, size) in Self.pickerSizes {
+      let model = Self.composerRowModel(selection: Self.gpt, providers: Self.pickerProviders)
+      try await Self.shoot("remote-picker-closed-\(name)", size: size) {
+        NavigationStack { JunoMobileLinkThreadView(model: model) }
+      }
+    }
+    let model = Self.composerRowModel(selection: Self.gpt, providers: Self.pickerProviders)
+    try await Self.shoot("remote-picker-closed-se-ax", size: CGSize(width: 375, height: 667)) {
+      NavigationStack { JunoMobileLinkThreadView(model: model) }
+        .environment(\.dynamicTypeSize, .accessibility2)
+    }
+  }
+
+  /// The selector: Alevr's labs, then the Mac's plans.
+  func testRemotePickerOpen() async throws {
+    for (name, size) in Self.pickerSizes {
+      let model = Self.composerRowModel(selection: Self.gpt, providers: Self.pickerProviders)
+      try await Self.shoot("remote-picker-open-\(name)", size: size) {
+        JunoMobileLinkModelPicker(model: model, chatModels: []) {}
+      }
+    }
+  }
+
+  /// The gauge open on the chosen model's own levels.
+  func testRemotePickerThinking() async throws {
+    for (name, size) in Self.pickerSizes {
+      let model = Self.composerRowModel(selection: Self.gpt, providers: Self.pickerProviders)
+      try await Self.shoot("remote-picker-thinking-\(name)", size: size) {
+        NavigationStack { JunoMobileLinkThreadView(model: model, previewPanel: .thinking) }
+      }
+    }
+    let model = Self.composerRowModel(
+      selection: CodeV2.ModelSelection(instanceId: "claude-agent:default", model: "claude-opus-5-5", effort: .max),
+      providers: Self.pickerProviders
+    )
+    try await Self.shoot("remote-picker-thinking-plan-se", size: CGSize(width: 375, height: 667)) {
+      NavigationStack { JunoMobileLinkThreadView(model: model, previewPanel: .thinking) }
     }
   }
 
@@ -248,7 +332,8 @@ final class JunoMobileLinkSnapshotTests: XCTestCase {
 
   static func model(
     open: Bool = false, approval: Bool = true, terminal: Bool = false, linkError: CodeLinkError? = nil,
-    macs count: Int = 1, snapshot custom: CodeV2.SessionSnapshot? = nil
+    macs count: Int = 1, snapshot custom: CodeV2.SessionSnapshot? = nil,
+    providers customProviders: [CodeV2.ProviderInstance]? = nil
   ) -> CodeLinkRemoteModel {
     let pair = RemotePair(
       id: "p1", kind: .phone, name: "iPhone", platform: "ios", deviceId: "mac1", deviceName: "Studio",
@@ -354,7 +439,7 @@ final class JunoMobileLinkSnapshotTests: XCTestCase {
       ))
     }
     return CodeLinkRemoteModel.preview(
-      macs: macs, sessions: sessions, open: custom ?? (open ? snapshot : nil), providers: providers,
+      macs: macs, sessions: sessions, open: custom ?? (open ? snapshot : nil), providers: customProviders ?? providers,
       diff: diff, terminal: terminal ? "$ npm test -- cart\r\n\r\n PASS  src/cart/total.test.ts\r\n  total\r\n    \u{2713} sums in cents (3 ms)\r\n    \u{2713} rounds to the cent (1 ms)\r\n\r\nTests: 2 passed, 2 total\r\n$ " : nil,
       git: git, linkError: linkError
     )
@@ -402,5 +487,62 @@ final class JunoMobileLinkSnapshotTests: XCTestCase {
         try data.write(to: url)
       }
     }
+  }
+}
+
+/// The remote's entries in Chat's selector and thinking panel: Alevr's API
+/// models as labs (with the account's Chat facts), the Mac's plans apart,
+/// each with the levels the Mac sent, and a pick choosing source and model.
+@MainActor
+final class JunoMobileLinkModelOptionsTests: XCTestCase {
+  func testTheSelectorListsAlevrsAPIModelsAndTheMacsPlans() throws {
+    let model = JunoMobileLinkSnapshotTests.composerRowModel(
+      selection: JunoMobileLinkSnapshotTests.gpt, providers: JunoMobileLinkSnapshotTests.pickerProviders
+    )
+    let picker = model.picker
+    let manifest = [
+      NativeChatModelOption(
+        id: "openai:gpt-6.1", providerID: "openai", providerName: "OpenAI · GPT", displayName: "GPT-6.1",
+        summary: "Strong all-round reasoning", minimumPlan: "pro", availability: "available", contextWindowTokens: 400_000,
+        pricing: NativeModelPricing(priceClass: "premium", inputPerMillion: 2, outputPerMillion: 8, currency: "USD"),
+        supportedReasoningEfforts: [.low], canDisableReasoning: false, supportsStreaming: true
+      ),
+    ]
+    let labs = picker.api.map { JunoMobileLinkModelOptions.option($0, chatModels: manifest) }
+    XCTAssertEqual(labs.map(\.id), [
+      "alevr|anthropic:claude-opus-5-5", "alevr|anthropic:claude-sonnet-5-5", "alevr|openai:gpt-6.1",
+      "alevr|zhipu:glm-5", "alevr|moonshot:kimi-k2.7", "alevr|google:gemini-3.5-pro",
+    ])
+    XCTAssertEqual(labs.map(\.providerID), ["anthropic", "anthropic", "openai", "zhipu", "moonshot", "google"])
+    XCTAssertTrue(labs.allSatisfy(\.isAvailable), "every one can be picked")
+    let gpt = labs[2]
+    XCTAssertEqual(gpt.summary, "Strong all-round reasoning", "Chat's line for the same model")
+    XCTAssertEqual(gpt.contextWindowTokens, 400_000)
+    XCTAssertNotNil(gpt.pricing)
+    XCTAssertEqual(gpt.supportedReasoningEfforts, [.minimal, .low, .medium, .high, .xhigh], "the Mac's levels, not Chat's")
+    XCTAssertTrue(labs[3].canDisableReasoning, "GLM can think or not")
+    XCTAssertEqual(NativeThinkingScale(model: labs[3]).stops.count, 2)
+    XCTAssertEqual(labs[4].supportedReasoningEfforts, [.low, .medium, .high, .xhigh], "no levels of its own: the engine's")
+
+    let plans = JunoMobileLinkModelOptions.plans(picker, chatModels: manifest)
+    XCTAssertEqual(plans.map(\.title), ["Claude plan", "ChatGPT plan"])
+    XCTAssertEqual(plans.map(\.providerID), ["anthropic", "openai"])
+    XCTAssertEqual(plans[0].models.map(\.id), ["claude-agent:default|claude-opus-5-5", "claude-agent:default|claude-sonnet-5-5"])
+    XCTAssertTrue(plans.flatMap(\.models).allSatisfy { $0.pricing == nil }, "a plan pays, never per token")
+    XCTAssertEqual(plans[0].models[0].supportedReasoningEfforts, [.low, .medium, .high, .max])
+
+    // Picking a row picks its source and model, effort kept where offered.
+    model.composer.choose(try XCTUnwrap(picker.entry(labs[0].id)))
+    XCTAssertEqual(model.composer.selection, CodeV2.ModelSelection(instanceId: "alevr", model: "anthropic:claude-opus-5-5", effort: .high))
+    model.composer.choose(try XCTUnwrap(picker.entry(plans[0].models[0].id)))
+    XCTAssertEqual(model.composer.selection?.instanceId, "claude-agent:default")
+    XCTAssertEqual(JunoMobileLinkModelOptions.panelName(try XCTUnwrap(picker.entry(for: model.composer.selection))), "Opus 5.5 \u{00B7} Claude")
+
+    // The panel's stops and the wire's levels.
+    XCTAssertNil(JunoMobileLinkModelOptions.nativeEffort(CodeV2.EffortLevel.none))
+    XCTAssertEqual(JunoMobileLinkModelOptions.nativeEffort(.xhigh), .xhigh)
+    XCTAssertEqual(JunoMobileLinkModelOptions.codeEffort(nil, levels: [.none, .high]), CodeV2.EffortLevel.none)
+    XCTAssertNil(JunoMobileLinkModelOptions.codeEffort(nil, levels: [.low, .high]))
+    XCTAssertEqual(JunoMobileLinkModelOptions.codeEffort(.max, levels: [.low, .max]), .max)
   }
 }

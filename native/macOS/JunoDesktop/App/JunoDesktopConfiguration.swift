@@ -387,7 +387,13 @@ struct JunoDesktopConfiguration {
                     remoteClient: NativeCodeRemoteClient(sender: runtime, streamer: runtime),
                     // The Code v2 device link: the web reaching this Mac's
                     // subscriptions while Remote hosting is on.
-                    linkSender: runtime
+                    linkSender: runtime,
+                    // And Alevr's API models beside them: the env server's
+                    // Alevr engine calls /api/agent with this session.
+                    backendAuthorization: { accountID, validity in
+                        try await runtime.bearerAuthorization(for: accountID, minimumValidity: validity)
+                    },
+                    backendOrigin: backendURL
                 ),
                 workModel: NativeWorkModel(
                     client: NativeWorkClient(sender: runtime, streamer: runtime)

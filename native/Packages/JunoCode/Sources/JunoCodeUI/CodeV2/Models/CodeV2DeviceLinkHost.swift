@@ -35,10 +35,17 @@ public final class CodeV2DeviceLinkHost {
         allowedRoots: @escaping @MainActor () -> [String],
         allowsTerminal: @escaping @MainActor () -> Bool = { false },
         hostHandler: EnvServerDeviceLink.HostHandler? = nil,
+        backend: (@MainActor () async -> EnvBackendConfig?)? = nil,
         perform: @escaping Perform
     ) {
-        if self.deviceId == deviceId, channel != nil { return }
+        // Alevr's API models for a paired phone, beside the subscriptions:
+        // the env server's Alevr engine gets this Mac's session while hosting is on.
+        if self.deviceId == deviceId, channel != nil {
+            self.hub.setBackend(backend)
+            return
+        }
         stop()
+        self.hub.setBackend(backend)
         self.deviceId = deviceId
         let hub = self.hub
         let link = EnvServerDeviceLink(
@@ -68,6 +75,7 @@ public final class CodeV2DeviceLinkHost {
     }
 
     public func stop() {
+        hub.setBackend(nil)
         if let sink { hub.removeRelaySink(sink) }
         sink = nil
         recorder?.cancel()
