@@ -25,6 +25,13 @@ this branch was built in an isolated worktree from the fetched commit.
   decoding of Apple's retired suspension reason without using a deprecated key.
 - Build the local execution bundle in the macOS CI job before Stable builds:
   a fresh runner previously had none of the dependencies its prebuild needed.
+- Stop the repository-parent search at the filesystem root. Foundation's URL
+  parent operation appended repeated `..` after reaching `/`, hanging plain-folder
+  hunk acceptance and growing the test process beyond 30 GB. The existing
+  plain-folder integration test and a root regression now pass.
+- Check concentric minimum radii through rendered pixel assertions, including a
+  square control, instead of assuming an unhosted SDK path resolves its layout.
+  Hosted CI exposed this test-only assumption; the intended corner check remains.
 
 ## Evidence established locally
 
@@ -32,17 +39,27 @@ Host: Xcode 27.0 (27A266a), Swift 6.4, Node 24.20.0. CI uses its hosted Xcode,
 so a local pass does not establish a CI pass on that toolchain.
 
 - Strict Mac Debug build: passed (warnings as errors, signing disabled).
+- Strict Mac Stable build: passed (warnings as errors, signing disabled).
 - Strict generic iOS simulator build: passed (warnings as errors, signing disabled).
 - Mac unit tests: 463 passed, 84 skipped, zero failures (547 discovered).
+- iOS simulator unit tests: 188 passed, 11 skipped, zero failures (199 discovered).
 - JunoNativeKit, JunoWork, JunoScreenControl package suites: passed, warnings as errors.
+- JunoCode package: passed, warnings as errors, including plain-folder hunk acceptance.
+- Rendered concentric token regression suite: 27 passed, zero failures.
+- Mac folder/pairing and iOS remote/pairing snapshot suites passed; iOS ran 27 tests.
+  Visual inspection included the Mac folder composer and small iPhone accessibility
+  composer. The latter still has cramped diff-summary labels at the largest text
+  size; this is unresolved accessibility debt, not acceptance.
 - Nine native design gates: passed. Existing debt remains (type 3, glass 14,
   targets 160, spacing 16 in the first corrected measurement).
 - TypeScript and web suite: passed; 6,833 passed, 123 skipped, zero failed.
 - Secret/dependency security gate: passed with the repository's existing documented exceptions.
 - Disposable local Postgres migration replay: passed; no schema difference detected.
 
-Stable Mac, JunoCode, iOS app tests and hosted CI are tracked separately while their
-runs finish. A compiler pass is not a physical-device workflow or accessibility pass.
+Hosted run 38157784416 passed contract, design and web-parity gates, but initially
+failed the unhosted concentric-path assertion; the rendered regression corrects it.
+Full hosted native acceptance remains pending. A compiler pass is not a
+physical-device workflow or accessibility pass.
 Snapshot fixtures are illustrative; they never establish real task completion.
 
 ## Unresolved mission requirements

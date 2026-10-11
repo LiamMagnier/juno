@@ -154,9 +154,36 @@ final class JunoDesignTokensTests: XCTestCase {
             ConcentricRectangle(corners: .concentric(minimum: .fixed(6)), isUniform: true)
                 .path(in: rect)
         )
-        // With no container declared, a concentric child falls back to its
-        // floor — it never draws square.
-        XCTAssertNotEqual(JunoRadius.concentric().path(in: rect), Rectangle().path(in: rect))
+        // ConcentricRectangle resolves through SwiftUI's layout context.
+        // A bare path(in:) has no context on the hosted CI SDK; the rendered
+        // test below checks the visible floor instead of that SDK detail.
+    }
+
+    @MainActor
+    func testConcentricMinimumRendersRoundedCorners() throws {
+        for minimum in [CGFloat.zero, JunoRadius.xs, JunoRadius.control] {
+            let renderer = ImageRenderer(content:
+                JunoRadius.concentric(minimum: minimum)
+                    .fill(Color.white)
+                    .frame(width: 120, height: 40)
+                    .containerShape(Rectangle())
+            )
+            renderer.scale = 1
+            let image = try XCTUnwrap(renderer.cgImage)
+            var pixels = [UInt8](repeating: 0, count: 120 * 40 * 4)
+            let context = try XCTUnwrap(CGContext(
+                data: &pixels, width: 120, height: 40, bitsPerComponent: 8,
+                bytesPerRow: 120 * 4, space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ))
+            context.draw(image, in: CGRect(x: 0, y: 0, width: 120, height: 40))
+            XCTAssertGreaterThan(pixels[(20 * 120 + 60) * 4 + 3], 240, "the shape must draw its center")
+            if minimum == 0 {
+                XCTAssertGreaterThan(pixels[3], 240, "zero is the square control case")
+            } else {
+                XCTAssertLessThan(pixels[3], 64, "a positive minimum must round the rendered corner")
+            }
+        }
     }
 
     /// The three names that used to mean different sizes on the two platforms.
