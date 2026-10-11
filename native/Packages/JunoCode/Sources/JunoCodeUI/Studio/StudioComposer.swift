@@ -637,6 +637,10 @@ struct StudioDoublePress {
     var interval: TimeInterval = 0.5
     private var last: Date?
 
+    init(interval: TimeInterval = 0.5) {
+        self.interval = interval
+    }
+
     /// Records a press, and answers whether it completes a pair. A completed
     /// pair starts over, so a third press is the first of the next pair.
     mutating func press(at date: Date = Date()) -> Bool {
