@@ -17,6 +17,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { newToken, describeError, type Logger } from "../util.js";
 import { CROSS_CONVERSATION_PROMPT_SECTION } from "../conversations/policy.js";
 import { COMPUTER_TOOL_RULES } from "./computer-tools.js";
+import { capabilityGuidance } from "./capability-hints.js";
 
 export const MCP_SERVER_NAME = "alevr";
 export const MCP_PROTOCOL_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
@@ -151,7 +152,8 @@ export class AlevrMcpServer {
           capabilities: { tools: { listChanged: false } },
           serverInfo: { name: MCP_SERVER_NAME, title: "Alevr", version: "1.0.0" },
           instructions:
-            "Alevr tools: start subagents on any model the user connected (spawn_subagent, then wait_subagent for its closing text), list or cancel them, message a running one, and search the user's earlier Alevr Code threads.\n\n" +
+            "Alevr tools: start subagents on any model the user connected (spawn_subagent, then wait_subagent for its closing text), list or cancel them, message a running one, open the Preview on a page you built (open_preview), use apps on this Mac (computer_use, when the user allowed it), and search the user's earlier Alevr Code threads.\n\n" +
+            `${capabilityGuidance(null)}\n\n` +
             CROSS_CONVERSATION_PROMPT_SECTION + (this.tools(scope).some((t) => t.name === "computer_use") ? `\n\n${COMPUTER_TOOL_RULES}` : ""),
         });
       }

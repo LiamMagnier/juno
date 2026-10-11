@@ -140,6 +140,9 @@ public final class PreviewLeaseModel {
 
     public func needsApproval(_ configuration: ResolvedPreviewConfiguration) -> Bool {
         guard let workspaceRoot else { return true }
+        // Alevr's own static server runs no project code and serves one
+        // folder inside the workspace on loopback: nothing to approve.
+        if configuration.isStatic { return false }
         // An attach `url` is asked about too: it points the page (and the
         // agent's input) at another server on this Mac.
         if settings.isApproved(configuration, in: workspaceRoot) { return false }
@@ -300,6 +303,48 @@ public final class PreviewLeaseModel {
             return
         }
         requestStart(name)
+    }
+
+    /// An agent opened the Preview (`open_preview`): a static site's folder
+    /// is served by Alevr's own static server, with no launch file and no
+    /// card; a dev server the agent started on loopback is attached to. The
+    /// configuration it makes is returned, or nil when neither applies.
+    @discardableResult
+    public func openAgentPreview(url: URL?, folder: URL?) -> ResolvedPreviewConfiguration? {
+        notice = nil
+        message = nil
+        guard let workspaceRoot,
+              let configuration = Self.agentConfiguration(url: url, folder: folder, workspaceRoot: workspaceRoot)
+        else { return nil }
+        selectedName = configuration.name
+        if snapshots.first(where: { $0.key.name == configuration.name })?.phase.isLive == true,
+           snapshots.first(where: { $0.key.name == configuration.name })?.configuration?.contentHash == configuration.contentHash {
+            syncPage()
+            PreviewPageRegistry.shared.existing(PreviewKey(checkoutRoot: workspaceRoot, name: configuration.name))?.reload()
+            return configuration
+        }
+        start(configuration)
+        return configuration
+    }
+
+    /// What `openAgentPreview` starts: the folder as a static site (named
+    /// `static` at the root, else by its folder), or an attach to the
+    /// agent's loopback server. Nil outside the workspace or off loopback.
+    nonisolated static func agentConfiguration(url: URL?, folder: URL?, workspaceRoot: URL) -> ResolvedPreviewConfiguration? {
+        let root = workspaceRoot.resolvingSymlinksInPath().standardizedFileURL
+        let file: PreviewLaunchConfiguration
+        if let folder {
+            let resolved = folder.resolvingSymlinksInPath().standardizedFileURL
+            guard resolved.path == root.path || resolved.path.hasPrefix(root.path + "/") else { return nil }
+            let relative = resolved.path == root.path ? "." : String(resolved.path.dropFirst(root.path.count + 1))
+            file = LaunchConfigurationDiscovery.staticSite(name: relative == "." ? "static" : relative, folder: relative)
+        } else if let url, let scheme = url.scheme, let host = url.host, let port = url.port {
+            file = PreviewLaunchConfiguration(name: "agent server :\(port)", url: "\(scheme)://\(host):\(port)")
+        } else {
+            return nil
+        }
+        let resolved = LaunchConfigurationStore.resolve([file], source: .discovered, workspaceRoot: root)
+        return resolved.configurations.first
     }
 
     /// Writes a configuration discovery found into the project's launch

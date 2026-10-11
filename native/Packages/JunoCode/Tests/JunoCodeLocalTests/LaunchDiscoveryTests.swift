@@ -102,6 +102,27 @@ final class LaunchDiscoveryTests: XCTestCase {
         XCTAssertEqual(site.first?.runtimeExecutable, ResolvedPreviewConfiguration.staticExecutable)
     }
 
+    func testAStaticSiteInASubfolderPreviewsWithoutALaunchFile() throws {
+        // What an agent writes when asked for "a portfolio": ./portfolio/index.html.
+        let site = try project(["portfolio/index.html": "<h1>hi</h1>", "portfolio/styles.css": "", "README.md": ""])
+        XCTAssertEqual(site.map(\.name), ["portfolio"])
+        XCTAssertEqual(site.first?.runtimeExecutable, ResolvedPreviewConfiguration.staticExecutable)
+        XCTAssertEqual(site.first?.cwd, "portfolio")
+        let catalog = LaunchDiscoveryHelpers.catalog(root)
+        XCTAssertEqual(catalog.defaultConfiguration?.workingDirectoryDisplay, "portfolio")
+        XCTAssertTrue(catalog.defaultConfiguration?.isStatic ?? false)
+
+        // Several: the most recently written first; dependencies never count.
+        _ = try project(["old/index.html": "a", "new/index.html": "b", "node_modules/x/index.html": "c"])
+        let older = Date(timeIntervalSinceNow: -3_600)
+        try FileManager.default.setAttributes([.modificationDate: older], ofItemAtPath: root.appendingPathComponent("old/index.html").path)
+        XCTAssertEqual(LaunchConfigurationDiscovery.propose(workspaceRoot: root).configurations.map(\.name), ["new", "old"])
+
+        // A root page still wins, named as before.
+        XCTAssertEqual(try project(["index.html": "a", "portfolio/index.html": "b"]).map(\.name), ["static"])
+        XCTAssertEqual(try project(["public/index.html": "a", "portfolio/index.html": "b"]).first?.cwd, "public")
+    }
+
     func testAnXcodeProjectIsOfferedTheSimulator() throws {
         _ = try project(["App/App.xcodeproj/project.pbxproj": ""])
         XCTAssertTrue(LaunchDiscoveryHelpers.catalog(root).hasXcodeProject)

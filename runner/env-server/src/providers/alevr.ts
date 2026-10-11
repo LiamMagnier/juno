@@ -41,6 +41,8 @@ import { classifyUsageLimit } from "./limits.js";
 import { describeError, type Logger } from "../util.js";
 import { CROSS_CONVERSATION_PROMPT_SECTION } from "../conversations/policy.js";
 import { COMPUTER_TOOL_RULES } from "../mcp/computer-tools.js";
+import { PREVIEW_TOOL_NAME } from "../mcp/preview-tools.js";
+import { capabilityGuidance } from "../mcp/capability-hints.js";
 
 // ── The slice of agent-core this adapter uses (structural, so no build-time dependency) ──
 
@@ -289,7 +291,14 @@ class EngineBackedSession implements ProviderSession {
       ...(routingKey && request.routing ? { routing: request.routing, resolveProvider: (sel: ModelSelection) => this.#resolve(sel) } : {}),
       ...(this.#extraTools?.length ? { extraTools: this.#extraTools } : {}),
     };
-    const appendix = [this.#extraTools?.length ? `${CROSS_CONVERSATION_PROMPT_SECTION}\n\n${COMPUTER_TOOL_RULES}` : "", skillText].filter(Boolean).join("\n\n");
+    const names = new Set((this.#extraTools ?? []).map((t) => (t as { spec?: { name?: string } }).spec?.name));
+    const conversationsOrComputer = [...names].some((n) => n && n !== PREVIEW_TOOL_NAME);
+    const appendix = [
+      // The Preview and the standing rule on subagents, preview and computer use.
+      names.has(PREVIEW_TOOL_NAME) ? capabilityGuidance(this.instance.kind) : "",
+      conversationsOrComputer ? `${CROSS_CONVERSATION_PROMPT_SECTION}\n\n${COMPUTER_TOOL_RULES}` : "",
+      skillText,
+    ].filter(Boolean).join("\n\n");
     if (appendix) opts.systemAppendix = appendix;
     let session: EngineSession;
     if (this.#engineSessionId) {

@@ -100,6 +100,18 @@ enum CodeV2AgentCopy {
         return others.isEmpty ? main : main + " and " + others.joined(separator: " and ")
     }
 
+    /// Panel › Agents before any agent ran, in the words of the thread's team.
+    static func empty(team: CodeV2.RolePreset?) -> String {
+        switch team {
+        case .planBuildVerify?, .leadWorkers?:
+            "Team is on. The lead plans, then starts its builders and a verifier when you send a message."
+        case .bestOfN?:
+            "Best of N is on. Each model starts its own attempt when you send a message."
+        case .solo?, nil:
+            "No agents in this thread yet. Ask for subagents in your message, or set Team in the composer to run a lead with builders."
+        }
+    }
+
     static func elapsed(_ children: [CodeV2AgentNode]) -> String? {
         children.compactMap(\.elapsedSeconds).max().map(CodeV2Formatting.duration(seconds:))
     }
@@ -236,6 +248,8 @@ public struct CodeV2AgentsPane: View {
     var spend: (spent: Double, limit: Double)?
     var message: ((String, String) async -> String?)?
     var stop: ((String) -> Void)?
+    /// The thread's team preset, for the empty state's words.
+    var team: CodeV2.RolePreset?
 
     @State private var draft = ""
     @State private var sending = false
@@ -243,20 +257,22 @@ public struct CodeV2AgentsPane: View {
 
     public init(
         nodes: [CodeV2AgentNode], selected: Binding<String?>, spend: (spent: Double, limit: Double)? = nil,
-        message: ((String, String) async -> String?)? = nil, stop: ((String) -> Void)? = nil
+        message: ((String, String) async -> String?)? = nil, stop: ((String) -> Void)? = nil,
+        team: CodeV2.RolePreset? = nil
     ) {
         self.nodes = nodes
         self._selected = selected
         self.spend = spend
         self.message = message
         self.stop = stop
+        self.team = team
     }
 
     public var body: some View {
         if let id = selected, let node = nodes.first(where: { $0.agentId == id }) {
             detail(node)
         } else if nodes.isEmpty {
-            Text("No agents in this thread yet. Choose Team in the + menu to run a lead with workers.")
+            Text(CodeV2AgentCopy.empty(team: team))
                 .studioType(.small).foregroundStyle(Studio.Ink.secondary)
                 .padding(JunoSpace.regular)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

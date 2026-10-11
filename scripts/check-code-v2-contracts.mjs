@@ -251,7 +251,7 @@ function buildSchema() {
       { ref: str, filesChanged: int, additions: int, deletions: int },
     ),
     InterruptItem: itemSchema("interrupt", { reason: en(["user", "limit", "budget", "error"]) }, { message: str, resumeAt: iso }),
-    SystemNoticeItem: itemSchema("system_notice", { level: en(["info", "warning"]), text: nonEmpty }, { code: str }),
+    SystemNoticeItem: itemSchema("system_notice", { level: en(["info", "warning"]), text: nonEmpty }, { code: str, url: str, path: str }),
     ErrorItem: itemSchema("error", { message: nonEmpty }, { code: str, retryable: bool }),
     CompactionItem: itemSchema(
       "compaction",

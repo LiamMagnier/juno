@@ -37,6 +37,7 @@ import { codexSetup } from "./presets.js";
 import { commandGuardReason, isOutside } from "./full-access-guard.js";
 import { readVersion } from "./detect.js";
 import { vendorEnv } from "./vendor-env.js";
+import { capabilityGuidance } from "../mcp/capability-hints.js";
 import type {
   OpenSessionOptions,
   ProbeOptions,
@@ -675,9 +676,17 @@ function mapFileChange(c: Record<string, unknown>): FileChangeEntry {
   return entry;
 }
 
-function threadConfig(mcp: McpEndpoint | undefined): Record<string, unknown> | undefined {
+/**
+ * Per-thread config overrides: the Alevr MCP server, and developer
+ * instructions that say when to use its subagents, Preview and computer use
+ * (Codex has no other system-prompt hook; exported for tests).
+ */
+export function threadConfig(mcp: McpEndpoint | undefined): Record<string, unknown> | undefined {
   if (!mcp) return undefined;
-  return { mcp_servers: { [mcp.name]: { url: mcp.url, http_headers: { Authorization: mcp.authorization } } } };
+  return {
+    mcp_servers: { [mcp.name]: { url: mcp.url, http_headers: { Authorization: mcp.authorization } } },
+    developer_instructions: `You are running inside Alevr Code on the user's own machine.\n${capabilityGuidance("codex")}`,
+  };
 }
 
 function errorCode(error: unknown): string | undefined {

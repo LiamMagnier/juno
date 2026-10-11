@@ -169,8 +169,10 @@ export function fakeClaudeQuery(record: { options?: unknown[]; prompts?: string[
     const stream = (event: Record<string, unknown>) => out.push({ type: "stream_event", event, parent_tool_use_id: null, uuid: `ev_${Math.random()}`, session_id });
     let busy = false;
     const handle = async (msg: { message: { content: { text: string }[] }; uuid?: string; priority?: string }) => {
-      const text = msg.message.content.map((c) => c.text).join(" ");
-      record.prompts?.push(text);
+      const sent = msg.message.content.map((c) => c.text).join(" ");
+      record.prompts?.push(sent);
+      // The scenario is the person's own words, not Alevr's capability block ahead of them.
+      const text = sent.replace(/^<alevr_capabilities>[\s\S]*?<\/alevr_capabilities>\n\n/, "");
       if (busy) {
         steered.push(text);
         if (msg.uuid) steeredUuids.push(msg.uuid);

@@ -607,6 +607,11 @@ export interface SystemNoticeItem extends TurnItemBase {
   level: "info" | "warning";
   text: string;
   code?: string;
+  // preview lane (additive): code "preview_opened": the agent opened the Preview.
+  /** The page's loopback address. */
+  url?: string;
+  /** The static site's folder (absolute); absent for a dev server. */
+  path?: string;
 }
 export interface ErrorItem extends TurnItemBase {
   kind: "error";
