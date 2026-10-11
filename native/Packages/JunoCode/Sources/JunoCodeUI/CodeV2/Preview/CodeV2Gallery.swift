@@ -322,7 +322,7 @@ public enum CodeV2Gallery {
         ))
         return AnyView(ZStack(alignment: .topLeading) {
             // A stand-in for whatever app is on screen under the panel.
-            LinearGradient(colors: [Color(white: 0.93), Color(white: 0.86)], startPoint: .top, endPoint: .bottom)
+            LinearGradient(colors: [Color.junoCanvas, Color.junoSecondary], startPoint: .top, endPoint: .bottom)
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(Color.white)
                 .shadow(color: .black.opacity(0.18), radius: 18, y: 8)

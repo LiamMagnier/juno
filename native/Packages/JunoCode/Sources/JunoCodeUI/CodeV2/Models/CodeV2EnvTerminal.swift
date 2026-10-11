@@ -30,6 +30,7 @@ public final class CodeV2EnvTerminal {
     @ObservationIgnored private weak var hub: EnvServerHub?
     @ObservationIgnored private let connect: (() async throws -> EnvServerConnection)?
     @ObservationIgnored private var listener: Task<Void, Never>?
+    @ObservationIgnored private var openingEvents: [String: [CodeV2.ServerEvent]] = [:]
 
     init(hub: EnvServerHub, cwd: String) {
         self.hub = hub
@@ -67,6 +68,7 @@ public final class CodeV2EnvTerminal {
         if let cols, let rows { size = (max(20, cols), max(5, rows)) }
         let reattaching = terminalId
         phase = .opening
+        defer { openingEvents.removeAll() }
         do {
             let connection = try await connection()
             // Outside a hub, follow the connection before anything is sent,
@@ -77,8 +79,9 @@ public final class CodeV2EnvTerminal {
                 cwd: cwd, cols: size.cols, rows: size.rows, terminalId: reattaching
             )
             terminalId = id
-            hub?.register(self, as: id)
             phase = .running
+            for event in openingEvents[id] ?? [] { receive(event) }
+            hub?.register(self, as: id)
         } catch {
             phase = .failed(CodeV2EnvSession.describe(error))
         }
@@ -142,6 +145,23 @@ public final class CodeV2EnvTerminal {
 
     /// The hub's (or a test's) delivery of one global terminal event.
     public func receive(_ event: CodeV2.ServerEvent) {
+        // The standalone connection has the same response/event race as the
+        // hub, which already retains unclaimed terminal events. Keep a bounded
+        // prelude until terminal.open tells us which id belongs to this shell.
+        if connect != nil, phase == .opening, terminalId == nil {
+            switch event {
+            case let .terminalOutput(id, _), let .terminalExited(id, _):
+                var held = openingEvents[id, default: []]
+                held.append(event)
+                openingEvents[id] = Array(held.suffix(64))
+                if openingEvents.count > 16,
+                   let stale = openingEvents.keys.first(where: { $0 != id }) {
+                    openingEvents[stale] = nil
+                }
+            default: break
+            }
+            return
+        }
         switch event {
         case let .terminalOutput(id, data) where id == terminalId:
             screen.feed(data)

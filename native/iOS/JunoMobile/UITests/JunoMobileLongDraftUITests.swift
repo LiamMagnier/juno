@@ -6,8 +6,9 @@ import XCTest
 /// running app can show is that the offer appears at all, and that taking it
 /// actually moves the draft out of the field and into an attachment — the step
 /// that used to leave the composer with an empty prompt and a dead Send button.
+@MainActor
 final class JunoMobileLongDraftUITests: XCTestCase {
-    override func setUpWithError() throws {
+    override func setUp() async throws {
         continueAfterFailure = false
     }
 

@@ -226,9 +226,8 @@ final class JunoTokenConsumptionTests: XCTestCase {
     /// back, and a retune on the web shows up as a deliberate edit here.
     func testTheAccentTriplesComeBackOutOfTheProjection() {
         let web: [JunoAccent: (light: (Double, Double, Double), dark: (Double, Double, Double))] = [
-            // The default accent keeps its stored name; V3 made it ultramarine
-            // and lifts it on the charcoal.
-            .coral: ((229.231, 0.63415, 0.48235), (228.608, 0.61240, 0.74706)),
+            // The default keeps its stored name; the current web palette is graphite.
+            .coral: ((216, 0.09, 0.11), (220, 0.07, 0.91)),
             .juniper: ((152, 0.44, 0.31), (152, 0.42, 0.54)),
             .teal: ((180, 0.63, 0.315), (187, 0.58, 0.49)),
             .violet: ((249, 0.59, 0.60), (249, 0.66, 0.71)),
@@ -309,8 +308,6 @@ final class JunoTokenConsumptionTests: XCTestCase {
             "JunoSurfaces.swift:rowSelectedDark": phone,
             "JunoSurfaces.swift:separatorLight": phone,
             "JunoSurfaces.swift:separatorDark": phone,
-            "JunoSurfaces.swift:terminalLight": code,
-            "JunoSurfaces.swift:terminalDark": code,
             "JunoStatus.swift:diffAddedLight": code,
             "JunoStatus.swift:diffAddedDark": code,
             "JunoStatus.swift:diffRemovedLight": code,

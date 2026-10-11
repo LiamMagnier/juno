@@ -675,6 +675,8 @@ public struct NativeTrayPopoverChip<Label: View, Panel: View>: View {
         .accessibilityLabel(accessibilityLabel)
         .accessibilityHint("Opens a list")
         .accessibilityIdentifier(identifier)
+        .frame(minWidth: 44, minHeight: 44)
+        .contentShape(.rect)
         #if os(macOS)
         .help(help ?? accessibilityLabel)
         #endif
@@ -703,7 +705,7 @@ public enum NativeComposerTrayPickers {
     }
 
     static func projectSubtitle(_ project: NativeComposerTrayProject, now: Date) -> String? {
-        let edited = project.updatedAt.map { edited($0, now: now) }
+        let edited = project.updatedAt.map { Self.edited($0, now: now) }
         switch (project.parentName, edited) {
         case let (parent?, edited?): return "In \(parent) \u{00B7} \(edited.prefix(1).lowercased() + edited.dropFirst())"
         case let (parent?, nil): return "In \(parent)"

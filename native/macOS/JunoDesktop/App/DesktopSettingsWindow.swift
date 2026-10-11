@@ -409,17 +409,17 @@ struct DesktopSettingsSidebar: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 8) {
+            HStack(spacing: JunoSpace.snug) {
                 JunoIconView(.search, size: 14).foregroundStyle(Color.junoSecondaryInk)
                 TextField("Search settings", text: $query).textFieldStyle(.plain)
             }
-            .padding(10)
+            .padding(JunoSpace.close)
             .background(Color.junoForeground.opacity(0.05), in: RoundedRectangle(cornerRadius: 9))
-            .padding(.horizontal, 12).padding(.top, 10)
+            .padding(.horizontal, JunoSpace.cozy).padding(.top, JunoSpace.close)
         List(selection: listSelection) {
             ForEach(Array(visibleGroups.enumerated()), id: \.offset) { index, group in
                 if let title = Self.title(for: group) {
-                    Text(title).font(.system(size: 12)).foregroundStyle(Color.junoSecondaryInk)
+                    Text(title).junoFont(size: 12, relativeTo: .caption).foregroundStyle(Color.junoSecondaryInk)
                         .padding(.top, index == 0 ? 4 : 14)
                         .accessibilityAddTraits(.isHeader)
                 }

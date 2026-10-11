@@ -534,6 +534,7 @@ struct JunoMobileLinkDisclosure<Content: View>: View {
         .contentShape(Rectangle())
       }
       .buttonStyle(.plain)
+      .frame(minWidth: 44, minHeight: 44)
       if open {
         content
           .padding(.leading, JunoSpace.section)
@@ -588,6 +589,7 @@ struct JunoMobileLinkCommandRow: View {
       }
       .buttonStyle(.plain)
       .accessibilityLabel("Command \(command.command)")
+      .frame(minWidth: 44, minHeight: 44)
       let tail = CodeV2Formatting.tail(command.output, lines: open ? 40 : 3)
       if !tail.isEmpty, open || running {
         Text(tail.joined(separator: "\n"))
@@ -634,11 +636,13 @@ struct JunoMobileLinkSubagentRow: View {
     }
     .buttonStyle(.plain)
     .accessibilityHint("Open the agent’s full trace")
+    .frame(minWidth: 44, minHeight: 44)
+    .contentShape(.rect)
   }
 }
 
 
-/// The changes so far, one line: "2 files changed +20 −2". Opens the review.
+/// The changes so far. Uses a second line when larger text needs more room.
 struct JunoMobileLinkChangesRow: View {
   let files: Int
   let additions: Int
@@ -647,15 +651,22 @@ struct JunoMobileLinkChangesRow: View {
 
   var body: some View {
     Button(action: open) {
-      HStack(spacing: JunoSpace.snug) {
-        JunoIconView(.fileDiff, size: 13).foregroundStyle(Color.junoTertiaryInk).frame(width: 16)
-        Text(files == 1 ? "1 file changed" : "\(files) files changed")
-          .foregroundStyle(Color.primary)
-        Text("+\(additions)").foregroundStyle(Color.junoSuccess)
-        Text("\u{2212}\(deletions)").foregroundStyle(Color.junoDanger)
-        Spacer(minLength: 0)
-        Text("Review").foregroundStyle(Color.junoSecondaryInk)
-        JunoIconView(.chevronRight, size: 10).foregroundStyle(Color.junoTertiaryInk)
+      ViewThatFits(in: .horizontal) {
+        HStack(spacing: JunoSpace.snug) {
+          fileCount
+          changeCounts
+          Spacer(minLength: 0)
+          reviewLabel
+        }
+        .fixedSize(horizontal: true, vertical: false)
+        VStack(alignment: .leading, spacing: JunoSpace.snug) {
+          fileCount
+          HStack(spacing: JunoSpace.snug) {
+            changeCounts
+            Spacer(minLength: 0)
+            reviewLabel
+          }
+        }
       }
       .font(.subheadline)
       .monospacedDigit()
@@ -664,6 +675,30 @@ struct JunoMobileLinkChangesRow: View {
     }
     .buttonStyle(.plain)
     .accessibilityIdentifier("juno.mobile.link-changes-row")
+  }
+
+  private var fileCount: some View {
+    HStack(spacing: JunoSpace.snug) {
+      JunoIconView(.fileDiff, size: 13).foregroundStyle(Color.junoTertiaryInk).frame(width: 16)
+      Text(files == 1 ? "1 file changed" : "\(files) files changed")
+        .foregroundStyle(Color.primary)
+    }
+  }
+
+  private var changeCounts: some View {
+    HStack(spacing: JunoSpace.snug) {
+      Text("+\(additions)").foregroundStyle(Color.junoSuccess)
+      Text("\u{2212}\(deletions)").foregroundStyle(Color.junoDanger)
+    }
+    .fixedSize(horizontal: true, vertical: false)
+  }
+
+  private var reviewLabel: some View {
+    HStack(spacing: JunoSpace.snug) {
+      Text("Review").foregroundStyle(Color.junoSecondaryInk)
+      JunoIconView(.chevronRight, size: 10).foregroundStyle(Color.junoTertiaryInk)
+    }
+    .fixedSize(horizontal: true, vertical: false)
   }
 }
 
@@ -758,7 +793,7 @@ struct JunoMobileLinkApprovalCard: View {
     .padding(.horizontal, JunoSpace.cozy)
     .padding(.top, JunoSpace.cozy)
     .padding(.bottom, JunoSpace.micro)
-    .junoGlass(in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+    .background(Color.junoRaised, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier("juno.mobile.link-approval")
   }
@@ -784,10 +819,11 @@ struct JunoMobileLinkSmallButton: View {
             Capsule().fill(Color.junoMuted)
           }
         }
-        .padding(.vertical, 6)
+        .padding(.vertical, JunoSpace.tight)
         .contentShape(Rectangle())
     }
     .buttonStyle(.junoPress)
+    .frame(minWidth: 44, minHeight: 44)
   }
 }
 
@@ -821,10 +857,11 @@ struct JunoMobileLinkQuestionCard: View {
                 .padding(.horizontal, JunoSpace.cozy)
                 .frame(height: 36)
                 .background(Color.junoMuted.opacity(chosen ? 1 : 0.5), in: Capsule())
-                .padding(.vertical, 4)
+                .padding(.vertical, JunoSpace.hairline)
                 .contentShape(Rectangle())
               }
               .buttonStyle(.plain)
+              .frame(minWidth: 44, minHeight: 44)
             }
           } else {
             TextField("Your answer", text: Binding(get: { typed[question.id] ?? "" }, set: { typed[question.id] = $0 }), axis: .vertical)
@@ -844,7 +881,7 @@ struct JunoMobileLinkQuestionCard: View {
     .padding(.horizontal, JunoSpace.cozy)
     .padding(.top, JunoSpace.cozy)
     .padding(.bottom, JunoSpace.micro)
-    .junoGlass(in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+    .background(Color.junoRaised, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
     .accessibilityIdentifier("juno.mobile.link-question")
   }
 
@@ -918,6 +955,8 @@ struct JunoMobileLinkAgentsView: View {
             }) { JunoMarkdownText(result).textSelection(.enabled) }
             if model.canControlSubagents, selected.status == .running || selected.status == .waiting {
               Button("Stop agent") { Task { await model.interruptAgent(selected.agentId) } }
+                  .frame(minWidth: 44, minHeight: 44)
+                  .contentShape(.rect)
               HStack {
                 TextField("Message this agent", text: $message, axis: .vertical).lineLimit(1...4)
                 Button("Send") {
@@ -931,6 +970,8 @@ struct JunoMobileLinkAgentsView: View {
                     else { deliveryError = model.lastError ?? "Your message could not be delivered. It is still here." }
                   }
                 }.disabled(sending || message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(.rect)
               }
               if let deliveryError { JunoInlineError(message: deliveryError) }
             }

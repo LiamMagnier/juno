@@ -94,12 +94,13 @@ final class CodeV2TeamAssetTests: XCTestCase {
         }
     }
 
+    @MainActor
     func testTheBudgetFieldTakesWhatPeopleType() {
         XCTAssertEqual(CodeV2TeamBudgetField.parse("$4"), .some(4))
         XCTAssertEqual(CodeV2TeamBudgetField.parse("2.505"), .some(2.51))
         XCTAssertEqual(CodeV2TeamBudgetField.parse(" "), .some(nil), "empty is no cap")
-        XCTAssertNil(CodeV2TeamBudgetField.parse("abc"), "not an amount: unchanged")
-        XCTAssertNil(CodeV2TeamBudgetField.parse("-1"))
+        XCTAssertTrue(CodeV2TeamBudgetField.parse("abc") == nil, "not an amount: unchanged")
+        XCTAssertTrue(CodeV2TeamBudgetField.parse("-1") == nil)
         XCTAssertEqual(CodeV2TeamBudgetField.format(4), "$4.00")
         XCTAssertEqual(CodeV2TeamBudgetField.format(nil), "")
     }

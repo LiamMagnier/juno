@@ -121,7 +121,7 @@ public actor AgentOrchestrator {
             maximumRetainedImages: Int = 20,
             maximumRetainedImageBytes: Int = 6 * 1_024 * 1_024,
             retryPolicy: ModelRetryPolicy = .standard,
-            retrySleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+            retrySleep: (@Sendable (Duration) async throws -> Void)? = nil,
             retryJitter: @escaping @Sendable () -> Double = { Double.random(in: 0..<1) },
             autonomy: AutonomyConfiguration? = nil,
             repeatCallThresholds: [Int] = RepeatCallGuard.defaultThresholds,
@@ -145,7 +145,13 @@ public actor AgentOrchestrator {
             self.maximumRetainedImages = max(1, maximumRetainedImages)
             self.maximumRetainedImageBytes = max(1, maximumRetainedImageBytes)
             self.retryPolicy = retryPolicy
-            self.retrySleep = retrySleep
+            // Keep the async closure in this module. Swift 6.3 can emit
+            // incompatible context sizes for a public default-argument closure
+            // in the library and its clients (swiftlang/swift#92017).
+            self.retrySleep = retrySleep ?? { duration in
+                let clock = ContinuousClock()
+                try await clock.sleep(until: clock.now.advanced(by: duration))
+            }
             self.retryJitter = retryJitter
             self.autonomy = autonomy
         }

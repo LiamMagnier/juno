@@ -95,6 +95,7 @@ struct JunoMobileCodeScopeBar<Overflow: View>: View {
               }
               .buttonStyle(.plain)
               .accessibilityIdentifier("juno.mobile.code-scope-pair")
+              .frame(minWidth: 44, minHeight: 44)
             }
         }
         .padding(.horizontal, JunoSpace.regular)
@@ -146,7 +147,7 @@ private struct JunoMobileScopeGlass: ViewModifier {
   let on: Bool
   func body(content: Content) -> some View {
     if on {
-      content.glassEffect(.regular.interactive(), in: Capsule())
+      content.background(Color.junoRaised, in: Capsule())
     } else {
       content
     }
@@ -397,11 +398,12 @@ struct JunoMobileCodeRecentsList<Leading: View>: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Clear")
+        .frame(minWidth: 44, minHeight: 44)
       }
     }
     .padding(.horizontal, JunoSpace.cozy)
     .frame(height: 44)
-    .junoGlass(in: Capsule())
+    .background(Color.junoRaised, in: Capsule())
   }
 }
 
@@ -423,6 +425,8 @@ struct JunoMobileCodePairLine: View {
         .buttonStyle(.plain)
         .frame(minWidth: 44, minHeight: 44)
         .accessibilityIdentifier("juno.mobile.code-pair-line")
+        .frame(minWidth: 44, minHeight: 44)
+        .contentShape(.rect)
     }
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier("juno.mobile.code-not-paired")
@@ -561,7 +565,7 @@ struct JunoMobileCodeDock: View {
     }
     .padding(.horizontal, JunoSpace.hairline)
     .frame(minHeight: 52)
-    .junoGlass(in: Capsule())
+    .background(Color.junoRaised, in: Capsule())
     .padding(.horizontal, JunoSpace.regular)
     .padding(.bottom, JunoSpace.snug)
     // No slab: the list runs under the glass, with a soft fade at the foot

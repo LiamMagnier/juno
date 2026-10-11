@@ -8,8 +8,9 @@ import XCTest
 /// iOS 26 ignores — the system put it in the *bottom* toolbar, so the screen
 /// appeared to have no search field at all. And matching was exact-token-or-prefix,
 /// so a mid-word fragment returned nothing even when the field was found.
+@MainActor
 final class JunoMobileSearchUITests: XCTestCase {
-    override func setUpWithError() throws {
+    override func setUp() async throws {
         continueAfterFailure = false
     }
 

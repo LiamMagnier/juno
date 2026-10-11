@@ -6,8 +6,9 @@ import XCTest
 /// is the one thing a unit test over ``NativePromptLimits`` cannot check. This
 /// drives the real transcript: it finds the Show more control on a long prompt,
 /// and proves that tapping it changes what the control says.
+@MainActor
 final class JunoMobileLongPromptUITests: XCTestCase {
-    override func setUpWithError() throws {
+    override func setUp() async throws {
         continueAfterFailure = false
     }
 

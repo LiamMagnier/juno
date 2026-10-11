@@ -187,6 +187,8 @@ public struct CodeSidebarHeader<ProjectMenu: View>: View {
                 .buttonStyle(.plain)
                 .help("Search sessions and commands (⌘K)")
                 .accessibilityIdentifier("juno.code.sidebar.search")
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(.rect)
                 Button(action: newSession) {
                     JunoIconView(.compose, size: 15)
                 }
@@ -214,6 +216,8 @@ public struct CodeSidebarHeader<ProjectMenu: View>: View {
             .fixedSize()
             .accessibilityLabel("Projects")
             .accessibilityValue(projectTitle)
+            .frame(minWidth: 44, minHeight: 44)
+            .contentShape(.rect)
         }
     }
 }
@@ -247,5 +251,7 @@ public struct CodeSidebarFold: View {
         .buttonStyle(.plain)
         .accessibilityLabel("\(title), \(count)")
         .accessibilityValue(isOpen ? "Shown" : "Hidden")
+        .frame(minWidth: 44, minHeight: 44)
+        .contentShape(.rect)
     }
 }

@@ -391,6 +391,7 @@ struct CodeV2TeamStepper: View {
         .foregroundStyle(enabled ? Studio.Ink.primary : Studio.Ink.tertiary)
         .disabled(!enabled)
         .accessibilityLabel(label)
+        .frame(minWidth: 44, minHeight: 44)
     }
 }
 

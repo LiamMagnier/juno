@@ -193,6 +193,8 @@ extension View {
       presenting: notice.wrappedValue
     ) { _ in
       Button("OK", role: .cancel) {}
+          .frame(minWidth: 44, minHeight: 44)
+          .contentShape(.rect)
     } message: { notice in
       Text(notice.message)
     }

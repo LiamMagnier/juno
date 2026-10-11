@@ -92,6 +92,8 @@ struct CodeComposerSpeechButtons: View {
                 .help("Dictate")
                 .accessibilityLabel("Dictate")
                 .accessibilityIdentifier("juno.code.composer.dictate")
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(.rect)
         }
     }
 }

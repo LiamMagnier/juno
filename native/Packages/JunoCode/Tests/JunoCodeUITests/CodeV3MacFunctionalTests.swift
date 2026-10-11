@@ -20,6 +20,7 @@ final class FakeEnvServer: EnvServerTransport, @unchecked Sendable {
         var result: JSONValue = .object([:])
         var error: CodeV2.WireError?
         var events: [CodeV2.ServerEventEnvelope] = []
+        var eventsBeforeResponse = false
     }
 
     private let lock = NSLock()
@@ -43,8 +44,13 @@ final class FakeEnvServer: EnvServerTransport, @unchecked Sendable {
         lock.withLock { log.append(command) }
         let reply = handle(command)
         let response = CodeV2.ServerResponse(id: command.id, ok: reply.error == nil, result: reply.result, error: reply.error)
+        if reply.eventsBeforeResponse {
+            for event in reply.events { emit(event) }
+        }
         push(String(decoding: try JSONEncoder().encode(response), as: UTF8.self))
-        for event in reply.events { emit(event) }
+        if !reply.eventsBeforeResponse {
+            for event in reply.events { emit(event) }
+        }
     }
 
     func emitRaw(_ frame: String) { push(frame) }
@@ -114,7 +120,7 @@ final class CodeV2EnvTerminalTests: XCTestCase {
                 return .init(result: FakeEnvServer.value(["terminalId": "t1"]), events: [
                     FakeEnvServer.event(nil, 1, .terminalOutput(terminalId: "t1", data: "\u{1B}[32m$\u{1B}[0m ")),
                     FakeEnvServer.event(nil, 2, .terminalOutput(terminalId: "other", data: "not mine")),
-                ])
+                ], eventsBeforeResponse: true)
             case .terminalWrite:
                 return .init(events: [FakeEnvServer.event(nil, 3, .terminalOutput(terminalId: "t1", data: "ls\r\nREADME.md\r\n$ "))])
             default:

@@ -58,10 +58,16 @@ public enum ModelTurnCollector {
         _ request: ModelTurnRequest,
         model: any AgentModelClient,
         policy: ModelRetryPolicy = .standard,
-        sleep: @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+        sleep: (@Sendable (Duration) async throws -> Void)? = nil,
         jitter: @Sendable () -> Double = { Double.random(in: 0..<1) },
         onRetry: @Sendable (Retry) async -> Void = { _ in }
     ) async throws -> Turn {
+        // As in AgentOrchestrator, keep the async default out of client modules
+        // to avoid Swift 6.3's mismatched default-closure context layout.
+        let sleep = sleep ?? { duration in
+            let clock = ContinuousClock()
+            try await clock.sleep(until: clock.now.advanced(by: duration))
+        }
         var retries = 0
         var waited = Duration.zero
         while true {

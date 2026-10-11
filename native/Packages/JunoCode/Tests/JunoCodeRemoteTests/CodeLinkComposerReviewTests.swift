@@ -164,7 +164,7 @@ final class CodeLinkComposerReviewTests: XCTestCase {
         var browser = CodeLinkFolderBrowser(sharedFolders: ["/Users/me/code/", "/Users/me/Work"])
         XCTAssertTrue(browser.isAtRoot)
         XCTAssertEqual(browser.rows.map(\.name), ["code", "Work"])
-        XCTAssertNil(browser.parent)
+        XCTAssertTrue(browser.parent == nil)
 
         browser.show(CodeV2.FsListing(path: "/Users/me/code", entries: [
             CodeV2.FsEntry(name: "zeta", path: "/Users/me/code/zeta", kind: .dir),

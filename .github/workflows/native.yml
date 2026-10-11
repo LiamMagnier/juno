@@ -352,6 +352,21 @@ jobs:
       - name: Generate projects
         run: ./native/Scripts/generate-projects.sh
 
+      # Stable's pre-build phase requires the local execution bundle. A fresh
+      # runner has no node_modules: compile success alone cannot supply it.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Build the local execution bundle from this source commit
+        run: |
+          npm ci
+          npm ci --prefix runner/agent-core
+          npm run build --prefix runner/agent-core
+          npm ci --prefix runner/env-server
+          npm run env-server:bundle:mac
+
       - name: Build JunoDesktop (Debug, strict)
         run: |
           xcodebuild \
@@ -385,6 +400,7 @@ jobs:
             -destination 'platform=macOS' \
             -derivedDataPath "$RUNNER_TEMP/desktop-dd" \
             -only-testing:JunoDesktopTests \
+            SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
             CODE_SIGNING_ALLOWED=NO \
             test
 
@@ -486,5 +502,6 @@ jobs:
             -derivedDataPath "$RUNNER_TEMP/mobile-dd" \
             -only-testing:JunoMobileTests \
             SWIFT_COMPILATION_MODE=wholemodule \
+            SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
             CODE_SIGNING_ALLOWED=NO \
             test

@@ -17,14 +17,14 @@ final class JunoMobileComposerToolsTests: XCTestCase {
     private var defaults: UserDefaults!
     private var suiteName: String!
 
-    override func setUpWithError() throws {
+    override func setUp() async throws {
         // A private suite per test: `.standard` would carry one test's writes
         // into the next, and into the app on this simulator.
         suiteName = "juno.tests.\(UUID().uuidString)"
         defaults = UserDefaults(suiteName: suiteName)
     }
 
-    override func tearDownWithError() throws {
+    override func tearDown() async throws {
         defaults.removePersistentDomain(forName: suiteName)
     }
 
@@ -269,7 +269,9 @@ final class JunoMobileThinkingProTests: XCTestCase {
                 .frame(width: size.width, height: size.height)
                 let host = UIHostingController(rootView: view)
                 host.overrideUserInterfaceStyle = dark ? .dark : .light
-                let window = UIWindow(frame: CGRect(origin: .zero, size: size))
+                let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+                let window = UIWindow(windowScene: scene)
+                window.frame = CGRect(origin: .zero, size: size)
                 window.overrideUserInterfaceStyle = dark ? .dark : .light
                 window.rootViewController = host
                 window.isHidden = false

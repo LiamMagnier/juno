@@ -424,6 +424,7 @@ public struct JunoEffortPanel: View {
             .help("Reset to the model's default")
             .accessibilityLabel("Reset to the model's default")
             .accessibilityIdentifier("juno.effort-panel.reset")
+            .frame(minWidth: 44, minHeight: 44)
         }
     }
 }

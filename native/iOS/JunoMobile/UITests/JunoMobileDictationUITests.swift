@@ -10,8 +10,9 @@ import XCTest
 /// the main queue and trapped — `EXC_BREAKPOINT` on
 /// `RealtimeMessenger.mServiceQueue`, the instant the microphone produced its
 /// first buffer. Nothing short of starting a real audio engine reaches that.
+@MainActor
 final class JunoMobileDictationUITests: XCTestCase {
-    override func setUpWithError() throws {
+    override func setUp() async throws {
         continueAfterFailure = false
     }
 

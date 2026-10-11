@@ -42,6 +42,8 @@ struct DesktopCrossMessageRow: View {
                             .junoFont(size: 12, relativeTo: .caption, weight: .medium)
                             .foregroundStyle(Color.junoForeground)
                             .accessibilityHint("Opens \(message.peerTitle)")
+                            .frame(minWidth: 28, minHeight: 28)
+                            .contentShape(.rect)
                     }
                 }
                 .junoFont(size: 12, relativeTo: .caption)

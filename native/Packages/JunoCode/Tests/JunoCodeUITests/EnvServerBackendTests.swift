@@ -7,6 +7,10 @@ import JunoCodeLocal
 /// Alevr engine its session and the models its own Code picker lists.
 @MainActor
 final class EnvServerBackendTests: XCTestCase {
+    private final class Credential {
+        var token = "Bearer one"
+    }
+
     private let options = [
         ModelOption(modelID: "anthropic:claude-opus-5-5", displayName: "Claude Opus 5.5", supportedReasoningEfforts: [.low, .medium, .high]),
         ModelOption(modelID: "openai:gpt-6.1-codex", displayName: "GPT-6.1 Codex", supportedReasoningEfforts: [.low, .high]),
@@ -36,10 +40,10 @@ final class EnvServerBackendTests: XCTestCase {
         let hub = EnvServerHub(connection: EnvServerConnection(transport: transport))
         defer { hub.stop() }
         for _ in 0..<200 where !hub.isReady { try await Task.sleep(for: .milliseconds(5)) }
-        var token = "Bearer one"
+        let credential = Credential()
         let models = CodeV2AlevrCatalog.backendModels(from: options)
         hub.backendInterval = .seconds(3_600)
-        hub.setBackend { EnvBackendConfig(baseUrl: "https://alevr.com/api/agent", authorization: token, models: models, deviceId: "mac1") }
+        hub.setBackend { EnvBackendConfig(baseUrl: "https://alevr.com/api/agent", authorization: credential.token, models: models, deviceId: "mac1") }
         let configures = { transport.commands.filter { $0.kind == .envConfigure } }
         for _ in 0..<200 where configures().isEmpty { try await Task.sleep(for: .milliseconds(5)) }
         let sent = try XCTUnwrap(configures().first?.params["backend"])
@@ -51,7 +55,7 @@ final class EnvServerBackendTests: XCTestCase {
 
         await hub.pushBackend()
         XCTAssertEqual(configures().count, 1, "unchanged: not re-sent")
-        token = "Bearer two"
+        credential.token = "Bearer two"
         await hub.pushBackend()
         XCTAssertEqual(configures().count, 2)
         XCTAssertEqual(configures().last?.params["backend"]?["authorization"]?.stringValue, "Bearer two")

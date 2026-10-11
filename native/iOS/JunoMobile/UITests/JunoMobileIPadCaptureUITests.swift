@@ -15,6 +15,7 @@ import XCTest
 ///     xcodebuild test -only-testing:JunoMobileUITests/JunoMobileIPadCaptureUITests …
 ///
 /// `JUNO_CAPTURE_ONLY` (comma separated names) narrows the scenarios.
+@MainActor
 final class JunoMobileIPadCaptureUITests: XCTestCase {
   private struct Scenario {
     let name: String

@@ -8,8 +8,9 @@ import XCTest
 /// test watched the button disappear instead, and that is exactly the assertion
 /// a control which hides itself optimistically can pass without scrolling
 /// anything.
+@MainActor
 final class JunoMobileScrollToLatestUITests: XCTestCase {
-    override func setUpWithError() throws {
+    override func setUp() async throws {
         continueAfterFailure = false
     }
 

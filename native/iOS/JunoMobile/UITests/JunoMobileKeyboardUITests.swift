@@ -5,8 +5,9 @@ import XCTest
 /// The commands live in the scene's menu bar and read the shell's actions
 /// through a focused scene value, so the only proof they reach the shell is a
 /// key press in a running app.
+@MainActor
 final class JunoMobileKeyboardUITests: XCTestCase {
-  override func setUpWithError() throws {
+  override func setUp() async throws {
     continueAfterFailure = false
   }
 

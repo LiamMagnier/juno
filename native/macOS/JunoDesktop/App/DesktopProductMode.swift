@@ -110,11 +110,15 @@ extension View {
     /// `.tabs` where it exists, `.segmented` where it does not.
     @ViewBuilder
     func junoProductPickerStyle() -> some View {
+        #if compiler(>=6.4)
         if #available(macOS 27, *) {
             pickerStyle(.tabs)
         } else {
             pickerStyle(.segmented)
         }
+        #else
+        pickerStyle(.segmented)
+        #endif
     }
 }
 

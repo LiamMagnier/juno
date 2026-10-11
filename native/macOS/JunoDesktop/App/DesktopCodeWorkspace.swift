@@ -399,6 +399,8 @@ struct DesktopCodeWorkspace: View {
                         .disabled(envBinding == nil && controller == nil)
                         .hidden()
                         .accessibilityHidden(true)
+                        .frame(minWidth: 28, minHeight: 28)
+                        .contentShape(.rect)
                 }
         }
         .inspector(isPresented: panelPresentation) {
@@ -476,6 +478,8 @@ struct DesktopCodeWorkspace: View {
             isPresented: Binding(get: { voiceUnavailable != nil }, set: { if !$0 { voiceUnavailable = nil } })
         ) {
             Button("OK", role: .cancel) { voiceUnavailable = nil }
+                .frame(minWidth: 28, minHeight: 28)
+                .contentShape(.rect)
         } message: {
             Text(voiceUnavailable ?? "Alevr could not start voice mode.")
         }
@@ -1915,6 +1919,8 @@ private struct DesktopCodeRemoteCanvas: View {
                     .disabled(remote.isSendingCommand)
                     // ⌘. is Session › Stop, which stops this session too.
                     .accessibilityLabel("Stop this session")
+                    .frame(minWidth: 28, minHeight: 28)
+                    .contentShape(.rect)
                 }
                 Button(action: send) {
                     JunoIconView(.send, size: 14)
@@ -1924,6 +1930,8 @@ private struct DesktopCodeRemoteCanvas: View {
                 .disabled(!canSend || trimmed.isEmpty)
                 .keyboardShortcut(.return, modifiers: .command)
                 .accessibilityLabel("Send to this computer")
+                .frame(minWidth: 28, minHeight: 28)
+                .contentShape(.rect)
             }
             .padding(.horizontal, JunoSpace.cozy)
             .padding(.vertical, JunoSpace.snug)
@@ -2029,6 +2037,8 @@ private struct DesktopCodeRemoteCanvas: View {
             }
             .buttonStyle(.junoGlass)
             .controlSize(.small)
+            .frame(minWidth: 28, minHeight: 28)
+            .contentShape(.rect)
         }
         .padding(.horizontal, JunoSpace.snug)
         .padding(.vertical, JunoSpace.snug)
@@ -2102,6 +2112,8 @@ private struct DesktopCodeRelayApproval: View {
                 Spacer(minLength: 0)
                 Button("Deny", role: .destructive) { respond(false) }
                     .keyboardShortcut(.escape, modifiers: .shift)
+                    .frame(minWidth: 28, minHeight: 28)
+                    .contentShape(.rect)
                 // The one primary action on the card, so it keeps the accent —
                 // `code-session-view.tsx` gives its own Allow button the default
                 // `bg-primary` variant for the same reason. The accent stays
@@ -2110,6 +2122,8 @@ private struct DesktopCodeRelayApproval: View {
                     .buttonStyle(.junoProminent)
                     .tint(Color.junoAccent)
                     .keyboardShortcut(.return, modifiers: .shift)
+                    .frame(minWidth: 28, minHeight: 28)
+                    .contentShape(.rect)
             }
             .disabled(isBusy)
         }

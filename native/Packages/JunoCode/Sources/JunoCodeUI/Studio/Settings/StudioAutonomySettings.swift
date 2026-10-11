@@ -130,7 +130,7 @@ struct StudioAutonomySettings: View {
         HStack {
             Text(title)
             Spacer()
-            TextField("no limit", value: Binding(get: { value }, set: set), format: .number)
+            TextField("no limit", value: Binding(get: { value }, set: { next in set(next) }), format: .number)
                 .textFieldStyle(.roundedBorder)
                 .frame(width: 72)
                 .multilineTextAlignment(.trailing)

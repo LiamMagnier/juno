@@ -6,6 +6,7 @@ import XCTest
 /// The composer must never sit on a model the account cannot send to — not
 /// after a plan change, not after a model is retired, and not while the catalog
 /// is still loading.
+@MainActor
 final class JunoMobileComposerSelectionTests: XCTestCase {
     private func option(
         _ id: String,
