@@ -7,7 +7,8 @@ import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { startEnvServer, type EnvServer } from "../src/server.js";
 import { silentLogger } from "../src/util.js";
-import type { AlevrEngine, EngineSessionOptions, EngineSession } from "../src/providers/alevr.js";
+import { liveAuthorizationFetch, type AlevrEngine, type EngineSessionOptions, type EngineSession } from "../src/providers/alevr.js";
+import type { EnvSecrets } from "../src/providers/types.js";
 import type { ApprovalRequestItem, ProviderInstance, RoleRouting, SubagentItem, TurnItem } from "../src/contracts/code-v2.js";
 import { TestClient, tempDir } from "./helpers.js";
 
@@ -145,6 +146,43 @@ test("alevr engine: signed out until the app passes the session, then ready with
   assert.equal(instance.models?.[0].contextTiers?.[0].tokens, 1_000_000);
   const list = await client.command<{ instances: ProviderInstance[] }>("provider.list", {});
   assert.ok(!JSON.stringify(list).includes("session-abc"), "the Alevr session never goes back out on the wire");
+});
+
+test("alevr engine: each model keeps the Mac picker's thinking levels and default, for a paired phone", async () => {
+  const { client } = await boot();
+  await client.command("env.configure", {
+    backend: {
+      baseUrl: "https://alevr.example/api/agent",
+      authorization: "Bearer session-abc",
+      models: [
+        { provider: "anthropic", kind: "anthropic", model: "claude-opus-5-5", label: "Opus 5.5", available: true, effortLevels: ["low", "medium", "high", "max"], defaultEffort: "high", isDefault: true },
+        { provider: "zhipu", kind: "openai", model: "glm-5", label: "GLM-5", available: true },
+      ],
+    },
+  });
+  const list = await client.command<{ instances: ProviderInstance[] }>("provider.list", {});
+  const alevr = list.instances.find((i) => i.id === "alevr");
+  assert.equal(alevr?.status, "ready", "env.configure probes the Alevr instance at once");
+  const [opus, glm] = alevr?.models ?? [];
+  assert.deepEqual(opus?.effortLevels, ["low", "medium", "high", "max"]);
+  assert.equal(opus?.defaultEffort, "high");
+  assert.equal(opus?.isDefault, true);
+  assert.equal(glm?.id, "zhipu:glm-5");
+  assert.equal(glm?.effortLevels, undefined, "no levels invented: the instance's own apply");
+  assert.equal(glm?.isDefault, undefined);
+});
+
+test("alevr engine: every backend call carries the session the app handed over last", async () => {
+  const secrets: EnvSecrets = { backend: { baseUrl: "https://alevr.example/api/agent", authorization: "Bearer first" }, byok: new Map() };
+  const seen: string[] = [];
+  const live = liveAuthorizationFetch(secrets, async (_input, init) => {
+    seen.push(new Headers(init?.headers).get("authorization") ?? "");
+    return new Response("{}");
+  });
+  await live("https://alevr.example/api/agent/anthropic/v1/messages", { headers: { authorization: "Bearer first", "x-other": "1" } });
+  secrets.backend = { ...secrets.backend!, authorization: "Bearer rotated" };
+  await live("https://alevr.example/api/agent/anthropic/v1/messages", { headers: { authorization: "Bearer first" } });
+  assert.deepEqual(seen, ["Bearer first", "Bearer rotated"]);
 });
 
 test("alevr engine: approvals, streaming, steering, interrupt and plan limits", async () => {

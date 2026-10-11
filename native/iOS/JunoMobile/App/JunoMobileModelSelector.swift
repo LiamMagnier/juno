@@ -27,11 +27,29 @@ import SwiftUI
 // read from ``JunoModelSelectorCatalog`` over ``JunoModelDescriptor``s rather
 // than restated here. Only the layout is the phone's.
 
-/// The phone's model catalogue. Presented as a sheet by the composer.
+/// Models a lab tile cannot hold: a subscription signed in on the Mac the
+/// Code remote drives, with its own models (the Mac picker's Subscriptions).
+struct JunoMobileModelPlan: Identifiable, Equatable {
+  let id: String
+  /// "Claude plan", "ChatGPT plan".
+  let title: String
+  /// The lab whose mark the heading wears.
+  let providerID: String
+  /// The one honest line under the heading (who pays).
+  var note: String?
+  let models: [NativeChatModelOption]
+}
+
+/// The phone's model catalogue. Presented as a sheet by the composer, and by
+/// the Code remote's composer with the Mac's subscriptions as ``plans``.
 struct JunoMobileModelSelectorView: View {
   let models: [NativeChatModelOption]
   let selectedModelID: String
   let onSelect: (NativeChatModelOption) -> Void
+  /// The labs grid's heading: "Labs" in Chat, "Alevr" over the remote's API models.
+  var labsTitle: String
+  /// Below the labs, under "Subscriptions": the remote's plans. Empty in Chat.
+  var plans: [JunoMobileModelPlan]
 
   @Environment(\.dismiss) private var dismiss
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -40,21 +58,31 @@ struct JunoMobileModelSelectorView: View {
   @State private var modality: JunoModelModality?
   @State private var path: [String] = []
   @State private var pickHaptic = JunoMobileHapticTrigger()
-  /// Shared with the Mac's selector: the web's `juno:models:recent`.
-  @AppStorage(JunoModelRecents.key) private var recentsRaw = ""
+  /// Shared with the Mac's selector: the web's `juno:models:recent`. The
+  /// remote keeps its own (its ids name the Mac's source too).
+  @AppStorage private var recentsRaw: String
 
   init(
     models: [NativeChatModelOption],
     selectedModelID: String,
+    labsTitle: String = "Labs",
+    plans: [JunoMobileModelPlan] = [],
+    recentsKey: String = JunoModelRecents.key,
     onSelect: @escaping (NativeChatModelOption) -> Void
   ) {
     self.models = models
     self.selectedModelID = selectedModelID
+    self.labsTitle = labsTitle
+    self.plans = plans
     self.onSelect = onSelect
     self.descriptors = models.map(\.junoDescriptor)
+    self.planDescriptors = plans.map { $0.models.map(\.junoDescriptor) }
+    _recentsRaw = AppStorage(wrappedValue: "", recentsKey)
   }
 
   private let descriptors: [JunoModelDescriptor]
+  /// Each plan's models, as the rows draw them.
+  private let planDescriptors: [[JunoModelDescriptor]]
 
   var body: some View {
     NavigationStack(path: $path) {
@@ -141,8 +169,8 @@ struct JunoMobileModelSelectorView: View {
       }
     }
 
-    if modality == nil || modality == .chat {
-      JunoMobileModelSection(title: "Labs") {
+    if modality == nil || modality == .chat, !labs.isEmpty {
+      JunoMobileModelSection(title: labsTitle) {
         LazyVGrid(
           columns: Array(
             repeating: GridItem(.flexible(), spacing: JunoSpace.snug, alignment: .top),
@@ -163,6 +191,10 @@ struct JunoMobileModelSelectorView: View {
         }
         .accessibilityIdentifier("juno.mobile.model-labs")
       }
+    }
+
+    if !plans.isEmpty, modality == nil || modality == .chat {
+      subscriptions(query: "")
     }
 
     // Pictures and video in sections of their own, across every lab, each
@@ -188,7 +220,7 @@ struct JunoMobileModelSelectorView: View {
   @ViewBuilder
   private var searchResults: some View {
     let groups = JunoModelSelectorCatalog.groups(models: visible, filter: .all, query: query)
-    if groups.isEmpty {
+    if groups.isEmpty, !plansMatch(query) {
       ContentUnavailableView.search(text: query)
         .frame(maxWidth: .infinity, minHeight: 240)
         .accessibilityIdentifier("juno.mobile.model-no-results")
@@ -208,14 +240,74 @@ struct JunoMobileModelSelectorView: View {
           }
         }
       }
+      if plansMatch(query) { subscriptions(query: query) }
     }
+  }
+
+  // MARK: Subscriptions
+
+  /// A plan's models matching `query` (all of them for none): by model or plan name.
+  private func planRows(_ index: Int, query: String) -> [JunoModelDescriptor] {
+    let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    guard !needle.isEmpty, !plans[index].title.lowercased().contains(needle) else { return planDescriptors[index] }
+    return planDescriptors[index].filter { $0.displayName.lowercased().contains(needle) }
+  }
+
+  private func plansMatch(_ query: String) -> Bool {
+    plans.indices.contains { !planRows($0, query: query).isEmpty }
+  }
+
+  /// The Mac's subscriptions: one heading for them all, then each plan with
+  /// its mark, its line and its models, as the Mac's picker lists them.
+  private func subscriptions(query: String) -> some View {
+    JunoMobileModelSection(title: "Subscriptions") {
+      VStack(alignment: .leading, spacing: JunoSpace.cozy) {
+        ForEach(Array(plans.enumerated()), id: \.element.id) { index, plan in
+          let rows = planRows(index, query: query)
+          if !rows.isEmpty {
+            VStack(alignment: .leading, spacing: JunoSpace.snug) {
+              VStack(alignment: .leading, spacing: JunoSpace.micro) {
+                HStack(spacing: JunoSpace.tight) {
+                  JunoProviderMark(providerID: plan.providerID, providerName: plan.title, size: 14)
+                  Text(verbatim: plan.title)
+                    .junoFont(size: 15, relativeTo: .subheadline, weight: .medium)
+                    .foregroundStyle(Color.junoForeground)
+                }
+                if let note = plan.note {
+                  Text(verbatim: note)
+                    .junoFont(size: 13, relativeTo: .footnote)
+                    .foregroundStyle(Color.junoSecondaryInk)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+              }
+              .padding(.horizontal, JunoSpace.hairline)
+              .accessibilityElement(children: .combine)
+              .accessibilityAddTraits(.isHeader)
+              JunoMobileModelCard {
+                ForEach(Array(rows.enumerated()), id: \.element.id) { offset, row in
+                  if offset > 0 { JunoMobileModelDivider(inset: true) }
+                  JunoMobileModelRow(
+                    model: row,
+                    selected: row.id == selectedModelID,
+                    showsMark: false,
+                    choose: { choose(row) }
+                  )
+                }
+              }
+            }
+            .accessibilityIdentifier("juno.mobile.model-plan.\(plan.id)")
+          }
+        }
+      }
+    }
+    .accessibilityIdentifier("juno.mobile.model-subscriptions")
   }
 
   // MARK: Choosing
 
   private func choose(_ model: JunoModelDescriptor) {
     guard model.unavailabilityReason == nil,
-      let option = models.first(where: { $0.id == model.id })
+      let option = (models + plans.flatMap(\.models)).first(where: { $0.id == model.id })
     else { return }
     if !JunoModelSelectorCatalog.isAuto(model) {
       recentsRaw = JunoModelRecents.recording(model.id, in: recentsRaw)
@@ -264,8 +356,9 @@ struct JunoMobileModelSelectorView: View {
 
   /// The last three picked, still in the catalogue and of the chosen kind.
   private var recentModels: [JunoModelDescriptor] {
-    JunoModelRecents.ids(in: recentsRaw).compactMap { id in
-      visible.first { $0.id == id && !JunoModelSelectorCatalog.isAuto($0) }
+    let planModels = modality == nil || modality == .chat ? planDescriptors.flatMap { $0 } : []
+    return JunoModelRecents.ids(in: recentsRaw).compactMap { id in
+      (visible + planModels).first { $0.id == id && !JunoModelSelectorCatalog.isAuto($0) }
     }
   }
 

@@ -15,6 +15,7 @@ final class CodeLinkRemoteModelTests: XCTestCase {
         var polls: [[[String: Any]]] = []
         var notPaired = false
         var refuseOpen = false
+        var providers: [CodeV2.ProviderInstance] = Fixture.providers
 
         func nextPoll() -> [[String: Any]] {
             lock.withLock { polls.isEmpty ? [] : polls.removeFirst() }
@@ -50,7 +51,7 @@ final class CodeLinkRemoteModelTests: XCTestCase {
                     "selection": ["instanceId": "alevr", "model": "claude-sonnet-5-5"], "updatedAt": "2026-10-10T09:00:00Z", "lastSequence": 3,
                 ]]])
             case "provider.list":
-                let data = try! JSONEncoder().encode(Fixture.providers)
+                let data = try! JSONEncoder().encode(script.providers)
                 return FakeSender.rpcReply(request, result: ["instances": try! JSONSerialization.jsonObject(with: data)])
             case "skills.list": return FakeSender.rpcReply(request, result: ["skills": []])
             case "session.open":
@@ -308,6 +309,110 @@ final class CodeLinkRemoteModelTests: XCTestCase {
         await model.applyRemote(ThreadSyncState(key: "code:mac1:s1", draft: "from the Mac", prefs: ThreadSyncPrefs(mode: "ask"), prefsUpdatedAt: Date().addingTimeInterval(60), updatedAt: Date()))
         XCTAssertEqual(model.draft, "from the Mac")
         XCTAssertEqual(model.composer.runtimeMode, .ask)
+    }
+
+    // MARK: The picker: Alevr's API models and the subscriptions
+
+    /// What a Mac whose env server got Alevr's session reports: the Alevr
+    /// engine's API models (each with its own levels) beside the plans.
+    static let macWithAlevr: [CodeV2.ProviderInstance] = [
+        CodeV2.ProviderInstance(
+            id: "alevr", kind: .alevr, label: "Alevr", status: .ready,
+            capabilities: CodeV2.ProviderCapabilities(steering: true, effortLevels: [.low, .medium, .high, .xhigh]),
+            models: [
+                CodeV2.ProviderModel(id: "anthropic:claude-opus-5-5", label: "Claude Opus 5.5", effortLevels: [.low, .medium, .high, .max], defaultEffort: .high, isDefault: true),
+                CodeV2.ProviderModel(id: "openai:gpt-6.1", label: "GPT-6.1", effortLevels: [.minimal, .low, .medium, .high, .xhigh]),
+                CodeV2.ProviderModel(id: "zhipu:glm-5", label: "GLM-5"),
+            ]
+        ),
+        CodeV2.ProviderInstance(
+            id: "claude-agent:default", kind: .claudeAgent, label: "Claude (your subscription)", status: .ready,
+            capabilities: CodeV2.ProviderCapabilities(steering: true, effortLevels: [.low, .medium, .high, .max]),
+            models: [CodeV2.ProviderModel(id: "claude-opus-5-5", label: "Claude Opus 5.5", defaultEffort: .high)]
+        ),
+        CodeV2.ProviderInstance(
+            id: "codex:default", kind: .codex, label: "ChatGPT (Codex)", status: .ready,
+            capabilities: CodeV2.ProviderCapabilities(steering: true, effortLevels: [.low, .medium, .high]),
+            models: [CodeV2.ProviderModel(id: "gpt-6.1-codex", label: "GPT-6.1 Codex")]
+        ),
+    ]
+
+    func testThePickerListsAlevrsAPIModelsAndTheSubscriptions() async throws {
+        let script = Script()
+        script.providers = Self.macWithAlevr
+        let (model, _) = makeModel(script)
+        await model.refreshMacs()
+        await model.select("mac1")
+
+        let picker = model.picker
+        XCTAssertEqual(picker.api.map(\.model.id), ["anthropic:claude-opus-5-5", "openai:gpt-6.1", "zhipu:glm-5"])
+        XCTAssertEqual(picker.api.map(\.lab), ["anthropic", "openai", "zhipu"])
+        XCTAssertEqual(picker.api.map(\.labName), ["Anthropic", "OpenAI", "Zhipu"])
+        XCTAssertTrue(picker.api.allSatisfy { !$0.isSubscription })
+        XCTAssertEqual(picker.subscriptions.map(\.title), ["Claude plan", "ChatGPT plan"])
+        XCTAssertEqual(picker.subscriptions.map(\.lab), ["anthropic", "openai"])
+        XCTAssertEqual(picker.subscriptions.flatMap(\.entries).map(\.id), ["claude-agent:default|claude-opus-5-5", "codex:default|gpt-6.1-codex"])
+        // Each model its own levels: the model's, else its runtime's.
+        XCTAssertEqual(picker.api[0].effortLevels, [.low, .medium, .high, .max])
+        XCTAssertEqual(picker.api[1].effortLevels, [.minimal, .low, .medium, .high, .xhigh])
+        XCTAssertEqual(picker.api[2].effortLevels, [.low, .medium, .high, .xhigh])
+        XCTAssertEqual(picker.subscriptions[1].entries[0].effortLevels, [.low, .medium, .high])
+        // The same model from Alevr and from the Claude plan are two entries.
+        XCTAssertNotEqual(picker.api[0].id, picker.subscriptions[0].entries[0].id)
+        // Alevr's best model is the default for a new session, as on the Mac.
+        XCTAssertEqual(model.composer.selection, CodeV2.ModelSelection(instanceId: "alevr", model: "anthropic:claude-opus-5-5", effort: .high))
+    }
+
+    func testAnAPIModelChosenOnThePhoneStartsAndContinuesTheMacSession() async throws {
+        let script = Script()
+        script.providers = Self.macWithAlevr
+        let (model, sender) = makeModel(script)
+        await model.refreshMacs()
+        await model.select("mac1")
+        // On a subscription first, then the phone picks Alevr's GPT-6.1 at Extra high.
+        model.composer.choose(try XCTUnwrap(model.picker.entry("claude-agent:default|claude-opus-5-5")))
+        let gpt = try XCTUnwrap(model.picker.entry("alevr|openai:gpt-6.1"))
+        model.composer.choose(gpt)
+        XCTAssertEqual(model.composer.selection?.effort, .high, "kept: GPT-6.1 has High")
+        model.composer.setEffort(.xhigh)
+        XCTAssertEqual(model.composer.entryID, "alevr|openai:gpt-6.1")
+
+        model.beginNewSession()
+        model.chooseNewSessionFolder("/Users/me/code/shop")
+        let id = await model.startNewSession("Make the cart faster")
+        XCTAssertEqual(id, "s1")
+        let open = try XCTUnwrap(sender.commands.last { $0.type == "session.open" })
+        let openSelection = try XCTUnwrap(open.params["selection"] as? [String: Any])
+        XCTAssertEqual(openSelection["instanceId"] as? String, "alevr")
+        XCTAssertEqual(openSelection["model"] as? String, "openai:gpt-6.1")
+        let first = try XCTUnwrap(sender.commands.last { $0.type == "turn.start" })
+        let firstSelection = try XCTUnwrap(first.params["selection"] as? [String: Any])
+        XCTAssertEqual(firstSelection["instanceId"] as? String, "alevr")
+        XCTAssertEqual(firstSelection["model"] as? String, "openai:gpt-6.1")
+        XCTAssertEqual(firstSelection["effort"] as? String, "xhigh")
+
+        // The Mac's own copy of the thread comes back on that model: the
+        // composer adopts it and the picker shows it checked.
+        model.receive([try decode(Self.event(4, [
+            "type": "session.snapshot", "snapshotSequence": 4,
+            "session": [
+                "id": "s1", "cwd": "/Users/me/code/shop", "title": "Make the cart faster",
+                "selection": ["instanceId": "alevr", "model": "openai:gpt-6.1", "effort": "xhigh"],
+                "runtimeMode": "ask", "interactionMode": "default", "state": "idle",
+                "items": [], "queue": [],
+            ],
+        ]))], deviceID: "mac1")
+        XCTAssertEqual(model.composer.entryID, "alevr|openai:gpt-6.1")
+        XCTAssertEqual(model.picker.entry(for: model.composer.selection)?.model.label, "GPT-6.1")
+
+        // The next message continues on the same model and effort.
+        await model.send("Now add a test")
+        let next = try XCTUnwrap(sender.commands.last)
+        XCTAssertEqual(next.type, "turn.start")
+        let nextSelection = try XCTUnwrap(next.params["selection"] as? [String: Any])
+        XCTAssertEqual(nextSelection["instanceId"] as? String, "alevr")
+        XCTAssertEqual(nextSelection["model"] as? String, "openai:gpt-6.1")
+        XCTAssertEqual(nextSelection["effort"] as? String, "xhigh")
     }
 
     // MARK: Helpers

@@ -1,3 +1,4 @@
+import JunoChatKit
 import JunoCodeCore
 import JunoCodeRemote
 import JunoDesignSystem
@@ -13,7 +14,7 @@ import SwiftUI
 
 /// What opens over the composer: a glass panel growing out of its control.
 enum JunoMobileLinkPanel: Equatable {
-  case computer, project, mode, effort
+  case computer, project, mode, thinking
 }
 
 /// The thread's foot: the pinned request (approval or question), the place
@@ -28,20 +29,20 @@ struct JunoMobileLinkFooter: View {
   var previewPanel: JunoMobileLinkPanel? = nil
   /// The screen's attachment surfaces, which the "+" presents.
   var attachments: JunoMobileAttachmentCoordinator? = nil
+  /// The account's Chat catalogue: Alevr's models read as they do in Chat
+  /// (their line, context and price) in the shared model selector.
+  var chatModels: [NativeChatModelOption] = []
 
   @FocusState private var focused: Bool
   @State private var panel: JunoMobileLinkPanel?
+  /// The model selector (Chat's), over the screen.
+  @State private var showingModels = false
   @State private var sendHaptic = JunoMobileHapticTrigger()
   @State private var stopHaptic = JunoMobileHapticTrigger()
   @State private var approveHaptic = JunoMobileHapticTrigger()
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.junoStartCodeVoice) private var startCodeVoice
   @Environment(\.junoCodeVoiceSession) private var codeVoice
-  @Environment(\.dynamicTypeSize) private var typeSize
-
-  /// At accessibility sizes the thinking gauge moves into "+", so the row
-  /// keeps room for the model's name.
-  private var effortInMenu: Bool { typeSize.isAccessibilitySize }
 
   private var typed: Bool { !model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
   private var drafting: Bool { model.isDraftingNewSession }
@@ -110,12 +111,10 @@ struct JunoMobileLinkFooter: View {
           { begin(JunoMobileCodeVoiceRelay.briefing(place: placeLine, turns: spokenTurns)) }
         },
         dictateOnAppear: dictateOnAppear,
-        trailing: effortInMenu ? nil : gauge,
+        trailing: dial,
         header: model.draftAttachments.isEmpty ? nil : AnyView(JunoMobileLinkAttachmentStrip(model: model))
       ) {
-        JunoMobileLinkPlusMenu(
-          model: model, coordinator: attachments, panel: $panel, effortInMenu: effortInMenu
-        ) {
+        JunoMobileLinkPlusMenu(model: model, coordinator: attachments, panel: $panel) {
           focused = false
           panel = nil
         }
@@ -138,6 +137,12 @@ struct JunoMobileLinkFooter: View {
       deliver(sentence)
     }
     .onChange(of: focused) { _, now in if now { panel = nil } }
+    .sheet(isPresented: $showingModels) {
+      JunoMobileLinkModelPicker(model: model, chatModels: chatModels) { showingModels = false }
+        // Full height, as Chat's: Recent, the labs and the plans on one screen.
+        .presentationDetents([.large])
+        .presentationDragIndicator(.visible)
+    }
     // A request from the Mac outranks an open picker: it closes so the
     // approval (or question) is what the person sees.
     .onChange(of: model.pendingRequests.first?.id) { _, id in if id != nil { panel = nil } }
@@ -162,34 +167,37 @@ struct JunoMobileLinkFooter: View {
       case .computer: JunoMobileLinkComputerPanel(model: model) { panel = nil }
       case .project: JunoMobileLinkProjectPanel(model: model) { panel = nil }
       case .mode: JunoMobileLinkModePanel(model: model) { panel = nil }
-      case .effort: JunoMobileLinkEffortPanel(model: model)
+      case .thinking: JunoMobileLinkThinkingPanel(model: model, chatModels: chatModels, openModels: openModels)
       }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
     .junoGlass(in: RoundedRectangle(cornerRadius: JunoMobileComposerPanelMetrics.radius, style: .continuous))
   }
 
-  /// The effort gauge, on the row's right, when the model has levels.
-  private var gauge: AnyView? {
-    let levels = model.composer.effortLevels(in: model.catalogue)
-    guard !levels.isEmpty else { return nil }
-    let index = model.composer.selection?.effort.flatMap { levels.firstIndex(of: $0) }
-    let fraction = index.map { Double($0) / Double(max(levels.count - 1, 1)) } ?? 0.5
-    return AnyView(
-      Button {
-        focused = false
-        panel = panel == .effort ? nil : .effort
-      } label: {
-        JunoDialGlyph(fraction: fraction, size: 19, lineWidth: 1.6)
-          .foregroundStyle(panel == .effort ? Color.primary : Color.junoSecondaryInk)
-          .frame(width: 40, height: 44)
-          .contentShape(Rectangle())
-      }
-      .buttonStyle(.junoQuietPress)
-      .accessibilityLabel("Thinking")
-      .accessibilityValue(model.composer.selection?.effort?.title ?? "")
-      .accessibilityIdentifier("juno.mobile.link-effort")
+  /// Chat's one control for the model and its thinking: the gauge on the
+  /// row's right. A tap opens the thinking panel (whose model name opens the
+  /// selector); a model without levels opens the selector straight away, and
+  /// touch and hold always does. The same control at every text size.
+  private var dial: AnyView {
+    AnyView(
+      JunoMobileThinkingDialButton(
+        scale: JunoMobileLinkModelOptions.scale(of: model, chatModels: chatModels),
+        effort: JunoMobileLinkModelOptions.nativeEffort(model.composer.selection?.effort),
+        open: {
+          focused = false
+          panel = panel == .thinking ? nil : .thinking
+          Task { await model.refreshSubscriptions() }
+        },
+        chooseModel: openModels
+      )
     )
+  }
+
+  private func openModels() {
+    focused = false
+    panel = nil
+    showingModels = true
+    Task { await model.refreshSubscriptions() }
   }
 
   // MARK: Requests
@@ -554,67 +562,152 @@ struct JunoMobileLinkModePanel: View {
   }
 }
 
-/// The thinking slider: the shared effort track over the model's levels.
-struct JunoMobileLinkEffortPanel: View {
+/// The dial, open: Chat's thinking panel (``JunoMobileThinkingPanel``) over
+/// the model's own levels, its model name the way to the selector.
+struct JunoMobileLinkThinkingPanel: View {
   @Bindable var model: CodeLinkRemoteModel
-
-  private var catalogue: [CodeLinkModelGroup] { model.catalogue }
-  private var current: CodeV2.ProviderModel? { CodeLinkComposerState.model(model.composer.selection, in: catalogue)?.1 }
-  private var levels: [CodeV2.EffortLevel] { model.composer.effortLevels(in: catalogue) }
-
-  private var ladder: JunoThinkingLadder {
-    JunoThinkingLadder(
-      stops: levels.map { JunoThinkingStop(id: $0.rawValue, label: $0.title, accessibilityLabel: "Effort \($0.title.lowercased())") },
-      modelName: current?.label ?? "",
-      defaultStopID: current?.defaultEffort?.rawValue
-    )
-  }
-
-  private var stopID: Binding<String?> {
-    Binding(
-      get: { (model.composer.selection?.effort ?? current?.defaultEffort ?? levels.first)?.rawValue },
-      set: { id in model.composer.setEffort(id.flatMap(CodeV2.EffortLevel.init(rawValue:))) }
-    )
-  }
+  let chatModels: [NativeChatModelOption]
+  let openModels: () -> Void
 
   var body: some View {
-    VStack(alignment: .leading, spacing: JunoSpace.cozy) {
-      HStack(alignment: .firstTextBaseline) {
-        Text(model.composer.selection?.effort?.title ?? current?.defaultEffort?.title ?? "Thinking")
-          .font(.headline.weight(.medium))
-          .contentTransition(.opacity)
-        Spacer(minLength: JunoSpace.snug)
-        Text(JunoMobileCodeRemoteThreadView.shortModelName(current?.label ?? "Model"))
-          .font(.subheadline)
-          .foregroundStyle(Color.junoSecondaryInk)
-          .lineLimit(1)
-      }
-      JunoEffortSlider(ladder: ladder, stopID: stopID)
-        .padding(.vertical, JunoSpace.hairline)
-        .accessibilityIdentifier("juno.mobile.link-effort-slider")
+    if let entry = model.picker.entry(for: model.composer.selection) {
+      let option = JunoMobileLinkModelOptions.option(entry, chatModels: chatModels)
+      JunoMobileThinkingPanel(
+        scale: NativeThinkingScale(model: option),
+        effort: Binding(
+          get: { JunoMobileLinkModelOptions.nativeEffort(model.composer.selection?.effort) },
+          set: { model.composer.setEffort(JunoMobileLinkModelOptions.codeEffort($0, levels: entry.effortLevels)) }
+        ),
+        modelName: JunoMobileLinkModelOptions.panelName(entry),
+        providerID: JunoMobileLinkModelOptions.markID(entry, in: model.picker),
+        providerName: entry.labName,
+        openModels: openModels
+      )
+      .accessibilityIdentifier("juno.mobile.link-thinking-panel")
     }
-    .padding(.horizontal, JunoSpace.regular)
-    .padding(.vertical, JunoSpace.cozy)
-    .accessibilityIdentifier("juno.mobile.link-effort-panel")
+  }
+}
+
+/// The remote's model selector: Chat's own (``JunoMobileModelSelectorView``),
+/// with Alevr's API models as its labs and the Mac's subscriptions below.
+struct JunoMobileLinkModelPicker: View {
+  @Bindable var model: CodeLinkRemoteModel
+  let chatModels: [NativeChatModelOption]
+  let done: () -> Void
+
+  var body: some View {
+    let picker = model.picker
+    JunoMobileModelSelectorView(
+      models: picker.api.map { JunoMobileLinkModelOptions.option($0, chatModels: chatModels) },
+      selectedModelID: model.composer.entryID ?? "",
+      labsTitle: "Alevr",
+      plans: JunoMobileLinkModelOptions.plans(picker, chatModels: chatModels),
+      recentsKey: JunoMobileLinkModelOptions.recentsKey
+    ) { option in
+      if let entry = picker.entry(option.id) { model.composer.choose(entry) }
+      done()
+    }
+  }
+}
+
+/// The remote's entries in the shapes Chat's selector and thinking panel take.
+@MainActor
+enum JunoMobileLinkModelOptions {
+  /// The remote's own recents: its ids name the Mac's source as well.
+  static let recentsKey = "juno.code-remote.model-selector.recent"
+
+  static func nativeEffort(_ effort: CodeV2.EffortLevel?) -> NativeReasoningEffort? {
+    guard let effort, effort != .none else { return nil }
+    return NativeReasoningEffort(rawValue: effort.rawValue)
+  }
+
+  /// Nil is the panel's Instant stop: "none" where the model offers it.
+  static func codeEffort(_ effort: NativeReasoningEffort?, levels: [CodeV2.EffortLevel]) -> CodeV2.EffortLevel? {
+    guard let effort else { return levels.contains(.none) ? CodeV2.EffortLevel.none : nil }
+    return CodeV2.EffortLevel(rawValue: effort.rawValue)
+  }
+
+  /// The selected entry's thinking scale, nil with no model chosen.
+  static func scale(of model: CodeLinkRemoteModel, chatModels: [NativeChatModelOption]) -> NativeThinkingScale? {
+    model.picker.entry(for: model.composer.selection).map { NativeThinkingScale(model: option($0, chatModels: chatModels)) }
+  }
+
+  /// One entry as a Chat catalogue row. Alevr's models take the account's
+  /// Chat entry for the same model (its line, context and price) where there
+  /// is one; a subscription is never priced, the plan pays. Either way the
+  /// levels are the ones the Mac sent for this source.
+  static func option(_ entry: CodeLinkPickerCatalogue.Entry, chatModels: [NativeChatModelOption]) -> NativeChatModelOption {
+    let base = chatModels.first { $0.id == entry.model.id || $0.id == "\(entry.lab):\(entry.model.id)" }
+    let levels = entry.effortLevels
+    let efforts = levels.compactMap(nativeEffort)
+    return NativeChatModelOption(
+      id: entry.id,
+      providerID: entry.lab,
+      providerName: base?.providerName ?? entry.labName,
+      displayName: entry.model.label,
+      summary: base?.summary,
+      minimumPlan: base?.minimumPlan ?? "free",
+      requiredPlan: base?.requiredPlan ?? "",
+      availability: "available",
+      modality: "chat",
+      isLegacy: base?.isLegacy ?? false,
+      released: base?.released,
+      contextWindowTokens: base?.contextWindowTokens ?? entry.model.contextTiers?.map(\.tokens).max(),
+      pricing: entry.isSubscription ? nil : base?.pricing,
+      grades: base?.grades,
+      supportedReasoningEfforts: efforts,
+      defaultReasoningEffort: nativeEffort(entry.model.defaultEffort),
+      canDisableReasoning: levels.contains(.none),
+      supportsReasoning: !efforts.isEmpty,
+      supportsStreaming: true,
+      supportsVision: base?.supportsVision ?? false,
+      supportsTools: true,
+      contextTiers: base?.contextTiers ?? [],
+      codeAgentic: true,
+      codeRank: base?.codeRank
+    )
+  }
+
+  /// The Mac's plans, each with its models and who pays.
+  static func plans(_ picker: CodeLinkPickerCatalogue, chatModels: [NativeChatModelOption]) -> [JunoMobileModelPlan] {
+    picker.subscriptions.map { plan in
+      JunoMobileModelPlan(
+        id: plan.id,
+        title: plan.title,
+        providerID: plan.lab,
+        note: "Counts against your \(CodeV2ProviderDirectory.vendorName(plan.instance)) plan on the Mac",
+        models: plan.entries.map { option($0, chatModels: chatModels) }
+      )
+    }
+  }
+
+  /// The panel's model name, short: a plan's model says whose plan it runs
+  /// on, because Alevr may offer the same model.
+  static func panelName(_ entry: CodeLinkPickerCatalogue.Entry) -> String {
+    let name = JunoMobileCodeRemoteThreadView.shortModelName(entry.model.label)
+    guard entry.isSubscription else { return name }
+    return "\(name) \u{00B7} \(CodeV2ProviderDirectory.vendorName(entry.instance))"
+  }
+
+  /// The mark beside it: the lab's, the plan's for a subscription.
+  static func markID(_ entry: CodeLinkPickerCatalogue.Entry, in picker: CodeLinkPickerCatalogue) -> String {
+    guard entry.isSubscription else { return entry.lab }
+    return picker.subscriptions.first { $0.id == entry.instance.id }?.lab ?? entry.lab
   }
 }
 
 // MARK: - The composer's row
 
-/// Access and model: quiet controls on the composer's row (Codex's row).
-/// Access is an icon only, its name in the panel it opens and in VoiceOver;
-/// the model's name takes the room that is left and truncates, never
-/// overlapping. Plan, team and skills are in "+"; effort is the gauge on the
-/// right (in "+" too at accessibility sizes).
+/// Access: a quiet control on the composer's row (Codex's row), an icon
+/// only, its name in the panel it opens and in VoiceOver. Plan, team and
+/// skills are in "+"; the model and its thinking are one control, Chat's
+/// gauge, on the row's right.
 struct JunoMobileLinkComposerControls: View {
   @Bindable var model: CodeLinkRemoteModel
   @Binding var panel: JunoMobileLinkPanel?
 
-  private var catalogue: [CodeLinkModelGroup] { model.catalogue }
-
   var body: some View {
     modeButton
-    modelMenu
   }
 
   // MARK: Mode
@@ -645,61 +738,18 @@ struct JunoMobileLinkComposerControls: View {
     case .full: .lockOpen
     }
   }
-
-  // MARK: Model
-
-  private var modelMenu: some View {
-    Menu {
-      ForEach(catalogue) { group in
-        Section {
-          ForEach(group.models, id: \.id) { option in
-            Button {
-              model.composer.choose(instance: group.instance, model: option)
-            } label: {
-              if model.composer.selection?.instanceId == group.instance.id, model.composer.selection?.model == option.id {
-                Label(option.label, image: JunoIcon.check.assetName(.regular))
-              } else {
-                Text(option.label)
-              }
-            }
-          }
-        } header: {
-          Text(group.title)
-        } footer: {
-          Text(group.note)
-        }
-      }
-    } label: {
-      JunoMobileLinkChipLabel(text: chipModelName)
-    }
-    .tint(Color.primary)
-    .frame(minHeight: 44)
-    .layoutPriority(1)
-    .accessibilityLabel("Model, \(model.composer.modelLabel(in: catalogue))")
-    .accessibilityIdentifier("juno.mobile.link-model")
-    .simultaneousGesture(TapGesture().onEnded { Task { await model.refreshSubscriptions() } })
-  }
-
-  /// "Opus 5.5" on the chip; the lab lives in the menu, effort on the gauge.
-  private var chipModelName: String {
-    guard let selection = model.composer.selection else { return "Model" }
-    let label = CodeLinkComposerState.model(selection, in: catalogue)?.1.label ?? CodeV2Formatting.modelName(selection.model)
-    return JunoMobileCodeRemoteThreadView.shortModelName(label)
-  }
-
 }
 
 // MARK: - "+"
 
 /// Everything that is not typing, model or access, behind "+" (Codex's
 /// composer): photos and files, then Plan first, the team and the skills,
-/// and at accessibility sizes the thinking level. The row itself stays four
-/// quiet controls wide, so nothing on it ever overlaps.
+/// The row itself stays a few quiet controls wide, so nothing on it ever
+/// overlaps.
 struct JunoMobileLinkPlusMenu: View {
   @Bindable var model: CodeLinkRemoteModel
   let coordinator: JunoMobileAttachmentCoordinator?
   @Binding var panel: JunoMobileLinkPanel?
-  var effortInMenu = false
   /// Puts the keyboard away before a panel arrives.
   var willPresent: () -> Void = {}
 
@@ -722,15 +772,6 @@ struct JunoMobileLinkPlusMenu: View {
         )) {
           Text("Plan first")
           Text("It proposes a plan and waits for you before it changes anything.")
-        }
-        if effortInMenu {
-          Button {
-            willPresent()
-            panel = .effort
-          } label: {
-            Text("Thinking")
-            Text(model.composer.selection?.effort?.title ?? "Default")
-          }
         }
       }
       Menu {
@@ -806,22 +847,5 @@ struct JunoMobileLinkPlusMenu: View {
   private func present(_ surface: JunoAttachmentSurface, _ coordinator: JunoMobileAttachmentCoordinator) {
     if surface.dismissesKeyboard { willPresent() }
     coordinator.present(surface, reduceMotion: reduceMotion)
-  }
-}
-
-/// Plain text with a chevron: the chat composer's control, not a capsule.
-/// The name truncates when the row is tight; the chevron always shows.
-struct JunoMobileLinkChipLabel: View {
-  let text: String
-  var body: some View {
-    HStack(spacing: JunoSpace.hairline) {
-      Text(text).lineLimit(1).truncationMode(.tail)
-      JunoIconView(.chevronDown, size: 10).foregroundStyle(Color.junoTertiaryInk)
-    }
-    .font(.subheadline)
-    .foregroundStyle(Color.junoSecondaryInk)
-    .padding(.horizontal, JunoSpace.snug)
-    .frame(minHeight: 44)
-    .contentShape(.rect)
   }
 }

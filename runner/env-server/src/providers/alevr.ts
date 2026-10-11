@@ -97,6 +97,24 @@ export interface AlevrEngine {
   providerFor(instance: ProviderInstance, model: string, secrets: EnvSecrets): unknown;
 }
 
+/**
+ * A fetch that sends the Alevr session the app handed over most recently.
+ *
+ * The app's access tokens live minutes, and an engine session keeps its
+ * provider for its whole life: the header it was built with would go stale
+ * mid-thread. The app re-sends env.configure before the token it handed over
+ * expires; every call reads the newest one here.
+ */
+export function liveAuthorizationFetch(secrets: EnvSecrets, base: typeof fetch = fetch): typeof fetch {
+  return (input, init) => {
+    const authorization = secrets.backend?.authorization;
+    if (!authorization) return base(input, init);
+    const headers = new Headers(init?.headers);
+    headers.set("authorization", authorization);
+    return base(input, { ...init, headers });
+  };
+}
+
 /** Loads agent-core from @juno/agent-core (runner/agent-core, built). */
 export async function loadAgentCoreEngine(): Promise<AlevrEngine> {
   const core = (await import("@juno/agent-core" as string)) as Record<string, any>;
@@ -113,7 +131,10 @@ export async function loadAgentCoreEngine(): Promise<AlevrEngine> {
         if (!models.some((m) => m.provider === lab && m.model === bare)) {
           models.push({ provider: lab, kind: lab === "anthropic" ? "anthropic" : "openai", model: bare, label: bare, available: true });
         }
-        return core.createProxyProvider({ baseUrl: backend.baseUrl, cookie: "", authorization: backend.authorization, models }, `backend/${lab}`);
+        return core.createProxyProvider(
+          { baseUrl: backend.baseUrl, cookie: "", authorization: backend.authorization, models, fetch: liveAuthorizationFetch(secrets) },
+          `backend/${lab}`,
+        );
       }
       const byokLab = instance.id.startsWith("byok:") ? instance.id.slice(5) : lab;
       const key = secrets.byok.get(byokLab);
@@ -222,6 +243,10 @@ export class AlevrEngineAdapter implements ProviderAdapter {
         .map((m) => {
           const model: ProviderModel = { id: `${m.provider}:${m.model}`, label: m.label };
           if (m.contextWindow) model.contextTiers = [{ tokens: m.contextWindow, label: `${Math.round(m.contextWindow / 1000)}K`, inputPerMTok: 0, outputPerMTok: 0 }];
+          // The Mac's own picker's levels and default, so a paired phone offers the same.
+          if (m.effortLevels?.length) model.effortLevels = [...m.effortLevels];
+          if (m.defaultEffort) model.defaultEffort = m.defaultEffort;
+          if (m.isDefault) model.isDefault = true;
           return model;
         });
       return { status: "ready", ...(models.length ? { models } : {}), account: { tokenSource: "alevr" } };

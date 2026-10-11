@@ -355,6 +355,9 @@ public final class CodeLinkRemoteModel {
         return CodeLinkComposerState.catalogue(merged)
     }
 
+    /// The picker: Alevr's API models by lab, then the subscriptions.
+    public var picker: CodeLinkPickerCatalogue { CodeLinkPickerCatalogue(catalogue) }
+
     public var orderedSessions: [CodeV2.SessionSummary] { remote.orderedSessions }
 
     public var openThread: CodeV2SessionState? { openSessionID.flatMap { remote.threads[$0] } }

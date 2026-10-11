@@ -680,6 +680,7 @@ final class DesktopCodeHostModel {
                 }
                 return try await responder.handle(type, params)
             },
+            backend: backendConfig(accountID: accountID, deviceID: deviceID),
             perform: { method, path, body in
                 let request = try NativeBearerRequest(
                     path: path,
@@ -691,6 +692,27 @@ final class DesktopCodeHostModel {
                 return (response.statusCode, response.body)
             }
         )
+    }
+
+    /// What the env server's Alevr engine runs a phone's Alevr models with:
+    /// this account's session (re-read each beat, so it never lapses) and the
+    /// models this Mac's own Code picker lists. Nil while there is nothing to
+    /// hand over, so the phone shows only what can actually run.
+    private func backendConfig(accountID: AccountID, deviceID: String) -> (@MainActor () async -> EnvBackendConfig?)? {
+        guard let backendAuthorization, let backendOrigin else { return nil }
+        return { [weak self] in
+            guard let self, self.accountID == accountID else { return nil }
+            let models = CodeV2AlevrCatalog.backendModels(from: self.projectWorkbench?.availableModels ?? [])
+            guard !models.isEmpty,
+                let authorization = try? await backendAuthorization(accountID, EnvServerHub.backendMinimumValidity)
+            else { return nil }
+            return EnvBackendConfig(
+                baseUrl: EnvBackendConfig.agentBaseURL(origin: backendOrigin),
+                authorization: authorization,
+                models: models,
+                deviceId: deviceID
+            )
+        }
     }
 
     // MARK: Remote control
@@ -827,6 +849,13 @@ final class DesktopCodeHostModel {
     private let linkSender: (any NativeAuthenticatedRequestSending)?
     /// The device link itself, alive only while hosting is on.
     private let envLink = CodeV2DeviceLinkHost()
+    /// The Alevr session for the env server's Alevr engine (`env.configure`),
+    /// so a paired phone runs Alevr's API models on this Mac too: the
+    /// `Authorization` value, valid for at least the given seconds. Nil where
+    /// there is no auth runtime (previews); the phone then lists subscriptions only.
+    private let backendAuthorization: (@Sendable (AccountID, TimeInterval) async throws -> String)?
+    /// The backend origin the engine's `/api/agent` calls go to.
+    private let backendOrigin: URL?
     private let defaults: UserDefaults
     /// Resolved once rather than per beat: `Host.current()` consults the system
     /// configuration store, and the beat runs on the main actor. A Mac renamed
@@ -850,9 +879,13 @@ final class DesktopCodeHostModel {
         agentClient: NativeCodeAgentClient? = nil,
         remoteClient: NativeCodeRemoteClient? = nil,
         linkSender: (any NativeAuthenticatedRequestSending)? = nil,
+        backendAuthorization: (@Sendable (AccountID, TimeInterval) async throws -> String)? = nil,
+        backendOrigin: URL? = nil,
         defaults: UserDefaults = .standard
     ) {
         self.linkSender = linkSender
+        self.backendAuthorization = backendAuthorization
+        self.backendOrigin = backendOrigin
         self.client = client
         self.relay = relay
         self.agentClient = agentClient

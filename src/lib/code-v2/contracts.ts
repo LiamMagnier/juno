@@ -1187,6 +1187,11 @@ export interface EnvBackendModel {
   available: boolean;
   contextWindow?: number;
   api?: "chat" | "responses";
+  // remote picker lane (additive): what the Mac's own picker shows for the model,
+  // so a paired phone lists it with the same thinking levels and default.
+  effortLevels?: EffortLevel[];
+  defaultEffort?: EffortLevel;
+  isDefault?: boolean;
 }
 
 export interface EnvBackendConfig {

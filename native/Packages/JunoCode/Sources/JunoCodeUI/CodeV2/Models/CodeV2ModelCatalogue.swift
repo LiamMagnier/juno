@@ -25,29 +25,18 @@ public enum CodeV2ModelCatalogue {
     /// The web's `PROVIDER_LIST`, which the Chat catalogue already ports.
     public static var labOrder: [String] { JunoModelSelectorCatalog.labOrder + ["openrouter"] }
 
-    /// The rail's one word per lab: the first half of the web's
-    /// `PROVIDERS[lab].label` ("Anthropic · Claude" → "Anthropic").
-    public static let labNames: [String: String] = [
-        "anthropic": "Anthropic", "openai": "OpenAI", "zhipu": "Zhipu", "moonshot": "Moonshot",
-        "google": "Google", "meta": "Meta", "deepseek": "DeepSeek", "mistral": "Mistral",
-        "xai": "SpaceXAI", "seedance": "ByteDance", "minimax": "MiniMax", "mimo": "MiMo",
-        "qwen": "Alibaba", "longcat": "Meituan", "openrouter": "OpenRouter",
-    ]
+    /// The rail's one word per lab (``CodeV2Labs``, shared with the phone's picker).
+    public static var labNames: [String: String] { CodeV2Labs.names }
 
-    public static func labName(_ id: String) -> String {
-        labNames[id.lowercased()] ?? (id.prefix(1).uppercased() + id.dropFirst())
-    }
+    public static func labName(_ id: String) -> String { CodeV2Labs.name(id) }
 
-    /// The lab a model belongs to: its id's routing prefix ("anthropic:claude-opus-5-5"),
-    /// else the lab of the key it runs on, else "other".
+    /// The lab a model belongs to (``CodeV2Labs/labID(model:instance:)``).
     public static func labID(model: String, instance: CodeV2.ProviderInstance) -> String {
-        if let colon = model.firstIndex(of: ":") { return model[..<colon].lowercased() }
-        if instance.kind == .byok, let lab = byokLab(instance) { return lab.rawValue }
-        return "other"
+        CodeV2Labs.labID(model: model, instance: instance)
     }
 
     static func byokLab(_ instance: CodeV2.ProviderInstance) -> CodeV2.ByokProvider? {
-        instance.id.split(separator: ":").last.flatMap { CodeV2.ByokProvider(rawValue: String($0)) }
+        CodeV2Labs.byokLab(instance)
     }
 
     static func labRank(_ id: String) -> Int { labOrder.firstIndex(of: id) ?? labOrder.count }

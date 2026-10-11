@@ -435,7 +435,14 @@ function buildSchema() {
             models: arr(
               obj(
                 { provider: nonEmpty, kind: en(["anthropic", "openai"]), model: nonEmpty, label: nonEmpty, available: bool },
-                { providerName: str, contextWindow: int, api: en(["chat", "responses"]) },
+                {
+                  providerName: str,
+                  contextWindow: int,
+                  api: en(["chat", "responses"]),
+                  effortLevels: arr(ref("EffortLevel")),
+                  defaultEffort: ref("EffortLevel"),
+                  isDefault: bool,
+                },
               ),
             ),
             deviceId: nonEmpty,

@@ -1,3 +1,4 @@
+import JunoChatKit
 import JunoCodeCore
 import JunoCodeRemote
 import JunoCore
@@ -15,6 +16,8 @@ struct JunoMobileLinkThreadView: View {
   var dictateOnAppear = false
   /// Opens with this composer panel up: the offscreen snapshots only.
   var previewPanel: JunoMobileLinkPanel? = nil
+  /// The account's Chat catalogue, for the model selector's rows.
+  var chatModels: [NativeChatModelOption] = []
 
   @State private var showsAgents = false
   @State private var inspectedAgent: String?
@@ -77,7 +80,8 @@ struct JunoMobileLinkThreadView: View {
       .safeAreaInset(edge: .bottom) {
         if showsComposer {
           JunoMobileLinkFooter(
-            model: model, dictateOnAppear: dictateOnAppear, previewPanel: previewPanel, attachments: attachments
+            model: model, dictateOnAppear: dictateOnAppear, previewPanel: previewPanel, attachments: attachments,
+            chatModels: chatModels
           )
         }
       }

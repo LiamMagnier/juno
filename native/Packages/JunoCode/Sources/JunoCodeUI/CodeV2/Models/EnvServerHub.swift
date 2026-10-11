@@ -66,6 +66,17 @@ public final class EnvServerHub {
     /// Dock › Terminal: one shell per env-server thread, kept for the app's life.
     @ObservationIgnored private var threadTerminals: [ObjectIdentifier: CodeV2EnvTerminal] = [:]
     @ObservationIgnored private var relaySinks: [UUID: @MainActor (CodeV2.ServerEventEnvelope) -> Void] = [:]
+    /// The Alevr session and models for the env server's Alevr engine, while a
+    /// paired phone may drive this Mac (``setBackend(_:)``).
+    @ObservationIgnored private var backend: (@MainActor () async -> EnvBackendConfig?)?
+    @ObservationIgnored private var backendTask: Task<Void, Never>?
+    /// What was last sent on the current connection, so an unchanged session
+    /// is not re-sent (each `env.configure` re-probes the engine instances).
+    @ObservationIgnored private var sentBackend: EnvBackendConfig?
+    /// How often the session is re-read and, when it changed, handed over:
+    /// well inside ``backendMinimumValidity`` (access tokens live ten minutes).
+    @ObservationIgnored var backendInterval: Duration = .seconds(150)
+    public static let backendMinimumValidity: TimeInterval = 300
 
     public static let shared = EnvServerHub()
 
@@ -193,6 +204,9 @@ public final class EnvServerHub {
             await connection.start()
             self?.phase = .ready
             self?.scheduleRefresh()
+            // A new connection is a new env server process: it holds no session.
+            self?.sentBackend = nil
+            if self?.backend != nil { Task { [weak self] in await self?.pushBackend() } }
             for await envelope in events {
                 guard let self else { return }
                 self.route(envelope)
@@ -252,6 +266,44 @@ public final class EnvServerHub {
             list.append(instance)
         }
         instances = list
+    }
+
+    // MARK: Alevr's engine for a paired phone
+
+    /// Hands the env server's Alevr engine this Mac's Alevr session and models
+    /// (`env.configure`), so a phone driving the Mac lists and runs Alevr's API
+    /// models as well as the subscriptions. Re-read every ``backendInterval``
+    /// and on every reconnect; sent only when it changed. Nil stops the loop
+    /// (the session last sent stays in that process until it restarts).
+    public func setBackend(_ provider: (@MainActor () async -> EnvBackendConfig?)?) {
+        backendTask?.cancel()
+        backendTask = nil
+        backend = provider
+        guard provider != nil else { return }
+        let interval = backendInterval
+        backendTask = Task { [weak self] in
+            while !Task.isCancelled {
+                await self?.pushBackend()
+                do { try await Task.sleep(for: interval) } catch { return }
+            }
+        }
+    }
+
+    /// Whether a backend provider is installed (tests).
+    var hasBackend: Bool { backend != nil }
+
+    /// Sends the current backend when it differs from what this connection has.
+    func pushBackend() async {
+        guard let backend, let connection, phase == .ready, let config = await backend() else { return }
+        guard config != sentBackend, self.connection === connection else { return }
+        do {
+            try await connection.configure(backend: config)
+            sentBackend = config
+            // The engine instance was re-probed: read it back for the Mac too.
+            await refreshProviders(quiet: true)
+        } catch {
+            // Retried on the next beat; the reason is the env server's, not the user's.
+        }
     }
 
     // MARK: Providers

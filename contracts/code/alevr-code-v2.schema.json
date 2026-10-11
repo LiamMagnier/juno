@@ -3356,6 +3356,18 @@
                               "chat",
                               "responses"
                             ]
+                          },
+                          "effortLevels": {
+                            "type": "array",
+                            "items": {
+                              "$ref": "#/definitions/EffortLevel"
+                            }
+                          },
+                          "defaultEffort": {
+                            "$ref": "#/definitions/EffortLevel"
+                          },
+                          "isDefault": {
+                            "type": "boolean"
                           }
                         },
                         "required": [
