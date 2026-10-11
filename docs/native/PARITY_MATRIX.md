@@ -22,7 +22,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 
 ## Summary
 
-346 routes: 225 native, 53 planned, 55 web only, 13 internal. 50 pages: on the Mac 37 native, 2 partial, 2 planned, 9 web only; on iOS 24 native, 9 partial, 8 planned, 9 web only.
+347 routes: 226 native, 53 planned, 55 web only, 13 internal. 50 pages: on the Mac 37 native, 2 partial, 2 planned, 9 web only; on iOS 24 native, 9 partial, 8 planned, 9 web only.
 
 | Feature | Pages (Mac) | Pages (iOS) | Routes native | Planned | Web only | Internal |
 |---|---|---|---|---|---|---|
@@ -44,7 +44,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 | [Agents](#agents) | 4/4 | 4/4 | 18 | 8 | 1 | 0 |
 | [Research](#research) | 2/2 | 2/2 | 7 | 0 | 0 | 0 |
 | [Voice](#voice) | – | – | 4 | 0 | 3 | 0 |
-| [Juno Code](#code) | 3/5 (+2 partial) | 0/5 (+4 partial) | 27 | 14 | 6 | 0 |
+| [Juno Code](#code) | 3/5 (+2 partial) | 0/5 (+4 partial) | 28 | 14 | 6 | 0 |
 | [Settings, notifications and announcements](#settings) | 3/3 | 3/3 | 12 | 5 | 2 | 0 |
 | [Plans and billing](#billing) | 1/2 | 0/2 | 7 | 0 | 0 | 1 |
 | [Roadmap and Compare](#community) | 0/3 | 0/3 | 0 | 0 | 4 | 0 |
@@ -555,6 +555,7 @@ Owned by the Code rework (`docs/native/code-rework/`), which audits Code's parit
 | `/api/code/pairing/deny` | POST | Native | JunoCodeKit | Deny on the iPhone, or in the browser at /pair. |
 | `/api/code/pairing/pairs` | GET | Native | JunoCodeKit | The Mac's paired devices (?deviceId=), or the Macs this iPhone may control. |
 | `/api/code/pairing/pairs/[pairId]` | DELETE | Native | JunoCodeKit | Remove a paired device on the Mac. |
+| `/api/code/v2/link/[deviceId]/stream` | POST | Native | CodeLinkClient.swift opens /api/code/v2/link/<device>/stream, the iPhone's server-sent event stream, and falls back to the long poll. |  |
 | `/api/code/v2/link/[deviceId]/host` | POST | Native | JunoCodeLocal |  |
 | `/api/provider-keys` | GET, POST | Native | JunoCodeLocal |  |
 | `/api/provider-keys/[provider]` | DELETE | Native | JunoCodeLocal |  |

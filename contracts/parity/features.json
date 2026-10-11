@@ -1001,6 +1001,10 @@
           "status": "native",
           "note": "Remove a paired device on the Mac."
         },
+        "/api/code/v2/link/[deviceId]/stream": {
+          "status": "native",
+          "swift": "CodeLinkClient.swift opens /api/code/v2/link/<device>/stream, the iPhone's server-sent event stream, and falls back to the long poll."
+        },
         "/api/code/v2/link/[deviceId]/host": {
           "status": "native",
           "swift": "EnvServerDeviceLink.swift builds /api/code/v2/link/<device>/host for the Mac's pull/push loop."
