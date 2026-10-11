@@ -26,6 +26,11 @@ final class ComputerBridgeTests: XCTestCase {
         var approveCards = true
         private(set) var agentAsks: [String] = []
         private(set) var cards: [String] = []
+        private(set) var permissionNotices: [(String, ComputerUsePermissionStatus)] = []
+
+        func permissionsMissing(_ status: ComputerUsePermissionStatus, sessionID: String) async {
+            lock.withLock { permissionNotices.append((sessionID, status)) }
+        }
 
         func allowAgent(sessionID: String, title: String) async -> Bool {
             lock.withLock {
@@ -82,7 +87,7 @@ final class ComputerBridgeTests: XCTestCase {
         let status = await missing.handle(.init(id: "s", type: .status, token: "t", sessionId: "x"))
         XCTAssertFalse(status.ok)
         XCTAssertEqual(status.missingPermissions, ["screen_recording"])
-        XCTAssertTrue(status.text.contains("System Settings › Privacy & Security › Screen Recording"))
+        XCTAssertTrue(status.text.contains(ComputerUsePermission.screenRecording.settingsPath()), status.text)
 
         let off = executor(approver: approver, settings: .init(connectedAgentsEnabled: false))
         let offStatus = await off.handle(.init(id: "s", type: .status, token: "t", sessionId: "x"))
@@ -115,6 +120,26 @@ final class ComputerBridgeTests: XCTestCase {
         XCTAssertEqual(approver.agentAsks, ["Check the deck"])
         let active = await service.isActive(sessionID: ComputerBridgeExecutor.screenSessionID("claude:t7"))
         XCTAssertFalse(active)
+    }
+
+    func testARefusedGrantTellsTheReaderAndGivesTheAgentTheWholeFix() async {
+        let approver = Approver()
+        let refused = await executor(approver: approver, permissions: .init(screenRecording: .granted, accessibility: .denied))
+            .handle(call("c1", .init(action: .screenshot)))
+        XCTAssertFalse(refused.ok)
+        // The page by this macOS's name, and the remove-and-add fix for a
+        // switch that is on but stale (1.10.9: on in Settings, untrusted).
+        XCTAssertTrue(refused.text.contains(ComputerUsePermission.accessibility.settingsPath()), refused.text)
+        XCTAssertTrue(refused.text.contains("press the minus button"), refused.text)
+        XCTAssertTrue(refused.text.contains("no need to reopen"), refused.text)
+        XCTAssertEqual(approver.permissionNotices.count, 1)
+        XCTAssertEqual(approver.permissionNotices.first?.0, "claude:t7")
+        XCTAssertEqual(approver.permissionNotices.first?.1.missing, [.accessibility])
+        XCTAssertTrue(approver.agentAsks.isEmpty)
+
+        // Granted: no notice.
+        _ = await executor(approver: approver).handle(call("c2", .init(action: .screenshot)))
+        XCTAssertEqual(approver.permissionNotices.count, 1)
     }
 
     // MARK: Calls

@@ -10,6 +10,13 @@ public protocol ComputerBridgeApproving: Sendable {
     func allowAgent(sessionID: String, title: String) async -> Bool
     /// One card: a grant proposal, or an input action with its target.
     func approve(_ detail: ScreenApprovalDetail, summary: String, sessionID: String) async -> Bool
+    /// A call was refused because macOS has not given Alevr a grant. Not a
+    /// question: the app shows the fix beside the thread and nothing waits.
+    func permissionsMissing(_ status: ComputerUsePermissionStatus, sessionID: String) async
+}
+
+public extension ComputerBridgeApproving {
+    func permissionsMissing(_ status: ComputerUsePermissionStatus, sessionID: String) async {}
 }
 
 /// The screen-control service as the bridge needs it: the agent surface
@@ -123,11 +130,12 @@ public actor ComputerBridgeExecutor: ComputerBridgeHandling {
         status.missing.map { $0 == .screenRecording ? "screen_recording" : "accessibility" }
     }
 
+    /// The exact grant, the exact Settings page and the stale-switch fix:
+    /// the agent relays this sentence, so it has to be the whole answer.
     static func permissionSentence(_ status: ComputerUsePermissionStatus) -> String {
-        if status.accessibilityTrustLostAfterUpdate { return ComputerUsePermissionStatus.trustLostAdvice }
-        let names = status.missing.map(\.title)
-        let list = names.count == 2 ? "\(names[0]) and \(names[1])" : names.first ?? ""
-        return "Alevr needs \(list) to use apps. Open System Settings › Privacy & Security › \(names.first ?? "Screen Recording"), turn Alevr on, then try again."
+        let advice = status.advice()
+        if status.accessibilityTrustLostAfterUpdate { return ComputerUsePermissionStatus.trustLostAdvice + " " + advice }
+        return advice + " Alevr shows the same steps above the message box, with a button that opens the page."
     }
 
     static let disabledSentence =
@@ -189,7 +197,10 @@ public actor ComputerBridgeExecutor: ComputerBridgeHandling {
     /// macOS grants, the reader's switch, and this session's screen control.
     private func ready(_ request: CodeV2.ComputerBridgeRequest, screenID: String) async throws {
         let grants = permissions()
-        guard grants.isReady else { throw Refusal(text: Self.permissionSentence(grants), status: .failed, endsTurn: true) }
+        guard grants.isReady else {
+            await approver.permissionsMissing(grants, sessionID: request.sessionId)
+            throw Refusal(text: Self.permissionSentence(grants), status: .failed, endsTurn: true)
+        }
         guard settings().connectedAgentsEnabled else { throw Refusal(text: Self.disabledSentence, endsTurn: true) }
         if startedSessions.contains(screenID), case let .stopped(reason) = await service.state(sessionID: screenID) {
             throw Refusal(text: reason.sentence + " Stop using the computer.", status: .interrupted, endsTurn: true)

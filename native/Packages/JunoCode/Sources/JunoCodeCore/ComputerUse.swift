@@ -35,6 +35,26 @@ public enum ComputerUsePermission: String, CaseIterable, Sendable {
         // failure here is a typo, not a runtime condition.
         return URL(string: "x-apple.systempreferences:com.apple.preference.security?\(anchor)")!
     }
+
+    /// The running macOS's major version, for naming its Settings pages.
+    public static var currentMacOSMajor: Int {
+        ProcessInfo.processInfo.operatingSystemVersion.majorVersion
+    }
+
+    /// The page in Privacy & Security that lists Alevr for this grant, by the
+    /// name this macOS gives it. macOS 15 renamed Screen Recording; macOS 27
+    /// folded Accessibility into Device Control and Data Access.
+    public func settingsPageName(macOSMajor: Int = ComputerUsePermission.currentMacOSMajor) -> String {
+        switch self {
+        case .screenRecording: macOSMajor >= 15 ? "Screen & System Audio Recording" : "Screen Recording"
+        case .accessibility: macOSMajor >= 27 ? "Device Control and Data Access" : "Accessibility"
+        }
+    }
+
+    /// "System Settings › Privacy & Security › <page>".
+    public func settingsPath(macOSMajor: Int = ComputerUsePermission.currentMacOSMajor) -> String {
+        "System Settings › Privacy & Security › \(settingsPageName(macOSMajor: macOSMajor))"
+    }
 }
 
 /// Both grants, as macOS reported them at one moment.
@@ -85,8 +105,44 @@ public struct ComputerUsePermissionStatus: Equatable, Sendable {
     public var isReady: Bool { missing.isEmpty }
 
     /// What the notice says when the grant looks on but is not.
-    public static let trustLostAdvice =
-        "macOS no longer trusts this build of Alevr. Remove Alevr from the Accessibility list and add it again."
+    public static var trustLostAdvice: String {
+        "macOS no longer trusts this build of Alevr. In \(ComputerUsePermission.accessibility.settingsPath()), remove Alevr with the minus button and add it again with the plus button."
+    }
+
+    /// The fix for a switch that shows on while macOS still says no.
+    ///
+    /// macOS keeps each grant with the code signature it saw when the switch
+    /// was turned on. A grant recorded for an older, differently signed copy
+    /// (an ad-hoc build, say) stays on in the list and never matches this
+    /// one, and flipping the switch does not rewrite it. Only removing the
+    /// entry and adding the app again does. Seen on 1.10.9: tccd logged
+    /// "Failed to match existing code requirement … kTCCServiceAccessibility"
+    /// against a stored `cdhash H"…"` requirement.
+    public static let staleGrantSteps =
+        "If Alevr is already on there, macOS is holding that switch for an older copy of Alevr: select Alevr, press the minus button to remove it, then press the plus button, choose Alevr in Applications and turn it on."
+
+    /// The whole fix, in the words both the agent and the reader are given.
+    /// Empty when nothing is missing.
+    public func advice(macOSMajor: Int = ComputerUsePermission.currentMacOSMajor) -> String {
+        let missing = missing
+        guard let first = missing.first else { return "" }
+        let names = missing.map(\.title)
+        let list = names.count == 2 ? "\(names[0]) and \(names[1])" : names[0]
+        var text = "Alevr needs \(list) to use apps. Open \(first.settingsPath(macOSMajor: macOSMajor)) and turn Alevr on."
+        if missing.count == 2 {
+            let second = missing[1]
+            text += " Then do the same in \(second.settingsPath(macOSMajor: macOSMajor))."
+        }
+        if missing.contains(.accessibility) || accessibilityTrustLostAfterUpdate {
+            text += " " + Self.staleGrantSteps
+        }
+        if missing.contains(.screenRecording) {
+            text += " macOS may ask you to quit and reopen Alevr after allowing Screen Recording."
+        } else {
+            text += " Alevr picks the change up straight away; there is no need to reopen it."
+        }
+        return text
+    }
 }
 
 /// The last frame the agent was sent in a session.
@@ -218,9 +274,9 @@ public enum ComputerUseError: Error, Equatable, Sendable, LocalizedError {
         case .consentRequired:
             "Screen control starts only when you press Start."
         case .screenCapturePermissionMissing:
-            "macOS has not given Alevr Screen Recording. Allow it in System Settings › Privacy & Security."
+            "macOS has not given Alevr Screen Recording. Allow it in \(ComputerUsePermission.screenRecording.settingsPath())."
         case .accessibilityPermissionMissing:
-            "macOS has not given Alevr Accessibility. Allow it in System Settings › Privacy & Security."
+            "macOS has not given Alevr Accessibility. Allow it in \(ComputerUsePermission.accessibility.settingsPath()). " + ComputerUsePermissionStatus.staleGrantSteps
         case .notActive:
             "Screen control is not running in this session."
         case let .heldElsewhere(sentence):

@@ -18,17 +18,13 @@ extension ComputerUsePermission {
         }
     }
 
-    /// The list's name in System Settings, which is not the grant's short
-    /// name for Screen Recording: macOS 15 renamed it.
-    var studioPaneName: String {
-        switch self {
-        case .screenRecording: "Screen & System Audio Recording"
-        case .accessibility: "Accessibility"
-        }
-    }
+    /// The list's name in System Settings on this Mac, which is not the
+    /// grant's short name: macOS 15 renamed Screen Recording, macOS 27 put
+    /// Accessibility under Device Control and Data Access.
+    var studioPaneName: String { settingsPageName() }
 
     var studioOpenHelp: String {
-        "Opens System Settings › Privacy & Security › \(studioPaneName)"
+        "Opens \(settingsPath())"
     }
 
     /// Opens the pane. Nothing in the app can flip the switch itself.
@@ -216,6 +212,8 @@ struct StudioScreenControlRow: View {
         case .active: "Press Esc anywhere to stop."
         case .paused: "Resume when you are done; Alevr takes a fresh look first."
         case .trustLost: "macOS ties the permission to each build, and this one was not added."
+        case let .needsPermission(missing) where missing.contains(.accessibility):
+            "Already on in Settings? Remove Alevr with the minus button and add it again."
         default: nil
         }
     }
@@ -500,6 +498,14 @@ struct StudioScreenControlSettings: View {
                     .foregroundStyle(Studio.Ink.primary)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("juno.code.settings.screen-control.trust-lost")
+            } else if permissions.accessibility == .denied {
+                // A switch that shows on while macOS says no is a grant kept
+                // for an older signature; only remove and add fixes it.
+                Text(ComputerUsePermissionStatus.staleGrantSteps)
+                    .font(Studio.Font.meta)
+                    .foregroundStyle(Studio.Ink.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("juno.code.settings.screen-control.stale-grant")
             }
             ForEach(ComputerUsePermission.allCases, id: \.self) { permission in
                 row(permission)
@@ -516,6 +522,15 @@ struct StudioScreenControlSettings: View {
         .onReceive(
             NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
         ) { _ in refresh() }
+        // System Settings can sit beside Alevr, so the app need not leave the
+        // front for a grant to change: while one is missing, read again every
+        // second. Preflight only, never a prompt.
+        .task(id: permissions.isReady) {
+            while !permissions.isReady, !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1))
+                permissions = probe.read()
+            }
+        }
 
         Section {
             if narrowed.isEmpty {
@@ -602,6 +617,10 @@ struct StudioScreenControlSettings: View {
             }
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("juno.code.settings.screen-control.\(permission.rawValue).state")
+            // Hidden on purpose: what support needs, not what the reader reads.
+            .contextMenu {
+                Button("Copy computer-use diagnostics") { CodeV2ComputerPermissionNotice.copyDiagnostics() }
+            }
             // Present whatever the state: the same pane is where an allowed
             // grant is taken back.
             Button("Open Settings") { permission.openPrivacySettings() }

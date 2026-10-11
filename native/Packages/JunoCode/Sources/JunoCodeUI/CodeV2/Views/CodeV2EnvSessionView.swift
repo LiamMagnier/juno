@@ -253,6 +253,11 @@ public struct CodeV2EnvSessionView: View {
             })
         }
         guard !pending.isEmpty else {
+            if let notice = CodeV2ConnectedApprovals.shared.permissionNotice(forSession: session.sessionId) {
+                return AnyView(CodeV2ComputerPermissionNotice(initial: notice.status) {
+                    CodeV2ConnectedApprovals.shared.dismissPermissionNotice()
+                })
+            }
             if snapshot.state == .limited, let instance {
                 let resumeDate = snapshot.resumeAt.flatMap(CodeV2Dates.parse)
                 return AnyView(CodeV2LimitedNotice(

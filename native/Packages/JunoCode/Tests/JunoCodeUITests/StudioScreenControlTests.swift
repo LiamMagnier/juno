@@ -64,7 +64,10 @@ final class StudioScreenControlTests: XCTestCase {
         let lost = ComputerUsePermissionStatus(screenRecording: .granted, accessibility: .denied, accessibilityTrustLostAfterUpdate: true)
         let notice = StudioScreenControlNotice(isActive: false, startBlocked: true, permissions: lost)
         XCTAssertEqual(notice, .trustLost)
-        XCTAssertEqual(notice?.message, "macOS no longer trusts this build of Alevr. Remove Alevr from the Accessibility list and add it again.")
+        XCTAssertEqual(
+            notice?.message,
+            "macOS no longer trusts this build of Alevr. In \(ComputerUsePermission.accessibility.settingsPath()), remove Alevr with the minus button and add it again with the plus button."
+        )
         XCTAssertEqual(notice?.nextPermission, .accessibility)
     }
 
