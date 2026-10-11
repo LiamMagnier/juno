@@ -1595,7 +1595,7 @@ struct DesktopConversationView: View {
     /// comes to the front (B4).
     @State private var systemPermissions = DesktopWorkSystemPermissions.current
 
-    var body: some View {
+    private var conversationShell: some View {
         // Clamped through `Color.clear.overlay { … }`, for the reason
         // ``JunoDetailPage`` spells out: a `ScrollView` propagates its content's
         // ideal height rather than absorbing it, so a long transcript reports an
@@ -1670,6 +1670,10 @@ struct DesktopConversationView: View {
                 openFilePanel(url)
             }
             .background(DesktopWindowVisibilityReader { windowVisible = $0 })
+    }
+
+    private var conversationLifecycle: some View {
+        conversationShell
             // Open in Conversation from the Artifacts page: once this chat is
             // the one on screen, the canvas opens on that row by id.
             .onAppear(perform: followCanvasRequest)
@@ -1733,6 +1737,10 @@ struct DesktopConversationView: View {
                 guard !model.isGenerating else { return }
                 await readPlan()
             }
+    }
+
+    var body: some View {
+        conversationLifecycle
             // The web's COEXISTENCE RULE, in the one shape this window has for
             // it: the canvas and a live call are both large right-hand claims on
             // the conversation column, and the call also lights the whole column

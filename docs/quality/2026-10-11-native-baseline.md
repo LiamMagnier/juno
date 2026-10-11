@@ -95,6 +95,16 @@ Logs: `/tmp/alevr-quality-evidence/swift-retry-fix.log`,
 `macos-compat-fix.log`, `ios-strict-test-fix.log`, `ios-layout-fixed.log`,
 `native-design-latest.log`; images in `ios-layout-fixed/`.
 
+The next hosted run (38162706883) passed the orchestrator backoff cancellation
+regression, then exposed the same async-default issue in ModelTurnCollector.
+That sleep default now also lives inside the runtime module. The Mac's large
+conversation modifier chain is split into three typed view properties because
+the older compiler still timed out after the binding extraction; strict local
+Mac Debug compilation passed. A separate terminal test exposed first-prompt
+delivery before the open response had supplied its id. Standalone terminals now
+retain bounded opening events, matching the hub's existing handling, and the
+test forces events before the response. None of these failures was bypassed.
+
 ## Unresolved mission requirements
 
 At the inspected main baseline, restricted folder execution fell back to an
