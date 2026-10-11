@@ -55,16 +55,18 @@ final class ComputerBridgeTests: XCTestCase {
         approver: Approver,
         permissions: ComputerUsePermissionStatus = .init(screenRecording: .granted, accessibility: .granted),
         settings: ComputerUseBridgeSettings = .init(connectedAgentsEnabled: true),
-        service: ScreenControlService = makeTestScreenService()
+        service: ScreenControlService = makeTestScreenService(),
+        livePermissions: (@Sendable () -> ComputerUsePermissionStatus)? = nil
     ) -> ComputerBridgeExecutor {
         ComputerBridgeExecutor(
             service: service,
             approver: approver,
-            permissions: { permissions },
+            permissions: livePermissions ?? { permissions },
             settings: { settings },
             screenshots: ComputerScreenshotStore(root: directory.appendingPathComponent("shots")),
             lockHolder: { nil },
-            now: { Date(timeIntervalSince1970: 1_791_489_600) }
+            now: { Date(timeIntervalSince1970: 1_791_489_600) },
+            busyWait: .zero
         )
     }
 
@@ -211,6 +213,86 @@ final class ComputerBridgeTests: XCTestCase {
         let next = await bridge.handle(call("next-task", .init(action: .screenshot, app: "com.apple.TextEdit")))
         XCTAssertTrue(next.ok, "a new task can ask for fresh consent after the stopped task releases")
         XCTAssertEqual(approver.agentAsks.count, asks + 1)
+    }
+
+    // MARK: One conversation, many turns; many conversations at once
+
+    final class Grants: @unchecked Sendable {
+        private let lock = NSLock()
+        private var accessibility: ComputerUsePermissionState = .denied
+        func grant() { lock.withLock { accessibility = .granted } }
+        var status: ComputerUsePermissionStatus {
+            lock.withLock { .init(screenRecording: .granted, accessibility: accessibility) }
+        }
+    }
+
+    /// The owner's report (1.10.10): Accessibility missing in turn 1, granted,
+    /// then turn 2 in the same conversation was refused as "another session"
+    /// holding Safari under its own title. The thread's hold is one, and the
+    /// leftover record of an Alevr that is no longer running is reclaimed.
+    func testAPermissionFailureThenSuccessInTheSameThreadAcquiresTheHold() async throws {
+        let lockURL = directory.appendingPathComponent("desktop.lock")
+        let me = ProcessInfo.processInfo.processIdentifier
+        // What 1.10.10's env server left behind: a record under the thread's
+        // raw id from a process that has since exited (the relaunch).
+        let stale = DesktopLockFile(url: lockURL, pid: 424_242, isAlive: { _ in true })
+        guard case .acquired = stale.acquire(holderID: "claude:t7", kind: .envServer, title: "Check the deck", app: "TextEdit") else {
+            return XCTFail()
+        }
+        let file = DesktopLockFile(url: lockURL, isAlive: { $0 == me })
+        let service = makeTestScreenService(lock: ScreenControlLock(file: file))
+        let grants = Grants()
+        let approver = Approver()
+        let bridge = executor(approver: approver, service: service, livePermissions: { grants.status })
+
+        let turn1 = await bridge.handle(call("t1-open", .init(action: .openApp, app: "TextEdit")))
+        XCTAssertFalse(turn1.ok)
+        XCTAssertEqual(turn1.endsTurn, true)
+        XCTAssertEqual(turn1.missingPermissions, ["accessibility"])
+        XCTAssertFalse(turn1.text.contains("Only one session"), turn1.text)
+        _ = await bridge.handle(.init(id: "end1", type: .release, token: "t", sessionId: "claude:t7"))
+
+        grants.grant()
+        let turn2 = await bridge.handle(call("t2-shot", .init(action: .screenshot, app: "TextEdit")))
+        XCTAssertTrue(turn2.ok, turn2.text)
+        XCTAssertFalse(turn2.text.contains("is using"), turn2.text)
+        let holds = await service.lock.holds
+        XCTAssertEqual(holds.map(\.holder.id), [ComputerBridgeExecutor.screenSessionID("claude:t7")])
+        XCTAssertEqual(holds.first?.holder.conversationID, "claude:t7")
+        XCTAssertEqual(file.read()?.holderId, "alevr-app:\(me)", "the stale record was reclaimed by this process")
+
+        // A later turn of the same thread is the same hold, never "another session".
+        let turn3 = await bridge.handle(call("t3-shot", .init(action: .screenshot, app: "TextEdit")))
+        XCTAssertTrue(turn3.ok, turn3.text)
+
+        // Turn end lets go of everything: the hold and the process record.
+        _ = await bridge.handle(.init(id: "end3", type: .release, token: "t", sessionId: "claude:t7"))
+        let after = await service.lock.holds
+        XCTAssertTrue(after.isEmpty)
+        XCTAssertNil(file.read())
+    }
+
+    func testTwoThreadsStillExcludeEachOtherFromOneApp() async throws {
+        let approver = Approver()
+        let service = makeTestScreenService()
+        let bridge = executor(approver: approver, service: service)
+        let first = await bridge.handle(call("a1", .init(action: .screenshot, app: "TextEdit"), session: "claude:t1"))
+        XCTAssertTrue(first.ok, first.text)
+        let second = await bridge.handle(call("b1", .init(action: .screenshot, app: "TextEdit"), session: "codex:t2"))
+        XCTAssertFalse(second.ok)
+        XCTAssertNil(second.endsTurn, "a busy app is not a stop: the agent may work elsewhere or wait")
+        XCTAssertEqual(action(second)?.status, .declined)
+        XCTAssertEqual(action(second)?.app, "TextEdit")
+        XCTAssertTrue(second.text.hasPrefix("‘Check the deck’ is using TextEdit right now."), second.text)
+        // The first thread's turn ends: the second gets the app.
+        _ = await bridge.handle(.init(id: "end", type: .release, token: "t", sessionId: "claude:t1"))
+        let retried = await bridge.handle(call("b2", .init(action: .screenshot, app: "TextEdit"), session: "codex:t2"))
+        XCTAssertTrue(retried.ok, retried.text)
+    }
+
+    func testASubagentBelongsToItsThread() {
+        XCTAssertEqual(ComputerBridgeExecutor.conversationID("claude:t7:agent:child"), "claude:t7")
+        XCTAssertEqual(ComputerBridgeExecutor.conversationID("claude:t7"), "claude:t7")
     }
 
     func testTheRuntimeModeDecidesWhetherInputAsks() async throws {

@@ -90,18 +90,34 @@ final class ComputerUseCoordinatorTests: XCTestCase {
         }
     }
 
-    /// Two workspaces have two coordinators and one service: one lock.
-    func testASecondWorkspaceIsRefusedNamingTheFirst() async throws {
+    /// Two workspaces have two coordinators and one service: both run, each
+    /// in its own app (the service's per-app holds keep them apart).
+    func testTwoWorkspacesRunSideBySide() async throws {
         let service = makeTestScreenService()
         let first = ComputerUseCoordinator(service: service, permissions: FakePermissions())
         let second = ComputerUseCoordinator(service: service, permissions: FakePermissions())
+        let other = CodeSessionID()
         try await first.activate(sessionID: sessionID, userConsented: true, title: "Fix the export sheet")
+        try await second.activate(sessionID: other, userConsented: true, title: "Other")
+        let firstActive = await service.isActive(sessionID: sessionID.value)
+        let secondActive = await service.isActive(sessionID: other.value)
+        XCTAssertTrue(firstActive)
+        XCTAssertTrue(secondActive)
+        let holds = await service.lock.holds
+        XCTAssertEqual(holds.count, 2)
+    }
+
+    /// A Work task has the whole screen: a workspace is refused naming it.
+    func testAWorkspaceIsRefusedWhileWorkDrivesTheScreen() async throws {
+        let service = makeTestScreenService()
+        _ = try await service.lock.claim(ScreenControlHolder(id: "work:r1", kind: .workTask, title: "Tidy downloads"))
         do {
-            try await second.activate(sessionID: CodeSessionID(), userConsented: true, title: "Other")
-            XCTFail("two sessions held the screen")
+            try await ComputerUseCoordinator(service: service, permissions: FakePermissions())
+                .activate(sessionID: sessionID, userConsented: true, title: "Fix the export sheet")
+            XCTFail("a session ran beside a Work task")
         } catch let error as ComputerUseError {
             guard case let .heldElsewhere(sentence) = error else { return XCTFail("\(error)") }
-            XCTAssertTrue(sentence.contains("Fix the export sheet"))
+            XCTAssertTrue(sentence.contains("Tidy downloads"))
             XCTAssertTrue(error.errorDescription!.hasSuffix("Stop it there first."))
         }
     }

@@ -11,10 +11,11 @@
  *
  * Execution happens in the Mac app, which owns the Screen Recording and
  * Accessibility grants, the per-app grants, the approval cards, the action
- * overlay and the Esc / menu-bar stop. This side validates, takes the desktop
- * lock (so a vendor agent never fights a Mac session for the pointer),
- * forwards over the bridge, and turns the answer into MCP content plus a turn
- * item for the session log.
+ * overlay and the Esc / menu-bar stop, and the one arbiter of who drives what
+ * (per-app holds keyed by this thread's id, so the same conversation is never
+ * "another session" to itself). This side validates, forwards over the bridge,
+ * and turns the answer into MCP content plus a turn item for the session log.
+ * It keeps no claim of its own: nothing here can outlive a turn or a relaunch.
  *
  * Integration: the env lane's Alevr MCP server calls `registerComputerTools`
  * with its registrar (anything with `tool(definition, handler)`), once per
@@ -32,7 +33,6 @@ import {
   type RuntimeMode,
 } from "../contracts/code-v2.js";
 import { ComputerBridgeUnavailable, type ComputerBridge } from "./computer-bridge.js";
-import { DesktopLock } from "./desktop-lock.js";
 
 // ── The tool definition ─────────────────────────────────────────────────────
 
@@ -244,7 +244,7 @@ export interface McpCallResult {
 }
 
 export interface ComputerToolSession {
-  /** The Alevr session (or vendor thread) id: the lock holder id on both sides. */
+  /** The Alevr session (or vendor thread) id: the Mac keys this conversation's hold on it. */
   id: string;
   title: string;
   runtimeMode: RuntimeMode;
@@ -257,7 +257,6 @@ export interface ComputerToolSession {
 export interface ComputerToolsOptions {
   bridge: ComputerBridge;
   session: ComputerToolSession;
-  lock?: DesktopLock;
   /** Every call's turn item, for the session log (item.added / item.updated). */
   onItem?: (item: ComputerActionItem) => void;
   now?: () => Date;
@@ -267,17 +266,14 @@ export interface ComputerToolsOptions {
 export interface ComputerTools {
   definition: McpToolDefinition;
   call(input: unknown, context: { callId: string; signal?: AbortSignal; session?: ComputerToolSession }): Promise<McpCallResult>;
-  /** Releases the desktop and tells the Mac this session is done with it. */
+  /** Tells the Mac this session is done: its hold and grants go. */
   dispose(): Promise<void>;
 }
 
 export function createComputerTools(options: ComputerToolsOptions): ComputerTools {
   const { bridge, session } = options;
-  const lock = options.lock ?? new DesktopLock();
   const now = options.now ?? (() => new Date());
   const space = session.coordinateSpace ?? "pixels";
-  let heartbeat: ReturnType<typeof setInterval> | null = null;
-  let held = false;
   let stopped = false;
   let disposed = false;
   let pending: Promise<void> = Promise.resolve();
@@ -300,20 +296,6 @@ export function createComputerTools(options: ComputerToolsOptions): ComputerTool
     }
   };
 
-  const hold = () => {
-    if (held) return;
-    held = true;
-    heartbeat = setInterval(() => {
-      if (!lock.heartbeat(session.id)) stopHolding();
-    }, options.heartbeatMs ?? 5_000);
-    heartbeat.unref?.();
-  };
-  const stopHolding = () => {
-    held = false;
-    if (heartbeat) clearInterval(heartbeat);
-    heartbeat = null;
-  };
-
   const failure = (callId: string, action: ComputerActionKind, text: string, status: ComputerActionItem["status"] = "failed"): McpCallResult => {
     emit(item(callId, action, { status, error: text, summary: text }));
     return { content: [{ type: "text", text }], isError: true };
@@ -331,10 +313,6 @@ export function createComputerTools(options: ComputerToolsOptions): ComputerTool
       if (!validation.ok) return failure(callId, (COMPUTER_ACTION_VALUES as readonly string[]).includes(action) ? action : "screenshot", validation.error);
       const args = validation.args;
 
-      const claim = lock.acquire({ holderId: session.id, kind: "env_server", title: session.title, app: args.app });
-      if (!claim.ok) return failure(callId, args.action, claim.reason, "declined");
-      hold();
-
       const started = now();
       emit(item(callId, args.action, { target: args.app }));
       let response: ComputerBridgeResponse;
@@ -344,8 +322,6 @@ export function createComputerTools(options: ComputerToolsOptions): ComputerTool
           { signal },
         );
       } catch (error) {
-        lock.release(session.id);
-        stopHolding();
         const text =
           error instanceof ComputerBridgeUnavailable ? error.message : `The screen action failed: ${(error as Error).message ?? String(error)}`;
         return failure(callId, args.action, text, signal?.aborted ? "interrupted" : "failed");
@@ -356,19 +332,18 @@ export function createComputerTools(options: ComputerToolsOptions): ComputerTool
       emit({
         ...item(callId, args.action, {}),
         ...returned,
+        ...(returned?.app || returned?.target || !args.app ? {} : { target: args.app }),
         id: `ca_${callId}`,
         callId,
         status: returned?.status ?? (response.ok ? "completed" : "failed"),
         durationMs: returned?.durationMs ?? durationMs,
         ...(response.ok ? {} : { error: returned?.error ?? response.text }),
       });
-      if (returned?.app) lock.heartbeat(session.id, returned.app);
       if (response.endsTurn) {
+        // The user pressed Esc or Stop, or a macOS grant is missing: nothing
+        // else queued in this turn reaches for the pointer. The next turn
+        // gets fresh tools (finishTurn disposes these).
         stopped = true;
-        // The user pressed Esc or Stop, or a macOS grant is missing: let go so
-        // nothing else queued on this session reaches for the pointer.
-        lock.release(session.id);
-        stopHolding();
       }
 
       const content: McpContent[] = [{ type: "text", text: response.endsTurn ? `${response.text}\nStop using the computer and tell the user.` : response.text }];
@@ -379,8 +354,6 @@ export function createComputerTools(options: ComputerToolsOptions): ComputerTool
     async dispose() {
       disposed = true;
       await pending;
-      stopHolding();
-      lock.release(session.id);
       try {
         await bridge.send({ type: "computer.release", sessionId: session.id });
       } catch {

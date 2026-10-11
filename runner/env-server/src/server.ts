@@ -47,7 +47,6 @@ import { registerSubagentTools } from "./mcp/subagent-tools.js";
 import { registerComputerUseOnAlevrMcp, type ComputerMcpScope } from "./mcp/computer-mcp-hook.js";
 import { createUnixSocketBridge, DEFAULT_BRIDGE_SOCKET_PATH, type ComputerBridge } from "./mcp/computer-bridge.js";
 import { coordinateSpaceForModel, type ComputerToolSession } from "./mcp/computer-tools.js";
-import type { DesktopLock } from "./mcp/desktop-lock.js";
 import { TerminalManager } from "./terminal/terminals.js";
 import { describeError, newToken, nowIso, stderrLogger, type Logger } from "./util.js";
 import { ConversationHub, conversationEngineTools, type BackendLink } from "./conversations/hub.js";
@@ -98,8 +97,6 @@ export interface ComputerUseConfig {
   bridge?: ComputerBridge;
   /** Whether the Mac app's bridge is up (default: its socket exists). */
   available?: () => boolean;
-  /** The desktop lock shared with the Mac app (default: the app's lock file). */
-  lock?: DesktopLock;
 }
 
 export interface EnvServer {
@@ -335,7 +332,6 @@ function registerComputerUse(mcp: AlevrMcpServer, sessions: SessionManager, conf
   const available = config.available ?? (() => fs.existsSync(DEFAULT_BRIDGE_SOCKET_PATH));
   return registerComputerUseOnAlevrMcp(mcp, {
     bridge: config.bridge ?? createUnixSocketBridge(),
-    ...(config.lock ? { lock: config.lock } : {}),
     session: (scope) => (available() ? computerSessionFor(sessions, scope) : undefined),
     onItem: (sessionId, item) => {
       try {

@@ -93,7 +93,7 @@ final class FakePermissions: ComputerUsePermissionChecking, @unchecked Sendable 
     }
 }
 
-func makeTestScreenService() -> ScreenControlService {
+func makeTestScreenService(lock: ScreenControlLock = ScreenControlLock()) -> ScreenControlService {
     ScreenControlService(
         dependencies: .init(
             capture: LocalFakeCapture(),
@@ -104,6 +104,7 @@ func makeTestScreenService() -> ScreenControlService {
             settleTimeout: 0.05,
             settleInterval: .milliseconds(1),
             minimumInputGap: 0
-        )
+        ),
+        lock: lock
     )
 }

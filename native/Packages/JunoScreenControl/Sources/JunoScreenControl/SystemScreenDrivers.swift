@@ -138,10 +138,15 @@ public struct SystemScreenEnvironment: ScreenEnvironment {
     }
 
     public func open(bundleID: String) async throws -> RunningApp {
-        if let app = await runningApps().first(where: { $0.bundleID.lowercased() == bundleID.lowercased() }) {
-            return app
+        let running = await runningApps().first(where: { $0.bundleID.lowercased() == bundleID.lowercased() })
+        // Running with a window: nothing to do. Running with none (Safari
+        // after its last window closed): opening it again sends the reopen
+        // event, which gives it a window, still without taking focus.
+        if let running, await !windows(pid: running.pid).isEmpty {
+            return running
         }
         guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else {
+            if let running { return running }
             throw ScreenControlError.invalidInput("\(bundleID) is not installed.")
         }
         let configuration = NSWorkspace.OpenConfiguration()

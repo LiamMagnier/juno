@@ -318,17 +318,54 @@ final class ScreenControlServiceTests: XCTestCase {
         XCTAssertEqual(state, .running(mode: .background, app: "TextEdit"))
     }
 
-    func testTwoSessionsShareOneLock() async throws {
+    /// Many conversations at once, one app each (ChatGPT-style): different
+    /// apps run side by side; the same app is refused naming its holder, is
+    /// free the moment that holder ends, and is reclaimed when it idles.
+    func testManyConversationsShareTheMacOneAppEach() async throws {
         let fixture = ScreenFixture()
         try await fixture.start(session: "a", title: "Fix the export sheet")
+        try await fixture.start(session: "b", title: "Check the receipt", grant: ["com.apple.Safari", "com.apple.TextEdit"])
+        let stateA = await fixture.service.state(sessionID: "a")
+        let stateB = await fixture.service.state(sessionID: "b")
+        XCTAssertEqual(stateA, .running(mode: .background, app: "TextEdit"))
+        XCTAssertEqual(stateB, .running(mode: .background, app: "Safari"), "b's grant targets the app nobody holds")
+        _ = try await fixture.service.prepare(sessionID: "b", action: ScreenAction(kind: .screenshot, app: "Safari"))
         do {
-            try await fixture.service.activate(sessionID: "b", title: "Other")
+            _ = try await fixture.service.prepare(sessionID: "b", action: ScreenAction(kind: .screenshot, app: "TextEdit"))
+            XCTFail("two conversations drove TextEdit")
+        } catch let error as ScreenControlError {
+            XCTAssertEqual(error, .appBusy(app: "TextEdit", holder: "‘Fix the export sheet’"))
+            XCTAssertTrue(error.errorDescription?.hasPrefix("‘Fix the export sheet’ is using TextEdit right now.") == true)
+        }
+        // a idles past the limit with nothing in flight: b may reclaim it,
+        // and a is told why on its next call.
+        fixture.clock.advance(ScreenControlLock.defaultIdleLimit + 1)
+        _ = try await fixture.service.prepare(sessionID: "b", action: ScreenAction(kind: .screenshot, app: "TextEdit"))
+        try await waitUntil { await fixture.service.state(sessionID: "a") == .stopped(.handedOff) }
+        do {
+            _ = try await fixture.service.prepare(sessionID: "a", action: ScreenAction(kind: .screenshot))
             XCTFail()
         } catch let error as ScreenControlError {
-            XCTAssertEqual(error, .lockHeld(holder: "Juno is using TextEdit for ‘Fix the export sheet’"))
+            XCTAssertEqual(error, .stoppedByReader)
         }
-        await fixture.service.deactivate(sessionID: "a")
-        try await fixture.service.activate(sessionID: "b", title: "Other")
+    }
+
+    func testTakeoverNeedsTheWholeMac() async throws {
+        let fixture = ScreenFixture()
+        try await fixture.start(session: "a", title: "Fix the export sheet")
+        try await fixture.start(session: "b", title: "Check the receipt", grant: ["com.apple.Safari"])
+        do {
+            _ = try await fixture.service.beginTakeover(sessionID: "a", displayID: nil)
+            XCTFail("a took the display while b worked")
+        } catch let error as ScreenControlError {
+            XCTAssertEqual(error, .lockHeld(holder: "Alevr is using Safari for ‘Check the receipt’"))
+        }
+        await fixture.service.deactivate(sessionID: "b")
+        _ = try await fixture.service.beginTakeover(sessionID: "a", displayID: nil)
+        do {
+            try await fixture.service.activate(sessionID: "c", title: "Third")
+            XCTFail("a session started beside a takeover")
+        } catch ScreenControlError.lockHeld {}
     }
 
     func testGrantsLapseAfterThirtyIdleMinutesInTheService() async throws {

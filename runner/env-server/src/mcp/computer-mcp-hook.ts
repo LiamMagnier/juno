@@ -4,10 +4,10 @@
  *
  * That server registers each tool once for every session and passes the
  * caller's scope (session id + depth, taken from the bearer token) to the
- * handler. Computer use is per session — its own lock holder id, runtime
+ * handler. Computer use is per session — its own hold id on the Mac, runtime
  * mode, coordinate space and turn items — so this adapter keeps one
  * `ComputerTools` per scoped session, created on the first call and disposed
- * on turn end, session close or explicit release so the desktop lock and
+ * on turn end, session close or explicit release so the Mac's hold and
  * the Mac's per-session grants are let go.
  *
  * The types below are structural copies of the env lane's `McpScope` /
@@ -33,7 +33,6 @@ import {
   type ComputerTools,
   type McpCallResult,
 } from "./computer-tools.js";
-import { DesktopLock } from "./desktop-lock.js";
 
 /** Mirrors `McpScope` in the env lane's alevr-mcp.ts. */
 export interface ComputerMcpScope {
@@ -60,8 +59,6 @@ export interface AlevrMcpRegistry {
 
 export interface ComputerUseHookOptions {
   bridge: ComputerBridge;
-  /** Shared by every session on this env server; one file lock with the Mac app. */
-  lock?: DesktopLock;
   /**
    * The session behind a scope: its title, runtime mode, model coordinate
    * space and whether it sees images. Undefined hides the tool from that
@@ -70,7 +67,7 @@ export interface ComputerUseHookOptions {
   session(scope: ComputerMcpScope): ComputerToolSession | undefined;
   /** Every call's turn item, for that session's log. */
   onItem?(sessionId: string, item: ComputerActionItem): void;
-  /** Whether subagents (depth 1) see the tool too. Default true: the desktop lock keeps them from fighting their parent. */
+  /** Whether subagents (depth 1) see the tool too. Default true: the Mac's per-app holds keep them from fighting their parent. */
   subagents?: boolean;
   /** Fresh id per call when the transport has none (MCP tools/call carries no call id). */
   newCallId?: () => string;
@@ -122,7 +119,6 @@ let callSequence = 0;
 const defaultCallId = () => `mcp_${Date.now().toString(36)}_${(++callSequence).toString(36)}`;
 
 export function registerComputerUseOnAlevrMcp(mcp: AlevrMcpRegistry, options: ComputerUseHookOptions): ComputerUseHook {
-  const lock = options.lock ?? new DesktopLock();
   const perSession = new Map<string, ComputerTools>();
   const newCallId = options.newCallId ?? defaultCallId;
   const owners = new Map<string, string>();
@@ -135,8 +131,7 @@ export function registerComputerUseOnAlevrMcp(mcp: AlevrMcpRegistry, options: Co
     if (!session) return undefined;
     const tools = createComputerTools({
       bridge: options.bridge,
-      lock,
-      // The lock and the Mac's grants key on the scoped session, whatever id the resolver reports.
+      // The Mac's hold and grants key on the scoped session, whatever id the resolver reports.
       session: { ...session, id: scope.sessionId },
       onItem: options.onItem ? (item) => options.onItem!(owner, item) : undefined,
       now: options.now,
@@ -181,6 +176,21 @@ export function registerComputerUseOnAlevrMcp(mcp: AlevrMcpRegistry, options: Co
     releasing.set(sessionId, work);
     return work;
   };
+  /**
+   * The model's computer_release: lets go of this conversation's hold on the
+   * Mac under the id the Mac keys it on, even when this env server holds no
+   * tools for it (they were disposed, or the env server restarted).
+   */
+  const releaseExplicitly = async (sessionId: string) => {
+    const hadTools = perSession.has(sessionId) || releasing.has(sessionId);
+    await releaseOne(sessionId);
+    if (hadTools) return;
+    try {
+      await options.bridge.send({ type: "computer.release", sessionId });
+    } catch {
+      // The app is gone: nothing is held there.
+    }
+  };
   const disposeSession = async (sessionId: string) => {
     const descendants = [...owners].filter(([child, owner]) => owner === sessionId && child !== sessionId).map(([child]) => child);
     await Promise.all([releaseOne(sessionId), ...descendants.map(releaseOne)]);
@@ -188,11 +198,11 @@ export function registerComputerUseOnAlevrMcp(mcp: AlevrMcpRegistry, options: Co
 
   const unregisterRelease = mcp.registerTool({
     name: "computer_release",
-    description: "Release this agent's desktop lock and app grants when finished or before another agent uses the computer.",
+    description: "Release this conversation's hold on apps and its app grants when finished or before another agent uses the computer.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     availableTo: (scope) => !(scope.depth > 0 && options.subagents === false) && options.session(scope) !== undefined,
     async handler(_args, scope) {
-      await releaseOne(scope.sessionId);
+      await releaseExplicitly(scope.sessionId);
       return { content: [{ type: "text", text: "Released the computer." }] };
     },
   });
@@ -241,9 +251,9 @@ export function registerComputerUseOnAlevrMcp(mcp: AlevrMcpRegistry, options: Co
         summarize: () => "Release the computer",
         async execute(_input: Record<string, unknown>, ctx: Context) {
           if (ctx.agentId && options.subagents === false) return { output: "Computer use is disabled for subagents.", isError: true };
-          // A child can release only its own lock, never its parent's or sibling's.
+          // A child can release only its own hold, never its parent's or sibling's.
           const id = caller(ctx);
-          await releaseOne(id);
+          await releaseExplicitly(id);
           return { output: "Released the computer." };
         },
       },

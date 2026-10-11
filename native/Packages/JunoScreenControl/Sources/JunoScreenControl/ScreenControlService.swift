@@ -159,9 +159,9 @@ public actor ScreenControlService: ScreenControlling {
 
     /// Starts screen control for a session: takes the app-wide lock or
     /// refuses naming who holds it. Call only from the reader's gesture.
-    public func activate(sessionID: String, title: String, kind: ScreenControlHolder.Kind = .codeSession) async throws {
+    public func activate(sessionID: String, title: String, kind: ScreenControlHolder.Kind = .codeSession, threadID: String? = nil) async throws {
         await listenToLockIfNeeded()
-        let claim = try await lock.claim(ScreenControlHolder(id: sessionID, kind: kind, title: title))
+        let claim = try await lock.claim(ScreenControlHolder(id: sessionID, kind: kind, title: title, threadID: threadID))
         var session = sessions[sessionID] ?? Session(id: sessionID, title: title, kind: kind)
         session.title = title
         session.claim = claim
@@ -316,6 +316,40 @@ public actor ScreenControlService: ScreenControlling {
         await lock.addHolderListener { [weak self] _ in
             Task { await self?.holderChanged() }
         }
+        // Take over, or an idle hold reclaimed for another conversation:
+        // that one session stops, and its next call says why.
+        await lock.addEvictionListener { [weak self] holderID, reason in
+            Task { await self?.handleEviction(holderID, reason: reason) }
+        }
+    }
+
+    private func handleEviction(_ sessionID: String, reason: ScreenControlStopReason) async {
+        guard var session = sessions[sessionID], session.claim != nil else { return }
+        releaseHeldButton(&session)
+        session.stopNotice = reason
+        session.claim = nil
+        session.generation &+= 1
+        session.frame = nil
+        session.snapshot = nil
+        session.pendingFrames = [:]
+        session.mode = .background
+        session.takeoverDisplayID = nil
+        session.paused = false
+        session.target = nil
+        sessions[sessionID] = session
+        dropProposals(sessionID: sessionID)
+        stopTapIfIdle()
+        await publishPresence()
+    }
+
+    /// A bridged call is running for this session (it may wait on a card):
+    /// its hold is never reclaimed as idle meanwhile.
+    public func beginCall(sessionID: String) async {
+        await lock.beginCall(sessionID)
+    }
+
+    public func endCall(sessionID: String) async {
+        await lock.endCall(sessionID)
     }
 
     /// The lock changed hands. Read the holder now rather than trusting the
@@ -470,6 +504,7 @@ public actor ScreenControlService: ScreenControlling {
             throw ScreenControlError.stoppedByReader
         }
         if sessions[sessionID]?.paused == true { throw ScreenControlError.readerTookOver }
+        await lock.touch(sessionID)
         return sessions[sessionID]?.generation ?? 0
     }
 
@@ -624,11 +659,14 @@ public actor ScreenControlService: ScreenControlling {
         if sessions[sessionID]?.target == nil, let first = granted.first,
            let running = await deps.environment.runningApps().first(where: { $0.bundleID.lowercased() == first.bundleID.lowercased() })
         {
-            sessions[sessionID]?.target = Target(
-                bundleID: running.bundleID, name: running.name, pid: running.pid, appStoreCategory: running.appStoreCategory
-            )
-            await lock.setApp(running.name, for: sessionID)
-            await publishPresence()
+            // Only when no other conversation is in that app: a grant is not
+            // a reason to take it from them.
+            if (try? await lock.claimApp(bundleID: running.bundleID, name: running.name, for: sessionID)) != nil {
+                sessions[sessionID]?.target = Target(
+                    bundleID: running.bundleID, name: running.name, pid: running.pid, appStoreCategory: running.appStoreCategory
+                )
+                await publishPresence()
+            }
         }
         return granted
     }
@@ -712,10 +750,11 @@ public actor ScreenControlService: ScreenControlling {
             )
             _ = try liveGrant(sessionID, bundleID: target.bundleID, appName: target.name)
             if sessions[sessionID]?.target != target {
+                // One conversation per app: refused, naming the one in it.
+                try await lock.claimApp(bundleID: target.bundleID, name: target.name, for: sessionID)
                 sessions[sessionID]?.target = target
                 sessions[sessionID]?.frame = nil
                 sessions[sessionID]?.snapshot = nil
-                await lock.setApp(target.name, for: sessionID)
             }
             return target
         }
@@ -729,21 +768,24 @@ public actor ScreenControlService: ScreenControlling {
             throw ScreenControlError.invalidInput("No app called \(app) is installed. Use computer_apps list to see what is.")
         }
         _ = try liveGrant(sessionID, bundleID: resolved.bundleID, appName: resolved.name)
+        // Before launching or raising it: another conversation in this app keeps it.
+        try await lock.claimApp(bundleID: resolved.bundleID, name: resolved.name, for: sessionID)
         let running = try await deps.environment.open(bundleID: resolved.bundleID)
         try checkpoint(sessionID, generation)
         let target = Target(bundleID: running.bundleID, name: running.name, pid: running.pid, appStoreCategory: running.appStoreCategory)
         sessions[sessionID]?.target = target
         sessions[sessionID]?.frame = nil
         sessions[sessionID]?.snapshot = nil
-        await lock.setApp(target.name, for: sessionID)
         await publishPresence()
         // A freshly launched app takes a moment to show its first window.
         var frame: Frame?
-        for attempt in 0..<10 {
+        // Up to about six seconds: a cold launch of a big app (Safari, Xcode)
+        // often takes longer than three to show its window.
+        for attempt in 0..<20 {
             do {
                 frame = try await settledCapture(sessionID, generation: generation)
                 break
-            } catch ScreenControlError.windowGone(_) where attempt < 9 {
+            } catch ScreenControlError.windowGone(_) where attempt < 19 {
                 try await deps.pause(.milliseconds(300))
                 try checkpoint(sessionID, generation)
             }
@@ -1856,6 +1898,8 @@ public actor ScreenControlService: ScreenControlling {
         guard let display = displays.first(where: { $0.id == displayID }) ?? displays.first(where: \.isMain) ?? displays.first else {
             throw ScreenControlError.driverFailed("No display is available.")
         }
+        // The whole display: every other conversation must have finished.
+        try await lock.setExclusive(true, for: sessionID)
         sessions[sessionID]?.mode = .takeover
         sessions[sessionID]?.takeoverDisplayID = display.id
         sessions[sessionID]?.frame = nil
@@ -1865,6 +1909,7 @@ public actor ScreenControlService: ScreenControlling {
     }
 
     public func endTakeover(sessionID: String) async -> String {
+        try? await lock.setExclusive(false, for: sessionID)
         sessions[sessionID]?.mode = .background
         sessions[sessionID]?.takeoverDisplayID = nil
         sessions[sessionID]?.frame = nil

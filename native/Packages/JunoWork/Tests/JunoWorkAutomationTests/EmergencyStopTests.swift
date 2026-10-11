@@ -250,7 +250,7 @@ final class SharedScreenControlTests: XCTestCase {
             XCTFail("Work drove the screen a Code session held")
         } catch let refusal as AutomationRefusal {
             XCTAssertEqual(refusal.code, .tooFast)
-            XCTAssertTrue(refusal.message.hasPrefix("Juno is using TextEdit for ‘Fix the export sheet’."))
+            XCTAssertTrue(refusal.message.hasPrefix("Alevr is using TextEdit for ‘Fix the export sheet’."), refusal.message)
         }
         let active = await stop.activeUse
         XCTAssertNil(active, "a refused claim leaves nothing reserved")
