@@ -96,7 +96,7 @@ final class CodeLinkRemoteModelTests: XCTestCase {
         await model.select("mac1")
         XCTAssertEqual(model.orderedSessions.map(\.id), ["s1"])
         XCTAssertEqual(model.catalogue.map(\.id), ["alevr", "claude-agent:default"])
-        XCTAssertEqual(model.composer.selection?.model, "claude-sonnet-5-5")
+        XCTAssertEqual(model.composer.selection?.instanceId, "claude-agent:default")
 
         script.polls = [
             [snapshotEvent(4, items: [[
@@ -359,8 +359,9 @@ final class CodeLinkRemoteModelTests: XCTestCase {
         XCTAssertEqual(picker.subscriptions[1].entries[0].effortLevels, [.low, .medium, .high])
         // The same model from Alevr and from the Claude plan are two entries.
         XCTAssertNotEqual(picker.api[0].id, picker.subscriptions[0].entries[0].id)
-        // Alevr's best model is the default for a new session, as on the Mac.
-        XCTAssertEqual(model.composer.selection, CodeV2.ModelSelection(instanceId: "alevr", model: "anthropic:claude-opus-5-5", effort: .high))
+        // With nothing remembered, a new session starts on the Claude plan, so
+        // a first session never bills the Alevr plan unasked (owner's choice).
+        XCTAssertEqual(model.composer.selection, CodeV2.ModelSelection(instanceId: "claude-agent:default", model: "claude-opus-5-5", effort: .high))
     }
 
     func testAnAPIModelChosenOnThePhoneStartsAndContinuesTheMacSession() async throws {

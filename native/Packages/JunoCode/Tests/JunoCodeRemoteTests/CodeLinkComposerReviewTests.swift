@@ -17,7 +17,8 @@ final class CodeLinkComposerReviewTests: XCTestCase {
         let catalogue = CodeLinkComposerState.catalogue(Fixture.providers)
         var composer = CodeLinkComposerState()
         composer.fillDefault(from: catalogue)
-        XCTAssertEqual(composer.selection?.instanceId, "alevr")
+        // A first session starts on the Claude plan, never billing Alevr unasked.
+        XCTAssertEqual(composer.selection?.instanceId, "claude-agent:default")
         composer.choose(instance: catalogue[1].instance, model: catalogue[1].models[0])
         XCTAssertEqual(composer.selection, CodeV2.ModelSelection(instanceId: "claude-agent:default", model: "claude-opus-5-5", effort: .high))
         composer.setEffort(.max)

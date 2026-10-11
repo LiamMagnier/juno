@@ -86,10 +86,17 @@ public struct CodeLinkComposerState: Equatable, Sendable {
         selection?.effort = effort
     }
 
-    /// The default when nothing is chosen: the catalogue's default model, else its first.
+    /// The default when nothing is chosen (the last session's model is
+    /// applied before this): the Claude subscription, so a first session never
+    /// bills the Alevr plan unasked; else the catalogue's default model, else its first.
     public mutating func fillDefault(from catalogue: [CodeLinkModelGroup]) {
         if let selection, Self.model(selection, in: catalogue) != nil { return }
         if selection != nil, catalogue.isEmpty { return }
+        if let plan = catalogue.first(where: { $0.instance.kind == .claudeAgent }),
+           let model = plan.models.first(where: { $0.isDefault == true }) ?? plan.models.first {
+            choose(instance: plan.instance, model: model)
+            return
+        }
         for group in catalogue {
             if let model = group.models.first(where: { $0.isDefault == true }) {
                 choose(instance: group.instance, model: model)
