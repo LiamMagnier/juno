@@ -35,6 +35,10 @@ passed all 41 tests, including four real-container tests. The real tests verify:
 The first added network assertion compared Linux errno numbers with macOS constants;
 that assertion was corrected to compare the guest's ENETUNREACH symbol. It was not
 weakened to accept a closed port. The final real-container run passed all four tests.
+The first hosted cancellation run exposed a fixture ownership mismatch: its hardcoded
+container uid 1000 could not write the Linux runner's uid-1001 workspace. The real
+fixture and local developer launcher now bind the non-root workspace owner's uid/gid,
+as the production setup already does. Neither grants world-write nor runs as root.
 Raw logs: `/tmp/alevr-quality-evidence/exec-kernel-final.log`,
 `exec-complete-final.log`, `exec-real-boundaries.log`, `exec-image-build.log`,
 `computer-boundaries.log`.

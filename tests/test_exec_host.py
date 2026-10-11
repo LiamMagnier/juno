@@ -835,6 +835,11 @@ class RealSandboxBoundary(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.directory, True)
         data = os.path.realpath(self.directory)
         policy = policy_for(os.path.join(data, "sessions"), image=image.stdout.strip())
+        # Match setup.sh: the container uses the workspace-owning service uid.
+        # A hardcoded 1000 cannot write a Linux CI workspace owned by uid 1001.
+        self.assertGreater(os.getuid(), 0, "run real sandbox fixtures as a non-root developer")
+        self.assertGreater(os.getgid(), 0)
+        policy["runUser"] = "%d:%d" % (os.getuid(), os.getgid())
         policy_path = os.path.join(data, "policy.json")
         with open(policy_path, "w") as file:
             json.dump(policy, file)
