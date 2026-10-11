@@ -753,6 +753,22 @@ extension EnvServerTests {
             XCTAssertNotNil(error as? CodeV2HunkApplier.Failure)
         }
     }
+
+    /// Changes without git: a plain folder has no index, so Accept keeps the
+    /// change as it is instead of failing on `git apply --cached`.
+    func testAcceptingAHunkInAFolderThatIsNotARepositoryKeepsTheFile() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("plain-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("index.html")
+        try "<h1>Hi</h1>\n<p>Portfolio</p>\n".write(to: file, atomically: true, encoding: .utf8)
+        XCTAssertFalse(CodeV2HunkApplier.isInsideRepository(dir))
+        let files = CodeV2UnifiedDiff.parse("diff --git a/index.html b/index.html\n--- a/index.html\n+++ b/index.html\n@@ -1 +1,2 @@\n <h1>Hi</h1>\n+<p>Portfolio</p>\n")
+        XCTAssertEqual(files.first?.additions, 1)
+        try await CodeV2HunkApplier().apply(.accept, hunk: files[0].hunks[0], path: "index.html", in: dir)
+        XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), "<h1>Hi</h1>\n<p>Portfolio</p>\n")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: dir.appendingPathComponent(".git").path))
+    }
 }
 
 // MARK: - Test doubles

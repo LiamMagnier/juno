@@ -1819,12 +1819,18 @@ struct ChatComposer: View {
         .lineLimit(1...8)
         .focused($focused)
         .accessibilityIdentifier("Message Juno")
-        // Return sends; Shift-Return breaks the line — every chat surface's
-        // rule, Juno's web composer included, and why the disc carries no
-        // Return shortcut of its own. A vertical `TextField` inserts a newline
-        // on Return, so the key is intercepted rather than bound.
+        // Return sends; Shift-Return and Option-Return break the line, and a
+        // Return confirming an input method's text stays the input method's
+        // (`JunoComposerReturn`, every composer's rule, the web's included,
+        // and why the disc carries no Return shortcut of its own). The field
+        // editor does not break the line on Shift-Return by itself, so the
+        // break is inserted here.
         .onKeyPress(.return, phases: .down) { press in
-            if press.modifiers.contains(.shift) { return .ignored }
+            switch JunoComposerReturn.resolve(press) {
+            case .inputMethod: return .ignored
+            case .newline: return JunoTextEditing.insertLineBreak() ? .handled : .ignored
+            case .send: break
+            }
             if let cursor = suggestionCursor { _ = cursor.pick(); return .handled }
             submit()
             // Swallowed even when nothing could be sent: Return must not quietly
@@ -2319,7 +2325,7 @@ struct ChatComposer: View {
         .focused($collapsedDraftFocused)
         // Return sends from here too: the card *is* the draft.
         .onKeyPress(.return, phases: .down) { press in
-            if press.modifiers.contains(.shift) { return .ignored }
+            guard JunoComposerReturn.resolve(press) == .send else { return .ignored }
             submit()
             return .handled
         }

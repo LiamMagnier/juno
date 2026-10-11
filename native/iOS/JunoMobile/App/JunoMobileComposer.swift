@@ -457,8 +457,20 @@ struct JunoMobileComposer: View {
               .onKeyPress(.upArrow) {
                 guard let cursor = suggestionCursor else { return .ignored }; cursor.move(-1); return .handled
               }
-              .onKeyPress(.return) {
-                guard let cursor = suggestionCursor else { return .ignored }; _ = cursor.pick(); return .handled
+              // A hardware keyboard: Return sends, Shift-Return and
+              // Option-Return break the line, an input method's Return
+              // confirms its text (`JunoComposerReturn`, as on the Mac and
+              // the web). The on-screen keyboard's return still types a
+              // line break: it is not a key press.
+              .onKeyPress(.return, phases: .down) { press in
+                switch JunoComposerReturn.resolve(press) {
+                case .inputMethod: return .ignored
+                case .newline: return JunoTextEditing.insertLineBreak() ? .handled : .ignored
+                case .send: break
+                }
+                if let cursor = suggestionCursor { _ = cursor.pick(); return .handled }
+                if !sendDisabled { send() }
+                return .handled
               }
               .onKeyPress(.tab) {
                 guard let cursor = suggestionCursor else { return .ignored }; _ = cursor.pick(); return .handled

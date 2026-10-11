@@ -146,6 +146,7 @@ import type {
   ReasoningEffort,
 } from "@/types/chat";
 import { uiPref } from "@/lib/ui-prefs";
+import { enterIntent, enterKeyOf } from "@/lib/composer-keys";
 
 /**
  * The chat field's id, so a card in the transcript can put the cursor in it.
@@ -1983,7 +1984,7 @@ function ComposerImpl({
       window.dispatchEvent(new CustomEvent("juno:edit-last-user-message"));
       return;
     }
-    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+    if (enterIntent(enterKeyOf(e)) === "send") {
       // "Send with ⌘ Enter" (Settings › Keyboard): a plain Enter is a new
       // line, which the field inserts when this leaves the event alone.
       if (uiPref("sendKey") === "mod-enter" && !e.metaKey && !e.ctrlKey) return;
@@ -2992,11 +2993,7 @@ function ComposerImpl({
                 role="group"
                 aria-label="Large paste ready to send. Press Enter to send."
                 onKeyDown={(e) => {
-                  if (
-                    e.key === "Enter" &&
-                    !e.shiftKey &&
-                    !e.nativeEvent.isComposing
-                  ) {
+                  if (enterIntent(enterKeyOf(e)) === "send") {
                     e.preventDefault();
                     void submit();
                   }

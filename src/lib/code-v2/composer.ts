@@ -1,7 +1,7 @@
 /**
  * Composer rules (DESIGN §5.5, §5.6; INTERACTION I-13, I-17; SPEC §3.6):
- * Enter sends (queues while a turn runs), ⌘↵ steers, Shift+Enter is a
- * newline, Send becomes Stop when the draft is empty during a run, Esc Esc
+ * Enter sends (queues while a turn runs), ⌘↵ steers, Shift+Enter and
+ * Option+Enter are a newline, Send becomes Stop when the draft is empty during a run, Esc Esc
  * within 600 ms stops. Slash and mention triggers. The editable queue.
  *
  * Pure; the component wires keys and timers to these.
@@ -38,7 +38,8 @@ const mod = (k: KeyInput, mac: boolean) => (mac ? !!k.meta : !!k.ctrl);
 export function composerKeyIntent(k: KeyInput, ctx: ComposerContext, mac = true): ComposerIntent {
   if (ctx.composing || ctx.menuOpen) return null;
   if (k.key === "Enter") {
-    if (k.shift) return "newline";
+    // Shift+Enter and Option/Alt+Enter break the line (src/lib/composer-keys.ts).
+    if (k.shift || k.alt) return "newline";
     if (mod(k, mac)) {
       if (!ctx.hasDraft) return null;
       if (ctx.running && ctx.canSteer) return "steer";

@@ -245,9 +245,16 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
             .padding(.horizontal, JunoSpace.regular)
             .padding(.top, JunoSpace.cozy + 2)
             .padding(.bottom, JunoSpace.snug)
+            // Return sends; Shift-Return and Option-Return break the line; an
+            // input method's Return confirms its text (`JunoComposerReturn`).
+            // The field editor does not break the line by itself, so the
+            // break is inserted here, and with "⌘Return sends" on, a plain
+            // Return breaks it the same way.
             .onKeyPress(.return, phases: .down) { press in
-                if press.modifiers.contains(.shift) || press.modifiers.contains(.option) {
-                    return .ignored
+                switch JunoComposerReturn.resolve(press) {
+                case .inputMethod: return .ignored
+                case .newline: return JunoTextEditing.insertLineBreak() ? .handled : .ignored
+                case .send: break
                 }
                 if menuCount > 0 || searchingQuery != nil {
                     choose()
@@ -260,7 +267,7 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
                     return .handled
                 }
                 if preferences.commandReturnSends, !press.modifiers.contains(.command) {
-                    return .ignored
+                    return JunoTextEditing.insertLineBreak() ? .handled : .ignored
                 }
                 submit()
                 return .handled

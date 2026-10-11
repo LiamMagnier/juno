@@ -38,6 +38,7 @@ import type {
 import type {
   ApprovalRequestItem,
   EffortLevel,
+  FileChangeEntry,
   InteractionMode,
   ItemStatus,
   ProviderCapabilities,
@@ -743,7 +744,9 @@ class ClaudeSession implements ProviderSession {
       const output = toolResultText(block.content);
       const failed = block.is_error === true;
       const denied = failed && /declined|denied|user (?:rejected|stopped)|plan is shown/i.test(output);
-      const item = toolItem(entry.name, entry.input, String(block.tool_use_id), entry.itemId, turn.turnId, entry.createdAt, denied ? "declined" : failed ? "failed" : "completed", output);
+      // The CLI's own record of an edit (structuredPatch) belongs to the one result in this message.
+      const result = content.filter((b) => b.type === "tool_result").length === 1 && !failed ? m.tool_use_result : undefined;
+      const item = toolItem(entry.name, entry.input, String(block.tool_use_id), entry.itemId, turn.turnId, entry.createdAt, denied ? "declined" : failed ? "failed" : "completed", output, result);
       if (item) turn.sink.item(this.#attributed(this.#own(item), entry.agentId));
     }
   }
@@ -824,6 +827,50 @@ function toolResultText(content: unknown): string {
   return "";
 }
 
+/**
+ * A finished Edit / MultiEdit / Write as the CLI reports it (FileEditOutput,
+ * FileWriteOutput: `structuredPatch`, `type`), as one change entry with a
+ * unified diff. Undefined when the result says nothing usable (older CLIs,
+ * a staged edit, a patch that timed out).
+ */
+export function appliedPatch(
+  path: string,
+  toolName: string,
+  input: Record<string, unknown>,
+  result: unknown,
+): Omit<FileChangeEntry, "path"> | undefined {
+  if (!result || typeof result !== "object") return undefined;
+  const r = result as { structuredPatch?: unknown; type?: unknown; staged?: unknown; content?: unknown };
+  if (r.staged === true) return undefined;
+  const created = toolName === "Write" && r.type === "create";
+  const hunks = Array.isArray(r.structuredPatch)
+    ? (r.structuredPatch as { oldStart?: unknown; oldLines?: unknown; newStart?: unknown; newLines?: unknown; lines?: unknown }[]).filter(
+        (h) => typeof h.oldStart === "number" && typeof h.newStart === "number" && Array.isArray(h.lines),
+      )
+    : [];
+  const body: string[] = [];
+  let additions = 0;
+  let deletions = 0;
+  for (const h of hunks) {
+    const lines = (h.lines as unknown[]).filter((l): l is string => typeof l === "string");
+    body.push(`@@ -${h.oldStart},${typeof h.oldLines === "number" ? h.oldLines : 0} +${h.newStart},${typeof h.newLines === "number" ? h.newLines : 0} @@`, ...lines);
+    for (const l of lines) {
+      if (l.startsWith("+")) additions++;
+      else if (l.startsWith("-")) deletions++;
+    }
+  }
+  if (created && body.length === 0) {
+    // A new file's patch is often empty: its content is the whole change.
+    const content = typeof r.content === "string" ? r.content : typeof input.content === "string" ? input.content : "";
+    const lines = content === "" ? [] : (content.endsWith("\n") ? content.slice(0, -1) : content).split("\n");
+    if (lines.length) body.push(`@@ -0,0 +1,${lines.length} @@`, ...lines.map((l) => `+${l}`));
+    additions = lines.length;
+  }
+  if (body.length === 0) return undefined;
+  const head = created ? ["--- /dev/null", `+++ b/${path}`] : [`--- a/${path}`, `+++ b/${path}`];
+  return { change: created ? "add" : "modify", diff: [...head, ...body].join("\n"), additions, deletions };
+}
+
 /** One Claude tool call as a normalized TurnItem, or undefined for tools Alevr shows elsewhere. */
 export function toolItem(
   name: string,
@@ -834,6 +881,8 @@ export function toolItem(
   createdAt: string,
   status: ItemStatus,
   output?: string,
+  /** The SDK's `tool_use_result` for this call, when it finished. */
+  result?: unknown,
 ): TurnItem | undefined {
   const base = { id: itemId, turnId, createdAt, callId };
   const s = (v: unknown) => (typeof v === "string" ? v : "");
@@ -858,6 +907,10 @@ export function toolItem(
         const content = s(input.content);
         additions = content ? content.split("\n").length : 0;
       }
+      // Once the edit ran, the CLI says what it really did: real hunks at real lines, and whether a
+      // Write created the file or replaced one. The thread's card and Changes then count the same lines.
+      const applied = appliedPatch(path, name, input, result);
+      if (applied) return { ...base, kind: "file_change", status, changes: [{ path, ...applied }] };
       return {
         ...base,
         kind: "file_change",

@@ -23,6 +23,7 @@
 import * as React from "react";
 import type { ApprovalDecision, ApprovalRequestItem, PlanItem, ProviderInstance, TurnItem, UserInputRequestItem } from "@/lib/code-v2/contracts";
 import { SLASH_COMMANDS, applyTrigger, composerKeyIntent, detectTrigger, escPress, filterByQuery, rankFiles, sendButtonMode, type Trigger } from "@/lib/code-v2/composer";
+import { insertLineBreak } from "@/lib/composer-keys";
 import { orchestrateLabel } from "@/lib/code-v2/orchestrate";
 import { displayName } from "@/lib/code-v2/providers-view";
 import { formatReset, formatTokens, tightestWindow } from "@/lib/code-v2/tier-view";
@@ -460,7 +461,22 @@ export const Composer = React.forwardRef<
       e.preventDefault();
       return;
     }
-    const intent = composerKeyIntent({ key: e.key, meta: e.metaKey, ctrl: e.ctrlKey, shift: e.shiftKey, alt: e.altKey }, { running, hasDraft, canSteer, canQueue, menuOpen, composing: e.nativeEvent.isComposing }, mac);
+    // Safari sends the Enter that confirms an input method's text after
+    // compositionend, isComposing false but keyCode 229: still not a send.
+    const composing = e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229;
+    const intent = composerKeyIntent({ key: e.key, meta: e.metaKey, ctrl: e.ctrlKey, shift: e.shiftKey, alt: e.altKey }, { running, hasDraft, canSteer, canQueue, menuOpen, composing }, mac);
+    if (intent === "newline" && e.altKey) {
+      // The textarea breaks the line on Shift+Enter by itself, not on Option+Enter.
+      e.preventDefault();
+      if (!insertLineBreak()) {
+        const el = e.currentTarget;
+        const start = el.selectionStart ?? draft.length;
+        const end = el.selectionEnd ?? start;
+        setDraft(draft.slice(0, start) + "\n" + draft.slice(end));
+        requestAnimationFrame(() => textarea.current?.setSelectionRange(start + 1, start + 1));
+      }
+      return;
+    }
     if (!intent || intent === "newline") return;
     e.preventDefault();
     if (intent === "edit-last-queued") {
