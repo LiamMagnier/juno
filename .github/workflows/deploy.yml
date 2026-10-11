@@ -354,6 +354,18 @@ jobs:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/shadow
           DIRECT_URL: postgresql://postgres:postgres@localhost:5432/shadow
 
+      - name: Durable local-tool replies across processes
+        run: |
+          npx prisma migrate reset --force --skip-seed --skip-generate
+          node --conditions=react-server --import tsx tests/local-folder-store.integration.ts
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/shadow
+          DIRECT_URL: postgresql://postgres:postgres@127.0.0.1:5432/shadow
+          AUTH_SECRET: alevr-local-tool-disposable-test-only
+          TOKEN_ENCRYPTION_KEYS: ""
+          TOKEN_ENCRYPTION_PRIMARY: ""
+          ALEVR_DISPOSABLE_LOCAL_TOOL_DB: "1"
+
       # Every concurrency claim in src/lib/work/store.ts is an argument about
       # what Postgres does under READ COMMITTED — that a condition inside an
       # UPDATE's WHERE makes exactly one caller win, that the run's row lock

@@ -7,11 +7,11 @@ set -Eeuo pipefail
 export PYTHONDONTWRITEBYTECODE=1
 cd "$(dirname "$0")/.."
 if [ "${1:-}" = "--migrations-only" ]; then
-  node scripts/check-local-migrations.mjs "${2:-HEAD}"
+  node scripts/check-local-migrations.mjs "${2:-HEAD}" --local-tools
   exit
 fi
 if [ "${1:-}" != "--without-migrations" ]; then
-  node scripts/check-local-migrations.mjs
+  node scripts/check-local-migrations.mjs --local-tools
 fi
 # No bypass here, on purpose. CI, the Mac release and the Mac deploy all call
 # this script, and an inherited SKIP_CHECKS=1 used to turn every one of them

@@ -13,6 +13,7 @@
  */
 import { prismaUnguarded } from "@/lib/db";
 import { isBoundSealedWithPrimary, isSealedWithPrimary, reencryptSecret, reencryptSecretBound } from "@/lib/crypto";
+import { localToolResultContext } from "@/lib/chat/local-folder-bridge";
 import { credentialContext } from "@/lib/secrets/store";
 
 const DRY = process.argv.includes("--dry") || process.argv.includes("--dry-run");
@@ -135,12 +136,38 @@ async function rotateSecretCredentials(): Promise<Tally> {
   return { changed, failed };
 }
 
+/** Ephemeral local-tool results use the same bound key registry. */
+async function rotateLocalToolResults(): Promise<Tally> {
+  const rows = await prismaUnguarded.chatLocalToolCall.findMany({
+    where: { sealedResult: { not: null } },
+    select: { id: true, userId: true, generationId: true, sealedResult: true },
+  });
+  let changed = 0, failed = 0;
+  for (const row of rows) {
+    try {
+      if (!row.sealedResult || isBoundSealedWithPrimary(row.sealedResult)) continue;
+      const sealedResult = reencryptSecretBound(row.sealedResult, localToolResultContext({
+        callId: row.id, userId: row.userId, generationId: row.generationId,
+      }));
+      changed++;
+      if (!DRY) await prismaUnguarded.chatLocalToolCall.updateMany({
+        where: { id: row.id, userId: row.userId, sealedResult: row.sealedResult }, data: { sealedResult },
+      });
+    } catch {
+      failed++;
+      console.error(`  Failed to rotate a local-tool receipt; retain its previous key.`);
+    }
+  }
+  return { changed, failed };
+}
+
 async function main() {
   console.log(DRY ? "Rotation dry-run (no writes)…" : "Rotating secrets onto the primary key…");
   const connections = await rotateConnections();
   const accounts = await rotateAccounts();
   const userMcpServers = await rotateUserMcpServers();
   const secretCredentials = await rotateSecretCredentials();
+  const localToolResults = await rotateLocalToolResults();
   const verb = DRY ? "would be re-sealed" : "re-sealed";
   console.log(`Connections ${verb}: ${connections.changed}` + (connections.failed ? ` (${connections.failed} FAILED)` : ""));
   console.log(`Accounts ${verb}:    ${accounts.changed}` + (accounts.failed ? ` (${accounts.failed} FAILED)` : ""));
@@ -150,7 +177,8 @@ async function main() {
   console.log(
     `Saved logins ${verb}: ${secretCredentials.changed}` + (secretCredentials.failed ? ` (${secretCredentials.failed} FAILED)` : "")
   );
-  const failed = connections.failed + accounts.failed + userMcpServers.failed + secretCredentials.failed;
+  console.log(`Local-tool results ${verb}: ${localToolResults.changed} (${localToolResults.failed} failed)`);
+  const failed = connections.failed + accounts.failed + userMcpServers.failed + secretCredentials.failed + localToolResults.failed;
   if (failed > 0) {
     console.error(`\n${failed} row(s) could not be rotated — keep every old key in TOKEN_ENCRYPTION_KEYS until this reports 0 failures, then re-run.`);
     process.exitCode = 1;
