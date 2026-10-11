@@ -275,7 +275,7 @@ struct DesktopNavigationStateTests {
     func aDesignRequestCarriesTheDesignsFilter() {
         let router = DesktopPageRouter()
         router.open(.design, opensNewMenu: true)
-        let request = try? #require(router.pending)
+        let request = router.pending
         #expect(request?.destination == .artifacts)
         #expect(request?.artifactsType == "DESIGN")
         if let request { router.consume(request) }
