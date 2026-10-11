@@ -380,6 +380,15 @@ struct DesktopCodeWorkspace: View {
                 .navigationTitle(title)
                 .navigationSubtitle(subtitle)
                 .toolbar { toolbar }
+                // ⇧⌘G opens the panel's Agents tab. It lives here, not in the
+                // toolbar: a hidden toolbar button still draws an empty glass slot.
+                .background {
+                    Button { envDock.toggle(.agents) } label: { EmptyView() }
+                        .keyboardShortcut("g", modifiers: [.command, .shift])
+                        .disabled(envBinding == nil)
+                        .hidden()
+                        .accessibilityHidden(true)
+                }
         }
         .inspector(isPresented: panelPresentation) {
             Group {
@@ -784,12 +793,6 @@ struct DesktopCodeWorkspace: View {
             .accessibilityLabel("Panel")
             .accessibilityValue(changeTotals.map { "\($0.added) lines added, \($0.removed) removed" } ?? "No changes")
             .accessibilityIdentifier("juno.code.review.toggle")
-
-            Button { envDock.toggle(.agents) } label: { EmptyView() }
-                .keyboardShortcut("g", modifiers: [.command, .shift])
-                .disabled(envBinding == nil)
-                .hidden()
-                .accessibilityHidden(true)
         }
 
         ToolbarItem(placement: .primaryAction) {
