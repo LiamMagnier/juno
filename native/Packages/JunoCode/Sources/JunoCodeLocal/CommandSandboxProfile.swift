@@ -59,6 +59,9 @@ public struct CommandSandboxProfile: Equatable, Sendable {
     /// theirs to use. Unless set, it follows `protectsPolicyFiles`, the same
     /// line between the agent and the reader.
     public let protectsCredentials: Bool
+    /// Chat's folder grant permits document reads only in the workspace.
+    /// Code's separately authorized toolchains retain their broader read mode.
+    public let restrictsReadsToWorkspace: Bool
 
     public init(
         workspaceRoot: URL,
@@ -68,7 +71,8 @@ public struct CommandSandboxProfile: Equatable, Sendable {
         additionalWritablePaths: [String] = CommandSandboxProfile.defaultWritablePaths,
         protectsPolicyFiles: Bool = true,
         homeDirectory: String = NSHomeDirectory(),
-        protectsCredentials: Bool? = nil
+        protectsCredentials: Bool? = nil,
+        restrictsReadsToWorkspace: Bool = false
     ) {
         self.workspaceRoot = workspaceRoot
         self.filesystem = filesystem
@@ -78,6 +82,7 @@ public struct CommandSandboxProfile: Equatable, Sendable {
         self.protectsPolicyFiles = protectsPolicyFiles
         self.homeDirectory = homeDirectory
         self.protectsCredentials = protectsCredentials ?? protectsPolicyFiles
+        self.restrictsReadsToWorkspace = restrictsReadsToWorkspace
     }
 
     /// What no command the agent runs may read: where the reader keeps the
@@ -287,9 +292,26 @@ public struct CommandSandboxProfile: Equatable, Sendable {
             // caches, the user's own config. Reading is not the risk the
             // workspace grant addresses — leaving the workspace with a *write*
             // is, along with sending its contents somewhere.
-            "(allow file-read*)",
             "(allow file-read-metadata)",
         ]
+        if restrictsReadsToWorkspace {
+            // zsh opens the filesystem root during startup. Permit that
+            // directory itself, without granting its descendant contents.
+            lines.append("(allow file-read-data (literal \"/\"))")
+            // System executables, shared libraries and shell/runtime data are
+            // necessary to launch a process. No home directory, global temp,
+            // user toolchain cache, or sibling document folder is granted.
+            for path in [workspaceRoot.path, "/System", "/bin", "/sbin", "/usr/bin",
+                         "/usr/sbin", "/usr/lib", "/usr/share", "/Library/Apple/System"] {
+                let granted = path == workspaceRoot.path ? path : Self.resolved(path)
+                lines.append("(allow file-read* (subpath \(Self.quote(granted))))")
+            }
+            for path in ["/dev/null", "/dev/urandom", "/dev/random", "/private/etc/zshenv", "/private/etc/localtime"] {
+                lines.append("(allow file-read* (literal \(Self.quote(Self.resolved(path)))))")
+            }
+        } else {
+            lines.append("(allow file-read*)")
+        }
         // ...except the reader's credentials. Later rules win in SBPL, so
         // these refusals override the read allowance above.
         if protectsCredentials {
@@ -297,7 +319,10 @@ public struct CommandSandboxProfile: Equatable, Sendable {
         }
 
         if filesystem == .readWrite {
-            for path in ([workspaceRoot.path] + additionalWritablePaths).map(Self.resolved) {
+            let writePaths = restrictsReadsToWorkspace
+                ? [workspaceRoot.path] + additionalWritablePaths.map(Self.resolved)
+                : ([workspaceRoot.path] + additionalWritablePaths).map(Self.resolved)
+            for path in writePaths {
                 lines.append("(allow file-write* (subpath \(Self.quote(path))))")
             }
             // The project's policy files, and Juno's folder itself, are not a

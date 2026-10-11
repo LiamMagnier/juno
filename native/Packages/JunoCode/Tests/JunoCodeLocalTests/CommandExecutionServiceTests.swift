@@ -20,6 +20,23 @@ final class CommandExecutionServiceTests: XCTestCase {
         try? FileManager.default.removeItem(at: workspaceURL)
     }
 
+    func testMandatoryContainmentNeverFallsBackWhenUnavailable() async throws {
+        let executor = CommandExecutionService(
+            workspaceRootURL: workspaceURL,
+            sandbox: CommandSandboxProfile(workspaceRoot: workspaceURL),
+            containmentAvailable: { false }
+        )
+        XCTAssertFalse(executor.isContained)
+        do {
+            _ = try await executor.run("touch unsafe.txt", timeoutSeconds: 2)
+            XCTFail("mandatory containment must refuse before launch")
+        } catch let error as CommandExecutionError {
+            guard case .launchFailed = error else { return XCTFail("unexpected error: \(error)") }
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: workspaceURL.appendingPathComponent("unsafe.txt").path))
+        XCTAssertEqual(try service.prepare("echo developer").executableURL.path, "/bin/zsh")
+    }
+
     func testCapturesStdoutStderrAndExitCode() async throws {
         let outcome = try await service.run(
             "echo out; echo err 1>&2; exit 3",

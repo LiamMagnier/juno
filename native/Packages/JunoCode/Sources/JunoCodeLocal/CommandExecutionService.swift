@@ -16,23 +16,25 @@ public final class CommandExecutionService: DirectoryScopedCommandExecuting, Sen
     private let sandbox: CommandSandboxProfile?
     /// Settings-driven variables and network access, read per command.
     private let overrides: CommandRuntimeOverrides?
+    private let containmentAvailable: @Sendable () -> Bool
 
     public init(
         workspaceRootURL: URL,
         sandbox: CommandSandboxProfile? = nil,
-        overrides: CommandRuntimeOverrides? = nil
+        overrides: CommandRuntimeOverrides? = nil,
+        containmentAvailable: @escaping @Sendable () -> Bool = { CommandSandboxProfile.isAvailable }
     ) {
         self.workspaceRootURL = workspaceRootURL
         self.sandbox = sandbox
         self.overrides = overrides
+        self.containmentAvailable = containmentAvailable
     }
 
     /// Creates a contained executor: writes confined to the workspace, with
     /// network and localhost reachability selected explicitly by the caller.
     ///
-    /// Falls back to unconfined execution when `sandbox-exec` is unavailable,
-    /// and says so through `isContained` rather than pretending — a caller
-    /// showing a "sandboxed" badge must be able to tell the difference.
+    /// Never falls back to developer mode. If containment is unavailable,
+    /// prepare refuses before launching any process.
     public static func contained(
         workspaceRootURL: URL,
         allowsNetwork: Bool = false,
@@ -40,9 +42,6 @@ public final class CommandExecutionService: DirectoryScopedCommandExecuting, Sen
         additionalWritablePaths: [String] = [],
         overrides: CommandRuntimeOverrides? = nil
     ) -> CommandExecutionService {
-        guard CommandSandboxProfile.isAvailable else {
-            return CommandExecutionService(workspaceRootURL: workspaceRootURL, overrides: overrides)
-        }
         return CommandExecutionService(
             workspaceRootURL: workspaceRootURL,
             sandbox: CommandSandboxProfile(
@@ -55,6 +54,19 @@ public final class CommandExecutionService: DirectoryScopedCommandExecuting, Sen
                     + additionalWritablePaths
             ),
             overrides: overrides
+        )
+    }
+
+    /// Mandatory Chat boundary: document reads and writes stay in this folder,
+    /// no network, and no global temporary or user toolchain-cache write grant.
+    public static func restrictedFolder(workspaceRootURL: URL) -> CommandExecutionService {
+        CommandExecutionService(
+            workspaceRootURL: workspaceRootURL,
+            sandbox: CommandSandboxProfile(
+                workspaceRoot: workspaceRootURL,
+                additionalWritablePaths: ["/dev/null"],
+                restrictsReadsToWorkspace: true
+            )
         )
     }
 
@@ -71,12 +83,13 @@ public final class CommandExecutionService: DirectoryScopedCommandExecuting, Sen
             additionalWritablePaths: sandbox.additionalWritablePaths + overrides.writablePaths,
             protectsPolicyFiles: sandbox.protectsPolicyFiles,
             homeDirectory: sandbox.homeDirectory,
-            protectsCredentials: sandbox.protectsCredentials
+            protectsCredentials: sandbox.protectsCredentials,
+            restrictsReadsToWorkspace: sandbox.restrictsReadsToWorkspace
         )
     }
 
     /// Whether commands from this executor are kernel-confined.
-    public var isContained: Bool { sandbox != nil }
+    public var isContained: Bool { sandbox != nil && containmentAvailable() }
 
     /// Everything a process needs to run a command under this executor's
     /// rules: the sandbox wrapper, the scrubbed environment with the reader's
@@ -100,6 +113,9 @@ public final class CommandExecutionService: DirectoryScopedCommandExecuting, Sen
         workingDirectory: WorkspacePath? = nil,
         additionalEnvironment: [String: String] = [:]
     ) throws -> PreparedCommand {
+        guard sandbox == nil || containmentAvailable() else {
+            throw CommandExecutionError.launchFailed(message: "Required command containment is unavailable; nothing was run.")
+        }
         // Defense in depth: the runtime checks the classifier before
         // proposing the command; refuse forbidden commands here too.
         if case let .forbidden(reason) = classifier.classify(commandLine) {
@@ -219,6 +235,10 @@ public final class CommandExecutionService: DirectoryScopedCommandExecuting, Sen
         workingDirectory: WorkspacePath? = nil
     ) -> AsyncThrowingStream<CommandEvent, Error> {
         AsyncThrowingStream { continuation in
+            guard !Task.isCancelled else {
+                continuation.finish(throwing: CancellationError())
+                return
+            }
             let prepared: PreparedCommand
             do {
                 prepared = try prepare(

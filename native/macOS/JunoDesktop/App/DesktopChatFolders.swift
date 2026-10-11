@@ -78,6 +78,7 @@ final class DesktopChatFolderStore: NativeLocalToolHosting {
     private var draftRecord: Record?
     private var accesses: [String: GrantAccess] = [:]
     private var continuations: [String: CheckedContinuation<ChatFolderApprovalDecision, Never>] = [:]
+    private var runningCalls: [String: [String: Task<ChatFolderResult, Never>]] = [:]
 
     init(
         defaults: UserDefaults = .standard,
@@ -153,7 +154,7 @@ final class DesktopChatFolderStore: NativeLocalToolHosting {
     /// already running stops at its next step.
     func remove(for conversationID: String?) {
         guard let conversationID else {
-            if let draftRecord { accesses.removeValue(forKey: draftRecord.id)?.revoke() }
+            if let draftRecord { revoke(recordID: draftRecord.id) }
             draftRecord = nil
             draft = nil
             return
@@ -171,11 +172,12 @@ final class DesktopChatFolderStore: NativeLocalToolHosting {
     func setAccess(_ access: ChatFolderAccess, for conversationID: String?) {
         if let conversationID, let index = records.firstIndex(where: { $0.conversationID == conversationID }) {
             records[index].access = access.rawValue
-            accesses.removeValue(forKey: records[index].id)?.revoke()
+            revoke(recordID: records[index].id)
+            cancelApprovals(for: conversationID)
             persist()
         } else if conversationID == nil, var record = draftRecord {
             record.access = access.rawValue
-            accesses.removeValue(forKey: record.id)?.revoke()
+            revoke(recordID: record.id)
             draftRecord = record
             draft = describe(record)
         }
@@ -202,6 +204,11 @@ final class DesktopChatFolderStore: NativeLocalToolHosting {
 
     func turnEnded(conversationID: String) {
         cancelApprovals(for: conversationID)
+        for record in records where record.conversationID == conversationID {
+            for task in runningCalls[record.id]?.values ?? Dictionary<String, Task<ChatFolderResult, Never>>().values {
+                task.cancel()
+            }
+        }
     }
 
     /// The reply stopped: nothing is waiting for these answers any more.
@@ -267,9 +274,21 @@ final class DesktopChatFolderStore: NativeLocalToolHosting {
             }
         )
         let executor = ChatFolderExecutor(access: access, folderName: record.name, gate: policy, system: system)
-        let result = await executor.perform(
-            ChatFolderCall(id: call.id, tool: call.tool, arguments: call.args.compactMapValues(Self.argument))
-        )
+        guard runningCalls[recordID]?[call.id] == nil else {
+            return .failed("This folder call is already running; it was not repeated.")
+        }
+        let task = Task {
+            await executor.perform(ChatFolderCall(id: call.id, tool: call.tool, arguments: call.args.compactMapValues(Self.argument)))
+        }
+        runningCalls[recordID, default: [:]][call.id] = task
+        defer { runningCalls[recordID]?.removeValue(forKey: call.id) }
+        let result = await withTaskCancellationHandler {
+            if Task.isCancelled { task.cancel() }
+            return await task.value
+        } onCancel: { [weak self] in
+            task.cancel()
+            Task { @MainActor in self?.answer(call.id, .deny) }
+        }
         switch result.outcome {
         case .succeeded: return NativeLocalToolResult(outcome: .succeeded, output: result.output)
         case .failed: return NativeLocalToolResult(outcome: .failed, output: result.output)
@@ -325,9 +344,16 @@ final class DesktopChatFolderStore: NativeLocalToolHosting {
 
     private func dropRecord(for conversationID: String) {
         for record in records where record.conversationID == conversationID {
-            accesses.removeValue(forKey: record.id)?.revoke()
+            revoke(recordID: record.id)
         }
         records.removeAll { $0.conversationID == conversationID }
+    }
+
+    private func revoke(recordID: String) {
+        accesses.removeValue(forKey: recordID)?.revoke()
+        if let calls = runningCalls[recordID] {
+            for task in calls.values { task.cancel() }
+        }
     }
 
     private static func load(_ defaults: UserDefaults) -> [Record] {
@@ -364,13 +390,17 @@ extension EnvironmentValues {
 /// What the chat's folder calls need from macOS beyond the file service: a
 /// contained shell, Launch Services and document text.
 struct DesktopChatFolderSystem: ChatFolderSystem {
+    var canRunContainedCommands: Bool { CommandSandboxProfile.isAvailable }
+
     func run(_ request: ChatFolderCommandRequest) async throws -> ChatFolderCommandOutcome {
-        // Alevr Code's executor, contained: the kernel sandbox lets the command
-        // write only inside the folder (and the per-user temp and toolchain
-        // caches a build needs), opens no socket, and starts from a scrubbed
-        // environment that carries no Alevr token or provider key.
-        let executor = CommandExecutionService.contained(workspaceRootURL: request.folderRoot)
+        try Task.checkCancellation()
+        // Dedicated Chat profile: document reads and writes in this folder,
+        // system runtime reads, no network, no global temp or home-cache grants.
+        let executor = CommandExecutionService.restrictedFolder(workspaceRootURL: request.folderRoot)
         let relative = Self.relativePath(of: request.workingDirectory, in: request.folderRoot)
+        guard relative != nil || request.workingDirectory.path == request.folderRoot.path else {
+            throw CommandExecutionError.launchFailed(message: "The command's starting folder is outside the grant.")
+        }
         let workingDirectory = try relative.map { try WorkspacePath($0) }
         var output = ""
         var result: CommandResult?

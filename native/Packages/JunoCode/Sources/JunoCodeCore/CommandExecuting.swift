@@ -73,6 +73,7 @@ public extension CommandExecuting {
             }
         }
         guard let result else {
+            try Task.checkCancellation()
             throw CommandExecutionError.launchFailed(message: "Stream ended without completion.")
         }
         return (result, stdout, stderr)
