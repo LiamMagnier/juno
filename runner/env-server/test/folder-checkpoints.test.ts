@@ -80,7 +80,7 @@ test("folder checkpoints: per-turn and whole-session diffs of a folder that is n
   const two = await store.create(cwd, "thread", 2);
   assert.equal(two.filesChanged, 2);
 
-  const turn1 = store.diff(cwd, "thread", 0, 1)!;
+  const turn1 = (await store.diff(cwd, "thread", 0, 1))!;
   assert.deepEqual(turn1.files.map((f) => [f.path, f.change, f.additions, f.deletions]), [
     ["index.html", "modify", 1, 0],
     ["styles.css", "add", 1, 0],
@@ -91,12 +91,12 @@ test("folder checkpoints: per-turn and whole-session diffs of a folder that is n
 
   // Whole session: from before the first turn to the live folder, later edits included.
   write(cwd, "index.html", "<h1>Hello</h1>\n<p>Portfolio</p>\n");
-  const whole = store.diff(cwd, "thread", 0, "worktree")!;
+  const whole = (await store.diff(cwd, "thread", 0, "worktree"))!;
   assert.deepEqual(whole.files.map((f) => [f.path, f.change, f.additions, f.deletions]), [
     ["index.html", "modify", 2, 1],
     ["script.js", "add", 1, 0],
   ]);
-  assert.equal(store.diff(cwd, "missing-thread", 0, "worktree"), undefined);
+  assert.equal(await store.diff(cwd, "missing-thread", 0, "worktree"), undefined);
 });
 
 test("folder checkpoints: rollback restores only the session's own files and keeps later edits", async () => {

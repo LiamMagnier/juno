@@ -600,15 +600,15 @@ export class SessionManager {
    * has no manifests yet; its own file_change items stand in, so what the
    * thread reports as changed is never shown as nothing.
    */
-  #folderDiff(live: LiveSession, checkpointId: string | undefined): ClientCommandResults["checkpoint.diff"] {
+  async #folderDiff(live: LiveSession, checkpointId: string | undefined): Promise<ClientCommandResults["checkpoint.diff"]> {
     const cwd = live.log.meta.cwd;
     const id = live.log.id;
     const folders = this.#folders(live);
     const items = live.log.snapshot.items;
-    if (!checkpointId) return folders.diff(cwd, id, 0, "worktree", this.#editedPaths(live, 0)) ?? fileChangesDiff(cwd, items);
+    if (!checkpointId) return (await folders.diff(cwd, id, 0, "worktree", this.#editedPaths(live, 0))) ?? fileChangesDiff(cwd, items);
     const item = this.#checkpointItem(live, checkpointId);
     if (!item) throw new WireError("not_found", "No such checkpoint.");
-    const turn = item.turnOrdinal > 0 ? folders.diff(cwd, id, item.turnOrdinal - 1, item.turnOrdinal) : undefined;
+    const turn = item.turnOrdinal > 0 ? await folders.diff(cwd, id, item.turnOrdinal - 1, item.turnOrdinal) : undefined;
     return turn ?? fileChangesDiff(cwd, items.filter((i) => i.turnId === item.turnId));
   }
 

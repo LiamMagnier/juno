@@ -66,6 +66,9 @@ const SKIP_DIRS = new Set([
 ]);
 const SKIP_FILES = new Set([".DS_Store"]);
 
+/** Files looked at between two returns to the event loop during a folder walk. */
+const YIELD_EVERY = 64;
+
 export class FolderCheckpoints {
   readonly #dir: string;
   readonly #limits: FolderLimits;
@@ -121,7 +124,7 @@ export class FolderCheckpoints {
    */
   async create(cwd: string, threadId: string, turn: number, extra: readonly string[] = []): Promise<FolderCheckpointInfo> {
     const previous = turn > 0 ? this.read(threadId, turn - 1) : undefined;
-    const manifest = this.#scan(cwd, extra, previous ?? this.#latest(threadId), true);
+    const manifest = await this.#scan(cwd, extra, previous ?? this.#latest(threadId), true);
     manifest.turn = turn;
     fs.mkdirSync(this.#threadDir(threadId), { recursive: true });
     const file = this.#manifestPath(threadId, turn);
@@ -141,10 +144,10 @@ export class FolderCheckpoints {
    * Unified diff plus per-file entries from checkpoint `from` to checkpoint
    * `to` or the live folder. Undefined when `from` (or `to`) was never taken.
    */
-  diff(cwd: string, threadId: string, from: number, to: number | "worktree", extra: readonly string[] = []): { diff: string; files: FileChangeEntry[] } | undefined {
+  async diff(cwd: string, threadId: string, from: number, to: number | "worktree", extra: readonly string[] = []): Promise<{ diff: string; files: FileChangeEntry[] } | undefined> {
     const base = this.read(threadId, from);
     if (!base) return undefined;
-    const target = to === "worktree" ? this.#scan(cwd, extra, base, false) : this.read(threadId, to);
+    const target = to === "worktree" ? await this.#scan(cwd, extra, base, false) : this.read(threadId, to);
     if (!target) return undefined;
     return this.#compare(cwd, base, target, to === "worktree");
   }
@@ -177,7 +180,7 @@ export class FolderCheckpoints {
       for (const file of changedPaths(previous, next)) touched.add(file);
       previous = next;
     }
-    const current = this.#scan(cwd, [...touched, ...Object.keys(target.files)], previous, true);
+    const current = await this.#scan(cwd, [...touched, ...Object.keys(target.files)], previous, true);
     const undoRef = path.join(this.#threadDir(threadId), `pre-rollback-${Date.now()}.json`);
     fs.mkdirSync(this.#threadDir(threadId), { recursive: true });
     fs.writeFileSync(undoRef, JSON.stringify(current));
@@ -282,9 +285,19 @@ export class FolderCheckpoints {
     return normalizeRepoPath(rel.split(path.sep).join("/"));
   }
 
-  /** The folder as it is now. `persist` keeps every content in the store (checkpoints); a live view only hashes. */
-  #scan(cwd: string, extra: readonly string[], reuse: Manifest | undefined, persist: boolean): Manifest {
+  /**
+   * The folder as it is now. `persist` keeps every content in the store
+   * (checkpoints); a live view only hashes. The walk hands the event loop back
+   * every few files, so a big folder never stalls the server's other sessions.
+   */
+  async #scan(cwd: string, extra: readonly string[], reuse: Manifest | undefined, persist: boolean): Promise<Manifest> {
     const files: Record<string, Entry> = {};
+    let sinceYield = 0;
+    const breathe = async (): Promise<void> => {
+      if (++sinceYield < YIELD_EVERY) return;
+      sinceYield = 0;
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    };
     let partial = false;
     let count = 0;
     let total = 0;
@@ -324,6 +337,7 @@ export class FolderCheckpoints {
             } catch {
               /* vanished */
             }
+            await breathe();
           }
         }
       }
@@ -343,6 +357,7 @@ export class FolderCheckpoints {
       } catch {
         /* deleted */
       }
+      await breathe();
     }
     return { version: 1, cwd, turn: -1, createdAt: new Date().toISOString(), partial, files };
   }
