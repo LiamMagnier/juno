@@ -391,7 +391,7 @@ function buildSchema() {
   const params = {
     "session.open": obj(
       { cwd: nonEmpty },
-      { sessionId: nonEmpty, selection: ref("ModelSelection"), afterSequence: int, worktree: bool },
+      { sessionId: nonEmpty, selection: ref("ModelSelection"), afterSequence: int, worktree: bool, runtimeMode: ref("RuntimeMode") },
     ),
     "turn.start": obj(
       {
@@ -486,6 +486,8 @@ function buildSchema() {
   params["host.upload"] = obj({ name: nonEmpty, mediaType: nonEmpty, data: nonEmpty });
   // project lane
   params["project.remove"] = obj({ cwd: nonEmpty });
+  // access lane
+  params["session.setMode"] = obj({ ...sid, runtimeMode: ref("RuntimeMode") }, { interactionMode: ref("InteractionMode") });
   for (const t of C.CLIENT_COMMAND_TYPE_VALUES) if (!params[t]) throw new Error(`no params schema for ${t}`);
   definitions.ClientCommand = {
     oneOf: C.CLIENT_COMMAND_TYPE_VALUES.map((t) => obj({ id: nonEmpty, type: { const: t }, params: params[t] })),

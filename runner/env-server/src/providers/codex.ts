@@ -24,6 +24,7 @@ import type {
   ProviderModel,
   ProviderSetupAction,
   ProviderSetupStep,
+  InteractionMode,
   RuntimeMode,
   SessionUsage,
   TurnItem,
@@ -64,9 +65,18 @@ export function codexSandboxPolicy(mode: RuntimeMode): Record<string, unknown> {
   return { type: sandbox };
 }
 
+/**
+ * The policy a turn starts with. Full access runs codex with no sandbox, but
+ * keeps it forwarding the commands it does not trust (`untrusted`, rather than
+ * the contract's `never`): Alevr answers each one here at once, so nothing
+ * inside the project asks, while sudo, ssh and deletes outside the folder still
+ * reach the person (the same guard as Claude and ACP). With `never`, codex
+ * would run those without anyone seeing them.
+ */
 export function codexTurnPolicy(mode: RuntimeMode) {
   const m = RUNTIME_MODE_VENDOR_MAP[mode].codex;
-  return { approvalPolicy: m.approvalPolicy, approvalsReviewer: m.approvalsReviewer, sandboxPolicy: codexSandboxPolicy(mode) };
+  const approvalPolicy = mode === "full" ? "untrusted" : m.approvalPolicy;
+  return { approvalPolicy, approvalsReviewer: m.approvalsReviewer, sandboxPolicy: codexSandboxPolicy(mode) };
 }
 
 function codexArgs(instance: ProviderInstance): string[] {
@@ -309,6 +319,16 @@ class CodexSession implements ProviderSession {
     return { threadId: this.#threadId, codexTurns: this.#codexTurns };
   }
 
+  /**
+   * The thread's mode changed mid-turn. Codex keeps the turn's own policy, but
+   * every approval it forwards is ruled here, so Full access stops asking at once.
+   */
+  setRuntimeMode(runtimeMode: RuntimeMode, _interactionMode: InteractionMode, cwd?: string): void {
+    if (!this.#active) return;
+    this.#active.runtimeMode = runtimeMode;
+    if (cwd) this.#active.cwd = cwd;
+  }
+
   async runTurn(request: TurnRequest): Promise<TurnResult> {
     if (this.#active) throw new Error("a Codex turn is already running");
     const active: ActiveTurn = {
@@ -407,18 +427,21 @@ class CodexSession implements ProviderSession {
     if (!active) throw new JsonRpcError(`no active turn for ${method}`, -32600);
     const sink = active.sink;
     const options: ApprovalDecision[] = ["accept", "acceptForSession", "decline", "cancel"];
-    // Full access: codex runs with approvalPolicy never and no sandbox, so it
-    // should not ask at all; anything it still forwards is accepted here,
-    // unless the guard says it reaches outside the project (then it asks,
-    // with the reason).
+    // Full access: codex runs with no sandbox and forwards what it does not
+    // trust; each forward is accepted here at once, unless the guard says it
+    // reaches outside the project (then it asks, with the reason). The guard
+    // runs in every mode, so a later switch to Full access can answer a
+    // request that is already waiting.
     const full = active.runtimeMode === "full";
     const cwd = typeof p.cwd === "string" ? p.cwd : (active.cwd ?? process.cwd());
     switch (method) {
       case "item/commandExecution/requestApproval": {
         const command = typeof p.command === "string" ? p.command : Array.isArray(p.command) ? p.command.join(" ") : "";
-        const guard = full ? commandGuardReason(command, cwd) : undefined;
+        const reason = commandGuardReason(command, cwd);
+        const guard = full ? reason : undefined;
         if (full && !guard) return { decision: "accept" };
         const answer = await sink.requestApproval({
+          fullAccessAllows: !reason,
           callId: String(p.itemId ?? p.approvalId ?? "command"),
           ...(typeof p.approvalId === "string" ? { requestId: p.approvalId } : {}),
           action: "command",
@@ -433,9 +456,11 @@ class CodexSession implements ProviderSession {
       case "item/fileChange/requestApproval": {
         const changes = active.items.get(String(p.itemId));
         const files = changes && changes.kind === "file_change" ? changes.changes.map((c) => c.path) : [];
-        const outside = full ? [...files, ...(typeof p.grantRoot === "string" ? [p.grantRoot] : [])].find((f) => isOutside(f, cwd)) : undefined;
+        const outsideAny = [...files, ...(typeof p.grantRoot === "string" ? [p.grantRoot] : [])].find((f) => isOutside(f, cwd));
+        const outside = full ? outsideAny : undefined;
         if (full && !outside) return { decision: "accept" };
         const answer = await sink.requestApproval({
+          fullAccessAllows: !outsideAny,
           callId: String(p.itemId ?? "edit"),
           action: "file_change",
           summary: files.length ? `Edit ${files.length === 1 ? files[0] : `${files.length} files`}` : "Edit files",
@@ -453,6 +478,7 @@ class CodexSession implements ProviderSession {
       case "item/permissions/requestApproval": {
         if (full) return { permissions: p.permissions ?? {}, scope: "turn" };
         const answer = await sink.requestApproval({
+          fullAccessAllows: true,
           callId: String(p.itemId ?? "permissions"),
           action: "permissions",
           summary: "Allow more access",

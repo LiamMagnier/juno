@@ -18,6 +18,7 @@ import type {
   ProviderInstance,
   ProviderSetupAction,
   ProviderSetupStep,
+  InteractionMode,
   RuntimeMode,
   TurnItem,
   UserInput,
@@ -308,6 +309,12 @@ class AcpSession implements ProviderSession {
     return this.#acpSessionId ? { acpSessionId: this.#acpSessionId } : {};
   }
 
+  /** The thread's mode changed mid-turn: the agent's own mode and Alevr's answers follow at once. */
+  setRuntimeMode(runtimeMode: RuntimeMode, _interactionMode: InteractionMode): void {
+    if (this.#turn) this.#turn.runtimeMode = runtimeMode;
+    void this.#applyMode(runtimeMode);
+  }
+
   async runTurn(request: TurnRequest): Promise<TurnResult> {
     if (!this.#acpSessionId) throw new Error("ACP session is not open");
     if (this.#turn) throw new Error("an ACP turn is already running");
@@ -481,13 +488,15 @@ class AcpSession implements ProviderSession {
     const kind = request.toolCall.kind ?? undefined;
     // Full access accepts everything inside the project; the guard's few
     // cases (sudo, another machine, outside the folder) still ask, with why.
-    const guard = turn.runtimeMode === "full" ? acpGuardReason(request.toolCall, this.options.cwd) : undefined;
+    const reason = acpGuardReason(request.toolCall, this.options.cwd);
+    const guard = turn.runtimeMode === "full" ? reason : undefined;
     const auto = guard ? undefined : autoDecision(turn.runtimeMode, kind);
     let decision: ApprovalDecision;
     if (auto) decision = auto;
     else {
       const allowAlways = request.options.some((o) => o.kind === "allow_always");
       const answer = await turn.sink.requestApproval({
+        fullAccessAllows: !reason,
         callId: request.toolCall.toolCallId,
         action: kind === "execute" ? "command" : kind === "edit" || kind === "delete" || kind === "move" ? "file_change" : "tool",
         summary: request.toolCall.title ?? "Allow this action",
@@ -506,13 +515,15 @@ class AcpSession implements ProviderSession {
 }
 
 /** Why a call must still ask under Full access: the shared guard over the call's raw input and paths. */
-export function acpGuardReason(toolCall: { rawInput?: unknown; locations?: { path: string }[] | null }, cwd: string): string | undefined {
+export function acpGuardReason(toolCall: { kind?: string | null; rawInput?: unknown; locations?: { path: string }[] | null }, cwd: string): string | undefined {
   const raw = toolCall.rawInput && typeof toolCall.rawInput === "object" ? (toolCall.rawInput as Record<string, unknown>) : {};
   if (typeof raw.command === "string" || Array.isArray(raw.command)) {
     const command = Array.isArray(raw.command) ? raw.command.join(" ") : (raw.command as string);
     const reason = commandGuardReason(command, cwd);
     if (reason) return reason;
   }
+  // Reading outside the folder never asks; only a call that may change what it points at does.
+  if (toolCall.kind === "read" || toolCall.kind === "search" || toolCall.kind === "think" || toolCall.kind === "fetch") return undefined;
   const outside = (toolCall.locations ?? []).map((l) => l.path).find((p) => isOutside(p, cwd));
   return outside ? `Full access still asks: this reaches ${outside}, outside the project folder.` : undefined;
 }

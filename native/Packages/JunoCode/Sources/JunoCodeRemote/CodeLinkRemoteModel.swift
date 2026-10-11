@@ -81,7 +81,12 @@ public final class CodeLinkRemoteModel {
     public internal(set) var providers: [CodeV2.ProviderInstance] = []
     public internal(set) var skills: [CodeV2.LocalSkillSummary] = []
     public var composer = CodeLinkComposerState() {
-        didSet { if composer != oldValue, !applyingRemote { composerChanged() } }
+        didSet {
+            if composer != oldValue, !applyingRemote { composerChanged() }
+            if composer.runtimeMode != oldValue.runtimeMode || composer.interactionMode != oldValue.interactionMode {
+                modeChanged(fromRemote: applyingRemote)
+            }
+        }
     }
     public var draft = "" {
         didSet { if draft != oldValue, !applyingRemote { draftChanged() } }
@@ -132,6 +137,9 @@ public final class CodeLinkRemoteModel {
     @ObservationIgnored private var providerFailures = 0
     @ObservationIgnored private var pollTask: Task<[CodeV2.ServerEventEnvelope], Error>?
     @ObservationIgnored private var reopening = Set<String>()
+    /// The backend answered that it has no push stream: poll from now on.
+    @ObservationIgnored var streamUnavailable = false
+    @ObservationIgnored private var modeTask: Task<Void, Never>?
     @ObservationIgnored private var lastListAt = Date.distantPast
     @ObservationIgnored var applyingRemote = false
     @ObservationIgnored private var prefsChangedAt: Date?
@@ -407,25 +415,66 @@ public final class CodeLinkRemoteModel {
 
     // MARK: The link loop
 
-    /// Polls for as long as the caller's task lives: immediately again after
-    /// each reply (low latency), backing off 1, 2, 4… 15 s after errors, and
-    /// stopping for good when the pair is gone.
+    /// Follows the Mac for as long as the caller's task lives. The push stream
+    /// first: one response held open, each batch applied the moment the Mac
+    /// pushes it; reopened at once when its window ends or the followed
+    /// sessions change. A backend without the stream falls back to the
+    /// long-poll (again at once after each reply). Errors back off 1, 2, 4…
+    /// 15 s; a gone pair stops it for good.
     public func runLink() async {
         var backoff: Duration = .seconds(1)
+        // The session list (other threads' state, "needs you") on its own
+        // clock: a stream holds one request open for up to a minute.
+        let lister = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(Self.listSeconds))
+                guard let self, self.selectedDeviceID != nil,
+                      self.now().timeIntervalSince(self.lastListAt) > Self.listSeconds
+                else { continue }
+                await self.loadSessions()
+            }
+        }
+        defer { lister.cancel() }
         while !Task.isCancelled {
             guard let client, let deviceID = selectedDeviceID else {
                 try? await sleep(.milliseconds(500))
                 continue
             }
-            if now().timeIntervalSince(lastListAt) > 15 { Task { await loadSessions() } }
+            if now().timeIntervalSince(lastListAt) > Self.listSeconds { Task { await loadSessions() } }
             let cursors = remote.cursors
             let global = remote.globalCursor
-            let task = Task { try await client.poll(deviceID, cursors: cursors, globalCursor: global) }
+            let streaming = client.canStream && !streamUnavailable
+            let openedAt = ContinuousClock.now
+            let task: Task<[CodeV2.ServerEventEnvelope], Error>
+            if streaming {
+                task = Task { [weak self] in
+                    let batches = try await client.stream(deviceID, cursors: cursors, globalCursor: global)
+                    for try await batch in batches {
+                        try Task.checkCancellation()
+                        guard let self, deviceID == self.selectedDeviceID else { break }
+                        if self.linkError != nil { self.linkError = nil }
+                        self.receive(batch, deviceID: deviceID)
+                    }
+                    return []
+                }
+            } else {
+                task = Task { try await client.poll(deviceID, cursors: cursors, globalCursor: global) }
+            }
             pollTask = task
             let result = await task.result
             if Task.isCancelled { return }
             if task.isCancelled { continue } // restarted: new cursors
             guard deviceID == selectedDeviceID else { continue }
+            if streaming, case let .failure(error) = result, error is CodeLinkClient.StreamUnavailable {
+                streamUnavailable = true
+                continue
+            }
+            // A stream the backend ends at once, every time, must not spin.
+            if streaming, case .success = result, ContinuousClock.now - openedAt < Self.minimumStream {
+                try? await sleep(backoff)
+                backoff = min(backoff * 2, .seconds(15))
+                continue
+            }
             switch result {
             case let .success(events):
                 backoff = .seconds(1)
@@ -441,7 +490,12 @@ public final class CodeLinkRemoteModel {
         }
     }
 
-    /// New cursors: drop the waiting poll so the next one asks for them.
+    /// How often the session list is read again while the link runs.
+    static let listSeconds: TimeInterval = 15
+    /// A stream that ends sooner than this with nothing in it counts as a failure.
+    static let minimumStream: Duration = .seconds(1)
+
+    /// New cursors: drop the waiting poll (or the open stream) so the next one asks for them.
     func restartPoll() {
         pollTask?.cancel()
     }
@@ -454,6 +508,9 @@ public final class CodeLinkRemoteModel {
             Task {
                 defer { reopening.remove(sessionId) }
                 _ = try? await client?.sessionOpen(deviceID, sessionId: sessionId, cwd: cwd, afterSequence: afterSequence)
+                // The stream moved its cursors past the gap: reopen it from
+                // this thread's own cursor so the replay is collected.
+                restartPoll()
             }
         }
     }
@@ -697,7 +754,10 @@ public final class CodeLinkRemoteModel {
         isSending = true
         defer { isSending = false }
         do {
-            let id = try await client.sessionOpen(deviceID, sessionId: nil, cwd: cwd, selection: selection, worktree: worktree ? true : nil)
+            let id = try await client.sessionOpen(
+                deviceID, sessionId: nil, cwd: cwd, selection: selection, worktree: worktree ? true : nil,
+                runtimeMode: composer.runtimeMode
+            )
             let summary = CodeV2.SessionSummary(
                 id: id, cwd: cwd, title: String(prompt.prefix(80)), state: .running, selection: selection,
                 updatedAt: CodeV2Dates.string(now()), lastSequence: 0
@@ -809,6 +869,22 @@ public final class CodeLinkRemoteModel {
 
     private func composerChanged() {
         writePrefs()
+    }
+
+    /// The access picker moved on this iPhone: the open thread takes it now
+    /// (on the Mac a waiting approval Full access covers is answered). A
+    /// thread's own mode adopted from the Mac or another device is not sent back.
+    private func modeChanged(fromRemote: Bool) {
+        guard !fromRemote, let client, let deviceID = selectedDeviceID, let sessionID = openSessionID,
+              remote.threads[sessionID]?.snapshot != nil
+        else { return }
+        let runtimeMode = composer.runtimeMode
+        let interactionMode = composer.interactionMode
+        modeTask?.cancel()
+        modeTask = Task {
+            // An older Mac or backend refuses the command; the next message carries the mode anyway.
+            try? await client.sessionSetMode(deviceID, sessionId: sessionID, runtimeMode: runtimeMode, interactionMode: interactionMode)
+        }
     }
 
     func writePrefs() {

@@ -118,7 +118,10 @@ public final class CodeV2EnvSession {
                 sessionId: sessionId,
                 cwd: cwd,
                 selection: snapshot.selection,
-                afterSequence: state.cursor
+                afterSequence: state.cursor,
+                // A new session holds the composer's access before its first
+                // message (an approval or a phone reading the snapshot sees it).
+                runtimeMode: state.cursor == nil ? openMode : nil
             )
             if opened != sessionId {
                 sessionId = opened
@@ -180,6 +183,21 @@ public final class CodeV2EnvSession {
     public func selectSkills(_ skills: [CodeV2.SkillActivation]) async {
         guard state.cursor != nil, let connection = try? await hub?.ready() else { return }
         _ = try? await connection.skillsSelect(sessionId: sessionId, skills: skills)
+    }
+
+    /// The composer's access when this session is first opened.
+    public var openMode: CodeV2.RuntimeMode?
+
+    /// The composer's access picker changed: the env server applies it to the
+    /// thread at once (a running turn included, and the queue after it). A
+    /// switch to Full access answers the approvals waiting inside the project.
+    /// A session not opened yet takes it with its first message instead.
+    public func setMode(_ runtimeMode: CodeV2.RuntimeMode, interactionMode: CodeV2.InteractionMode) async {
+        openMode = runtimeMode
+        guard state.cursor != nil,
+              let connection = try? await hub?.ready()
+        else { return }
+        _ = try? await connection.sessionSetMode(sessionId: sessionId, runtimeMode: runtimeMode, interactionMode: interactionMode)
     }
 
     /// Skills lane: changes with every `skills.updated` from the env server.

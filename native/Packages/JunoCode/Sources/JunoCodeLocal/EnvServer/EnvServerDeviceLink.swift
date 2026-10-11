@@ -110,6 +110,9 @@ public actor EnvServerDeviceLink {
         // forgets the folder and its own sessions too, then asks the env
         // server); the folder itself always stays on disk from a remote.
         .projectRemove,
+        // Access lane: the composer's access picker on the phone, applied to
+        // the thread at once (a waiting approval included).
+        .sessionSetMode,
     ]
     /// Commands this app answers itself (``hostHandler``) instead of the env server.
     public static let hostCommands: Set<CodeV2.ClientCommandType> = [.hostInfo, .hostCapture, .hostUpload, .projectRemove]
@@ -124,8 +127,13 @@ public actor EnvServerDeviceLink {
     private let bufferLimit: Int
     private var buffer: [CodeV2.ServerEventEnvelope] = []
     private var waiters: [UUID: CheckedContinuation<Void, Never>] = [:]
-    /// Sessions opened through the link: a remote may only drive these.
+    /// Sessions a remote may follow and drive: opened through the link, or
+    /// found (``isShared(_:)``) to live in a folder shared with Remote.
     private var linkedSessions: Set<String> = []
+    /// Sessions looked up and found outside the shared folders, and when (a
+    /// folder shared later is picked up on the next look).
+    private var notShared: [String: ContinuousClock.Instant] = [:]
+    private var lookups: [String: Task<Bool, Never>] = [:]
     /// Terminals opened through the link. Terminal events are global (keyed
     /// by terminal id, not session), so only these are ever relayed, and a
     /// remote may only write to, resize or close these: never the shells the
@@ -191,6 +199,35 @@ public actor EnvServerDeviceLink {
         if let outbound, await shareable(envelope) { await outbound(envelope) }
     }
 
+    /// Whether a remote may follow session `id`: one the link opened, or any
+    /// session whose own folder is shared with Remote. The second covers a
+    /// thread started on this Mac (its approval must reach the phone before
+    /// the phone ever opens it) and every thread after this app restarts,
+    /// when the link forgets what it opened. A remote could open such a
+    /// session anyway (``check(_:_:)`` re-admits it by its own folder), so
+    /// this widens nothing; it only stops its events being dropped.
+    func isShared(_ id: String) async -> Bool {
+        if linkedSessions.contains(id) { return true }
+        if let at = notShared[id], ContinuousClock.now - at < .seconds(10) { return false }
+        if let running = lookups[id] { return await running.value }
+        let forward = forward
+        let allowedRoots = allowedRoots
+        let lookup = Task { () -> Bool in
+            guard let listed = try? await forward(.sessionList, .object([:])), let cwd = Self.sessionCwd(id, in: listed) else { return false }
+            return Self.isInside(cwd, roots: await allowedRoots())
+        }
+        lookups[id] = lookup
+        let shared = await lookup.value
+        lookups[id] = nil
+        if shared {
+            linkedSessions.insert(id)
+            notShared[id] = nil
+        } else {
+            notShared[id] = .now
+        }
+        return shared
+    }
+
     /// Whether a remote may see this event at all: the provider stream, and
     /// sessions opened through the link (terminal output only when shared).
     func shareable(_ envelope: CodeV2.ServerEventEnvelope) async -> Bool {
@@ -203,7 +240,7 @@ public actor EnvServerDeviceLink {
             default: return false
             }
         case .session:
-            guard let sessionId = envelope.sessionId, linkedSessions.contains(sessionId) else { return false }
+            guard let sessionId = envelope.sessionId, await isShared(sessionId) else { return false }
             switch envelope.event {
             case .terminalOutput, .terminalExited: return await allowsTerminal()
             default: return true
@@ -377,7 +414,7 @@ public actor EnvServerDeviceLink {
             if case let .string(cwd)? = object["cwd"], !Self.isInside(cwd, roots: await allowedRoots()) {
                 return "That folder is not shared with other devices."
             }
-            if case let .string(id)? = object["sessionId"], !linkedSessions.contains(id) {
+            if case let .string(id)? = object["sessionId"], !(await isShared(id)) {
                 return "Open the session first."
             }
             return nil
@@ -387,20 +424,23 @@ public actor EnvServerDeviceLink {
                 ? nil : "That folder is not shared with other devices. Share it from Alevr on your Mac first."
         case .gitStatus:
             if case let .string(id)? = object["sessionId"] {
-                return linkedSessions.contains(id) ? nil : "Open the session first."
+                return await isShared(id) ? nil : "Open the session first."
             }
             guard case let .string(cwd)? = object["cwd"] else { return "A session or a folder is required." }
             return Self.isInside(cwd, roots: await allowedRoots()) ? nil : "That folder is not shared with other devices."
         case .gitCommit, .gitPush, .gitPr:
             guard case let .string(id)? = object["sessionId"] else { return "A session is required." }
-            return linkedSessions.contains(id) ? nil : "Open the session first."
+            return await isShared(id) ? nil : "Open the session first."
         case .terminalWrite, .terminalResize, .terminalClose:
             guard case let .string(id)? = object["terminalId"] else { return "A terminal is required." }
             return linkedTerminals.contains(id) ? nil : "Open the terminal first."
         case .turnStart, .turnSteer, .turnQueue, .turnInterrupt, .approvalRespond, .checkpointRollback,
-             .checkpointDiff, .sessionClose, .checkpointApplyPatch, .turnSchedule, .turnUnschedule, .skillsSelect:
+             .checkpointDiff, .sessionClose, .checkpointApplyPatch, .turnSchedule, .turnUnschedule, .skillsSelect,
+             .sessionSetMode:
+            // A session in a shared folder may be answered from the phone's
+            // notification without opening it first (and after this app restarts).
             guard case let .string(id)? = object["sessionId"] else { return "A session is required." }
-            return linkedSessions.contains(id) ? nil : "Open the session first."
+            return await isShared(id) ? nil : "Open the session first."
         default:
             return nil
         }
@@ -485,6 +525,12 @@ public actor EnvServerDeviceLinkChannel {
     private var failures = 0
     private var outbox: [Outgoing] = []
     private var flushing: Task<Void, Never>?
+    /// A push is on the wire. Only one ever is: a second, concurrent POST
+    /// could land first and hand the phone a sequence gap (then a replay).
+    /// What arrives meanwhile rides the next batch of the same loop.
+    private var pushing = false
+    /// When the last push left, for the minimum spacing between pushes.
+    private var lastPush: ContinuousClock.Instant?
     /// Set when the backend says this Mac can no longer serve (unpaired, or another protocol).
     public private(set) var stoppedReason: String?
 
@@ -493,7 +539,7 @@ public actor EnvServerDeviceLinkChannel {
         link: EnvServerDeviceLink,
         appVersion: String? = nil,
         pullWaitMs: Int = 25_000,
-        flushDelay: Duration = .milliseconds(50),
+        flushDelay: Duration = .milliseconds(15),
         perform: @escaping Perform
     ) {
         self.deviceId = deviceId
@@ -569,19 +615,33 @@ public actor EnvServerDeviceLinkChannel {
         enqueue(.response(response))
     }
 
+    /// Queues one item for the hub. The first item after a quiet spell leaves
+    /// at once (leading edge); while a push is on the wire everything batches
+    /// into the next one, so a streaming answer costs one POST per round trip,
+    /// never one per delta. `flushDelay` is the least spacing between pushes.
     func enqueue(_ item: Outgoing) {
         outbox.append(item)
-        guard flushing == nil else { return }
-        let delay = flushDelay
+        guard flushing == nil, !pushing else { return }
+        let delay = Self.wait(since: lastPush, spacing: flushDelay)
         flushing = Task { [weak self] in
-            try? await Task.sleep(for: delay)
+            if delay > .zero { try? await Task.sleep(for: delay) }
             await self?.flush()
         }
+    }
+
+    /// How long a push must still wait to keep `spacing` after the last one.
+    static func wait(since last: ContinuousClock.Instant?, spacing: Duration, now: ContinuousClock.Instant = .now) -> Duration {
+        guard let last else { return .zero }
+        let elapsed = now - last
+        return elapsed >= spacing ? .zero : spacing - elapsed
     }
 
     /// Pushes everything queued, in order, in batches the hub accepts.
     public func flush() async {
         flushing = nil
+        guard !pushing else { return }
+        pushing = true
+        defer { pushing = false }
         while !outbox.isEmpty {
             let batch = outbox.prefix(Self.maxPushItems)
             outbox.removeFirst(batch.count)
@@ -603,6 +663,7 @@ public actor EnvServerDeviceLinkChannel {
             // (or, for a response, a timeout) for something the Mac did. The
             // batch goes back to the front, in order, and is retried with a
             // short backoff; a 404 (unpaired) is the one answer that drops it.
+            lastPush = .now
             let status = (try? await perform("POST", hostPath, body))?.0
             if let status, (200..<300).contains(status) || status == 404 {
                 pushFailures = 0

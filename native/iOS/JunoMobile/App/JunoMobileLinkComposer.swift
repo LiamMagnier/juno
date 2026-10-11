@@ -37,6 +37,11 @@ struct JunoMobileLinkFooter: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.junoStartCodeVoice) private var startCodeVoice
   @Environment(\.junoCodeVoiceSession) private var codeVoice
+  @Environment(\.dynamicTypeSize) private var typeSize
+
+  /// At accessibility sizes the thinking gauge moves into "+", so the row
+  /// keeps room for the model's name.
+  private var effortInMenu: Bool { typeSize.isAccessibilitySize }
 
   private var typed: Bool { !model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
   private var drafting: Bool { model.isDraftingNewSession }
@@ -105,14 +110,14 @@ struct JunoMobileLinkFooter: View {
           { begin(JunoMobileCodeVoiceRelay.briefing(place: placeLine, turns: spokenTurns)) }
         },
         dictateOnAppear: dictateOnAppear,
-        trailing: gauge,
+        trailing: effortInMenu ? nil : gauge,
         header: model.draftAttachments.isEmpty ? nil : AnyView(JunoMobileLinkAttachmentStrip(model: model))
       ) {
-        if let attachments {
-          JunoMobileLinkAttachMenu(coordinator: attachments, enabled: model.canAttachMore) {
-            focused = false
-            panel = nil
-          }
+        JunoMobileLinkPlusMenu(
+          model: model, coordinator: attachments, panel: $panel, effortInMenu: effortInMenu
+        ) {
+          focused = false
+          panel = nil
         }
         JunoMobileLinkComposerControls(model: model, panel: $panel)
       }
@@ -133,6 +138,9 @@ struct JunoMobileLinkFooter: View {
       deliver(sentence)
     }
     .onChange(of: focused) { _, now in if now { panel = nil } }
+    // A request from the Mac outranks an open picker: it closes so the
+    // approval (or question) is what the person sees.
+    .onChange(of: model.pendingRequests.first?.id) { _, id in if id != nil { panel = nil } }
     .onAppear {
       if let previewPanel { panel = previewPanel }
       // The empty thread opens ready to type, keyboard up, as Codex's does.
@@ -593,8 +601,11 @@ struct JunoMobileLinkEffortPanel: View {
 
 // MARK: - The composer's row
 
-/// Mode, model and the rest (plan, team, skills): quiet controls on the
-/// composer's row. Effort is the gauge on the right.
+/// Access and model: quiet controls on the composer's row (Codex's row).
+/// Access is an icon only, its name in the panel it opens and in VoiceOver;
+/// the model's name takes the room that is left and truncates, never
+/// overlapping. Plan, team and skills are in "+"; effort is the gauge on the
+/// right (in "+" too at accessibility sizes).
 struct JunoMobileLinkComposerControls: View {
   @Bindable var model: CodeLinkRemoteModel
   @Binding var panel: JunoMobileLinkPanel?
@@ -604,7 +615,6 @@ struct JunoMobileLinkComposerControls: View {
   var body: some View {
     modeButton
     modelMenu
-    moreMenu
   }
 
   // MARK: Mode
@@ -613,16 +623,12 @@ struct JunoMobileLinkComposerControls: View {
     Button {
       panel = panel == .mode ? nil : .mode
     } label: {
-      HStack(spacing: JunoSpace.hairline + 2) {
-        JunoIconView(Self.icon(model.composer.runtimeMode), size: 16)
-        if model.composer.runtimeMode == .full {
-          Text(model.composer.runtimeMode.title).lineLimit(1).fixedSize()
-        }
-      }
-      .font(.subheadline)
-      .foregroundStyle(model.composer.runtimeMode == .full ? Color.junoCaution : (panel == .mode ? Color.primary : Color.junoSecondaryInk))
-      .frame(minWidth: 40, minHeight: 44)
-      .contentShape(.rect)
+      // Full access is a choice, not something waiting on the person, so it
+      // is never coral: it reads as the open lock, in full ink.
+      JunoIconView(Self.icon(model.composer.runtimeMode), size: 17)
+        .foregroundStyle(panel == .mode || model.composer.runtimeMode == .full ? Color.primary : Color.junoSecondaryInk)
+        .frame(width: 40, height: 44)
+        .contentShape(.rect)
     }
     .buttonStyle(.plain)
     .accessibilityLabel("Mode, \(model.composer.runtimeMode.title)")
@@ -667,7 +673,8 @@ struct JunoMobileLinkComposerControls: View {
       JunoMobileLinkChipLabel(text: chipModelName)
     }
     .tint(Color.primary)
-    .frame(minWidth: 44, minHeight: 44)
+    .frame(minHeight: 44)
+    .layoutPriority(1)
     .accessibilityLabel("Model, \(model.composer.modelLabel(in: catalogue))")
     .accessibilityIdentifier("juno.mobile.link-model")
     .simultaneousGesture(TapGesture().onEnded { Task { await model.refreshSubscriptions() } })
@@ -680,10 +687,34 @@ struct JunoMobileLinkComposerControls: View {
     return JunoMobileCodeRemoteThreadView.shortModelName(label)
   }
 
-  // MARK: Plan, team, skills
+}
 
-  private var moreMenu: some View {
+// MARK: - "+"
+
+/// Everything that is not typing, model or access, behind "+" (Codex's
+/// composer): photos and files, then Plan first, the team and the skills,
+/// and at accessibility sizes the thinking level. The row itself stays four
+/// quiet controls wide, so nothing on it ever overlaps.
+struct JunoMobileLinkPlusMenu: View {
+  @Bindable var model: CodeLinkRemoteModel
+  let coordinator: JunoMobileAttachmentCoordinator?
+  @Binding var panel: JunoMobileLinkPanel?
+  var effortInMenu = false
+  /// Puts the keyboard away before a panel arrives.
+  var willPresent: () -> Void = {}
+
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  var body: some View {
     Menu {
+      if let coordinator {
+        Section {
+          Button { present(.camera, coordinator) } label: { JunoIconLabel("attachments.camera", icon: .photos) }
+          Button { present(.photos, coordinator) } label: { JunoIconLabel("attachments.photos", icon: .photos) }
+          Button { present(.files, coordinator) } label: { JunoIconLabel("attachments.files", icon: .files) }
+        }
+        .disabled(!model.canAttachMore)
+      }
       Section {
         Toggle(isOn: Binding(
           get: { model.composer.interactionMode == .plan },
@@ -692,8 +723,17 @@ struct JunoMobileLinkComposerControls: View {
           Text("Plan first")
           Text("It proposes a plan and waits for you before it changes anything.")
         }
+        if effortInMenu {
+          Button {
+            willPresent()
+            panel = .effort
+          } label: {
+            Text("Thinking")
+            Text(model.composer.selection?.effort?.title ?? "Default")
+          }
+        }
       }
-      Section("Team") {
+      Menu {
         ForEach(CodeV2Team.Preset.allCases, id: \.self) { preset in
           Button {
             model.composer.team = preset
@@ -711,8 +751,11 @@ struct JunoMobileLinkComposerControls: View {
             }
           }
         }
+      } label: {
+        Text("Team")
+        Text(model.composer.team.title)
       }
-      Section("Skills") {
+      Menu {
         if model.skills.isEmpty {
           Text("No skills on this Mac")
         }
@@ -727,42 +770,52 @@ struct JunoMobileLinkComposerControls: View {
             Text(skill.description)
           }
         }
+      } label: {
+        Text("Skills")
+        Text(skillsLine)
       }
     } label: {
-      HStack(spacing: JunoSpace.hairline + 2) {
-        JunoIconView(.sliders, size: 14)
-        if let summary = moreSummary {
-          Text(summary).lineLimit(1).fixedSize()
-        }
-      }
-      .font(.subheadline)
-      .foregroundStyle(Color.junoSecondaryInk)
-      .padding(.horizontal, JunoSpace.snug)
-      .frame(minHeight: 44)
-      .contentShape(.rect)
+      JunoIconView(.plus, size: 20)
+        .foregroundStyle(Color.primary)
+        .frame(width: 44, height: 44)
+        .contentShape(Rectangle())
     }
     .tint(Color.primary)
-    .frame(minWidth: 44, minHeight: 44)
-    .accessibilityLabel("Plan, team and skills")
-    .accessibilityIdentifier("juno.mobile.link-more")
+    .accessibilityLabel("Add files, plan, team and skills")
+    .accessibilityValue(summary ?? "")
+    .accessibilityIdentifier("juno.mobile.link-attach")
   }
 
-  /// A word on the control when something beyond the defaults is on.
-  private var moreSummary: String? {
+  private var skillsLine: String {
+    switch model.composer.skills.count {
+    case 0: "None"
+    case 1: "1 skill"
+    case let n: "\(n) skills"
+    }
+  }
+
+  /// What is on beyond the defaults, for VoiceOver.
+  private var summary: String? {
     var parts: [String] = []
-    if model.composer.interactionMode == .plan { parts.append("Plan") }
+    if model.composer.interactionMode == .plan { parts.append("Plan first") }
     if model.composer.team != .solo { parts.append(model.composer.team.shortTitle) }
-    if !model.composer.skills.isEmpty { parts.append(model.composer.skills.count == 1 ? "1 skill" : "\(model.composer.skills.count) skills") }
+    if !model.composer.skills.isEmpty { parts.append(skillsLine) }
     return parts.isEmpty ? nil : parts.joined(separator: ", ")
+  }
+
+  private func present(_ surface: JunoAttachmentSurface, _ coordinator: JunoMobileAttachmentCoordinator) {
+    if surface.dismissesKeyboard { willPresent() }
+    coordinator.present(surface, reduceMotion: reduceMotion)
   }
 }
 
 /// Plain text with a chevron: the chat composer's control, not a capsule.
+/// The name truncates when the row is tight; the chevron always shows.
 struct JunoMobileLinkChipLabel: View {
   let text: String
   var body: some View {
     HStack(spacing: JunoSpace.hairline) {
-      Text(text).lineLimit(1).fixedSize()
+      Text(text).lineLimit(1).truncationMode(.tail)
       JunoIconView(.chevronDown, size: 10).foregroundStyle(Color.junoTertiaryInk)
     }
     .font(.subheadline)

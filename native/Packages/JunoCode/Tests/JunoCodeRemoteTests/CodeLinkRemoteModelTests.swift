@@ -131,6 +131,9 @@ final class CodeLinkRemoteModelTests: XCTestCase {
         model.receive([try decode(snapshotEvent(4, state: "idle"))], deviceID: "mac1")
         XCTAssertEqual(model.composer.runtimeMode, .ask)
         model.composer.runtimeMode = .full
+        // The picker reaches the open thread at once, not only with the next message.
+        try await waitUntil { sender.commands.contains { $0.type == "session.setMode" } }
+        XCTAssertEqual(sender.commands.last { $0.type == "session.setMode" }?.params["runtimeMode"] as? String, "full")
 
         await model.send("Add a test")
         let start = try XCTUnwrap(sender.commands.last)

@@ -303,17 +303,40 @@ public extension EnvServerConnection {
         return try await request(.providerSetup, params: P(instanceId: instanceId, action: action), as: SetupResult.self).step
     }
 
-    func sessionOpen(sessionId: String?, cwd: String, selection: CodeV2.ModelSelection?, afterSequence: Int? = nil) async throws -> String {
+    func sessionOpen(
+        sessionId: String?, cwd: String, selection: CodeV2.ModelSelection?, afterSequence: Int? = nil,
+        runtimeMode: CodeV2.RuntimeMode? = nil
+    ) async throws -> String {
         struct P: Encodable {
             let sessionId: String?
             let cwd: String
             let selection: CodeV2.ModelSelection?
             let afterSequence: Int?
+            let runtimeMode: CodeV2.RuntimeMode?
         }
         return try await request(
-            .sessionOpen, params: P(sessionId: sessionId, cwd: cwd, selection: selection, afterSequence: afterSequence),
+            .sessionOpen,
+            params: P(sessionId: sessionId, cwd: cwd, selection: selection, afterSequence: afterSequence, runtimeMode: runtimeMode),
             as: SessionOpenResult.self
         ).sessionId
+    }
+
+    /// The composer's access picker changed: the thread's mode applies at once,
+    /// mid-turn included. Returns how many waiting approvals the new mode answered.
+    @discardableResult
+    func sessionSetMode(
+        sessionId: String, runtimeMode: CodeV2.RuntimeMode, interactionMode: CodeV2.InteractionMode? = nil
+    ) async throws -> Int {
+        struct P: Encodable {
+            let sessionId: String
+            let runtimeMode: CodeV2.RuntimeMode
+            let interactionMode: CodeV2.InteractionMode?
+        }
+        struct R: Decodable { let approved: Int? }
+        return try await request(
+            .sessionSetMode, params: P(sessionId: sessionId, runtimeMode: runtimeMode, interactionMode: interactionMode),
+            as: R.self
+        ).approved ?? 0
     }
 
     func turnStart(

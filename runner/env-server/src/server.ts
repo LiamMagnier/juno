@@ -470,6 +470,8 @@ export async function dispatchCommand(deps: ConnectionDeps, cmd: ClientCommand, 
     }
     // A person's own input ends any chain a cross-conversation message started,
     // and a client can never pass one off as such a message.
+    case "session.setMode":
+      return sessions.setMode(cmd.params);
     case "turn.start":
       deps.conversations?.noteUserInput(cmd.params.sessionId);
       return sessions.startTurn({ ...cmd.params, input: userOnly(cmd.params.input) });

@@ -284,8 +284,8 @@ struct JunoMobileLinkThreadList: View {
         ForEach(snapshot?.queue ?? []) { queued in
           JunoMobileCodeQueuedPrompt(text: queued.input.text)
         }
-        if snapshot?.state == .running, !isStreamingText, model.openThread?.cursor != nil {
-          JunoShimmerText(workingLine, font: .subheadline)
+        if snapshot?.state == .running, !isStreamingText, !hasLiveRow, model.openThread?.cursor != nil {
+          JunoShimmerText("Working", font: .subheadline)
             .padding(.leading, JunoSpace.hairline)
             .accessibilityIdentifier("juno.mobile.link-working")
         }
@@ -355,15 +355,17 @@ struct JunoMobileLinkThreadList: View {
     return false
   }
 
-  /// What the agent is doing right now, in its own words when it has them.
-  private var workingLine: String {
-    for item in items.reversed() {
-      if case let .subagent(agent) = item, agent.status == .running, let line = agent.liveLine { return line }
-      if let row = CodeV2StepRow.make(item), row.state == .running, row.glyph != .plan {
-        return [row.verb, row.object].compactMap { $0 }.joined(separator: " ")
-      }
+  /// Whether a row in the thread already says what is happening (a thought,
+  /// a command or a subagent still running). The loose "Working" line only
+  /// shows when none does: it used to repeat that row's own verb ("Thinking"
+  /// twice, once in the thread and once over the composer).
+  private var hasLiveRow: Bool {
+    items.contains { item in
+      if case let .subagent(agent) = item, agent.status == .running { return true }
+      if case let .reasoning(reasoning) = item, reasoning.streaming == true { return true }
+      guard let row = CodeV2StepRow.make(item) else { return false }
+      return row.state == .running && row.glyph != .plan
     }
-    return "Working"
   }
 }
 
@@ -733,21 +735,17 @@ struct JunoMobileLinkApprovalCard: View {
       if let why = request.justification, !why.isEmpty {
         Text(why).font(.footnote).foregroundStyle(Color.junoSecondaryInk).lineLimit(1)
       }
+      // The Mac's row, in the same order: Deny, Always (only when the Mac
+      // offers it for this request), Allow. Compact capsules, 44pt to touch.
       HStack(spacing: JunoSpace.snug) {
-        if offersSession {
-          Button { decide(.acceptForSession) } label: {
-            Text("Always this session")
-              .font(.footnote)
-              .foregroundStyle(Color.junoSecondaryInk)
-              .frame(minHeight: 44)
-              .contentShape(Rectangle())
-          }
-          .buttonStyle(.plain)
-          .accessibilityIdentifier("juno.mobile.link-allow-session")
-        }
         Spacer(minLength: 0)
         JunoMobileLinkSmallButton(title: "Deny", prominent: false) { decide(.decline) }
           .accessibilityIdentifier("juno.mobile.link-deny")
+        if offersSession {
+          JunoMobileLinkSmallButton(title: "Always", prominent: false) { decide(.acceptForSession) }
+            .accessibilityLabel("Always allow in this session")
+            .accessibilityIdentifier("juno.mobile.link-allow-session")
+        }
         JunoMobileLinkSmallButton(title: "Allow", prominent: true) { decide(.accept) }
           .accessibilityIdentifier("juno.mobile.link-allow")
       }

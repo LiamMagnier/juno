@@ -216,7 +216,8 @@
         "host.info",
         "host.capture",
         "host.upload",
-        "project.remove"
+        "project.remove",
+        "session.setMode"
       ]
     },
     "ServerEventType": {
@@ -2631,6 +2632,9 @@
                 },
                 "worktree": {
                   "type": "boolean"
+                },
+                "runtimeMode": {
+                  "$ref": "#/definitions/RuntimeMode"
                 }
               },
               "required": [
@@ -4038,6 +4042,42 @@
               },
               "required": [
                 "cwd"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "type",
+            "params"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": {
+              "const": "session.setMode"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "sessionId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "runtimeMode": {
+                  "$ref": "#/definitions/RuntimeMode"
+                },
+                "interactionMode": {
+                  "$ref": "#/definitions/InteractionMode"
+                }
+              },
+              "required": [
+                "sessionId",
+                "runtimeMode"
               ]
             }
           },

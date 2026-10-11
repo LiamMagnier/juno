@@ -87,6 +87,7 @@ public struct CodeV2EnvSessionView: View {
         .background(Studio.Surface.canvas)
         .task(id: session.sessionId) {
             focused = true
+            session.openMode = composer.runtimeMode
             if session.state.cursor == nil { await session.open() }
             let thread = session
             skills.bind(threadKey: thread.sessionId, snapshot: thread.snapshot.skills)
@@ -104,6 +105,13 @@ public struct CodeV2EnvSessionView: View {
         }
         .onChange(of: session.state.cursor == nil) { _, unopened in
             if !unopened { skills.applyRemote(session.snapshot.skills) }
+        }
+        // The access picker applies to the thread now, not at the next message:
+        // Full access chosen while a prompt waits answers it (inside the project).
+        .onChange(of: composer.runtimeMode) { _, mode in
+            let thread = session
+            let interaction = composer.interactionMode
+            Task { await thread.setMode(mode, interactionMode: interaction) }
         }
         .onChange(of: session.skillsRevision) { _, _ in
             // A skill installed, edited or removed on this Mac: re-read an opened list.

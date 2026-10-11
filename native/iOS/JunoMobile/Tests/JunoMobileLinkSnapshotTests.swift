@@ -84,6 +84,52 @@ final class JunoMobileLinkSnapshotTests: XCTestCase {
     }
   }
 
+  // MARK: The composer row at every width
+
+  /// iPhone SE, the standard 6.3", Pro Max: Full access with a long model
+  /// name, while a turn runs. Nothing on the row may overlap (Oct 11: "Full
+  /// access" was drawn over the model's name); the name truncates instead,
+  /// and the loose "Thinking" over the composer is gone.
+  func testComposerRowAtEveryWidth() async throws {
+    let widths: [(String, CGSize)] = [
+      ("se", CGSize(width: 375, height: 667)),
+      ("standard", CGSize(width: 402, height: 874)),
+      ("promax", CGSize(width: 440, height: 956)),
+    ]
+    for (name, size) in widths {
+      let model = Self.composerRowModel()
+      try await Self.shoot("composer-row-\(name)", size: size) {
+        NavigationStack { JunoMobileLinkThreadView(model: model) }
+      }
+    }
+    // The largest accessibility sizes on the smallest phone: the thinking
+    // gauge moves into "+", the model name keeps what room is left.
+    let model = Self.composerRowModel()
+    try await Self.shoot("composer-row-se-ax", size: CGSize(width: 375, height: 667)) {
+      NavigationStack { JunoMobileLinkThreadView(model: model) }
+        .environment(\.dynamicTypeSize, .accessibility2)
+    }
+  }
+
+  /// A running thread on Full access with the longest model name we offer.
+  static func composerRowModel() -> CodeLinkRemoteModel {
+    let t = CodeV2Dates.string(Date())
+    let long = CodeV2.ModelSelection(instanceId: "claude-agent:default", model: "claude-haiku-5-5-long", effort: .high)
+    let snapshot = CodeV2.SessionSnapshot(
+      id: "s1", cwd: "/Users/liam/Desktop/test", title: "Code the best looking portfolio", selection: long,
+      runtimeMode: .full, state: .running, activeTurnId: "t1", items: [
+        .userMessage(CodeV2.UserMessage(id: "u1", turnId: "t1", createdAt: t, text: "Code the best looking portfolio using the brand kit")),
+        .commandExecution(CodeV2.CommandExecution(id: "x1", turnId: "t1", createdAt: t, callId: "c1", command: "ls -la && (ls portfolio 2>/dev/null || true)", output: "", exitCode: 0, durationMs: 40, status: .completed)),
+        .reasoning(CodeV2.Reasoning(id: "r2", turnId: "t1", createdAt: t, text: "Fixing the overflow first.", streaming: true)),
+      ]
+    )
+    let model = Self.model(snapshot: snapshot)
+    model.composer.selection = long
+    model.composer.runtimeMode = .full
+    model.setPreviewDraft("")
+    return model
+  }
+
   // MARK: New session, Codex's way: the empty thread itself
 
   func testNewSessionEmptyWithKeyboard() async throws {
@@ -286,7 +332,11 @@ final class JunoMobileLinkSnapshotTests: XCTestCase {
       CodeV2.ProviderInstance(
         id: "claude-agent:default", kind: .claudeAgent, label: "Claude (your subscription)", status: .ready,
         capabilities: CodeV2.ProviderCapabilities(steering: true, effortLevels: [.low, .medium, .high, .max]),
-        models: [CodeV2.ProviderModel(id: "claude-opus-5-5", label: "Claude Opus 5.5"), CodeV2.ProviderModel(id: "claude-sonnet-5-5", label: "Claude Sonnet 5.5")]
+        models: [
+          CodeV2.ProviderModel(id: "claude-opus-5-5", label: "Claude Opus 5.5"),
+          CodeV2.ProviderModel(id: "claude-sonnet-5-5", label: "Claude Sonnet 5.5"),
+          CodeV2.ProviderModel(id: "claude-haiku-5-5-long", label: "Claude Haiku 5.5 Long Context Preview"),
+        ]
       ),
       CodeV2.ProviderInstance(id: "alevr", kind: .alevr, label: "Alevr", status: .ready, models: [CodeV2.ProviderModel(id: "fable-2", label: "Fable 2")]),
     ]

@@ -10,6 +10,11 @@ import JunoSync
 //
 //   POST /api/code/v2/link/<deviceId> {kind:"rpc", command}  → {responses:[ServerResponse]} | {offline, message}
 //   POST /api/code/v2/link/<deviceId> {kind:"poll", cursors, globalCursor} → {events:[…]} | {offline, message}
+//   POST /api/code/v2/link/<deviceId>/stream {cursors, globalCursor} → text/event-stream of the same replies
+//
+// The stream is the fast path: one response stays open and every batch the
+// Mac pushes is written into it at once (no request, sign-in or pair lookup
+// per batch). A backend without it answers 404 or 405 and the poll is used.
 //
 // 403 {code:"not_paired"} means this iPhone holds no live pair with that Mac;
 // 404 means the Mac is not (or no longer) on the account.
@@ -62,18 +67,25 @@ public struct CodeLinkClient: Sendable {
     public static let rpcTimeout: Duration = .seconds(36)
 
     private let sender: any NativeAuthenticatedRequestSending
+    /// The push stream's transport: the sender itself when it can stream bytes.
+    private let streamer: (any NativeAuthenticatedByteStreaming)?
     public let accountID: AccountID
     private let makeID: @Sendable () -> String
 
     public init(
         sender: any NativeAuthenticatedRequestSending,
         accountID: AccountID,
+        streamer: (any NativeAuthenticatedByteStreaming)? = nil,
         makeID: @escaping @Sendable () -> String = { "iphone-" + UUID().uuidString.lowercased() }
     ) {
         self.sender = sender
+        self.streamer = streamer ?? (sender as? any NativeAuthenticatedByteStreaming)
         self.accountID = accountID
         self.makeID = makeID
     }
+
+    /// Whether the push stream can be tried at all.
+    public var canStream: Bool { streamer != nil }
 
     // MARK: Wire
 
@@ -112,6 +124,27 @@ public struct CodeLinkClient: Sendable {
         let events: [CodeV2.ServerEventEnvelope]?
         let offline: Bool?
         let message: String?
+
+        enum CodingKeys: String, CodingKey { case responses, events, offline, message }
+
+        init(from decoder: any Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            responses = try c.decodeIfPresent([CodeV2.ServerResponse].self, forKey: .responses)
+            // One event this build cannot read must not sink the whole batch
+            // (every later poll would fail on it again): it is skipped, the
+            // reducer sees a gap and re-opens from its cursor.
+            events = try c.decodeIfPresent([Lenient].self, forKey: .events)?.compactMap(\.value)
+            offline = try c.decodeIfPresent(Bool.self, forKey: .offline)
+            message = try c.decodeIfPresent(String.self, forKey: .message)
+        }
+    }
+
+    /// One event, or nil when it does not decode.
+    struct Lenient: Decodable {
+        let value: CodeV2.ServerEventEnvelope?
+        init(from decoder: any Decoder) throws {
+            value = try? CodeV2.ServerEventEnvelope(from: decoder)
+        }
     }
 
     private struct ErrorReply: Decodable {
@@ -205,6 +238,118 @@ public struct CodeLinkClient: Sendable {
         let reply = try await post(deviceID, body: Self.pollBody(cursors: cursors, globalCursor: globalCursor), timeout: Self.pollTimeout)
         return reply.events ?? []
     }
+
+    // MARK: Stream
+
+    /// The backend has no push stream (an older deployment): poll instead.
+    public struct StreamUnavailable: Error, Equatable, Sendable {}
+
+    /// The stream's body: the cursors it starts from.
+    public static func streamBody(cursors: [String: Int], globalCursor: Int) throws -> Data {
+        struct Body: Encodable {
+            let cursors: [String: Int]
+            let globalCursor: Int
+        }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        return try encoder.encode(Body(cursors: cursors, globalCursor: globalCursor))
+    }
+
+    /// Opens the push stream: each element is one batch, the moment the Mac
+    /// pushed it. Ends when the backend closes its window (open it again at
+    /// once); throws `.offline`, `.notPaired` and the like as the poll does,
+    /// and ``StreamUnavailable`` when the backend has no stream.
+    public func stream(
+        _ deviceID: String, cursors: [String: Int], globalCursor: Int
+    ) async throws -> AsyncThrowingStream<[CodeV2.ServerEventEnvelope], any Error> {
+        guard let streamer else { throw StreamUnavailable() }
+        let request = try NativeBearerRequest(
+            path: Self.path(deviceID) + "/stream",
+            method: .post,
+            headers: try HTTPHeaders(["accept": "text/event-stream", "content-type": "application/json"]),
+            body: try Self.streamBody(cursors: cursors, globalCursor: globalCursor)
+        )
+        let accountID = self.accountID
+        let response = try await Self.withTimeout(Self.rpcTimeout) { try await streamer.stream(request, for: accountID) }
+        let type = response.headers["content-type"]?.lowercased() ?? ""
+        if response.statusCode == 405 || (response.statusCode == 404 && !type.contains("json")) { throw StreamUnavailable() }
+        guard (200..<300).contains(response.statusCode) else {
+            var body = Data()
+            for try await byte in response.bytes {
+                body.append(byte)
+                if body.count > 16_384 { break }
+            }
+            throw Self.error(status: response.statusCode, body: body)
+        }
+        guard type.hasPrefix("text/event-stream") else { throw StreamUnavailable() }
+        return AsyncThrowingStream { continuation in
+            let relay = Task {
+                var parser = CodeLinkSSEParser()
+                do {
+                    for try await byte in response.bytes {
+                        guard let payload = parser.consume(byte) else { continue }
+                        guard let reply = try? JSONDecoder().decode(StreamFrame.self, from: payload) else {
+                            throw CodeLinkError.malformed("the link stream")
+                        }
+                        if reply.offline == true {
+                            throw CodeLinkError.offline(message: reply.message ?? "Your Mac did not answer. Open Alevr on it, or check that it is awake.")
+                        }
+                        if let error = reply.error { throw CodeLinkError.notPaired(message: error) }
+                        let events = reply.events?.compactMap(\.value) ?? []
+                        if !events.isEmpty { continuation.yield(events) }
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { @Sendable _ in relay.cancel() }
+        }
+    }
+
+    private struct StreamFrame: Decodable {
+        let events: [Lenient]?
+        let offline: Bool?
+        let message: String?
+        let error: String?
+    }
+}
+
+/// Server-Sent Events, as the link stream writes them: `data:` lines joined
+/// until a blank line ends the frame; `:` comments (heartbeats) ignored.
+public struct CodeLinkSSEParser: Sendable {
+    private var line: [UInt8] = []
+    private var data: [UInt8] = []
+    private var hasData = false
+    /// The longest frame accepted (a batch of up to 1,000 events).
+    public static let maxFrame = 8 * 1024 * 1024
+
+    public init() {}
+
+    /// Feeds one byte; returns a frame's payload when this byte ended it.
+    public mutating func consume(_ byte: UInt8) -> Data? {
+        if byte != 0x0A {
+            if byte != 0x0D, line.count < Self.maxFrame { line.append(byte) }
+            return nil
+        }
+        defer { line.removeAll(keepingCapacity: true) }
+        if line.isEmpty {
+            guard hasData else { return nil }
+            let payload = Data(data)
+            data.removeAll(keepingCapacity: true)
+            hasData = false
+            return payload
+        }
+        if line.first == 0x3A { return nil } // ":" comment
+        let prefix: [UInt8] = Array("data:".utf8)
+        guard line.starts(with: prefix) else { return nil }
+        var value = line.dropFirst(prefix.count)
+        if value.first == 0x20 { value = value.dropFirst() }
+        if hasData { data.append(0x0A) }
+        if data.count + value.count <= Self.maxFrame { data.append(contentsOf: value) }
+        hasData = true
+        return nil
+    }
 }
 
 // MARK: - Typed commands
@@ -274,7 +419,7 @@ public extension CodeLinkClient {
     @discardableResult
     func sessionOpen(
         _ deviceID: String, sessionId: String?, cwd: String, selection: CodeV2.ModelSelection? = nil,
-        afterSequence: Int? = nil, worktree: Bool? = nil
+        afterSequence: Int? = nil, worktree: Bool? = nil, runtimeMode: CodeV2.RuntimeMode? = nil
     ) async throws -> String {
         struct P: Encodable {
             let sessionId: String?
@@ -282,12 +427,29 @@ public extension CodeLinkClient {
             let selection: CodeV2.ModelSelection?
             let afterSequence: Int?
             let worktree: Bool?
+            let runtimeMode: CodeV2.RuntimeMode?
         }
         return try await request(
             .sessionOpen,
-            params: P(sessionId: sessionId, cwd: cwd, selection: selection, afterSequence: afterSequence, worktree: worktree),
+            params: P(
+                sessionId: sessionId, cwd: cwd, selection: selection, afterSequence: afterSequence,
+                worktree: worktree, runtimeMode: runtimeMode
+            ),
             as: SessionOpenResult.self, to: deviceID
         ).sessionId
+    }
+
+    /// The access picker changed: the Mac applies it to the thread now (a
+    /// running turn and its waiting approvals included), not at the next message.
+    func sessionSetMode(
+        _ deviceID: String, sessionId: String, runtimeMode: CodeV2.RuntimeMode, interactionMode: CodeV2.InteractionMode
+    ) async throws {
+        struct P: Encodable {
+            let sessionId: String
+            let runtimeMode: CodeV2.RuntimeMode
+            let interactionMode: CodeV2.InteractionMode
+        }
+        try await send(.sessionSetMode, params: P(sessionId: sessionId, runtimeMode: runtimeMode, interactionMode: interactionMode), to: deviceID)
     }
 
     @discardableResult
