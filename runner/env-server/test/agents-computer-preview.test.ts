@@ -8,12 +8,13 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { startEnvServer, type EnvServer } from "../src/server.js";
 import { silentLogger } from "../src/util.js";
 import type { SystemNoticeItem, TurnItem } from "../src/contracts/code-v2.js";
 import { ALEVR_APPEND, mcpConfig } from "../src/providers/claude-agent.js";
-import { threadConfig } from "../src/providers/codex.js";
+import { threadConfig, userDeveloperInstructions } from "../src/providers/codex.js";
 import { capabilityGuidance, capabilityHint, requestedCapabilities, withCapabilityHints } from "../src/mcp/capability-hints.js";
 import { StaticSiteServers, detectSite, indexFiles, loopbackUrl, openPreview, type PreviewToolDeps } from "../src/mcp/preview-tools.js";
 import { TestClient, fakeBinDir, fakeClaudeQuery, tempDir } from "./helpers.js";
@@ -304,4 +305,18 @@ test("claude: Agent tool subagents become subagent items with their own trace", 
     assert.equal(a.status, "completed");
     assert.ok(all.some((i) => i.kind !== "subagent" && i.agentId === a.agentId), "the child's steps carry its id");
   }
+});
+
+test("codex: the user's own developer_instructions from config.toml come first, Alevr's guidance after", () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "codex-home-"));
+  fs.writeFileSync(path.join(home, "config.toml"), 'model = "gpt-5"\ndeveloper_instructions = """\nAlways answer in French.\n"""\n\n[mcp_servers.x]\ndeveloper_instructions = "not this one"\n');
+  const own = userDeveloperInstructions(home);
+  assert.equal(own?.trim(), "Always answer in French.");
+  const config = threadConfig({ name: "alevr", url: "http://127.0.0.1:1/mcp", authorization: "Bearer t" }, own)!;
+  const text = String(config.developer_instructions);
+  assert.ok(text.startsWith("Always answer in French."));
+  assert.match(text, /open_preview/);
+  fs.writeFileSync(path.join(home, "config.toml"), 'developer_instructions = "Be terse.\\nNo emoji."\n');
+  assert.equal(userDeveloperInstructions(home), "Be terse.\nNo emoji.");
+  assert.equal(userDeveloperInstructions(path.join(home, "missing")), undefined);
 });

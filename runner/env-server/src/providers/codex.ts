@@ -12,6 +12,9 @@
  * server requests item/{commandExecution,fileChange,permissions}/requestApproval
  * and item/tool/requestUserInput.
  */
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import type {
   ApprovalDecision,
   CommandExecutionItem,
@@ -255,6 +258,8 @@ class CodexSession implements ProviderSession {
   /** codex turn id of each completed Alevr turn, by ordinal - 1. */
   #codexTurns: string[] = [];
   readonly #logger: Logger;
+  /** The CODEX_HOME this session's codex reads its config.toml from. */
+  readonly #codexHome: string | undefined;
 
   constructor(
     instance: ProviderInstance,
@@ -262,6 +267,7 @@ class CodexSession implements ProviderSession {
     private readonly clientVersion?: string,
   ) {
     this.#logger = options.logger;
+    this.#codexHome = vendorEnv(instance, "CODEX_HOME").CODEX_HOME;
     const state = options.resumeState ?? {};
     if (typeof state.threadId === "string") this.#threadId = state.threadId;
     if (Array.isArray(state.codexTurns)) this.#codexTurns = state.codexTurns.filter((t): t is string => typeof t === "string");
@@ -285,7 +291,7 @@ class CodexSession implements ProviderSession {
   async start(): Promise<void> {
     this.#rpc.start();
     await initialize(this.#rpc, this.clientVersion);
-    const config = threadConfig(this.options.mcp);
+    const config = threadConfig(this.options.mcp, userDeveloperInstructions(this.#codexHome));
     if (this.#threadId) {
       try {
         await this.#rpc.request("thread/resume", { threadId: this.#threadId, cwd: this.options.cwd, excludeTurns: true, ...(config ? { config } : {}) });
@@ -681,12 +687,45 @@ function mapFileChange(c: Record<string, unknown>): FileChangeEntry {
  * instructions that say when to use its subagents, Preview and computer use
  * (Codex has no other system-prompt hook; exported for tests).
  */
-export function threadConfig(mcp: McpEndpoint | undefined): Record<string, unknown> | undefined {
+export function threadConfig(mcp: McpEndpoint | undefined, userInstructions?: string): Record<string, unknown> | undefined {
   if (!mcp) return undefined;
+  // A per-thread `developer_instructions` replaces the user's own from
+  // config.toml, so theirs are carried first and Alevr's guidance follows.
+  const own = userInstructions?.trim();
+  const alevr = `You are running inside Alevr Code on the user's own machine.\n${capabilityGuidance("codex")}`;
   return {
     mcp_servers: { [mcp.name]: { url: mcp.url, http_headers: { Authorization: mcp.authorization } } },
-    developer_instructions: `You are running inside Alevr Code on the user's own machine.\n${capabilityGuidance("codex")}`,
+    developer_instructions: own ? `${own}\n\n${alevr}` : alevr,
   };
+}
+
+/**
+ * The top-level `developer_instructions` from the user's Codex config.toml
+ * (CODEX_HOME, else ~/.codex), or undefined. Reads only the forms that key
+ * takes in practice: a basic "…" string, or a multi-line """…""" / '''…'''
+ * string, before the first [table]. Exported for tests.
+ */
+export function userDeveloperInstructions(codexHome: string | undefined): string | undefined {
+  const home = codexHome || path.join(os.homedir(), ".codex");
+  let text: string;
+  try {
+    text = fs.readFileSync(path.join(home, "config.toml"), "utf8");
+  } catch {
+    return undefined;
+  }
+  const top = text.split(/^\s*\[/m)[0] ?? "";
+  const multi = top.match(/^\s*developer_instructions\s*=\s*("""|''')\r?\n?([\s\S]*?)\1/m);
+  if (multi) return multi[2];
+  const basic = top.match(/^\s*developer_instructions\s*=\s*("(?:[^"\\\n]|\\.)*")/m);
+  if (basic) {
+    try {
+      return JSON.parse(basic[1]) as string;
+    } catch {
+      return undefined;
+    }
+  }
+  const literal = top.match(/^\s*developer_instructions\s*=\s*'([^'\n]*)'/m);
+  return literal?.[1];
 }
 
 function errorCode(error: unknown): string | undefined {
