@@ -128,7 +128,7 @@ const CONTROLS = /(?<![A-Za-z0-9_.])(Button|Menu)\s*(?=[({])/g;
  */
 const SYSTEM_DRAWN = new RegExp(
   [
-    "(?<![A-Za-z0-9_.])Menu\\s*[({]",
+    "(?<![A-Za-z0-9_.])(?:Menu|NativeTrayMenu)\\s*[({]",
     "\\.contextMenu\\s*[({]",
     "\\.confirmationDialog\\s*\\(",
     "\\.alert\\s*\\(",

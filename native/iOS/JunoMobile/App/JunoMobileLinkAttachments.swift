@@ -102,6 +102,7 @@ struct JunoMobileLinkAttachmentStrip: View {
       }
       .buttonStyle(.plain)
       .accessibilityLabel("Remove \(file.name)")
+      .frame(minWidth: 44, minHeight: 44)
     }
     .padding(.leading, JunoSpace.hairline)
   }

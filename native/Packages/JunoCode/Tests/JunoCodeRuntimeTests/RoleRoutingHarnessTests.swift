@@ -106,7 +106,7 @@ final class RoleRoutingHarnessTests: XCTestCase {
             orchestrator: .init(instanceId: "alevr", model: "anthropic:claude-opus-5-5", effort: .high),
             workers: [
                 .init(instanceId: "codex", model: "gpt-6-codex", effort: .low, contextTokens: 200_000),
-                .init(instanceId: "alevr", model: "anthropic:claude-sonnet-5-5", effort: .none),
+                .init(instanceId: "alevr", model: "anthropic:claude-sonnet-5-5", effort: CodeV2.EffortLevel.none),
             ],
             reviewer: .init(instanceId: "claude", model: "claude-opus-5-5", effort: .xhigh),
             explorer: nil,

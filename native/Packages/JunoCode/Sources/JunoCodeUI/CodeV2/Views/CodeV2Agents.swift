@@ -749,7 +749,7 @@ struct CodeV2ScreenBusyPanel: View {
         }
         .padding(JunoSpace.regular)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .junoGlass(in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(Color.junoRaised, in: RoundedRectangle(cornerRadius: JunoRadius.menu, style: .continuous))
         .accessibilityElement(children: .contain)
         .accessibilityLabel(busy.title)
     }

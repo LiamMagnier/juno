@@ -46,9 +46,9 @@ enum CodeV2FixtureFrames {
         flip.scaleX(by: 1, yBy: -1)
         flip.concat()
 
-        let ink = NSColor(white: 0.12, alpha: 1)
-        let muted = NSColor(white: 0.45, alpha: 1)
-        let line = NSColor(white: 0.88, alpha: 1)
+        let ink = NSColor.labelColor
+        let muted = NSColor.secondaryLabelColor
+        let line = NSColor.separatorColor
         func fill(_ rect: NSRect, _ color: NSColor, radius: CGFloat = 0) {
             color.setFill()
             NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius).fill()
@@ -59,11 +59,11 @@ enum CodeV2FixtureFrames {
         }
 
         // Desktop and the browser window.
-        fill(NSRect(origin: .zero, size: size), NSColor(calibratedRed: 0.86, green: 0.88, blue: 0.91, alpha: 1))
+        fill(NSRect(origin: .zero, size: size), NSColor.underPageBackgroundColor)
         let window = NSRect(x: 40, y: 30, width: 880, height: 540)
         fill(window, .white, radius: 12)
-        fill(NSRect(x: 40, y: 30, width: 880, height: 44), NSColor(white: 0.96, alpha: 1), radius: 12)
-        fill(NSRect(x: 40, y: 62, width: 880, height: 12), NSColor(white: 0.96, alpha: 1))
+        fill(NSRect(x: 40, y: 30, width: 880, height: 44), NSColor.controlBackgroundColor, radius: 12)
+        fill(NSRect(x: 40, y: 62, width: 880, height: 12), NSColor.controlBackgroundColor)
         for (i, c) in [NSColor.systemRed, .systemYellow, .systemGreen].enumerated() {
             fill(NSRect(x: 58 + CGFloat(i) * 20, y: 46, width: 12, height: 12), c.withAlphaComponent(0.8), radius: 6)
         }
@@ -74,7 +74,7 @@ enum CodeV2FixtureFrames {
         if step == .blank {
             text("Storefront", NSPoint(x: 80, y: 110), size: 22, weight: .medium)
             for row in 0..<3 {
-                fill(NSRect(x: 80, y: 170 + CGFloat(row) * 80, width: 520, height: 56), NSColor(white: 0.97, alpha: 1), radius: 8)
+                fill(NSRect(x: 80, y: 170 + CGFloat(row) * 80, width: 520, height: 56), NSColor.controlBackgroundColor, radius: 8)
             }
             return rep.representation(using: .png, properties: [:])
         }
@@ -84,7 +84,7 @@ enum CodeV2FixtureFrames {
         let items = [("Linen apron", "$48.00"), ("Stoneware mug, 2 ×", "$36.00"), ("Coffee scoop", "$12.00")]
         for (i, item) in items.enumerated() {
             let y = 160 + CGFloat(i) * 64
-            fill(NSRect(x: 80, y: y, width: 44, height: 44), NSColor(white: 0.93, alpha: 1), radius: 6)
+            fill(NSRect(x: 80, y: y, width: 44, height: 44), NSColor.controlBackgroundColor, radius: 6)
             text(item.0, NSPoint(x: 140, y: y + 12), size: 15)
             text(item.1, NSPoint(x: 520, y: y + 12), size: 15)
             fill(NSRect(x: 80, y: y + 54, width: 500, height: 1), line)
@@ -95,7 +95,7 @@ enum CodeV2FixtureFrames {
         text(step == .cart ? "Coupon code" : "SPRING10", NSPoint(x: 92, y: 378), size: 14, color: step == .cart ? muted : ink)
 
         let card = NSRect(x: 630, y: 140, width: 250, height: step == .receipt ? 300 : 220)
-        fill(card, NSColor(white: 0.975, alpha: 1), radius: 10)
+        fill(card, NSColor.controlBackgroundColor, radius: 10)
         text(step == .receipt ? "Receipt" : "Summary", NSPoint(x: 650, y: 158), size: 16, weight: .medium)
         let rows = [("Subtotal", "$96.00"), ("Tax", "$7.68"), ("Coupon", "−$10.37")]
         for (i, row) in rows.enumerated() {

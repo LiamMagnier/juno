@@ -56,6 +56,8 @@ struct ChatFolderControl: View {
         .help("Work in a folder on this Mac")
         .accessibilityLabel("Work in a folder")
         .accessibilityIdentifier("juno.desktop.chat.folder.choose")
+        .frame(minWidth: 28, minHeight: 28)
+        .contentShape(.rect)
     }
 
     private func chosen(_ folder: DesktopChatFolderStore.Folder, store: DesktopChatFolderStore) -> some View {
@@ -105,6 +107,8 @@ struct ChatFolderControl: View {
             .help("Stop working in \(folder.name)")
             .accessibilityLabel("Stop working in \(folder.name)")
             .accessibilityIdentifier("juno.desktop.chat.folder.remove")
+            .frame(minWidth: 28, minHeight: 28)
+            .contentShape(.rect)
         }
         .fixedSize()
     }

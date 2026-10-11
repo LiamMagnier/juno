@@ -177,7 +177,7 @@ struct JunoMobileCodeComposer<Accessories: View>: View {
                 .padding(.horizontal, JunoSpace.tight)
                 .padding(.bottom, JunoSpace.tight)
         }
-        .junoGlass(in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .background(Color.junoRaised, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
         // The card's own edge carries the light, as Chat's composer does: the
         // call's while one is live, your ink while you dictate.
         .overlay {

@@ -341,7 +341,7 @@ enum CodeV2Syntax {
             .split(separator: " ").map(String.init)
     )
 
-    nonisolated(unsafe) private static let pattern = try! NSRegularExpression(
+    private static let pattern = try! NSRegularExpression(
         pattern: #"(//.*$|/\*.*?\*/|#.*$)|("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)|(\b\d[\d_.]*\b)|([A-Za-z_$][\w$]*)"#,
         options: [.anchorsMatchLines]
     )

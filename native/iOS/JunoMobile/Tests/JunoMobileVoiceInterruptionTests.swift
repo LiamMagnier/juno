@@ -12,6 +12,13 @@ final class JunoMobileVoiceInterruptionTests: XCTestCase {
     )
   }
 
+  func testOnlyTheLegacySuspensionReasonIsADelayedEvent() {
+    XCTAssertTrue(JunoMobileVoiceInterruptionPolicy.wasSuspended(reasonRaw: 1))
+    for reason: UInt? in [nil, 0, 2, 3, 4, 999] {
+      XCTAssertFalse(JunoMobileVoiceInterruptionPolicy.wasSuspended(reasonRaw: reason))
+    }
+  }
+
   func testARealInterruptionPausesTheCall() {
     XCTAssertEqual(action(began: true), .pause)
   }

@@ -181,7 +181,7 @@ struct JunoMobilePairingScannerScreen: View {
               .multilineTextAlignment(.center)
               .padding(.horizontal, JunoSpace.regular)
               .padding(.vertical, JunoSpace.snug)
-              .glassEffect(.regular, in: .rect(cornerRadius: JunoSpace.regular))
+              .background(Color.black.opacity(0.85), in: .rect(cornerRadius: JunoSpace.regular))
               .transition(.opacity.combined(with: .offset(y: JunoSpace.snug)))
               .accessibilityAddTraits(.updatesFrequently)
           }
@@ -222,6 +222,8 @@ struct JunoMobilePairingScannerScreen: View {
           .frame(maxWidth: .infinity, minHeight: JunoLayout.touchTarget)
       }
       .junoMobileCapsulePrimary()
+      .frame(minWidth: 44, minHeight: 44)
+      .contentShape(.rect)
       JunoMobilePairingPasteButton(scanned: scanned)
     }
   }
@@ -271,6 +273,7 @@ private struct JunoMobileViewfinderScrim: View {
 /// The viewfinder's four corners, breathing slowly while it looks.
 private struct JunoMobileViewfinderCorners: View {
   let animated: Bool
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var settled = false
 
   var body: some View {
@@ -280,8 +283,8 @@ private struct JunoMobileViewfinderCorners: View {
       .opacity(settled ? 0.86 : 1)
       .shadow(color: .black.opacity(0.25), radius: 8)
       .onAppear {
-        guard animated else { return }
-        withAnimation(.easeInOut(duration: 1.6).repeatForever(autoreverses: true)) { settled = true }
+        guard animated, !reduceMotion else { return }
+        withAnimation(JunoMotion.ambient(JunoMotion.breathe(period: JunoMotion.Loop.statusBreathe), when: reduceMotion)) { settled = true }
       }
   }
 }
@@ -359,8 +362,8 @@ private struct JunoMobilePairingChoice: View {
       .frame(minWidth: 96)
       .frame(height: 40)
       .contentShape(Capsule())
-      .junoGlass(in: Capsule(), tint: prominent ? Color.junoAccent : nil, interactive: true)
-      .padding(.vertical, 2)
+      .background(prominent ? Color.junoAccent : Color.junoRaised, in: Capsule())
+      .padding(.vertical, JunoSpace.micro)
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
@@ -496,6 +499,8 @@ struct JunoMobilePairingResultScreen: View {
             .frame(maxWidth: .infinity, minHeight: JunoLayout.touchTarget)
         }
         .junoMobileCapsulePrimary()
+        .frame(minWidth: 44, minHeight: 44)
+        .contentShape(.rect)
         if let secondary {
           Button(action: secondary.1) {
             Text(secondary.0)
@@ -504,6 +509,8 @@ struct JunoMobilePairingResultScreen: View {
               .frame(maxWidth: .infinity, minHeight: JunoLayout.touchTarget)
           }
           .junoMobileCapsuleAction()
+          .frame(minWidth: 44, minHeight: 44)
+          .contentShape(.rect)
         }
       }
     }
@@ -603,7 +610,7 @@ private struct JunoMobilePairingBadge: View {
     JunoIconView(icon, size: 26)
       .foregroundStyle(Color.junoForeground)
       .frame(width: 76, height: 76)
-      .glassEffect(.regular, in: Circle())
+      .background(Color.junoRaised, in: Circle())
       .accessibilityHidden(true)
   }
 }
@@ -621,7 +628,7 @@ struct JunoMobilePairingBridge: View {
       JunoMark(size: 34)
         .foregroundStyle(Color.junoForeground)
         .frame(width: 76, height: 76)
-        .glassEffect(.regular, in: Circle())
+        .background(Color.junoRaised, in: Circle())
         .overlay(alignment: .bottomTrailing) {
           if state == .paired {
             JunoIconView(.check, size: 13, weight: .bold)
@@ -642,7 +649,7 @@ struct JunoMobilePairingBridge: View {
     JunoIconView(icon, size: 20)
       .foregroundStyle(state == .apart ? Color.junoTertiaryInk : Color.junoForeground)
       .frame(width: 52, height: 52)
-      .glassEffect(.regular, in: Circle())
+      .background(Color.junoRaised, in: Circle())
   }
 
   private var link: some View {

@@ -344,7 +344,7 @@ final class StaticPreviewServerTests: XCTestCase {
 
     private static func payload(bytes: Int) -> Data {
         var data = Data(count: bytes)
-        data.withUnsafeMutableBytes { buffer in
+        data.withUnsafeMutableBytes { (buffer: UnsafeMutableRawBufferPointer) in
             for index in 0..<bytes {
                 buffer[index] = UInt8(truncatingIfNeeded: index &* 31 &+ index >> 8)
             }

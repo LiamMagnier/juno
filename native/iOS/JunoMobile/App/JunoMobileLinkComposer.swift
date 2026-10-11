@@ -171,7 +171,7 @@ struct JunoMobileLinkFooter: View {
       }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
-    .junoGlass(in: RoundedRectangle(cornerRadius: JunoMobileComposerPanelMetrics.radius, style: .continuous))
+    .background(Color.junoRaised, in: RoundedRectangle(cornerRadius: JunoMobileComposerPanelMetrics.radius, style: .continuous))
   }
 
   /// Chat's one control for the model and its thinking: the gauge on the
@@ -307,6 +307,7 @@ struct JunoMobileLinkPlaceRows: View {
     }
     .buttonStyle(.plain)
     .accessibilityIdentifier(identifier)
+    .frame(minWidth: 44, minHeight: 44)
   }
 }
 
@@ -473,10 +474,14 @@ struct JunoMobileLinkProjectPanel: View {
     .accessibilityIdentifier("juno.mobile.link-project-panel")
     .alert("Remove project from Alevr?", isPresented: Binding(get: { removingProject != nil }, set: { if !$0 { removingProject = nil } })) {
       Button("Cancel", role: .cancel) { removingProject = nil }
+          .frame(minWidth: 44, minHeight: 44)
+          .contentShape(.rect)
       Button("Remove", role: .destructive) {
         guard let path = removingProject else { return }
         Task { if await model.removeProject(cwd: path) { close() } }
       }
+          .frame(minWidth: 44, minHeight: 44)
+          .contentShape(.rect)
     } message: { Text("Running sessions will stop and their records will be removed. The folder stays on your Mac.") }
   }
 

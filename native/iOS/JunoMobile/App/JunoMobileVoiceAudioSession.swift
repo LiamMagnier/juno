@@ -43,7 +43,8 @@ final class JunoMobileVoiceAudioSession {
       ) { [weak self] notification in
         let raw = (notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt) ?? 0
         let options = (notification.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt) ?? 0
-        let suspended = (notification.userInfo?[AVAudioSessionInterruptionWasSuspendedKey] as? Bool) ?? false
+        let reason = notification.userInfo?[AVAudioSessionInterruptionReasonKey] as? UInt
+        let suspended = JunoMobileVoiceInterruptionPolicy.wasSuspended(reasonRaw: reason)
         Task { @MainActor [weak self] in
           self?.handleInterruption(typeRaw: raw, optionsRaw: options, wasSuspended: suspended)
         }
@@ -149,6 +150,12 @@ enum JunoMobileVoiceInterruptionPolicy {
     /// interruption was what muted it.
     case resume(unmute: Bool)
   }
+
+  /// The modern reason key replaced the deprecated Boolean notification key.
+  /// Reason 1 is Apple's legacy appWasSuspended wire value (retired in iOS 16).
+  /// Preserve delayed-event compatibility without treating current background,
+  /// muted-microphone or disconnected-route interruptions as stale events.
+  static func wasSuspended(reasonRaw: UInt?) -> Bool { reasonRaw == 1 }
 
   static func action(
     began: Bool,

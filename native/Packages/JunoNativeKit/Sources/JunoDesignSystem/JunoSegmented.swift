@@ -49,7 +49,7 @@ public enum JunoSegmentedMetrics {
     /// `rounded-menu` (14) outside, `rounded-control` (10) inside: concentric
     /// across the 4pt inset.
     public static let trackRadius: CGFloat = JunoRadius.menu
-    public static let thumbRadius: CGFloat = JunoRadius.control
+    public static let thumbRadius: CGFloat = max(0, trackRadius - inset)
     /// `px-3`.
     public static let segmentPadding: CGFloat = JunoSpace.cozy
     /// `size-3.5`: a mark beside a 13pt word.

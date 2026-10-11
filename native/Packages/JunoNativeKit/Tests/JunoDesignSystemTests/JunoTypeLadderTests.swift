@@ -24,7 +24,7 @@ final class JunoTypeLadderTests: XCTestCase {
     /// §8.2 with errata 8 applied: `ui` is ×1.5 and `bodyLarge` ×1.6.
     private let ladder: [Expected] = [
         Expected(rung: .display(size: 32), generated: JunoGeneratedType.display, size: 32, lineHeight: 1.08, tracking: -0.02, weight: .regular, face: .serif, name: "display"),
-        Expected(rung: .pageTitle, generated: JunoGeneratedType.pageTitle, size: 26, lineHeight: 1.15, tracking: -0.02, weight: .semibold, face: .sans, name: "pageTitle"),
+        Expected(rung: .pageTitle, generated: JunoGeneratedType.pageTitle, size: 32, lineHeight: 1.08, tracking: -0.03, weight: .semibold, face: .sans, name: "pageTitle"),
         Expected(rung: .title, generated: JunoGeneratedType.title, size: 22, lineHeight: 1.25, tracking: -0.012, weight: .semibold, face: .sans, name: "title"),
         Expected(rung: .heading, generated: JunoGeneratedType.heading, size: 18, lineHeight: 1.3, tracking: -0.006, weight: .semibold, face: .sans, name: "heading"),
         Expected(rung: .bodyLarge, generated: JunoGeneratedType.bodyLg, size: 17, lineHeight: 1.6, tracking: 0, weight: .regular, face: .sans, name: "bodyLarge"),
@@ -102,10 +102,10 @@ final class JunoTypeLadderTests: XCTestCase {
         XCTAssertEqual(JunoType.displaySize(forColumnWidth: 1024), 48, accuracy: 0.05)
         XCTAssertEqual(JunoType.displaySize(forColumnWidth: 1600), 48, accuracy: 0.01)
 
-        XCTAssertEqual(JunoType.pageTitle(columnWidth: 400).size, 26, accuracy: 0.01)
-        XCTAssertEqual(JunoType.pageTitle(columnWidth: 640).size, 26, accuracy: 0.01)
-        XCTAssertEqual(JunoType.pageTitle(columnWidth: 1024).size, 32, accuracy: 0.01)
-        XCTAssertEqual(JunoType.pageTitle(columnWidth: 2000).size, 32, accuracy: 0.01)
+        XCTAssertEqual(JunoType.pageTitle(columnWidth: 400).size, 32, accuracy: 0.01)
+        XCTAssertEqual(JunoType.pageTitle(columnWidth: 640).size, 32, accuracy: 0.01)
+        XCTAssertEqual(JunoType.pageTitle(columnWidth: 1024).size, 44, accuracy: 0.01)
+        XCTAssertEqual(JunoType.pageTitle(columnWidth: 2000).size, 44, accuracy: 0.01)
     }
 
     /// A rung resolves to its size, multiplied by the reader's text size.
@@ -119,7 +119,7 @@ final class JunoTypeLadderTests: XCTestCase {
             XCTAssertEqual(scaled.pointSize, expected.size * 1.25, accuracy: 0.01, expected.name)
         }
         XCTAssertEqual(EnvironmentValues().junoTextScale, 1)
-        XCTAssertEqual(JunoType.pageTitle.trackingPoints(atSize: 26), -0.52, accuracy: 0.0001)
+        XCTAssertEqual(JunoType.pageTitle.trackingPoints(atSize: 32), -0.96, accuracy: 0.0001)
     }
 
     /// Variants keep everything but what they change.

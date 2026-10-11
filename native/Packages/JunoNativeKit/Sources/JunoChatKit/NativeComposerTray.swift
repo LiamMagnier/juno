@@ -178,6 +178,8 @@ struct NativeTrayMenu<Label: View, Content: View>: View {
         .fixedSize()
         .accessibilityLabel(accessibilityLabel)
         .accessibilityIdentifier(identifier)
+        .frame(minWidth: 44, minHeight: 44)
+        .contentShape(.rect)
         #if os(macOS)
         .help(accessibilityLabel)
         #endif
@@ -473,7 +475,7 @@ struct NativeTrayChoiceMenu<Glyph: View>: View {
         let current = control.value ?? .auto
         let items = choices.map { choice in
             let chosen = choice.value == current
-            let pick = { if !chosen { pick(choice.value) } }
+            let pick = { if !chosen { self.pick(choice.value) } }
             if control.key == "aspect" {
                 return NativeTrayPickerItem(
                     id: choice.value.description,
@@ -566,6 +568,8 @@ struct NativeTraySoundPill: View {
         .accessibilityValue(on ? "On" : "Off")
         .accessibilityAddTraits(on ? .isSelected : [])
         .accessibilityIdentifier(identifier)
+        .frame(minWidth: 44, minHeight: 44)
+        .contentShape(.rect)
     }
 }
 
@@ -605,6 +609,8 @@ struct NativeTrayLengthControl: View {
                 .presentationCompactAdaptation(.popover)
                 #endif
         }
+            .frame(minWidth: 44, minHeight: 44)
+            .contentShape(.rect)
     }
 
     @ViewBuilder

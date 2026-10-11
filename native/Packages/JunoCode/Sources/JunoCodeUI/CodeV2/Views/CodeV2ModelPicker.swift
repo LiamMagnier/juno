@@ -84,6 +84,8 @@ struct CodeV2ModelControl: View {
             .accessibilityLabel("Model")
             .accessibilityValue("Connect")
             .accessibilityIdentifier("juno.code.v2.model")
+            .frame(minWidth: 44, minHeight: 44)
+            .contentShape(.rect)
         }
     }
 
@@ -349,6 +351,7 @@ struct CodeV2ModelPicker: View {
                     .buttonStyle(.plain)
                     .help("Connect a subscription or add a key")
                     .accessibilityLabel("Connect")
+                    .frame(minWidth: 44, minHeight: 44)
                 }
             }
             .padding(.vertical, JunoSpace.snug)
@@ -379,6 +382,7 @@ struct CodeV2ModelPicker: View {
         .help(help)
         .accessibilityLabel(help.components(separatedBy: ":").first ?? help)
         .accessibilityAddTraits(selected ? .isSelected : [])
+        .frame(minWidth: 44, minHeight: 44)
     }
 
     // MARK: Search

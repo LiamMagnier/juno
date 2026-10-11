@@ -241,6 +241,8 @@ struct JunoMobileLinkEmpty: View {
         .frame(minHeight: 44)
         .padding(.top, JunoSpace.snug)
         .accessibilityIdentifier("juno.mobile.link-new-empty")
+        .frame(minWidth: 44, minHeight: 44)
+        .contentShape(.rect)
       }
     }
     .frame(maxWidth: .infinity)
@@ -280,10 +282,12 @@ struct JunoMobileLinkNotPaired: View {
         .controlSize(.large)
         .padding(.top, JunoSpace.snug)
         .accessibilityIdentifier("juno.mobile.link-pair-again")
+        .frame(minWidth: 44, minHeight: 44)
+        .contentShape(.rect)
       }
     }
     .padding(JunoSpace.regular)
-    .junoGlass(in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+    .background(Color.junoRaised, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
     .frame(maxWidth: JunoMobileMeasure.reading)
     .frame(maxWidth: .infinity)
     .accessibilityElement(children: .contain)
@@ -315,6 +319,8 @@ struct JunoMobileLinkPairPrompt: View {
       .frame(minHeight: 44)
       .padding(.top, JunoSpace.snug)
       .accessibilityIdentifier("juno.mobile.link-pair")
+      .frame(minWidth: 44, minHeight: 44)
+      .contentShape(.rect)
     }
     .frame(maxWidth: .infinity)
     .padding(.vertical, JunoSpace.section)

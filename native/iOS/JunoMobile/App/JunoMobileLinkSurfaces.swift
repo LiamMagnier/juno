@@ -59,7 +59,11 @@ struct JunoMobileLinkChangesView: View {
         confirming = nil
         Task { await model.revert(pick.hunk, in: pick.file) }
       }
+          .frame(minWidth: 44, minHeight: 44)
+          .contentShape(.rect)
       Button("Keep it", role: .cancel) { confirming = nil }
+          .frame(minWidth: 44, minHeight: 44)
+          .contentShape(.rect)
     } message: {
       Text("The file on your Mac goes back to how it was before this hunk. Other hunks stay.")
     }
@@ -196,7 +200,7 @@ struct JunoMobileLinkHunk: View {
                 .padding(.trailing, JunoSpace.cozy)
             }
             .font(.caption.monospaced())
-            .padding(.vertical, 2)
+            .padding(.vertical, JunoSpace.micro)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background { Rectangle().fill(background(line.kind)) }
           }
@@ -286,6 +290,8 @@ struct JunoMobileLinkTerminalView: View {
         .buttonStyle(.glass)
         .controlSize(.large)
         .frame(minHeight: 44)
+        .frame(minWidth: 44, minHeight: 44)
+        .contentShape(.rect)
         Spacer(minLength: 0)
       } else {
         JunoMobileTerminalView(lines: lines)
@@ -313,10 +319,12 @@ struct JunoMobileLinkTerminalView: View {
       }
       .buttonStyle(.plain)
       .accessibilityLabel("Interrupt")
+      .frame(minWidth: 44, minHeight: 44)
+      .contentShape(.rect)
     }
     .padding(.horizontal, JunoSpace.regular)
     .frame(minHeight: 52)
-    .junoGlass(in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+    .background(Color.junoRaised, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
     .padding(.horizontal, JunoSpace.regular)
     .padding(.vertical, JunoSpace.snug)
   }
@@ -518,6 +526,8 @@ struct JunoMobileLinkShipView: View {
           .frame(minHeight: 44)
         }
         .buttonStyle(.plain)
+        .frame(minWidth: 44, minHeight: 44)
+        .contentShape(.rect)
       } else {
         TextField("Title", text: $prTitle)
           .font(.body)
@@ -540,5 +550,7 @@ struct JunoMobileLinkShipView: View {
     }
     .buttonStyle(.glass)
     .disabled(disabled || model.gitBusy != nil)
+    .frame(minWidth: 44, minHeight: 44)
+    .contentShape(.rect)
   }
 }
