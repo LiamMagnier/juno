@@ -28,8 +28,8 @@ public enum LaunchConfigurationDiscovery {
         configurations += phpConfigurations(root: root)
         configurations += hugoConfigurations(root: root)
         configurations += goConfigurations(root: root)
-        if configurations.isEmpty, let site = staticConfiguration(root: root) {
-            configurations.append(site)
+        if configurations.isEmpty {
+            configurations += staticConfigurations(root: root)
         }
         var seen: Set<String> = []
         configurations = configurations.filter { seen.insert($0.name).inserted }
@@ -271,17 +271,66 @@ public enum LaunchConfigurationDiscovery {
     /// `index.html` (PV-16: never the repository root when the page is in
     /// `public/`).
     static func staticConfiguration(root: URL) -> PreviewLaunchConfiguration? {
+        staticConfigurations(root: root).first
+    }
+
+    /// Every static site in the project: `static` for the root or a usual
+    /// folder, else one per folder that holds an `index.html` (to depth 3,
+    /// newest first, named by its folder), so a site an agent just wrote in
+    /// `portfolio/` previews without a launch file.
+    static func staticConfigurations(root: URL) -> [PreviewLaunchConfiguration] {
         for folder in [".", "public", "site", "docs"] {
             let index = folder == "." ? "index.html" : "\(folder)/index.html"
             if exists(root, index) {
-                return PreviewLaunchConfiguration(
-                    name: "static",
-                    runtimeExecutable: ResolvedPreviewConfiguration.staticExecutable,
-                    cwd: folder == "." ? nil : folder
-                )
+                return [staticSite(name: "static", folder: folder)]
             }
         }
-        return nil
+        return indexFolders(root: root).prefix(8).map { staticSite(name: $0, folder: $0) }
+    }
+
+    public static func staticSite(name: String, folder: String) -> PreviewLaunchConfiguration {
+        PreviewLaunchConfiguration(
+            name: name,
+            runtimeExecutable: ResolvedPreviewConfiguration.staticExecutable,
+            cwd: folder == "." ? nil : folder
+        )
+    }
+
+    static let maximumSiteDepth = 3
+
+    /// Folders below `root` that hold an `index.html`, relative, the most
+    /// recently written first. Dependencies, build output and hidden folders
+    /// are skipped.
+    static func indexFolders(root: URL) -> [String] {
+        guard let enumerator = FileManager.default.enumerator(
+            at: root,
+            includingPropertiesForKeys: [.isDirectoryKey, .contentModificationDateKey],
+            options: [.skipsHiddenFiles, .skipsPackageDescendants]
+        ) else { return [] }
+        var found: [(folder: String, modified: Date)] = []
+        var visited = 0
+        while let candidate = enumerator.nextObject() as? URL {
+            visited += 1
+            if visited > 4_000 { break }
+            let name = candidate.lastPathComponent
+            if ignoredDirectoryNames.contains(name) {
+                enumerator.skipDescendants()
+                continue
+            }
+            if enumerator.level > maximumSiteDepth {
+                enumerator.skipDescendants()
+                continue
+            }
+            guard name.lowercased() == "index.html" else { continue }
+            let folder = candidate.deletingLastPathComponent().standardizedFileURL
+            let relative = relativePath(of: folder, under: root)
+            guard relative != "." else { continue }
+            let modified = (try? candidate.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
+            found.append((relative, modified))
+        }
+        return found
+            .sorted { $0.modified != $1.modified ? $0.modified > $1.modified : $0.folder < $1.folder }
+            .map(\.folder)
     }
 
     // MARK: - Xcode

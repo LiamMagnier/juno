@@ -98,8 +98,8 @@ test("the Alevr engine gets the three tools natively, the send tool on its own r
   const { client, rec } = await boot();
   const a = await thread(client, "Release prep");
   const tools = rec.tools.get(a.cwd) ?? [];
-  // Computer use rides along on the same engine tool list.
-  assert.deepEqual(tools.map((t) => t.spec.name).sort(), ["computer_release", "computer_use", "list_conversations", "read_conversation", "send_to_conversation"]);
+  // Computer use and the Preview ride along on the same engine tool list.
+  assert.deepEqual(tools.map((t) => t.spec.name).sort(), ["computer_release", "computer_use", "list_conversations", "open_preview", "read_conversation", "send_to_conversation"]);
   assert.equal(tools.find((t) => t.spec.name === "send_to_conversation")?.messaging, true);
   assert.equal(tools.find((t) => t.spec.name === "list_conversations")?.kind, "read");
   assert.match(rec.appendix[0] ?? "", /carries no user authority/);

@@ -100,6 +100,13 @@ public struct CodeV2EnvSessionView: View {
         .onChange(of: snapshot.items.compactMap { item -> String? in if case let .subagent(agent) = item { agent.agentId } else { nil } }) { previous, next in
             if next.contains(where: { !previous.contains($0) }), dock?.isOpen != true { dock?.show(.agents) }
         }
+        // The agent opened the Preview (open_preview) during this run: show it.
+        .onChange(of: CodeV2PreviewRequest.all(in: snapshot.items).map(\.id)) { previous, next in
+            guard isRunning, let id = next.last, !previous.contains(id),
+                  let request = CodeV2PreviewRequest.all(in: snapshot.items).last
+            else { return }
+            dock?.openPreview(request)
+        }
         .onChange(of: session.snapshot.skills) { _, remote in
             if session.state.cursor != nil { skills.applyRemote(remote) }
         }
@@ -379,6 +386,32 @@ public struct CodeV2EnvSessionView: View {
     }
 }
 
+/// One `open_preview` from the thread's agent: the page's address, and the
+/// static site's folder when it is one.
+public struct CodeV2PreviewRequest: Equatable, Sendable {
+    public var id: String
+    public var url: URL?
+    public var folder: URL?
+
+    public init(id: String, url: URL?, folder: URL?) {
+        self.id = id
+        self.url = url
+        self.folder = folder
+    }
+
+    /// The `preview_opened` notices in a thread, oldest first.
+    public static func all(in items: [CodeV2.TurnItem]) -> [CodeV2PreviewRequest] {
+        items.compactMap { item in
+            guard case let .systemNotice(notice) = item, notice.code == CodeV2.SystemNotice.previewOpenedCode else { return nil }
+            return CodeV2PreviewRequest(
+                id: notice.id,
+                url: notice.url.flatMap(URL.init(string:)),
+                folder: notice.path.map { URL(fileURLWithPath: $0, isDirectory: true) }
+            )
+        }
+    }
+}
+
 /// What the thread asks of the dock: which tab, which file, which agent.
 @MainActor
 @Observable
@@ -414,6 +447,15 @@ public final class CodeV2DockController {
     public func selectAgent(_ id: String) {
         selectedAgent = id
         show(.agents)
+    }
+
+    /// The agent's latest `open_preview`, for the Preview tab to start.
+    public private(set) var previewRequest: CodeV2PreviewRequest?
+
+    /// An agent opened the Preview: show the tab, and let it start the page.
+    public func openPreview(_ request: CodeV2PreviewRequest) {
+        previewRequest = request
+        show(.preview)
     }
 
     public func showFrame(_ id: String) {

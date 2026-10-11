@@ -108,7 +108,8 @@ public struct CodeV2EnvDockView: View {
                             let accepted = await session.messageAgent(id, text: text)
                             return accepted ? nil : (session.lastError ?? "Could not send this message. Try again.")
                         } : nil,
-                        stop: (CodeV2.instanceKind(of: snapshot.selection.instanceId) == .alevr || CodeV2.instanceKind(of: snapshot.selection.instanceId) == .byok) ? { id in Task { await session.interruptAgent(id) } } : nil))
+                        stop: (CodeV2.instanceKind(of: snapshot.selection.instanceId) == .alevr || CodeV2.instanceKind(of: snapshot.selection.instanceId) == .byok) ? { id in Task { await session.interruptAgent(id) } } : nil,
+                        team: snapshot.routing?.preset))
                 }
             case .terminal:
                 if let terminal {
@@ -137,6 +138,16 @@ public struct CodeV2EnvDockView: View {
                 AnyView(CodeV2ScreenPane(actions: frames, selected: $dock.selectedFrame))
             }
         }
+        .task(id: dock.previewRequest?.id) { openAgentPreview() }
+    }
+
+    /// The agent's open_preview: Alevr's static server on its folder (no
+    /// launch file, no card), or its own loopback dev server.
+    private func openAgentPreview() {
+        guard let request = dock.previewRequest, let workspace, let target = dock.previewTarget(for: workspace) else { return }
+        let lease = workspace.controller.previewLease
+        lease.bind(sessionID: target.sessionID, workspaceRoot: target.workspaceRoot)
+        lease.openAgentPreview(url: request.url, folder: request.folder)
     }
 
     private func reload() async {

@@ -1645,6 +1645,12 @@
         },
         "code": {
           "type": "string"
+        },
+        "url": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
         }
       },
       "required": [

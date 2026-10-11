@@ -40,6 +40,7 @@ import { createWorktree, runWorktreeSetup } from "../git/worktrees.js";
 import { AlevrMcpServer, MCP_SERVER_NAME } from "../mcp/alevr-mcp.js";
 import { deferred, describeError, newId, nowIso, type Deferred, type Logger } from "../util.js";
 import { withTeamBrief } from "../mcp/team-brief.js";
+import { withCapabilityHints } from "../mcp/capability-hints.js";
 import { renderSkillInstructions, resolveSkillActivations, type SkillCatalog } from "../skills/discovery.js";
 
 export class WireError extends Error {
@@ -851,7 +852,8 @@ export class SessionManager {
         turnOrdinal: ordinal,
         cwd,
         // Team lane: a vendor agent leads a Plan → Build → Verify team through the Alevr MCP tools.
-        input: withTeamBrief(turnInput, params.routing, instance.kind, params.interactionMode),
+        // A message that names subagents, computer use or the preview gets the runtime's tool for each.
+        input: withTeamBrief(withCapabilityHints(turnInput, instance.kind, params.interactionMode, bareInput.text), params.routing, instance.kind, params.interactionMode),
         ...(engineKind ? { skillInstructions: skillText } : {}),
         selection: params.selection,
         ...(params.routing ? { routing: params.routing } : {}),

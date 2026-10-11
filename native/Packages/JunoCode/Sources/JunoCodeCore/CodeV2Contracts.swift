@@ -1064,14 +1064,26 @@ public enum CodeV2 {
         public var level: Level
         public var text: String
         public var code: String?
+        /// `preview_opened`: the page's loopback address.
+        public var url: String?
+        /// `preview_opened`: the static site's folder (absolute); nil for a dev server.
+        public var path: String?
 
-        public init(id: String, turnId: String? = nil, createdAt: String, level: Level = .info, text: String, code: String? = nil) {
+        /// The code of the notice an agent leaves when it opens the Preview.
+        public static let previewOpenedCode = "preview_opened"
+
+        public init(
+            id: String, turnId: String? = nil, createdAt: String, level: Level = .info, text: String, code: String? = nil,
+            url: String? = nil, path: String? = nil
+        ) {
             self.id = id
             self.turnId = turnId
             self.createdAt = createdAt
             self.level = level
             self.text = text
             self.code = code
+            self.url = url
+            self.path = path
         }
     }
 

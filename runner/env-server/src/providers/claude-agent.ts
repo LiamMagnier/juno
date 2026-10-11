@@ -58,6 +58,7 @@ import { claudeSetup } from "./presets.js";
 import { fullAccessGuardReason } from "./full-access-guard.js";
 import { readVersion } from "./detect.js";
 import { vendorEnv } from "./vendor-env.js";
+import { capabilityGuidance } from "../mcp/capability-hints.js";
 import type {
   McpEndpoint,
   OpenSessionOptions,
@@ -75,9 +76,11 @@ export type ClaudeQueryFn = (params: { prompt: AsyncIterable<SDKUserMessage>; op
 
 export const PROBE_TIMEOUT_MS = 25_000;
 
-const ALEVR_APPEND = [
+/** Appended to the claude_code preset prompt (exported for tests). */
+export const ALEVR_APPEND = [
   "You are running inside Alevr Code on the user's own machine, with the user's own Claude subscription.",
-  "When the `alevr` MCP server is available it can start subagents on any model the user has connected (spawn_subagent, wait_subagent, list_subagents, cancel_subagent) and search earlier threads (search_threads). Prefer it over your own Task tool when the user asks for a specific model or provider.",
+  "The `alevr` MCP server adds: open_preview (the Preview tab), computer_use and computer_release (apps on this Mac, when the user allowed it), subagents on any model the user connected (spawn_subagent, wait_subagent, list_subagents, cancel_subagent) and search_threads (earlier threads). Prefer spawn_subagent over your own Agent tool when the user asks for a specific model or provider.",
+  capabilityGuidance("claude-agent"),
 ].join("\n");
 
 async function loadQuery(): Promise<ClaudeQueryFn> {
@@ -786,8 +789,15 @@ class ClaudeSession implements ProviderSession {
   }
 }
 
-function mcpConfig(mcp: McpEndpoint) {
-  return { type: "http" as const, url: mcp.url, headers: { Authorization: mcp.authorization }, timeout: 15 * 60_000 };
+/**
+ * The Alevr MCP server as the CLI sees it. `alwaysLoad`: its tools are in the
+ * very first prompt, never deferred behind tool search (with many MCP servers
+ * of the user's own, Claude Code would otherwise hide open_preview,
+ * computer_use and spawn_subagent until the model searched for them by name,
+ * and MCP startup would not block turn 1 either).
+ */
+export function mcpConfig(mcp: McpEndpoint) {
+  return { type: "http" as const, url: mcp.url, headers: { Authorization: mcp.authorization }, timeout: 15 * 60_000, alwaysLoad: true };
 }
 
 function approvalAction(toolName: string): ApprovalRequestItem["action"] {

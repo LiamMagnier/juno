@@ -29,7 +29,7 @@ extension View {
     }
 }
 
-/// `Team` at rest (Solo); `Opus plans · Sonnet ×2 builds · GPT verifies`
+/// `Solo` at rest; `Opus plans · Sonnet ×2 builds · GPT verifies`
 /// once a team is set. Opens the role editor in a Liquid Glass popover.
 struct CodeV2TeamChip: View {
     @Bindable var model: CodeV2ComposerModel
@@ -44,7 +44,8 @@ struct CodeV2TeamChip: View {
 
     var body: some View {
         Button { isOpen.toggle() } label: {
-            CodeV2TextControlLabel(title: summary ?? "Team", icon: .agents)
+            // At rest the chip names the state ("Solo"), so it never reads as a team that is on.
+            CodeV2TextControlLabel(title: summary ?? CodeV2Team.Preset.solo.shortTitle, icon: .agents)
                 .contentTransition(.opacity)
         }
         .buttonStyle(CodeV2FooterButtonStyle(isOpen: isOpen)).contentShape(.rect)

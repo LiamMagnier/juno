@@ -52,6 +52,7 @@ import { TerminalManager } from "./terminal/terminals.js";
 import { describeError, newToken, nowIso, stderrLogger, type Logger } from "./util.js";
 import { ConversationHub, conversationEngineTools, type BackendLink } from "./conversations/hub.js";
 import { registerConversationTools } from "./mcp/conversation-tools.js";
+import { StaticSiteServers, previewEngineTools, registerPreviewTools, sessionPreviewDeps } from "./mcp/preview-tools.js";
 import { SkillCatalog } from "./skills/discovery.js";
 
 export interface EnvServerOptions {
@@ -194,7 +195,13 @@ export async function startEnvServer(options: EnvServerOptions = {}): Promise<En
   });
   const removeConversationTools = registerConversationTools(mcp, conversations);
   const computer = computerUseEnabled(options) ? registerComputerUse(mcp, sessions, options.computerUse || {}) : undefined;
+  // The Preview: open_preview for every runtime; static sites served here on 127.0.0.1.
+  const sites = new StaticSiteServers();
+  const previewDeps = sessionPreviewDeps(sessions, sites);
+  const removePreviewTools = registerPreviewTools(mcp, previewDeps);
+  const removePreviewClose = sessions.onSessionClosed((id) => sites.release(id));
   sessions.setEngineTools((sessionId) => [
+    ...previewEngineTools(sessionId, previewDeps),
     ...(conversations.enabledFor(sessionId) ? conversationEngineTools(conversations, sessionId) : []),
     ...(computer?.engineTools({ sessionId, depth: sessions.log(sessionId).meta.parentSessionId ? 1 : 0 }) ?? []),
   ]);
@@ -280,6 +287,8 @@ export async function startEnvServer(options: EnvServerOptions = {}): Promise<En
     close: async () => {
       removeSubagentTools();
       removeConversationTools();
+      removePreviewTools();
+      removePreviewClose();
       conversations.dispose();
       removeSkillsWatch();
       if (!options.skills) skills.close();
@@ -290,6 +299,7 @@ export async function startEnvServer(options: EnvServerOptions = {}): Promise<En
       await sessions.shutdown();
       await antigravity.shutdown();
       await computer?.dispose();
+      await sites.closeAll();
       removeComputerEnded?.();
       await new Promise<void>((resolve) => wss.close(() => resolve()));
       await new Promise<void>((resolve) => server.close(() => resolve()));
