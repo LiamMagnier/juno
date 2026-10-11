@@ -53,6 +53,7 @@ def commands(output: Path, sha: str, simulator: str) -> list[tuple[str, list[str
         ("core-dependencies", ["npm", "ci", "--prefix", "runner/agent-core"]),
         ("env-dependencies", ["npm", "ci", "--prefix", "runner/env-server"]),
         ("relay-dependencies", ["npm", "ci", "--prefix", "relay"]),
+        ("exec-sandbox-image", ["docker", "build", "-t", "juno-exec:dev", "deploy/exec-host/image"]),
         ("shared-gates", ["bash", "scripts/local-gates.sh"]),
         ("native-contract", ["npm", "run", "native:contract:check"]),
         ("native-icons", ["npm", "run", "native:icons:check"]),
@@ -137,6 +138,14 @@ def main() -> int:
     allowed = ("PATH", "HOME", "USER", "TMPDIR", "LANG", "LC_ALL", "DEVELOPER_DIR", "SDKROOT")
     environment = {key: value for key, value in os.environ.items() if key in allowed}
     environment.update({"PYTHONDONTWRITEBYTECODE": "1", "NEXT_TELEMETRY_DISABLED": "1", "RUNNER_TEMP": str(output / "swift")})
+    # Pin the checked local context for every subprocess; never exercise a
+    # production or remote Docker daemon through an inherited default context.
+    docker_context = subprocess.check_output(["docker", "context", "show"], text=True, env=environment).strip()
+    endpoint = json.loads(subprocess.check_output(["docker", "context", "inspect", docker_context], env=environment))[0]["Endpoints"]["docker"]["Host"]
+    if not endpoint.startswith("unix://"):
+        raise RuntimeError("Use a local Unix-socket Docker daemon for disposable sandbox tests")
+    environment.update({"DOCKER_CONTEXT": docker_context, "JUNO_EXEC_DOCKER_TESTS": "1"})
+    subprocess.run(["docker", "info", "--format", "{{.ServerVersion}}"], env=environment, check=True, stdout=subprocess.DEVNULL)
     if subprocess.check_output(["node", "--version"], text=True, env=environment).strip().split(".")[0] != "v24":
         raise RuntimeError("Use Node 24, the repository's CI runtime")
     devices = json.loads(subprocess.check_output(["xcrun", "simctl", "list", "devices", "available", "--json"], env=environment))

@@ -16,6 +16,12 @@ set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd -P)"
 PORT="${JUNO_EXEC_PORT:-3178}"
 DATA="${JUNO_EXEC_DATA:-$HOME/.cache/juno-exec-dev}"
+RUN_UID="$(id -u)"
+RUN_GID="$(id -g)"
+if [ "$RUN_UID" -eq 0 ] || [ "$RUN_GID" -eq 0 ]; then
+  echo "juno-exec local: run as a non-root developer so the sandbox owns its workspace" >&2
+  exit 2
+fi
 case "$PORT" in 317[0-9]) ;; *) echo "juno-exec local: use a port in 3170-3179" >&2; exit 2 ;; esac
 if lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
   echo "juno-exec local: port $PORT is already in use" >&2
@@ -29,7 +35,7 @@ if [ ! -s "$DATA/token" ]; then
   (umask 077 && openssl rand -hex 32 > "$DATA/token")
 fi
 cat > "$DATA/policy.json" <<JSON
-{"image": "$IMAGE", "sessionsRoot": "$DATA/sessions", "runUser": "1000:1000", "memoryMb": 1536, "cpus": "1",
+{"image": "$IMAGE", "sessionsRoot": "$DATA/sessions", "runUser": "$RUN_UID:$RUN_GID", "memoryMb": 1536, "cpus": "1",
  "pidsLimit": 256, "tmpfsSize": "256m", "runtime": null, "maxSkillMounts": 8}
 JSON
 export JUNO_EXEC_TOKEN_FILE="$DATA/token" JUNO_EXEC_POLICY="$DATA/policy.json" JUNO_EXEC_DATA="$DATA"
