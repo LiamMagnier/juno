@@ -31,7 +31,12 @@ struct CodeSidebarSnapshotTests {
         URL(fileURLWithPath: ProcessInfo.processInfo.environment["JUNO_SIDEBAR_SNAPSHOT_DIR"]!)
     }
 
-    nonisolated static let names = ["chat", "code-empty", "code-sessions", "compare", "project-removal", "project-removal-trash"]
+    nonisolated static var names: [String] {
+        let all = ["chat", "code-empty", "code-sessions", "compare", "project-removal", "project-removal-trash"]
+        guard let requested = ProcessInfo.processInfo.environment["JUNO_SIDEBAR_SNAPSHOT_NAMES"] else { return all }
+        let included = Set(requested.split(separator: ",").map(String.init))
+        return all.filter { included.contains($0) }
+    }
 
     static let paneSize = CGSize(width: 260, height: 820)
 
