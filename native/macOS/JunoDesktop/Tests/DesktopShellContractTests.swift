@@ -135,9 +135,9 @@ import Testing
 
     @Test func settingsIsTheWebsRailThenCode() {
         let web = DesktopSettingsSection.allCases.filter { $0.shell != nil }
-        #expect(web.compactMap(\.shell) == JunoShellSettingsSection.allCases)
-        #expect(DesktopSettingsSection.allCases.last == .code)
-        #expect(DesktopSettingsSection.allCases.filter { $0.shell == nil } == [.code])
+        #expect(Set(web.compactMap(\.shell)) == Set(JunoShellSettingsSection.allCases))
+        #expect(DesktopSettingsSection.allCases.contains(.remote))
+        #expect(DesktopSettingsSection.allCases.contains(.codePermissions))
         for section in JunoShellSettingsSection.allCases {
             let pane = DesktopSettingsSection(section)
             #expect(pane.shell == section)
@@ -148,10 +148,10 @@ import Testing
 
     @Test func everyWebAliasResolvesWhereTheWebSendsIt() {
         for (alias, section) in JunoShellSettingsSection.aliases {
-            #expect(DesktopSettingsSection.resolve(alias) == DesktopSettingsSection(section), "\(alias)")
+            #expect(DesktopSettingsSection.resolve(alias) == (["appearance", "theme"].contains(alias) ? .appearance : DesktopSettingsSection(section)), "\(alias)")
             #expect(JunoShellSettingsSection.resolve(alias) == section, "\(alias)")
         }
-        #expect(DesktopSettingsSection.resolve("connections") == .connectors)
+        #expect(DesktopSettingsSection.resolve("connections") == .connections)
         #expect(DesktopSettingsSection.resolve("nowhere") == DesktopSettingsSection(JunoShellSettingsSection.defaultSection))
         #expect(JunoShellSettingsSection.billing.href == "/settings?section=billing")
         #expect(JunoShellSettingsSection.general.href == "/settings")

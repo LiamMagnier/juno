@@ -3,6 +3,7 @@
 import * as React from "react";
 import { toast } from "sonner";
 import { readChatStream, type StreamFrameInfo } from "@/lib/chat-stream";
+import { announceResearchStarted } from "@/components/research/research-discovery";
 import { createFrameSequencer } from "@/lib/chat/stream-replay";
 import {
   applyTurnArtifacts,
@@ -683,6 +684,16 @@ export function useChat(opts: UseChatOptions) {
                     : m
                 )
               );
+              break;
+            }
+            case "handoff": {
+              sawTerminal = true;
+              const conversationId = convoIdRef.current;
+              if (conversationId) clearPendingGeneration(conversationId);
+              // Research owns the reply from here. Its panel follows the run;
+              // the empty chat placeholder must not start stream recovery.
+              setMessages((prev) => prev.filter((m) => m.id !== assistantTempId));
+              if (!opts.privateMode) announceResearchStarted({ runId: chunk.runId, conversationId });
               break;
             }
             case "done": {

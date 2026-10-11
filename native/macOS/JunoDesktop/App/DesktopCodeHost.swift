@@ -1,4 +1,5 @@
 import Foundation
+import IOKit.ps
 import JunoAPI
 import JunoAuth
 import JunoCodeBridge
@@ -516,12 +517,24 @@ final class DesktopCodeHostModel {
             // Switching it off here is "stop sharing this Mac": its sessions
             // come off the phone, rather than staying there frozen.
             syncRemoteHost(retracting: !newValue)
+            refreshRemoteWake()
             // Re-register immediately rather than waiting for the next
             // heartbeat: until the relay knows, the phone still shows this Mac
             // as unavailable (or, worse, as available after it was switched
             // off) for up to a minute.
             Task { await self.register() }
         }
+    }
+
+    private let remoteWake = DesktopRemoteWakeController()
+    private var wakeRevision = 0
+    static let remoteWakeKey = "alevr.remote.keep-awake"
+    var keepsAwakeForRemote: Bool {
+        get { _ = wakeRevision; return defaults.object(forKey: Self.remoteWakeKey) as? Bool ?? true }
+        set { defaults.set(newValue, forKey: Self.remoteWakeKey); wakeRevision += 1; refreshRemoteWake() }
+    }
+    private func refreshRemoteWake() {
+        remoteWake.setEnabled(accountID != nil && phase != .revoked && servesQueuedTasks && keepsAwakeForRemote)
     }
 
     static let servesQueuedTasksKey = "juno.code.remote.servesQueuedTasks"
@@ -594,6 +607,7 @@ final class DesktopCodeHostModel {
         revokeError = nil
         lastError = nil
         phase = .registering
+        refreshRemoteWake()
         beginBeat()
     }
 
@@ -965,6 +979,7 @@ final class DesktopCodeHostModel {
     /// it offline two minutes later. The persisted id deliberately survives, so
     /// signing back in updates this Mac's own row rather than creating another.
     func stop() {
+        remoteWake.setEnabled(false)
         beat?.cancel()
         beat = nil
         // Before the account is cleared: the loop must be told to stop while
@@ -1090,6 +1105,7 @@ final class DesktopCodeHostModel {
     /// with the row so a relaunch cannot replay it either. Only ``pairAgain()``
     /// reverses this — signing in is not consent to re-pair.
     private func enterRevoked() {
+        remoteWake.setEnabled(false)
         beat?.cancel()
         beat = nil
         if let host = remoteHost {
@@ -1175,5 +1191,36 @@ final class DesktopCodeHostModel {
             atPath: resolved.path, isDirectory: &isDirectory
         )
         return exists && isDirectory.boolValue
+    }
+}
+
+
+/// Holds only idle system sleep, only on AC power, while signed-in hosting is on.
+@MainActor
+final class DesktopRemoteWakeController {
+    private var timer: Task<Void, Never>?
+    static func shouldPreventSleep(enabled: Bool, onACPower: Bool) -> Bool { enabled && onACPower }
+    deinit { timer?.cancel() }
+    func setEnabled(_ enabled: Bool) {
+        timer?.cancel()
+        timer = nil
+        guard enabled else { return }
+        timer = Task { [weak self] in
+            var activity: NSObjectProtocol?
+            defer { if let activity { ProcessInfo.processInfo.endActivity(activity) } }
+            while !Task.isCancelled, self != nil {
+                let source = IOPSCopyPowerSourcesInfo().takeRetainedValue()
+                let type = IOPSGetProvidingPowerSourceType(source).takeUnretainedValue() as String
+                if Self.shouldPreventSleep(enabled: true, onACPower: type == kIOPSACPowerValue) {
+                    if activity == nil {
+                        activity = ProcessInfo.processInfo.beginActivity(options: [.idleSystemSleepDisabled], reason: "Alevr Remote is available on this Mac")
+                    }
+                } else if let held = activity {
+                    ProcessInfo.processInfo.endActivity(held)
+                    activity = nil
+                }
+                try? await Task.sleep(for: .seconds(15))
+            }
+        }
     }
 }

@@ -22,6 +22,9 @@ public enum StudioSettingsSection: String, CaseIterable, Identifiable, Sendable 
 
     public var id: String { rawValue }
 
+    public var titleForSettings: String { title }
+    public var iconForSettings: JunoIcon { icon }
+
     var title: String {
         switch self {
         case .general: "General"
@@ -87,6 +90,7 @@ public struct StudioSettingsView: View {
     /// The host's "let other devices use this Mac" control, which lives in the
     /// app because the model behind it does.
     let remoteHosting: AnyView?
+    let embedded: Bool
     /// Where the screen-control grants are read from: this Mac, except in a
     /// snapshot or test that needs a particular answer.
     let screenControlProbe: ComputerUsePermissionProbe
@@ -101,10 +105,12 @@ public struct StudioSettingsView: View {
         workbench: WorkbenchModel?,
         initialSection: StudioSettingsSection = .general,
         remoteHosting: AnyView? = nil,
+        embedded: Bool = false,
         screenControlProbe: ComputerUsePermissionProbe = .system
     ) {
         self.workbench = workbench
         self.remoteHosting = remoteHosting
+        self.embedded = embedded
         self.screenControlProbe = screenControlProbe
         _section = State(initialValue: initialSection)
     }
@@ -115,6 +121,15 @@ public struct StudioSettingsView: View {
     }
 
     public var body: some View {
+        Group {
+        if embedded {
+            VStack(spacing: 0) {
+                if section.isScoped || section == .tools {
+                    HStack { Spacer(); projectPicker }.padding(.horizontal, 28).padding(.top, 12)
+                }
+                page
+            }
+        } else {
         NavigationSplitView {
             List(selection: Binding(get: { section }, set: { if let value = $0 { section = value } })) {
                 ForEach(StudioSettingsSection.allCases) { item in
@@ -137,9 +152,11 @@ public struct StudioSettingsView: View {
                     }
                 }
         }
-        .frame(minWidth: 760, minHeight: 540)
+        }
+        }
+        .frame(minWidth: embedded ? 0 : 760, minHeight: embedded ? 0 : 540)
         .onChange(of: StudioSettingsRouter.shared.requested, initial: true) { _, requested in
-            if let requested {
+            if let requested, !embedded {
                 section = requested
                 StudioSettingsRouter.shared.requested = nil
             }
@@ -232,6 +249,10 @@ public struct StudioSettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .contentMargins(.horizontal, 12, for: .scrollContent)
+        .pickerStyle(.menu)
+        .toggleStyle(.switch)
     }
 }
 
@@ -256,7 +277,7 @@ struct StudioScopeSection: View {
                         .disabled(!settings.isAvailable(option))
                 }
             }
-            .pickerStyle(.segmented)
+            .pickerStyle(.menu)
             HStack {
                 Text(scope.detail)
                     .font(Studio.Font.mono)
@@ -1049,26 +1070,30 @@ struct StudioToolsSettings: View {
 
 // MARK: - Appearance
 
-struct StudioAppearanceSettings: View {
+public struct StudioAppearanceSettings: View {
+    private let includeDiffLayout: Bool
+    public init(includeDiffLayout: Bool = true) { self.includeDiffLayout = includeDiffLayout }
     @Bindable private var preferences = StudioPreferences.shared
 
-    var body: some View {
+    public var body: some View {
         Section {
             Picker("Detail", selection: $preferences.density) {
                 ForEach(StudioThreadDensity.allCases) { Text($0.label).tag($0) }
             }
-            .pickerStyle(.segmented)
+            .pickerStyle(.menu)
             Text(preferences.density.detail)
                 .font(Studio.Font.meta)
                 .foregroundStyle(Studio.Ink.tertiary)
-            Toggle("Show the model's reasoning", isOn: $preferences.showReasoning)
+            Toggle("Show reasoning summaries", isOn: $preferences.showReasoning)
             Toggle("Show how full the context is", isOn: $preferences.showContextMeter)
         } header: {
             Text("Thread")
         }
         Section("Changes") {
-            Picker("Diff layout", selection: $preferences.diffLayout) {
-                ForEach(StudioDiffLayout.allCases) { Text($0.label).tag($0) }
+            if includeDiffLayout {
+                Picker("Diff layout", selection: $preferences.diffLayout) {
+                    ForEach(StudioDiffLayout.allCases) { Text($0.label).tag($0) }
+                }
             }
             Toggle("Wrap long lines", isOn: $preferences.wrapLines)
         }

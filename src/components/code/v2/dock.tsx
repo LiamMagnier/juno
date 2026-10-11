@@ -613,8 +613,14 @@ function AgentDetail({ agent, model, onBack }: { agent: SubagentItem; model: Wor
         {trace.map((item) => item.kind === "assistant_message" ? (
           <Markdown key={item.id} content={item.text} streaming={item.streaming} />
         ) : item.kind === "reasoning" ? (
-          <details key={item.id}><summary className="cv2-mute cv2-small">Reasoning</summary><Markdown content={item.text} /></details>
+          <details key={item.id} open><summary className="cv2-mute cv2-small">Reasoning summary</summary><Markdown content={item.text} /></details>
         ) : (() => { const line = lineFor(item, Date.now()); return line ? <LogRow key={item.id} line={line} forceOpen /> : null; })())}
+        {trace.length === 0 && (
+          <>
+            <p className="cv2-mute cv2-small">{live ? "Waiting for activity from the provider…" : "The provider did not share a live trace for this run."}</p>
+            {agent.closingText && <Markdown content={agent.closingText} />}
+          </>
+        )}
         {agent.tokens && (
           <div className="cv2-mute cv2-small cv2-tnum">
             {Math.round(agent.tokens.input / 1000)}K in, {Math.round(agent.tokens.output / 1000)}K out

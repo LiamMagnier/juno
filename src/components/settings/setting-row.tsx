@@ -4,7 +4,6 @@ import { SaveStatus, type SaveState } from "@/components/settings/save-status";
 import { Button } from "@/components/ui/button";
 import { StatusIcons } from "@/lib/app-icons";
 import { cn } from "@/lib/utils";
-import { PageBackdrop } from "@/components/app/page-backdrop";
 
 /**
  * The shapes every settings section is built from.
@@ -16,32 +15,14 @@ import { PageBackdrop } from "@/components/app/page-backdrop";
  *   <SettingBlock>    a labelled full-width control (a textarea, a list) that
  *                     needs the whole measure.
  *
- * GROUPED, since the premium pass. The rows used to sit directly on the pane,
- * which made a group a heading followed by lines, and on a long section the
- * eye could not tell where one group stopped and the next began without
- * reading the headings. Each group's rows now sit in one card (the raised
- * rung's hairline and contact shadow, `rounded-card`, a 16px inset), with the
- * group's title and note ABOVE the card, not inside it. That is the shape the
- * Mac's settings already have (`.formStyle(.grouped)` in DesktopSettingsScreen
- * and a `DesktopSettingsGroupHeader` over each section), so the two clients
- * now draw one picture. The only lines inside a card are the hairlines between
- * its rows.
- *
- * The type ladder, top down (the editorial pass, October 2026): the pane's
- * section name in the serif at `ed-h2` with a one-line lede under it, a
- * group's title in the serif at `ed-h3`, a row's label at `text-body` medium,
- * and every note, group or row, at `text-ui` in muted ink. The serif is the
- * document voice the editorial pages (Memory, Instructions, Routines) set, so
- * settings read as the same kind of page; the rows and their controls stay in
- * the interface sans. The `ed-*` classes come from editorial.css, which
- * settings-pane.tsx loads (this module stays free of CSS imports so the
- * render tests can load it under plain Node).
+ * Plain headings, two text weights, and flat outlined groups keep the
+ * settings rail and rows consistent with the native settings window.
  */
 /**
  * The grouped card a SettingsGroup draws its rows in. Exported so a skeleton
  * (settings/loading.tsx) stands its placeholder rows in the same card.
  */
-export const SETTINGS_CARD_CLASS = "surface-raised divide-y divide-border/60 rounded-card px-4";
+export const SETTINGS_CARD_CLASS = "border border-border/60 divide-y divide-border/60 rounded-2xl px-4";
 
 export function SettingsGroup({
   title,
@@ -80,7 +61,7 @@ export function SettingsGroup({
       {hasHeader && (
         <div className="flex items-end justify-between gap-x-6 gap-y-1 pb-3">
           <div className="min-w-0 flex-1">
-            {title != null && <h3 className="ed-h3 text-foreground">{title}</h3>}
+            {title != null && <h3 className="text-body font-medium text-foreground">{title}</h3>}
             {description && <p className="mt-1 max-w-[36rem] text-pretty text-ui text-muted-foreground">{description}</p>}
           </div>
           {aside && <div className="flex shrink-0 items-center gap-3">{aside}</div>}
@@ -214,8 +195,7 @@ export function SettingsPaneHeader({ title, lede }: { title: React.ReactNode; le
     // The app pages' header (app-page-header.tsx): the display serif at the
     // page-title rung over the homepage's construction, drawn once.
     <header className="relative isolate mb-10">
-      <PageBackdrop />
-      <h2 className="text-balance font-serif text-page-title font-normal text-foreground">{title}</h2>
+      <h2 className="text-balance font-sans text-title font-medium text-foreground">{title}</h2>
       {lede && <p className="mt-2 max-w-[34rem] text-pretty text-body text-muted-foreground">{lede}</p>}
     </header>
   );

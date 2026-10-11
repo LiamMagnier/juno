@@ -79,6 +79,24 @@ test("transport: bearer required, loopback host only, health has no secrets", as
 
 // ── Codex app-server ─────────────────────────────────────────────────────────
 
+test("projectless conversations: refreshing Changes never reports a Git error", async () => {
+  const { client } = await boot();
+  await client.command("provider.probe", { instanceId: "codex:default" });
+  const cwd = tempDir("projectless");
+  const selection = { instanceId: "codex:default", model: "gpt-6.1-codex" };
+  const sid = await openSession(client, cwd, selection);
+  const empty = { diff: "", files: [] };
+  assert.deepEqual(await client.command("checkpoint.diff", { sessionId: sid }), empty);
+  const { turnId } = await client.command<{ turnId: string }>("turn.start", {
+    sessionId: sid, input: { text: "Say hello" }, selection, ...ask,
+  });
+  assert.equal((await client.turnCompleted(sid, turnId)).outcome, "completed");
+  assert.deepEqual(await client.command("checkpoint.diff", { sessionId: sid }), empty);
+  assert.equal(client.snapshot(sid).state, "idle");
+  assert.equal(fs.existsSync(path.join(cwd, ".git")), false);
+  await assert.rejects(client.command("checkpoint.diff", { sessionId: sid, checkpointId: "cp_1" }), /git repository/);
+});
+
 test("codex: probe reads account, paged models and limit windows without a session", async () => {
   const { client } = await boot();
   const { instance } = await client.command<{ instance: import("../src/contracts/code-v2.js").ProviderInstance }>("provider.probe", { instanceId: "codex:default" });
@@ -555,4 +573,60 @@ test("worktree: a session can run in its own git worktree", async () => {
   assert.notEqual(snap.cwd, repo);
   assert.ok(fs.existsSync(path.join(snap.cwd, "README.md")));
   assert.equal(fs.realpathSync(snap.worktree!.repoRoot), fs.realpathSync(repo));
+});
+
+
+test("Claude background subagents: keep the original trace after the parent and next turn finish", async () => {
+  const { client } = await boot();
+  await client.command("provider.probe", { instanceId: "claude-agent:default" });
+  const selection = { instanceId: "claude-agent:default", model: "default" };
+  const sid = await openSession(client, tempDir("background-trace"), selection);
+  const { turnId } = await client.command<{ turnId: string }>("turn.start", {
+    sessionId: sid, input: { text: "trace background subagent" }, selection, ...ask,
+  });
+  await client.turnCompleted(sid, turnId);
+  const launched = items(client, sid).find(i => i.kind === "subagent");
+  assert.ok(launched?.kind === "subagent");
+  assert.equal(launched.status, "running", "launch acknowledgment must not complete the child");
+  const next = await client.command<{ turnId: string }>("turn.start", {
+    sessionId: sid, input: { text: "hello again" }, selection, ...ask,
+  });
+  await client.turnCompleted(sid, next.turnId);
+  await client.waitFor(() => items(client, sid).some(i => i.kind === "subagent" && i.status === "completed"), 5000, "background completion");
+  const child = items(client, sid).filter(i => i.agentId === "background-agent");
+  assert.ok(child.every(i => i.turnId === turnId), "late events belong to their original turn");
+  assert.ok(child.some(i => i.kind === "search" && i.status === "completed"));
+  assert.ok(child.some(i => i.kind === "assistant_message" && i.text === "Full background findings"));
+  assert.ok(child.some(i => i.kind === "subagent" && i.liveLine === "Background check finished"));
+});
+
+test("Claude subagents: persist full prompts and attributed reasoning, tools and streamed results", async () => {
+  const { client, record } = await boot();
+  await client.command("provider.probe", { instanceId: "claude-agent:default" });
+  const selection = { instanceId: "claude-agent:default", model: "default" };
+  const sid = await openSession(client, tempDir("trace"), selection);
+  const { turnId } = await client.command<{ turnId: string }>("turn.start", {
+    sessionId: sid, input: { text: "trace two subagents" }, selection, ...ask,
+  });
+  assert.equal((await client.turnCompleted(sid, turnId)).outcome, "completed");
+  const options = record.options.at(-1) as Record<string, unknown>;
+  assert.equal(options.forwardSubagentText, true);
+  assert.equal(options.agentProgressSummaries, true);
+  const all = items(client, sid);
+  for (const id of ["agent-a", "agent-b"]) {
+    const agent = all.find(i => i.kind === "subagent" && i.agentId === id);
+    assert.ok(agent?.kind === "subagent");
+    assert.equal(agent.title, `Check ${id}`);
+    assert.equal(agent.task, `Read README.md and report the complete findings for ${id}.`);
+    assert.equal(agent.status, "completed");
+    const trace = all.filter(i => i.kind !== "subagent" && i.agentId === id);
+    assert.equal(trace.filter(i => i.kind === "reasoning").length, 1, "stream and complete messages reuse one item");
+    assert.ok(trace.some(i => i.kind === "reasoning" && i.text === `Checking ${id}.`));
+    assert.ok(trace.some(i => i.kind === "search" && i.status === "completed"));
+    assert.equal(trace.filter(i => i.kind === "assistant_message").length, 1);
+    assert.ok(trace.some(i => i.kind === "assistant_message" && i.text === `Full result ${id}` && !i.streaming));
+  }
+  const parent = all.filter(i => !i.agentId);
+  assert.ok(parent.some(i => i.kind === "reasoning" && i.text === "Hmm."));
+  assert.ok(!parent.some(i => i.kind === "assistant_message" && i.text.startsWith("Full result")));
 });

@@ -83,7 +83,7 @@ export function parseRunSummaries(json: unknown): ResearchRunSummary[] {
 /** The conversation's runs, or null when the answer could not be had (the caller keeps what it knew). */
 export async function discoverConversationRuns(fetchFn: FetchLike, conversationId: string): Promise<ResearchRunSummary[] | null> {
   try {
-    const res = await fetchFn(`/api/research?conversationId=${encodeURIComponent(conversationId)}`);
+    const res = await fetchFn(`/api/research?conversationId=${encodeURIComponent(conversationId)}`, { cache: "no-store" });
     if (!res.ok) return null;
     return parseRunSummaries(await res.json());
   } catch {

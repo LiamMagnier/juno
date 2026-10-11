@@ -298,7 +298,7 @@ public struct CodeV2AgentsPane: View {
         HStack(alignment: .center, spacing: JunoSpace.snug) {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: JunoSpace.tight + 2) {
-                    Text(node.task).studioType(.text).foregroundStyle(Studio.Ink.primary).textSelection(.enabled)
+                    Text(node.title).studioType(.text).foregroundStyle(Studio.Ink.primary).lineLimit(1)
                     CodeV2Mark(id: CodeV2Marks.markID(model: node.selection.model, instanceId: node.selection.instanceId), size: 13)
                     Text(CodeV2Formatting.modelName(node.selection.model)).studioType(.small).foregroundStyle(Studio.Ink.secondary).lineLimit(1)
                 }
@@ -348,11 +348,17 @@ public struct CodeV2AgentsPane: View {
                             if case let .assistantMessage(message) = item {
                                 JunoMarkdownText(message.text, streaming: message.streaming)
                             } else if case let .reasoning(reasoning) = item {
-                                DisclosureGroup("Reasoning") { JunoMarkdownText(reasoning.text, streaming: reasoning.streaming) }
+                                CodeV2ReasoningSummary(text: reasoning.text, streaming: reasoning.streaming)
                                     .studioType(.small).foregroundStyle(Studio.Ink.secondary)
                             } else if let row = CodeV2StepRow.make(item) { CodeV2StepRowView(row: row) }
                         }
-                        if node.steps.isEmpty { CodeV2AgentStep(node: node) }
+                        if node.steps.isEmpty {
+                            Text(node.status == .running ? "Waiting for activity from the provider…" : "The provider did not share a live trace for this run.")
+                                .studioType(.small).foregroundStyle(Studio.Ink.secondary)
+                            if let result = node.liveLine, !result.isEmpty {
+                                JunoMarkdownText(result)
+                            }
+                        }
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -660,5 +666,17 @@ public struct CodeV2ScreenPane: View {
             Spacer(minLength: 0)
         }
         .padding(JunoSpace.regular)
+    }
+}
+
+
+struct CodeV2ReasoningSummary: View {
+    let text: String
+    let streaming: Bool
+    @State private var expanded = true
+    var body: some View {
+        DisclosureGroup("Reasoning summary", isExpanded: $expanded) {
+            JunoMarkdownText(text, streaming: streaming)
+        }
     }
 }

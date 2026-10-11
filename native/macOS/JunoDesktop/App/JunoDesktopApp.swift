@@ -30,7 +30,6 @@ enum JunoDesktopWindow {
     /// Juno Code's own settings: permissions, environment, instructions, agent,
     /// Git, tools, appearance. A window of its own because a coding agent's
     /// configuration is page-sized, and it opens beside the session it tunes.
-    static let codeSettingsID = "juno.code.settings"
     /// A research report in its own window, keyed by its run's id: opening
     /// the same report twice brings its window forward (register #65).
     static let researchReportID = "juno.research-report"
@@ -580,13 +579,6 @@ struct JunoDesktopApp: App {
         .defaultSize(width: DesktopSettingsMetrics.windowIdeal.width, height: DesktopSettingsMetrics.windowIdeal.height)
         .windowResizability(.contentMinSize)
         .windowToolbarStyle(.unified)
-
-        Window("Alevr Code Settings", id: JunoDesktopWindow.codeSettingsID) {
-            DesktopCodeSettingsWindow(configuration: configuration)
-                .junoAccountAppearance(configuration)
-        }
-        .defaultSize(width: 880, height: 640)
-        .windowResizability(.contentMinSize)
 
         Window("Keyboard Shortcuts", id: JunoDesktopWindow.shortcutsID) {
             DesktopShortcutsWindow()

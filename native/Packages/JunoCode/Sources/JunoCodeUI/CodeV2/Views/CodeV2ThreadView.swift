@@ -30,7 +30,8 @@ public struct CodeV2ThreadView: View {
     var budget: (spent: Double, limit: Double)?
     var actions = CodeV2ThreadActions()
 
-    @State private var expanded: Set<String> = []
+    @State private var expanded: [String: Bool] = [:]
+    @State private var preferences = StudioPreferences.shared
     @Environment(\.codeV2Now) private var pinnedNow
 
     public init(
@@ -57,8 +58,8 @@ public struct CodeV2ThreadView: View {
                     isExpanded: Binding(
                         // A turn that ended without an answer (stopped, paused at a
                         // limit) shows its work: there is nothing else to read.
-                        get: { !turn.canFold || turn.answer == nil || expanded.contains(turn.id) },
-                        set: { open in if open { expanded.insert(turn.id) } else { expanded.remove(turn.id) } }
+                        get: { !turn.canFold || turn.answer == nil || (expanded[turn.id] ?? (preferences.density == .detailed)) },
+                        set: { expanded[turn.id] = $0 }
                     ),
                     selectedAgent: selectedAgent,
                     now: pinnedNow ?? Date(),
@@ -80,6 +81,7 @@ struct CodeV2TurnView: View {
     let actions: CodeV2ThreadActions
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var preferences = StudioPreferences.shared
 
     private var steps: [CodeV2.TurnItem] {
         turn.steps.filter { item in
@@ -137,9 +139,12 @@ struct CodeV2TurnView: View {
     /// rest of the work.
     private var workLog: some View {
         VStack(alignment: .leading, spacing: 0) {
-            let list = steps
+            let list = turn.isRunning && preferences.density == .compact ? Array(steps.suffix(1)) : steps
             ForEach(Array(list.enumerated()), id: \.element.id) { index, item in
-                if case let .plan(plan) = item {
+                if case let .reasoning(reasoning) = item, preferences.showReasoning || preferences.density == .detailed {
+                    CodeV2ReasoningSummary(text: reasoning.text, streaming: reasoning.streaming)
+                        .padding(.vertical, JunoSpace.tight)
+                } else if case let .plan(plan) = item {
                     CodeV2PlanChecklist(plan: plan)
                         .padding(.vertical, JunoSpace.tight)
                 } else if let row = CodeV2StepRow.make(item, nextDate: index + 1 < list.count ? list[index + 1].createdDate : nil, now: now) {

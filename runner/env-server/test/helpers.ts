@@ -183,6 +183,35 @@ export function fakeClaudeQuery(record: { options?: unknown[]; prompts?: string[
       stream({ type: "content_block_start", index: 0, content_block: { type: "thinking", thinking: "" } });
       stream({ type: "content_block_delta", index: 0, delta: { type: "thinking_delta", thinking: "Hmm." } });
       const blocks: Record<string, unknown>[] = [{ type: "thinking", thinking: "Hmm." }];
+      if (text === "trace background subagent") {
+        out.push({ type: "assistant", message: { content: [{ type: "tool_use", id: "background-agent", name: "Agent", input: { description: "Background check", prompt: "Read README.md and return the full background findings.", run_in_background: true } }] }, parent_tool_use_id: null, session_id });
+        out.push({ type: "system", subtype: "task_started", task_id: "background-task", tool_use_id: "background-agent", is_backgrounded: true, session_id });
+        out.push({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "background-agent", content: "Agent launched." }] }, tool_use_result: { isAsync: true }, parent_tool_use_id: null, session_id });
+        setTimeout(() => {
+          out.push({ type: "system", subtype: "task_progress", task_id: "background-task", summary: "Reading the requested file", session_id });
+          out.push({ type: "assistant", message: { content: [{ type: "tool_use", id: "background-read", name: "Read", input: { file_path: "README.md" } }] }, parent_tool_use_id: "background-agent", session_id });
+          out.push({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "background-read", content: "Background file content" }] }, parent_tool_use_id: "background-agent", session_id });
+          out.push({ type: "assistant", message: { content: [{ type: "text", text: "Full background findings" }] }, parent_tool_use_id: "background-agent", session_id });
+          out.push({ type: "system", subtype: "task_notification", task_id: "background-task", status: "completed", summary: "Background check finished", session_id });
+        }, 150);
+      }
+      if (text === "trace two subagents") {
+        for (const id of ["agent-a", "agent-b"]) {
+          out.push({ type: "assistant", message: { content: [{ type: "tool_use", id, name: "Agent", input: { description: `Check ${id}`, prompt: `Read README.md and report the complete findings for ${id}.` } }] }, parent_tool_use_id: null, uuid: `start-${id}`, session_id });
+          out.push({ type: "system", subtype: "task_progress", tool_use_id: id, summary: `Reading README for ${id}`, session_id });
+          const child = (event: Record<string, unknown>) => out.push({ type: "stream_event", event, parent_tool_use_id: id, uuid: `event-${id}-${Math.random()}`, session_id });
+          child({ type: "message_start" });
+          child({ type: "content_block_start", index: 0, content_block: { type: "thinking" } });
+          child({ type: "content_block_delta", index: 0, delta: { type: "thinking_delta", thinking: `Checking ${id}.` } });
+          out.push({ type: "assistant", message: { content: [{ type: "thinking", thinking: `Checking ${id}.` }, { type: "tool_use", id: `read-${id}`, name: "Read", input: { file_path: "README.md" } }] }, parent_tool_use_id: id, uuid: `thought-${id}`, session_id });
+          out.push({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: `read-${id}`, content: `Content for ${id}` }] }, parent_tool_use_id: id, session_id });
+          child({ type: "message_start" });
+          child({ type: "content_block_start", index: 0, content_block: { type: "text" } });
+          child({ type: "content_block_delta", index: 0, delta: { type: "text_delta", text: `Full result ${id}` } });
+          out.push({ type: "assistant", message: { content: [{ type: "text", text: `Full result ${id}` }] }, parent_tool_use_id: id, uuid: `result-${id}`, session_id });
+          out.push({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: id, content: `Full result ${id}` }] }, parent_tool_use_id: null, session_id });
+        }
+      }
       // Like the real CLI, every text block is streamed before the assistant message repeats it.
       let answered = "";
       if (/bash/.test(text)) {

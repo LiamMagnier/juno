@@ -76,7 +76,9 @@ test("a titled SettingsGroup draws its title, its note and its aside", () => {
   // as developer metadata over a louder paragraph.
   const h3 = html.match(/<h3 class="([^"]*)"/)?.[1] ?? "";
   assert.ok(!/font-mono/.test(h3), "the group title is not set in mono");
-  assert.ok(/\bed-h3\b/.test(h3), "the group title is the editorial serif, a step above the row labels");
+  // Settings pass (Remote + unified window): plain headings in the interface
+  // sans, two weights, so the pane matches the native settings window.
+  assert.ok(/\btext-body\b/.test(h3) && /\bfont-medium\b/.test(h3), "the group title is a plain medium heading, a step above the row labels");
   assert.ok(/<p class="[^"]*text-ui[^"]*">The lede\.<\/p>/.test(html), "the group note is on the text-ui rung");
 });
 

@@ -39,23 +39,29 @@ struct DesktopSettingsScreen: View {
 
     @ViewBuilder
     private var pane: some View {
-        switch section {
-        case .general: DesktopSettingsGeneralPane(context: context)
-        case .personalization: DesktopSettingsPersonalizationPane(context: context)
-        case .memory: DesktopSettingsMemoryPane(context: context)
-        case .models: DesktopSettingsModelsPane(context: context)
-        case .connectors: DesktopSettingsConnectorsPane(context: context)
-        case .devices: DesktopSettingsDevicesPane(context: context)
-        case .voice: DesktopSettingsVoicePane(context: context)
-        case .data: DesktopSettingsDataPane(context: context)
-        case .account: DesktopSettingsAccountPane(context: context)
-        case .billing: DesktopSettingsPlanPane(context: context)
-        case .code:
-            DesktopCodeSettingsScreen(
-                workbench: context.services.codeWorkbench,
-                availableModels: context.services.codeModels,
-                codeHostModel: context.services.codeHostModel
-            )
+        if let code = section.studioSection {
+            VStack(spacing: 0) {
+                DesktopSettingsPageLead(title: section == .code ? "Session defaults" : section.label, lede: "")
+                    .padding(.horizontal, 28).padding(.top, 24)
+                StudioSettingsView(workbench: context.services.codeWorkbench, initialSection: code, embedded: true)
+                    .id(section)
+            }
+        } else {
+            switch section {
+            case .general: DesktopSettingsGeneralPane(context: context, appearanceOnly: false)
+            case .appearance: DesktopSettingsGeneralPane(context: context, appearanceOnly: true)
+            case .personalization: DesktopSettingsPersonalizationPane(context: context)
+            case .memory: DesktopSettingsMemoryPane(context: context)
+            case .models: DesktopSettingsModelsPane(context: context)
+            case .connectors: DesktopSettingsConnectorsPane(context: context)
+            case .devices: DesktopSettingsDevicesPane(context: context)
+            case .remote: DesktopSettingsRemotePane(host: context.services.codeHostModel)
+            case .voice: DesktopSettingsVoicePane(context: context)
+            case .data: DesktopSettingsDataPane(context: context)
+            case .account: DesktopSettingsAccountPane(context: context)
+            case .billing: DesktopSettingsPlanPane(context: context)
+            default: EmptyView()
+            }
         }
     }
 }
@@ -116,15 +122,16 @@ struct DesktopSettingsPageLead: View {
                 .junoType(.title)
                 .foregroundStyle(Color.junoForeground)
                 .accessibilityAddTraits(.isHeader)
-            Text(lede)
+            if !lede.isEmpty { Text(lede)
                 .junoType(.ui)
                 .foregroundStyle(Color.junoSecondaryInk)
-                .fixedSize(horizontal: false, vertical: true)
+                .fixedSize(horizontal: false, vertical: true) }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .textCase(nil)
         .accessibilityIdentifier("juno.desktop.settings.page-lead")
         .desktopLayoutProbe("page.lead")
+        .desktopLayoutProbe("settings.lead")
     }
 }
 
@@ -147,8 +154,8 @@ struct DesktopSettingsForm<Content: View>: View {
         Form {
             switch lead {
             case .section(let section):
-                Section {
-                    DesktopSettingsPaneHero(section: section)
+                Section {} header: {
+                    DesktopSettingsPageLead(title: section.label, lede: "")
                 }
             case .page(let title, let lede):
                 Section {
@@ -163,6 +170,7 @@ struct DesktopSettingsForm<Content: View>: View {
                 .environment(\.desktopSettingsLead, nil)
         }
         .formStyle(.grouped)
+        .pickerStyle(.menu)
         .scrollContentBackground(.hidden)
         .contentMargins(.horizontal, sideMargin, for: .scrollContent)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -525,10 +533,10 @@ enum DesktopSettingsMetrics {
     /// the sidebar keeps its 260 and a pane keeps 500 for a label and its
     /// control.
     static let windowMinimum = CGSize(width: 760, height: 520)
-    static let windowIdeal = CGSize(width: 900, height: 660)
+    static let windowIdeal = CGSize(width: 1060, height: 780)
     /// The pane's readable measure: cards never run wider, however wide the
     /// window.
-    static let paneMeasure: CGFloat = 720
+    static let paneMeasure: CGFloat = 760
     /// A grouped card's corner, as the grouped form draws its sections.
     static let cardRadius: CGFloat = 10
     /// The signed-in account's photo in Account.

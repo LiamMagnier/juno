@@ -1571,7 +1571,7 @@ public enum CodeV2 {
             case let .error(item): item.agentId
             case let .compaction(item): item.agentId
             case let .handoff(item): item.agentId
-            case let .subagent(item): nil
+            case .subagent: nil
             case let .computerAction(item): item.agentId
             case let .conversationMessage(item): item.agentId
             case .unknown: nil

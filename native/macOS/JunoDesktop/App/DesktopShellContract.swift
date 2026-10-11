@@ -108,7 +108,7 @@ extension DesktopSettingsSection {
         case .data: .data
         case .account: .account
         case .billing: .billing
-        case .code: nil
+        default: nil
         }
     }
 }

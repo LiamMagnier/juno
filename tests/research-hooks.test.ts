@@ -439,3 +439,69 @@ test("an invalid successful response is a connection problem, never a cleared re
   assert.equal(h.store.get("run-1").disconnected, true);
   assert.ok(h.store.get("run-1").payload);
 });
+
+
+test("a chat research handoff discovers its run and publishes the plan without reloading", async () => {
+  const events = new EventTarget();
+  let handedOff = false;
+  let discoveries = 0;
+  let selected: string | null = null;
+  const h = harness(() => json(payload(handedOff ? "awaiting_plan_confirmation" : "planning", [], {
+    plan: { steps: ["Compare primary sources"], queries: ["evidence"], constraints: [], pinnedSources: [], confirmed: false },
+  })));
+  let offRun: (() => void) | undefined;
+  const watcher = watchConversationRuns({
+    conversationId: "c-live", events,
+    fetch: async (_url, init) => {
+      assert.equal(init?.cache, "no-store");
+      discoveries += 1;
+      return json(handedOff ? [{ id: "run-1", conversationId: "c-live", state: "planning", createdAt: "2026-10-11T12:00:00Z" }] : []);
+    },
+    onRuns(runs) {
+      const id = currentRunId(runs);
+      if (id && id !== selected) {
+        selected = id;
+        offRun = h.store.subscribe(id, () => {});
+      }
+    },
+  });
+  await flush();
+  assert.equal(selected, null);
+  const { readChatStream } = await import("@/lib/chat-stream");
+  const frame = { type: "handoff", to: "research", runId: "run-1", userMessageId: "m1" };
+  const body = new ReadableStream<Uint8Array>({ start(controller) {
+    controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(frame)}\n\n`));
+    controller.close();
+  }});
+  await readChatStream(body, chunk => {
+    if (chunk.type === "handoff") {
+      handedOff = true;
+      announceResearchStarted({ runId: chunk.runId, conversationId: "c-live" }, events);
+    }
+  });
+  await flush(); await flush();
+  assert.equal(selected, "run-1");
+  assert.deepEqual(h.store.get("run-1").payload?.run.plan.steps, ["Compare primary sources"]);
+  assert.equal(discoveries, 2, "discovery refreshes only when the handoff is announced");
+  assert.equal(h.pending().length, 1, "one live run poller follows the plan");
+  watcher.dispose(); offRun?.();
+  assert.equal(h.pending().length, 0);
+  const hook = readFileSync(path.join(root, "src/hooks/use-chat.ts"), "utf8");
+  assert.match(hook, /case "handoff": \{[\s\S]*?sawTerminal = true;[\s\S]*?announceResearchStarted/);
+});
+
+test("a live planning run replaces its empty plan on the next poll", async () => {
+  let ready = false;
+  const h = harness(() => json(payload(ready ? "investigating" : "planning", [], {
+    plan: { steps: ready ? ["Read the primary sources"] : [], queries: [], constraints: [], pinnedSources: [], confirmed: true },
+  })));
+  let notices = 0;
+  const off = h.store.subscribe("run-1", () => { notices += 1; });
+  await flush(); await flush();
+  assert.deepEqual(h.store.get("run-1").payload?.run.plan.steps, []);
+  ready = true;
+  await h.fire();
+  assert.deepEqual(h.store.get("run-1").payload?.run.plan.steps, ["Read the primary sources"]);
+  assert.equal(notices, 2);
+  off();
+});

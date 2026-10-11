@@ -202,7 +202,7 @@ export function createResearchRunStore(deps: ResearchRunStoreDeps): ResearchRunS
     const request = ++entry.requests;
     let res: Response;
     try {
-      res = await deps.fetch(`/api/research/${encodeURIComponent(entry.runId)}?after=${entry.cursor}`);
+      res = await deps.fetch(`/api/research/${encodeURIComponent(entry.runId)}?after=${entry.cursor}`, { cache: "no-store" });
     } catch {
       if (request >= entry.applied) update(entry, { disconnected: true });
       return null;

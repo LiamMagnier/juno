@@ -132,4 +132,13 @@ struct DesktopRemotePairingSnapshots {
         .padding(JunoSpace.section)
         try await shoot("devices", width: 560, card)
     }
+    @Test func remoteSectionShowsAccessAndPowerControls() async throws {
+        let model = model()
+        await model.refreshPairs()
+        try await shoot("remote-settings", width: 800, DesktopRemoteSettingsContent(
+            enabled: .constant(true), terminal: .constant(false), keepAwake: .constant(true),
+            pairing: model, canPair: true, add: {}, refresh: {}
+        ).frame(height: 700))
+    }
+
 }

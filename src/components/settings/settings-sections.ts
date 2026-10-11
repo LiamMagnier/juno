@@ -1,4 +1,4 @@
-import { Bell, Keyboard, KeyRound, Sparkles, Sun, type IconComponent } from "@/components/ui/icons";
+import { Bell, Keyboard, KeyRound, Sparkles, Sun, Smartphone, Users, ShieldAlert, Terminal, type IconComponent } from "@/components/ui/icons";
 import { CodeIcons, SettingsIcons } from "@/lib/app-icons";
 import { FEATURE_NAMES } from "@/lib/brand/names";
 
@@ -38,7 +38,7 @@ export const SETTINGS_SECTIONS = [
  * mirrored into the Mac app); these are web-only panes for per-device
  * preferences. They sit in the same rail, in their groups, and resolve before
  * the contract's aliases (so `/settings?section=appearance` opens Appearance
- * here, while the Mac keeps routing it to General).
+ * on both platforms).
  */
 export const WEB_SETTINGS_SECTIONS = [
   { id: "appearance", label: "Appearance", icon: Sun },
@@ -48,6 +48,11 @@ export const WEB_SETTINGS_SECTIONS = [
   // Alevr Code v2: your own API keys (BYOK). Web-only until the Mac's
   // Connections settings (code-v2 mac lane) land in the shell contract.
   { id: "connections", label: "Connections", icon: KeyRound },
+  { id: "remote", label: "Remote", icon: Smartphone },
+  { id: "code", label: "Session preferences", icon: Terminal },
+  { id: "code-agent", label: "Agents", icon: Users },
+  { id: "code-permissions", label: "Permissions", icon: ShieldAlert },
+  { id: "code-keyboard", label: "Code shortcuts", icon: Keyboard },
 ] as const satisfies readonly { id: string; label: string; icon: IconComponent }[];
 
 type SharedSectionId = (typeof SETTINGS_SECTIONS)[number]["id"];
@@ -60,13 +65,18 @@ export type SettingsSectionMeta = { id: SettingsSectionId; label: string; icon: 
  * screen, what the assistant can do and reach, then the account.
  */
 export const SETTINGS_GROUPS: { label: string; ids: SettingsSectionId[] }[] = [
-  { label: "Personal", ids: ["general", "appearance", "notifications", "personalization", "keyboard"] },
-  { label: "Assistant", ids: ["capabilities", "memory", "models", "connectors", "connections", "voice", "devices"] },
-  { label: "Account", ids: ["account", "data", "billing"] },
+  { label: "Personal", ids: ["general", "appearance", "notifications", "personalization", "memory", "models", "voice", "keyboard", "account", "data", "billing"] },
+  { label: "Integrations", ids: ["connectors", "connections", "remote", "devices"] },
+  { label: "Coding", ids: ["code", "code-agent", "code-permissions", "code-keyboard", "capabilities"] },
 ];
 
 /** Words a search in the rail should find each section by (its rows' labels). */
 export const SETTINGS_KEYWORDS: Record<SettingsSectionId, string> = {
+  remote: "remote pair QR iPhone Mac computer browser revoke access",
+  code: "session defaults work log generation image video music",
+  "code-agent": "agents subagents team orchestration roles budget",
+  "code-permissions": "permissions ask plan full access edits commands",
+  "code-keyboard": "code keyboard shortcuts hotkeys",
   general: "language interface locale send enter shortcut",
   appearance: "theme light dark system mode accent color colour text size font chat font serif mono width transcript motion animation reduce",
   notifications: "notify notification alert sound chime email budget digest background reply",

@@ -9,27 +9,32 @@ import JunoSync
 import JunoWorkKit
 import SwiftUI
 
-/// The sections of Settings, in the web's order (`settings-sections.ts`, held
-/// by the shell contract): General · Personalization · Memory · Models ·
-/// Connectors · Devices · Voice · Data & privacy · Account · Plan & usage,
-/// then the Mac-only Code section last until Code's redesign (P3-3). The
-/// names, marks and aliases are the contract's (`JunoShellSettingsSection`);
-/// a test holds the order to it.
-///
-/// Raw values are stored (`storageKey`) and routed by, so they never change:
-/// Plan & usage is still `billing`.
+/// One settings rail for Chat and Code. Raw values stay stable for saved
+/// destinations and links; shared sections retain their shell identities.
 enum DesktopSettingsSection: String, CaseIterable, Identifiable {
     case general
+    case appearance
+    case notifications
+    case keyboard
     case personalization
     case memory
     case models
-    case connectors
-    case devices
     case voice
-    case data
     case account
+    case data
     case billing
+    case connectors
+    case connections
+    case remote
+    case devices
     case code
+    case codePermissions = "code-permissions"
+    case codeEnvironment = "code-environment"
+    case codeInstructions = "code-instructions"
+    case codeAgent = "code-agent"
+    case codeGit = "code-git"
+    case codeTools = "code-tools"
+    case advanced
 
     var id: String { rawValue }
 
@@ -38,14 +43,14 @@ enum DesktopSettingsSection: String, CaseIterable, Identifiable {
     /// The names older call sites route by. `usage` is Plan & usage and
     /// `connections` is what the web calls connectors.
     static var usage: DesktopSettingsSection { .billing }
-    static var connections: DesktopSettingsSection { .connectors }
+
 
     /// The web's aliases (`ALIASES` in `settings-sections.ts`, through the
     /// shell contract), plus the Mac's own `connections`. The web's win a
     /// clash, so a name the web starts routing elsewhere follows the web.
     static let aliases: [String: DesktopSettingsSection] = JunoShellSettingsSection.aliases
         .mapValues { DesktopSettingsSection($0) }
-        .merging(["connections": .connectors]) { web, _ in web }
+        .merging(["theme": .appearance, "appearance": .appearance, "pair": .remote, "remote-control": .remote]) { _, native in native }
 
     /// A section id or one of the web's aliases, else the web's default
     /// (General).
@@ -58,13 +63,13 @@ enum DesktopSettingsSection: String, CaseIterable, Identifiable {
     /// The web's name for the section (the shell contract); Code's is the
     /// Mac's own.
     var label: String {
-        shell?.label ?? "Code"
+        (self == .code ? "Session defaults" : shell?.label) ?? (studioSection?.titleForSettings ?? (self == .remote ? "Remote" : "Appearance"))
     }
 
     /// The web's `SettingsIcons` (and `CodeIcons.device` for Devices), as the
     /// shell contract names them; Code wears the Code mark.
     var icon: JunoIcon {
-        shell?.icon ?? .code
+        shell?.icon ?? (studioSection?.iconForSettings ?? (self == .remote ? .smartphone : .appearance))
     }
 
     /// The labels of the rows each pane holds, for the sidebar's search field.
@@ -73,7 +78,7 @@ enum DesktopSettingsSection: String, CaseIterable, Identifiable {
     var searchTerms: [String] {
         switch self {
         case .general:
-            ["Appearance", "Theme", "Light", "Dark", "System", "Accent color", "Custom accent color", "Text size", "About", "Version", "Updates", "Diagnostics"]
+            ["About", "Version", "Updates", "Diagnostics", "New sessions", "Default model"]
         case .personalization:
             ["What Alevr calls you", "Name", "Custom instructions", "Responses", "Personality", "Response language"]
         case .memory:
@@ -92,8 +97,10 @@ enum DesktopSettingsSection: String, CaseIterable, Identifiable {
             ["Profile picture", "Change name", "Sign-in and security", "Two-step verification", "Password", "Email address", "This session", "Sign out", "Sign out everywhere", "Notifications", "Budget alerts", "Weekly digest", "When something needs you", "Updates", "Delete account"]
         case .billing:
             ["Plan", "Upgrade", "Change plan", "Manage billing", "Usage", "This month", "Current session", "This week", "Spend ceiling", "Monthly ceiling", "History"]
-        case .code:
-            ["Alevr Code", "Permissions", "Environment", "MCP", "Remote", "Pair"]
+        case .appearance: ["Theme", "Accent", "Text size", "Density", "Wrap", "Reasoning", "Diff"]
+        case .connections: ["Subscription", "Claude", "ChatGPT", "Codex", "Gemini", "API keys", "Usage"]
+        case .remote: ["Pair", "QR code", "iPhone", "Allow connections", "Revoke access", "Keep awake"]
+        default: [label, "Alevr Code"]
         }
     }
 
@@ -104,7 +111,7 @@ enum DesktopSettingsSection: String, CaseIterable, Identifiable {
     /// What each rail group is, said quietly above it in sentence case: the
     /// sections read as places, not eleven loose rows. The first group is
     /// the window's own and has no heading.
-    static let railGroupTitles: [String?] = [nil, "Intelligence", "Account", "Developer"]
+    static let railGroupTitles: [String?] = ["Personal", "Integrations", "Coding"]
 
     /// One sentence under the pane's name, saying what the section holds.
     var summary: String {
@@ -119,16 +126,38 @@ enum DesktopSettingsSection: String, CaseIterable, Identifiable {
         case .data: "Export, import, shared links, and clearing your history."
         case .account: "Your profile, sign-in, security, and notifications."
         case .billing: "Your plan, what you have used, and your spending ceiling."
-        case .code: "Alevr Code’s own settings, and remote sessions on this Mac."
+        case .remote: "Pair your iPhone or browser with this Mac."
+        default: "Settings for Chat and Code."
         }
     }
 
     static let railGroups: [[DesktopSettingsSection]] = [
-        [.general, .personalization],
-        [.memory, .models, .connectors, .devices, .voice],
-        [.data, .account, .billing],
-        [.code],
+        [.general, .appearance, .notifications, .keyboard, .personalization, .memory, .models, .voice, .account, .data, .billing],
+        [.connectors, .connections, .remote, .devices],
+        [.code, .codePermissions, .codeEnvironment, .codeInstructions, .codeAgent, .codeGit, .codeTools, .advanced],
     ]
+
+    var studioSection: StudioSettingsSection? {
+        switch self {
+        case .code: .general
+        case .connections: .connections
+        case .codePermissions: .permissions
+        case .codeEnvironment: .environment
+        case .codeInstructions: .instructions
+        case .codeAgent: .agent
+        case .codeGit: .git
+        case .codeTools: .tools
+        case .notifications: .notifications
+        case .keyboard: .keyboard
+        case .advanced: .advanced
+        default: nil
+        }
+    }
+
+    static func codeDestination(_ section: StudioSettingsSection) -> Self {
+        if section == .appearance { return .appearance }
+        return allCases.first { $0.studioSection == section } ?? .code
+    }
 
     /// The sections a search string leaves visible — all of them for an empty
     /// string. Matched against the name and the row labels, case- and
@@ -338,7 +367,13 @@ struct DesktopSettingsShell: View {
         } detail: {
             DesktopSettingsScreen(section: section, context: context)
                 .junoToastHost(context.toasts)
-                .navigationTitle(section.label)
+                .navigationTitle("Settings")
+        }
+        .onChange(of: StudioSettingsRouter.shared.requested, initial: true) { _, requested in
+            if let requested {
+                section = .codeDestination(requested)
+                StudioSettingsRouter.shared.requested = nil
+            }
         }
     }
 }
@@ -373,10 +408,20 @@ struct DesktopSettingsSidebar: View {
     }
 
     var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                JunoIconView(.search, size: 14).foregroundStyle(Color.junoSecondaryInk)
+                TextField("Search settings", text: $query).textFieldStyle(.plain)
+            }
+            .padding(10)
+            .background(Color.junoForeground.opacity(0.05), in: RoundedRectangle(cornerRadius: 9))
+            .padding(.horizontal, 12).padding(.top, 10)
         List(selection: listSelection) {
             ForEach(Array(visibleGroups.enumerated()), id: \.offset) { index, group in
                 if let title = Self.title(for: group) {
-                    DesktopSidebarHeadingRow(title, isFirst: index == 0)
+                    Text(title).font(.system(size: 12)).foregroundStyle(Color.junoSecondaryInk)
+                        .padding(.top, index == 0 ? 4 : 14)
+                        .accessibilityAddTraits(.isHeader)
                 }
                 ForEach(group) { section in
                     DesktopSidebarNavRow(icon: section.icon, title: section.label, selected: selection == section)
@@ -389,13 +434,14 @@ struct DesktopSettingsSidebar: View {
         // The web's 32pt rows, set once, as the main sidebar does.
         .environment(\.defaultMinListRowHeight, 0)
         .junoSidebarSelectionTint()
-        .searchable(text: $query, placement: .sidebar, prompt: "Search settings")
+
         .overlay {
             if visible.isEmpty {
                 // Mac-only copy (register #177), on the shared empty state.
                 JunoEmptyState(title: "No settings match \u{201C}\(query)\u{201D}", icon: .search, size: .panel)
                     .padding(JunoSpace.regular)
             }
+        }
         }
         .navigationSplitViewColumnWidth(
             min: DesktopSettingsMetrics.railMinimum,
@@ -443,85 +489,6 @@ struct DesktopSettingsSectionTile: View {
 /// of its own (and in its settings files), so this pane points rather than
 /// copies: two editors for one value is how they drift. This Mac's Work
 /// switch moved to Devices (§C2).
-struct DesktopCodeSettingsScreen: View {
-    let workbench: WorkbenchModel?
-    let availableModels: [ModelOption]
-    let codeHostModel: DesktopCodeHostModel?
-
-    @Environment(\.openWindow) private var openWindow
-
-    /// Code's pages this pane opens, in Code's own order.
-    static let destinations: [(page: StudioSettingsSection, title: String, description: String)] = [
-        (
-            .general,
-            "Models and defaults",
-            "The model, thinking and environment new sessions start with, and the generation models Code uses for images, video and music."
-        ),
-        (
-            .connections,
-            "Connections",
-            "The accounts and keys Alevr Code runs on, and the agents it can start on this Mac."
-        ),
-        (
-            .permissions,
-            "Permissions",
-            "What Code may do without asking, and whether your other devices can run sessions on this Mac."
-        ),
-        (
-            .tools,
-            "Tools and MCP",
-            "The tools and MCP servers Code can call."
-        ),
-    ]
-
-    var body: some View {
-        DesktopSettingsForm {
-            Section {
-                ForEach(Self.destinations, id: \.page) { destination in
-                    DesktopSettingRow(title: destination.title, description: destination.description) {
-                        DesktopOutlineButton(title: "Open") { open(destination.page) }
-                            .accessibilityLabel("Open \(destination.title)")
-                            .accessibilityIdentifier("juno.desktop.settings.code.\(destination.page.rawValue)")
-                    }
-                }
-            } header: {
-                DesktopSettingsGroupHeader(
-                    title: "Alevr Code",
-                    note: "Code keeps its settings in a window of its own, beside your projects’ settings files."
-                )
-            }
-
-            Section {
-                DesktopSettingRow(
-                    title: "All Code settings",
-                    description: "Instructions, the agent, Git, appearance, notifications and keyboard."
-                ) {
-                    DesktopOutlineButton(title: "Open Code Settings") { open(nil) }
-                        .accessibilityIdentifier("juno.desktop.settings.open-code-settings")
-                }
-            }
-        }
-    }
-
-    private func open(_ page: StudioSettingsSection?) {
-        if let page { StudioSettingsRouter.shared.requested = page }
-        openWindow(id: JunoDesktopWindow.codeSettingsID)
-    }
-}
-
-/// Juno Code's settings window: the package's page, with this app's remote
-/// hosting switch handed in for the Permissions section.
-struct DesktopCodeSettingsWindow: View {
-    let configuration: JunoDesktopConfiguration?
-
-    var body: some View {
-        StudioSettingsView(
-            workbench: DesktopWorkbenchRegistry.shared.workbench,
-            remoteHosting: AnyView(DesktopCodeRemoteHostTile(host: configuration?.codeHostModel))
-        )
-    }
-}
-
 /// Hosting for Juno Code Remote — off until someone at this Mac says
 /// otherwise.
 ///

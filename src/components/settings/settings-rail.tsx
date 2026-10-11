@@ -240,7 +240,7 @@ export function SettingsRail({
     </div>
   );
   const groupLabel = (label: string) => (
-    <p className="ed-annot px-2.5 pb-1.5 pt-5 first:pt-0 @[16rem]/rail:hidden" aria-hidden="true">
+    <p className="text-caption text-muted-foreground px-2.5 pb-1.5 pt-5 first:pt-0 @[16rem]/rail:hidden" aria-hidden="true">
       {label}
     </p>
   );

@@ -145,7 +145,7 @@ public struct CodeV2ChangesPane: View {
     var failure: String?
 
     @State private var collapsed: Set<String>?
-    @State private var wraps = false
+    @Bindable private var preferences = StudioPreferences.shared
 
     public init(
         files: [CodeV2DiffFile], scope: Binding<Scope>, decisions: CodeV2HunkDecisions,
@@ -185,7 +185,7 @@ public struct CodeV2ChangesPane: View {
                 CodeV2DiffCounts(additions: additions, deletions: deletions)
                 Spacer()
                 Menu {
-                    Toggle("Wrap Lines", isOn: $wraps)
+                    Toggle("Wrap Lines", isOn: $preferences.wrapLines)
                     Button("Expand All") { collapsed = [] }
                     Button("Collapse All") { collapsed = Set(files.map(\.path)) }
                 } label: {
@@ -275,7 +275,7 @@ public struct CodeV2ChangesPane: View {
             }
             CodeV2Hunk(
                 hunk: hunk,
-                wraps: wraps,
+                wraps: preferences.wrapLines,
                 decision: decisions.decision(for: hunk),
                 revert: decide.map { decide in { decide(file, hunk, .rejected) } }
             )

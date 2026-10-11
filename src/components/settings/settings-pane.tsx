@@ -12,6 +12,8 @@ import { MemorySection } from "@/components/settings/sections/memory";
 import { ModelsSection } from "@/components/settings/sections/models";
 import { ConnectorsSection } from "@/components/settings/sections/connectors";
 import { ConnectionsSection } from "@/components/settings/sections/connections";
+import { RemoteSection } from "@/components/settings/sections/remote";
+import { CodeSessionSection, CodeAgentSection, CodePermissionsSection, CodeKeyboardSection } from "@/components/settings/sections/code";
 import { DevicesSection } from "@/components/settings/sections/devices";
 import { VoiceSection } from "@/components/settings/sections/voice";
 import { DataPrivacySection } from "@/components/settings/sections/data-privacy";
@@ -40,6 +42,11 @@ const SECTION_COMPONENTS: Record<SettingsSectionId, React.ComponentType> = {
   capabilities: CapabilitiesSection,
   keyboard: KeyboardSection,
   connections: ConnectionsSection,
+  remote: RemoteSection,
+  code: CodeSessionSection,
+  "code-agent": CodeAgentSection,
+  "code-permissions": CodePermissionsSection,
+  "code-keyboard": CodeKeyboardSection,
 };
 
 /**
@@ -47,6 +54,11 @@ const SECTION_COMPONENTS: Record<SettingsSectionId, React.ComponentType> = {
  * not a table of contents: the groups below name themselves.
  */
 const SECTION_LEDES: Record<SettingsSectionId, string> = {
+  remote: "Pair this browser with a Mac and manage its access.",
+  code: "Work log and generation models for Code.",
+  "code-agent": "Team roles and budget for your current Code session.",
+  "code-permissions": "What Code may do in your current session.",
+  "code-keyboard": "Keyboard shortcuts for Code.",
   general: "The language the interface speaks, and the way to everything else.",
   appearance: `How ${PRODUCT_NAME} looks, and how its replies read.`,
   notifications: `When ${PRODUCT_NAME} should reach you, here and in your inbox.`,

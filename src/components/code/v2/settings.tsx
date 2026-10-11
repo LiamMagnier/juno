@@ -119,6 +119,13 @@ export function GenerationModelsGroup() {
   );
 }
 
+export function CodeKeyboardGroup() {
+  const mac = useIsMac();
+  return <Group>{DEFAULT_KEYBINDINGS.filter((b) => !b.command.startsWith("hunk.accept")).map((b) => (
+    <Row key={`${b.key}:${b.command}`} title={COMMAND_TITLES[b.command] ?? b.command} control={<Kbd k={b.key} mac={mac} />} />
+  ))}</Group>;
+}
+
 export function SettingsContent({
   pane,
   connections,
@@ -130,8 +137,10 @@ export function SettingsContent({
   onRuntimeMode,
   detail,
   onDetail,
+  embedded = false,
 }: {
   pane: SettingsPane;
+  embedded?: boolean;
   connections: ConnectionsProps;
   instances: readonly ProviderInstance[];
   routing: RoleRouting;
@@ -142,7 +151,6 @@ export function SettingsContent({
   detail: DetailLevel;
   onDetail: (d: DetailLevel) => void;
 }) {
-  const mac = useIsMac();
   const [budget, setBudget] = React.useState(formatBudget(routing.budget?.maxUsd));
   const model = (sel?: ModelSelection) => {
     if (!sel) return "None";
@@ -151,8 +159,8 @@ export function SettingsContent({
   };
   const title = PANES.find((p) => p.id === pane)?.label;
   return (
-    <div className="cv2-page">
-      <div className="inner" style={{ maxWidth: pane === "connections" ? 880 : 680 }}>
+    <div className={embedded ? undefined : "cv2-page"}>
+      <div className="inner" style={{ maxWidth: pane === "connections" ? 880 : 680, ...(embedded ? { padding: 0 } : {}) }}>
         <h1 className="cv2-sr">{title}</h1>
         {pane === "connections" && <ConnectionsPanel {...connections} embedded />}
         {pane === "general" && (
@@ -206,13 +214,7 @@ export function SettingsContent({
             ))}
           </Group>
         )}
-        {pane === "keyboard" && (
-          <Group>
-            {DEFAULT_KEYBINDINGS.filter((b) => !b.command.startsWith("hunk.accept")).map((b) => (
-              <Row key={`${b.key}:${b.command}`} title={COMMAND_TITLES[b.command] ?? b.command} control={<Kbd k={b.key} mac={mac} />} />
-            ))}
-          </Group>
-        )}
+        {pane === "keyboard" && <CodeKeyboardGroup />}
       </div>
     </div>
   );

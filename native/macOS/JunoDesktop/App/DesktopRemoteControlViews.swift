@@ -27,15 +27,12 @@ struct DesktopRemotePairingSheet: View {
                 .padding(.bottom, JunoSpace.roomy)
 
             if showsSegments {
-                JunoSegmented(
-                    options: [
-                        .init(RemotePairingKind.phone, "Phone", icon: .smartphone),
-                        .init(RemotePairingKind.browser, "Computer", icon: .device),
-                    ],
-                    selection: Binding(get: { model.kind }, set: { model.select($0) }),
-                    accessibilityLabel: "Pair a phone or a computer",
-                    optionAccessibilityIdentifier: { "juno.desktop.pairing.kind.\($0.rawValue)" }
-                )
+                Picker("Pair a device", selection: Binding(get: { model.kind }, set: { model.select($0) })) {
+                    Text("iPhone").tag(RemotePairingKind.phone)
+                    Text("Computer").tag(RemotePairingKind.browser)
+                }
+                .pickerStyle(.menu)
+                .accessibilityIdentifier("juno.desktop.pairing.kind")
                 .padding(.bottom, JunoSpace.section)
             }
 
@@ -366,12 +363,12 @@ struct DesktopRemotePairedDeviceList: View {
             }
         }
         .confirmationDialog(
-            "Remove \(confirming?.name ?? "this device")?",
+            "Revoke access for \(confirming?.name ?? "this device")?",
             isPresented: Binding(get: { confirming != nil }, set: { if !$0 { confirming = nil } }),
             titleVisibility: .visible,
             presenting: confirming
         ) { pair in
-            Button("Remove", role: .destructive) { Task { await model.remove(pair) } }
+            Button("Revoke access", role: .destructive) { Task { await model.remove(pair) } }
             Button("Cancel", role: .cancel) {}
         } message: { _ in
             Text("It loses access to this Mac at once. Pair it again any time.")
@@ -398,7 +395,7 @@ struct DesktopRemotePairedDeviceList: View {
                     .lineLimit(1)
             }
             Spacer(minLength: JunoSpace.cozy)
-            DesktopOutlineButton(title: model.removingPairID == pair.id ? "Removing…" : "Remove", destructive: true) {
+            DesktopOutlineButton(title: model.removingPairID == pair.id ? "Revoking…" : "Revoke access") {
                 confirming = pair
             }
             .disabled(model.removingPairID != nil)
@@ -531,6 +528,140 @@ struct DesktopRemoteControlRows: View {
                 Spacer(minLength: 0)
                 button
             }
+        }
+    }
+}
+
+// MARK: - Settings › Remote
+
+struct DesktopSettingsRemotePane: View {
+    let host: DesktopCodeHostModel?
+    @State private var pairing: DesktopRemotePairingModel?
+    @State private var adding = false
+
+    var body: some View {
+        DesktopRemoteSettingsContent(
+            enabled: Binding(get: { host?.servesQueuedTasks ?? false }, set: { host?.servesQueuedTasks = $0 }),
+            terminal: Binding(get: { host?.sharesTerminalRemotely ?? false }, set: { host?.sharesTerminalRemotely = $0 }),
+            keepAwake: Binding(get: { host?.keepsAwakeForRemote ?? false }, set: { host?.keepsAwakeForRemote = $0 }),
+            pairing: pairing,
+            canPair: host?.pairingService != nil,
+            host: host,
+            problem: host?.remoteSyncProblem,
+            add: { adding = true },
+            refresh: { Task { await pairing?.refreshPairs() } }
+        )
+        .task(id: host?.deviceID) {
+            pairing = DesktopRemotePairingModel(service: host?.pairingService)
+            await pairing?.refreshPairs()
+        }
+        .sheet(isPresented: $adding, onDismiss: {
+            pairing?.stop()
+            Task { await pairing?.refreshPairs() }
+        }) {
+            if let pairing {
+                DesktopRemotePairingSheet(model: pairing, close: { adding = false })
+                    .onAppear {
+                        pairing.onApproved = { adding = false }
+                        pairing.start()
+                    }
+                    .onDisappear { pairing.stop() }
+            }
+        }
+    }
+}
+
+/// Data-driven production view, also rendered by the offscreen fixture.
+struct DesktopRemoteSettingsContent: View {
+    @Binding var enabled: Bool
+    @Binding var terminal: Bool
+    @Binding var keepAwake: Bool
+    let pairing: DesktopRemotePairingModel?
+    let canPair: Bool
+    var host: DesktopCodeHostModel?
+    var problem: String?
+    let add: () -> Void
+    let refresh: () -> Void
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 36) {
+                DesktopSettingsPageLead(title: "Remote", lede: "")
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Text("Devices that can control this Mac").junoType(.ui)
+                        Spacer()
+                        Button(action: refresh) { JunoIconView(.refresh, size: 16) }
+                            .buttonStyle(.borderless).accessibilityLabel("Refresh devices")
+                        Button("Add", action: add)
+                            .buttonStyle(.junoProminent)
+                            .disabled(!enabled || !canPair || pairing == nil)
+                            .accessibilityIdentifier("juno.desktop.settings.remote.add")
+                    }
+                    VStack(alignment: .leading, spacing: 0) {
+                        remoteToggle("Allow connections", isOn: $enabled, identifier: "juno.desktop.settings.remote-control")
+                            .padding(.vertical, 16)
+                        Divider()
+                        if canPair, let pairing {
+                            DesktopRemotePairedDeviceList(model: pairing).padding(.vertical, 8)
+                        }
+                        if !canPair {
+                            Text(host == nil ? "Sign in to Alevr on this Mac to create a pairing code." : "Pairing becomes available when this Mac is registered. If it was unpaired, pair this Mac again below.")
+                                .junoType(.label).foregroundStyle(Color.junoSecondaryInk).padding(.vertical, 12)
+                        } else if !enabled {
+                            Text("Allow connections, then choose Add to scan a QR code from your iPhone.")
+                                .junoType(.label).foregroundStyle(Color.junoSecondaryInk).padding(.vertical, 12)
+                        }
+                    }
+                    .padding(.horizontal, 18)
+                    .background(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.junoBorder, lineWidth: 1))
+                    Text("Paired devices can start and steer Code sessions in shared folders. Turning this off stops remote access immediately.")
+                        .junoType(.label).foregroundStyle(Color.junoSecondaryInk)
+                }
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Other settings").junoType(.ui)
+                    VStack(spacing: 0) {
+                        remoteToggle(
+                            "Keep this Mac awake",
+                            detail: "Prevent sleep while this Mac is plugged in and remote access is enabled.",
+                            isOn: $keepAwake,
+                            identifier: "juno.desktop.settings.remote.keep-awake"
+                        ).padding(.vertical, 12)
+                        Divider()
+                        remoteToggle(
+                            "Share the terminal",
+                            detail: "Allow paired devices to open a shell inside shared folders.",
+                            isOn: $terminal,
+                            identifier: "juno.desktop.settings.remote-host-terminal"
+                        ).padding(.vertical, 12)
+                    }
+                    .padding(.horizontal, 18)
+                    .background(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.junoBorder, lineWidth: 1))
+                }
+                if let host {
+                    VStack(alignment: .leading, spacing: 12) { DesktopCodeHostRevokeSection(host: host) }
+                }
+                if let problem {
+                    Text(problem).junoType(.label).foregroundStyle(Color.junoDestructiveInk)
+                }
+            }
+            .frame(maxWidth: 760, alignment: .leading)
+            .padding(32)
+            .frame(maxWidth: .infinity)
+        }
+        .accessibilityIdentifier("juno.desktop.settings.remote")
+    }
+
+    private func remoteToggle(_ title: String, detail: String? = nil, isOn: Binding<Bool>, identifier: String) -> some View {
+        HStack(spacing: 24) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title).junoType(.ui)
+                if let detail {
+                    Text(detail).junoType(.label).foregroundStyle(Color.junoSecondaryInk)
+                }
+            }.frame(maxWidth: .infinity, alignment: .leading)
+            Toggle(title, isOn: isOn).labelsHidden().toggleStyle(.switch)
+                .accessibilityIdentifier(identifier)
         }
     }
 }

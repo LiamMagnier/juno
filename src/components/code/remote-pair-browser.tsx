@@ -82,7 +82,7 @@ export function RemotePairBrowser({ initialStep, initialCode = "" }: { initialSt
             <>
               <h1 className="alv-display alv-enter">Pair this browser with your Mac</h1>
               <p className="alv-lede alv-enter">
-                On your Mac, open Alevr › Settings › Connections › Control this Mac remotely, choose Computer, and type the code it shows.
+                On your Mac, open Alevr › Settings › Remote, allow connections, choose Add then Computer, and type the code it shows.
               </p>
               <form onSubmit={inspect} className="alv-state-actions alv-enter mx-auto flex w-full max-w-sm flex-col items-stretch gap-3">
                 <label htmlFor="pair-code" className="sr-only">

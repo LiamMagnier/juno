@@ -170,6 +170,7 @@ struct CodeV2TextControlLabel: View {
 /// the thread has used more than 60% of its window, and `Queued (n)` while
 /// follow-ups wait (TARGET §7.1, §7.3).
 struct CodeV2ComposerTrailing: View {
+    @State private var preferences = StudioPreferences.shared
     var context: CodeV2ContextReading?
     var compact: (() -> Void)?
     var queue: [CodeV2.QueuedInput] = []
@@ -181,7 +182,7 @@ struct CodeV2ComposerTrailing: View {
         if !queue.isEmpty {
             CodeV2QueuedMenu(queue: queue, edit: editQueued, steer: steerQueued, remove: removeQueued)
         }
-        if let context, context.fraction > 0.6 {
+        if let context, context.fraction > 0.6, preferences.showContextMeter {
             CodeV2ContextGauge(reading: context, compact: compact)
         }
     }

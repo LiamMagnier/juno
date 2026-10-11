@@ -571,7 +571,14 @@ export class SessionManager {
   async diff(params: ClientCommandParams["checkpoint.diff"]): Promise<ClientCommandResults["checkpoint.diff"]> {
     const live = this.#get(params.sessionId);
     const cwd = live.log.meta.cwd;
-    if (!(await this.checkpoints.repoRoot(cwd))) throw new WireError("unsupported", "Diffs need a git repository.");
+    if (!(await this.checkpoints.repoRoot(cwd))) {
+      // The Changes pane refreshes after every turn, including projectless
+      // conversations and read-only subagents. No repository means no Git
+      // changes to display, not a failed conversation. Explicit checkpoint
+      // operations still require a repository.
+      if (params.checkpointId) throw new WireError("unsupported", "Diffs need a git repository.");
+      return { diff: "", files: [] };
+    }
     const id = live.log.id;
     if (!params.checkpointId) {
       const base = await this.checkpoints.resolve(cwd, id, 0);

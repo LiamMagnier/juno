@@ -22,6 +22,8 @@ import { composerModeInfo, composerModeOf, cycleComposerMode, setComposerMode } 
 import { ComposerPopover, Glyph, Kbd, MenuList, useIsMac, type MenuEntry } from "./primitives";
 import { CodeWorkList } from "@/components/app/code-work-list";
 import { SettingsContent, SettingsSidebar, type SettingsPane } from "./settings";
+import { codeSettingsBridge } from "./settings-bridge";
+import { openSettings as openAppSettings } from "@/components/settings/settings-sections";
 import { Thread, ThreadSkeleton, type DockRequest } from "./thread";
 import type { WorkspaceModel, WorkspaceUiState } from "./types";
 import { cn } from "@/lib/utils";
@@ -237,7 +239,7 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
   const toggleDock = (tab: DockTab) => dispatch({ type: "toggle", tab, threadId: model.thread.id });
   const openConnections = () => {
     if (model.actions.openConnections) model.actions.openConnections();
-    else setSettings("connections");
+    else openAppSettings("connections");
   };
   const rename = () => {
     const next = window.prompt("Rename this session", model.thread.title);
@@ -437,11 +439,23 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
     { kind: "sep", id: "s1" },
     { id: "pulls", label: "Pull requests", icon: <Glyph name="pull-request" size={16} />, onSelect: () => window.location.assign("/code/pulls") },
     { id: "conn", label: "Connections", icon: <Glyph name="plug" size={16} />, onSelect: openConnections },
-    { id: "settings", label: "Settings", icon: <Glyph name="settings" size={16} />, onSelect: () => setSettings("general") },
+    { id: "settings", label: "Settings", icon: <Glyph name="settings" size={16} />, onSelect: () => openAppSettings("code") },
     { id: "keys", label: "Keyboard shortcuts", icon: <Glyph name="keyboard" size={16} />, trail: <Kbd k="mod+/" mac={mac} />, onSelect: () => setShortcuts(true) },
   ];
 
-  const connectionsProps: ConnectionsProps = { instances: model.instances, device: model.device, flags: model.flags, byok, keys: model.byokKeys, onProbe, onManaged, onSetup, alevrPlan: ui.alevrPlan };
+  const connectionsProps: ConnectionsProps = React.useMemo(() => ({ instances: model.instances, device: model.device, flags: model.flags, byok, keys: model.byokKeys, onProbe, onManaged, onSetup, alevrPlan: ui.alevrPlan }), [model.instances, model.device, model.flags, byok, model.byokKeys, onProbe, onManaged, onSetup, ui.alevrPlan]);
+  const settingsOwner = React.useRef({});
+  React.useEffect(() => {
+    codeSettingsBridge.publish(settingsOwner.current, {
+      connections: connectionsProps, instances: model.instances, routing: model.routing,
+      lead: model.selection, onRouting: model.actions.setRouting, runtimeMode: model.runtimeMode,
+      onRuntimeMode: model.actions.setRuntimeMode, detail, onDetail: setDetail,
+    });
+  }, [connectionsProps, model.instances, model.routing, model.selection, model.actions.setRouting, model.actions.setRuntimeMode, model.runtimeMode, detail]);
+  React.useEffect(() => {
+    const owner = settingsOwner.current;
+    return () => codeSettingsBridge.clear(owner);
+  }, []);
   if (settings) {
     return (
       <div className={cn("cv2 cv2-app", !(sidebar && sideOpen) && "no-side", className)} data-reduced-motion={ui.reducedMotion ? "true" : undefined}>

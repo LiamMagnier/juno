@@ -1,6 +1,7 @@
 import Foundation
 import JunoChatKit
 import JunoCore
+import JunoCodeUI
 import JunoDesignSystem
 import JunoWorkKit
 import Testing
@@ -14,15 +15,18 @@ import Testing
 @Suite struct DesktopSettingsParityTests {
     // MARK: Sections
 
-    @Test func sectionsAreTheWebsOrderThenCode() {
-        #expect(DesktopSettingsSection.allCases.map(\.label) == [
-            "General", "Personalization", "Memory", "Models", "Apps", "Devices",
-            "Voice", "Data & privacy", "Account", "Plan & usage", "Code",
-        ])
-        // Stored and routed by, so the raw value never changes.
+    @Test func unifiedSettingsKeepsStoredIdentifiersAndAllCodeDestinations() {
         #expect(DesktopSettingsSection.billing.rawValue == "billing")
         #expect(DesktopSettingsSection.usage == .billing)
-        #expect(DesktopSettingsSection.connections == .connectors)
+        #expect(DesktopSettingsSection.connections != .connectors)
+        #expect(DesktopSettingsSection.resolve("remote") == .remote)
+        for section in StudioSettingsSection.allCases {
+            let destination = DesktopSettingsSection.codeDestination(section)
+            #expect(section == .appearance ? destination == .appearance : destination.studioSection == section)
+        }
+        #expect(DesktopRemoteWakeController.shouldPreventSleep(enabled: true, onACPower: true))
+        #expect(!DesktopRemoteWakeController.shouldPreventSleep(enabled: true, onACPower: false))
+        #expect(!DesktopRemoteWakeController.shouldPreventSleep(enabled: false, onACPower: true))
     }
 
     /// The rail's groups change its rhythm, never its order or its set.
@@ -41,7 +45,7 @@ import Testing
             ("permissions", .devices), ("macs", .devices), ("hosts", .devices),
             ("usage", .billing), ("plan", .billing), ("plan-usage", .billing),
             ("profile", .account), ("security", .account), ("danger", .account),
-            ("privacy", .data), ("theme", .general), ("instructions", .personalization),
+            ("privacy", .data), ("theme", .appearance), ("instructions", .personalization),
             ("connected-apps", .connectors), ("billing", .billing), ("Devices", .devices),
             ("nonsense", .general), ("", .general),
         ]
@@ -51,7 +55,7 @@ import Testing
     }
 
     @Test func searchFindsASectionByItsRows() {
-        #expect(DesktopSettingsSection.matching("accent") == [.general])
+        #expect(DesktopSettingsSection.matching("accent") == [.appearance])
         #expect(DesktopSettingsSection.matching("digest") == [.account])
         #expect(DesktopSettingsSection.matching("ceiling") == [.billing])
         #expect(DesktopSettingsSection.matching("lockdown") == [.connectors])

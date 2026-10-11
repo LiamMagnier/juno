@@ -263,6 +263,10 @@ export function claudeLimitWindows(rateLimits: Record<string, unknown>): UsageWi
 }
 
 interface ToolEntry {
+  agentId?: string;
+  createdAt: string;
+  finished?: boolean;
+  background?: boolean;
   itemId: string;
   name: string;
   input: Record<string, unknown>;
@@ -276,6 +280,7 @@ interface ClaudeTurn {
   awaiting: Set<string>;
   /** stream index → our item id for the block being streamed. */
   streaming: Map<number, string>;
+  childStreaming: Map<string, Map<number, string>>;
   tools: Map<string, ToolEntry>;
   limited?: { resumeAt?: string; message?: string };
   planCaptured?: boolean;
@@ -287,6 +292,8 @@ class ClaudeSession implements ProviderSession {
   #prompts: AsyncQueue<SDKUserMessage> | undefined;
   #abort: AbortController | undefined;
   #turn: ClaudeTurn | undefined;
+  #childTurns = new Map<string, ClaudeTurn>();
+  #taskCalls = new Map<string, string>();
   #claudeSessionId: string | undefined;
   #resumeAt: string | undefined;
   /** last assistant message uuid at the end of each turn, by ordinal - 1. */
@@ -332,6 +339,8 @@ class ClaudeSession implements ProviderSession {
       env: vendorEnv(this.instance, "CLAUDE_CONFIG_DIR"),
       abortController: abort,
       includePartialMessages: true,
+      forwardSubagentText: true,
+      agentProgressSummaries: true,
       permissionMode: mode,
       canUseTool: this.#canUseTool,
       ...(request.selection.model && request.selection.model !== "default" ? { model: request.selection.model } : {}),
@@ -375,6 +384,7 @@ class ClaudeSession implements ProviderSession {
       done: deferred<TurnResult>(),
       awaiting: new Set(),
       streaming: new Map(),
+      childStreaming: new Map(),
       tools: new Map(),
     };
     this.#turn = turn;
@@ -447,6 +457,8 @@ class ClaudeSession implements ProviderSession {
     this.#abort?.abort();
     this.#q = undefined;
     this.#prompts = undefined;
+    this.#childTurns.clear();
+    this.#taskCalls.clear();
   }
 
   #push(input: UserInput, turn: ClaudeTurn, priority: "now" | "next"): void {
@@ -466,7 +478,8 @@ class ClaudeSession implements ProviderSession {
   // ── Permissions ─────────────────────────────────────────────────────────
 
   #canUseTool: CanUseTool = async (toolName, input, options) => {
-    const turn = this.#turn;
+    const agentCall = options.agentID ? this.#taskCalls.get(options.agentID) : undefined;
+    const turn = (agentCall ? this.#childTurns.get(agentCall) : undefined) ?? this.#turn;
     if (!turn) return { behavior: "deny", message: "No turn is running." };
     const sink = turn.sink;
     const toolUseId = (options as { toolUseID?: string }).toolUseID ?? randomUUID();
@@ -520,6 +533,7 @@ class ClaudeSession implements ProviderSession {
     const decisionReason = guard ?? (options as { decisionReason?: string }).decisionReason;
     const answer = await sink.requestApproval({
       callId: toolUseId,
+      ...(agentCall ? { agentId: agentCall } : {}),
       action: approvalAction(toolName),
       summary: summarizeTool(toolName, input),
       ...(typeof decisionReason === "string" ? { justification: decisionReason } : {}),
@@ -573,8 +587,35 @@ class ClaudeSession implements ProviderSession {
   #onMessage(message: SDKMessage): void {
     const m = message as SDKMessage & Record<string, unknown>;
     if (typeof m.session_id === "string" && m.session_id) this.#claudeSessionId = m.session_id;
-    const turn = this.#turn;
+    const parent = typeof m.parent_tool_use_id === "string" ? m.parent_tool_use_id : undefined;
+    const task = m as unknown as { subtype?: string; task_id?: string; tool_use_id?: string; is_backgrounded?: boolean; patch?: { is_backgrounded?: boolean }; status?: string; summary?: string; last_tool_name?: string; description?: string };
+    const taskCall = task.tool_use_id ?? (task.task_id ? this.#taskCalls.get(task.task_id) : undefined);
+    const turn = parent ? this.#childTurns.get(parent) : (taskCall ? this.#childTurns.get(taskCall) : undefined) ?? this.#turn;
     switch (m.type) {
+      case "system": {
+        if (!turn || !taskCall) return;
+        const entry = turn.tools.get(taskCall);
+        if (!entry || entry.finished) return;
+        if (task.task_id) this.#taskCalls.set(task.task_id, taskCall);
+        if (task.subtype === "task_started" || task.subtype === "task_updated") {
+          if (task.is_backgrounded || task.patch?.is_backgrounded) entry.background = true;
+          return;
+        }
+        if (task.subtype !== "task_progress" && task.subtype !== "task_notification") return;
+        const ended = task.subtype === "task_notification";
+        const status = ended ? task.status === "failed" ? "failed" : task.status === "stopped" ? "interrupted" : "completed" : "running";
+        const item = toolItem(entry.name, entry.input, taskCall, entry.itemId, turn.turnId, entry.createdAt, status, ended ? task.summary : undefined);
+        if (item?.kind === "subagent") {
+          const liveLine = task.summary || (task.last_tool_name ? `Using ${task.last_tool_name}` : task.description);
+          turn.sink.item({ ...this.#own(item), ...(liveLine ? { liveLine } : {}) });
+        }
+        if (ended) {
+          entry.finished = true;
+          this.#childTurns.delete(taskCall);
+          if (task.task_id) this.#taskCalls.delete(task.task_id);
+        }
+        return;
+      }
       case "rate_limit_event": {
         const info = (m as { rate_limit_info?: { status?: string; resetsAt?: number; rateLimitType?: string; utilization?: number } }).rate_limit_info;
         if (!info) return;
@@ -589,13 +630,13 @@ class ClaudeSession implements ProviderSession {
         return;
       }
       case "stream_event":
-        if (turn && (m as { parent_tool_use_id?: string | null }).parent_tool_use_id == null) this.#onStreamEvent(turn, (m as unknown as { event: Record<string, unknown> }).event);
+        if (turn) this.#onStreamEvent(turn, (m as unknown as { event: Record<string, unknown> }).event, (m as { parent_tool_use_id?: string | null }).parent_tool_use_id ?? undefined);
         return;
       case "assistant":
         if (turn) this.#onAssistant(turn, m as unknown as { message: { content?: Record<string, unknown>[] }; parent_tool_use_id: string | null; uuid?: string; error?: unknown });
         return;
       case "user":
-        if (turn) this.#onUser(turn, m as unknown as { message: { content?: unknown }; parent_tool_use_id: string | null });
+        if (turn) this.#onUser(turn, m as unknown as { message: { content?: unknown }; parent_tool_use_id: string | null; tool_use_result?: { isAsync?: boolean } });
         return;
       case "result":
         if (turn) this.#onResult(turn, m as unknown as Record<string, unknown>);
@@ -605,29 +646,41 @@ class ClaudeSession implements ProviderSession {
     }
   }
 
-  #onStreamEvent(turn: ClaudeTurn, event: Record<string, unknown>): void {
+  #streaming(turn: ClaudeTurn, agentId?: string): Map<number, string> {
+    if (!agentId) return turn.streaming;
+    let blocks = turn.childStreaming.get(agentId);
+    if (!blocks) { blocks = new Map(); turn.childStreaming.set(agentId, blocks); }
+    return blocks;
+  }
+
+  #attributed(item: TurnItem, agentId?: string): TurnItem {
+    return agentId && item.kind !== "subagent" ? { ...item, agentId } : item;
+  }
+
+  #onStreamEvent(turn: ClaudeTurn, event: Record<string, unknown>, agentId?: string): void {
     const sink = turn.sink;
+    const streaming = this.#streaming(turn, agentId);
     const index = typeof event.index === "number" ? event.index : -1;
     if (event.type === "message_start") {
-      turn.streaming.clear();
+      streaming.clear();
       return;
     }
     if (event.type === "content_block_start") {
       const block = event.content_block as { type?: string } | undefined;
       if (block?.type === "text" || block?.type === "thinking") {
         const id = sink.newItemId(block.type === "text" ? "msg" : "think");
-        turn.streaming.set(index, id);
+        streaming.set(index, id);
         sink.item(
           block.type === "text"
-            ? { id, kind: "assistant_message", turnId: turn.turnId, createdAt: sink.now(), text: "", streaming: true }
-            : { id, kind: "reasoning", turnId: turn.turnId, createdAt: sink.now(), text: "", streaming: true, summary: true },
+            ? { id, kind: "assistant_message", turnId: turn.turnId, createdAt: sink.now(), ...(agentId ? { agentId } : {}), text: "", streaming: true }
+            : { id, kind: "reasoning", turnId: turn.turnId, createdAt: sink.now(), ...(agentId ? { agentId } : {}), text: "", streaming: true, summary: true },
         );
       }
       return;
     }
     if (event.type === "content_block_delta") {
       const delta = event.delta as { type?: string; text?: string; thinking?: string } | undefined;
-      const id = turn.streaming.get(index);
+      const id = streaming.get(index);
       if (!id || !delta) return;
       if (delta.type === "text_delta" && delta.text) sink.delta(id, "text", delta.text);
       if (delta.type === "thinking_delta" && delta.thinking) sink.delta(id, "text", delta.thinking);
@@ -635,12 +688,13 @@ class ClaudeSession implements ProviderSession {
   }
 
   #onAssistant(turn: ClaudeTurn, m: { message: { content?: Record<string, unknown>[] }; parent_tool_use_id: string | null; uuid?: string; error?: unknown }): void {
-    if (m.parent_tool_use_id) return; // Claude's own Task subagent internals.
-    if (m.uuid) turn.lastAssistantUuid = m.uuid;
+    const agentId = m.parent_tool_use_id ?? undefined;
+    const streaming = this.#streaming(turn, agentId);
+    if (m.uuid && !agentId) turn.lastAssistantUuid = m.uuid;
     const sink = turn.sink;
     const blocks = m.message?.content ?? [];
     // Streamed blocks arrive here again complete; map them by position onto the streamed items.
-    const streamed = [...turn.streaming.entries()].sort((a, b) => a[0] - b[0]).map(([, id]) => id);
+    const streamed = [...streaming.entries()].sort((a, b) => a[0] - b[0]).map(([, id]) => id);
     let s = 0;
     for (const block of blocks) {
       if (block.type === "text" || block.type === "thinking") {
@@ -648,38 +702,46 @@ class ClaudeSession implements ProviderSession {
         const id = streamed[s++] ?? sink.newItemId(block.type === "text" ? "msg" : "think");
         sink.item(
           block.type === "text"
-            ? { id, kind: "assistant_message", turnId: turn.turnId, createdAt: sink.now(), text, streaming: false }
-            : { id, kind: "reasoning", turnId: turn.turnId, createdAt: sink.now(), text, streaming: false, summary: true },
+            ? { id, kind: "assistant_message", turnId: turn.turnId, createdAt: sink.now(), ...(agentId ? { agentId } : {}), text, streaming: false }
+            : { id, kind: "reasoning", turnId: turn.turnId, createdAt: sink.now(), ...(agentId ? { agentId } : {}), text, streaming: false, summary: true },
         );
         if (block.type === "text") {
           const limit = classifyUsageLimit({ message: text });
-          if (limit.limited && m.error) turn.limited = { ...(limit.resetsAt ? { resumeAt: limit.resetsAt } : {}), message: text };
+          if (limit.limited && m.error && !agentId) turn.limited = { ...(limit.resetsAt ? { resumeAt: limit.resetsAt } : {}), message: text };
         }
       } else if (block.type === "tool_use") {
         const id = String(block.id ?? randomUUID());
         const input = (block.input ?? {}) as Record<string, unknown>;
         const name = String(block.name ?? "tool");
         const itemId = sink.newItemId("tool");
-        turn.tools.set(id, { itemId, name, input });
-        const item = toolItem(name, input, id, itemId, turn.turnId, sink.now(), "running");
-        if (item) sink.item(this.#own(item));
+        const createdAt = sink.now();
+        turn.tools.set(id, { itemId, name, input, agentId, createdAt });
+        if (name === "Agent" || name === "Task") this.#childTurns.set(id, turn);
+        const item = toolItem(name, input, id, itemId, turn.turnId, createdAt, "running");
+        if (item) sink.item(this.#attributed(this.#own(item), agentId));
       }
     }
-    turn.streaming.clear();
+    streaming.clear();
   }
 
-  #onUser(turn: ClaudeTurn, m: { message: { content?: unknown }; parent_tool_use_id: string | null }): void {
-    if (m.parent_tool_use_id) return;
+  #onUser(turn: ClaudeTurn, m: { message: { content?: unknown }; parent_tool_use_id: string | null; tool_use_result?: { isAsync?: boolean } }): void {
     const content = Array.isArray(m.message?.content) ? (m.message.content as Record<string, unknown>[]) : [];
     for (const block of content) {
       if (block.type !== "tool_result") continue;
       const entry = turn.tools.get(String(block.tool_use_id));
       if (!entry) continue;
+      // The launch acknowledgment is not the background agent's final report.
+      if ((entry.name === "Agent" || entry.name === "Task") && block.is_error !== true && (entry.background || entry.input.run_in_background === true || m.tool_use_result?.isAsync === true)) {
+        entry.background = true;
+        continue;
+      }
+      entry.finished = true;
+      this.#childTurns.delete(String(block.tool_use_id));
       const output = toolResultText(block.content);
       const failed = block.is_error === true;
       const denied = failed && /declined|denied|user (?:rejected|stopped)|plan is shown/i.test(output);
-      const item = toolItem(entry.name, entry.input, String(block.tool_use_id), entry.itemId, turn.turnId, turn.sink.now(), denied ? "declined" : failed ? "failed" : "completed", output);
-      if (item) turn.sink.item(this.#own(item));
+      const item = toolItem(entry.name, entry.input, String(block.tool_use_id), entry.itemId, turn.turnId, entry.createdAt, denied ? "declined" : failed ? "failed" : "completed", output);
+      if (item) turn.sink.item(this.#attributed(this.#own(item), entry.agentId));
     }
   }
 
@@ -831,7 +893,8 @@ export function toolItem(
         role: "worker",
         model: { instanceId: "claude-agent", model: s(input.model) || "inherit" },
         status: status === "running" ? "running" : status === "completed" ? "completed" : status === "interrupted" ? "interrupted" : "failed",
-        task: s(input.description) || s(input.prompt),
+        title: s(input.description) || undefined,
+        task: s(input.prompt) || s(input.description),
         ...(output ? { closingText: output } : {}),
       };
     case "ExitPlanMode":

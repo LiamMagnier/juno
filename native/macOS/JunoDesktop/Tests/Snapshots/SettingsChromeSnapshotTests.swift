@@ -51,7 +51,7 @@ struct SettingsChromeSnapshotTests {
         #expect(DesktopSettingsMetrics.windowIdeal.height >= DesktopSettingsMetrics.windowMinimum.height)
     }
 
-    nonisolated static let shotSections: [DesktopSettingsSection] = [.general, .models, .code, .account]
+    nonisolated static let shotSections: [DesktopSettingsSection] = [.general, .appearance, .remote, .connections, .code, .codeAgent]
 
     @Test(
         .enabled(if: ProcessInfo.processInfo.environment["JUNO_SETTINGS_SHOTS_DIR"] != nil),

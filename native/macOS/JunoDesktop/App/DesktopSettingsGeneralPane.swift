@@ -1,6 +1,7 @@
 import AppKit
 import JunoChatKit
 import JunoCore
+import JunoCodeUI
 import JunoDesignSystem
 import JunoStorage
 import SwiftUI
@@ -13,6 +14,7 @@ import SwiftUI
 /// window while the reader is still choosing.
 struct DesktopSettingsGeneralPane: View {
     let context: DesktopSettingsContext
+    var appearanceOnly = true
 
     @State private var updater = DesktopUpdateModel.shared
     @State private var showingDiagnostics = false
@@ -21,17 +23,20 @@ struct DesktopSettingsGeneralPane: View {
 
     var body: some View {
         DesktopSettingsRecordForm(context: context) { settings in
+            if appearanceOnly {
             Section {
                 themeRow(settings)
                 accentRow(settings)
                 textSizeRow
             } header: {
                 DesktopSettingsGroupHeader(
-                    title: "Appearance",
+                    title: "Interface",
                     note: "Theme and accent follow your account. Text size is set for this device."
                 )
             }
 
+            StudioAppearanceSettings(includeDiffLayout: false)
+            } else {
             Section {
                 DesktopSettingRow(
                     title: "Alevr for Mac",
@@ -57,6 +62,7 @@ struct DesktopSettingsGeneralPane: View {
                 }
             } header: {
                 DesktopSettingsGroupHeader(title: "About")
+            }
             }
         }
         .sheet(isPresented: $showingDiagnostics) {
@@ -84,7 +90,7 @@ struct DesktopSettingsGeneralPane: View {
                 Text("Dark").tag(NativeThemePreference.dark)
                 Text("System").tag(NativeThemePreference.system)
             }
-            .pickerStyle(.segmented)
+            .pickerStyle(.menu)
             .labelsHidden()
             .fixedSize()
             .accessibilityIdentifier("juno.desktop.settings.theme")

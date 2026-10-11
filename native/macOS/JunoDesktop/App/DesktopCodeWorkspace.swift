@@ -82,6 +82,7 @@ struct DesktopCodeWorkspace: View {
     /// "Continue on iPhone"'s answer, over the thread.
     @State private var codeToasts = JunoToastCenter()
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.openSettings) private var openSystemSettings
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     // MARK: - Selection
@@ -191,8 +192,7 @@ struct DesktopCodeWorkspace: View {
     }
 
     private func openConnections() {
-        StudioSettingsRouter.shared.requested = .connections
-        openSettings()
+        DesktopSettingsRouter.open(.connections, using: openSystemSettings)
     }
 
     /// Hands the selected thread to the env server: a subscription was chosen
@@ -1083,7 +1083,7 @@ struct DesktopCodeWorkspace: View {
     }
 
     private func openSettings() {
-        openWindow(id: JunoDesktopWindow.codeSettingsID)
+        DesktopSettingsRouter.open(.code, using: openSystemSettings)
     }
 
     private func newSession() {

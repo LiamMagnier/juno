@@ -168,6 +168,9 @@ function fixtureFor(url: URL, method: string, hostsParam: string | null): unknow
   if (path === "/api/account/mfa") {
     return { enabled: true, pending: false, enabledAt: new Date(NOW - 60 * DAY_MS).toISOString(), recoveryCodesRemaining: 8, hasPassword: true };
   }
+  if (path === "/api/code/pairing/pairs") return { pairs: hostsParam === "0" ? [] : [{ id: "fixture-pair", kind: "browser", name: "This browser", platform: "web", deviceId: "fixture-mac", deviceName: "MacBook Pro", createdAt: new Date(NOW - 10 * DAY_MS).toISOString(), lastUsedAt: new Date(NOW - 3_600_000).toISOString() }] };
+  if (path === "/api/code/devices") return { devices: [] };
+  if (path === "/api/provider-keys") return { keys: [], providers: [], usage: [] };
   return undefined;
 }
 
