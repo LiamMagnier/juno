@@ -44,12 +44,33 @@ export interface RegistryOptions {
   onUpdate?: (instance: ProviderInstance) => void;
   /** Antigravity's managed runtime: detection and its install / sign-in state on every instance. */
   antigravity?: AntigravityService;
+  /** Clock for the probe cache (tests). */
+  now?: () => number;
+}
+
+/** An automatic refresh may reuse a probe this old (clients poll once a minute). */
+export const PROBE_CACHE_MS = 30_000;
+/** No caller may ask the registry to keep a probe longer than this. */
+const MAX_PROBE_AGE_MS = 10 * 60_000;
+
+export interface ProbeRequest {
+  cwd?: string;
+  /**
+   * Automatic refresh: a probe that finished at most this long ago is good
+   * enough, and the adapter's own minimum interval applies. Absent: a manual
+   * Re-check, which always runs unless the vendor asked us to wait.
+   */
+  maxAgeMs?: number;
 }
 
 export class ProviderRegistry {
   #instances = new Map<string, ProviderInstance>();
   #enabled = new Map<string, boolean>();
   #probing = new Map<string, Promise<ProviderInstance>>();
+  /** When each instance's last probe finished (the cache's clock). */
+  #probedAt = new Map<string, number>();
+  /** A vendor that rate-limited its usage API: no probe before this time. */
+  #notBefore = new Map<string, number>();
   readonly #options: RegistryOptions;
 
   constructor(options: RegistryOptions) {
@@ -117,6 +138,8 @@ export class ProviderRegistry {
 
   remove(id: string): void {
     this.#instances.delete(id);
+    this.#probedAt.delete(id);
+    this.#notBefore.delete(id);
   }
 
   list(): ProviderInstance[] {
@@ -171,10 +194,42 @@ export class ProviderRegistry {
     return out;
   }
 
-  /** Runs the adapter's probe (cheap, no sessions, no hooks, no logins). Concurrent probes of one instance share a result. */
-  probe(id: string, cwd?: string): Promise<ProviderInstance> {
+  #now(): number {
+    return this.#options.now?.() ?? Date.now();
+  }
+
+  /**
+   * The last answer for `id`, when a probe may reuse it instead of running:
+   * the vendor asked us to wait, or (automatic refresh) the last probe is
+   * fresher than both `maxAgeMs` and the adapter's own minimum interval.
+   */
+  #cached(id: string, maxAgeMs: number | undefined): ProviderInstance | undefined {
+    const instance = this.#instances.get(id);
+    const at = this.#probedAt.get(id);
+    if (!instance || at === undefined) return undefined;
+    const now = this.#now();
+    if ((this.#notBefore.get(id) ?? 0) > now) return this.get(id);
+    if (maxAgeMs === undefined || !Number.isFinite(maxAgeMs)) return undefined;
+    const adapter = this.#options.adapters.get(instance.kind);
+    const floor = Math.min(Math.max(0, maxAgeMs, adapter?.minProbeIntervalMs?.(instance) ?? 0), MAX_PROBE_AGE_MS);
+    return now - at < floor ? this.get(id) : undefined;
+  }
+
+  /**
+   * Runs the adapter's probe (cheap, no sessions, no hooks, no logins).
+   * Concurrent probes of one instance share a result. An automatic refresh
+   * (`maxAgeMs`) reuses a recent answer, so a Mac, a web tab and a phone
+   * polling together still start the vendor's runtime at most once per
+   * interval; a vendor that rate-limited its usage API is left alone until
+   * it said to come back, whoever asks.
+   */
+  probe(id: string, cwdOrRequest?: string | ProbeRequest): Promise<ProviderInstance> {
+    const request: ProbeRequest = typeof cwdOrRequest === "string" ? { cwd: cwdOrRequest } : (cwdOrRequest ?? {});
+    const cwd = request.cwd;
     const existing = this.#probing.get(id);
     if (existing) return existing;
+    const cached = this.#cached(id, request.maxAgeMs);
+    if (cached) return Promise.resolve(cached);
     const run = (async () => {
       const instance = this.#instances.get(id);
       if (!instance) throw new Error(`No provider instance "${id}".`);
@@ -189,7 +244,12 @@ export class ProviderRegistry {
         return this.update(id, { capabilities, checkedAt: nowIso() })!;
       }
       try {
-        const result = await adapter.probe(fresh, { logger: this.#options.logger, cwd });
+        const { retryAfterMs, ...result } = await adapter.probe(fresh, { logger: this.#options.logger, cwd });
+        if (retryAfterMs !== undefined) {
+          const wait = Math.min(Math.max(retryAfterMs, 1000), 60 * 60_000);
+          this.#notBefore.set(id, this.#now() + wait);
+          this.#options.logger.info(`${fresh.label}: the usage API asked to wait ${Math.round(wait / 1000)} s`);
+        }
         const gate = this.isEnabled(id);
         const patch: ProbeResult & { checkedAt: string } = { capabilities, ...result, checkedAt: nowIso() };
         if (!gate.enabled && patch.status === "ready") {
@@ -200,7 +260,10 @@ export class ProviderRegistry {
       } catch (error) {
         return this.update(id, { capabilities, status: "error", statusMessage: describeError(error), checkedAt: nowIso() })!;
       }
-    })().finally(() => this.#probing.delete(id));
+    })().finally(() => {
+      this.#probing.delete(id);
+      this.#probedAt.set(id, this.#now());
+    });
     this.#probing.set(id, run);
     return run;
   }

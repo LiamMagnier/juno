@@ -293,6 +293,16 @@ public final class WorkbenchModel {
     /// The sessions opened most recently, newest last. See
     /// `retainTranscripts(opening:)`.
     private var recentlyOpened: [CodeSessionID] = []
+    @ObservationIgnored public var removeEnvProject: @MainActor (String) async throws -> [String] = {
+        try await EnvServerHub.shared.removeProject(cwd: $0)
+    }
+    @ObservationIgnored public var removeRemoteProject: @MainActor (WorkspaceRecord) async throws -> Void = { _ in }
+    @ObservationIgnored private var removingProjects: Set<WorkspaceID> = []
+    private struct ProjectRemoval: Codable {
+        var record: WorkspaceRecord
+        var trash: Bool
+    }
+    private var pendingProjectRemovals: [ProjectRemoval] = []
     private var storeObserver: UUID?
     /// True once `bootstrap()` has read the workspaces and sessions.
     ///
@@ -370,6 +380,13 @@ public final class WorkbenchModel {
         runTracker = RunTracker.load(from: runTrackerURL)
         workspaces = await workspaceDirectory.allWorkspaces()
         sessions = await sessionStore.allSessions()
+        if let data = try? Data(contentsOf: projectRemovalsURL),
+           let pending = try? JSONDecoder().decode([ProjectRemoval].self, from: data) {
+            pendingProjectRemovals = pending
+            for removal in pending {
+                _ = await removeProject(id: removal.record.id, moveFolderToTrash: removal.trash)
+            }
+        }
         hasLoaded = true
         if selectedSessionID == nil {
             selectedSessionID = visibleSessions.first?.id
@@ -504,6 +521,83 @@ public final class WorkbenchModel {
         try? await workspaceDirectory.remove(id: id)
         await contexts.removeValue(forKey: id)?.shells.terminateAll()
         workspaces = await workspaceDirectory.allWorkspaces()
+    }
+
+    /// Removes the records and stops their runtimes. A small durable journal
+    /// retries an interrupted removal on launch so old sessions cannot
+    /// rebuild a project the user removed.
+    @discardableResult
+    public func removeProject(id: WorkspaceID, moveFolderToTrash: Bool = false) async -> Bool {
+        guard removingProjects.insert(id).inserted else { return false }
+        lastError = nil
+        defer { removingProjects.remove(id) }
+        guard let record = workspaces.first(where: { $0.id == id })
+            ?? pendingProjectRemovals.first(where: { $0.record.id == id })?.record else { return false }
+        let folder = URL(fileURLWithPath: record.descriptor.localPathHint)
+        if moveFolderToTrash, FileManager.default.fileExists(atPath: folder.path), let reason = projectTrashRefusal(id: id) {
+            lastError = reason
+            return false
+        }
+        do {
+            if !pendingProjectRemovals.contains(where: { $0.record.id == id }) {
+                pendingProjectRemovals.append(ProjectRemoval(record: record, trash: moveFolderToTrash))
+                try persistProjectRemovals()
+            }
+            let owned = sessions.filter { $0.workspaceID == id }
+            for session in owned { await controllers[session.id]?.stop() }
+            _ = try await removeEnvProject(folder.path)
+            for session in owned where !session.isSubagent {
+                await deleteSession(id: session.id)
+                if let error = lastError { throw ProjectRemovalError(message: error) }
+            }
+            try await removeRemoteProject(record)
+            if moveFolderToTrash, FileManager.default.fileExists(atPath: folder.path) {
+                // Revalidate and retain the security scope until trashItem
+                // finishes. A failed Trash never claims the folder moved.
+                let access = try WorkspaceAccess(workspaceID: record.id, bookmarkData: record.bookmarkData)
+                if let reason = projectTrashRefusal(id: id) { throw ProjectRemovalError(message: reason) }
+                try FileManager.default.trashItem(at: access.rootURL, resultingItemURL: nil)
+            }
+            try await workspaceDirectory.remove(id: id)
+            await removeWorkspace(id: id)
+            pendingProjectRemovals.removeAll { $0.record.id == id }
+            try persistProjectRemovals()
+            lastError = nil
+            return true
+        } catch {
+            lastError = "Could not remove \(record.descriptor.displayName): \(error.localizedDescription)"
+            return false
+        }
+    }
+
+    public func projectTrashRefusal(id: WorkspaceID) -> String? {
+        guard let record = workspaces.first(where: { $0.id == id }) else { return "This project is no longer listed." }
+        return ProjectTrashPolicy.refusal(for: URL(fileURLWithPath: record.descriptor.localPathHint),
+            otherProjects: workspaces.filter { $0.id != id }.map { URL(fileURLWithPath: $0.descriptor.localPathHint) })
+    }
+
+    private struct ProjectRemovalError: LocalizedError {
+        let message: String
+        var errorDescription: String? { message }
+    }
+
+    private var projectRemovalsURL: URL { dependencies.storageRootURL.appendingPathComponent("project-removals.json") }
+
+    private func persistProjectRemovals() throws {
+        try FileManager.default.createDirectory(at: dependencies.storageRootURL, withIntermediateDirectories: true)
+        try JSONEncoder().encode(pendingProjectRemovals).write(to: projectRemovalsURL, options: .atomic)
+    }
+
+    /// Vendor runtimes require a cwd even for a chat with no project. Keep
+    /// these folders private to Alevr, per thread, without adding a project
+    /// or giving an agent access to the user's last repository or home.
+    public func subscriptionDirectory(for controller: SessionController) throws -> URL {
+        if let root = controller.context?.access.rootURL { return root }
+        let root = dependencies.storageRootURL
+            .appendingPathComponent("subscription-chats", isDirectory: true)
+            .appendingPathComponent(controller.sessionID.value, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        return root
     }
 
     public func renameWorkspace(id: WorkspaceID, displayName: String) async {

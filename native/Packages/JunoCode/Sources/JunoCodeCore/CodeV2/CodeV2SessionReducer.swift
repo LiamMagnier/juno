@@ -109,7 +109,7 @@ public enum CodeV2SessionReducer {
         case let .sessionSkills(skills):
             // The thread's selection, set on any device (empty: cleared).
             state.snapshot.skills = skills.isEmpty ? nil : skills
-        case .providerUpdated, .terminalOutput, .terminalExited, .skillsUpdated, .unknown:
+        case .providerUpdated, .terminalOutput, .terminalExited, .skillsUpdated, .projectRemoved, .unknown:
             break
         }
     }

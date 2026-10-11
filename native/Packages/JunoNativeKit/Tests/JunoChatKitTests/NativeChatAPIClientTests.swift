@@ -511,6 +511,18 @@ final class NativeChatAPIClientTests: XCTestCase {
         XCTAssertEqual(NativeContextMention.inserting(token, in: "Look at @Ju"), "Look at @Juno ")
     }
 
+    func testMentionsKeepTheQueryOutOfThePathAndDecodeWebRows() async throws {
+        let sender = ChatQueueSender(responses: [HTTPResponse(statusCode: 200, headers: HTTPHeaders(), body: Data(#"{"query":"git","kinds":["app"],"items":[{"kind":"app","id":"github","label":"GitHub","icon":"app:github","connected":true,"score":15}]}"#.utf8))])
+        let client = NativeChatAPIClient(sender: sender, streamer: ChatQueueStreamer(responses: []))
+        let rows = try await client.mentions(query: "git & files", conversationID: "chat-1", for: accountID)
+        XCTAssertEqual(rows.first?.token.identity, "app:github")
+        let requests = await sender.requests
+        let request = try XCTUnwrap(requests.first)
+        XCTAssertEqual(request.path, "/api/mentions")
+        XCTAssertEqual(request.queryItems.first(where: { $0.name == "q" })?.value, "git & files")
+        XCTAssertEqual(request.queryItems.first(where: { $0.name == "conversationId" })?.value, "chat-1")
+    }
+
     private func streamResponse(_ body: String, statusCode: Int = 200)
         -> HTTPByteStreamResponse
     {

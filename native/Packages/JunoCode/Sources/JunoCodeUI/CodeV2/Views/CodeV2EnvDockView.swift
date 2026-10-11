@@ -103,7 +103,9 @@ public struct CodeV2EnvDockView: View {
                 if snapshot.routing?.preset == .bestOfN, !bestOfN.isEmpty {
                     AnyView(CodeV2BestOfNCompare(candidates: bestOfN, keep: { keepCandidate?($0) }))
                 } else {
-                    AnyView(CodeV2AgentsPane(nodes: nodes, selected: $dock.selectedAgent, spend: spend))
+                    AnyView(CodeV2AgentsPane(nodes: nodes, selected: $dock.selectedAgent, spend: spend,
+                        message: (CodeV2.instanceKind(of: snapshot.selection.instanceId) == .alevr || CodeV2.instanceKind(of: snapshot.selection.instanceId) == .byok) ? { id, text in Task { await session.messageAgent(id, text: text) } } : nil,
+                        stop: (CodeV2.instanceKind(of: snapshot.selection.instanceId) == .alevr || CodeV2.instanceKind(of: snapshot.selection.instanceId) == .byok) ? { id in Task { await session.interruptAgent(id) } } : nil))
                 }
             case .terminal:
                 if let terminal {

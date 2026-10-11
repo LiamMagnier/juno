@@ -733,6 +733,7 @@ public enum CodeV2 {
 
     public struct UserMessage: Codable, Sendable, Hashable {
         public enum Delivery: String, Codable, Sendable, Hashable { case send, steer, queue }
+        public var agentId: String? = nil
         public var id: String
         public var turnId: String?
         public var createdAt: String
@@ -775,6 +776,7 @@ public enum CodeV2 {
     }
 
     public struct Reasoning: Codable, Sendable, Hashable {
+        public var agentId: String? = nil
         public var id: String
         public var turnId: String?
         public var createdAt: String
@@ -793,6 +795,7 @@ public enum CodeV2 {
     }
 
     public struct Plan: Codable, Sendable, Hashable {
+        public var agentId: String? = nil
         public var id: String
         public var turnId: String?
         public var createdAt: String
@@ -814,6 +817,7 @@ public enum CodeV2 {
     }
 
     public struct TodoList: Codable, Sendable, Hashable {
+        public var agentId: String? = nil
         public var id: String
         public var turnId: String?
         public var createdAt: String
@@ -829,6 +833,7 @@ public enum CodeV2 {
 
     public struct UserInputRequest: Codable, Sendable, Hashable {
         public enum Status: String, Codable, Sendable, Hashable { case pending, answered, cancelled }
+        public var agentId: String? = nil
         public var id: String
         public var turnId: String?
         public var createdAt: String
@@ -852,6 +857,7 @@ public enum CodeV2 {
     }
 
     public struct FileChange: Codable, Sendable, Hashable {
+        public var agentId: String? = nil
         public var id: String
         public var turnId: String?
         public var createdAt: String
@@ -873,6 +879,7 @@ public enum CodeV2 {
     }
 
     public struct CommandExecution: Codable, Sendable, Hashable {
+        public var agentId: String? = nil
         public var id: String
         public var turnId: String?
         public var createdAt: String
@@ -906,6 +913,7 @@ public enum CodeV2 {
 
     public struct Search: Codable, Sendable, Hashable {
         public enum Scope: String, Codable, Sendable, Hashable { case files, content, symbols }
+        public var agentId: String? = nil
         public var id: String
         public var turnId: String?
         public var createdAt: String
@@ -931,6 +939,7 @@ public enum CodeV2 {
     }
 
     public struct WebSearch: Codable, Sendable, Hashable {
+        public var agentId: String? = nil
         public var id: String
         public var turnId: String?
         public var createdAt: String
@@ -999,6 +1008,7 @@ public enum CodeV2 {
     }
 
     public struct Checkpoint: Codable, Sendable, Hashable {
+        public var agentId: String? = nil
         public var id: String
         public var turnId: String?
         public var createdAt: String
@@ -1027,6 +1037,7 @@ public enum CodeV2 {
 
     public struct Interrupt: Codable, Sendable, Hashable {
         public enum Reason: String, Codable, Sendable, Hashable { case user, limit, budget, error }
+        public var agentId: String? = nil
         public var id: String
         public var turnId: String?
         public var createdAt: String
@@ -1046,6 +1057,7 @@ public enum CodeV2 {
 
     public struct SystemNotice: Codable, Sendable, Hashable {
         public enum Level: String, Codable, Sendable, Hashable { case info, warning }
+        public var agentId: String? = nil
         public var id: String
         public var turnId: String?
         public var createdAt: String
@@ -1064,6 +1076,7 @@ public enum CodeV2 {
     }
 
     public struct ErrorNotice: Codable, Sendable, Hashable {
+        public var agentId: String? = nil
         public var id: String
         public var turnId: String?
         public var createdAt: String
@@ -1083,6 +1096,7 @@ public enum CodeV2 {
 
     public struct Compaction: Codable, Sendable, Hashable {
         public enum Strategy: String, Codable, Sendable, Hashable { case prune, offload, summarize }
+        public var agentId: String? = nil
         public var id: String
         public var turnId: String?
         public var createdAt: String
@@ -1110,6 +1124,7 @@ public enum CodeV2 {
     public struct ConversationMessage: Codable, Sendable, Hashable {
         public enum Product: String, Codable, Sendable, Hashable { case chat, code }
         public enum Status: String, Codable, Sendable, Hashable { case delivered, queued, failed }
+        public var agentId: String? = nil
         public var id: String
         public var turnId: String?
         public var createdAt: String
@@ -1145,6 +1160,7 @@ public enum CodeV2 {
     }
 
     public struct Handoff: Codable, Sendable, Hashable {
+        public var agentId: String? = nil
         public var id: String
         public var turnId: String?
         public var createdAt: String
@@ -1230,6 +1246,7 @@ public enum CodeV2 {
     }
 
     public struct ComputerAction: Codable, Sendable, Hashable {
+        public var agentId: String? = nil
         public var id: String
         public var turnId: String?
         public var createdAt: String
@@ -1534,6 +1551,33 @@ public enum CodeV2 {
         }
 
         /// The wire `kind`.
+        /// Complete child trace attribution, independent of the item kind.
+        public var traceAgentId: String? {
+            switch self {
+            case let .userMessage(item): item.agentId
+            case let .assistantMessage(item): item.agentId
+            case let .reasoning(item): item.agentId
+            case let .plan(item): item.agentId
+            case let .todoList(item): item.agentId
+            case let .userInputRequest(item): item.agentId
+            case let .fileChange(item): item.agentId
+            case let .commandExecution(item): item.agentId
+            case let .search(item): item.agentId
+            case let .webSearch(item): item.agentId
+            case let .approvalRequest(item): item.agentId
+            case let .checkpoint(item): item.agentId
+            case let .interrupt(item): item.agentId
+            case let .systemNotice(item): item.agentId
+            case let .error(item): item.agentId
+            case let .compaction(item): item.agentId
+            case let .handoff(item): item.agentId
+            case let .subagent(item): nil
+            case let .computerAction(item): item.agentId
+            case let .conversationMessage(item): item.agentId
+            case .unknown: nil
+            }
+        }
+
         public var rawKind: String {
             switch self {
             case .userMessage: TurnItemKind.userMessage.rawValue
@@ -1629,6 +1673,8 @@ public enum CodeV2 {
         case sessionOpen = "session.open"
         case turnStart = "turn.start"
         case turnSteer = "turn.steer"
+        case agentMessage = "agent.message"
+        case agentInterrupt = "agent.interrupt"
         case turnQueue = "turn.queue"
         case turnInterrupt = "turn.interrupt"
         case approvalRespond = "approval.respond"
@@ -1663,6 +1709,8 @@ public enum CodeV2 {
         case hostInfo = "host.info"
         case hostCapture = "host.capture"
         case hostUpload = "host.upload"
+        // project lane: stop and delete every session in a folder; the folder stays.
+        case projectRemove = "project.remove"
     }
 
     // MARK: Remote lane (docs/code-v2/REMOTE-CONTROL.md)
@@ -1868,6 +1916,7 @@ public enum CodeV2 {
         case sessionScheduled = "session.scheduled"
         case sessionSkills = "session.skills"
         case skillsUpdated = "skills.updated"
+        case projectRemoved = "project.removed"
     }
 
     // contract: TURN_OUTCOME_VALUES
@@ -2056,12 +2105,15 @@ public enum CodeV2 {
         case sessionSkills([SkillActivation])
         /// Skills lane (global): skills changed on the Mac; `cwd` names the project, nil any listing.
         case skillsUpdated(cwd: String?)
+        /// Project lane (global): a project was removed and these sessions with it. `cwd` is
+        /// left out for a remote unless the folder was shared with it.
+        case projectRemoved(cwd: String?, sessionIds: [String])
         case unknown(type: String)
 
         private enum Keys: String, CodingKey {
             case type, snapshotSequence, session, state, resumeAt, message, turnId, selection, outcome, usage
             case item, itemId, field, append, queue, instance, terminalId, data, exitCode, scheduledResume
-            case skills, cwd
+            case skills, cwd, sessionIds
         }
 
         public var type: String {
@@ -2081,6 +2133,7 @@ public enum CodeV2 {
             case .sessionScheduled: ServerEventType.sessionScheduled.rawValue
             case .sessionSkills: ServerEventType.sessionSkills.rawValue
             case .skillsUpdated: ServerEventType.skillsUpdated.rawValue
+            case .projectRemoved: ServerEventType.projectRemoved.rawValue
             case let .unknown(type): type
             }
         }
@@ -2142,6 +2195,11 @@ public enum CodeV2 {
                 self = .sessionSkills(try c.decodeIfPresent([SkillActivation].self, forKey: .skills) ?? [])
             case .skillsUpdated:
                 self = .skillsUpdated(cwd: try c.decodeIfPresent(String.self, forKey: .cwd))
+            case .projectRemoved:
+                self = .projectRemoved(
+                    cwd: try c.decodeIfPresent(String.self, forKey: .cwd),
+                    sessionIds: try c.decodeIfPresent([String].self, forKey: .sessionIds) ?? []
+                )
             }
         }
 
@@ -2184,6 +2242,9 @@ public enum CodeV2 {
                 try c.encode(skills, forKey: .skills)
             case let .skillsUpdated(cwd):
                 try c.encodeIfPresent(cwd, forKey: .cwd)
+            case let .projectRemoved(cwd, sessionIds):
+                try c.encodeIfPresent(cwd, forKey: .cwd)
+                try c.encode(sessionIds, forKey: .sessionIds)
             case .unknown:
                 break
             }

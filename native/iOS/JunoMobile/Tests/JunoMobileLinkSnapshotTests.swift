@@ -20,6 +20,22 @@ import XCTest
 final class JunoMobileLinkSnapshotTests: XCTestCase {
   private static let size = CGSize(width: 402, height: 874)
 
+  func testSubagentSummaryAndFullTrace() async throws {
+    let t = "2026-10-11T00:00:00Z"
+    var reply = CodeV2.AssistantMessage(id: "child-reply", turnId: "t1", createdAt: t, text: "Startup delivery passed.")
+    reply.agentId = "startup-audit"
+    var command = CodeV2.CommandExecution(id: "child-tool", turnId: "t1", createdAt: t, callId: "check", command: "npm test", output: "3 tests passed", exitCode: 0, status: .completed)
+    command.agentId = "startup-audit"
+    let snapshot = CodeV2.SessionSnapshot(id: "s1", cwd: "/Users/liam/code/shop", selection: .init(instanceId: "alevr", model: "claude-sonnet-5-5"), items: [
+      .subagent(.init(id: "agent-row", turnId: "t1", createdAt: t, agentId: "startup-audit", role: .worker,
+        model: Self.sonnet, status: .completed, task: "Audit startup ordering and test first-message delivery", closingText: "Startup delivery passed.", title: "Audit subscription startup", elapsedMs: 120_000)),
+      .commandExecution(command), .assistantMessage(reply)
+    ])
+    let model = Self.model(snapshot: snapshot)
+    try await shoot("agents-summary") { JunoMobileLinkAgentsView(model: model, selectedID: .constant(nil)) }
+    try await shoot("agent-full-trace") { JunoMobileLinkAgentsView(model: model, selectedID: .constant("startup-audit")) }
+  }
+
   func testSessionList() async throws {
     let model = Self.model()
     try await shoot("link-sessions") {

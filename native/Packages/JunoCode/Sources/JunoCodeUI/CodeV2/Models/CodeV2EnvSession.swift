@@ -26,6 +26,7 @@ public final class CodeV2EnvSession {
     @ObservationIgnored private weak var hub: EnvServerHub?
     @ObservationIgnored private var buffered: [CodeV2.ServerEventEnvelope] = []
     @ObservationIgnored private var reopening = false
+    @ObservationIgnored private var openTask: Task<Bool, Never>?
 
     init(hub: EnvServerHub, sessionId: String, cwd: String, selection: CodeV2.ModelSelection) {
         self.hub = hub
@@ -73,16 +74,46 @@ public final class CodeV2EnvSession {
 
     // MARK: Commands
 
+    public func messageAgent(_ agentId: String, text: String) async {
+        await perform { connection in
+            let reply = try await connection.send(.agentMessage, params: JSONValue.object(["sessionId": .string(self.sessionId), "agentId": .string(agentId), "text": .string(text)]))
+            if reply?["accepted"]?.boolValue == false {
+                throw EnvServerConnectionError.server(.conflict, reply?["message"]?.stringValue ?? "This agent cannot receive a message right now.")
+            }
+        }
+    }
+
+    public func interruptAgent(_ agentId: String) async {
+        await perform { connection in
+            _ = try await connection.send(.agentInterrupt, params: JSONValue.object(["sessionId": .string(self.sessionId), "agentId": .string(agentId)]))
+        }
+    }
+
+    public func refreshSubscriptions() { hub?.requestRefresh() }
+
     /// Opens (or resumes) the session on the server. A fresh session sends a
     /// snapshot first; a resumed one replays from the cursor.
-    public func open() async {
-        guard let hub else { return }
+    @discardableResult
+    public func open() async -> Bool {
+        if let openTask { return await openTask.value }
+        let task = Task { await self.openOnce() }
+        openTask = task
+        let opened = await task.value
+        openTask = nil
+        return opened
+    }
+
+    private func openOnce() async -> Bool {
+        guard let hub else { return false }
         isOpening = true
         defer { isOpening = false }
         do {
             let connection = try await hub.ready()
             let opened = try await connection.sessionOpen(
-                sessionId: state.cursor == nil && sessionId.hasPrefix("draft-") ? nil : sessionId,
+                // The server accepts a client-chosen id. Register it before
+                // opening so the snapshot sent beside the reply cannot race
+                // the registration of a freshly allocated server id.
+                sessionId: sessionId,
                 cwd: cwd,
                 selection: snapshot.selection,
                 afterSequence: state.cursor
@@ -93,8 +124,10 @@ public final class CodeV2EnvSession {
                 hub.register(self, as: opened)
             }
             lastError = nil
+            return true
         } catch {
             lastError = Self.describe(error)
+            return false
         }
     }
 
@@ -111,6 +144,7 @@ public final class CodeV2EnvSession {
         _ = try? await connection.sessionOpen(sessionId: sessionId, cwd: cwd, selection: nil, afterSequence: afterSequence)
     }
 
+    @discardableResult
     public func send(
         _ text: String,
         selection: CodeV2.ModelSelection,
@@ -118,14 +152,17 @@ public final class CodeV2EnvSession {
         runtimeMode: CodeV2.RuntimeMode,
         interactionMode: CodeV2.InteractionMode,
         skills: [CodeV2.SkillActivation]? = nil
-    ) async {
+    ) async -> Bool {
         await perform { connection in
-            if self.state.cursor == nil { await self.open() }
+            if self.state.cursor == nil, !(await self.open()) {
+                throw EnvServerConnectionError.server(.notReady, self.lastError ?? "Could not open this chat. Try sending again.")
+            }
             _ = try await connection.turnStart(
                 sessionId: self.sessionId, input: CodeV2.UserInput(text: text, skills: skills), selection: selection,
                 routing: routing, runtimeMode: runtimeMode, interactionMode: interactionMode
             )
         }
+        return lastError == nil
     }
 
     /// Skills lane: the skills on this Mac plus this thread's project

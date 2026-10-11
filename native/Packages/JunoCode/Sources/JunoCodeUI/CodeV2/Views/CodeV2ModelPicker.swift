@@ -20,6 +20,7 @@ struct CodeV2ModelControl: View {
     var openConnections: (() -> Void)?
     var setup: ((String, CodeV2.ProviderSetupAction) -> Void)?
     var choose: ((String, CodeV2.ProviderModel) -> Void)?
+    var refreshSubscriptions: (() -> Void)?
 
     @State private var stage: JunoModelPickerStage?
 
@@ -127,6 +128,7 @@ struct CodeV2ModelControl: View {
                 }
             )
         }
+        .onChange(of: stage) { _, stage in if stage != nil { refreshSubscriptions?() } }
         .background {
             // The two shortcuts, as hidden buttons so they work wherever the
             // composer has focus: ⇧⌘M the models, ⇧⌘E the effort.
@@ -242,6 +244,7 @@ struct CodeV2ModelPicker: View {
     var openConnections: (() -> Void)?
     var setup: ((String, CodeV2.ProviderSetupAction) -> Void)?
     var choose: ((String, CodeV2.ProviderModel) -> Void)?
+    var refreshSubscriptions: (() -> Void)?
     /// The team popover reuses the picker for one role: no footer there.
     var showsFooter = true
     /// Where the rail opens, when not the selection's own place (the gallery).

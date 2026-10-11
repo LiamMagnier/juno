@@ -42,6 +42,13 @@ public final class EnvServerHub {
     /// a login finished in Terminal shows up without pressing anything.
     @ObservationIgnored private var setupWatches: [String: Task<Void, Never>] = [:]
     @ObservationIgnored private var activeObserver: NSObjectProtocol?
+    @ObservationIgnored private var lifecycleObservers: [NSObjectProtocol] = []
+    @ObservationIgnored private var refreshTask: Task<Void, Never>?
+    @ObservationIgnored private var refreshing = false
+    @ObservationIgnored private var checking: Set<String> = []
+    @ObservationIgnored private var refreshActive = false
+    @ObservationIgnored var refreshInterval: Duration = .seconds(60)
+    @ObservationIgnored private(set) var refreshFailures = 0
     /// How often, and for how long, a setup is watched.
     @ObservationIgnored var setupWatchInterval: Duration = .seconds(4)
     @ObservationIgnored var setupWatchLimit: Duration = .seconds(300)
@@ -80,8 +87,22 @@ public final class EnvServerHub {
         activeObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
         ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.recheckUnready() }
+            MainActor.assumeIsolated { self?.setRefreshActive(true) }
         }
+        for (center, name) in [
+            (NotificationCenter.default, NSApplication.didResignActiveNotification),
+            (NSWorkspace.shared.notificationCenter, NSWorkspace.willSleepNotification)
+        ] {
+            lifecycleObservers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.setRefreshActive(false) }
+            })
+        }
+        lifecycleObservers.append(NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.setRefreshActive(NSApplication.shared.isActive) }
+        })
+        refreshActive = NSApplication.shared.isActive
     }
 
     /// For tests and previews: a hub already connected over `transport`.
@@ -107,7 +128,7 @@ public final class EnvServerHub {
 
     /// Starts the server (if needed) and connects. Safe to call repeatedly.
     public func start() {
-        guard startTask == nil, phase != .ready else { return }
+        guard startTask == nil, phase != .ready, connection == nil else { return }
         phase = .starting
         startTask = Task { [weak self] in
             guard let self else { return }
@@ -142,6 +163,8 @@ public final class EnvServerHub {
     }
 
     public func stop() {
+        refreshTask?.cancel()
+        refreshTask = nil
         eventTask?.cancel()
         eventTask = nil
         let connection = self.connection
@@ -155,7 +178,7 @@ public final class EnvServerHub {
 
     private func adopt(_ connection: EnvServerConnection) {
         self.connection = connection
-        phase = .ready
+        phase = .starting
         setupTask?.cancel()
         setupTask = Task { [weak self] in
             let updates = await connection.runtimeSetupUpdates()
@@ -165,8 +188,10 @@ public final class EnvServerHub {
         }
         eventTask?.cancel()
         eventTask = Task { [weak self] in
-            await connection.start()
             let events = await connection.events()
+            await connection.start()
+            self?.phase = .ready
+            self?.scheduleRefresh()
             for await envelope in events {
                 guard let self else { return }
                 self.route(envelope)
@@ -187,6 +212,10 @@ public final class EnvServerHub {
             apply(instance)
         }
         if case .skillsUpdated = envelope.event { skillsRevision += 1 }
+        if case let .projectRemoved(_, sessionIds) = envelope.event {
+            CodeV2SessionBindings.shared.unbind(envSessionIds: Set(sessionIds))
+            for id in sessionIds { sessions[id] = nil }
+        }
         if let sessionId = envelope.sessionId, let session = sessions[sessionId]?.value {
             session.receive(envelope)
         }
@@ -226,6 +255,11 @@ public final class EnvServerHub {
 
     // MARK: Providers
 
+    public func removeProject(cwd: String) async throws -> [String] {
+        let connection = try await ready()
+        return try await connection.projectRemove(cwd: cwd)
+    }
+
     public func refreshProviders() async {
         guard let connection else { return }
         do {
@@ -242,8 +276,9 @@ public final class EnvServerHub {
             start()
             return
         }
+        guard checking.insert(instanceId).inserted else { return }
         probing.insert(instanceId)
-        defer { probing.remove(instanceId) }
+        defer { probing.remove(instanceId); checking.remove(instanceId) }
         do {
             apply(try await connection.providerProbe(instanceId))
         } catch {
@@ -254,10 +289,59 @@ public final class EnvServerHub {
     /// Re-checks every instance that is not ready or limited (app became
     /// active, or Connections appeared).
     public func recheckUnready() {
-        guard connection != nil, let list = instances else { return }
-        for instance in list where instance.status != .ready && instance.status != .limited {
-            guard !probing.contains(instance.id) else { continue }
-            Task { await self.probe(instance.id) }
+        requestRefresh()
+    }
+
+    /// Quiet refreshes never change the manual Re-check spinner. The env
+    /// server shares a 30 second cache across the Mac, web and phone.
+    public func refreshSubscriptions() async {
+        guard !refreshing else { return }
+        refreshing = true
+        defer { refreshing = false }
+        guard let connection = try? await ready() else { return }
+        await refreshProviders()
+        var failed = lastError != nil
+        for instance in instances ?? [] where instance.kind != .alevr && instance.kind != .byok {
+            guard !Task.isCancelled else { return }
+            guard checking.insert(instance.id).inserted else { continue }
+            do {
+                let result = try await connection.providerProbe(instance.id, maxAgeMs: 30_000)
+                apply(result)
+                failed = failed || result.status == .error
+            } catch {
+                failed = true
+            }
+            checking.remove(instance.id)
+        }
+        refreshFailures = failed ? min(refreshFailures + 1, 5) : 0
+    }
+
+    public func requestRefresh() {
+        guard !refreshing else { return }
+        refreshTask?.cancel()
+        refreshTask = Task { [weak self] in
+            await self?.refreshSubscriptions()
+            guard !Task.isCancelled else { return }
+            self?.scheduleRefresh()
+        }
+    }
+
+    func setRefreshActive(_ active: Bool) {
+        refreshActive = active
+        refreshTask?.cancel()
+        refreshTask = nil
+        if active { requestRefresh() }
+    }
+
+    private func scheduleRefresh() {
+        guard refreshActive else { return }
+        let delay = refreshInterval * min(10, 1 << max(0, refreshFailures - 1))
+        refreshTask = Task { [weak self] in
+            do { try await Task.sleep(for: delay) } catch { return }
+            guard let self, self.refreshActive, !Task.isCancelled else { return }
+            await self.refreshSubscriptions()
+            guard !Task.isCancelled else { return }
+            self.scheduleRefresh()
         }
     }
 

@@ -28,6 +28,7 @@ struct JunoMobileCodeView: View {
   /// iPhone. Nil builds the app's one from `requestSender`; the snapshot tests
   /// hand in a filled one.
   var linkModelOverride: CodeLinkRemoteModel? = nil
+  @Environment(\.scenePhase) private var scenePhase
   /// Local notifications for approvals. Nil in the harness.
   var notifications: JunoMobileCodeNotifications? = nil
   /// Starts a Juno Code conversation that has no project, sends the reader's
@@ -408,6 +409,10 @@ struct JunoMobileCodeView: View {
       }
       if previewDictation != nil { cloudComposerOpen = true }
     }
+    .onChange(of: scenePhase, initial: true) { _, phase in
+      if linkModelOverride == nil { linkModel?.setSubscriptionRefreshActive(phase == .active) }
+    }
+    .onDisappear { if linkModelOverride == nil { linkModel?.setSubscriptionRefreshActive(false) } }
     .task(id: accountID) {
       // Remote state is account-scoped. Starting it here rather than at app
       // launch avoids retaining another account's trusted-host inventory after
@@ -424,6 +429,7 @@ struct JunoMobileCodeView: View {
             await linkModel.select(id)
           }
           await linkModel.refreshAllSessions()
+          linkModel.setSubscriptionRefreshActive(scenePhase == .active)
         }
         await remoteModel?.refreshAllSessions()
       } else {

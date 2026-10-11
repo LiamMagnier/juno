@@ -135,38 +135,45 @@ struct JunoMobileComposer: View {
   /// The "/" commands this composer can honour. Rows whose surface the
   /// shell did not hand over (voice, library, connected apps) are absent
   /// rather than present and inert.
-  private var slashCommands: [JunoMobileSlashCommand] {
-    var rows: [JunoMobileSlashCommand] = [
-      .init(key: "research", icon: .research, hint: "Run deep research on this message"),
-      .init(key: "search", icon: .web, hint: "Search the web for this message"),
-      .init(key: "canvas", icon: .canvas, hint: "Answer as a canvas"),
+  private var suggestionCursor: NativeSuggestionCursor? {
+    if mentionCursor.isOpen(for: NativeContextMention.query(in: prompt)) { return mentionCursor }
+    if commandCursor.isOpen(for: NativeSlashQuery.query(in: prompt)) { return commandCursor }
+    return nil
+  }
+
+  private var slashCommands: [NativeComposerCommand] {
+    var rows: [NativeComposerCommand] = [
+      .init("research", hint: "Run deep research on this message"),
+      .init("search", hint: "Search the web for this message"),
+      .init("canvas", hint: "Answer as a canvas"),
     ]
     if openVoiceMode != nil {
-      rows.append(.init(key: "voice", icon: .mic, hint: "Start voice mode"))
+      rows.append(.init("voice", hint: "Start voice mode"))
     }
     if openLibrary != nil {
-      rows.append(.init(key: "library", icon: .files, hint: "Attach from your library"))
+      rows.append(.init("library", hint: "Attach from your library"))
     }
     if openPlugins != nil {
-      rows.append(.init(key: "apps", icon: .blocks, hint: "Connected apps"))
+      rows.append(.init("apps", hint: "Connected apps"))
     }
+    rows += (hub?.skills.chooseable ?? []).map { .init($0.slug, hint: $0.name, category: "Skills") }
     return rows
   }
 
   /// Consumes the token and acts. The prompt is cleared first so the command
   /// never lands in the sent message as literal text.
-  private func runSlashCommand(_ command: JunoMobileSlashCommand) {
+  private func runSlashCommand(_ command: NativeComposerCommand) {
     prompt = ""
-    switch command.key {
+    switch command.id {
     case "research": tools.deepResearch = true
     case "search": tools.webSearch = true
     case "canvas": tools.canvas = true
     case "voice": openVoiceMode?()
     case "library": openLibrary?()
     case "apps": openPlugins?()
-    default: break
+    default: tools.skillSlug = command.id
     }
-    if ["research", "search", "canvas"].contains(command.key) {
+    if ["research", "search", "canvas"].contains(command.id) {
       composerFocused.wrappedValue = true
     }
   }
@@ -293,11 +300,13 @@ struct JunoMobileComposer: View {
       || attachmentModel.map { !$0.canSend } == true
   }
 
+  @State private var mentionCursor = NativeSuggestionCursor()
+  @State private var commandCursor = NativeSuggestionCursor()
   @State private var contextTokens: [NativeContextToken] = []
 
   var body: some View {
     VStack(spacing: JunoSpace.snug) {
-      NativeContextSuggestions(query: NativeContextMention.query(in: prompt), search: {
+      NativeContextSuggestions(query: NativeContextMention.query(in: prompt), cursor: mentionCursor, search: {
         try await model.mentions(query: $0, conversationID: conversation?.id)
       }, select: { token in
         guard contextTokens.count < 16 else { return }
@@ -371,11 +380,12 @@ struct JunoMobileComposer: View {
               .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
 
-            if let slashQuery = JunoMobileSlashPalette.query(in: prompt), !showsCollapsedDraft {
-              JunoMobileSlashPalette(
+            if !showsCollapsedDraft {
+              NativeCommandSuggestions(
+                query: NativeSlashQuery.query(in: prompt),
                 commands: slashCommands,
-                query: slashQuery,
-                pick: runSlashCommand
+                cursor: commandCursor,
+                select: runSlashCommand
               )
               .padding(.horizontal, JunoSpace.snug)
               .padding(.top, JunoSpace.snug)
@@ -427,6 +437,23 @@ struct JunoMobileComposer: View {
               .padding(.top, JunoSpace.comfy)
               .padding(.bottom, JunoSpace.tight)
               .accessibilityIdentifier("juno.mobile.chat-composer")
+              .onKeyPress(.downArrow) {
+                guard let cursor = suggestionCursor else { return .ignored }; cursor.move(1); return .handled
+              }
+              .onKeyPress(.upArrow) {
+                guard let cursor = suggestionCursor else { return .ignored }; cursor.move(-1); return .handled
+              }
+              .onKeyPress(.return) {
+                guard let cursor = suggestionCursor else { return .ignored }; _ = cursor.pick(); return .handled
+              }
+              .onKeyPress(.tab) {
+                guard let cursor = suggestionCursor else { return .ignored }; _ = cursor.pick(); return .handled
+              }
+              .onKeyPress(.escape) {
+                guard let cursor = suggestionCursor else { return .ignored }
+                cursor.dismiss(query: cursor === mentionCursor ? NativeContextMention.query(in: prompt) : NativeSlashQuery.query(in: prompt))
+                return .handled
+              }
 
               if isLongDraft {
                 attachAsFileOffer

@@ -90,7 +90,7 @@ public actor EnvServerDeviceLink {
     public static let remoteCommands: Set<CodeV2.ClientCommandType> = [
         .sessionOpen, .turnStart, .turnSteer, .turnQueue, .turnInterrupt, .approvalRespond,
         .checkpointRollback, .checkpointDiff, .providerList, .providerProbe, .providerSetup,
-        .sessionList, .sessionClose,
+        .sessionList, .sessionClose, .agentMessage, .agentInterrupt,
         // Runtime lane: reject a hunk, resume at reset, a managed runtime's install and sign-in.
         .checkpointApplyPatch, .turnSchedule, .turnUnschedule, .providerInstall, .providerAuth,
         // Cross-conversation lane: another conversation's message, written by
@@ -106,9 +106,13 @@ public actor EnvServerDeviceLink {
         // Answered by this app, never forwarded: its name and shared folders,
         // a screenshot of the preview pane or the Simulator.
         .hostInfo, .hostCapture, .hostUpload,
+        // Project lane: removing a shared project. The app answers it (it
+        // forgets the folder and its own sessions too, then asks the env
+        // server); the folder itself always stays on disk from a remote.
+        .projectRemove,
     ]
     /// Commands this app answers itself (``hostHandler``) instead of the env server.
-    public static let hostCommands: Set<CodeV2.ClientCommandType> = [.hostInfo, .hostCapture, .hostUpload]
+    public static let hostCommands: Set<CodeV2.ClientCommandType> = [.hostInfo, .hostCapture, .hostUpload, .projectRemove]
     public static let terminalCommands: Set<CodeV2.ClientCommandType> = [
         .terminalOpen, .terminalWrite, .terminalResize, .terminalClose,
     ]
@@ -172,6 +176,13 @@ public actor EnvServerDeviceLink {
         if case let .skillsUpdated(cwd) = envelope.event, cwd != nil {
             envelope.event = .skillsUpdated(cwd: nil)
         }
+        // A removed project's folder is not named to remotes either (it may
+        // never have been shared): they drop the sessions by id and re-read
+        // the shared folders with `host.info`.
+        if case let .projectRemoved(cwd, sessionIds) = envelope.event {
+            if cwd != nil { envelope.event = .projectRemoved(cwd: nil, sessionIds: sessionIds) }
+            for id in sessionIds { linkedSessions.remove(id) }
+        }
         buffer.append(envelope)
         if buffer.count > bufferLimit { buffer.removeFirst(buffer.count - bufferLimit) }
         let waiting = waiters
@@ -186,7 +197,7 @@ public actor EnvServerDeviceLink {
         switch envelope.stream {
         case .global:
             switch envelope.event {
-            case .providerUpdated, .skillsUpdated: return true
+            case .providerUpdated, .skillsUpdated, .projectRemoved: return true
             case let .terminalOutput(id, _), let .terminalExited(id, _):
                 return linkedTerminals.contains(id) ? await allowsTerminal() : false
             default: return false
@@ -206,7 +217,7 @@ public actor EnvServerDeviceLink {
             case .global:
                 guard envelope.sequence > globalCursor else { return false }
                 switch envelope.event {
-                case .providerUpdated, .skillsUpdated: return true
+                case .providerUpdated, .skillsUpdated, .projectRemoved: return true
                 case let .terminalOutput(id, _), let .terminalExited(id, _): return terminal && linkedTerminals.contains(id)
                 default: return false
                 }
@@ -350,6 +361,11 @@ public actor EnvServerDeviceLink {
                 }
             }
             return nil
+        case .projectRemove:
+            // Only a project in (or inside) a folder shared with other devices.
+            guard case let .string(cwd)? = object["cwd"], cwd.hasPrefix("/") else { return "A folder is required." }
+            return Self.isInside(cwd, roots: await allowedRoots())
+                ? nil : "That folder is not shared with other devices."
         case .sessionList:
             if case let .string(cwd)? = object["cwd"], !Self.isInside(cwd, roots: await allowedRoots()) {
                 return "That folder is not shared with other devices."

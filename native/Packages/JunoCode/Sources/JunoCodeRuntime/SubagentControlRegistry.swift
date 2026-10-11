@@ -86,6 +86,16 @@ public actor SubagentControlRegistry {
         return true
     }
 
+
+    @discardableResult
+    public func message(childSessionID: CodeSessionID, ownedBy parentSessionID: CodeSessionID, text: String) async -> Bool {
+        guard let entry = entries[childSessionID], entry.parentSessionID == parentSessionID else { return false }
+        do {
+            _ = try await entry.orchestrator.steer(prompt: text)
+            return true
+        } catch { return false }
+    }
+
     public func hasControl(for childSessionID: CodeSessionID) -> Bool {
         entries[childSessionID] != nil
     }

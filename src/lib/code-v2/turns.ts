@@ -119,6 +119,7 @@ export interface GroupTurnsOptions {
 export function groupTurns(items: readonly TurnItem[], options: GroupTurnsOptions = {}): Turn[] {
   const groups: { user?: UserMessageItem; items: TurnItem[] }[] = [];
   for (const item of items) {
+    if (item.agentId && item.kind !== "subagent") continue;
     if (startsTurn(item) || groups.length === 0) {
       groups.push(startsTurn(item) ? { user: item, items: [] } : { items: [item] });
       continue;

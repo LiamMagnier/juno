@@ -239,6 +239,20 @@ export class SessionManager {
     return out.slice(0, params.limit ?? 200);
   }
 
+  async messageAgent(sessionId: string, agentId: string, text: string): Promise<{ accepted: boolean; message?: string }> {
+    const live = this.#get(sessionId);
+    if (!live.provider?.messageAgent) throw new WireError("unsupported", "This provider does not support messaging individual agents.");
+    if (!agentId || !text.trim() || text.length > 100_000) throw new WireError("bad_request", "An agent and a nonempty message are required.");
+    return live.provider.messageAgent(agentId, text);
+  }
+
+  async interruptAgent(sessionId: string, agentId: string): Promise<void> {
+    const live = this.#get(sessionId);
+    if (!live.provider?.interruptAgent) throw new WireError("unsupported", "This provider does not support stopping individual agents.");
+    if (!agentId.trim()) throw new WireError("bad_request", "An agent is required.");
+    await live.provider.interruptAgent(agentId);
+  }
+
   startTurn(params: ClientCommandParams["turn.start"]): ClientCommandResults["turn.start"] {
     const live = this.#get(params.sessionId);
     if (live.active) throw new WireError("conflict", "A turn is already running. Steer it or queue the message.");
@@ -537,8 +551,9 @@ export class SessionManager {
   }
 
   /** sessionId → schedule id for every live session with a schedule, merged with sessions not loaded yet. */
-  #writeScheduleIndex(): void {
+  #writeScheduleIndex(drop: readonly string[] = []): void {
     const index = this.#readScheduleIndex();
+    for (const id of drop) delete index[id];
     for (const [id, live] of this.#live) {
       const schedule = live.log.snapshot.scheduledResume;
       if (schedule) index[id] = schedule.id;
@@ -596,6 +611,62 @@ export class SessionManager {
     this.#o.mcp.revokeSession(sessionId);
     live.mcpToken = undefined;
     await Promise.all([...this.#closed].map((l) => Promise.resolve(l(sessionId)).catch(() => undefined)));
+  }
+
+  /**
+   * The sessions that belong to a project folder: the folder itself, anything inside it, or a
+   * worktree made from it. Read from each log's meta.json, so nothing is loaded to answer.
+   */
+  sessionsInFolder(cwd: string): string[] {
+    const root = path.resolve(cwd);
+    const inside = (p: string | undefined) => !!p && (path.resolve(p) === root || path.resolve(p).startsWith(root + path.sep));
+    const ids = new Set([...SessionLog.list(this.sessionsDir), ...this.#live.keys()]);
+    const out: string[] = [];
+    for (const id of ids) {
+      let meta: SessionMeta | undefined = this.#live.get(id)?.log.meta;
+      if (!meta) {
+        try {
+          meta = JSON.parse(fs.readFileSync(path.join(this.sessionsDir, id, "meta.json"), "utf8")) as SessionMeta;
+        } catch {
+          continue;
+        }
+      }
+      if (inside(meta.cwd) || inside(meta.worktree?.repoRoot)) out.push(id);
+    }
+    return out.sort();
+  }
+
+  /**
+   * Removes a project from Alevr: every session in the folder is stopped (its run interrupted, its
+   * runtime closed, its schedule cleared) and its log deleted. Only the env server's own session
+   * directories are deleted, never anything in the folder. Returns the removed ids.
+   */
+  async removeProject(cwd: string): Promise<string[]> {
+    if (typeof cwd !== "string" || !path.isAbsolute(cwd)) throw new WireError("bad_request", "cwd must be an absolute path.");
+    const ids = this.sessionsInFolder(cwd);
+    const sessionsRoot = path.resolve(this.sessionsDir);
+    for (const id of ids) {
+      this.#clearTimer(id);
+      const running = this.#live.get(id)?.active?.done;
+      await this.close(id);
+      // The interrupted turn writes its last events before the log goes.
+      if (running) {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          await Promise.race([running.catch(() => undefined), new Promise((resolve) => { timer = setTimeout(resolve, 5_000); timer.unref(); })]);
+        } finally { if (timer) clearTimeout(timer); }
+      }
+      const live = this.#live.get(id);
+      const dir = path.resolve(live?.log.dir ?? path.join(this.sessionsDir, id));
+      for (const wake of live?.idleWaiters ?? []) wake();
+      live?.log.close();
+      this.#live.delete(id);
+      // Only ever a direct child of the sessions directory.
+      if (path.dirname(dir) !== sessionsRoot) continue;
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+    if (ids.length) this.#writeScheduleIndex(ids);
+    return ids;
   }
 
   /** Stops every session running on one provider instance (sign-in replaced or signed out). The logs stay. */
@@ -843,6 +914,8 @@ export class SessionManager {
           turnId,
           createdAt: nowIso(),
           callId: request.callId,
+          ...(request.agentId ? { agentId: request.agentId } : {}),
+          ...(request.agentLabel ? { agentLabel: request.agentLabel } : {}),
           requestId,
           action: request.action,
           summary: request.summary,

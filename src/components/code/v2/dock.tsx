@@ -19,7 +19,7 @@ import { aggregateChanges, groupTurns, formatDuration } from "@/lib/code-v2/turn
 import { budgetLine } from "@/lib/code-v2/orchestrate";
 import { displayName, shortModelLabel } from "@/lib/code-v2/providers-view";
 import { ComposerPopover, Glyph, MenuList, ModelMark, Spinner, useIsMac } from "./primitives";
-import { agentStep, isCandidate, teamHead } from "./thread";
+import { agentStep, isCandidate, teamHead, LogRow, lineFor } from "./thread";
 import type { WorkspaceModel } from "./types";
 import { XtermView } from "./xterm-view";
 import { cn } from "@/lib/utils";
@@ -555,11 +555,11 @@ function PreviewPane({ model }: { model: WorkspaceModel }) {
 
 function AgentDetail({ agent, model, onBack }: { agent: SubagentItem; model: WorkspaceModel; onBack: () => void }) {
   const instance = model.instances.find((i) => i.id === agent.model.instanceId);
-  const words = model.items.filter((i): i is Extract<TurnItem, { kind: "assistant_message" }> => i.kind === "assistant_message" && i.agentId === agent.agentId);
+  const trace = model.items.filter((i) => i.kind !== "subagent" && i.agentId === agent.agentId);
   const [msg, setMsg] = React.useState("");
   const live = agent.status === "running" || agent.status === "waiting";
   const step = agentStep(agent);
-  const name = agent.label ?? "Agent";
+  const name = agent.title ?? agent.task?.split("\n")[0] ?? agent.label ?? "Agent";
   return (
     <div className="cv2-dock-pane" key={agent.agentId}>
       <div className="cv2-dockbar">
@@ -607,11 +607,9 @@ function AgentDetail({ agent, model, onBack }: { agent: SubagentItem; model: Wor
             </div>
           )}
         </div>
-        {words.map((w) => (
-          <div key={w.id} className="cv2-prose" style={{ whiteSpace: "pre-wrap" }}>
-            {w.text}
-          </div>
-        ))}
+        {trace.map((item) => item.kind === "assistant_message" || item.kind === "reasoning" ? (
+          <div key={item.id} className="cv2-prose" style={{ whiteSpace: "pre-wrap" }}>{item.text}</div>
+        ) : (() => { const line = lineFor(item, Date.now()); return line ? <LogRow key={item.id} line={line} forceOpen /> : null; })())}
         {agent.tokens && (
           <div className="cv2-mute cv2-small cv2-tnum">
             {Math.round(agent.tokens.input / 1000)}K in, {Math.round(agent.tokens.output / 1000)}K out
@@ -717,14 +715,16 @@ function AgentsPane({ model, selectedId, onSelect }: { model: WorkspaceModel; se
         <span className="cv2-mute cv2-small cv2-tnum">{money ?? (elapsed ? formatDuration(elapsed) : "")}</span>
       </div>
       <div className="cv2-dockscroll" style={{ paddingTop: 6 }}>
-        {agents.map((a) => {
+        {[...agents.filter((a) => a.status === "running" || a.status === "waiting"), ...agents.filter((a) => a.status !== "running" && a.status !== "waiting")].map((a, index, list) => {
           const step = agentStep(a);
           const instance = model.instances.find((x) => x.id === a.model.instanceId);
           return (
-            <button key={a.id} type="button" className="cv2-arow" aria-pressed={selectedId === a.agentId} onClick={() => onSelect(a.agentId)}>
+            <React.Fragment key={a.id}>
+            {(index === 0 || (list[index - 1].status === "running" || list[index - 1].status === "waiting") !== (a.status === "running" || a.status === "waiting")) && <div className="cv2-phase-head">{a.status === "running" || a.status === "waiting" ? "Active" : "Done"}</div>}
+            <button type="button" className="cv2-arow" aria-pressed={selectedId === a.agentId} onClick={() => onSelect(a.agentId)}>
               <span style={{ minWidth: 0 }}>
                 <span className="l1">
-                  <span>{a.label ?? "Agent"}</span>
+                  <span className="cv2-trunc">{a.title ?? a.task?.split("\n")[0] ?? a.label ?? "Agent"}</span>
                   <ModelMark modelId={a.model.model} instance={instance} />
                   <span className="mdl cv2-trunc">{modelLabelFor(a.model.model, model.instances, a.model.instanceId)}</span>
                 </span>
@@ -734,6 +734,7 @@ function AgentsPane({ model, selectedId, onSelect }: { model: WorkspaceModel; se
               </span>
               <span className="t">{a.elapsedMs !== undefined ? formatDuration(a.elapsedMs) : ""}</span>
             </button>
+            </React.Fragment>
           );
         })}
       </div>

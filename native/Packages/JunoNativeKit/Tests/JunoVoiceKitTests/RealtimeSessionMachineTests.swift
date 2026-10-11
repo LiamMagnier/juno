@@ -40,6 +40,21 @@ final class RealtimeSessionMachineTests: XCTestCase {
 
     /// Audio comes up before the socket. A reconnect onto a stopped engine is a
     /// conversation with no audio in either direction and nothing to explain it.
+    func testSpeakerResidualCannotInterruptButSustainedNearEndSpeechCan() {
+        var prior = RealtimeVoiceActivityDetector()
+        _ = prior.observe(loudness: 0.48); _ = prior.observe(loudness: 0.48)
+        XCTAssertEqual(prior.observe(loudness: 0.48), .began)
+        var gate = RealtimeBargeInGate()
+        for _ in 0..<90 { XCTAssertFalse(gate.observe(microphone: 0.48, playback: 0.78)) }
+        for _ in 0..<6 { XCTAssertFalse(gate.observe(microphone: 0.96, playback: 0.78)) }
+        XCTAssertTrue(gate.observe(microphone: 0.96, playback: 0.78))
+        gate.reset()
+        for _ in 0..<3 { XCTAssertFalse(gate.observe(microphone: 0.96, playback: 0.78)) }
+        XCTAssertFalse(gate.observe(microphone: 0.2, playback: 0.78))
+        for _ in 0..<6 { XCTAssertFalse(gate.observe(microphone: 0.96, playback: 0.78)) }
+        XCTAssertTrue(gate.observe(microphone: 0.96, playback: 0.78))
+    }
+
     func testOpeningBringsAudioUpBeforeTheSocket() {
         var machine = RealtimeSessionMachine(provider: .openai)
 

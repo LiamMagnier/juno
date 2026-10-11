@@ -31,7 +31,7 @@ struct CodeSidebarSnapshotTests {
         URL(fileURLWithPath: ProcessInfo.processInfo.environment["JUNO_SIDEBAR_SNAPSHOT_DIR"]!)
     }
 
-    nonisolated static let names = ["chat", "code-empty", "code-sessions", "compare"]
+    nonisolated static let names = ["chat", "code-empty", "code-sessions", "compare", "project-removal", "project-removal-trash"]
 
     static let paneSize = CGSize(width: 260, height: 820)
 
@@ -48,6 +48,11 @@ struct CodeSidebarSnapshotTests {
                 view = AnyView(SidebarPane { Self.codeEmpty(world: world) })
             case "code-sessions":
                 view = AnyView(SidebarPane { Self.codeSessions(world: world) })
+            case "project-removal", "project-removal-trash":
+                size = CGSize(width: 420, height: 280)
+                view = AnyView(DesktopCodeProjectRemovalView(name: "Storefront", allowsTrash: true,
+                    moveToTrash: .constant(name == "project-removal-trash"), isWorking: false, error: nil,
+                    cancel: {}, remove: {}).background(Color.junoCanvas))
             case "compare":
                 size = CGSize(width: Self.paneSize.width * 3 + 48, height: Self.paneSize.height + 24)
                 view = AnyView(

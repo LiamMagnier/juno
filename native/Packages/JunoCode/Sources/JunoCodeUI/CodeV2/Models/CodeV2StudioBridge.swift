@@ -53,6 +53,13 @@ public final class CodeV2SessionBindings {
         persist()
     }
 
+    /// Lets go of every thread bound to one of these env sessions (a removed project's).
+    public func unbind(envSessionIds: Set<String>) {
+        let before = bindings.count
+        bindings = bindings.filter { !envSessionIds.contains($0.value.envSessionId) }
+        if bindings.count != before { persist() }
+    }
+
     private func persist() {
         if let data = try? JSONEncoder().encode(bindings) { defaults.set(data, forKey: key) }
     }
@@ -136,6 +143,7 @@ public struct CodeV2StudioContext {
     public let directory: CodeV2ProviderDirectory
     /// Hands the thread (with this first message) to the env server.
     public let handoff: (String) -> Void
+    public var refreshSubscriptions: (() -> Void)?
     public var openConnections: (() -> Void)?
     public var setup: ((String, CodeV2.ProviderSetupAction) -> Void)?
     /// How Orchestrate's roles on other instances run (BYOK keys,
@@ -147,6 +155,7 @@ public struct CodeV2StudioContext {
         directory: CodeV2ProviderDirectory,
         handoff: @escaping (String) -> Void,
         openConnections: (() -> Void)? = nil,
+        refreshSubscriptions: (() -> Void)? = nil,
         setup: ((String, CodeV2.ProviderSetupAction) -> Void)? = nil,
         subagentProviders: (() -> CodeV2SubagentProviders?)? = nil
     ) {
@@ -154,6 +163,7 @@ public struct CodeV2StudioContext {
         self.directory = directory
         self.handoff = handoff
         self.openConnections = openConnections
+        self.refreshSubscriptions = refreshSubscriptions
         self.setup = setup
         self.subagentProviders = subagentProviders
     }

@@ -48,7 +48,7 @@ export interface TurnSink {
   notice(level: "info" | "warning", text: string, code?: string): void;
   /** Blocks until the user decides. The sink adds/updates the approval_request item. */
   requestApproval(
-    request: Pick<ApprovalRequestItem, "callId" | "action" | "summary" | "justification" | "detail" | "options"> & {
+    request: Pick<ApprovalRequestItem, "callId" | "action" | "summary" | "justification" | "detail" | "options" | "agentId" | "agentLabel"> & {
       requestId?: string;
     },
   ): Promise<ApprovalAnswer>;
@@ -101,6 +101,8 @@ export interface ProviderSession {
   runTurn(request: TurnRequest): Promise<TurnResult>;
   /** Injects input into the running turn. Resolves false when it could not (the caller queues instead). */
   steer?(input: UserInput): Promise<boolean>;
+  messageAgent?(agentId: string, text: string): Promise<{ accepted: boolean; message?: string }>;
+  interruptAgent?(agentId: string): Promise<void>;
   interrupt(): Promise<void>;
   /** Rewinds the vendor conversation so the next turn follows turn `ordinal` (0 = before the first turn). */
   rewindTo?(ordinal: number): Promise<boolean>;
@@ -126,7 +128,13 @@ export type ProbeResult = Partial<
     ProviderInstance,
     "status" | "statusMessage" | "version" | "account" | "limits" | "models" | "capabilities" | "binaryPath" | "acpCommand" | "install" | "auth"
   >
->;
+> & {
+  /**
+   * The vendor's usage API said "too many requests": wait this long before
+   * asking it again. Kept by the registry, never sent to clients.
+   */
+  retryAfterMs?: number;
+};
 
 export interface ProbeOptions {
   logger: Logger;
@@ -147,6 +155,13 @@ export interface ProviderAdapter {
   openSession(instance: ProviderInstance, options: OpenSessionOptions): Promise<ProviderSession>;
   /** The step the user runs in a terminal for install / login; null when nothing is needed or possible. */
   setup(instance: ProviderInstance, action: ProviderSetupAction): ProviderSetupStep | null;
+  /**
+   * The shortest gap between two automatic probes of one instance (a client's
+   * `provider.probe` with `maxAgeMs`): how often the vendor's usage API may be
+   * asked, or how often it is worth starting the runtime at all. A manual
+   * Re-check (no `maxAgeMs`) is not held to it. Default: the registry's cache.
+   */
+  minProbeIntervalMs?(instance: ProviderInstance): number;
 }
 
 export const NO_CAPABILITIES: ProviderCapabilities = {

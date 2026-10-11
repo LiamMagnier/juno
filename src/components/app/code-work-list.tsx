@@ -25,13 +25,14 @@
  */
 import * as React from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useApp } from "@/components/app/app-provider";
 import { LIST_ROW_TRANSITION, Section, listRowClass } from "@/components/app/sidebar-section";
 import { useCodeRuns } from "@/components/code/use-code-runs";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuItem, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
@@ -58,6 +59,12 @@ import {
   type ThreadSummary,
 } from "@/lib/code-v2/thread-sections";
 import { cn } from "@/lib/utils";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { DeviceLinkTransport, EnvClient } from "@/lib/code-v2/env-client";
+
+interface RemovableCodeProject { id: string; key?: string | null; name: string; path: string }
+
 
 function useFlip(container: React.RefObject<HTMLElement | null>, key: string) {
   const prev = React.useRef<Map<string, number>>(new Map());
@@ -162,12 +169,19 @@ export function CodeWorkList({
   activeId,
   hrefFor,
   onOpen,
+  removalTargets = [],
+  onRemoveProject,
 }: {
   threads: readonly ThreadSummary[];
   activeId?: string;
   hrefFor?: (id: string) => string;
   onOpen?: (id: string) => void;
+  removalTargets?: readonly RemovableCodeProject[];
+  onRemoveProject?: (project: RemovableCodeProject) => Promise<void>;
 }) {
+  const [removing, setRemoving] = React.useState<RemovableCodeProject | null>(null);
+  const [removalError, setRemovalError] = React.useState<string | null>(null);
+  const [removalBusy, setRemovalBusy] = React.useState(false);
   const [project, setProject] = React.useState<string | null>(null);
   const [showSettled, setShowSettled] = React.useState(false);
   const [now, setNow] = React.useState(() => Date.now());
@@ -175,7 +189,7 @@ export function CodeWorkList({
     const t = setInterval(() => setNow(Date.now()), 60_000);
     return () => clearInterval(t);
   }, []);
-  const projects = React.useMemo(() => workProjects(threads), [threads]);
+  const projects = React.useMemo(() => [...new Set([...workProjects(threads), ...removalTargets.map((p) => p.name)])], [threads, removalTargets]);
   const list = React.useMemo(() => workList(threads, { project, now }), [threads, project, now]);
   const root = React.useRef<HTMLDivElement>(null);
   const order = [...list.active, ...(showSettled ? list.settled : [])].map((t) => `${t.id}.${t.state}`).join(",");
@@ -186,6 +200,25 @@ export function CodeWorkList({
 
   return (
     <div ref={root}>
+      <Dialog open={removing !== null} onOpenChange={(open) => { if (!open && !removalBusy) setRemoving(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Remove {removing?.name} from Alevr?</DialogTitle>
+            <DialogDescription>Running sessions will stop and their records will be removed from Alevr. The folder stays on disk.</DialogDescription>
+          </DialogHeader>
+          {removalError && <p role="alert" className="text-ui text-destructive">{removalError}</p>}
+          <DialogFooter>
+            <Button variant="ghost" disabled={removalBusy} onClick={() => setRemoving(null)}>Cancel</Button>
+            <Button variant="destructive" disabled={removalBusy} onClick={async () => {
+              if (!removing || !onRemoveProject) return;
+              setRemovalBusy(true); setRemovalError(null);
+              try { await onRemoveProject(removing); setProject(null); setRemoving(null); }
+              catch (error) { setRemovalError(error instanceof Error ? error.message : "Could not remove this project."); }
+              finally { setRemovalBusy(false); }
+            }}>{removalBusy ? "Removing…" : "Remove"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       {/* The filter is the list's first heading: `Section`'s heading recipe
           (12 px annotation on the 16 px edge, ink that answers the pointer),
           with its chevron always drawn because it opens a menu. */}
@@ -204,11 +237,20 @@ export function CodeWorkList({
             <DropdownMenuRadioGroup value={project ?? ""} onValueChange={(v) => setProject(v || null)}>
               <DropdownMenuRadioItem value="">All projects</DropdownMenuRadioItem>
               {projects.length > 0 && <DropdownMenuSeparator />}
-              {projects.map((p) => (
-                <DropdownMenuRadioItem key={p} value={p}>
-                  {p}
-                </DropdownMenuRadioItem>
-              ))}
+              {projects.map((p) => onRemoveProject && removalTargets.some((t) => t.name === p) ? (
+                <DropdownMenuSub key={p}>
+                  <DropdownMenuSubTrigger>{p}</DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent>
+                    <DropdownMenuItem onSelect={() => setProject(p)}>Show sessions</DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    {removalTargets.filter((t) => t.name === p).map((target) => (
+                      <DropdownMenuItem key={target.id} onSelect={() => { setRemovalError(null); setRemoving(target); }}>
+                        Remove from Alevr…{removalTargets.filter((t) => t.name === p).length > 1 ? ` (${target.path})` : ""}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+              ) : <DropdownMenuRadioItem key={p} value={p}>{p}</DropdownMenuRadioItem>)}
             </DropdownMenuRadioGroup>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -237,7 +279,35 @@ const EMPTY = new Map();
  */
 export function CodeShellList({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
-  const { conversations, activeConversationId } = useApp();
+  const { conversations, activeConversationId, removeConversation } = useApp();
+  const router = useRouter();
+  const [removalTargets, setRemovalTargets] = React.useState<RemovableCodeProject[]>([]);
+  React.useEffect(() => {
+    let live = true;
+    fetch("/api/code/workspaces").then((r) => r.ok ? r.json() : null).then((body) => { if (live) setRemovalTargets(body?.workspaces ?? []); }).catch(() => {});
+    return () => { live = false; };
+  }, []);
+  const removeProject = async (project: RemovableCodeProject) => {
+    // The host forgets its authoritative folder and stops local runtimes first.
+    const response = await fetch("/api/code/devices");
+    if (!response.ok) throw new Error("Could not check the computers sharing this project.");
+    const devices = (await response.json()).devices as { id: string; online?: boolean; workspaces?: { path: string }[] }[];
+    const hosts = devices.filter((d) => d.workspaces?.some((w) => w.path === project.path));
+    for (const host of hosts) {
+      if (!host.online) throw new Error("Open Alevr on the Mac sharing this project so its running sessions can stop.");
+      const transport = new DeviceLinkTransport(host.id);
+      transport.followGlobal();
+      const client = new EnvClient(transport, { timeoutMs: 36_000 });
+      try { await client.request("project.remove", { cwd: project.path }); } finally { client.close(); }
+    }
+    const removed = await fetch("/api/code/workspaces/remove", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ cwd: project.path, ...(project.key ? { key: project.key } : {}) }) });
+    if (!removed.ok) throw new Error((await removed.json()).error ?? "Could not remove this project.");
+    const ids = conversations.filter((c) => c.kind === "code" && (c.codeWorkspacePath === project.path || !!project.key && c.codeWorkspaceKey === project.key)).map((c) => c.id);
+    for (const id of ids) removeConversation(id);
+    setRemovalTargets((rows) => rows.filter((p) => p.id !== project.id));
+    if (ids.includes(activeConversationId ?? "")) router.push("/code");
+    router.refresh();
+  };
   const { runs, reachableFor } = useCodeRuns({ enabled: true, perConversation: true });
   const live = React.useSyncExternalStore(subscribeThreadStates, threadStatesSnapshot, () => EMPTY);
 
@@ -264,5 +334,5 @@ export function CodeShellList({ onNavigate }: { onNavigate?: () => void }) {
     pathname?.match(/^\/(?:code|chat)\/([^/?#]+)/)?.[1] ??
     (activeConversationId && threads.some((t) => t.id === activeConversationId) ? activeConversationId : undefined);
 
-  return <CodeWorkList threads={threads} activeId={activeId} hrefFor={(id) => `/code/${id}`} onOpen={() => onNavigate?.()} />;
+  return <CodeWorkList removalTargets={removalTargets} onRemoveProject={removeProject} threads={threads} activeId={activeId} hrefFor={(id) => `/code/${id}`} onOpen={() => onNavigate?.()} />;
 }

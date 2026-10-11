@@ -52,7 +52,7 @@ import type {
   UserInput,
 } from "../contracts/code-v2.js";
 import { RUNTIME_MODE_VENDOR_MAP } from "../contracts/code-v2.js";
-import { classifyUsageLimit, earliestExhaustedReset, normalizeReset } from "./limits.js";
+import { classifyUsageLimit, earliestExhaustedReset, normalizeReset, usageRetryAfterMs } from "./limits.js";
 import { claudeSetup } from "./presets.js";
 import { fullAccessGuardReason } from "./full-access-guard.js";
 import { readVersion } from "./detect.js";
@@ -199,7 +199,7 @@ export class ClaudeAgentAdapter implements ProviderAdapter {
       const models = (init.models ?? []).map(claudeModel);
       if (models.length) result.models = models;
       const usage = await Promise.race([
-        q.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET({ skipBehaviors: true }).catch(() => undefined),
+        q.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET({ skipBehaviors: true }).catch((error) => { result.retryAfterMs = usageRetryAfterMs(error); return undefined; }),
         new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), 6000).unref?.()),
       ]);
       const windows = usage?.rate_limits ? claudeLimitWindows(usage.rate_limits as Record<string, unknown>) : [];

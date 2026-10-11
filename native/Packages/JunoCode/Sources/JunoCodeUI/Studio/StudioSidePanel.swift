@@ -7,6 +7,7 @@ import JunoDesignSystem
 public enum StudioPanelTab: String, CaseIterable, Identifiable, Sendable {
     case changes
     case terminal
+    case agents
 
     public var id: String { rawValue }
 
@@ -14,6 +15,7 @@ public enum StudioPanelTab: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .changes: "Changes"
         case .terminal: "Terminal"
+        case .agents: "Agents"
         }
     }
 }
@@ -47,23 +49,19 @@ public struct StudioSidePanel: View {
     public var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: JunoSpace.snug) {
-                // Juno's segmented control, the same raised key the product
-                // switch and every in-window filter use, with the change
-                // count riding the Changes segment.
-                JunoSegmented(
-                    options: StudioPanelTab.allCases.map { option in
-                        JunoSegmentedOption(
-                            option,
-                            option.title,
-                            icon: option == .changes ? .fileDiff : .terminal,
-                            count: option == .changes && !controller.changes.isEmpty ? controller.changes.count : nil
-                        )
-                    },
-                    selection: $tab,
-                    accessibilityLabel: "Panel",
-                    optionAccessibilityIdentifier: { "juno.code.panel.tab.\($0.rawValue)" },
-                    size: .compact
-                )
+                Menu {
+                    Picker("Panel", selection: $tab) {
+                        ForEach(StudioPanelTab.allCases) { option in
+                            Text(option.title).tag(option)
+                        }
+                    }
+                } label: {
+                    StudioChipLabel(title: tab.title)
+                }
+                .menuStyle(.button)
+                .menuIndicator(.hidden)
+                .buttonStyle(.plain)
+                .accessibilityLabel("Panel")
                 Spacer()
                 Button(action: close) {
                     JunoIconView(.panelRight, size: 14)
@@ -85,6 +83,8 @@ public struct StudioSidePanel: View {
                 )
             case .terminal:
                 StudioTerminalPane(controller: controller)
+            case .agents:
+                StudioAgentsPane(controller: controller)
             }
         }
         .background(Studio.Surface.canvas)

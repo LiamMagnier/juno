@@ -55,6 +55,7 @@ struct CodeV2ComposerLeading: View {
     var setup: ((String, CodeV2.ProviderSetupAction) -> Void)?
     /// Skills lane: the thread's skills, on the row after the mode.
     var skills: CodeSkillsModel?
+    var refreshSubscriptions: (() -> Void)?
 
     private var instance: CodeV2.ProviderInstance? { directory.instance(model.selection.instanceId) }
     private var modes: [CodeV2.RuntimeMode] {
@@ -71,7 +72,8 @@ struct CodeV2ComposerLeading: View {
             directory: directory, selection: $model.selection, lean: $model.lean,
             threadTokens: threadTokens, isEnabled: isEnabled,
             openConnections: openConnections, setup: setup,
-            choose: { id, choice in model.choose(instanceId: id, model: choice) }
+            choose: { id, choice in model.choose(instanceId: id, model: choice) },
+            refreshSubscriptions: refreshSubscriptions
         )
         // Team lane: always on the composer, Solo or not.
         CodeV2TeamChip(model: model, directory: directory, isEnabled: isEnabled)

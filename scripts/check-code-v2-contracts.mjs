@@ -75,7 +75,7 @@ function obj(r, o = {}) {
 function itemSchema(kind, r, o = {}) {
   return obj(
     { id: nonEmpty, kind: { const: kind }, createdAt: iso, ...r },
-    { turnId: str, ...o },
+    { turnId: str, agentId: str, ...o },
   );
 }
 
@@ -404,6 +404,8 @@ function buildSchema() {
       { routing: ref("RoleRouting") },
     ),
     "turn.steer": obj({ ...sid, turnId: nonEmpty, input: ref("UserInput") }),
+    "agent.message": obj({ ...sid, agentId: nonEmpty, text: nonEmpty }),
+    "agent.interrupt": obj({ ...sid, agentId: nonEmpty }),
     "turn.queue": obj({ ...sid, input: ref("UserInput") }),
     "turn.interrupt": obj(sid, { turnId: nonEmpty }),
     "approval.respond": obj(
@@ -411,7 +413,7 @@ function buildSchema() {
       { updatedInput: { type: "object" }, answers: strMap(arr(str)) },
     ),
     "checkpoint.rollback": obj({ ...sid, checkpointId: nonEmpty }),
-    "provider.probe": obj({ instanceId: nonEmpty }),
+    "provider.probe": obj({ instanceId: nonEmpty }, { maxAgeMs: { type: "integer", minimum: 0 } }),
     "provider.list": obj({}),
     "terminal.open": obj(
       { cwd: nonEmpty, cols: { type: "integer", minimum: 1 }, rows: { type: "integer", minimum: 1 } },
@@ -482,6 +484,8 @@ function buildSchema() {
   params["host.info"] = obj({});
   params["host.capture"] = obj({ target: ref("RemoteCaptureTarget") });
   params["host.upload"] = obj({ name: nonEmpty, mediaType: nonEmpty, data: nonEmpty });
+  // project lane
+  params["project.remove"] = obj({ cwd: nonEmpty });
   for (const t of C.CLIENT_COMMAND_TYPE_VALUES) if (!params[t]) throw new Error(`no params schema for ${t}`);
   definitions.ClientCommand = {
     oneOf: C.CLIENT_COMMAND_TYPE_VALUES.map((t) => obj({ id: nonEmpty, type: { const: t }, params: params[t] })),
@@ -515,6 +519,7 @@ function buildSchema() {
     "session.scheduled": [{}, { scheduledResume: ref("ScheduledResume") }],
     "session.skills": { skills: arr(ref("SkillActivation")) },
     "skills.updated": [{}, { cwd: nonEmpty }],
+    "project.removed": [{ sessionIds: arr(nonEmpty) }, { cwd: nonEmpty }],
   };
   for (const t of C.SERVER_EVENT_TYPE_VALUES) if (!payloads[t]) throw new Error(`no payload schema for ${t}`);
   definitions.ServerEvent = {

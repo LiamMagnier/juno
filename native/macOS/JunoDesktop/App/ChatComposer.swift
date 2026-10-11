@@ -889,6 +889,8 @@ struct ChatComposer: View {
     /// for the follow-up chips above it, which show only then.
     var draftIsEmptyChanged: ((Bool) -> Void)? = nil
 
+    @State private var mentionCursor = NativeSuggestionCursor()
+    @State private var commandCursor = NativeSuggestionCursor()
     @State private var prompt = ""
     /// Empty only until the first ``configureSelection()`` on appear, which
     /// resolves it — to the conversation's own model when it has one, and to
@@ -1464,13 +1466,16 @@ struct ChatComposer: View {
     @ViewBuilder
     private var aboveSlot: some View {
         if !isPrivate, !voiceActive {
-            NativeContextSuggestions(query: NativeContextMention.query(in: prompt), search: {
+            NativeContextSuggestions(query: NativeContextMention.query(in: prompt), cursor: mentionCursor, search: {
                 try await model.mentions(query: $0, conversationID: model.selectedConversationID)
             }, select: { token in
                 guard contextTokens.count < 16 else { return }
                 if !contextTokens.contains(where: { $0.identity == token.identity }) { contextTokens.append(token) }
                 prompt = NativeContextMention.inserting(token, in: prompt)
             })
+        }
+        if !isPrivate, !voiceActive {
+            NativeCommandSuggestions(query: NativeSlashQuery.query(in: prompt), commands: slashCommands, cursor: commandCursor, select: runSlashCommand)
         }
         // The instructions the run has not read yet, rising in the moment the
         // server takes one and leaving when the run reads it — the steering
@@ -1820,13 +1825,21 @@ struct ChatComposer: View {
         // on Return, so the key is intercepted rather than bound.
         .onKeyPress(.return, phases: .down) { press in
             if press.modifiers.contains(.shift) { return .ignored }
+            if let cursor = suggestionCursor { _ = cursor.pick(); return .handled }
             submit()
             // Swallowed even when nothing could be sent: Return must not quietly
             // grow the field instead of doing what was asked.
             return .handled
         }
         // ↑ in an empty field reopens the last message, as the web's does.
+        .onKeyPress(.tab) {
+            guard let cursor = suggestionCursor else { return .ignored }; _ = cursor.pick(); return .handled
+        }
+        .onKeyPress(.downArrow) {
+            guard let cursor = suggestionCursor else { return .ignored }; cursor.move(1); return .handled
+        }
         .onKeyPress(.upArrow) {
+            if let cursor = suggestionCursor { cursor.move(-1); return .handled }
             guard prompt.isEmpty, !isGenerating, let editLastMessage else { return .ignored }
             editLastMessage()
             return .handled
@@ -1834,10 +1847,46 @@ struct ChatComposer: View {
         // Esc stops a reply in flight. (A quoted selection, from Phase 4, is
         // cleared before this; dictation has its own Esc.)
         .onKeyPress(.escape) {
+            if let cursor = suggestionCursor {
+                cursor.dismiss(query: cursor === mentionCursor ? NativeContextMention.query(in: prompt) : NativeSlashQuery.query(in: prompt))
+                return .handled
+            }
             guard isGenerating else { return .ignored }
             stopGeneration()
             return .handled
         }
+    }
+
+    private var suggestionCursor: NativeSuggestionCursor? {
+        if mentionCursor.isOpen(for: NativeContextMention.query(in: prompt)) { return mentionCursor }
+        if commandCursor.isOpen(for: NativeSlashQuery.query(in: prompt)) { return commandCursor }
+        return nil
+    }
+
+    private var slashCommands: [NativeComposerCommand] {
+        var rows: [NativeComposerCommand] = []
+        if researchAvailable { rows.append(.init("research", hint: "Deep research")) }
+        if webSearchAvailable { rows.append(.init("search", hint: "Search the web")) }
+        rows.append(.init("voice", hint: "Start voice mode"))
+        if libraryModel != nil { rows.append(.init("library", hint: "Attach from Library")) }
+        if connectorModel != nil { rows.append(.init("apps", hint: "Connected apps")) }
+        if skillsAvailable {
+            rows += (skillLibrary?.chooseable ?? []).map { .init($0.slug, hint: $0.name, category: "Skills") }
+        }
+        return rows
+    }
+
+    private func runSlashCommand(_ command: NativeComposerCommand) {
+        prompt = ""
+        switch command.id {
+        case "research": deepResearch = true
+        case "search": webSearch = true
+        case "voice": startVoice()
+        case "library": showingLibrary = true
+        case "apps": showingTrayApps = true
+        default: skillSlug = command.id
+        }
+        focused = true
     }
 
     // MARK: Marks

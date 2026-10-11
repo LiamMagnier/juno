@@ -297,7 +297,12 @@ esac
 printf '  env server   %s (%s bytes)\n' "$ENV_SERVER_BUNDLE" "$(wc -c < "$ENV_SERVER_BUNDLE" | tr -d ' ')"
 
 step "Shared local gates"
-bash scripts/local-gates.sh
+if node scripts/gate-stamp.mjs check HEAD; then
+  bash scripts/local-gates.sh --migrations-only HEAD
+  npm run security:check
+else
+  bash scripts/local-gates.sh
+fi
 
 xcodebuild -project "$PROJECT" -scheme "$SCHEME" -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath "$BUILD_DIR/test" CODE_SIGNING_ALLOWED=NO -only-testing:JunoDesktopTests test >/dev/null
 

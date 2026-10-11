@@ -62,6 +62,7 @@ export interface CodeWorkspaceProps {
   sidebar?: boolean;
   byok?: ByokClient;
   onProbe?: (instanceId: string) => Promise<ProviderInstance | void>;
+  onRefreshSubscriptions?: () => Promise<void>;
   onSetup?: (instance: ProviderInstance, action: "install" | "login") => Promise<void | string> | void | string;
   onManaged?: ConnectionsProps["onManaged"];
   /** Open the Connections sheet on first run (no connected provider and never dismissed). */
@@ -165,7 +166,7 @@ function Shortcuts({ onClose }: { onClose: () => void }) {
   );
 }
 
-export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, onSetup, onManaged, firstRun, loading, resolveScreenshot, className }: CodeWorkspaceProps) {
+export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, onRefreshSubscriptions, onSetup, onManaged, firstRun, loading, resolveScreenshot, className }: CodeWorkspaceProps) {
   const mac = useIsMac();
   const [dock, dispatch] = React.useReducer(dockReducer, undefined, () => {
     const s = initialDockState(readStored(WIDTH_KEY, Number) ?? undefined);
@@ -208,6 +209,17 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
     if (readStored("alevr.code.connectionsSeen", (s) => s === "1")) return;
     setConnections(true);
   }, [firstRun]);
+
+  React.useEffect(() => {
+    if (popover === "model" || popover === "catalog" || connections || settings === "connections") void onRefreshSubscriptions?.();
+  }, [popover, connections, settings, onRefreshSubscriptions]);
+
+  const seenAgents = React.useRef(new Set<string>());
+  React.useEffect(() => {
+    const ids = model.items.filter((i) => i.kind === "subagent").map((i) => i.agentId);
+    if (ids.some((id) => !seenAgents.current.has(id))) dispatch({ type: "open", tab: "agents", threadId: model.thread.id });
+    seenAgents.current = new Set(ids);
+  }, [model.thread.id, model.items]);
 
   const running = model.state === "running" || model.state === "waiting";
   const pending = pendingRequests(model.items);

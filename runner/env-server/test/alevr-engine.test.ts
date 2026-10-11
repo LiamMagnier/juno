@@ -79,6 +79,15 @@ function fakeEngine(rec: Recorded): AlevrEngine {
             emit({ type: "subagent_update", agent: { id: r.id, title: r.label, role: r.role, contractRole: r.contractRole ?? r.role, phase: r.phase, label: r.label, model: r.sel.model, selection: r.sel, status: "completed", summary: `${r.label} done` } });
           }
         }
+        if (/child trace/.test(text)) {
+          emit({ type: "assistant_delta", text: "Lead answer. " });
+          emit({ type: "subagent_update", agent: { id: "trace-child", title: "Audit startup", task: "Audit subscription startup and verify first-send delivery", role: "explorer", status: "running" } });
+          emit({ type: "thinking_delta", agentId: "trace-child", text: "Check event ordering." });
+          emit({ type: "tool_started", agentId: "trace-child", name: "read_file", callId: "child-read", input: { path: "startup.ts" } });
+          emit({ type: "tool_finished", agentId: "trace-child", callId: "child-read", output: "subscribe before starting", durationMs: 1 });
+          emit({ type: "assistant_delta", agentId: "trace-child", text: "Startup audit passed." });
+          emit({ type: "subagent_update", agent: { id: "trace-child", title: "Audit startup", task: "Audit subscription startup and verify first-send delivery", role: "explorer", status: "completed", summary: "Startup audit passed." } });
+        }
         if (/slow/.test(text)) {
           for (let i = 0; i < 300 && !aborted && queued.length === 0; i++) {
             emit({ type: "assistant_delta", text: "." });
@@ -207,4 +216,27 @@ test("alevr engine: a Plan → Build → Verify routing reaches the engine, role
   await client.turnCompleted(sid, solo.turnId);
   assert.equal(rec.routings.length, 2);
   assert.equal(rec.routings.at(-1), undefined);
+});
+
+test("alevr engine: child reasoning, tools and replies remain attributed outside the lead's answer", async () => {
+  const { client } = await boot();
+  await client.command("env.configure", { backend: { baseUrl: "https://alevr.example/api/agent", authorization: "Bearer s", models: [] } });
+  await client.command("provider.probe", { instanceId: "alevr" });
+  const selection = { instanceId: "alevr", model: "anthropic:claude-sonnet-5-5" };
+  const { sessionId } = await client.command<{ sessionId: string }>("session.open", { cwd: tempDir("cwd"), selection });
+  await client.waitFor(() => client.snapshots.get(sessionId), 4000, "snapshot");
+  const turn = await client.command<{ turnId: string }>("turn.start", { sessionId, input: { text: "child trace" }, selection, ...ask });
+  await client.turnCompleted(sessionId, turn.turnId);
+  const trace = items(client, sessionId).filter((item) => item.agentId === "trace-child" && item.kind !== "subagent");
+  assert.deepEqual(trace.map((item) => item.kind), ["reasoning", "search", "assistant_message"]);
+  const childReply = trace.find((item) => item.kind === "assistant_message");
+  assert.ok(childReply && childReply.kind === "assistant_message");
+  assert.equal(childReply.text, "Startup audit passed.");
+  assert.equal(childReply.streaming, false);
+  const lead = items(client, sessionId).filter((item) => item.kind === "assistant_message" && !item.agentId);
+  assert.equal(lead.length, 1);
+  assert.ok(!JSON.stringify(lead).includes("Startup audit passed."));
+  const agent = items(client, sessionId).find((item) => item.kind === "subagent");
+  assert.ok(agent && agent.kind === "subagent");
+  assert.equal(agent.task, "Audit subscription startup and verify first-send delivery");
 });

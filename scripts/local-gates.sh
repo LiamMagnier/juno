@@ -64,3 +64,9 @@ npm test --prefix relay
 npm run build --prefix relay
 step "Release source invariants"
 bash scripts/release-gates.sh
+
+# Only a complete, unsharded pass including migrations certifies a clean tree.
+# This script never reads stamps and never bypasses checks.
+if [ "${1:-}" != "--without-migrations" ] && [ "${GATES_UNIT_TESTS_SHARDED:-}" != "1" ]; then
+  node scripts/gate-stamp.mjs record HEAD || true
+fi

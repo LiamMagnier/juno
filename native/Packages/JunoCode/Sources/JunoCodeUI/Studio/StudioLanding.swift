@@ -246,7 +246,7 @@ public struct StudioLanding: View {
                 CodeV2ComposerLeading(
                     model: v2.composer, directory: v2.directory, isEnabled: !isRemote,
                     openConnections: v2.openConnections, setup: v2.setup,
-                    skills: isRemote ? nil : skills
+                    skills: isRemote ? nil : skills, refreshSubscriptions: v2.refreshSubscriptions
                 )
                 .codeV2TeamScope(session: nil, project: project?.descriptor.displayName)
             } else {

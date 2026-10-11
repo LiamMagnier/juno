@@ -463,7 +463,7 @@ public final class JunoRealtimeVoiceController {
     /// Reads the same 0…1 meter the orb is drawn from and decides whether the
     /// reader has started talking over the answer. Only consulted under
     /// ``RealtimeBargeInPolicy/automatic``.
-    private var detector = RealtimeVoiceActivityDetector()
+    private var detector = RealtimeBargeInGate()
     /// What the input node reported once the graph was up. ``RealtimeEchoCancellation/unknown``
     /// before ``startAudioEngine()`` and after teardown — a third answer, not a
     /// pessimistic second one.
@@ -633,9 +633,10 @@ public final class JunoRealtimeVoiceController {
     /// ``assistantSpeaking`` (there is nothing to interrupt otherwise), and the
     /// reducer itself, which returns no effects unless it agrees Juno holds the
     /// floor.
-    private func noticeBargeIn(_ loudness: Double) {
+    private func noticeBargeIn(_ loudness: Double, playback: Double) {
         guard bargeIn == .automatic, !muted, assistantSpeaking else { return }
-        guard detector.observe(loudness: loudness) == .began else { return }
+        guard detector.observe(microphone: loudness, playback: playback) else { return }
+        Self.audioLog.info("Barge-in accepted: mic \(loudness, privacy: .public), speaker \(playback, privacy: .public)")
         perform(advance(.userSpeechDetected))
     }
 
@@ -2174,12 +2175,12 @@ public final class JunoRealtimeVoiceController {
                 // ~30Hz, which is the cadence ``RealtimeVoiceActivityDetector``'s
                 // frame counts are tuned against; the tap's rate follows whatever
                 // buffer size the hardware chose.
-                self.noticeBargeIn(micLoudness)
                 let micTarget = self.muted ? 0 : micLoudness
                 // Juno's voice at the playhead: what the listener is hearing
                 // this instant, not the chunk that just arrived.
                 let playhead = self.playerSample()
                 let heard = playhead.map { self.playbackEnvelope.spectrum(at: $0) } ?? .silent
+                self.noticeBargeIn(micLoudness, playback: heard.level)
                 let audible = playhead.map { self.playbackEnvelope.hasAudio(after: $0) } ?? false
                 if audible != self.playbackAudible { self.playbackAudible = audible }
                 // Published only on a visible change, so a silent call does not

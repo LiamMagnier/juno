@@ -115,6 +115,57 @@ final class WorkbenchModelTests: XCTestCase {
         await model.bootstrap()
     }
 
+    func testRemovingProjectDeletesSessionsAndPersistsWhileKeepingFiles() async throws {
+        let createdWorkspace = await model.addWorkspace(grantedURL: workspaceURL)
+        let record = try XCTUnwrap(createdWorkspace)
+        _ = await model.createSession(workspaceID: record.id, configuration: AgentConfiguration(modelID: "test-model"))
+        var removedFolders: [String] = []
+        model.removeEnvProject = { cwd in removedFolders.append(cwd); return [] }
+        let removed = await model.removeProject(id: record.id)
+        XCTAssertTrue(removed)
+        XCTAssertTrue(model.workspaces.isEmpty)
+        XCTAssertTrue(model.sessions.isEmpty)
+        XCTAssertEqual(removedFolders, [workspaceURL.path])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: workspaceURL.appendingPathComponent("src/main.swift").path))
+        let relaunched = WorkbenchModel(dependencies: model.dependencies)
+        await relaunched.bootstrap()
+        XCTAssertTrue(relaunched.workspaces.isEmpty)
+        XCTAssertTrue(relaunched.sessions.isEmpty)
+    }
+
+    func testFailedRemoteRemovalRemainsJournaledAndRetriesAfterRelaunch() async throws {
+        let createdWorkspace = await model.addWorkspace(grantedURL: workspaceURL)
+        let record = try XCTUnwrap(createdWorkspace)
+        model.removeEnvProject = { _ in [] }
+        model.removeRemoteProject = { _ in throw NSError(domain: "offline", code: 1) }
+        let removed = await model.removeProject(id: record.id)
+        XCTAssertFalse(removed)
+        XCTAssertEqual(model.workspaces.count, 1)
+        let journal = model.dependencies.storageRootURL.appendingPathComponent("project-removals.json")
+        XCTAssertFalse(try JSONDecoder().decode([JSONValue].self, from: Data(contentsOf: journal)).isEmpty)
+        let relaunched = WorkbenchModel(dependencies: model.dependencies)
+        relaunched.removeEnvProject = { _ in [] }
+        var remoteRetries = 0
+        relaunched.removeRemoteProject = { _ in remoteRetries += 1 }
+        await relaunched.bootstrap()
+        XCTAssertEqual(remoteRetries, 1)
+        XCTAssertTrue(relaunched.workspaces.isEmpty)
+        XCTAssertTrue(try JSONDecoder().decode([JSONValue].self, from: Data(contentsOf: journal)).isEmpty)
+    }
+
+    func testProjectlessSubscriptionGetsItsOwnPrivateDirectory() async throws {
+        let created = await model.createSession(workspaceID: nil, configuration: AgentConfiguration(modelID: "test-model"))
+        let session = try XCTUnwrap(created)
+        let live = await model.controller(for: session.id)
+        let controller = try XCTUnwrap(live)
+        let first = try model.subscriptionDirectory(for: controller)
+        XCTAssertEqual(try model.subscriptionDirectory(for: controller), first)
+        XCTAssertNil(session.workspaceID)
+        XCTAssertTrue(first.path.hasPrefix(model.dependencies.storageRootURL.path + "/"))
+        XCTAssertFalse(first.path.hasPrefix(workspaceURL.path))
+        XCTAssertTrue(model.workspaces.isEmpty)
+    }
+
     func testWorkspaceRegistrationPersistsAcrossRelaunch() async throws {
         let record = await model.addWorkspace(grantedURL: workspaceURL)
         XCTAssertNotNil(record)

@@ -63,6 +63,8 @@ export interface EngineSession {
   readonly sessionId: string;
   prompt(text: string): Promise<void>;
   abort(): void;
+  messageAgent?(agentId: string, text: string): { ok: boolean; message: string };
+  interruptAgent?(agentId: string): void;
   setMode(mode: EnginePermissionMode): void;
   queueUserMessage(text: string): Promise<void>;
   rewindToTurn?(turnIndex: number): string[];
@@ -239,6 +241,8 @@ class EngineBackedSession implements ProviderSession {
   #session: EngineSession | undefined;
   #engineSessionId: string | undefined;
   #turn: EngineTurn | undefined;
+  #children = new Map<string, EngineTurn>();
+  #agentStarts = new Map<string, string>();
   #model: string | undefined;
   /** The routing the live engine session was built with; a change rebuilds it. */
   #routingKey = "";
@@ -329,6 +333,8 @@ class EngineBackedSession implements ProviderSession {
     } catch (error) {
       return { outcome: "failed", message: describeError(error) };
     }
+    this.#children.clear();
+    this.#agentStarts.clear();
     const turn: EngineTurn = { turnId: request.turnId, sink: request.sink, assistantText: "", reasoningText: "", tools: new Map(), subagents: new Map() };
     this.#turn = turn;
     const onAbort = () => {
@@ -365,6 +371,17 @@ class EngineBackedSession implements ProviderSession {
     return true;
   }
 
+  async messageAgent(agentId: string, text: string): Promise<{ accepted: boolean; message?: string }> {
+    if (!this.#session?.messageAgent) return { accepted: false, message: "This runtime cannot receive agent messages." };
+    const result = this.#session.messageAgent(agentId, text);
+    return { accepted: result.ok, message: result.message };
+  }
+
+  async interruptAgent(agentId: string): Promise<void> {
+    if (!this.#session?.interruptAgent) throw new Error("This runtime cannot stop individual agents.");
+    this.#session.interruptAgent(agentId);
+  }
+
   async interrupt(): Promise<void> {
     if (this.#turn) this.#turn.aborted = true;
     this.#session?.abort();
@@ -393,7 +410,8 @@ class EngineBackedSession implements ProviderSession {
       callId: r.callId,
       action,
       summary: r.summary || r.toolName,
-      ...(r.agentLabel ? { detail: `Asked by ${r.agentLabel}` } : {}),
+      ...(r.agentId ? { agentId: r.agentId } : {}),
+      ...(r.agentLabel ? { agentLabel: r.agentLabel, detail: `Asked by ${r.agentLabel}` } : {}),
       options: ["accept", "acceptForSession", "decline", "cancel"],
     });
     if (answer.decision === "cancel") {
@@ -414,13 +432,26 @@ class EngineBackedSession implements ProviderSession {
   }
 
   #onEvent(e: EngineEvent): void {
-    const turn = this.#turn;
+    let turn = this.#turn;
     if (!turn) return;
+    const childId = typeof e.agentId === "string" ? e.agentId : undefined;
+    if (childId) {
+      let child = this.#children.get(childId);
+      if (!child) {
+        const parentSink = turn.sink;
+        const sink: TurnSink = { ...parentSink,
+          item: (item) => parentSink.item({ ...item, agentId: childId }),
+          usage: () => {},
+        };
+        child = { turnId: turn.turnId, sink, assistantText: "", reasoningText: "", tools: new Map(), subagents: new Map() };
+        this.#children.set(childId, child);
+      }
+      turn = child;
+    }
     const sink = turn.sink;
     const str = (v: unknown) => (typeof v === "string" ? v : "");
     switch (e.type) {
       case "assistant_delta": {
-        if (e.agentId) return;
         const text = str(e.text);
         if (!turn.assistantId) {
           turn.assistantId = sink.newItemId("msg");
@@ -433,7 +464,6 @@ class EngineBackedSession implements ProviderSession {
         return;
       }
       case "assistant_message": {
-        if (e.agentId) return;
         const id = turn.assistantId ?? sink.newItemId("msg");
         sink.item({ id, kind: "assistant_message", turnId: turn.turnId, createdAt: sink.now(), text: str(e.text), streaming: false });
         turn.assistantId = undefined;
@@ -460,7 +490,6 @@ class EngineBackedSession implements ProviderSession {
         return;
       }
       case "tool_started": {
-        if (e.agentId) return;
         // A tool call closes the streamed text before it.
         if (turn.assistantId) {
           sink.item({ id: turn.assistantId, kind: "assistant_message", turnId: turn.turnId, createdAt: sink.now(), text: turn.assistantText, streaming: false });
@@ -509,16 +538,25 @@ class EngineBackedSession implements ProviderSession {
         const id = turn.subagents.get(agentId) ?? sink.newItemId("agent");
         turn.subagents.set(agentId, id);
         const st = str(a.status);
+        if (st === "completed" || st === "failed" || st === "cancelled" || st === "interrupted") {
+          const child = this.#children.get(agentId);
+          if (child) this.#closeText(child);
+        }
+        const createdAt = this.#agentStarts.get(agentId) ?? (str(a.startedAt) || sink.now());
+        this.#agentStarts.set(agentId, createdAt);
         const item: SubagentItem = {
           id,
           kind: "subagent",
           turnId: turn.turnId,
-          createdAt: sink.now(),
+          createdAt,
           agentId,
           role: contractRoleOfEngine(str(a.contractRole) || str(a.role)),
           model: isSelection(a.selection) ? a.selection : { instanceId: this.instance.id, model: str(a.model) || this.#model || "default" },
           status: st === "completed" || st === "done" ? "completed" : st === "failed" ? "failed" : st === "cancelled" || st === "interrupted" ? "interrupted" : st === "queued" ? "waiting" : "running",
-          task: str(a.title),
+          task: str(a.task) || str(a.title),
+          title: str(a.title),
+          liveLine: str(a.currentActivity) || undefined,
+          ...(str(a.startedAt) && str(a.completedAt) ? { elapsedMs: Math.max(0, Date.parse(str(a.completedAt)) - Date.parse(str(a.startedAt))) } : {}),
           ...(typeof a.summary === "string" ? { closingText: a.summary } : {}),
           ...(a.phase === "plan" || a.phase === "build" || a.phase === "verify" ? { phase: a.phase } : {}),
           ...(str(a.label) ? { label: str(a.label), title: str(a.title) } : {}),
@@ -527,12 +565,14 @@ class EngineBackedSession implements ProviderSession {
         return;
       }
       case "turn_finished": {
+        if (childId) return;
         const u = (e.usage ?? {}) as { inputTokens?: number; outputTokens?: number; cacheReadTokens?: number };
         turn.usage = { inputTokens: u.inputTokens ?? 0, outputTokens: u.outputTokens ?? 0, ...(u.cacheReadTokens ? { cachedInputTokens: u.cacheReadTokens } : {}) };
         sink.usage(turn.usage);
         return;
       }
       case "error":
+        if (childId) { sink.notice("warning", str(e.message) || "This agent stopped after an error."); return; }
         turn.error = { message: str(e.message) || "Alevr's engine reported an error.", ...(typeof e.code === "string" ? { code: e.code } : {}) };
         return;
       default:

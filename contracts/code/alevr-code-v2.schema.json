@@ -181,6 +181,8 @@
         "session.open",
         "turn.start",
         "turn.steer",
+        "agent.message",
+        "agent.interrupt",
         "turn.queue",
         "turn.interrupt",
         "approval.respond",
@@ -213,7 +215,8 @@
         "git.pr",
         "host.info",
         "host.capture",
-        "host.upload"
+        "host.upload",
+        "project.remove"
       ]
     },
     "ServerEventType": {
@@ -233,7 +236,8 @@
         "terminal.exited",
         "session.scheduled",
         "session.skills",
-        "skills.updated"
+        "skills.updated",
+        "project.removed"
       ]
     },
     "TurnOutcome": {
@@ -946,6 +950,9 @@
         "turnId": {
           "type": "string"
         },
+        "agentId": {
+          "type": "string"
+        },
         "attachments": {
           "type": "array",
           "items": {
@@ -1033,6 +1040,9 @@
         "turnId": {
           "type": "string"
         },
+        "agentId": {
+          "type": "string"
+        },
         "summary": {
           "type": "boolean"
         }
@@ -1063,6 +1073,9 @@
           "type": "string"
         },
         "turnId": {
+          "type": "string"
+        },
+        "agentId": {
           "type": "string"
         },
         "steps": {
@@ -1118,6 +1131,9 @@
           }
         },
         "turnId": {
+          "type": "string"
+        },
+        "agentId": {
           "type": "string"
         }
       },
@@ -1186,6 +1202,9 @@
         "turnId": {
           "type": "string"
         },
+        "agentId": {
+          "type": "string"
+        },
         "answers": {
           "type": "object",
           "additionalProperties": {
@@ -1234,6 +1253,9 @@
         },
         "turnId": {
           "type": "string"
+        },
+        "agentId": {
+          "type": "string"
         }
       },
       "required": [
@@ -1271,6 +1293,9 @@
           "$ref": "#/definitions/ItemStatus"
         },
         "turnId": {
+          "type": "string"
+        },
+        "agentId": {
           "type": "string"
         },
         "cwd": {
@@ -1326,6 +1351,9 @@
         "turnId": {
           "type": "string"
         },
+        "agentId": {
+          "type": "string"
+        },
         "scope": {
           "type": "string",
           "enum": [
@@ -1373,6 +1401,9 @@
           "$ref": "#/definitions/ItemStatus"
         },
         "turnId": {
+          "type": "string"
+        },
+        "agentId": {
           "type": "string"
         },
         "results": {
@@ -1451,6 +1482,9 @@
         "turnId": {
           "type": "string"
         },
+        "agentId": {
+          "type": "string"
+        },
         "justification": {
           "type": "string"
         },
@@ -1465,9 +1499,6 @@
         },
         "decision": {
           "$ref": "#/definitions/ApprovalDecision"
-        },
-        "agentId": {
-          "type": "string"
         },
         "agentLabel": {
           "type": "string"
@@ -1507,6 +1538,9 @@
           "minimum": 0
         },
         "turnId": {
+          "type": "string"
+        },
+        "agentId": {
           "type": "string"
         },
         "ref": {
@@ -1559,6 +1593,9 @@
         "turnId": {
           "type": "string"
         },
+        "agentId": {
+          "type": "string"
+        },
         "message": {
           "type": "string"
         },
@@ -1602,6 +1639,9 @@
         "turnId": {
           "type": "string"
         },
+        "agentId": {
+          "type": "string"
+        },
         "code": {
           "type": "string"
         }
@@ -1633,6 +1673,9 @@
           "minLength": 1
         },
         "turnId": {
+          "type": "string"
+        },
+        "agentId": {
           "type": "string"
         },
         "code": {
@@ -1672,6 +1715,9 @@
           "minimum": 0
         },
         "turnId": {
+          "type": "string"
+        },
+        "agentId": {
           "type": "string"
         },
         "strategy": {
@@ -1714,6 +1760,9 @@
         "turnId": {
           "type": "string"
         },
+        "agentId": {
+          "type": "string"
+        },
         "from": {
           "$ref": "#/definitions/ModelSelection"
         },
@@ -1743,8 +1792,7 @@
           "minLength": 10
         },
         "agentId": {
-          "type": "string",
-          "minLength": 1
+          "type": "string"
         },
         "role": {
           "$ref": "#/definitions/AgentRole"
@@ -1806,6 +1854,9 @@
           "$ref": "#/definitions/ItemStatus"
         },
         "turnId": {
+          "type": "string"
+        },
+        "agentId": {
           "type": "string"
         },
         "target": {
@@ -1917,6 +1968,9 @@
           "minimum": 0
         },
         "turnId": {
+          "type": "string"
+        },
+        "agentId": {
           "type": "string"
         },
         "chainId": {
@@ -2684,6 +2738,79 @@
               "minLength": 1
             },
             "type": {
+              "const": "agent.message"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "sessionId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "agentId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "text": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "sessionId",
+                "agentId",
+                "text"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "type",
+            "params"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": {
+              "const": "agent.interrupt"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "sessionId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "agentId": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "sessionId",
+                "agentId"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "type",
+            "params"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": {
               "const": "turn.queue"
             },
             "params": {
@@ -2842,6 +2969,10 @@
                 "instanceId": {
                   "type": "string",
                   "minLength": 1
+                },
+                "maxAgeMs": {
+                  "type": "integer",
+                  "minimum": 0
                 }
               },
               "required": [
@@ -3886,6 +4017,35 @@
             "type",
             "params"
           ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": {
+              "const": "project.remove"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "cwd": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "cwd"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "type",
+            "params"
+          ]
         }
       ]
     },
@@ -4227,6 +4387,29 @@
           },
           "required": [
             "type"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "project.removed"
+            },
+            "sessionIds": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "cwd": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "type",
+            "sessionIds"
           ]
         }
       ]

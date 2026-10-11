@@ -93,8 +93,7 @@ public extension CodeLinkRemoteModel {
         return out
     }
 
-    /// Opens the empty thread on the selected Mac: the last folder used there
-    /// (or its newest session's), and the last model, effort and mode.
+    /// Opens a projectless draft, retaining only the last model, effort and mode.
     func beginNewSession(keepingAttachments: Bool = false) {
         let kept = keepingAttachments ? draftAttachments : []
         if openSessionID != nil { close() }
@@ -105,7 +104,7 @@ public extension CodeLinkRemoteModel {
         threadDiff = []
         turnDiff = []
         browser = CodeLinkFolderBrowser(sharedFolders: selectedMac?.info?.sharedFolders ?? [])
-        newSession = CodeLinkNewSession(cwd: defaultFolder())
+        newSession = CodeLinkNewSession()
         applyingRemote = true
         if let prefs = memory.prefs {
             composer.apply(prefs, catalogue: catalogue)
@@ -132,7 +131,7 @@ public extension CodeLinkRemoteModel {
         newSession = CodeLinkNewSession()
         await select(deviceID)
         browser = CodeLinkFolderBrowser(sharedFolders: selectedMac?.info?.sharedFolders ?? [])
-        newSession?.cwd = defaultFolder()
+
     }
 
     /// A folder for the new session; only inside what the Mac shares.
@@ -201,9 +200,6 @@ public extension CodeLinkRemoteModel {
         let shared = selectedMac?.info?.sharedFolders ?? []
         if browser == nil || browser?.sharedFolders != shared.map(CodeLinkFolderBrowser.normalized), browser?.isAtRoot != false {
             browser = CodeLinkFolderBrowser(sharedFolders: shared)
-        }
-        if newSession?.chosen != true, newSession?.cwd == nil {
-            newSession?.cwd = defaultFolder()
         }
     }
 }

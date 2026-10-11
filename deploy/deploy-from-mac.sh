@@ -140,6 +140,11 @@ UPLOAD_DIR="/tmp/juno-upload-$RUN_ID"
 
 say "Shared migration gate on isolated local Postgres"
 bash scripts/local-gates.sh --migrations-only "$SHA"
+WEB_GATES_VERIFIED=0
+if [ "$SKIP_CHECKS" != 1 ] && node scripts/gate-stamp.mjs check "$SHA"; then
+  WEB_GATES_VERIFIED=1
+fi
+
 
 # —— Production env for the build ———————————————————————————————————————————
 # Next.js bakes NEXT_PUBLIC_* values into the build, so it has to see the real
@@ -163,6 +168,14 @@ git archive --format=tar "$SHA" | gzip -1 > "$WORK/$ARCHIVE"
 git ls-tree -r -z --name-only "$SHA" > "$WORK/tracked-files"
 shasum -a 256 "$WORK/$ARCHIVE" | cut -d' ' -f1 > "$WORK/$ARCHIVE.sha256"
 
+say "Cached Linux dependencies"
+mkdir -p "$WORK/dependencies"
+git archive "$SHA" package.json package-lock.json prisma runner/agent-core/package.json runner/agent-core/package-lock.json runner/env-server/package.json runner/env-server/package-lock.json relay/package.json relay/package-lock.json deploy/deploy-deps.Dockerfile | tar -x -C "$WORK/dependencies"
+# Bound only the builder cache. Never remove another application's images or volumes.
+docker builder prune --force --keep-storage 15GB >/dev/null
+DEPS_IMAGE=juno-deploy-deps:latest
+DOCKER_BUILDKIT=1 docker build --platform linux/amd64 --build-arg "NODE_IMAGE=$IMAGE" --build-arg "BUILD_ROOT=$BUILD_ROOT" -f "$WORK/dependencies/deploy/deploy-deps.Dockerfile" -t "$DEPS_IMAGE" "$WORK/dependencies"
+
 say "Checks and build in a linux/amd64 container ($([ "$SKIP_CHECKS" = 1 ] && echo 'EMERGENCY: gates SKIPPED except security' || echo 'with checks'))"
 build_start=$SECONDS
 # Everything the container prints goes to stderr (your terminal); the build
@@ -174,23 +187,19 @@ docker run --rm -i --platform linux/amd64 \
   -v juno-npm-cache:/root/.npm \
   -v "$WORK/build.env:/run/juno-build.env:ro" \
   -v "$WORK/tracked-files:/run/juno-tracked-files:ro" -e JUNO_TRACKED_FILES=/run/juno-tracked-files \
-  -e JUNO_EMERGENCY_SKIP_GATES="$SKIP_CHECKS" -e CI=1 -e BUILD_ROOT="$BUILD_ROOT" \
-  "$IMAGE" bash -c '
+  -e JUNO_WEB_GATES_VERIFIED="$WEB_GATES_VERIFIED" -e JUNO_EMERGENCY_SKIP_GATES="$SKIP_CHECKS" -e CI=1 -e BUILD_ROOT="$BUILD_ROOT" \
+  "$DEPS_IMAGE" bash -c '
     set -Eeuo pipefail
     exec 3>&1 1>&2
     step() { printf "\n\033[1;36m--> %s\033[0m\n" "$*"; }
     mkdir -p "$BUILD_ROOT" && cd "$BUILD_ROOT" && gzip -cd | tar -x
-    step "npm ci"
-    npm ci --no-audit --no-fund
     step "vendored runner core"
-    npm ci --prefix runner/agent-core --no-audit --no-fund
     npm run build --prefix runner/agent-core
-    step "Code env server dependencies"
-    npm ci --prefix runner/env-server --no-audit --no-fund
-    step "relay dependencies"
-    npm ci --prefix relay --no-audit --no-fund
     if [ "${JUNO_EMERGENCY_SKIP_GATES:-0}" = "1" ]; then
       step "EMERGENCY: shared gates skipped; the security check still runs"
+      npm run security:check
+    elif [ "${JUNO_WEB_GATES_VERIFIED:-0}" = "1" ]; then
+      step "verified web gates reused; security still runs"
       npm run security:check
     else
       step "shared local gates"
@@ -201,7 +210,6 @@ docker run --rm -i --platform linux/amd64 \
     npm run build
     rm -f .env
     step "voice relay"
-    npm ci --prefix relay --no-audit --no-fund
     npm test --prefix relay
     npm run build --prefix relay
     step "packaging"
@@ -210,6 +218,13 @@ docker run --rm -i --platform linux/amd64 \
         -czf - .next node_modules relay/node_modules relay/dist \
         runner/agent-core/node_modules runner/agent-core/dist >&3
   ' < "$WORK/$ARCHIVE" > "$WORK/$ARTIFACT" || die "build failed — nothing was sent to the server"
+# A full container gate pass is certified only for this unchanged, clean source.
+# Migration replay ran before entering the container. Emergency builds never stamp.
+if [ "$SKIP_CHECKS" != 1 ] && [ "$WEB_GATES_VERIFIED" != 1 ]; then
+  node scripts/gate-stamp.mjs record "$SHA" || true
+fi
+docker image prune --force --filter label=com.alevr.deploy.dependencies=true >/dev/null
+docker builder prune --force --keep-storage 15GB >/dev/null
 shasum -a 256 "$WORK/$ARTIFACT" | cut -d' ' -f1 > "$WORK/$ARTIFACT.sha256"
 echo "Built in $(elapsed "$build_start"): $(du -h "$WORK/$ARTIFACT" | cut -f1) artifact"
 

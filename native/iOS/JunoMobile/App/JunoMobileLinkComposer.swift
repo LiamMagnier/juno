@@ -388,6 +388,7 @@ struct JunoMobileLinkProjectPanel: View {
   let close: () -> Void
 
   private var browser: CodeLinkFolderBrowser? { model.browser }
+  @State private var removingProject: String?
 
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
@@ -454,6 +455,13 @@ struct JunoMobileLinkProjectPanel: View {
     }
     .padding(.vertical, JunoSpace.snug)
     .accessibilityIdentifier("juno.mobile.link-project-panel")
+    .alert("Remove project from Alevr?", isPresented: Binding(get: { removingProject != nil }, set: { if !$0 { removingProject = nil } })) {
+      Button("Cancel", role: .cancel) { removingProject = nil }
+      Button("Remove", role: .destructive) {
+        guard let path = removingProject else { return }
+        Task { if await model.removeProject(cwd: path) { close() } }
+      }
+    } message: { Text("Running sessions will stop and their records will be removed. The folder stays on your Mac.") }
   }
 
   private func heading(_ text: String) -> some View {
@@ -490,6 +498,11 @@ struct JunoMobileLinkProjectPanel: View {
       .buttonStyle(.plain)
       .accessibilityLabel("Folders inside \(name)")
       .padding(.trailing, JunoSpace.snug)
+    }
+    .contextMenu {
+      if model.selectedMac?.info?.sharedFolders.contains(path) == true {
+        Button("Remove from Alevr…", role: .destructive) { removingProject = path }
+      }
     }
   }
 
@@ -657,6 +670,7 @@ struct JunoMobileLinkComposerControls: View {
     .frame(minWidth: 44, minHeight: 44)
     .accessibilityLabel("Model, \(model.composer.modelLabel(in: catalogue))")
     .accessibilityIdentifier("juno.mobile.link-model")
+    .simultaneousGesture(TapGesture().onEnded { Task { await model.refreshSubscriptions() } })
   }
 
   /// "Opus 5.5" on the chip; the lab lives in the menu, effort on the gauge.

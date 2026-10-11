@@ -134,7 +134,7 @@ function Checklist({ steps }: { steps: { text: string; status: string }[] }) {
   );
 }
 
-function lineFor(item: TurnItem, now: number, openDock?: (r: DockRequest) => void): LogLine | null {
+export function lineFor(item: TurnItem, now: number, openDock?: (r: DockRequest) => void): LogLine | null {
   const row = describeItem(item, now);
   if (!row) return null;
   const live = row.tone === "running";
@@ -185,7 +185,7 @@ function lineFor(item: TurnItem, now: number, openDock?: (r: DockRequest) => voi
   }
 }
 
-function LogRow({ line, forceOpen, onOpenDock }: { line: LogLine; forceOpen: boolean; onOpenDock?: (r: DockRequest) => void }) {
+export function LogRow({ line, forceOpen, onOpenDock }: { line: LogLine; forceOpen: boolean; onOpenDock?: (r: DockRequest) => void }) {
   const [open, setOpen] = React.useState(false);
   const shown = (open || forceOpen) && line.expand;
   const clickable = !!line.expand || !!line.open;
@@ -306,7 +306,7 @@ function TeamGroup({ items, props, forceOpen }: { items: SubagentItem[]; props: 
                 props.onOpenDock?.({ tab: "agents", target: a.agentId });
               }}
             >
-              <span className="who">{a.label ?? (a.role === "explorer" ? "Explorer" : a.role === "reviewer" ? "Reviewer" : a.role === "architect" ? "Architect" : "Worker")}</span>
+              <span className="who">{a.title ?? a.task?.split("\n")[0] ?? a.label ?? "Agent"}</span>
               <span className={cn("what", step.needs && "cv2-sig", a.status === "running" && "cv2-shine")}>{step.text}</span>
               <span className="t">{a.elapsedMs !== undefined ? formatDuration(a.elapsedMs) : ""}</span>
             </button>

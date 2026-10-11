@@ -122,7 +122,7 @@ struct StudioScreenGrantSheet: View {
             ForEach($offers) { $offer in
                 row($offer)
             }
-            Text("For this session only. Alevr never controls itself, password managers or system prompts, and you can press Esc anywhere to stop.")
+            Text("For this run only. Alevr never controls itself, password managers or system prompts, and you can press Esc anywhere to stop.")
                 .font(Studio.Font.meta)
                 .foregroundStyle(Studio.Ink.tertiary)
                 .fixedSize(horizontal: false, vertical: true)

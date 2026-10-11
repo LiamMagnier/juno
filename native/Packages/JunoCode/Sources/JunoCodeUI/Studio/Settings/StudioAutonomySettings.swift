@@ -86,7 +86,7 @@ struct StudioAutonomySettings: View {
             ) { value in update { $0.autoVerify = Self.autoVerify($0.autoVerify, resolved: resolved.autoVerify) { $0.web = value ?? resolved.autoVerify.web } } }
             StudioScopedToggle(
                 title: "Mac apps, through screen control",
-                detail: "Only apps you granted for the session.",
+                detail: "Choose the apps Alevr can control for each run.",
                 scope: scope,
                 value: overrides?.autoVerify?.mac,
                 inherited: resolved.autoVerify.mac

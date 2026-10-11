@@ -151,10 +151,23 @@ public struct StudioThreadView: View {
         case let .plan(_, goal):
             StudioPlanCard(goal: controller.session.goal ?? goal)
                 .accessibilityIdentifier("juno.code.plan")
-        case let .subagent(id, update):
+        case let .subagent(_, update):
             VStack(alignment: .leading, spacing: JunoSpace.tight) {
-                StudioSubagentRow(update: update, isExpanded: binding(id))
-                StudioSubagentControls(controller: controller, update: update)
+                Button {
+                    controller.inspectedSubagentID = update.agentID
+                } label: {
+                    HStack(spacing: JunoSpace.snug) {
+                        JunoIconView(.agents, size: 14)
+                        Text(update.title).lineLimit(1)
+                        Spacer()
+                        Text(StudioSubagentFormat.label(update.status)).font(Studio.Font.meta)
+                    }
+                    .foregroundStyle(update.status.isTerminal ? Studio.Ink.secondary : Studio.Ink.accent)
+                    .padding(.vertical, JunoSpace.snug)
+                    .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+                .help("Open the agent's full trace")
             }
         case let .tests(_, run):
             StudioTestsRow(run: run)

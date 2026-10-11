@@ -32,7 +32,7 @@ import type {
 } from "../contracts/code-v2.js";
 import { RUNTIME_MODE_VENDOR_MAP } from "../contracts/code-v2.js";
 import { JsonRpcError, JsonRpcStdio } from "./jsonrpc-stdio.js";
-import { classifyUsageLimit, earliestExhaustedReset, normalizeReset } from "./limits.js";
+import { classifyUsageLimit, earliestExhaustedReset, normalizeReset, usageRetryAfterMs } from "./limits.js";
 import { codexSetup } from "./presets.js";
 import { commandGuardReason, isOutside } from "./full-access-guard.js";
 import { readVersion } from "./detect.js";
@@ -141,7 +141,7 @@ export class CodexAdapter implements ProviderAdapter {
       };
       result.models = await listModels(rpc).catch(() => undefined);
       if (!result.models) delete result.models;
-      const limits = await rpc.request<Record<string, unknown>>("account/rateLimits/read", {}).catch(() => undefined);
+      const limits = await rpc.request<Record<string, unknown>>("account/rateLimits/read", {}).catch((error) => { result.retryAfterMs = usageRetryAfterMs(error); return undefined; });
       const windows = limits ? codexLimitWindows(limits.rateLimits as Record<string, unknown> | undefined) : [];
       if (windows.length) result.limits = windows;
       const reset = earliestExhaustedReset(windows);

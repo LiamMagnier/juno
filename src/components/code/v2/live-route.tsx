@@ -234,6 +234,12 @@ export function CodeV2Route({ conversation, initialMessages }: CodeV2RouteProps)
   };
 
   const actions: WorkspaceModel["actions"] = {
+    ...(useEnv && env.client && env.view && env.instances.some((i) => i.id === env.view!.selection.instanceId && (i.kind === "alevr" || i.kind === "byok")) ? {
+      messageAgent: (agentId: string, text: string) => {
+        void env.client!.request("agent.message", { sessionId: env.view!.id, agentId, text }).then((r) => { if (!r.accepted) toast.error(r.message ?? "This agent cannot receive a message right now."); }).catch((e) => toast.error(e.message));
+      },
+      stopAgent: (agentId: string) => { void env.client!.request("agent.interrupt", { sessionId: env.view!.id, agentId }).catch((e) => toast.error(e.message)); },
+    } : {}),
     async send(text) {
       if (useEnv && env.client) {
         const sessionId = await ensureEnvSession();
@@ -467,6 +473,7 @@ export function CodeV2Route({ conversation, initialMessages }: CodeV2RouteProps)
       byok={byok}
       firstRun={!instances.some((i) => i.kind !== "alevr" && (i.status === "ready" || i.status === "limited")) && !keys.length && session.messages.length === 0}
       onProbe={env.ready ? env.probe : undefined}
+      onRefreshSubscriptions={env.refreshSubscriptions}
       onManaged={
         env.ready && env.client
           ? (instanceId, op) => {

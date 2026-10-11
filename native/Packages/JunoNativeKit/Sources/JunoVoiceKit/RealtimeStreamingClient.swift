@@ -1275,3 +1275,20 @@ public actor RealtimeStreamingClient {
         }
     }
 }
+
+
+/// Speaker-aware onset for the local interrupt control. Residual playback is
+/// louder than room noise even with voice processing enabled; that flag alone
+/// cannot establish that three loud frames belong to the person.
+public struct RealtimeBargeInGate: Equatable, Sendable {
+    private var detector = RealtimeVoiceActivityDetector(onsetFrames: 7)
+    public init() {}
+    public mutating func reset() { detector.reset() }
+    public mutating func observe(microphone: Double, playback: Double) -> Bool {
+        // About 230 ms of distinct near-end speech. Reset the onset when the
+        // microphone follows the speaker instead of carrying a stronger voice.
+        let threshold = max(0.46, min(0.85, playback + 0.10))
+        guard microphone >= threshold else { detector.reset(); return false }
+        return detector.observe(loudness: microphone) == .began
+    }
+}

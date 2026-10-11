@@ -530,6 +530,24 @@ public final class SessionController {
     /// only the step-by-step ticker is transient, which is the correct lifetime
     /// for a sentence that is only true for four seconds.
     public var subagentActivity: [CodeSessionID: String] { subagentIndex.activity }
+    public var inspectedSubagentID: String?
+    public var delegatedAgents: [SubagentUpdateEvent] {
+        SubagentDigest.runs(in: events).map { run in
+            SubagentUpdateEvent(agentID: run.agentID, toolCallID: run.toolCallID, childSessionID: run.childSessionID,
+                title: run.title, task: run.task, role: run.role ?? .explorer, executionMode: run.executionMode,
+                status: run.status, currentActivity: run.currentActivity, startedAt: run.startedAt,
+                completedAt: run.completedAt, inputTokens: run.inputTokens, outputTokens: run.outputTokens,
+                summary: run.summary, error: run.error)
+        }
+    }
+
+    public func messageSubagent(_ childID: CodeSessionID, text: String) async -> Bool {
+        guard let live else { return false }
+        let message = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !message.isEmpty, message.count <= 8_000 else { return false }
+        return await live.subagentControls.message(childSessionID: childID, ownedBy: sessionID, text: message)
+    }
+
     public var composerText = ""
     /// Delivery semantics for text submitted while the execution is active.
     /// Outside an active run every message starts a normal turn.

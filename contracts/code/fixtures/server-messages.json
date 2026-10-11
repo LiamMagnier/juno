@@ -45,6 +45,8 @@
     { "type": "event", "stream": "session", "sessionId": "s1", "sequence": 51, "at": "2026-10-10T20:00:00Z", "event": { "type": "session.skills", "skills": [{ "name": "design-taste-frontend", "source": "user", "path": "/Users/me/.claude/skills/design-taste-frontend/SKILL.md" }, { "name": "tidy-commits", "source": "account", "title": "Tidy commits", "instructions": "Squash fixups before a PR." }] } },
     { "type": "event", "stream": "session", "sessionId": "s1", "sequence": 52, "at": "2026-10-10T20:00:01Z", "event": { "type": "session.skills", "skills": [] } },
     { "type": "event", "stream": "global", "sequence": 9, "at": "2026-10-10T20:00:02Z", "event": { "type": "skills.updated" } },
-    { "type": "event", "stream": "global", "sequence": 10, "at": "2026-10-10T20:00:03Z", "event": { "type": "skills.updated", "cwd": "/repo" } }
+    { "type": "event", "stream": "global", "sequence": 10, "at": "2026-10-10T20:00:03Z", "event": { "type": "skills.updated", "cwd": "/repo" } },
+    { "type": "event", "stream": "global", "sequence": 11, "at": "2026-10-11T09:00:00Z", "event": { "type": "project.removed", "cwd": "/repo", "sessionIds": ["s1", "s2"] } },
+    { "type": "event", "stream": "global", "sequence": 12, "at": "2026-10-11T09:00:01Z", "event": { "type": "project.removed", "sessionIds": [] } }
   ]
 }

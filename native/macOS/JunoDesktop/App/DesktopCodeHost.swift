@@ -457,6 +457,7 @@ final class DesktopCodeHostModel {
     /// the workbench loads its grants asynchronously well after sign-in: a copy
     /// taken when the beat starts is always empty, and an empty list is what
     /// makes the phone show this Mac with nothing to run in.
+    private weak var projectWorkbench: WorkbenchModel?
     private(set) var workspaces: [NativeCodeDevice.Workspace] = []
 
     /// Whether a task dispatched at this Mac would actually be picked up. It
@@ -657,8 +658,12 @@ final class DesktopCodeHostModel {
                 guard let self else { return false }
                 return self.servesQueuedTasks && self.sharesTerminalRemotely
             },
-            hostHandler: { [responder = hostResponder] type, params in
-                try await responder.handle(type, params)
+            hostHandler: { [weak self, responder = hostResponder] type, params in
+                if type == .projectRemove {
+                    guard let self else { throw CodeV2.WireError(code: .notReady, message: "This Mac is not ready.") }
+                    return try await self.removeLinkedProject(params)
+                }
+                return try await responder.handle(type, params)
             },
             perform: { method, path, body in
                 let request = try NativeBearerRequest(
@@ -849,6 +854,16 @@ final class DesktopCodeHostModel {
     /// Connects both remote protocols to the authenticated account's real
     /// Workbench. Called after bootstrap composition and cleared before sign-out.
     func connect(workbench: WorkbenchModel) {
+        projectWorkbench = workbench
+        workbench.removeRemoteProject = { [weak self] record in
+            guard let self, let accountID = self.accountID, let sender = self.linkSender else { return }
+            let body = try JSONEncoder().encode(["cwd": record.descriptor.localPathHint, "key": record.id.value])
+            let response = try await sender.send(NativeBearerRequest(path: "/api/code/workspaces/remove", method: .post,
+                headers: HTTPHeaders(["content-type": "application/json"]), body: body), for: accountID)
+            guard (200..<300).contains(response.statusCode) else {
+                throw CodeV2.WireError(code: .conflict, message: "Could not remove the synced project records (\(response.statusCode)). Try again once running sessions stop.")
+            }
+        }
         let bridge = WorkbenchRemoteBridge(
             model: workbench,
             sharedWorkspaceIDs: {
@@ -987,6 +1002,22 @@ final class DesktopCodeHostModel {
         workspaces = advertisable
         guard accountID != nil else { return }
         Task { await register() }
+    }
+
+    private func removeLinkedProject(_ params: JSONValue) async throws -> JSONValue {
+        guard let cwd = params["cwd"]?.stringValue, let workbench = projectWorkbench,
+            let record = workbench.workspaces.first(where: {
+                URL(fileURLWithPath: $0.descriptor.localPathHint).standardizedFileURL.resolvingSymlinksInPath().path
+                    == URL(fileURLWithPath: cwd).standardizedFileURL.resolvingSymlinksInPath().path
+            }), workspaces.contains(where: { $0.path == record.descriptor.localPathHint }) else {
+            throw CodeV2.WireError(code: .notFound, message: "This project is no longer shared by this Mac.")
+        }
+        let ids = try await EnvServerHub.shared.removeProject(cwd: cwd)
+        guard await workbench.removeProject(id: record.id) else {
+            throw CodeV2.WireError(code: .internal, message: workbench.lastError ?? "Could not remove this project.")
+        }
+        setWorkspaces(from: workbench.workspaces)
+        return .object(["sessionIds": .array(ids.map(JSONValue.string))])
     }
 
     // MARK: Internals

@@ -959,6 +959,7 @@
           "status": "planned",
           "note": "Steer a running cloud task."
         },
+        "/api/code/workspaces/remove": "native",
         "/api/code/workspaces": {
           "status": "planned",
           "note": "The app is meant to mirror its Code workspaces here so the web's Code tab lists them; native Code does not yet."

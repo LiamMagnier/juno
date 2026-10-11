@@ -392,7 +392,7 @@ public struct StudioSessionView: View {
                     model: v2.composer, directory: v2.directory, isEnabled: !isBusy,
                     threadTokens: controller.contextTokens ?? 0, computerUse: computerUseBinding,
                     openConnections: v2.openConnections, setup: v2.setup,
-                    skills: skills
+                    skills: skills, refreshSubscriptions: v2.refreshSubscriptions
                 )
                     .codeV2TeamScope(session: controller.sessionID.value, project: controller.workspaceDisplayName)
                     .onChange(of: v2.composer.selection) { _, _ in syncV2(v2.composer) }

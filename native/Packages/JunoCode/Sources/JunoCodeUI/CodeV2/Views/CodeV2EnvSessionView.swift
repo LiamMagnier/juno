@@ -96,6 +96,9 @@ public struct CodeV2EnvSessionView: View {
             skills.onSelectionChange = { [weak thread] selection in await thread?.selectSkills(selection) }
             if thread.state.cursor != nil { skills.applyRemote(thread.snapshot.skills) }
         }
+        .onChange(of: snapshot.items.compactMap { item -> String? in if case let .subagent(agent) = item { agent.agentId } else { nil } }) { previous, next in
+            if next.contains(where: { !previous.contains($0) }), dock?.isOpen != true { dock?.show(.agents) }
+        }
         .onChange(of: session.snapshot.skills) { _, remote in
             if session.state.cursor != nil { skills.applyRemote(remote) }
         }
@@ -158,6 +161,12 @@ public struct CodeV2EnvSessionView: View {
                     .lineLimit(1)
                     .accessibilityAddTraits(.isHeader)
                 composerView
+                if let message = session.lastError {
+                    Text(message)
+                        .studioType(.text)
+                        .foregroundStyle(Studio.Ink.danger)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
             .frame(maxWidth: Studio.Metrics.measure)
             .padding(.horizontal, Studio.Metrics.gutter)
@@ -306,7 +315,7 @@ public struct CodeV2EnvSessionView: View {
                 model: composer, directory: directory, isEnabled: enabled,
                 threadTokens: snapshot.usage?.contextTokens ?? 0,
                 openConnections: openConnections, setup: setup,
-                skills: skills
+                skills: skills, refreshSubscriptions: { session.refreshSubscriptions() }
             )
             .codeV2TeamScope(session: session.sessionId, project: (snapshot.cwd as NSString).lastPathComponent)
         } trailing: {
@@ -332,24 +341,33 @@ public struct CodeV2EnvSessionView: View {
             Task {
                 let active = await skills.takeActivations()
                 await session.queue(text, skills: active)
+                if session.lastError != nil { restoreDraft(text) }
             }
         } else {
             Task {
                 let active = await skills.takeActivations()
-                await session.send(
+                let accepted = await session.send(
                     text, selection: composer.selection, routing: composer.routing,
                     runtimeMode: composer.runtimeMode, interactionMode: composer.interactionMode,
                     skills: active
                 )
+                if !accepted { restoreDraft(text) }
             }
         }
+    }
+
+    private func restoreDraft(_ text: String) {
+        composer.draft = composer.draft.isEmpty ? text : text + "\n\n" + composer.draft
     }
 
     private func steer() {
         let text = composer.draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         composer.draft = ""
-        Task { await session.steer(text) }
+        Task {
+            await session.steer(text)
+            if session.lastError != nil { restoreDraft(text) }
+        }
     }
 }
 

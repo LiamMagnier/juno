@@ -221,9 +221,10 @@ final class CodeLinkRemoteModelTests: XCTestCase {
         model.beginNewSession()
         XCTAssertTrue(model.isDraftingNewSession)
         XCTAssertTrue(model.showsThread)
-        XCTAssertEqual(model.newSession?.cwd, "/Users/me/code/shop", "the newest session's folder")
+        XCTAssertNil(model.newSession?.cwd, "new drafts never inherit a folder")
         model.chooseNewSessionFolder("/etc")
-        XCTAssertEqual(model.newSession?.cwd, "/Users/me/code/shop", "never outside the shared folders")
+        XCTAssertNil(model.newSession?.cwd, "never outside the shared folders")
+        model.chooseNewSessionFolder("/Users/me/code/shop")
         model.composer.runtimeMode = .full
         model.attach([CodeLinkDraftAttachment(name: "shot.png", mediaType: "image/png", data: Data([1, 2, 3]))])
         model.draft = "Make the cart faster"
@@ -260,7 +261,7 @@ final class CodeLinkRemoteModelTests: XCTestCase {
         XCTAssertFalse(model.showsThread)
         model.composer.runtimeMode = .ask
         model.beginNewSession()
-        XCTAssertEqual(model.newSession?.cwd, "/Users/me/code/shop")
+        XCTAssertNil(model.newSession?.cwd)
         XCTAssertEqual(model.composer.runtimeMode, .full)
     }
 
@@ -271,6 +272,7 @@ final class CodeLinkRemoteModelTests: XCTestCase {
         await model.refreshMacs()
         await model.select("mac1")
         model.beginNewSession()
+        model.chooseNewSessionFolder("/Users/me/code/shop")
         let id = await model.startNewSession("Try this")
         XCTAssertNil(id)
         XCTAssertTrue(model.isDraftingNewSession)

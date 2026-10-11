@@ -172,6 +172,8 @@ public struct CodeLinkRemoteState: Equatable, Sendable {
             terminals[terminalId] = screen
         case let .terminalExited(terminalId, exitCode):
             exitedTerminals[terminalId] = exitCode
+        case let .projectRemoved(_, sessionIds):
+            removeSessions(sessionIds)
         case let .providerUpdated(instance):
             providerUpdates[instance.id] = instance
         default:
@@ -188,6 +190,10 @@ public struct CodeLinkRemoteState: Equatable, Sendable {
         if let cursor = thread.cursor { summary.lastSequence = max(summary.lastSequence, cursor) }
         if Self.date(at) > Self.date(summary.updatedAt) { summary.updatedAt = at }
         sessions[id] = summary
+    }
+
+    public mutating func removeSessions(_ ids: [String]) {
+        for id in ids { sessions[id] = nil; threads[id] = nil }
     }
 
     /// A terminal the phone opened starts with an empty screen.

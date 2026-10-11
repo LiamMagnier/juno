@@ -2,6 +2,20 @@ import XCTest
 @testable import JunoDesignSystem
 
 final class JunoMarkdownTests: XCTestCase {
+    func testIncrementalMatchesEveryCharacterIncludingMutableTablesAndFences() {
+        let documents = ["# Résumé\n\nHello 👋\nworld\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n\n```swift\nlet x = 1\n\nprint(x)\n```\n\n> quote\n> more\n\n- one\n- two\n\n$$x^2\n+ y^2$$\n\nend", "~~~\n```\n~~~\n\n1. a\n2. b"]
+        for document in documents {
+            var parser = JunoIncrementalMarkdown()
+            var growing = ""
+            for character in document {
+                growing.append(character)
+                XCTAssertEqual(parser.update(growing), JunoMarkdown.blocks(from: growing), "At \(growing)")
+            }
+            XCTAssertLessThan(parser.lastParsedCharacters, document.count)
+            XCTAssertEqual(parser.update("replacement"), [.paragraph("replacement")])
+        }
+    }
+
     // MARK: - Paragraphs
 
     func testConsecutiveLinesJoinIntoOneParagraph() {

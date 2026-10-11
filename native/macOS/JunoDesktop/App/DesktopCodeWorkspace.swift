@@ -199,7 +199,14 @@ struct DesktopCodeWorkspace: View {
     /// in its composer. The thread keeps its place in the sidebar; from here
     /// on the vendor's own agent runs it.
     private func handOff(_ controller: SessionController, text: String) {
-        guard let cwd = controller.context?.access.rootURL.path else { return }
+        let cwd: String
+        do {
+            cwd = try workbenchModel.subscriptionDirectory(for: controller).path
+        } catch {
+            controller.composerText = text
+            codeToasts.post(.error("Could not prepare this chat's folder: \(error.localizedDescription)"))
+            return
+        }
         // Skills lane: the thread's skills (and a /name one) go with it.
         let skills = controller.selectedSkills + controller.onceSkills
         controller.onceSkills = []
@@ -210,19 +217,25 @@ struct DesktopCodeWorkspace: View {
         )
         envBindings.bind(controller.sessionID.value, to: binding)
         let session = envSession(binding)
+        let choice = v2Composer.selection
+        let routing = v2Composer.routing
+        let runtimeMode = v2Composer.runtimeMode
+        let interactionMode = v2Composer.interactionMode
+        v2Composer.draft = text
+        CodeSkillsModel.remember(skills, thread: session.sessionId)
         Task {
-            await session.open()
+            guard await session.open() else { return }
             if session.sessionId != binding.envSessionId {
                 var opened = binding
                 opened.envSessionId = session.sessionId
                 envBindings.bind(controller.sessionID.value, to: opened)
             }
             CodeSkillsModel.remember(skills, thread: session.sessionId)
-            await session.send(
-                text, selection: v2Composer.selection, routing: v2Composer.routing,
-                runtimeMode: v2Composer.runtimeMode, interactionMode: v2Composer.interactionMode,
-                skills: skills
+            let accepted = await session.send(
+                text, selection: choice, routing: routing,
+                runtimeMode: runtimeMode, interactionMode: interactionMode, skills: skills
             )
+            if accepted, v2Composer.draft == text { v2Composer.draft = "" }
         }
     }
 
@@ -300,7 +313,7 @@ struct DesktopCodeWorkspace: View {
         default:
             break
         }
-        return workbenchModel.workspaces.first
+        return nil
     }
 
     private var title: String {
@@ -493,6 +506,16 @@ struct DesktopCodeWorkspace: View {
             // the session and keeps running (PV-1).
             previewTarget = nil
         }
+        .onChange(of: controller?.delegatedAgents.count) { old, count in
+            guard (count ?? 0) > (old ?? 0), !panelVisible else { return }
+            panelTab.wrappedValue = .agents
+            panelVisible = true
+        }
+        .onChange(of: controller?.inspectedSubagentID) { _, id in
+            guard id != nil else { return }
+            panelTab.wrappedValue = .agents
+            panelVisible = true
+        }
         .onChange(of: controller?.review.isPresented) { _, presented in
             // The thread's "Review" actions set the review's flag; here that
             // means the side panel, on its Changes tab.
@@ -615,7 +638,7 @@ struct DesktopCodeWorkspace: View {
             if isBootstrapping {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                landing(workbenchModel.workspaces.first)
+                landing(nil)
             }
         }
     }
@@ -640,6 +663,7 @@ struct DesktopCodeWorkspace: View {
                 directory: v2Directory,
                 handoff: { _ in },
                 openConnections: openConnections,
+                refreshSubscriptions: { envHub.requestRefresh() },
                 setup: { id, action in Task { await envHub.openSetup(for: id, action: action) } }
             ),
             speech: speech,
@@ -661,6 +685,7 @@ struct DesktopCodeWorkspace: View {
                 directory: v2Directory,
                 dock: envDock,
                 openConnections: openConnections,
+                refreshSubscriptions: { envHub.requestRefresh() },
                 setup: { id, action in Task { await envHub.openSetup(for: id, action: action) } },
                 place: CodeV2SessionPlace(
                     project: controller.workspaceDisplayName,
@@ -700,6 +725,7 @@ struct DesktopCodeWorkspace: View {
                 directory: v2Directory,
                 handoff: { text in handOff(controller, text: text) },
                 openConnections: openConnections,
+                refreshSubscriptions: { envHub.requestRefresh() },
                 setup: { id, action in Task { await envHub.openSetup(for: id, action: action) } },
                 subagentProviders: { subagentProviders(for: controller) }
             )
@@ -1043,11 +1069,7 @@ struct DesktopCodeWorkspace: View {
     }
 
     private func newSession() {
-        if let record = targetRepository {
-            selection.wrappedValue = .repository(record.id)
-        } else {
-            selection.wrappedValue = .draft
-        }
+        selection.wrappedValue = .draft
     }
 
     private func consume(_ request: DesktopWorkbenchRegistry.Request) {

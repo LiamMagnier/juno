@@ -195,7 +195,7 @@ public struct DelegateTaskTool: CodeTool {
        Pass `tasks` with up to \(perCallLimit) genuinely independent \
        investigations to run them concurrently (\(concurrency) at a \
        time) and get every answer back in one call; pass `task` for a single one. Each \
-       sub-agent starts with a fresh context, so its instruction must be self-contained, \
+       sub-agent starts with a fresh context, so its instruction must include the goal, constraints, owned files and verification expected, \
        and it cannot delegate further. \
         Name an `agent` to give the task a role: `explorer` (read-only \
         search), `reviewer` (reviews a diff and answers in JSON), `verifier` \
@@ -239,7 +239,7 @@ public struct DelegateTaskTool: CodeTool {
                     "enum": .array(SubagentExecutionMode.allCases.map { .string($0.rawValue) }),
                     "description": "read_only (default) or workspace_write in an isolated worktree",
                 ],
-                "title": ["type": "string", "description": "Short imperative title"],
+                "title": ["type": "string", "description": "Concise purpose, such as Audit subscription startup. Avoid generic names such as Worker 1."],
             ],
         ]
         return [

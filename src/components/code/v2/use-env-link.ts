@@ -39,6 +39,7 @@ export interface EnvLink {
   /** Open (or resume) the session; resolves with its id. */
   open(params: ClientCommandParams["session.open"]): Promise<string>;
   probe(instanceId: string): Promise<ProviderInstance | void>;
+  refreshSubscriptions(): Promise<void>;
   openTerminal(cwd: string, command?: string, title?: string): Promise<string | void>;
   writeTerminal(terminalId: string, data: string): void;
   resizeTerminal(terminalId: string, cols: number, rows: number): void;
@@ -69,6 +70,8 @@ export function useEnvLink(device: { id: string; online: boolean } | null, initi
   const [sessionId, setSessionId] = React.useState<string | null>(initialSessionId);
   const [skillsRevision, setSkillsRevision] = React.useState(0);
   const sub = React.useRef<SessionSubscription | null>(null);
+  const refreshNow = React.useRef<() => Promise<void>>(async () => {});
+  const checking = React.useRef(new Set<string>());
   const deviceId = device?.id ?? null;
   const online = !!device?.online;
 
@@ -83,6 +86,40 @@ export function useEnvLink(device: { id: string; online: boolean } | null, initi
     if (transport instanceof DeviceLinkTransport) transport.followGlobal();
     const c = new EnvClient(transport, { timeoutMs: endpoint.kind === "socket" ? 15_000 : 25_000 });
     let live = true;
+    let refreshing = false;
+    let failures = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const schedule = () => {
+      clearTimeout(timer);
+      if (!live || document.visibilityState === "hidden") return;
+      timer = setTimeout(() => void refresh(), 60_000 * Math.min(10, 2 ** Math.max(0, failures - 1)));
+    };
+    const refresh = async () => {
+      if (!live || refreshing || document.visibilityState === "hidden") return;
+      refreshing = true;
+      clearTimeout(timer);
+      try {
+        const list = await c.listProviders();
+        for (const instance of list) {
+          if (instance.kind === "alevr" || instance.kind === "byok" || checking.current.has(instance.id)) continue;
+          checking.current.add(instance.id);
+          try {
+            const { instance: fresh } = await c.request("provider.probe", { instanceId: instance.id, maxAgeMs: 30_000 });
+            if (live) setInstances((rows) => [...rows.filter((i) => i.id !== fresh.id), fresh]);
+            if (fresh.status === "error") throw new Error("Provider check failed");
+          } finally { checking.current.delete(instance.id); }
+        }
+        failures = 0;
+      } catch { failures = Math.min(5, failures + 1); }
+      finally { refreshing = false; schedule(); }
+    };
+    refreshNow.current = refresh;
+    const activate = () => {
+      clearTimeout(timer);
+      if (document.visibilityState !== "hidden") void refresh();
+    };
+    document.addEventListener("visibilitychange", activate);
+    window.addEventListener("focus", activate);
     const offStatus = c.onStatus((s) => live && setStatus(s));
     const offGlobal = c.onGlobal((env) => {
       if (!live) return;
@@ -100,6 +137,7 @@ export function useEnvLink(device: { id: string; online: boolean } | null, initi
         setInstances(list);
         setReady(true);
         setProbed(true);
+        void refresh();
       })
       .catch(() => {
         if (!live) return;
@@ -109,6 +147,10 @@ export function useEnvLink(device: { id: string; online: boolean } | null, initi
       });
     return () => {
       live = false;
+      clearTimeout(timer);
+      document.removeEventListener("visibilitychange", activate);
+      window.removeEventListener("focus", activate);
+      refreshNow.current = async () => {};
       offStatus();
       offGlobal();
       sub.current?.close();
@@ -144,9 +186,13 @@ export function useEnvLink(device: { id: string; online: boolean } | null, initi
   const probe = React.useCallback(
     async (instanceId: string) => {
       if (!client) throw new Error("Your Mac is not connected.");
-      const { instance } = await client.request("provider.probe", { instanceId });
-      setInstances((list) => [...list.filter((i) => i.id !== instance.id), instance]);
-      return instance;
+      if (checking.current.has(instanceId)) return;
+      checking.current.add(instanceId);
+      try {
+        const { instance } = await client.request("provider.probe", { instanceId });
+        setInstances((list) => [...list.filter((i) => i.id !== instance.id), instance]);
+        return instance;
+      } finally { checking.current.delete(instanceId); }
     },
     [client],
   );
@@ -201,5 +247,7 @@ export function useEnvLink(device: { id: string; online: boolean } | null, initi
     [client],
   );
 
-  return { ready, probed, status, pairingRequired, client, instances, terminals, view, sessionId, skillsRevision, open, probe, openTerminal, writeTerminal, resizeTerminal, closeTerminal };
+  const refreshSubscriptions = React.useCallback(() => refreshNow.current(), []);
+
+  return { refreshSubscriptions, ready, probed, status, pairingRequired, client, instances, terminals, view, sessionId, skillsRevision, open, probe, openTerminal, writeTerminal, resizeTerminal, closeTerminal };
 }

@@ -226,6 +226,18 @@ public extension CodeLinkClient {
         public let files: [String]
     }
     struct InstancesResult: Decodable, Sendable { public let instances: [CodeV2.ProviderInstance] }
+    struct InstanceResult: Decodable, Sendable { public let instance: CodeV2.ProviderInstance }
+    struct RemovedProject: Decodable, Sendable { public let sessionIds: [String] }
+
+    func providerProbe(_ deviceID: String, instanceId: String, maxAgeMs: Int = 30_000) async throws -> CodeV2.ProviderInstance {
+        struct P: Encodable { let instanceId: String; let maxAgeMs: Int }
+        return try await request(.providerProbe, params: P(instanceId: instanceId, maxAgeMs: maxAgeMs), as: InstanceResult.self, to: deviceID).instance
+    }
+
+    func removeProject(_ deviceID: String, cwd: String) async throws -> [String] {
+        struct P: Encodable { let cwd: String }
+        return try await request(.projectRemove, params: P(cwd: cwd), as: RemovedProject.self, to: deviceID).sessionIds
+    }
     struct SkillsResult: Decodable, Sendable { public let skills: [CodeV2.LocalSkillSummary] }
     struct TerminalResult: Decodable, Sendable { public let terminalId: String }
     struct CommitResult: Decodable, Sendable, Equatable { public let sha: String; public let summary: String }

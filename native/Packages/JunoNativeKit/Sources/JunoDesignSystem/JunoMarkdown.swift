@@ -85,7 +85,15 @@ public enum JunoMarkdown {
     /// swallowing the remainder or throwing. Streaming text is therefore always
     /// renderable, just occasionally mid-construct.
     public static func blocks(from source: String) -> [JunoMarkdownBlock] {
+        parse(source).blocks
+    }
+
+    fileprivate static func parse(_ source: String) -> (blocks: [JunoMarkdownBlock], starts: [Int]) {
         var blocks: [JunoMarkdownBlock] = []
+        var starts: [Int] = []
+        var paragraphStart = 0
+        var quoteStart = 0
+        var listLineStart = 0
         var paragraph: [String] = []
         var quote: [String] = []
         var listItems: [JunoMarkdownBlock.Item] = []
@@ -94,16 +102,19 @@ public enum JunoMarkdown {
 
         func flushParagraph() {
             guard !paragraph.isEmpty else { return }
+            starts.append(paragraphStart)
             blocks.append(.paragraph(paragraph.joined(separator: "\n")))
             paragraph.removeAll()
         }
         func flushQuote() {
             guard !quote.isEmpty else { return }
+            starts.append(quoteStart)
             blocks.append(.quote(quote.joined(separator: "\n")))
             quote.removeAll()
         }
         func flushList() {
             guard !listItems.isEmpty else { return }
+            starts.append(listLineStart)
             blocks.append(.list(ordered: listOrdered, start: listStart, items: listItems))
             listItems.removeAll()
         }
@@ -116,6 +127,7 @@ public enum JunoMarkdown {
         let lines = source.components(separatedBy: "\n")
         var index = 0
         while index < lines.count {
+            let blockStart = index
             let line = lines[index]
             let trimmed = line.trimmingCharacters(in: .whitespaces)
 
@@ -137,6 +149,7 @@ public enum JunoMarkdown {
                     body.append(lines[index])
                     index += 1
                 }
+                starts.append(blockStart)
                 blocks.append(
                     .code(
                         language: fence.language,
@@ -154,6 +167,7 @@ public enum JunoMarkdown {
             if let fence = MathFence(line: trimmed) {
                 flushAll()
                 if let body = fence.singleLineBody {
+                    starts.append(blockStart)
                     blocks.append(.math(latex: body, isClosed: true))
                     index += 1
                     continue
@@ -171,6 +185,7 @@ public enum JunoMarkdown {
                     body.append(lines[index])
                     index += 1
                 }
+                starts.append(blockStart)
                 blocks.append(
                     .math(
                         latex: body.joined(separator: "\n")
@@ -189,6 +204,7 @@ public enum JunoMarkdown {
 
             if isThematicBreak(trimmed) {
                 flushAll()
+                starts.append(blockStart)
                 blocks.append(.thematicBreak)
                 index += 1
                 continue
@@ -196,6 +212,7 @@ public enum JunoMarkdown {
 
             if let heading = parseHeading(trimmed) {
                 flushAll()
+                starts.append(blockStart)
                 blocks.append(heading)
                 index += 1
                 continue
@@ -217,6 +234,7 @@ public enum JunoMarkdown {
                     rows.append(splitTableRow(candidate))
                     index += 1
                 }
+                starts.append(blockStart)
                 blocks.append(.table(header: header, rows: rows))
                 continue
             }
@@ -226,6 +244,7 @@ public enum JunoMarkdown {
                 flushList()
                 var body = String(trimmed.dropFirst())
                 if body.hasPrefix(" ") { body.removeFirst() }
+                if quote.isEmpty { quoteStart = index }
                 quote.append(body)
                 index += 1
                 continue
@@ -240,6 +259,7 @@ public enum JunoMarkdown {
                     flushList()
                 }
                 if listItems.isEmpty {
+                    listLineStart = index
                     listOrdered = item.ordered
                     listStart = item.number ?? 1
                 }
@@ -250,11 +270,12 @@ public enum JunoMarkdown {
 
             flushQuote()
             flushList()
+            if paragraph.isEmpty { paragraphStart = index }
             paragraph.append(trimmed)
             index += 1
         }
         flushAll()
-        return blocks
+        return (blocks, starts)
     }
 
     // MARK: - Line classification
@@ -415,5 +436,40 @@ public enum JunoMarkdown {
             ordered: true,
             number: Int(digits)
         )
+    }
+}
+
+
+/// Retains completed blocks and parses only the block that can still change.
+/// Offsets come from the same parser, so fences, tables and Unicode text keep
+/// exactly the whole-document interpretation, even with one-character deltas.
+public struct JunoIncrementalMarkdown: Sendable {
+    private var previous = ""
+    private var committedCharacters = 0
+    private var finished: [JunoMarkdownBlock] = []
+    public private(set) var blocks: [JunoMarkdownBlock] = []
+    public private(set) var lastParsedCharacters = 0
+
+    public init() {}
+
+    @discardableResult
+    public mutating func update(_ source: String) -> [JunoMarkdownBlock] {
+        if source == previous { return blocks }
+        if !source.hasPrefix(previous) { committedCharacters = 0; finished = [] }
+        let tail = String(source.dropFirst(committedCharacters))
+        lastParsedCharacters = tail.count
+        let parsed = JunoMarkdown.parse(tail)
+        blocks = finished + parsed.blocks
+        let lines = tail.components(separatedBy: "\n")
+        // A provisional marker on the next line can merge with the prior
+        // list or turn prose into a table. Commit only at a blank-line boundary.
+        if let lastStart = parsed.starts.last, lastStart > 0,
+            lines[lastStart - 1].trimmingCharacters(in: .whitespaces).isEmpty {
+            let consumed = lines.prefix(lastStart).reduce(0) { $0 + $1.count + 1 }
+            committedCharacters += consumed
+            finished += parsed.blocks.dropLast()
+        }
+        previous = source
+        return blocks
     }
 }

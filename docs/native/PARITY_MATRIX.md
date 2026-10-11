@@ -22,7 +22,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 
 ## Summary
 
-345 routes: 224 native, 53 planned, 55 web only, 13 internal. 50 pages: on the Mac 37 native, 2 partial, 2 planned, 9 web only; on iOS 24 native, 9 partial, 8 planned, 9 web only.
+346 routes: 225 native, 53 planned, 55 web only, 13 internal. 50 pages: on the Mac 37 native, 2 partial, 2 planned, 9 web only; on iOS 24 native, 9 partial, 8 planned, 9 web only.
 
 | Feature | Pages (Mac) | Pages (iOS) | Routes native | Planned | Web only | Internal |
 |---|---|---|---|---|---|---|
@@ -44,7 +44,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 | [Agents](#agents) | 4/4 | 4/4 | 18 | 8 | 1 | 0 |
 | [Research](#research) | 2/2 | 2/2 | 7 | 0 | 0 | 0 |
 | [Voice](#voice) | – | – | 4 | 0 | 3 | 0 |
-| [Juno Code](#code) | 3/5 (+2 partial) | 0/5 (+4 partial) | 26 | 14 | 6 | 0 |
+| [Juno Code](#code) | 3/5 (+2 partial) | 0/5 (+4 partial) | 27 | 14 | 6 | 0 |
 | [Settings, notifications and announcements](#settings) | 3/3 | 3/3 | 12 | 5 | 2 | 0 |
 | [Plans and billing](#billing) | 1/2 | 0/2 | 7 | 0 | 0 | 1 |
 | [Roadmap and Compare](#community) | 0/3 | 0/3 | 0 | 0 | 4 | 0 |
@@ -543,6 +543,7 @@ Owned by the Code rework (`docs/native/code-rework/`), which audits Code's parit
 | `/api/code/tasks/[id]/respond` | POST | Native | JunoCodeKit |  |
 | `/api/code/tasks/[id]/rollback` | POST | Planned |  | Revert a cloud run's change. |
 | `/api/code/tasks/[id]/steer` | POST | Planned |  | Steer a running cloud task. |
+| `/api/code/workspaces/remove` | POST | Native | JunoDesktop |  |
 | `/api/code/workspaces` | GET, PUT | Planned |  | The app is meant to mirror its Code workspaces here so the web's Code tab lists them; native Code does not yet. |
 | `/api/v1/code/devices/[deviceId]` | DELETE | Native | JunoCodeKit |  |
 | `/api/code/routing/[conversationId]` | GET, PUT | Web only |  | Code v2 per-thread role routing (Orchestrate). The Mac keeps routing in its own session state and sends it with each run. |

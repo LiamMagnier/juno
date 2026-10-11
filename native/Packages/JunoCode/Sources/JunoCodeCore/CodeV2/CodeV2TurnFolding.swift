@@ -83,6 +83,7 @@ public enum CodeV2TurnFolding {
         }
 
         for item in items {
+            if item.traceAgentId != nil { continue }
             let date = item.createdDate
             if case let .userMessage(message) = item {
                 if message.delivery == .steer, !turns.isEmpty {

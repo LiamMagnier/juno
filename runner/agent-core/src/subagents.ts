@@ -313,8 +313,8 @@ export function orchestrationToolSpecs(options: OrchestrationToolOptions = {}): 
             items: {
               type: 'object',
               properties: {
-                title: { type: 'string', description: 'Short imperative title' },
-                prompt: { type: 'string', description: 'Complete, self-contained instructions' },
+                title: { type: 'string', description: 'Concise purpose shown in the activity list, for example Audit subscription startup. Use a specific task title rather than Worker 1.' },
+                prompt: { type: 'string', description: 'Complete self-contained brief: objective, owned files, constraints, expected result and verification. Include necessary context; a fresh child cannot infer the main conversation.' },
                 role: { type: 'string', enum: ROLES },
                 writes: { type: 'boolean', description: 'true when the task must modify files (requires git; runs in an isolated worktree)' },
                 dependencies: { type: 'array', items: { type: 'string' } },

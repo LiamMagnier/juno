@@ -464,6 +464,8 @@ export interface TokenCount {
 }
 
 interface TurnItemBase {
+  /** The child whose complete trace this item belongs to; absent for the lead. */
+  agentId?: string;
   /** Unique within the session. */
   id: string;
   turnId?: string;
@@ -929,6 +931,8 @@ export const CLIENT_COMMAND_TYPE_VALUES = [
   "session.open",
   "turn.start",
   "turn.steer",
+  "agent.message",
+  "agent.interrupt",
   "turn.queue",
   "turn.interrupt",
   "approval.respond",
@@ -972,6 +976,9 @@ export const CLIENT_COMMAND_TYPE_VALUES = [
   // remote lane (additive): a file the phone attaches to a message, kept by the Mac app in its own
   // uploads folder (never inside a shared folder) and referred to by its absolute path.
   "host.upload",
+  // project lane (additive): remove a project from Alevr. Every session in the folder is stopped and its log
+  // deleted; the folder itself stays on disk (moving it to the Trash is the Mac app's own, local-only choice).
+  "project.remove",
 ] as const;
 export type ClientCommandType = (typeof CLIENT_COMMAND_TYPE_VALUES)[number];
 
@@ -987,6 +994,8 @@ export interface ClientCommandParams {
     interactionMode: InteractionMode;
   };
   "turn.steer": { sessionId: string; turnId: string; input: UserInput };
+  "agent.message": { sessionId: string; agentId: string; text: string };
+  "agent.interrupt": { sessionId: string; agentId: string };
   "turn.queue": { sessionId: string; input: UserInput };
   "turn.interrupt": { sessionId: string; turnId?: string };
   /** Answers an approval_request (decision) or a user_input_request (answers). */
@@ -998,7 +1007,12 @@ export interface ClientCommandParams {
     answers?: Record<string, string[]>;
   };
   "checkpoint.rollback": { sessionId: string; checkpointId: string };
-  "provider.probe": { instanceId: string };
+  /**
+   * `maxAgeMs`: an automatic refresh. The env server answers from its cache
+   * when the last probe is at most this old (and no sooner than the vendor
+   * allows). Absent: a manual Re-check, which probes now.
+   */
+  "provider.probe": { instanceId: string; maxAgeMs?: number };
   "provider.list": Record<string, never>;
   /** `command` is typed into the shell after it starts (install / login flows). */
   "terminal.open": { terminalId?: string; cwd: string; cols: number; rows: number; command?: string };
@@ -1018,6 +1032,11 @@ export interface ClientCommandParams {
    * Held in memory by the env server, never written to disk or logged.
    */
   "env.configure": { backend?: EnvBackendConfig; byok?: ByokKey[] };
+  /**
+   * Removes a project: stops every session whose cwd is the folder, inside it, or a worktree of it,
+   * and deletes their logs. Never touches the folder. Every client hears `project.removed`.
+   */
+  "project.remove": { cwd: string };
   /**
    * Applies a unified diff (paths relative to the repository root) to the
    * session's working tree, or its reverse (`reverse: true`, a rejected hunk).
@@ -1214,6 +1233,8 @@ export interface ClientCommandResults {
   "session.open": { sessionId: string };
   "turn.start": { turnId: string };
   "turn.steer": { accepted: boolean };
+  "agent.message": { accepted: boolean; message?: string };
+  "agent.interrupt": Record<string, never>;
   "turn.queue": { queuedId: string };
   "turn.interrupt": Record<string, never>;
   "approval.respond": Record<string, never>;
@@ -1251,6 +1272,8 @@ export interface ClientCommandResults {
   "host.capture": { mime: "image/png"; data: string; width: number; height: number; at: string };
   /** `ref` is the file's absolute path on the Mac: an `Attachment.ref` the env server resolves. */
   "host.upload": { ref: string; name: string; mediaType: string; size: number };
+  /** The sessions that were removed (empty when the folder had none). */
+  "project.remove": { sessionIds: string[] };
 }
 
 export const WIRE_ERROR_CODE_VALUES = [
@@ -1287,6 +1310,8 @@ export const SERVER_EVENT_TYPE_VALUES = [
   "session.skills",
   // skills lane (additive, global): a skill was installed, edited or removed on this Mac; re-read `skills.list`.
   "skills.updated",
+  // project lane (additive, global): a project was removed; drop these sessions and re-read the folders.
+  "project.removed",
 ] as const;
 export type ServerEventType = (typeof SERVER_EVENT_TYPE_VALUES)[number];
 
@@ -1316,9 +1341,14 @@ export interface ServerEventPayloads {
    * absent: any listing may have (a user or plugin skill). Names nothing else.
    */
   "skills.updated": { cwd?: string };
+  /**
+   * A project was removed from Alevr: these sessions no longer exist. `cwd` is the folder; a remote
+   * hears it only when the folder was one shared with it (otherwise it is left out).
+   */
+  "project.removed": { cwd?: string; sessionIds: string[] };
 }
 
-export const GLOBAL_EVENT_TYPES: readonly ServerEventType[] = ["provider.updated", "terminal.output", "terminal.exited", "skills.updated"];
+export const GLOBAL_EVENT_TYPES: readonly ServerEventType[] = ["provider.updated", "terminal.output", "terminal.exited", "skills.updated", "project.removed"];
 
 export type ServerEvent = {
   [T in ServerEventType]: { type: T } & ServerEventPayloads[T];

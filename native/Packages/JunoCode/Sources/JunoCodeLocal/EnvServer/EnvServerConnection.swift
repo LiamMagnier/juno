@@ -293,9 +293,9 @@ public extension EnvServerConnection {
         try await request(.providerList, params: EnvServerEmpty(), as: InstancesResult.self).instances
     }
 
-    func providerProbe(_ instanceId: String) async throws -> CodeV2.ProviderInstance {
-        struct P: Encodable { let instanceId: String }
-        return try await request(.providerProbe, params: P(instanceId: instanceId), as: InstanceResult.self).instance
+    func providerProbe(_ instanceId: String, maxAgeMs: Int? = nil) async throws -> CodeV2.ProviderInstance {
+        struct P: Encodable { let instanceId: String; let maxAgeMs: Int? }
+        return try await request(.providerProbe, params: P(instanceId: instanceId, maxAgeMs: maxAgeMs), as: InstanceResult.self).instance
     }
 
     func providerSetup(_ instanceId: String, action: CodeV2.ProviderSetupAction) async throws -> CodeV2.ProviderSetupStep? {
@@ -419,6 +419,14 @@ public extension EnvServerConnection {
     func sessionClose(_ sessionId: String) async throws {
         struct P: Encodable { let sessionId: String }
         _ = try await send(.sessionClose, params: P(sessionId: sessionId))
+    }
+
+    /// Stops and deletes every env session in a project folder; the folder
+    /// stays. Returns the removed session ids.
+    func projectRemove(cwd: String) async throws -> [String] {
+        struct P: Encodable { let cwd: String }
+        struct R: Decodable { let sessionIds: [String] }
+        return try await request(.projectRemove, params: P(cwd: cwd), as: R.self).sessionIds
     }
 
     func terminalOpen(cwd: String, cols: Int, rows: Int, command: String? = nil, terminalId: String? = nil) async throws -> String {

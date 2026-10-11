@@ -126,6 +126,10 @@ public final class CodeLinkRemoteModel {
     @ObservationIgnored private let sender: (any NativeAuthenticatedRequestSending)?
     @ObservationIgnored private var accountID: AccountID?
     @ObservationIgnored var client: CodeLinkClient?
+    @ObservationIgnored private var providerRefreshTask: Task<Void, Never>?
+    @ObservationIgnored private var providerRefreshing = false
+    @ObservationIgnored private var providerRefreshActive = false
+    @ObservationIgnored private var providerFailures = 0
     @ObservationIgnored private var pollTask: Task<[CodeV2.ServerEventEnvelope], Error>?
     @ObservationIgnored private var reopening = Set<String>()
     @ObservationIgnored private var lastListAt = Date.distantPast
@@ -169,6 +173,7 @@ public final class CodeLinkRemoteModel {
     }
 
     public func stop() {
+        setSubscriptionRefreshActive(false)
         pollTask?.cancel()
         accountID = nil
         client = nil
@@ -250,6 +255,7 @@ public final class CodeLinkRemoteModel {
         }
         await loadSessions()
         await loadComposerSources()
+        if providerRefreshActive { setSubscriptionRefreshActive(true) }
     }
 
     // MARK: Sessions
@@ -282,6 +288,55 @@ public final class CodeLinkRemoteModel {
         if let list = try? await client.skillsList(deviceID, sessionId: openSessionID), deviceID == selectedDeviceID {
             skills = list
         }
+    }
+
+    /// Quiet checks while the remote is foreground, also called by the model menu.
+    public func refreshSubscriptions() async {
+        guard !providerRefreshing, let client, let deviceID = selectedDeviceID else { return }
+        providerRefreshing = true
+        defer { providerRefreshing = false }
+        do {
+            let instances = try await client.providerList(deviceID)
+            var fresh = instances
+            for (index, instance) in instances.enumerated() where instance.kind != .alevr && instance.kind != .byok {
+                fresh[index] = try await client.providerProbe(deviceID, instanceId: instance.id)
+            }
+            guard deviceID == selectedDeviceID, !Task.isCancelled else { return }
+            providers = fresh
+            providerFailures = fresh.contains { $0.status == .error } ? min(5, providerFailures + 1) : 0
+        } catch {
+            providerFailures = min(5, providerFailures + 1)
+        }
+    }
+
+    public func setSubscriptionRefreshActive(_ active: Bool) {
+        providerRefreshActive = active
+        providerRefreshTask?.cancel()
+        providerRefreshTask = nil
+        guard active, client != nil else { return }
+        providerRefreshTask = Task { [weak self] in
+            guard let self else { return }
+            while !Task.isCancelled {
+                await self.refreshSubscriptions()
+                let seconds = 60 * min(10, 1 << max(0, self.providerFailures - 1))
+                do { try await Task.sleep(for: .seconds(seconds)) } catch { return }
+            }
+        }
+    }
+
+    @discardableResult
+    public func removeProject(cwd: String) async -> Bool {
+        guard let client, let deviceID = selectedDeviceID else { return false }
+        do {
+            let ids = try await client.removeProject(deviceID, cwd: cwd)
+            remote.removeSessions(ids)
+            sessionsByMac[deviceID]?.removeAll { ids.contains($0.id) }
+            if let id = openSessionID, ids.contains(id) { close() }
+            update(deviceID) { $0.info?.sharedFolders.removeAll { $0 == cwd } }
+            if newSession?.cwd == cwd { newSession?.cwd = nil; newSession?.chosen = false }
+            lastError = nil
+            return true
+        } catch { lastError = Self.describe(error); return false }
     }
 
     /// The Model menu: provider updates on the global stream win over `provider.list`.
@@ -451,6 +506,34 @@ public final class CodeLinkRemoteModel {
             try await client.turnQueue(deviceID, sessionId: sessionID, input: input)
         }
         if lastError == nil { await clearedDraft() }
+    }
+
+    public var canControlSubagents: Bool {
+        guard let id = openSnapshot?.selection.instanceId else { return false }
+        return CodeV2.instanceKind(of: id) == .alevr || CodeV2.instanceKind(of: id) == .byok
+    }
+
+    @discardableResult
+    public func messageAgent(_ agentID: String, text: String) async -> Bool {
+        guard let sessionID = openSessionID, client != nil, selectedDeviceID != nil else { return false }
+        var accepted = false
+        await perform { client, deviceID in
+            let result = try await client.send(.agentMessage, params: JSONValue.object([
+                "sessionId": .string(sessionID), "agentId": .string(agentID), "text": .string(text)
+            ]), to: deviceID)
+            accepted = result?["accepted"]?.boolValue == true
+            if !accepted { throw CodeLinkError.refused(code: .notReady, message: result?["message"]?.stringValue ?? "The agent could not take this message.") }
+        }
+        return accepted
+    }
+
+    public func interruptAgent(_ agentID: String) async {
+        guard let sessionID = openSessionID else { return }
+        await perform { client, deviceID in
+            _ = try await client.send(.agentInterrupt, params: JSONValue.object([
+                "sessionId": .string(sessionID), "agentId": .string(agentID)
+            ]), to: deviceID)
+        }
     }
 
     public func interrupt() async {

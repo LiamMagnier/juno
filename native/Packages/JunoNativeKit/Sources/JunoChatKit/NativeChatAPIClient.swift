@@ -1319,11 +1319,9 @@ public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
     }
 
     public func mentions(query: String, conversationID: String?, for accountID: AccountID) async throws -> [NativeMentionItem] {
-        var components = URLComponents()
-        components.path = "/api/mentions"
-        components.queryItems = [URLQueryItem(name: "q", value: String(query.prefix(200))), URLQueryItem(name: "limit", value: "6")]
-        if let conversationID { components.queryItems?.append(URLQueryItem(name: "conversationId", value: conversationID)) }
-        let response = try await sender.send(try NativeBearerRequest(path: components.string ?? "/api/mentions", method: .get), for: accountID)
+        var queryItems = [URLQueryItem(name: "q", value: String(query.prefix(100))), URLQueryItem(name: "limit", value: "6")]
+        if let conversationID { queryItems.append(URLQueryItem(name: "conversationId", value: conversationID)) }
+        let response = try await sender.send(try NativeBearerRequest(path: "/api/mentions", method: .get, queryItems: queryItems), for: accountID)
         guard response.statusCode == 200 else { throw NativeChatAPIError.malformedResponse }
         return try JSONDecoder().decode(NativeMentionResults.self, from: response.body).items
     }

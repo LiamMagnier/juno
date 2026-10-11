@@ -21,7 +21,8 @@ public struct JunoMarkdownText: View {
     static let blockSpacing: Double = 13
 
     private let source: String
-    private let blocks: [JunoMarkdownBlock]
+    @State private var cache = JunoMarkdownRenderCache()
+    private var blocks: [JunoMarkdownBlock] { cache.blocks(for: source) }
     private let streaming: Bool
 
     /// - Parameter streaming: whether tokens are still arriving, which puts
@@ -29,7 +30,6 @@ public struct JunoMarkdownText: View {
     ///   why it is a glyph in the text run rather than a shape beside it.
     public init(_ source: String, streaming: Bool = false) {
         self.source = source
-        self.blocks = JunoMarkdown.blocks(from: source)
         self.streaming = streaming
     }
 
@@ -657,3 +657,10 @@ import AppKit
 #elseif canImport(UIKit)
 import UIKit
 #endif
+
+
+@MainActor
+private final class JunoMarkdownRenderCache {
+    private var parser = JunoIncrementalMarkdown()
+    func blocks(for source: String) -> [JunoMarkdownBlock] { parser.update(source) }
+}

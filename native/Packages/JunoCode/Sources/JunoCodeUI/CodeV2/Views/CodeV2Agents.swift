@@ -16,6 +16,7 @@ public struct CodeV2AgentNode: Identifiable, Equatable, Sendable {
     public var selection: CodeV2.ModelSelection
     public var status: CodeV2.SubagentStatus
     public var title: String
+    public var task: String
     /// What it is doing now, its closing sentence, or what it waits on.
     public var liveLine: String?
     public var elapsedSeconds: Int?
@@ -28,10 +29,10 @@ public struct CodeV2AgentNode: Identifiable, Equatable, Sendable {
         selection = subagent.model
         status = subagent.status
         let task = subagent.task ?? "Subagent"
-        title = task.split(separator: "\n").first.map(String.init) ?? task
+        self.task = task
+        title = subagent.title ?? subagent.label ?? task.split(separator: "\n").first.map(String.init) ?? task
         let own = items.filter { item in
-            if case let .assistantMessage(message) = item { return message.agentId == subagent.agentId }
-            return false
+            item.traceAgentId == subagent.agentId
         }
         steps = own
         let latest: String? = own.last.flatMap { item in
@@ -41,7 +42,7 @@ public struct CodeV2AgentNode: Identifiable, Equatable, Sendable {
         case .waiting: liveLine = "Waiting for you"
         case .completed, .interrupted: liveLine = subagent.closingText ?? latest
         case .failed: liveLine = subagent.closingText ?? "Stopped after an error."
-        case .running: liveLine = latest
+        case .running: liveLine = subagent.liveLine ?? latest
         }
         let index = ordinal ?? Int(subagent.agentId.filter(\.isNumber)) ?? 1
         switch subagent.role {
@@ -53,7 +54,8 @@ public struct CodeV2AgentNode: Identifiable, Equatable, Sendable {
         case .architect: roleLabel = "Architect"
         }
         if let label = subagent.label, !label.isEmpty { roleLabel = label }
-        if let start = CodeV2Dates.parse(subagent.createdAt) {
+        if let elapsed = subagent.elapsedMs { elapsedSeconds = max(0, Int(elapsed / 1_000)) }
+        else if let start = CodeV2Dates.parse(subagent.createdAt) {
             if subagent.status == .running || subagent.status == .waiting {
                 elapsedSeconds = max(0, Int(now.timeIntervalSince(start)))
             } else if let end = own.last?.createdDate {
@@ -180,7 +182,7 @@ struct CodeV2AgentLine: View {
     var body: some View {
         Button(action: select) {
             HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
-                Text(node.roleLabel)
+                Text(node.title)
                     .studioType(.text)
                     .foregroundStyle(Studio.Ink.primary)
                     .underline(hovering || isSelected, color: Studio.Ink.tertiary)
@@ -270,13 +272,22 @@ public struct CodeV2AgentsPane: View {
                 .frame(height: 40)
                 ScrollView {
                     VStack(spacing: 0) {
-                        ForEach(nodes) { node in
-                            Button { selected = node.agentId } label: { row(node) }
-                                .buttonStyle(CodeV2RowButtonStyle())
-                                .contentShape(.rect)
-                        }
+                        agentSection("Active", nodes.filter { $0.status == .running || $0.status == .waiting })
+                        agentSection("Done", nodes.filter { $0.status != .running && $0.status != .waiting })
                     }
                 }
+            }
+        }
+    }
+
+    @ViewBuilder private func agentSection(_ title: String, _ members: [CodeV2AgentNode]) -> some View {
+        if !members.isEmpty {
+            Text("\(title) · \(members.count)").studioType(.small).foregroundStyle(Studio.Ink.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, JunoSpace.regular).padding(.top, JunoSpace.cozy)
+            ForEach(members) { node in
+                Button { selected = node.agentId } label: { row(node) }
+                    .buttonStyle(CodeV2RowButtonStyle()).contentShape(.rect)
+                    .accessibilityHint("Open the full activity trace")
             }
         }
     }
@@ -285,7 +296,7 @@ public struct CodeV2AgentsPane: View {
         HStack(alignment: .center, spacing: JunoSpace.snug) {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: JunoSpace.tight + 2) {
-                    Text(node.roleLabel).studioType(.text).foregroundStyle(Studio.Ink.primary)
+                    Text(node.task).studioType(.text).foregroundStyle(Studio.Ink.primary).textSelection(.enabled)
                     CodeV2Mark(id: CodeV2Marks.markID(model: node.selection.model, instanceId: node.selection.instanceId), size: 13)
                     Text(CodeV2Formatting.modelName(node.selection.model)).studioType(.small).foregroundStyle(Studio.Ink.secondary).lineLimit(1)
                 }
@@ -307,7 +318,7 @@ public struct CodeV2AgentsPane: View {
                 Button { selected = nil } label: {
                     HStack(spacing: JunoSpace.tight) {
                         JunoIconView(.chevronLeft, size: 12)
-                        Text(node.roleLabel)
+                        Text(node.title)
                     }
                     .studioType(.textMedium)
                     .foregroundStyle(Studio.Ink.primary)
@@ -329,10 +340,15 @@ public struct CodeV2AgentsPane: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: JunoSpace.cozy) {
                     Text("Task from the lead").studioType(.small).foregroundStyle(Studio.Ink.secondary)
-                    Text(node.title).studioType(.text).foregroundStyle(Studio.Ink.primary)
+                    Text(node.task).studioType(.text).foregroundStyle(Studio.Ink.primary).textSelection(.enabled)
                     VStack(alignment: .leading, spacing: 0) {
                         ForEach(node.steps, id: \.id) { item in
-                            if let row = CodeV2StepRow.make(item) { CodeV2StepRowView(row: row) }
+                            if case let .assistantMessage(message) = item {
+                                JunoMarkdownText(message.text, streaming: message.streaming)
+                            } else if case let .reasoning(reasoning) = item {
+                                DisclosureGroup("Reasoning") { JunoMarkdownText(reasoning.text, streaming: reasoning.streaming) }
+                                    .studioType(.small).foregroundStyle(Studio.Ink.secondary)
+                            } else if let row = CodeV2StepRow.make(item) { CodeV2StepRowView(row: row) }
                         }
                         if node.steps.isEmpty { CodeV2AgentStep(node: node) }
                     }

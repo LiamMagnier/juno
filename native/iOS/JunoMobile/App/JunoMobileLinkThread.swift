@@ -16,6 +16,8 @@ struct JunoMobileLinkThreadView: View {
   /// Opens with this composer panel up: the offscreen snapshots only.
   var previewPanel: JunoMobileLinkPanel? = nil
 
+  @State private var showsAgents = false
+  @State private var inspectedAgent: String?
   @State private var sheet: JunoMobileLinkSurface?
   @State private var handoffNotice: JunoMobileHandoffNotice?
   @State private var attentionHaptic = JunoMobileHapticTrigger()
@@ -41,6 +43,10 @@ struct JunoMobileLinkThreadView: View {
     // One screen from the empty thread to the live one: the list is always
     // here (empty while drafting), so sending never swaps the view.
     JunoMobileLinkThreadList(model: model, openChanges: { sheet = .changes })
+      .environment(\.junoInspectSubagent) { id in inspectedAgent = id; showsAgents = true }
+      .sheet(isPresented: $showsAgents) {
+        JunoMobileLinkAgentsView(model: model, selectedID: $inspectedAgent)
+      }
       .overlay(alignment: .top) {
         if model.isDraftingNewSession { draftState }
       }
@@ -131,6 +137,9 @@ struct JunoMobileLinkThreadView: View {
 
   private var menu: some View {
     Menu {
+      Button {
+        inspectedAgent = nil; showsAgents = true
+      } label: { Label("Agents", image: JunoIcon.agents.assetName(.regular)) }
       Section {
         ForEach(JunoMobileLinkSurface.allCases) { surface in
           Button {
@@ -254,7 +263,7 @@ struct JunoMobileLinkThreadList: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   private var snapshot: CodeV2.SessionSnapshot? { model.openSnapshot }
-  private var items: [CodeV2.TurnItem] { snapshot?.items ?? [] }
+  private var items: [CodeV2.TurnItem] { (snapshot?.items ?? []).filter { $0.traceAgentId == nil } }
 
   var body: some View {
     ScrollView {
@@ -591,6 +600,7 @@ struct JunoMobileLinkCommandRow: View {
 
 struct JunoMobileLinkSubagentRow: View {
   let agent: CodeV2.Subagent
+  @Environment(\.junoInspectSubagent) private var inspect
 
   private var words: String {
     switch agent.status {
@@ -603,10 +613,11 @@ struct JunoMobileLinkSubagentRow: View {
   }
 
   var body: some View {
+    Button { inspect(agent.agentId) } label: {
     HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
       JunoIconView(.agents, size: 13).foregroundStyle(Color.junoTertiaryInk).frame(width: 16)
       VStack(alignment: .leading, spacing: JunoSpace.micro) {
-        Text(agent.label ?? agent.title ?? agent.role.rawValue.capitalized)
+        Text(agent.title ?? agent.label ?? String((agent.task ?? agent.role.rawValue.capitalized).prefix(80)))
           .font(.subheadline)
         Text("\(CodeV2Team.shortModelName(agent.model.model)), \(words)")
           .font(.footnote)
@@ -614,6 +625,9 @@ struct JunoMobileLinkSubagentRow: View {
           .lineLimit(2)
       }
     }
+    }
+    .buttonStyle(.plain)
+    .accessibilityHint("Open the agent’s full trace")
   }
 }
 
@@ -852,5 +866,101 @@ struct JunoMobileLinkQuestionCard: View {
       set = [option]
     }
     picks[question.id] = set
+  }
+}
+
+
+private struct JunoInspectSubagentKey: EnvironmentKey {
+  static let defaultValue: (String) -> Void = { _ in }
+}
+private extension EnvironmentValues {
+  var junoInspectSubagent: (String) -> Void {
+    get { self[JunoInspectSubagentKey.self] }
+    set { self[JunoInspectSubagentKey.self] = newValue }
+  }
+}
+
+struct JunoMobileLinkAgentsView: View {
+  @Bindable var model: CodeLinkRemoteModel
+  @Binding var selectedID: String?
+  @State private var message = ""
+  @State private var deliveryError: String?
+  @State private var sending = false
+  @Environment(\.dismiss) private var dismiss
+
+  private var agents: [CodeV2.Subagent] {
+    var result: [String: CodeV2.Subagent] = [:]
+    for case let .subagent(agent) in model.openSnapshot?.items ?? [] { result[agent.agentId] = agent }
+    return result.values.sorted { $0.createdAt < $1.createdAt }
+  }
+  private var selected: CodeV2.Subagent? { agents.first { $0.agentId == selectedID } }
+
+  var body: some View {
+    NavigationStack {
+      ScrollView {
+        LazyVStack(alignment: .leading, spacing: JunoSpace.regular) {
+          if let selected {
+            DisclosureGroup("Assignment") { Text(selected.task ?? "").textSelection(.enabled) }
+            ForEach((model.openSnapshot?.items ?? []).filter { $0.traceAgentId == selected.agentId }, id: \.id) { item in
+              JunoMobileLinkItem(item: item)
+              if case let .fileChange(change) = item {
+                ForEach(change.changes, id: \.path) { file in
+                  Text(file.path).font(.footnote)
+                  if let diff = file.diff { Text(diff).font(.system(.footnote, design: .monospaced)).textSelection(.enabled) }
+                }
+              }
+            }
+            if let result = selected.closingText { JunoMarkdownText(result).textSelection(.enabled) }
+            if model.canControlSubagents, selected.status == .running || selected.status == .waiting {
+              Button("Stop agent") { Task { await model.interruptAgent(selected.agentId) } }
+              HStack {
+                TextField("Message this agent", text: $message, axis: .vertical).lineLimit(1...4)
+                Button("Send") {
+                  let text = message
+                  sending = true
+                  Task {
+                    let accepted = await model.messageAgent(selected.agentId, text: text)
+                    sending = false
+                    if accepted { message = ""; deliveryError = nil }
+                    else { deliveryError = model.lastError ?? "Your message could not be delivered. It is still here." }
+                  }
+                }.disabled(sending || message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+              }
+              if let deliveryError { JunoInlineError(message: deliveryError) }
+            }
+          } else {
+            agentGroup("Active", agents: agents.filter { $0.status == .running || $0.status == .waiting })
+            agentGroup("Done", agents: agents.filter { $0.status != .running && $0.status != .waiting })
+          }
+        }
+        .padding(JunoSpace.regular)
+      }
+      .junoScreenCanvas()
+      .navigationTitle(selected.map { $0.title ?? $0.label ?? "Agent" } ?? "Agents")
+      .navigationBarTitleDisplayMode(.inline)
+      .toolbar {
+        if selected != nil {
+          ToolbarItem(placement: .topBarLeading) { Button("All agents") { selectedID = nil } }
+        }
+        ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } }
+      }
+      .environment(\.junoInspectSubagent) { selectedID = $0 }
+      .onChange(of: selectedID) { _, _ in message = ""; deliveryError = nil }
+      .accessibilityIdentifier("juno.mobile.link-agents")
+    }
+  }
+
+  private func agentGroup(_ title: String, agents: [CodeV2.Subagent]) -> some View {
+    VStack(alignment: .leading, spacing: JunoSpace.snug) {
+      Text("\(title) · \(agents.count)").font(.footnote).foregroundStyle(.secondary)
+      if agents.isEmpty { Text(title == "Active" ? "No active subagents" : "No completed subagents").foregroundStyle(.secondary) }
+      ForEach(agents, id: \.agentId) { agent in
+        VStack(alignment: .leading, spacing: JunoSpace.tight) {
+          JunoMobileLinkSubagentRow(agent: agent)
+          if let summary = agent.closingText { Text(summary).font(.footnote).foregroundStyle(.secondary).lineLimit(2) }
+          if let elapsed = agent.elapsedMs { Text("\(Int(max(0, elapsed / 1000)))s").font(.caption).foregroundStyle(.secondary) }
+        }
+      }
+    }
   }
 }

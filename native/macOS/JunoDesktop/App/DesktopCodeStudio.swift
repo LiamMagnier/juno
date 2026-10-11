@@ -469,6 +469,8 @@ struct DesktopCodeSidebar: View {
     @State private var searchOpen = false
     @State private var searchFocused = false
     @State private var projectPendingRemoval: WorkspaceRecord?
+    @State private var trashProjectFolder = false
+    @State private var isRemovingProject = false
     @State private var showsSettled = false
     @State private var showsArchived = false
     @State private var projectFilter: WorkspaceID?
@@ -567,24 +569,34 @@ struct DesktopCodeSidebar: View {
         .onAppear {
             if startsShowingSettled { showsSettled = true }
         }
-        .confirmationDialog(
-            "Remove \u{201C}\(projectPendingRemoval?.descriptor.displayName ?? "")\u{201D} from Alevr?",
+        .sheet(
             isPresented: Binding(
                 get: { projectPendingRemoval != nil },
-                set: { if !$0 { projectPendingRemoval = nil } }
-            ),
-            presenting: projectPendingRemoval
-        ) { record in
-            Button("Remove Project", role: .destructive) {
-                // A thread left on screen would have no row to return to and
-                // no folder to act in once the project is gone.
-                if isInProject(selection, record.id) { selection = .draft }
-                if projectFilter == record.id { projectFilter = nil }
-                Task { await workbench.removeWorkspace(id: record.id) }
+                set: { if !$0 { projectPendingRemoval = nil; trashProjectFolder = false } }
+            )
+        ) {
+            if let record = projectPendingRemoval {
+                DesktopCodeProjectRemovalView(
+                    name: record.descriptor.displayName,
+                    allowsTrash: workbench.projectTrashRefusal(id: record.id) == nil,
+                    moveToTrash: $trashProjectFolder,
+                    isWorking: isRemovingProject,
+                    error: workbench.lastError,
+                    cancel: { projectPendingRemoval = nil; trashProjectFolder = false },
+                    remove: {
+                        isRemovingProject = true
+                        Task {
+                            defer { isRemovingProject = false }
+                            guard await workbench.removeProject(id: record.id, moveFolderToTrash: trashProjectFolder) else { return }
+                            if isInProject(selection, record.id) { selection = .draft }
+                            if projectFilter == record.id { projectFilter = nil }
+                            projectPendingRemoval = nil
+                            trashProjectFolder = false
+                        }
+                    }
+                )
+                .junoSheetSurface(.fitted)
             }
-                .contentShape(.rect)
-        } message: { _ in
-            Text("The folder and its files stay on disk. Alevr stops its running sessions and forgets its access; the sessions stay in your history.")
         }
         .accessibilityIdentifier("juno.code.sidebar")
         // Titles, projects and pull request links match as you type; this
@@ -606,7 +618,7 @@ struct DesktopCodeSidebar: View {
         DesktopSidebarNavRow(
             icon: JunoShellCodeSidebar.Action.new.icon,
             title: JunoShellCodeSidebar.Action.new.label,
-            action: { newSession(projectFilter) },
+            action: { newSession(nil) },
             prominent: true
         )
         .help(JunoShortcutRegistry.help(JunoShellCodeSidebar.Action.new.title, .newChat))
@@ -684,8 +696,10 @@ struct DesktopCodeSidebar: View {
         }
             .contentShape(.rect)
         ForEach(workbench.workspaces) { record in
-            Button {
-                projectFilter = record.id
+            Menu {
+                Button("Show Sessions") { projectFilter = record.id }
+                Button("New Session in \(record.descriptor.displayName)") { newSession(record.id) }
+                Button("Remove from Alevr…", role: .destructive) { projectPendingRemoval = record }
             } label: {
                 if projectFilter == record.id {
                     Label(record.descriptor.displayName, image: JunoIcon.check.assetName)
@@ -833,6 +847,9 @@ struct DesktopCodeSidebar: View {
                 if let workspaceID = session.workspaceID {
                     Button("New Session in This Project") { newSession(workspaceID) }
                         .contentShape(.rect)
+                    if let record = workbench.workspaces.first(where: { $0.id == workspaceID }) {
+                        Button("Remove Project from Alevr…", role: .destructive) { projectPendingRemoval = record }
+                    }
                 }
                 Divider()
                 sessionShipItems(id)
@@ -1169,5 +1186,39 @@ enum DesktopSessionExport {
         panel.nameFieldStringValue = title.replacingOccurrences(of: "/", with: "-") + ".md"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         try? markdown.write(to: url, atomically: true, encoding: .utf8)
+    }
+}
+
+
+/// The confirmation is shared with the offscreen light/dark release snapshots.
+struct DesktopCodeProjectRemovalView: View {
+    let name: String
+    let allowsTrash: Bool
+    @Binding var moveToTrash: Bool
+    let isWorking: Bool
+    let error: String?
+    let cancel: () -> Void
+    let remove: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.regular) {
+            Text("Remove \(name) from Alevr?").junoType(.headline)
+            Text(moveToTrash
+                ? "Running sessions will stop and this project's sessions will be removed. Its folder will move to the Trash."
+                : "Running sessions will stop and this project's sessions will be removed. The folder and its files stay on disk.")
+                .junoType(.body).foregroundStyle(.secondary)
+            if allowsTrash {
+                Toggle("Also move the folder to the Trash", isOn: $moveToTrash).toggleStyle(.checkbox)
+            }
+            if let error { Text(error).junoType(.caption).foregroundStyle(Color.junoDestructiveInk) }
+            HStack {
+                Spacer()
+                Button("Cancel", role: .cancel, action: cancel).disabled(isWorking)
+                Button(isWorking ? "Removing…" : "Remove", role: .destructive, action: remove).disabled(isWorking)
+            }
+        }
+        .padding(JunoSpace.region)
+        .frame(width: 420)
+        .accessibilityIdentifier("juno.code.project-removal")
     }
 }

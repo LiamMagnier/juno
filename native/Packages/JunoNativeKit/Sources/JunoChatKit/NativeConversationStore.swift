@@ -1658,6 +1658,7 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
     /// The live turn's reducer, per conversation: every answer-shaping frame
     /// goes through it, in either grammar (``NativeTurnStream``), and the
     /// pending row is written from what it holds.
+    @ObservationIgnored private var turnWriteTasks: [String: Task<Void, Never>] = [:]
     @ObservationIgnored private var turnStreams: [String: NativeTurnStream] = [:]
     @ObservationIgnored private var heldTextReleases: [String: (deadline: Date, task: Task<Void, Never>)] = [:]
 
@@ -1666,8 +1667,23 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         stream.apply(event, now: Date())
         if case .failed = event { stream.finish() }
         turnStreams[conversationID] = stream
-        writeTurn(stream, conversationID: conversationID)
+        switch event {
+        case .textDelta, .reasoningDelta:
+            if turnWriteTasks[conversationID] == nil {
+                turnWriteTasks[conversationID] = Task { [weak self] in
+                    do { try await Task.sleep(for: .milliseconds(16)) } catch { return }
+                    self?.flushTurnWrite(conversationID: conversationID)
+                }
+            }
+        default:
+            flushTurnWrite(conversationID: conversationID)
+        }
         scheduleHeldTextRelease(conversationID: conversationID)
+    }
+
+    private func flushTurnWrite(conversationID: String) {
+        turnWriteTasks.removeValue(forKey: conversationID)?.cancel()
+        if let stream = turnStreams[conversationID] { writeTurn(stream, conversationID: conversationID) }
     }
 
     private func writeTurn(_ stream: NativeTurnStream, conversationID: String) {
@@ -1715,6 +1731,7 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
     }
 
     private func endTurnStream(conversationID: String) {
+        flushTurnWrite(conversationID: conversationID)
         heldTextReleases[conversationID]?.task.cancel()
         heldTextReleases[conversationID] = nil
         turnStreams[conversationID] = nil

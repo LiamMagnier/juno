@@ -243,7 +243,7 @@ export async function startEnvServer(options: EnvServerOptions = {}): Promise<En
       return;
     }
     wss.handleUpgrade(req, socket, head, (ws) => {
-      const connection = new Connection(ws, { sessions, registry, terminals, secrets, logger, antigravity, conversations, skills });
+      const connection = new Connection(ws, { sessions, registry, terminals, secrets, logger, antigravity, conversations, skills, broadcast });
       connections.add(connection);
       ws.on("close", () => {
         connection.dispose();
@@ -360,6 +360,7 @@ function safeEqual(a: string, b: string): boolean {
 }
 
 interface ConnectionDeps {
+  broadcast?: (event: ServerEvent) => void;
   sessions: SessionManager;
   registry: ProviderRegistry;
   terminals: TerminalManager;
@@ -462,11 +463,21 @@ export async function dispatchCommand(deps: ConnectionDeps, cmd: ClientCommand, 
     case "session.close":
       await sessions.close(cmd.params.sessionId);
       return {};
+    case "project.remove": {
+      const sessionIds = await sessions.removeProject(cmd.params.cwd);
+      deps.broadcast?.({ type: "project.removed", cwd: path.resolve(cmd.params.cwd), sessionIds });
+      return { sessionIds };
+    }
     // A person's own input ends any chain a cross-conversation message started,
     // and a client can never pass one off as such a message.
     case "turn.start":
       deps.conversations?.noteUserInput(cmd.params.sessionId);
       return sessions.startTurn({ ...cmd.params, input: userOnly(cmd.params.input) });
+    case "agent.message":
+      return sessions.messageAgent(cmd.params.sessionId, cmd.params.agentId, cmd.params.text);
+    case "agent.interrupt":
+      await sessions.interruptAgent(cmd.params.sessionId, cmd.params.agentId);
+      return {};
     case "turn.steer":
       deps.conversations?.noteUserInput(cmd.params.sessionId);
       return sessions.steer({ ...cmd.params, input: userOnly(cmd.params.input) });
@@ -538,7 +549,8 @@ export async function dispatchCommand(deps: ConnectionDeps, cmd: ClientCommand, 
     }
     case "provider.probe": {
       if (!registry.get(cmd.params.instanceId)) throw new WireError("not_found", `No provider instance ${cmd.params.instanceId}.`);
-      return { instance: await registry.probe(cmd.params.instanceId) };
+      const maxAgeMs = typeof cmd.params.maxAgeMs === "number" && cmd.params.maxAgeMs >= 0 ? cmd.params.maxAgeMs : undefined;
+      return { instance: await registry.probe(cmd.params.instanceId, maxAgeMs === undefined ? undefined : { maxAgeMs }) };
     }
     case "provider.setup": {
       const instance = registry.get(cmd.params.instanceId);
