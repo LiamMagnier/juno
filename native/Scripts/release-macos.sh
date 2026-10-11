@@ -198,10 +198,34 @@ if [ "$PRODUCTION_PUBLISH" = 1 ]; then
 elif [ "$DEVELOPMENT_PUBLISH" = 1 ]; then
   NOTARIZE=0
   IDENTITY_CLASS="Apple Development"
-  IDENTITY="$(security find-identity -v -p codesigning \
-    | awk -F'"' '/Apple Development/{print $2; exit}')" || true
+  # The certificate is what macOS's privacy grants (Accessibility, Screen
+  # Recording, Microphone) are recorded against: the designated requirement is
+  # identifier + certificate leaf, so every build signed by the same
+  # certificate keeps the reader's grants. ALEVR_SIGNING_IDENTITY pins one
+  # when the keychain holds several.
+  IDENTITY="${ALEVR_SIGNING_IDENTITY:-}"
+  if [ -z "$IDENTITY" ]; then
+    IDENTITY="$(security find-identity -v -p codesigning \
+      | awk -F'"' '/Apple Development/{print $2; exit}')" || true
+  fi
   if [ -z "$IDENTITY" ]; then
     IDENTITY="-"
+    cat >&2 <<'ADHOC'
+
+  ⚠⚠⚠  AD-HOC SIGNED: THIS UPDATE WILL BREAK COMPUTER USE AND DICTATION  ⚠⚠⚠
+
+     No 'Apple Development' certificate is in the keychain, so this build is
+     signed ad-hoc. macOS records an ad-hoc app's privacy grants against that
+     one build's hash, so after this update Accessibility, Screen Recording
+     and Microphone stay switched on in System Settings but no longer apply.
+     Every Mac that installs it must remove Alevr from those lists and add it
+     again (docs/native/computer-use-permissions.md).
+
+     Fix: install the Apple Development certificate (Xcode › Settings ›
+     Accounts › Manage Certificates) and run this again. Ctrl-C now to stop.
+
+ADHOC
+    sleep 10
   fi
   cat >&2 <<WARNING
 

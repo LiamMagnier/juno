@@ -156,10 +156,8 @@ final class ComputerUsePermissionProbeTests: XCTestCase {
         )
         let status = probe.read()
         XCTAssertTrue(status.accessibilityTrustLostAfterUpdate)
-        XCTAssertEqual(
-            ComputerUsePermissionStatus.trustLostAdvice,
-            "macOS no longer trusts this build of Alevr. Remove Alevr from the Accessibility list and add it again."
-        )
+        XCTAssertTrue(ComputerUsePermissionStatus.trustLostAdvice.hasPrefix("macOS no longer trusts this build of Alevr."))
+        XCTAssertTrue(ComputerUsePermissionStatus.trustLostAdvice.contains(ComputerUsePermission.accessibility.settingsPath()))
         // Re-added: trusted again, nothing to say.
         XCTAssertFalse(trustMemory(build: "1.9.4 (95)", suite: suite).observe(.granted))
         XCTAssertFalse(trustMemory(build: "1.9.4 (95)", suite: suite).observe(.denied))
@@ -168,7 +166,8 @@ final class ComputerUsePermissionProbeTests: XCTestCase {
     func testErrorsAreSentences() {
         XCTAssertEqual(
             ComputerUseError.accessibilityPermissionMissing.errorDescription,
-            "macOS has not given Alevr Accessibility. Allow it in System Settings › Privacy & Security."
+            "macOS has not given Alevr Accessibility. Allow it in \(ComputerUsePermission.accessibility.settingsPath()). "
+                + ComputerUsePermissionStatus.staleGrantSteps
         )
         XCTAssertFalse(ComputerUseError.notActive.errorDescription!.contains("notActive"))
     }

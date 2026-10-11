@@ -3,6 +3,7 @@ import JunoCodeCore
 import JunoCodeLocal
 import JunoScreenControl
 import Observation
+import os
 
 /// Approvals connected agents ask the reader for, outside a thread's own
 /// event stream: computer use through the Mac bridge (may this agent use
@@ -29,6 +30,15 @@ public final class CodeV2ConnectedApprovals {
     }
 
     public private(set) var pending: [Pending] = []
+
+    /// A connected agent's computer-use call that macOS refused for a grant:
+    /// the thread shows the fix above its composer until the reader closes it.
+    public struct PermissionNotice: Equatable, Sendable {
+        public let sessionID: String
+        public let status: ComputerUsePermissionStatus
+    }
+
+    public private(set) var permissionNotice: PermissionNotice?
     /// Threads whose composer is on screen now: their requests show inline.
     public private(set) var visibleSessions: [String: Int] = [:]
     /// Window-level cards attached (the root view's overlay).
@@ -55,6 +65,19 @@ public final class CodeV2ConnectedApprovals {
     public func respond(_ id: UUID, _ decision: CodeV2.ApprovalDecision) {
         pending.removeAll { $0.id == id }
         waiting.removeValue(forKey: id)?.resume(returning: decision)
+    }
+
+    public func showPermissionNotice(_ status: ComputerUsePermissionStatus, sessionID: String) {
+        permissionNotice = PermissionNotice(sessionID: sessionID, status: status)
+    }
+
+    public func dismissPermissionNotice() {
+        permissionNotice = nil
+    }
+
+    /// The notice this thread shows, if it is this thread's.
+    public func permissionNotice(forSession sessionID: String) -> PermissionNotice? {
+        permissionNotice?.sessionID == sessionID ? permissionNotice : nil
     }
 
     /// Requests a thread shows inline in its own composer.
@@ -163,6 +186,18 @@ public final class StudioComputerBridgeApprover: ComputerBridgeApproving, Sendab
         let decision = await approvals(request, sessionID, crop)
         return decision == .accept || decision == .acceptForSession
     }
+
+    public func permissionsMissing(_ status: ComputerUsePermissionStatus, sessionID: String) async {
+        // The log line names the process, its signature and both preflight
+        // answers: what it takes to tell a missing grant from a stale one.
+        let diagnostics = ComputerUseDiagnostics.collect()
+        Self.logger.notice("\(diagnostics.logLine, privacy: .public)")
+        await MainActor.run {
+            CodeV2ConnectedApprovals.shared.showPermissionNotice(status, sessionID: sessionID)
+        }
+    }
+
+    private static let logger = Logger(subsystem: "com.liammagnier.JunoDesktop", category: "computer-use")
 
     static func request(
         sessionID: String, summary: String, justification: String?,
