@@ -111,6 +111,7 @@ export const OWNER_COLUMN = new Map<string, "userId" | "accountId">([
   // Added by the tool-audit work; its only unscoped write is a settle-by-primary-key
   // that deliberately uses prismaUnguarded (see src/lib/tool-audit.ts).
   ["ToolInvocation", "userId"],
+  ["ChatLocalToolCall", "userId"],
   ["ActionApprovalReceipt", "userId"],
   ["ActionApprovalGrant", "userId"],
   // Alevr Secrets: a missing scope here would hand one account another's credential.

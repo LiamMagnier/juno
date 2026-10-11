@@ -16,10 +16,10 @@ import {
 import {
   LOCAL_TOOL_CANCELLED_OUTPUT,
   LOCAL_TOOL_TIMEOUT_OUTPUT,
-  awaitLocalToolResult,
-  deliverLocalToolResult,
-  pendingLocalToolCalls,
+  registerLocalToolCall,
+  waitLocalToolResult,
 } from "@/lib/chat/local-folder-bridge";
+import { LocalToolTestStore } from "./local-folder-test-store";
 import { createLocalFolderTools } from "@/lib/chat/local-folder-tools";
 import { resolvedNativeTool, withNativeChatTools } from "@/lib/tools/toolset";
 import { executeToolBatch } from "@/lib/tools/dispatch";
@@ -33,6 +33,14 @@ import { turnModule } from "./chat-turn-source";
  * half is the gate (only a Mac that says it runs them gets the tools), the
  * shape checks, and the round trip.
  */
+
+const store = new LocalToolTestStore();
+const deliverLocalToolResult = store.deliver.bind(store);
+const pendingLocalToolCalls = () => [...store.rows.values()].filter(row => row.status === "pending").length;
+async function awaitLocalToolResult(input: Parameters<typeof registerLocalToolCall>[0]) {
+  await registerLocalToolCall(input);
+  return waitLocalToolResult({ ...input, pollMs: 1 });
+}
 
 const OPEN_GATE: LocalFolderGate = {
   clientDeclares: true,
@@ -128,6 +136,7 @@ test("rows show the action and the location, never a write's content", () => {
     command: "pandoc a.md -o a.docx",
   });
   const resolved = resolvedNativeTool(createLocalFolderTools({
+    store,
     folder: { name: "Invoices", access: "read_write" },
     userId: "u1",
     generationId: "generation-1",
@@ -148,6 +157,7 @@ test("a call goes to the Mac as a local_tool frame and waits for its answer", as
   const sent: StreamChunk[] = [];
   let authorized = 0;
   const tools = createLocalFolderTools({
+    store,
     folder: { name: "Invoices", access: "read_write" },
     userId: "user-1",
     generationId: "generation-1",
@@ -163,12 +173,12 @@ test("a call goes to the Mac as a local_tool frame and waits for its answer", as
   ]);
 
   assert.equal(
-    deliverLocalToolResult({ callId: "lft_00000000-0000-0000-0000-000000000001", userId: "someone-else", result: { outcome: "succeeded", output: "x" } }),
+    await deliverLocalToolResult({ callId: "lft_00000000-0000-0000-0000-000000000001", userId: "someone-else", result: { outcome: "succeeded", output: "x" } }),
     "unknown",
     "another account cannot answer this call"
   );
   assert.equal(
-    deliverLocalToolResult({
+    await deliverLocalToolResult({
       callId: "lft_00000000-0000-0000-0000-000000000001",
       userId: "user-1",
       generationId: "generation-1",
@@ -182,7 +192,7 @@ test("a call goes to the Mac as a local_tool frame and waits for its answer", as
   assert.equal(result.body, "date,amount\n2026-03-01,12");
   assert.equal(pendingLocalToolCalls(), 0);
   assert.equal(
-    deliverLocalToolResult({ callId: "lft_00000000-0000-0000-0000-000000000001", userId: "user-1", result: { outcome: "succeeded", output: "again" } }),
+    await deliverLocalToolResult({ callId: "lft_00000000-0000-0000-0000-000000000001", userId: "user-1", result: { outcome: "succeeded", output: "again" } }),
     "unknown",
     "a call is answered once"
   );
@@ -191,6 +201,7 @@ test("a call goes to the Mac as a local_tool frame and waits for its answer", as
 test("a declined call reads as a denial; a bad call never leaves the server", async () => {
   const sent: StreamChunk[] = [];
   const [, , , , , , , remove] = createLocalFolderTools({
+    store,
     folder: { name: "Invoices", access: "read_write" },
     userId: "user-1",
     generationId: "generation-1",
@@ -200,7 +211,7 @@ test("a declined call reads as a denial; a bad call never leaves the server", as
   assert.equal(remove.tool.function.name, "folder_delete");
   const pending = remove.execute({ path: "old.pdf" });
   await new Promise((resolve) => setImmediate(resolve));
-  deliverLocalToolResult({
+  await deliverLocalToolResult({
     callId: "lft_00000000-0000-0000-0000-000000000002",
     userId: "user-1",
     result: { outcome: "denied", output: "The user chose Deny." },
@@ -216,10 +227,11 @@ test("a declined call reads as a denial; a bad call never leaves the server", as
 });
 
 test("the wait always ends: timeout and Stop", async () => {
-  const timedOut = await awaitLocalToolResult({ callId: "lft_t", userId: "u", generationId: "g-00000001", timeoutMs: 5 });
+  const timedOut = await awaitLocalToolResult({ store, callId: "lft_t", userId: "u", generationId: "g-00000001", timeoutMs: 5 });
   assert.deepEqual(timedOut, { outcome: "failed", output: LOCAL_TOOL_TIMEOUT_OUTPUT });
   const controller = new AbortController();
-  const waiting = awaitLocalToolResult({ callId: "lft_s", userId: "u", generationId: "g-00000001", timeoutMs: 60_000, signal: controller.signal });
+  const waiting = awaitLocalToolResult({ store, callId: "lft_s", userId: "u", generationId: "g-00000001", timeoutMs: 60_000, signal: controller.signal });
+  await new Promise(resolve => setImmediate(resolve));
   controller.abort();
   assert.deepEqual(await waiting, { outcome: "failed", output: LOCAL_TOOL_CANCELLED_OUTPUT });
   assert.equal(pendingLocalToolCalls(), 0);
@@ -227,6 +239,7 @@ test("the wait always ends: timeout and Stop", async () => {
 
 test("the dispatcher's queued act names the action and the file, before the Mac answers", async () => {
   const tools = createLocalFolderTools({
+    store,
     folder: { name: "Invoices", access: "read_write" },
     userId: "user-1",
     generationId: "generation-1",

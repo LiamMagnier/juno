@@ -8,7 +8,8 @@ import net from 'node:net';
 
 const root = process.cwd();
 const checkout = mkdtempSync(path.join(tmpdir(), 'juno-migration-gate-'));
-const sourceRef = process.argv[2];
+const sourceRef = process.argv.slice(2).find(arg => !arg.startsWith('--'));
+const checkLocalTools = process.argv.includes('--local-tools');
 const name = `juno-migration-gate-${process.pid}-${randomBytes(4).toString('hex')}`;
 let created = false;
 let postgresBin;
@@ -75,6 +76,17 @@ try {
   run(process.execPath, [prisma, 'validate', '--schema', path.join(source, 'prisma/schema.prisma')], { env: environment, stdio: 'inherit' });
   run(process.execPath, [prisma, 'migrate', 'diff', '--from-migrations', path.join(source, 'prisma/migrations'), '--to-schema-datamodel', path.join(source, 'prisma/schema.prisma'), '--shadow-database-url', url, '--exit-code'], { env: environment, stdio: 'inherit' });
   console.log('Disposable migration replay reproduces schema.prisma exactly.');
+  if (checkLocalTools) {
+    // migrate diff has populated this fresh disposable shadow cluster. Reset
+    // that cluster (whose URL was created above, never read from .env) before
+    // the integration test; no real database can reach this path.
+    run(process.execPath, [prisma, 'migrate', 'reset', '--force', '--skip-seed', '--skip-generate', '--schema', path.join(source, 'prisma/schema.prisma')], { env: environment, stdio: 'inherit' });
+    run(process.execPath, ['--conditions=react-server', '--import', 'tsx', 'tests/local-folder-store.integration.ts'], {
+      env: { ...environment, AUTH_SECRET: 'alevr-local-tool-disposable-test-only',
+        TOKEN_ENCRYPTION_KEYS: '', TOKEN_ENCRYPTION_PRIMARY: '',
+        ALEVR_DISPOSABLE_LOCAL_TOOL_DB: '1' }, stdio: 'inherit',
+    });
+  }
 } finally {
   if (pgStarted) spawnSync(postgresBin ? path.join(postgresBin, 'pg_ctl') : 'pg_ctl', ['stop', '-D', path.join(checkout, 'pgdata'), '-m', 'immediate', '-w'], { stdio: 'ignore' });
   if (created) spawnSync('docker', ['rm', '--force', name], { stdio: 'ignore' });

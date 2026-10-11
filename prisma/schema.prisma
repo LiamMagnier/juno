@@ -124,6 +124,7 @@ model User {
   codeAutoFixWatches          CodeAutoFixWatch[]
   chatFirstSubmissionReceipts ChatFirstSubmissionReceipt[]
   toolInvocations             ToolInvocation[]
+  chatLocalToolCalls          ChatLocalToolCall[]
   actionApprovalReceipts      ActionApprovalReceipt[]
   spendPeriods                SpendPeriod[]
   usageCredits                UsageCredit[]
@@ -2721,6 +2722,25 @@ model CodeAutoFixDelivery {
 // NOTE (not built here): nothing prunes this table. It grows with tool use and
 // will want a retention window before it gets large.
 // ----------------------------------------------------------------------------
+
+/// Durable result receipt for one Mac folder call. This is not an execution
+/// queue: completed/uncertain calls are never automatically replayed. Results
+/// use the existing rotating AES-GCM key registry with owner/call-bound AAD.
+model ChatLocalToolCall {
+  id           String   @id
+  userId       String
+  generationId String
+  /// pending | completed | cancelled | expired.
+  status       String   @default("pending")
+  sealedResult String?  @db.Text
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+  completedAt  DateTime?
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, generationId, createdAt])
+  @@index([expiresAt])
+}
 
 model ToolInvocation {
   id                   String  @id @default(cuid())

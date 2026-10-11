@@ -20,6 +20,7 @@ import { createCrossConversationTools } from "@/lib/chat/cross-conversation-tool
 import type { CrossTurn } from "./cross";
 import { isAgentComputerConfigured } from "@/lib/computer/provider";
 import { createLocalFolderTools } from "@/lib/chat/local-folder-tools";
+import { durableLocalToolStore } from "@/lib/chat/local-folder-store";
 import type { LocalFolderGrant } from "@/lib/chat/local-folder";
 import { agentApprovalMode } from "@/lib/agents/domain";
 import type { RoomTurnSetup } from "@/lib/agents/room-store";
@@ -366,7 +367,7 @@ export async function buildNativeTools({
   // `local_tool` frame and waits for the Mac's answer
   // (src/lib/chat/local-folder-tools.ts).
   const folderTools = localFolder
-    ? createLocalFolderTools({ folder: localFolder, userId: user.id, generationId, send })
+    ? createLocalFolderTools({ folder: localFolder, userId: user.id, generationId, send, store: durableLocalToolStore })
     : [];
   const nativeTools = [
     taskTool,

@@ -13,7 +13,7 @@ import {
   type LocalFolderGrant,
   type LocalFolderToolId,
 } from "@/lib/chat/local-folder";
-import { awaitLocalToolResult, type LocalToolResult } from "@/lib/chat/local-folder-bridge";
+import { registerLocalToolCall, waitLocalToolResult, LOCAL_TOOL_STORE_FAILURE_OUTPUT, type LocalToolResult, type LocalToolStore } from "@/lib/chat/local-folder-bridge";
 
 /*
  * The folder tools as the chat route offers them (src/lib/chat/local-folder.ts
@@ -39,6 +39,7 @@ export function createLocalFolderTools(input: {
   folder: LocalFolderGrant;
   userId: string;
   generationId: string;
+  store: LocalToolStore;
   send: (chunk: StreamChunk) => void;
   /** Test seam; production issues a fresh id per call. */
   newCallId?: () => string;
@@ -68,15 +69,27 @@ export function createLocalFolderTools(input: {
         // dispatcher's bound is this tool's own, sized for that.
         opts?.onAuthorized?.();
         const started = Date.now();
-        const waiting = awaitLocalToolResult({
+        const identity = {
           callId,
           userId: input.userId,
           generationId: input.generationId,
-          timeoutMs: BRIDGE_TIMEOUT_MS,
+          store: input.store,
           signal,
-        });
-        input.send({ type: "local_tool", call: { id: callId, tool: id, args: check.args } });
-        const result = await waiting;
+        };
+        let result: LocalToolResult;
+        try {
+          await registerLocalToolCall({ ...identity, timeoutMs: BRIDGE_TIMEOUT_MS });
+          if (signal?.aborted) {
+            await input.store.end(identity, "cancelled");
+          } else {
+            input.send({ type: "local_tool", call: { id: callId, tool: id, args: check.args } });
+          }
+          result = await waitLocalToolResult(identity);
+        } catch {
+          // An insertion/transport failure is never permission to reissue a
+          // possibly dispatched command. Duplicate ids leave the old row alone.
+          result = { outcome: "failed", output: LOCAL_TOOL_STORE_FAILURE_OUTPUT };
+        }
         const text = localToolText(input.folder, id, result);
         const body = result.output || text;
         const durationMs = Date.now() - started;

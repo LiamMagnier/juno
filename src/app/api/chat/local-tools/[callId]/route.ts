@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getCurrentUser } from "@/lib/session";
-import { deliverLocalToolResult, MAX_LOCAL_TOOL_OUTPUT_CHARS } from "@/lib/chat/local-folder-bridge";
+import { MAX_LOCAL_TOOL_OUTPUT_CHARS } from "@/lib/chat/local-folder-bridge";
+import { durableLocalToolStore } from "@/lib/chat/local-folder-store";
 
 export const runtime = "nodejs";
 
@@ -9,9 +10,9 @@ export const runtime = "nodejs";
  * The Mac answering one folder call (src/lib/chat/local-folder.ts).
  *
  * The chat turn that sent the `local_tool` frame is waiting on this id; the
- * body is what the Mac did. A result for a call that is not waiting — already
- * answered, timed out, or another account's — is 404, the same answer for all
- * three. The output is cut rather than refused when it is long: a command's
+ * body is what the Mac did. Identical response retries are acknowledged without
+ * changing the stored result. Conflicting, expired, cancelled and other-account
+ * calls receive the same 404. The output is cut rather than refused when it is long: a command's
  * output past the cap is still worth its first sixty thousand characters.
  */
 const schema = z.object({
@@ -32,12 +33,17 @@ export async function POST(req: Request, { params }: { params: Promise<{ callId:
   const parsed = schema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid input" }, { status: 400 });
 
-  const delivered = deliverLocalToolResult({
-    callId,
-    userId: user.id,
-    generationId: parsed.data.generationId,
-    result: { outcome: parsed.data.outcome, output: parsed.data.output },
-  });
+  let delivered;
+  try {
+    delivered = await durableLocalToolStore.deliver({
+      callId,
+      userId: user.id,
+      generationId: parsed.data.generationId,
+      result: { outcome: parsed.data.outcome, output: parsed.data.output },
+    });
+  } catch {
+    return NextResponse.json({ error: "The answer could not be saved. Retry this same result." }, { status: 503 });
+  }
   if (delivered !== "accepted") {
     return NextResponse.json({ error: "This call is no longer waiting for an answer." }, { status: 404 });
   }
