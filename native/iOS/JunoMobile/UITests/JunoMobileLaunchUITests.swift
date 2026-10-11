@@ -1,7 +1,8 @@
 import XCTest
 
+@MainActor
 final class JunoMobileLaunchUITests: XCTestCase {
-    override func setUpWithError() throws {
+    override func setUp() async throws {
         continueAfterFailure = false
     }
 

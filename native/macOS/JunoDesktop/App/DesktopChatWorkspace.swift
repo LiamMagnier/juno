@@ -1749,10 +1749,7 @@ struct DesktopConversationView: View {
             }
             .alert(
                 "Voice is unavailable",
-                isPresented: Binding(
-                    get: { voiceUnavailable != nil },
-                    set: { if !$0 { voiceUnavailable = nil } }
-                ),
+                isPresented: voiceUnavailablePresented,
                 presenting: voiceUnavailable
             ) { _ in
                 Button("OK") { voiceUnavailable = nil }
@@ -1787,6 +1784,15 @@ struct DesktopConversationView: View {
             } message: { reason in
                 Text(reason)
             }
+    }
+
+    private var voiceUnavailablePresented: Binding<Bool> {
+        Binding<Bool>(
+            get: { voiceUnavailable != nil },
+            set: { presented in
+                if !presented { voiceUnavailable = nil }
+            }
+        )
     }
 
     private var mediaFailurePresented: Binding<Bool> {

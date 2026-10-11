@@ -2,6 +2,7 @@ import SwiftUI
 import XCTest
 @testable import JunoMobile
 
+@MainActor
 final class JunoMobileNavigationTests: XCTestCase {
     /// The identifiers are written into `@SceneStorage`, so one changing renames
     /// a destination the app has already remembered and strands the reader on a

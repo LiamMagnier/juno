@@ -1,7 +1,7 @@
 # Alevr native quality: 11 October 2026
 
 Inspected and fetched `origin/main`: `58cd3739d283088491fc67be710fb8f1c92e267f`.
-It is identical to the historical audit reference. The latest native run is
+It is identical to the historical audit reference. The initial inspected native run was
 https://github.com/LiamMagnier/juno/actions/runs/38153024427 (failed).
 The owner's newer checkout and uncommitted computer-use changes were preserved;
 this branch was built in an isolated worktree from the fetched commit.
@@ -48,8 +48,8 @@ so a local pass does not establish a CI pass on that toolchain.
 - Rendered concentric token regression suite: 27 passed, zero failures.
 - Mac folder/pairing and iOS remote/pairing snapshot suites passed; iOS ran 27 tests.
   Visual inspection included the Mac folder composer and small iPhone accessibility
-  composer. The latter still has cramped diff-summary labels at the largest text
-  size; this is unresolved accessibility debt, not acceptance.
+  composer. Its cramped diff-summary labels were subsequently repaired and
+  visually rechecked as described below; overall accessibility acceptance is pending.
 - Nine native design gates: passed. Existing debt remains (type 3, glass 14,
   targets 160, spacing 16 in the first corrected measurement).
 - TypeScript and web suite: passed; 6,833 passed, 123 skipped, zero failed.
@@ -62,12 +62,45 @@ Full hosted native acceptance remains pending. A compiler pass is not a
 physical-device workflow or accessibility pass.
 Snapshot fixtures are illustrative; they never establish real task completion.
 
+## Subsequent strict and hosted corrections
+
+Hosted run 38161281671 passed NativeKit, Work, ScreenControl, design, contract and
+web-parity checks, but failed Code at `testStopDuringABackoffEndsTheRunPromptly`
+with `freed pointer was not the last allocation`. It also failed Mac compilation
+at the large conversation view's inline voice-alert binding. These failures remain
+recorded; no real failure is retried or counted as passing.
+
+The Code failure's signature and public async default closure match the reported
+[Swift context-layout issue](https://github.com/swiftlang/swift/issues/92017).
+This is a diagnosis from the signature and call site, not a recovered crash stack.
+The default sleep closure now lives in the runtime module and uses ContinuousClock.
+Eighteen strict retry tests passed locally, including a second client file that
+exercises the real sleep deadline and cancellation. Hosted confirmation is pending.
+The voice-alert binding is a separately typed property; strict Mac Debug passed.
+
+The first exact-source development candidate failed strict iOS test compilation
+at a deprecated UIWindow initializer. The test now uses the host's window scene.
+Main-actor test helpers use isolated classes and async XCTest setup/teardown.
+The strict iOS unit suite passed: 188 passed, 11 skipped, zero failures; UI test
+targets also compiled. This is simulator evidence, not physical UI automation.
+Both hosted app test commands now explicitly enforce warnings as errors.
+
+The iPhone diff summary uses a second line when large text cannot fit one row.
+The existing composer snapshot test passed and produced eight images at SE,
+standard and Pro Max sizes in light/dark, including SE accessibility text. Visual
+inspection confirms the file count, additions/deletions and Review label fit.
+Nine design gates still pass without raised baselines.
+
+Logs: `/tmp/alevr-quality-evidence/swift-retry-fix.log`,
+`macos-compat-fix.log`, `ios-strict-test-fix.log`, `ios-layout-fixed.log`,
+`native-design-latest.log`; images in `ios-layout-fixed/`.
+
 ## Unresolved mission requirements
 
-Restricted folder execution still needs fail-closed containment: the baseline's
-contained factory falls back to an unrestricted executor. Its broad read policy
-also needs a dedicated Chat boundary. The Chat result bridge still uses an
-in-process registry. No production changes or releases have been made.
+At the inspected main baseline, restricted folder execution fell back to an
+unrestricted executor and Chat results used an in-process registry. Separate
+stacked PRs 84 and 85 implement containment and durable result receipts; this native
+PR does not include those changes. No production changes or releases have been made.
 
 Three consecutive release candidates, 27/30 independently verified tasks, real
 remote iPhone-to-Mac operation, physical-device voice/accessibility, actual provider

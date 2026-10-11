@@ -6,8 +6,9 @@ import XCTest
 /// is only checkable against the running app: the ghost has to be offered exactly
 /// where a chat is *not* open, the session has to open, and ending it has to leave
 /// no row in the sidebar. None of that is visible in the transport code.
+@MainActor
 final class JunoMobileIncognitoUITests: XCTestCase {
-    override func setUpWithError() throws {
+    override func setUp() async throws {
         continueAfterFailure = false
     }
 

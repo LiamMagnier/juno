@@ -7,8 +7,9 @@ import XCTest
 /// controls (sidebar, title menu, New chat) land, and whether the
 /// thought-process row actually opens anything. Unit tests over `NativeMessageContent` prove the
 /// parsing; only this proves what a reader sees.
+@MainActor
 final class JunoMobileChatChromeUITests: XCTestCase {
-    override func setUpWithError() throws {
+    override func setUp() async throws {
         continueAfterFailure = false
     }
 

@@ -400,6 +400,7 @@ jobs:
             -destination 'platform=macOS' \
             -derivedDataPath "$RUNNER_TEMP/desktop-dd" \
             -only-testing:JunoDesktopTests \
+            SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
             CODE_SIGNING_ALLOWED=NO \
             test
 
@@ -501,5 +502,6 @@ jobs:
             -derivedDataPath "$RUNNER_TEMP/mobile-dd" \
             -only-testing:JunoMobileTests \
             SWIFT_COMPILATION_MODE=wholemodule \
+            SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
             CODE_SIGNING_ALLOWED=NO \
             test

@@ -6,8 +6,9 @@ import XCTest
 /// touch on the track actually move it" is not something the unit tests over
 /// `NativeThinkingScale` can answer. An earlier build passed every unit test
 /// while being completely undraggable on device.
+@MainActor
 final class JunoMobileComposerUITests: XCTestCase {
-    override func setUpWithError() throws {
+    override func setUp() async throws {
         continueAfterFailure = false
     }
 

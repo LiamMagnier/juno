@@ -7,8 +7,9 @@ import XCTest
 /// selection now — but that only helps if the swatch actually writes the setting
 /// and the write reaches the shell, and neither is observable without running the
 /// app.
+@MainActor
 final class JunoMobileAccentUITests: XCTestCase {
-  override func setUpWithError() throws {
+  override func setUp() async throws {
     continueAfterFailure = false
   }
 

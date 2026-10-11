@@ -9,8 +9,9 @@ import XCTest
 /// pieces that replaced them, and — more importantly — pin the *reason*: a
 /// project's instructions must not be able to push its conversations and files off
 /// the screen again.
+@MainActor
 final class JunoMobileWorkspaceScreensUITests: XCTestCase {
-    override func setUpWithError() throws {
+    override func setUp() async throws {
         continueAfterFailure = false
     }
 

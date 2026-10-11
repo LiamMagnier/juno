@@ -642,7 +642,7 @@ struct JunoMobileLinkSubagentRow: View {
 }
 
 
-/// The changes so far, one line: "2 files changed +20 −2". Opens the review.
+/// The changes so far. Uses a second line when larger text needs more room.
 struct JunoMobileLinkChangesRow: View {
   let files: Int
   let additions: Int
@@ -651,15 +651,22 @@ struct JunoMobileLinkChangesRow: View {
 
   var body: some View {
     Button(action: open) {
-      HStack(spacing: JunoSpace.snug) {
-        JunoIconView(.fileDiff, size: 13).foregroundStyle(Color.junoTertiaryInk).frame(width: 16)
-        Text(files == 1 ? "1 file changed" : "\(files) files changed")
-          .foregroundStyle(Color.primary)
-        Text("+\(additions)").foregroundStyle(Color.junoSuccess)
-        Text("\u{2212}\(deletions)").foregroundStyle(Color.junoDanger)
-        Spacer(minLength: 0)
-        Text("Review").foregroundStyle(Color.junoSecondaryInk)
-        JunoIconView(.chevronRight, size: 10).foregroundStyle(Color.junoTertiaryInk)
+      ViewThatFits(in: .horizontal) {
+        HStack(spacing: JunoSpace.snug) {
+          fileCount
+          changeCounts
+          Spacer(minLength: 0)
+          reviewLabel
+        }
+        .fixedSize(horizontal: true, vertical: false)
+        VStack(alignment: .leading, spacing: JunoSpace.snug) {
+          fileCount
+          HStack(spacing: JunoSpace.snug) {
+            changeCounts
+            Spacer(minLength: 0)
+            reviewLabel
+          }
+        }
       }
       .font(.subheadline)
       .monospacedDigit()
@@ -668,6 +675,30 @@ struct JunoMobileLinkChangesRow: View {
     }
     .buttonStyle(.plain)
     .accessibilityIdentifier("juno.mobile.link-changes-row")
+  }
+
+  private var fileCount: some View {
+    HStack(spacing: JunoSpace.snug) {
+      JunoIconView(.fileDiff, size: 13).foregroundStyle(Color.junoTertiaryInk).frame(width: 16)
+      Text(files == 1 ? "1 file changed" : "\(files) files changed")
+        .foregroundStyle(Color.primary)
+    }
+  }
+
+  private var changeCounts: some View {
+    HStack(spacing: JunoSpace.snug) {
+      Text("+\(additions)").foregroundStyle(Color.junoSuccess)
+      Text("\u{2212}\(deletions)").foregroundStyle(Color.junoDanger)
+    }
+    .fixedSize(horizontal: true, vertical: false)
+  }
+
+  private var reviewLabel: some View {
+    HStack(spacing: JunoSpace.snug) {
+      Text("Review").foregroundStyle(Color.junoSecondaryInk)
+      JunoIconView(.chevronRight, size: 10).foregroundStyle(Color.junoTertiaryInk)
+    }
+    .fixedSize(horizontal: true, vertical: false)
   }
 }
 
