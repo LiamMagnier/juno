@@ -126,7 +126,8 @@ final class DesktopLockFileTests: XCTestCase {
         _ = other.release(holderID: "claude:t7")
 
         let claim = try await appLock.claim(ScreenControlHolder(id: "mac:s1", kind: .codeSession, title: "Fix it"))
-        XCTAssertEqual(file.read()?.holderId, "mac:s1")
+        // One record for this whole process, whoever inside it holds apps.
+        XCTAssertEqual(file.read()?.holderId, "alevr-app:\(ProcessInfo.processInfo.processIdentifier)")
         XCTAssertEqual(file.read()?.kind, .codeSession)
         guard case .held = other.acquire(holderID: "claude:t7", kind: .envServer, title: "") else {
             return XCTFail("the env server took the desktop the app holds")

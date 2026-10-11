@@ -2,6 +2,7 @@ import SwiftUI
 import JunoCodeCore
 import JunoCodeLocal
 import JunoDesignSystem
+import JunoScreenControl
 
 /// The inspector dock for an env-server thread: Changes (checkpoint diffs
 /// with per-hunk Accept / Reject), Agents (the fan-out, or Best of N side by
@@ -17,15 +18,24 @@ public struct CodeV2EnvDockView: View {
     var workspace: CodeV2DockWorkspace?
     /// Previews and snapshots: a terminal that never starts a shell.
     var previewTerminal: CodeV2EnvTerminal?
+    /// Goes to another conversation by its id (an env thread or a Code session).
+    var openConversation: ((String) -> Void)?
+    /// Who holds which app (Screen's waiting line). Nil in previews.
+    var screenLock: ScreenControlLock?
 
     @Environment(\.codeV2Now) private var pinnedNow
+    @State private var holds: [ScreenControlHold] = []
 
     public init(
         session: CodeV2EnvSession, dock: CodeV2DockController,
         bestOfN: [CodeV2BestOfNCandidate] = [], keepCandidate: ((String) -> Void)? = nil,
         close: (() -> Void)? = nil, workspace: CodeV2DockWorkspace? = nil,
-        previewTerminal: CodeV2EnvTerminal? = nil
+        previewTerminal: CodeV2EnvTerminal? = nil,
+        openConversation: ((String) -> Void)? = nil,
+        followsScreenControl: Bool = false
     ) {
+        self.openConversation = openConversation
+        self.screenLock = followsScreenControl ? ScreenControlService.shared.lock : nil
         self.session = session
         self.dock = dock
         self.bestOfN = bestOfN
@@ -135,10 +145,33 @@ public struct CodeV2EnvDockView: View {
                         .foregroundStyle(Studio.Ink.secondary).padding(JunoSpace.regular))
                 }
             case .screen:
-                AnyView(CodeV2ScreenPane(actions: frames, selected: $dock.selectedFrame))
+                AnyView(screenPane)
             }
         }
         .task(id: dock.previewRequest?.id) { openAgentPreview() }
+        .task(id: screenLock.map { ObjectIdentifier($0) }) {
+            guard let screenLock else { return }
+            for await latest in screenLock.holdUpdates() { holds = latest }
+        }
+    }
+
+    /// Screen: this conversation's frames, and when it waits for another
+    /// conversation's app, who that is with Take over and Open.
+    private var screenPane: some View {
+        let busy = CodeV2ScreenBusy.resolve(conversationID: session.sessionId, actions: frames, holds: holds)
+        var takeOver: (() -> Void)?
+        if let busy, let lock = screenLock {
+            let holderID = busy.holderID
+            takeOver = { Task { @MainActor in await lock.evict(holderID: holderID) } }
+        }
+        var open: (() -> Void)?
+        if let busy, let openConversation {
+            let id = busy.conversationID
+            open = { openConversation(id) }
+        }
+        return CodeV2ScreenPane(
+            actions: frames, selected: $dock.selectedFrame, busy: busy, takeOver: takeOver, openConversation: open
+        )
     }
 
     /// The agent's open_preview: Alevr's static server on its folder (no

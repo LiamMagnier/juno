@@ -165,6 +165,13 @@ struct DesktopCodeWorkspace: View {
         }
     }
 
+    /// Screen's Open: a conversation by its env thread id (the thread bound to
+    /// it) or its Code session id.
+    private func openConversation(_ id: String) {
+        let studioID = envBindings.bindings.first { $0.value.envSessionId == id }?.key ?? id
+        selection.wrappedValue = .session(CodeSessionID(value: studioID))
+    }
+
     /// The selected thread's env-server binding, when a subscription runs it.
     private var envBinding: CodeV2SessionBindings.Binding? {
         selectedSessionID.flatMap { envBindings.binding(for: $0.value) }
@@ -399,7 +406,9 @@ struct DesktopCodeWorkspace: View {
                 if let binding = envBinding {
                     CodeV2EnvDockView(
                         session: envSession(binding), dock: envDock, close: { envDock.isOpen = false },
-                        workspace: controller.map { CodeV2DockWorkspace(controller: $0, openPreviewWindow: openPreviewWindow) }
+                        workspace: controller.map { CodeV2DockWorkspace(controller: $0, openPreviewWindow: openPreviewWindow) },
+                        openConversation: openConversation,
+                        followsScreenControl: true
                     )
                 } else if let controller {
                     StudioSidePanel(

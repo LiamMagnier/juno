@@ -262,7 +262,8 @@ struct ScreenFixture {
                 settleTimeout: 0.5,
                 settleInterval: .milliseconds(1),
                 minimumInputGap: 0
-            )
+            ),
+            lock: ScreenControlLock(now: { clock.now })
         )
     }
 

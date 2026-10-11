@@ -1,8 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { after, test } from "node:test";
+import { test } from "node:test";
 import Ajv from "ajv";
 
 import {
@@ -20,15 +17,6 @@ import {
   type ComputerMcpScope,
   type ScopedMcpToolDefinition,
 } from "../runner/env-server/src/mcp/computer-mcp-hook";
-import { DesktopLock } from "../runner/env-server/src/mcp/desktop-lock";
-
-const dirs: string[] = [];
-after(() => dirs.forEach((d) => rmSync(d, { recursive: true, force: true })));
-const lockFile = () => {
-  const dir = mkdtempSync(join(tmpdir(), "alevr-cu-hook-"));
-  dirs.push(dir);
-  return join(dir, "desktop.lock");
-};
 
 /** The env lane's AlevrMcpServer, reduced to its registration hook. */
 class FakeMcp implements AlevrMcpRegistry {
@@ -58,7 +46,7 @@ const resolve = (scope: ComputerMcpScope) =>
 
 test("registers one shared computer_use tool, visible only to sessions the resolver knows", async () => {
   const mcp = new FakeMcp();
-  const hook = registerComputerUseOnAlevrMcp(mcp, { bridge: new FakeBridge(), lock: new DesktopLock({ path: lockFile() }), session: resolve });
+  const hook = registerComputerUseOnAlevrMcp(mcp, { bridge: new FakeBridge(), session: resolve });
   assert.deepEqual(mcp.visible({ sessionId: "s1", depth: 0 }), [ALEVR_COMPUTER_TOOL_NAME, "computer_release"]);
   assert.deepEqual(mcp.visible({ sessionId: "nope", depth: 0 }), []);
   const tool = mcp.tools.get(ALEVR_COMPUTER_TOOL_NAME)!;
@@ -70,7 +58,7 @@ test("registers one shared computer_use tool, visible only to sessions the resol
 test("subagents can be kept out", async () => {
   const mcp = new FakeMcp();
   const bridge = new FakeBridge();
-  const hook = registerComputerUseOnAlevrMcp(mcp, { bridge, lock: new DesktopLock({ path: lockFile() }), session: resolve, subagents: false });
+  const hook = registerComputerUseOnAlevrMcp(mcp, { bridge, session: resolve, subagents: false });
   assert.deepEqual(mcp.visible({ sessionId: "s1", depth: 1 }), []);
   assert.deepEqual(mcp.visible({ sessionId: "s1", depth: 0 }), [ALEVR_COMPUTER_TOOL_NAME, "computer_release"]);
   const [use] = hook.engineTools({ sessionId: "s1", depth: 0 }) as { execute(args: Record<string, unknown>, ctx: Record<string, unknown>): Promise<{ isError?: boolean }> }[];
@@ -84,7 +72,7 @@ test("built-in engine and children receive images, current permissions and separ
   const bridge = new FakeBridge();
   let mode: "full" | "read-only" = "full";
   const hook = registerComputerUseOnAlevrMcp(mcp, {
-    bridge, lock: new DesktopLock({ path: lockFile() }),
+    bridge,
     session: () => ({ id: "lead", title: "App task", runtimeMode: mode, images: true }),
   });
   type Tool = { spec: { name: string }; execute(args: Record<string, unknown>, ctx: Record<string, unknown>): Promise<{ output: string; isError?: boolean; images?: unknown[] }>; finishSubagent?(id: string): Promise<void> };
@@ -105,9 +93,12 @@ test("built-in engine and children receive images, current permissions and separ
   assert.equal(bridge.sent.at(-1)?.runtimeMode, "ask");
   await hook.finishTurn("lead");
   assert.ok(hook.activeSessions().includes("lead:agent:child"), "background children survive the lead's turn end");
-  const competing = await use.execute({ action: "screenshot" }, { callId: "lead-competes" });
-  assert.ok(competing.isError, "a parent cannot steal a child's active desktop");
+  // Parent and child keep separate holds on the Mac (which refuses whichever
+  // reaches for the app the other is in); here they only need distinct ids.
+  await use.execute({ action: "screenshot" }, { callId: "lead-competes" });
+  assert.equal(bridge.sent.at(-1)?.sessionId, "lead");
   await use.finishSubagent!("child");
+  assert.deepEqual({ type: bridge.sent.at(-1)?.type, sessionId: bridge.sent.at(-1)?.sessionId }, { type: "computer.release", sessionId: "lead:agent:child" });
   assert.ok(!(await use.execute({ action: "screenshot" }, { callId: "lead-resumes" })).isError);
   await hook.dispose();
 });
@@ -123,7 +114,7 @@ test("text models receive current accessibility controls and routed vision child
     },
   };
   const hook = registerComputerUseOnAlevrMcp(mcp, {
-    bridge, lock: new DesktopLock({ path: lockFile() }),
+    bridge,
     session: () => ({ id: "lead", title: "App task", runtimeMode: "full", images: false }),
   });
   type Tool = { execute(input: Record<string, unknown>, ctx: Record<string, unknown>): Promise<{ output: string; images: unknown[] }>; finishSubagent?(id: string): Promise<void> };
@@ -156,16 +147,13 @@ test("the shared schema is flat, compiles, and lets a call pick its coordinate s
   assert.ok(!validate({ action: "click", coordinate_space: "inches" }));
 });
 
-test("calls go to the bridge under the scoped session id, emit items per session, and dispose releases the lock", async () => {
+test("calls go to the bridge under the scoped session id, emit items per session, and dispose releases the hold", async () => {
   const mcp = new FakeMcp();
   const bridge = new FakeBridge();
-  const path = lockFile();
-  const lock = new DesktopLock({ path });
   const items: [string, ComputerActionItem][] = [];
   let n = 0;
   const hook = registerComputerUseOnAlevrMcp(mcp, {
     bridge,
-    lock,
     session: resolve,
     onItem: (sessionId, item) => items.push([sessionId, item]),
     newCallId: () => `c${++n}`,
@@ -188,16 +176,17 @@ test("calls go to the bridge under the scoped session id, emit items per session
   assert.equal(items.at(-1)![1].status, "completed");
   assert.equal(items.at(-1)![1].id, "ca_c1");
 
-  // Another session can't take the desktop while s1 holds it.
-  const blocked = await tool.handler({ action: "screenshot" }, { sessionId: "s2", depth: 0 }, signal);
-  assert.equal(blocked.isError, true);
-  assert.equal(bridge.sent.length, 1);
+  // Many chats at once: another conversation is forwarded too; the Mac's
+  // per-app holds decide, so two threads in different apps both run.
+  const second = await tool.handler({ action: "screenshot", app: "Notes" }, { sessionId: "s2", depth: 0 }, signal);
+  assert.equal(second.isError, undefined);
+  assert.equal(bridge.sent.length, 2);
+  assert.equal(bridge.sent[1].sessionId, "s2");
 
-  // Closing s1 lets go: the bridge hears a release and s2 can act.
+  // Closing s1 lets go: the bridge hears a release for s1 only.
   await hook.disposeSession("s1");
-  assert.equal(bridge.sent.at(-1)!.type, "computer.release");
-  const freed = await tool.handler({ action: "screenshot" }, { sessionId: "s2", depth: 0 }, signal);
-  assert.equal(freed.isError, undefined);
+  assert.deepEqual({ type: bridge.sent.at(-1)!.type, sessionId: bridge.sent.at(-1)!.sessionId }, { type: "computer.release", sessionId: "s1" });
+  assert.deepEqual(hook.activeSessions(), ["s2"]);
   await hook.dispose();
   assert.deepEqual(hook.activeSessions(), []);
 });
@@ -205,9 +194,72 @@ test("calls go to the bridge under the scoped session id, emit items per session
 test("an unknown session gets a plain error, never a bridge call", async () => {
   const mcp = new FakeMcp();
   const bridge = new FakeBridge();
-  const hook = registerComputerUseOnAlevrMcp(mcp, { bridge, lock: new DesktopLock({ path: lockFile() }), session: resolve });
+  const hook = registerComputerUseOnAlevrMcp(mcp, { bridge, session: resolve });
   const r = await mcp.tools.get(ALEVR_COMPUTER_TOOL_NAME)!.handler({ action: "screenshot" }, { sessionId: "ghost", depth: 0 }, new AbortController().signal);
   assert.equal(r.isError, true);
   assert.equal(bridge.sent.length, 0);
+  await hook.dispose();
+});
+
+// ── One conversation, many turns (the owner's "only one conversation" report) ──
+
+/** A Mac that answers like ComputerBridgeExecutor: Accessibility missing first, then granted. */
+class PermissionThenGrantedBridge implements ComputerBridge {
+  sent: ComputerBridgeRequest[] = [];
+  granted = false;
+  async send(request: ComputerBridgeRequest): Promise<ComputerBridgeResponse> {
+    this.sent.push(request);
+    if (request.type !== "computer.call") return { id: "r", ok: true, text: "Released." } as ComputerBridgeResponse;
+    if (!this.granted) {
+      return { id: "r", ok: false, text: "Alevr needs Accessibility.", endsTurn: true, missingPermissions: ["accessibility"] } as ComputerBridgeResponse;
+    }
+    return { id: "r", ok: true, text: "Opened Safari." } as ComputerBridgeResponse;
+  }
+}
+
+test("a permission failure in turn 1 ends that turn's computer use, and turn 2 in the same thread gets through", async () => {
+  const mcp = new FakeMcp();
+  const bridge = new PermissionThenGrantedBridge();
+  let n = 0;
+  const hook = registerComputerUseOnAlevrMcp(mcp, { bridge, session: resolve, newCallId: () => `c${++n}` });
+  const tool = mcp.tools.get(ALEVR_COMPUTER_TOOL_NAME)!;
+  const signal = new AbortController().signal;
+
+  const first = await tool.handler({ action: "open_app", app: "Safari" }, { sessionId: "s1", depth: 0 }, signal);
+  assert.equal(first.isError, true);
+  assert.match((first.content[0] as { text: string }).text, /Accessibility/);
+  // The rest of turn 1 does not reach for the Mac again.
+  const retry = await tool.handler({ action: "open_app", app: "Safari" }, { sessionId: "s1", depth: 0 }, signal);
+  assert.match((retry.content[0] as { text: string }).text, /Computer use stopped/);
+  assert.equal(bridge.sent.filter((r) => r.type === "computer.call").length, 1);
+
+  // Turn 1 ends: the Mac hears the release for this thread, under its own id.
+  await hook.finishTurn("s1");
+  assert.deepEqual({ type: bridge.sent.at(-1)!.type, sessionId: bridge.sent.at(-1)!.sessionId }, { type: "computer.release", sessionId: "s1" });
+  assert.deepEqual(hook.activeSessions(), []);
+
+  // The reader grants Accessibility; turn 2 of the same thread acts.
+  bridge.granted = true;
+  const second = await tool.handler({ action: "open_app", app: "Safari" }, { sessionId: "s1", depth: 0 }, signal);
+  assert.equal(second.isError, undefined);
+  const calls = bridge.sent.filter((r) => r.type === "computer.call");
+  assert.equal(calls.length, 2);
+  assert.ok(calls.every((c) => c.sessionId === "s1"), "every turn of a thread uses the same hold id");
+  await hook.dispose();
+});
+
+test("turn end releases the thread's hold; computer_release reaches the Mac even with no tools left", async () => {
+  const mcp = new FakeMcp();
+  const bridge = new FakeBridge();
+  const hook = registerComputerUseOnAlevrMcp(mcp, { bridge, session: resolve });
+  const signal = new AbortController().signal;
+  await mcp.tools.get(ALEVR_COMPUTER_TOOL_NAME)!.handler({ action: "screenshot" }, { sessionId: "s1", depth: 0 }, signal);
+  await hook.finishTurn("s1");
+  assert.equal(bridge.sent.at(-1)!.type, "computer.release");
+  const before = bridge.sent.length;
+  // A fresh env server (or tools already disposed): the model's release still lets go on the Mac.
+  await mcp.tools.get("computer_release")!.handler({}, { sessionId: "s1", depth: 0 }, signal);
+  assert.equal(bridge.sent.length, before + 1);
+  assert.deepEqual({ type: bridge.sent.at(-1)!.type, sessionId: bridge.sent.at(-1)!.sessionId }, { type: "computer.release", sessionId: "s1" });
   await hook.dispose();
 });

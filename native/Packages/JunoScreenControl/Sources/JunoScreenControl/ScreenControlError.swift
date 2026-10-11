@@ -13,6 +13,8 @@ public enum ScreenControlError: Error, Hashable, Sendable, LocalizedError {
     case readerTookOver
     /// Another session or task holds the screen.
     case lockHeld(holder: String)
+    /// Another conversation owns this app right now.
+    case appBusy(app: String, holder: String)
     /// No app is targeted yet.
     case noTargetApp
     case appNotGranted(app: String)
@@ -48,7 +50,9 @@ public enum ScreenControlError: Error, Hashable, Sendable, LocalizedError {
         case .readerTookOver:
             "The reader took over the Mac. Wait until they press Resume, then take a new screenshot."
         case let .lockHeld(holder):
-            "\(holder). Only one session can use apps at a time; wait for it to finish or ask the reader."
+            "\(holder). It must finish before anything else can use apps; wait for it, or ask the reader to stop it."
+        case let .appBusy(app, holder):
+            "\(holder) is using \(app) right now. Work in another app meanwhile, or wait and try again; the reader can give you \(app) with Take over in the Screen tab."
         case .noTargetApp:
             "No app is chosen yet. Open a granted app with computer_apps open, or ask the reader to grant one with computer_apps request."
         case let .appNotGranted(app):

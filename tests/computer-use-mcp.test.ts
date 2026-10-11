@@ -209,7 +209,7 @@ const shotItem = (callId: string): ComputerActionItem => ({
   frameSize: { width: 1366, height: 768 },
 });
 
-test("a call takes the lock, forwards the validated args, and returns text + image + a running→completed item", async () => {
+test("a call forwards the validated args under the thread id, takes no claim of its own, and returns text + image + a running→completed item", async () => {
   const path = join(scratch(), "desktop.lock");
   const items: ComputerActionItem[] = [];
   const bridge = new FakeBridge((r) => ({
@@ -222,11 +222,9 @@ test("a call takes the lock, forwards the validated args, and returns text + ima
   let t = Date.parse("2026-10-08T20:00:00Z");
   const tools = createComputerTools({
     bridge,
-    lock: new DesktopLock({ path, isAlive: () => true }),
     session: { id: "claude:t7", title: "Check the deck", runtimeMode: "ask" },
     onItem: (i) => items.push(i),
     now: () => new Date((t += 250)),
-    heartbeatMs: 60_000,
   });
   const result = await tools.call({ action: "click", x: 512, y: 300 }, { callId: "toolu_1" });
   assert.equal(result.isError, undefined);
@@ -246,35 +244,36 @@ test("a call takes the lock, forwards the validated args, and returns text + ima
   assert.equal(items[1].screenshotRef, "alevr-shot://claude:t7/toolu_1.jpg");
   assert.ok((items[1].durationMs ?? 0) >= 250, "duration comes from the clock");
   for (const i of items) assert.ok(validates("ComputerActionItem", i));
-  const lockRecord = JSON.parse(readFileSync(path, "utf8")) as DesktopLockRecord;
-  assert.equal(lockRecord.holderId, "claude:t7");
-  assert.equal(lockRecord.kind, "env_server");
-  assert.equal(lockRecord.app, "Pages");
+  // The Mac is the one arbiter: a second record under another id is what
+  // made a conversation "another session" to itself.
+  assert.equal(existsSync(path), false, "the env server writes no desktop record");
 
   await tools.dispose();
-  assert.equal(existsSync(path), false);
-  assert.equal(bridge.requests.at(-1)?.type, "computer.release");
+  assert.deepEqual(bridge.requests.at(-1), { type: "computer.release", sessionId: "claude:t7" });
 });
 
-test("refusals: invalid args never reach the Mac; a held desktop declines; a missing app says what to do; Esc ends the turn", async () => {
-  const path = join(scratch(), "desktop.lock");
+test("refusals: invalid args never reach the Mac; a busy app is the Mac's to say; a missing app says what to do; Esc ends the turn", async () => {
   const items: ComputerActionItem[] = [];
-  const bridge = new FakeBridge(() => new ComputerBridgeUnavailable());
+  let busy = true;
+  const bridge = new FakeBridge((r) =>
+    busy
+      ? { id: "x", ok: false, text: "‘Ship it’ is using Xcode right now.", item: { id: "m", kind: "computer_action", createdAt: "2026-10-08T20:00:00Z", callId: r.callId!, action: "screenshot", status: "declined", error: "busy" } }
+      : new ComputerBridgeUnavailable(),
+  );
   const session = { id: "codex:t1", title: "", runtimeMode: "auto-edit" as const };
-  const tools = createComputerTools({ bridge, lock: new DesktopLock({ path, isAlive: () => true }), session, onItem: (i) => items.push(i) });
+  const tools = createComputerTools({ bridge, session, onItem: (i) => items.push(i) });
 
   const invalid = await tools.call({ action: "type" }, { callId: "c1" });
   assert.equal(invalid.isError, true);
   assert.equal(bridge.requests.length, 0);
   assert.equal(items.at(-1)?.status, "failed");
 
-  const other = new DesktopLock({ path, pid: 999_999, isAlive: () => true });
-  other.acquire({ holderId: "mac:s2", kind: "code_session", title: "Ship it", app: "Xcode" });
-  const held = await tools.call({ action: "screenshot" }, { callId: "c2" });
+  const held = await tools.call({ action: "screenshot", app: "Xcode" }, { callId: "c2" });
   assert.equal(held.isError, true);
-  assert.match((held.content[0] as { text: string }).text, /Alevr is using Xcode for ‘Ship it’/);
+  assert.match((held.content[0] as { text: string }).text, /‘Ship it’ is using Xcode/);
   assert.equal(items.at(-1)?.status, "declined");
-  other.release("mac:s2");
+  assert.equal(items.at(-1)?.target, "Xcode", "the refused item keeps the app it asked for, for the Screen tab");
+  busy = false;
 
   const offline = await tools.call({ action: "screenshot" }, { callId: "c3" });
   assert.equal(offline.isError, true);
@@ -282,23 +281,20 @@ test("refusals: invalid args never reach the Mac; a held desktop declines; a mis
 
   const stopping = createComputerTools({
     bridge: new FakeBridge(() => ({ id: "x", ok: false, text: "You pressed Esc.", endsTurn: true })),
-    lock: new DesktopLock({ path, isAlive: () => true }),
     session: { ...session, images: false },
   });
   const stopped = await stopping.call({ action: "click", x: 1, y: 1 }, { callId: "c4" });
   assert.equal(stopped.isError, true);
   assert.match((stopped.content[0] as { text: string }).text, /You pressed Esc\.\nStop using the computer/);
-  assert.equal(existsSync(path), false, "Esc lets go of the desktop");
   await tools.dispose();
 });
 
 test("registerComputerTools adds one tool and routes calls with a call id", async () => {
-  const path = join(scratch(), "desktop.lock");
   const registered: { def: McpToolDefinition; handler: (a: unknown, e: { callId?: string }) => Promise<unknown> }[] = [];
   const bridge = new FakeBridge((r) => ({ id: "x", ok: true, text: `ok ${r.callId}` }));
   const tools = registerComputerTools(
     { tool: (def, handler) => registered.push({ def, handler }) },
-    { bridge, lock: new DesktopLock({ path, isAlive: () => true }), session: { id: "acp:g1", title: "", runtimeMode: "full", coordinateSpace: "normalized_1000" } },
+    { bridge, session: { id: "acp:g1", title: "", runtimeMode: "full", coordinateSpace: "normalized_1000" } },
   );
   assert.equal(registered.length, 1);
   assert.equal(registered[0].def.name, "computer_use");
@@ -309,14 +305,13 @@ test("registerComputerTools adds one tool and routes calls with a call id", asyn
 });
 
 test("parallel calls execute in order and queued input is refused after Esc", async () => {
-  const path = join(scratch(), "desktop.lock");
   const session = { id: "lead", title: "Browser task", runtimeMode: "full" as const };
   const entered: string[] = [];
   const bridge = new FakeBridge((r) => {
     entered.push(r.callId!);
     return { id: "r", ok: false, text: "You pressed Esc.", endsTurn: true };
   });
-  const tools = createComputerTools({ bridge, lock: new DesktopLock({ path }), session });
+  const tools = createComputerTools({ bridge, session });
   const results = await Promise.all([
     tools.call({ action: "screenshot" }, { callId: "first" }),
     tools.call({ action: "type", text: "must not run" }, { callId: "queued" }),

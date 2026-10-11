@@ -1,6 +1,9 @@
+import AppKit
 import SwiftUI
 import JunoCodeCore
+import JunoCodeLocal
 import JunoDesignSystem
+import JunoScreenControl
 
 // MARK: - Node
 
@@ -599,7 +602,9 @@ struct CodeV2ComputerLine: View {
                 Spacer(minLength: 0)
             }
             .frame(minHeight: Studio.Metrics.rowHeight)
-            if let last = actions.last {
+            // The latest picture, never a placeholder: a step without one
+            // (refused, or still running) shows its line only.
+            if let last = actions.last(where: { CodeV2Frame.hasImage($0.screenshotRef) }) {
                 Button { open(last.id) } label: {
                     CodeV2Frame(ref: last.screenshotRef, size: CGSize(width: 120, height: 75))
                         .contentShape(.rect)
@@ -612,23 +617,33 @@ struct CodeV2ComputerLine: View {
     }
 }
 
-/// A screenshot frame: the image at `ref` (a file path) or a quiet well.
+/// A screenshot frame: the stored picture behind `ref` (an `alevr-shot://`
+/// reference, resolved by the screenshot store, or a file path). Callers show
+/// it only when ``hasImage(_:)``; without a picture it is a plain well, never
+/// a skeleton that waits for something that will not come.
 struct CodeV2Frame: View {
     let ref: String?
     let size: CGSize
 
+    static func image(for ref: String?) -> NSImage? {
+        guard let ref, !ref.isEmpty else { return nil }
+        if let url = ComputerScreenshotStore.shared.url(for: ref) { return NSImage(contentsOf: url) }
+        if ref.hasPrefix("/") { return NSImage(contentsOfFile: ref) }
+        return nil
+    }
+
+    static func hasImage(_ ref: String?) -> Bool {
+        guard let ref, !ref.isEmpty else { return false }
+        if let url = ComputerScreenshotStore.shared.url(for: ref) { return FileManager.default.fileExists(atPath: url.path) }
+        return ref.hasPrefix("/") && FileManager.default.fileExists(atPath: ref)
+    }
+
     var body: some View {
         Group {
-            if let ref, let image = NSImage(contentsOfFile: ref) {
+            if let image = Self.image(for: ref) {
                 Image(nsImage: image).resizable().scaledToFill()
             } else {
-                ZStack {
-                    Studio.Surface.muted
-                    VStack(spacing: 6) {
-                        RoundedRectangle(cornerRadius: 2).fill(Studio.Surface.hairline).frame(width: size.width * 0.6, height: 6)
-                        RoundedRectangle(cornerRadius: 2).fill(Studio.Surface.hairline).frame(width: size.width * 0.4, height: 6)
-                    }
-                }
+                Studio.Surface.muted
             }
         }
         .frame(width: size.width, height: size.height)
@@ -637,36 +652,169 @@ struct CodeV2Frame: View {
     }
 }
 
-/// Panel › Screen (TARGET §10.5): the live frame at full width, the step
+/// This conversation is waiting for another one that has the app it needs.
+/// Built from the live holds, so it names the conversation that really has
+/// the app, and it is never shown for this conversation itself.
+public struct CodeV2ScreenBusy: Equatable, Sendable {
+    /// The hold to end on Take over.
+    public var holderID: String
+    /// The conversation to open.
+    public var conversationID: String
+    /// "‘Fix the export sheet’".
+    public var name: String
+    public var app: String?
+    /// A Work task or a takeover: it has the whole screen.
+    public var wholeScreen: Bool
+
+    public init(holderID: String, conversationID: String, name: String, app: String?, wholeScreen: Bool) {
+        self.holderID = holderID
+        self.conversationID = conversationID
+        self.name = name
+        self.app = app
+        self.wholeScreen = wholeScreen
+    }
+
+    public var title: String { "Waiting for \(name)" }
+
+    public var detail: String {
+        if wholeScreen {
+            return "It has the whole screen right now. This conversation can carry on when it finishes, or you can take over now."
+        }
+        let app = self.app ?? "that app"
+        return "It is using \(app), which this conversation needs too. Wait for it to finish, or take over to bring \(app) here."
+    }
+
+    /// The busy state for `conversationID`'s latest step, or nil: the step
+    /// was refused because the app was taken, and another conversation (never
+    /// this one) still holds it.
+    public static func resolve(conversationID: String, actions: [CodeV2.ComputerAction], holds: [ScreenControlHold]) -> CodeV2ScreenBusy? {
+        guard let last = actions.last, last.status == .declined || last.status == .failed else { return nil }
+        let reason = last.error ?? last.summary ?? ""
+        guard reason.contains(" is using ") || reason.contains("must finish before") else { return nil }
+        let wanted = last.app ?? last.target
+        let other = holds.first { hold in
+            hold.holder.conversationID != conversationID
+                && ComputerBridgeExecutor.conversationID(hold.holder.conversationID) != conversationID
+                && hold.blocks(app: wanted)
+        }
+        guard let other else { return nil }
+        return CodeV2ScreenBusy(
+            holderID: other.holder.id,
+            conversationID: ComputerBridgeExecutor.conversationID(other.holder.conversationID),
+            name: other.holder.name,
+            app: other.holder.appName ?? wanted,
+            wholeScreen: other.exclusive
+        )
+    }
+}
+
+/// "Waiting for ‘Fix the export sheet’", what it holds, and the two ways
+/// forward: give the app to this conversation, or go to that one.
+struct CodeV2ScreenBusyPanel: View {
+    let busy: CodeV2ScreenBusy
+    var takeOver: (() -> Void)?
+    var open: (() -> Void)?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.snug) {
+            Text(busy.title)
+                .studioType(.textMedium)
+                .foregroundStyle(Studio.Ink.primary)
+                .lineLimit(2)
+            Text(busy.detail)
+                .studioType(.small)
+                .foregroundStyle(Studio.Ink.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if takeOver != nil || open != nil {
+                HStack(spacing: JunoSpace.snug) {
+                    if let takeOver {
+                        Button("Take over", action: takeOver)
+                            .buttonStyle(CodeV2InkButtonStyle())
+                            .help("End the other conversation's hold so this one can use \(busy.app ?? "the app")")
+                            .contentShape(.rect)
+                            .accessibilityIdentifier("alevr.code.screen.take-over")
+                    }
+                    if let open {
+                        Button("Open conversation", action: open)
+                            .buttonStyle(.bordered)
+                            .help("Go to \(busy.name)")
+                            .contentShape(.rect)
+                            .accessibilityIdentifier("alevr.code.screen.open-holder")
+                    }
+                    Spacer(minLength: 0)
+                }
+                .controlSize(.regular)
+                .padding(.top, JunoSpace.tight)
+            }
+        }
+        .padding(JunoSpace.regular)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .junoGlass(in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(busy.title)
+    }
+}
+
+/// Panel › Screen (TARGET §10.5): the latest frame at full width, the step
 /// as a caption, a thin filmstrip of earlier frames. Stop lives in the
-/// panel's header.
+/// panel's header. Only real pictures are drawn: a refused or running step
+/// has its caption, and a wait for another conversation has its panel.
 public struct CodeV2ScreenPane: View {
     let actions: [CodeV2.ComputerAction]
     @Binding var selected: String?
+    var busy: CodeV2ScreenBusy?
+    var takeOver: (() -> Void)?
+    var openConversation: (() -> Void)?
 
-    public init(actions: [CodeV2.ComputerAction], selected: Binding<String?>) {
+    public init(
+        actions: [CodeV2.ComputerAction], selected: Binding<String?>, busy: CodeV2ScreenBusy? = nil,
+        takeOver: (() -> Void)? = nil, openConversation: (() -> Void)? = nil
+    ) {
         self.actions = actions
         self._selected = selected
+        self.busy = busy
+        self.takeOver = takeOver
+        self.openConversation = openConversation
+    }
+
+    private var pictured: [CodeV2.ComputerAction] {
+        actions.filter { CodeV2Frame.hasImage($0.screenshotRef) }
     }
 
     private var current: CodeV2.ComputerAction? {
         actions.first { $0.id == selected } ?? actions.last
     }
 
+    /// The picture for the current step: its own, else the latest before it.
+    private var shown: CodeV2.ComputerAction? {
+        guard let current else { return pictured.last }
+        if CodeV2Frame.hasImage(current.screenshotRef) { return current }
+        guard let index = actions.firstIndex(where: { $0.id == current.id }) else { return pictured.last }
+        return actions[..<index].last { CodeV2Frame.hasImage($0.screenshotRef) }
+    }
+
     public var body: some View {
         VStack(alignment: .leading, spacing: JunoSpace.snug) {
-            if let current {
+            if let busy {
+                CodeV2ScreenBusyPanel(busy: busy, takeOver: takeOver, open: openConversation)
+            }
+            if let shown {
                 GeometryReader { proxy in
-                    CodeV2Frame(ref: current.screenshotRef, size: CGSize(width: proxy.size.width, height: proxy.size.width * 0.625))
+                    CodeV2Frame(ref: shown.screenshotRef, size: CGSize(width: proxy.size.width, height: proxy.size.width * 0.625))
                 }
                 .aspectRatio(1.6, contentMode: .fit)
+            }
+            if let current, busy == nil || current.status == .completed {
                 Text(current.caption).studioType(.small).foregroundStyle(Studio.Ink.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if pictured.count > 1 {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: JunoSpace.tight + 2) {
-                        ForEach(actions, id: \.id) { action in
+                        ForEach(pictured, id: \.id) { action in
                             Button { selected = action.id } label: {
                                 CodeV2Frame(ref: action.screenshotRef, size: CGSize(width: 77, height: 48))
-                                    .opacity(action.id == current.id ? 1 : 0.6)
+                                    .opacity(action.id == shown?.id ? 1 : 0.6)
                                     .contentShape(.rect)
                             }
                             .buttonStyle(.plain)
@@ -675,7 +823,8 @@ public struct CodeV2ScreenPane: View {
                     }
                 }
                 .padding(.top, JunoSpace.tight)
-            } else {
+            }
+            if current == nil, busy == nil {
                 Text("Nothing on screen yet. When an agent uses the computer, its frames appear here.")
                     .studioType(.small).foregroundStyle(Studio.Ink.secondary)
             }

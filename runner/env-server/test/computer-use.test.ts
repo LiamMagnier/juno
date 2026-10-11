@@ -11,7 +11,6 @@ import { startEnvServer, computerSessionFor, type EnvServer } from "../src/serve
 import { silentLogger } from "../src/util.js";
 import { ALEVR_COMPUTER_TOOL_NAME, type ComputerBridgeRequest, type ComputerBridgeResponse, type TurnItem } from "../src/contracts/code-v2.js";
 import type { ComputerBridge } from "../src/mcp/computer-bridge.js";
-import { DesktopLock } from "../src/mcp/desktop-lock.js";
 import { TestClient, fakeBinDir, tempDir } from "./helpers.js";
 import type { AlevrEngine, EngineSessionOptions, EngineSession } from "../src/providers/alevr.js";
 
@@ -38,7 +37,7 @@ async function boot(available: { up: boolean }, alevrEngine?: AlevrEngine) {
     logger: silentLogger,
     probeOnStart: false,
     coalesceMs: 5,
-    computerUse: { bridge, available: () => available.up, lock: new DesktopLock({ path: path.join(tempDir("lock"), "desktop.lock") }) },
+    computerUse: { bridge, available: () => available.up },
     ...(alevrEngine ? { alevrEngine } : {}),
   });
   servers.push(server);

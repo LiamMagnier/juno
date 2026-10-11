@@ -36,6 +36,7 @@ public enum CodeV2Gallery {
         case settingsConnections = "settings-connections"
         case dockTerminal = "dock-terminal"
         case computerOverlay = "computer-overlay"
+        case screenBusy = "screen-busy"
         case connectedApproval = "connected-approval"
         case skillsPanel = "skills-panel"
         case skillsPanelSearch = "skills-panel-search"
@@ -58,12 +59,29 @@ public enum CodeV2Gallery {
             case .settingsConnections: CGSize(width: 900, height: 640)
             case .dockTerminal: CGSize(width: 520, height: 420)
             case .computerOverlay: CGSize(width: 960, height: 600)
+            case .screenBusy: CGSize(width: 440, height: 360)
             case .connectedApproval: CGSize(width: 820, height: 360)
             case .skillsPanel, .skillsPanelSearch: CGSize(width: 460, height: 500)
             case .skillsSlash: CGSize(width: 600, height: 340)
             case .skillsComposer: CGSize(width: 900, height: 220)
             }
         }
+    }
+
+    /// Screen while this conversation waits for another one's app: the
+    /// refused step, who has the app, Take over and Open.
+    static var screenBusy: some View {
+        let refused = CodeV2.ComputerAction(
+            id: "ca_busy", createdAt: "2026-10-11T17:30:00Z", callId: "busy", action: .openApp, target: "Safari",
+            status: .declined, app: "Safari",
+            summary: "‘Book the train to Lyon’ is using Safari right now.",
+            error: "‘Book the train to Lyon’ is using Safari right now."
+        )
+        let busy = CodeV2ScreenBusy(
+            holderID: "agent:thread-2", conversationID: "thread-2", name: "‘Book the train to Lyon’", app: "Safari", wholeScreen: false
+        )
+        return CodeV2ScreenPane(actions: [refused], selected: .constant(nil), busy: busy, takeOver: {}, openConversation: {})
+            .background(Studio.Surface.canvas)
     }
 
     public static func view(_ surface: Surface) -> AnyView {
@@ -80,6 +98,8 @@ public enum CodeV2Gallery {
             )
         }
         switch surface {
+        case .screenBusy:
+            return AnyView(screenBusy)
         case .windowNew:
             return AnyView(CodeV2WindowPreview(title: "New session", subtitle: "storefront", selected: nil, inspectorOpen: false) {
                 thread(CodeV2Fixtures.newSnapshot, composer: composer(CodeV2Fixtures.claudeSelection))
