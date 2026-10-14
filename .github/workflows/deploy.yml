@@ -420,7 +420,7 @@ jobs:
         run: |
           psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -c 'CREATE DATABASE researchtest'
           npx prisma migrate deploy
-          npx tsx --test tests/research-inspector-db.test.ts
+          npx tsx --test tests/research-inspector-db.test.ts tests/research-plan-fields-db.test.ts
         env:
           ADMIN_URL: postgresql://postgres:postgres@localhost:5432/shadow
           NODE_OPTIONS: --conditions=react-server

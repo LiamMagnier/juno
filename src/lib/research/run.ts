@@ -274,6 +274,13 @@ export function createPrismaResearchStore(): ResearchStore {
       return row ? toRunRow(row) : null;
     },
 
+    async saveIssuedQueries({ runId, userId, issuedQueries }) {
+      await prisma.$executeRaw`
+        UPDATE "ResearchRun"
+           SET "plan" = jsonb_set(COALESCE("plan", '{}'::jsonb), '{issuedQueries}', ${JSON.stringify(issuedQueries)}::jsonb)
+         WHERE "id" = ${runId} AND "userId" = ${userId}`;
+    },
+
     async recordQueries({ runId, userId, queries }) {
       await prisma.researchRun.updateMany({
         where: { id: runId, userId },

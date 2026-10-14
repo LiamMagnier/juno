@@ -128,6 +128,13 @@ export function memoryStore() {
       return { ...row };
     },
 
+    async saveIssuedQueries({ runId, userId, issuedQueries }) {
+      const row = own(runId, userId);
+      if (!row) return;
+      row.planObject = { ...(row.planObject as object), issuedQueries: [...issuedQueries] } as typeof row.planObject;
+      row.plan = row.planObject;
+    },
+
     async recordQueries({ runId, userId, queries }) {
       const row = own(runId, userId);
       if (row) row.queries = [...queries];

@@ -134,6 +134,12 @@ export interface ResearchStore {
     patch?: { plan?: ResearchPlan; error?: string | null; report?: string | null; budgetMicroUsd?: bigint | null };
   }): Promise<ResearchRunRow | null>;
   savePlan(input: { runId: string; userId: string; plan: ResearchPlan }): Promise<ResearchRunRow | null>;
+  /**
+   * Writes only the plan's `issuedQueries`, atomically. The driver records
+   * each query as it is billed; rewriting the whole plan to do so could drop
+   * steering or pause bookkeeping a person saved in between.
+   */
+  saveIssuedQueries?(input: { runId: string; userId: string; issuedQueries: string[] }): Promise<void>;
   recordQueries(input: { runId: string; userId: string; queries: string[] }): Promise<void>;
   appendEvents(input: {
     runId: string;

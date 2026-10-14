@@ -29,6 +29,7 @@ import {
   type ResearchPageResult,
   type ResearchRunRow,
   type ResearchSourceRow,
+  type ResearchStore,
   type StepOutcome,
   pageSkipMessage,
   pageWasSkipped,
@@ -161,12 +162,7 @@ export function createCorpusStage(ctx: EngineContext, stages: Pick<ReturnType<ty
             ]);
           }
           issued.add(query);
-          const latestSkip = (await store.loadRun(current.id, current.userId)) ?? current;
-          await store.savePlan({
-            runId: current.id,
-            userId: current.userId,
-            plan: { ...parsePlan(latestSkip.plan), issuedQueries: [...issued] },
-          });
+          await saveIssued(store, current, issued);
           continue;
         }
         const result = searched.result;
@@ -218,13 +214,7 @@ export function createCorpusStage(ctx: EngineContext, stages: Pick<ReturnType<ty
         // members of a wave has already been billed for the ones behind it, and
         // a resumed run that re-issued them would pay the vendor twice for the
         // same results.
-        const latest = (await store.loadRun(current.id, current.userId)) ?? current;
-        const latestPlan = parsePlan(latest.plan);
-        await store.savePlan({
-          runId: current.id,
-          userId: current.userId,
-          plan: { ...latestPlan, issuedQueries: [...issued] },
-        });
+        await saveIssued(store, current, issued);
       }
     }
     // Searching, pinned-source ingestion and reading are one investigation
@@ -877,4 +867,18 @@ export function createCorpusStage(ctx: EngineContext, stages: Pick<ReturnType<ty
    */
 
   return { doPrivateSources, doSearching, doBrowsing, doLinkHop, doReading };
+}
+
+/**
+ * Records the queries billed so far. Only that field, when the store can: a
+ * whole-plan rewrite here raced a person's steering or pause, and the last
+ * write silently dropped theirs.
+ */
+async function saveIssued(store: ResearchStore, run: { id: string; userId: string; plan: unknown }, issued: ReadonlySet<string>): Promise<void> {
+  if (store.saveIssuedQueries) {
+    await store.saveIssuedQueries({ runId: run.id, userId: run.userId, issuedQueries: [...issued] });
+    return;
+  }
+  const latest = (await store.loadRun(run.id, run.userId)) ?? run;
+  await store.savePlan({ runId: run.id, userId: run.userId, plan: { ...parsePlan(latest.plan), issuedQueries: [...issued] } });
 }
