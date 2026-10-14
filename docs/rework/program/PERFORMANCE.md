@@ -197,6 +197,114 @@ Verified on the development server unless noted.
 
 The hydration check caught a #418 caused by seeding from the cache in a state initialiser. That was fixed by seeding in a layout effect.
 
+## Paged history (Workstream I, 2026-10-14)
+
+Measured on a production build (`ALEVR_BUNDLE_SOURCEMAPS=1 next build && next start -p 3201`), Chrome stable headless, 1440×900, Postgres 17 on loopback in a throwaway database. Before and after are the same fixture and the same script.
+
+**Fixture.** `scripts/perf/seed-perf-data.ts` now also seeds `perf-long-2000`: 2,000 messages. Every fourth reply carries a run of three tool calls with arguments and results (encrypted activity), every tenth carries web sources, and every twentieth question carries an image and a PDF (100 attachments). Find and jump anchors are `perf-anchor-6` (near the top) and `perf-anchor-1500`.
+
+**Script.** `node scripts/perf/measure-chat-history.mjs --runs 5 --profile local|remote --state <storage.json> --out <file>`.
+- Five cold hard loads of `/chat/<id>`, with the cache cleared and starting from `about:blank`.
+- The route's RSC payload and HTML document timed to last byte from Node with the session cookie.
+- A wheel scroll to the very top.
+- Find `perf-anchor-6` from a fresh load.
+- A `?m=` deep link to message 6.
+
+**Attribution.** `node scripts/perf/loaded-attribution.mjs --bucket early|late` attributes the scripts the browser actually fetched before (early) or after (late) DOMContentLoaded, through source maps. The build manifest that `bundle-attribution.mjs` reads lists chunks the page never fetches, and it misses that a Server Component's `next/dynamic` does not split a Client Component.
+
+Raw results: `perf/history-{before,after}-{local,remote}.json`, `perf/loaded-history-{before,after}-{early,late}.txt`, `perf/build-routes-history-{before,after}.txt`, `perf/bundle-history-{before,after}.txt`.
+
+### Baseline (before)
+
+- **The whole conversation was in the route payload.** `/chat/[id]` decrypted and serialised all 2,000 messages into the RSC.
+  - Payload: 3.5 MB.
+  - HTML document: 4.26 MB decoded, 194 KB gzipped.
+  - Server time to last byte: 108 ms (RSC) and 158 ms (HTML), against 3–20 ms to first byte.
+- **The dropped-stream recovery poll** read the same whole thread every few seconds for up to an hour.
+- **Code and voice modules shipped with every conversation:**
+  - **Code session surface (~150 KB minified):** `code-session-view`, `run-review`, `code-run-cards`, the session composer and banner, and the agent-protocol code. They were fetched before DOMContentLoaded on every chat, although `page.tsx` imported them through `next/dynamic`. Called from a Server Component, that does not split a Client Component.
+  - **`voice-glow` (38.5 KB minified):** the whole library, imported only for its six-line `getAudioContext`. The dev voice labs use the library's `VoiceBeam`, so webpack kept the entire module in the shared chunk.
+- **zod (75 KB) is in the client graph legitimately.** `chat/context-tokens`, the semantic deliverables and `work/skills` parse with it at runtime. The agent request schemas in `lib/agents/domain.ts` are about 6 KB of it. Moving them would not remove zod, so they were left.
+
+### Changes
+
+| Change | Where |
+|---|---|
+| Cursor paging over `(createdAt, id)`, a total order, so tied timestamps neither skip nor repeat. The first page is the newest 60 messages and older pages are 120. A page is widened back to the question that opens its turn, so a turn is never split. `through` reaches back to a message; `all` returns the rest. | `src/lib/chat/history-page.ts` |
+| `/chat/[id]` opens on the newest page. A `?m=` deep link widens that page to reach its message, so the jump renders with the route. The legacy Code surface still reads the whole thread. | `chat/[id]/page.tsx`, `lib/queries.ts` (`getConversationThreadPage`, `getConversationHistory`) |
+| `GET /api/conversations/[id]/messages?before=&limit=&through=&all=1`: owner-scoped (another account's conversation is a 404, with or without a valid cursor) and parameters validated. | `api/conversations/[id]/messages/route.ts` |
+| `GET /api/conversations/[id]` is unchanged without parameters. The Mac and iPhone apps read it whole (`NativeThreadClient.swift`), and its whole-thread order now tie-breaks on id. `?limit=N` returns the newest page plus `history`. The web recovery poll uses `?limit=40`. | `api/conversations/[id]/route.ts`, `use-chat.ts` |
+| `use-chat` holds `history` and `loadOlderMessages`, one request at a time. A refreshed newest page (`router.refresh`, sync) keeps the history the reader already scrolled back through, but only when the two overlap. | `use-chat.ts`, `lib/chat/history-merge.ts` |
+| The next page is requested about two screens before the top. Rows landing above the reader hold the reader's line by key. In the commit where a page lands, the window is drawn at the anchored position. Rows that have never been measured are measured before paint, so their first layout cannot move the line. | `use-transcript-window.ts`, `message-list.tsx` |
+| History that lands above does not replay its entrance. Runs placed before every loaded question wait for their turn instead of drawing at the foot. | `message-list.tsx` |
+| Find, the full-transcript switch, the outputs panel and fork bring in the rest of the conversation when used. Find still searches on the client and adds no server search surface. Jumping (rail, find, links) to an unloaded message reads back to it first. | `conversation-find.tsx`, `session-outputs.tsx`, `chat-view.tsx`, `use-transcript-window.ts` |
+| The Code session view is split behind a Client Component `next/dynamic`. | `components/code/code-session-view-lazy.tsx` |
+| `getAudioContext` is local, so the product no longer imports `voice-glow`. The dev labs still do. | `src/lib/audio-context.ts` |
+
+No component, style or layout changed.
+
+### Results: first load of the 2,000-message conversation (median of 5 cold loads)
+
+| | local before | local after | remote before | remote after |
+|---|---|---|---|---|
+| Ready (first transcript row) | 399 ms | **192 ms** | 874 ms | **372 ms** |
+| Document fully received (`responseEnd`) | 250 ms | **47 ms** | 296 ms | **82 ms** |
+| DOMContentLoaded | 302 ms | **62 ms** | 405 ms | **277 ms** |
+| HTML document, transferred (gzip) | 194 KB | **45 KB** | 194 KB | **45 KB** |
+| HTML document, decoded | 4,262 KB | **330 KB** | 4,262 KB | **330 KB** |
+| RSC payload, soft navigation (decoded) | 3,547 KB | **148 KB** | — | — |
+| Server, to last byte: RSC / HTML | 108 / 158 ms | **15 / 36 ms** | — | — |
+| Server, to first byte (Navigation Timing) | 19 ms | 24 ms | 19 ms | 18 ms |
+| JS transferred, cold | 1,224 KB | **1,169 KB** | 1,216 KB | **1,169 KB** |
+| Everything transferred | 1,734 KB | **1,538 KB** | 1,738 KB | **1,549 KB** |
+| Long tasks during load (count / total / max) | 0 / 0 / 0 | 0 / 0 / 0 | 3 / 247 / 93 ms | 3 / 221 / 94 ms |
+| DOM elements after load | 2,174 | 1,851 | 2,137 | 1,845 |
+| Settled (network quiet 300 ms) | 754 ms | 851 ms | 2,124 ms | 1,990 ms |
+
+- **First-load scripts** (attributed, fetched before DOMContentLoaded): 84 scripts and 3,026 KB minified before, 80 scripts and 2,845 KB after. The Code session surface and `voice-glow` are gone. `next build` reports `/chat/[id]` first-load JS at 864 → 817 kB.
+- **`?m=` deep link to message 6:** visible at 778 → 427 ms locally and 1,830 → 1,772 ms remote. That link needs nearly the whole conversation, so its document is the same size as before.
+
+### What got slower, as measured
+
+- **Find on a phrase near the top, from a fresh load:** 94 → 257 ms locally and 167 → 1,564 ms remote. Find now fetches the rest of the conversation first: one request of about 2.8 MB, because route-handler JSON is not compressed by `next start`. The first load no longer pays that cost for everyone, but the one person who searches does. Compressing API responses (or a proxy that does) would cut most of it.
+- **Scrolling from the newest message to the very first:** 17 history requests, 2.9 MB uncompressed. Long tasks: 2 (108 ms total) locally, and 14 (1.36 s total, max 129 ms) on the remote profile with CPU ×2, against 0–1 before. Each landing page costs one task to parse, merge and lay out. That is spread across the scroll rather than paid up front, but a page is not free on slow hardware. Smaller older pages, or merging off the render path, are the next step.
+- **Settled time locally:** 754 → 851 ms. The page now requests the next older page only when the reader is near the top, so this is not history traffic. It is within run-to-run variance of this metric, and the remote profile improved.
+
+### Anchoring, verified
+
+`e2e/transcript-history.spec.ts` runs on the production build and on the development server: 5/5 on each.
+- The first load does not contain old turns.
+- Three successive pages land above a reader parked near the top, and the reader's row stays within 2 px. Measured drift is 0.6 px. Before the measure-before-paint fix it was 213 px: the first page's new rows rendered at their real heights while the layout still had estimates.
+- The top is reachable, and all 2,000 distinct rows render.
+- Find reaches an unloaded phrase and centres it.
+- `?m=` opens on message 1,500.
+
+The existing `e2e/transcript-window.spec.ts` and `e2e/transcript-route.spec.ts` still pass (6/6). They cover streaming re-rendering only its row, find on the 1,000-message chat, card growth above the reader, and the full-transcript switch.
+
+### Tests
+
+| Command | Result |
+|---|---|
+| `npx tsx --test tests/chat-history.test.ts tests/transcript-window.test.ts` | 19/19 |
+| `HISTORY_TEST_DATABASE_URL=<throwaway> NODE_OPTIONS=--conditions=react-server npx tsx --test --experimental-test-module-mocks tests/chat-history-paging.integration.test.ts` | 9/9 against Postgres 17 |
+| `npx tsx --test tests/*.test.ts` | 6,886 pass, 0 fail, 140 skipped |
+| `npm run typecheck` | clean |
+
+The integration test runs the real routes. It covers:
+- the native contract (no `history` key, every message, in order);
+- a cursor walk that returns each message exactly once, with tied timestamps;
+- attachments without `extractedText`;
+- bodies stored as ciphertext;
+- `through`, `all` and `?m=`;
+- owner scoping and malformed parameters.
+
+### Known limits
+
+- **The outputs chip's count of generated images** covers loaded history until the panel is opened. Opening it loads the rest. Artifacts were always complete.
+- **The file viewer's switcher** lists files from loaded history.
+- **The rail and the scrollbar** describe the loaded part of a long conversation. Each grows as history arrives.
+- **The legacy Code surface** (`?surface=legacy`) and `/code/[id]` still read whole threads.
+
 ## Security considerations
 
 - The client cache holds only the signed-in user's own GET responses, in memory, for one page load. It is never persisted, never keyed across accounts, and signing out is a full navigation.
@@ -215,7 +323,7 @@ The hydration check caught a #418 caused by seeding from the cache in a state in
 
 1. Make the `/chat/[id]` cold path never show a fallback: guarantee a FULL prefetch before click, or remove that segment's `loading.tsx` and give pending feedback on the clicked row (`useLinkStatus`).
 2. Take zod out of the shell by moving the agent request schemas to a server-only module. Lazy-load voice (`use-realtime-voice`/`voice-glow`) and the Code session hook from the sidebar.
-3. Page the conversation payload: send the newest N turns in the RSC and fetch older history on approach. Find in chat would then need a server-side or progressive search over decrypted pages.
+3. ~~Page the conversation payload~~ (done, "Paged history" above). Follow-ups: compress route-handler JSON so find and long scroll-backs pay less, and cut the per-page long task on slow hardware.
 4. Re-run `scripts/perf/measure-navigation.mjs` against the hosted deployment with a test account, and record the result in `src/lib/capabilities.ts`.
 
 ## References

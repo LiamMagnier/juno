@@ -20,7 +20,17 @@ export const VIRTUALIZE_AFTER = 24;
 const BOTTOM_SLOP = 24;
 
 /** Keep rich message renderers bounded; measurements include inline runs/media. */
-export function useTranscriptWindow(messages: readonly ChatMessage[]) {
+export function useTranscriptWindow(
+  messages: readonly ChatMessage[],
+  options: {
+    /**
+     * A jump (find, the rail, a search link) named a message that is not
+     * loaded: a paged transcript reads back to it, and the jump completes when
+     * it arrives.
+     */
+    onMissingMessage?: (messageId: string) => void;
+  } = {},
+) {
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const contentRef = React.useRef<HTMLDivElement>(null);
   const measurements = React.useRef(new Map<string, number>());
@@ -32,6 +42,10 @@ export function useTranscriptWindow(messages: readonly ChatMessage[]) {
   const writtenTopRef = React.useRef<number | null>(null);
   const targetRef = React.useRef<string | null>(null);
   const widthRef = React.useRef(0);
+  const firstKeyRef = React.useRef<string | undefined>(undefined);
+  const missingRef = React.useRef<string | null>(null);
+  const onMissingRef = React.useRef(options.onMissingMessage);
+  onMissingRef.current = options.onMissingMessage;
   const [revision, bump] = React.useReducer((n: number) => n + 1, 0);
   const [viewport, setViewport] = React.useState({ top: Infinity, height: 800 });
   const [atBottom, setAtBottom] = React.useState(true);
@@ -197,9 +211,20 @@ export function useTranscriptWindow(messages: readonly ChatMessage[]) {
 
   const last = messages[messages.length - 1];
   React.useLayoutEffect(() => {
+    const previous = layoutRef.current;
     layoutRef.current = layout;
+    const priorFirst = firstKeyRef.current;
+    firstKeyRef.current = layout.keys[0];
     const el = scrollRef.current;
     if (!el) return;
+    // Older history landed above the reader (a paged transcript scrolling
+    // back). Everything below moved down by the new rows' height; hold the
+    // line being read where it was, by its key, exactly as for a row above it
+    // changing height.
+    const prepended = priorFirst !== undefined && layout.keys[0] !== priorFirst && (layout.indexByKey.get(priorFirst) ?? 0) > 0;
+    if (prepended && !followsRef.current && !targetRef.current) {
+      pendingAnchor.current ??= readerAnchorRef.current ?? transcriptAnchor(previous, el.scrollTop - 24);
+    }
     if (targetRef.current) {
       const target = contentRef.current?.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(targetRef.current)}"]`);
       if (target) {
@@ -214,6 +239,29 @@ export function useTranscriptWindow(messages: readonly ChatMessage[]) {
       pendingAnchor.current = null;
     }
     mountedRef.current = true;
+    // Rows mounting for the first time were placed from estimates, but the
+    // browser lays them out at their real height, so a reader above or among
+    // them would see the line move before the ResizeObserver reports (and that
+    // report would then hold the moved line). Scrolling back into history that
+    // has never been on screen — every page that lands above the reader — does
+    // this on every step. Measure them here, before paint, and hold the line
+    // the layout put on screen.
+    if (!followsRef.current && !targetRef.current) {
+      const intended = transcriptAnchor(layout, el.scrollTop - 24);
+      let measured = false;
+      for (const [element, key] of observedRows.current) {
+        if (measurements.current.has(key)) continue;
+        const height = element.getBoundingClientRect().height;
+        if (height <= 0) continue;
+        measurements.current.set(key, height);
+        measured = true;
+      }
+      if (measured && intended) {
+        pendingAnchor.current = intended;
+        bump();
+        return;
+      }
+    }
     syncViewport();
   }, [layout, last?.content, messages.length, showAll, viewport.height, syncViewport, writeTop, follow]);
 
@@ -221,7 +269,13 @@ export function useTranscriptWindow(messages: readonly ChatMessage[]) {
   const focusMessage = React.useCallback((messageId: string) => {
     const index = messages.findIndex((m) => m.id === messageId);
     const el = scrollRef.current;
+    if (index < 0 && onMissingRef.current) {
+      missingRef.current = messageId;
+      onMissingRef.current(messageId);
+      return;
+    }
     if (index < 0 || !el) return;
+    missingRef.current = null;
     followsRef.current = false;
     pendingAnchor.current = null;
     targetRef.current = messageId;
@@ -230,6 +284,12 @@ export function useTranscriptWindow(messages: readonly ChatMessage[]) {
     setViewport({ top, height: el.clientHeight });
     bump();
   }, [messages, layout, writeTop]);
+
+  // The jump that was waiting on its message, once a page has brought it in.
+  React.useEffect(() => {
+    const waiting = missingRef.current;
+    if (waiting && messages.some((m) => m.id === waiting)) focusMessage(waiting);
+  }, [messages, focusMessage]);
 
   React.useEffect(() => {
     const focus = (event: Event) => {
@@ -248,7 +308,17 @@ export function useTranscriptWindow(messages: readonly ChatMessage[]) {
     if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFocusedKey(null);
   }, []);
   const windowed = messages.length > VIRTUALIZE_AFTER && !showAll;
-  const top = Number.isFinite(viewport.top) ? viewport.top : Math.max(0, layout.total - viewport.height);
+  // The render in which older history lands above the reader draws the window
+  // where the reader is about to be (the layout effect writes the same
+  // position), not where the stale scroll position says: drawn there, the
+  // rows around the reader would mount a frame late and their first layout
+  // would move the line.
+  const priorFirst = firstKeyRef.current;
+  const prependAnchor = priorFirst !== undefined && keys[0] !== priorFirst && (layout.indexByKey.get(priorFirst) ?? 0) > 0 && !followsRef.current && !targetRef.current
+    ? pendingAnchor.current ?? readerAnchorRef.current
+    : null;
+  const viewTop = prependAnchor ? anchoredTranscriptTop(layout, prependAnchor, viewport.top) + 24 : viewport.top;
+  const top = Number.isFinite(viewTop) ? viewTop : Math.max(0, layout.total - viewport.height);
   const range = windowed ? transcriptWindow(layout, Math.max(0, top - 24), viewport.height) : { start: 0, end: messages.length };
   const indices = Array.from({ length: range.end - range.start }, (_, i) => range.start + i);
   // The streaming leaf stays mounted when the reader looks back through history.

@@ -1,6 +1,6 @@
 "use client";
 
-import { getAudioContext } from "voice-glow";
+import { getAudioContext } from "@/lib/audio-context";
 import { cueDuration, renderVoiceCue, VOICE_CUES, type VoiceCueKind } from "@/lib/voice-cues";
 
 /**

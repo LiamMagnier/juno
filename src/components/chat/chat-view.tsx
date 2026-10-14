@@ -89,7 +89,7 @@ import { replaceArtifactById } from "@/lib/chat-client-state";
 import { serializeQuote, type ComposerQuote, type DocumentQuote } from "@/lib/quote-context";
 import { fileExtension } from "@/lib/documents/viewer-kind";
 import type { DocumentAsk } from "@/components/documents/types";
-import type { ClientArtifact, ClientAttachment, ClientMessage, ClientConversation, ReasoningEffort, TitleSource } from "@/types/chat";
+import type { ClientArtifact, ClientAttachment, ClientMessage, ClientConversation, ConversationHistory, ReasoningEffort, TitleSource } from "@/types/chat";
 import { Pressable } from "@/components/ui/pressable";
 import { announceReplyFinished } from "@/lib/ui-prefs";
 import { cachedJson } from "@/lib/client-cache";
@@ -100,6 +100,8 @@ import { useCrossMessages } from "@/components/chat/use-cross-messages";
 interface ChatViewProps {
   conversationId: string | null;
   initialMessages: ClientMessage[];
+  /** `initialMessages` is the newest page of a longer conversation; see useChat. */
+  initialHistory?: ConversationHistory;
   initialArtifacts: ClientArtifact[];
   initialModel: string;
   projectId?: string;
@@ -182,7 +184,7 @@ function titleMessages(messages: ClientMessage[]): { role: "USER" | "ASSISTANT";
     .map((m) => ({ role: m.role as "USER" | "ASSISTANT", content: m.content.slice(0, 4000) }));
 }
 
-export function ChatView({ conversationId, initialMessages, initialArtifacts, initialModel, projectId, agent: initialAgent, initialPrompt, initialPromptResearch, initialResearchRun, initialReasoningEffort, initialConnectors, initialArtifactIdentifier, initialFocusMessageId, initialRoom }: ChatViewProps) {
+export function ChatView({ conversationId, initialMessages, initialHistory, initialArtifacts, initialModel, projectId, agent: initialAgent, initialPrompt, initialPromptResearch, initialResearchRun, initialReasoningEffort, initialConnectors, initialArtifactIdentifier, initialFocusMessageId, initialRoom }: ChatViewProps) {
   const {
     settings,
     quota,
@@ -430,6 +432,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   const chat = useChat({
     conversationId,
     initialMessages,
+    initialHistory,
     initialArtifacts,
     model,
     projectId: activeProjectId ?? undefined,
@@ -518,6 +521,9 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       }, 4000);
     },
   });
+  // A paged conversation (lib/chat/history-page.ts): how much of it is here,
+  // and the reader for the rest.
+  const { history: chatHistory, loadOlderMessages } = chat;
 
   // A FAILED first generation still leaves a real conversation behind: the
   // server creates it before streaming, onMeta puts it in the sidebar, and the
@@ -955,11 +961,18 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   );
 
   const handleFork = React.useCallback(
-    (messageId: string) => {
+    async (messageId: string) => {
       if (chat.isBusy) return;
-      const idx = chat.messages.findIndex((m) => m.id === messageId);
+      // A fork carries the transcript up to the message, so the part of it
+      // still on the server comes first.
+      const transcript = chatHistory.hasOlder ? await loadOlderMessages({ all: true }) : chat.messages;
+      if (!transcript) {
+        toast.error("Couldn’t fork. The start of this chat didn’t load.");
+        return;
+      }
+      const idx = transcript.findIndex((m) => m.id === messageId);
       if (idx === -1) return;
-      const sliced = chat.messages
+      const sliced = transcript
         .slice(0, idx + 1)
         .filter((m) => !m.error && (m.role === "USER" || m.role === "ASSISTANT") && m.content.trim())
         .map(({ streaming: _s, pending: _p, error: _e, ...m }) => m as ClientMessage);
@@ -979,7 +992,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       }
       toast.success(`Forked from message ${idx + 1}`);
     },
-    [applyFork, chat.isBusy, chat.messages, conversationId, conversations, currentConversationId, router]
+    [applyFork, chat.isBusy, chat.messages, chatHistory.hasOlder, loadOlderMessages, conversationId, conversations, currentConversationId, router]
   );
 
   // Pick up a pending fork after navigating to the new-chat route. The payload
@@ -1109,13 +1122,18 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   }, [conversationId]);
   React.useEffect(() => {
     if (!initialFocusMessageId || focusedMessageRef.current === initialFocusMessageId) return;
-    if (!chat.messages.some((message) => message.id === initialFocusMessageId)) return;
+    if (!chat.messages.some((message) => message.id === initialFocusMessageId)) {
+      // The route's page reaches back to it; a soft navigation that only
+      // swapped ?m= may not have, so read back to it here.
+      if (chatHistory.hasOlder) void loadOlderMessages({ throughMessageId: initialFocusMessageId });
+      return;
+    }
     const frame = window.requestAnimationFrame(() => {
       focusedMessageRef.current = initialFocusMessageId;
       focusTranscriptMessage(initialFocusMessageId);
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [chat.messages, initialFocusMessageId]);
+  }, [chat.messages, chatHistory.hasOlder, loadOlderMessages, initialFocusMessageId]);
 
   // Keep the panel mounted through its slide-out; reopening cancels the exit.
   const closeArtifact = React.useCallback(() => {
@@ -1483,6 +1501,11 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
     return lines;
   }, [realtimeVoice.speechInterim, realtimeVoice.transcript]);
   const displayMessages = React.useMemo(() => [...chat.messages, ...voiceMessages], [chat.messages, voiceMessages]);
+  // Find and the outputs index read the whole conversation, so opening either
+  // brings in whatever of it is still on the server. A no-op once it is all here.
+  const loadWholeTranscript = React.useCallback(() => {
+    void loadOlderMessages({ all: true });
+  }, [loadOlderMessages]);
   // A task counts, the same way a research run does: a conversation whose only
   // content is a run is not an empty chat, and showing the greeting over a live
   // run would be the product denying the thing it is in the middle of doing.
@@ -2181,6 +2204,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
         <SessionOutputs
           artifacts={openableArtifacts}
           messages={chat.messages}
+          onOpen={loadWholeTranscript}
           onOpenArtifact={(identifier) => openArtifactByIdentifier(identifier)}
           onOpenAttachment={openAttachment}
         />
@@ -2453,7 +2477,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
             // Message view
             <div className="flex min-h-0 flex-1 flex-col relative h-full">
               {findOpen && (
-                <ConversationFind messages={displayMessages} onClose={() => setFindOpen(false)} />
+                <ConversationFind messages={displayMessages} onSearch={loadWholeTranscript} onClose={() => setFindOpen(false)} />
               )}
               <AgentThreadContext.Provider value={agentThreadIdentity}>
               <LiveUIHostProvider value={liveUIHost}>
@@ -2484,6 +2508,9 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                  * into it. The route prop stays null through all of that.
                  */
                 key={conversationId ?? "new"}
+                history={chatHistory}
+                loadingOlder={chat.loadingOlder}
+                onLoadOlder={loadOlderMessages}
                 entrance={handoff === null}
                 className={handoff === "entering" ? "motion-safe:animate-fade-in" : undefined}
                 messages={displayMessages}

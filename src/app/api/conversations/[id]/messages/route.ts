@@ -6,8 +6,47 @@ import { encryptMessageText, decryptMessageTextSafe } from "@/lib/message-crypto
 import { appendRequestSchema, appendTurnCreatedAt } from "@/lib/message-append";
 import { rateLimit } from "@/lib/rate-limit";
 import { isOwnerEmail } from "@/lib/owner";
+import { getConversationHistory } from "@/lib/queries";
+import { decodeHistoryCursor, MAX_PAGE_MESSAGES, OLDER_PAGE_MESSAGES } from "@/lib/chat/history-page";
 
 export const runtime = "nodejs";
+
+/**
+ * Older messages, a page at a time: the web transcript scrolling back through
+ * a conversation that opened on its newest page (lib/chat/history-page.ts).
+ *
+ *   ?before=<cursor>   only messages older than this (from `history.olderCursor`)
+ *   ?limit=<n>         how many (default OLDER_PAGE_MESSAGES, at most MAX_PAGE_MESSAGES)
+ *   ?through=<id>      reach back at least as far as this message (a jump to it)
+ *   ?all=1             everything older than `before` (find, the full-transcript switch)
+ *
+ * Answers `{ messages, history }`, messages oldest first in the same shape as
+ * GET /api/conversations/[id]. Owner-scoped: another account's conversation is
+ * a 404, the same as one that does not exist.
+ */
+export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const user = await getCurrentUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const { id } = await params;
+  const search = new URL(req.url).searchParams;
+  const rawBefore = search.get("before");
+  const before = rawBefore === null ? null : decodeHistoryCursor(rawBefore);
+  if (rawBefore !== null && !before) return NextResponse.json({ error: "Invalid cursor" }, { status: 400 });
+  const rawLimit = search.get("limit");
+  const limit = rawLimit === null ? OLDER_PAGE_MESSAGES : Number(rawLimit);
+  if (!Number.isInteger(limit) || limit < 1 || limit > MAX_PAGE_MESSAGES) {
+    return NextResponse.json({ error: "Invalid limit" }, { status: 400 });
+  }
+  const through = search.get("through");
+  if (through !== null && !/^[A-Za-z0-9_-]{1,64}$/.test(through)) {
+    return NextResponse.json({ error: "Invalid message id" }, { status: 400 });
+  }
+
+  const page = await getConversationHistory(user.id, id, { before, limit, throughMessageId: through, all: search.get("all") === "1" });
+  if (!page) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  return NextResponse.json(page);
+}
 
 /** Raised when an attachment cannot be claimed — wrong owner, or already used. */
 class AttachmentClaimError extends Error {

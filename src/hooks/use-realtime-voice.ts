@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { getAudioContext } from "voice-glow";
+import { getAudioContext } from "@/lib/audio-context";
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
 import {
   MIC_SAMPLE_RATE,
