@@ -421,6 +421,24 @@ describe("agent-computer provider and lifecycle", () => {
     assert.equal(await fakeComputerProvider.state(kept.handle), "running", "a computer with a row is never touched");
   });
 
+  it("two computers waking at once cannot both take the last awake slot", async () => {
+    process.env.AGENT_COMPUTER_MAX_AWAKE_USER = "2";
+    resetComputerProviderCache();
+    try {
+      await ensureAwake("user_1", "agent_on", { autoEnable: true });
+      for (const agentId of ["agent_b", "agent_c"]) {
+        await enableComputer("user_1", agentId);
+      }
+      const results = await Promise.allSettled([ensureAwake("user_1", "agent_b"), ensureAwake("user_1", "agent_c")]);
+      assert.equal(results.filter((r) => r.status === "fulfilled").length, 1, "one of them wakes");
+      const refused = results.find((r) => r.status === "rejected") as PromiseRejectedResult | undefined;
+      assert.equal(refused?.reason?.message, CAPS_USER_MESSAGE);
+      assert.equal(await memDb.countAwakeUser("user_1"), 2, "never three on for a cap of two");
+    } finally {
+      delete process.env.AGENT_COMPUTER_MAX_AWAKE_USER;
+    }
+  });
+
   it("builds exact Docker production argv and never includes forbidden flags", () => {
     const prodArgv = buildDockerCreateArgv({
       agentId: "ag_123",

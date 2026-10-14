@@ -55,3 +55,43 @@ test("sweeper writes on Postgres: a renewed lease and a changed row are left alo
     await db.$disconnect();
   }
 });
+
+test("awake caps on Postgres: two wakes at once cannot both take the last slot", { skip: !url }, async () => {
+  assert.match(url!, /\/juno_[a-z_]*test$/, "only a throwaway *_test database");
+  process.env.DATABASE_URL = url;
+  const { prismaUnguarded: db } = await import("../src/lib/prisma");
+  const { getComputerStorePersistence } = await import("../src/lib/computer/store");
+  const store = getComputerStorePersistence();
+  const userId = `computer_caps_${randomUUID()}`;
+  await db.user.create({ data: { id: userId, email: `${userId}@example.invalid` } });
+  try {
+    const agents = await Promise.all(
+      ["on", "b", "c"].map((name) => db.agent.create({ data: { userId, name, role: "Tester", instructions: "Tests caps." } })),
+    );
+    await db.agentComputer.createMany({
+      data: agents.map((agent, i) => ({ userId, agentId: agent.id, provider: "fake", status: i === 0 ? "awake" : "asleep" })),
+    });
+    // Separate connection pools stand in for two backend processes.
+    const { PrismaClient } = await import("@prisma/client");
+    const other = new PrismaClient({ datasourceUrl: url });
+    try {
+      const caps = { user: 2, host: 100 };
+      const verdicts = await Promise.all([
+        store.claimAwakeSlot(userId, agents[1].id, caps),
+        store.claimAwakeSlot(userId, agents[2].id, caps),
+        // A third racer straight through another pool, the same statement shape.
+        other.$transaction(async (tx) => {
+          await tx.$queryRawUnsafe(`SELECT pg_advisory_xact_lock(hashtext('juno.agent-computer.awake-caps'))::text`);
+          return tx.agentComputer.count({ where: { userId, status: { in: ["awake", "starting", "resting", "stopping"] } } });
+        }),
+      ]);
+      assert.deepEqual([verdicts[0], verdicts[1]].sort(), ["ok", "user"]);
+      assert.equal(await db.agentComputer.count({ where: { userId, status: { in: ["awake", "starting"] } } }), 2);
+    } finally {
+      await other.$disconnect();
+    }
+  } finally {
+    await db.user.delete({ where: { id: userId } }).catch(() => undefined);
+    await db.$disconnect();
+  }
+});

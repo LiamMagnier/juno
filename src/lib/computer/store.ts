@@ -81,6 +81,16 @@ export interface ComputerStorePersistence {
   listAgentIdsUnguarded(): Promise<Set<string>>;
   countAwakeHostUnguarded(excludeAgentId?: string): Promise<number>;
   countAwakeUser(userId: string, excludeAgentId?: string): Promise<number>;
+  /**
+   * Counts and claims in one step: marks this computer "starting" only while
+   * the person's and the server's awake counts are under their caps. Two wakes
+   * at once are serialized, so they cannot both read a count under the cap.
+   */
+  claimAwakeSlot(
+    userId: string,
+    agentId: string,
+    caps: { user: number; host: number }
+  ): Promise<"ok" | "user" | "host">;
   upsertByAgent(
     userId: string,
     agentId: string,
@@ -281,6 +291,23 @@ const prismaPersistence: ComputerStorePersistence = {
     });
   },
 
+  async claimAwakeSlot(userId, agentId, caps) {
+    const { prismaUnguarded } = await import("@/lib/db");
+    return prismaUnguarded.$transaction(async (tx) => {
+      // One short, server-wide lock for the count-then-claim; never held across `docker start`.
+      await tx.$queryRawUnsafe(`SELECT pg_advisory_xact_lock(hashtext('juno.agent-computer.awake-caps'))::text`);
+      const on = { status: { in: [...ON_STATUSES] }, agentId: { not: agentId } };
+      const [userAwake, hostAwake] = await Promise.all([
+        tx.agentComputer.count({ where: { ...on, userId } }),
+        tx.agentComputer.count({ where: on }),
+      ]);
+      if (userAwake >= caps.user) return "user" as const;
+      if (hostAwake >= caps.host) return "host" as const;
+      await tx.agentComputer.updateMany({ where: { userId, agentId }, data: { status: "starting", lastError: null } });
+      return "ok" as const;
+    });
+  },
+
   async countAwakeUser(userId, excludeAgentId) {
     const { prisma } = await import("@/lib/db");
     return prisma.agentComputer.count({
@@ -469,6 +496,22 @@ export function createInMemoryComputerPersistence(): ComputerStorePersistence & 
         )
         .map((r) => ({ ...r }));
     },
+    async claimAwakeSlot(userId, agentId, caps) {
+      let user = 0;
+      let host = 0;
+      for (const r of rows.values()) {
+        if (r.agentId === agentId || !(ON_STATUSES as readonly string[]).includes(r.status)) continue;
+        host++;
+        if (r.userId === userId) user++;
+      }
+      if (user >= caps.user) return "user";
+      if (host >= caps.host) return "host";
+      const existing = rows.get(agentId);
+      if (existing && existing.userId === userId) {
+        rows.set(agentId, { ...existing, status: "starting", lastError: null, updatedAt: new Date() });
+      }
+      return "ok";
+    },
     async countAwakeHostUnguarded(excludeAgentId) {
       let count = 0;
       for (const r of rows.values()) {
@@ -646,18 +689,14 @@ export const CAPS_USER_MESSAGE =
 export const CAPS_HOST_MESSAGE =
   "The server has reached its maximum number of computers right now. Try again in a moment.";
 
+/** Takes an awake slot for this computer (it becomes "starting"), or says which cap is full. */
 async function checkAwakeCaps(userId: string, agentId: string): Promise<void> {
-  const [userAwake, hostAwake] = await Promise.all([
-    activePersistence.countAwakeUser(userId, agentId),
-    activePersistence.countAwakeHostUnguarded(agentId),
-  ]);
-
-  if (userAwake >= env.agentComputer.maxAwakeUser) {
-    throw new ComputerError(CAPS_USER_MESSAGE);
-  }
-  if (hostAwake >= env.agentComputer.maxAwakeHost) {
-    throw new ComputerError(CAPS_HOST_MESSAGE);
-  }
+  const verdict = await activePersistence.claimAwakeSlot(userId, agentId, {
+    user: env.agentComputer.maxAwakeUser,
+    host: env.agentComputer.maxAwakeHost,
+  });
+  if (verdict === "user") throw new ComputerError(CAPS_USER_MESSAGE);
+  if (verdict === "host") throw new ComputerError(CAPS_HOST_MESSAGE);
 }
 
 function posterStorageKey(userId: string, agentId: string): string {
