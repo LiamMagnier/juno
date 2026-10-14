@@ -66,6 +66,8 @@ export interface OpsTarget {
   title: string;
   version: number;
   content: string;
+  /** When this version was written: compared with `notBefore` (see resolveArtifactOps). */
+  versionCreatedAt?: Date;
 }
 
 export interface AppliedOps {
@@ -125,7 +127,18 @@ export function opsFailureNotice(title: string, reason: string): string {
 export async function resolveArtifactOps(
   text: string,
   load: (identifier: string) => Promise<OpsTarget | null>,
-  options: { now?: Date; author?: string } = {}
+  options: {
+    now?: Date;
+    author?: string;
+    /**
+     * The model wrote its operations against the outline it was given when the
+     * turn began. A version written after that (the person inserted a row,
+     * another tab saved) shifts addresses: `setCell B5` would land on another
+     * row and overwrite the newer edit. Such a block fails with the usual
+     * notice instead of being applied.
+     */
+    notBefore?: Date;
+  } = {}
 ): Promise<{ text: string; applied: AppliedOps[]; failed: FailedOps[] } | null> {
   if (!hasArtifactOps(text)) return null;
   const applied: AppliedOps[] = [];
@@ -148,6 +161,11 @@ export async function resolveArtifactOps(
     if (!target) {
       failed.push({ identifier, reason: "no such artifact in this chat" });
       replacements.push(opsFailureNotice(identifier || "the artifact", "there is no artifact with that identifier in this chat"));
+      continue;
+    }
+    if (!working.has(identifier) && options.notBefore && target.versionCreatedAt && target.versionCreatedAt > options.notBefore) {
+      failed.push({ identifier, reason: "changed during the turn" });
+      replacements.push(opsFailureNotice(target.title, "it changed while this reply was being written, so nothing was applied; ask again to edit the current version"));
       continue;
     }
     if (!isSemanticArtifactType(target.type)) {

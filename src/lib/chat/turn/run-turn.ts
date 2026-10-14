@@ -722,7 +722,8 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
         const resolvedOps = await resolveArtifactOps(
           acc.text,
           (identifier) => loadOpsTarget(conversationId, identifier, user.id),
-          { author: user.name ?? undefined }
+          // Ops were written against the outline in this turn's prompt.
+          { author: user.name ?? undefined, notBefore: new Date(turnStartedAt) }
         );
         if (resolvedOps) {
           acc.replaceText(resolvedOps.text);

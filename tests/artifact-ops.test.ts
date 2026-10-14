@@ -122,3 +122,20 @@ test("the prompt section lists outlines and the ops contract", () => {
   assert.equal(buildSemanticArtifactContext([]), null);
   assert.equal(describeSemantic("SPREADSHEET", workbook), "1 sheet · 1 formula");
 });
+
+test("ops written against an older version than the current one are not applied", async () => {
+  const turnStarted = new Date("2026-10-14T12:00:00Z");
+  const edit = ops({ summary: "Raised the rate", ops: [{ op: "setCell", sheet: "S", cell: "rate", value: 0.075 }] });
+  // Someone saved a newer version while the reply was being written.
+  const moved = await resolveArtifactOps(edit, async () => ({ ...target(), versionCreatedAt: new Date("2026-10-14T12:00:05Z") }), {
+    notBefore: turnStarted,
+  });
+  assert.equal(moved?.applied.length, 0);
+  assert.match(moved!.text, /changed while this reply was being written/);
+  assert.equal(parseArtifacts(moved!.text).length, 0, "nothing is versioned");
+  // The version the outline showed: applied as before.
+  const same = await resolveArtifactOps(edit, async () => ({ ...target(), versionCreatedAt: new Date("2026-10-14T11:59:00Z") }), {
+    notBefore: turnStarted,
+  });
+  assert.equal(same?.applied.length, 1);
+});

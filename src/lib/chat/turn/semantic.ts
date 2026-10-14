@@ -48,8 +48,15 @@ export async function semanticArtifactContext(conversationId: string, userId: st
 export async function loadOpsTarget(conversationId: string, identifier: string, userId: string) {
   const row = await prisma.artifact.findFirst({
     where: { conversationId, userId, identifier, deletedAt: null },
-    select: { identifier: true, type: true, title: true, currentVersion: true, versions: { orderBy: { version: "desc" }, take: 1, select: { content: true, version: true } } },
+    select: { identifier: true, type: true, title: true, currentVersion: true, versions: { orderBy: { version: "desc" }, take: 1, select: { content: true, version: true, createdAt: true } } },
   });
   if (!row?.versions[0]) return null;
-  return { identifier: row.identifier, type: row.type, title: row.title, version: row.versions[0].version, content: row.versions[0].content };
+  return {
+    identifier: row.identifier,
+    type: row.type,
+    title: row.title,
+    version: row.versions[0].version,
+    content: row.versions[0].content,
+    versionCreatedAt: row.versions[0].createdAt,
+  };
 }
