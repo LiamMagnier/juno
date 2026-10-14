@@ -16,6 +16,7 @@ import type {
 } from './types.js';
 import type { ProviderAdapter, ReasoningEffort } from './providers/types.js';
 import type { ToolContext, ToolDefinition } from './tools/types.js';
+import { assertContainedPath, writeFileAtomic } from './tools/fs.js';
 import { PermissionEngine, classifyRisk, ruleSubjectFor, type PermissionRuleSet } from './permissions.js';
 import { addUsage } from './usage.js';
 import { runAgentLoop } from './loop.js';
@@ -223,6 +224,8 @@ export interface SubagentHost {
   requestApproval(request: ApprovalRequest): Promise<ApprovalDecision>;
   /** Snapshot an absolute path before the manager applies imported changes. */
   snapshotForUndo(absPath: string): void;
+  /** Record what an import left in a file, so a later undo never erases changes made after it. */
+  recordWrittenForUndo?(absPath: string): void;
 }
 
 // MARK: Role capability profiles
@@ -2271,7 +2274,20 @@ ${isolation}
    * existing undo machinery covers them. A best-of-N pick (`userPicked`) is
    * the person's own approval of a clean import.
    */
-  private async importWorktreeChanges(task: SubagentTask, options: { userPicked?: boolean } = {}): Promise<void> {
+  /**
+   * One import at a time. Children that finish together used to import in
+   * parallel: both read the checkout while it still matched the base, both
+   * were judged clean, and the second wrote its whole file over the first's.
+   */
+  private importChain: Promise<void> = Promise.resolve();
+
+  private importWorktreeChanges(task: SubagentTask, options: { userPicked?: boolean } = {}): Promise<void> {
+    const run = this.importChain.then(() => this.importWorktreeChangesNow(task, options));
+    this.importChain = run.catch(() => undefined);
+    return run;
+  }
+
+  private async importWorktreeChangesNow(task: SubagentTask, options: { userPicked?: boolean } = {}): Promise<void> {
     const worktree = task.worktree;
     if (!worktree) return;
     // -z: NUL-delimited records so quoted/special-char paths parse exactly.
@@ -2299,18 +2315,31 @@ ${isolation}
     }
 
     // Buffers end to end: binary files must round-trip byte-exact.
-    const changes: Array<{ file: string; content: Buffer | null; conflicted: boolean }> = [];
+    const changes: Array<{ file: string; content: Buffer | null; conflicted: boolean; target: string; main: Buffer | null }> = [];
+    const refused: string[] = [];
     for (const { file, deleted } of entries) {
       if (!file || changes.some((c) => c.file === file)) continue;
       const workPath = path.join(worktree.dir, file);
       const exists = fs.existsSync(workPath);
       const content = deleted || !exists ? null : fs.readFileSync(workPath);
       const base = await gitBuffer(worktree.dir, ['show', `${worktree.baseCommit}:${file}`]);
-      const mainPath = path.join(this.host.cwd, file);
-      const main = fs.existsSync(mainPath) ? fs.readFileSync(mainPath) : Buffer.alloc(0);
+      // The same containment as the file tools: a symlinked directory in the
+      // checkout must not carry an import outside the workspace.
+      let mainPath: string;
+      try {
+        mainPath = assertContainedPath({ cwd: this.host.cwd }, path.join(this.host.cwd, file));
+      } catch {
+        refused.push(file);
+        continue;
+      }
+      const mainNow = fs.existsSync(mainPath) ? fs.readFileSync(mainPath) : null;
+      const main = mainNow ?? Buffer.alloc(0);
       if (content !== null && content.equals(main)) continue; // already identical
-      if (content === null && !fs.existsSync(mainPath)) continue; // deleting a ghost
-      changes.push({ file, content, conflicted: !main.equals(base) });
+      if (content === null && mainNow === null) continue; // deleting a ghost
+      changes.push({ file, content, conflicted: !main.equals(base), target: mainPath, main: mainNow });
+    }
+    if (refused.length > 0) {
+      task.warnings.push(`Not applied (outside the workspace): ${refused.join(', ')}. They remain on branch ${worktree.branch}.`);
     }
     if (changes.length === 0) {
       await this.removeWorktree(task);
@@ -2355,15 +2384,36 @@ ${isolation}
       return; // worktree preserved for manual review
     }
 
+    // Checked again at the moment of writing: the parent (or the person) may
+    // have changed a file while the approval waited. That file is left as it
+    // is now, never overwritten by a version judged against an older one.
+    const changedSince: string[] = [];
     for (const change of changes) {
-      const target = path.join(this.host.cwd, change.file);
+      const target = change.target;
+      const now = fs.existsSync(target) ? fs.readFileSync(target) : null;
+      const same = now === null || change.main === null ? now === change.main : now.equals(change.main);
+      if (!same) {
+        changedSince.push(change.file);
+        continue;
+      }
       this.host.snapshotForUndo(target);
       if (change.content === null) {
         fs.rmSync(target, { force: true });
       } else {
         fs.mkdirSync(path.dirname(target), { recursive: true });
-        fs.writeFileSync(target, change.content);
+        writeFileAtomic(target, change.content);
       }
+      this.host.recordWrittenForUndo?.(target);
+    }
+    if (changedSince.length > 0) {
+      task.conflictedFiles = [...new Set([...(task.conflictedFiles ?? []), ...changedSince])];
+      task.warnings.push(
+        `Not applied because they changed after this agent's changes were checked: ${changedSince.join(', ')}. ` +
+          `Its versions remain on branch ${worktree.branch}.`,
+      );
+      task.applied = changedSince.length < changes.length;
+      this.emitUpdate(task);
+      return; // worktree preserved so the skipped files can still be merged by hand
     }
     task.applied = true;
     this.emitUpdate(task);

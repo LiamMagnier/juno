@@ -394,3 +394,92 @@ test('budgets stop runaway children, and abort cancels running children', async 
   assert.ok(sleeper.status === 'cancelled' || sleeper.status === 'interrupted');
   delete process.env.JUNO_HOME;
 });
+
+test('two children editing one file: the second import is a conflict, never a silent overwrite', async () => {
+  process.env.JUNO_HOME = tmpdir();
+  const cwd = gitRepo({ 'shared.txt': 'base\n' });
+  const provider = routedProvider((req, rootCall) => {
+    if (isChildRequest(req)) {
+      const who = taskText(req).includes('edit as A') ? 'A' : 'B';
+      const lastUser = req.messages[req.messages.length - 1];
+      const wrote = lastUser?.role === 'user' && lastUser.content.some((c) => c.type === 'tool_result' && !c.isError);
+      if (wrote) return [{ type: 'text_delta', text: `edited as ${who}` }, done('end_turn')];
+      return [
+        { type: 'tool_call', id: `w${who}`, name: 'write_file', input: { path: 'shared.txt', content: `${who} version\n` } },
+        done('tool_use'),
+      ];
+    }
+    if (rootCall === 0) {
+      return delegateCall([
+        { title: 'Writer A', prompt: 'edit as A', role: 'builder', writes: true },
+        { title: 'Writer B', prompt: 'edit as B', role: 'builder', writes: true },
+      ]);
+    }
+    if (rootCall === 1) return awaitCall;
+    return [{ type: 'text_delta', text: 'done' }, done('end_turn')];
+  });
+  // Each import approval stays open a moment, as a person reading the card
+  // does, so the other child finishes and imports while it waits.
+  const approvals: ApprovalRequest[] = [];
+  const session = AgentSession.create({
+    provider,
+    cwd,
+    mode: 'ask',
+    subagents: { readBeforeEdit: false },
+    callbacks: {
+      onEvent: () => undefined,
+      requestApproval: async (req): Promise<ApprovalDecision> => {
+        approvals.push(req);
+        if (req.toolName !== 'apply_subagent_changes') return 'allow';
+        await new Promise((resolve) => setTimeout(resolve, 400));
+        return req.risk === 'sensitive' ? 'deny' : 'allow';
+      },
+    },
+  });
+  await session.prompt('two writers');
+
+  const content = fs.readFileSync(path.join(cwd, 'shared.txt'), 'utf8');
+  assert.ok(content === 'A version\n' || content === 'B version\n', content);
+  const states = session.subagents!.states();
+  const applied = states.filter((s) => s.applied);
+  const conflicted = states.filter((s) => s.conflictedFiles?.includes('shared.txt'));
+  assert.equal(applied.length, 1, 'one import lands');
+  assert.equal(conflicted.length, 1, 'the other is reported as a conflict');
+  assert.ok(approvals.some((a) => a.toolName === 'apply_subagent_changes' && a.risk === 'sensitive'), 'and it asked');
+  delete process.env.JUNO_HOME;
+});
+
+test('a file the parent changed while the import approval waited is not overwritten', async () => {
+  process.env.JUNO_HOME = tmpdir();
+  const cwd = gitRepo({ 'file.txt': 'original\n', 'other.txt': 'other\n' });
+  const provider = routedProvider((req, rootCall) => {
+    if (isChildRequest(req)) {
+      const lastUser = req.messages[req.messages.length - 1];
+      const wrote = lastUser?.role === 'user' && lastUser.content.some((c) => c.type === 'tool_result' && !c.isError);
+      if (wrote) return [{ type: 'text_delta', text: 'edited' }, done('end_turn')];
+      return [
+        { type: 'tool_call', id: 'w1', name: 'write_file', input: { path: 'file.txt', content: 'agent version\n' } },
+        { type: 'tool_call', id: 'w2', name: 'write_file', input: { path: 'other.txt', content: 'agent other\n' } },
+        done('tool_use'),
+      ];
+    }
+    if (rootCall === 0) return delegateCall([{ title: 'Edit', prompt: 'change files', role: 'builder', writes: true }]);
+    if (rootCall === 1) return awaitCall;
+    return [{ type: 'text_delta', text: 'done' }, done('end_turn')];
+  });
+  const { session } = makeSession(provider, cwd, {
+    mode: 'ask',
+    onApproval: (req) => {
+      // While the card is up, the person edits one of the files.
+      if (req.toolName === 'apply_subagent_changes') fs.writeFileSync(path.join(cwd, 'file.txt'), 'person edit\n');
+      return 'allow';
+    },
+  });
+  await session.prompt('edit via agent');
+  assert.equal(fs.readFileSync(path.join(cwd, 'file.txt'), 'utf8'), 'person edit\n', 'their edit survives');
+  assert.equal(fs.readFileSync(path.join(cwd, 'other.txt'), 'utf8'), 'agent other\n', 'the untouched file is applied');
+  const state = session.subagents!.states()[0];
+  assert.ok(state.conflictedFiles?.includes('file.txt'));
+  assert.ok(state.warnings?.some((w) => w.includes('changed after')));
+  delete process.env.JUNO_HOME;
+});

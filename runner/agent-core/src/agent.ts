@@ -386,6 +386,7 @@ export class AgentSession {
           emit: (event) => session.emit(event),
           requestApproval: (request) => session.authorize(request),
           snapshotForUndo: (absPath) => session.checkpoints.snapshot(session.currentTurnIndex, absPath),
+          recordWrittenForUndo: (absPath) => session.checkpoints.recordWritten(absPath),
         },
         {
           ...(opts.routing?.budget ? { budget: opts.routing.budget } : {}),
