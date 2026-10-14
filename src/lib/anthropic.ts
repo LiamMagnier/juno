@@ -528,6 +528,25 @@ export async function* streamAnthropic(
       messages.push({ role: "user", content: results });
       continue;
     }
+    // Calls the model announced that will not run (a response cut off by
+    // max_tokens mid-call; tools are never run from a truncated turn): each
+    // row gets its end, so none is left spinning in the panel.
+    for (const call of toolUses) {
+      yield {
+        type: "tool",
+        phase: "result",
+        server: tools?.toolset.labelFor?.(call.name) ?? "connector",
+        name: call.name,
+        callId: call.callId,
+        round: roundIndex,
+        index: call.index,
+        args: call.json,
+        result: "",
+        ok: false,
+        status: "cancelled",
+        error: { code: "cancelled" },
+      };
+    }
     break;
   }
 

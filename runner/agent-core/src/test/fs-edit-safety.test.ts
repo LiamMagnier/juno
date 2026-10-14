@@ -93,3 +93,35 @@ test('a partial read lets edit_file through but not a write_file that would drop
   fresh.record('read_file', { path: 'huge.txt' }, false);
   assert.match(fresh.check('write_file', { path: 'huge.txt' }) ?? '', /read only part/);
 });
+
+test('finished background jobs are not kept without bound', async () => {
+  const { BackgroundJobs, MAX_FINISHED_JOBS } = await import('../harness/jobs.js');
+  const jobs = new BackgroundJobs();
+  const cwd = workspace();
+  const started = [];
+  for (let i = 0; i < MAX_FINISHED_JOBS + 5; i++) {
+    const job = jobs.start(`echo job-${i}`, { cwd });
+    await job.exited;
+    started.push(job.id);
+  }
+  const kept = started.filter((id) => jobs.read(id) !== null);
+  assert.equal(kept.length, MAX_FINISHED_JOBS, 'only the newest finished jobs stay');
+  assert.ok(kept.includes(started.at(-1)!), 'the latest is readable');
+  assert.equal(jobs.read(started[0]!), null, 'the oldest finished job was released');
+  jobs.killAll();
+});
+
+test("a child ledger's listeners hear when the budget it rolls up into runs out", async () => {
+  const { BudgetLedger } = await import('../harness/budget.js');
+  const session = new BudgetLedger({ maxTokens: 100 });
+  const workflow = session.child();
+  const heard: string[] = [];
+  workflow.onExhausted((reason) => heard.push(reason));
+  // Another part of the session spends the rest.
+  session.child().charge({ inputTokens: 80, outputTokens: 30 });
+  assert.equal(workflow.exhausted, true);
+  assert.equal(heard.length, 1, 'told once');
+  assert.match(heard[0]!, /100 tokens/);
+  workflow.charge({ inputTokens: 1, outputTokens: 1 });
+  assert.equal(heard.length, 1, 'and not again');
+});

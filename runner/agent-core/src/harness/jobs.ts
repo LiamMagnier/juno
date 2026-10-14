@@ -23,6 +23,12 @@ const MAX_JOB_BUFFER_CHARS = 2_000_000;
 /** What one foreground answer or one bash_output read returns at most. */
 const MAX_READ_CHARS = 30_000;
 export const MAX_JOB_RUNTIME_MS = 30 * 60_000;
+/**
+ * Finished jobs kept for bash_output. Each can hold up to 2M characters of
+ * output, and they were kept until the session ended; past this many the
+ * oldest finished ones go (running jobs are never dropped).
+ */
+export const MAX_FINISHED_JOBS = 16;
 
 export type JobStatus = 'running' | 'exited' | 'killed';
 
@@ -156,11 +162,19 @@ export class BackgroundJobs {
       job.cleanup();
       resolveExit();
     });
+    this.pruneFinished();
     this.jobs.set(id, job);
     // Keep the originating turn's ownership after timeout or explicit backgrounding.
     ctx.signal?.addEventListener('abort', onAbort, { once: true });
     if (ctx.signal?.aborted) onAbort();
     return job;
+  }
+
+  private pruneFinished(): void {
+    const finished = [...this.jobs.values()]
+      .filter((job) => job.status !== 'running')
+      .sort((a, b) => (a.endedAt ?? 0) - (b.endedAt ?? 0));
+    for (const job of finished.slice(0, Math.max(0, finished.length - MAX_FINISHED_JOBS + 1))) this.jobs.delete(job.id);
   }
 
   /** Output since the last read (capped), and the job's state. */

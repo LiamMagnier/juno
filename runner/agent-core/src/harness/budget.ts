@@ -28,12 +28,24 @@ export class BudgetLedger {
   private stopReason: string | undefined;
   private readonly parent: BudgetLedger | undefined;
   private readonly listeners = new Set<(reason: string) => void>();
+  private notified = false;
 
   constructor(
     readonly limits: RunBudget = {},
     parent?: BudgetLedger,
   ) {
     this.parent = parent;
+    // A run inside a larger one stops when the larger one runs out, and its
+    // listeners have to hear it: a workflow listening on its own ledger kept
+    // running its script, and reported "completed", after the session's
+    // budget was spent.
+    parent?.onExhausted((reason) => this.notify(reason));
+  }
+
+  private notify(reason: string): void {
+    if (this.notified) return;
+    this.notified = true;
+    for (const listener of this.listeners) listener(reason);
   }
 
   /** A child ledger: charges roll up, and either one being exhausted stops it. */
@@ -49,7 +61,7 @@ export class BudgetLedger {
     return this.stopReason ?? this.parent?.reason;
   }
 
-  /** Called once, when this ledger (not its parent) runs out. */
+  /** Called once, when this ledger or one it rolls up into runs out. */
   onExhausted(listener: (reason: string) => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
@@ -78,9 +90,7 @@ export class BudgetLedger {
       } else if (maxUsd !== undefined && this.costUsd >= maxUsd) {
         this.stopReason = `the run's cost budget ($${maxUsd.toFixed(2)}) was reached`;
       }
-      if (this.stopReason !== undefined) {
-        for (const listener of this.listeners) listener(this.stopReason);
-      }
+      if (this.stopReason !== undefined) this.notify(this.stopReason);
     }
     return this.exhausted;
   }
