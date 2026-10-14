@@ -31,7 +31,7 @@ function loadEnv(file) {
  * terminates untrusted public WebSockets every provider key Juno holds —
  * ANTHROPIC_API_KEY, COMPOSIO_API_KEY, TAVILY_API_KEY, RESEND_API_KEY and the
  * rest — none of which the relay has any use for. The relay speaks to exactly
- * four realtime voice providers.
+ * five realtime voice providers.
  *
  * Keep this in sync with what relay/src actually reads. Adding a key the relay
  * does not use costs nothing but blast radius; omitting one it does use breaks
@@ -50,6 +50,8 @@ const RELAY_ENV_ALLOWLIST = [
   "MINIMAX_BASE_URL",
   // Qwen (DashScope) realtime
   "DASHSCOPE_API_KEY",
+  // xAI Grok Voice
+  "XAI_API_KEY",
 ];
 
 const rootEnv = loadEnv(path.join(__dirname, "..", ".env"));

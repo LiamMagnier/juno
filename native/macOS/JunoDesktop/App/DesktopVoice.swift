@@ -389,6 +389,7 @@ enum DesktopVoiceCallText {
         case .gemini: "Screen sharing, thinks with Gemini 3.8 Flash"
         case .qwen: "Long calls, sees images and your screen"
         case .minimax: "Speech pipeline, no vision, no screen"
+        case .xai: "Grok Voice 3.0, full duplex, no vision, no screen"
         }
     }
 

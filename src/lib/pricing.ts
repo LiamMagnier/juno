@@ -1,5 +1,5 @@
 import type { ModelInfo } from "@/lib/models";
-import { geminiFlashRate, isGeminiPromoFlash } from "@/lib/scheduled-prices";
+import { geminiArgonRate, geminiFlashRate, isGeminiArgon, isGeminiPromoFlash } from "@/lib/scheduled-prices";
 import { OFFICIAL_RATES, type OfficialRateEntry } from "@/lib/model-rates.generated";
 
 /**
@@ -237,6 +237,8 @@ function baseRate(model: ModelInfo, at: Date | number = Date.now()): { input: nu
       if (pm.includes("gpt-4o")) return { input: 2.5, output: 10 };
       return { input: 2.5, output: 10 };
     case "google":
+      // $2/$10 through 2026-11-30, $4/$20 from 2026-12-01 UTC (scheduled-prices.ts).
+      if (isGeminiArgon(pm)) return { ...geminiArgonRate(at) };
       if (pm.includes("3.1-flash-lite")) return { input: 0.25, output: 1.5 };
       // $0.75/$3.75 through 2026-12-31, $1.50/$7.50 from 2027-01-01 UTC
       // (scheduled-prices.ts), priced at the moment the tokens were used.
@@ -260,6 +262,9 @@ function baseRate(model: ModelInfo, at: Date | number = Date.now()): { input: nu
       // hypothetical: get the order wrong and everyone who picked the cheap
       // tier is metered at the standard one.
       if (pm.includes("contributor")) return { input: 0.1, output: 0.2 };
+      // Muse Wonder 1.0 (dev.meta.ai/docs/pricing-rate-limits, 2026-10-14):
+      // $4 / $20, cached $0.20, no long-context premium, no contributor tier.
+      if (pm.includes("muse-wonder")) return { input: 4, output: 20 };
       if (pm.includes("muse-spark")) return { input: 1.25, output: 4.25 };
       // No muse-image row, for the reason model-metrics.ts gives: it bills per
       // returned image and `mediaRequestCost` is what charges for it, so a
@@ -529,7 +534,9 @@ function computedRate(model: ModelInfo, input: number, output: number): TokenRat
     // it; Pro, Flash-Lite and 3 Flash fell through to the 0.25x default and a
     // reader was billed 2.5x the real price on every implicit-cache hit.
     // Implicit caching has no storage fee, so writes cost plain input.
-    return { input, output, cacheRead: input * 0.1, cacheWrite: input, cacheWrite5m: input, cacheWrite1h: input };
+    // Gemini 4 Argon is the exception: $0.10 on $2, then $0.20 on $4 — 5%.
+    const cacheRatio = isGeminiArgon(model.providerModel) ? 0.05 : 0.1;
+    return { input, output, cacheRead: input * cacheRatio, cacheWrite: input, cacheWrite5m: input, cacheWrite1h: input };
   }
   if (model.provider === "deepseek") {
     // api-docs.deepseek.com/quick_start/pricing (2026-10-04): a cache hit is
@@ -598,6 +605,7 @@ function computedRate(model: ModelInfo, input: number, output: number): TokenRat
      *
      *   standard      $0.15   against $1.25   = 12%
      *   contributor   $0.002  against $0.10   = 2%
+     *   Muse Wonder   $0.20   against $4.00   = 5%
      *
      * The fallback billed a standard cached token at $0.3125 against a real
      * $0.15 — 2x — and a contributor one at $0.025 against $0.002, which is
@@ -613,7 +621,7 @@ function computedRate(model: ModelInfo, input: number, output: number): TokenRat
     return {
       input,
       output,
-      cacheRead: input * (pm.includes("contributor") ? 0.02 : 0.12),
+      cacheRead: input * (pm.includes("contributor") ? 0.02 : pm.includes("muse-wonder") ? 0.05 : 0.12),
       cacheWrite: input,
       cacheWrite5m: input,
       cacheWrite1h: input,

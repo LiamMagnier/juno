@@ -40,6 +40,7 @@ const PROVIDER_BLURB: Record<VoiceProviderId, string> = {
   gemini: `Screen sharing · thinks with ${voiceModelLabel(VOICE_GEMINI_DELEGATE_MODEL)}`,
   qwen: "Long calls · sees images and your screen",
   minimax: "Speech pipeline · no vision, no screen",
+  xai: "Grok Voice 3.0 · full duplex · no vision, no screen",
   mock: "Developer stand-in · no provider is called",
 };
 

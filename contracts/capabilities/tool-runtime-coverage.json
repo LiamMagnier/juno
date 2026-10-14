@@ -284,6 +284,31 @@
       }
     },
     {
+      "id": "google:gemini-4-argon",
+      "provider": "google",
+      "adapter": "gemini-native",
+      "vision": true,
+      "catalogAgenticTools": true,
+      "compatible": false,
+      "verdicts": {
+        "roundTrip": {
+          "verdict": "untested"
+        },
+        "parallel": {
+          "verdict": "untested"
+        },
+        "toolImages": {
+          "verdict": "untested"
+        },
+        "runCodeE2E": {
+          "verdict": "untested"
+        },
+        "skillE2E": {
+          "verdict": "untested"
+        }
+      }
+    },
+    {
       "id": "google:gemini-3.8-flash",
       "provider": "google",
       "adapter": "gemini-native",
@@ -337,6 +362,31 @@
       "id": "google:gemini-3.5-flash-lite",
       "provider": "google",
       "adapter": "gemini-native",
+      "vision": true,
+      "catalogAgenticTools": true,
+      "compatible": false,
+      "verdicts": {
+        "roundTrip": {
+          "verdict": "untested"
+        },
+        "parallel": {
+          "verdict": "untested"
+        },
+        "toolImages": {
+          "verdict": "untested"
+        },
+        "runCodeE2E": {
+          "verdict": "untested"
+        },
+        "skillE2E": {
+          "verdict": "untested"
+        }
+      }
+    },
+    {
+      "id": "meta:muse-wonder-1.0",
+      "provider": "meta",
+      "adapter": "openai-compatible",
       "vision": true,
       "catalogAgenticTools": true,
       "compatible": false,

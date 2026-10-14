@@ -432,6 +432,14 @@ const CURATED: ModelInfo[] = [
   def({ provider: "openai", id: "gpt-3.5-turbo", name: "GPT-3.5 Turbo", family: "gpt-3.5", status: "deprecated", released: "2023-03", minPlan: "FREE", cost: 1, contextWindow: 16_385, description: "Legacy fast model.", deprecationNote: "Retires Oct 23, 2026. Use GPT-5.6 Terra", retiresOn: "2026-10-23", replacedBy: "openai:gpt-5.6-terra" }),
 
   // —— Google ——
+  // Gemini 4 Argon (owner-requested 2026-10-14), read 2026-10-14 from
+  // ai.google.dev/gemini-api/docs/models/gemini-4-argon, the thinking table
+  // and the pricing page: id `gemini-4-argon` (stable, not preview), text /
+  // image / video / audio / PDF in, text out, 1,048,576 context shared with
+  // output (65,536 out by default). Thinking low|medium|high, default medium.
+  // $2/$10 through Nov 30, then $4/$20 (scheduled-prices.ts). Not on Google's
+  // free tier, so PRO. Its own family: it is a new generation, not a Pro row.
+  def({ provider: "google", id: "gemini-4-argon", name: "Gemini 4 Argon", family: "argon", status: "current", released: "2026-10", minPlan: "PRO", vision: true, reasoning: true, cost: 3, contextWindow: 1_048_576, description: "Google's frontier model for complex, long-running work: coding, knowledge work, 1M context." }),
   def({ provider: "google", id: "gemini-3.8-flash", name: "Gemini 3.8 Flash", family: "flash", status: "current", released: "2026-09", minPlan: "FREE", vision: true, reasoning: true, cost: 2, contextWindow: 1_048_576, description: "Google's flagship multimodal Flash model with hybrid reasoning." }),
   def({ provider: "google", id: "gemini-3.6-flash", name: "Gemini 3.6 Flash", family: "flash", status: "legacy", released: "2026-07", minPlan: "FREE", vision: true, cost: 2, contextWindow: 1_048_576, description: "Earlier Flash generation." }),
   def({ provider: "google", id: "gemini-3.1-pro-preview", name: "Gemini 3.1 Pro", family: "pro", status: "current", released: "2026-02", minPlan: "PRO", vision: true, cost: 3, contextWindow: 1_048_576, description: "Deep-reasoning Pro tier (preview): 3.5 Flash now edges it on most benchmarks." }),
@@ -472,6 +480,13 @@ const CURATED: ModelInfo[] = [
   // are registered as SEPARATE FAMILIES so neither can shadow the other in a
   // picker that shows one current row per family. See `trainsOnPrompts` for
   // what keeps the cheap one out of Auto.
+  // Muse Wonder 1.0 (owner-requested 2026-10-14), read 2026-10-14 from
+  // dev.meta.ai/docs/models and /docs/pricing-rate-limits: id
+  // `muse-wonder-1.0`, Preview, 1,048,576 context, text/image/video/audio/PDF
+  // in, effort minimal..max, $4/$20 (cached $0.20), no contributor tier.
+  // Muse Wonder Full is Muse Code only and not on the API, so not listed.
+  // Not verified live, for the same no-credential reason as the Spark rows.
+  def({ provider: "meta", id: "muse-wonder-1.0", name: "Muse Wonder", family: "muse-wonder", status: "current", released: "2026-10", minPlan: "PRO", vision: true, reasoning: true, cost: 3, contextWindow: 1_048_576, description: "Meta's frontier model for agents (preview): 1M context, multimodal input, minimal to max effort." }),
   def({ provider: "meta", id: "muse-spark-1.3", name: "Muse Spark 1.3", family: "muse-spark", status: "current", released: "2026-09", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 1_048_576, description: "Meta's agentic flagship: ~20% fewer tool calls and ~25% fewer tokens than 1.2." }),
   def({ provider: "meta", id: "muse-spark-1.3-contributor", name: "Muse Spark 1.3 Contributor", family: "muse-spark-contributor", status: "current", released: "2026-09", minPlan: "PRO", vision: true, reasoning: true, cost: 1, contextWindow: 1_048_576, trainsOnPrompts: true, description: "Muse Spark 1.3 at a 12x discount: Meta trains on the prompts and completions you send it." }),
   def({ provider: "meta", id: "muse-spark-1.2", name: "Muse Spark 1.2", family: "muse-spark", status: "legacy", released: "2026-08", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 1_048_576, description: "Meta's agentic reasoner: coding-tuned, 1M context, with image, video and PDF input." }),

@@ -1365,6 +1365,25 @@ enum ModelPickerWebFixtures {
             price: JunoModelPrice(inputPerMillion: 0.95, outputPerMillion: 4)
         ),
         JunoModelDescriptor(
+            id: "google:gemini-4-argon",
+            providerID: "google",
+            providerName: "Google · Gemini",
+            displayName: "Gemini 4 Argon",
+            summary: "Google's frontier model for complex, long-running work: coding, knowledge work, 1M context.",
+            modality: .chat,
+            isLegacy: false,
+            released: "2026-10",
+            contextWindowTokens: 1048576,
+            speedGrade: 6,
+            intelligenceGrade: 10,
+            capabilities: [.reasoning, .vision, .search, .tools],
+            thinking: JunoThinkingLadder(stops: [.init(id: "low", label: "Low", accessibilityLabel: "Low"), .init(id: "medium", label: "Medium", accessibilityLabel: "Medium"), .init(id: "high", label: "High", accessibilityLabel: "High")], modelName: "Gemini 4 Argon", fastModeRateMultiplier: nil, defaultStopID: "medium"),
+            unavailabilityReason: nil,
+            deprecationNote: nil,
+            retiresOn: nil,
+            price: JunoModelPrice(inputPerMillion: 2, outputPerMillion: 10)
+        ),
+        JunoModelDescriptor(
             id: "google:gemini-3.8-flash",
             providerID: "google",
             providerName: "Google · Gemini",
@@ -1705,6 +1724,25 @@ enum ModelPickerWebFixtures {
             deprecationNote: nil,
             retiresOn: nil,
             price: JunoModelPrice(inputPerMillion: 0.3, outputPerMillion: 2.5)
+        ),
+        JunoModelDescriptor(
+            id: "meta:muse-wonder-1.0",
+            providerID: "meta",
+            providerName: "Meta · Muse",
+            displayName: "Muse Wonder",
+            summary: "Meta's frontier model for agents (preview): 1M context, multimodal input, minimal to max effort.",
+            modality: .chat,
+            isLegacy: false,
+            released: "2026-10",
+            contextWindowTokens: 1048576,
+            speedGrade: 5,
+            intelligenceGrade: 10,
+            capabilities: [.reasoning, .vision, .search, .tools],
+            thinking: JunoThinkingLadder(stops: [.init(id: "minimal", label: "Minimal", accessibilityLabel: "Minimal"), .init(id: "low", label: "Low", accessibilityLabel: "Low"), .init(id: "medium", label: "Medium", accessibilityLabel: "Medium"), .init(id: "high", label: "High", accessibilityLabel: "High"), .init(id: "xhigh", label: "Extra high", accessibilityLabel: "Extra high"), .init(id: "max", label: "Max", accessibilityLabel: "Max")], modelName: "Muse Wonder", fastModeRateMultiplier: nil, defaultStopID: "medium"),
+            unavailabilityReason: nil,
+            deprecationNote: nil,
+            retiresOn: nil,
+            price: JunoModelPrice(inputPerMillion: 4, outputPerMillion: 20)
         ),
         JunoModelDescriptor(
             id: "meta:muse-spark-1.3",

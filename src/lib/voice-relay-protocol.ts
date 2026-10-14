@@ -4,7 +4,7 @@
  * JunoApp Juno/Features/Voice/Realtime/VoiceRelayProtocol.swift.
  */
 
-export type VoiceProviderId = "openai" | "gemini" | "qwen" | "minimax" | "mock";
+export type VoiceProviderId = "openai" | "gemini" | "qwen" | "minimax" | "xai" | "mock";
 
 /**
  * How hard a provider's delegated model reasons (relay/src/protocol.ts).
@@ -136,6 +136,7 @@ export const VOICE_PROVIDER_LABELS: Record<VoiceProviderId, string> = {
   gemini: "Gemini",
   qwen: "Qwen",
   minimax: "MiniMax",
+  xai: "Grok",
   mock: "Mock (dev)",
 };
 
@@ -151,8 +152,8 @@ export const DEFAULT_VOICE_PROVIDER: VoiceProviderId = "gemini";
 /** Providers shown in the switcher (mock appears only in dev builds). */
 export const VOICE_PROVIDERS: VoiceProviderId[] =
   process.env.NODE_ENV === "development"
-    ? ["openai", "gemini", "qwen", "minimax", "mock"]
-    : ["openai", "gemini", "qwen", "minimax"];
+    ? ["openai", "gemini", "xai", "qwen", "minimax", "mock"]
+    : ["openai", "gemini", "xai", "qwen", "minimax"];
 
 /**
  * The model each provider runs by default, by name. Shown on the provider
@@ -164,6 +165,7 @@ export const VOICE_PROVIDER_MODELS: Record<VoiceProviderId, string> = {
   gemini: "gemini-3.8-live",
   qwen: "qwen3.5-omni-flash-realtime",
   minimax: "MiniMax-M2.7-highspeed",
+  xai: "grok-voice-3.0",
   mock: "mock",
 };
 
@@ -186,6 +188,8 @@ const VOICE_MODEL_LABELS: Record<string, string> = {
   "gemini-3.8-live-extended-thinking": "Gemini 3.8 Live Thinking",
   "qwen3.5-omni-flash-realtime": "Qwen3.5 Omni Flash",
   "MiniMax-M2.7-highspeed": "MiniMax M2.7",
+  "grok-voice-3.0": "Grok Voice 3.0",
+  "grok-voice-latest": "Grok Voice",
   mock: "Mock",
 };
 

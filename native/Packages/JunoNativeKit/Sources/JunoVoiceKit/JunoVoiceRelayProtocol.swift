@@ -21,6 +21,7 @@ public enum JunoVoiceProvider: String, Codable, CaseIterable, Identifiable, Send
     case gemini
     case qwen
     case minimax
+    case xai
 
     public var id: String { rawValue }
 
@@ -36,6 +37,7 @@ public enum JunoVoiceProvider: String, Codable, CaseIterable, Identifiable, Send
         case .gemini: "Gemini"
         case .qwen: "Qwen"
         case .minimax: "MiniMax"
+        case .xai: "Grok"
         }
     }
 
@@ -48,6 +50,7 @@ public enum JunoVoiceProvider: String, Codable, CaseIterable, Identifiable, Send
         case .gemini: "Gemini 3.8 Live"
         case .qwen: "Qwen3.5 Omni Flash"
         case .minimax: "MiniMax M2.7"
+        case .xai: "Grok Voice 3.0"
         }
     }
 
@@ -59,7 +62,7 @@ public enum JunoVoiceProvider: String, Codable, CaseIterable, Identifiable, Send
         switch self {
         case .openai: "GPT-6.1 Sol"
         case .gemini: "Gemini 3.8 Flash"
-        case .qwen, .minimax: nil
+        case .qwen, .minimax, .xai: nil
         }
     }
 
@@ -72,7 +75,7 @@ public enum JunoVoiceProvider: String, Codable, CaseIterable, Identifiable, Send
         switch self {
         case .openai: [.low, .medium, .high, .xhigh]
         case .gemini: [.low, .medium, .high]
-        case .qwen, .minimax: []
+        case .qwen, .minimax, .xai: []
         }
     }
 
@@ -104,6 +107,8 @@ public enum JunoVoiceProvider: String, Codable, CaseIterable, Identifiable, Send
             return .qwen
         } else if lower.contains("minimax") {
             return .minimax
+        } else if lower.contains("grok") || lower.contains("xai") {
+            return .xai
         } else {
             return .gemini
         }

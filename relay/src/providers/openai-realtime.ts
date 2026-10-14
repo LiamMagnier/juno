@@ -32,6 +32,9 @@ export interface RealtimeDialect {
   assistantHistoryContentType: "output_text" | "text";
   sessionUpdate(seed: VoiceSessionSeed): Record<string, unknown>;
   supportsVideo: boolean;
+  /** Report mic audio as `audioInSec` as it is sent, for a provider billed per
+   * minute of call rather than per token (xAI's Grok Voice). */
+  meterInputAudio?: boolean;
 }
 
 /**
@@ -191,6 +194,7 @@ export class OpenAiShapedRealtimeSession implements VoiceProviderSession {
   sendAudio(pcm16k: Buffer): void {
     const pcm = resamplePcm16(pcm16k, 16000, this.dialect.inputRate);
     const audio = pcm.toString("base64");
+    if (this.dialect.meterInputAudio) this.events?.onUsage({ audioInSec: pcm16k.length / 2 / 16000 });
     if (this.provider === "qwen") {
       for (const event of this.qwenInputOrder.audio(audio)) this.send(event);
       return;

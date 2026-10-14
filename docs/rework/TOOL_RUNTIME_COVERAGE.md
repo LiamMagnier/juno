@@ -45,7 +45,7 @@ JSON as `catalogAgenticTools` for context, and never counts as evidence. The cap
 ## Models
 
 <!-- coverage:models:start -->
-52 current chat models; 0 compatible. Every other cell is untested until a live probe or acceptance run records evidence.
+54 current chat models; 0 compatible. Every other cell is untested until a live probe or acceptance run records evidence.
 
 | Model | Adapter | roundTrip | parallel | toolImages | runCodeE2E | skillE2E | Compatible |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -59,9 +59,11 @@ JSON as `catalogAgenticTools` for context, and never counts as evidence. The cap
 | `openai:gpt-5.6-terra` | openai-responses | untested | untested | untested | untested | untested | no |
 | `openai:gpt-5.5-pro` | openai-responses | untested | untested | untested | untested | untested | no |
 | `openai:gpt-5.4-mini` | openai-responses | untested | untested | untested | untested | untested | no |
+| `google:gemini-4-argon` | gemini-native | untested | untested | untested | untested | untested | no |
 | `google:gemini-3.8-flash` | gemini-native | untested | untested | untested | untested | untested | no |
 | `google:gemini-3.1-pro-preview` | gemini-native | untested | untested | untested | untested | untested | no |
 | `google:gemini-3.5-flash-lite` | gemini-native | untested | untested | untested | untested | untested | no |
+| `meta:muse-wonder-1.0` | openai-compatible | untested | untested | untested | untested | untested | no |
 | `meta:muse-spark-1.3` | openai-compatible | untested | untested | untested | untested | untested | no |
 | `meta:muse-spark-1.3-contributor` | openai-compatible | untested | untested | untested | untested | untested | no |
 | `zhipu:glm-5.3` | openai-compatible | untested | untested | n/a | untested | untested | no |

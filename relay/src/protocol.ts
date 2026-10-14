@@ -25,7 +25,7 @@
  *  - TEXT   both ways     : one JSON message per frame (types below)
  */
 
-export type VoiceProviderId = "openai" | "gemini" | "qwen" | "minimax" | "mock";
+export type VoiceProviderId = "openai" | "gemini" | "qwen" | "minimax" | "xai" | "mock";
 // "mock" is dev-only (relay env RELAY_ENABLE_MOCK=1) — no external calls.
 
 /**

@@ -66,6 +66,39 @@ const qwenDialect: RealtimeDialect = {
 };
 
 /**
+ * Grok Voice 3.0 (docs.x.ai/developers/model-capabilities/audio/voice-agent,
+ * read 2026-10-14): xAI's speech-to-speech model on an OpenAI-Realtime-shaped
+ * WebSocket, GA session schema (audio nested under session.audio). Pinned to
+ * `grok-voice-3.0` rather than the `grok-voice-latest` alias so a future
+ * generation is a deliberate change here, not a silent swap mid-release;
+ * RELAY_XAI_VOICE_MODEL overrides. Reasoning is "high" (default) or "none";
+ * the default is kept. Voice `eve` is the documented default; the page names
+ * no other, so agents speak in it (see AGENT_VOICES). Image input is not
+ * documented for realtime sessions, so no video.
+ */
+const xaiDialect: RealtimeDialect = {
+  provider: "xai",
+  url: () => {
+    const model = process.env.RELAY_XAI_VOICE_MODEL || "grok-voice-3.0";
+    return `wss://api.x.ai/v1/realtime?model=${encodeURIComponent(model)}`;
+  },
+  headers: () => ({ Authorization: `Bearer ${requiredEnv("XAI_API_KEY")}` }),
+  inputRate: 24000,
+  assistantHistoryContentType: "output_text",
+  supportsVideo: false,
+  meterInputAudio: true,
+  sessionUpdate: (seed: VoiceSessionSeed) => ({
+    instructions: seed.instructions,
+    voice: seed.voice || "eve",
+    turn_detection: { type: "server_vad" },
+    audio: {
+      input: { format: { type: "audio/pcm", rate: 24000 } },
+      output: { format: { type: "audio/pcm", rate: 24000 } },
+    },
+  }),
+};
+
+/**
  * The voices an agent may speak in, per provider.
  *
  * Only names the provider is known to accept: Gemini Live fails setup on a
@@ -168,6 +201,24 @@ export const PROVIDERS: Record<VoiceProviderId, VoiceProviderFactory> = {
     pricing: { audioInPerSec: 0.00189 / 60, audioOutPerSec: 0.0133 / 60 },
     available: () => !!process.env.DASHSCOPE_API_KEY,
     create: () => new OpenAiShapedRealtimeSession(qwenDialect),
+  },
+  xai: {
+    id: "xai",
+    capabilities: {
+      videoInput: false,
+      screenInput: false,
+      trueS2S: true,
+      needsClientTranscript: false,
+      thinkingChoice: false,
+      // xAI publishes no session cap; an hour matches the OpenAI ceiling.
+      maxSessionSec: 60 * 60,
+    },
+    // $0.08 per minute of call (docs.x.ai/developers/models, grok-voice-3.0,
+    // read 2026-10-14), charged against the mic seconds the dialect meters,
+    // as GPT-Live's is. Text input ($0.004 per message) is not estimated.
+    pricing: { audioInPerSec: 0.08 / 60, audioOutPerSec: 0 },
+    available: () => !!process.env.XAI_API_KEY,
+    create: () => new OpenAiShapedRealtimeSession(xaiDialect),
   },
   minimax: {
     id: "minimax",

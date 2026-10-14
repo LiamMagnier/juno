@@ -1,7 +1,7 @@
 import { hasRetired, isSupersededModel, MODELS, type ModelInfo } from "@/lib/models";
 import { PROVIDER_LIST, type Provider } from "@/lib/providers";
 import { BENCHMARKS, type ModelBenchmark } from "@/lib/benchmarks.generated";
-import { geminiFlashRate, type TokenPrice } from "@/lib/scheduled-prices";
+import { geminiArgonRate, geminiFlashRate, type TokenPrice } from "@/lib/scheduled-prices";
 import { OFFICIAL_RATES } from "@/lib/model-rates.generated";
 
 export type ReasoningEffort = "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null;
@@ -124,6 +124,10 @@ const FAMILY_RULES: Partial<Record<Provider, FamilyRule[]>> = {
     // `flash` row ($0.30/$2.50) and 3.6 hit a $1.50/$9 row. Google's pricing
     // page lists all three at $0.75/$3.75 through 2026-12-31 and $1.50/$7.50
     // from 2027-01-01; `scheduled` swaps the rates at 00:00 UTC that day.
+    // Gemini 4 Argon: $2/$10 through 2026-11-30, $4/$20 from 2026-12-01
+    // (scheduled-prices.ts). Google's frontier tier for long-running work;
+    // graded on positioning until a benchmark sync covers it.
+    { hints: ["4-argon"], metric: official(2, 10, 1_048_576, 6, 10), scheduled: geminiArgonRate },
     { hints: ["3.8-flash"], metric: official(0.75, 3.75, 1_048_576, 8, 9), scheduled: geminiFlashRate },
     { hints: ["3.7-flash"], metric: official(0.75, 3.75, 1_048_576, 8, 9), scheduled: geminiFlashRate },
     { hints: ["3.6-flash"], metric: official(0.75, 3.75, 1_048_576, 8, 8), scheduled: geminiFlashRate },
@@ -151,6 +155,9 @@ const FAMILY_RULES: Partial<Record<Provider, FamilyRule[]>> = {
     // input and 21x output — and because `pickAutoModel` and `pickWorkModel`
     // rank on exactly these numbers, the lie would not merely be displayed,
     // it would change which model the routers choose.
+    // Muse Wonder 1.0 (dev.meta.ai, 2026-10-14): $4 / $20, 1M, Meta's new
+    // frontier tier above Spark. Grades are positioning estimates, as below.
+    { hints: ["muse-wonder"], metric: metric(4, 20, 1_048_576, 5, 10) },
     { hints: ["muse-spark-1.3-contributor"], metric: metric(0.1, 0.2, 1_048_576, 6, 8) },
     // 1.2 Contributor: the same contributor rate, one generation back.
     { hints: ["muse-spark-1.2-contributor"], metric: metric(0.1, 0.2, 1_048_576, 6, 8) },
@@ -788,6 +795,9 @@ export function reasoningCaps(model: ModelInfo): ReasoningCaps {
       // which is why they are matched separately rather than folded together.
       // Keeping 3.8 explicit also stops a live-discovered 3.8 row falling
       // through to the unknown-model branch and losing its thinking selector.
+      // Gemini 4 Argon: low | medium | high, default medium ("On (medium)"
+      // in Google's thinking table, read 2026-10-14). No off, no minimal.
+      if (id.includes("4-argon")) return caps(LMH, false, false, "medium");
       if (/3\.[78]-flash/.test(id)) return caps(LMH, false, false, "medium");
       if (/3\.[56]-flash/.test(id)) {
         return caps(["minimal", ...LMH], false, false, "medium");
@@ -912,6 +922,9 @@ export function reasoningCaps(model: ModelInfo): ReasoningCaps {
       // …but NOT on the Contributor tier: dev.meta.ai/docs/reasoning says
       // `max` is "Standard-tier muse-spark-1.3 only; not available on
       // Contributor-tier models", so the contributor id keeps 1.2's ladder.
+      // Muse Wonder 1.0: "minimal" to "max" (dev.meta.ai/docs/models,
+      // 2026-10-14). `max` stays standard Wonder; Wonder Full is Muse Code only.
+      if (id.includes("muse-wonder")) return caps(["minimal", ...LMHXM], false);
       if (id.includes("muse-spark-1.3") && !id.includes("contributor")) return caps(["minimal", ...LMHXM], false);
       if (id.includes("muse-spark")) return caps(["minimal", ...LMHX], false);
       return caps([], false); // retired Llama ids resolving through migration
