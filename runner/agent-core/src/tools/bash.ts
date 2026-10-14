@@ -54,6 +54,7 @@ export const bashTool: ToolDefinition = {
   },
   summarize: (i) => `$ ${String(i.command).slice(0, 200)}`,
   execute(input, ctx): Promise<ToolResult> {
+    if (ctx.signal?.aborted) return Promise.resolve({ output: '[command cancelled]', isError: true });
     const command = String(input.command);
     const timeout = Math.min(Number(input.timeout_ms ?? DEFAULT_TIMEOUT_MS), MAX_TIMEOUT_MS);
     return new Promise((resolveResult) => {
@@ -79,6 +80,8 @@ export const bashTool: ToolDefinition = {
       });
       let out = '';
       let killed = false;
+      let cancelled = false;
+      let settled = false;
 
       /**
        * Kills the whole process group.
@@ -103,21 +106,32 @@ export const bashTool: ToolDefinition = {
         }
       };
 
+      const onAbort = () => {
+        if (settled || killed || cancelled) return;
+        cancelled = true;
+        killGroup();
+      };
       const timer = setTimeout(() => {
+        if (settled || cancelled) return;
         killed = true;
         killGroup();
       }, timeout);
+      const finish = (result: ToolResult) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        ctx.signal?.removeEventListener('abort', onAbort);
+        resolveResult(result);
+      };
       const append = (chunk: Buffer) => {
         if (out.length < MAX_OUTPUT_CHARS) out += chunk.toString('utf8');
       };
       child.stdout.on('data', append);
       child.stderr.on('data', append);
       child.on('error', (err) => {
-        clearTimeout(timer);
-        resolveResult({ output: `Failed to spawn: ${err.message}`, isError: true });
+        finish({ output: cancelled ? '[command cancelled]' : `Failed to spawn: ${err.message}`, isError: true });
       });
       child.on('close', (code) => {
-        clearTimeout(timer);
         let output = out;
         if (output.length > MAX_OUTPUT_CHARS) {
           output = output.slice(0, MAX_OUTPUT_CHARS) + `\n…[output truncated at ${MAX_OUTPUT_CHARS} chars]`;
@@ -126,14 +140,19 @@ export const bashTool: ToolDefinition = {
         // above, or an OOM). There is no exit status to report then, and
         // inventing one would let a killed suite read as a failed one.
         const exitCode = typeof code === 'number' ? code : undefined;
-        if (killed) {
-          resolveResult({ output: `${output}\n[command timed out after ${timeout}ms]`, isError: true });
+        if (cancelled) {
+          finish({ output: `${output}\n[command cancelled]`, isError: true });
+        } else if (killed) {
+          finish({ output: `${output}\n[command timed out after ${timeout}ms]`, isError: true });
         } else if (code !== 0) {
-          resolveResult({ output: `${output}\n[exit code ${code}]`, isError: true, exitCode });
+          finish({ output: `${output}\n[exit code ${code}]`, isError: true, exitCode });
         } else {
-          resolveResult({ output: output || '(no output)', exitCode });
+          finish({ output: output || '(no output)', exitCode });
         }
       });
+      ctx.signal?.addEventListener('abort', onAbort, { once: true });
+      // Cover cancellation between the pre-spawn check and listener registration.
+      if (ctx.signal?.aborted) onAbort();
     });
   },
 };

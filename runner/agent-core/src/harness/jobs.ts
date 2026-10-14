@@ -51,6 +51,8 @@ interface Job {
   endedAt?: number;
   exited: Promise<void>;
   hardLimit: ReturnType<typeof setTimeout>;
+  cancelled: boolean;
+  cleanup: () => void;
 }
 
 function killGroup(child: ChildProcess): void {
@@ -90,6 +92,7 @@ export class BackgroundJobs {
 
   /** Start a command; the job is registered immediately. */
   start(command: string, ctx: ToolContext): Job {
+    ctx.signal?.throwIfAborted();
     const invocation = ctx.containerSandbox
       ? { file: 'docker', args: buildContainerArgs(command, ctx.containerSandbox) }
       : { file: '/bin/bash', args: ['-c', command] };
@@ -101,6 +104,11 @@ export class BackgroundJobs {
     });
     const id = `job-${randomUUID().slice(0, 6)}`;
     let resolveExit: () => void = () => {};
+    const onAbort = () => {
+      if (job.status !== 'running') return;
+      job.cancelled = true;
+      this.kill(id);
+    };
     const job: Job = {
       id,
       command,
@@ -114,6 +122,11 @@ export class BackgroundJobs {
         resolveExit = resolve;
       }),
       hardLimit: setTimeout(() => this.kill(id), MAX_JOB_RUNTIME_MS),
+      cancelled: false,
+      cleanup: () => {
+        clearTimeout(job.hardLimit);
+        ctx.signal?.removeEventListener('abort', onAbort);
+      },
     };
     job.hardLimit.unref?.();
     const append = (chunk: Buffer) => {
@@ -130,17 +143,20 @@ export class BackgroundJobs {
       job.output += `\nFailed to spawn: ${err.message}`;
       if (job.status === 'running') job.status = 'exited';
       job.endedAt = Date.now();
-      clearTimeout(job.hardLimit);
+      job.cleanup();
       resolveExit();
     });
     child.on('close', (code) => {
       if (job.status === 'running') job.status = 'exited';
       if (typeof code === 'number') job.exitCode = code;
       job.endedAt = Date.now();
-      clearTimeout(job.hardLimit);
+      job.cleanup();
       resolveExit();
     });
     this.jobs.set(id, job);
+    // Keep the originating turn's ownership after timeout or explicit backgrounding.
+    ctx.signal?.addEventListener('abort', onAbort, { once: true });
+    if (ctx.signal?.aborted) onAbort();
     return job;
   }
 
@@ -166,6 +182,7 @@ export class BackgroundJobs {
     const job = this.jobs.get(id);
     if (!job || job.status !== 'running') return false;
     job.status = 'killed';
+    job.cleanup();
     killGroup(job.child);
     return true;
   }
@@ -180,6 +197,7 @@ export class BackgroundJobs {
    * result. Still running: the output so far, and the job keeps going.
    */
   async runForeground(command: string, ctx: ToolContext, timeoutMs: number): Promise<ToolResult> {
+    if (ctx.signal?.aborted) return { output: '[command cancelled]', isError: true };
     const job = this.start(command, ctx);
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timedOut = await Promise.race([
@@ -201,7 +219,7 @@ export class BackgroundJobs {
     let output = job.dropped > 0 ? `[${job.dropped} earlier characters not kept]\n${job.output}` : job.output;
     if (output.length > MAX_READ_CHARS * 14) output = output.slice(-MAX_READ_CHARS * 14);
     const exitCode = job.exitCode;
-    if (job.status === 'killed') return { output: `${output}\n[killed]`, isError: true };
+    if (job.status === 'killed') return { output: `${output}\n[${job.cancelled ? 'command cancelled' : 'killed'}]`, isError: true };
     if (exitCode !== 0) {
       return { output: `${output}\n[exit code ${exitCode ?? 'unknown'}]`, isError: true, ...(exitCode === undefined ? {} : { exitCode }) };
     }
@@ -229,6 +247,7 @@ export function jobAwareShellTools(jobs: BackgroundJobs): ToolDefinition[] {
     },
     summarize: (i) => `$ ${String(i.command).slice(0, 200)}${i.run_in_background ? ' (background)' : ''}`,
     async execute(input, ctx) {
+      if (ctx.signal?.aborted) return { output: '[command cancelled]', isError: true };
       const command = String(input.command);
       if (input.run_in_background === true) {
         const job = jobs.start(command, ctx);
