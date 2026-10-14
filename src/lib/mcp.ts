@@ -389,11 +389,11 @@ function uniqueToolName(base: string, taken: (name: string) => boolean): string 
  * Whole-result length is measured after the parts are joined, not per part: what
  * the model is missing is measured in the text it was actually going to read.
  */
-function stringifyToolResult(res: unknown): TruncatedForModel {
+function stringifyToolResult(res: unknown): TruncatedForModel & { isError: boolean } {
   // Image parts are pixels, not base64 in the text: a connector's chart must
   // never count against (or ride inside) the text the cap measures.
   const flattened = flattenToolResult(res);
-  return truncateConnectorResult(flattened.text);
+  return { ...truncateConnectorResult(flattened.text), isError: flattened.isError === true };
 }
 
 /**
@@ -636,6 +636,14 @@ export async function openMcpToolset(
         // the trail and the thought process cannot report different numbers for
         // the same call.
         const durationMs = Date.now() - startedAt;
+        // A connector that answers `isError: true` ("Quota exceeded") did not do
+        // the action: it is recorded, receipted and shown as a failure, so the
+        // audit trail is true and the dispatcher does not cache it as success.
+        if (result.isError) {
+          await settleToolInvocation(auditId, { status: "failed", error: result.text, durationMs });
+          await completeExternalAction({ userId: ctx.userId, receiptId: authorization.receiptId, ok: false, result: result.text });
+          return toolExecution(label, `Tool error: ${result.text}`, false, durationMs);
+        }
         await settleToolInvocation(auditId, { status: "executed", durationMs });
         // The receipt stores what the model was actually given, notice included:
         // a replay of this call returns the stored string verbatim, so a receipt

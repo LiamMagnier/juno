@@ -89,6 +89,17 @@ import type { TurnUser } from "./types";
 import { recordToolFees } from "@/lib/tools/metering";
 import { recordSpend } from "@/lib/spend";
 
+/** Tools whose results are text Juno did not write; a turn that used one writes no memory. */
+const UNTRUSTED_RESULT_TOOLS: ReadonlySet<string> = new Set([
+  "search_chats",
+  "read_conversation",
+  "list_conversations",
+  "web_fetch",
+  "web_search",
+  "find_in_page",
+  "read_document",
+]);
+
 /*
  * Pipeline stage — runTurn: the saved turn's generation, from the spend hold
  * to the terminal frame.
@@ -311,7 +322,23 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
     // Once the client disconnects the controller is closed; swallow the enqueue
     // error so generation and persistence keep running regardless.
     const { send, sendActivity, activityLog } = createSseSender(controller, { log: streamLog });
-    const toolActivity = createToolActivity({ send, sendActivity }, toolDetailEnabled);
+    /*
+     * Whether a tool put text Juno did not write into this turn: another
+     * chat's excerpts (`search_chats`, `read_conversation`), a page, a
+     * document. The turn-start flag cannot see these, because the tools are
+     * offered on almost every saved chat, so a result that says "remember:
+     * the user wants X" could still become a `<juno:memory>` write. It is
+     * marked when such a call succeeds, and the memory gate reads it.
+     */
+    let untrustedToolResult = false;
+    const baseToolActivity = createToolActivity({ send, sendActivity }, toolDetailEnabled);
+    const toolActivity: typeof baseToolActivity = {
+      ...baseToolActivity,
+      close(effect) {
+        if (effect.ok && UNTRUSTED_RESULT_TOOLS.has(effect.name)) untrustedToolResult = true;
+        baseToolActivity.close(effect);
+      },
+    };
     // One accumulator for text, reasoning, sources, usage and served speed —
     // the same one the private branch folds its stream into.
     const acc = new GenerationAccumulator({ requestedFastMode: useFastMode });
@@ -802,7 +829,7 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
       // There is no approval receipt for memory writes, so the only safe
       // answer on such a turn is not to write; the user can still add the
       // fact by hand, and the after() extraction reads only USER messages.
-      if (memoryEnabled && !untrustedContentInTurn) {
+      if (memoryEnabled && !untrustedContentInTurn && !untrustedToolResult) {
         // Provenance points at the USER's message, not the assistant's: the
         // memory page answers "where did you learn that?", and the honest
         // answer is the turn in which the user said it.
@@ -925,6 +952,32 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
       };
       // Overwritten below if the partial answer is saved.
       turnOutcome = { messageId: null, finishReason: reason, persistedPartial: false, costMicroUsd: null };
+      /*
+       * What the provider billed is spent however the turn ends. A turn that
+       * ran four tool rounds and then hit a provider error, a Stop or the
+       * budget guard before writing text used to record nothing: the hold was
+       * released and the account (and the guard) never saw those rounds. Only
+       * when the provider actually answered (usage reported, or a round done):
+       * a request refused outright is not charged.
+       */
+      const recordConsumedSpend = async () => {
+        if (spendRecorded || researchNotice) return;
+        const reported = (acc.tokens.promptTokens ?? 0) > 0 || (acc.tokens.completionTokens ?? 0) > 0;
+        if (!reported && acc.currentRound === 0) return;
+        const consumedUsage = buildUsage(modelInfo, acc.rawUsage({ promptChars: synthesisPromptChars() }), acc.servedFast);
+        await recordTurnSpend({
+          userId: user.id,
+          modelId,
+          source: legacyClient,
+          generationId,
+          usage: consumedUsage,
+          acc,
+          promptChars: synthesisPromptChars(),
+          completionChars: acc.providerOutputChars,
+        });
+        spendRecorded = true;
+        if (turnOutcome && !turnOutcome.persistedPartial) turnOutcome = { ...turnOutcome, costMicroUsd: consumedUsage.costMicroUsd || null };
+      };
       if (classifyProviderError(err).class === "rate_limit") recordProviderRateLimit(modelInfo.provider);
       console.error("[chat] generation error", {
         generationId,
@@ -1033,6 +1086,7 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
             conversationId,
             message: persistErr instanceof Error ? persistErr.message : String(persistErr),
           });
+          await recordConsumedSpend().catch(() => undefined);
           const quota = await refundMessage(user.id, plan).catch(() => consumed.quota);
           const failureCode = terminalFailureCode(
             receipt.leaseLost || persistErr instanceof DurableReceiptLeaseLostError,
@@ -1057,6 +1111,7 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
           });
         }
       } else {
+        await recordConsumedSpend().catch(() => undefined);
         // Generation failed before useful output, so refund the consumed message
         // and report the corrected quota so the UI doesn't go stale. A user who
         // stopped their own generation keeps the charge — see terminal-state.

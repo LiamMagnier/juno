@@ -377,7 +377,9 @@ export async function* streamGemini(
         break;
       }
     } catch (error) {
-      if (continuations === 0) throw error;
+      // A Stop is not a failed continuation: it must end the turn as stopped,
+      // not be kept as a finished answer (memory and artifacts written).
+      if (continuations === 0 || signal?.aborted) throw error;
       console.warn("[llm:gemini] continuation failed; keeping the answer so far", {
         model: model.providerModel,
         attempt: continuations,

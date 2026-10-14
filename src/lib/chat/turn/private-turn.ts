@@ -476,6 +476,26 @@ export async function runPrivateTurn({
             finishReason: reason,
           });
         } else {
+          // What the provider billed before the failure is spent (the saved
+          // path does the same): only when it answered at least once.
+          const reported = (acc.tokens.promptTokens ?? 0) > 0 || (acc.tokens.completionTokens ?? 0) > 0;
+          if (!spendRecorded && (reported || acc.currentRound > 0)) {
+            const consumedUsage = buildUsage(modelInfo, acc.rawUsage({ promptChars: privatePromptChars() }), acc.servedFast);
+            await recordTurnSpend({
+              userId: user.id,
+              modelId,
+              source: legacyClient,
+              generationId,
+              usage: consumedUsage,
+              acc,
+              promptChars: privatePromptChars(),
+              completionChars: acc.text.length,
+            })
+              .then(() => {
+                spendRecorded = true;
+              })
+              .catch(() => undefined);
+          }
           const quota = terminal.refunds
             ? await refundMessage(user.id, plan).catch(() => consumed.quota)
             : consumed.quota;
