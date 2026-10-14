@@ -211,7 +211,8 @@ test("the route treats an Alevr Search turn as untrusted: the rule is on, memory
   const flag = turnModule("capabilities").slice(turnModule("capabilities").indexOf("export function turnCarriesUntrustedContent"));
   assert.match(flag, /signals\.useAlevrSearch \|\|/);
   assert.match(route, /useAlevrSearch,\n\s+researchActive,/);
-  assert.match(route, /if \(memoryEnabled && !untrustedContentInTurn\)/);
+  // The untrusted-content flag gates memory; a tool that returned outside text this turn gates it too.
+  assert.match(route, /if \(memoryEnabled && !untrustedContentInTurn && !untrustedToolResult\)/);
   assert.match(route, /untrustedContent: untrustedContentInTurn,/);
 });
 

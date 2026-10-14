@@ -225,7 +225,7 @@ test("nothing recorded, no receipt", () => {
 
 test("the chat route forgets only on a turn with no untrusted content", () => {
   const body = chatTurnSource();
-  const guard = body.indexOf("if (memoryEnabled && !untrustedContentInTurn) {");
+  const guard = body.indexOf("if (memoryEnabled && !untrustedContentInTurn && !untrustedToolResult) {");
   const call = body.indexOf("forgetStatements(user.id, parseForgets(acc.text)");
   assert.ok(guard > -1 && call > guard, "forgetStatements must sit inside the untrusted-content guard");
   // …and inside THAT block, not after it: nothing between the guard and the
