@@ -39,6 +39,8 @@ export interface JobSnapshot {
 interface Job {
   id: string;
   command: string;
+  /** The child agent that started it, if one did: its jobs end when it does. */
+  agentId?: string;
   child: ChildProcess;
   output: string;
   /** Characters dropped from the front of `output` when it was capped. */
@@ -112,6 +114,7 @@ export class BackgroundJobs {
     const job: Job = {
       id,
       command,
+      ...(ctx.agentId ? { agentId: ctx.agentId } : {}),
       child,
       output: '',
       dropped: 0,
@@ -187,6 +190,18 @@ export class BackgroundJobs {
     return true;
   }
 
+  /**
+   * A child agent finished: its background jobs (a dev server, a watcher) stop
+   * with it, before its worktree is removed under them.
+   */
+  killForAgent(agentId: string): number {
+    let killed = 0;
+    for (const job of this.jobs.values()) {
+      if (job.agentId === agentId && this.kill(job.id)) killed++;
+    }
+    return killed;
+  }
+
   /** Session end: nothing a session started keeps running after it. */
   killAll(): void {
     for (const job of this.jobs.values()) this.kill(job.id);
@@ -246,6 +261,9 @@ export function jobAwareShellTools(jobs: BackgroundJobs): ToolDefinition[] {
       },
     },
     summarize: (i) => `$ ${String(i.command).slice(0, 200)}${i.run_in_background ? ' (background)' : ''}`,
+    async finishSubagent(agentId) {
+      jobs.killForAgent(agentId);
+    },
     async execute(input, ctx) {
       if (ctx.signal?.aborted) return { output: '[command cancelled]', isError: true };
       const command = String(input.command);

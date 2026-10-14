@@ -481,7 +481,11 @@ export class AgentSession {
   dispose(): void {
     this.abort();
     this.jobs?.killAll();
+    this.disposed = this.subagents?.discardUnpicked().catch(() => undefined) ?? Promise.resolve();
   }
+
+  /** Settles when `dispose`'s cleanup (unpicked best-of-N worktrees) is done. */
+  disposed: Promise<void> = Promise.resolve();
 
   private emit(event: AgentEvent): void {
     this.store.appendEvent(event);

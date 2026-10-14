@@ -483,3 +483,76 @@ test('a file the parent changed while the import approval waited is not overwrit
   assert.ok(state.warnings?.some((w) => w.includes('changed after')));
   delete process.env.JUNO_HOME;
 });
+
+test("the turn's shared token budget stops children mid-run, not only at start", async () => {
+  process.env.JUNO_HOME = tmpdir();
+  const cwd = gitRepo();
+  const provider = routedProvider((req, rootCall) => {
+    if (isChildRequest(req)) {
+      return [{ type: 'tool_call', id: 'r1', name: 'read_file', input: { path: 'README.md' } }, done('tool_use', 400, 200)];
+    }
+    if (rootCall === 0) {
+      return delegateCall([
+        { title: 'Spin A', prompt: 'spin', role: 'explorer' },
+        { title: 'Spin B', prompt: 'spin', role: 'explorer' },
+        { title: 'Spin C', prompt: 'spin', role: 'explorer' },
+      ]);
+    }
+    if (rootCall === 1) return awaitCall;
+    return [{ type: 'text_delta', text: 'done' }, done('end_turn')];
+  });
+  // Each child alone may use 100k; together the turn allows 3k.
+  const { session } = makeSession(provider, cwd, { subagents: { childTokenBudget: 100_000, turnTokenBudget: 3_000 } });
+  await session.prompt('three spinners');
+  const states = session.subagents!.states();
+  const total = states.reduce((n, s) => n + s.usage.inputTokens + s.usage.outputTokens, 0);
+  assert.ok(total < 3_000 + 3 * 600, `the turn spent ${total}, past its shared budget by more than one step per child`);
+  assert.ok(states.every((s) => s.status === 'failed' || s.status === 'cancelled'), JSON.stringify(states.map((s) => s.status)));
+  assert.ok(states.some((s) => s.error?.includes('shared token budget')));
+  delete process.env.JUNO_HOME;
+});
+
+test("a child's background jobs stop when the child finishes", async () => {
+  process.env.JUNO_HOME = tmpdir();
+  const cwd = gitRepo();
+  const pidFile = path.join(tmpdir(), 'job.pid');
+  const provider = routedProvider((req, rootCall) => {
+    if (isChildRequest(req)) {
+      const lastUser = req.messages[req.messages.length - 1];
+      const started = lastUser?.role === 'user' && lastUser.content.some((c) => c.type === 'tool_result' && !c.isError);
+      if (started) {
+        // The server is up (its pid written) before the child reports and finishes.
+        const until = Date.now() + 3_000;
+        while (!fs.existsSync(pidFile) && Date.now() < until) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+        return [{ type: 'text_delta', text: 'server started' }, done('end_turn')];
+      }
+      return [
+        { type: 'tool_call', id: 'b1', name: 'bash', input: { command: `echo $$ > ${pidFile}; exec sleep 30`, run_in_background: true } },
+        done('tool_use'),
+      ];
+    }
+    if (rootCall === 0) return delegateCall([{ title: 'Serve', prompt: 'start a server', role: 'reviewer' }]);
+    if (rootCall === 1) return awaitCall;
+    return [{ type: 'text_delta', text: 'done' }, done('end_turn')];
+  });
+  const { session } = makeSession(provider, cwd, { mode: 'full' });
+  await session.prompt('start then finish');
+  const deadline = Date.now() + 2_000;
+  while (!fs.existsSync(pidFile) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 20));
+  const pid = Number(fs.readFileSync(pidFile, 'utf8').trim());
+  assert.ok(pid > 0);
+  const alive = () => {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  const until = Date.now() + 2_000;
+  while (alive() && Date.now() < until) await new Promise((r) => setTimeout(r, 20));
+  assert.equal(alive(), false, 'the background job died with its child');
+  assert.equal(session.subagents!.states()[0]?.status, 'completed');
+  session.dispose?.();
+  delete process.env.JUNO_HOME;
+});
