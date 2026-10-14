@@ -125,6 +125,13 @@ export const LINK_LIMITS = {
   maxPullItems: 100,
   /** Don't ask the Mac to replay the same session more often than this. */
   replayCooldownMs: 5_000,
+  /**
+   * Postgres store, hosts that keep receipts only (`{kind:"pull", receipts:true}`): a leased
+   * command still unanswered after this long is handed out again (its pull reply was lost)…
+   */
+  leaseRedeliverMs: 8_000,
+  /** …at most this many deliveries in all, well inside the RPC window. */
+  maxDeliveries: 3,
 } as const;
 
 /** The browser-facing reply (matches `LinkReply` in env-client.ts on the web lane). */
@@ -140,7 +147,7 @@ export type LinkClientRequest =
   | { kind: "poll"; cursors: Record<string, number>; globalCursor?: number };
 
 export type LinkHostRequest =
-  | { kind: "pull"; protocol?: string; appVersion?: string; waitMs?: number; terminal?: boolean }
+  | { kind: "pull"; protocol?: string; appVersion?: string; waitMs?: number; terminal?: boolean; receipts?: boolean }
   | { kind: "push"; responses?: ServerResponse[]; events?: ServerEventEnvelope[] };
 
 export interface LinkHostPullReply {
@@ -157,8 +164,12 @@ export interface LinkHostPullReply {
 export interface LinkEndpoint {
   rpc(command: ClientCommand): Promise<LinkReply>;
   poll(cursors: Record<string, number>, globalCursor?: number, waitMs?: number, signal?: AbortSignal): Promise<LinkReply>;
-  /** `terminal`: the Mac's latest pull says the user shared its terminal. */
-  pull(waitMs?: number, signal?: AbortSignal, appVersion?: string, terminal?: boolean): Promise<LinkHostPullReply>;
+  /**
+   * `terminal`: the Mac's latest pull says the user shared its terminal. `receipts`: this pull's
+   * host runs each relay id once and answers a repeat from its receipts, so an unanswered lease
+   * may be delivered again (the Postgres store does; this process's queue never needs to).
+   */
+  pull(waitMs?: number, signal?: AbortSignal, appVersion?: string, terminal?: boolean, receipts?: boolean): Promise<LinkHostPullReply>;
   push(input: { responses?: ServerResponse[]; events?: ServerEventEnvelope[] }): { accepted: number } | Promise<{ accepted: number }>;
 }
 
@@ -343,8 +354,11 @@ export class DeviceLink implements LinkEndpoint {
 
   // ── Mac side ──────────────────────────────────────────────────────────
 
-  /** The Mac's long poll for work. Pulling is also its heartbeat. */
-  async pull(waitMs: number = LINK_LIMITS.hostPullWaitMs, signal?: AbortSignal, appVersion?: string, terminal = false): Promise<LinkHostPullReply> {
+  /**
+   * The Mac's long poll for work. Pulling is also its heartbeat. `receipts` changes nothing here:
+   * this queue hands a command out once and keeps no lease to redeliver.
+   */
+  async pull(waitMs: number = LINK_LIMITS.hostPullWaitMs, signal?: AbortSignal, appVersion?: string, terminal = false, _receipts = false): Promise<LinkHostPullReply> {
     this.#lastPullAt = this.clock();
     if (appVersion) this.appVersion = appVersion;
     this.terminalShared = terminal === true;
@@ -510,6 +524,7 @@ export function parseHostRequest(body: unknown): LinkHostRequest | null {
       ...(typeof body.appVersion === "string" ? { appVersion: body.appVersion.slice(0, 100) } : {}),
       ...(typeof body.waitMs === "number" && Number.isFinite(body.waitMs) ? { waitMs: Math.max(0, body.waitMs) } : {}),
       ...(body.terminal === true ? { terminal: true } : {}),
+      ...(body.receipts === true ? { receipts: true } : {}),
     };
   }
   if (body.kind === "push") {

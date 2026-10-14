@@ -485,10 +485,13 @@ public actor EnvServerDeviceLink {
 /// Drains the backend's device-link hub (`src/lib/code-v2/env-link-hub.ts`,
 /// docs/code-v2/DEVICE-LINK.md "Mac side") for this Mac:
 ///
-/// - `POST /api/code/v2/link/<deviceId>/host {kind:"pull", protocol, appVersion, waitMs, terminal}`
+/// - `POST /api/code/v2/link/<deviceId>/host {kind:"pull", protocol, appVersion, waitMs, terminal, receipts}`
 ///   long-polls the commands the web relayed (`{protocol, commands:[ClientCommand]}`);
 ///   the pull is also this Mac's heartbeat. Each command runs through
-///   ``EnvServerDeviceLink/run(_:)`` (the same remote rules) on its own task.
+///   ``EnvServerDeviceLink/run(_:)`` (the same remote rules) on its own task,
+///   once per relay id (``EnvLinkReceipts``): a repeat delivery gets the kept
+///   answer, or nothing while the first still runs. `receipts: true` (sent
+///   only with a durable store) lets the relay redeliver an unanswered command.
 /// - `POST …/host {kind:"push", responses, events}` hands back the env
 ///   server's responses and the events a remote may see, in arrival order,
 ///   flushed every ~50 ms (≤ 1,000 items per push).
@@ -521,6 +524,7 @@ public actor EnvServerDeviceLinkChannel {
     private let appVersion: String?
     private let pullWaitMs: Int
     private let flushDelay: Duration
+    private let receipts: EnvLinkReceipts
     private var loop: Task<Void, Never>?
     private var failures = 0
     private var outbox: [Outgoing] = []
@@ -540,8 +544,10 @@ public actor EnvServerDeviceLinkChannel {
         appVersion: String? = nil,
         pullWaitMs: Int = 25_000,
         flushDelay: Duration = .milliseconds(15),
+        receipts: EnvLinkReceipts = EnvLinkReceipts(directory: nil),
         perform: @escaping Perform
     ) {
+        self.receipts = receipts
         self.deviceId = deviceId
         self.link = link
         self.appVersion = appVersion
@@ -586,6 +592,8 @@ public actor EnvServerDeviceLinkChannel {
             var body: [String: Any] = ["kind": "pull", "protocol": Self.protocolName, "waitMs": pullWaitMs]
             if let appVersion { body["appVersion"] = appVersion }
             body["terminal"] = await link.sharesTerminal()
+            // Only a store that outlives a restart makes a redelivered command safe.
+            if receipts.isDurable { body["receipts"] = true }
             let (status, data) = try await perform("POST", hostPath, try JSONSerialization.data(withJSONObject: body))
             if status == 404 || status == 409 {
                 stoppedReason = status == 404 ? "This Mac is no longer paired with your account." : "Update Alevr to keep using this Mac from the web."
@@ -610,9 +618,20 @@ public actor EnvServerDeviceLinkChannel {
         return .seconds(min(15, 1 << min(failures - 1, 4)))
     }
 
+    /// Runs a pulled command once per relay id. `begin` and `finish` are
+    /// synchronous on this actor, so two deliveries of one id never both run.
     func answer(_ command: EnvLinkRequest.Command) async {
-        let response = await link.run(command)
-        enqueue(.response(response))
+        switch receipts.begin(command.id) {
+        case .running:
+            return
+        case let .finished(response):
+            enqueue(.response(response))
+            return
+        case .run:
+            let response = await link.run(command)
+            receipts.finish(command.id, response)
+            enqueue(.response(response))
+        }
     }
 
     /// Queues one item for the hub. The first item after a quiet spell leaves

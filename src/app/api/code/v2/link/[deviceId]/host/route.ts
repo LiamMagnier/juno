@@ -41,7 +41,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ deviceI
     if (request.protocol && request.protocol !== CODE_V2_PROTOCOL.name) {
       return NextResponse.json({ error: `This relay speaks ${CODE_V2_PROTOCOL.name}.` }, { status: 409 });
     }
-    const reply = await link.pull(request.waitMs, req.signal, request.appVersion, request.terminal === true);
+    const reply = await link.pull(request.waitMs, req.signal, request.appVersion, request.terminal === true, request.receipts === true);
     return NextResponse.json(reply, { headers: { "Cache-Control": "no-store" } });
   }
   const accepted = await link.push(request);

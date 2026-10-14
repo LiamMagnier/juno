@@ -4,7 +4,8 @@
  * tables so any backend process can serve the browser and any other the Mac.
  *
  *   CodeLinkHost      heartbeat (lastPullAt), app version, global renumbering
- *   CodeLinkCommand   commands for the Mac: queued, then leased (SKIP LOCKED) until answered
+ *   CodeLinkCommand   commands for the Mac: queued, then leased (SKIP LOCKED) until answered;
+ *                     re-leased, a bounded number of times, only to a host that keeps receipts
  *   CodeLinkResponse  the Mac's answers, keyed by relay id, read once
  *   CodeLinkEvent     the event rings (per session, and the global stream)
  *   CodeLinkSession   per-session replay bookkeeping (floor, last replay)
@@ -289,16 +290,17 @@ export class PgDeviceLink implements LinkEndpoint {
     );
   }
 
-  async pull(waitMs: number = LINK_LIMITS.hostPullWaitMs, signal?: AbortSignal, appVersion?: string, terminal = false): Promise<LinkHostPullReply> {
+  async pull(waitMs: number = LINK_LIMITS.hostPullWaitMs, signal?: AbortSignal, appVersion?: string, terminal = false, receipts = false): Promise<LinkHostPullReply> {
     await this.#heartbeat(appVersion, terminal === true);
     const deadline = this.#clock() + Math.min(Math.max(0, waitMs), LINK_LIMITS.hostPullWaitMs);
-    let commands = signal?.aborted ? [] : await this.#claim();
+    const redeliver = receipts === true;
+    let commands = signal?.aborted ? [] : await this.#claim(redeliver);
     while (commands.length === 0 && !signal?.aborted) {
       const left = deadline - this.#clock();
       if (left <= 0) break;
       await sleep(`h:${this.#k}`, Math.min(this.#pollMs, left), signal);
       if (signal?.aborted) break;
-      commands = await this.#claim();
+      commands = await this.#claim(redeliver);
     }
     // The Mac hung up: nobody will read this reply, so the commands were never delivered.
     if (signal?.aborted && commands.length > 0) {
@@ -311,27 +313,37 @@ export class PgDeviceLink implements LinkEndpoint {
 
   /**
    * Leases the oldest unclaimed commands; two pulling processes never get the same one. The row
-   * stays until the Mac's answer acknowledges it (or the RPC gives up), and a lease is never
-   * handed out again: the Mac keeps no receipts, so delivering twice could run an action twice.
+   * stays until the Mac's answer acknowledges it (or the RPC gives up).
+   *
+   * `redeliver` (the pulling host keeps receipts): a lease older than `leaseRedeliverMs` and
+   * still unanswered is taken again, up to `maxDeliveries` in all, so a lost pull reply costs
+   * seconds instead of the RPC timeout; the Mac answers a repeat from its receipt and never runs
+   * it twice. Without it a lease is never handed out again: a host without receipts could run an
+   * action twice. A late answer to any delivery still acknowledges the row, once.
    */
-  async #claim(): Promise<ClientCommand[]> {
+  async #claim(redeliver: boolean): Promise<ClientCommand[]> {
+    const now = this.#clock();
     const rows = await this.sql.$queryRawUnsafe<{ id: bigint | number; payload: ClientCommand }[]>(
-      `UPDATE "CodeLinkCommand" SET "claimedAt" = $4 WHERE "id" IN (
-         SELECT "id" FROM "CodeLinkCommand" WHERE "userId" = $1 AND "deviceId" = $2 AND "claimedAt" IS NULL
+      `UPDATE "CodeLinkCommand" SET "claimedAt" = $4, "attempts" = "attempts" + 1 WHERE "id" IN (
+         SELECT "id" FROM "CodeLinkCommand" WHERE "userId" = $1 AND "deviceId" = $2
+            AND ("claimedAt" IS NULL OR ($5::boolean AND "claimedAt" <= $6 AND "attempts" < $7))
          ORDER BY "id" LIMIT $3 FOR UPDATE SKIP LOCKED
        ) RETURNING "id", "payload"`,
       this.userId,
       this.deviceId,
       LINK_LIMITS.maxPullItems,
-      new Date(this.#clock()),
+      new Date(now),
+      redeliver,
+      new Date(now - LINK_LIMITS.leaseRedeliverMs),
+      LINK_LIMITS.maxDeliveries,
     );
     return [...rows].sort((a, b) => Number(a.id) - Number(b.id)).map((r) => r.payload);
   }
 
-  /** Puts back commands from a pull whose reply could not reach the Mac. */
+  /** Puts back commands from a pull whose reply could not reach the Mac (that delivery never happened). */
   async #release(commands: ClientCommand[]): Promise<void> {
     await this.sql.$executeRawUnsafe(
-      `UPDATE "CodeLinkCommand" SET "claimedAt" = NULL WHERE "userId" = $1 AND "deviceId" = $2 AND "relayId" = ANY($3::text[])`,
+      `UPDATE "CodeLinkCommand" SET "claimedAt" = NULL, "attempts" = GREATEST("attempts" - 1, 0) WHERE "userId" = $1 AND "deviceId" = $2 AND "relayId" = ANY($3::text[])`,
       this.userId,
       this.deviceId,
       commands.map((c) => c.id),

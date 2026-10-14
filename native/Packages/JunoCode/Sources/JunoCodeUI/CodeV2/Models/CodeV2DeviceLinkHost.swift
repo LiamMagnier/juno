@@ -21,9 +21,13 @@ public final class CodeV2DeviceLinkHost {
     private var sink: UUID?
     private var recorder: Task<Void, Never>?
     private var deviceId: String?
+    /// One store for every channel this host starts: an answer a stopped
+    /// channel finishes late is still there for the next one's repeat.
+    private let receipts: EnvLinkReceipts
 
-    public init(hub: EnvServerHub = .shared) {
+    public init(hub: EnvServerHub = .shared, receipts: EnvLinkReceipts = EnvLinkReceipts(directory: EnvLinkReceipts.defaultDirectory)) {
         self.hub = hub
+        self.receipts = receipts
     }
 
     public var isRunning: Bool { channel != nil }
@@ -67,7 +71,7 @@ public final class CodeV2DeviceLinkHost {
             for await envelope in events { await link.record(envelope) }
         }
         let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
-        let channel = EnvServerDeviceLinkChannel(deviceId: deviceId, link: link, appVersion: appVersion, perform: perform)
+        let channel = EnvServerDeviceLinkChannel(deviceId: deviceId, link: link, appVersion: appVersion, receipts: receipts, perform: perform)
         self.link = link
         self.channel = channel
         hub.start()

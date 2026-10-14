@@ -5218,6 +5218,8 @@ model CodeLinkCommand {
   relayId   String    @unique
   payload   Json
   claimedAt DateTime?
+  /// Leases taken so far (redelivered only to a host that keeps receipts).
+  attempts  Int       @default(0)
   createdAt DateTime  @default(now())
 
   @@index([userId, deviceId, id])

@@ -374,3 +374,86 @@ test("postgres relay: a late, repeated or foreign answer never settles another c
   );
   assert.equal(Number(n), 0, "nothing pending or unread is left behind");
 });
+
+/** A pull from a host that keeps receipts (`{kind:"pull", receipts:true}`), or one that does not. */
+const pullAs = (link: ReturnType<PgLinkHub["link"]>, receipts: boolean, waitMs = 0) => link.pull(waitMs, undefined, undefined, false, receipts);
+
+test("postgres relay: an unanswered lease is handed out again only to a host that keeps receipts", options, async (t) => {
+  let now = 1_000_000;
+  const r = replicas(t, () => now);
+  const user = r.user();
+  await r.hubA.link(user, "mac").pull(0);
+  const rpc = r.hubA.link(user, "mac").rpc({ id: "c1", type: "session.list" } as never);
+  const [first] = (await pullAs(r.hubB.link(user, "mac"), true, 1_000)).commands;
+  assert.ok(first);
+  now += LINK_LIMITS.leaseRedeliverMs - 1;
+  assert.deepEqual((await pullAs(r.hubA.link(user, "mac"), true)).commands, [], "a fresh lease is not taken again");
+  now += 1;
+  assert.deepEqual((await pullAs(r.hubA.link(user, "mac"), false)).commands, [], "a host without receipts stays at-most-once");
+  // Two replicas race for the stale lease: exactly one redelivers it.
+  const racing = await Promise.all([pullAs(r.hubA.link(user, "mac"), true), pullAs(r.hubB.link(user, "mac"), true)]);
+  const again = racing.flatMap((p) => p.commands);
+  assert.deepEqual(again.map((c) => c.id), [first.id], "the reply was lost: the same relay id goes out once more");
+  assert.deepEqual(await r.hubB.link(user, "mac").push({ responses: [answer(first.id, "listed")] }), { accepted: 1 });
+  assert.deepEqual((await rpc).responses?.[0], answer("c1", "listed"));
+});
+
+test("postgres relay: redelivery stops at the attempt cap, and a late answer still settles the call once", options, async (t) => {
+  let now = 1_000_000;
+  const r = replicas(t, () => now);
+  const user = r.user();
+  await r.hubA.link(user, "mac").pull(0);
+  const rpc = r.hubA.link(user, "mac").rpc({ id: "c1", type: "turn.start", params: { sessionId: "s1", input: [] } } as never);
+  const deliveries: string[] = [];
+  deliveries.push(...(await pullAs(r.hubB.link(user, "mac"), true, 1_000)).commands.map((c) => c.id));
+  // One window past the last delivery, still inside the RPC's own timeout.
+  assert.ok(LINK_LIMITS.maxDeliveries * LINK_LIMITS.leaseRedeliverMs < LINK_TIMEOUT);
+  for (let i = 0; i < LINK_LIMITS.maxDeliveries; i++) {
+    now += LINK_LIMITS.leaseRedeliverMs;
+    deliveries.push(...(await pullAs((i % 2 ? r.hubA : r.hubB).link(user, "mac"), true)).commands.map((c) => c.id));
+  }
+  assert.equal(deliveries.length, LINK_LIMITS.maxDeliveries, "never more deliveries than the cap");
+  assert.equal(new Set(deliveries).size, 1);
+  const [{ attempts }] = await observer!.$queryRawUnsafe<{ attempts: number }[]>(
+    `SELECT "attempts" FROM "CodeLinkCommand" WHERE "relayId" = $1`, deliveries[0],
+  );
+  assert.equal(attempts, LINK_LIMITS.maxDeliveries, "the row waits for its answer after the last delivery");
+  // The first delivery's answer arrives late; the Mac then re-sends it from its receipt for a repeat.
+  assert.deepEqual(await r.hubA.link(user, "mac").push({ responses: [answer(deliveries[0], "started")] }), { accepted: 1 });
+  assert.deepEqual(await r.hubB.link(user, "mac").push({ responses: [answer(deliveries[0], "started")] }), { accepted: 0 });
+  assert.deepEqual((await rpc).responses?.[0], answer("c1", "started"));
+  now += LINK_LIMITS.leaseRedeliverMs;
+  assert.deepEqual((await pullAs(r.hubA.link(user, "mac"), true)).commands, [], "an answered command is gone");
+});
+
+test("postgres relay: an aborted redelivery gives its attempt back, and an answer after the RPC gave up is dropped", options, async (t) => {
+  let now = 1_000_000;
+  const r = replicas(t, () => now);
+  const user = r.user();
+  await r.hubA.link(user, "mac").pull(0);
+  const rpc = r.hubA.link(user, "mac").rpc({ id: "c1", type: "session.list" } as never);
+  const [first] = (await pullAs(r.hubB.link(user, "mac"), true, 1_000)).commands;
+  assert.ok(first);
+  now += LINK_LIMITS.leaseRedeliverMs;
+  // The redelivering pull's connection drops right after it took the lease.
+  const gone = new AbortController();
+  const client = new PrismaClient({ datasourceUrl: url! });
+  t.after(() => client.$disconnect());
+  const host = new PgLinkHub(instrumentClient(client, async (call) => {
+    if (call.phase === "after" && call.query.includes('SET "claimedAt" = $4')) gone.abort();
+  }), { pollMs: 5, clock: () => now }).link(user, "mac");
+  assert.deepEqual((await host.pull(1_000, gone.signal, undefined, false, true)).commands, []);
+  const [{ attempts }] = await observer!.$queryRawUnsafe<{ attempts: number }[]>(
+    `SELECT "attempts" FROM "CodeLinkCommand" WHERE "relayId" = $1`, first.id,
+  );
+  assert.equal(attempts, 1, "a delivery that never reached the Mac does not count");
+  // The RPC gives up; the Mac's answer, from either delivery, is no longer kept.
+  now += LINK_TIMEOUT;
+  assert.equal((await rpc).responses?.[0].ok, false);
+  assert.deepEqual(await r.hubA.link(user, "mac").push({ responses: [answer(first.id, "late")] }), { accepted: 0 });
+  assert.deepEqual((await pullAs(r.hubB.link(user, "mac"), true)).commands, [], "a command whose RPC gave up is never redelivered");
+  const [{ n }] = await observer!.$queryRawUnsafe<{ n: number }[]>(
+    `SELECT (SELECT count(*) FROM "CodeLinkCommand" WHERE "userId" = $1) + (SELECT count(*) FROM "CodeLinkResponse" WHERE "userId" = $1)::int AS n`, user,
+  );
+  assert.equal(Number(n), 0);
+});
