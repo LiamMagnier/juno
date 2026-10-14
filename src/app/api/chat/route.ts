@@ -89,6 +89,8 @@ async function handleChat(req: Request) {
     plan,
     settings,
     workspaceConfig,
+    selectedKnowledgeFileIds,
+    preserveLastAssistant: !!input.crossReply || roomSetup?.mode.kind === "follow_up",
     threadAgent,
     privateHistory: request.privateHistory,
     deterministicSmokeProviderEnabled: request.deterministicSmokeProviderEnabled,

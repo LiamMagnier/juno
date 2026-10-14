@@ -1,7 +1,6 @@
 import "server-only";
 import { NextResponse } from "next/server";
 import type { Plan } from "@prisma/client";
-import { prisma } from "@/lib/prisma";
 import { cheapestEligible, selectModel } from "@/lib/model-selection";
 import { canUseModel } from "@/lib/plans";
 import { isModelId, getModel, DEFAULT_MODEL, FREE_DEFAULT_EFFORT, FREE_DEFAULT_MODEL, MODEL_LIST, defaultModelFor, type ModelInfo } from "@/lib/models";
@@ -10,7 +9,7 @@ import { receiptFromDecision, type RoutingReceipt } from "@/lib/router/receipt";
 import { NoAutoCandidateError, ROUTER_VERSION, isAutoPreference, type RouteDecision } from "@/lib/router/decide";
 import { autoDataUseVerdict, isAutoDataBoundary } from "@/lib/router/data-policy";
 import { providerRetryPressure } from "@/lib/router/provider-pressure";
-import { autoBudgetRoom, autoContextTokens, autoPaidTierProviders, classifyTaskForTelemetry } from "@/lib/router/chat-inputs";
+import { autoBudgetRoom, autoRoutingContext, autoPaidTierProviders, classifyTaskForTelemetry } from "@/lib/router/chat-inputs";
 import { loadRoutingEvidence } from "@/lib/router/telemetry-store";
 import { isProviderConfigured, configuredProviders, PROVIDERS, type Provider } from "@/lib/providers";
 import { providerHealthy } from "@/lib/provider-health";
@@ -45,6 +44,8 @@ export async function resolveModel({
   plan,
   settings,
   workspaceConfig,
+  selectedKnowledgeFileIds,
+  preserveLastAssistant,
   threadAgent,
   privateHistory,
   deterministicSmokeProviderEnabled,
@@ -56,6 +57,8 @@ export async function resolveModel({
   plan: Plan;
   settings: TurnSettings;
   workspaceConfig: WorkspaceConfig;
+  selectedKnowledgeFileIds?: string[];
+  preserveLastAssistant?: boolean;
   threadAgent: { model: string | null; reasoningEffort: string | null } | null;
   privateHistory: MessageForModel[];
   deterministicSmokeProviderEnabled: boolean;
@@ -134,38 +137,34 @@ export async function resolveModel({
             (input.privateMode
               ? [...privateHistory].reverse().find((m) => m.role === "USER")?.content ?? ""
               : "");
-    let hasImages = false;
-    if ((input.attachmentIds?.length ?? 0) > 0) {
-      const imageHit = await prisma.attachment.findFirst({
-        where: { id: { in: input.attachmentIds! }, userId: user.id, kind: "IMAGE", deletedAt: null },
-        select: { id: true },
-      });
-      hasImages = !!imageHit;
-    }
     // The fair fallback: with under 10% of the month left, Auto keeps to the
     // cost-1 models. A read only (no reaping); the gate proper runs later.
     // The router's environment, read once: measured outcomes, the capability
     // probes (tool reliability), and the room left under the account's binding
     // window — Auto never plans a turn the account cannot pay for.
-    const [autoBudget, evidence, probes, budgetRoom] = await Promise.all([
+    const [autoBudget, evidence, probes, budgetRoom, routingContext] = await Promise.all([
       checkBudget(user.id, plan, period, effective, { reap: false }).catch(() => null),
       loadRoutingEvidence(),
       deterministicSmokeProviderEnabled ? Promise.resolve(capabilityProbes) : loadModelCapabilityMap(MODEL_LIST.map((model) => model.id)),
       autoBudgetRoom(user.id, plan, period, effective),
+      autoRoutingContext({
+        userId: user.id, input, privateHistory, workspaceConfig,
+        selectedKnowledgeFileIds, instructions: settings?.customInstructions, preserveLastAssistant,
+      }),
     ]);
     capabilityProbes = probes;
     try {
       const pick = pickAutoModel({
         message: routingMessage,
         plan,
-        hasImages,
+        hasImages: routingContext.hasImages,
         wantsWebSearch: !!input.webSearch,
         // Voice keeps the provider's own search (policy.ts), so it never widens the pool.
         alevrSearch: !input.voiceMode && chatSearchAvailable(),
         lowBudget: autoBudget ? isBudgetLow(autoBudget.remainingMicroUsd, autoBudget.budgetMicroUsd) : false,
         context: {
           toolsOffered: input.connectors?.length ?? 0,
-          contextTokens: autoContextTokens(input, privateHistory),
+          contextTokens: routingContext.contextTokens,
           preference: isAutoPreference(settings?.autoPreference) ? settings.autoPreference : undefined,
           boundary: isAutoDataBoundary(settings?.autoDataBoundary) ? settings.autoDataBoundary : undefined,
           paidTier: autoPaidTierProviders(),
@@ -233,6 +232,7 @@ export async function resolveModel({
     // choosing, and it may not land on terms the reader never accepted.
     const autoPaidTier = autoPaidTierProviders();
     const autoBoundary = isAutoDataBoundary(settings?.autoDataBoundary) ? settings.autoDataBoundary : undefined;
+    const autoCandidates = new Set(autoDecision?.ranked.map((candidate) => candidate.modelId));
     eligible = (m: ModelInfo) =>
       m.modality === "chat" &&
       !m.comingSoon &&
@@ -240,6 +240,10 @@ export async function resolveModel({
       isProviderConfigured(m.provider) &&
       canUseModel(plan, m.id) &&
       modelCanRoute(m, capabilityProbes) &&
+      // Every Auto substitute must have passed this turn's context, vision
+      // and capability filters. Generic/cheaper fallbacks cannot re-admit a
+      // model the router excluded, even if its provider is healthy.
+      (!isAutoModelId(requestedId) || autoCandidates.has(m.id)) &&
       (!isAutoModelId(requestedId) || autoDataUseVerdict(m, { paidTier: autoPaidTier, boundary: autoBoundary }).eligible);
 
     // Auto's own runner-up before the generic fallback: when the pick cannot

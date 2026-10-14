@@ -452,6 +452,51 @@ jobs:
           BASE_URL: postgresql://postgres:postgres@localhost:5432
           NODE_OPTIONS: --conditions=react-server
 
+      - name: Prepare the Chat integration runtime
+        run: |
+          npm run i18n:extract
+          npm ci --prefix runner/agent-core
+          npm run build --prefix runner/agent-core
+          npm ci --prefix runner/env-server
+
+      # These suites otherwise skip in the unit-test shards. Each database is
+      # disposable, freshly migrated, and isolated from the other fixtures.
+      - name: Auto context ownership and sizing, against a real database
+        run: |
+          psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -c 'CREATE DATABASE juno_context_test'
+          npx prisma migrate deploy
+          npx tsx --test tests/router-chat-context.integration.test.ts
+        env:
+          ADMIN_URL: postgresql://postgres:postgres@127.0.0.1:5432/shadow
+          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/juno_context_test
+          DIRECT_URL: postgresql://postgres:postgres@127.0.0.1:5432/juno_context_test
+          JUNO_CONTEXT_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/juno_context_test
+          NODE_OPTIONS: --conditions=react-server
+
+      - name: Chat admission, routing, Stop and reconnect, against a real database
+        run: |
+          psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -c 'CREATE DATABASE juno_route_test'
+          npx prisma migrate deploy
+          npx tsx --test --experimental-test-module-mocks tests/chat-turn-pipeline.integration.test.ts
+        env:
+          ADMIN_URL: postgresql://postgres:postgres@127.0.0.1:5432/shadow
+          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/juno_route_test
+          DIRECT_URL: postgresql://postgres:postgres@127.0.0.1:5432/juno_route_test
+          CHAT_TURN_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/juno_route_test
+          NODE_OPTIONS: --conditions=react-server
+
+      - name: Code link backend parity, against a real database
+        run: |
+          psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -c 'CREATE DATABASE linktest'
+          npx prisma migrate deploy
+          npx tsx --test tests/code-v2-env-link-pg.test.ts
+        env:
+          ADMIN_URL: postgresql://postgres:postgres@127.0.0.1:5432/shadow
+          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/linktest
+          DIRECT_URL: postgresql://postgres:postgres@127.0.0.1:5432/linktest
+          CODE_LINK_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/linktest
+          NODE_OPTIONS: --conditions=react-server
+
   # The vendored Cloud Code runner drives arbitrary agent-authored bash, so its
   # containment tests are a release gate rather than a nicety: they are what
   # prove a timed-out command cannot leave children running, and that a

@@ -128,7 +128,7 @@ Vertical for BRIEF §25 (Auto Router 2.0), §26 (feedback loop), §27 (Auto UX),
 5. **Measured evidence:** starts accumulating only after the migration is deployed.
 6. **Signed-in chat check** of the receipt (verified on the real component in `/dev/routing`, not in an authenticated session).
 7. **Native:** macOS/iOS do not render `routing` or the Auto settings yet; the field is additive and ignored by older clients.
-8. Known gap: a saved thread's history is read after routing, so long saved threads are not yet a long-context signal (private history and the message are counted). Retries per turn are recorded as 0 because the chat path has no automatic retry; regenerations are recorded as signals instead.
+8. **Saved-context sizing (local increment, 2026-10-14):** Auto now reads an owner-scoped, bounded history estimate before selecting a provider, including attachments, project instructions/reference coverage and connector reserves. Substitutions remain inside the context/vision-eligible ranking. Private history is counted once without saved-context reads. Regression coverage includes a real disposable-database Chat turn and platform-budget fallback; the database suites are wired into CI. Unparsed-document expansion and tool schemas remain estimates, and a retrieval failure that falls back to whole project files is not a guaranteed fit. Retries per turn are recorded as 0 because the chat path has no automatic retry; regenerations are recorded as signals instead.
 
 ## Next milestone
 

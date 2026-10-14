@@ -2,6 +2,7 @@ import test, { mock } from "node:test";
 import assert from "node:assert/strict";
 import { randomBytes, randomUUID } from "node:crypto";
 import { PrismaClient } from "@prisma/client";
+import type { ModelInfo } from "@/lib/models";
 
 /*
  * CHARACTERISATION OF ONE CHAT TURN, END TO END, THROUGH POST /api/chat.
@@ -34,6 +35,7 @@ const DB_URL = process.env.CHAT_TURN_TEST_DATABASE_URL;
 if (!DB_URL) {
   test("chat turn pipeline suite is skipped without CHAT_TURN_TEST_DATABASE_URL", { skip: true }, () => {});
 } else {
+  assert.match(DB_URL, /^postgresql:\/\/[^@]+@127\.0\.0\.1:\d+\/juno_route_test$/, "only an explicit local disposable database");
   process.env.DATABASE_URL = DB_URL;
   process.env.DIRECT_URL = DB_URL;
   process.env.DATA_ENCRYPTION_KEY = randomBytes(32).toString("base64");
@@ -53,6 +55,9 @@ if (!DB_URL) {
   let stallMs: number | null = null;
   /** Makes the deep-research leg throw, for the one test that needs it. */
   let researchThrows = false;
+  let forcedPlatformBudget = false;
+  let minimumAutoContext = 0;
+  let fallbackChecks = 0;
   const logLines: string[] = [];
 
   const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -83,6 +88,26 @@ if (!DB_URL) {
         ...providers,
         isProviderConfigured: () => true,
         configuredProviders: () => [...providers.PROVIDER_LIST],
+      },
+    });
+    const budget = await import("@/lib/platform-budget");
+    mock.module("@/lib/platform-budget", {
+      namedExports: { ...budget, isPlatformBudgetExceeded: async () => forcedPlatformBudget || await budget.isPlatformBudgetExceeded() },
+    });
+    const selection = await import("@/lib/model-selection");
+    const { getModelMetrics } = await import("@/lib/model-metrics");
+    mock.module("@/lib/model-selection", {
+      namedExports: {
+        ...selection,
+        cheapestEligible: (catalogue: readonly ModelInfo[], eligible: (model: ModelInfo) => boolean, healthy: (provider: string) => boolean) => {
+          if (minimumAutoContext > 0) {
+            const undersized = catalogue.find((model) => model.modality === "chat" && (model.contextWindow ?? getModelMetrics(model).contextTokens) < minimumAutoContext);
+            assert.ok(undersized, "the actual catalogue contains a context-ineligible fallback");
+            assert.equal(eligible(undersized), false, "platform degradation cannot undo Auto's context exclusion");
+            fallbackChecks += 1;
+          }
+          return selection.cheapestEligible(catalogue, eligible, healthy);
+        },
       },
     });
     const stall = await import("@/lib/chat-stall");
@@ -165,7 +190,7 @@ if (!DB_URL) {
 
   // ── Pre-stream refusals ───────────────────────────────────────────────────
 
-  test("refusals before the stream: unauthenticated, malformed, no paid plan", async () => {
+  test("refusals before the stream: unauthenticated, malformed, model outside the plan", async () => {
     signedIn = null;
     assert.equal((await chat({ message: "hi" })).status, 401);
 
@@ -177,13 +202,49 @@ if (!DB_URL) {
 
     await seedUser("FREE");
     const before = streamCalls;
-    const free = await chat({ message: "hi" });
-    assert.equal(free.status, 402);
-    assert.equal((JSON.parse(free.text) as { code?: string }).code, "PLAN_REQUIRED");
+    // Free now includes a metered allowance; a paid-only model is still
+    // refused before generation. Pin the current entitlement boundary.
+    const free = await chat({ message: "hi", model: "anthropic:claude-opus-5-5" });
+    assert.equal(free.status, 403);
+    assert.equal((JSON.parse(free.text) as { code?: string }).code, "MODEL_NOT_IN_PLAN");
     assert.equal(streamCalls, before, "no model call for a refused turn");
   });
 
   // ── The ordinary saved turn ───────────────────────────────────────────────
+
+  test("Auto routes a saved long conversation using history before the paid turn starts", async () => {
+    const user = await seedUser();
+    const conversation = await prisma.conversation.create({ data: { userId: user.id, model: "juno:auto" } });
+    const { encryptMessageText } = await import("@/lib/message-crypto");
+    await prisma.message.createMany({ data: Array.from({ length: 8 }, (_, index) => ({
+      conversationId: conversation.id,
+      role: index % 2 ? "ASSISTANT" as const : "USER" as const,
+      content: encryptMessageText("context ".repeat(10_000)),
+      createdAt: new Date(1_700_000_000_000 + index),
+    })) });
+    script = () => answer("Continuing with the saved context.");
+    const before = streamCalls;
+    let result: Awaited<ReturnType<typeof chat>>;
+    forcedPlatformBudget = true;
+    minimumAutoContext = 160_000 * 1.1;
+    try {
+      result = await chat({ conversationId: conversation.id, model: "juno:auto", message: "continue" });
+    } finally {
+      forcedPlatformBudget = false;
+      minimumAutoContext = 0;
+    }
+    assert.equal(result.status, 200, result.text);
+    assert.ok(fallbackChecks > 0, "the platform-budget substitution path was exercised");
+    assert.equal(streamCalls, before + 1, "selection requires no preliminary model call");
+    const assistant = await prisma.message.findFirst({ where: { conversationId: conversation.id, role: "ASSISTANT" }, orderBy: { createdAt: "desc" } });
+    const { parseRoutingReceipt } = await import("@/lib/router/receipt");
+    assert.equal(parseRoutingReceipt(assistant?.routing)?.taskClass, "long_context");
+    const { getModel } = await import("@/lib/models");
+    const { getModelMetrics } = await import("@/lib/model-metrics");
+    const selected = getModel(assistant!.model!);
+    assert.ok(selected);
+    assert.ok((selected.contextWindow ?? getModelMetrics(selected).contextTokens) >= 160_000 * 1.1);
+  });
 
   test("a saved turn: frame order, persisted rows, spend settled, quota consumed, stream log kept", async () => {
     const user = await seedUser();
