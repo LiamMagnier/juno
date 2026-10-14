@@ -85,6 +85,7 @@ export class FakeProvider implements ComputerProvider {
     this.preflightResult = { ok: true };
     this.defaultDiskUsageMb = 42;
     this.execHandler = undefined;
+    this.destroyError = undefined;
   }
 
   async available(): Promise<{ ok: boolean; reason?: string }> {
@@ -170,8 +171,12 @@ export class FakeProvider implements ComputerProvider {
     c.vncRunning = false;
   }
 
+  /** Set to make `destroy` fail, as a Docker daemon or broker outage does. */
+  public destroyError?: Error;
+
   async destroy(handle: ComputerHandle, opts?: { removeVolume?: boolean }): Promise<void> {
     this.record("destroy", handle, opts);
+    if (this.destroyError) throw this.destroyError;
     this.containers.delete(handle.name);
     if (opts?.removeVolume) {
       this.volumes.delete(handle.volume);

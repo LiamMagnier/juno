@@ -172,3 +172,31 @@ export function guardBrowserForTakeover<T extends GuardableBrowser>(
       : {}),
   } as T;
 }
+
+/** How much text one `xdotool type` call carries: about 0.8 s of typing. */
+export const TYPE_CHUNK_CHARS = 64;
+
+/**
+ * Types long text in chunks, reading the fence before each one. A takeover
+ * (or a lost lease) that begins mid-text stops the typing at the next chunk
+ * instead of letting seconds of keystrokes land in whatever the person has
+ * focused, a password field included. Chunks never split a character.
+ * Returns the refusal that stopped it, or null when all of it was typed.
+ */
+export async function typeInChunks(
+  text: string,
+  sendChunk: (chunk: string) => Promise<void>,
+  fence: () => Promise<TakeoverFence>,
+  chunkChars = TYPE_CHUNK_CHARS,
+): Promise<string | null> {
+  const characters = Array.from(text);
+  const start = await fence();
+  for (let i = 0; i < characters.length; i += chunkChars) {
+    if (i > 0) {
+      const verdict = takeoverFenceVerdict(start, await fence());
+      if (verdict) return verdict;
+    }
+    await sendChunk(characters.slice(i, i + chunkChars).join(""));
+  }
+  return null;
+}

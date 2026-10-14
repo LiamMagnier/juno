@@ -23,6 +23,54 @@ export interface SweepSummary {
   rested: string[];
   slept: string[];
   expiredLeases: string[];
+  /** Containers and volumes with no computer row, removed. */
+  reapedOrphans: string[];
+}
+
+/**
+ * When the sweep first saw each container or volume with no row. One is removed
+ * only once it has stayed rowless this long, so a computer being created (its
+ * container can exist a moment before its row) is never taken for an orphan.
+ */
+const ORPHAN_GRACE_MS = 10 * 60_000;
+const orphanSince = new Map<string, number>();
+
+/** Removes what a failed teardown or a deleted account left behind (security audit: teardown leak). */
+async function reapOrphans(
+  provider: NonNullable<ReturnType<typeof computerProvider>>,
+  persistence: ReturnType<typeof getComputerStorePersistence>,
+  nowMs: number,
+  summary: SweepSummary,
+): Promise<void> {
+  const owned = await provider.listOwned();
+  const known = await persistence.listAgentIdsUnguarded();
+  const agentOf = (name: string) => name.replace(/^juno-agent-/, "").replace(/-browser$/, "");
+  const rowless = new Set(
+    [...owned.containers.map((c) => c.name), ...owned.volumes].filter((name) => !known.has(agentOf(name))),
+  );
+  for (const name of [...orphanSince.keys()]) if (!rowless.has(name)) orphanSince.delete(name);
+  for (const name of rowless) {
+    const since = orphanSince.get(name);
+    if (since === undefined) {
+      orphanSince.set(name, nowMs);
+      continue;
+    }
+    if (nowMs - since < ORPHAN_GRACE_MS) continue;
+    const agentId = agentOf(name);
+    // The deterministic handle covers the container and both volumes.
+    await provider
+      .destroy({ name: `juno-agent-${agentId}`, volume: `juno-agent-${agentId}` }, { removeVolume: true })
+      .then(() => {
+        orphanSince.delete(name);
+        summary.reapedOrphans.push(name);
+      })
+      .catch(() => undefined);
+  }
+}
+
+/** Test seam: forget what earlier sweeps saw. */
+export function resetOrphanTrackingForTest(): void {
+  orphanSince.clear();
 }
 
 function lastMeaningfulTimestamp(row: AgentComputerRow): number {
@@ -44,6 +92,7 @@ export async function sweepAgentComputers(opts?: {
     rested: [],
     slept: [],
     expiredLeases: [],
+    reapedOrphans: [],
   };
 
   const provider = computerProvider();
@@ -155,6 +204,8 @@ export async function sweepAgentComputers(opts?: {
       if (await restComputer(row.userId, row.agentId, { now, ifIdle })) summary.rested.push(row.agentId);
     }
   }
+
+  await reapOrphans(provider, persistence, nowMs, summary).catch(() => undefined);
 
   // Spent and expired single-use view links (src/lib/computer/handoff.ts).
   if (computerStoreUsesDatabase()) await purgeComputerHandoffs(now).catch(() => 0);

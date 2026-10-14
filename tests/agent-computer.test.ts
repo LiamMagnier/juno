@@ -48,7 +48,7 @@ const {
 const { guardBrowserForTakeover } = req(
   "../src/lib/computer/takeover"
 ) as typeof import("@/lib/computer/takeover");
-const { sweepAgentComputers } = req(
+const { sweepAgentComputers, resetOrphanTrackingForTest } = req(
   "../src/lib/computer/sweep"
 ) as typeof import("@/lib/computer/sweep");
 
@@ -67,6 +67,7 @@ describe("agent-computer provider and lifecycle", () => {
     fakeComputerProvider.reset();
     memDb = createInMemoryComputerPersistence();
     setComputerStorePersistenceForTest(memDb);
+    resetOrphanTrackingForTest();
   });
 
   afterEach(() => {
@@ -399,6 +400,25 @@ describe("agent-computer provider and lifecycle", () => {
     assert.equal(clicks, 1, "run A's click never reached run B's browser");
     assert.equal(await computerBlockedReason("user_1", "agent_shared", new Date(), "run_b"), null, "the new holder carries on");
     assert.equal(await computerBlockedReason("user_1", "agent_shared"), null, "callers that name no run see only takeovers");
+  });
+
+  it("a teardown that fails is reported, and the sweep removes what it left behind once it has stayed rowless", async () => {
+    const t0 = new Date("2026-10-14T12:00:00Z");
+    const kept = await ensureAwake("user_1", "agent_kept", { autoEnable: true });
+    const leaked = await ensureAwake("user_1", "agent_leaked", { autoEnable: true });
+    fakeComputerProvider.destroyError = new Error("Cannot connect to the Docker daemon");
+    await assert.rejects(() => disableComputer("user_1", "agent_leaked"), /Docker daemon/);
+    fakeComputerProvider.destroyError = undefined;
+    assert.equal(await memDb.findByAgent("user_1", "agent_leaked"), null, "the person turned it off: the row goes");
+    assert.equal(await fakeComputerProvider.state(leaked.handle), "running", "but the container is still there");
+
+    // First sighting: a computer mid-creation looks the same, so nothing is removed yet.
+    assert.deepEqual((await sweepAgentComputers({ now: t0 })).reapedOrphans, []);
+    const later = await sweepAgentComputers({ now: new Date(t0.getTime() + 11 * 60_000) });
+    assert.ok(later.reapedOrphans.includes(leaked.handle.name), `reaped: ${later.reapedOrphans}`);
+    assert.equal(await fakeComputerProvider.state(leaked.handle), "missing");
+    assert.equal(fakeComputerProvider.volumes.has(leaked.handle.volume), false, "its files and sign-ins go too");
+    assert.equal(await fakeComputerProvider.state(kept.handle), "running", "a computer with a row is never touched");
   });
 
   it("builds exact Docker production argv and never includes forbidden flags", () => {

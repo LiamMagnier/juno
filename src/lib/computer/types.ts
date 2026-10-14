@@ -58,6 +58,7 @@ export interface ComputerProvider {
   pause(handle: ComputerHandle): Promise<void>;
   unpause(handle: ComputerHandle): Promise<void>;
   stop(handle: ComputerHandle): Promise<void>;
+  /** Throws if the container or a volume could not be removed (already gone is fine). */
   destroy(handle: ComputerHandle, opts?: { removeVolume?: boolean }): Promise<void>;
   state(handle: ComputerHandle): Promise<"running" | "paused" | "exited" | "missing">;
   endpoints(handle: ComputerHandle): Promise<Endpoints>;

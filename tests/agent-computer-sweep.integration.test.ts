@@ -46,6 +46,8 @@ test("sweeper writes on Postgres: a renewed lease and a changed row are left alo
     assert.equal(now.leaseRunId, "run_c", "a wake that raced the sweep keeps its lease");
     assert.equal(await store.reconcileStoppedCas(userId, agent.id, { status: "awake", updatedAt: now.updatedAt }), true);
     assert.equal((await db.agentComputer.findUniqueOrThrow({ where: { agentId: agent.id } })).status, "asleep");
+    // The orphan check sees every row, whatever its status.
+    assert.ok((await store.listAgentIdsUnguarded()).has(agent.id));
     // Another account cannot act on this computer.
     assert.equal(await store.clearExpiredLeaseCas("someone_else", agent.id, "run_c", later), false);
   } finally {

@@ -223,3 +223,42 @@ describe("site policy on the agent computer's browser", () => {
     assert.equal(remote.agentNavigationVerdict({ ...base, agentActing: true, policy: undefined, url: "https://evil.example/" }), null);
   });
 });
+
+describe("long typing stops when the person takes control", () => {
+  it("types in chunks and stops at the next chunk once a takeover begins, never splitting a character", async () => {
+    const text = "é".repeat(100) + "🙂".repeat(100);
+    const sent: string[] = [];
+    let epoch = 3;
+    const stopped = await takeover.typeInChunks(
+      text,
+      async (chunk) => {
+        sent.push(chunk);
+        if (sent.length === 2) epoch = 4; // the person takes over during the second chunk
+      },
+      async () => ({ reason: null, epoch }),
+    );
+    assert.equal(stopped, takeover.TAKEOVER_OVERLAP_REFUSAL);
+    assert.equal(sent.length, 2, "nothing after the takeover was typed");
+    assert.ok(sent.every((chunk) => Array.from(chunk).length <= takeover.TYPE_CHUNK_CHARS));
+    assert.equal(sent.join(""), Array.from(text).slice(0, 2 * takeover.TYPE_CHUNK_CHARS).join(""));
+  });
+
+  it("stops on a refusal (an active takeover or a lost lease), and types everything when nothing changes", async () => {
+    const sent: string[] = [];
+    let reason: string | null = null;
+    const stopped = await takeover.typeInChunks(
+      "x".repeat(300),
+      async (chunk) => {
+        sent.push(chunk);
+        reason = store.LEASE_LOST_REFUSAL;
+      },
+      async () => ({ reason, epoch: 1 }),
+    );
+    assert.equal(stopped, store.LEASE_LOST_REFUSAL);
+    assert.equal(sent.length, 1);
+
+    const all: string[] = [];
+    assert.equal(await takeover.typeInChunks("y".repeat(300), async (c) => { all.push(c); }, async () => ({ reason: null, epoch: 1 })), null);
+    assert.equal(all.join(""), "y".repeat(300));
+  });
+});

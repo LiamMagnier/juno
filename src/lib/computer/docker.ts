@@ -395,14 +395,19 @@ export class DockerProvider implements ComputerProvider {
   }
 
   async destroy(handle: ComputerHandle, opts?: { removeVolume?: boolean }): Promise<void> {
-    await runDockerText(["rm", "-f", handle.name], { allowNonZero: true });
+    // Already gone is done; anything else (daemon down, broker refusing, volume
+    // in use) throws, so a teardown that left the person's files or site
+    // sign-ins behind is never reported as finished.
+    const remove = async (argv: string[]) => {
+      const res = await runDockerText(argv, { allowNonZero: true });
+      if (res.exitCode !== 0 && !/no such (container|volume)/i.test(res.stderr)) {
+        throw dockerFailure(argv, res.exitCode, res.stderr || res.stdout);
+      }
+    };
+    await remove(["rm", "-f", handle.name]);
     if (opts?.removeVolume) {
-      await runDockerText(["volume", "rm", "-f", `${handle.volume}-browser`], {
-        allowNonZero: true,
-      });
-      await runDockerText(["volume", "rm", "-f", handle.volume], {
-        allowNonZero: true,
-      });
+      await remove(["volume", "rm", "-f", `${handle.volume}-browser`]);
+      await remove(["volume", "rm", "-f", handle.volume]);
     }
   }
 

@@ -77,6 +77,8 @@ export interface PublicAgentComputerState {
 export interface ComputerStorePersistence {
   findByAgent(userId: string, agentId: string): Promise<AgentComputerRow | null>;
   findAllActiveUnguarded(): Promise<AgentComputerRow[]>;
+  /** Every agent that has a computer row, any status: what the orphan check keeps. */
+  listAgentIdsUnguarded(): Promise<Set<string>>;
   countAwakeHostUnguarded(excludeAgentId?: string): Promise<number>;
   countAwakeUser(userId: string, excludeAgentId?: string): Promise<number>;
   upsertByAgent(
@@ -247,6 +249,12 @@ const prismaPersistence: ComputerStorePersistence = {
       where: { userId, agentId },
     });
     return row ? toRow(row) : null;
+  },
+
+  async listAgentIdsUnguarded() {
+    const { prismaUnguarded } = await import("@/lib/db");
+    const rows = await prismaUnguarded.agentComputer.findMany({ select: { agentId: true } });
+    return new Set(rows.map((r) => r.agentId));
   },
 
   async findAllActiveUnguarded() {
@@ -447,6 +455,9 @@ export function createInMemoryComputerPersistence(): ComputerStorePersistence & 
     async findByAgent(userId, agentId) {
       const r = rows.get(agentId);
       return r && r.userId === userId ? { ...r } : null;
+    },
+    async listAgentIdsUnguarded() {
+      return new Set(rows.keys());
     },
     async findAllActiveUnguarded() {
       return Array.from(rows.values())
@@ -1220,12 +1231,19 @@ export async function disableComputer(
 ): Promise<void> {
   const provider = computerProvider();
   const existing = await activePersistence.findByAgent(userId, agentId);
+  let failure: unknown = null;
   if (existing && provider) {
     const handle = decodeHandle(existing.containerRef, agentId);
-    await provider.destroy(handle, { removeVolume: true }).catch(() => {});
+    await provider.destroy(handle, { removeVolume: true }).catch((error: unknown) => {
+      failure = error;
+    });
   }
   posterCache.delete(agentId);
   await activePersistence.deleteByAgent(userId, agentId);
+  // The row goes either way (the person turned the computer off). A container
+  // or volume left behind has no row now, and the sweep's orphan check removes
+  // it; the caller still hears that the teardown did not finish.
+  if (failure) throw failure;
 }
 
 export async function acquireComputerLease(
@@ -1588,12 +1606,15 @@ export async function heartbeatComputerViewSession(
   // A control heartbeat keeps the takeover; Hand back (`ended`) releases it
   // before anything else, so the agent can carry on even if rotating the
   // passwords below fails.
-  if (input.mode === "control" && !input.ended) {
-    await activePersistence.updateByAgent(
-      userId,
-      agentId,
-      takeoverOpened({ state: existing, by: takeoverHolder(input.deviceSessionId ?? null), now })
-    );
+  // It only keeps one going: opening the control session starts a takeover,
+  // so a heartbeat that was in flight when the person pressed Hand back (the
+  // takeover is closed, `takeoverUntil` is null) must not open a new one and
+  // stop the agent again. A window that lapsed (a slow network) is still the
+  // same holder's, and is renewed.
+  const holder = takeoverHolder(input.deviceSessionId ?? null);
+  const keepsItsTakeover = existing.takeoverUntil != null && (existing.takeoverBy ?? holder) === holder;
+  if (input.mode === "control" && !input.ended && keepsItsTakeover) {
+    await activePersistence.updateByAgent(userId, agentId, takeoverOpened({ state: existing, by: holder, now }));
   }
   // Only the client that holds the takeover can hand it back. Another tab or
   // device signed in to the same account cannot end someone's control session

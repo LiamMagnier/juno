@@ -219,6 +219,22 @@ describe("(b) a takeover is exclusive", () => {
     assert.equal(await store.computerBlockedReason("user_1", "agent_t"), null, "Hand back resumes the agent");
   });
 
+  it("a control heartbeat that arrives after Hand back does not take the computer again", async () => {
+    await store.ensureAwake("user_1", "agent_t", { autoEnable: true });
+    await store.openComputerViewSession("user_1", "agent_t", "control");
+    const epoch = (await store.computerTakeoverFence("user_1", "agent_t")).epoch;
+    await store.heartbeatComputerViewSession("user_1", "agent_t", { mode: "control", ended: true });
+    // The tab's last heartbeat was already in flight.
+    await store.heartbeatComputerViewSession("user_1", "agent_t", { mode: "control" });
+    assert.equal(await store.computerBlockedReason("user_1", "agent_t"), null, "the agent carries on");
+    assert.equal((await store.computerTakeoverFence("user_1", "agent_t")).epoch, epoch, "no new takeover discarded the agent's work");
+    // Another device's heartbeat does not extend someone else's takeover either.
+    await store.openComputerViewSession("user_1", "agent_t", "control");
+    const row = await memDb.findByAgent("user_1", "agent_t");
+    await store.heartbeatComputerViewSession("user_1", "agent_t", { mode: "control", deviceSessionId: "phone" });
+    assert.equal((await memDb.findByAgent("user_1", "agent_t"))?.takeoverUntil?.getTime(), row?.takeoverUntil?.getTime());
+  });
+
   it("every computer tool refuses without touching the computer while the person has it", async () => {
     const runtime = await loadRuntime();
     const { deps, calls } = recordingDeps(() => takeover.TAKEOVER_REFUSAL);

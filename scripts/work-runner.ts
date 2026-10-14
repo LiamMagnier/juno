@@ -68,7 +68,7 @@ import {
 import { WORK_MAX_STEPS_PER_RUN } from "@/lib/work/budget";
 import { createWorkBrowser, sealedResponseHeaders, type WorkBrowser } from "@/lib/work/browser";
 import { connectAgentBrowser } from "@/lib/computer/remote-browser";
-import { guardBrowserForTakeover } from "@/lib/computer/takeover";
+import { guardBrowserForTakeover, typeInChunks } from "@/lib/computer/takeover";
 import { createCredentialFill } from "@/lib/secrets/browser-fill";
 import { workTaskKey } from "@/lib/secrets/policy";
 import { redeemSecretGrant, secretRefsForTask } from "@/lib/secrets/store";
@@ -2004,8 +2004,14 @@ function buildTools(input: {
         },
         async type(text) {
           const remote = input.remoteComputer!;
-          await remote.attachment.provider.type(remote.attachment.handle, text);
+          // In chunks, with the takeover and lease fence read between them.
+          const stopped = await typeInChunks(
+            text,
+            (chunk) => remote.attachment.provider.type(remote.attachment.handle, chunk),
+            () => computerTakeoverFence(input.userId, remote.attachment.agentId, new Date(), input.runId),
+          );
           bumpEpoch();
+          if (stopped) throw new Error(stopped);
           return takeShot();
         },
         async key(keys) {
