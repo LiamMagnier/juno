@@ -1541,3 +1541,17 @@ test("the scheduler and the trigger poller both snapshot the session's grants", 
     assert.ok(created >= 0 && recorded > created, `${file} records inputs before it has a run`);
   }
 });
+
+test("a long outage catches up the newest missed fire, not the oldest past the cap", () => {
+  const hourly = spec("hourly", { minute: 0 }, "UTC");
+  // Down for 100 hours: far more fires than the catch-up cap.
+  const plan = planMissedRuns({
+    spec: hourly,
+    dueAt: new Date("2026-08-01T00:00:00Z"),
+    now: new Date("2026-08-05T04:30:00Z"),
+    policy: "run_once",
+  });
+  assert.deepEqual(plan.run.map((fire) => fire.toISOString()), ["2026-08-05T04:00:00.000Z"], "the most recent missed hour runs");
+  assert.ok(plan.missed.some((fire) => fire.toISOString() === "2026-08-05T04:00:00.000Z"));
+  assert.equal(plan.nextRunAt?.toISOString(), "2026-08-05T05:00:00.000Z");
+});

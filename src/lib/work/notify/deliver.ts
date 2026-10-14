@@ -158,7 +158,7 @@ async function deliver(
       origin: true,
       inputSensitivity: true,
       outputSensitivity: true,
-      session: { select: { title: true, conversationId: true, agentId: true } },
+      session: { select: { title: true, conversationId: true, agentId: true, deletedAt: true } },
       schedule: { select: { notifyPolicy: true } },
       host: { select: { displayName: true } },
     },
@@ -166,6 +166,11 @@ async function deliver(
 
   if (run === null) {
     return { delivered: false, reason: "That run is not there to notify about." };
+  }
+  // The person deleted the task (its live run was cancelled as part of that):
+  // a "task stopped" message for it would point at a task they removed.
+  if (run.session?.deletedAt) {
+    return { delivered: false, reason: "That task was deleted." };
   }
   if (!isWorkStatus(run.status)) {
     // A status column holding something outside the vocabulary is a bug

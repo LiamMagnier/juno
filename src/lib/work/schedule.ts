@@ -744,6 +744,28 @@ function catchUpFires(
   }
 }
 
+/**
+ * The newest fire at or before `now`, found by bisecting time rather than
+ * walking every fire (a minutely schedule after a week offline is 10,000 of
+ * them). `from` is a fire known to be at or before `now`.
+ */
+function latestFireAtOrBefore(spec: TimeTriggerSpec, from: Date, now: Date): Date {
+  let best = from;
+  let lo = from.getTime();
+  let hi = now.getTime();
+  for (let step = 0; step < 64 && lo < hi; step++) {
+    const mid = lo + Math.floor((hi - lo) / 2);
+    const fire = nextFireAfter(spec, new Date(mid));
+    if (fire && fire.getTime() <= now.getTime()) {
+      best = fire;
+      lo = fire.getTime();
+    } else {
+      hi = mid;
+    }
+  }
+  return best;
+}
+
 export function planMissedRuns(input: MissedRunInput): MissedRunPlan {
   const nextRunAt = nextFireAfter(input.spec, input.now);
   if (!input.dueAt || input.dueAt.getTime() > input.now.getTime()) {
@@ -752,11 +774,19 @@ export function planMissedRuns(input: MissedRunInput): MissedRunPlan {
 
   const owed: Date[] = [input.dueAt];
   // One past the cap, so a catch-up that was truncated can say so rather than
-  // reporting a suspiciously round number as if it were complete.
+  // reporting a suspiciously round number as if it were complete. The walk
+  // goes on (bounded) to the newest fire, which is always kept: stopping at
+  // the cap from the OLDEST fire meant that after a long outage "run once"
+  // ran a fire from days ago and the current fire was never seen.
   while (owed.length <= MAX_CATCH_UP_RUNS) {
     const following = nextFireAfter(input.spec, owed[owed.length - 1]);
     if (!following || following.getTime() > input.now.getTime()) break;
     owed.push(following);
+  }
+  const truncated = owed.length > MAX_CATCH_UP_RUNS;
+  if (truncated) {
+    const latest = latestFireAtOrBefore(input.spec, owed[owed.length - 1], input.now);
+    if (latest.getTime() !== owed[owed.length - 1].getTime()) owed.push(latest);
   }
 
   const freshFrom = input.now.getTime() - MISSED_RUN_GRACE_MS;
@@ -767,6 +797,7 @@ export function planMissedRuns(input: MissedRunInput): MissedRunPlan {
 
   const caught = catchUpFires(input.policy, missed, current !== null);
   const run = current === null ? caught : [...caught, current];
+  // Fires walked past but not listed (beyond the cap) were dropped too.
   return { missed, run, dropped: missed.length - caught.length, nextRunAt };
 }
 
