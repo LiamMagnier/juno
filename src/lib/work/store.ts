@@ -1436,6 +1436,51 @@ export interface ReclaimStalledRunsResult {
  * guard is there to catch a query that forgot its userId and this one omits it
  * on purpose.
  */
+/** How long an unattended routine run may stay parked for an answer before it is ended. */
+export const PARKED_ROUTINE_RUN_TTL_MS = 24 * 60 * 60 * 1000;
+
+export const PARKED_ROUTINE_RUN_EXPIRED_DETAIL =
+  "Stopped after waiting 24 hours for an answer or approval that never came, so this routine's next runs are not held up. Nothing more was done; start it again from the routine when you're ready.";
+
+/**
+ * Ends routine runs that were parked for an answer and left there.
+ *
+ * A scheduled or triggered run that needs an approval parks as `paused`, which
+ * counts as live, so it held its routine's concurrency (the routine stayed
+ * "delayed" every minute) and the account's: three such runs stopped every
+ * routine on the account, indefinitely. Only unattended runs (a schedule or a
+ * trigger fired them, `attended: false`) untouched for 24 hours are ended, as
+ * `interrupted` with a sentence saying why; a run a person started by hand is
+ * left alone.
+ */
+export async function expireParkedRoutineRuns(input: { now?: Date; limit?: number } = {}): Promise<string[]> {
+  const now = input.now ?? new Date();
+  const cutoff = new Date(now.getTime() - PARKED_ROUTINE_RUN_TTL_MS);
+  const stale = await prismaUnguarded.workRun.findMany({
+    where: {
+      status: "paused",
+      scheduleId: { not: null },
+      updatedAt: { lt: cutoff },
+      permissionPolicy: { path: ["attended"], equals: false },
+    },
+    select: { id: true, userId: true },
+    orderBy: { updatedAt: "asc" },
+    take: input.limit ?? 100,
+  });
+  const expired: string[] = [];
+  for (const run of stale) {
+    const ended = await finishRun({
+      runId: run.id,
+      userId: run.userId,
+      reason: "interrupted",
+      detail: PARKED_ROUTINE_RUN_EXPIRED_DETAIL,
+      now,
+    }).catch(() => null);
+    if (ended?.finished) expired.push(run.id);
+  }
+  return expired;
+}
+
 export async function reclaimStalledRuns(
   input: ReclaimStalledRunsInput = {}
 ): Promise<ReclaimStalledRunsResult> {

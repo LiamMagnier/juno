@@ -66,6 +66,7 @@ import { runBudgetForWindow } from "@/lib/work/budget";
 import {
   WorkSpendAdmissionError,
   createRun,
+  expireParkedRoutineRuns,
   createWorkSession,
   appendEvents,
   finishRun,
@@ -1080,6 +1081,9 @@ async function dispatchOne(
  * userId. Ordered by the fire they are owed, oldest first, so a schedule that
  * has been waiting longest is served before one that came due this second.
  */
+const PARKED_SWEEP_MS = 5 * 60_000;
+let nextParkedSweepAt = 0;
+
 async function findDueSchedules(now: Date, limit: number) {
   return prismaUnguarded.workSchedule.findMany({
     where: {
@@ -1103,6 +1107,17 @@ async function tick(): Promise<void> {
   if (now.getTime() >= nextMigrationSweepAt) {
     nextMigrationSweepAt = now.getTime() + MIGRATION_SWEEP_MS;
     await sweepMigrations();
+  }
+
+  // Routine runs parked for an answer that never came stop holding their
+  // routine and the account's concurrency after 24 hours.
+  if (now.getTime() >= nextParkedSweepAt) {
+    nextParkedSweepAt = now.getTime() + PARKED_SWEEP_MS;
+    const expired = await expireParkedRoutineRuns({ now }).catch((error: unknown) => {
+      log("parked-run sweep failed", { error: error instanceof Error ? error.message : String(error) });
+      return [] as string[];
+    });
+    if (expired.length) log("expired parked routine runs", { count: expired.length });
   }
 
   if (now.getTime() >= nextCheckpointSweepAt) {
