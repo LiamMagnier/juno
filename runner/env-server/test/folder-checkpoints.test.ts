@@ -162,3 +162,54 @@ test("Claude edits: the CLI's structuredPatch gives real hunks; a Write says whe
   assert.equal(appliedPatch("/p/x", "Edit", {}, undefined), undefined);
   assert.equal(appliedPatch("/p/x", "Edit", {}, { staged: true, structuredPatch: [] }), undefined);
 });
+
+test("folder rollback never reverts what the person edited between turns", async () => {
+  const store = new FolderCheckpoints(tempDir("store"));
+  const cwd = tempDir("folder");
+  write(cwd, "notes.md", "start\n");
+  write(cwd, "app.js", "a = 1\n");
+  await store.create(cwd, "t", 0);
+  await store.createPreTurn(cwd, "t", 1);
+  write(cwd, "app.js", "a = 2\n");
+  await store.create(cwd, "t", 1, ["app.js"]);
+  write(cwd, "notes.md", "start\nmy own notes\n"); // between turns
+  await store.createPreTurn(cwd, "t", 2);
+  write(cwd, "new.js", "b = 1\n");
+  await store.create(cwd, "t", 2, ["new.js"]);
+
+  const back = await store.rollback(cwd, "t", 0, { latestTurn: 2 });
+  assert.equal(read(cwd, "notes.md"), "start\nmy own notes\n", "their edit survives");
+  assert.equal(read(cwd, "app.js"), "a = 1\n", "the session's own change is undone");
+  assert.equal(fs.existsSync(path.join(cwd, "new.js")), false);
+  assert.deepEqual(back.skipped, []);
+});
+
+test("folder rollback never deletes a file a partial checkpoint did not record", async () => {
+  // A walk that stops after one file: the baseline is partial.
+  const store = new FolderCheckpoints(tempDir("store"), { maxFiles: 1 });
+  const cwd = tempDir("folder");
+  write(cwd, "a.txt", "a\n");
+  write(cwd, "z.txt", "precious original\n");
+  const baseline = await store.create(cwd, "t", 0);
+  assert.equal(baseline.turn, 0);
+  assert.equal(store.read("t", 0)?.partial, true);
+  const missing = ["a.txt", "z.txt"].find((f) => !store.read("t", 0)?.files[f]);
+  assert.ok(missing, "one file is past the walk limit");
+  await store.createPreTurn(cwd, "t", 1, [missing]);
+  write(cwd, missing, "agent edit\n");
+  await store.create(cwd, "t", 1, [missing]);
+
+  const back = await store.rollback(cwd, "t", 0, { latestTurn: 1 });
+  assert.equal(fs.existsSync(path.join(cwd, missing)), true, "the original file is not deleted");
+  assert.deepEqual(back.skipped, [missing], "and the reader is told it could not be restored");
+});
+
+test("folder patches refuse a path through a symlinked directory", () => {
+  const store = new FolderCheckpoints(tempDir("store"));
+  const cwd = tempDir("folder");
+  const outside = tempDir("outside");
+  fs.symlinkSync(outside, path.join(cwd, "link"));
+  const patch = ["--- /dev/null", "+++ link/escape.txt", "@@ -0,0 +1 @@", "+written outside", ""].join("\n");
+  assert.throws(() => store.applyPatch(cwd, patch), /outside this session's folder/);
+  assert.equal(fs.existsSync(path.join(outside, "escape.txt")), false);
+});

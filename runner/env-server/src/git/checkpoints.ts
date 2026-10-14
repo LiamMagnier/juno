@@ -68,6 +68,15 @@ export function safeRefSegment(value: string): string {
   return cleaned;
 }
 
+/**
+ * The working tree as turn `turn` began: what the person (or anything else)
+ * changed between the previous turn's checkpoint and this one is the diff from
+ * that checkpoint to here, and is not the thread's to roll back.
+ */
+export function preTurnRef(threadId: string, turn: number): string {
+  return `${CHECKPOINT_REF_ROOT}/${safeRefSegment(threadId)}/pre/${turn}`;
+}
+
 export function checkpointRef(threadId: string, turn: number): string {
   return `${CHECKPOINT_REF_ROOT}/${safeRefSegment(threadId)}/turn/${turn}`;
 }
@@ -124,6 +133,20 @@ export class GitCheckpoints {
     let stats = { filesChanged: 0, additions: 0, deletions: 0 };
     if (previous) stats = await this.stats(root, previous, commit);
     return { ref, commit, turn, ...stats };
+  }
+
+  /** Records the working tree as turn `turn` starts (see `preTurnRef`). */
+  async createPreTurn(cwd: string, threadId: string, turn: number): Promise<string | null> {
+    const root = await this.repoRoot(cwd);
+    if (!root) return null;
+    const commit = await this.snapshot(root, `alevr pre-turn ${threadId} turn ${turn}`);
+    await gitOk(root, ["update-ref", preTurnRef(threadId, turn), commit]);
+    return commit;
+  }
+
+  async resolvePreTurn(cwd: string, threadId: string, turn: number): Promise<string | undefined> {
+    const r = await git(cwd, ["rev-parse", "--verify", "-q", `${preTurnRef(threadId, turn)}^{commit}`]);
+    return r.code === 0 ? r.stdout.trim() : undefined;
   }
 
   async resolve(cwd: string, threadId: string, turn: number): Promise<string | undefined> {
@@ -229,15 +252,22 @@ export class GitCheckpoints {
       const prefix = await subtreePrefix(root, scope.subtree ?? cwd);
       const touched = new Set<string>((scope.paths ?? []).map(normalizeRepoPath).filter((p): p is string => !!p));
       const latest = scope.latestTurn ?? turn;
+      const laterEdits = new Set<string>();
       let previous = target;
       for (let t = turn + 1; t <= latest; t++) {
         const commit = await this.resolve(root, threadId, t);
         if (!commit) continue;
-        for (const file of (await gitOk(root, ["diff", "--name-only", "--no-renames", "-z", previous, commit])).split("\0").filter(Boolean)) touched.add(file);
+        // The thread's own changes are what its turn did: from the tree as the
+        // turn began to its end. What changed between turns (the person's own
+        // edits) is someone else's, skipped and reported like a later edit.
+        const began = await this.resolvePreTurn(root, threadId, t);
+        if (began) {
+          for (const file of (await gitOk(root, ["diff", "--name-only", "--no-renames", "-z", previous, began])).split("\0").filter(Boolean)) laterEdits.add(file);
+        }
+        for (const file of (await gitOk(root, ["diff", "--name-only", "--no-renames", "-z", began ?? previous, commit])).split("\0").filter(Boolean)) touched.add(file);
         previous = commit;
       }
       // What the thread's latest checkpoint holds; anything different now was written by someone else since.
-      const laterEdits = new Set<string>();
       if (latest > turn && previous !== target) {
         for (const file of (await gitOk(root, ["diff", "--name-only", "--no-renames", "-z", previous, current])).split("\0").filter(Boolean)) laterEdits.add(file);
       }

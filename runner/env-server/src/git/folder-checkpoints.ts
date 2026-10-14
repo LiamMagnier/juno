@@ -86,6 +86,31 @@ export class FolderCheckpoints {
     return path.join(this.#threadDir(threadId), `turn-${turn}.json`);
   }
 
+  #preTurnPath(threadId: string, turn: number): string {
+    return path.join(this.#threadDir(threadId), `pre-${turn}.json`);
+  }
+
+  /**
+   * Records the folder as turn `turn` begins, so a rollback can tell the
+   * session's changes from what the person edited between turns.
+   */
+  async createPreTurn(cwd: string, threadId: string, turn: number, extra: readonly string[] = []): Promise<void> {
+    const previous = turn > 0 ? this.read(threadId, turn - 1) : undefined;
+    const manifest = await this.#scan(cwd, extra, previous ?? this.#latest(threadId), true);
+    manifest.turn = turn;
+    fs.mkdirSync(this.#threadDir(threadId), { recursive: true });
+    writeAtomic(this.#preTurnPath(threadId, turn), JSON.stringify(manifest));
+  }
+
+  #readPreTurn(threadId: string, turn: number): Manifest | undefined {
+    try {
+      const manifest = JSON.parse(fs.readFileSync(this.#preTurnPath(threadId, turn), "utf8")) as Manifest;
+      return manifest.version === 1 ? manifest : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
   #blobPath(hash: string): string {
     return path.join(this.#dir, "blobs", hash.slice(0, 2), hash);
   }
@@ -174,10 +199,15 @@ export class FolderCheckpoints {
       if (rel) touched.add(rel);
     }
     let previous = target;
+    const betweenTurns = new Set<string>();
     for (let t = turn + 1; t <= latestTurn; t++) {
       const next = this.read(threadId, t);
       if (!next) continue;
-      for (const file of changedPaths(previous, next)) touched.add(file);
+      // A turn's own changes run from the folder as it began to its end; what
+      // changed between turns was the person's, and is never reverted.
+      const began = this.#readPreTurn(threadId, t);
+      if (began) for (const file of changedPaths(previous, began)) betweenTurns.add(file);
+      for (const file of changedPaths(began ?? previous, next)) touched.add(file);
       previous = next;
     }
     const current = await this.#scan(cwd, [...touched, ...Object.keys(target.files)], previous, true);
@@ -191,18 +221,20 @@ export class FolderCheckpoints {
       const want = target.files[file];
       const have = current.files[file];
       if (sameEntry(want, have)) continue;
-      if (laterEdits.has(file) || want?.big) {
+      // A checkpoint whose walk stopped early (a huge folder) did not record
+      // every file: missing from it is not "did not exist", so never delete.
+      if (laterEdits.has(file) || betweenTurns.has(file) || want?.big || (!want && target.partial)) {
         skipped.push(file);
         continue;
       }
       const abs = path.join(cwd, file);
-      if (!inside(cwd, abs) || isSymlink(abs)) {
+      if (!containedWithoutLinks(cwd, abs)) {
         skipped.push(file);
         continue;
       }
       if (want) {
         fs.mkdirSync(path.dirname(abs), { recursive: true });
-        fs.writeFileSync(abs, fs.readFileSync(this.#blobPath(want.h)));
+        writeAtomic(abs, fs.readFileSync(this.#blobPath(want.h)));
       } else {
         fs.rmSync(abs, { force: true });
         pruneEmptyDirs(path.dirname(abs), cwd);
@@ -229,7 +261,7 @@ export class FolderCheckpoints {
       if (!named || !clean || clean !== named) throw new PatchError("bad_request", `The patch names an unsafe path: ${named ?? "(none)"}`);
       if (clean.split("/").includes(".git")) throw new PatchError("bad_request", "The patch may not touch .git.");
       const abs = path.join(cwd, clean);
-      if (!inside(cwd, abs) || isSymlink(abs)) throw new PatchError("bad_request", `${clean} is outside this session's folder.`);
+      if (!containedWithoutLinks(cwd, abs)) throw new PatchError("bad_request", `${clean} is outside this session's folder.`);
       const before = fs.existsSync(abs) ? fs.readFileSync(abs, "utf8") : "";
       let after: string;
       try {
@@ -251,7 +283,7 @@ export class FolderCheckpoints {
         pruneEmptyDirs(path.dirname(w.abs), cwd);
       } else {
         fs.mkdirSync(path.dirname(w.abs), { recursive: true });
-        fs.writeFileSync(w.abs, w.text);
+        writeAtomic(w.abs, w.text);
       }
     }
     return { applied: true, files: list };
@@ -473,6 +505,47 @@ function isBinary(content: Buffer): boolean {
 function inside(root: string, abs: string): boolean {
   const rel = path.relative(root, abs);
   return !!rel && !rel.startsWith("..") && !path.isAbsolute(rel);
+}
+
+/**
+ * Inside `root` once every symlink is followed: the file is not a link, and its
+ * deepest existing ancestor resolves inside the real root. Checking only the
+ * last component let `link/x` (a linked directory) write outside the folder.
+ */
+function containedWithoutLinks(root: string, abs: string): boolean {
+  if (!inside(root, abs) || isSymlink(abs)) return false;
+  let realRoot: string;
+  try {
+    realRoot = fs.realpathSync(root);
+  } catch {
+    return false;
+  }
+  let probe = path.dirname(abs);
+  while (!fs.existsSync(probe)) {
+    const up = path.dirname(probe);
+    if (up === probe) return false;
+    probe = up;
+  }
+  const real = fs.realpathSync(probe);
+  return real === realRoot || inside(realRoot, real);
+}
+
+/** Whole or not at all: a temp file beside the target, then a rename. */
+function writeAtomic(abs: string, data: string | Buffer): void {
+  let mode: number | undefined;
+  try {
+    mode = fs.statSync(abs).mode & 0o7777;
+  } catch {
+    mode = undefined;
+  }
+  const tmp = `${abs}.${process.pid}.${Date.now().toString(36)}.alevr-tmp`;
+  try {
+    fs.writeFileSync(tmp, data, mode === undefined ? undefined : { mode });
+    fs.renameSync(tmp, abs);
+  } catch (error) {
+    fs.rmSync(tmp, { force: true });
+    throw error;
+  }
 }
 
 function isSymlink(abs: string): boolean {

@@ -120,3 +120,27 @@ test("checkpoints: not a repository, unsafe thread ids and repos without commits
   assert.ok(first, "a repo with no HEAD still checkpoints");
   assert.ok(g(empty, "ls-tree", "-r", "--name-only", first.commit).includes("a.txt"));
 });
+
+test("checkpoints: a scoped rollback never reverts what the person edited between turns", async () => {
+  const repo = initRepo();
+  const cp = new GitCheckpoints();
+  await cp.create(repo, "t", 0);
+  // Turn 1: the agent edits app.ts.
+  await cp.createPreTurn(repo, "t", 1);
+  write(repo, "src/app.ts", "export const a = 2;\n");
+  await cp.create(repo, "t", 1);
+  // Between turns the person edits README.md, and also app.ts.
+  write(repo, "README.md", "hello\nmy own notes\n");
+  write(repo, "src/app.ts", "export const a = 2; // reviewed\n");
+  // Turn 2: the agent edits other.ts and app.ts again.
+  await cp.createPreTurn(repo, "t", 2);
+  write(repo, "src/other.ts", "export const b = 1;\n");
+  write(repo, "src/app.ts", "export const a = 3; // reviewed\n");
+  await cp.create(repo, "t", 2);
+
+  const back = await cp.rollback(repo, "t", 1, { subtree: repo, latestTurn: 2 });
+  assert.equal(fs.existsSync(path.join(repo, "src/other.ts")), false, "turn 2's new file is undone");
+  assert.equal(read(repo, "README.md"), "hello\nmy own notes\n", "the person's between-turn edit survives");
+  assert.equal(read(repo, "src/app.ts"), "export const a = 3; // reviewed\n", "a file both edited is left alone");
+  assert.deepEqual(back.skipped, ["src/app.ts"], "and reported");
+});

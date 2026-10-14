@@ -834,6 +834,13 @@ export class SessionManager {
         // Not a repository: the folder store takes the same baseline.
         await this.#folders(live).create(cwd, log.id, ordinal - 1, this.#editedPaths(live, 0)).catch((e) => this.#o.logger.debug(`baseline folder checkpoint: ${describeError(e)}`));
       }
+      // The tree as this turn begins, so a rollback can tell this thread's
+      // changes from the person's own edits between turns (never reverted).
+      if (await this.checkpoints.repoRoot(cwd).catch(() => null)) {
+        await this.checkpoints.createPreTurn(cwd, log.id, ordinal).catch((e) => this.#o.logger.debug(`pre-turn checkpoint: ${describeError(e)}`));
+      } else {
+        await this.#folders(live).createPreTurn(cwd, log.id, ordinal, this.#editedPaths(live, 0)).catch((e) => this.#o.logger.debug(`pre-turn folder checkpoint: ${describeError(e)}`));
+      }
       // Stopped (or the session closed) while the baseline checkpoint was written: start nothing.
       if (abort.signal.aborted || (live.generation ?? 0) !== generation) throw new TurnStoppedEarly();
       const provider = await this.#ensureProvider(live, instance, params.selection, generation);
