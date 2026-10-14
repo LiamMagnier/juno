@@ -16,12 +16,14 @@ import {
   addAnthropicUsage,
   emptyAnthropicUsage,
   readAnthropicRound,
+  type AnthropicRoundResult,
 } from "@/lib/anthropic-round";
 import { wireCallId, type ToolLoop } from "@/lib/tools/loop";
 import type { ToolCallInput } from "@/lib/tools/types";
 import type { ModelInfo } from "@/lib/models";
 import type { ReasoningEffort } from "@/types/chat";
 import type { LlmEvent, MessageForModel, PromptCacheMode } from "@/types/llm";
+import { withFirstToken, type MeteredRequest, type RequestMeter } from "@/lib/llm/request-meter";
 
 export {
   anthropicThinkingKind,
@@ -243,7 +245,9 @@ export async function* streamAnthropic(
   fastMode?: boolean,
   systemStablePrefix?: string,
   transport?: AnthropicTransport,
-  promptCache?: PromptCacheMode
+  promptCache?: PromptCacheMode,
+  /** One record per request (src/lib/llm/request-meter.ts). */
+  meter?: RequestMeter
 ): AsyncGenerator<LlmEvent> {
   const toolset = tools?.toolset;
   const messages = await toAnthropicMessages(history, attachmentTextBudget(getModelMetrics(model).contextTokens));
@@ -383,30 +387,53 @@ export async function* streamAnthropic(
     } as Anthropic.Messages.MessageCreateParamsStreaming;
 
     let stream: Awaited<ReturnType<typeof openStream>>;
+    let metered: MeteredRequest | undefined = meter?.begin({
+      wire: "anthropic",
+      round: roundIndex,
+      body: servedFast ? { ...params, speed: "fast" } : params,
+    });
     try {
       stream = await openStream(servedFast, params);
     } catch (err) {
       // Only the first round can discover that fast mode is unavailable; later
       // rounds have already been downgraded, so this stays a one-shot fallback.
       if (servedFast && isFastModeUnavailable(err)) {
+        metered?.end(null, { ok: false });
+        metered = meter?.begin({ wire: "anthropic", round: roundIndex, body: params, fallback: true });
         // The turn is no longer served fast. `servedFast` is what the final
         // `fast` flag is computed from, so downgrading it here is what stops a
         // provider that never reports `speed` from being billed the premium rate.
         servedFast = false;
-        stream = await openStream(false, params);
+        try {
+          stream = await openStream(false, params);
+        } catch (retryErr) {
+          metered?.end(null, { ok: false });
+          throw retryErr;
+        }
       } else {
+        metered?.end(null, { ok: false });
         throw err;
       }
     }
 
     // Delegated so the block reassembly can be exercised by a test without an
     // API key or a network. See src/lib/anthropic-round.ts.
-    const round = yield* readAnthropicRound(stream as AsyncIterable<Anthropic.RawMessageStreamEvent>, {
-      labelFor: toolset ? (name) => toolset.labelFor(name) : undefined,
-      seen,
-      issueCallId: tools ? (providerId, index) => tools.issueCallId(providerId, roundIndex, index) : undefined,
-      round: roundIndex,
-    });
+    let round: AnthropicRoundResult;
+    try {
+      round = yield* withFirstToken(
+        readAnthropicRound(stream as AsyncIterable<Anthropic.RawMessageStreamEvent>, {
+          labelFor: toolset ? (name) => toolset.labelFor(name) : undefined,
+          seen,
+          issueCallId: tools ? (providerId, index) => tools.issueCallId(providerId, roundIndex, index) : undefined,
+          round: roundIndex,
+        }),
+        metered
+      );
+    } catch (err) {
+      metered?.end(null, { ok: false });
+      throw err;
+    }
+    metered?.end(round.usage, { fastMode: servedFast && round.usage.speed !== "standard" });
     const { blocks, toolUses, stopReason } = round;
 
     lastStopReason = stopReason;

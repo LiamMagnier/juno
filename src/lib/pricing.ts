@@ -781,13 +781,15 @@ export function toolFeesUsd(
 /**
  * Cache-hit price as a fraction of the base input rate, per Anthropic's
  * pricing table: 0.1x by default, but the newest models discount reads
- * further — Fable/Mythos 5.1 to 0.025x ($0.25 on $10) and Opus 5.5 to 0.05x
- * ($0.20 on $4). Writes keep the standard 1.25x / 2x everywhere.
+ * further — Fable/Mythos 5.1 to 0.025x ($0.25 on $10), Opus 5.5 and Sonnet
+ * 5.5 to 0.05x ($0.20 on $4, $0.10 on $2; prompt-caching page, 2026-10-14).
+ * Writes keep the standard 1.25x / 2x everywhere. The generated rate table
+ * wins for every id it lists; this is the rule for one it does not.
  */
 function anthropicCacheReadRatio(providerModel: string): number {
   const pm = providerModel.toLowerCase();
   if (/(fable|mythos)-5-1/.test(pm)) return 0.025;
-  if (pm.includes("opus-5-5")) return 0.05;
+  if (pm.includes("opus-5-5") || pm.includes("sonnet-5-5")) return 0.05;
   return 0.1;
 }
 
