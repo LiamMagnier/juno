@@ -1513,6 +1513,34 @@ export async function readResearchRun(input: {
  * that the next Resume (or the next call to this function) picks up exactly
  * where the persisted rows say it got to.
  */
+/**
+ * A signal that fires once the person cancels or pauses the run. Cancel and
+ * Pause only change the run's state: a drive with no signal kept its writer
+ * call (up to ~6 minutes, billed) and its current wave of fetches running and
+ * then threw the result away. The chat path passes its own signal; background
+ * drives (web and worker) take this one. Checked every few seconds.
+ */
+export function watchResearchRunForStop(
+  runId: string,
+  userId: string,
+  intervalMs = 3_000
+): { signal: AbortSignal; stop: () => void } {
+  const controller = new AbortController();
+  const timer = setInterval(() => {
+    void prisma.researchRun
+      .findFirst({ where: { id: runId, userId }, select: { state: true } })
+      .then((row) => {
+        if (!row || row.state === "cancelled" || row.state === "paused") controller.abort();
+      })
+      .catch(() => undefined);
+  }, intervalMs);
+  timer.unref?.();
+  return {
+    signal: controller.signal,
+    stop: () => clearInterval(timer),
+  };
+}
+
 export function driveResearchInBackground(input: {
   runId: string;
   userId: string;
@@ -1520,17 +1548,20 @@ export function driveResearchInBackground(input: {
   workerId?: string;
 }): void {
   const driver = input.engine ?? researchEngine();
+  const watch = watchResearchRunForStop(input.runId, input.userId);
   void driver
     .drive({
       runId: input.runId,
       userId: input.userId,
+      signal: watch.signal,
       // Stable per run (B1): a nudge after a gate reclaims a lease its own
       // earlier drive held, instead of waiting two minutes for it to lapse.
       workerId: input.workerId ?? researchWebOwner(input.runId),
     })
     .catch((e: unknown) => {
       console.error("[research] background drive failed", { runId: input.runId, error: e });
-    });
+    })
+    .finally(() => watch.stop());
 }
 
 /**

@@ -25,7 +25,7 @@ test("recording issued queries keeps steering a person saved in between", { skip
     // The driver loaded the plan, then the person queued guidance...
     const loaded = (await store.loadRun(run.id, ownerId))!;
     const plan = loaded.plan as Record<string, unknown>;
-    await store.savePlan({ runId: run.id, userId: ownerId, plan: { ...(plan as never), steering: [{ id: "s1", text: "Focus on pricing" }] } as never });
+    await store.savePlan({ runId: run.id, userId: ownerId, plan: { ...plan, steering: [{ id: "s1", text: "Focus on pricing" }] } as never });
     // ...and the driver records its next billed query.
     await store.saveIssuedQueries!({ runId: run.id, userId: ownerId, issuedQueries: ["first", "second"] });
     const saved = (await db.researchRun.findUniqueOrThrow({ where: { id: run.id } })).plan as Record<string, unknown>;
@@ -34,6 +34,32 @@ test("recording issued queries keeps steering a person saved in between", { skip
     // Another account's run is never written.
     await store.saveIssuedQueries!({ runId: run.id, userId: "someone-else", issuedQueries: [] });
     assert.deepEqual(((await db.researchRun.findUniqueOrThrow({ where: { id: run.id } })).plan as Record<string, unknown>).issuedQueries, ["first", "second"]);
+  } finally {
+    await db.user.delete({ where: { id: ownerId } }).catch(() => undefined);
+    await db.$disconnect();
+  }
+});
+
+test("cancelling a run aborts the background drive's signal", { skip: !url }, async () => {
+  assert.match(url!, /\/[a-z_]*test$/, "only a throwaway *test database");
+  process.env.DATABASE_URL = url;
+  const { prismaUnguarded: db } = await import("../src/lib/prisma");
+  const { watchResearchRunForStop } = await import("../src/lib/research/run");
+  const ownerId = `research-${randomUUID()}`;
+  try {
+    await db.user.create({ data: { id: ownerId, email: `${ownerId}@example.invalid` } });
+    const run = await db.researchRun.create({ data: { userId: ownerId, goal: "Compare two tools", state: "synthesizing" } });
+    const watch = watchResearchRunForStop(run.id, ownerId, 25);
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 120));
+      assert.equal(watch.signal.aborted, false, "a live run keeps its drive");
+      await db.researchRun.update({ where: { id: run.id }, data: { state: "cancelled" } });
+      const deadline = Date.now() + 2_000;
+      while (!watch.signal.aborted && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 20));
+      assert.equal(watch.signal.aborted, true, "Cancel reaches the in-flight calls");
+    } finally {
+      watch.stop();
+    }
   } finally {
     await db.user.delete({ where: { id: ownerId } }).catch(() => undefined);
     await db.$disconnect();

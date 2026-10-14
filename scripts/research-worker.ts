@@ -12,7 +12,7 @@ import "server-only";
 
 import { prismaUnguarded } from "@/lib/db";
 import { RESEARCH_WORKING_STATES } from "@/lib/research/domain";
-import { researchEngine } from "@/lib/research/run";
+import { researchEngine, watchResearchRunForStop } from "@/lib/research/run";
 
 /*
  * THE FLOOR, not the cadence.
@@ -63,17 +63,21 @@ async function tick(): Promise<number> {
       .filter((run) => !activeRuns.has(run.id))
       .map(async (run) => {
         activeRuns.add(run.id);
+        // Cancel or Pause aborts the drive's in-flight calls, not only its next step.
+        const watch = watchResearchRunForStop(run.id, run.userId);
         try {
           await researchEngine().drive({
             runId: run.id,
             userId: run.userId,
             workerId: WORKER_ID,
+            signal: watch.signal,
           });
         } catch (error) {
           // The engine records stage failures. A worker-level exception should
           // not stop the sweep from adopting the remaining runs.
           console.error("[research-worker] drive failed", { runId: run.id, error });
         } finally {
+          watch.stop();
           activeRuns.delete(run.id);
         }
       })
