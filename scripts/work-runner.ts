@@ -1987,7 +1987,9 @@ function buildTools(input: {
         isHealthy: () => true,
         // While the person has control, every computer tool (screenshots
         // included) refuses before and after acting (D-011, audit C3).
-        blockedReason: () => computerBlockedReason(input.userId, input.remoteComputer!.attachment.agentId),
+        // ...and once this run no longer holds the computer's lease (put to sleep, reset, taken over by another task).
+        blockedReason: () =>
+          computerBlockedReason(input.userId, input.remoteComputer!.attachment.agentId, new Date(), input.runId),
         takeoverEpoch: async () =>
           (await computerTakeoverFence(input.userId, input.remoteComputer!.attachment.agentId)).epoch,
         pageTakesPayment: () => browser.pageTakesPayment(),
@@ -3516,7 +3518,7 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
             return egress.allowed ? null : `Juno will not open that for this skill: ${egress.reason}.`;
           },
         }),
-        () => computerTakeoverFence(input.userId, takeoverAgentId)
+        () => computerTakeoverFence(input.userId, takeoverAgentId, new Date(), input.runId)
       );
       remoteComputer = { attachment: computerAttachment, browser: remoteBrowser };
     } catch {

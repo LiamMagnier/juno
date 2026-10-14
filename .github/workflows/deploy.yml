@@ -485,6 +485,18 @@ jobs:
           CHAT_TURN_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/juno_route_test
           NODE_OPTIONS: --conditions=react-server
 
+      - name: Agent computer sweep writes, against a real database
+        run: |
+          psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -c 'CREATE DATABASE juno_computer_test'
+          npx prisma migrate deploy
+          npx tsx --test tests/agent-computer-sweep.integration.test.ts
+        env:
+          ADMIN_URL: postgresql://postgres:postgres@127.0.0.1:5432/shadow
+          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/juno_computer_test
+          DIRECT_URL: postgresql://postgres:postgres@127.0.0.1:5432/juno_computer_test
+          COMPUTER_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/juno_computer_test
+          NODE_OPTIONS: --conditions=react-server
+
       - name: Code link backend parity, against a real database
         run: |
           psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -c 'CREATE DATABASE linktest'

@@ -112,6 +112,20 @@ export interface ComputerStorePersistence {
     now: Date
   ): Promise<boolean>;
   /**
+   * The sweeper's cleanup of an expired lease: only the lease it read, and only while it is still
+   * expired. A blind clear could wipe a lease its run had just renewed.
+   */
+  clearExpiredLeaseCas(userId: string, agentId: string, runId: string, now: Date): Promise<boolean>;
+  /**
+   * The sweeper's reboot reconciliation: applies only if the row is unchanged since the sweeper
+   * read it (same status and `updatedAt`), so it cannot undo a wake that raced it.
+   */
+  reconcileStoppedCas(
+    userId: string,
+    agentId: string,
+    expected: { status: ComputerStatus; updatedAt: Date }
+  ): Promise<boolean>;
+  /**
    * The sweeper's claim on an idle computer before it pauses or stops it: one
    * conditional write that succeeds only if nobody holds a live lease and
    * nothing touched the row since the sweeper read it. Without it, a run that
@@ -371,6 +385,24 @@ const prismaPersistence: ComputerStorePersistence = {
     return updated.count > 0;
   },
 
+  async clearExpiredLeaseCas(userId, agentId, runId, now) {
+    const { prisma } = await import("@/lib/db");
+    const updated = await prisma.agentComputer.updateMany({
+      where: { userId, agentId, leaseRunId: runId, leaseExpiresAt: { lte: now } },
+      data: { leaseRunId: null, leaseExpiresAt: null },
+    });
+    return updated.count > 0;
+  },
+
+  async reconcileStoppedCas(userId, agentId, expected) {
+    const { prisma } = await import("@/lib/db");
+    const updated = await prisma.agentComputer.updateMany({
+      where: { userId, agentId, status: expected.status, updatedAt: expected.updatedAt },
+      data: { status: "asleep", streamOn: false, leaseRunId: null, leaseExpiresAt: null, lastResumedAt: null },
+    });
+    return updated.count > 0;
+  },
+
   async claimIdleCas(userId, agentId, expected, now) {
     const { prisma } = await import("@/lib/db");
     const updated = await prisma.agentComputer.updateMany({
@@ -533,6 +565,41 @@ export function createInMemoryComputerPersistence(): ComputerStorePersistence & 
         updatedAt: now,
       };
       rows.set(agentId, next);
+      return true;
+    },
+    async clearExpiredLeaseCas(userId, agentId, runId, now) {
+      const existing = rows.get(agentId);
+      if (
+        !existing ||
+        existing.userId !== userId ||
+        existing.leaseRunId !== runId ||
+        !existing.leaseExpiresAt ||
+        existing.leaseExpiresAt.getTime() > now.getTime()
+      ) {
+        return false;
+      }
+      rows.set(agentId, { ...existing, leaseRunId: null, leaseExpiresAt: null, updatedAt: new Date() });
+      return true;
+    },
+    async reconcileStoppedCas(userId, agentId, expected) {
+      const existing = rows.get(agentId);
+      if (
+        !existing ||
+        existing.userId !== userId ||
+        existing.status !== expected.status ||
+        existing.updatedAt.getTime() !== expected.updatedAt.getTime()
+      ) {
+        return false;
+      }
+      rows.set(agentId, {
+        ...existing,
+        status: "asleep",
+        streamOn: false,
+        leaseRunId: null,
+        leaseExpiresAt: null,
+        lastResumedAt: null,
+        updatedAt: new Date(),
+      });
       return true;
     },
     async claimIdleCas(userId, agentId, expected, now) {
@@ -1331,14 +1398,33 @@ export class AsleepComputerError extends Error {
  * runner before (and after) every computer and browser tool call: while the
  * person has control, the answer is `TAKEOVER_REFUSAL`.
  */
-export async function computerBlockedReason(userId: string, agentId: string, now = new Date()): Promise<string | null> {
-  const row = await activePersistence.findByAgent(userId, agentId);
-  return takeoverActive(row, now) ? TAKEOVER_REFUSAL : null;
+export async function computerBlockedReason(
+  userId: string,
+  agentId: string,
+  now = new Date(),
+  runId?: string,
+): Promise<string | null> {
+  return fenceRefusal(await activePersistence.findByAgent(userId, agentId), now, runId);
+}
+
+/**
+ * Said to a run whose lease is gone: the person put the computer to sleep or reset it, or the
+ * lease lapsed and another task took it. Its next action would land in someone else's session.
+ */
+export const LEASE_LOST_REFUSAL =
+  "This task no longer has its computer: it was put to sleep, reset, or given to another task. Stop using the computer and tell the person what is left to do.";
+
+/** A takeover refuses every run; a run (when named) must also still hold the computer's lease. */
+function fenceRefusal(row: AgentComputerRow | null, now: Date, runId?: string): string | null {
+  if (takeoverActive(row, now)) return TAKEOVER_REFUSAL;
+  if (runId !== undefined && row?.leaseRunId !== runId) return LEASE_LOST_REFUSAL;
+  return null;
 }
 
 /**
  * The takeover fence: the refusal (if any) plus how many takeovers have ever
- * started. A guard reads it before and after a call; a changed epoch means a
+ * started. Given the run's id it is also the lease fence: a run that lost the
+ * computer's lease is refused before and after every action. A guard reads it before and after a call; a changed epoch means a
  * takeover overlapped the call — even one that started and ended inside it —
  * and the call's result is discarded (security audit, computer gap 2).
  */
@@ -1346,9 +1432,10 @@ export async function computerTakeoverFence(
   userId: string,
   agentId: string,
   now = new Date(),
+  runId?: string,
 ): Promise<{ reason: string | null; epoch: number }> {
   const row = await activePersistence.findByAgent(userId, agentId);
-  return { reason: takeoverActive(row, now) ? TAKEOVER_REFUSAL : null, epoch: row?.takeoverEpoch ?? 0 };
+  return { reason: fenceRefusal(row, now, runId), epoch: row?.takeoverEpoch ?? 0 };
 }
 
 /**

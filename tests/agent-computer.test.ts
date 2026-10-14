@@ -29,6 +29,9 @@ const {
 } = req("../src/lib/computer/provider") as typeof import("@/lib/computer/provider");
 const {
   acquireComputerLease,
+  computerBlockedReason,
+  computerTakeoverFence,
+  LEASE_LOST_REFUSAL,
   CAPS_HOST_MESSAGE,
   CAPS_USER_MESSAGE,
   createInMemoryComputerPersistence,
@@ -42,6 +45,9 @@ const {
   setComputerStorePersistenceForTest,
   sleepComputer,
 } = req("../src/lib/computer/store") as typeof import("@/lib/computer/store");
+const { guardBrowserForTakeover } = req(
+  "../src/lib/computer/takeover"
+) as typeof import("@/lib/computer/takeover");
 const { sweepAgentComputers } = req(
   "../src/lib/computer/sweep"
 ) as typeof import("@/lib/computer/sweep");
@@ -281,6 +287,118 @@ describe("agent-computer provider and lifecycle", () => {
     const sweep2 = await sweepAgentComputers({ now: t25h });
     assert.deepEqual(sweep2.slept, ["agent_rest"]);
     assert.equal((await memDb.findByAgent("user_1", "agent_rest"))?.status, "asleep");
+  });
+
+  /** Runs `during` the moment the sweep has read a computer's row and asks for its live state. */
+  function interleave(agentId: string, during: () => Promise<void>) {
+    const state = fakeComputerProvider.state.bind(fakeComputerProvider);
+    let fired = false;
+    fakeComputerProvider.state = async (handle) => {
+      const live = await state(handle);
+      if (!fired && handle.name.endsWith(agentId)) {
+        fired = true;
+        await during();
+      }
+      return live;
+    };
+    return () => {
+      fakeComputerProvider.state = state;
+    };
+  }
+
+  it("sweeper never rests or sleeps a computer a run leased after the sweep read it", async () => {
+    const t0 = new Date("2026-09-26T00:00:00Z");
+    for (const agentId of ["agent_rest_race", "agent_sleep_race"]) {
+      await ensureAwake("user_1", agentId, { autoEnable: true });
+      const idle = new Date(t0.getTime() - (agentId === "agent_rest_race" ? 25 * 60_000 : 25 * 3_600_000));
+      await memDb.updateByAgent("user_1", agentId, { lastActiveAt: idle, lastViewedAt: idle, lastResumedAt: idle });
+    }
+    const restore = interleave("agent_rest_race", async () => {
+      assert.equal((await acquireComputerLease("user_1", "agent_rest_race", "run_a", 120_000, t0)).acquired, true);
+    });
+    const restoreSleep = interleave("agent_sleep_race", async () => {
+      assert.equal((await acquireComputerLease("user_1", "agent_sleep_race", "run_b", 120_000, t0)).acquired, true);
+    });
+    try {
+      const sweep = await sweepAgentComputers({ now: t0 });
+      assert.deepEqual(sweep.rested, []);
+      assert.deepEqual(sweep.slept, []);
+    } finally {
+      restoreSleep();
+      restore();
+    }
+    for (const [agentId, runId] of [["agent_rest_race", "run_a"], ["agent_sleep_race", "run_b"]]) {
+      const row = await memDb.findByAgent("user_1", agentId);
+      assert.equal(row?.status, "awake", `${agentId} stays awake under its run`);
+      assert.equal(row?.leaseRunId, runId, `${agentId} keeps its run's lease`);
+      const c = await ensureAwake("user_1", agentId);
+      assert.equal(await fakeComputerProvider.state(c.handle), "running");
+    }
+  });
+
+  it("sweeper never clears a lease its run renewed after the sweep read it", async () => {
+    const t0 = new Date("2026-09-26T00:00:00Z");
+    await ensureAwake("user_1", "agent_lease_race", { autoEnable: true });
+    await acquireComputerLease("user_1", "agent_lease_race", "run_a", 1_000, new Date(t0.getTime() - 60_000));
+    const restore = interleave("agent_lease_race", async () => {
+      assert.equal(await renewComputerLease("user_1", "agent_lease_race", "run_a", 120_000, t0), true);
+    });
+    try {
+      const sweep = await sweepAgentComputers({ now: t0 });
+      assert.deepEqual(sweep.expiredLeases, []);
+    } finally {
+      restore();
+    }
+    const row = await memDb.findByAgent("user_1", "agent_lease_race");
+    assert.equal(row?.leaseRunId, "run_a");
+    assert.equal(row?.leaseExpiresAt?.getTime(), t0.getTime() + 120_000);
+  });
+
+  it("sweeper leaves a computer that is mid-wake alone, and reconciles one stuck starting", async () => {
+    const t0 = new Date();
+    const c = await ensureAwake("user_1", "agent_waking", { autoEnable: true });
+    await fakeComputerProvider.stop(c.handle);
+    await acquireComputerLease("user_1", "agent_waking", "run_a", 120_000, t0);
+    // `ensureAwake` has written "starting" but `docker start` has not returned yet.
+    await memDb.updateByAgent("user_1", "agent_waking", { status: "starting" });
+    const sweep = await sweepAgentComputers({ now: t0 });
+    assert.deepEqual(sweep.reconciledAfterReboot, []);
+    const row = await memDb.findByAgent("user_1", "agent_waking");
+    assert.equal(row?.status, "starting");
+    assert.equal(row?.leaseRunId, "run_a", "the waking run keeps its lease");
+    // Long after, still starting with no container: that one really is stuck.
+    const later = await sweepAgentComputers({ now: new Date(t0.getTime() + 10 * 60_000) });
+    assert.deepEqual(later.reconciledAfterReboot, ["agent_waking"]);
+    assert.equal((await memDb.findByAgent("user_1", "agent_waking"))?.status, "asleep");
+  });
+
+  it("a run that lost its computer's lease is refused before its next action lands in another run's session", async () => {
+    await ensureAwake("user_1", "agent_shared", { autoEnable: true });
+    assert.equal((await acquireComputerLease("user_1", "agent_shared", "run_a")).acquired, true);
+    assert.equal(await computerBlockedReason("user_1", "agent_shared", new Date(), "run_a"), null);
+    let clicks = 0;
+    const browserA = guardBrowserForTakeover(
+      {
+        open: async () => ({ ok: true }),
+        read: async () => ({ ok: true }),
+        click: async (_target: { ref?: number; selector?: string }) => ({ ok: true, message: String(++clicks) }),
+        typeText: async () => ({ ok: true }),
+        submit: async () => ({ ok: true }),
+      },
+      () => computerTakeoverFence("user_1", "agent_shared", new Date(), "run_a"),
+    );
+    assert.equal((await browserA.click({ ref: 1 })).ok, true);
+
+    // The person presses Sleep; another task then takes and wakes the same computer.
+    await sleepComputer("user_1", "agent_shared");
+    assert.equal((await acquireComputerLease("user_1", "agent_shared", "run_b")).acquired, true);
+    await ensureAwake("user_1", "agent_shared");
+
+    assert.equal(await computerBlockedReason("user_1", "agent_shared", new Date(), "run_a"), LEASE_LOST_REFUSAL);
+    assert.deepEqual(await browserA.click({ ref: 1 }), { ok: false, message: LEASE_LOST_REFUSAL });
+    assert.equal(clicks, 1, "run A's click never reached run B's browser");
+    assert.equal(await computerBlockedReason("user_1", "agent_shared", new Date(), "run_b"), null, "the new holder carries on");
+    assert.equal(await computerBlockedReason("user_1", "agent_shared"), null, "callers that name no run see only takeovers");
   });
 
   it("builds exact Docker production argv and never includes forbidden flags", () => {

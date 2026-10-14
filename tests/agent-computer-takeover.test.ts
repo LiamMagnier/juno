@@ -282,10 +282,14 @@ describe("(b) a takeover is exclusive", () => {
     assert.deepEqual(calls, ["open"]);
   });
 
-  it("the runner wires the takeover check into the computer and browser tools", () => {
+  it("the runner wires the takeover and lease check into the computer and browser tools", () => {
     const runner = readFileSync("scripts/work-runner.ts", "utf8");
-    assert.match(runner, /blockedReason: \(\) => computerBlockedReason\(input\.userId, input\.remoteComputer!\.attachment\.agentId\)/);
+    assert.match(
+      runner,
+      /blockedReason: \(\) =>\s*computerBlockedReason\(input\.userId, input\.remoteComputer!\.attachment\.agentId, new Date\(\), input\.runId\)/,
+    );
     assert.match(runner, /guardBrowserForTakeover\(\s*connectAgentBrowser\(/);
+    assert.match(runner, /computerTakeoverFence\(input\.userId, takeoverAgentId, new Date\(\), input\.runId\)/);
   });
 
   it("a computer over its disk quota is not attached to a task", async () => {
