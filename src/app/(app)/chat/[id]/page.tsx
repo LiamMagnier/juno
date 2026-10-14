@@ -1,27 +1,12 @@
-import nextDynamic from "next/dynamic";
 import { notFound, redirect } from "next/navigation";
 import { requireUser } from "@/lib/session";
-import { getConversationThread } from "@/lib/queries";
+import { getConversationThread, getConversationThreadPage } from "@/lib/queries";
 import { ChatView } from "@/components/chat/chat-view";
+// Not imported directly: this route renders ONE of two surfaces and the chat
+// one is the overwhelming case. See the loader for why the split lives there.
+import { CodeSessionViewLazy as CodeSessionView } from "@/components/code/code-session-view-lazy";
 import { agentForThread, pendingAgentStarter } from "@/lib/agents/store";
 import { loadRoomDetail } from "@/lib/agents/room-store";
-
-/**
- * Split, not imported. This route renders ONE of two surfaces and the chat one
- * is the overwhelming case, but a static import put the whole Code session
- * view — and, through it, the canvas panel and the design editor's node
- * machinery — into the first load of every conversation page. Measured: 234 kB
- * of the route's 797 kB, downloaded and parsed by everyone who ever opens a
- * chat, to render nothing.
- *
- * No `ssr: false`: a Server Component cannot ask for that, and it should not —
- * a code session still renders its history on the server. `next/dynamic` here
- * only moves the module into its own chunk, fetched when the branch below
- * actually takes it.
- */
-const CodeSessionView = nextDynamic(() =>
-  import("@/components/code/code-session-view").then((m) => m.CodeSessionView),
-);
 
 export default async function ConversationPage({
   params,
@@ -35,7 +20,10 @@ export default async function ConversationPage({
   const user = await requireUser();
   const { id } = await params;
   const { artifact, m, researchRun, q, surface } = await searchParams;
-  const thread = await getConversationThread(user.id, id);
+  // The newest page of the conversation, not all of it: older turns load as the
+  // reader scrolls back (lib/chat/history-page.ts). A ?m= deep link widens the
+  // page to reach its message, so the jump needs no second request.
+  const thread = await getConversationThreadPage(user.id, id, { focusMessageId: typeof m === "string" && m ? m : null });
   if (!thread) notFound();
 
   // Juno Code sessions get the code surface: same message rendering, but the
@@ -56,14 +44,14 @@ export default async function ConversationPage({
     redirect(`/code/${id}`);
   }
   if (thread.conversation.kind === "code" && codeSessionHasTarget) {
-    // `thread.artifacts` is loaded for every conversation this route renders,
-    // code or not — handing it to both surfaces is what stops the code one
-    // needing a fetch of its own for rows the page already has.
+    // The legacy Code surface renders its whole transcript; it does not page.
+    const whole = await getConversationThread(user.id, id);
+    if (!whole) notFound();
     return (
       <CodeSessionView
-        conversation={thread.conversation}
-        initialMessages={thread.messages}
-        initialArtifacts={thread.artifacts}
+        conversation={whole.conversation}
+        initialMessages={whole.messages}
+        initialArtifacts={whole.artifacts}
       />
     );
   }
@@ -87,6 +75,7 @@ export default async function ConversationPage({
       agent={agent ?? undefined}
       initialPrompt={firstMessage ?? (agent ? await pendingAgentStarter(user.id, agent.id) ?? undefined : undefined)}
       initialMessages={thread.messages}
+      initialHistory={thread.history}
       initialArtifacts={thread.artifacts}
       initialModel={thread.conversation.model}
       initialResearchRun={researchRun}

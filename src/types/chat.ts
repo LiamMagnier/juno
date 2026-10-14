@@ -498,6 +498,16 @@ export interface ClientArtifactSuggestion {
   createdAt: string;
 }
 
+/**
+ * Where a paged transcript stands (lib/chat/history-page.ts): whether older
+ * messages exist above the ones the client holds, and the opaque cursor that
+ * fetches the next page of them from GET /api/conversations/[id]/messages.
+ */
+export interface ConversationHistory {
+  hasOlder: boolean;
+  olderCursor: string | null;
+}
+
 export interface ClientConversation {
   id: string;
   title: string;

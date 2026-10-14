@@ -12,11 +12,20 @@ import { useLatestHandler } from "@/hooks/use-latest-handler";
 import { countTranscriptRender, placeInlineRuns } from "@/lib/chat/transcript-window";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import type { ChatMessage, ImageEditInput, RegenerateOptions, SendResult } from "@/hooks/use-chat";
-import type { ClientArtifact, ClientAttachment, GenerationStatus } from "@/types/chat";
+import type { ChatMessage, ImageEditInput, LoadOlderRequest, RegenerateOptions, SendResult } from "@/hooks/use-chat";
+import type { ClientArtifact, ClientAttachment, ConversationHistory, GenerationStatus } from "@/types/chat";
 
 interface MessageListProps {
   messages: ChatMessage[];
+  /**
+   * A paged transcript (lib/chat/history-page.ts): `messages` is the newest
+   * part of the conversation and `onLoadOlder` reads further back. Scrolling
+   * near the top asks for the next page, and the reader's line holds still as
+   * it lands above them. Absent: `messages` is the whole conversation.
+   */
+  history?: ConversationHistory;
+  loadingOlder?: boolean;
+  onLoadOlder?: (request?: LoadOlderRequest) => Promise<unknown>;
   /**
    * Durable runs drawn inside the transcript, each placed after the turn that
    * started it.
@@ -104,6 +113,11 @@ function RoomHandoffLine({ text }: { text: string }) {
   );
 }
 
+/** Ask for the next older page this far from the top: about two screens of runway. */
+const LOAD_OLDER_WITHIN_PX = 1600;
+/** After a page failed to load, wait this long before scrolling may ask again. */
+const LOAD_OLDER_RETRY_MS = 3000;
+
 const SCROLL_FADE_STYLE: React.CSSProperties = {
   maskImage: "linear-gradient(to bottom, black 0%, black calc(100% - 72px), transparent 100%)",
   WebkitMaskImage: "linear-gradient(to bottom, black 0%, black calc(100% - 72px), transparent 100%)",
@@ -151,11 +165,39 @@ export function MessageList(props: MessageListProps) {
   const onOpenAttachment = useLatestHandler(props.onOpenAttachment);
   const runsByMessage = new Map<number, React.ReactNode[]>();
   const runNodes = new Map((props.inlineRuns ?? []).map((item) => [item.id, item.node]));
+  const hasOlder = Boolean(props.history?.hasOlder);
   for (const [index, ids] of placeInlineRuns(messages, props.inlineRuns ?? [])) {
+    // A run placed before every loaded question started in history that has
+    // not loaded yet; it takes its place under its turn when that arrives,
+    // rather than at the foot of the transcript, which is where -1 draws.
+    if (index === -1 && hasOlder) continue;
     runsByMessage.set(index, ids.map((id) => <React.Fragment key={id}>{runNodes.get(id)}</React.Fragment>));
   }
-  const transcript = useTranscriptWindow(messages);
+  const onLoadOlder = useLatestHandler(props.onLoadOlder);
+  const pagedTranscript = Boolean(props.onLoadOlder);
+  const transcript = useTranscriptWindow(messages, {
+    onMissingMessage: pagedTranscript ? (messageId) => void onLoadOlder?.({ throughMessageId: messageId }) : undefined,
+  });
   const { scrollRef, contentRef, atBottom, onScroll, jumpToLatest } = transcript;
+  // Paged history: read the next older page while the reader still has about
+  // two screens of transcript above them, so scrolling up rarely meets the top.
+  const viewportTop = transcript.viewport.top;
+  const viewportHeight = transcript.viewport.height;
+  const failedAtRef = React.useRef(0);
+  React.useEffect(() => {
+    if (!hasOlder || props.loadingOlder || !pagedTranscript || !Number.isFinite(viewportTop)) return;
+    // The live position, not the state: in the commit where a page lands, the
+    // window hook has already moved the scroller down by the page's height but
+    // its viewport state still says "near the top", which read as a second
+    // request for the next page nobody scrolled to.
+    const top = scrollRef.current?.scrollTop ?? viewportTop;
+    if (top > Math.max(LOAD_OLDER_WITHIN_PX, viewportHeight * 2)) return;
+    if (Date.now() - failedAtRef.current < LOAD_OLDER_RETRY_MS) return;
+    void onLoadOlder?.().then((result) => {
+      if (result === null) failedAtRef.current = Date.now();
+    });
+  }, [hasOlder, props.loadingOlder, pagedTranscript, viewportTop, viewportHeight, onLoadOlder, scrollRef]);
+
   // From two turns up the rail stands in for the scrollbar (sm and wider; a
   // phone keeps its own scroll indicator and the full width for the text).
   const hasRail = React.useMemo(() => messages.filter((m) => m.role === "USER").length > 1, [messages]);
@@ -166,11 +208,14 @@ export function MessageList(props: MessageListProps) {
   // Only animate messages that arrive after the initial mount, so opening an
   // existing conversation doesn't replay every entrance. Seed with the initial
   // count → those render instantly; later sends/streams rise in.
-  const seenRef = React.useRef(messages.length);
-  const animateFrom = seenRef.current;
+  // Older pages prepended above (paged history) shift every index by their
+  // length, so the count is offset by where the previous first row now sits:
+  // history arriving above must not replay its entrance either.
+  const seenRef = React.useRef({ count: messages.length, firstKey: messages[0] ? (messages[0].renderKey ?? messages[0].id) : undefined });
+  const animateFrom = seenRef.current.count + (seenRef.current.firstKey ? (transcript.layout.indexByKey.get(seenRef.current.firstKey) ?? 0) : 0);
   React.useEffect(() => {
-    seenRef.current = messages.length;
-  }, [messages.length]);
+    seenRef.current = { count: messages.length, firstKey: messages[0] ? (messages[0].renderKey ?? messages[0].id) : undefined };
+  }, [messages]);
 
   // The newest user turn is the one ↑ edits from an empty composer.
   const lastUserId = React.useMemo(() => [...messages].reverse().find((m) => m.role === "USER" && !m.pending)?.id ?? null, [messages]);
@@ -215,7 +260,14 @@ export function MessageList(props: MessageListProps) {
         {completionAnnouncement}
       </span>
       {messages.length > VIRTUALIZE_AFTER && (
-        <button type="button" onClick={() => transcript.setShowAll(!transcript.showAll)} className="sr-only focus:not-sr-only focus:absolute focus:top-0 focus:z-20 focus:rounded-field focus:bg-popover focus:p-2">
+        <button
+          type="button"
+          onClick={() => {
+            // "Read full conversation" means all of it, not the part loaded so far.
+            if (!transcript.showAll && hasOlder) void onLoadOlder?.({ all: true });
+            transcript.setShowAll(!transcript.showAll);
+          }}
+          className="sr-only focus:not-sr-only focus:absolute focus:top-0 focus:z-20 focus:rounded-field focus:bg-popover focus:p-2">
           {transcript.showAll ? "Use compact conversation view" : "Read full conversation"}
         </button>
       )}
@@ -266,6 +318,10 @@ export function MessageList(props: MessageListProps) {
         role="log"
         aria-label="Conversation transcript"
         aria-live="off"
+        // How much of a paged conversation is here; read by the benchmark and
+        // e2e/transcript-history.spec.ts. Absent on a transcript that does not page.
+        data-history-loaded={props.history ? messages.length : undefined}
+        data-history-older={props.history ? String(props.history.hasOlder) : undefined}
         /*
          * The entrance runs on the CONTENT, not on the scroller around it, and
          * that is the whole reason it is safe.

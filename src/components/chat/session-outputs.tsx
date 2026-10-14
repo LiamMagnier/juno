@@ -237,10 +237,13 @@ export function SessionOutputs({
   messages,
   onOpenArtifact,
   onOpenAttachment,
+  onOpen,
   className,
 }: {
   artifacts: ClientArtifact[];
   messages: ClientMessage[];
+  /** The panel opened: a paged chat brings in its older turns so the index covers all of it. */
+  onOpen?: () => void;
   onOpenArtifact: (identifier: string) => void;
   /** Open an uploaded file in the side viewer; without it the row only counts. */
   onOpenAttachment?: (attachment: ClientAttachment) => void;
@@ -255,7 +258,13 @@ export function SessionOutputs({
   if (outputs.length === 0 && used.length === 0) return null;
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        if (next) onOpen?.();
+        setOpen(next);
+      }}
+    >
       <Tooltip>
         <TooltipTrigger asChild>
           <PopoverTrigger asChild>

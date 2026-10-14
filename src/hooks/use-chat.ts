@@ -18,6 +18,7 @@ import {
 } from "@/lib/generation-pending";
 import { appendReasoningDelta, emptyReasoning } from "@/lib/reasoning-parts";
 import { resolveModel } from "@/lib/models";
+import { COMPLETE_HISTORY, prependOlder, reconcileNewestPage, reconciledHistory } from "@/lib/chat/history-merge";
 import type { ResearchEffort } from "@/lib/research/domain";
 import type { ArtifactEditRequest } from "@/lib/artifact-edit";
 import { rangesForStoredText, type ContextToken } from "@/lib/chat/context-tokens";
@@ -39,6 +40,7 @@ import type {
   ClientMessage,
   ClientMessageVersion,
   ClientQuota,
+  ConversationHistory,
   GenerateEditPayload,
   GenerationStatus,
   ReasoningEffort,
@@ -205,9 +207,20 @@ function recoveryDelayMs(attempt: number): number {
   return 3_000;
 }
 
+/** Newest messages the dropped-stream recovery poll reads; the turn it waits on is the latest. */
+const RECOVERY_PAGE_MESSAGES = 40;
+
+/** How far back to read: the next page, through one message, or all the rest. */
+export type LoadOlderRequest = { throughMessageId?: string; all?: boolean };
+
 interface UseChatOptions {
   conversationId: string | null;
   initialMessages: ClientMessage[];
+  /**
+   * Whether `initialMessages` is the newest page of a longer conversation
+   * (lib/chat/history-page.ts). Absent: they are the whole of it.
+   */
+  initialHistory?: ConversationHistory;
   initialArtifacts: ClientArtifact[];
   model: string;
   projectId?: string;
@@ -245,6 +258,11 @@ interface UseChatOptions {
 
 export function useChat(opts: UseChatOptions) {
   const [messages, setMessages] = React.useState<ChatMessage[]>(opts.initialMessages);
+  const [history, setHistory] = React.useState<ConversationHistory>(opts.initialHistory ?? COMPLETE_HISTORY);
+  const historyRef = React.useRef(history);
+  historyRef.current = history;
+  const [loadingOlder, setLoadingOlder] = React.useState(false);
+  const olderRequestRef = React.useRef<Promise<ChatMessage[] | null> | null>(null);
   const [artifacts, setArtifacts] = React.useState<ClientArtifact[]>(opts.initialArtifacts);
   const [status, setStatus] = React.useState<GenerationStatus>("idle");
   const [pendingClarification, setPendingClarification] = React.useState<PendingPreflightClarification | null>(null);
@@ -328,6 +346,9 @@ export function useChat(opts: UseChatOptions) {
     locallyRemovedRef.current = new Map();
     appliedInitialRevisionRef.current = serverTranscriptRevision(opts.initialMessages);
     setMessages(opts.initialMessages);
+    setHistory(opts.initialHistory ?? COMPLETE_HISTORY);
+    olderRequestRef.current = null;
+    setLoadingOlder(false);
     setArtifacts(opts.initialArtifacts);
     setStatus("idle");
     setPendingClarification(null);
@@ -351,21 +372,74 @@ export function useChat(opts: UseChatOptions) {
     // appear to think briefly and then erase its own result.
     if (appliedInitialRevisionRef.current === initialMessagesRevision) return;
     appliedInitialRevisionRef.current = initialMessagesRevision;
-    setMessages((current) => {
-      const renderKeys = new Map(current.map((message) => [message.id, message.renderKey]));
-      return opts.initialMessages.map((message) => ({
-        ...message,
-        renderKey: renderKeys.get(message.id),
-      }));
-    });
+    // A paged conversation's refresh carries its newest page only. History the
+    // reader already scrolled back through is kept above it (history-merge.ts).
+    const pageHistory = opts.initialHistory ?? COMPLETE_HISTORY;
+    const current = messagesRef.current;
+    const renderKeys = new Map(current.map((message) => [message.id, message.renderKey]));
+    const page = opts.initialMessages.map((message) => ({ ...message, renderKey: renderKeys.get(message.id) }));
+    const { messages: merged, keptOlder } = reconcileNewestPage<ChatMessage>(current, page, pageHistory);
+    setMessages(merged);
+    setHistory((held) => reconciledHistory(held, pageHistory, keptOlder));
     setArtifacts(opts.initialArtifacts);
   }, [
     initialMessagesRevision,
     opts.initialMessages,
+    opts.initialHistory,
     opts.initialArtifacts,
     opts.conversationId,
     status,
   ]);
+
+  /**
+   * Read older messages into the transcript, above what is held. Scrolling
+   * near the top asks for the next page; a jump to a message that is not loaded
+   * asks `throughMessageId`; find and the full-transcript switch ask for `all`.
+   * One request at a time: a second call waits for the first and then decides
+   * whether it still has anything to fetch. Resolves to the transcript as it
+   * stands afterwards, or null when nothing could be read (offline, or the
+   * conversation changed underneath).
+   */
+  const loadOlderMessages = React.useCallback(async (request: LoadOlderRequest = {}): Promise<ChatMessage[] | null> => {
+    const convoId = convoIdRef.current;
+    if (!convoId) return messagesRef.current;
+    for (let pending = olderRequestRef.current; pending; pending = olderRequestRef.current) {
+      const done = await pending;
+      if (olderRequestRef.current === pending) olderRequestRef.current = null;
+      if (convoIdRef.current !== convoId || !done) return null;
+    }
+    const held = historyRef.current;
+    const reached = request.throughMessageId && messagesRef.current.some((m) => m.id === request.throughMessageId);
+    if (!held.hasOlder || !held.olderCursor || reached) return messagesRef.current;
+    const query = new URLSearchParams({ before: held.olderCursor });
+    if (request.all) query.set("all", "1");
+    else if (request.throughMessageId) query.set("through", request.throughMessageId);
+    const run = (async () => {
+      setLoadingOlder(true);
+      try {
+        const res = await fetch(`/api/conversations/${convoId}/messages?${query}`);
+        if (!res.ok) return null;
+        const payload = (await res.json()) as { messages?: ClientMessage[]; history?: ConversationHistory };
+        if (convoIdRef.current !== convoId || !Array.isArray(payload.messages) || !payload.history) return null;
+        const next = prependOlder<ChatMessage>(messagesRef.current, payload.messages);
+        messagesRef.current = next;
+        historyRef.current = payload.history;
+        setMessages(next);
+        setHistory(payload.history);
+        return next;
+      } catch {
+        return null;
+      } finally {
+        if (convoIdRef.current === convoId) setLoadingOlder(false);
+      }
+    })();
+    olderRequestRef.current = run;
+    try {
+      return await run;
+    } finally {
+      if (olderRequestRef.current === run) olderRequestRef.current = null;
+    }
+  }, []);
 
   /**
    * The server deliberately detaches generation from the request: when the SSE
@@ -416,7 +490,9 @@ export function useChat(opts: UseChatOptions) {
           return;
         }
         try {
-          const res = await fetch(`/api/conversations/${convoId}`);
+          // The newest page, not the whole thread: this poll can run every few
+          // seconds for an hour, and the turn it waits on is the latest one.
+          const res = await fetch(`/api/conversations/${convoId}?limit=${RECOVERY_PAGE_MESSAGES}`);
           if (!res.ok) continue;
           const payload = (await res.json()) as { messages?: ClientMessage[]; artifacts?: ClientArtifact[] };
           const msgs = payload.messages ?? [];
@@ -1958,6 +2034,7 @@ export function useChat(opts: UseChatOptions) {
     generationIdRef.current = null;
     assistantIdRef.current = null;
     setMessages([]);
+    setHistory(COMPLETE_HISTORY);
     setArtifacts([]);
     setStatus("idle");
     setPendingClarification(null);
@@ -2044,6 +2121,10 @@ export function useChat(opts: UseChatOptions) {
 
   return {
     messages,
+    /** Whether older messages exist above `messages`; see loadOlderMessages. */
+    history,
+    loadingOlder,
+    loadOlderMessages,
     artifacts,
     status,
     pendingClarification,

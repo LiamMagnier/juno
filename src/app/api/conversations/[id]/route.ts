@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
-import { getConversationThread } from "@/lib/queries";
+import { getConversationThread, getConversationThreadPage } from "@/lib/queries";
+import { MAX_PAGE_MESSAGES } from "@/lib/chat/history-page";
 import { serializeConversation } from "@/lib/serializers";
 import { codeWorkspaceAttributionShape } from "@/lib/code-workspaces";
 import { artifactsFollowConversationProject, deleteConversationsKeepingArtifacts, type ArtifactFollowDb } from "@/lib/artifact-follow";
@@ -13,7 +14,15 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
-  const thread = await getConversationThread(user.id, id);
+  // `?limit=N`: the newest N messages and a `history` cursor for the rest (the
+  // web's dropped-stream recovery poll). Without it the thread is whole — the
+  // contract the Mac and iPhone apps read (NativeThreadClient.swift).
+  const limitParam = new URL(req.url).searchParams.get("limit");
+  const limit = limitParam === null ? null : Number(limitParam);
+  if (limit !== null && (!Number.isInteger(limit) || limit < 1 || limit > MAX_PAGE_MESSAGES)) {
+    return NextResponse.json({ error: "Invalid limit" }, { status: 400 });
+  }
+  const thread = limit === null ? await getConversationThread(user.id, id) : await getConversationThreadPage(user.id, id, { limit });
   if (!thread) return NextResponse.json({ error: "Not found" }, { status: 404 });
   // The installed apps lay every artifact of a chat read over their library
   // until sync catches up, so they get neither a trashed artifact (sync has

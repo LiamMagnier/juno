@@ -1,0 +1,243 @@
+{
+  "label": "before",
+  "profile": "local",
+  "base": "http://localhost:3201",
+  "conversation": "perf-long-2000",
+  "messageCount": 2000,
+  "runs": 5,
+  "at": "2026-10-14T19:03:59.882Z",
+  "median": {
+    "readyMs": 399,
+    "settledMs": 754,
+    "serverMs": 18.6,
+    "ttfb": 19.1,
+    "responseEnd": 250.3,
+    "domContentLoaded": 301.9,
+    "documentKb": 194.4,
+    "documentDecodedKb": 4261.6,
+    "jsKb": 1223.7,
+    "totalKb": 1734.1,
+    "requests": 136,
+    "longTasks": 0,
+    "longTaskMs": 0,
+    "maxLongTaskMs": 0,
+    "heapMb": 70.7,
+    "elements": 2174,
+    "rows": 7
+  },
+  "serverFetch": {
+    "rsc": {
+      "ttfbMs": 3.2,
+      "totalMs": 107.6,
+      "kb": 3546.8
+    },
+    "html": {
+      "ttfbMs": 14.8,
+      "totalMs": 157.9,
+      "kb": 4261.6
+    }
+  },
+  "scroll": {
+    "reachedTop": true,
+    "longTasks": 0,
+    "longTaskMs": 0,
+    "maxLongTaskMs": 0,
+    "rowsLoaded": null,
+    "historyRequests": 0,
+    "historyKb": 0,
+    "anchorDrift": []
+  },
+  "find": {
+    "found": true,
+    "ms": 94,
+    "status": "1 of 1",
+    "historyRequests": 0
+  },
+  "deepLink": {
+    "visibleMs": 778,
+    "documentKb": 194.5
+  },
+  "loads": [
+    {
+      "run": 0,
+      "readyMs": 411,
+      "settledMs": 755,
+      "serverMs": 18.6,
+      "ttfb": 19.1,
+      "responseEnd": 250.3,
+      "domContentLoaded": 301.9,
+      "load": 337.1,
+      "documentKb": 194.4,
+      "documentDecodedKb": 4261.6,
+      "jsKb": 1215.5,
+      "totalKb": 1733.3,
+      "requests": 135,
+      "historyRequests": 0,
+      "longTasks": 0,
+      "longTaskMs": 0,
+      "maxLongTaskMs": 0,
+      "heapMb": 37.9,
+      "scriptS": 0.1761,
+      "rows": 7,
+      "elements": 2178
+    },
+    {
+      "run": 1,
+      "readyMs": 399,
+      "settledMs": 722,
+      "serverMs": 19.1,
+      "ttfb": 19.6,
+      "responseEnd": 270.2,
+      "domContentLoaded": 309.3,
+      "load": 345.1,
+      "documentKb": 194.4,
+      "documentDecodedKb": 4261.6,
+      "jsKb": 1223.7,
+      "totalKb": 1742.8,
+      "requests": 136,
+      "historyRequests": 0,
+      "longTasks": 0,
+      "longTaskMs": 0,
+      "maxLongTaskMs": 0,
+      "heapMb": 70.7,
+      "scriptS": 0.1605,
+      "rows": 7,
+      "elements": 2175
+    },
+    {
+      "run": 2,
+      "readyMs": 378,
+      "settledMs": 699,
+      "serverMs": 17.6,
+      "ttfb": 18.2,
+      "responseEnd": 218.2,
+      "domContentLoaded": 279.9,
+      "load": 316.3,
+      "documentKb": 194.3,
+      "documentDecodedKb": 4261.6,
+      "jsKb": 1215.5,
+      "totalKb": 1728.5,
+      "requests": 135,
+      "historyRequests": 0,
+      "longTasks": 0,
+      "longTaskMs": 0,
+      "maxLongTaskMs": 0,
+      "heapMb": 46.6,
+      "scriptS": 0.15819999999999998,
+      "rows": 7,
+      "elements": 2173
+    },
+    {
+      "run": 3,
+      "readyMs": 885,
+      "settledMs": 899,
+      "serverMs": 15.8,
+      "ttfb": 16.4,
+      "responseEnd": 307.4,
+      "domContentLoaded": 348.4,
+      "load": 386.9,
+      "documentKb": 194.4,
+      "documentDecodedKb": 4261.6,
+      "jsKb": 1223.7,
+      "totalKb": 1741.3,
+      "requests": 136,
+      "historyRequests": 0,
+      "longTasks": 0,
+      "longTaskMs": 0,
+      "maxLongTaskMs": 0,
+      "heapMb": 80.1,
+      "scriptS": 0.16540000000000002,
+      "rows": 7,
+      "elements": 2171
+    },
+    {
+      "run": 4,
+      "readyMs": 379,
+      "settledMs": 754,
+      "serverMs": 21.6,
+      "ttfb": 22,
+      "responseEnd": 242.2,
+      "domContentLoaded": 280.6,
+      "load": 318.5,
+      "documentKb": 194.3,
+      "documentDecodedKb": 4261.6,
+      "jsKb": 1223.7,
+      "totalKb": 1734.1,
+      "requests": 136,
+      "historyRequests": 0,
+      "longTasks": 0,
+      "longTaskMs": 0,
+      "maxLongTaskMs": 0,
+      "heapMb": 113.4,
+      "scriptS": 0.1551,
+      "rows": 7,
+      "elements": 2174
+    }
+  ],
+  "serverRaw": {
+    "rsc": [
+      {
+        "status": 200,
+        "ttfbMs": 3.1,
+        "totalMs": 114,
+        "kb": 3546.8
+      },
+      {
+        "status": 200,
+        "ttfbMs": 3.2,
+        "totalMs": 107.6,
+        "kb": 3546.8
+      },
+      {
+        "status": 200,
+        "ttfbMs": 3.3,
+        "totalMs": 112.7,
+        "kb": 3546.8
+      },
+      {
+        "status": 200,
+        "ttfbMs": 3.2,
+        "totalMs": 100.8,
+        "kb": 3546.8
+      },
+      {
+        "status": 200,
+        "ttfbMs": 3.3,
+        "totalMs": 93.9,
+        "kb": 3546.8
+      }
+    ],
+    "html": [
+      {
+        "status": 200,
+        "ttfbMs": 17.3,
+        "totalMs": 157.9,
+        "kb": 4261.6
+      },
+      {
+        "status": 200,
+        "ttfbMs": 27.1,
+        "totalMs": 175.5,
+        "kb": 4261.6
+      },
+      {
+        "status": 200,
+        "ttfbMs": 13.6,
+        "totalMs": 154.2,
+        "kb": 4261.6
+      },
+      {
+        "status": 200,
+        "ttfbMs": 14.8,
+        "totalMs": 146.2,
+        "kb": 4261.6
+      },
+      {
+        "status": 200,
+        "ttfbMs": 14,
+        "totalMs": 161.2,
+        "kb": 4261.6
+      }
+    ]
+  }
+}
