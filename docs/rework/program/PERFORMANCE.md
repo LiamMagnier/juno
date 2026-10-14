@@ -305,6 +305,77 @@ The integration test runs the real routes. It covers:
 - **The rail and the scrollbar** describe the loaded part of a long conversation. Each grows as history arrives.
 - **The legacy Code surface** (`?surface=legacy`) and `/code/[id]` still read whole threads.
 
+## Paged history follow-up (2026-10-14)
+
+This follow-up addresses the two regressions recorded under "What got slower, as measured" above. Same fixture, scripts and build flags. The baseline is the Workstream I build (`b2253788a`). The machine was shared with Xcode builds (load average up to ~190), so before and after were measured **interleaved**: alternating runs against two servers, the baseline on :3202 and this build on :3201. Raw results and a summary are in `perf/history-followup/`.
+
+### Compressed history
+
+**Nothing compressed route-handler JSON.**
+- `next start` gzips pages and build output, but not what a route handler returns. A local `?all=1` request sent with `Accept-Encoding: gzip, br` came back with no `Content-Encoding`.
+- Production is not on Render: `render.yaml` deploys only the voice relay. The app runs behind nginx 1.24 on Ubuntu (`deploy/nginx.conf.template`), which has no `gzip_types` for JSON. A 90-byte JSON body from `chat.liams.dev/api/health` comes back uncompressed, while HTML comes back gzipped.
+
+**Change.** `GET /api/conversations/[id]` (whole or `?limit=`) and `GET /api/conversations/[id]/messages` now compress their own JSON (`src/lib/compressed-json.ts`).
+- Brotli quality 5 when the client offers it, otherwise gzip level 6. Bodies under 1 KB, and clients that offer no encoding, get plain JSON.
+- Every response sends `Vary: Accept-Encoding`. Compression runs on the libuv thread pool.
+- The native apps' contract is unchanged: URLSession offers gzip and br and decodes them itself, and nothing in `native/` sets `Accept-Encoding`.
+- The alternative was adding `gzip_types application/json` to nginx. That is a host change that also needs a redeploy of the template, and it would leave `next start` (and any other proxy) uncompressed.
+
+| Payload | Raw | gzip 6 | brotli 4 | **brotli 5** |
+|---|---|---|---|---|
+| Rest of the fixture (`?all=1`, 1,940 messages) | 2,922 KB | 114 KB / 8.5 ms | 76 KB / 4.1 ms | **63 KB / 8.2 ms** |
+| One older page (120) | 182 KB | 8 KB | 6 KB | **5 KB / 0.5 ms** |
+| Same shape, real prose and code (repo docs and components) | 2,888 KB | 1,044 KB / 72 ms | 981 KB / 26 ms | **918 KB / 43 ms** |
+
+The fixture repeats itself and compresses 46:1. Expect about 3:1 on real conversations: the third row is the honest number for production.
+
+### Scroll-back long tasks
+
+**Profile.**
+- A sampled CPU profile, cut to the page's long tasks (`scripts/perf/profile-history-scroll.mjs`), blamed the icons: the `autoSize` measurement and the crisp-placement walk in `juno-icons`.
+- A DevTools trace showed that most of that time was forced layout of rows that had just mounted. Each landing task held 3–4 layouts and 3–5 whole-transcript style recalcs.
+- Counting DOM operations on the transcript explained why. In about every other landing, the window mounted ~11 rows of the new page, measured them and dropped them, then remounted the ~11 rows the reader was on: 22 row mounts where 0–3 were needed.
+
+**Cause.**
+- When rows mounted on the tick before a page lands have not been measured yet, the landing's layout effect measures them and re-renders *before* it syncs the viewport state.
+- That state still held the scroll position from before the page landed, which after the prepend is over the new page's rows. The re-render drew the window there.
+- The landing commit itself was already drawn at the anchored position (Workstream I). This re-render was not.
+
+**Changes.**
+- **Window position** (`use-transcript-window.ts`). Any render with an anchor still to be written (`pendingAnchor`) draws the window at that anchor, the position the layout effect is about to write. Before, only the landing render did.
+- **Icon placement** (`juno-icons/index.tsx`). Icons mounted in one commit are placed together in a microtask, still before paint: every `data-solo` and ancestor-transform read first, then every write. Ancestor computed styles are memoised per pass. Before, each icon wrote between the next icon's reads and walked all ~30 ancestors itself. The result is the same translate on the same group.
+- No component, style or layout changed.
+
+### Results (interleaved, median of 2 × 5 cold loads; scroll and find once per run)
+
+| | Remote before | Remote after | Local before | Local after |
+|---|---|---|---|---|
+| Scroll to the top: long tasks (count / total / max), per run | 15 / 1,553 / 134 ms; 32 / 2,931 / 206 ms | **0 / 0 / 0; 7 / 429 / 73 ms** | 3 / 162; 1 / 53; 2 / 110; 2 / 149 ms | **1 / 78; 0; 0; 0 ms** |
+| Scroll to the top: history transferred | 2,935 KB | **96 KB** | 2,935 KB | **96 KB** |
+| Find `perf-anchor-6` from a fresh load | 1,601; 2,036 ms | **463; 915 ms** | 268–282 ms | 278–288 ms |
+| Ready (first transcript row) | 535 ms | 372 ms | 232 ms | 233 ms |
+| `?m=` deep link to message 6 | 1,812; 1,956 ms | 1,902; 1,909 ms | 432–604 ms | 438–687 ms |
+
+- On the remote profile, find now costs mostly parsing and rendering the rest of the conversation at CPU ×2, not transfer. Locally (loopback) compression changes nothing, as expected.
+- On the earlier measurement (load average ~190), the remote scroll went from 15 tasks / 1,431 ms to 4 / 219 ms.
+- The deep-link ranges overlap. It does not use the paths changed here: it renders with the route and sets a jump target, which skips the anchored window.
+
+### Verified
+
+- `e2e/transcript-history.spec.ts`, production build: 10/10 over two repeats. This includes three pages landing above a parked reader within 2 px.
+- On the development server, warm:
+  - `transcript-history.spec.ts` line 59 (anchoring) passes 2/2.
+  - `transcript-window.spec.ts` passes 3/4 tests on the first run. The navigation test passed 1/2 on repeat: its failure is a 5 s `main h1` timeout on `/library` while the development server compiled under load.
+  - `transcript-route.spec.ts` skips here, as before.
+- `tests/chat-history-paging.integration.test.ts`: 10/10 against Postgres 17. It adds brotli and gzip through both routes, decoding to the same JSON as the plain response.
+- `tests/compressed-json.test.ts` (5) and `tests/chat-history.test.ts` plus `tests/transcript-window.test.ts`: 24/24.
+- `next build` (typecheck) is clean, and eslint on the changed files is clean.
+
+### Still open
+
+- **Find still fetches the rest only once the reader types.** Starting the fetch when find opens would hide most of the remaining remote time. It would also download the conversation for readers who open find and close it. Not done.
+- **Every child inserted into the transcript restyles the whole mounted transcript** (about 2,500 elements, 10–15 ms at CPU ×2). The trace attributes it to Chrome's sibling and nth invalidation set ("invalidates subtree"). Disabling the sibling, `:has()` and structural rules through the CSSOM did not change the count, so the source is not yet identified. It costs every scroll tick that mounts a row, as before paging.
+
 ## Security considerations
 
 - The client cache holds only the signed-in user's own GET responses, in memory, for one page load. It is never persisted, never keyed across accounts, and signing out is a full navigation.
@@ -323,7 +394,7 @@ The integration test runs the real routes. It covers:
 
 1. Make the `/chat/[id]` cold path never show a fallback: guarantee a FULL prefetch before click, or remove that segment's `loading.tsx` and give pending feedback on the clicked row (`useLinkStatus`).
 2. Take zod out of the shell by moving the agent request schemas to a server-only module. Lazy-load voice (`use-realtime-voice`/`voice-glow`) and the Code session hook from the sidebar.
-3. ~~Page the conversation payload~~ (done, "Paged history" above). Follow-ups: compress route-handler JSON so find and long scroll-backs pay less, and cut the per-page long task on slow hardware.
+3. ~~Page the conversation payload~~ (done, "Paged history" above). ~~Follow-ups: compress route-handler JSON, cut the per-page long task~~ (done, "Paged history follow-up"). Next: the whole-transcript restyle on row insertion.
 4. Re-run `scripts/perf/measure-navigation.mjs` against the hosted deployment with a test account, and record the result in `src/lib/capabilities.ts`.
 
 ## References

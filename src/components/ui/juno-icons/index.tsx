@@ -591,59 +591,150 @@ function useCalmLevels(levels: number[] | undefined, svg: React.RefObject<SVGSVG
 
 /* —————————————————————————————— Placement —————————————————————————————— */
 
+/** One element's translate, or null when it scales or rotates. Memoised per pass (ShiftCache). */
+type Shift = [number, number] | null;
+type ShiftCache = Map<Element, Shift>;
+
+function ownShift(el: HTMLElement): Shift {
+  const cs = getComputedStyle(el);
+  const t = cs.transform;
+  const tr = cs.translate;
+  const sc = cs.scale;
+  const ro = cs.rotate;
+  if ((!t || t === "none") && (!tr || tr === "none") && (!sc || sc === "none") && (!ro || ro === "none")) return [0, 0];
+  if (sc && sc !== "none" && sc.split(/\s+/).some((v) => Number(v) !== 1)) return null;
+  if (ro && ro !== "none" && parseFloat(ro) !== 0) return null;
+  let tx = 0;
+  let ty = 0;
+  if (tr && tr !== "none") {
+    const parts = tr.split(/\s+(?![^(]*\))/);
+    const one = (v: string | undefined, ref: number): number => (v == null ? 0 : v.endsWith("%") ? (parseFloat(v) / 100) * ref : v.endsWith("px") || v === "0" ? parseFloat(v) : NaN);
+    const x = one(parts[0], el.offsetWidth);
+    const y = one(parts[1], el.offsetHeight);
+    if (Number.isNaN(x) || Number.isNaN(y)) return null;
+    tx += x;
+    ty += y;
+  }
+  if (t && t !== "none") {
+    const m = new DOMMatrixReadOnly(t);
+    if (!m.is2D || m.a !== 1 || m.d !== 1 || m.b !== 0 || m.c !== 0) return null;
+    tx += m.e;
+    ty += m.f;
+  }
+  return [tx, ty];
+}
+
+/** What `el` and everything above it translate by, short of the root. */
+function shiftFrom(el: HTMLElement | null, cache: ShiftCache): Shift {
+  if (!el || el === document.documentElement) return [0, 0];
+  const hit = cache.get(el);
+  if (hit !== undefined) return hit;
+  const own = ownShift(el);
+  const up = own && shiftFrom(el.parentElement, cache);
+  const shift: Shift = own && up ? [own[0] + up[0], own[1] + up[1]] : null;
+  cache.set(el, shift);
+  return shift;
+}
+
 /**
  * The translation an icon's ancestors add, in CSS px, or null while one of
  * them scales or rotates (mid-animation: nothing to fit to). Layout offsets
  * are not counted: the browser already paints an SVG root at a whole device
  * pixel (tools/snaptest*.mjs in the icon scratchpad prove it for Chrome).
+ *
+ * `cache` is shared by every icon placed in one pass: they share most of
+ * their ancestors (a transcript row's dozen icons share all thirty of the
+ * row's), so each ancestor's computed style is read once per pass, not once
+ * per icon.
  */
-function ancestorShift(svg: SVGSVGElement): [number, number] | null {
-  let tx = 0;
-  let ty = 0;
-  for (let el = svg.parentElement; el && el !== document.documentElement; el = el.parentElement) {
-    const cs = getComputedStyle(el);
-    const t = cs.transform;
-    const tr = cs.translate;
-    const sc = cs.scale;
-    const ro = cs.rotate;
-    if ((!t || t === "none") && (!tr || tr === "none") && (!sc || sc === "none") && (!ro || ro === "none")) continue;
-    if (sc && sc !== "none" && sc.split(/\s+/).some((v) => Number(v) !== 1)) return null;
-    if (ro && ro !== "none" && parseFloat(ro) !== 0) return null;
-    if (tr && tr !== "none") {
-      const parts = tr.split(/\s+(?![^(]*\))/);
-      const one = (v: string | undefined, ref: number): number => (v == null ? 0 : v.endsWith("%") ? (parseFloat(v) / 100) * ref : v.endsWith("px") || v === "0" ? parseFloat(v) : NaN);
-      const x = one(parts[0], el.offsetWidth);
-      const y = one(parts[1], el.offsetHeight);
-      if (Number.isNaN(x) || Number.isNaN(y)) return null;
-      tx += x;
-      ty += y;
-    }
-    if (t && t !== "none") {
-      const m = new DOMMatrixReadOnly(t);
-      if (!m.is2D || m.a !== 1 || m.d !== 1 || m.b !== 0 || m.c !== 0) return null;
-      tx += m.e;
-      ty += m.f;
-    }
-  }
-  return [tx, ty];
+function ancestorShift(svg: SVGSVGElement, cache: ShiftCache): Shift {
+  return shiftFrom(svg.parentElement, cache);
 }
 
-const placed = new Map<SVGSVGElement, () => void>();
+/** An icon's placement: what its .jsnap group's translate should be, read without writing. */
+interface Placement {
+  snap: SVGGElement;
+  size: number;
+}
+const placed = new Map<SVGSVGElement, Placement>();
 let settledTargets: Set<Element> | null = null;
 let listening = false;
+
+/**
+ * Place icons in one pass: every read first, then every write.
+ *
+ * Placing them one by one wrote each icon's translate (and data-solo) between
+ * the next icon's style reads, so every icon could pay a style recalculation
+ * and walked all of its ancestors' computed styles. Rows mounting in the
+ * transcript bring a few hundred icons in one commit (docs/rework/program/
+ * PERFORMANCE.md, "Scroll-back long tasks"). The result is the same translate
+ * on the same group.
+ */
+function placeAll(svgs: Iterable<SVGSVGElement>) {
+  const cache: ShiftCache = new Map();
+  const writes: Array<[SVGGElement, string]> = [];
+  const dpr = window.devicePixelRatio || 1;
+  for (const svg of svgs) {
+    const placement = placed.get(svg);
+    if (!placement || !svg.isConnected) continue;
+    const shift = ancestorShift(svg, cache);
+    if (!shift) continue;
+    const fix = (v: number) => {
+      const d = v * dpr;
+      const c = (Math.round(d) - d) / dpr;
+      return Math.abs(c) < 0.004 ? 0 : Math.round(((c * 24) / placement.size) * 1000) / 1000;
+    };
+    const x = fix(shift[0]);
+    const y = fix(shift[1]);
+    const next = x || y ? `${x}px ${y}px` : "";
+    if (placement.snap.style.translate !== next) writes.push([placement.snap, next]);
+  }
+  for (const [snap, next] of writes) snap.style.translate = next;
+}
+
+/**
+ * Mark the icon data-solo when its .jicon-trigger holds nothing but this
+ * glyph (an icon button, which gets the press dip; a row or a labelled button
+ * does not). Text and selectors only: no style or layout is read.
+ */
+function markSolo(svg: SVGSVGElement) {
+  const trigger = svg.closest(".jicon-trigger");
+  if (!trigger) return;
+  const own = svg.textContent ?? "";
+  const text = (trigger.textContent ?? "").replace(own, "").trim();
+  svg.toggleAttribute("data-solo", !text && trigger.querySelectorAll("svg.ji").length === 1);
+}
+
+/*
+ * Icons mounted (or resized) in one React commit are placed together, in a
+ * microtask: after the commit's layout effects, before the browser paints.
+ */
+const mounting = new Set<SVGSVGElement>();
+function flushMounting() {
+  const svgs = [...mounting];
+  mounting.clear();
+  for (const svg of svgs) if (svg.isConnected) markSolo(svg);
+  placeAll(svgs);
+}
+function queuePlacement(svg: SVGSVGElement) {
+  if (!mounting.size) queueMicrotask(flushMounting);
+  mounting.add(svg);
+}
 
 function flushSettled() {
   const targets = settledTargets;
   settledTargets = null;
   if (!targets) return;
-  for (const [svg, place] of placed) {
+  const moved: SVGSVGElement[] = [];
+  for (const svg of placed.keys()) {
     for (const t of targets) {
       if (t.contains(svg)) {
-        place();
+        moved.push(svg);
         break;
       }
     }
   }
+  placeAll(moved);
 }
 
 function onSettled(e: Event) {
@@ -658,7 +749,7 @@ function onSettled(e: Event) {
 }
 
 function onResize() {
-  requestAnimationFrame(() => placed.forEach((place) => place()));
+  requestAnimationFrame(() => placeAll(placed.keys()));
 }
 
 function listen() {
@@ -671,41 +762,22 @@ function listen() {
 
 /**
  * After mount and whenever its trigger or size changes: (1) mark the icon
- * data-solo when its .jicon-trigger holds nothing but this glyph (an icon
- * button, which gets the press dip; a row or a labelled button does not), and
- * (2) cancel any fractional translate its ancestors add, on the .jsnap group,
- * so the fitted drawing lands on whole device pixels where it is painted.
+ * data-solo (markSolo), and (2) cancel any fractional translate its ancestors
+ * add, on the .jsnap group, so the fitted drawing lands on whole device pixels
+ * where it is painted. Both happen with the rest of the commit's icons, before
+ * paint (queuePlacement).
  */
 function useCrispPlacement(svgRef: React.RefObject<SVGSVGElement | null>, snapRef: React.RefObject<SVGGElement | null>, size: number, name: string) {
   React.useLayoutEffect(() => {
     const svg = svgRef.current;
     const snap = snapRef.current;
     if (!svg || !snap) return;
-    const trigger = svg.closest(".jicon-trigger");
-    if (trigger) {
-      const own = svg.textContent ?? "";
-      const text = (trigger.textContent ?? "").replace(own, "").trim();
-      svg.toggleAttribute("data-solo", !text && trigger.querySelectorAll("svg.ji").length === 1);
-    }
-    const place = () => {
-      const shift = ancestorShift(svg);
-      if (!shift) return;
-      const dpr = window.devicePixelRatio || 1;
-      const fix = (v: number) => {
-        const d = v * dpr;
-        const c = (Math.round(d) - d) / dpr;
-        return Math.abs(c) < 0.004 ? 0 : Math.round(((c * 24) / size) * 1000) / 1000;
-      };
-      const x = fix(shift[0]);
-      const y = fix(shift[1]);
-      const next = x || y ? `${x}px ${y}px` : "";
-      if (snap.style.translate !== next) snap.style.translate = next;
-    };
-    place();
-    placed.set(svg, place);
+    placed.set(svg, { snap, size });
+    queuePlacement(svg);
     listen();
     return () => {
       placed.delete(svg);
+      mounting.delete(svg);
     };
   }, [svgRef, snapRef, size, name]);
 }

@@ -14,9 +14,9 @@ import { PrismaClient } from "@prisma/client";
  * Covers: the native apps' contract (no parameters → the whole thread, no
  * `history` key), walking every cursor returns each message exactly once in
  * order with its attachments, pages start on a question, `through` and `all`,
- * the ?m= widening of the first page, owner scoping (another account's
- * conversation and cursor are a 404), bodies stay ciphertext in the database,
- * and malformed parameters are refused.
+ * the ?m= widening of the first page, brotli and gzip when offered, owner
+ * scoping (another account's conversation and cursor are a 404), bodies stay
+ * ciphertext in the database, and malformed parameters are refused.
  *
  * Skipped unless HISTORY_TEST_DATABASE_URL names a throwaway, migrated database:
  *   HISTORY_TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:55439/juno_paging_test \
@@ -148,6 +148,25 @@ if (!DB_URL) {
     const rest = await history(`?before=${before}&all=1`);
     assert.deepEqual([...rest.body!.messages, ...first.messages].map((m) => m.id), ordered);
     assert.deepEqual(rest.body!.history, { hasOlder: false, olderCursor: null });
+  });
+
+  test("both routes compress for a client that offers it, and decode to the same JSON", async () => {
+    signedIn = alice;
+    const { brotliDecompressSync, gunzipSync } = await import("node:zlib");
+    const threadRoute = await import("@/app/api/conversations/[id]/route");
+    const historyRoute = await import("@/app/api/conversations/[id]/messages/route");
+    const offered = (url: string, encoding: string) => new Request(`http://juno.test${url}`, { headers: { "accept-encoding": encoding } });
+    const plainThread = (await thread(`/api/conversations/${conversationId}`)).body;
+    const plainRest = (await history("?all=1")).body;
+    for (const [encoding, decode] of [["gzip, deflate, br", brotliDecompressSync], ["gzip", gunzipSync]] as const) {
+      const whole = await threadRoute.GET(offered(`/api/conversations/${conversationId}`, encoding), params(conversationId));
+      assert.equal(whole.headers.get("content-encoding"), encoding === "gzip" ? "gzip" : "br");
+      assert.match(whole.headers.get("vary") ?? "", /Accept-Encoding/);
+      assert.deepEqual(JSON.parse(decode(Buffer.from(await whole.arrayBuffer())).toString("utf8")), plainThread);
+      const rest = await historyRoute.GET(offered(`/api/conversations/${conversationId}/messages?all=1`, encoding), params(conversationId));
+      assert.equal(rest.headers.get("content-encoding"), encoding === "gzip" ? "gzip" : "br");
+      assert.deepEqual(JSON.parse(decode(Buffer.from(await rest.arrayBuffer())).toString("utf8")), plainRest);
+    }
   });
 
   test("a ?m= deep link widens the first page back to its message", async () => {

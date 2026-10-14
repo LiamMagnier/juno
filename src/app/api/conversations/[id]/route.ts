@@ -5,6 +5,7 @@ import { getCurrentUser } from "@/lib/session";
 import { getConversationThread, getConversationThreadPage } from "@/lib/queries";
 import { MAX_PAGE_MESSAGES } from "@/lib/chat/history-page";
 import { serializeConversation } from "@/lib/serializers";
+import { compressedJson } from "@/lib/compressed-json";
 import { codeWorkspaceAttributionShape } from "@/lib/code-workspaces";
 import { artifactsFollowConversationProject, deleteConversationsKeepingArtifacts, type ArtifactFollowDb } from "@/lib/artifact-follow";
 import { artifactsForInstalledApps, isInstalledAppRequest } from "@/lib/artifact-access";
@@ -27,8 +28,11 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   // The installed apps lay every artifact of a chat read over their library
   // until sync catches up, so they get neither a trashed artifact (sync has
   // tombstoned it; it would come back and stay) nor a web design draft.
-  if (isInstalledAppRequest(req)) return NextResponse.json({ ...thread, artifacts: artifactsForInstalledApps(thread.artifacts) });
-  return NextResponse.json(thread);
+  // Compressed when the client offers it (lib/compressed-json.ts): a whole
+  // thread is megabytes of JSON. URLSession offers gzip and br and decodes
+  // them itself, so the native apps read the same JSON as before.
+  if (isInstalledAppRequest(req)) return compressedJson(req, { ...thread, artifacts: artifactsForInstalledApps(thread.artifacts) });
+  return compressedJson(req, thread);
 }
 
 const patchSchema = z.object({
