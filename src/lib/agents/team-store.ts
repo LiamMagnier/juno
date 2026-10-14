@@ -71,7 +71,8 @@ function policyFor(role: TeamRole, leadPolicy: string): WorkPermissionPolicy {
  */
 export async function createTeamForLead(input: {
   userId: string;
-  lead: Pick<WorkSession, "id" | "title" | "projectId" | "requestedModel" | "reasoningEffort" | "permissionPolicy">;
+  lead: Pick<WorkSession, "id" | "title" | "projectId" | "requestedModel" | "reasoningEffort" | "permissionPolicy"> &
+    Partial<Pick<WorkSession, "agentId">>;
   request: string;
   specialists?: readonly string[] | null;
 }): Promise<{ roles: TeamRole[] }> {
@@ -96,6 +97,8 @@ export async function createTeamForLead(input: {
           userId: input.userId,
           projectId: input.lead.projectId,
           parentSessionId: input.lead.id,
+          // The agent's own budget cap counts (and stops) its team's spend.
+          ...(input.lead.agentId ? { agentId: input.lead.agentId } : {}),
           teamRole: node.role,
           title: `${input.lead.title} · ${info.name}`.slice(0, 120),
           titleSource: "manual",
@@ -197,7 +200,20 @@ export async function advanceTeam(input: { userId: string; leadId: string; execu
     await prisma.workSession.updateMany({ where: { id: leadId, userId }, data: { status: "running" } });
     leadRun = claim.run;
   } else if (leadRun.terminalReason === "interrupted") {
-    if (leadRun.attempt >= MAX_LEAD_ATTEMPTS) return { kind: "skipped", reason: "lead_attempts_exhausted" };
+    if (leadRun.attempt >= MAX_LEAD_ATTEMPTS) {
+      // Out of attempts: the team ends here. Left "interrupted" it was picked
+      // up every tick for ever, oldest first, until such teams filled the
+      // whole batch and no team anywhere advanced.
+      const memberRuns = await latestRuns(userId, members.map((m) => m.id));
+      for (const run of memberRuns.values()) {
+        if ((WORK_LIVE_STATUSES as readonly string[]).includes(run.status)) {
+          await finishRun({ runId: run.id, userId, reason: "cancelled", detail: "The team's lead could not be resumed.", now });
+        }
+      }
+      await prisma.workSession.updateMany({ where: { userId, parentSessionId: leadId, status: "draft" }, data: { status: "failed" } });
+      await prisma.workSession.updateMany({ where: { id: leadId, userId, status: "interrupted" }, data: { status: "failed" } });
+      return { kind: "skipped", reason: "lead_attempts_exhausted" };
+    }
     const resumed = await createRun({
       sessionId: leadId,
       userId,
@@ -310,6 +326,22 @@ export async function advanceTeam(input: { userId: string; leadId: string; execu
       });
     }
     const policy = member.permissionPolicy as WorkPermissionPolicy;
+    const share =
+      leadRun!.maxCostMicroUsd > 0
+        ? Math.max(1, Math.floor((leadRun!.maxCostMicroUsd * teamBudgetShare(role, states.map((st) => st.role))) / 1000))
+        : 0;
+    // A retry gets what is left of the member's share, not a fresh one: an
+    // interrupted attempt already spent part of the budget the lead approved.
+    let remaining = share;
+    if (share > 0 && retry) {
+      const spent = await prisma.workRun.aggregate({ where: { userId, sessionId: member.id }, _sum: { costMicroUsd: true } });
+      remaining = share - (spent._sum.costMicroUsd ?? 0);
+      if (remaining <= 0) {
+        await prisma.workSession.updateMany({ where: { id: member.id, userId }, data: { status: "failed" } });
+        events.push({ kind: "subagent_update", key: `team:${role}:failed:budget:${attempt}`, agentId: role, payload: { role, name: TEAM_ROLE_INFO[role].name, phase: "failed", title: `${TEAM_ROLE_INFO[role].name} used its share of the team's budget`, sentence: `${TEAM_ROLE_INFO[role].name} used its share of the team's budget` } });
+        return;
+      }
+    }
     try {
       await createRun({
         sessionId: member.id,
@@ -322,10 +354,7 @@ export async function advanceTeam(input: { userId: string; leadId: string; execu
         requiredCapabilities: TEAM_ROLE_INFO[role].capabilities,
         permissionPolicy: { ...leadPolicy, policy, session: policy, team: role } as Prisma.InputJsonValue,
         budget: {
-          maxCostMicroUsd:
-            leadRun!.maxCostMicroUsd > 0
-              ? Math.max(1, Math.floor((leadRun!.maxCostMicroUsd * teamBudgetShare(role, states.map((st) => st.role))) / 1000))
-              : 0,
+          maxCostMicroUsd: remaining,
           maxTokens: 0,
           maxRuntimeMs: 0,
         },

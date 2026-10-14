@@ -56,6 +56,13 @@ test("a team runs as Work tasks: order, containment, retry, coordinator recovery
     const request = "Research the market, compare 40 competitors, build a pricing spreadsheet model and design an onboarding deck.";
     const lead = await store.createWorkSession({ userId: owner, title: "Market research pack", goal: `Request: ${request}`, conversationId: conversation.id, requestedTarget: "cloud" });
     await teams.createTeamForLead({ userId: owner, lead, request: lead.goal, specialists: ["researcher", "engineer", "designer"] });
+    // A team an agent leads is that agent's spend: members carry its id.
+    const agent = await db.agent.create({ data: { userId: owner, name: "Scout", role: "Researcher", instructions: "Research." } });
+    const agentLead = await store.createWorkSession({ userId: owner, title: "Agent-led", goal: "Request: compare two tools.", conversationId: conversation.id, requestedTarget: "cloud" });
+    await db.workSession.update({ where: { id: agentLead.id }, data: { agentId: agent.id } });
+    await teams.createTeamForLead({ userId: owner, lead: { ...agentLead, agentId: agent.id }, request: agentLead.goal, specialists: ["researcher"] });
+    const agentMembers = await db.workSession.findMany({ where: { parentSessionId: agentLead.id } });
+    assert.ok(agentMembers.length > 0 && agentMembers.every((m) => m.agentId === agent.id), "members count against the agent's own budget");
     // Idempotent: a retried start finds the same members.
     await teams.createTeamForLead({ userId: owner, lead, request: lead.goal, specialists: ["researcher", "engineer", "designer"] });
     const members = await db.workSession.findMany({ where: { parentSessionId: lead.id }, orderBy: { teamRole: "asc" } });
@@ -82,7 +89,9 @@ test("a team runs as Work tasks: order, containment, retry, coordinator recovery
     assert.deepEqual(pass.kind === "advanced" && pass.started, ["designer"]);
 
     // 3. Designer's worker dies before acting: the sweep interrupts it, the team retries it.
-    await work(lead.id, "designer", "die-before-acting");
+    const firstDesigner = await work(lead.id, "designer", "die-before-acting");
+    // The attempt spent part of its share before its worker died.
+    await db.workRun.update({ where: { id: firstDesigner.id }, data: { costMicroUsd: 100_000 } });
     later(RUN_LEASE_MS + 1_000);
     // The coordinator heartbeats its lead in between, so only the designer lapses.
     await store.renewRunLease({ runId: leadRun.run.id, userId: owner, executorId: "coord-A", now: new Date(now.getTime() - 2_000) });
@@ -92,6 +101,11 @@ test("a team runs as Work tasks: order, containment, retry, coordinator recovery
     pass = await teams.advanceTeam({ userId: owner, leadId: lead.id, executorId: "coord-A", now });
     assert.deepEqual(pass.kind === "advanced" && pass.retried, ["designer"]);
     assert.equal((await memberRun(lead.id, "designer"))!.attempt, 2);
+    assert.equal(
+      (await memberRun(lead.id, "designer"))!.maxCostMicroUsd,
+      firstDesigner.maxCostMicroUsd - 100_000,
+      "a retry runs on what is left of the member's share, not a fresh one",
+    );
     await work(lead.id, "designer", "completed", "Deck outline: 8 slides, onboarding first.");
 
     // 4. The critic starts with the specialists' results, and is told what is missing.

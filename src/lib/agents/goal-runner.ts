@@ -154,9 +154,13 @@ export async function advanceGoal(input: {
   const now = input.now ?? new Date();
   const deps = input.deps ?? defaultGoalRunnerDeps;
   const userId = input.user.id;
+  // The lease this advance holds, exactly: every write below is conditioned on
+  // it, so an advance that outlived its lease (a slow step) cannot write over,
+  // or release, the advance that took the goal after it.
+  const lease = new Date(now.getTime() + GOAL_ADVANCE_LEASE_MS);
   const claimed = await prisma.agentGoal.updateMany({
     where: { id: input.goalId, userId, OR: [{ advanceLeaseUntil: null }, { advanceLeaseUntil: { lt: now } }] },
-    data: { advanceLeaseUntil: new Date(now.getTime() + GOAL_ADVANCE_LEASE_MS) },
+    data: { advanceLeaseUntil: lease },
   });
   if (claimed.count !== 1) {
     const exists = await prisma.agentGoal.count({ where: { id: input.goalId, userId } });
@@ -249,11 +253,14 @@ export async function advanceGoal(input: {
           break;
         }
       }
-      await prisma.agentGoal.updateMany({ where: { id: goal.id, userId }, data });
+      const wrote = await prisma.agentGoal.updateMany({ where: { id: goal.id, userId, advanceLeaseUntil: lease }, data });
+      if (wrote.count !== 1) return { kind: "busy" };
       if (!again) break;
     }
   } finally {
-    await prisma.agentGoal.updateMany({ where: { id: input.goalId, userId }, data: { advanceLeaseUntil: null } }).catch(() => undefined);
+    await prisma.agentGoal
+      .updateMany({ where: { id: input.goalId, userId, advanceLeaseUntil: lease }, data: { advanceLeaseUntil: null } })
+      .catch(() => undefined);
   }
   const goal = await prisma.agentGoal.findFirst({ where: { id: input.goalId, userId } });
   return goal ? { kind: "advanced", steps: applied, goal } : { kind: "missing" };
