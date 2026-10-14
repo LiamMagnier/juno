@@ -319,6 +319,11 @@ function checkRange(text: string, where: string, sheetNames: ReadonlySet<string>
   if (parsed.sheet !== null && !sheetNames.has(parsed.sheet.toLowerCase())) {
     throw new SemanticError("invalid_model", `${where}: "${text}" refers to a sheet that does not exist`);
   }
+  // The same bound as a range written in a formula: a chart reads every cell.
+  const size = rangeSize(parsed.range);
+  if (size > WORKBOOK_LIMITS.rangeCells) {
+    throw new SemanticError("too_large", `${where}: "${text}" spans ${size} cells, above ${WORKBOOK_LIMITS.rangeCells}`);
+  }
 }
 
 /**
@@ -347,6 +352,13 @@ export function normalizeWorkbook(input: unknown): WorkbookModel {
     }
     if (!sheetNames.has(target.sheet.toLowerCase())) {
       throw new SemanticError("invalid_model", `The name "${name}" points at a sheet that does not exist`);
+    }
+    // A formula that uses a name reads the whole range it names, so a name is
+    // held to the range limit too. Without it `=SUM(Big)` over a name for
+    // C1:XFD1048576 stalled the server on every save, outline and export.
+    const size = rangeSize(target.range);
+    if (size > WORKBOOK_LIMITS.rangeCells) {
+      throw new SemanticError("too_large", `The name "${name}" spans ${size} cells, above ${WORKBOOK_LIMITS.rangeCells}`);
     }
     names[name] = ref;
   }

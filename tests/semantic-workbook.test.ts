@@ -429,3 +429,29 @@ test("an imported formula this build cannot compute is kept opaque with its cach
   const again = await new Workbook().xlsx.load((await exportWorkbookXlsx(model)) as unknown as ArrayBuffer);
   assert.equal(again.getWorksheet("S")!.getCell("A2").formula, "XLOOKUP(5,A1:A1,A1:A1)");
 });
+
+test("a defined name or chart range is held to the range limit (no unbounded reads)", () => {
+  const model = normalizeWorkbook({ title: "x", sheets: [{ name: "S", cells: { A1: 1 } }] });
+  const t0 = Date.now();
+  assert.throws(
+    () => applyWorkbookOps(model, [{ op: "defineName", name: "Big", ref: "S!C1:Z1000000" } as WorkbookOp]),
+    (error: unknown) => error instanceof SemanticError && /spans \d+ cells/.test(error.message),
+  );
+  // A stored or imported body cannot carry one either.
+  assert.throws(
+    () => normalizeWorkbook({ title: "x", names: { Big: "S!C1:XFD1048576" }, sheets: [{ name: "S", cells: { A1: 1 } }] }),
+    (error: unknown) => error instanceof SemanticError && /The name "Big" spans/.test(error.message),
+  );
+  assert.throws(
+    () =>
+      normalizeWorkbook({
+        title: "x",
+        sheets: [{ name: "S", cells: { A1: 1 }, charts: [{ type: "bar", title: "c", categories: "S!A1:A2", series: [{ name: "v", values: "S!B1:XFD1048576" }] }] }],
+      }),
+    (error: unknown) => error instanceof SemanticError && /spans \d+ cells/.test(error.message),
+  );
+  assert.ok(Date.now() - t0 < 2_000, "refused quickly, not after reading the range");
+  // A name inside the limit still works.
+  const ok = applyWorkbookOps(model, [{ op: "defineName", name: "Small", ref: "S!A1:A10" } as WorkbookOp]);
+  assert.equal(ok.model.names.Small, "S!$A$1:$A$10");
+});

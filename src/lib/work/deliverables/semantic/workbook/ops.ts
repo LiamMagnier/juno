@@ -31,6 +31,7 @@ import {
   qualifiedRange,
   type CellAddress,
   type RangeAddress,
+  rangeSize,
 } from "@/lib/work/deliverables/semantic/workbook/address";
 import { WorkbookEngine, cellId, type CellId } from "@/lib/work/deliverables/semantic/workbook/engine";
 import {
@@ -57,6 +58,7 @@ import {
   type WorkbookChart,
   type WorkbookModel,
   type WorkbookSheet,
+  WORKBOOK_LIMITS,
 } from "@/lib/work/deliverables/semantic/workbook/model";
 
 // ---------------------------------------------------------------------------
@@ -597,6 +599,10 @@ function applyOne(
       const parsed = parseQualifiedRange(op.ref);
       if (!parsed || !parsed.sheet) throw new SemanticError("invalid_op", `"${op.ref}" must be a sheet-qualified range like Assumptions!B3`);
       const target = sheetOrThrow(model, parsed.sheet);
+      const cells = rangeSize(parsed.range);
+      if (cells > WORKBOOK_LIMITS.rangeCells) {
+        throw new SemanticError("too_large", `"${op.ref}" spans ${cells} cells, above ${WORKBOOK_LIMITS.rangeCells}; name a smaller range`);
+      }
       for (const name of Object.keys(model.names)) if (name.toLowerCase() === op.name.toLowerCase()) delete model.names[name];
       model.names[op.name] = qualifiedRange(target.name, parsed.range, true);
       return { text: `Named ${model.names[op.name]} "${op.name}"`, structural: true };
