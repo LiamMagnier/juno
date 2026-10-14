@@ -110,7 +110,6 @@ import {
   type CalendarTriggerEvent,
   type EmailTriggerEvent,
   type TopicTriggerEvent,
-  type ConnectorTriggerEvent,
   type FolderTriggerEvent,
   type TriggerConfig,
   type TriggerCursor,
@@ -681,26 +680,12 @@ async function readSource(
       return { events: [], cursorSource: null, cursorPosition: null, establishing: false };
     }
 
-    const events: ConnectorTriggerEvent[] = [];
-    const eventKey = `${source}:${now.toISOString().slice(0, 13)}`;
-
-    if (!establishing && mark !== eventKey) {
-      events.push({
-        kind: "connector_event",
-        eventKey,
-        occurredAt: now,
-        connector: connectorName,
-        event: eventName,
-        attributes: parsed.config.attributes ?? {},
-      });
-    }
-
-    return {
-      events,
-      cursorSource: source,
-      cursorPosition: eventKey,
-      establishing,
-    };
+    // No connector is read for events (TRIGGER_KIND_LIMITS refuses the
+    // kind). This used to emit one made-up event per UTC hour, which started
+    // a paid run every hour; a stored row from before now yields nothing.
+    void establishing;
+    void mark;
+    return { events: [], cursorSource: null, cursorPosition: null, establishing: false };
   }
 
   if (parsed.kind === "folder_change") {

@@ -133,3 +133,13 @@ test("folder_change trigger parses grantId and matches folder event", () => {
 
   assert.equal(verdict.fire, true);
 });
+
+test("trigger kinds with no event source are refused, not left to fire on a made-up clock", async () => {
+  const { triggerSupport } = await import("@/lib/work/triggers");
+  const connector = triggerSupport("connector_event", { connector: "linear", events: ["issue.created"] });
+  assert.equal(connector.servable, false);
+  assert.match(connector.servable ? "" : connector.message, /cannot watch a connector/);
+  const folder = triggerSupport("folder_change", { grantId: "g1" });
+  assert.equal(folder.servable, false);
+  assert.equal(triggerSupport("email_filter", { from: ["boss@example.com"] }).servable, true, "real sources still work");
+});

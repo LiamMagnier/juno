@@ -102,6 +102,8 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   // Soft delete: the audit log keeps referring to this session for years, and a
   // hard delete would leave every one of those rows pointing at nothing exactly
   // when somebody is trying to reconstruct what happened.
+  // Its routines stop with it (the scheduler also skips deleted sessions).
+  await prisma.workSchedule.updateMany({ where: { sessionId: id, userId: user.id }, data: { enabled: false } });
   await prisma.workSession.updateMany({
     where: { id, userId: user.id, deletedAt: null },
     data: { deletedAt: new Date() },

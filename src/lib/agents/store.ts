@@ -732,10 +732,28 @@ async function resumeRoutines(userId: string, agentId: string): Promise<void> {
     : {};
   const ids = Array.isArray(detail.routineIds) ? detail.routineIds.filter((id): id is string => typeof id === "string") : [];
   if (ids.length === 0) return;
-  await prisma.workSchedule.updateMany({
-    where: { userId, id: { in: ids }, session: { userId, agentId } },
-    data: { enabled: true },
+  await enableRoutines(userId, { id: { in: ids }, session: { userId, agentId } });
+}
+
+/**
+ * Switches routines back on with their next run computed from now. Re-enabling
+ * kept the `nextRunAt` from before the pause, so the next tick fired at once
+ * for a slot long past (and, under "run all", caught up the whole pause). The
+ * same rule as a schedule edit (`planScheduleEdit`): resuming starts from now.
+ */
+async function enableRoutines(userId: string, where: Prisma.WorkScheduleWhereInput): Promise<void> {
+  const { nextFireForTriggers } = await import("@/lib/work/schedule");
+  const rows = await prisma.workSchedule.findMany({
+    where: { ...where, userId },
+    select: { id: true, timezone: true, triggers: { select: { kind: true, config: true, enabled: true } } },
   });
+  const now = new Date();
+  for (const row of rows) {
+    await prisma.workSchedule.updateMany({
+      where: { id: row.id, userId },
+      data: { enabled: true, nextRunAt: nextFireForTriggers(row.triggers, row.timezone, now) },
+    });
+  }
 }
 
 export async function updateAgentForUser(
@@ -869,6 +887,32 @@ export async function updateAgentForUser(
     });
   }
 
+  // The agent's routines run as the agent: their sessions were copies of its
+  // apps and approval mode when each routine was made, so a later change
+  // (Gmail removed, approvals tightened) has to reach them too. Otherwise the
+  // nightly routine kept reaching Gmail under the old, looser policy. Only
+  // routine sessions follow; a task the person approved on its own keeps what
+  // it was approved with.
+  const approvalChanged = patch.approvalMode !== undefined && patch.approvalMode !== agent.approvalMode;
+  if (connectorIds !== undefined || approvalChanged) {
+    const routineSessions = await prisma.workSchedule.findMany({
+      where: { userId: user.id, session: { agentId: agent.id, userId: user.id, deletedAt: null } },
+      select: { sessionId: true },
+    });
+    const { reconcileSessionConnectors } = await import("@/lib/work/store");
+    for (const sessionId of [...new Set(routineSessions.map((r) => r.sessionId))]) {
+      if (connectorIds !== undefined) {
+        await reconcileSessionConnectors({ userId: user.id, sessionId, connectorIds });
+      }
+      if (approvalChanged) {
+        await prisma.workSession.updateMany({
+          where: { id: sessionId, userId: user.id },
+          data: { permissionPolicy: agentApprovalMode(patch.approvalMode!) },
+        });
+      }
+    }
+  }
+
   let eventId: string | undefined;
   if (patch.status && patch.status !== agent.status) {
     if (patch.status === "paused") {
@@ -983,10 +1027,14 @@ export async function undoAgentEventForUser(
     } else if (entity === "routine_created" && typeof before.scheduleId === "string") {
       await prisma.workSchedule.deleteMany({ where: { id: before.scheduleId, userId: user.id } });
     } else if (entity === "routine_updated" && typeof before.scheduleId === "string" && typeof before.enabled === "boolean") {
-      await prisma.workSchedule.updateMany({
-        where: { id: before.scheduleId, userId: user.id },
-        data: { enabled: before.enabled },
-      });
+      if (before.enabled) {
+        await enableRoutines(user.id, { id: before.scheduleId });
+      } else {
+        await prisma.workSchedule.updateMany({
+          where: { id: before.scheduleId, userId: user.id },
+          data: { enabled: false },
+        });
+      }
     }
   } else {
     const agentUpdate: Record<string, unknown> = {};
@@ -1426,10 +1474,14 @@ export async function updateAgentRoutine(
     where: { id: scheduleId, userId: user.id, session: { userId: user.id, agentId: agent.id, deletedAt: null } },
   });
   if (!row) return refusal(404, "not_found", "That routine no longer exists.");
-  await prisma.workSchedule.update({
-    where: { id: row.id, userId: user.id },
-    data: { enabled },
-  });
+  if (enabled && !row.enabled) {
+    await enableRoutines(user.id, { id: row.id });
+  } else {
+    await prisma.workSchedule.update({
+      where: { id: row.id, userId: user.id },
+      data: { enabled },
+    });
+  }
   const eventId = await recordAgentEvent({
     userId: user.id,
     agentId: agent.id,

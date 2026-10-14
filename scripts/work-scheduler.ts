@@ -64,6 +64,7 @@ import { checkBudget, checkUsageWindows } from "@/lib/spend";
 import { checkMemberBudget } from "@/lib/agents/budget-store";
 import { runBudgetForWindow } from "@/lib/work/budget";
 import {
+  WorkSpendAdmissionError,
   createRun,
   createWorkSession,
   appendEvents,
@@ -874,78 +875,101 @@ async function dispatchOne(
       };
 
       let started = 0;
-      for (const fireAt of decision.fireAt) {
-        const created = await createRun({
-          sessionId: schedule.sessionId,
-          userId: schedule.userId,
-          origin: "schedule",
-          scheduleId: schedule.id,
-          requestedTarget: scheduleTargetOf(schedule.target),
-          effectiveTarget: decision.effectiveTarget,
-          hostId: decision.hostId,
-          requestedModel: runConfig.model ?? schedule.session.requestedModel,
-          requiredCapabilities: runConfig.requiredCapabilities,
-          degradation: decision.degradation,
-          permissionPolicy: policy,
-          // 0 means UNLIMITED to `budgetExceeded`, and a schedule that never
-          // set a figure stores 0 on every axis. What fills that zero is the
-          // window: `runBudgetForWindow` writes the binding window's remainder
-          // onto the cost axis, and `narrowestBudget` keeps the schedule's own
-          // figure only where it asked for LESS.
-          //
-          // The no-window backstop is NOT applied to the schedule's own figure
-          // here, and that is the whole point: wrapping it in
-          // `unattendedRunCeiling` made every metered scheduled fire run at
-          // min($1, window) — a per-run ceiling, on every plan, contradicting
-          // the docs and this commit, and differing from the same schedule
-          // pressed by hand, which got the window. `runBudgetForWindow` already
-          // carries the backstop for the one account that has no window at all.
-          //
-          // Tokens and runtime stay at whatever the schedule asked for, and
-          // that is usually zero: there is no per-run token or time ceiling any
-          // more, only what a schedule chooses to impose on itself.
-          //
-          // The window is read through the same cache the admission check used,
-          // so a schedule cannot be admitted against one number and dispatched
-          // under another.
-          budget: narrowestBudget(
-            {
-              maxCostMicroUsd: schedule.maxCostMicroUsd,
-              maxTokens: schedule.maxTokens,
-              maxRuntimeMs: schedule.maxRuntimeMs,
-            },
-            runBudgetForWindow(windowForRun)
-          ),
-          // The same plan the ceiling above was built from, so spend admission
-          // measures the run against it rather than reading the row a second
-          // time and possibly getting a different answer.
-          plan: limits.plan,
-          idempotencyKey: scheduleRunIdempotencyKey(schedule.id, fireAt),
-        });
-        // A replay is a fire this process already made and is seeing again, so
-        // it is neither counted nor re-manifested.
-        //
-        // The task's files are carried onto the attempt here because the runner
-        // reads a run's attachments from its `WorkRunIO` input rows and from
-        // nowhere else, and only the manual dispatch route wrote them — so a
-        // schedule pointed at a session with three documents attached fired
-        // every morning against none of them and said nothing about it. The run
-        // behaved as though the task had no files, which from the reader's side
-        // is a task that quietly stopped working.
-        //
-        // After `createRun` rather than inside it: the call needs the run id,
-        // and `createMany` on a replayed key would double rows that already
-        // exist. The manifest is a snapshot of the grants as they stand at this
-        // fire, which is the point — a file revoked yesterday is not in today's
-        // run.
-        if (!created.replay) {
-          started += 1;
-          await recordRunInputsFromGrants({
-            runId: created.run.id,
+      try {
+        for (const fireAt of decision.fireAt) {
+          const created = await createRun({
             sessionId: schedule.sessionId,
             userId: schedule.userId,
+            origin: "schedule",
+            scheduleId: schedule.id,
+            requestedTarget: scheduleTargetOf(schedule.target),
+            effectiveTarget: decision.effectiveTarget,
+            hostId: decision.hostId,
+            requestedModel: runConfig.model ?? schedule.session.requestedModel,
+            requiredCapabilities: runConfig.requiredCapabilities,
+            degradation: decision.degradation,
+            permissionPolicy: policy,
+            // 0 means UNLIMITED to `budgetExceeded`, and a schedule that never
+            // set a figure stores 0 on every axis. What fills that zero is the
+            // window: `runBudgetForWindow` writes the binding window's remainder
+            // onto the cost axis, and `narrowestBudget` keeps the schedule's own
+            // figure only where it asked for LESS.
+            //
+            // The no-window backstop is NOT applied to the schedule's own figure
+            // here, and that is the whole point: wrapping it in
+            // `unattendedRunCeiling` made every metered scheduled fire run at
+            // min($1, window) — a per-run ceiling, on every plan, contradicting
+            // the docs and this commit, and differing from the same schedule
+            // pressed by hand, which got the window. `runBudgetForWindow` already
+            // carries the backstop for the one account that has no window at all.
+            //
+            // Tokens and runtime stay at whatever the schedule asked for, and
+            // that is usually zero: there is no per-run token or time ceiling any
+            // more, only what a schedule chooses to impose on itself.
+            //
+            // The window is read through the same cache the admission check used,
+            // so a schedule cannot be admitted against one number and dispatched
+            // under another.
+            budget: narrowestBudget(
+              {
+                maxCostMicroUsd: schedule.maxCostMicroUsd,
+                maxTokens: schedule.maxTokens,
+                maxRuntimeMs: schedule.maxRuntimeMs,
+              },
+              runBudgetForWindow(windowForRun)
+            ),
+            // The same plan the ceiling above was built from, so spend admission
+            // measures the run against it rather than reading the row a second
+            // time and possibly getting a different answer.
+            plan: limits.plan,
+            idempotencyKey: scheduleRunIdempotencyKey(schedule.id, fireAt),
           });
+          // A replay is a fire this process already made and is seeing again, so
+          // it is neither counted nor re-manifested.
+          //
+          // The task's files are carried onto the attempt here because the runner
+          // reads a run's attachments from its `WorkRunIO` input rows and from
+          // nowhere else, and only the manual dispatch route wrote them — so a
+          // schedule pointed at a session with three documents attached fired
+          // every morning against none of them and said nothing about it. The run
+          // behaved as though the task had no files, which from the reader's side
+          // is a task that quietly stopped working.
+          //
+          // After `createRun` rather than inside it: the call needs the run id,
+          // and `createMany` on a replayed key would double rows that already
+          // exist. The manifest is a snapshot of the grants as they stand at this
+          // fire, which is the point — a file revoked yesterday is not in today's
+          // run.
+          if (!created.replay) {
+            started += 1;
+            await recordRunInputsFromGrants({
+              runId: created.run.id,
+              sessionId: schedule.sessionId,
+              userId: schedule.userId,
+            });
+          }
         }
+      } catch (error) {
+        // The planner admits a fire while any budget is left; the run's spend
+        // reservation can still not fit (a few cents left). That is the same
+        // outcome as `budget_blocked`, not a dispatch failure: left as a
+        // failure, the fire was retried every tick, indefinitely, unrecorded.
+        if (!(error instanceof WorkSpendAdmissionError)) throw error;
+        await prisma.workSchedule.updateMany({
+          where: { id: schedule.id, userId: schedule.userId },
+          data: { nextRunAt: advanced(), lockedUntil: null },
+        });
+        await recordMarkerRun({
+          scheduleId: schedule.id,
+          sessionId: schedule.sessionId,
+          userId: schedule.userId,
+          fireAt: decision.fireAt[0]!,
+          requestedTarget: schedule.target,
+          reason: "budget_exceeded",
+          explanation: error.message,
+        });
+        log("budget blocked at reservation", { scheduleId: schedule.id, started });
+        return;
       }
 
       await prisma.workSchedule.updateMany({
@@ -1014,9 +1038,12 @@ async function dispatchOne(
     }
 
     case "budget_blocked": {
+      // The next fire of ANY trigger, as every other branch: the planner's
+      // `nextRunAt` follows only the trigger that owned this fire, so a blocked
+      // Monday 08:00 skipped Monday 17:00 from another trigger.
       await prisma.workSchedule.updateMany({
         where: { id: schedule.id, userId: schedule.userId },
-        data: { nextRunAt: decision.nextRunAt, lockedUntil: null },
+        data: { nextRunAt: advanced(), lockedUntil: null },
       });
       await recordMarkerRun({
         scheduleId: schedule.id,
@@ -1059,6 +1086,9 @@ async function findDueSchedules(now: Date, limit: number) {
       enabled: true,
       nextRunAt: { lte: now },
       OR: [{ lockedUntil: null }, { lockedUntil: { lt: now } }],
+      // A routine of a deleted task never fires: it would run, and bill, on a
+      // session the person can no longer see.
+      session: { deletedAt: null },
     },
     orderBy: { nextRunAt: "asc" },
     take: limit,

@@ -316,10 +316,19 @@ export function triggerSourceConnector(kind: EventTriggerKind): string | null {
 /**
  * Why a kind cannot be served at all, in the sentence the user is shown.
  *
- * All primary trigger kinds (email_filter, calendar_window, topic_monitor,
- * connector_event, folder_change, manual) are supported with active event producers.
+ * `connector_event` has no event source: the poller never read the connector,
+ * and made up one "event" per UTC hour for any linked connector, so every such
+ * routine started a paid run every hour whether anything happened or not.
+ * `folder_change` keyed on a grant field nothing ever writes, so it could
+ * never fire. Both are refused (on save, in the editor, and by the poller)
+ * until a real producer exists.
  */
-export const TRIGGER_KIND_LIMITS: Readonly<Partial<Record<EventTriggerKind, string>>> = {};
+export const TRIGGER_KIND_LIMITS: Readonly<Partial<Record<EventTriggerKind, string>>> = {
+  connector_event:
+    `${PRODUCT_NAME} cannot watch a connector for events yet, so this trigger would never see one. Use a schedule, or an email or calendar trigger.`,
+  folder_change:
+    `${PRODUCT_NAME} cannot watch a folder for changes yet, so this trigger would never fire. Use a schedule instead.`,
+};
 
 /**
  * A single option the source cannot answer, and what that means for the trigger.
