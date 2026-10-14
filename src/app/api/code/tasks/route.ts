@@ -33,6 +33,7 @@ import { activeByokProviders } from "@/lib/code-v2/byok-store";
 import { legacyModelFor, routingAvoidsAlevrBilling, validateRoleRouting } from "@/lib/code-v2/role-routing";
 import type { RoleRouting } from "@/lib/code-v2/contracts";
 import { cloudSkillRefsSchema, dedupeRefs, readCloudSkillRefs, type CloudSkillRef } from "@/lib/code-v2/cloud-skills";
+import { admitCodeStart } from "@/lib/code-admission";
 
 export const runtime = "nodejs";
 
@@ -282,6 +283,20 @@ export async function POST(req: Request) {
     return NextResponse.json(
       { error: "Code is included from the Pro plan.", code: "PLAN_REQUIRED" },
       { status: 402 },
+    );
+  }
+
+  // Spend admission, as for a Work run: a run billed by Alevr starts only
+  // inside the account's usage window (the same exemption as the plan gate).
+  const admission = await admitCodeStart({ userId: user.id, unbilled: routingAvoidsAlevrBilling(roleRouting) });
+  if (!admission.ok) {
+    return NextResponse.json(
+      {
+        error: admission.message,
+        code: admission.reason === "usage_window_exceeded" ? "USAGE_WINDOW_EXCEEDED" : "MEMBER_BUDGET_EXHAUSTED",
+        ...(admission.resetsAtMs ? { resetsAt: new Date(admission.resetsAtMs).toISOString() } : {}),
+      },
+      { status: 429 },
     );
   }
 

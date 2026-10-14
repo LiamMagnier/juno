@@ -437,8 +437,10 @@ test("nothing in the skip vocabulary is a quota", () => {
    * already going, no branch, the runner down. What bounds the sequence is the
    * account's own usage window.
    */
+  // `over_budget` is that window, read at admission like every Code start: not
+  // a per-PR counter.
   const reasons = Object.keys(AUTO_FIX_SKIP_NOTE);
-  assert.deepEqual(reasons, ["fix_in_flight", "no_session", "runner_unavailable", "dispatch_failed"]);
+  assert.deepEqual(reasons, ["fix_in_flight", "no_session", "runner_unavailable", "dispatch_failed", "over_budget"]);
   /*
    * And no "duplicate". It reads like a skip and it cannot be one: the
    * duplicate is decided by the unique (watchId, digest) refusing the second

@@ -654,7 +654,8 @@ export type AutoFixSkipReason =
   | "fix_in_flight"
   | "no_session"
   | "runner_unavailable"
-  | "dispatch_failed";
+  | "dispatch_failed"
+  | "over_budget";
 
 export const AUTO_FIX_SKIP_NOTE: Record<AutoFixSkipReason, string> = {
   fix_in_flight:
@@ -662,6 +663,7 @@ export const AUTO_FIX_SKIP_NOTE: Record<AutoFixSkipReason, string> = {
   no_session: "No cloud run in this session to continue from, so there was no branch to fix.",
   runner_unavailable: "The cloud runner is not available, so nothing was attempted.",
   dispatch_failed: `${PRODUCT_NAME} could not start a run for this. Nothing was changed on the branch.`,
+  over_budget: "The account's usage limit for now is reached, so no run was started. Nothing was changed on the branch.",
 };
 
 /** The sentence shown against a delivery that DID start a run. */

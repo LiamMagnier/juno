@@ -13,6 +13,7 @@ import {
   parseCodeRoutineConfig,
   type CodeRoutineConfig,
 } from "@/lib/work/code-routine";
+import { admitCodeStart } from "@/lib/code-admission";
 
 /**
  * Starting one Code run for one fire of a routine.
@@ -68,6 +69,10 @@ export const CODE_RUN_REFUSALS = [
   "cloud_runner_not_configured",
   /** GitHub accepted nothing. Usually temporary. */
   "dispatch_failed",
+  /** The account's binding usage window is spent. */
+  "usage_window_exceeded",
+  /** The agent that owns the routine reached its own budget cap. */
+  "member_budget_exhausted",
 ] as const;
 
 export type CodeRunRefusal = (typeof CODE_RUN_REFUSALS)[number];
@@ -112,6 +117,18 @@ export async function startCodeRoutineRun(input: CodeRunInput): Promise<CodeRunO
   });
   if (existing) {
     return { outcome: "replay", taskId: existing.id, conversationId: existing.conversationId };
+  }
+
+  // Spend admission, as for a Work run: the usage window, then the owning
+  // agent's cap. Here rather than in each caller, so a fire by hand, by URL or
+  // by the scheduler is admitted the same way.
+  const schedule = await prisma.workSchedule.findFirst({
+    where: { id: input.scheduleId, userId: input.userId },
+    select: { session: { select: { agentId: true } } },
+  });
+  const admission = await admitCodeStart({ userId: input.userId, agentId: schedule?.session?.agentId ?? null });
+  if (!admission.ok) {
+    return { outcome: "refused", reason: admission.reason, message: admission.message, recorded: false };
   }
 
   // Both of these refuse BEFORE a row exists, exactly as the create route does,

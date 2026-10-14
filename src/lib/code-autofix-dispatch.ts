@@ -19,6 +19,7 @@ import {
   type AutoFixEvent,
   type AutoFixSkipReason,
 } from "@/lib/code-autofix";
+import { admitCodeStart } from "@/lib/code-admission";
 
 /*
  * TURNING A VERIFIED DELIVERY INTO A RUN.
@@ -291,6 +292,10 @@ export async function answerAutoFixDelivery(input: {
   // Asked before the lock below, because it is a network probe and holding a
   // per-watch lock across one would serialise every delivery behind GitHub.
   const readiness = await getCloudRunnerReadiness();
+  // A new fix is a new billed run: admitted like any other Code start. (Steering
+  // a run already going costs nothing new and is decided under the lock below,
+  // but checking first keeps the admission read out of that lock.)
+  const admission = await admitCodeStart({ userId: watch.userId });
 
   /*
    * LOOK AND WRITE UNDER ONE LOCK, AND UNDER THE SAME LOCK THE COMPOSER TAKES.
@@ -325,6 +330,7 @@ export async function answerAutoFixDelivery(input: {
     // `canSteerRun` can still refuse is a run on a Mac.
     if (live) return { kind: "live" as const, live };
     if (!readiness.ready) return { kind: "unavailable" as const };
+    if (!admission.ok) return { kind: "over_budget" as const };
     const created = await tx.codeTask.create({
       data: {
         userId: watch.userId,
@@ -359,6 +365,7 @@ export async function answerAutoFixDelivery(input: {
   });
 
   if (decision.kind === "unavailable") return skip("runner_unavailable");
+  if (decision.kind === "over_budget") return skip("over_budget");
   if (decision.kind === "live") {
     const { live } = decision;
     if (!canSteerRun(live.status, live.target)) return skip("fix_in_flight");

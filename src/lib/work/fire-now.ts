@@ -291,10 +291,9 @@ export async function fireScheduleNow(input: FireNowInput): Promise<FireOutcome>
   // run has now. The same read refuses the fire and sizes the run's cost
   // ceiling; the reasoning is in `src/lib/work/budget.ts`.
   //
-  // It sits on the WORK path, below the Code branch, for the symmetry the
-  // header argues for: a Code fire is admitted exactly as `POST
-  // /api/code/tasks` admits a composer's run, and a gate here alone would make
-  // a routine stricter than the button that starts the same work by hand.
+  // A Code fire returned above is admitted inside `startCodeRoutineRun`
+  // (src/lib/code-admission.ts), the same check `POST /api/code/tasks` makes,
+  // so a routine and the button that starts the same work by hand agree.
   const windows = await checkUsageWindows(userId, plan);
   if (!windows.allowed && windows.bound !== null) {
     return {
