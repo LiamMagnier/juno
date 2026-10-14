@@ -59,6 +59,10 @@ it. The checks below cover the request each chat path builds.
 | 19 | **Mac Code** (`native/Packages/JunoCode`, `PromptCacheWire.swift`) | Request bodies encoded from Swift dictionaries | Key order changed between requests, so tool schemas and replayed inputs differed byte for byte and every prefix cache missed from the first tool on. | **Fixed (Oct 10, Mac lane):** sorted-key encoding, the session id as `prompt_cache_key` / `x-grok-conv-id` per lab; the agent proxy forwards `x-grok-conv-id`. |
 | 20 | **Runner** (`runner/agent-core/src/providers/prompt-cache.ts`) | No cache key on the OpenAI-shaped wires | Same routing gaps as #9 inside Code sessions. | **Fixed (Oct 10, runner lane):** per-lab plan mirroring `openai-prompt-cache.ts` (key, GPT-5.6 breakpoint, retention, Qwen markers, sorted tools). Its retention list still matches by substring; align it with #7. |
 | 21 | **Code proxy thinking budget** (`agent-proxy.ts` `capOutputTokens`) | A budget near its limit lowered `budget_tokens` to `cap − 1024` on every request | The cap shrinks as the account spends, and a changed thinking budget invalidates Anthropic's cached messages, so a long session re-wrote its history on each request. | **Fixed (Oct 10):** lowered in power-of-two steps (min 1,024, `steppedThinkingBudget`). |
+| 22 | **OpenAI GPT-5.6+ / GPT-6 chat turns** (`openai-responses.ts`, the production path for every OpenAI model) | The date spliced in front of the newest user turn, the volatile tail inside it, implicit mode | These models create entries only at breakpoints and read only at lookup boundaries, the ends of earlier user messages among them (prompt-caching guide). Every turn's implicit write ended in "date, newest message, tail", which the next turn never sends, so each turn read only the system prompt and re-wrote the whole history at 1.25x. | **Fixed (Oct 14):** the tail follows the user's words as its own user item, the words carry an explicit breakpoint, the date goes last. Same date placement on Chat Completions (`OPENAI_RESPONSES=0`). Pre-5.6 models unchanged. Fixture (simulated from the documented rules, 6 turns, GPT-6.1 Sol rates): input cost $0.0204 → $0.0096. Not a production figure. |
+| 23 | **One-off prompts on GPT-5.6+** (web utility prompts, runner side calls with `cache: false`) | `prompt_cache_options.mode: "implicit"` and a system breakpoint on every request | Implicit mode writes at the newest message, billed 1.25x, on prompts nobody re-sends. | **Fixed (Oct 14):** `"none"` / `cache: false` send explicit mode with no breakpoint ("no prompt caching or cache writes"); `"short"` without tools keeps the system breakpoint only (`openAIModernCachePlan`, runner `promptCachePlan`). |
+| 24 | **Anthropic fallback cache-read ratio** (`pricing.ts`) | 0.1x for any id the rate table does not list | Sonnet 5.5 reads are 0.05x. The generated table already priced the listed id correctly. | **Fixed (Oct 14)** for unlisted Sonnet 5.5 ids. |
+| 25 | **Anthropic tool loops**: the forced-answer final round | `tool_choice: "none"` on the last request | A `tool_choice` change invalidates the messages cache, so that one request re-writes the conversation. It runs only when a turn exhausts its tool budget. | Not changed: it is what guarantees a final sentence. Measure with the `llm.request` records below. |
 
 ### Cost ledger: are cache reads and writes billed at the real discounted rate?
 
@@ -233,6 +237,23 @@ cap, it is headroom: they do more for the same plan, which is the fairness
 half of the brief.
 
 ## 6. Verify after deploy
+
+- **Per-request records (`llm.request` log lines, Oct 14):** one structured
+  line per provider request (src/lib/llm/request-meter.ts): provider, model,
+  role, context tier, round, attempt / retry / fallback, fresh, cache-read,
+  cache-write (5m/1h), output and reasoning tokens, tool fees, list-price
+  cost, latency and first-token latency, and `prefix.verdict`: `first`,
+  `stable`, or the reason the prefix changed since the conversation's previous
+  request (`model`, `tools`, `system@i`, `settings`, `history_rewritten@i`,
+  `history_truncated@i`), from hashes of each prefix segment
+  (src/lib/llm/prefix-diagnostic.ts). No content and no raw conversation id.
+  A `stable` verdict with a low `cacheReadShare` points at the provider side
+  (TTL, the 20-block lookback, a below-minimum prefix); a `history_rewritten`
+  verdict names the message that broke the prefix.
+- **Cost per accepted result:** `scripts/cost-per-accepted.ts` divides the
+  cost of all saved-chat turns per task class (and model) by the turns the
+  router's own outcome rule counts as kept (completed, not regenerated,
+  switched, edited or thumbed down; `RoutingOutcome`).
 
 - **Cache hit ratio per provider:** `ApiSpend` rows do not store cache tokens.
   Read `Message.cacheReadTokens` / `cacheWriteTokens` (the chat usage columns)

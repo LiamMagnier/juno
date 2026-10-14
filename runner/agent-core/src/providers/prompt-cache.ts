@@ -107,7 +107,11 @@ export function promptCachePlan(input: {
 
   if (provider === 'openai') {
     if (isOpenAIModernCacheModel(input.model)) {
-      plan.fields.prompt_cache_options = { mode: 'implicit', ttl: '30m' };
+      // Implicit mode writes at the newest message and OpenAI bills that write
+      // at 1.25x input. A one-off side call is never re-sent, so it asks for
+      // explicit mode with no breakpoint, which "does not use prompt caching or
+      // create cache writes" (prompt-caching guide, GPT-5.6 and later).
+      plan.fields.prompt_cache_options = { mode: write ? 'implicit' : 'explicit', ttl: '30m' };
       plan.systemBreakpoint = write;
     } else if (supportsOpenAIRetention(input.model)) {
       plan.fields.prompt_cache_retention = '24h';

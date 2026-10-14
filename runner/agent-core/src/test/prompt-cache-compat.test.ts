@@ -114,6 +114,14 @@ test('OpenAI GPT-5.6+ chat: key, implicit options and an explicit breakpoint on 
   assert.deepEqual((body.tools as Array<{ function: { name: string } }>).map((tool) => tool.function.name), ['read_file', 'write_file']);
 });
 
+test('OpenAI GPT-5.6+ one-off side call: explicit mode, no breakpoint, so nothing is written at 1.25x', async () => {
+  // Implicit mode places a breakpoint at the newest message and bills the write;
+  // explicit mode with no breakpoint is documented to create no cache writes.
+  const { request } = await chatRequest('openai', 'gpt-5.6-luna', { cache: false });
+  assert.deepEqual(request.body.prompt_cache_options, { mode: 'explicit', ttl: '30m' });
+  assert.deepEqual((request.body.messages as unknown[])[0], { role: 'system', content: 'You are Juno.' });
+});
+
 test('OpenAI pre-5.6 chat: key and 24h retention, the system prompt stays a string', async () => {
   for (const model of ['gpt-5.5', 'gpt-5.4', 'gpt-5.1-codex', 'gpt-5', 'gpt-4.1-2025-04-14']) {
     const { request } = await chatRequest('openai', model);

@@ -9,12 +9,15 @@ import {
   compatPromptCacheRequestFields,
   openAIPromptCacheRequestFields,
   openAISystemMessage,
+  isOpenAIModernCacheModel,
+  openAIModernCachePlan,
   withQwenCacheMarkers,
 } from "@/lib/openai-prompt-cache";
 import { qwenExplicitCacheModel } from "@/lib/pricing";
 import type { ModelInfo } from "@/lib/models";
 import type { ReasoningEffort } from "@/types/chat";
 import type { LlmEvent, MessageForModel, PromptCacheMode } from "@/types/llm";
+import type { MeteredRequest, RequestMeter } from "@/lib/llm/request-meter";
 import { toWireTools } from "@/lib/mcp";
 import { wireCallId, type ToolLoop } from "@/lib/tools/loop";
 import type { ToolCallInput } from "@/lib/tools/types";
@@ -72,11 +75,14 @@ async function toOpenAIMessages(
   system: string,
   history: MessageForModel[],
   vision: boolean,
-  model?: ModelInfo
+  model?: ModelInfo,
+  /** False when the request must write nothing (`openAIModernCachePlan`). */
+  systemBreakpoint = true
 ): Promise<OpenAI.Chat.Completions.ChatCompletionMessageParam[]> {
   // OpenAI GPT-5.6+: system as structured text with an explicit cache breakpoint
   // so the static instructions stay a warm prefix (docs: prompt-caching).
-  const systemMsg = model?.provider === "openai" ? openAISystemMessage(model, system) : { role: "system" as const, content: system };
+  const systemMsg =
+    model?.provider === "openai" ? openAISystemMessage(model, system, systemBreakpoint) : { role: "system" as const, content: system };
   const out: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
     systemMsg as OpenAI.Chat.Completions.ChatCompletionMessageParam,
   ];
@@ -309,10 +315,14 @@ export async function* streamOpenAICompat(
   cacheKey?: string,
   fastMode?: FastMode,
   transport?: CompatTransport,
-  promptCache?: PromptCacheMode
+  promptCache?: PromptCacheMode,
+  /** One record per request (src/lib/llm/request-meter.ts). */
+  meter?: RequestMeter
 ): AsyncGenerator<LlmEvent> {
   const toolset = tools?.toolset;
-  const messages = await toOpenAIMessages(system, history, model.vision, model);
+  const modernOpenAI = isOpenAIModernCacheModel(model);
+  const cachePlan = openAIModernCachePlan(promptCache, !!toolset && toolset.tools.length > 0);
+  const messages = await toOpenAIMessages(system, history, model.vision, model, cachePlan.systemBreakpoint);
   // Per-request dynamic context (the date) is injected AFTER the frozen
   // conversation history — providers cache the longest stable prefix, so
   // nothing that changes per request may sit before the history. It lands as
@@ -327,7 +337,11 @@ export async function* streamOpenAICompat(
       }
     }
     dynamicMessage = { role: "system", content: dynamicContext };
-    messages.splice(lastUser, 0, dynamicMessage);
+    // GPT-5.6+ reads an entry only at the end of an earlier user message, so
+    // the date goes after the newest one rather than in front of it
+    // (openai-responses.ts, "GPT-5.6+ TURN LAYOUT").
+    if (modernOpenAI) messages.push(dynamicMessage);
+    else messages.splice(lastUser, 0, dynamicMessage);
   }
   const modelId = model.providerModel.toLowerCase();
   const isZhipuThinking = model.provider === "zhipu" && model.reasoning;
@@ -491,7 +505,7 @@ export async function* streamOpenAICompat(
   //   below (withQwenCacheMarkers); the rest of Qwen is implicit.
   // - Zhipu/DeepSeek/Moonshot: implicit on stable prefixes only.
   if (model.provider === "openai") {
-    Object.assign(params, openAIPromptCacheRequestFields(model, cacheKey));
+    Object.assign(params, openAIPromptCacheRequestFields(model, cacheKey, { promptCache, hasTools }));
   } else {
     Object.assign(params, compatPromptCacheRequestFields(model, cacheKey));
   }
@@ -549,7 +563,19 @@ export async function* streamOpenAICompat(
     // xAI routes same-conversation requests to the same cache via this header
     // (its chat.completions API has no prompt_cache_key).
     const requestHeaders = model.provider === "xai" && cacheKey ? { "x-grok-conv-id": cacheKey } : undefined;
-    const stream = await c.create(params, { signal, headers: requestHeaders });
+    const metered: MeteredRequest | undefined = meter?.begin({
+      wire: "compat",
+      round,
+      body: params,
+      volatile: dynamicMessage ? new Set([dynamicMessage]) : undefined,
+    });
+    let stream: Awaited<ReturnType<CompatTransport["create"]>>;
+    try {
+      stream = await c.create(params, { signal, headers: requestHeaders });
+    } catch (err) {
+      metered?.end(null, { ok: false });
+      throw err;
+    }
 
     let assistantText = "";
     let finishReason: string | undefined;
@@ -562,6 +588,7 @@ export async function* streamOpenAICompat(
     const toolCalls = new Map<string, CompatToolCall>();
     const roundUsage = emptyCompatUsage();
 
+    try {
     for await (const chunk of stream) {
       const choice = chunk.choices?.[0];
       const choiceDelta = choice?.delta;
@@ -574,7 +601,10 @@ export async function* streamOpenAICompat(
         reasoningText = reasoningDetailsDelta(minimaxReasoningBuffer, fullReasoning);
         minimaxReasoningBuffer = fullReasoning;
       }
-      if (reasoningText) yield { type: "reasoning", text: reasoningText };
+      if (reasoningText) {
+        metered?.firstToken();
+        yield { type: "reasoning", text: reasoningText };
+      }
       // `content` is typed string|null, but Mistral's reasoning models stream an
       // array of typed chunks — normalise before it gets concatenated.
       const rawDelta = choiceDelta?.content as unknown;
@@ -586,8 +616,10 @@ export async function* streamOpenAICompat(
       }
       if (delta) {
         assistantText += delta;
+        metered?.firstToken();
         yield { type: "text", text: delta };
       }
+      if (choiceDelta?.tool_calls?.length) metered?.firstToken();
       accumulateToolCallDeltas(toolCalls, choiceDelta?.tool_calls as CompatToolCallDelta[] | undefined);
       const citations = (chunk as unknown as { citations?: string[] }).citations;
       if (citations?.length) {
@@ -613,6 +645,11 @@ export async function* streamOpenAICompat(
       }
       if (choice?.finish_reason) finishReason = choice.finish_reason;
     }
+    } catch (err) {
+      metered?.end(roundSawUsage ? roundUsage : null, { ok: false });
+      throw err;
+    }
+    metered?.end(roundSawUsage ? roundUsage : null);
     if (roundSawUsage) {
       sawUsage = true;
       addCompatUsage(turnUsage, roundUsage);

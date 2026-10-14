@@ -16,12 +16,16 @@ import {
   type HostedSearchDialect,
 } from "@/lib/hosted-web-search";
 import {
+  detachNewestVolatileTail,
+  isOpenAIModernCacheModel,
+  openAIModernCachePlan,
   openAIResponsesSystemInput,
   responsesPromptCacheRequestFields,
 } from "@/lib/openai-prompt-cache";
+import { usageDelta, type MeteredRequest, type RequestMeter, type RequestUsage } from "@/lib/llm/request-meter";
 import type { ModelInfo } from "@/lib/models";
 import type { ReasoningEffort } from "@/types/chat";
-import type { LlmEvent, MessageForModel } from "@/types/llm";
+import type { LlmEvent, MessageForModel, PromptCacheMode } from "@/types/llm";
 import { wireCallId, type ToolLoop } from "@/lib/tools/loop";
 import type { ToolCallInput } from "@/lib/tools/types";
 import { attachedFileText, pdfAttachmentFallbackNote } from "@/lib/attachment-context";
@@ -228,7 +232,11 @@ export async function* streamOpenAIResponses(
   cacheKey?: string,
   fastMode?: FastMode,
   proMode?: boolean,
-  transport?: ResponsesTransport
+  transport?: ResponsesTransport,
+  /** Explicit prompt-cache markers (`PromptCacheMode`). Omit for chat turns. */
+  promptCache?: PromptCacheMode,
+  /** One record per request (src/lib/llm/request-meter.ts). */
+  meter?: RequestMeter
 ): AsyncGenerator<LlmEvent> {
   const toolset = tools?.toolset;
   /*
@@ -266,8 +274,29 @@ export async function* streamOpenAIResponses(
   const searchEffort = reasoningEffort ?? (rcSearch.canDisable ? undefined : rcSearch.defaultLevel ?? undefined);
   const hostedSearch = meta ? !!webSearch : !!webSearch && hostedSearchAllowedAt(caps, searchEffort);
   const searchDialect: HostedSearchDialect = xai ? "xai" : "openai";
+  /*
+   * GPT-5.6+ TURN LAYOUT. These models read a cache entry only at a lookup
+   * boundary, and the boundaries a later turn checks are the ends of its
+   * earlier user messages (prompt-caching guide). So the entry this turn
+   * writes at its newest user message must end in bytes the next turn sends
+   * at the same place:
+   *
+   *  - the per-generation tail (memory notes, retrieved extracts) leaves the
+   *    message and follows it as its own user item, and the message carries
+   *    an explicit breakpoint so an entry is written at its end;
+   *  - the date follows everything, instead of being spliced in front of the
+   *    newest user turn.
+   *
+   * With the date in front, every turn's implicit write ended in "date, then
+   * the newest message" and the next turn, whose history has the reply where
+   * the date was, matched none of it: each turn re-read only the system
+   * prompt and re-wrote the whole history at the 1.25x write rate.
+   */
+  const modernLayout = host === "openai" && isOpenAIModernCacheModel(model);
+  const cachePlan = openAIModernCachePlan(promptCache, !!toolset && toolset.tools.length > 0);
+  const detached = modernLayout ? detachNewestVolatileTail(history) : { history, tail: null };
   const input = await toResponsesInput(
-    history,
+    detached.history,
     model.vision,
     attachmentTextBudget(getModelMetrics(model).contextTokens),
     !meta && !xai
@@ -277,13 +306,45 @@ export async function* streamOpenAIResponses(
   // Older models keep `instructions` below. xAI: a plain system message.
   const systemAsInput = xai
     ? [{ role: "system", content: system }]
-    : openAIResponsesSystemInput(model, system);
+    : openAIResponsesSystemInput(model, system, cachePlan.systemBreakpoint);
   if (systemAsInput) {
     input.unshift(...(systemAsInput as unknown as InputItem[]));
   }
-  // Same cache-safe placement as the compat adapter: dynamic context lands as a
-  // system item just before the newest user turn, never ahead of the stable prefix.
-  if (dynamicContext) {
+  // Items appended for this request only, for the prefix diagnostic.
+  const volatileItems = new Set<unknown>();
+  if (modernLayout && detached.tail) {
+    let lastUser = -1;
+    for (let i = input.length - 1; i >= 0; i--) {
+      if ((input[i] as { role?: string }).role === "user") {
+        lastUser = i;
+        break;
+      }
+    }
+    if (lastUser >= 0 && cachePlan.mode === "implicit") {
+      const message = input[lastUser] as { content?: Array<Record<string, unknown>> };
+      const parts = message.content ?? [];
+      const last = parts[parts.length - 1];
+      // A breakpoint on a text part only, and only when it ends the message: an
+      // entry that ends mid-message is at no boundary a later request checks.
+      if (last && last.type === "input_text") {
+        input[lastUser] = { ...message, content: [...parts.slice(0, -1), { ...last, prompt_cache_breakpoint: { mode: "explicit" } }] } as unknown as InputItem;
+      }
+    }
+    const tailItem = { role: "user", content: [{ type: "input_text", text: detached.tail }] } as InputItem;
+    input.splice(lastUser >= 0 ? lastUser + 1 : input.length, 0, tailItem);
+    volatileItems.add(tailItem);
+  }
+  if (dynamicContext && modernLayout) {
+    // After everything: a later system message is no lookup boundary, so the
+    // newest user message (or its tail) stays the end of the cached prefix.
+    const dateItem = { role: "system", content: [{ type: "input_text", text: dynamicContext }] } as InputItem;
+    input.push(dateItem);
+    volatileItems.add(dateItem);
+  } else if (dynamicContext) {
+    // Older models cache at fixed intervals from the start, so the date in
+    // front of the newest user turn costs at most one interval: kept where it
+    // was. Dynamic context lands as a system item just before the newest user
+    // turn, never ahead of the stable prefix.
     let lastUser = input.length;
     for (let i = input.length - 1; i >= 0; i--) {
       const item = input[i] as { role?: string };
@@ -292,10 +353,9 @@ export async function* streamOpenAIResponses(
         break;
       }
     }
-    input.splice(lastUser, 0, {
-      role: "system",
-      content: [{ type: "input_text", text: dynamicContext }],
-    } as InputItem);
+    const dateItem = { role: "system", content: [{ type: "input_text", text: dynamicContext }] } as InputItem;
+    input.splice(lastUser, 0, dateItem);
+    volatileItems.add(dateItem);
   }
 
   // A model that takes no function tools (grok-4.20-multi-agent) is sent none.
@@ -451,7 +511,10 @@ export async function* streamOpenAIResponses(
     }
     // Prompt caching per host: OpenAI's full set (key + GPT-5.6 options /
     // retention); `prompt_cache_key` on xAI and Meta, plus Meta's 24h retention.
-    Object.assign(params, responsesPromptCacheRequestFields(model, host, cacheKey));
+    Object.assign(
+      params,
+      responsesPromptCacheRequestFields(model, host, cacheKey, { promptCache, hasTools: !!wireTools })
+    );
     // OpenAI priority processing (premium latency). The route gates fastMode to
     // priority-eligible models, so relaying it straight through is safe.
     // "priority" (Fast) or "ultrafast" (GPT-6.1 Sol / GPT-6 Astra, Responses only).
@@ -459,7 +522,34 @@ export async function* streamOpenAIResponses(
     // The SDK's service_tier union predates "ultrafast"; the API accepts it.
     if (tier) params.service_tier = tier as typeof params.service_tier;
 
-    const stream = await c.create(params, { signal });
+    const before: RequestUsage = {
+      input: cumInput,
+      output: cumOutput,
+      cacheRead: cumCached,
+      cacheWrite: cumCacheWrite,
+      reasoning: cumReasoning,
+      webSearchRequests: webSearchQueries,
+    };
+    const metered: MeteredRequest | undefined = meter?.begin({ wire: "responses", round, body: params, volatile: volatileItems });
+    const endMetered = (ok: boolean) =>
+      metered?.end(
+        usageDelta(before, {
+          input: cumInput,
+          output: cumOutput,
+          cacheRead: cumCached,
+          cacheWrite: cumCacheWrite,
+          reasoning: cumReasoning,
+          webSearchRequests: webSearchQueries,
+        }),
+        { ok }
+      );
+    let stream: Awaited<ReturnType<ResponsesTransport["create"]>>;
+    try {
+      stream = await c.create(params, { signal });
+    } catch (err) {
+      endMetered(false);
+      throw err;
+    }
 
     const calls: Array<{ callId: string; name: string; args: string }> = [];
     /**
@@ -470,9 +560,11 @@ export async function* streamOpenAIResponses(
     const replayItems: InputItem[] = [];
     let roundFinish: string | undefined;
 
+    try {
     for await (const event of stream) {
       switch (event.type) {
         case "response.output_text.delta":
+          metered?.firstToken();
           yield { type: "text", text: event.delta };
           break;
         // A part boundary is a FACT the API states, not something to infer from
@@ -486,6 +578,7 @@ export async function* streamOpenAIResponses(
           // Defensive: a delta with no preceding part.added still belongs to a
           // real part, so open one rather than emitting part:-1.
           if (summaryPart < 0) summaryPart = 0;
+          metered?.firstToken();
           yield { type: "reasoning", text: event.delta, part: summaryPart };
           break;
         case "response.output_item.done": {
@@ -528,6 +621,7 @@ export async function* streamOpenAIResponses(
             if (fresh.length) yield { type: "sources", sources: fresh, origin: "provider_search" };
           }
           if (item.type === "function_call" && item.call_id && item.name) {
+            metered?.firstToken();
             calls.push({ callId: item.call_id, name: item.name, args: item.arguments ?? "{}" });
             replayItems.push(event.item as unknown as InputItem);
           }
@@ -596,6 +690,11 @@ export async function* streamOpenAIResponses(
           break;
       }
     }
+    } catch (err) {
+      endMetered(false);
+      throw err;
+    }
+    endMetered(true);
     finishRaw = roundFinish;
 
     if (tools && hasTools && !isFinalRound && calls.length > 0) {

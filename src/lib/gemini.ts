@@ -17,6 +17,7 @@ import type { ModelInfo } from "@/lib/models";
 import type { ReasoningEffort } from "@/types/chat";
 import type { ClientSource } from "@/types/chat";
 import type { LlmEvent, MessageForModel } from "@/types/llm";
+import type { MeteredRequest, RequestMeter } from "@/lib/llm/request-meter";
 import {
   toGeminiContents,
   resolveGroundingUrls,
@@ -95,6 +96,8 @@ export async function* streamGemini(
   dynamicContext?: string,
   requestContext?: Partial<GeminiRequestContext>,
   transport?: GeminiTransport,
+  /** One record per request (src/lib/llm/request-meter.ts). */
+  meter?: RequestMeter,
 ): AsyncGenerator<LlmEvent> {
   const toolset = tools?.toolset;
   const apiKeys = transport ? [] : getGoogleApiKeys();
@@ -198,6 +201,7 @@ export async function* streamGemini(
     lastFinishReason = undefined;
     const startOutput = cumOutput;
     const startThoughts = cumThoughts;
+    let metered: MeteredRequest | undefined;
 
     /*
      * A FAILED CONTINUATION MUST NOT TAKE THE ANSWER WITH IT.
@@ -230,6 +234,7 @@ export async function* streamGemini(
           tools: geminiToolsPayload({ model, functionDeclarations, webSearch, isFinalRound }),
         });
 
+        metered = meter?.begin({ wire: "gemini", round: step, body: requestBody });
         const res = transport
           ? await transport.request({ url, body: requestBody, signal })
           : await requestGeminiStream({
@@ -269,6 +274,7 @@ export async function* streamGemini(
                 sawAnswer = true;
                 answerTail = (answerTail + ev.text).slice(-4096);
               }
+              if (ev.type === "text" || ev.type === "reasoning" || ev.type === "tool") metered?.firstToken();
               yield ev;
             }
           }
@@ -314,6 +320,12 @@ export async function* streamGemini(
           cumThoughts += state.usage.thoughts;
           cumTotal += state.usage.total;
         }
+        metered?.end(
+          state.sawUsage
+            ? { input: state.usage.input, output: state.usage.output, cacheRead: state.usage.cached, reasoning: state.usage.thoughts }
+            : null
+        );
+        metered = undefined;
 
         if (tools && hasTools && !isFinalRound && state.functionCalls.length > 0) {
           // Gemini's `functionCall.id` is optional. When it gave one, that is
@@ -391,6 +403,7 @@ export async function* streamGemini(
         break;
       }
     } catch (error) {
+      metered?.end(null, { ok: false });
       // A Stop is not a failed continuation: it must end the turn as stopped,
       // not be kept as a finished answer (memory and artifacts written).
       if (continuations === 0 || signal?.aborted) throw error;

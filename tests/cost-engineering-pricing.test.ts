@@ -65,3 +65,9 @@ test("the batch discount never applies to per-call tool fees", () => {
   assert.ok(fees > 0);
   assert.ok(Math.abs(batched.costUsd - ((interactive.costUsd - fees) / 2 + fees)) < 1e-12);
 });
+
+test("an Anthropic id the rate table does not list still gets Sonnet 5.5's 0.05x cache read", () => {
+  // e.g. a dated alias: the hand rule, not the generated table, prices it.
+  const alias = { ...model("claude-sonnet-5-5"), id: "anthropic:claude-sonnet-5-5-alias", providerModel: "claude-sonnet-5-5-alias" };
+  assert.ok(Math.abs(tokenRate(alias).cacheRead - 0.1) < 1e-9);
+});

@@ -12,6 +12,63 @@
  */
 
 import type { ModelInfo } from "@/lib/models";
+import type { PromptCacheMode } from "@/types/llm";
+
+/**
+ * How a request should cache on GPT-5.6+, given the caller's `PromptCacheMode`.
+ *
+ * Implicit mode is not free: OpenAI places a breakpoint at the end of the
+ * latest eligible message and bills what it writes there at 1.25x input
+ * (prompt-caching guide, GPT-5.6 and later). A one-off utility prompt that
+ * nobody re-sends paid that premium on its whole prompt. Explicit mode with no
+ * breakpoint "does not use prompt caching or create cache writes", so:
+ *
+ * - "none": explicit mode, no breakpoints: billed as plain input.
+ * - "short" without a tool loop: explicit mode, the system breakpoint only
+ *   (the memory extractor's chunks share one system prompt).
+ * - otherwise (chat turns, "short" tool loops): implicit, so each tool round
+ *   and each turn writes at its newest message and the next one reads it.
+ */
+export function openAIModernCachePlan(
+  promptCache: PromptCacheMode | undefined,
+  hasTools: boolean
+): { mode: "implicit" | "explicit"; systemBreakpoint: boolean } {
+  if (promptCache === "none") return { mode: "explicit", systemBreakpoint: false };
+  if (promptCache === "short" && !hasTools) return { mode: "explicit", systemBreakpoint: true };
+  return { mode: "implicit", systemBreakpoint: true };
+}
+
+/**
+ * The newest user message's per-generation tail (`MessageForModel.volatileTail`),
+ * taken off so a GPT-5.6+ adapter can send it as its own item AFTER the
+ * message. Returns the history unchanged and `tail: null` when the newest user
+ * message has none, or its content no longer ends with it.
+ *
+ * Why: GPT-5.6+ reads a cache entry only at a lookup boundary, and the
+ * boundaries a later turn checks are the ENDS of its earlier user messages.
+ * The entry this turn writes at the end of its newest message has to be the
+ * one the next turn finds at the end of the same message, which it is only
+ * when that message carries the same bytes in both: the person's own words,
+ * not this generation's context.
+ */
+export function detachNewestVolatileTail<T extends { role: string; content: string; volatileTail?: string }>(
+  history: readonly T[]
+): { history: T[]; tail: string | null } {
+  for (let i = history.length - 1; i >= 0; i -= 1) {
+    const message = history[i];
+    if (message.role !== "USER") continue;
+    const tail = message.volatileTail;
+    if (!tail || !message.content.endsWith(tail)) return { history: [...history], tail: null };
+    let own = message.content.slice(0, message.content.length - tail.length);
+    // `appendVolatileTail` joins with exactly "\n\n"; strip only that, so the
+    // person's own trailing whitespace is sent as the next turn will send it.
+    if (own.endsWith("\n\n")) own = own.slice(0, -2);
+    const out = [...history];
+    out[i] = { ...message, content: own, volatileTail: undefined };
+    return { history: out, tail };
+  }
+  return { history: [...history], tail: null };
+}
 
 /** GPT-5.6 and later — explicit breakpoints + prompt_cache_options.ttl. */
 export function isOpenAIModernCacheModel(model: ModelInfo): boolean {
@@ -59,7 +116,9 @@ export function openAIPromptCacheRetention(model: ModelInfo): "24h" | "in_memory
  */
 export function openAIPromptCacheRequestFields(
   model: ModelInfo,
-  cacheKey: string | undefined
+  cacheKey: string | undefined,
+  /** The caller's cache mode and whether the request runs a tool loop (`openAIModernCachePlan`). */
+  opts: { promptCache?: PromptCacheMode; hasTools?: boolean } = {}
 ): Record<string, unknown> {
   if (model.provider !== "openai") return {};
   const out: Record<string, unknown> = {};
@@ -71,7 +130,7 @@ export function openAIPromptCacheRequestFields(
     // implicit: OpenAI still places a breakpoint on the latest message; we also
     // mark the system prefix explicitly so static instructions stay warm.
     // ttl "30m" is the only supported value (and the default).
-    out.prompt_cache_options = { mode: "implicit", ttl: "30m" };
+    out.prompt_cache_options = { mode: openAIModernCachePlan(opts.promptCache, !!opts.hasTools).mode, ttl: "30m" };
   } else {
     const retention = openAIPromptCacheRetention(model);
     if (retention) out.prompt_cache_retention = retention;
@@ -97,7 +156,9 @@ export function openAIExplicitCacheBreakpoint(
  */
 export function openAISystemMessage(
   model: ModelInfo,
-  system: string
+  system: string,
+  /** False for a request that must write nothing ("none": `openAIModernCachePlan`). */
+  breakpoint = true
 ): {
   role: "system";
   content:
@@ -106,6 +167,7 @@ export function openAISystemMessage(
 } {
   const bp = openAIExplicitCacheBreakpoint(model);
   if (!bp) return { role: "system", content: system };
+  if (!breakpoint) return { role: "system", content: [{ type: "text", text: system }] };
   return {
     role: "system",
     content: [
@@ -125,10 +187,13 @@ export function openAISystemMessage(
  */
 export function openAIResponsesSystemInput(
   model: ModelInfo,
-  system: string
+  system: string,
+  /** False for a request that must write nothing ("none": `openAIModernCachePlan`). */
+  breakpoint = true
 ): Array<Record<string, unknown>> | null {
   const bp = openAIExplicitCacheBreakpoint(model);
   if (!bp) return null;
+  if (!breakpoint) return [{ type: "message", role: "system", content: [{ type: "input_text", text: system }] }];
   return [
     {
       type: "message",
@@ -177,9 +242,10 @@ export function compatPromptCacheRequestFields(
 export function responsesPromptCacheRequestFields(
   model: ModelInfo,
   host: "openai" | "xai" | "meta",
-  cacheKey: string | undefined
+  cacheKey: string | undefined,
+  opts: { promptCache?: PromptCacheMode; hasTools?: boolean } = {}
 ): Record<string, unknown> {
-  if (host === "openai") return openAIPromptCacheRequestFields(model, cacheKey);
+  if (host === "openai") return openAIPromptCacheRequestFields(model, cacheKey, opts);
   if (!cacheKey) return {};
   if (host === "meta") return { prompt_cache_key: cacheKey, prompt_cache_retention: "24h" };
   return { prompt_cache_key: cacheKey };

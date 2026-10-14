@@ -21,6 +21,8 @@ import type { ReasoningEffort } from "@/types/chat";
 import type { AdapterRequest } from "@/lib/llm/types";
 import { undispatchedToolsetReason } from "@/lib/llm/tool-round";
 import type { LlmEvent, MessageForModel, PromptCacheMode } from "@/types/llm";
+import { logSync } from "@/lib/logger";
+import { createRequestMeter, type RequestRole } from "@/lib/llm/request-meter";
 
 export { clampMaxTokens };
 
@@ -70,6 +72,14 @@ export async function* streamChat(opts: {
   systemStablePrefix?: string;
   /** Explicit prompt-cache markers (`PromptCacheMode`). Omit for chat turns. */
   promptCache?: PromptCacheMode;
+  /**
+   * What these requests are for, on each `llm.request` record
+   * (src/lib/llm/request-meter.ts). Default: "chat", or "utility" for a
+   * `promptCache: "none"` prompt and "auxiliary" for a "short" one.
+   */
+  role?: RequestRole;
+  /** The caller's attempt number for this generation (1 = first); > 1 marks the records as retries. */
+  attempt?: number;
   /** Premium "fast mode": Anthropic speed:"fast" / OpenAI service_tier:"priority".
    *  The route only sets this on models that support it. */
   fastMode?: FastMode;
@@ -177,6 +187,24 @@ export async function* streamChat(opts: {
   const tools: ToolLoop | undefined =
     opts.toolLoop ??
     (toolset && toolset.tools.length > 0 ? createToolLoop(toolset, { maxRounds: opts.maxToolRounds }) : undefined);
+  /*
+   * One `llm.request` line per provider request: tokens by bucket, cost,
+   * latency and the prefix diagnostic, never content. The per-turn trace and
+   * the ledger see only the turn's total; this is what makes a cache miss
+   * visible as the request it happened on.
+   */
+  const meter = createRequestMeter(
+    {
+      model,
+      role: opts.role ?? (opts.promptCache === "none" ? "utility" : opts.promptCache === "short" ? "auxiliary" : "chat"),
+      cacheKey,
+      attempt: opts.attempt,
+      fastMode,
+      requestId: opts.requestContext?.requestId ?? null,
+      generationId: opts.requestContext?.generationId ?? null,
+    },
+    { sink: (record) => logSync("info", "llm.request", { ...record }) }
+  );
   try {
     // `webSearch` picks Meta's transport: its search exists only on Responses.
     const adapter = providerAdapterFor(model, proMode, { webSearch: !!webSearch });
@@ -195,13 +223,13 @@ export async function* streamChat(opts: {
           // yield* streamAnthropic(request)
           yield* streamAnthropic(
             model, system, history, maxTokens, signal, reasoningEffort, webSearch,
-            tools, dynamicContext, fastMode === true, opts.systemStablePrefix, undefined, opts.promptCache
+            tools, dynamicContext, fastMode === true, opts.systemStablePrefix, undefined, opts.promptCache, meter
           );
           return;
         case "gemini-native":
           yield* streamGemini(
             model, system, history, maxTokens, signal, reasoningEffort, webSearch,
-            tools, dynamicContext, opts.requestContext
+            tools, dynamicContext, opts.requestContext, undefined, meter
           );
           return;
         case "openai-responses":
@@ -209,7 +237,7 @@ export async function* streamChat(opts: {
           // /chat/completions; this branch preserves their reasoning controls.
           yield* streamOpenAIResponses(
             model, system, history, maxTokens, signal, reasoningEffort, webSearch,
-            tools, dynamicContext, cacheKey, fastMode, proMode
+            tools, dynamicContext, cacheKey, fastMode, proMode, undefined, opts.promptCache, meter
           );
           return;
         case "xai-responses":
@@ -217,7 +245,7 @@ export async function* streamChat(opts: {
           // adapter as openai-responses, pointed at xAI's base URL.
           yield* streamOpenAIResponses(
             model, system, history, maxTokens, signal, reasoningEffort, webSearch,
-            tools, dynamicContext, cacheKey, fastMode, proMode
+            tools, dynamicContext, cacheKey, fastMode, proMode, undefined, opts.promptCache, meter
           );
           return;
         case "meta-responses":
@@ -225,13 +253,13 @@ export async function* streamChat(opts: {
           // tool on its Responses API (the only surface that has it).
           yield* streamOpenAIResponses(
             model, system, history, maxTokens, signal, reasoningEffort, webSearch,
-            tools, dynamicContext, cacheKey, fastMode, proMode
+            tools, dynamicContext, cacheKey, fastMode, proMode, undefined, opts.promptCache, meter
           );
           return;
         case "openai-compatible":
           yield* streamOpenAICompat(
             model, system, history, maxTokens, signal, reasoningEffort, webSearch,
-            tools, dynamicContext, cacheKey, fastMode, undefined, opts.promptCache
+            tools, dynamicContext, cacheKey, fastMode, undefined, opts.promptCache, meter
           );
           return;
         default: {
