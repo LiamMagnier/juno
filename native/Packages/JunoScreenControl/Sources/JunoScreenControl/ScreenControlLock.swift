@@ -470,8 +470,14 @@ public actor ScreenControlLock {
         if !file.heartbeat(holderID: processHolderID, app: latest.appName) {
             // Someone removed our record (it went stale while the Mac slept):
             // take it back if it is free, so the other copy still sees us.
-            if case .acquired = file.acquire(holderID: processHolderID, kind: latest.kind.fileKind, title: latest.title, app: latest.appName) {
+            switch file.acquire(holderID: processHolderID, kind: latest.kind.fileKind, title: latest.title, app: latest.appName) {
+            case .acquired:
                 holdingFile = true
+            case .held, .contended:
+                // Another copy of the app holds the desktop now. Driving on
+                // would put two agents on one screen: stop here.
+                holdingFile = false
+                stopAll(reason: .handedOff)
             }
         }
     }

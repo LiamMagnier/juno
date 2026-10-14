@@ -91,6 +91,33 @@ final class DesktopLockFileTests: XCTestCase {
         }
     }
 
+    func testTwoCopiesJudgingTheSameStaleRecordCannotBothHoldTheLock() throws {
+        let clock = Clock()
+        let url = directory.appendingPathComponent("desktop.lock")
+        // A dead process left a record behind.
+        let dead = DesktopLockFile(url: url, pid: 9, staleAfter: 15, now: { clock.now }, isAlive: { _ in true })
+        guard case .acquired = dead.acquire(holderID: "old", kind: .workTask, title: "") else { return XCTFail() }
+
+        final class Once: @unchecked Sendable { var fired = false; var copyB: DesktopLockFile?; var outcomeB: DesktopLockFile.Outcome? }
+        let once = Once()
+        once.copyB = DesktopLockFile(url: url, pid: 2, staleAfter: 15, now: { clock.now }, isAlive: { $0 == 2 })
+        // Copy A is judging the dead record when copy B takes the lock over.
+        let copyA = DesktopLockFile(url: url, pid: 1, staleAfter: 15, now: { clock.now }, isAlive: { pid in
+            if pid == 9, !once.fired {
+                once.fired = true
+                once.outcomeB = once.copyB?.acquire(holderID: "b", kind: .codeSession, title: "")
+            }
+            return pid == 1 || pid == 2
+        })
+        let outcomeA = copyA.acquire(holderID: "a", kind: .codeSession, title: "")
+        guard case .acquired = once.outcomeB else { return XCTFail("copy B took the stale lock: \(String(describing: once.outcomeB))") }
+        guard case let .held(by: holder) = outcomeA else { return XCTFail("both copies hold the desktop: \(outcomeA)") }
+        XCTAssertEqual(holder.holderId, "b")
+        XCTAssertEqual(copyA.read()?.holderId, "b", "copy B's fresh record survived copy A's cleanup")
+        let leftovers = try FileManager.default.contentsOfDirectory(atPath: directory.path).filter { $0 != "desktop.lock" }
+        XCTAssertEqual(leftovers, [], "no temp files are left behind")
+    }
+
     func testTheRecordIsTheContractShape() throws {
         let clock = Clock()
         let alive = Alive()

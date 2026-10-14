@@ -485,6 +485,28 @@ final class ScreenControlHardeningTests: XCTestCase {
         }
     }
 
+    func testWithdrawingAFinanceAppsAllowanceInSettingsEndsItsLiveGrant() async throws {
+        let fixture = ScreenFixture()
+        let broker = RunningApp(pid: 105, bundleID: "com.robinhood.desktop", name: "Robinhood")
+        fixture.environment.apps.append(broker)
+        fixture.environment.windowsByPID[broker.pid] = [
+            WindowInfo(windowID: 105, pid: broker.pid, bundleID: broker.bundleID, appName: broker.name,
+                       title: "Portfolio", frame: ScreenFixture.windowFrame, displayID: 1),
+        ]
+        fixture.capture.setImage(makeImage(width: 1600, height: 1200), window: 105, frame: ScreenFixture.windowFrame)
+        await fixture.service.setPreferences(ScreenControlPreferences(allowedFinance: ["com.robinhood.desktop"]))
+        try await fixture.start(grant: ["com.robinhood.desktop"])
+        let look = ScreenAction(kind: .screenshot, app: "com.robinhood.desktop")
+        _ = try await fixture.service.prepare(sessionID: "s1", action: look)
+        await fixture.service.setPreferences(ScreenControlPreferences())
+        do {
+            _ = try await fixture.service.prepare(sessionID: "s1", action: look)
+            XCTFail("looked at a finance app after its allowance was withdrawn")
+        } catch let error as ScreenControlError {
+            XCTAssertEqual(error, .appRefused(app: "Robinhood", reason: "finance and trading apps are denied unless you allow them in Settings"))
+        }
+    }
+
     // MARK: Juno Work under the same Esc
 
     func testEscapeStopsAWorkTaskThatHoldsTheLock() async throws {

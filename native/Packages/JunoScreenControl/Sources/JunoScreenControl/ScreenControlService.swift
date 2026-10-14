@@ -127,6 +127,10 @@ public actor ScreenControlService: ScreenControlling {
     struct Session {
         var id: String
         var title: String
+        /// Granted apps that are finance apps (by bundle or App Store
+        /// category, as known when granted): withdrawing the Settings
+        /// allowance ends their grants on the next action.
+        var financeGrants: Set<String> = []
         var kind: ScreenControlHolder.Kind
         var claim: ScreenControlClaim?
         /// Bumped by every activation, deactivation and stop. A suspended
@@ -654,6 +658,7 @@ public actor ScreenControlService: ScreenControlling {
                 grantedAt: now
             )
             sessions[sessionID]?.grants.add(grant)
+            if offer.category.deniedByDefault { sessions[sessionID]?.financeGrants.insert(bundleID.lowercased()) }
             granted.append(grant)
         }
         if sessions[sessionID]?.target == nil, let first = granted.first,
@@ -721,6 +726,14 @@ public actor ScreenControlService: ScreenControlling {
         let key = bundleID.lowercased()
         if preferences.denied.contains(key) {
             throw ScreenControlError.appRefused(app: appName, reason: "you denied it in Settings")
+        }
+        if (category.deniedByDefault || sessions[sessionID]?.financeGrants.contains(key) == true),
+           !preferences.allowedFinance.contains(key)
+        {
+            throw ScreenControlError.appRefused(
+                app: appName,
+                reason: "finance and trading apps are denied unless you allow them in Settings"
+            )
         }
         if let lowered = preferences.loweredTiers[key] { grant.tier = min(grant.tier, lowered) }
         return grant

@@ -194,7 +194,7 @@ public final class ComputerBridgeServer: @unchecked Sendable {
                 let line = buffer[buffer.startIndex..<newline]
                 buffer.removeSubrange(buffer.startIndex...newline)
                 guard !line.allSatisfy({ $0 == 0x20 || $0 == 0x0D }) else { continue }
-                let response = refusal.map { Self.refuse(Data(line), text: $0) } ?? answer(Data(line))
+                let response = refusal.map { Self.refuse(Data(line), text: $0) } ?? answer(Data(line), client: client)
                 guard var data = try? JSONEncoder().encode(response) else { return }
                 data.append(0x0A)
                 let written = data.withUnsafeBytes { raw -> Int in
@@ -213,7 +213,7 @@ public final class ComputerBridgeServer: @unchecked Sendable {
 
     /// Decodes, checks the token, and waits for the handler on this thread
     /// (a connection thread of our own, never the cooperative pool).
-    private func answer(_ line: Data) -> CodeV2.ComputerBridgeResponse {
+    private func answer(_ line: Data, client: Int32) -> CodeV2.ComputerBridgeResponse {
         guard let request = try? JSONDecoder().decode(CodeV2.ComputerBridgeRequest.self, from: line) else {
             let id = (try? JSONSerialization.jsonObject(with: line) as? [String: Any])?["id"] as? String ?? "?"
             return CodeV2.ComputerBridgeResponse(id: id, ok: false, text: "The request was not a computer bridge request.")
@@ -231,12 +231,31 @@ public final class ComputerBridgeServer: @unchecked Sendable {
         let box = ResponseBox()
         let semaphore = DispatchSemaphore(value: 0)
         let handler = self.handler
-        Task.detached {
+        let task = Task.detached {
             box.value = await handler.handle(request)
             semaphore.signal()
         }
-        semaphore.wait()
+        // The env server hangs up when the agent cancels the call: cancel the
+        // handler too, so an action whose card is still open never runs on a
+        // late Yes. The handler still finishes (and is waited for) here.
+        while semaphore.wait(timeout: .now() + .milliseconds(200)) == .timedOut {
+            if Self.peerHungUp(client) {
+                task.cancel()
+                semaphore.wait()
+                break
+            }
+        }
         return box.value ?? CodeV2.ComputerBridgeResponse(id: request.id, ok: false, text: "The screen action did not finish.")
+    }
+
+    /// Whether the other end closed the connection. Data waiting to be read
+    /// (the next request) is not a hang-up.
+    static func peerHungUp(_ fd: Int32) -> Bool {
+        var probe = pollfd(fd: fd, events: Int16(POLLIN), revents: 0)
+        guard poll(&probe, 1, 0) > 0 else { return false }
+        if probe.revents & Int16(POLLHUP | POLLERR | POLLNVAL) != 0 { return true }
+        var byte: UInt8 = 0
+        return recv(fd, &byte, 1, MSG_PEEK | MSG_DONTWAIT) == 0
     }
 
     /// A refusal for one request line, answering its id when it has one.

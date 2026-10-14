@@ -321,6 +321,70 @@ final class ComputerBridgeTests: XCTestCase {
         XCTAssertEqual(action(full)?.point.map { $0.x > 0 && $0.x < 1 }, true, "the ring lands inside the frame")
     }
 
+    func testAClickInAnotherCoordinateConventionThanTheFrameLandsWhereItPoints() async throws {
+        let approver = Approver()
+        let bridge = executor(approver: approver)
+        // The frame is in pixels; the click comes in normalized_1000.
+        let shot = await bridge.handle(call("c1", .init(action: .screenshot, app: "com.apple.TextEdit")))
+        XCTAssertTrue(shot.ok, shot.text)
+        let click = await bridge.handle(call("c2", .init(action: .click, x: 500, y: 500, coordinateSpace: .normalized1000), mode: .full))
+        XCTAssertTrue(click.ok, click.text)
+        let point = try XCTUnwrap(action(click)?.point)
+        XCTAssertEqual(point.x, 0.5, accuracy: 0.01, "the middle of the frame, not pixel 500")
+        XCTAssertEqual(point.y, 0.5, accuracy: 0.01)
+        // And back: a pixel click after a normalized frame.
+        let normalizedShot = await bridge.handle(call("c3", .init(action: .screenshot, app: "com.apple.TextEdit", coordinateSpace: .normalized1000)))
+        XCTAssertTrue(normalizedShot.ok, normalizedShot.text)
+        let size = try XCTUnwrap(action(shot)?.frameSize)
+        let pixel = await bridge.handle(call("c4", .init(action: .click, x: Double(size.width) / 4, y: Double(size.height) / 4), mode: .full))
+        XCTAssertTrue(pixel.ok, pixel.text)
+        let quarter = try XCTUnwrap(action(pixel)?.point)
+        XCTAssertEqual(quarter.x, 0.25, accuracy: 0.01)
+        XCTAssertEqual(quarter.y, 0.25, accuracy: 0.01)
+    }
+
+    /// Holds every card open until told to answer Yes.
+    private final class LateApprover: ComputerBridgeApproving, @unchecked Sendable {
+        private let lock = NSLock()
+        private var _waiting = false
+        private var _answer = false
+        var waiting: Bool { lock.withLock { _waiting } }
+        func answerYes() { lock.withLock { _answer = true } }
+        func permissionsMissing(_ status: ComputerUsePermissionStatus, sessionID: String) async {}
+        func allowAgent(sessionID: String, title: String) async -> Bool { true }
+        func approve(_ detail: ScreenApprovalDetail, summary: String, sessionID: String) async -> Bool {
+            if case .grants = detail { return true }
+            lock.withLock { _waiting = true }
+            while !lock.withLock({ _answer }) { try? await Task.sleep(for: .milliseconds(5)) }
+            return true
+        }
+    }
+
+    func testACallCancelledWhileItsCardWaitsDoesNotRunOnALateYes() async throws {
+        let approver = LateApprover()
+        let bridge = ComputerBridgeExecutor(
+            service: makeTestScreenService(),
+            approver: approver,
+            permissions: { .init(screenRecording: .granted, accessibility: .granted) },
+            settings: { .init(connectedAgentsEnabled: true) },
+            screenshots: ComputerScreenshotStore(root: directory.appendingPathComponent("shots")),
+            lockHolder: { nil },
+            now: { Date(timeIntervalSince1970: 1_791_489_600) },
+            busyWait: .zero
+        )
+        let shot = await bridge.handle(call("c1", .init(action: .screenshot, app: "com.apple.TextEdit")))
+        XCTAssertTrue(shot.ok, shot.text)
+        let click = call("c2", .init(action: .click, x: 10, y: 10), mode: .ask)
+        let pending = Task { [bridge] in await bridge.handle(click) }
+        while !approver.waiting { try await Task.sleep(for: .milliseconds(5)) }
+        pending.cancel()
+        approver.answerYes()
+        let answer = await pending.value
+        XCTAssertFalse(answer.ok, answer.text)
+        XCTAssertTrue(answer.text.contains("cancelled this action before it ran"), answer.text)
+        XCTAssertEqual(action(answer)?.status, .interrupted)
+    }
+
     func testInvalidArgumentsAreSentencesNotCrashes() async {
         let bridge = executor(approver: Approver())
         let response = await bridge.handle(call("c1", .init(action: .drag, x: 1, y: 1)))
@@ -362,6 +426,49 @@ final class ComputerBridgeTests: XCTestCase {
             received.append(contentsOf: chunk[0..<n])
         }
         return received.split(separator: 0x0A).map { String(decoding: $0, as: UTF8.self) }
+    }
+
+    /// Waits until it is cancelled (or five seconds pass), and says which.
+    private final class WaitsForCancel: ComputerBridgeHandling, @unchecked Sendable {
+        private let lock = NSLock()
+        private var _started = false
+        private var _cancelled = false
+        var started: Bool { lock.withLock { _started } }
+        var cancelled: Bool { lock.withLock { _cancelled } }
+        func handle(_ request: CodeV2.ComputerBridgeRequest) async -> CodeV2.ComputerBridgeResponse {
+            lock.withLock { _started = true }
+            for _ in 0..<500 where !Task.isCancelled { try? await Task.sleep(for: .milliseconds(10)) }
+            lock.withLock { _cancelled = Task.isCancelled }
+            return .init(id: request.id, ok: true, text: "done")
+        }
+    }
+
+    func testAnAgentThatHangsUpCancelsItsCall() throws {
+        let handler = WaitsForCancel()
+        let server = ComputerBridgeServer(directory: directory.appendingPathComponent("h"), handler: handler)
+        try server.start()
+        defer { server.stop() }
+        server.allowPeer(getpid())
+        let token = try String(contentsOf: server.tokenURL, encoding: .utf8)
+        let fd = Darwin.socket(AF_UNIX, SOCK_STREAM, 0)
+        var address = sockaddr_un()
+        address.sun_family = sa_family_t(AF_UNIX)
+        withUnsafeMutableBytes(of: &address.sun_path) { raw in
+            raw.copyBytes(from: server.socketURL.path.utf8)
+            raw[server.socketURL.path.utf8.count] = 0
+        }
+        let connected = withUnsafePointer(to: &address) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
+        }
+        XCTAssertEqual(connected, 0)
+        let line = Data((#"{"id":"1","type":"computer.call","token":"\#(token)","sessionId":"s1","args":{"action":"click","x":1,"y":1}}"# + "\n").utf8)
+        _ = line.withUnsafeBytes { write(fd, $0.baseAddress, $0.count) }
+        let deadline = Date().addingTimeInterval(3)
+        while !handler.started, Date() < deadline { usleep(5_000) }
+        XCTAssertTrue(handler.started)
+        close(fd) // the env server destroys the socket when the agent cancels
+        while !handler.cancelled, Date() < deadline { usleep(5_000) }
+        XCTAssertTrue(handler.cancelled, "the call was cancelled when the agent hung up, not left to run")
     }
 
     func testTheSocketAnswersEachLineAndRefusesAStaleToken() throws {

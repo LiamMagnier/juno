@@ -153,7 +153,7 @@ public struct DesktopLockFile: Sendable {
                 return .acquired(renewed)
             }
             if let existing, !isStale(existing) { return .held(by: existing) }
-            try? FileManager.default.removeItem(at: url)
+            removeIfStill(existing)
         }
         if let holder = read() { return .held(by: holder) }
         return .contended
@@ -174,13 +174,29 @@ public struct DesktopLockFile: Sendable {
         return (try? FileManager.default.removeItem(at: url)) != nil
     }
 
+    /// Written whole to a private temp file, then linked into place: `link`
+    /// fails if the lock exists, and a reader never sees a half-written
+    /// record (an empty file read as stale let a second copy take the lock).
     private func createExclusively(_ record: Record) -> Bool {
         guard let data = try? JSONEncoder().encode(record) else { return false }
-        let fd = open(url.path, O_WRONLY | O_CREAT | O_EXCL, 0o600)
-        guard fd >= 0 else { return false }
-        defer { close(fd) }
-        let written = data.withUnsafeBytes { write(fd, $0.baseAddress, $0.count) }
-        return written == data.count
+        let tmp = url.deletingLastPathComponent().appendingPathComponent("desktop.lock.\(pid).\(UUID().uuidString).new")
+        guard FileManager.default.createFile(atPath: tmp.path, contents: data, attributes: [.posixPermissions: 0o600]) else {
+            return false
+        }
+        defer { unlink(tmp.path) }
+        return link(tmp.path, url.path) == 0
+    }
+
+    /// Removes the stale record that was read, and only that one. Two copies
+    /// judging the same stale record would otherwise both delete, the second
+    /// deleting the first's fresh lock. The file is moved aside atomically;
+    /// if what was moved is not the record judged stale, it goes back.
+    private func removeIfStill(_ judged: Record?) {
+        let aside = url.deletingLastPathComponent().appendingPathComponent("desktop.lock.\(pid).\(UUID().uuidString).stale")
+        guard rename(url.path, aside.path) == 0 else { return }
+        defer { unlink(aside.path) }
+        let taken = (try? Data(contentsOf: aside)).flatMap { try? JSONDecoder().decode(Record.self, from: $0) }
+        if taken != judged { _ = link(aside.path, url.path) }
     }
 
     private func writeAtomically(_ record: Record) {

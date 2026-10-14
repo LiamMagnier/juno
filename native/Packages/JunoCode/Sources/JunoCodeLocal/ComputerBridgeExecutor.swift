@@ -83,6 +83,10 @@ public actor ComputerBridgeExecutor: ComputerBridgeHandling {
     private let busyWait: Duration
     private let busyPoll: Duration
     private var frames: [String: PixelSize] = [:]
+    /// The coordinate convention each latest frame was captured under. The
+    /// service maps a point through the frame it has, so a call in another
+    /// convention than that frame's is converted to the frame's, not to its own.
+    private var frameConventions: [String: CoordinateConvention] = [:]
     private var startedSessions: Set<String> = []
     private var allowedSessions: Set<String> = []
     /// When a stopped session last called (it was refused).
@@ -154,6 +158,7 @@ public actor ComputerBridgeExecutor: ComputerBridgeHandling {
         allowedSessions.remove(screenID)
         stoppedCalls[screenID] = nil
         frames[screenID] = nil
+        frameConventions[screenID] = nil
     }
 
     // MARK: - Status
@@ -227,9 +232,14 @@ public actor ComputerBridgeExecutor: ComputerBridgeHandling {
                 amount: args.amount, seconds: args.seconds, region: args.region, path: args.path,
                 coordinateSpace: args.coordinateSpace == .normalized1000 ? .normalized1000 : .pixels
             )
-            let plan = try PortableComputerVocabulary.plan(call, frameConvention: budget.coordinates, frameSize: frames[screenID])
+            let plan = try PortableComputerVocabulary.plan(
+                call, frameConvention: frameConventions[screenID] ?? budget.coordinates, frameSize: frames[screenID]
+            )
             let (result, prepared, target) = try await run(plan, mode: mode, screenID: screenID, callID: callID)
-            if let size = result.frame?.size { frames[screenID] = size }
+            if let size = result.frame?.size {
+                frames[screenID] = size
+                frameConventions[screenID] = budget.coordinates
+            }
             return (await success(request, callID: callID, action: args.action, started: started, result: result, prepared: prepared, target: target, screenID: screenID), false)
         } catch let refusal as Refusal {
             return (failure(request, callID: callID, action: args.action, started: started, text: refusal.text, status: refusal.status, endsTurn: refusal.endsTurn, app: args.app), false)
@@ -340,6 +350,14 @@ public actor ComputerBridgeExecutor: ComputerBridgeHandling {
         }
     }
 
+    /// The agent gave up on this call (the env server hung up, so the bridge
+    /// cancelled it) while its card waited: a late Yes must not run it.
+    private func abandonIfCancelled(_ prepared: PreparedScreenAction, screenID: String) async throws {
+        guard Task.isCancelled else { return }
+        await service.discard(sessionID: screenID, preparedID: prepared.id)
+        throw Refusal(text: "The agent cancelled this action before it ran, so it was not done.", status: .interrupted)
+    }
+
     private func run(
         _ plan: PortableComputerPlan, mode: CodeV2.RuntimeMode, screenID: String, callID: String
     ) async throws -> (ScreenActionResult, PreparedScreenAction?, String?) {
@@ -347,6 +365,7 @@ public actor ComputerBridgeExecutor: ComputerBridgeHandling {
         case let .screen(action):
             let prepared = try await service.prepare(sessionID: screenID, action: action)
             try await authorize(prepared, mode: mode, screenID: screenID)
+            try await abandonIfCancelled(prepared, screenID: screenID)
             let result = try await service.perform(sessionID: screenID, prepared: prepared, toolCallID: callID, attachFrame: true)
             return (result, prepared, prepared.target.element)
         case let .openApp(app):
@@ -369,11 +388,13 @@ public actor ComputerBridgeExecutor: ComputerBridgeHandling {
             }
             let prepared = try await service.prepare(sessionID: screenID, action: ScreenAction(kind: .leftClick, app: app, element: id))
             try await authorize(prepared, mode: mode, screenID: screenID)
+            try await abandonIfCancelled(prepared, screenID: screenID)
             let result = try await service.perform(sessionID: screenID, prepared: prepared, toolCallID: callID, attachFrame: true)
             return (result, prepared, prepared.target.element)
         case let .menu(app, path):
             let prepared = try await service.prepareMenu(sessionID: screenID, app: app, path: path)
             try await authorize(prepared, mode: mode, screenID: screenID)
+            try await abandonIfCancelled(prepared, screenID: screenID)
             let result = try await service.performMenu(sessionID: screenID, prepared: prepared, path: path, toolCallID: callID)
             return (result, prepared, path.joined(separator: " › "))
         }
