@@ -9,6 +9,9 @@ import { legacyChatToolset, type ToolRoundRunner } from "@/lib/llm/tool-round";
 import type { AdapterRequest, ProviderTransport } from "@/lib/llm/types";
 import type { McpToolset } from "@/lib/mcp";
 import { MODELS, type ModelInfo } from "@/lib/models";
+import { GenerationAccumulator } from "@/lib/chat/stream-accumulator";
+import { buildUsage } from "@/lib/chat-usage";
+import { estimateCostUsd } from "@/lib/pricing";
 import type { BatchResult, ToolCallInput } from "@/lib/tools/dispatch";
 import { wrapUntrusted } from "@/lib/untrusted-content";
 import type { LlmEvent } from "@/types/llm";
@@ -269,6 +272,40 @@ test("usage is yielded after every request, cumulative and stamped with its roun
       [1, 2500, 20],
     ],
   );
+});
+
+test("a fully cached response preserves zero fresh input through the loop and chat receipt", async () => {
+  const { events } = await run(request(), [[
+    { type: "message_start", message: { usage: { input_tokens: 0, cache_read_input_tokens: 90_000 } } },
+    start(0, { type: "text", text: "" }),
+    textDelta(0, "Done."),
+    stop(0),
+    messageDelta("end_turn", 100),
+  ]], null);
+  const usages = ofType(events, "usage");
+  assert.ok(usages.length > 0);
+  assert.ok(usages.every((usage) => usage.input === 0), "an explicit zero must survive provider adaptation");
+
+  const acc = new GenerationAccumulator();
+  for (const event of events) acc.apply(event);
+  const usage = buildUsage(OPUS, acc.rawUsage({ promptChars: 360_000 }));
+  assert.equal(usage.billedPromptTokens, 0);
+  assert.equal(usage.totalInput, 90_000);
+  assert.equal(usage.output, 100);
+  assert.equal(usage.cost, estimateCostUsd(OPUS, { input: 0, output: 100, cacheRead: 90_000 }));
+});
+
+test("a response without any prompt usage still estimates its missing input", async () => {
+  const { events } = await run(request(), [[
+    start(0, { type: "text", text: "" }),
+    textDelta(0, "Done."),
+    stop(0),
+    messageDelta("end_turn", 100),
+  ]], null);
+  assert.ok(ofType(events, "usage").every((usage) => usage.input === undefined));
+  const acc = new GenerationAccumulator();
+  for (const event of events) acc.apply(event);
+  assert.equal(buildUsage(OPUS, acc.rawUsage({ promptChars: 4_000 })).billedPromptTokens, 1_000);
 });
 
 test("a failed call goes back with is_error (RC-14)", async () => {

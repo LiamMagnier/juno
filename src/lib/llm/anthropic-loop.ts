@@ -531,7 +531,9 @@ function usageEvent(acc: AnthropicRoundUsage, round: number, fast?: boolean): Ll
   // total − input as missing output and inflate completion tokens.
   return {
     type: "usage",
-    input: acc.input || undefined,
+    // Cache buckets establish a fully cached prompt's zero fresh input. With
+    // no prompt usage at all, retain the caller's missing-input fallback.
+    input: acc.input > 0 || acc.cacheRead > 0 || acc.cacheWrite > 0 ? acc.input : undefined,
     output: acc.output || undefined,
     cacheRead: acc.cacheRead || undefined,
     cacheWrite: acc.cacheWrite || undefined,
