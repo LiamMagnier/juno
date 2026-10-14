@@ -625,6 +625,21 @@ export async function* streamOpenAIResponses(
           index: call.index,
         };
       }
+      // The running total before tools run (as anthropic.ts does): a Stop or a
+      // provider error in a later round keeps the rounds already billed, and
+      // the turn's spend guard sees them as they happen. Cumulative and
+      // monotonic, merged with preferHigher; the final event still follows.
+      if (sawUsage) {
+        yield {
+          type: "usage",
+          input: cumInput,
+          output: cumOutput,
+          reasoning: cumReasoning || undefined,
+          total: cumTotal || undefined,
+          cacheRead: cumCached || undefined,
+          cacheWrite: cumCacheWrite || undefined,
+        };
+      }
       const batch = yield* tools.run(inputs, signal, { nextIsFinal: round + 1 === maxRounds - 1 });
       const imageTurns: InputItem[] = [];
       for (const result of batch) {
