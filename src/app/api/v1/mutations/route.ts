@@ -8,6 +8,8 @@ import { mutationRequestSchema, type MutationOperation } from "@/lib/sync-mutati
 import { WORKSPACE_CONFIG_VERSION, writeWorkspaceConfig } from "@/lib/projects/workspace-config";
 import { serializeWorkDefaults, WORK_DEFAULTS_VERSION } from "@/lib/work/projects";
 import { guardedMemoryWrite, type MemoryEntryKind } from "@/lib/memory-suppression";
+import { factFields } from "@/lib/memory-lifecycle";
+import { summaryInvalidations } from "@/lib/memory-summary-changes";
 import { artifactsFollowConversationProject, keepArtifactAttachments } from "@/lib/artifact-follow";
 
 export const runtime = "nodejs";
@@ -275,7 +277,7 @@ async function executeMutation(tx: Tx, accountId: string, baseRevision: number, 
     }
     case "memory.update": {
       await requireRevision(tx, accountId, "memory", op.entityId, baseRevision);
-      const existing = await tx.memoryEntry.findFirst({ where: { id: op.entityId, userId: accountId }, select: { kind: true } });
+      const existing = await tx.memoryEntry.findFirst({ where: { id: op.entityId, userId: accountId }, select: { kind: true, projectId: true } });
       if (!existing) throw new ApiV1Error("not_found", 404, "The memory was not found.");
       const outcome = await guardedMemoryWrite({
         content: op.content,
@@ -283,16 +285,35 @@ async function executeMutation(tx: Tx, accountId: string, baseRevision: number, 
         // block edits to itself.
         kind: existing.kind as MemoryEntryKind,
         loadSuppressions: () => accountSuppressions(tx, accountId),
+        // The same derived fields the web edit rewrites: a stale `normalized`
+        // breaks duplicate and contradiction detection, and a vector of the old
+        // sentence would keep retrieving it for the old meaning.
         write: (content) =>
-          tx.memoryEntry.updateMany({ where: { id: op.entityId, userId: accountId }, data: { content, source: "MANUAL" } }),
+          tx.memoryEntry.updateMany({
+            where: { id: op.entityId, userId: accountId },
+            data: {
+              content,
+              source: "MANUAL",
+              normalized: factFields(content, { source: "MANUAL" }).normalized,
+              embedding: [],
+              embeddingModel: null,
+              lastVerifiedAt: new Date(),
+            },
+          }),
       });
       if (!requireWritten(outcome).count) throw new ApiV1Error("not_found", 404, "The memory was not found.");
+      // A summary quoting the old text must not be injected until rebuilt.
+      if (existing.kind === "FACT") await Promise.all(summaryInvalidations(tx, accountId, [existing.projectId]));
       return { entity: { id: op.entityId, revision: await nextRevision(tx, accountId, "memory", op.entityId) } };
     }
     case "memory.delete": {
       await requireRevision(tx, accountId, "memory", op.entityId, baseRevision);
+      const doomed = await tx.memoryEntry.findFirst({ where: { id: op.entityId, userId: accountId }, select: { kind: true, projectId: true } });
       const deleted = await tx.memoryEntry.deleteMany({ where: { id: op.entityId, userId: accountId } });
       if (!deleted.count) throw new ApiV1Error("not_found", 404, "The memory was not found.");
+      await tx.memoryEntry.updateMany({ where: { userId: accountId, supersededById: op.entityId }, data: { supersededById: null } });
+      // A summary quoting the deleted fact must not be injected again.
+      if (doomed?.kind === "FACT") await Promise.all(summaryInvalidations(tx, accountId, [doomed.projectId]));
       return { entity: { id: op.entityId, revision: await nextRevision(tx, accountId, "memory", op.entityId), deleted: true } };
     }
     case "settings.update": {

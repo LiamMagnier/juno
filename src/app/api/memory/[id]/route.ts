@@ -6,6 +6,7 @@ import { embedMemoryEntries, getSuppressions, refreshSummaries } from "@/lib/mem
 import { screenMemoryWrite } from "@/lib/memory-suppression";
 import { MEMORY_CATEGORIES } from "@/lib/memory-categories";
 import { factFields } from "@/lib/memory-lifecycle";
+import { summaryInvalidations } from "@/lib/memory-summary-changes";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
@@ -72,7 +73,15 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     await prisma.$transaction([
       prisma.memoryEntry.updateMany({
         where: { id, userId: user.id },
-        data: { status: "suppressed", reason: `You asked ${PRODUCT_NAME} to forget this.`, supersededById: null },
+        data: {
+          status: "suppressed",
+          reason: `You asked ${PRODUCT_NAME} to forget this.`,
+          supersededById: null,
+          // The text stays as the trail; a semantic copy of what the person
+          // asked to be forgotten has no reader and no reason to stay.
+          embedding: [],
+          embeddingModel: null,
+        },
       }),
       // The block-list entry is what survives a re-extraction of the original
       // chat. Without it, forgetting only lasts until the next backfill.
@@ -132,40 +141,48 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     }
   }
 
-  await prisma.memoryEntry.update({
-    where: { id, userId: user.id },
-    data: {
-      ...(body.content !== undefined ? { content: body.content } : {}),
-      ...(body.category !== undefined ? { category: body.category } : {}),
-      ...(body.projectId !== undefined ? { projectId: body.projectId ?? null } : {}),
-      ...(fields
-        ? {
-            normalized: fields.normalized,
-            confidence: fields.confidence,
-            expiresAt: fields.expiresAt,
-            source: "MANUAL" as const,
-            // An edited fact is believed again: a row the user just rewrote is
-            // not still "replaced by something newer".
-            status: "active",
-            reason: null,
-            supersededById: null,
-            // The old vector describes the old sentence. Cleared in the same
-            // write, so if re-embedding below fails the row is honestly
-            // lexical rather than semantically wrong.
-            embedding: [],
-            embeddingModel: null,
-            // Rewritten now, so said now.
-            observedAt: new Date(),
-            ...(body.category === undefined ? { category: fields.category } : {}),
-          }
-        : {}),
-      lastVerifiedAt: new Date(),
-    },
-  });
+  const moved = body.projectId !== undefined && (body.projectId ?? null) !== existing.projectId;
+  // The summary of the scope this fact was in quotes its old text (or, moved
+  // into a project, quotes it to every chat outside that project). Out of
+  // service with the write, not after a rebuild that may never land.
+  const staleSummaries =
+    existing.kind === "FACT" && (rewritten || moved) ? summaryInvalidations(prisma, user.id, [existing.projectId]) : [];
+  await prisma.$transaction([
+    ...staleSummaries,
+    prisma.memoryEntry.update({
+      where: { id, userId: user.id },
+      data: {
+        ...(body.content !== undefined ? { content: body.content } : {}),
+        ...(body.category !== undefined ? { category: body.category } : {}),
+        ...(body.projectId !== undefined ? { projectId: body.projectId ?? null } : {}),
+        ...(fields
+          ? {
+              normalized: fields.normalized,
+              confidence: fields.confidence,
+              expiresAt: fields.expiresAt,
+              source: "MANUAL" as const,
+              // An edited fact is believed again: a row the user just rewrote is
+              // not still "replaced by something newer".
+              status: "active",
+              reason: null,
+              supersededById: null,
+              // The old vector describes the old sentence. Cleared in the same
+              // write, so if re-embedding below fails the row is honestly
+              // lexical rather than semantically wrong.
+              embedding: [],
+              embeddingModel: null,
+              // Rewritten now, so said now.
+              observedAt: new Date(),
+              ...(body.category === undefined ? { category: fields.category } : {}),
+            }
+          : {}),
+        lastVerifiedAt: new Date(),
+      },
+    }),
+  ]);
   if (rewritten) {
     await embedMemoryEntries({ userId: user.id, rows: [{ id, content: body.content! }] });
   }
-  const moved = body.projectId !== undefined && (body.projectId ?? null) !== existing.projectId;
   if (rewritten || moved) {
     refreshSummariesLater(user.id, [existing.projectId, moved ? body.projectId ?? null : existing.projectId]);
   }
@@ -188,6 +205,8 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
       data: { supersededById: null },
     }),
     prisma.memoryEntry.delete({ where: { id, userId: user.id } }),
+    // A summary that quotes the deleted fact must not be injected again.
+    ...(existing.kind === "FACT" ? summaryInvalidations(prisma, user.id, [existing.projectId]) : []),
   ]);
   refreshSummariesLater(user.id, [existing.projectId]);
   return NextResponse.json({ ok: true });

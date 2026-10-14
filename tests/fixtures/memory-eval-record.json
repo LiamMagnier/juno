@@ -114,7 +114,7 @@
     }
   },
   "current": {
-    "recordedAt": "2026-10-04",
+    "recordedAt": "2026-10-14",
     "results": {
       "lifecycle": {
         "live": {
@@ -122,7 +122,7 @@
           "stale": 0,
           "forgotten": 0,
           "precision": 1,
-          "retrieval": 0.8181818181818182,
+          "retrieval": 0.9090909090909091,
           "leaks": 0,
           "contradictionResolution": 1
         },
@@ -131,7 +131,7 @@
           "stale": 0,
           "forgotten": 0,
           "precision": 1,
-          "retrieval": 0.8181818181818182,
+          "retrieval": 0.9090909090909091,
           "leaks": 0,
           "contradictionResolution": 1
         }
@@ -179,10 +179,15 @@
       },
       "tokens": {
         "questions": 23,
-        "mean": 163.3,
-        "p95": 318,
-        "max": 320,
-        "budget": 600
+        "mean": 56.3,
+        "p95": 100,
+        "max": 135,
+        "budget": 600,
+        "precision": 0.2,
+        "factsMean": 4.3,
+        "offTopicQuestions": 25,
+        "offTopicMean": 22.6,
+        "offTopicFactsMean": 2
       },
       "recall": {
         "messages": 20016,
@@ -194,10 +199,10 @@
       }
     },
     "latency": {
-      "factSelectP50Ms": 2.29,
-      "factSelectP95Ms": 2.84,
+      "factSelectP50Ms": 2.42,
+      "factSelectP95Ms": 2.92,
       "recallRankP50Ms": 0.01,
-      "recallRankP95Ms": 0.14
+      "recallRankP95Ms": 0.16
     }
   }
 }
