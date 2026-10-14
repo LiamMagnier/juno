@@ -661,6 +661,9 @@ export async function forgetStatements(
         status: "suppressed",
         reason: `You asked ${PRODUCT_NAME} to forget this in a conversation.`,
         supersededById: null,
+        // The text stays as the trail; its vector has no reader once retired.
+        embedding: [],
+        embeddingModel: null,
       },
     }),
     ...fresh.map((statement) =>

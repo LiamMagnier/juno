@@ -60,6 +60,9 @@ export function selectCodingMemories(
     now,
     budgetTokens: CODING_MEMORY_BUDGET_TOKENS,
     limit: CODING_MEMORY_LIMIT,
+    // Already narrowed to how the user works, which applies to every task;
+    // the task text only orders them.
+    relevanceGate: false,
   });
   return selected.map((memory) => ({ id: memory.id, content: memory.content }));
 }

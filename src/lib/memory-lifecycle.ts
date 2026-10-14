@@ -1334,6 +1334,48 @@ function fuseRelevance(
   return fused;
 }
 
+/**
+ * How far above the field a fact's cosine must sit to count as about this
+ * message, in standard deviations of that turn's own cosines.
+ *
+ * Relative, not an absolute floor, because an absolute one means nothing
+ * across embedding models: unrelated text scores near 0.1 in one space and
+ * near 0.5 in another. What every space shares is that a fact the message is
+ * about stands out from the facts it is not about. When nothing stands out,
+ * nothing was asked about.
+ */
+const SEMANTIC_STANDOUT_SD = 1;
+/** At most this many facts may be admitted on semantic evidence alone. */
+const SEMANTIC_STANDOUT_LIMIT = 6;
+
+/**
+ * Facts that shape HOW to answer anything — who the person is and how they
+ * like to be answered — rather than what a particular answer says. A few of
+ * these ride along without evidence of relevance; nothing else does.
+ */
+const AMBIENT_CATEGORIES: ReadonlySet<string> = new Set(["identity", "preferences"]);
+/** The ambient allowance: a handful of facts, never a profile dump. */
+const AMBIENT_LIMIT = 3;
+
+/** Entry ids whose cosine stands out from this turn's field — see SEMANTIC_STANDOUT_SD. */
+function semanticStandouts(weighed: readonly { id: string; cosine: number | null }[]): Set<string> {
+  const scored = weighed.filter((w): w is { id: string; cosine: number } => w.cosine !== null && w.cosine > 0);
+  if (scored.length === 0) return new Set();
+  // One fact with a vector has no field to stand out from; a positive cosine
+  // is all the evidence there can be.
+  if (scored.length === 1) return new Set([scored[0].id]);
+  const mean = scored.reduce((sum, w) => sum + w.cosine, 0) / scored.length;
+  const sd = Math.sqrt(scored.reduce((sum, w) => sum + (w.cosine - mean) ** 2, 0) / scored.length);
+  if (sd < 1e-6) return new Set();
+  return new Set(
+    scored
+      .filter((w) => w.cosine >= mean + SEMANTIC_STANDOUT_SD * sd)
+      .sort((a, b) => b.cosine - a.cosine || (a.id < b.id ? -1 : 1))
+      .slice(0, SEMANTIC_STANDOUT_LIMIT)
+      .map((w) => w.id)
+  );
+}
+
 export interface SelectedMemory {
   id: string;
   content: string;
@@ -1355,7 +1397,7 @@ export interface RetrievalResult {
   /** Eligible entries that lost to the budget — the receipt says how many. */
   droppedForBudget: number;
   /** Why the rest never made it, so a degraded memory page can say so. */
-  excluded: { inactive: number; expired: number; outOfScope: number };
+  excluded: { inactive: number; expired: number; outOfScope: number; irrelevant: number };
 }
 
 /**
@@ -1403,6 +1445,12 @@ export function selectMemoriesForContext(
      * quality change and never a shape change.
      */
     semantic?: SemanticEvidence;
+    /**
+     * false: rank and fill the budget without asking whether each fact is
+     * about the query. For a reader that has already narrowed the candidates
+     * to what applies to every request it serves (Code's working habits).
+     */
+    relevanceGate?: boolean;
   } = {}
 ): RetrievalResult {
   const now = opts.now ?? new Date();
@@ -1411,7 +1459,7 @@ export function selectMemoriesForContext(
   const limit = opts.limit ?? 24;
   const queryTokens = new Set(opts.query ? significantTokens(opts.query) : []);
 
-  const excluded = { inactive: 0, expired: 0, outOfScope: 0 };
+  const excluded = { inactive: 0, expired: 0, outOfScope: 0, irrelevant: 0 };
   const weighed: {
     entry: LifecycleEntry;
     tokens: number;
@@ -1462,6 +1510,19 @@ export function selectMemoriesForContext(
   const hasSemantic = weighed.some((w) => (w.cosine ?? 0) > 0);
   const fused = hasSemantic ? fuseRelevance(weighed) : null;
 
+  // THE RELEVANCE GATE. A turn that answers a message (a `query` was given)
+  // is handed the facts that message is about — a shared word, or a vector
+  // that stands out from the rest — plus a small ambient allowance of
+  // identity and preferences. Without it, selection filled the token budget
+  // on every turn: "what is 17 × 23?" carried the person's job, their trip
+  // and their thesis citation style, under a heading that told the model
+  // these notes were relevant to the message. No query means no message to
+  // judge against (a profile read, an attachment-only message), and the old
+  // fill-the-budget behaviour; so does a caller that opts out.
+  const gated = opts.relevanceGate !== false && !!opts.query?.trim();
+  const standouts = gated && hasSemantic ? semanticStandouts(weighed) : new Set<string>();
+  const evidenced = new Set(weighed.filter((w) => w.lexical > 0 || standouts.has(w.id)).map((w) => w.id));
+
   const eligible = weighed.map((w) => {
     const relevance = fused ? fused.get(w.id) ?? 0 : w.lexical;
     // Fresh means recently SAID. A fact re-read out of last year's chats was
@@ -1484,7 +1545,19 @@ export function selectMemoriesForContext(
   const selected: SelectedMemory[] = [];
   let usedTokens = 0;
   let droppedForBudget = 0;
+  let ambient = 0;
   for (const candidate of eligible) {
+    if (gated && !evidenced.has(candidate.entry.id)) {
+      const mayRideAlong =
+        ambient < AMBIENT_LIMIT && candidate.entry.category !== null && AMBIENT_CATEGORIES.has(candidate.entry.category);
+      if (!mayRideAlong) {
+        excluded.irrelevant++;
+        continue;
+      }
+      // Counted when considered, not when it fits: the allowance is a
+      // ceiling on facts without evidence, not a quota to fill.
+      ambient++;
+    }
     // Keep scanning past an entry that doesn't fit rather than stopping: one
     // long fact near the top should not cost every short one behind it its
     // place. The order of what *is* taken still follows the ranking.

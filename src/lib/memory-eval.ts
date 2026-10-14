@@ -25,7 +25,10 @@
  *                  not change the row count. Does the obsolete prose reach the
  *                  next turn? Measured under the count-only gate the product
  *                  had before 2026-10-04 and under the lifecycle gate.
- *   tokens         memory tokens injected per question (mean / p95 / max).
+ *   tokens         memory tokens injected per question (mean / p95 / max), how
+ *                  many of the injected facts the question needed (precision),
+ *                  and what an off-topic message ("what is 17 × 23?") is
+ *                  handed — which should be next to nothing.
  *   latency        fact selection over a 2,000-fact account; session recall
  *                  ranking over a synthetic 20,000-message account.
  *   recall         session recall quality: does a question about an old
@@ -116,7 +119,21 @@ export interface SuiteResult {
     rebuildMissedCountOnly: number;
     rebuildMissedLifecycle: number;
   };
-  tokens: { questions: number; mean: number; p95: number; max: number; budget: number };
+  tokens: {
+    questions: number;
+    mean: number;
+    p95: number;
+    max: number;
+    budget: number;
+    /** Injected facts the question expected, over all injected facts. */
+    precision: number;
+    /** Facts injected per on-topic question, on average. */
+    factsMean: number;
+    /** The same history asked things it has nothing to say about. */
+    offTopicQuestions: number;
+    offTopicMean: number;
+    offTopicFactsMean: number;
+  };
   latency: { factSelectP50Ms: number; factSelectP95Ms: number; recallRankP50Ms: number; recallRankP95Ms: number };
   recall: {
     messages: number;
@@ -465,29 +482,59 @@ async function summarySection(): Promise<SuiteResult["summary"]> {
   };
 }
 
+/**
+ * Messages no remembered fact helps answer. Asked of every history: whatever
+ * memory injects for these is pure overhead on that turn.
+ */
+const OFF_TOPIC_QUERIES = [
+  "What is 17 times 23?",
+  "Explain how a hash map handles collisions.",
+  "Translate 'good morning' into Spanish.",
+  "Summarise the causes of the French Revolution in three bullets.",
+  "thanks!",
+];
+
 async function tokensSection(): Promise<SuiteResult["tokens"]> {
   const reader = recordedReader(MEMORY_BENCH_SCENARIOS);
   const used: number[] = [];
+  const offTopic: number[] = [];
+  let injected = 0;
+  let needed = 0;
+  let offTopicFacts = 0;
   for (const scenario of MEMORY_BENCH_SCENARIOS) {
     const { store, now } = await replayScenario(scenario, { setting: "live", config: PRODUCT, reader });
-    for (const probe of scenario.probes) {
-      const { usedTokens } = selectMemoriesForContext(store.entries, {
-        query: probe.query,
-        projectId: probe.projectId,
-        isolateProjectMemory: probe.projectId !== null,
+    const select = (query: string, projectId: string | null) =>
+      selectMemoriesForContext(store.entries, {
+        query,
+        projectId,
+        isolateProjectMemory: projectId !== null,
         now,
         budgetTokens: DEFAULT_MEMORY_TOKEN_BUDGET,
       });
+    for (const probe of scenario.probes) {
+      const { usedTokens, selected } = select(probe.query, probe.projectId);
       used.push(usedTokens);
+      injected += selected.length;
+      needed += selected.filter((memory) => probe.expect.some((fact) => factMatches(memory.content, fact))).length;
+    }
+    for (const query of OFF_TOPIC_QUERIES) {
+      const { usedTokens, selected } = select(query, null);
+      offTopic.push(usedTokens);
+      offTopicFacts += selected.length;
     }
   }
-  const mean = used.reduce((a, b) => a + b, 0) / Math.max(1, used.length);
+  const mean = (values: number[]) => values.reduce((a, b) => a + b, 0) / Math.max(1, values.length);
   return {
     questions: used.length,
-    mean: round(mean, 1),
+    mean: round(mean(used), 1),
     p95: quantile(used, 0.95),
     max: Math.max(...used),
     budget: DEFAULT_MEMORY_TOKEN_BUDGET,
+    precision: injected ? round(needed / injected, 3) : 1,
+    factsMean: round(injected / Math.max(1, used.length), 1),
+    offTopicQuestions: offTopic.length,
+    offTopicMean: round(mean(offTopic), 1),
+    offTopicFactsMean: round(offTopicFacts / Math.max(1, offTopic.length), 1),
   };
 }
 

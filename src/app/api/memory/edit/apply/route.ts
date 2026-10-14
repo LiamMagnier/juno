@@ -6,6 +6,7 @@ import { consolidateWithFallback, embedMemoryEntries, getMemorySummary, refreshS
 import { checkProjectAccess } from "@/lib/project-collaboration";
 import { guardedMemoryWrite, type MemoryWriteRefusal } from "@/lib/memory-suppression";
 import { factFields } from "@/lib/memory-lifecycle";
+import { summaryInvalidations } from "@/lib/memory-summary-changes";
 import { MEMORY_ENTRY_SELECT, serializeMemoryEntry } from "@/lib/memory-view";
 
 export const runtime = "nodejs";
@@ -182,7 +183,11 @@ export async function POST(req: Request) {
             refusal = outcome;
             throw new SuppressedWrite();
           }
-          if (row.kind === "FACT") touched.push({ id: op.id, content: outcome.content });
+          if (row.kind === "FACT") {
+            touched.push({ id: op.id, content: outcome.content });
+            // The summary quoting the old text is out of service until rebuilt.
+            await Promise.all(summaryInvalidations(tx, user.id, [row.projectId]));
+          }
           inverse.push({ op: "update", id: op.id, before: op.content, content: row.content });
         } else {
           const row = byId.get(op.id)!;
@@ -193,6 +198,7 @@ export async function POST(req: Request) {
             data: { supersededById: null },
           });
           await tx.memoryEntry.delete({ where: { id: op.id, userId: user.id } });
+          if (row.kind === "FACT") await Promise.all(summaryInvalidations(tx, user.id, [row.projectId]));
           // Undoing the removal must restore the same KIND (a deleted suppression
           // comes back as a suppression, not as a fact).
           inverse.push({
