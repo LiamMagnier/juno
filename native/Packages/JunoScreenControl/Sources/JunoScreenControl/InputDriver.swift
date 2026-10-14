@@ -245,13 +245,23 @@ public struct InputDriver: Sendable {
         try await sink.post([.keyUp(keyCode: stroke.keyCode, modifiers: stroke.modifiers, text: [])], to: target)
     }
 
+    /// The settle time after a typed Return before the next chunk.
+    static let afterReturn: Duration = .milliseconds(150)
+
     /// Types `text`, paced, in units no longer than ``chunkUnits``.
     @discardableResult
     public func type(_ text: String, target: EventTarget) async throws -> TypingPlan {
         let plan = Self.plan(text, layout: layout)
         for (index, unit) in plan.units.enumerated() {
             if index > 0 {
-                try await pause(.milliseconds(8))
+                // A Return can open a window or bring an app forward, which takes
+                // longer than a chunk's gap: the checkpoint below must see it
+                // before the next chunk is sent.
+                if case .named(.return) = plan.units[index - 1] {
+                    try await pause(Self.afterReturn)
+                } else {
+                    try await pause(.milliseconds(8))
+                }
                 // A stop between two chunks ends the typing there.
                 try await checkpoint()
             }

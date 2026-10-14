@@ -1454,13 +1454,21 @@ public actor ScreenControlService: ScreenControlling {
         }
         let mode = sessions[sessionID]?.mode ?? .background
         let eventTarget: EventTarget = mode == .takeover ? .global : .process(pid: target.pid)
+        let frontPID = mode == .takeover ? (await deps.environment.frontmostApp())?.pid : nil
         let driver = InputDriver(
             layout: await deps.layout(),
             sink: deps.sink,
             pause: deps.pause,
             // Between every chunk, repeat and drag step: Esc or Stop ends the
-            // action where it is.
-            checkpoint: { [self] in try await self.verifyLive(sessionID, generation) }
+            // action where it is. In takeover the keys go to whatever is in
+            // front, so an action that brought another app forward (a Return
+            // that opened something) ends there too, before its next chunk.
+            checkpoint: { [self] in
+                try await self.verifyLive(sessionID, generation)
+                if let frontPID, let front = await self.deps.environment.frontmostApp(), front.pid != frontPID {
+                    throw ScreenControlError.screenChanged
+                }
+            }
         )
         try checkpoint(sessionID, generation)
 
@@ -1575,6 +1583,13 @@ public actor ScreenControlService: ScreenControlling {
         var keyCategory = target.category
         var keyBundle = target.bundleID
         if mode == .takeover {
+            if action.kind == .key || action.kind == .holdKey, let chord = action.text,
+               ConsequentialActionFloor.switchesApps(chord)
+            {
+                throw ScreenControlError.tierTooLow(
+                    "Juno does not switch apps with a shortcut while it drives your screen. Click the app's window instead."
+                )
+            }
             if var front = await deps.environment.frontmostApp() {
                 try checkpoint(sessionID, generation)
                 if deps.environment.ownProcess.owns(pid: front.pid, bundleID: front.bundleID) {
@@ -1613,6 +1628,21 @@ public actor ScreenControlService: ScreenControlling {
                     }
                     if hit.category == .refused { throw ScreenControlError.systemPromptInFront(app: hit.appName) }
                     if hit.bundleID.lowercased() != prepared.target.bundleID.lowercased() {
+                        throw ScreenControlError.screenChanged
+                    }
+                    // The same app, but maybe another control under the point now
+                    // (the page moved on while the card waited): one the floor
+                    // would have asked about was never approved.
+                    if prepared.floor == nil,
+                       ConsequentialActionFloor.evaluate(
+                           action: action,
+                           category: hit.category,
+                           targetTexts: hit.pressTexts,
+                           typedSinceLastCommit: false,
+                           bundleID: hit.bundleID,
+                           looksLikeCredential: deps.looksLikeCredential
+                       ) != nil
+                    {
                         throw ScreenControlError.screenChanged
                     }
                 }

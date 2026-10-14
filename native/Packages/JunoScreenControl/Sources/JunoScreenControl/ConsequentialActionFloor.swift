@@ -4,7 +4,7 @@ import Foundation
 public enum FloorReason: Hashable, Codable, Sendable {
     /// The target's title says it sends, buys, deletes, signs in…: the word.
     case consequentialControl(String)
-    /// Return after typing in a mail, messaging or social app.
+    /// Return in a mail, messaging or social app.
     case sendsMessage
     /// Anything beyond looking in a finance app.
     case financeApp
@@ -13,6 +13,9 @@ public enum FloorReason: Hashable, Codable, Sendable {
     /// A change in System Settings: privacy switches, login items, sharing
     /// — what the Mac and its apps are allowed to do.
     case systemSettings
+    /// Typed text that tabs to another control and then presses it with
+    /// Space or Return: the control it presses was never looked at.
+    case pressAfterTab
 
     /// The sentence on the approval card.
     public var explanation: String {
@@ -27,6 +30,8 @@ public enum FloorReason: Hashable, Codable, Sendable {
             "This text looks like a password or key. Juno asks before typing it anywhere."
         case .systemSettings:
             "System Settings decides what your Mac and its apps may do, so Juno always asks before changing anything there, even in Full access."
+        case .pressAfterTab:
+            "This text moves to another control with Tab and then presses it, so Juno always asks, even in Full access."
         }
     }
 }
@@ -85,9 +90,35 @@ public enum ConsequentialActionFloor {
         }
     }
 
+    /// Chords that bring another app forward or open a launcher: ⌘Space,
+    /// ⌘⌥Space, ⌘Tab, ⌘`, ⌃ plus an arrow (Spaces, Mission Control). In
+    /// takeover, keys go to whatever is in front, so these would let the
+    /// next keys land in an app that was never granted or checked.
+    public static func switchesApps(_ chord: String) -> Bool {
+        guard let parsed = try? KeyChord.parse(chord) else { return false }
+        switch parsed.key {
+        case .named(.space), .named(.tab):
+            return parsed.modifiers.contains(.command)
+        case .character("`"):
+            return parsed.modifiers.contains(.command)
+        case .named(.left), .named(.right), .named(.up), .named(.down):
+            return parsed.modifiers.contains(.control)
+        default:
+            return false
+        }
+    }
+
     /// Whether typed text contains a line break, which is the Return key.
     static func containsReturn(_ text: String) -> Bool {
         text.unicodeScalars.contains { $0 == "\n" || $0 == "\r" }
+    }
+
+    /// Whether typed text presses a control it tabbed to: a Tab (typed as the
+    /// Tab key) followed later by a Space or a line break. The floor is read
+    /// against the control focused before typing, which is not that one.
+    static func pressesAfterTab(_ text: String) -> Bool {
+        guard let tab = text.unicodeScalars.firstIndex(of: "\t") else { return false }
+        return text.unicodeScalars[tab...].contains { $0 == " " || $0 == "\n" || $0 == "\r" }
     }
 
     /// The floor for one action against its resolved target, or nil.
@@ -99,7 +130,8 @@ public enum ConsequentialActionFloor {
     ///     description and value-free label; for Return, also the window's
     ///     default button title.
     ///   - typedSinceLastCommit: whether this session typed into this app
-    ///     since its last Return.
+    ///     since its last Return. Return in a messaging app now always asks,
+    ///     so this no longer changes the answer; kept for callers.
     ///   - looksLikeCredential: the credential test for typed text.
     ///   - bundleID: the app acted in, for the apps whose every change asks.
     public static func evaluate(
@@ -129,6 +161,7 @@ public enum ConsequentialActionFloor {
         case .type:
             guard let text = action.text else { return nil }
             if looksLikeCredential(text) { return .credentialText }
+            if pressesAfterTab(text) { return .pressAfterTab }
             // A line break is typed as the Return key: in a messaging app it
             // sends, and in a dialog it presses the default button. Typing
             // "hi\n" must ask exactly as typing "hi" then pressing Return does.
@@ -142,7 +175,10 @@ public enum ConsequentialActionFloor {
             // as surely as pressing it.
             guard let chord = action.text else { return nil }
             if commits(chord) {
-                if category == .messaging, typedSinceLastCommit { return .sendsMessage }
+                // Always in a messaging app: a draft can be there already, or
+                // typed with key presses or pasted, none of which this session
+                // records as typing.
+                if category == .messaging { return .sendsMessage }
                 if let word = matchingWord(in: targetTexts) { return .consequentialControl(word) }
                 return nil
             }

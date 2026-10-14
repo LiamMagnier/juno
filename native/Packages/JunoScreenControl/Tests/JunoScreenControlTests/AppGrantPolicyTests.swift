@@ -116,7 +116,8 @@ final class AppGrantPolicyTests: XCTestCase {
             ConsequentialActionFloor.evaluate(action: ScreenAction(kind: .key, text: "cmd+Return"), category: .messaging, targetTexts: [], typedSinceLastCommit: true),
             .sendsMessage
         )
-        XCTAssertNil(ConsequentialActionFloor.evaluate(action: enter, category: .messaging, targetTexts: [], typedSinceLastCommit: false))
+        // A draft already there, or typed with key presses or pasted, sends too.
+        XCTAssertEqual(ConsequentialActionFloor.evaluate(action: enter, category: .messaging, targetTexts: [], typedSinceLastCommit: false), .sendsMessage)
         XCTAssertNil(ConsequentialActionFloor.evaluate(action: enter, category: .other, targetTexts: [], typedSinceLastCommit: true))
         // Return presses the window's default button: its title counts.
         XCTAssertEqual(
@@ -262,5 +263,30 @@ final class AppGrantPolicyTests: XCTestCase {
         let field = AXElementInfo(id: "e1", role: "AXTextField", subrole: "AXSecureTextField", value: "hunter2", frame: ScreenRect(x: 0, y: 0, width: 1, height: 1))
         XCTAssertTrue(field.isSecure)
         XCTAssertNil(field.value, "a secure field's value is never kept")
+    }
+
+    func testTypedTextThatTabsToAControlAndPressesItAlwaysAsks() {
+        for text in ["\t ", "\t\n", "name\tx\r", "a\t\tb c"] {
+            XCTAssertEqual(
+                ConsequentialActionFloor.evaluate(action: ScreenAction(kind: .type, text: text), category: .other, targetTexts: [], typedSinceLastCommit: false),
+                .pressAfterTab,
+                "\(text.debugDescription) presses a control nobody looked at"
+            )
+        }
+        for text in ["a\tb", "first last", "line\nnext", "no tabs here"] {
+            XCTAssertNil(
+                ConsequentialActionFloor.evaluate(action: ScreenAction(kind: .type, text: text), category: .other, targetTexts: [], typedSinceLastCommit: false),
+                text.debugDescription
+            )
+        }
+    }
+
+    func testShortcutsThatSwitchAppsAreRecognised() {
+        for chord in ["cmd+space", "cmd+option+space", "cmd+tab", "cmd+shift+tab", "cmd+`", "ctrl+left", "ctrl+up"] {
+            XCTAssertTrue(ConsequentialActionFloor.switchesApps(chord), chord)
+        }
+        for chord in ["space", "tab", "shift+tab", "cmd+s", "left", "option+left", "cmd+left"] {
+            XCTAssertFalse(ConsequentialActionFloor.switchesApps(chord), chord)
+        }
     }
 }

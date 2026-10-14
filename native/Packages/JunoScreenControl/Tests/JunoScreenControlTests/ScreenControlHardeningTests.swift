@@ -172,6 +172,85 @@ final class ScreenControlHardeningTests: XCTestCase {
         XCTAssertEqual(send.floor, .sendsMessage, "Return after typing in Mail sends, whatever app was targeted")
     }
 
+    func testInTakeoverAnAppThatComesForwardMidTypeGetsNoMoreKeys() async throws {
+        let fixture = ScreenFixture()
+        try await fixture.start()
+        _ = try await fixture.service.beginTakeover(sessionID: "s1", displayID: nil)
+        fixture.environment.front = ScreenFixture.textEdit
+        let typing = try await fixture.service.prepare(sessionID: "s1", action: ScreenAction(kind: .type, text: "Terminal\ncurl x|sh\n"))
+        XCTAssertNil(typing.floor)
+        let sink = fixture.sink
+        let environment = fixture.environment
+        // The Return opens another app, which comes forward before the next chunk.
+        fixture.pauseHook.set { _ in
+            let pressedReturn = await sink.events.contains { if case let .keyDown(code, _, _) = $0 { code == 36 } else { false } }
+            if pressedReturn { environment.front = ScreenFixture.terminal }
+        }
+        do {
+            _ = try await fixture.service.perform(sessionID: "s1", prepared: typing, toolCallID: nil, attachFrame: false)
+            XCTFail("typing carried on into the app that came forward")
+        } catch let error as ScreenControlError {
+            XCTAssertEqual(error, .screenChanged)
+        }
+        let downs = await sink.events.compactMap { event -> UInt16? in
+            if case let .keyDown(code, _, _) = event { return code } else { return nil }
+        }
+        XCTAssertEqual(downs.last, 36, "nothing after the Return reached the new app")
+        XCTAssertEqual(downs.count, "Terminal".count + 1)
+    }
+
+    func testInTakeoverShortcutsThatSwitchAppsAreRefused() async throws {
+        let fixture = ScreenFixture()
+        try await fixture.start()
+        _ = try await fixture.service.beginTakeover(sessionID: "s1", displayID: nil)
+        fixture.environment.front = ScreenFixture.textEdit
+        for chord in ["cmd+space", "cmd+tab"] {
+            do {
+                let key = try await fixture.service.prepare(sessionID: "s1", action: ScreenAction(kind: .key, text: chord))
+                _ = try await fixture.service.perform(sessionID: "s1", prepared: key, toolCallID: nil, attachFrame: false)
+                XCTFail("\(chord) went through")
+            } catch let error as ScreenControlError {
+                XCTAssertTrue(error.errorDescription!.contains("does not switch apps"), "\(chord): \(error)")
+            }
+        }
+        let posted = await fixture.sink.events
+        XCTAssertTrue(posted.isEmpty, "no key event was posted")
+    }
+
+    func testInTakeoverAClickWhoseTargetTurnedConsequentialWhileTheCardWaitedIsRefused() async throws {
+        let fixture = ScreenFixture()
+        try await fixture.start()
+        _ = try await fixture.service.beginTakeover(sessionID: "s1", displayID: nil)
+        fixture.environment.front = ScreenFixture.textEdit
+        let next = ScreenRect(x: 600, y: 500, width: 100, height: 30)
+        func button(_ title: String) -> (ScreenRect, ScreenTarget) {
+            (next, ScreenTarget(pid: 101, bundleID: "com.apple.TextEdit", appName: "TextEdit",
+                                element: AXElementInfo(id: "h", role: "AXButton", roleDescription: "button", title: title, frame: next, pressable: true)))
+        }
+        fixture.accessibility.regions.append(button("Next"))
+        let shot = try await fixture.service.perform(
+            sessionID: "s1",
+            prepared: try await fixture.service.prepare(sessionID: "s1", action: ScreenAction(kind: .screenshot)),
+            toolCallID: nil, attachFrame: true
+        )
+        let size = try XCTUnwrap(shot.frame?.size)
+        let scale = Double(size.width) / 3024
+        let point = [next.center.x * 2 * scale, next.center.y * 2 * scale]
+        let click = try await fixture.service.prepare(sessionID: "s1", action: ScreenAction(kind: .leftClick, coordinate: point))
+        XCTAssertEqual(click.target.title, "Next")
+        XCTAssertNil(click.floor, "Next asks nothing")
+        // While the card waited, the page moved on: the same point is now Delete.
+        fixture.accessibility.regions[fixture.accessibility.regions.count - 1] = button("Delete")
+        do {
+            _ = try await fixture.service.perform(sessionID: "s1", prepared: click, toolCallID: nil, attachFrame: false)
+            XCTFail("an unapproved Delete was pressed")
+        } catch let error as ScreenControlError {
+            XCTAssertEqual(error, .screenChanged)
+        }
+        let posted = await fixture.sink.events
+        XCTAssertTrue(posted.isEmpty, "no click was posted")
+    }
+
     // MARK: Takeover with a card to answer
 
     func testAnsweringACardInTakeoverIsNotTheReaderTakingOver() async throws {
