@@ -137,6 +137,22 @@ public struct CodeLinkRemoteState: Equatable, Sendable {
 
     // MARK: Events
 
+    /// Applies a sequential poll/stream batch from the relay. A lower maximum
+    /// global sequence is the hub's retained tail after its numbering restarted.
+    /// Session cursors belong to the Mac's log and must not move backwards.
+    /// Equal/overlapping batches still pass through normal duplicate checks.
+    /// A restart that has already caught up to the old cursor needs a protocol
+    /// epoch to distinguish it; a batch alone cannot identify that case.
+    @discardableResult
+    public mutating func applyRelayBatch(_ envelopes: [CodeV2.ServerEventEnvelope], now: Date = Date()) -> [Effect] {
+        var newestGlobal: Int?
+        for envelope in envelopes where envelope.stream == .global {
+            newestGlobal = max(newestGlobal ?? -1, envelope.sequence)
+        }
+        if let newestGlobal, newestGlobal < globalCursor { globalCursor = -1 }
+        return apply(envelopes, now: now)
+    }
+
     /// Applies a poll's events in order. Duplicates and stale snapshots are
     /// dropped by `CodeV2.classify`; a gap stops that session's batch (the
     /// rest would be gaps too) and asks for one re-open.

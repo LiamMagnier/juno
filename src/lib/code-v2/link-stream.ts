@@ -18,6 +18,7 @@
  */
 import type { ServerEventEnvelope } from "./contracts";
 import type { LinkEndpoint, LinkReply } from "./env-link-hub";
+import { rebaseGlobalCursor } from "./link-cursors";
 
 export const LINK_STREAM_LIMITS = {
   /** A stream ends after this long; the phone reopens it at once. */
@@ -40,9 +41,9 @@ export interface LinkStreamOptions {
   now?: () => number;
 }
 
-/** Moves the cursors past the events just sent. */
+/** Moves session cursors forward, rebasing the global stream if the relay restarted. */
 export function advanceCursors(cursors: Record<string, number>, globalCursor: number, events: readonly ServerEventEnvelope[]): number {
-  let global = globalCursor;
+  let global = rebaseGlobalCursor(globalCursor, events);
   for (const e of events) {
     if (e.stream === "global") global = Math.max(global, e.sequence);
     else if (e.sessionId && e.sessionId in cursors) cursors[e.sessionId] = Math.max(cursors[e.sessionId], e.sequence);

@@ -23,10 +23,11 @@
  *    asks the Mac to replay from the env server's own append-only log
  *    (`session.open` with `afterSequence`), which is the source of truth.
  *
- * Because the env server's log is authoritative, losing the hub (a backend
- * restart) loses nothing: the next poll triggers a replay. The backend runs as
- * one Node process (deploy/ecosystem.config.js, fork mode); running several
- * would need a shared store behind the same `EnvLinkHub` surface.
+ * The env server's log is authoritative for session events: after a backend
+ * restart, the next poll triggers a replay. Queued commands and pending RPC
+ * receipts are process-local and do not survive that restart. The backend runs
+ * as one Node process (deploy/ecosystem.config.js); running several needs the
+ * shared store behind the same `LinkHub` surface.
  *
  * Security: the relay is a remote control for the user's Mac, so it carries a
  * strict allow-list. env.configure (secrets) is never relayed; terminals (a
@@ -36,6 +37,7 @@
  *
  * No Next.js imports: the routes are thin wrappers and this is unit-tested.
  */
+import { randomUUID } from "node:crypto";
 import {
   CODE_V2_PROTOCOL,
   type ClientCommand,
@@ -212,7 +214,6 @@ export class DeviceLink implements LinkEndpoint {
   /** `globalOriginKey` of each `#global` entry, index for index. */
   #globalOrigins: string[] = [];
   #globalSeq = 0;
-  #nextId = 1;
   #lastPullAt = -Infinity;
   #hostWaiters = new Waiters();
   #clientWaiters = new Waiters();
@@ -243,7 +244,9 @@ export class DeviceLink implements LinkEndpoint {
       return refuse("unsupported", "The terminal on your Mac is not shared. Turn on Share terminal in Alevr on your Mac, under Remote hosting.");
     }
     if (this.#queue.length >= LINK_LIMITS.maxQueuedCommands) return refuse("not_ready", "Your Mac is busy. Try again in a moment.");
-    const relayId = `link_${this.#nextId++}`;
+    // A host can retry an old outbox after this hub restarted. Never reuse a
+    // relay id: its delayed response must not settle an unrelated new action.
+    const relayId = `link_${randomUUID()}`;
     const response = await new Promise<ServerResponse>((resolve) => {
       const timer = setTimeout(() => {
         this.#pending.delete(relayId);
@@ -311,7 +314,7 @@ export class DeviceLink implements LinkEndpoint {
     if (this.#queue.length >= LINK_LIMITS.maxQueuedCommands) return;
     // A synthetic open: the env server replays events after the cursor to the Mac's relay connection.
     // `cwd` is ignored for an existing session. The response is dropped by `push` (no pending rpc).
-    const replayId = `replay_${this.#nextId++}`;
+    const replayId = `replay_${randomUUID()}`;
     this.#replays.set(replayId, { sessionId, cursor });
     if (this.#replays.size > LINK_LIMITS.maxQueuedCommands) this.#replays.delete(this.#replays.keys().next().value!);
     this.#queue.push({

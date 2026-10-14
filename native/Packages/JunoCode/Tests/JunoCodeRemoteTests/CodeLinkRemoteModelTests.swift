@@ -123,6 +123,47 @@ final class CodeLinkRemoteModelTests: XCTestCase {
         XCTAssertTrue(model.isRunning)
     }
 
+    func testBackendRestartRebasesGlobalBatchesWithoutRollingBackTheSession() async throws {
+        let (model, _) = makeModel(Script())
+        await model.refreshMacs()
+        await model.select("mac1")
+        await model.open("s1")
+        func output(_ sequence: Int, _ text: String) -> CodeV2.ServerEventEnvelope {
+            CodeV2.ServerEventEnvelope(
+                stream: .global, sessionId: nil, sequence: sequence, at: "x",
+                event: .terminalOutput(terminalId: "term", data: text)
+            )
+        }
+        model.receive([
+            try decode(snapshotEvent(10, state: "idle")),
+            output(100, "before\r\n"),
+        ], deviceID: "mac1")
+        XCTAssertEqual(model.remote.globalCursor, 100)
+
+        // The backend relay restarted; the Mac's session log did not.
+        model.receive([
+            output(1, "after-1\r\n"),
+            output(2, "after-2\r\n"),
+            try decode(Self.event(11, ["type": "queue.updated", "queue": []])),
+        ], deviceID: "mac1")
+        XCTAssertEqual(model.remote.globalCursor, 2)
+        XCTAssertEqual(model.openThread?.cursor, 11)
+        XCTAssertEqual(
+            model.remote.terminals["term"]?.text.trimmingCharacters(in: .whitespacesAndNewlines),
+            "before\nafter-1\nafter-2"
+        )
+
+        model.receive([output(2, "after-2\r\n")], deviceID: "mac1")
+        model.receive([try decode(snapshotEvent(4, state: "idle"))], deviceID: "mac1")
+        XCTAssertEqual(model.remote.globalCursor, 2, "an equal-sequence retry does not rebase the cursor")
+        XCTAssertEqual(model.openThread?.cursor, 11, "session snapshots still cannot roll a thread back")
+        XCTAssertEqual(
+            model.remote.terminals["term"]?.text.trimmingCharacters(in: .whitespacesAndNewlines),
+            "before\nafter-1\nafter-2"
+        )
+        model.stop()
+    }
+
     func testSendStartsATurnWhenIdleAndQueuesWhileRunning() async throws {
         let script = Script()
         let (model, sender) = makeModel(script)

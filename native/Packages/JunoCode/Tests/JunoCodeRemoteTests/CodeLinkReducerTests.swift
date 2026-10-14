@@ -123,6 +123,36 @@ final class CodeLinkReducerTests: XCTestCase {
         XCTAssertEqual(state.terminals["term"]?.text.trimmingCharacters(in: .whitespacesAndNewlines), "$ ls\nREADME.md")
     }
 
+    func testRelayBatchKeepsEqualAndOverlappingGlobalReplaysDeduplicated() {
+        var state = CodeLinkRemoteState()
+        func output(_ sequence: Int, _ text: String) -> CodeV2.ServerEventEnvelope {
+            CodeV2.ServerEventEnvelope(
+                stream: .global, sessionId: nil, sequence: sequence, at: "x",
+                event: .terminalOutput(terminalId: "term", data: text)
+            )
+        }
+        let first = output(1, "first\r\n")
+        let second = output(2, "second\r\n")
+        state.applyRelayBatch([first, second])
+        state.applyRelayBatch([first, second])
+        state.applyRelayBatch([second, output(3, "third\r\n")])
+        XCTAssertEqual(state.globalCursor, 3)
+        XCTAssertEqual(
+            state.terminals["term"]?.text.trimmingCharacters(in: .whitespacesAndNewlines),
+            "first\nsecond\nthird"
+        )
+
+        // The ordinary reducer still rejects a late, stale event. Rebasing is
+        // reserved for sequential authoritative batches from the link loop.
+        state.apply([first])
+        state.applyRelayBatch([])
+        XCTAssertEqual(state.globalCursor, 3)
+        XCTAssertEqual(
+            state.terminals["term"]?.text.trimmingCharacters(in: .whitespacesAndNewlines),
+            "first\nsecond\nthird"
+        )
+    }
+
     // MARK: Session list
 
     func testListPutsNeedsYouFirstThenWorkingThenNewest() {
