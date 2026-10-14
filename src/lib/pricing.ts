@@ -920,17 +920,25 @@ export function resolveBillableTokens(opts: {
    */
   totalTokens?: number | null;
   cacheRead?: number | null;
+  cacheWrite?: number | null;
+  cacheWrite5m?: number | null;
+  cacheWrite1h?: number | null;
   promptChars?: number;
   /** Visible answer characters. */
   completionChars?: number;
   /** Streamed reasoning / thinking characters (summary or full). */
   reasoningChars?: number;
-}): {
+}, provider?: string): {
   promptTokens: number;
   completionTokens: number;
   cacheRead: number;
 } {
   const cacheRead = Math.max(0, opts.cacheRead ?? 0);
+  const cacheWrite = normalizeUsage(provider ?? "", {
+    cacheWrite: opts.cacheWrite ?? undefined,
+    cacheWrite5m: opts.cacheWrite5m ?? undefined,
+    cacheWrite1h: opts.cacheWrite1h ?? undefined,
+  }).cacheWrite;
   const charIn = estimateTokensFromChars(opts.promptChars);
   const charOut = estimateTokensFromChars((opts.completionChars ?? 0) + (opts.reasoningChars ?? 0));
 
@@ -939,8 +947,9 @@ export function resolveBillableTokens(opts: {
   const reasoning = Math.max(0, opts.reasoningTokens ?? 0);
   const total = Math.max(0, opts.totalTokens ?? 0);
 
-  // No provider usage at all → char estimate.
-  if (!opts.promptTokens && !opts.completionTokens && !opts.totalTokens) {
+  // An all-zero placeholder is also how missing-usage streams reach billing.
+  // Cache and reasoning counters are real usage even without fresh input or output.
+  if (!prompt && !completion && !total && !reasoning && !cacheRead && !cacheWrite) {
     return {
       promptTokens: charIn,
       completionTokens: charOut,
@@ -948,7 +957,12 @@ export function resolveBillableTokens(opts: {
     };
   }
 
-  if (!prompt) prompt = charIn;
+  // Zero is a valid reported fresh-input count. Older Anthropic events also
+  // omitted it on fully cached requests; positive cache buckets prove those
+  // requests consumed input, already accounted for separately. Filling the
+  // whole prompt from characters would charge that cache again at full price.
+  const cacheOnlyAnthropic = provider === "anthropic" && (cacheRead > 0 || cacheWrite > 0);
+  if (opts.promptTokens == null && !cacheOnlyAnthropic) prompt = charIn;
 
   // Lift completion when:
   //  - reasoning was reported separately and is larger than completion (answer-only report)
@@ -1003,7 +1017,7 @@ export function estimateGenerationCostUsd(
   cacheRead: number;
   toolFeesUsd: number;
 } {
-  const tokens = resolveBillableTokens(opts);
+  const tokens = resolveBillableTokens(opts, model.provider);
   const extras: ToolUsageExtras = {
     webSearchRequests: opts.webSearchRequests ?? undefined,
     xSearchRequests: opts.xSearchRequests ?? undefined,

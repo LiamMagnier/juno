@@ -89,6 +89,91 @@ test("resolveBillableTokens floors on answer+reasoning chars when usage is missi
   assert.equal(t.completionTokens, 1_100); // (400+4000)/4
 });
 
+test("a reported zero prompt count survives the character fallback", () => {
+  const billed = resolveBillableTokens({
+    promptTokens: 0,
+    completionTokens: 100,
+    promptChars: 360_000,
+  });
+  assert.equal(billed.promptTokens, 0);
+  assert.equal(billed.completionTokens, 100);
+});
+
+test("an absent prompt count and an all-zero missing-usage report still use characters", () => {
+  assert.equal(resolveBillableTokens({ completionTokens: 100, promptChars: 1_200 }).promptTokens, 300);
+  assert.deepEqual(
+    resolveBillableTokens({
+      promptTokens: 0,
+      completionTokens: 0,
+      totalTokens: 0,
+      promptChars: 1_200,
+      completionChars: 400,
+      reasoningChars: 4_000,
+    }),
+    { promptTokens: 300, completionTokens: 1_100, cacheRead: 0 },
+  );
+});
+
+test("a reasoning-only usage report is not mistaken for missing provider usage", () => {
+  const billed = resolveBillableTokens({ reasoningTokens: 5_000, promptChars: 4_000 });
+  assert.equal(billed.promptTokens, 1_000);
+  assert.equal(billed.completionTokens, 5_000);
+});
+
+test("Anthropic zero-fresh-input cache reads are not also billed from prompt characters", () => {
+  for (const promptTokens of [0, undefined, null]) {
+    // Older stream events and ledger callers omitted a zero fresh-input count.
+    const billed = estimateGenerationCostUsd(sonnet5, {
+      promptTokens,
+      completionTokens: 100,
+      cacheRead: 90_000,
+      promptChars: 360_000,
+    });
+    assert.equal(billed.promptTokens, 0);
+    assert.equal(billed.completionTokens, 100);
+    assert.equal(billed.costUsd, 0.019); // 90K reads at $0.20/M + 100 output at $10/M
+  }
+});
+
+test("cache-only writes and mixed TTL buckets do not trigger a second prompt charge", () => {
+  const caches = [
+    { cacheWrite: 90_000 },
+    { cacheWrite5m: 90_000 },
+    { cacheWrite1h: 90_000 },
+    { cacheRead: 60_000, cacheWrite: 999_999, cacheWrite5m: 10_000, cacheWrite1h: 20_000 },
+  ];
+  for (const cache of caches) {
+    for (const promptTokens of [0, undefined]) {
+      const billed = estimateGenerationCostUsd(sonnet5, {
+        ...cache,
+        promptTokens,
+        completionTokens: 0,
+        promptChars: 360_000,
+      });
+      assert.equal(billed.promptTokens, 0);
+      assert.equal(billed.completionTokens, 0);
+      assert.equal(billed.costUsd, estimateCostUsd(sonnet5, { input: 0, output: 0, ...cache }));
+    }
+  }
+});
+
+test("cache evidence never removes a reported fresh tail or an inclusive provider's missing-input estimate", () => {
+  const anthropic = estimateGenerationCostUsd(sonnet5, {
+    promptTokens: 50,
+    completionTokens: 100,
+    cacheRead: 90_000,
+    promptChars: 360_200,
+  });
+  assert.equal(anthropic.promptTokens, 50);
+  assert.equal(anthropic.costUsd, 0.0191);
+  const compat = estimateGenerationCostUsd(gpt56, {
+    completionTokens: 100,
+    cacheRead: 90_000,
+    promptChars: 400_000,
+  });
+  assert.equal(compat.promptTokens, 100_000, "inclusive input is estimated when its count is absent");
+});
+
 test("resolveBillableTokens lifts completion when reasoning exceeds reported output", () => {
   const t = resolveBillableTokens({
     promptTokens: 1_000,

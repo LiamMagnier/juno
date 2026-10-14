@@ -42,6 +42,55 @@ test("cache reads and writes count towards displayed input", () => {
   assert.match(usage.detail, /8,000 input \(7,000 cached\)/);
 });
 
+test("inclusive providers count cached tokens once in displayed and persisted input", () => {
+  for (const provider of ["openai", "xai", "google", "deepseek", "moonshot", "qwen"] as const) {
+    const inclusive = { ...model, id: `${provider}:test`, provider, providerModel: "test" };
+    const usage = buildUsage(inclusive, {
+      input: 1_000,
+      output: 10,
+      cacheRead: 600,
+      cacheWrite: 200,
+      promptChars: 8_000,
+    });
+    assert.equal(usage.totalInput, 1_000, provider);
+    assert.equal(usage.billedPromptTokens, 1_000, provider);
+    assert.match(usage.detail, /1,000 input \(800 cached\)/);
+  }
+});
+
+test("inclusive input uses the authoritative TTL split without adding it again", () => {
+  const usage = buildUsage({ ...model, provider: "openai" }, {
+    input: 1_000,
+    output: 10,
+    cacheRead: 600,
+    cacheWrite: 999_999,
+    cacheWrite5m: 100,
+    cacheWrite1h: 100,
+  });
+  assert.equal(usage.totalInput, 1_000);
+  assert.equal(usage.cacheWrite, 200);
+  assert.match(usage.detail, /1,000 input \(800 cached\)/);
+});
+
+test("a fully cached Anthropic receipt keeps zero fresh input despite the full prompt text", () => {
+  const usage = buildUsage(model, { input: 0, output: 100, cacheRead: 90_000, promptChars: 360_000 });
+  assert.equal(usage.billedPromptTokens, 0);
+  assert.equal(usage.totalInput, 90_000);
+  assert.equal(usage.cost, 0.019);
+  assert.equal(usage.costMicroUsd, 19_000);
+  assert.match(usage.detail, /90,000 input \(90,000 cached\)/);
+});
+
+test("missing usage still creates a receipt from prompt and output characters", () => {
+  for (const provider of ["anthropic", "openai"] as const) {
+    const usage = buildUsage({ ...model, provider }, { promptChars: 4_000, completionChars: 400 });
+    assert.equal(usage.billedPromptTokens, 1_000);
+    assert.equal(usage.totalInput, 1_000);
+    assert.equal(usage.output, 100);
+    assert.ok(usage.cost > 0);
+  }
+});
+
 test("split 5m/1h cache writes win over the flat figure", () => {
   const usage = buildUsage(model, {
     input: 1_000,

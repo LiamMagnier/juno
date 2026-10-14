@@ -1,6 +1,5 @@
 import type { FastMode } from "@/lib/pricing";
-import { estimateGenerationCostUsd } from "@/lib/pricing";
-import { totalInputTokens } from "@/lib/usage-merge";
+import { estimateGenerationCostUsd, normalizeUsage } from "@/lib/pricing";
 import { formatUsd } from "@/lib/utils";
 import type { ModelInfo } from "@/lib/models";
 
@@ -45,8 +44,8 @@ export interface GenerationUsage {
   /**
    * The prompt count in the provider's own convention (Anthropic: fresh input
    * only; OpenAI-style: cache included), which is what `recordSpend` re-prices
-   * alongside the cache fields. `totalInput` adds the cache on top, so a
-   * ledger write that passed it billed every cached token twice: once at the
+   * alongside the cache fields. For Anthropic, `totalInput` adds the cache,
+   * so a ledger write that passed it billed every cached token twice: once at the
    * full input rate and again at its cache rate (a cached Sonnet turn
    * recorded at ~6x its real cost).
    */
@@ -99,17 +98,15 @@ export function buildUsage(
       ? cacheWrite5m + cacheWrite1h
       : Math.max(0, raw.cacheWrite ?? 0);
   const cachedDisplay = cacheRead + cacheWrite;
-  // Display/persist total input = fresh + all cache (matches Anthropic billing sum).
-  const totalInput = Math.max(
-    billed.promptTokens + cacheRead + cacheWrite,
-    totalInputTokens({
-      input: raw.input,
-      cacheRead: raw.cacheRead,
-      cacheWrite: raw.cacheWrite,
-      cacheWrite5m: raw.cacheWrite5m,
-      cacheWrite1h: raw.cacheWrite1h,
-    })
-  );
+  // Anthropic reports fresh input; other providers already include the cache.
+  // Use the same convention as pricing when displaying and persisting totals.
+  const totalInput = normalizeUsage(model.provider, {
+    input: billed.promptTokens,
+    cacheRead,
+    cacheWrite,
+    cacheWrite5m,
+    cacheWrite1h,
+  }).totalInput;
   const searches =
     Math.max(0, raw.webSearchRequests ?? 0) + Math.max(0, raw.xSearchRequests ?? 0);
   const detail = [
