@@ -46,6 +46,20 @@ test("link: a relayed command reaches the Mac under a relay id and its response 
   assert.equal(link.stats().pending, 0);
 });
 
+test("link: a pull the Mac hung up on leaves its commands for the next pull", async () => {
+  const link = new DeviceLink();
+  await online(link);
+  const gone = new AbortController();
+  const waiting = link.pull(5_000, gone.signal);
+  const reply = link.rpc({ id: "7", type: "provider.list", params: {} });
+  gone.abort();
+  assert.deepEqual((await waiting).commands, [], "an aborted pull never takes a command");
+  const { commands } = await link.pull(0);
+  assert.equal(commands.length, 1);
+  link.push({ responses: [{ type: "response", id: commands[0].id, ok: true, result: { instances: [] } }] });
+  assert.deepEqual((await reply).responses, [{ type: "response", id: "7", ok: true, result: { instances: [] } }]);
+});
+
 test("link: secrets are never relayed, terminals only while the Mac shares one; an offline Mac says so", async () => {
   const link = new DeviceLink();
   const offline = await link.rpc({ id: "1", type: "provider.list", params: {} });

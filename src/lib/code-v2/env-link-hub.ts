@@ -352,6 +352,8 @@ export class DeviceLink implements LinkEndpoint {
       await this.#hostWaiters.wait(Math.min(waitMs, LINK_LIMITS.hostPullWaitMs), signal);
       this.#lastPullAt = this.clock();
     }
+    // The Mac hung up: nobody will read this reply, so the commands stay queued.
+    if (signal?.aborted) return { protocol: CODE_V2_PROTOCOL, commands: [] };
     const commands = this.#queue.splice(0, LINK_LIMITS.maxPullItems);
     return { protocol: CODE_V2_PROTOCOL, commands };
   }

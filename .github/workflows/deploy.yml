@@ -489,7 +489,7 @@ jobs:
         run: |
           psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -c 'CREATE DATABASE linktest'
           npx prisma migrate deploy
-          npx tsx --test tests/code-v2-env-link-pg.test.ts
+          npx tsx --test tests/code-v2-env-link-pg.test.ts tests/code-v2-link-concurrency-pg.test.ts
         env:
           ADMIN_URL: postgresql://postgres:postgres@127.0.0.1:5432/shadow
           DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/linktest

@@ -4,7 +4,7 @@
  * tables so any backend process can serve the browser and any other the Mac.
  *
  *   CodeLinkHost      heartbeat (lastPullAt), app version, global renumbering
- *   CodeLinkCommand   commands waiting for the Mac (claimed with SKIP LOCKED)
+ *   CodeLinkCommand   commands for the Mac: queued, then leased (SKIP LOCKED) until answered
  *   CodeLinkResponse  the Mac's answers, keyed by relay id, read once
  *   CodeLinkEvent     the event rings (per session, and the global stream)
  *   CodeLinkSession   per-session replay bookkeeping (floor, last replay)
@@ -36,10 +36,17 @@ import {
   type LinkReply,
 } from "./env-link-hub";
 
-/** What the store needs from a database client (a PrismaClient satisfies it). */
-export interface LinkSql {
+type LinkQueries = {
   $queryRawUnsafe<T = unknown>(query: string, ...values: unknown[]): Promise<T>;
   $executeRawUnsafe(query: string, ...values: unknown[]): Promise<number>;
+};
+
+/** What the store needs from a database client (a PrismaClient satisfies it). */
+export interface LinkSql extends LinkQueries {
+  $transaction<T>(
+    run: (tx: LinkQueries) => Promise<T>,
+    options?: { isolationLevel?: "ReadCommitted"; maxWait?: number; timeout?: number },
+  ): Promise<T>;
 }
 
 export interface PgLinkOptions {
@@ -285,32 +292,51 @@ export class PgDeviceLink implements LinkEndpoint {
   async pull(waitMs: number = LINK_LIMITS.hostPullWaitMs, signal?: AbortSignal, appVersion?: string, terminal = false): Promise<LinkHostPullReply> {
     await this.#heartbeat(appVersion, terminal === true);
     const deadline = this.#clock() + Math.min(Math.max(0, waitMs), LINK_LIMITS.hostPullWaitMs);
-    let commands = await this.#claim();
+    let commands = signal?.aborted ? [] : await this.#claim();
     while (commands.length === 0 && !signal?.aborted) {
       const left = deadline - this.#clock();
       if (left <= 0) break;
       await sleep(`h:${this.#k}`, Math.min(this.#pollMs, left), signal);
+      if (signal?.aborted) break;
       commands = await this.#claim();
+    }
+    // The Mac hung up: nobody will read this reply, so the commands were never delivered.
+    if (signal?.aborted && commands.length > 0) {
+      await this.#release(commands);
+      commands = [];
     }
     if (waitMs > 0) await this.#heartbeat();
     return { protocol: CODE_V2_PROTOCOL, commands };
   }
 
-  /** Takes the oldest unclaimed commands; two pulling processes never get the same one. */
+  /**
+   * Leases the oldest unclaimed commands; two pulling processes never get the same one. The row
+   * stays until the Mac's answer acknowledges it (or the RPC gives up), and a lease is never
+   * handed out again: the Mac keeps no receipts, so delivering twice could run an action twice.
+   */
   async #claim(): Promise<ClientCommand[]> {
-    const rows = await this.sql.$queryRawUnsafe<{ payload: ClientCommand }[]>(
-      `DELETE FROM "CodeLinkCommand" WHERE "id" IN (
+    const rows = await this.sql.$queryRawUnsafe<{ id: bigint | number; payload: ClientCommand }[]>(
+      `UPDATE "CodeLinkCommand" SET "claimedAt" = $4 WHERE "id" IN (
          SELECT "id" FROM "CodeLinkCommand" WHERE "userId" = $1 AND "deviceId" = $2 AND "claimedAt" IS NULL
          ORDER BY "id" LIMIT $3 FOR UPDATE SKIP LOCKED
        ) RETURNING "id", "payload"`,
       this.userId,
       this.deviceId,
       LINK_LIMITS.maxPullItems,
+      new Date(this.#clock()),
     );
-    return rows
-      .map((r) => ({ ...(r as { id: bigint | number; payload: ClientCommand }) }))
-      .sort((a, b) => Number(a.id) - Number(b.id))
-      .map((r) => r.payload);
+    return [...rows].sort((a, b) => Number(a.id) - Number(b.id)).map((r) => r.payload);
+  }
+
+  /** Puts back commands from a pull whose reply could not reach the Mac. */
+  async #release(commands: ClientCommand[]): Promise<void> {
+    await this.sql.$executeRawUnsafe(
+      `UPDATE "CodeLinkCommand" SET "claimedAt" = NULL WHERE "userId" = $1 AND "deviceId" = $2 AND "relayId" = ANY($3::text[])`,
+      this.userId,
+      this.deviceId,
+      commands.map((c) => c.id),
+    );
+    wake(`h:${this.#k}`);
   }
 
   async push(input: { responses?: ServerResponse[]; events?: ServerEventEnvelope[] }): Promise<{ accepted: number }> {
@@ -319,6 +345,12 @@ export class PgDeviceLink implements LinkEndpoint {
     for (const r of (input.responses ?? []).slice(0, LINK_LIMITS.maxPushItems)) {
       if (!r || r.type !== "response" || typeof r.id !== "string") continue;
       if (r.id.startsWith("replay_")) {
+        await this.sql.$executeRawUnsafe(
+          `DELETE FROM "CodeLinkCommand" WHERE "userId" = $1 AND "deviceId" = $2 AND "relayId" = $3`,
+          this.userId,
+          this.deviceId,
+          r.id,
+        );
         // The env server replays before it answers the open: the ring now holds everything after the cursor.
         if (r.ok) {
           await this.sql.$executeRawUnsafe(
@@ -332,8 +364,15 @@ export class PgDeviceLink implements LinkEndpoint {
         continue;
       }
       if (!r.id.startsWith("link_")) continue;
+      // The answer acknowledges its own command, atomically: one for a command this device never
+      // leased (another account's id, an RPC that already gave up, a repeat) is not kept.
       const n = await this.sql.$executeRawUnsafe(
-        `INSERT INTO "CodeLinkResponse" ("relayId", "userId", "deviceId", "payload") VALUES ($1, $2, $3, $4::jsonb) ON CONFLICT ("relayId") DO NOTHING`,
+        `WITH acked AS (
+           DELETE FROM "CodeLinkCommand" WHERE "relayId" = $1 AND "userId" = $2 AND "deviceId" = $3 AND "claimedAt" IS NOT NULL RETURNING 1
+         )
+         INSERT INTO "CodeLinkResponse" ("relayId", "userId", "deviceId", "payload")
+         SELECT $1, $2, $3, $4::jsonb WHERE EXISTS (SELECT 1 FROM acked)
+         ON CONFLICT ("relayId") DO NOTHING`,
         r.id,
         this.userId,
         this.deviceId,
@@ -345,45 +384,78 @@ export class PgDeviceLink implements LinkEndpoint {
       }
     }
     const touched = new Set<string>();
-    let globals = 0;
+    const pending: ServerEventEnvelope[] = [];
     for (const e of (input.events ?? []).slice(0, LINK_LIMITS.maxPushItems)) {
       if (!e || e.type !== "event" || typeof e.sequence !== "number" || !e.event || typeof e.event.type !== "string") continue;
       if (e.stream === "global") {
-        // A batch the Mac pushed again (a retried push) is not relayed twice: the hub renumbers
-        // globals, so the Mac's own sequence and the event's hash say whether it is already here.
-        const origin = globalOriginKey(e);
-        const seen = await this.sql.$queryRawUnsafe<{ one: number }[]>(
-          `SELECT 1 AS one FROM "CodeLinkEvent" WHERE "userId" = $1 AND "deviceId" = $2 AND "sessionId" = '' AND "payload"->>'_origin' = $3 LIMIT 1`,
-          this.userId,
-          this.deviceId,
-          origin,
-        );
-        if (seen.length > 0) continue;
-        const [row] = await this.sql.$queryRawUnsafe<{ globalSeq: number }[]>(
-          `UPDATE "CodeLinkHost" SET "globalSeq" = "globalSeq" + 1 WHERE "userId" = $1 AND "deviceId" = $2 RETURNING "globalSeq"`,
-          this.userId,
-          this.deviceId,
-        );
-        const sequence = Number(row?.globalSeq ?? 0);
-        await this.#insertEvent("", sequence, { ...e, sequence, _origin: origin } as ServerEventEnvelope);
-        globals++;
-        accepted++;
+        pending.push(e);
         continue;
       }
       if (e.stream !== "session" || typeof e.sessionId !== "string" || !e.sessionId || e.sessionId.length > 200) continue;
-      if (await this.#insertEvent(e.sessionId, e.sequence, e)) {
+      if (await this.#insertEvent(this.sql, e.sessionId, e.sequence, e)) {
         touched.add(e.sessionId);
         accepted++;
       }
     }
+    const globals = pending.length ? await this.#publishGlobals(pending) : 0;
+    accepted += globals;
     for (const sessionId of touched) await this.#trim(sessionId, LINK_LIMITS.ringPerSession);
     if (globals) await this.#trim("", LINK_LIMITS.ringGlobal);
     if (touched.size || globals) wake(`e:${this.#k}`);
     return { accepted };
   }
 
-  async #insertEvent(sessionId: string, sequence: number, envelope: ServerEventEnvelope): Promise<boolean> {
-    const n = await this.sql.$executeRawUnsafe(
+  /**
+   * The hub renumbers the global stream, so numbering and publication are one transaction under
+   * the host row's lock: a sequence is never visible before its event, a later number never
+   * commits before an earlier one (a viewer's cursor cannot step over it), and a rollback or a
+   * lost connection leaves neither behind. A batch the Mac pushed again (a retried push, possibly
+   * on another backend) is checked by origin under the same lock, so it is relayed once.
+   */
+  async #publishGlobals(events: ServerEventEnvelope[]): Promise<number> {
+    return this.sql.$transaction(
+      async (tx) => {
+        const [host] = await tx.$queryRawUnsafe<{ globalSeq: number }[]>(
+          `SELECT "globalSeq" FROM "CodeLinkHost" WHERE "userId" = $1 AND "deviceId" = $2 FOR UPDATE`,
+          this.userId,
+          this.deviceId,
+        );
+        if (!host) throw new Error("The device link has no host row to number global events.");
+        const start = Number(host.globalSeq ?? 0);
+        let sequence = start;
+        const batch = new Set<string>();
+        for (const e of events) {
+          const origin = globalOriginKey(e);
+          if (batch.has(origin)) continue;
+          batch.add(origin);
+          const seen = await tx.$queryRawUnsafe<{ one: number }[]>(
+            `SELECT 1 AS one FROM "CodeLinkEvent" WHERE "userId" = $1 AND "deviceId" = $2 AND "sessionId" = '' AND "payload"->>'_origin' = $3 LIMIT 1`,
+            this.userId,
+            this.deviceId,
+            origin,
+          );
+          if (seen.length > 0) continue;
+          sequence++;
+          if (!(await this.#insertEvent(tx, "", sequence, { ...e, sequence, _origin: origin } as ServerEventEnvelope))) {
+            throw new Error("A global event sequence was already taken under the host lock.");
+          }
+        }
+        if (sequence !== start) {
+          await tx.$executeRawUnsafe(
+            `UPDATE "CodeLinkHost" SET "globalSeq" = $3 WHERE "userId" = $1 AND "deviceId" = $2`,
+            this.userId,
+            this.deviceId,
+            sequence,
+          );
+        }
+        return sequence - start;
+      },
+      { isolationLevel: "ReadCommitted", maxWait: 5_000, timeout: 10_000 },
+    );
+  }
+
+  async #insertEvent(sql: LinkQueries, sessionId: string, sequence: number, envelope: ServerEventEnvelope): Promise<boolean> {
+    const n = await sql.$executeRawUnsafe(
       `INSERT INTO "CodeLinkEvent" ("userId", "deviceId", "sessionId", "sequence", "eventType", "payload")
        VALUES ($1, $2, $3, $4, $5, $6::jsonb)
        ON CONFLICT ("userId", "deviceId", "sessionId", "sequence", "eventType") DO NOTHING`,
