@@ -2,7 +2,9 @@ import { spawn } from 'node:child_process';
 import type { ToolDefinition, ToolResult } from './types.js';
 import { buildContainerArgs } from './container-sandbox.js';
 
-const MAX_OUTPUT_CHARS = 30_000;
+/** What a command's output keeps: its first and last characters (30k in all). */
+const HEAD_CHARS = 10_000;
+const TAIL_CHARS = 20_000;
 const DEFAULT_TIMEOUT_MS = 120_000;
 const MAX_TIMEOUT_MS = 600_000;
 
@@ -123,8 +125,20 @@ export const bashTool: ToolDefinition = {
         ctx.signal?.removeEventListener('abort', onAbort);
         resolveResult(result);
       };
+      // The start and the end are kept, the middle dropped: a failing build or
+      // test run prints its error last, and keeping only the head lost it.
+      let tail = '';
+      let total = 0;
       const append = (chunk: Buffer) => {
-        if (out.length < MAX_OUTPUT_CHARS) out += chunk.toString('utf8');
+        const text = chunk.toString('utf8');
+        total += text.length;
+        if (out.length < HEAD_CHARS) {
+          const room = HEAD_CHARS - out.length;
+          out += text.slice(0, room);
+          if (text.length > room) tail = (tail + text.slice(room)).slice(-TAIL_CHARS);
+        } else {
+          tail = (tail + text).slice(-TAIL_CHARS);
+        }
       };
       child.stdout.on('data', append);
       child.stderr.on('data', append);
@@ -132,10 +146,8 @@ export const bashTool: ToolDefinition = {
         finish({ output: cancelled ? '[command cancelled]' : `Failed to spawn: ${err.message}`, isError: true });
       });
       child.on('close', (code) => {
-        let output = out;
-        if (output.length > MAX_OUTPUT_CHARS) {
-          output = output.slice(0, MAX_OUTPUT_CHARS) + `\n…[output truncated at ${MAX_OUTPUT_CHARS} chars]`;
-        }
+        const omitted = total - out.length - tail.length;
+        const output = omitted > 0 ? `${out}\n…[${omitted} chars of output omitted]…\n${tail}` : out + tail;
         // `code` is null when the process died to a signal (the timeout kill
         // above, or an OOM). There is no exit status to report then, and
         // inventing one would let a killed suite read as a failed one.

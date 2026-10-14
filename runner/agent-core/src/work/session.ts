@@ -78,6 +78,7 @@ import {
   type WorkValidationCheck,
   type WorkValidationResult,
 } from './types.js';
+import { FileStateGuard } from '../harness/guards.js';
 
 /**
  * Steps per run before the loop gives up on its own.
@@ -463,6 +464,14 @@ export class WorkAgentSession {
   /** The child currently working, so its events can say so. Null otherwise. */
   private activeDelegation: string | null = null;
   private started = false;
+
+  /**
+   * Read-before-edit, as the coding agent has it (harness/guards.ts): an
+   * existing file is edited or overwritten only after this run read it, and
+   * only while it is unchanged since, so a Work run never clobbers a file it
+   * has not seen or one someone changed under it.
+   */
+  private fileGuard?: FileStateGuard;
 
   constructor(options: WorkSessionOptions) {
     this.options = options;
@@ -937,6 +946,13 @@ export class WorkAgentSession {
       }
     }
 
+    this.fileGuard ??= new FileStateGuard(this.options.cwd);
+    const stale = this.fileGuard.check(call.name, call.input);
+    if (stale) {
+      this.emit({ kind: 'tool_denied', callId: call.id, tool: call.name, reason: stale });
+      return this.toolResult(call.id, stale, true);
+    }
+
     this.emit({
       kind: 'tool_started',
       callId: call.id,
@@ -967,6 +983,7 @@ export class WorkAgentSession {
       output = `Tool crashed: ${err instanceof Error ? err.message : String(err)}`;
       isError = true;
     }
+    this.fileGuard?.record(call.name, call.input, isError);
 
     this.actions.push({
       callId: call.id,

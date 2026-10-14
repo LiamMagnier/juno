@@ -24,6 +24,27 @@ interface FileFingerprint {
   mtimeMs: number;
   size: number;
   hash: string;
+  /** The agent saw only part of it (a line window, or read_file's character cap). */
+  partial?: boolean;
+}
+
+/** read_file's own cap and window (tools/fs.ts), mirrored to tell a whole read from a partial one. */
+const READ_CAP_CHARS = 50_000;
+function readWasPartial(abs: string, input: Record<string, unknown>): boolean {
+  let text: string;
+  try {
+    text = fs.readFileSync(abs, 'utf8');
+  } catch {
+    return false;
+  }
+  if (input.offset !== undefined || input.limit !== undefined) {
+    const lines = text.split('\n');
+    const start = Math.max(0, Number(input.offset ?? 1) - 1);
+    const count = Number(input.limit ?? 2000);
+    if (start > 0 || start + count < lines.length) return true;
+    text = lines.slice(start, start + count).join('\n');
+  }
+  return text.length > READ_CAP_CHARS;
 }
 
 function fingerprint(abs: string): FileFingerprint | null {
@@ -80,6 +101,11 @@ export class FileStateGuard {
     if (!seen) {
       return `Refused: read ${input.path} with read_file before ${toolName === 'write_file' ? 'overwriting' : 'editing'} it, so the change is made against its current contents.`;
     }
+    // Overwriting a file seen only in part would drop what was never shown;
+    // edit_file replaces only text the model saw, so it stays allowed.
+    if (toolName === 'write_file' && seen.partial && seen.hash === current.hash) {
+      return `Refused: you read only part of ${input.path}, so overwriting it with write_file would drop the rest. Use edit_file for the change, or read the whole file first.`;
+    }
     if (seen.hash !== current.hash) {
       return `Refused: ${input.path} changed on disk since you last read it (someone or something else edited it). Read it again, then redo the edit against the new contents.`;
     }
@@ -92,7 +118,10 @@ export class FileStateGuard {
     if (!READ_TOOLS.has(toolName) && !WRITE_TOOLS.has(toolName)) return;
     const key = this.key(input.path);
     const current = fingerprint(key);
-    if (current) this.known.set(key, current);
+    if (!current) return;
+    // A write leaves the agent knowing the whole file; a read only what it returned.
+    if (READ_TOOLS.has(toolName) && readWasPartial(key, input)) current.partial = true;
+    this.known.set(key, current);
   }
 }
 

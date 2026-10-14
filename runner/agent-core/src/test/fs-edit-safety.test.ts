@@ -56,3 +56,40 @@ test('atomic writes keep the file mode and leave no temp files behind', () => {
   assert.throws(() => writeFileAtomic(path.join(cwd, 'dir'), 'x'));
   assert.deepEqual(fs.readdirSync(cwd).sort(), ['dir', 'run.sh']);
 });
+
+test('bash keeps the end of long output, where the error is', async () => {
+  const { bashTool } = await import('../tools/bash.js');
+  const cwd = workspace();
+  const result = await bashTool.execute(
+    { command: "seq -f 'line %g' 0 19999; echo 'FATAL: the real error' >&2; exit 3" },
+    { cwd },
+  );
+  assert.equal(result.isError, true);
+  assert.match(result.output, /line 0\n/, 'the start is kept');
+  assert.match(result.output, /FATAL: the real error/, 'and so is the end');
+  assert.match(result.output, /chars of output omitted/);
+  assert.match(result.output, /\[exit code 3\]$/);
+  assert.ok(result.output.length < 31_000);
+});
+
+test('a partial read lets edit_file through but not a write_file that would drop the unseen rest', async () => {
+  const { FileStateGuard } = await import('../harness/guards.js');
+  const cwd = workspace();
+  const lines = Array.from({ length: 100 }, (_, i) => `line ${i}`).join('\n');
+  fs.writeFileSync(path.join(cwd, 'big.txt'), lines);
+  const guard = new FileStateGuard(cwd);
+  guard.record('read_file', { path: 'big.txt', offset: 1, limit: 10 }, false);
+  assert.match(guard.check('write_file', { path: 'big.txt' }) ?? '', /read only part/);
+  assert.equal(guard.check('edit_file', { path: 'big.txt' }), null);
+  // A whole read clears it.
+  guard.record('read_file', { path: 'big.txt' }, false);
+  assert.equal(guard.check('write_file', { path: 'big.txt' }), null);
+  // A window that covers the whole file is a whole read.
+  const fresh = new FileStateGuard(cwd);
+  fresh.record('read_file', { path: 'big.txt', offset: 1, limit: 500 }, false);
+  assert.equal(fresh.check('write_file', { path: 'big.txt' }), null);
+  // Past read_file's 50k-character cap the read is partial too.
+  fs.writeFileSync(path.join(cwd, 'huge.txt'), 'x'.repeat(60_000));
+  fresh.record('read_file', { path: 'huge.txt' }, false);
+  assert.match(fresh.check('write_file', { path: 'huge.txt' }) ?? '', /read only part/);
+});
