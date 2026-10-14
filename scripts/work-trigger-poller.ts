@@ -118,6 +118,7 @@ import {
 } from "@/lib/work/triggers";
 import { maxFusedSearchFeeMicroUsd, meteredWebSearch } from "@/lib/web-search";
 import { effectiveHostState } from "@/app/api/work/protocol";
+import { scheduleRunKindOf } from "@/lib/work/code-routine";
 
 /**
  * How often to look for triggers whose next poll is due.
@@ -745,7 +746,8 @@ type ScheduleRow = NonNullable<Awaited<ReturnType<typeof loadSchedule>>>;
 
 async function loadSchedule(scheduleId: string, userId: string) {
   return prisma.workSchedule.findFirst({
-    where: { id: scheduleId, userId },
+    // A deleted task's routine is not offered events (its task is gone).
+    where: { id: scheduleId, userId, session: { deletedAt: null } },
     include: { session: true },
   });
 }
@@ -886,6 +888,14 @@ async function offer(
   event: TriggerEvent,
   context: { now: Date; recent: readonly string[]; budgets: Map<string, AccountLimits> }
 ): Promise<Settlement> {
+  // A Code routine runs as a CodeTask with its repository, which this poller
+  // does not start: offering it would create a Work run on the routine's
+  // session with no repository, outside the routine's own concurrency limit.
+  // Settled, so the cursor moves on; Code routines fire on their clock.
+  if (scheduleRunKindOf(schedule.runKind) === "code") {
+    log("skipped: polled triggers do not start Code routines", { scheduleId: schedule.id, triggerId: trigger.id });
+    return "settled";
+  }
   const state: TriggerState = {
     id: trigger.id,
     kind: trigger.kind,
