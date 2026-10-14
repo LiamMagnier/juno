@@ -61,6 +61,8 @@ export async function importSemanticFile(
         notes.push(`${report.opaqueFormulas.length} formula${report.opaqueFormulas.length === 1 ? "" : "s"} kept with their last value (functions this workbook does not compute)`);
       }
       if (report.droppedFormats) notes.push(`${report.droppedFormats} number format${report.droppedFormats === 1 ? "" : "s"} not carried over`);
+      if (report.droppedMerges) notes.push(`${report.droppedMerges} merged range${report.droppedMerges === 1 ? "" : "s"} unmerged (values kept)`);
+      if (report.droppedNotes) notes.push(`${report.droppedNotes} cell note${report.droppedNotes === 1 ? "" : "s"} not carried over`);
       return { type: "SPREADSHEET", content: serializeSemantic("SPREADSHEET", model), notes };
     }
     case "docx": {

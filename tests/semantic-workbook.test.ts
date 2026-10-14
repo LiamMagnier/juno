@@ -455,3 +455,19 @@ test("a defined name or chart range is held to the range limit (no unbounded rea
   const ok = applyWorkbookOps(model, [{ op: "defineName", name: "Small", ref: "S!A1:A10" } as WorkbookOp]);
   assert.equal(ok.model.names.Small, "S!$A$1:$A$10");
 });
+
+test("an imported workbook's merged ranges and cell notes are reported, not lost silently", async () => {
+  const { readWorkbookXlsx } = await import("@/lib/work/deliverables/semantic/workbook/xlsx");
+  const book = new Workbook();
+  const ws = book.addWorksheet("Plan");
+  ws.getCell("A1").value = "Quarterly plan";
+  ws.mergeCells("A1:C1");
+  ws.getCell("A2").value = 42;
+  ws.getCell("A2").note = "Checked with finance";
+  const bytes = Buffer.from(await book.xlsx.writeBuffer());
+  const { model, report } = await readWorkbookXlsx(bytes);
+  assert.equal(report.droppedMerges, 1);
+  assert.equal(report.droppedNotes, 1);
+  assert.equal(model.sheets[0].cells.A1?.v, "Quarterly plan", "the merged value is kept");
+  assert.equal(model.sheets[0].cells.A2?.v, 42);
+});

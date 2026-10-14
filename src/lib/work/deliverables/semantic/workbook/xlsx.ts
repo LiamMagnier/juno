@@ -287,6 +287,13 @@ export interface WorkbookImportReport {
   /** Number formats this build cannot render, dropped (the value is unaffected). */
   droppedFormats: number;
   charts: number;
+  /**
+   * Merged ranges and cell notes, which this workbook model does not hold. The
+   * values in them are kept; the merge and the note text are not, and the
+   * import says so rather than losing them silently.
+   */
+  droppedMerges: number;
+  droppedNotes: number;
 }
 
 interface RawChart {
@@ -381,7 +388,7 @@ export async function readWorkbookXlsx(
   } catch (error) {
     throw new SemanticError("unreadable", `This .xlsx could not be opened: ${error instanceof Error ? error.message : String(error)}`);
   }
-  const report: WorkbookImportReport = { formulas: 0, opaqueFormulas: [], droppedFormats: 0, charts: 0 };
+  const report: WorkbookImportReport = { formulas: 0, opaqueFormulas: [], droppedFormats: 0, charts: 0, droppedMerges: 0, droppedNotes: 0 };
   const sheets: WorkbookSheetInput[] = [];
   const sheetNames = new Set<string>();
   workbook.eachSheet((ws) => sheetNames.add(ws.name.toLowerCase()));
@@ -398,6 +405,7 @@ export async function readWorkbookXlsx(
 
   const charts = await readCharts(bytes);
   workbook.eachSheet((ws: Worksheet) => {
+    report.droppedMerges += (ws.model as { merges?: unknown[] } | undefined)?.merges?.length ?? 0;
     const cells: Record<string, CellInput> = {};
     ws.eachRow({ includeEmpty: false }, (row) => {
       row.eachCell({ includeEmpty: false }, (cell) => {
@@ -405,6 +413,7 @@ export async function readWorkbookXlsx(
         const fmtRaw = cell.numFmt;
         const fmt = fmtRaw ? resolveFormat(fmtRaw) : null;
         if (fmtRaw && !fmt && fmtRaw !== "General") report.droppedFormats++;
+        if (cell.note) report.droppedNotes++;
         const style: { fmt?: string; bold?: boolean } = {
           ...(fmt && fmt !== "General" ? { fmt } : {}),
           ...(cell.font?.bold ? { bold: true } : {}),
