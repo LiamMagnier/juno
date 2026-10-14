@@ -1087,6 +1087,8 @@ export class AgentSession {
       output = `Tool crashed: ${err instanceof Error ? err.message : String(err)}`;
       isError = true;
     }
+    // What the agent left in each file, so an undo never overwrites a change made after it.
+    for (const abs of mutatedPaths) this.checkpoints.recordWritten(abs);
     this.files.record(call.name, call.input, isError);
     const image = !isError && call.name === 'computer_screenshot' ? decodeComputerScreenshot(output) : undefined;
     const eventOutput = image
@@ -1186,9 +1188,14 @@ export class AgentSession {
 
   /** Undo everything the previous turn changed on disk. Returns restored paths. */
   undoLastTurn(): string[] {
+    return this.undoLastTurnReport().restored;
+  }
+
+  /** `undoLastTurn`, also naming the files left alone because they changed after the agent wrote them. */
+  undoLastTurnReport(): import('./checkpoints.js').TurnRollback {
     const turns = this.checkpoints.turnsWithChanges();
-    if (turns.length === 0) return [];
-    return this.checkpoints.restoreToBefore(turns[turns.length - 1]);
+    if (turns.length === 0) return { restored: [], skipped: [] };
+    return this.checkpoints.rollbackToBefore(turns[turns.length - 1]);
   }
 
   /** Rewind the workspace to its state before the given turn. */

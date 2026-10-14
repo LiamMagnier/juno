@@ -8,6 +8,29 @@ const MAX_GLOB_RESULTS = 200;
 const MAX_GREP_MATCHES = 100;
 const IGNORE = ['**/node_modules/**', '**/.git/**', '**/dist/**', '**/build/**', '**/.next/**'];
 
+/**
+ * Writes a file whole or not at all: a temp file beside it, then a rename. A
+ * crash, a kill or a full disk mid-write leaves the old file, never a
+ * truncated one. An existing file keeps its permission bits.
+ */
+export function writeFileAtomic(abs: string, data: string | Buffer): void {
+  let mode: number | undefined;
+  try {
+    mode = fs.statSync(abs).mode & 0o7777;
+  } catch {
+    mode = undefined;
+  }
+  const tmp = path.join(path.dirname(abs), `.${path.basename(abs)}.${process.pid}.${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}.tmp`);
+  try {
+    fs.writeFileSync(tmp, data, mode === undefined ? undefined : { mode });
+    if (mode !== undefined) fs.chmodSync(tmp, mode);
+    fs.renameSync(tmp, abs);
+  } catch (error) {
+    fs.rmSync(tmp, { force: true });
+    throw error;
+  }
+}
+
 function resolve(ctx: ToolContext, p: string): string {
   return path.isAbsolute(p) ? p : path.resolve(ctx.cwd, p);
 }
@@ -140,7 +163,7 @@ export const writeFileTool: ToolDefinition = {
       return { output: error instanceof Error ? error.message : String(error), isError: true };
     }
     fs.mkdirSync(path.dirname(abs), { recursive: true });
-    fs.writeFileSync(abs, String(input.content), 'utf8');
+    writeFileAtomic(abs, String(input.content));
     return { output: `Wrote ${String(input.content).length} chars to ${abs}` };
   },
 };
@@ -172,9 +195,18 @@ export const editFileTool: ToolDefinition = {
       return { output: error instanceof Error ? error.message : String(error), isError: true };
     }
     if (!fs.existsSync(abs)) return { output: `File not found: ${abs}`, isError: true };
-    const text = fs.readFileSync(abs, 'utf8');
     const oldStr = String(input.old_string);
     const newStr = String(input.new_string);
+    // An empty old_string "matches" between every character: replace_all
+    // would interleave new_string through the whole file.
+    if (oldStr === '') return { output: 'old_string must not be empty; use write_file to create or replace a whole file.', isError: true };
+    const bytes = fs.readFileSync(abs);
+    const text = bytes.toString('utf8');
+    // Editing as UTF-8 text rewrites every byte that is not valid UTF-8 as
+    // U+FFFD: a Latin-1 or binary file would be silently damaged.
+    if (!Buffer.from(text, 'utf8').equals(bytes)) {
+      return { output: `${abs} is not UTF-8 text, so edit_file will not change it (that would corrupt it). Use bash for this file.`, isError: true };
+    }
     const count = text.split(oldStr).length - 1;
     if (count === 0) return { output: `old_string not found in ${abs}`, isError: true };
     if (count > 1 && !input.replace_all) {
@@ -183,10 +215,13 @@ export const editFileTool: ToolDefinition = {
         isError: true,
       };
     }
+    // Spliced, not String.replace: a string replacement there reads `$$`,
+    // `$&`, `` $` `` and `$'` in new_string as patterns.
+    const at = text.indexOf(oldStr);
     const updated = input.replace_all
       ? text.split(oldStr).join(newStr)
-      : text.replace(oldStr, newStr);
-    fs.writeFileSync(abs, updated, 'utf8');
+      : text.slice(0, at) + newStr + text.slice(at + oldStr.length);
+    writeFileAtomic(abs, updated);
     return { output: `Edited ${abs} (${count} replacement${count === 1 ? '' : 's'})` };
   },
 };

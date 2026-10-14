@@ -186,7 +186,8 @@ function handleConnection(ws: WebSocket, fallback?: ProviderAdapter): void {
             session?.setMode(msg.mode as PermissionMode);
             break;
           case 'undo':
-            send({ type: 'undo_result', restored: session?.undoLastTurn() ?? [] });
+            // `skipped`: files changed after the agent wrote them, which an undo never overwrites.
+            send({ type: 'undo_result', ...(session?.undoLastTurnReport() ?? { restored: [], skipped: [] }) });
             break;
           /*
            * PER-FILE ROLLBACK, and why it is two verbs rather than a flag on

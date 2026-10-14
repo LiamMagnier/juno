@@ -1,5 +1,7 @@
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { writeFileAtomic } from './tools/fs.js';
 import { createTwoFilesPatch } from 'diff';
 
 interface CheckpointIndexEntry {
@@ -25,7 +27,22 @@ interface CheckpointIndexEntry {
  * the class docstring). Callers MUST surface that as "cannot undo this" rather
  * than as success — the whole point of the third outcome.
  */
-export type FileRollback = 'restored' | 'deleted' | 'unknown';
+export type FileRollback = 'restored' | 'deleted' | 'unknown' | 'changed';
+
+/** What a whole-turn rollback did: put back, and left alone because they changed after the agent wrote them. */
+export interface TurnRollback {
+  restored: string[];
+  skipped: string[];
+}
+
+/** The file's content hash, or null when it does not exist. */
+function contentHash(absPath: string): string | null {
+  try {
+    return createHash('sha256').update(fs.readFileSync(absPath)).digest('hex');
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Per-turn file snapshots. Before the agent mutates a file through write/edit
@@ -36,18 +53,54 @@ export type FileRollback = 'restored' | 'deleted' | 'unknown';
 export class CheckpointStore {
   private dir: string;
   private index: CheckpointIndexEntry[] = [];
+  /**
+   * Each path's content hash right after the agent last wrote it (null: it
+   * deleted it). A rollback puts back only files that still hold exactly that:
+   * one the person, a later bash command or a formatter changed since is left
+   * alone and reported, never overwritten.
+   */
+  private written: Record<string, string | null> = {};
+  private snapshotSeq = 0;
 
   constructor(sessionDir: string) {
     this.dir = path.join(sessionDir, 'checkpoints');
     fs.mkdirSync(this.dir, { recursive: true });
     const indexPath = path.join(this.dir, 'index.json');
     if (fs.existsSync(indexPath)) {
-      this.index = JSON.parse(fs.readFileSync(indexPath, 'utf8')) as CheckpointIndexEntry[];
+      try {
+        this.index = JSON.parse(fs.readFileSync(indexPath, 'utf8')) as CheckpointIndexEntry[];
+      } catch {
+        // A damaged index (written before saves were atomic) must not stop the
+        // session from opening: it only loses the undo history.
+        this.index = [];
+      }
     }
+    try {
+      this.written = JSON.parse(fs.readFileSync(path.join(this.dir, 'written.json'), 'utf8')) as Record<string, string | null>;
+    } catch {
+      this.written = {};
+    }
+    this.snapshotSeq = fs.readdirSync(this.dir).length;
   }
 
   private save(): void {
-    fs.writeFileSync(path.join(this.dir, 'index.json'), JSON.stringify(this.index, null, 2));
+    writeFileAtomic(path.join(this.dir, 'index.json'), JSON.stringify(this.index, null, 2));
+  }
+
+  private saveWritten(): void {
+    writeFileAtomic(path.join(this.dir, 'written.json'), JSON.stringify(this.written));
+  }
+
+  /** Records what the agent left in a file it just wrote (call after the write). */
+  recordWritten(absPath: string): void {
+    if (!this.snapshottedPaths().includes(absPath)) return;
+    this.written[absPath] = contentHash(absPath);
+    this.saveWritten();
+  }
+
+  /** Whether the file changed after the agent last wrote it (false when no write was recorded). */
+  private changedSinceWritten(absPath: string): boolean {
+    return absPath in this.written && contentHash(absPath) !== this.written[absPath];
   }
 
   private entryFor(turnIndex: number): CheckpointIndexEntry {
@@ -65,7 +118,9 @@ export class CheckpointStore {
     const entry = this.entryFor(turnIndex);
     if (absPath in entry.files) return;
     if (fs.existsSync(absPath)) {
-      const name = `${turnIndex}-${Object.keys(entry.files).length}-${path.basename(absPath)}`;
+      // A counter that only grows: the per-turn file count drops when a file
+      // is kept or reverted, and reusing a number overwrote a live snapshot.
+      const name = `${turnIndex}-${this.snapshotSeq++}-${path.basename(absPath)}`;
       fs.copyFileSync(absPath, path.join(this.dir, name));
       entry.files[absPath] = name;
     } else {
@@ -90,6 +145,11 @@ export class CheckpointStore {
    * at or after that turn, the earliest snapshot wins.
    */
   restoreToBefore(turnIndex: number): string[] {
+    return this.rollbackToBefore(turnIndex).restored;
+  }
+
+  /** `restoreToBefore`, also saying which files were left alone because they changed after the agent wrote them. */
+  rollbackToBefore(turnIndex: number): TurnRollback {
     const affected = this.index
       .filter((e) => e.turnIndex >= turnIndex)
       .sort((a, b) => a.turnIndex - b.turnIndex);
@@ -100,7 +160,12 @@ export class CheckpointStore {
       }
     }
     const restored: string[] = [];
+    const skipped: string[] = [];
     for (const [abs, snap] of earliest) {
+      if (this.changedSinceWritten(abs)) {
+        skipped.push(abs);
+        continue;
+      }
       if (snap === null) {
         if (fs.existsSync(abs)) fs.rmSync(abs);
       } else {
@@ -111,7 +176,9 @@ export class CheckpointStore {
     }
     this.index = this.index.filter((e) => e.turnIndex < turnIndex);
     this.save();
-    return restored;
+    for (const abs of earliest.keys()) delete this.written[abs];
+    this.saveWritten();
+    return { restored, skipped };
   }
 
   /**
@@ -150,6 +217,9 @@ export class CheckpointStore {
   revertFile(absPath: string): FileRollback {
     const snapshot = this.earliestSnapshot(absPath);
     if (snapshot === undefined) return 'unknown';
+    // Changed since the agent wrote it: putting the old bytes back would erase
+    // that change too. The snapshot stays, so the reader can decide.
+    if (this.changedSinceWritten(absPath)) return 'changed';
     let outcome: FileRollback;
     if (snapshot === null) {
       if (fs.existsSync(absPath)) fs.rmSync(absPath);
@@ -207,6 +277,10 @@ export class CheckpointStore {
   private forget(absPath: string): void {
     for (const entry of this.index) delete entry.files[absPath];
     this.save();
+    if (absPath in this.written) {
+      delete this.written[absPath];
+      this.saveWritten();
+    }
   }
 
   /** Unified diff of everything changed since (and including) `turnIndex`. */
