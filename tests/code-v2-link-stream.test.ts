@@ -42,6 +42,15 @@ test("advanceCursors: per followed session and the global stream, never backward
   assert.equal(global, 3);
 });
 
+test("advanceCursors: a renumbered global batch resets only the relay cursor", () => {
+  const cursors = { s1: 10 };
+  assert.equal(advanceCursors(cursors, 100, [gev(1), gev(2), ev("s1", 4)]), 2);
+  assert.deepEqual(cursors, { s1: 10 });
+  assert.equal(advanceCursors(cursors, 2, [ev("s1", 11)]), 2, "a session-only batch preserves the global cursor");
+  assert.deepEqual(cursors, { s1: 11 });
+  assert.equal(advanceCursors(cursors, 2, []), 2, "an empty batch is not evidence of a relay reset");
+});
+
 test("stream: a push reaches the open stream within milliseconds, one frame per batch", async () => {
   const link = await onlineLink();
   const abort = new AbortController();

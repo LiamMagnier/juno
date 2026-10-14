@@ -32,6 +32,7 @@ import {
   type UserInput,
 } from "@/lib/code-v2/contracts";
 import { applyCoalesced, emptySessionView, type SessionView } from "@/lib/code-v2/session-store";
+import { rebaseGlobalCursor } from "./link-cursors";
 
 export type TransportStatus = "connecting" | "open" | "closed";
 
@@ -485,8 +486,13 @@ export class DeviceLinkTransport implements EnvTransport {
       return;
     }
     for (const r of reply.responses ?? []) this.messages.emit(r);
-    for (const e of reply.events ?? []) {
-      if (e.stream === "global") this.globalCursor = Math.max(this.globalCursor, e.sequence);
+    const events = reply.events ?? [];
+    this.globalCursor = rebaseGlobalCursor(this.globalCursor, events);
+    for (const e of events) {
+      if (e.stream === "global") {
+        if (e.sequence <= this.globalCursor) continue;
+        this.globalCursor = e.sequence;
+      }
       this.messages.emit(e);
     }
   }

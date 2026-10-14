@@ -505,7 +505,7 @@ public final class CodeLinkRemoteModel {
 
     func receive(_ events: [CodeV2.ServerEventEnvelope], deviceID: String) {
         guard !events.isEmpty else { return }
-        let effects = remote.apply(events, now: now())
+        let effects = remote.applyRelayBatch(events, now: now())
         for case let .reopen(sessionId, cwd, afterSequence) in effects where !reopening.contains(sessionId) {
             reopening.insert(sessionId)
             Task {
