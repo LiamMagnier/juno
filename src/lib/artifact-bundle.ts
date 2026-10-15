@@ -9,7 +9,7 @@ import { PRODUCT_NAME } from "@/lib/brand/names";
  * DOWNLOAD (PRODUCT_REFOUNDATION §10): an artifact as a file, or as a ZIP
  * bundle when it is more than one file.
  *
- * A design is the multi-file one today: its document (`.juno.design.json`,
+ * A design is the multi-file one today: its document (`.alevr.design.json`,
  * what the editor opens and Juno imports), a picture of it (`poster.svg`), and
  * the Juno Code handoff bundle (`handoff.json`) the design editor already
  * builds. Every other type is one source file, and a ZIP of it (`format=zip`)
@@ -31,7 +31,7 @@ export const ARTIFACT_FILE_EXTENSIONS: Record<string, string> = {
   SVG: "svg",
   MARKDOWN: "md",
   MERMAID: "mmd",
-  DESIGN: "juno.design.json",
+  DESIGN: "alevr.design.json",
   CODE: "txt",
 };
 

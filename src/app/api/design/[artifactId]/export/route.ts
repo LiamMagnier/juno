@@ -239,7 +239,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ artifact
         return NextResponse.json(exportTokens(document));
       }
       case "json": {
-        return download(serializeDesignDocument(document), `${artifact.identifier}.juno.design.json`, "application/json");
+        return download(serializeDesignDocument(document), `${artifact.identifier}.alevr.design.json`, "application/json");
       }
       case "handoff": {
         return NextResponse.json(buildHandoffBundle(document, pageId, new Date().toISOString()));

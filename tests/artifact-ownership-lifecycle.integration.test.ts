@@ -665,7 +665,7 @@ if (!DB_URL || !canMockModules) {
     const designZip = await route.GET(request("GET", `/api/artifacts/${design.artifact.id}/download`), params({ id: design.artifact.id }));
     assert.equal(designZip.headers.get("content-type"), "application/zip", "a design is more than one file");
     const bundle = await JSZip.loadAsync(await designZip.arrayBuffer());
-    assert.ok(bundle.file("Sign in.juno.design.json"));
+    assert.ok(bundle.file("Sign in.alevr.design.json"));
     assert.ok(bundle.file("poster.svg"));
     assert.ok(bundle.file("handoff.json"));
   });

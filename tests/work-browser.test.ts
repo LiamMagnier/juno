@@ -99,7 +99,7 @@ function servedSite(extra: Record<string, string> = {}): ServedSite {
       // address check runs against every request the page makes, not only
       // against the URL the model asked for.
       const blocked = blockedFetchTarget(request.url);
-      if (blocked) return Promise.resolve({ ok: false, message: `Juno will not open that: ${blocked}` });
+      if (blocked) return Promise.resolve({ ok: false, message: `Alevr will not open that: ${blocked}` });
 
       const url = new URL(request.url);
       const html = (body: string): BrowserResourceResult => ({
@@ -364,7 +364,7 @@ test("it refuses an address that is not on the web before it starts a browser", 
   ]) {
     const result = await tool.execute({ action: "open", url }, { cwd: "/tmp" });
     assert.equal(result.isError, true, url);
-    assert.match(result.output, /Juno will not open that/);
+    assert.match(result.output, /Alevr will not open that/);
   }
   assert.equal(opened, 0, "none of them reached the browser");
 });

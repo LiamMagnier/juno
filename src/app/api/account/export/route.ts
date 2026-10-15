@@ -409,7 +409,7 @@ export async function GET(req: Request) {
     return new NextResponse(lines.join("\r\n") + "\r\n", {
       headers: {
         "Content-Type": "text/csv; charset=utf-8",
-        "Content-Disposition": `attachment; filename="juno-export-${date}.csv"`,
+        "Content-Disposition": `attachment; filename="alevr-export-${date}.csv"`,
       },
     });
   }
@@ -646,12 +646,12 @@ export async function GET(req: Request) {
   };
 
   if (isJuno && junoZip) {
-    junoZip.file("juno-export.json", JSON.stringify(payload, null, 2));
+    junoZip.file("alevr-export.json", JSON.stringify(payload, null, 2));
     const archive = await junoZip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" });
     return new NextResponse(new Uint8Array(archive), {
       headers: {
         "Content-Type": "application/zip",
-        "Content-Disposition": `attachment; filename="juno-export-${date}.zip"`,
+        "Content-Disposition": `attachment; filename="alevr-export-${date}.zip"`,
       },
     });
   }
@@ -659,7 +659,7 @@ export async function GET(req: Request) {
   return new NextResponse(JSON.stringify(payload, null, 2), {
     headers: {
       "Content-Type": "application/json",
-      "Content-Disposition": `attachment; filename="juno-export-${date}.json"`,
+      "Content-Disposition": `attachment; filename="alevr-export-${date}.json"`,
     },
   });
 }

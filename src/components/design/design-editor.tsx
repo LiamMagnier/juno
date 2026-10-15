@@ -326,7 +326,7 @@ export function DesignEditor({
           const payload = await res.json();
           const name =
             format === "handoff"
-              ? `${doc?.name ?? "design"}.juno-handoff.json`
+              ? `${doc?.name ?? "design"}.alevr-handoff.json`
               : format === "tokens"
                 ? `${doc?.name ?? "design"}.tokens.json`
                 : (payload.file as string);

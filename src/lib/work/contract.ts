@@ -291,7 +291,7 @@ export function assertWorkContractMatchesDomain(): void {
 
   if (failures.length > 0) {
     throw new Error(
-      `The Juno Work contract and src/lib/work/domain.ts disagree:\n  - ${failures.join("\n  - ")}\n`
+      `The Work contract and src/lib/work/domain.ts disagree:\n  - ${failures.join("\n  - ")}\n`
         + `Change ${CONTRACT_PATH}, then regenerate Swift with: `
         + "node scripts/generate-work-contract.mjs "
         + "--output=native/Packages/JunoNativeKit/Sources/JunoCore/Generated/JunoWorkContract.swift"

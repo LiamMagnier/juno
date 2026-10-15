@@ -19,6 +19,8 @@
  * catalog entry, not two.
  */
 
+import { PRODUCT_NAME } from "@/lib/brand/names";
+
 export const PANEL_COPY = {
   shell: {
     closePanel: "Close panel",
@@ -60,7 +62,7 @@ export const PANEL_COPY = {
 
   timeline: {
     empty: "No steps yet",
-    emptyDetail: "Steps appear here as Juno works.",
+    emptyDetail: `Steps appear here as ${PRODUCT_NAME} works.`,
     commentary: "Said while working",
   },
 
@@ -118,22 +120,22 @@ export const PANEL_COPY = {
     untrusted:
       "The model wrote these arguments from content it read: a web page, a file, or output from another connector. That content can contain text written to steer what gets sent. Check the values below are what you meant before you allow it.",
     untrustedTask:
-      "This chat includes content Juno read from outside it, such as a web page, a file or a connected app. Check that the brief below is what you asked for before you start it.",
+      `This chat includes content ${PRODUCT_NAME} read from outside it, such as a web page, a file or a connected app. Check that the brief below is what you asked for before you start it.`,
     risk: {
       read_only: "Reads only",
       reversible_write: "Reversible change",
-      external_write: "Leaves Juno",
+      external_write: `Leaves ${PRODUCT_NAME}`,
       destructive_or_sensitive: "Cannot be undone",
       unknown: "Unverified",
     },
     riskDetail: {
-      read_only: "This reads. Nothing outside Juno changes.",
+      read_only: `This reads. Nothing outside ${PRODUCT_NAME} changes.`,
       reversible_write: "This changes something that can be put back, like a label, a folder or a draft.",
-      external_write: "This sends something to another service. Once it lands there, Juno cannot take it back.",
+      external_write: `This sends something to another service. Once it lands there, ${PRODUCT_NAME} cannot take it back.`,
       destructive_or_sensitive:
         "This deletes, pays for, or touches something private. Nothing here can undo it afterwards.",
       unknown:
-        "Juno could not verify that this only reads, so it is treated as a change that leaves Juno. Read the arguments below before you answer.",
+        `${PRODUCT_NAME} could not verify that this only reads, so it is treated as a change that leaves ${PRODUCT_NAME}. Read the arguments below before you answer.`,
     },
   },
 
@@ -165,7 +167,7 @@ export const PANEL_COPY = {
     forget: "Forget",
     openSourceChat: "Open source chat",
     manageAll: "Manage all",
-    forgotten: "Forgotten. Juno won’t learn this again.",
+    forgotten: `Forgotten. ${PRODUCT_NAME} won’t learn this again.`,
     forgetFailed: "Couldn’t forget that. Nothing was changed.",
     undo: "Undo",
     /** The effort rungs, spelled as the model selector spells them. */

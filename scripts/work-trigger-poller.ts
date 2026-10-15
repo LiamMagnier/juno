@@ -120,6 +120,7 @@ import {
 import { maxFusedSearchFeeMicroUsd, meteredWebSearch } from "@/lib/web-search";
 import { effectiveHostState } from "@/app/api/work/protocol";
 import { scheduleRunKindOf } from "@/lib/work/code-routine";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /**
  * How often to look for triggers whose next poll is due.
@@ -342,7 +343,7 @@ async function callConnectorTool(
     // `credential_unusable` sentence in `evaluateConnector`, which is the case
     // the user can act on and by far the most common of the three.
     throw new SourceUnavailable(
-      `Juno could not reach ${connectorId} for this account. It may need to be connected again.`
+      `${PRODUCT_NAME} could not reach ${connectorId} for this account. It may need to be connected again.`
     );
   }
 
@@ -362,7 +363,7 @@ async function callConnectorTool(
     const named = toolset.tools.find((entry) => entry.function.name.endsWith(suffix));
     if (!named) {
       throw new SourceUnavailable(
-        `${connectorId} did not offer the ${tool} tool, so Juno has no way to check this trigger.`
+        `${connectorId} did not offer the ${tool} tool, so ${PRODUCT_NAME} has no way to check this trigger.`
       );
     }
     return unwrapUntrusted((await toolset.execute(named.function.name, args)).text);
@@ -518,7 +519,7 @@ async function readSource(
     // connector before this is called — and stated rather than assumed, because
     // "no source" reaching here silently would be a trigger polled for ever
     // against nothing.
-    throw new SourceUnavailable(`Juno has no source to watch for a ${parsed.kind} trigger.`);
+    throw new SourceUnavailable(`${PRODUCT_NAME} has no source to watch for a ${parsed.kind} trigger.`);
   }
 
   if (parsed.kind === "email_filter") {
@@ -529,13 +530,13 @@ async function readSource(
       limit: MAIL_PAGE,
     });
     const failure = toolFailure(text);
-    if (failure) throw new SourceUnavailable(`Juno could not read ${mailbox}: ${failure}`);
+    if (failure) throw new SourceUnavailable(`${PRODUCT_NAME} could not read ${mailbox}: ${failure}`);
 
     const lines = text.split("\n").filter((line) => line.trim().startsWith("•"));
     const parsedLines = lines.map((line) => parseMailLine(line, mailbox));
     if (lines.length > 0 && parsedLines.every((entry) => entry === null)) {
       throw new SourceUnavailable(
-        "Juno could not make sense of what the mail connector returned, so it has not looked at these messages."
+        `${PRODUCT_NAME} could not make sense of what the mail connector returned, so it has not looked at these messages.`
       );
     }
     const messages = parsedLines.filter((entry): entry is EmailTriggerEvent => entry !== null);
@@ -576,13 +577,13 @@ async function readSource(
       limit: 50,
     });
     const failure = toolFailure(text);
-    if (failure) throw new SourceUnavailable(`Juno could not read your calendar: ${failure}`);
+    if (failure) throw new SourceUnavailable(`${PRODUCT_NAME} could not read your calendar: ${failure}`);
 
     const lines = text.split("\n").filter((line) => line.trim().startsWith("•"));
     const parsedLines = lines.map(parseCalendarLine);
     if (lines.length > 0 && parsedLines.every((entry) => entry === null)) {
       throw new SourceUnavailable(
-        "Juno could not make sense of what the calendar connector returned, so it has not looked at these meetings."
+        `${PRODUCT_NAME} could not make sense of what the calendar connector returned, so it has not looked at these meetings.`
       );
     }
     const events = parsedLines.filter((entry): entry is CalendarTriggerEvent => entry !== null);
@@ -613,7 +614,7 @@ async function readSource(
       const verdict = admissionVerdict({ budget: status, windows, estimateMicroUsd: maxFusedSearchFeeMicroUsd(10) });
       if (!verdict.allowed) {
         throw new SourceUnavailable(
-          "Juno paused this topic monitor because the account's usage limit is reached. It resumes when the limit resets."
+          `${PRODUCT_NAME} paused this topic monitor because the account's usage limit is reached. It resumes when the limit resets.`
         );
       }
     }
@@ -735,7 +736,7 @@ async function readSource(
     };
   }
 
-  throw new SourceUnavailable(`Juno has no source to watch for a ${parsed.kind} trigger.`);
+  throw new SourceUnavailable(`${PRODUCT_NAME} has no source to watch for a ${parsed.kind} trigger.`);
 }
 
 // ---------------------------------------------------------------------------
@@ -1170,7 +1171,7 @@ async function pollOne(trigger: TriggerRow, budgets: Map<string, AccountLimits>)
         : // Never the raw error. A connector failure message is exactly the kind
           // of string that ends up carrying a fragment of what it failed on, and
           // this column is rendered in the schedule's UI.
-          "Juno could not read this trigger's source. It will try again shortly.";
+          `${PRODUCT_NAME} could not read this trigger's source. It will try again shortly.`;
     if (!(error instanceof SourceUnavailable)) {
       log("poll failed", { triggerId: trigger.id, error: String(error) });
     }
@@ -1307,7 +1308,7 @@ async function tick(): Promise<void> {
           data: {
             pollLockedUntil: null,
             nextPollAt: new Date(now.getTime() + TRIGGER_POLL_ERROR_INTERVAL_MS),
-            lastPollError: "Juno could not check this trigger. It will try again shortly.",
+            lastPollError: `${PRODUCT_NAME} could not check this trigger. It will try again shortly.`,
           },
         })
         .catch((releaseError: unknown) => {

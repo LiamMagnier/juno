@@ -61,7 +61,7 @@ const EXTENSIONS: Record<string, string> = {
   SVG: "svg",
   MARKDOWN: "md",
   MERMAID: "mmd",
-  DESIGN: "juno.design.json",
+  DESIGN: "alevr.design.json",
   CODE: "txt",
 };
 

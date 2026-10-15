@@ -3,6 +3,8 @@
  * the i18n extractor never harvests it (INV-29, SPEC §10.5).
  */
 
+import { PRODUCT_NAME } from "@/lib/brand/names";
+
 /**
  * Appended to the last tool result of the round before the final, tools-off
  * request — outside the untrusted envelope, never as a message of its own
@@ -10,4 +12,4 @@
  * prefix.
  */
 export const FINAL_ROUND_NOTE =
-  "[Juno: this is the last step. Do not call tools. Answer the user now from what you have, and say briefly what you could not check.]";
+  `[${PRODUCT_NAME}: this is the last step. Do not call tools. Answer the user now from what you have, and say briefly what you could not check.]`;

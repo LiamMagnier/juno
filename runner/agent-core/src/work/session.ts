@@ -818,7 +818,7 @@ export class WorkAgentSession {
       terminalReason: 'completed',
       detail: validation.judged
         ? 'The deliverable answers the goal.'
-        : 'Every step finished and the run produced a result. Juno has not judged whether it is correct.',
+        : 'Every step finished and the run produced a result. Alevr has not judged whether it is correct.',
     };
   }
 
@@ -1510,7 +1510,7 @@ export function structuralValidation(input: {
       outstanding.length === 0
         ? `All ${snapshot.steps.length} steps are done, skipped or failed.`
         : untouched
-          ? 'Juno answered without starting the plan: no step was begun, so nothing was actually done.'
+          ? 'Alevr answered without starting the plan: no step was begun, so nothing was actually done.'
           : `Still open: ${outstanding.map((step) => step.title).join('; ')}.`,
   });
 

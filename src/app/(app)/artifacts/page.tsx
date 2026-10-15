@@ -98,7 +98,7 @@ const DOWNLOAD_EXTENSIONS: Record<string, string> = {
   SVG: "svg",
   MARKDOWN: "md",
   MERMAID: "mmd",
-  DESIGN: "juno.design.json",
+  DESIGN: "alevr.design.json",
   SPREADSHEET: "xlsx",
   DOCUMENT: "docx",
   PRESENTATION: "pptx",

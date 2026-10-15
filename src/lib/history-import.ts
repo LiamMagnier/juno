@@ -147,6 +147,9 @@ export function findConversationsEntry(zipEntries: string[]): string | null {
     "My Activity.json",
     "my_activity.json",
     "gemini.json",
+    // Alevr's own account export, under its current name and the one it
+    // shipped with before the rename, so an older archive still imports.
+    "alevr-export.json",
     "juno-export.json",
   ]);
   const hits = zipEntries
@@ -166,7 +169,7 @@ export function findConversationsEntry(zipEntries: string[]): string | null {
 export function detectFormat(zipEntries: string[]): ImportFormat | null {
   if (!findConversationsEntry(zipEntries)) return null;
   const names = new Set(zipEntries.map((path) => path.split("/").pop() ?? path));
-  if ([...names].some((name) => /juno-export/i.test(name))) return "juno";
+  if ([...names].some((name) => /(?:alevr|juno)-export/i.test(name))) return "juno";
   if ([...names].some((name) => /gemini|my activity/i.test(name))) return "gemini";
   if (names.has("chat.html") || names.has("user.json") || names.has("message_feedback.json")) return "chatgpt";
   if (names.has("projects.json") || names.has("users.json")) return "claude";

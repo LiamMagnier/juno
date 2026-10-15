@@ -77,7 +77,7 @@ export class BackendUsageReporter implements UsageReporter {
     }
     const reservationId = result?.data?.reservationId;
     if (!result || result.status < 200 || result.status >= 300 || typeof reservationId !== 'string' || !reservationId) {
-      return { allowed: false, message: result?.error ?? 'Juno could not verify Code usage for this account.' };
+      return { allowed: false, message: result?.error ?? 'Alevr could not verify Code usage for this account.' };
     }
     this.reservationId = reservationId;
     return { allowed: true };

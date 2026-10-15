@@ -301,7 +301,7 @@ export function blockedFetchAddress(rawAddress: string): string | null {
       (a === 198 && b === 51 && c === 100) ||
       (a === 203 && b === 0 && c === 113) ||
       a >= 224;
-    return privateRange ? 'that address is inside Juno\'s own network, not on the web.' : null;
+    return privateRange ? 'that address is inside Alevr\'s own network, not on the web.' : null;
   }
 
   const ipv6 = parseIpv6(address);
@@ -330,7 +330,7 @@ export function blockedFetchAddress(rawAddress: string): string | null {
       (a === 198 && b === 51 && c === 100) ||
       (a === 203 && b === 0 && c === 113) ||
       a >= 224;
-    return privateRange ? 'that address is inside Juno\'s own network, not on the web.' : null;
+    return privateRange ? 'that address is inside Alevr\'s own network, not on the web.' : null;
   }
 
   const first = ipv6[0];
@@ -341,7 +341,7 @@ export function blockedFetchAddress(rawAddress: string): string | null {
   const isMulticast = (first & 0xff00) === 0xff00;
   const isDocumentation = ipv6[0] === 0x2001 && ipv6[1] === 0x0db8;
   return isUnspecified || isLoopback || isUniqueLocal || isLinkLocal || isMulticast || isDocumentation
-    ? 'that address is inside Juno\'s own network, not on the web.'
+    ? 'that address is inside Alevr\'s own network, not on the web.'
     : null;
 }
 
@@ -388,13 +388,13 @@ export function blockedFetchTarget(rawUrl: string): string | null {
   try {
     url = new URL(rawUrl);
   } catch {
-    return 'that is not a URL Juno can parse.';
+    return 'that is not a URL Alevr can parse.';
   }
   if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-    return `${url.protocol} is not a protocol Juno will fetch; use http or https.`;
+    return `${url.protocol} is not a protocol Alevr will fetch; use http or https.`;
   }
   if (url.username || url.password) {
-    return 'the URL carries credentials, which Juno will not send.';
+    return 'the URL carries credentials, which Alevr will not send.';
   }
   const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.+$/, '');
   if (
@@ -404,7 +404,7 @@ export function blockedFetchTarget(rawUrl: string): string | null {
     host.endsWith('.local') ||
     host.endsWith('.internal')
   ) {
-    return 'that address is on the machine Juno is running on, not on the web.';
+    return 'that address is on the machine Alevr is running on, not on the web.';
   }
   return blockedFetchAddress(host);
 }
@@ -487,7 +487,7 @@ export function webSearchTool(deps: WebSearchDeps): WorkToolDefinition {
       if (!deps.configured()) {
         return {
           output:
-            'Web search is not configured on this Juno deployment, so nothing was searched. Say so in your answer rather than working from memory.',
+            'Web search is not configured on this Alevr deployment, so nothing was searched. Say so in your answer rather than working from memory.',
           isError: true,
         };
       }
@@ -541,14 +541,14 @@ export function webFetchTool(deps: WebFetchDeps): WorkToolDefinition {
       if (!url) return { output: 'A URL is required.', isError: true };
 
       const blocked = blockedFetchTarget(url);
-      if (blocked) return { output: `Juno will not fetch that: ${blocked}`, isError: true };
+      if (blocked) return { output: `Alevr will not fetch that: ${blocked}`, isError: true };
 
       const allowedDomains = deps.allowedDomains?.();
       if (allowedDomains !== undefined && allowedDomains !== null) {
         const egress = evaluateEgress(url, { allowedDomains, allowedPorts: [443] });
         if (!egress.allowed) {
           return {
-            output: `Juno will not fetch that for this skill: ${egress.reason}.`,
+            output: `Alevr will not fetch that for this skill: ${egress.reason}.`,
             isError: true,
           };
         }
@@ -914,7 +914,7 @@ export function browserTool(deps: BrowserToolDeps): WorkToolDefinition {
       if (!deps.available()) {
         return {
           output:
-            'No browser is available on this Juno deployment, so nothing was opened. Use web_search and web_fetch, and say in your answer that you could not use a browser.',
+            'No browser is available on this Alevr deployment, so nothing was opened. Use web_search and web_fetch, and say in your answer that you could not use a browser.',
           isError: true,
         };
       }
@@ -953,13 +953,13 @@ export function browserTool(deps: BrowserToolDeps): WorkToolDefinition {
           const url = String(input.url ?? '').trim();
           if (!url) return { output: 'A URL is required.', isError: true };
           const blocked = blockedFetchTarget(url);
-          if (blocked) return { output: `Juno will not open that: ${blocked}`, isError: true };
+          if (blocked) return { output: `Alevr will not open that: ${blocked}`, isError: true };
           const allowedDomains = deps.allowedDomains?.();
           if (allowedDomains !== undefined && allowedDomains !== null) {
             const egress = evaluateEgress(url, { allowedDomains, allowedPorts: [443] });
             if (!egress.allowed) {
               return {
-                output: `Juno will not open that for this skill: ${egress.reason}.`,
+                output: `Alevr will not open that for this skill: ${egress.reason}.`,
                 isError: true,
               };
             }
@@ -1172,7 +1172,7 @@ export function cloudFilesTool(deps: CloudFileToolDeps): WorkToolDefinition {
     spec: {
       name: 'cloud_files',
       description:
-        "Read and write text files kept with this task in Juno's cloud storage. They persist between runs of the same task and are not on anybody's computer. Use it to park intermediate work — extracted tables, notes, a draft — that would otherwise have to be carried in the conversation.",
+        "Read and write text files kept with this task in Alevr's cloud storage. They persist between runs of the same task and are not on anybody's computer. Use it to park intermediate work — extracted tables, notes, a draft — that would otherwise have to be carried in the conversation.",
       inputSchema: {
         type: 'object',
         properties: {

@@ -571,7 +571,7 @@ async function execute(
           conversationId: context.conversationId ?? null,
           projectId: context.projectId ?? null,
           connectorId: "juno_runtime",
-          connectorLabel: "Juno",
+          connectorLabel: PRODUCT_NAME,
           toolName: spec.id,
           functionName: spec.id,
           args,
