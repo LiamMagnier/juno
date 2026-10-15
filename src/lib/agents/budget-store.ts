@@ -10,7 +10,8 @@ import { memberBudgetMessage, memberBudgetVerdict, memberBudgetWindow } from "@/
 
 /**
  * What a member has spent in a window: the cost of the runs of the tasks it
- * owns that started inside it. `excludeRunId` leaves out a run the caller is
+ * owns that started inside it, plus utility calls attributed to the member.
+ * `excludeRunId` leaves out a run the caller is
  * counting itself (the runner's own, whose live cost is newer than the row).
  */
 export async function memberSpendMicroUsd(input: {
@@ -19,7 +20,7 @@ export async function memberSpendMicroUsd(input: {
   since: Date;
   excludeRunId?: string | null;
 }): Promise<number> {
-  const sum = await prisma.workRun.aggregate({
+  const [sum, utility] = await Promise.all([prisma.workRun.aggregate({
     where: {
       userId: input.userId,
       createdAt: { gte: input.since },
@@ -27,8 +28,11 @@ export async function memberSpendMicroUsd(input: {
       ...(input.excludeRunId ? { id: { not: input.excludeRunId } } : {}),
     },
     _sum: { costMicroUsd: true },
-  });
-  return sum._sum.costMicroUsd ?? 0;
+  }), prisma.apiSpend.aggregate({
+    where: { userId: input.userId, agentId: input.agentId, kind: "utility", createdAt: { gte: input.since } },
+    _sum: { costMicroUsd: true },
+  })]);
+  return (sum._sum.costMicroUsd ?? 0) + (utility._sum.costMicroUsd ?? 0);
 }
 
 export type MemberBudgetCheck =

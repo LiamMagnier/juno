@@ -1798,6 +1798,8 @@ enum ArtifactType {
 model ApiSpend {
   id               String   @id @default(cuid())
   userId           String
+  /// Owning agent for utility work such as reflections; Work runs keep their own ledger.
+  agentId          String?
   model            String
   kind             String   @default("chat") // chat | image | video | voice | code
   source           String   @default("web") // web | app — which surface produced the spend
@@ -1819,6 +1821,7 @@ model ApiSpend {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, idempotencyKey])
+  @@index([userId, agentId, createdAt])
   @@index([userId, createdAt])
   // The platform-wide daily total (platform-budget.ts) filters on createdAt with
   // no userId, and Postgres cannot range-scan a composite index whose leading

@@ -179,6 +179,7 @@ export function mediaRequestCost(modelId: string, kind: "image" | "video" | "aud
 
 export interface RecordSpendInput {
   userId: string;
+  agentId?: string;
   model: string;
   /**
    * "work" and "research" are ledger kinds, not chat: a Work run's model spend
@@ -303,6 +304,7 @@ export async function recordSpend(input: RecordSpendInput): Promise<boolean> {
 
     const data = {
       userId: input.userId,
+      ...(input.agentId ? { agentId: input.agentId } : {}),
       model: input.model,
       kind: input.kind,
       source: input.source ?? "web",

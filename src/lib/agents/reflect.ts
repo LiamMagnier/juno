@@ -43,10 +43,13 @@ import {
 import { recordAgentEvent, type AgentActor } from "@/lib/agents/store";
 import { notifyUser } from "@/lib/notifications";
 import { agentPath } from "@/lib/notify/paths";
+import { checkUsageWindows } from "@/lib/spend";
+import { getUserPlan } from "@/lib/usage";
+import { checkMemberBudget } from "@/lib/agents/budget-store";
 
 export type ReflectOutcome =
   | { kind: "reflected"; ideas: number; ideaIds: string[]; ideaTitles: string[]; checkIns: number; notes: number }
-  | { kind: "skipped"; reason: "not_due" | "paused" | "claimed" | "no_answer" | "not_found" };
+  | { kind: "skipped"; reason: "not_due" | "paused" | "claimed" | "no_answer" | "not_found" | "budget" };
 
 /**
  * Who asked: the agent's page opening (the lazy trigger), the person pressing
@@ -74,6 +77,15 @@ export async function reflectAgent(
   ) {
     return { kind: "skipped", reason: "not_due" };
   }
+
+  // Every entry point (page, button and sweep) asks before the frequency claim.
+  // A spent member stays due and may reflect when its budget is available.
+  const windows = await checkUsageWindows(user.id, await getUserPlan(user.id), null, undefined, { now });
+  if (!windows.allowed) return { kind: "skipped", reason: "budget" };
+  const member = await checkMemberBudget({
+    userId: user.id, agentId, weekly: windows.weekly, stage: "admission", now,
+  });
+  if (!member.ok) return { kind: "skipped", reason: "budget" };
 
   // The claim. A forced reflection still claims, so a double press is one call.
   const threshold = new Date(now.getTime() - (options.force ? 30_000 : AGENT_REFLECT_INTERVAL_MS));
@@ -151,6 +163,7 @@ export async function reflectAgent(
     maxTokens: 900,
     label: "agent-reflection",
     userId: user.id,
+    agentId: agent.id,
     parse: (text) =>
       parseReflection(text, {
         goalCount: goals.length,

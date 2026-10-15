@@ -250,6 +250,7 @@ export type UtilityLlm = (opts: {
    * batch — needs them to stay inside the caller's policy and ledger.
    */
   userId?: string | null;
+  agentId?: string;
   policy?: BackgroundProviderPolicy;
   conversationProvider?: string | null;
   purpose?: BackgroundPurpose;
@@ -288,6 +289,8 @@ export async function runUtilityPrompt<T>(opts: {
    * is a foreign key with nowhere to point.
    */
   userId: string | null;
+  /** Attribute this utility call to the agent's own budget as well as the account. */
+  agentId?: string;
   /** Override the provider walk (tests / callers with their own model). */
   llm?: UtilityLlm;
   /**
@@ -500,6 +503,7 @@ export async function runUtilityPrompt<T>(opts: {
       if (opts.userId) {
         await recordSpend({
           userId: opts.userId,
+          ...(opts.agentId ? { agentId: opts.agentId } : {}),
           model: model.id,
           kind: "utility",
           promptTokens: billed.promptTokens,

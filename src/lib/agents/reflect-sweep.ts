@@ -157,6 +157,8 @@ export async function sweepAgentReflections(
       if (result.kind === "reflected") {
         outcome.reflected++;
         outcome.ideas += result.ideas;
+      } else if (result.reason === "budget") {
+        outcome.deferred++;
       } else {
         outcome.skipped++;
       }
