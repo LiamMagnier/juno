@@ -53,6 +53,7 @@
  */
 
 import "server-only";
+import { pathToFileURL } from "node:url";
 import { createArtifactMaintenance } from "@/lib/artifact-maintenance";
 import { sweepToolRuns } from "@/lib/exec/runtime";
 import { sealIdleDrafts } from "@/lib/artifact-writes";
@@ -1212,4 +1213,6 @@ async function main(): Promise<void> {
   log("stopped");
 }
 
-void main();
+export { tick as schedulerTick, dispatchOne as dispatchSchedule, findDueSchedules };
+
+if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) void main();

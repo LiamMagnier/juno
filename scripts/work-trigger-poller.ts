@@ -58,6 +58,7 @@
  */
 
 import "server-only";
+import { pathToFileURL } from "node:url";
 
 import { createHash } from "node:crypto";
 import type { Plan } from "@prisma/client";
@@ -1348,4 +1349,6 @@ async function main(): Promise<void> {
   log("stopped");
 }
 
-void main();
+export { tick as triggerPollerTick, offer as offerTriggerEvent, loadSchedule as loadTriggerSchedule };
+
+if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) void main();

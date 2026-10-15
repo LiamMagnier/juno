@@ -497,6 +497,27 @@ jobs:
           COMPUTER_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/juno_computer_test
           NODE_OPTIONS: --conditions=react-server
 
+      - name: Reliability continuation regressions, against isolated databases
+        run: |
+          set -euo pipefail
+          for fixture in \
+            'juno_pause_test:ORBIT_TEST_DATABASE_URL:parked-routine-expiry.integration.test.ts' \
+            'juno_running_budget_test:COMPUTER_TEST_DATABASE_URL:computer-running-budget.integration.test.ts' \
+            'juno_reflection_test:ORBIT_TEST_DATABASE_URL:agent-reflection-budget.integration.test.ts' \
+            'juno_worker_test:WORKER_TEST_DATABASE_URL:work-workers.integration.test.ts' \
+            'juno_coordinator_test:ORBIT_TEST_DATABASE_URL:agent-coordinator-fences.integration.test.ts' \
+            'juno_history_test:HISTORY_TEST_DATABASE_URL:chat-history-paging.integration.test.ts'; do
+            IFS=: read -r database fixture_env suite <<< "$fixture"
+            psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -c "CREATE DATABASE $database"
+            export DATABASE_URL="$BASE_URL/$database" DIRECT_URL="$BASE_URL/$database"
+            npx prisma migrate deploy
+            env "$fixture_env=$DATABASE_URL" npx tsx --test --experimental-test-module-mocks "tests/$suite"
+          done
+        env:
+          ADMIN_URL: postgresql://postgres:postgres@127.0.0.1:5432/shadow
+          BASE_URL: postgresql://postgres:postgres@127.0.0.1:5432
+          NODE_OPTIONS: --conditions=react-server
+
       - name: Code link backend parity, against a real database
         run: |
           psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -c 'CREATE DATABASE linktest'
