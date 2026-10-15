@@ -56,6 +56,9 @@ export function PrivateChatToggle({
           type="button"
           aria-label={active ? "Leave incognito" : "Turn on incognito"}
           aria-pressed={active}
+          // How chat-view finds this button to hand focus back to it when the
+          // incognito band's close button folds away under the reader.
+          data-incognito-toggle=""
           disabled={disabled}
           onClick={onToggle}
           className={cn(

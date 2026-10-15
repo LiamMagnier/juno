@@ -383,6 +383,28 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
     });
   }, []);
   const [privateMode, setPrivateMode] = React.useState(false);
+  /*
+   * The control that switches incognito leaves with the mode it switched: the
+   * header toggle unmounts with the title row, and the incognito band's close
+   * goes inert as the band folds. Focus went to <body> both ways, so a
+   * keyboard user's next Tab started over at the top of the page. Hand it to
+   * the counterpart instead, and only when it was actually lost.
+   */
+  const incognitoBandRef = React.useRef<HTMLDivElement>(null);
+  const leaveIncognitoRef = React.useRef<HTMLButtonElement>(null);
+  const privateModeShownRef = React.useRef(privateMode);
+  React.useEffect(() => {
+    if (privateModeShownRef.current === privateMode) return;
+    privateModeShownRef.current = privateMode;
+    const active = document.activeElement;
+    const lost = !active || active === document.body || !!incognitoBandRef.current?.contains(active);
+    if (!lost) return;
+    if (privateMode) {
+      leaveIncognitoRef.current?.focus({ preventScroll: true });
+    } else {
+      layoutRef.current?.querySelector<HTMLElement>("[data-incognito-toggle]")?.focus({ preventScroll: true });
+    }
+  }, [privateMode]);
   React.useEffect(() => {
     window.dispatchEvent(new CustomEvent("juno:incognito", { detail: privateMode }));
     if (privateMode) {
@@ -2390,6 +2412,10 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
 
         {/* Incognito header — grid-rows collapse keeps height animation smooth. */}
         <div
+          ref={incognitoBandRef}
+          // Folded, the band is invisible but its close button was still in
+          // the tab order: `inert` takes it out (as dictation-swap does).
+          inert={!privateMode}
           className={cn(
             "relative z-30 grid transition-[grid-template-rows,opacity] duration-slow ease-out-soft",
             privateMode ? "grid-rows-[1fr] opacity-100 pointer-events-auto" : "grid-rows-[0fr] opacity-0 pointer-events-none"
@@ -2419,6 +2445,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
               <Tooltip>
                 <TooltipTrigger asChild>
                   <button
+                    ref={leaveIncognitoRef}
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();

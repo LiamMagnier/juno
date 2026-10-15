@@ -291,7 +291,7 @@ function PaletteShell({
             // this is the fuller sentence the dialog is titled with.
             aria-label={ariaLabel}
             role="combobox"
-            aria-expanded="true"
+            aria-expanded={items.length > 0}
             aria-haspopup="listbox"
             aria-controls={listboxId}
             aria-autocomplete="list"
@@ -332,12 +332,17 @@ function PaletteShell({
 
         {/* Combobox popup: focus stays on the input; aria-activedescendant
             tracks the highlighted option, so rows are role=option and out of
-            the tab order. Group headers are visual-only (aria-hidden). */}
+            the tab order. Group headers are visual-only (aria-hidden).
+            A listbox only while there are options in it: the empty states
+            (the resting prompt, "nothing matches", the skeleton) are prose,
+            and a listbox holding prose and no options is an invalid widget
+            (axe: aria-required-children) that a screen reader enters as an
+            empty list. The box itself stays, so the overlay keeps its shape. */}
         <div
           ref={listRef}
           id={listboxId}
-          role="listbox"
-          aria-label={ariaLabel}
+          role={items.length > 0 ? "listbox" : undefined}
+          aria-label={items.length > 0 ? ariaLabel : undefined}
           /*
            * `min-h` as well as `max-h`. With one result the dialog measured
            * 550×233 — a squat box whose footer was a seventh of it — and with

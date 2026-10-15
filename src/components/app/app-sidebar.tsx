@@ -2155,12 +2155,15 @@ function SectionAction({
 /** Inline rename field for a chat row. */
 function InlineNameInput({
   initial = "",
+  label,
   placeholder,
   onCommit,
   onCancel,
   nested,
 }: {
   initial?: string;
+  /** The field's accessible name; the placeholder vanishes once there is a title in it. */
+  label: string;
   placeholder?: string;
   onCommit: (value: string) => void;
   onCancel: () => void;
@@ -2176,6 +2179,7 @@ function InlineNameInput({
   return (
     <div className={cn("flex min-h-8 items-center gap-1 py-0.5 pr-1", nested ? "ml-4 pl-2" : "pl-2")}>
       <Input
+        aria-label={label}
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         placeholder={placeholder}
@@ -2267,10 +2271,25 @@ function ConversationRow({
 
   const { patch } = useConversationActions({ conversation, active, onUpdate, onRemove, onRestore, onRequestConfirm });
 
+  /* The rename field replaces the row, so Enter or Escape unmounted the
+     focused input and dropped focus on <body>: the reader's next Tab started
+     over at the top of the page. Put it back on the row they renamed — unless
+     the field closed because focus went somewhere else on purpose (blur). */
+  const linkRef = React.useRef<HTMLAnchorElement>(null);
+  const wasRenaming = React.useRef(renaming);
+  React.useEffect(() => {
+    if (wasRenaming.current === renaming) return;
+    wasRenaming.current = renaming;
+    if (renaming) return;
+    const focused = document.activeElement;
+    if (!focused || focused === document.body) linkRef.current?.focus({ preventScroll: true });
+  }, [renaming]);
+
   if (renaming) {
     return (
       <InlineNameInput
         initial={conversation.title}
+        label={isCodeSession ? "Rename session" : "Rename chat"}
         placeholder={isCodeSession ? "Session name" : "Chat name"}
         nested={nested}
         onCommit={(value) => {
@@ -2306,6 +2325,7 @@ function ConversationRow({
       )}
     >
       <Link
+        ref={linkRef}
         href={`/chat/${conversation.id}`}
         onClick={onNavigate}
         /* Prefetched on aim, not on scroll — see lib/intent-prefetch.ts. */
