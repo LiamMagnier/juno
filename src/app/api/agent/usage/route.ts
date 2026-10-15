@@ -2,12 +2,14 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { getCurrentUser } from "@/lib/session";
 import {
+  consumeRefusalBody,
   getUserPlan,
   getQuota,
+  openCodeUsageReservation,
   recordTokens,
-  reserveCodeMessage,
   resolveCodeUsageReservation,
 } from "@/lib/usage";
+import { prisma } from "@/lib/prisma";
 import { checkBudget, checkUsageWindows, budgetExceededMessage } from "@/lib/spend";
 import { budgetExceededBody } from "@/lib/billing/budget-fallback";
 import { windowLimitMessage } from "@/lib/spend-ceiling";
@@ -30,11 +32,14 @@ const usageSchema = z.object({
  * agent turns draw against the same plan limits as website chat:
  *
  *   { phase: "start" }
- *     → consumes one message from the plan AND checks the € budget — the
- *       message counter only blocks FREE (paid plans are budget-limited), so
- *       checkBudget is the gate that actually enforces paid-plan limits,
- *       and `checkUsageWindows` beside it is the 5-hour/weekly one that is
- *       the real ceiling on a run. 402 QUOTA_EXCEEDED blocks the turn.
+ *     → admits the turn the way a chat turn is admitted: an unconfirmed
+ *       address is refused (`EMAIL_UNVERIFIED`), then the € budget and the
+ *       5-hour/weekly windows, which are the real ceiling on a run. 402
+ *       blocks the turn. It returns a single-use handle and does NOT move the
+ *       month's message counter any more: the turn's opening call goes through
+ *       the provider proxy, which counts the turn once that call is billed
+ *       (src/lib/metering/code-turn-store.ts). Counting here as well would
+ *       count every turn of these hosts twice.
  *
  *   { phase: "record", promptTokens, completionTokens, model }
  *     → settles the reservation and adds the turn's token counts to the
@@ -49,8 +54,9 @@ const usageSchema = z.object({
  *       provider model id. The proxy's figure is the one to keep.
  *
  *   { phase: "refund" }
- *     → gives back a reserved message when a turn produced no billable work
- *       (provider error / abort before output), mirroring the web chat route.
+ *     → closes the handle when a turn produced no billable work (provider
+ *       error / abort before output). Nothing to give back: a turn whose
+ *       opening was never billed was never counted.
  *
  * A more specific route than /api/agent/[...path], so it wins over the proxy
  * catch-all. Auth is the shared session cookie the app already sends.
@@ -68,6 +74,15 @@ export async function POST(req: NextRequest) {
   const plan = await getUserPlan(user.id);
 
   if (body.phase === "start") {
+    // The first thing `consumeMessage` asks of a chat turn, asked here too: an
+    // address nobody confirmed does not get to spend on Code either.
+    const account = await prisma.user.findUnique({ where: { id: user.id }, select: { emailVerified: true } });
+    if (!account?.emailVerified) {
+      return NextResponse.json(
+        consumeRefusalBody({ allowed: false, reason: "email_unverified", quota: await getQuota(user.id, plan) }, "coding"),
+        { status: 402 },
+      );
+    }
     const budget = await checkBudget(user.id, plan);
     if (!budget.allowed) {
       return NextResponse.json(
@@ -95,22 +110,19 @@ export async function POST(req: NextRequest) {
         { status: 402 },
       );
     }
-    const reserved = await reserveCodeMessage(user.id, plan);
-    if (!reserved.allowed) {
+    const quota = await getQuota(user.id, plan);
+    if (quota.remaining !== null && quota.remaining <= 0) {
       return NextResponse.json(
         {
           error: `You've reached your monthly usage limit. Upgrade your plan to keep using ${PRODUCT_NAME} Code.`,
           code: "QUOTA_EXCEEDED",
-          quota: reserved.quota,
+          quota,
         },
         { status: 402 },
       );
     }
-    return NextResponse.json({
-      ok: true,
-      reservationId: reserved.reservationId,
-      quota: reserved.quota,
-    });
+    const reservationId = await openCodeUsageReservation(user.id);
+    return NextResponse.json({ ok: true, reservationId, quota });
   }
 
   if (body.phase === "record") {

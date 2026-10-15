@@ -23,10 +23,12 @@ export function addUsage(a: Usage, b: Usage): Usage {
 
 /**
  * Reports Code-mode usage to the Juno backend so it counts against the same
- * account/plan as website chat. `reserve()` runs at each turn's start
- * (consumes one message from the monthly quota — the same unit the website
- * charges); `record()` runs at turn end (adds real token counts). BYOK
- * sessions get no reporter — that usage is on the user's own key.
+ * account/plan as website chat. `reserve()` runs at each turn's start and is
+ * the turn's admission (budget, windows, a confirmed address); it no longer
+ * takes a message itself, because the backend's provider proxy counts the
+ * turn when its opening call is billed, and counting in both places would
+ * count every turn twice. `record()` runs at turn end (adds real token
+ * counts). BYOK sessions get no reporter — that usage is on the user's own key.
  */
 export interface UsageReporter {
   reserve(): Promise<{ allowed: boolean; message?: string }>;
