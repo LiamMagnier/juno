@@ -23,6 +23,7 @@ import { undispatchedToolsetReason } from "@/lib/llm/tool-round";
 import type { LlmEvent, MessageForModel, PromptCacheMode } from "@/types/llm";
 import { logSync } from "@/lib/logger";
 import { createRequestMeter, type RequestRole } from "@/lib/llm/request-meter";
+import { systemWithUntrustedReadTools } from "@/lib/untrusted-content";
 
 export { clampMaxTokens };
 
@@ -121,7 +122,7 @@ export async function* streamChat(opts: {
   batch?: AdapterRequest["batch"];
   responseSchema?: AdapterRequest["responseSchema"];
 }): AsyncGenerator<LlmEvent> {
-  const { model, system, history, signal, reasoningEffort, webSearch, dynamicContext, cacheKey, fastMode } = opts;
+  const { model, system: initialSystem, history, signal, reasoningEffort, webSearch, dynamicContext, cacheKey, fastMode } = opts;
   const proMode = !!opts.proMode && supportsProMode(model);
   // On OpenAI-compatible providers, reasoning/thinking tokens count toward the
   // completion budget — a plan-sized cap can be eaten entirely by thinking,
@@ -187,6 +188,7 @@ export async function* streamChat(opts: {
   const tools: ToolLoop | undefined =
     opts.toolLoop ??
     (toolset && toolset.tools.length > 0 ? createToolLoop(toolset, { maxRounds: opts.maxToolRounds }) : undefined);
+  const system = systemWithUntrustedReadTools(initialSystem, tools?.toolset.tools.map((tool) => tool.function.name) ?? []);
   /*
    * One `llm.request` line per provider request: tokens by bucket, cost,
    * latency and the prefix diagnostic, never content. The per-turn trace and

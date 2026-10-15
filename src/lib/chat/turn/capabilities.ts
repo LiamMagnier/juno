@@ -68,9 +68,10 @@ export type TurnCapabilities = ReturnType<typeof resolveCapabilities>;
 /**
  * Whether anything Juno did not author is in this turn's context.
  *
- * Read twice downstream: it switches on the untrusted-content rule in the
- * system prompt, and a turn that carried untrusted content must not be
- * allowed to write durable memory.
+ * Static content switches on the prompt rule and blocks durable memory writes.
+ * streamChat adds the rule for history-reading tools when their actual toolset
+ * is known; run-turn blocks memory once such a tool returns content. Merely
+ * offering an unused tool must not disable memory on ordinary turns.
  */
 export function turnCarriesUntrustedContent(signals: {
   connectors: number;

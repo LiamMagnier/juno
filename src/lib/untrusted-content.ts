@@ -23,6 +23,7 @@
  * early and "escape" into instruction position.
  */
 
+import { UNTRUSTED_CONTENT_RULE } from "@/lib/web/untrusted-rule.prompt";
 const SENTINEL = "JUNO_UNTRUSTED";
 
 export const UNTRUSTED_OPEN = `<<<${SENTINEL}_BEGIN>>>`;
@@ -36,6 +37,16 @@ export const UNTRUSTED_CLOSE = `<<<${SENTINEL}_END>>>`;
  * markers it names are asserted equal to these by `tests/untrusted-content.test.ts`.
  */
 export { UNTRUSTED_CONTENT_RULE } from "@/lib/web/untrusted-rule.prompt";
+
+/**
+ * A history-reading tool can introduce untrusted text during a later round.
+ * Add its rule when the actual toolset is known, without treating an unused
+ * tool as content or disabling memory writes on every ordinary chat turn.
+ */
+export function systemWithUntrustedReadTools(system: string, toolNames: readonly string[]): string {
+  if (!toolNames.some((name) => name === "search_chats" || name === "read_conversation") || system.includes(UNTRUSTED_CONTENT_RULE)) return system;
+  return `${system}\n\n${UNTRUSTED_CONTENT_RULE}`;
+}
 
 /**
  * Neutralise anything that looks like our markers so hostile content cannot

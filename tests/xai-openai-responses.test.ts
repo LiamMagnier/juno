@@ -13,6 +13,7 @@ import {
 import type { LlmEvent, MessageForModel } from "@/types/llm";
 import { createToolLoop } from "@/lib/tools/loop";
 import { fakeTurnToolset } from "./fixtures/tool-loop";
+import { UNTRUSTED_CONTENT_RULE } from "@/lib/untrusted-content";
 
 /*
  * The Responses adapter's HOST, KEY and DIALECT for OpenAI and Grok, driven
@@ -93,6 +94,19 @@ const done = (item: Record<string, unknown>) => ({ type: "response.output_item.d
 function reset(rounds: unknown[][]) {
   sent.length = 0;
   script = rounds;
+}
+
+for (const name of ["search_chats", "read_conversation"]) {
+  test(`a production request carrying ${name} has the trust rule before its first tool result`, async () => {
+    reset([[delta("Hi"), completed()]]);
+    const original = fakeTurnToolset();
+    const toolset = { ...original, tools: [{ ...original.tools[0], function: { ...original.tools[0].function, name } }] };
+    await collect(streamChat({ model: model("xai:grok-4.7"), system: "sys", history: HISTORY, maxTokens: 1000, toolLoop: createToolLoop(toolset) }));
+    const system = ((sent[0].body.input as Array<{ content: string }>)[0]).content;
+    assert.ok(system.startsWith("sys\n\n"), "the existing cached prefix is preserved");
+    assert.ok(system.includes(UNTRUSTED_CONTENT_RULE));
+    assert.equal(original.dispatched.length, 0, "offering the tool did not execute it");
+  });
 }
 
 test("every Grok model in the catalog is routed to xai-responses, every GPT to openai-responses", () => {
