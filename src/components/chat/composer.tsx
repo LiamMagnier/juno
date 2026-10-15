@@ -103,7 +103,7 @@ import { alevrToolsUsable } from "@/lib/search/alevr/policy";
 import { PLANS, cheapestPlanWith } from "@/lib/plans";
 import { ProviderLogo } from "@/components/brand/provider-logo";
 import { useUploads } from "@/hooks/use-uploads";
-import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
+import { useDictationSupported } from "@/hooks/use-dictation-support";
 import { DictationSwap } from "@/components/ui/dictation-swap";
 import { useApp } from "@/components/app/app-provider";
 import { ACCEPT_ATTRIBUTE } from "@/lib/uploads";
@@ -1050,7 +1050,8 @@ function ComposerImpl({
     excess.forEach((id) => onToggleConnector(id));
   }, [connectorsEnabled, onToggleConnector, voiceActive]);
 
-  const { supported: speechSupported } = useSpeechRecognition();
+  // Web Speech or the server's transcription, whichever can work here (G36).
+  const speechSupported = useDictationSupported();
   const [dictating, setDictatingInner] = React.useState(false);
   const setDictating = React.useCallback(
     (d: boolean | ((prev: boolean) => boolean)) => {

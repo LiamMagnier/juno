@@ -87,7 +87,8 @@ test("keys, as native: Esc cancels, Return/Enter sends, IME and Shift+Enter pass
   assert.equal(dictationKeyAction({ key: "a" }), null);
   const src = read("src/components/chat/composer-dictation.tsx");
   assert.match(src, /onClick=\{onDone\}/, "✓ is the way to keep the words as a draft");
-  assert.match(src, /onDone=\{stop\}/);
+  // ✓ keeps the words; after a failed server cut it retries the kept recording (G36).
+  assert.match(src, /onDone=\{failedTake \? retryTake : stop\}/);
 });
 
 test("the row is ✕ · waveform · ✓ in the card, with no status word, no meter and no second send disc", () => {

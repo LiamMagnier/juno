@@ -38,7 +38,7 @@ import { VoiceComposerGlow } from "@/components/voice/voice-composer-glow";
 import type { CodeVoiceBriefingInput } from "@/components/code/code-voice-briefing";
 import { useApp } from "@/components/app/app-provider";
 import { useUploads } from "@/hooks/use-uploads";
-import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
+import { useDictationSupported } from "@/hooks/use-dictation-support";
 import { CodeIcons, StatusIcons } from "@/lib/app-icons";
 import {
   CLOUD_RUNTIME_APPROVALS,
@@ -434,7 +434,8 @@ export function CodeComposer({
   const [dictating, setDictating] = React.useState(false);
   const canAttach = features.storage;
 
-  const { supported: speechSupported } = useSpeechRecognition();
+  // Web Speech or the server's transcription, whichever can work here (G36).
+  const speechSupported = useDictationSupported();
   const { uploads, addFiles, addAttachments, remove, clear, readyAttachments, isUploading } = useUploads(null);
 
   // —— Submission & Status ——
