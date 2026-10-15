@@ -33,42 +33,42 @@ This is a full review of Alevr against ChatGPT (Chat, Work, Codex), Claude (Chat
 
 ## Ranked gaps
 
-Impact runs from 5 (decides whether people pick the product) to 1 (polish). Effort is S, M, L or XL. "Wave 1" marks the items in the first build wave.
+Impact runs from 5 (decides whether people pick the product) to 1 (polish). Effort is S, M, L or XL. The Plan column gives the build wave for each gap (see "Build plan").
 
 | ID | Impact | Effort | Area | Gap | Outside dependency | Plan |
 |---|---|---|---|---|---|---|
 | G01 | 5 | S | mobile/native | Restore iOS push (aps-environment) and guard it in CI | Apple Developer account with the Push Notifications capability on the App ID, an APNs auth | Wave 1 |
 | G02 | 5 | S | coding | First Code turn must honour the landing's model, effort, attachments and text-less prompts |  | Wave 1 |
 | G03 | 5 | M | chat | Editing an earlier message should fork a branch, not delete the rest of the thread |  | Wave 1 |
-| G04 | 5 | M | chat | Generate images when asked in chat or Auto, with 'Create image' in the + menu | Image model provider capacity and keys for the image models already in the catalogue. |  |
-| G05 | 5 | M | coding | Ship flow in the v2 workspace: commit, push, PR, CI checks and an auto-fix toggle | GitHub App installation with contents, pull_requests and checks permissions (already used  |  |
+| G04 | 5 | M | chat | Generate images when asked in chat or Auto, with 'Create image' in the + menu | Image model provider capacity and keys for the image models already in the catalogue. | Wave 2 |
+| G05 | 5 | M | coding | Ship flow in the v2 workspace: commit, push, PR, CI checks and an auto-fix toggle | GitHub App installation with contents, pull_requests and checks permissions (already used  | Wave 2 |
 | G06 | 5 | M | coding | Real attachments in the Code session composer: paste, drop and upload |  | Wave 1 |
 | G07 | 5 | M | automation | Create recurring routines straight from chat ('every weekday at 8am…') |  | Wave 1 |
-| G08 | 5 | L | integrations | First-party Gmail, Google Calendar/Drive, Outlook/M365 and Slack connectors and triggers | Google Cloud OAuth app with restricted-scope verification (Gmail) and a Pub/Sub topic; Mic |  |
+| G08 | 5 | L | integrations | First-party Gmail, Google Calendar/Drive, Outlook/M365 and Slack connectors and triggers | Google Cloud OAuth app with restricted-scope verification (Gmail) and a Pub/Sub topic; Mic | Wave 6 |
 | G09 | 4 | S | coding | Fix the Mac-thread queue: remove, edit and steer-now act on the real queue |  | Wave 1 |
 | G10 | 4 | S | chat | Select a passage in an answer to ask about it or quote it |  | Wave 1 |
-| G11 | 4 | S | mobile | Bring incognito, Share, Continue-on and Session outputs to phones |  | Wave 1 |
+| G11 | 4 | S | mobile | Bring incognito, Share, Continue-on and Session outputs to phones |  | Wave 4 |
 | G12 | 4 | S | artifacts/canvas | Never lose canvas edits: autosave the draft and confirm before discarding |  | Wave 1 |
 | G13 | 4 | S | agents | Finished-task actions on the card: Retry, Run again, Continue, Resume and Make a routine |  | Wave 1 |
 | G14 | 4 | M | chat | Inline, expandable reasoning that also works on phones |  | Wave 1 |
 | G15 | 4 | M | agents | Choose a permission mode for tasks from the chat composer |  | Wave 1 |
-| G16 | 4 | M | coding | Wire @file mentions and the Files dock to the Mac's file system |  |  |
-| G17 | 4 | M | coding | Keep Mac-thread history readable offline and show link status |  |  |
-| G18 | 4 | M | chat | Pin the new user turn to the top while the answer grows below |  |  |
-| G19 | 4 | M | collaboration | Shared chats: Update link, continue in your own account, per-message share and phone access |  |  |
+| G16 | 4 | M | coding | Wire @file mentions and the Files dock to the Mac's file system |  | Wave 2 |
+| G17 | 4 | M | coding | Keep Mac-thread history readable offline and show link status |  | Wave 2 |
+| G18 | 4 | M | chat | Pin the new user turn to the top while the answer grows below |  | Wave 2 |
+| G19 | 4 | M | collaboration | Shared chats: Update link, continue in your own account, per-message share and phone access |  | Wave 3 |
 | G20 | 4 | M | memory | Memory sources on answers, and an actionable 'Memory updated' |  | Wave 1 |
-| G21 | 4 | M | desktop | Mac Quick Entry: a real global hotkey, answers inside the panel, window capture with text | macOS Screen Recording permission for window capture (user grant). |  |
-| G22 | 4 | M | mobile/native | iOS Share extension and macOS Services menu | App Group entitlement and provisioning profiles for the new extension targets. |  |
-| G23 | 4 | M | artifacts/canvas | Let React artifacts import charting and UI libraries | CSP allowance for the chosen CDN origin in the sandbox frame (or self-host the bundles). |  |
-| G24 | 4 | M | collaboration | Project sharing UI: invite members with viewer and editor roles | Transactional email deliverability for invites (existing provider). |  |
-| G25 | 4 | M | coding | Diff review that talks back: inline comments, context expansion, virtualization, real highlighting |  |  |
-| G26 | 4 | L | mobile/native | Allow several chats to generate at once in the native apps |  |  |
-| G27 | 4 | L | artifacts/canvas | Edit documents and decks directly, with selection-scoped AI edits |  |  |
-| G28 | 4 | L | agents | A live browser and computer view for every cloud task, with take over and hand back | Production-grade isolated browser/VM capacity (self-hosted Docker fleet hardening or a ven |  |
-| G29 | 4 | L | chat | Generative UI that drives the conversation: clickable visuals, savable widgets, entity and map cards | Map tile provider and a weather data source if not served via search. |  |
-| G30 | 4 | L | artifacts/canvas | Artifacts with persistent storage that can call the model, billed to each viewer |  |  |
-| G31 | 4 | XL | coding | Warm, persistent cloud environments for Code instead of a cold GitHub Actions job per turn | Container/VM compute vendor or self-managed cluster, egress proxy, secrets management, and |  |
-| G32 | 4 | XL | platform | Team and Business workspaces: orgs, seats, shared billing, SSO, SCIM and audit log | Stripe per-seat products, IdP test tenants (Okta/Entra/Google) for OIDC/SCIM, and legal te |  |
+| G21 | 4 | M | desktop | Mac Quick Entry: a real global hotkey, answers inside the panel, window capture with text | macOS Screen Recording permission for window capture (user grant). | Wave 4 |
+| G22 | 4 | M | mobile/native | iOS Share extension and macOS Services menu | App Group entitlement and provisioning profiles for the new extension targets. | Wave 4 |
+| G23 | 4 | M | artifacts/canvas | Let React artifacts import charting and UI libraries | CSP allowance for the chosen CDN origin in the sandbox frame (or self-host the bundles). | Wave 3 |
+| G24 | 4 | M | collaboration | Project sharing UI: invite members with viewer and editor roles | Transactional email deliverability for invites (existing provider). | Wave 3 |
+| G25 | 4 | M | coding | Diff review that talks back: inline comments, context expansion, virtualization, real highlighting |  | Wave 2 |
+| G26 | 4 | L | mobile/native | Allow several chats to generate at once in the native apps |  | Wave 4 |
+| G27 | 4 | L | artifacts/canvas | Edit documents and decks directly, with selection-scoped AI edits |  | Wave 2 |
+| G28 | 4 | L | agents | A live browser and computer view for every cloud task, with take over and hand back | Production-grade isolated browser/VM capacity (self-hosted Docker fleet hardening or a ven | Wave 6 |
+| G29 | 4 | L | chat | Generative UI that drives the conversation: clickable visuals, savable widgets, entity and map cards | Map tile provider and a weather data source if not served via search. | Wave 2 |
+| G30 | 4 | L | artifacts/canvas | Artifacts with persistent storage that can call the model, billed to each viewer |  | Wave 3 |
+| G31 | 4 | XL | coding | Warm, persistent cloud environments for Code instead of a cold GitHub Actions job per turn | Container/VM compute vendor or self-managed cluster, egress proxy, secrets management, and | Wave 6 |
+| G32 | 4 | XL | platform | Team and Business workspaces: orgs, seats, shared billing, SSO, SCIM and audit log | Stripe per-seat products, IdP test tenants (Okta/Entra/Google) for OIDC/SCIM, and legal te | Wave 5 |
 | G33 | 3 | S | chat | Thumbs-down that listens: no celebration, and a reason picker |  | Wave 1 |
 | G34 | 3 | S | chat | Starter prompts and capability chips on the home screen |  | Wave 1 |
 | G35 | 3 | S | mobile | Return inserts a newline on touch keyboards |  | Wave 1 |
@@ -83,58 +83,69 @@ Impact runs from 5 (decides whether people pick the product) to 1 (polish). Effo
 | G44 | 3 | S | design | Remove 'Juno' from every user-visible surface |  | Wave 1 |
 | G45 | 3 | S | motion | Tiered in-app Reduced motion, a 'Full' option, and Tailwind utilities on the motion tokens |  | Wave 1 |
 | G46 | 3 | S | motion | Scope icon hover articulation back to destinations |  | Wave 1 |
-| G47 | 3 | S | platform | Onboarding that activates: server-gated, use-case setup, an import nudge, a tour of modes |  | Wave 1 |
-| G48 | 3 | S | pricing/limits | Simplify the seven consumer tiers | Stripe price and product changes; legal review of plan change notices. |  |
-| G49 | 3 | M | chat | Fuller incognito: attachments, save to history, a personalised option |  |  |
+| G47 | 3 | S | platform | Onboarding that activates: server-gated, use-case setup, an import nudge, a tour of modes |  | Wave 2 |
+| G48 | 3 | S | pricing/limits | Simplify the seven consumer tiers | Stripe price and product changes; legal review of plan change notices. | Wave 5 |
+| G49 | 3 | M | chat | Fuller incognito: attachments, save to history, a personalised option |  | Wave 2 |
 | G50 | 3 | M | chat | Regenerate any answer and unify branching |  | Wave 1 |
-| G51 | 3 | M | research | A research history index, and site restrictions |  |  |
-| G52 | 3 | M | files | One Library: content search, in-app viewers, type filters, stable paging, rendered thumbnails |  |  |
+| G51 | 3 | M | research | A research history index, and site restrictions |  | Wave 3 |
+| G52 | 3 | M | files | One Library: content search, in-app viewers, type filters, stable paging, rendered thumbnails |  | Wave 3 |
 | G53 | 3 | M | design | One working indicator everywhere: the galaxy, driven by real state |  | Wave 1 |
 | G54 | 3 | M | mobile | Mobile web that feels native: safe areas, swipe, bottom sheets, 44px targets, compact headers |  | Wave 1 |
-| G55 | 3 | M | design | Automated accessibility checks and prefers-contrast coverage on web |  |  |
+| G55 | 3 | M | design | Automated accessibility checks and prefers-contrast coverage on web |  | Wave 5 |
 | G56 | 3 | M | motion | Symmetric motion: exits for docks, popovers and folds, plus View Transitions for list to detail |  | Wave 1 |
-| G57 | 3 | M | coding | Working Preview from any device, plus annotate-to-edit |  |  |
+| G57 | 3 | M | coding | Working Preview from any device, plus annotate-to-edit |  | Wave 3 |
 | G58 | 3 | M | coding | One composer from landing to session, painted on first load |  | Wave 1 |
-| G59 | 3 | M | coding | Goal and live todo row above the composer |  |  |
-| G60 | 3 | M | coding | Cloud environments UI, keybinding cleanup and dead shortcuts |  |  |
-| G61 | 3 | M | coding | End-to-end tests for the Code flow |  |  |
-| G62 | 3 | M | mobile/native | Durable offline sends and real network awareness in native apps |  |  |
-| G63 | 3 | M | mobile/native | 'Continue on Mac/iPhone' that works without APNs |  |  |
+| G59 | 3 | M | coding | Goal and live todo row above the composer |  | Wave 2 |
+| G60 | 3 | M | coding | Cloud environments UI, keybinding cleanup and dead shortcuts |  | Wave 3 |
+| G61 | 3 | M | coding | End-to-end tests for the Code flow |  | Wave 3 |
+| G62 | 3 | M | mobile/native | Durable offline sends and real network awareness in native apps |  | Wave 4 |
+| G63 | 3 | M | mobile/native | 'Continue on Mac/iPhone' that works without APNs |  | Wave 4 |
 | G64 | 3 | M | mobile/native | Widgets and controls worth using: fixed small widget, Lock Screen, Control Center, recent and needs-you |  | Wave 1 |
-| G65 | 3 | M | mobile/native | App Intents that answer inside Siri and Shortcuts, with conversation entities |  |  |
-| G66 | 3 | M | mobile/native | Live Activities for v2 Code approvals, push-to-start and in-place actions | APNs push-to-start (requires G01) and the Live Activities push type on the server. |  |
-| G67 | 3 | M | mobile/native | Run trace and task cards in the iPhone transcript |  |  |
-| G68 | 3 | M | platform | Passkeys, active sessions, linked sign-in methods and native Sign in with Apple | WebAuthn relying-party domain, apple-app-site-association webcredentials entry, and Apple  |  |
-| G69 | 3 | M | agents | Answer Work approvals and questions straight from notifications | APNs (G01) and VAPID web push already configured. |  |
-| G70 | 3 | M | agents | An Activity view across chats, tasks and Code: Running, Needs you, Ready, Blocked |  |  |
-| G71 | 3 | M | chat | Study mode with guided tutoring, quizzes and flashcards |  |  |
-| G72 | 3 | M | chat | Ask several models at once and see where they agree |  |  |
-| G73 | 3 | M | search | Inline image results and richer source cards in search answers | An image search API from the existing search provider, if not already returned. |  |
-| G75 | 3 | M | pricing/limits | Bring-your-own-key for Chat, with Priority and Fallback per model |  |  |
-| G74 | 3 | L | files | True semantic retrieval with pgvector, plus project sources synced from Drive, GitHub and Notion | pgvector extension on the production Postgres. |  |
-| G76 | 3 | L | artifacts/canvas | Spreadsheet and deck editors at full size, with presenter mode and PDF export |  |  |
-| G77 | 3 | L | coding | Repository understanding beyond TypeScript, a persistent index and diagnostics |  |  |
-| G78 | 3 | L | coding | User MCP servers and hooks for web, Mac env-server and cloud runs |  |  |
-| G79 | 3 | L | coding | In-app PR inbox and an @alevr review bot | GitHub App permissions for pull request reviews and issue comments. |  |
-| G80 | 3 | L | i18n | Server-rendered translations and RTL layout | Translation review for legal pages. |  |
-| G81 | 3 | L | automation | Teach by showing: record a workflow, get a skill | macOS Screen Recording and Accessibility permissions (user grant). |  |
-| G82 | 3 | L | integrations | Reach Alevr agents from email, Slack and Teams | Inbound email domain and MX/processing provider; Slack app and Microsoft Teams bot registr |  |
-| G83 | 3 | L | artifacts/canvas | Sites: custom domains, server storage and analytics for published artifacts | Edge hosting with TLS for custom domains (certificate automation). |  |
-| G84 | 3 | XL | desktop | A browser extension with a side chat and browser control | Chrome Web Store developer account and review. |  |
-| G85 | 3 | XL | integrations | Office and Google Workspace add-ins | Microsoft Partner Center/AppSource listing; Google Workspace Marketplace listing and OAuth |  |
-| G86 | 2 | S | design | One accent list and a presence token across web and native |  |  |
-| G87 | 2 | S | design | Ship Inter's Cyrillic and extended-Latin subsets |  |  |
-| G88 | 2 | S | coding | Keep Best-of-N winners, and undo cloud turns |  |  |
-| G89 | 2 | S | platform | Help, feedback, release notes and status in the account menu | A public status page provider or self-hosted status page. |  |
-| G90 | 2 | S | memory | Readable memory export and a ready-made import prompt |  |  |
-| G91 | 2 | S | settings | Personality characteristic dials |  |  |
+| G65 | 3 | M | mobile/native | App Intents that answer inside Siri and Shortcuts, with conversation entities |  | Wave 4 |
+| G66 | 3 | M | mobile/native | Live Activities for v2 Code approvals, push-to-start and in-place actions | APNs push-to-start (requires G01) and the Live Activities push type on the server. | Wave 4 |
+| G67 | 3 | M | mobile/native | Run trace and task cards in the iPhone transcript |  | Wave 4 |
+| G68 | 3 | M | platform | Passkeys, active sessions, linked sign-in methods and native Sign in with Apple | WebAuthn relying-party domain, apple-app-site-association webcredentials entry, and Apple  | Wave 5 |
+| G69 | 3 | M | agents | Answer Work approvals and questions straight from notifications | APNs (G01) and VAPID web push already configured. | Wave 4 |
+| G70 | 3 | M | agents | An Activity view across chats, tasks and Code: Running, Needs you, Ready, Blocked |  | Wave 2 |
+| G71 | 3 | M | chat | Study mode with guided tutoring, quizzes and flashcards |  | Wave 3 |
+| G72 | 3 | M | chat | Ask several models at once and see where they agree |  | Wave 3 |
+| G73 | 3 | M | search | Inline image results and richer source cards in search answers | An image search API from the existing search provider, if not already returned. | Wave 3 |
+| G75 | 3 | M | pricing/limits | Bring-your-own-key for Chat, with Priority and Fallback per model |  | Wave 3 |
+| G74 | 3 | L | files | True semantic retrieval with pgvector, plus project sources synced from Drive, GitHub and Notion | pgvector extension on the production Postgres. | Wave 6 |
+| G76 | 3 | L | artifacts/canvas | Spreadsheet and deck editors at full size, with presenter mode and PDF export |  | Wave 3 |
+| G77 | 3 | L | coding | Repository understanding beyond TypeScript, a persistent index and diagnostics |  | Wave 3 |
+| G78 | 3 | L | coding | User MCP servers and hooks for web, Mac env-server and cloud runs |  | Wave 3 |
+| G79 | 3 | L | coding | In-app PR inbox and an @alevr review bot | GitHub App permissions for pull request reviews and issue comments. | Wave 6 |
+| G80 | 3 | L | i18n | Server-rendered translations and RTL layout | Translation review for legal pages. | Wave 5 |
+| G81 | 3 | L | automation | Teach by showing: record a workflow, get a skill | macOS Screen Recording and Accessibility permissions (user grant). | Wave 6 |
+| G82 | 3 | L | integrations | Reach Alevr agents from email, Slack and Teams | Inbound email domain and MX/processing provider; Slack app and Microsoft Teams bot registr | Wave 6 |
+| G83 | 3 | L | artifacts/canvas | Sites: custom domains, server storage and analytics for published artifacts | Edge hosting with TLS for custom domains (certificate automation). | Wave 6 |
+| G84 | 3 | XL | desktop | A browser extension with a side chat and browser control | Chrome Web Store developer account and review. | Wave 6 |
+| G85 | 3 | XL | integrations | Office and Google Workspace add-ins | Microsoft Partner Center/AppSource listing; Google Workspace Marketplace listing and OAuth | Wave 6 |
+| G86 | 2 | S | design | One accent list and a presence token across web and native |  | Wave 1 |
+| G87 | 2 | S | design | Ship Inter's Cyrillic and extended-Latin subsets |  | Wave 5 |
+| G88 | 2 | S | coding | Keep Best-of-N winners, and undo cloud turns |  | Wave 3 |
+| G89 | 2 | S | platform | Help, feedback, release notes and status in the account menu | A public status page provider or self-hosted status page. | Wave 5 |
+| G90 | 2 | S | memory | Readable memory export and a ready-made import prompt |  | Wave 3 |
+| G91 | 2 | S | settings | Personality characteristic dials |  | Wave 3 |
 | G92 | 2 | S | mobile/native | Full-screen prompt editor on iPhone |  | Wave 1 |
-| G93 | 2 | M | settings | Rebindable shortcuts and the missing ones |  |  |
-| G94 | 2 | M | projects | Per-chat export and bulk sidebar actions |  |  |
-| G95 | 2 | M | coding | Ghost-text next-prompt suggestions in Code |  |  |
-| G96 | 2 | M | mobile/native | iPad multi-window, and system-wide screen share in iOS voice | App Group entitlement for the broadcast extension. |  |
-| G97 | 2 | M | agents | Rooms, templates and roster actions you can find |  |  |
-| G98 | 2 | M | voice | Live camera in web voice mode |  |  |
+| G93 | 2 | M | settings | Rebindable shortcuts and the missing ones |  | Wave 3 |
+| G94 | 2 | M | projects | Per-chat export and bulk sidebar actions |  | Wave 3 |
+| G95 | 2 | M | coding | Ghost-text next-prompt suggestions in Code |  | Wave 3 |
+| G96 | 2 | M | mobile/native | iPad multi-window, and system-wide screen share in iOS voice | App Group entitlement for the broadcast extension. | Wave 4 |
+| G97 | 2 | M | agents | Rooms, templates and roster actions you can find |  | Wave 3 |
+| G98 | 2 | M | voice | Live camera in web voice mode |  | Wave 3 |
+
+## Build plan
+
+Each wave is built in isolated worktrees, attacked by an independent reviewer, merged, put through the full local gates, then pushed and deployed through GitHub Actions. After wave 6, a fresh competitor sweep and a judge panel score Alevr surface by surface. Anything still behind goes into another wave.
+
+- **Wave 1: correctness and craft. Chat branching, answer selection bar, inline reasoning, the Code composer and session management, routines from chat, the motion system, home and mobile web, canvas autosave, the iOS approval fix and push, permission modes, memory sources, Mac Code billing.** (G01, G02, G03, G06, G07, G09, G10, G12, G13, G14, G15, G20, G33, G34, G35, G36, G37, G38, G39, G40, G41, G42, G43, G44, G45, G46, G50, G53, G54, G56, G58, G64, G86, G92)
+- **Wave 2: core experience. Pinned user turn, image generation, the Code ship flow, Mac files and offline history, diff review, goal row, Activity view, generative UI, direct document editing, onboarding, fuller incognito.** (G04, G05, G16, G17, G18, G25, G27, G29, G47, G49, G59, G70)
+- **Wave 3: depth. Sharing, artifacts with storage, Library, preview and annotate, study mode, multi-model answers, bring-your-own-key, repository understanding, user MCP and hooks, full-size editors, shortcuts and exports.** (G19, G23, G24, G30, G51, G52, G57, G60, G61, G71, G72, G73, G75, G76, G77, G78, G88, G90, G91, G93, G94, G95, G97, G98)
+- **Wave 4: native apps. Concurrent generation, offline sends, widgets, Live Activities, App Intents, Quick Entry, Share extension, notification approvals, iPad multi-window, native parity and localization.** (G11, G21, G22, G26, G62, G63, G65, G66, G67, G69, G96)
+- **Wave 5: platform and trust. Passkeys and sessions, Team workspaces, pricing tiers, RTL and translations, accessibility automation, observability, offline shell, sign-up limits, settings, built-in document skills, Work voice and undo.** (G32, G48, G55, G68, G80, G87, G89)
+- **Wave 6: outside accounts. Google and Microsoft connectors, live cloud browser, warm cloud environments, semantic retrieval, PR review bot, email and Slack agents, Sites domains, browser extension, Office add-ins. Built up to each boundary, then switched on once the owner provides the account.** (G08, G28, G31, G74, G79, G81, G82, G83, G84, G85)
 
 ## Design and motion direction
 
