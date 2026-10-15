@@ -1,0 +1,262 @@
+[
+  {
+    "name": "projects",
+    "theme": "dark",
+    "width": 1440,
+    "status": 200,
+    "scrollWidth": 1440,
+    "headings": [
+      "Projects"
+    ],
+    "errors": [],
+    "screenshot": "artifacts/continuation-2026-10-15/projects-dark-1440.png"
+  },
+  {
+    "name": "library",
+    "theme": "dark",
+    "width": 1440,
+    "status": 200,
+    "scrollWidth": 1440,
+    "headings": [
+      "Library"
+    ],
+    "errors": [],
+    "screenshot": "artifacts/continuation-2026-10-15/library-dark-1440.png"
+  },
+  {
+    "name": "connections",
+    "theme": "dark",
+    "width": 1440,
+    "status": 200,
+    "scrollWidth": 1440,
+    "headings": [
+      "Apps",
+      "Connected 3",
+      "More apps"
+    ],
+    "errors": [],
+    "screenshot": "artifacts/continuation-2026-10-15/connections-dark-1440.png"
+  },
+  {
+    "name": "skills",
+    "theme": "dark",
+    "width": 1440,
+    "status": 200,
+    "scrollWidth": 1440,
+    "headings": [
+      "Skills",
+      "Your skills3",
+      "Installed2"
+    ],
+    "errors": [],
+    "screenshot": "artifacts/continuation-2026-10-15/skills-dark-1440.png"
+  },
+  {
+    "name": "automations",
+    "theme": "dark",
+    "width": 1440,
+    "status": 200,
+    "scrollWidth": 1440,
+    "headings": [
+      "Routines",
+      "Active2",
+      "Paused1"
+    ],
+    "errors": [],
+    "screenshot": "artifacts/continuation-2026-10-15/automations-dark-1440.png"
+  },
+  {
+    "name": "instructions",
+    "theme": "dark",
+    "width": 1440,
+    "status": 200,
+    "scrollWidth": 1440,
+    "headings": [
+      "Instructions",
+      "About youEvery chat reads this",
+      "ResponsesYour instructions come first"
+    ],
+    "errors": [],
+    "screenshot": "artifacts/continuation-2026-10-15/instructions-dark-1440.png"
+  },
+  {
+    "name": "agents",
+    "theme": "dark",
+    "width": 1440,
+    "status": 200,
+    "scrollWidth": 1440,
+    "headings": [
+      "Orbit",
+      "Needs you"
+    ],
+    "errors": [],
+    "screenshot": "artifacts/continuation-2026-10-15/agents-dark-1440.png"
+  },
+  {
+    "name": "settings",
+    "theme": "dark",
+    "width": 1440,
+    "status": 200,
+    "scrollWidth": 1440,
+    "headings": [
+      "Settings",
+      "General"
+    ],
+    "errors": [],
+    "screenshot": "artifacts/continuation-2026-10-15/settings-dark-1440.png"
+  },
+  {
+    "name": "search",
+    "theme": "dark",
+    "width": 1440,
+    "status": 200,
+    "scrollWidth": 1440,
+    "headings": [
+      "Projects"
+    ],
+    "errors": [],
+    "screenshot": "artifacts/continuation-2026-10-15/search-dark-1440.png"
+  },
+  {
+    "name": "code",
+    "theme": "dark",
+    "width": 1440,
+    "status": 200,
+    "scrollWidth": 1440,
+    "headings": [
+      "What will you build?"
+    ],
+    "errors": [],
+    "screenshot": "artifacts/continuation-2026-10-15/code-dark-1440.png"
+  },
+  {
+    "name": "projects",
+    "theme": "light",
+    "width": 390,
+    "status": 200,
+    "scrollWidth": 390,
+    "headings": [
+      "Projects"
+    ],
+    "errors": [],
+    "screenshot": "artifacts/continuation-2026-10-15/projects-light-390.png"
+  },
+  {
+    "name": "library",
+    "theme": "light",
+    "width": 390,
+    "status": 200,
+    "scrollWidth": 390,
+    "headings": [
+      "Library"
+    ],
+    "errors": [],
+    "screenshot": "artifacts/continuation-2026-10-15/library-light-390.png"
+  },
+  {
+    "name": "connections",
+    "theme": "light",
+    "width": 390,
+    "status": 200,
+    "scrollWidth": 390,
+    "headings": [
+      "Apps",
+      "Connected 3",
+      "More apps"
+    ],
+    "errors": [],
+    "screenshot": "artifacts/continuation-2026-10-15/connections-light-390.png"
+  },
+  {
+    "name": "skills",
+    "theme": "light",
+    "width": 390,
+    "status": 200,
+    "scrollWidth": 390,
+    "headings": [
+      "Skills",
+      "Your skills3",
+      "Installed2"
+    ],
+    "errors": [],
+    "screenshot": "artifacts/continuation-2026-10-15/skills-light-390.png"
+  },
+  {
+    "name": "automations",
+    "theme": "light",
+    "width": 390,
+    "status": 200,
+    "scrollWidth": 390,
+    "headings": [
+      "Routines",
+      "Active2",
+      "Paused1"
+    ],
+    "errors": [],
+    "screenshot": "artifacts/continuation-2026-10-15/automations-light-390.png"
+  },
+  {
+    "name": "instructions",
+    "theme": "light",
+    "width": 390,
+    "status": 200,
+    "scrollWidth": 390,
+    "headings": [
+      "Instructions",
+      "About youEvery chat reads this",
+      "ResponsesYour instructions come first"
+    ],
+    "errors": [],
+    "screenshot": "artifacts/continuation-2026-10-15/instructions-light-390.png"
+  },
+  {
+    "name": "agents",
+    "theme": "light",
+    "width": 390,
+    "status": 200,
+    "scrollWidth": 390,
+    "headings": [
+      "Orbit",
+      "Needs you"
+    ],
+    "errors": [],
+    "screenshot": "artifacts/continuation-2026-10-15/agents-light-390.png"
+  },
+  {
+    "name": "settings",
+    "theme": "light",
+    "width": 390,
+    "status": 200,
+    "scrollWidth": 390,
+    "headings": [
+      "Settings",
+      "General"
+    ],
+    "errors": [],
+    "screenshot": "artifacts/continuation-2026-10-15/settings-light-390.png"
+  },
+  {
+    "name": "search",
+    "theme": "light",
+    "width": 390,
+    "status": 200,
+    "scrollWidth": 390,
+    "headings": [
+      "Projects"
+    ],
+    "errors": [],
+    "screenshot": "artifacts/continuation-2026-10-15/search-light-390.png"
+  },
+  {
+    "name": "code",
+    "theme": "light",
+    "width": 390,
+    "status": 200,
+    "scrollWidth": 390,
+    "headings": [
+      "What will you build?"
+    ],
+    "errors": [],
+    "screenshot": "artifacts/continuation-2026-10-15/code-light-390.png"
+  }
+]
