@@ -30,7 +30,7 @@ import { publishThreadState } from "@/lib/code-v2/shell-threads";
 import { hunkPatch, type HunkDecision } from "@/lib/code-v2/diff";
 import { managedCall, runtimeRequest, type ScheduledResume } from "@/lib/code-v2/runtime-lane";
 import { toast } from "sonner";
-import type { ClientMessage } from "@/types/chat";
+import type { ClientMessage, ConversationHistory } from "@/types/chat";
 import { useEnvLink } from "./use-env-link";
 import { readRepoSkills, useCodeSkills } from "./use-code-skills";
 import type { WorkspaceModel } from "./types";
@@ -52,6 +52,8 @@ export interface CodeV2RouteProps {
     codeWorkspaceKey?: string | null;
   };
   initialMessages: ClientMessage[];
+  /** The newest page of a longer session (lib/chat/history-page.ts). Absent: the whole session. */
+  initialHistory?: ConversationHistory;
 }
 
 function readJson<T>(key: string): T | null {
@@ -70,7 +72,7 @@ function writeJson(key: string, value: unknown) {
   }
 }
 
-export function CodeV2Route({ conversation, initialMessages }: CodeV2RouteProps) {
+export function CodeV2Route({ conversation, initialMessages, initialHistory }: CodeV2RouteProps) {
   const router = useRouter();
   const { conversations, updateConversation } = useApp();
   const meta = useCodeTaskMeta(conversation.id);
@@ -78,6 +80,7 @@ export function CodeV2Route({ conversation, initialMessages }: CodeV2RouteProps)
   const session = useCodeSession({
     conversationId: conversation.id,
     initialMessages,
+    initialHistory,
     onActivity: () => updateConversation(conversation.id, { lastMessageAt: new Date().toISOString() }),
   });
   const device = presence.device ? { id: presence.device.id, name: presence.device.name, online: presence.state === "online" } : null;
@@ -444,6 +447,8 @@ export function CodeV2Route({ conversation, initialMessages }: CodeV2RouteProps)
       cwd,
     },
     items,
+    // Paging belongs to the CodeTask transcript; the env server's view arrives whole.
+    history: useEnv && env.view ? undefined : { hasOlder: session.history.hasOlder, loading: session.loadingOlder, loadOlder: session.loadOlderMessages },
     state,
     resumeAt: env.view?.resumeAt,
     scheduledResume: scheduled ? { id: scheduled.id, at: scheduled.at } : null,

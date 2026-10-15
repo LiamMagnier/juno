@@ -37,6 +37,8 @@ import { TEAM_PHASE_LABELS } from "@/lib/code-v2/team";
 import { formatTokens } from "@/lib/code-v2/tier-view";
 import { describeItem, formatDuration, groupTurns, stepItems, turnHeader, turnMarks, turnVisibility, type DetailLevel, type Turn } from "@/lib/code-v2/turns";
 import { Glyph, useNow } from "./primitives";
+import type { PagedHistory } from "./types";
+import { shouldLoadOlder } from "@/lib/chat/history-client";
 import { cn } from "@/lib/utils";
 import { CrossMessageRow } from "@/components/chat/cross-message-row";
 import { peerHrefForRef as peerHref } from "@/lib/cross-conversation/links";
@@ -51,6 +53,12 @@ export interface DockRequest {
 
 export interface ThreadProps {
   items: readonly TurnItem[];
+  /**
+   * Older turns still to read above `items` (paged history). Scrolling near
+   * the top reads the next page, and the turn the reader is on holds still as
+   * it lands above them. Absent: `items` are the whole session.
+   */
+  history?: PagedHistory;
   state: SessionState;
   instances: readonly ProviderInstance[];
   detailLevel: DetailLevel;
@@ -634,6 +642,41 @@ export function Thread(props: ThreadProps) {
   const pinned = React.useRef(true);
   const [current, setCurrent] = React.useState<string | null>(null);
 
+  /*
+   * PAGED HISTORY. The first turn the reader can see, and how far it sits
+   * from the top of the scroller, noted on every scroll. When an older page
+   * lands above, the layout effect below puts that turn back where it was
+   * before paint. Measured rather than assumed: where the browser's own
+   * scroll anchoring (`overflow-anchor: auto`) already held it the
+   * correction is zero, and where it does not (Safari, or the very top)
+   * this is what holds it.
+   */
+  const history = props.history;
+  const anchor = React.useRef<{ turnId: string; offset: number } | null>(null);
+  const failedAt = React.useRef(0);
+  const firstTurnId = turns[0]?.id ?? null;
+  const shownFirstTurnId = React.useRef(firstTurnId);
+
+  const noteAnchor = (el: HTMLElement) => {
+    const top = el.getBoundingClientRect().top;
+    anchor.current = null;
+    for (const s of el.querySelectorAll<HTMLElement>("[data-turn]")) {
+      const box = s.getBoundingClientRect();
+      if (box.bottom > top) {
+        anchor.current = { turnId: s.dataset.turn ?? "", offset: box.top - top };
+        return;
+      }
+    }
+  };
+  const loadOlderIfNear = () => {
+    const el = scrollRef.current;
+    if (!el || !history?.hasOlder || history.loading) return;
+    if (!shouldLoadOlder(el.scrollTop, el.clientHeight, failedAt.current)) return;
+    void history.loadOlder().then((result) => {
+      if (result === null) failedAt.current = Date.now();
+    });
+  };
+
   const onScroll = () => {
     const el = scrollRef.current;
     if (!el) return;
@@ -642,11 +685,36 @@ export function Thread(props: ThreadProps) {
     let cur: string | null = null;
     for (const s of sections) if (s.offsetTop - el.scrollTop < el.clientHeight * 0.4) cur = s.dataset.turn ?? null;
     setCurrent(cur);
+    if (history) {
+      noteAnchor(el);
+      loadOlderIfNear();
+    }
   };
   React.useLayoutEffect(() => {
     const el = scrollRef.current;
-    if (el && pinned.current) el.scrollTop = el.scrollHeight;
+    const prepended = shownFirstTurnId.current !== null && firstTurnId !== shownFirstTurnId.current;
+    shownFirstTurnId.current = firstTurnId;
+    if (!el) return;
+    if (pinned.current) {
+      el.scrollTop = el.scrollHeight;
+      return;
+    }
+    const held = anchor.current;
+    if (!prepended || !held) return;
+    const turn = el.querySelector<HTMLElement>(`[data-turn="${CSS.escape(held.turnId)}"]`);
+    if (!turn) return;
+    const delta = turn.getBoundingClientRect().top - el.getBoundingClientRect().top - held.offset;
+    if (Math.abs(delta) >= 1) el.scrollTop += delta;
+    // `firstTurnId` is derived from `items`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items]);
+  // A first page shorter than the runway, or a page that landed with the
+  // reader still near the top, asks for the next one without a scroll.
+  React.useEffect(() => {
+    loadOlderIfNear();
+    // Re-checked when a page lands or loading settles.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items, history?.hasOlder, history?.loading]);
 
   const jump = (id: string) => {
     const el = scrollRef.current?.querySelector<HTMLElement>(`[data-turn="${CSS.escape(id)}"]`);
@@ -670,7 +738,15 @@ export function Thread(props: ThreadProps) {
   );
 
   return (
-    <div className="cv2-scroll" ref={scrollRef} onScroll={onScroll}>
+    <div
+      className="cv2-scroll"
+      ref={scrollRef}
+      onScroll={onScroll}
+      aria-busy={history?.loading || undefined}
+      // Read by e2e (as on the chat transcript); absent when the thread does not page.
+      data-history-turns={history ? turns.length : undefined}
+      data-history-older={history ? String(history.hasOlder) : undefined}
+    >
       <div className="cv2-col">
         {props.starting && (
           <div className="cv2-wl">

@@ -231,7 +231,7 @@ Raw results: `perf/history-{before,after}-{local,remote}.json`, `perf/loaded-his
 | Change | Where |
 |---|---|
 | Cursor paging over `(createdAt, id)`, a total order, so tied timestamps neither skip nor repeat. The first page is the newest 60 messages and older pages are 120. A page is widened back to the question that opens its turn, so a turn is never split. `through` reaches back to a message; `all` returns the rest. | `src/lib/chat/history-page.ts` |
-| `/chat/[id]` opens on the newest page. A `?m=` deep link widens that page to reach its message, so the jump renders with the route. The legacy Code surface still reads the whole thread. | `chat/[id]/page.tsx`, `lib/queries.ts` (`getConversationThreadPage`, `getConversationHistory`) |
+| `/chat/[id]` opens on the newest page. A `?m=` deep link widens that page to reach its message, so the jump renders with the route. The Code surfaces followed on 2026-10-15 ("Paged history on the Code surfaces"). | `chat/[id]/page.tsx`, `lib/queries.ts` (`getConversationThreadPage`, `getConversationHistory`) |
 | `GET /api/conversations/[id]/messages?before=&limit=&through=&all=1`: owner-scoped (another account's conversation is a 404, with or without a valid cursor) and parameters validated. | `api/conversations/[id]/messages/route.ts` |
 | `GET /api/conversations/[id]` is unchanged without parameters. The Mac and iPhone apps read it whole (`NativeThreadClient.swift`), and its whole-thread order now tie-breaks on id. `?limit=N` returns the newest page plus `history`. The web recovery poll uses `?limit=40`. | `api/conversations/[id]/route.ts`, `use-chat.ts` |
 | `use-chat` holds `history` and `loadOlderMessages`, one request at a time. A refreshed newest page (`router.refresh`, sync) keeps the history the reader already scrolled back through, but only when the two overlap. | `use-chat.ts`, `lib/chat/history-merge.ts` |
@@ -303,7 +303,7 @@ The integration test runs the real routes. It covers:
 - **The outputs chip's count of generated images** covers loaded history until the panel is opened. Opening it loads the rest. Artifacts were always complete.
 - **The file viewer's switcher** lists files from loaded history.
 - **The rail and the scrollbar** describe the loaded part of a long conversation. Each grows as history arrives.
-- **The legacy Code surface** (`?surface=legacy`) and `/code/[id]` still read whole threads.
+- ~~**The legacy Code surface** (`?surface=legacy`) and `/code/[id]` still read whole threads.~~ Both page now ("Paged history on the Code surfaces").
 
 ## Paged history follow-up (2026-10-14)
 
@@ -375,6 +375,32 @@ The fixture repeats itself and compresses 46:1. Expect about 3:1 on real convers
 
 - **Find still fetches the rest only once the reader types.** Starting the fetch when find opens would hide most of the remaining remote time. It would also download the conversation for readers who open find and close it. Not done.
 - **Every child inserted into the transcript restyles the whole mounted transcript** (about 2,500 elements, 10–15 ms at CPU ×2). The trace attributes it to Chrome's sibling and nth invalidation set ("invalidates subtree"). Disabling the sibling, `:has()` and structural rules through the CSSOM did not change the count, so the source is not yet identified. It costs every scroll tick that mounts a row, as before paging.
+
+## Paged history on the Code surfaces (2026-10-15)
+
+`/code/[id]` (the v2 workspace) and the legacy Code surface (`/chat/[id]?surface=legacy`) read whole threads after Workstream I. Both now open on the newest page and read older pages on scroll-up, through the same pager and loader as Chat.
+
+| Change | Where |
+|---|---|
+| Both routes read `getConversationThreadPage` and hand the client `initialHistory`. The legacy branch reuses the page `/chat/[id]` already read, instead of a second whole-thread read. | `code/[id]/page.tsx`, `chat/[id]/page.tsx` |
+| The older-page request and its one-request-at-a-time rule moved out of `use-chat` into a shared loader, unchanged. `use-chat` and `use-code-session` both use it. The load-older threshold (two screens, at least 1,600 px; 3 s after a failure) is shared with `MessageList`. | `lib/chat/history-client.ts`, `use-chat.ts`, `use-code-session.ts`, `message-list.tsx` |
+| `use-code-session` holds `history`, `loadingOlder` and `loadOlderMessages`. Pages land with a functional update, so a live bubble streaming at the foot is never overwritten by a page read before its last delta. | `use-code-session.ts` |
+| Legacy surface: `MessageList` gets `history` and `onLoadOlder`, so it pages, anchors, jumps to unloaded rows and expands "Read full conversation" exactly as Chat does. | `code-session-view.tsx` |
+| v2 thread: two screens from the top it reads the next page. The first visible turn and its offset are noted on scroll, and put back before paint when a page lands above (measured, so the correction is zero where the browser's own `overflow-anchor` already held it). The turn rail lists loaded turns. | `components/code/v2/thread.tsx` |
+| v2 dock: it reads the whole session (changes, commands, files), so opening it loads the rest, as Chat's outputs panel does. Sessions on the env server arrive whole and do not page. | `components/code/v2/workspace.tsx`, `live-route.tsx` |
+
+Native contracts are unchanged: `GET /api/conversations/[id]` without parameters still returns the whole thread with no `history` key (asserted for a Code session in the new integration test).
+
+**Verified.**
+- `tests/code-history-paging.integration.test.ts` (Postgres, both pages as Server Components): 9/9. On the old pages, 5 fail, the first page being all 301 messages.
+- `tests/chat-history-client.test.ts`: 10/10 (wire request, loader queueing, `through`/`all`, failure, conversation change, threshold, v2 thread markup).
+- `tests/chat-history-paging.integration.test.ts` still 10/10. Full unit suite (`tsx --test tests/*.test.ts`): 6,950 pass, 0 fail, 158 skipped.
+- Headless Chrome against `next dev` with a throwaway database and a 400-message Code session. `/code/[id]` opened at the bottom with 30 of 200 turns, and its HTML held neither the oldest nor the middle turns. Three pages landed while scrolling up, each with 0 px drift of the turn being read, one of them at `scrollTop` 0. The dock loaded the rest with one `all=1` request. The legacy surface opened with 60 of 400 messages and reached the top in three pages.
+
+**Known limits.**
+- **Session-wide summaries on the legacy surface** (the banner's +N −M and the changed-files card) cover loaded history until the reader scrolls back. The v2 dock loads the rest when opened. The legacy card does not.
+- **The v2 turn rail** lists loaded turns, as Chat's rail does.
+- Not measured: Safari (no `overflow-anchor`, so the measured correction does all the work there), a production build, or a remote network profile.
 
 ## Security considerations
 

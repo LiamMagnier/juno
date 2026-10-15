@@ -9,6 +9,7 @@ import { MessageItem } from "@/components/chat/message-item";
 import { TranscriptRail } from "@/components/chat/transcript-rail";
 import { useTranscriptWindow, VIRTUALIZE_AFTER } from "@/hooks/use-transcript-window";
 import { useLatestHandler } from "@/hooks/use-latest-handler";
+import { shouldLoadOlder } from "@/lib/chat/history-client";
 import { countTranscriptRender, placeInlineRuns } from "@/lib/chat/transcript-window";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -113,10 +114,6 @@ function RoomHandoffLine({ text }: { text: string }) {
   );
 }
 
-/** Ask for the next older page this far from the top: about two screens of runway. */
-const LOAD_OLDER_WITHIN_PX = 1600;
-/** After a page failed to load, wait this long before scrolling may ask again. */
-const LOAD_OLDER_RETRY_MS = 3000;
 
 const SCROLL_FADE_STYLE: React.CSSProperties = {
   maskImage: "linear-gradient(to bottom, black 0%, black calc(100% - 72px), transparent 100%)",
@@ -191,8 +188,7 @@ export function MessageList(props: MessageListProps) {
     // its viewport state still says "near the top", which read as a second
     // request for the next page nobody scrolled to.
     const top = scrollRef.current?.scrollTop ?? viewportTop;
-    if (top > Math.max(LOAD_OLDER_WITHIN_PX, viewportHeight * 2)) return;
-    if (Date.now() - failedAtRef.current < LOAD_OLDER_RETRY_MS) return;
+    if (!shouldLoadOlder(top, viewportHeight, failedAtRef.current)) return;
     void onLoadOlder?.().then((result) => {
       if (result === null) failedAtRef.current = Date.now();
     });
