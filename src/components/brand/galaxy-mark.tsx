@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { watchCanvas } from "@/lib/canvas/canvas-lifecycle";
+import { reducedMotionAt } from "@/lib/run/loop-phase";
 import { cn } from "@/lib/utils";
 import {
   GALAXY_COUNT_SMALL,
@@ -35,7 +36,7 @@ export type GalaxyMarkProps = {
   size?: number;
   /** Accessible name. Omit when adjacent text states the phase (it should): the mark is then hidden. */
   label?: string;
-  /** Force reduced motion (galleries, tests); otherwise the OS setting is followed, live. */
+  /** Override reduced motion (galleries, tests); otherwise follow the OS and app choice live. */
   reducedMotion?: boolean;
   className?: string;
 };
@@ -92,7 +93,7 @@ export function GalaxyMark({ phase, size = 16, label, reducedMotion, className }
     if (!ctx) return;
 
     const mq = typeof window.matchMedia === "function" ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
-    const reduced = () => reducedMotion ?? mq?.matches ?? false;
+    const reduced = () => reducedMotion ?? reducedMotionAt(el);
 
     let raf = 0;
     let last = 0;
@@ -245,6 +246,12 @@ export function GalaxyMark({ phase, size = 16, label, reducedMotion, className }
     document.addEventListener("visibilitychange", onVisibility);
     const onMotion = () => wake.current();
     mq?.addEventListener("change", onMotion);
+    // CSS cannot stop a canvas clock. Observe the same app preference that
+    // MotionConfig and the CSS rules use, including gallery ancestor overrides.
+    const motionWatch = new MutationObserver(onMotion);
+    for (let ancestor = el.parentElement; ancestor; ancestor = ancestor.parentElement) {
+      motionWatch.observe(ancestor, { attributes: true, attributeFilter: ["data-motion"] });
+    }
     // Theme flips repaint at once (the ink is otherwise re-read twice a second).
     const themeWatch = new MutationObserver(() => {
       inkReadAt = -1;
@@ -263,6 +270,7 @@ export function GalaxyMark({ phase, size = 16, label, reducedMotion, className }
       unwatch();
       stop();
       io?.disconnect();
+      motionWatch.disconnect();
       themeWatch.disconnect();
       document.removeEventListener("visibilitychange", onVisibility);
       mq?.removeEventListener("change", onMotion);

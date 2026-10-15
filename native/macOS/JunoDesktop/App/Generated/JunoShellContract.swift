@@ -13,7 +13,7 @@ enum JunoShellContract {
     /// Bumped when the contract's shape changes.
     static let version = 2
     /// SHA-256 of the contract this was generated from.
-    static let digest = "bab5e6c3032021059a8e1385e8c1b87cc0271582efefaebadf01d2eb39d66dc5"
+    static let digest = "5e31caf5a3e48e427034e931a02f611bfb3d6f96c020e4bc81d634479847d225"
 }
 
 /// An account's plan, lowest to highest (`Plan` in prisma/schema.prisma,
@@ -252,7 +252,7 @@ enum JunoShellChatSidebar {
     }
 
     /// What the list says when there is nothing in it, line by line.
-    static let emptyLines: [String] = ["No conversations yet.", "Start one above."]
+    static let emptyLines: [String] = ["Your recent chats will", "appear here."]
 }
 
 /// Code's sidebar (`app-sidebar.tsx` with `product` = code), top to bottom.

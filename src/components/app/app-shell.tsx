@@ -3,6 +3,7 @@
 import * as React from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { AnimatePresence, MotionConfig, motion } from "framer-motion";
+import { useUiPref } from "@/lib/ui-prefs";
 import { Menu, MessageSquarePlus } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { AppSidebar } from "@/components/app/app-sidebar";
@@ -99,6 +100,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { sidebarOpen, setSidebarOpen, activeConversationId, conversations } = useApp();
   const router = useRouter();
   const pathname = usePathname();
+  const [motionPreference] = useUiPref("motion");
 
   const [collapsed, setCollapsed] = React.useState(false);
   // md–lg: the expanded panel FLOATS over the content instead of pushing it,
@@ -469,8 +471,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
      * in globals.css: transform and layout animations become instant, opacity
      * and colour keep their timing (ICONS_AND_MOTION.md §2.2, rule 10). It is
      * context, so it reaches the dialogs and menus the shell portals out too.
+     * Keep the app's Reduced choice here as well: a nested "user" provider
+     * otherwise overrides the root provider's "always" choice.
      */
-    <MotionConfig reducedMotion="user">
+    <MotionConfig reducedMotion={motionPreference === "reduced" ? "always" : "user"}>
       <div className="juno-frame relative flex h-dvh overflow-hidden">
         {/* Bypass Blocks (SC 2.4.1, Level A). */}
         <a
@@ -690,12 +694,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </Button>
           </div>
 
-          {/* `z-[1]`, and it is the other half of the aura's `z-index: 0`.
-              A positioned layer at 0 paints ABOVE in-flow content, so without a
-              stacking order here the voice light would cover the conversation
-              instead of sitting behind it. One class, on the one element that
-              wraps everything a person reads. */}
-          <div className="relative z-[1] min-h-0 flex-1">
+          {/* The retired page-wide voice aura no longer needs this wrapper
+              to create a stacking context. That context trapped full-window
+              Settings below the phone bar and covered its Back control. */}
+          <div className="relative min-h-0 flex-1">
             <PageTransition>{children}</PageTransition>
           </div>
         </main>

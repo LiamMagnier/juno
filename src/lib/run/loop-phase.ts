@@ -120,13 +120,13 @@ export function useOffscreen(ref: RefObject<Element | null>, onChange?: Offscree
 const REDUCED = "(prefers-reduced-motion: reduce)";
 
 /**
- * Whether motion at `element` is reduced: the reader's preference, or the
- * galleries' simulation (`data-motion="reduce"` on an ancestor), which the
+ * Whether motion at `element` is reduced: the OS, the app's saved choice
+ * (`data-motion="reduced"`), or the galleries' simulation (`data-motion="reduce"`), which the
  * browser pane needs because it cannot emulate the media query. Read at the
  * moment a scripted transition starts, so the gallery toggle takes effect on
  * the next one without any component re-rendering for it.
  */
 export function reducedMotionAt(element: Element | null): boolean {
   if (typeof window !== "undefined" && window.matchMedia?.(REDUCED).matches) return true;
-  return Boolean(element?.closest('[data-motion="reduce"]'));
+  return Boolean(element?.closest('[data-motion="reduce"], [data-motion="reduced"]'));
 }

@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { usePathname } from "next/navigation";
+import { reducedMotionAt } from "@/lib/run/loop-phase";
 
 /**
  * Cross-route entrance for the app shell's content area: a 160ms crossfade
@@ -63,7 +64,7 @@ export function PageTransition({ children }: { children: React.ReactNode }) {
     previous.current = group;
     const el = ref.current;
     if (!el || typeof el.animate !== "function") return;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    if (reducedMotionAt(el)) return;
     const style = getComputedStyle(document.documentElement);
     const duration = parseFloat(style.getPropertyValue("--dur-exit")) || 160;
     const easing = style.getPropertyValue("--ease-out-soft").trim() || "ease-out";

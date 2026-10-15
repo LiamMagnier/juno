@@ -177,8 +177,8 @@
         }
       ],
       "empty": [
-        "No conversations yet.",
-        "Start one above."
+        "Your recent chats will",
+        "appear here."
       ]
     },
     "code": {
