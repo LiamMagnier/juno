@@ -10,7 +10,7 @@
     "predev": "npm run i18n:extract",
     "dev": "next dev",
     "prebuild": "npm run i18n:extract",
-    "build": "prisma generate && NODE_OPTIONS=--max-old-space-size=4096 next build",
+    "build": "prisma generate && NODE_OPTIONS=--max-old-space-size=8192 next build",
     "start": "next start -H 127.0.0.1",
     "lint": "eslint .",
     "typecheck": "NODE_OPTIONS=--max-old-space-size=8192 tsc --noEmit",
