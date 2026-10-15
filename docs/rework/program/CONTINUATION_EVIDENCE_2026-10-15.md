@@ -54,7 +54,7 @@ Captured twenty ready-state gallery views: Projects, Library, Apps/connections, 
 - [Orbit, desktop dark](../../../artifacts/continuation-2026-10-15/agents-dark-1440.png)
 - [Settings phone before](../../../artifacts/continuation-2026-10-15/settings-light-390.png) / [after](../../../artifacts/continuation-2026-10-15/settings-light-390-after.png)
 
-The screenshots remain local artifacts. This evidence does not assert that all twenty images received detailed visual inspection. Projects, Library, Orbit and Settings were inspected directly. The wider light/dark × desktop/phone/tablet matrix, keyboard and screen-reader paths, loading/error/offline states, interruption/reversal, pointer versus keyboard behavior, reduced transparency and installed native workflows remain acceptance work. Original character/artwork decisions also remain in their existing design brief.
+The screenshots are saved local artifacts. This evidence does not assert that all twenty images received detailed visual inspection. Projects, Library, Orbit and Settings were inspected directly. The phone Search fixture capture matches its base Projects view, so it is not evidence that the Search overlay opened successfully. The wider light/dark × desktop/phone/tablet matrix, keyboard and screen-reader paths, loading/error/offline states, interruption/reversal, pointer versus keyboard behavior, reduced transparency and installed native workflows remain acceptance work. Original character/artwork decisions also remain in their existing design brief.
 
 ## Tests
 
