@@ -28,6 +28,7 @@ import { useWorkThreadFiles } from "@/components/work/composer/work-thread-files
 import { useComposerProjects } from "@/components/work/composer-home/use-composer-projects";
 import type { ClientWorkSession } from "@/lib/work/serializers";
 import { cn, formatBytes } from "@/lib/utils";
+import { touchReturnBreaksLine } from "@/lib/touch-keyboard";
 
 /**
  * The box at the bottom of a Work thread. It is always there.
@@ -443,7 +444,7 @@ export function WorkThreadComposer({
                   event.currentTarget.blur();
                   return;
                 }
-                if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing && !touchReturnBreaksLine(event)) {
                   event.preventDefault();
                   void submit(draft);
                 }

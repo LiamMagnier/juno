@@ -11,6 +11,7 @@
  */
 
 import * as React from "react";
+import type { TouchReturn } from "@/lib/composer-keys";
 import {
   DEFAULT_VOICE_REASONING_EFFORT,
   VOICE_REASONING_EFFORTS,
@@ -21,12 +22,15 @@ export type ChatFont = "default" | "system" | "serif" | "mono";
 export type TranscriptWidth = "narrow" | "medium" | "wide";
 export type MotionPref = "system" | "reduced";
 export type SendKey = "enter" | "mod-enter";
+/** What Return does on an on-screen keyboard (src/lib/composer-keys.ts, G35). */
+export type { TouchReturn };
 
 export interface UiPrefs {
   chatFont: ChatFont;
   transcriptWidth: TranscriptWidth;
   motion: MotionPref;
   sendKey: SendKey;
+  touchReturn: TouchReturn;
   codeWrap: boolean;
   followUps: boolean;
   notifyOnReply: boolean;
@@ -49,6 +53,7 @@ export const UI_PREF_DEFAULTS: UiPrefs = {
   transcriptWidth: "medium",
   motion: "system",
   sendKey: "enter",
+  touchReturn: "newline",
   codeWrap: false,
   followUps: true,
   notifyOnReply: false,
@@ -80,6 +85,7 @@ function sanitize(raw: unknown): UiPrefs {
   pick("transcriptWidth", ["narrow", "medium", "wide"]);
   pick("motion", ["system", "reduced"]);
   pick("sendKey", ["enter", "mod-enter"]);
+  pick("touchReturn", ["newline", "send"]);
   pick("voiceEffort", VOICE_REASONING_EFFORTS);
   pick("voiceGeminiEffort", ["low", "medium", "high"]);
   for (const key of ["codeWrap", "followUps", "notifyOnReply", "replySound", "voiceSounds"] as const) {

@@ -21,6 +21,7 @@ import { resolveModel, DEFAULT_MODEL } from "@/lib/models";
 import { isAutoModelId } from "@/lib/auto-model";
 import { reasoningOptions, type ReasoningEffort } from "@/lib/model-metrics";
 import { cn } from "@/lib/utils";
+import { touchReturnBreaksLine } from "@/lib/touch-keyboard";
 import type { ClientAttachment } from "@/types/chat";
 import type { PendingUpload } from "@/hooks/use-uploads";
 import type { CodeSessionStatus } from "@/hooks/use-code-session";
@@ -287,7 +288,7 @@ export function CodeSessionComposer({
                   value={draft}
                   onChange={(e) => onDraftChange(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && !touchReturnBreaksLine(e)) {
                       e.preventDefault();
                       if (isBusy) {
                         if (steerReady) onSteer();

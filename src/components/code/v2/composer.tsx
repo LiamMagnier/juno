@@ -24,6 +24,7 @@ import * as React from "react";
 import type { ApprovalDecision, ApprovalRequestItem, PlanItem, ProviderInstance, TurnItem, UserInputRequestItem } from "@/lib/code-v2/contracts";
 import { SLASH_COMMANDS, applyTrigger, composerKeyIntent, detectTrigger, escPress, filterByQuery, rankFiles, sendButtonMode, type Trigger } from "@/lib/code-v2/composer";
 import { insertLineBreak } from "@/lib/composer-keys";
+import { touchReturnBreaksLine, useEnterKeyHint } from "@/lib/touch-keyboard";
 import { orchestrateLabel } from "@/lib/code-v2/orchestrate";
 import { displayName } from "@/lib/code-v2/providers-view";
 import { formatReset, formatTokens, tightestWindow } from "@/lib/code-v2/tier-view";
@@ -271,6 +272,7 @@ export const Composer = React.forwardRef<
   const [revising, setRevising] = React.useState(false);
   const [roleTab, setRoleTab] = React.useState<RoleTab>("lead");
   const textarea = React.useRef<HTMLTextAreaElement>(null);
+  const enterKeyHint = useEnterKeyHint("touch");
   const footRef = React.useRef<HTMLDivElement>(null);
   const stripRef = React.useRef<HTMLDivElement>(null);
   const fileInput = React.useRef<HTMLInputElement>(null);
@@ -464,6 +466,8 @@ export const Composer = React.forwardRef<
     // Safari sends the Enter that confirms an input method's text after
     // compositionend, isComposing false but keyCode 229: still not a send.
     const composing = e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229;
+    // Return on an on-screen keyboard breaks the line; the send disc sends (G35).
+    if (!composing && touchReturnBreaksLine(e)) return;
     const intent = composerKeyIntent({ key: e.key, meta: e.metaKey, ctrl: e.ctrlKey, shift: e.shiftKey, alt: e.altKey }, { running, hasDraft, canSteer, canQueue, menuOpen, composing }, mac);
     if (intent === "newline" && e.altKey) {
       // The textarea breaks the line on Shift+Enter by itself, not on Option+Enter.
@@ -602,6 +606,7 @@ export const Composer = React.forwardRef<
         ref={textarea}
         className={cn("cv2-draft", tall && "tall")}
         rows={1}
+        enterKeyHint={enterKeyHint}
         value={draft}
         disabled={!connected}
         placeholder={!connected ? "Connect a subscription or add a key to start" : call ? "Type while you talk\u2026" : revising ? "What should change in the plan?" : placeholder(running)}

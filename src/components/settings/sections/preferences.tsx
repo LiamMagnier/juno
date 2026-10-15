@@ -18,7 +18,8 @@ import { CrossConversationGroup } from "@/components/settings/sections/cross-con
 import { useSettingsSave } from "@/components/settings/use-settings-save";
 import { useSaveStates } from "@/components/settings/save-status";
 import { openSettings } from "@/components/settings/settings-sections";
-import { playReplyChime, useUiPref, type SendKey } from "@/lib/ui-prefs";
+import { playReplyChime, useUiPref, type SendKey, type TouchReturn } from "@/lib/ui-prefs";
+import { useTouchPrimary } from "@/lib/touch-keyboard";
 import { shortcutGroups } from "@/lib/shortcut-groups";
 
 /* ——— Notifications ——————————————————————————————————————————————————— */
@@ -172,9 +173,17 @@ export function CapabilitiesSection() {
 export function KeyboardSection() {
   const mod = useModifierKeyLabel();
   const [sendKey, setSendKey] = useUiPref("sendKey");
+  const [touchReturn, setTouchReturn] = useUiPref("touchReturn");
+  // The on-screen keyboard's row shows where there is one: a touch-first
+  // device with no mouse or trackpad attached (lib/touch-keyboard.ts, G35).
+  const touch = useTouchPrimary();
   const sendOptions: { value: SendKey; label: string }[] = [
     { value: "enter", label: "Enter" },
     { value: "mod-enter", label: `${mod} Enter` },
+  ];
+  const touchReturnOptions: { value: TouchReturn; label: string }[] = [
+    { value: "newline", label: "Adds a line" },
+    { value: "send", label: "Sends" },
   ];
   const groups = shortcutGroups(mod).map((group) =>
     group.title !== "Composer"
@@ -199,6 +208,26 @@ export function KeyboardSection() {
           wide
           control={<SegmentedControl ariaLabel="Send messages with" value={sendKey} onChange={setSendKey} options={sendOptions} className="w-full @[34rem]/pane:w-auto" />}
         />
+        {touch && sendKey === "enter" ? (
+          <SettingRow
+            label="Return on the on-screen keyboard"
+            description={
+              touchReturn === "newline"
+                ? "The send button sends. Return on a connected keyboard still sends."
+                : "Return sends, like Enter on a keyboard."
+            }
+            wide
+            control={
+              <SegmentedControl
+                ariaLabel="Return on the on-screen keyboard"
+                value={touchReturn}
+                onChange={setTouchReturn}
+                options={touchReturnOptions}
+                className="w-full @[34rem]/pane:w-auto"
+              />
+            }
+          />
+        ) : null}
       </SettingsGroup>
       {groups.map((group) => (
         <SettingsGroup key={group.title} title={group.title}>

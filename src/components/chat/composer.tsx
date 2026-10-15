@@ -145,7 +145,7 @@ import type {
   GenerationStatus,
   ReasoningEffort,
 } from "@/types/chat";
-import { uiPref } from "@/lib/ui-prefs";
+import { plainReturnSends } from "@/lib/touch-keyboard";
 import { enterIntent, enterKeyOf } from "@/lib/composer-keys";
 
 /**
@@ -1985,9 +1985,10 @@ function ComposerImpl({
       return;
     }
     if (enterIntent(enterKeyOf(e)) === "send") {
-      // "Send with ⌘ Enter" (Settings › Keyboard): a plain Enter is a new
-      // line, which the field inserts when this leaves the event alone.
-      if (uiPref("sendKey") === "mod-enter" && !e.metaKey && !e.ctrlKey) return;
+      // "Send with ⌘ Enter" (Settings › Keyboard), and Return on an on-screen
+      // keyboard (G35, lib/touch-keyboard.ts): a plain Enter is a new line,
+      // which the field inserts when this leaves the event alone.
+      if (!plainReturnSends(e)) return;
       e.preventDefault();
       void submit(e.currentTarget.value);
     }
