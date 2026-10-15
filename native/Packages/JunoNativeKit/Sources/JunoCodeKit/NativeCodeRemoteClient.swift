@@ -120,14 +120,14 @@ public enum CodeRemoteError: Error, Equatable, LocalizedError, Sendable {
 
     public var errorDescription: String? {
         switch self {
-        case .invalidIdentifier: "Juno could not safely address that device or session."
+        case .invalidIdentifier: "Alevr could not safely address that device or session."
         case .unsupportedCommand(let kind): "This build cannot send a \"\(kind)\" command."
-        case .malformedResponse: "Juno returned invalid remote session data."
-        case .invalidEventStream: "Juno returned an invalid Code event stream."
-        case .eventStreamUnavailable: "This Juno build cannot open a live Code event stream."
+        case .malformedResponse: "Alevr returned invalid remote session data."
+        case .invalidEventStream: "Alevr returned an invalid Code event stream."
+        case .eventStreamUnavailable: "This Alevr build cannot open a live Code event stream."
         case .server(_, let message, _): message
         case .eventSequenceConflict:
-            "Juno's copy of this session is out of step with this Mac."
+            "Alevr's copy of this session is out of step with this Mac."
         }
     }
 
@@ -509,7 +509,7 @@ public struct NativeCodeRemoteClient: Sendable {
             }
         throw CodeRemoteError.server(
             statusCode: response.statusCode,
-            message: message ?? "Juno could not reach that Code session (\(response.statusCode)).",
+            message: message ?? "Alevr could not reach that Code session (\(response.statusCode)).",
             // 5xx is worth another attempt; a 4xx means this request is wrong
             // and will stay wrong.
             retryable: (500...599).contains(response.statusCode)
@@ -532,7 +532,7 @@ public struct NativeCodeRemoteClient: Sendable {
             }
         throw CodeRemoteError.server(
             statusCode: response.statusCode,
-            message: message ?? "Juno could not reach that Code session (\(response.statusCode)).",
+            message: message ?? "Alevr could not reach that Code session (\(response.statusCode)).",
             retryable: (500...599).contains(response.statusCode)
         )
     }

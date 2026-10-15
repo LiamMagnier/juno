@@ -14,7 +14,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
       <div className="alv-access">
         <aside className="alv-access-panel alv-deep">
           <PublicBrand height={26} tone="current" />
-          <div className="alv-access-construction" aria-hidden="true"><Construction parallax /></div>
+          <div className="alv-access-construction" aria-hidden="true"><Construction parallax lamp /></div>
           <div className="alv-access-promise" aria-hidden="true">
             <p className="alv-display">Go further.</p>
             <p>Chat, agents and code in one calm workspace.</p>

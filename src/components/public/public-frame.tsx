@@ -30,7 +30,7 @@ export function PublicState({ title, description, code, children }: { title: str
     <PublicFrame className="alevr-public-state alv">
       <header className="alevr-access-header"><PublicBrand /><PublicThemeToggle /></header>
       <main className="alv-state">
-        <div className="alv-state-construction" aria-hidden="true"><Construction ticks={false} /></div>
+        <div className="alv-state-construction" aria-hidden="true"><Construction ticks={false} lamp /></div>
         <div className="alv-state-copy">
           <div className="alv-state-identifier alv-enter" aria-hidden="true">{code ? <span>{code}</span> : <ContinuumMark size={56} />}</div>
           {code && <p className="sr-only">Error {code}</p>}

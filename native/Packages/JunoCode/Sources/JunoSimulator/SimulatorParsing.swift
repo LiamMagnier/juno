@@ -19,7 +19,7 @@ public enum SimulatorParsing {
 
         public var description: String {
             switch self {
-            case .notJSON: "Xcode returned output Juno could not read as JSON."
+            case .notJSON: "Xcode returned output Alevr could not read as JSON."
             case .missing(let field): "Xcode's output is missing “\(field)”."
             case .noApplicationScheme: "This project has no shared scheme that builds an iOS app."
             case .noIOSRuntime: "No iOS simulator runtime is installed. Install one in Xcode ▸ Settings ▸ Components."

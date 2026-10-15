@@ -575,7 +575,7 @@ public struct NativeResearchRun: Equatable, Sendable, Identifiable {
         switch phase {
         case .planning: "Planning"
         case .awaitingStart: "Ready to start"
-        case .awaitingClarification: "Before Juno starts"
+        case .awaitingClarification: "Before Alevr starts"
         case .searching: "Searching"
         case .reading: "Reading"
         case .reviewing: "Reviewing"

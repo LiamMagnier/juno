@@ -191,7 +191,7 @@ public enum JunoWorkVocabulary {
     /// Where a run happens, named from the effective target.
     public static func target(_ raw: String?, hostName: String?) -> String {
         guard let raw, let target = JunoWorkTarget(rawValue: raw) else {
-            return "Juno hasn’t chosen where this runs yet"
+            return "Alevr hasn’t chosen where this runs yet"
         }
         switch target {
         case .cloud: return "Runs in the cloud"

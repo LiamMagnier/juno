@@ -27,6 +27,7 @@ export function DotConstruction({
   axis = true,
   animate = true,
   parallax = false,
+  lamp = false,
   zoom,
   paused = false,
   className,
@@ -37,6 +38,8 @@ export function DotConstruction({
   animate?: boolean;
   /** A few degrees of eased pointer tilt. Public hero surfaces only, never product pages. */
   parallax?: boolean;
+  /** The pointer lights the dots near it, in presence at the centre. Fine pointers only; off under reduced motion. */
+  lamp?: boolean;
   /** A live zoom (the hero's scroll), redrawn crisp rather than scaled as a bitmap. */
   zoom?: MotionValue<number>;
   /** Hold the drawing where it is and stop scheduling frames (it is faded out under another view). */
@@ -90,6 +93,11 @@ export function DotConstruction({
   React.useEffect(() => {
     instRef.current?.setPaused(paused);
   }, [paused]);
+
+  React.useEffect(() => {
+    const fine = window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+    instRef.current?.setLamp(lamp && fine);
+  }, [lamp]);
 
   React.useEffect(() => {
     if (!zoom) return;

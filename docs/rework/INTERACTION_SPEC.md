@@ -1691,7 +1691,7 @@ Everything was read or captured on 2026-09-30 unless dated otherwise. Board file
 | I-4 | Reasoning stays closed with one live line; explicit choices are never overridden | [micro D6] |
 | I-5 | Stagger only in F3, ≤ 6 items at 40 ms | Audit R7; [micro D4] |
 | I-6 | Overshoot beziers retired; reward spring at two sites, bounce 0.15 | [micro T2]; WWDC23 |
-| I-7 | Icon hover articulation limited to F2 destinations, never on keyboard focus, never on the Mac | Rules 1–2; Raycast 2's Mac conventions |
+| I-7 | ~~Icon hover articulation limited to F2 destinations, never on keyboard focus, never on the Mac~~ **Superseded 2026-10-14 (owner):** every icon in an interactive control plays its drawing's hover pose under a fine pointer, on the web and the Mac (`juno-icons/icons.css`, `JunoIconGesture.swift`); still never on keyboard focus alone, never under reduced motion; `.jicon-quiet` opts out | Owner: "subtle motion of icons when hovering", like Claude |
 | I-8 | Approval arms after 500 ms and re-arms on payload change; no global approve key; "Always" never on floor actions | Owner rule 3; browser security delays (UNVERIFIED value) |
 | I-9 | One queued message while streaming, never auto-sent after a stop or an error | Codex and Claude Code queues; safety |
 | I-10 | The dock above the composer holds needs-you, queued, goal and offline rows, one at a time | ChatGPT's goal row, generalised |

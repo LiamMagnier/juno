@@ -49,17 +49,17 @@ public enum NativeProjectAPIError: Error, Equatable, LocalizedError, Sendable {
     public var errorDescription: String? {
         switch self {
         case .invalidIdentifier:
-            "Juno could not safely address this project or file."
+            "Alevr could not safely address this project or file."
         case .invalidFileName:
             "Enter a valid file name."
         case .invalidMIMEType:
-            "Juno could not determine a safe file type."
+            "Alevr could not determine a safe file type."
         case .fileTooLarge(let maximumBytes):
             "This native upload is limited to \(maximumBytes / 1_048_576) MB."
         case .malformedResponse:
-            "Juno returned invalid project data."
+            "Alevr returned invalid project data."
         case .unsafeFileURL:
-            "Juno returned an unsafe file address."
+            "Alevr returned an unsafe file address."
         case .server(_, let message, _):
             message
         }
@@ -248,7 +248,7 @@ public struct NativeProjectAPIClient: Sendable {
         guard !(200...299).contains(response.statusCode) else { return }
         throw NativeProjectAPIError.server(
             statusCode: response.statusCode,
-            message: serverMessage(response.body) ?? "Juno could not complete the file request.",
+            message: serverMessage(response.body) ?? "Alevr could not complete the file request.",
             retryable: response.statusCode == 408 || response.statusCode == 429
                 || response.statusCode >= 500
         )

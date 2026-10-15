@@ -339,9 +339,9 @@ public enum NativeConversationStoreError: Error, Equatable, LocalizedError, Send
     public var errorDescription: String? {
         switch self {
         case .corruptRecord:
-            "Juno could not read the locally stored conversation data."
+            "Alevr could not read the locally stored conversation data."
         case .invalidMessageRole:
-            "Juno returned an unsupported message role."
+            "Alevr returned an unsupported message role."
         case .invalidMutation:
             "The pending conversation change is invalid."
         case .invalidTitle:
@@ -3339,7 +3339,7 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         guard !Task.isCancelled, accountID == context.accountID,
             activeChatConversationID == context.conversationID
         else { return }
-        let message = "Juno could not confirm the saved response after reconnecting. Retry the response when the network is stable."
+        let message = "Alevr could not confirm the saved response after reconnecting. Retry the response when the network is stable."
         failAssistant(message, reason: .networkError, context: context)
         activeGenerationID = nil
         generationTask = nil
@@ -3587,15 +3587,15 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         {
             switch code {
             case "digest_mismatch":
-                return "This approval no longer matches the action Juno showed. Nothing was sent."
+                return "This approval no longer matches the action Alevr showed. Nothing was sent."
             case "policy_changed":
-                return "Your permissions changed, so Juno refused this approval. Nothing was sent."
+                return "Your permissions changed, so Alevr refused this approval. Nothing was sent."
             case "expired":
                 return "This approval expired before it was answered. Nothing was sent."
             case "already_decided":
                 return "This approval was already answered, possibly on another device."
             case "not_scope_allowable":
-                return "Juno cannot remember this permission. Allow once or deny it."
+                return "Alevr cannot remember this permission. Allow once or deny it."
             case "blocked":
                 return "Your permissions blocked this action. Nothing was sent."
             default:
@@ -4040,7 +4040,7 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
             }
             await reload()
             if result.retryScheduled > 0 {
-                lastErrorDescription = "Changes are saved and will sync when Juno reconnects."
+                lastErrorDescription = "Changes are saved and will sync when Alevr reconnects."
                 phase = .offline
             } else if result.conflicted > 0 {
                 lastErrorDescription = "A conversation changed on another device. Refresh before retrying."

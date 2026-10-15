@@ -148,14 +148,14 @@ public enum NativeSyncAPIError: Error, Equatable, LocalizedError, Sendable {
 
     public var errorDescription: String? {
         switch self {
-        case .server(_, let code, _, _): "Juno sync failed (\(code ?? "server_error"))."
+        case .server(_, let code, _, _): "Alevr sync failed (\(code ?? "server_error"))."
         case .cursorCompacted: "The local change cursor must be rebuilt."
-        case .malformedResponse: "Juno returned malformed synchronization data."
-        case .invalidCursor: "Juno returned an invalid synchronization cursor."
-        case .invalidEntityType: "Juno returned an unknown synchronization entity."
+        case .malformedResponse: "Alevr returned malformed synchronization data."
+        case .invalidCursor: "Alevr returned an invalid synchronization cursor."
+        case .invalidEntityType: "Alevr returned an unknown synchronization entity."
         case .invalidEntityBatch: "The synchronization entity batch is invalid."
-        case .missingEntity: "Juno omitted an entity required to advance synchronization."
-        case .duplicateEntity: "Juno returned a duplicate synchronization entity."
+        case .missingEntity: "Alevr omitted an entity required to advance synchronization."
+        case .duplicateEntity: "Alevr returned a duplicate synchronization entity."
         }
     }
 

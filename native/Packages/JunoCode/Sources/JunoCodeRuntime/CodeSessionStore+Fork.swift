@@ -37,7 +37,7 @@ public extension CodeSessionStore {
 
         public var errorDescription: String? {
             switch self {
-            case .sessionRunning: "Juno is working in this session. Stop it, or fork from an earlier message."
+            case .sessionRunning: "Alevr is working in this session. Stop it, or fork from an earlier message."
             case .turnNotFound: "That message is no longer in the conversation."
             }
         }

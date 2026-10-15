@@ -102,7 +102,7 @@ enum ModelFailure: Equatable {
         case let .planLimit(message):
             message
         case .rateLimited:
-            "The model's provider is limiting how fast Juno may call it."
+            "The model's provider is limiting how fast Alevr may call it."
         case .overloaded:
             "The model's provider is overloaded right now."
         case .contextOverflow:
@@ -110,7 +110,7 @@ enum ModelFailure: Equatable {
         case .quota:
             "The model's provider refused the request for its own quota or billing."
         case .unauthorized:
-            "The model provider rejected Juno's credentials."
+            "The model provider rejected Alevr's credentials."
         case let .unavailable(message):
             message
         case .transient:
@@ -118,7 +118,7 @@ enum ModelFailure: Equatable {
         case .stalled:
             "The model stopped responding."
         case .malformed:
-            "The model sent a response Juno could not read."
+            "The model sent a response Alevr could not read."
         case .rejected:
             "The model's provider rejected the request as one it cannot serve."
         }

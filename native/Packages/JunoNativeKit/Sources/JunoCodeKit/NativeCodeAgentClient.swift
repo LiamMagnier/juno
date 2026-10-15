@@ -129,8 +129,8 @@ public enum NativeCodeAgentAPIError: Error, Equatable, LocalizedError, Sendable 
 
     public var errorDescription: String? {
         switch self {
-        case .invalidInput: "Juno could not safely create this agent task."
-        case .malformedResponse: "Juno returned an invalid agent response."
+        case .invalidInput: "Alevr could not safely create this agent task."
+        case .malformedResponse: "Alevr returned an invalid agent response."
         case .server(_, let message): message
         }
     }

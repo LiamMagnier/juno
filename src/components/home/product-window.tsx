@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { User, ArrowUp, ChevronDown, FileText, JunoCode, JunoLibrary, JunoOrbit, Layers, Mic, PanelRight, Plus, Search, Share2, SquarePen, Telescope } from "@/components/ui/icons";
+import { User, ArrowUp, ChevronDown, FileText, JunoCode, JunoLibrary, JunoOrbit, Mic, PanelRight, Plus, Search, Share2, SquarePen, Telescope } from "@/components/ui/icons";
 import { GalaxyMark, type ThinkingPhase } from "@/components/brand/galaxy-mark";
 
 /**
@@ -100,7 +100,6 @@ export function ProductWindow({ play, onReplayRef }: { play: boolean; onReplayRe
         <div className="alv-side-row"><SquarePen />New chat</div>
         <div className="alv-side-row"><Search />Search</div>
         <div className="alv-side-row"><JunoLibrary />Library</div>
-        <div className="alv-side-row"><Layers />Folio</div>
         <div className="alv-side-row"><JunoOrbit />Orbit</div>
         <div className="alv-side-row"><JunoCode />Code</div>
         <div className="alv-side-label">Recent</div>
@@ -139,7 +138,7 @@ export function ProductWindow({ play, onReplayRef }: { play: boolean; onReplayRe
             </div>
             <div className="alv-pop alv-folio" data-on={stage.folio || undefined} hidden={!stage.folio}>
               <span className="alv-folio-thumb"><i /><i /><i /><i /><i /></span>
-              <span><b>Onboarding brief</b><small>Document in Folio, 2 pages</small></span>
+              <span><b>Onboarding brief</b><small>Document, 2 pages</small></span>
               <span className="alv-folio-open">Open</span>
             </div>
           </div>

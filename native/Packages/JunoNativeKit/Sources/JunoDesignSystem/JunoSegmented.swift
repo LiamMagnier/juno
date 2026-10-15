@@ -46,10 +46,10 @@ public enum JunoSegmentedMetrics {
     public static let inset: CGFloat = JunoSpace.hairline
     /// The thumb, and the segment it marks: the track less its inset.
     public static var segmentHeight: CGFloat { trackHeight - inset * 2 }
-    /// `rounded-menu` (14) outside, `rounded-control` (10) inside: concentric
-    /// across the 4pt inset.
+    /// Keep the thumb concentric across the 4pt inset even when the shared
+    /// control-radius token changes independently of the track.
     public static let trackRadius: CGFloat = JunoRadius.menu
-    public static let thumbRadius: CGFloat = JunoRadius.control
+    public static var thumbRadius: CGFloat { max(0, trackRadius - inset) }
     /// `px-3`.
     public static let segmentPadding: CGFloat = JunoSpace.cozy
     /// `size-3.5`: a mark beside a 13pt word.

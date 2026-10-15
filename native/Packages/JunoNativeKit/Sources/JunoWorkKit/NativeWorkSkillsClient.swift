@@ -108,13 +108,13 @@ public enum WorkSkillDraft {
     // MARK: Copy (the web's, verbatim)
 
     public static let sheetTitle = "Save this task as a skill"
-    public static let sheetDescription = "Juno has drafted this from the steps it actually took. Change anything you like — it is saved exactly as it reads here, and nothing runs until you ask for it by name."
-    public static let descriptionHint = "One line. This is what Juno reads when deciding whether a future task is this job, so describe the job rather than this particular run of it."
-    public static let rejected = "Juno wouldn’t accept that. Check the name and try again — nothing was created."
-    public static let unreachable = "Couldn’t reach Juno to save this. Nothing was created."
+    public static let sheetDescription = "Alevr has drafted this from the steps it actually took. Change anything you like — it is saved exactly as it reads here, and nothing runs until you ask for it by name."
+    public static let descriptionHint = "One line. This is what Alevr reads when deciding whether a future task is this job, so describe the job rather than this particular run of it."
+    public static let rejected = "Alevr wouldn’t accept that. Check the name and try again — nothing was created."
+    public static let unreachable = "Couldn’t reach Alevr to save this. Nothing was created."
     /// A 409 or 429 that carried no sentence of its own (`refusal` in
     /// `work-transport.tsx`).
-    public static let blockedWithoutReason = "Juno cannot run this right now and did not say why. Try again in a moment."
+    public static let blockedWithoutReason = "Alevr cannot run this right now and did not say why. Try again in a moment."
 }
 
 private extension String {

@@ -302,21 +302,41 @@ public enum JunoMotion {
     /// it is spent on the two moments a person has genuinely been waiting for.
     /// Not scaled by ``platformFactor``: a reward is the same size everywhere.
     public static let reward = Animation.spring(duration: Duration.slow, bounce: 0.18)
+    /// A glyph's hover gesture (``JunoIconGesture``): `--dur-base` with the
+    /// small settle the web's `--ease-out-back` gives the same pose (~3%), so
+    /// a tilt or a lift lands with weight instead of stopping. × ``platformFactor``.
+    public static let articulate = Animation.spring(
+        duration: Duration.base * platformFactor, bounce: 0.15
+    )
 
     // ── The chat shell's spring vocabulary (native redesign, Oct 2026) ──────
     //
     // Three springs and one settle, named here so the phone and the Mac speak
     // the same physics and the motion gate can hold every call site to them.
 
+    // Each spring takes its duration from the ladder (`--dur-base` /
+    // `--dur-slow`), × ``platformFactor`` like the other springs, so a chat
+    // control settles in the same time as the web's matching transition
+    // rather than on SwiftUI's stock 0.25/0.35/0.4.
+
     /// Layout: a composer docking, a message rising, the drawer's rows. A
-    /// critically damped spring — moves with weight, never overshoots.
-    public static let chatLayout = Animation.smooth(duration: 0.35)
+    /// critically damped spring on `--dur-slow`: moves with weight, never
+    /// overshoots.
+    public static let chatLayout = Animation.spring(
+        duration: Duration.slow * platformFactor, bounce: 0
+    )
     /// Controls: a dial opening, a toggle turning over, a menu row landing.
-    public static let chatControl = Animation.snappy(duration: 0.25)
+    /// `--dur-base`, with the house's barely-there 0.05 settle.
+    public static let chatControl = Animation.spring(
+        duration: Duration.base * platformFactor, bounce: 0.05
+    )
     /// The composer's primary action changing face — voice → send → stop. The
     /// one place a little bounce is allowed, because it is the one control the
-    /// thumb returns to on every turn.
-    public static let sendMorph = Animation.bouncy(duration: 0.4, extraBounce: 0.05)
+    /// thumb returns to on every turn. 0.12 stays under ``reward``'s 0.18, so
+    /// a glyph swap never reads as a celebration.
+    public static let sendMorph = Animation.spring(
+        duration: Duration.slow * platformFactor, bounce: 0.12
+    )
     /// The push drawer settling open or closed after a drag. Uses the
     /// interactive spring so a fling's velocity carries into the settle.
     public static let drawerSettle = Animation.interactiveSpring(
@@ -646,6 +666,7 @@ public struct JunoPressButtonStyle: ButtonStyle {
 
         var body: some View {
             configuration.label
+                .junoIconHoverSource()
                 .scaleEffect(configuration.isPressed && !reduceMotion ? 0.97 : 1)
                 .opacity(configuration.isPressed ? 0.72 : 1)
                 .animation(

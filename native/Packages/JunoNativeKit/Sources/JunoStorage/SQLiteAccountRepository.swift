@@ -21,13 +21,13 @@ extension SQLiteAccountRepositoryError: LocalizedError {
         case .invalidDatabaseURL:
             "The local account database URL is invalid."
         case .openFailed:
-            "Juno could not open its local account database."
+            "Alevr could not open its local account database."
         case .databaseClosed:
             "The local account database is closed."
         case .unsupportedSchemaVersion:
-            "The local account database was created by an unsupported version of Juno."
+            "The local account database was created by an unsupported version of Alevr."
         case .unexpectedUnversionedSchema:
-            "Juno found an unversioned local database and left it untouched."
+            "Alevr found an unversioned local database and left it untouched."
         case .statementFailed:
             "The local account database operation failed."
         case .corruptStoredValue:
@@ -35,11 +35,11 @@ extension SQLiteAccountRepositoryError: LocalizedError {
         case .valueOutOfRange:
             "A value is too large for the local account database."
         case .encryptionFailed:
-            "Juno could not encrypt a locally stored record."
+            "Alevr could not encrypt a locally stored record."
         case .decryptionFailed:
-            "Juno could not authenticate a locally stored record."
+            "Alevr could not authenticate a locally stored record."
         case .fileProtectionFailed:
-            "Juno could not protect its local account database."
+            "Alevr could not protect its local account database."
         }
     }
 }

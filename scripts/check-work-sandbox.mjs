@@ -141,7 +141,7 @@ const hostWorkspaceToolNames = new Set(
   [...workspaceSection.matchAll(/name:\s*['"]([a-z_]+)['"]/g)].map((m) => m[1])
 );
 // Also include defaultTools() names from runner/agent-core/src/tools/
-for (const hostName of ["bash", "read_file", "write_file", "edit_file", "glob", "grep", "list_dir"]) {
+for (const hostName of ["bash", "read_file", "write_file", "edit_file", "glob", "grep", "list_dir", "repository_map", "repository_symbols", "repository_tests"]) {
   hostWorkspaceToolNames.add(hostName);
 }
 for (const remoteName of declaredRemoteNames) {

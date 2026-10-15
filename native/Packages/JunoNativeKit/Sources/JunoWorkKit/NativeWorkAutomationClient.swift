@@ -317,7 +317,7 @@ public struct NativeWorkAutomationClient: Sendable {
         let detail = try? object(response)
         let message = detail?["message"]?.stringValue
             ?? detail?["error"]?.stringValue
-            ?? "Juno could not update Work automations (\(response.statusCode))."
+            ?? "Alevr could not update Work automations (\(response.statusCode))."
         throw WorkRemoteError.server(
             statusCode: response.statusCode,
             message: message,

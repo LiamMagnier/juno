@@ -22,8 +22,9 @@
   --alv-add: #1b7a3a;
   --alv-del: #b3261e;
   --alv-shadow: 0 1px 1px rgb(25 27 30 / .04), 0 24px 64px -24px rgb(25 27 30 / .22), 0 64px 120px -48px rgb(25 27 30 / .18);
-  --alv-ease: cubic-bezier(.16, 1, .3, 1);
-  --alv-ease-out: cubic-bezier(.33, 1, .68, 1);
+  /* The product's own curves (globals.css), not a public-page copy of them. */
+  --alv-ease: var(--ease-out-expo);
+  --alv-ease-out: var(--ease-out-soft);
   --alv-gutter: 64px;
   --alv-max: 1312px;
   background: hsl(var(--background));

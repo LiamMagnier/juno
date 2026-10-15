@@ -46,7 +46,7 @@ public struct NativeMessageActionsClient: Sendable {
             for: accountID
         )
         guard (200...299).contains(response.statusCode) else {
-            throw failure(response, fallback: "Juno could not save that rating")
+            throw failure(response, fallback: "Alevr could not save that rating")
         }
     }
 
@@ -72,7 +72,7 @@ public struct NativeMessageActionsClient: Sendable {
             for: accountID
         )
         guard (200...299).contains(response.statusCode) else {
-            throw failure(response, fallback: "Juno could not branch this conversation")
+            throw failure(response, fallback: "Alevr could not branch this conversation")
         }
         guard let decoded = try? JSONDecoder().decode(BranchResponseWire.self, from: response.body),
             let id = decoded.conversation?.id ?? decoded.id,
@@ -116,7 +116,7 @@ public struct NativeMessageActionsClient: Sendable {
         )
         if response.statusCode == 501 { return nil }
         guard (200...299).contains(response.statusCode) else {
-            throw failure(response, fallback: "Juno could not read this aloud")
+            throw failure(response, fallback: "Alevr could not read this aloud")
         }
         guard !response.body.isEmpty else { return nil }
         return response.body
@@ -138,7 +138,7 @@ public enum NativeMessageActionError: Error, Equatable, LocalizedError, Sendable
 
     public var errorDescription: String? {
         switch self {
-        case .malformedResponse: "Juno returned an unexpected response."
+        case .malformedResponse: "Alevr returned an unexpected response."
         case .server(_, let message): message
         }
     }

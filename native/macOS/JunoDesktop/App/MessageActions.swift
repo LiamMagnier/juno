@@ -230,6 +230,7 @@ struct MessageActionButtonStyle: ButtonStyle {
 
         var body: some View {
             configuration.label
+                .junoIconHover(lit)
                 .foregroundStyle(ink)
                 .frame(width: diameter, height: diameter)
                 .background { ground }

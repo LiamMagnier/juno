@@ -350,9 +350,9 @@ public enum NativeMemorySettingsError: Error, Equatable, LocalizedError, Sendabl
     public var errorDescription: String? {
         switch self {
         case .corruptRecord:
-            "Juno could not read the locally stored memory and settings data."
+            "Alevr could not read the locally stored memory and settings data."
         case .invalidMutation:
-            "Juno could not save this account change."
+            "Alevr could not save this account change."
         case .invalidMemory:
             "Enter a memory between 1 and 20,000 characters."
         case .invalidSettings:
@@ -362,7 +362,7 @@ public enum NativeMemorySettingsError: Error, Equatable, LocalizedError, Sendabl
         case .settingsUnavailable:
             "Account settings have not finished synchronizing."
         case .concurrentWriteLimitExceeded:
-            "Local memory changed repeatedly while Juno was saving it."
+            "Local memory changed repeatedly while Alevr was saving it."
         }
     }
 }
@@ -847,7 +847,7 @@ public enum NativeMemoryAPIError: Error, Equatable, LocalizedError, Sendable {
     public var errorDescription: String? {
         switch self {
         case .malformedResponse:
-            "Juno returned invalid memory data."
+            "Alevr returned invalid memory data."
         case .server(_, let message, _):
             message
         }
@@ -903,7 +903,7 @@ public struct NativeMemoryAPIClient: Sendable {
         let object = try? JSONSerialization.jsonObject(with: response.body) as? [String: Any]
         let message = object?["message"] as? String
             ?? object?["error"] as? String
-            ?? "Juno could not complete the memory request."
+            ?? "Alevr could not complete the memory request."
         throw NativeMemoryAPIError.server(
             statusCode: response.statusCode,
             message: message,
@@ -1415,7 +1415,7 @@ public final class NativeMemorySettingsModel<Repository: AccountScopedRepository
             if result.acknowledged > 0 { await syncModel.refresh() }
             await reload()
             if result.retryScheduled > 0 {
-                lastErrorDescription = "Account changes are saved and will sync when Juno reconnects."
+                lastErrorDescription = "Account changes are saved and will sync when Alevr reconnects."
                 phase = .offline
             } else if result.conflicted > 0 {
                 lastErrorDescription = "Memory or settings changed on another device."
@@ -1633,7 +1633,7 @@ public struct NativeServerSettingsClient: Sendable {
             ),
             for: accountID
         )
-        try Self.requireSuccess(response, fallback: "Juno could not load your settings")
+        try Self.requireSuccess(response, fallback: "Alevr could not load your settings")
         do {
             return try Self.decode(response.body)
         } catch {
@@ -1677,7 +1677,7 @@ public struct NativeServerSettingsClient: Sendable {
             ),
             for: accountID
         )
-        try Self.requireSuccess(response, fallback: "Juno could not save this setting")
+        try Self.requireSuccess(response, fallback: "Alevr could not save this setting")
     }
 
     private static func requireSuccess(_ response: HTTPResponse, fallback: String) throws {

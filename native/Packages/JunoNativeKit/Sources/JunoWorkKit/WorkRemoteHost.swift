@@ -161,7 +161,7 @@ public actor WorkRemoteHost {
         guard loop == nil else { return true }
         let policy = await policyProvider()
         guard policy.enabled else {
-            state = .stopped(reason: "Juno Work is switched off on this Mac.")
+            state = .stopped(reason: "Work is switched off on this Mac.")
             return false
         }
         state = .connecting
@@ -197,7 +197,7 @@ public actor WorkRemoteHost {
                 // against a loop that is already running, and the loop is
                 // parked in a long poll for most of its life.
                 guard policy.enabled else {
-                    state = .stopped(reason: "Juno Work is switched off on this Mac.")
+                    state = .stopped(reason: "Work is switched off on this Mac.")
                     return
                 }
 
@@ -344,11 +344,11 @@ public actor WorkRemoteHost {
         case .expired:
             "That instruction expired before this Mac could act on it."
         case .workDisabled:
-            "Juno Work is switched off on this Mac."
+            "Work is switched off on this Mac."
         case .capabilityNotGranted:
             "This Mac has not been granted what that instruction needs."
         case .unsupportedKind:
-            "This Mac's version of Juno does not understand that instruction."
+            "This Mac's version of Alevr does not understand that instruction."
         }
     }
 

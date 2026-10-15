@@ -52,9 +52,9 @@
     <key>NSHumanReadableCopyright</key>
     <string>Copyright © 2026 Liam Magnier.</string>
     <key>NSMicrophoneUsageDescription</key>
-    <string>Juno uses the microphone when you choose to dictate or start a voice conversation.</string>
+    <string>Alevr uses the microphone when you choose to dictate or start a voice conversation.</string>
     <key>NSSpeechRecognitionUsageDescription</key>
-    <string>Juno turns speech into draft text when you choose dictation.</string>
+    <string>Alevr turns speech into draft text when you choose dictation.</string>
     <!--
       Juno Code opens whole repositories the user points it at, and those
       normally live in one of these three folders. Without a usage string macOS
@@ -62,17 +62,17 @@
       say nothing about why a coding agent wants the folder.
     -->
     <key>NSDocumentsFolderUsageDescription</key>
-    <string>Juno Code needs access to open repositories you keep in Documents, read their files and run their tests.</string>
+    <string>Alevr Code needs access to open repositories you keep in Documents, read their files and run their tests.</string>
     <key>NSDesktopFolderUsageDescription</key>
-    <string>Juno Code needs access to open repositories you keep on the Desktop, read their files and run their tests.</string>
+    <string>Alevr Code needs access to open repositories you keep on the Desktop, read their files and run their tests.</string>
     <key>NSDownloadsFolderUsageDescription</key>
-    <string>Juno Code needs access to open repositories you keep in Downloads, read their files and run their tests.</string>
+    <string>Alevr Code needs access to open repositories you keep in Downloads, read their files and run their tests.</string>
     <!--
       `osascript` is a critical-risk command the agent may run only behind an
       explicit approval; sending the event still needs this declaration.
     -->
     <key>NSAppleEventsUsageDescription</key>
-    <string>Juno Code uses Apple Events to open and control apps you work with, such as a Simulator or an app it built. Your permission mode decides when it asks first.</string>
+    <string>Alevr Code uses Apple Events to open and control apps you work with, such as a Simulator or an app it built. Your permission mode decides when it asks first.</string>
     <!--
       The Code Preview loads the project's own dev server over plain HTTP on
       loopback (http://localhost:5173, http://127.0.0.1:8000). ATS already

@@ -247,7 +247,7 @@ public struct GoalUpdateTool: CodeTool {
         switch Action(rawValue: input["action"]?.stringValue ?? "") {
         case .citeEvidence: "Cite evidence for \(input["criterion"]?.stringValue ?? "a criterion")"
         case .blocked: "Say the goal is blocked"
-        case .claimAchieved: "Ask Juno to check the goal"
+        case .claimAchieved: "Ask Alevr to check the goal"
         case nil: "Update the goal"
         }
     }

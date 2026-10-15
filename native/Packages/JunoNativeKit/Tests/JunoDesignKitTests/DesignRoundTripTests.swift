@@ -141,7 +141,7 @@ final class DesignRoundTripTests: XCTestCase {
             }
             XCTAssertEqual(found, DesignSchema.version + 5)
             XCTAssertEqual(supported, DesignSchema.version)
-            XCTAssertTrue("\(error)".contains("newer version of Juno"))
+            XCTAssertTrue("\(error)".contains("newer version of Alevr"))
         }
     }
 

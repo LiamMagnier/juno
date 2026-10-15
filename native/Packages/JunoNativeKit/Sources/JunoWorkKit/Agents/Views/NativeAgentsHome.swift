@@ -31,7 +31,7 @@ struct NativeAgentsHome: View {
             } else if model.agents.isEmpty, model.phase == .failed || model.phase == .offline {
                 NativeAgentsNotice(
                     title: "Couldn’t load your agents",
-                    message: model.lastErrorDescription ?? "Juno could not reach your agents.",
+                    message: model.lastErrorDescription ?? "Alevr could not reach your agents.",
                     icon: .agents,
                     actionLabel: "Try again",
                     action: { Task { await model.refresh() } }

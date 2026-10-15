@@ -80,7 +80,7 @@ public struct SimulatorDeviceService: Sendable {
         guard let pid = SimulatorParsing.parseLaunchPID(result.standardOutput) else {
             throw SimulatorFailure(
                 stage: .launch,
-                message: "The simulator reported no process id for \(bundleID), so Juno cannot confirm it started.",
+                message: "The simulator reported no process id for \(bundleID), so Alevr cannot confirm it started.",
                 detail: result.combined
             )
         }

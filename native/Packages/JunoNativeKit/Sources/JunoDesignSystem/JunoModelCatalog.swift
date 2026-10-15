@@ -77,7 +77,7 @@ public enum JunoModelCapability: String, Identifiable, CaseIterable, Sendable {
     public var explanation: String? {
         switch self {
         case .computerUse:
-            "Can see the screen and click, so Juno Code can drive this Mac with it."
+            "Can see the screen and click, so Alevr Code can drive this Mac with it."
         case .reasoning, .vision, .search, .tools:
             nil
         }

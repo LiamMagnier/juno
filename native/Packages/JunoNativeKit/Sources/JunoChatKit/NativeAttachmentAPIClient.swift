@@ -53,10 +53,10 @@ public enum NativeAttachmentAPIError: Error, Equatable, LocalizedError, Sendable
     public var errorDescription: String? {
         switch self {
         case .invalidFileName: "Enter a valid file name."
-        case .invalidMIMEType: "Juno could not determine a safe file type."
+        case .invalidMIMEType: "Alevr could not determine a safe file type."
         case .fileTooLarge(let maximumBytes):
             "This upload is limited to \(maximumBytes / 1_048_576) MB."
-        case .malformedResponse: "Juno returned an invalid upload response."
+        case .malformedResponse: "Alevr returned an invalid upload response."
         case .server(_, _, let message, _): message
         }
     }
@@ -197,7 +197,7 @@ public struct NativeAttachmentAPIClient: Sendable {
             statusCode: response.statusCode,
             code: envelope?.error.code,
             message: envelope?.error.message
-                ?? "Juno could not upload this file (\(response.statusCode)).",
+                ?? "Alevr could not upload this file (\(response.statusCode)).",
             // Trust the server's own verdict when it gives one. A 429 or 503 is
             // worth retrying; a 415 never will be, however many times it is
             // tried.

@@ -29,8 +29,10 @@ export function EmptyGreeting() {
  * it, and the one presence trajectory travels the fourth orbit, the frame's
  * one live object. No ℵ marks: at this size they crowd the greeting. It draws itself on when the home arrives, faint, masked to
  * an ellipse so it never reaches the sidebar or the header band; it pauses
- * whenever it is hidden or off screen. No pointer parallax in the product.
- * Decorative.
+ * whenever it is hidden or off screen. No pointer parallax in the product,
+ * but the pointer lights it: the dots near the cursor brighten and the nearest
+ * take presence blue, then fade once the pointer rests or leaves (the lamp in
+ * dot-engine.ts). Decorative.
  */
 export function HomeField({ visible = true }: { visible?: boolean }) {
   return (
@@ -41,7 +43,7 @@ export function HomeField({ visible = true }: { visible?: boolean }) {
         visible ? "opacity-100" : "opacity-0",
       )}
     >
-      <Construction ticks={false} paused={!visible} />
+      <Construction ticks={false} paused={!visible} lamp />
     </div>
   );
 }

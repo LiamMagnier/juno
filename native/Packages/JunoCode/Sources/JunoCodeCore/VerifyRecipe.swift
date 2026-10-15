@@ -244,7 +244,7 @@ public enum VerifyRecipeError: Error, Equatable, Sendable, CustomStringConvertib
         case let .unreadable(reason):
             ".juno/verify.json could not be read: \(reason)"
         case let .unsupportedVersion(version):
-            ".juno/verify.json is version \(version); this Juno reads version \(VerifyRecipe.currentVersion)."
+            ".juno/verify.json is version \(version); this Alevr reads version \(VerifyRecipe.currentVersion)."
         case let .duplicateCheck(id):
             ".juno/verify.json names the check \"\(id)\" twice."
         case let .invalidCheck(id):

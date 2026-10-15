@@ -68,7 +68,7 @@ public enum CodeRemoteCommandError: Error, Equatable, LocalizedError, Sendable {
     public var errorDescription: String? {
         switch self {
         case let .unsupportedKind(kind):
-            "This Mac cannot run a \"\(kind)\" command. Update Juno on the Mac and try again."
+            "This Mac cannot run a \"\(kind)\" command. Update Alevr on the Mac and try again."
         case let .missingField(field):
             "The command is missing \"\(field)\"."
         case let .invalidField(field, reason):
@@ -82,7 +82,7 @@ public enum CodeRemoteCommandError: Error, Equatable, LocalizedError, Sendable {
             // probing, and the phone already knows what it sent.
             "That workspace is not shared with Remote on this Mac."
         case .hostInactive:
-            "Remote Juno Code is switched off on this Mac."
+            "Remote Alevr Code is switched off on this Mac."
         case let .aboveRemoteCeiling(session, ceiling):
             "This session runs in \(session), and this Mac allows at most \(ceiling) for work "
                 + "sent from another device. Continue it on the Mac, or lower its mode there."

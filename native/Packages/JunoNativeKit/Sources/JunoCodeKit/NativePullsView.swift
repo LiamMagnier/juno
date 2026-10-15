@@ -44,7 +44,7 @@ public struct NativePullsView: View {
                 ContentUnavailableView {
                     JunoIconLabel("GitHub isn’t connected", icon: .connections)
                 } description: {
-                    Text("Connect GitHub to see the pull requests Juno Code opens from your sessions.")
+                    Text("Connect GitHub to see the pull requests Alevr Code opens from your sessions.")
                 } actions: {
                     if let openConnections {
                         Button("Open Connections", action: openConnections)
@@ -69,7 +69,7 @@ public struct NativePullsView: View {
                     // The web's pull-request glyph.
                     Label("No pull requests", image: JunoIcon.pulls.assetName)
                 } description: {
-                    Text("Pull requests Juno Code opens from your sessions appear here.")
+                    Text("Pull requests Alevr Code opens from your sessions appear here.")
                 }
             } else {
                 list

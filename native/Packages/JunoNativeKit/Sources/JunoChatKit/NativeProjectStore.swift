@@ -185,9 +185,9 @@ public enum NativeProjectStoreError: Error, Equatable, LocalizedError, Sendable 
     public var errorDescription: String? {
         switch self {
         case .corruptRecord:
-            "Juno could not read the locally stored project data."
+            "Alevr could not read the locally stored project data."
         case .invalidMutation:
-            "Juno could not save this project change."
+            "Alevr could not save this project change."
         case .invalidName:
             "Enter a project name between 1 and 160 characters."
         case .projectNotFound:
@@ -1007,7 +1007,7 @@ public final class NativeProjectModel<Repository: AccountScopedRepository> {
             if result.acknowledged > 0 { await syncModel.refresh() }
             await reload()
             if result.retryScheduled > 0 {
-                lastErrorDescription = "Project changes are saved and will sync when Juno reconnects."
+                lastErrorDescription = "Project changes are saved and will sync when Alevr reconnects."
                 phase = .offline
             } else if result.conflicted > 0 {
                 lastErrorDescription = "A project changed on another device. Refresh before retrying."

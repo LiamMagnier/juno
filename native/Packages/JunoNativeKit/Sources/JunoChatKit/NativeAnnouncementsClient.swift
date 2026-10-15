@@ -71,7 +71,7 @@ public struct NativeAnnouncementsClient: Sendable {
             ),
             for: accountID
         )
-        if let error = NativeWebRouteError.from(response, fallback: "Juno could not load announcements.") {
+        if let error = NativeWebRouteError.from(response, fallback: "Alevr could not load announcements.") {
             throw error
         }
         return try Self.decode(response.body)
@@ -89,7 +89,7 @@ public struct NativeAnnouncementsClient: Sendable {
             ),
             for: accountID
         )
-        if let error = NativeWebRouteError.from(response, fallback: "Juno could not dismiss the announcement.") {
+        if let error = NativeWebRouteError.from(response, fallback: "Alevr could not dismiss the announcement.") {
             throw error
         }
     }

@@ -10,7 +10,7 @@ public enum NativeAuthRuntimeError: Error, Equatable, LocalizedError, Sendable {
     case localDataPurgeFailed
 
     public var errorDescription: String? {
-        "Juno could not securely remove the local account data."
+        "Alevr could not securely remove the local account data."
     }
 }
 

@@ -161,7 +161,7 @@ public enum JunoCodeCLIError: Error, Equatable, LocalizedError, Sendable {
     public var errorDescription: String? {
         switch self {
         case .usage(let detail): "Usage: juno \(detail)"
-        case .sessionNotFound(let id): "No Juno Code session named \(id)."
+        case .sessionNotFound(let id): "No Alevr Code session named \(id)."
         }
     }
 }

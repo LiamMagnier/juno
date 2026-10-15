@@ -65,13 +65,13 @@ public enum NativePushTokenError: Error, Equatable, LocalizedError, Sendable {
     public var errorDescription: String? {
         switch self {
         case .invalidToken:
-            "This device gave Juno a notification token it cannot use."
+            "This device gave Alevr a notification token it cannot use."
         case .invalidIdentifier:
-            "Juno could not read that notification."
+            "Alevr could not read that notification."
         case .server(let statusCode, let code):
-            "Juno could not set up notifications on this device (\(code ?? String(statusCode)))."
+            "Alevr could not set up notifications on this device (\(code ?? String(statusCode)))."
         case .malformedResponse:
-            "Juno returned an invalid notification registration."
+            "Alevr returned an invalid notification registration."
         }
     }
 }

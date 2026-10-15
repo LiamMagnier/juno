@@ -56,7 +56,7 @@ export const ease = {
   inOut: bezier(EASING.inOut),
   /** The only symmetric LOOP curve — no seam where it turns around. */
   breathe: bezier(EASING.breathe),
-  /** The Soft UI entrance: scale .96 → 1 with a ~2% overrun, then settle. */
+  /** The Soft UI entrance: scale .96 → 1 on a long, overshoot-free settle. */
   spring: bezier(EASING.spring),
   /** Sheets and drawers — front-loaded, overshoot-free, pulled by the user. */
   drawer: bezier(EASING.drawer),

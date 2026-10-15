@@ -414,7 +414,7 @@ public final class ChatFolderExecutor: Sendable {
     }
 
     // Only ever read after it is built; DateFormatter is thread-safe for formatting.
-    nonisolated(unsafe) private static let dateFormatter: DateFormatter = {
+    nonisolated private static let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd HH:mm"

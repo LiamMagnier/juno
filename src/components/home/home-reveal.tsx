@@ -53,7 +53,9 @@ export function HomeReveal() {
     const fold = window.innerHeight * 0.92;
     const held: HTMLElement[] = [];
     for (const section of Array.from(main.children)) {
-      if (section.matches(".alv-hero")) continue;
+      // A shared landing Section already reveals its own header and body
+      // (landing/reveal.tsx); a second rise on the same blocks would stack.
+      if (section.matches(".alv-hero, [data-own-reveal]")) continue;
       partsOf(section).forEach((el, i) => {
         if (el.getBoundingClientRect().top < fold) return;
         el.style.setProperty("--alv-reveal-delay", `${Math.min(i, MAX_STAGGER) * STAGGER_MS}ms`);

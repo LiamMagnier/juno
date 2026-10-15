@@ -59,11 +59,11 @@ enum DesktopSidebarMetrics {
     static let trailingSlot: CGFloat = JunoLayout.Row.trailingSlot
 }
 
-/// The glyph gesture a destination makes under the pointer (the web's
-/// `sidebar-motion-icon.tsx`): the folder opens, the search glass tilts. At
-/// most one per row; none under Reduce Motion. There is no turning gesture:
-/// Customize's sliders rotated 45° read as the row sliding over on its side,
-/// so Customize, like every other row, answers with the hover fill alone.
+/// The glyph gesture a destination makes under the pointer. `folderOpens`
+/// swaps to the open folder; every other row plays its glyph's own
+/// ``JunoIconGesture`` (a tilt, a lift, a nudge), as every row on the web now
+/// does (owner, 2026-10-14). None under Reduce Motion. `tilts` is kept so
+/// call sites compile; it now means the same as `none`.
 enum DesktopSidebarGesture {
     case none
     case folderOpens
@@ -180,12 +180,11 @@ struct DesktopSidebarNavRow<Trailing: View>: View {
             JunoIconView(moving ? .folderOpen : icon, size: glyphSize)
                 .contentTransition(.opacity)
                 .animation(JunoMotion.fast, value: moving)
-        case .tilts:
+        case .tilts, .none:
+            // Every other row plays its glyph's own gesture
+            // (`JunoIconGesture.forIcon`), as the web's rows do.
             JunoIconView(icon, size: glyphSize)
-                .rotationEffect(.degrees(moving ? -12 : 0))
-                .animation(JunoMotion.fast, value: moving)
-        case .none:
-            JunoIconView(icon, size: glyphSize)
+                .junoIconHover(hovered)
         }
     }
 }
@@ -271,6 +270,7 @@ struct DesktopSidebarHeadingAction: View {
     var body: some View {
         Button(action: action) {
             JunoIconView(icon, size: 12)
+                .junoIconHover(hovered)
                 .foregroundStyle(hovered ? Color.junoForeground : Color.junoSecondaryInk)
                 .frame(width: 28, height: 28)
                 .contentShape(.rect)

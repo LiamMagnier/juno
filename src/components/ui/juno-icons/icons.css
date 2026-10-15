@@ -65,30 +65,39 @@
 }
 
 /* ——————————————————————————— Hover articulation ———————————————————————————
- * Opt-in (INTERACTION_SPEC I-7): a fine pointer over a .jicon-trigger that is
- * itself, or sits inside, .jicon-hover (and not inside .jicon-quiet), or a
- * forced pose for stills. Never on keyboard focus. F2 destinations and the
- * gallery opt in; the composer, the action row, menus and list rows do not,
- * so a list never shimmers as the pointer scans down it.                     */
+ * On by default (owner, 2026-10-14: icons should answer the pointer the way
+ * Claude's do; this supersedes INTERACTION_SPEC I-7's opt-in). Any interactive
+ * element around the icon (a .jicon-trigger, a link, a button, a tab, a menu
+ * row) plays the
+ * drawing's own hover pose under a fine pointer. Never on keyboard focus
+ * alone, never inside a disabled control, never under reduced motion.
+ * .jicon-quiet still turns it off for everything inside.
+ *
+ * --ji-amp scales every drawn pose a little past its grid value so the
+ * gesture is felt at 16px (a 1.5px nudge read as nothing), and the outbound
+ * leg runs on --ease-out-back so a pose settles with weight rather than
+ * stopping; it returns on out-soft in `exit`.                               */
+.ji { --ji-amp: 1.35; }
 
 @media (hover: hover) and (pointer: fine) {
-  :is(.jicon-trigger.jicon-hover, .jicon-hover .jicon-trigger):not(.jicon-quiet, .jicon-quiet *):hover .ji:not([data-state="disabled"]) .jp:not([data-anim]) {
-    translate: var(--hx, 0) var(--hy, 0);
-    rotate: var(--hr, 0deg);
-    scale: var(--hsx, 1) var(--hsy, 1);
+  :is(.jicon-trigger, a, button, summary, label, [role="button"], [role="link"], [role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"], [role="option"], [role="tab"], [data-icon-trigger]):not(.jicon-quiet, .jicon-quiet *, :disabled, [aria-disabled="true"], [data-disabled]):hover .ji:not([data-state="disabled"]) .jp:not([data-anim]) {
+    translate: calc(var(--hx, 0px) * var(--ji-amp)) calc(var(--hy, 0px) * var(--ji-amp));
+    rotate: calc(var(--hr, 0deg) * var(--ji-amp));
+    scale: calc(1 + (var(--hsx, 1) - 1) * var(--ji-amp)) calc(1 + (var(--hsy, 1) - 1) * var(--ji-amp));
     opacity: var(--ho, 1);
-    transition-duration: 220ms, 220ms, 220ms, 120ms;
+    transition-duration: 220ms, 360ms, 220ms, 120ms;
+    transition-timing-function: var(--ease-out-back), var(--ease-out-back), var(--ease-out-back), var(--ji-soft);
     transition-delay: var(--hd, 0ms);
   }
-  :is(.jicon-trigger.jicon-hover, .jicon-hover .jicon-trigger):not(.jicon-quiet, .jicon-quiet *):hover .ji:not([data-state="disabled"]) .jp[data-anim] {
+  :is(.jicon-trigger, a, button, summary, label, [role="button"], [role="link"], [role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"], [role="option"], [role="tab"], [data-icon-trigger]):not(.jicon-quiet, .jicon-quiet *, :disabled, [aria-disabled="true"], [data-disabled]):hover .ji:not([data-state="disabled"]) .jp[data-anim] {
     opacity: var(--ho, 1);
     animation: var(--ji-anim) var(--ji-anim-dur, 220ms) var(--ji-soft) var(--hd, 0ms) 1 both;
   }
-  :is(.jicon-trigger.jicon-hover, .jicon-hover .jicon-trigger):not(.jicon-quiet, .jicon-quiet *):hover .ji:not([data-state="disabled"]) .jg-hover {
+  :is(.jicon-trigger, a, button, summary, label, [role="button"], [role="link"], [role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"], [role="option"], [role="tab"], [data-icon-trigger]):not(.jicon-quiet, .jicon-quiet *, :disabled, [aria-disabled="true"], [data-disabled]):hover .ji:not([data-state="disabled"]) .jg-hover {
     opacity: 1;
   }
-  :is(.jicon-trigger.jicon-hover, .jicon-hover .jicon-trigger):not(.jicon-quiet, .jicon-quiet *):hover .ji:not([data-state="disabled"]) .jg-hover ~ .jg-fill,
-  :is(.jicon-trigger.jicon-hover, .jicon-hover .jicon-trigger):not(.jicon-quiet, .jicon-quiet *):hover .ji:not([data-state="disabled"]):not([data-state="active"]) .jg-base:has(~ .jg-hover) {
+  :is(.jicon-trigger, a, button, summary, label, [role="button"], [role="link"], [role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"], [role="option"], [role="tab"], [data-icon-trigger]):not(.jicon-quiet, .jicon-quiet *, :disabled, [aria-disabled="true"], [data-disabled]):hover .ji:not([data-state="disabled"]) .jg-hover ~ .jg-fill,
+  :is(.jicon-trigger, a, button, summary, label, [role="button"], [role="link"], [role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"], [role="option"], [role="tab"], [data-icon-trigger]):not(.jicon-quiet, .jicon-quiet *, :disabled, [aria-disabled="true"], [data-disabled]):hover .ji:not([data-state="disabled"]):not([data-state="active"]) .jg-base:has(~ .jg-hover) {
     opacity: 0;
   }
 }
@@ -156,7 +165,7 @@
   --ji-anim: none;
 }
 @media (hover: hover) and (pointer: fine) {
-  :is(.jicon-trigger.jicon-hover, .jicon-hover .jicon-trigger):not(.jicon-quiet, .jicon-quiet *):hover .ji:not([data-state="disabled"]) .jp[data-anim="draw"] .jd {
+  :is(.jicon-trigger, a, button, summary, label, [role="button"], [role="link"], [role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"], [role="option"], [role="tab"], [data-icon-trigger]):not(.jicon-quiet, .jicon-quiet *, :disabled, [aria-disabled="true"], [data-disabled]):hover .ji:not([data-state="disabled"]) .jp[data-anim="draw"] .jd {
     animation: ji-draw 220ms var(--ji-soft) var(--hd, 0ms) 1 both;
   }
 }
@@ -431,6 +440,7 @@
   .ji .jg-fill,
   .ji .jg-alt,
   .ji .jg-base {
+    transition-property: opacity !important;
     translate: none !important;
     rotate: none !important;
     scale: none !important;
@@ -461,6 +471,7 @@
 :is([data-rm], [data-motion="reduced"]) .ji .jg-fill,
 :is([data-rm], [data-motion="reduced"]) .ji .jg-alt,
 :is([data-rm], [data-motion="reduced"]) .ji .jg-base {
+  transition-property: opacity !important;
   translate: none !important;
   rotate: none !important;
   scale: none !important;

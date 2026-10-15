@@ -433,8 +433,8 @@ final class GoalRuntimeTests: XCTestCase {
         XCTAssertEqual(calls.count, 4, "one retry per evaluation")
         let goal = await currentGoal()
         XCTAssertEqual(goal?.status, .needsYou)
-        XCTAssertEqual(goal?.statusReason, "Juno could not check the goal twice in a row")
-        XCTAssertEqual(goal?.verdicts.first?.reason, "Juno could not check the goal this turn")
+        XCTAssertEqual(goal?.statusReason, "Alevr could not check the goal twice in a row")
+        XCTAssertEqual(goal?.verdicts.first?.reason, "Alevr could not check the goal this turn")
         let ended = await endReasons()
         XCTAssertEqual(ended, [.needsYou])
     }

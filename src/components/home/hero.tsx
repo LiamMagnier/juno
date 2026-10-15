@@ -65,7 +65,7 @@ export function Hero() {
       <section ref={ref} className="alv-hero" aria-labelledby="alv-hero-title">
         <div className="alv-hero-pin">
           <m.div className="alv-hero-construction" style={pinned ? { opacity: orbitOpacity } : undefined}>
-            <Construction parallax={pinned} zoom={pinned ? orbitZoom : undefined} ticks={wide} axis={false} />
+            <Construction parallax={pinned} lamp zoom={pinned ? orbitZoom : undefined} ticks={wide} axis={false} />
           </m.div>
           <div className="alv-hero-veil" />
           <m.div className="alv-hero-copy" style={pinned ? { opacity: copyOpacity, y: copyY } : undefined}>

@@ -101,7 +101,7 @@ final class NativeSkillsClientTests: XCTestCase {
 
     func testOfflineIsItsOwnSentence() async throws {
         let result = await NativeSkillsClient(sender: OfflineTransport()).library(for: account)
-        XCTAssertEqual(result.message(fallback: "x"), "Couldn’t reach Juno. Check your connection and try again.")
+        XCTAssertEqual(result.message(fallback: "x"), "Couldn’t reach Alevr. Check your connection and try again.")
     }
 
     // MARK: Encoding

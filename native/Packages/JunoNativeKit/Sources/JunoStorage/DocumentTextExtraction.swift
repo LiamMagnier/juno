@@ -35,7 +35,7 @@ extension DocumentIngestionError: LocalizedError {
     public var errorDescription: String? {
         switch self {
         case let .unrecognizedFormat(fileName):
-            "\(fileName) is not a document type Juno can read."
+            "\(fileName) is not a document type Alevr can read."
         case let .undecodableText(fileName):
             "\(fileName) is not readable as text."
         case let .extractorUnavailable(format):
@@ -45,7 +45,7 @@ extension DocumentIngestionError: LocalizedError {
         case let .malformedDocument(reason):
             "The document is damaged: \(reason)."
         case let .noExtractableText(fileName):
-            "\(fileName) contains no text Juno could read."
+            "\(fileName) contains no text Alevr could read."
         }
     }
 }

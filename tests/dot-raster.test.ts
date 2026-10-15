@@ -48,3 +48,35 @@ test("a zero-sized box still yields a valid one-cell grid", () => {
   assert.equal(r.gw, 1);
   assert.equal(r.gh, 1);
 });
+
+/** The cell a point lands in, as Raster.plot computes it. */
+function cell(r: Raster, x: number, y: number) {
+  return ((y / r.pitch) | 0) * r.gw + ((x / r.pitch) | 0);
+}
+
+test("the pointer lamp brightens nearby dots, tints the nearest, and leaves far ones alone", () => {
+  const r = new Raster();
+  r.resize(400, 100, 4);
+  for (let x = 2; x < 400; x += 4) r.plot(x, 50, 0.3);
+  const near = cell(r, 102, 50);
+  const mid = cell(r, 182, 50);
+  const far = cell(r, 398, 50);
+  r.lamp(100, 50, 84, 1);
+  assert.ok(r.lum[near] > 0.85, `nearest dot lit to ${r.lum[near]}`);
+  assert.equal(r.blue[near], 1, "nearest dot takes presence");
+  assert.ok(r.lum[mid] > 0.3 && r.lum[mid] < r.lum[near], "a dot inside the radius brightens less");
+  assert.equal(r.blue[mid], 0, "only the core is tinted");
+  assert.ok(Math.abs(r.lum[far] - 0.3) < 1e-6, "a dot outside the radius is untouched");
+});
+
+test("the lamp adds no dots of its own and does nothing at zero strength", () => {
+  const r = new Raster();
+  r.resize(200, 100, 4);
+  r.plot(102, 50, 0.3);
+  r.lamp(102, 50, 84, 0);
+  assert.ok(Math.abs(r.lum[cell(r, 102, 50)] - 0.3) < 1e-6, "zero strength changes nothing");
+  const lit = r.n;
+  r.lamp(40, 50, 84, 1);
+  assert.equal(r.n, lit, "an empty cell under the lamp stays empty");
+  assert.equal(r.lum[cell(r, 40, 50)], 0);
+});

@@ -213,10 +213,10 @@ public enum WorkApprovalWords {
     public static func riskConsequence(_ risk: String) -> String {
         switch JunoWorkRiskLevel(rawValue: risk) ?? .irreversible {
         case .safe: "Nothing here changes anything outside this task."
-        case .edit: "This writes to a file. Juno can show you what changed afterwards."
+        case .edit: "This writes to a file. Alevr can show you what changed afterwards."
         case .command: "This runs a command on the machine this task is on."
-        case .sensitive: "This touches something private. Juno asks every time, whatever you have allowed before."
-        case .irreversible: "This cannot be undone — not by Juno, and not from this page afterwards."
+        case .sensitive: "This touches something private. Alevr asks every time, whatever you have allowed before."
+        case .irreversible: "This cannot be undone — not by Alevr, and not from this page afterwards."
         }
     }
 
@@ -260,11 +260,11 @@ public enum WorkApprovalWords {
         case .denied:
             return when.map { "Refused \(ago($0))" } ?? "Refused"
         case .expired:
-            return "Expired unanswered — Juno stopped rather than acting on a stale approval"
+            return "Expired unanswered — Alevr stopped rather than acting on a stale approval"
         case .superseded:
             return "Replaced by a later request"
         case .pending:
-            return expired ? "Expired unanswered — Juno stopped rather than acting on a stale approval" : "Waiting"
+            return expired ? "Expired unanswered — Alevr stopped rather than acting on a stale approval" : "Waiting"
         }
     }
 
@@ -273,9 +273,9 @@ public enum WorkApprovalWords {
     public static let decisionHeader = "Your decision"
     public static let amendPrompt = "What should it do instead?"
     public static let amendPlaceholder = "Send it to the finance alias instead, and drop the last paragraph."
-    public static let amendNote = "Juno will not do this one. It will be told what you want instead, and will carry on from there."
-    public static let expiryFootnote = "Unanswered, this expires and Juno stops rather than acting on it."
-    public static let noDigest = "This request did not arrive with the signature Juno needs to accept an answer from the web. Decide it in the Juno app on the Mac that raised it."
+    public static let amendNote = "Alevr will not do this one. It will be told what you want instead, and will carry on from there."
+    public static let expiryFootnote = "Unanswered, this expires and Alevr stops rather than acting on it."
+    public static let noDigest = "This request did not arrive with the signature Alevr needs to accept an answer from the web. Decide it in the Alevr app on the Mac that raised it."
 
     /// The second line under "{Verb}, and Stop Asking".
     public static func standingScope(action: String) -> String {

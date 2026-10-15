@@ -331,7 +331,7 @@ public final class NativeAssistantsModel {
         }
     }
 
-    public nonisolated static let saveFailure = "Juno could not save this assistant."
+    public nonisolated static let saveFailure = "Alevr could not save this assistant."
 
     /// Pin or unpin; nil when it moved, or the sentence.
     public func togglePin(_ assistant: NativeAssistant) async -> String? {

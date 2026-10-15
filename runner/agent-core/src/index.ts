@@ -1,4 +1,6 @@
 export * from './types.js';
+export { buildRepositoryIndex, repositoryWorkingMap, renderRepositoryWorkingMap, selectRepositoryTests,
+  type RepositoryIndex, type RepositoryWorkingMap, type RepositoryFile, type RepositorySymbol, type RepositoryCall } from './repository.js';
 export * from './providers/types.js';
 export { AnthropicAdapter, resolveAnthropicKey } from './providers/anthropic.js';
 export { OpenAICompatAdapter, COMPAT_PROVIDERS } from './providers/openai-compat.js';

@@ -166,7 +166,7 @@ public struct GoalRun: Hashable, Codable, Sendable, Identifiable {
     public var usageBaseline: GoalUsageBaseline
 
     /// Why a goal that was active when Juno quit is paused.
-    public static let interruptedReason = "Juno quit while this goal was running. Resume it to carry on."
+    public static let interruptedReason = "Alevr quit while this goal was running. Resume it to carry on."
 
     public static let maximumObjectiveCharacters = 4_000
     public static let maximumCriteria = 8
@@ -473,7 +473,7 @@ public extension GoalRun {
             // an earlier build kept must not start a run with no ceiling.
             budget: AutonomySettings.standard.goalBudget,
             status: status,
-            statusReason: status == .paused ? "Carried over from an earlier version of Juno. Resume it to keep working." : nil,
+            statusReason: status == .paused ? "Carried over from an earlier version of Alevr. Resume it to keep working." : nil,
             origin: .reader,
             createdAt: legacy.createdAt,
             updatedAt: legacy.updatedAt

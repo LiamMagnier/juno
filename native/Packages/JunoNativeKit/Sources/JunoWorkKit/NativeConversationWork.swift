@@ -630,13 +630,13 @@ public final class NativeConversationWork {
 
     // MARK: Copy (the web's, verbatim)
 
-    public static let answerFailed = "Couldn’t send that answer, so Juno hasn’t seen it. Try again."
+    public static let answerFailed = "Couldn’t send that answer, so Alevr hasn’t seen it. Try again."
     public static let steerFailed = "Couldn’t add that to the task. Nothing was recorded."
-    public static let decisionFailed = "Couldn’t record your decision, so Juno has not acted on it. Try again."
+    public static let decisionFailed = "Couldn’t record your decision, so Alevr has not acted on it. Try again."
     public static let notReportedIn = "This task hasn’t reported in yet, so there is nothing to stop. Try again in a moment."
-    public static let stopFailed = "Couldn’t reach Juno to stop that. The task is still going."
+    public static let stopFailed = "Couldn’t reach Alevr to stop that. The task is still going."
     /// Pause, Resume and Try Again are the Mac's own (register #57).
-    public static let controlFailed = "Couldn’t reach Juno to change that. Try again in a moment."
+    public static let controlFailed = "Couldn’t reach Alevr to change that. Try again in a moment."
 
     // MARK: Fixtures
 

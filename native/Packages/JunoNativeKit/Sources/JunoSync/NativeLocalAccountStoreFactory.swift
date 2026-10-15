@@ -14,13 +14,13 @@ extension NativeLocalAccountStoreFactoryError: LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .malformedEncryptionKey:
-            "Juno found an invalid local encryption key."
+            "Alevr found an invalid local encryption key."
         case .missingEncryptionKey:
-            "Juno cannot unlock the existing local account database."
+            "Alevr cannot unlock the existing local account database."
         case .encryptionKeyRace:
-            "Juno could not finish creating its local encryption key."
+            "Alevr could not finish creating its local encryption key."
         case .archiveDestinationUnavailable:
-            "Juno could not find a free name to move the old local database to."
+            "Alevr could not find a free name to move the old local database to."
         }
     }
 }

@@ -2319,12 +2319,13 @@ private struct JunoMobileMessageRow: View {
           .padding(.top, JunoSpace.hairline)
       }
 
-      // While the answer has no words yet, say what is happening — the
-      // web's shimmering status line — rather than leaving a blank row.
+      // While the answer has no words yet, say what is happening rather than
+      // leaving a blank row: the web's LiveLine and the Mac's run line, the
+      // galaxy beside the plain word, paced so a quick answer never flashes it.
       if message.isPending, message.content.isEmpty, message.mediaProgress == nil,
         (message.reasoning ?? "").isEmpty, !voice, !isLiveResearch
       {
-        JunoShimmerText("Thinking…")
+        JunoMobilePendingLine()
           .padding(.vertical, JunoSpace.tight)
       }
 
@@ -2873,5 +2874,38 @@ struct JunoMobileHomeLine: View {
       .foregroundStyle(Color.junoForeground)
       .multilineTextAlignment(.center)
       .accessibilityAddTraits(.isHeader)
+  }
+}
+
+/// The reply's first live signal, before any words or reasoning arrive: the
+/// galaxy working mark and "Thinking", the same pair the web's `LiveLine` and
+/// the Mac's run line show. Nothing for ``NativeRunPacing/glyphDelay``, then
+/// the mark, then the word at ``NativeRunPacing/showDelay``, so an answer that
+/// starts quickly never flashes a working state. No shimmer: the words are the
+/// state, and the mark is the only thing that moves.
+private struct JunoMobilePendingLine: View {
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @State private var showsMark = false
+  @State private var showsLabel = false
+
+  var body: some View {
+    HStack(spacing: JunoSpace.cozy) {
+      JunoGalaxyMark(size: 18)
+        .foregroundStyle(Color.junoMutedForeground)
+        .opacity(showsMark ? 1 : 0)
+      Text("Thinking")
+        .font(.junoBody)
+        .foregroundStyle(Color.junoMutedForeground)
+        .opacity(showsLabel ? 1 : 0)
+    }
+    .frame(minHeight: 24, alignment: .leading)
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel(showsLabel ? "Thinking" : "")
+    .task {
+      try? await Task.sleep(for: .seconds(NativeRunPacing.glyphDelay))
+      withAnimation(JunoMotion.reduced(JunoMotion.base, when: reduceMotion)) { showsMark = true }
+      try? await Task.sleep(for: .seconds(NativeRunPacing.showDelay - NativeRunPacing.glyphDelay))
+      withAnimation(JunoMotion.reduced(JunoMotion.base, when: reduceMotion)) { showsLabel = true }
+    }
   }
 }

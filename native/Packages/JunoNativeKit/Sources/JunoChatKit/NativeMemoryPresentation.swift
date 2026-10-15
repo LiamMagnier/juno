@@ -50,8 +50,8 @@ public enum NativeMemoryVocabulary {
     public static func statusDescription(_ status: String) -> String? {
         switch status {
         case "superseded": "Something newer took its place. Kept so you can see the change."
-        case "contradicted": "It clashes with a fact you saved yourself, so Juno does not use it."
-        case "suppressed": "You asked Juno to forget this. It will not be relearned."
+        case "contradicted": "It clashes with a fact you saved yourself, so Alevr does not use it."
+        case "suppressed": "You asked Alevr to forget this. It will not be relearned."
         case "expired": "It was only true for a while, and that while has passed."
         default: nil
         }

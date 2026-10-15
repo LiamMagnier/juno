@@ -136,7 +136,7 @@ public struct NativeChatApprovalCard: View {
         switch approval.riskClass {
         case .readOnly: "Reads only"
         case .reversibleWrite: "Reversible change"
-        case .externalWrite: "Leaves Juno"
+        case .externalWrite: "Leaves Alevr"
         case .destructiveOrSensitive: "Cannot be undone"
         case .unknown: "Unverified action"
         }
@@ -160,14 +160,14 @@ public struct NativeChatApprovalCard: View {
 
     private var statusCopy: String {
         switch approval.status {
-        case .pending: "Juno is waiting for your answer."
-        case .allowed: "Allowed. Juno is carrying out the action."
-        case .denied: "Denied. Juno did not carry out the action."
-        case .executing: "Juno is carrying out the action now."
-        case .executed: "Juno carried out the action."
-        case .failed: "Juno tried this and it failed."
+        case .pending: "Alevr is waiting for your answer."
+        case .allowed: "Allowed. Alevr is carrying out the action."
+        case .denied: "Denied. Alevr did not carry out the action."
+        case .executing: "Alevr is carrying out the action now."
+        case .executed: "Alevr carried out the action."
+        case .failed: "Alevr tried this and it failed."
         case .expired: "This expired before it was answered. Nothing was sent."
-        case .superseded: "The action or permissions changed, so Juno cancelled this request."
+        case .superseded: "The action or permissions changed, so Alevr cancelled this request."
         case .blocked: "Your permissions blocked this. Nothing was sent."
         }
     }

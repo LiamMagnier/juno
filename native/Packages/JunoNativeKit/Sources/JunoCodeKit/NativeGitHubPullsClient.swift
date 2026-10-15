@@ -73,7 +73,7 @@ public struct NativeGitHubPullsClient: Sendable {
             ),
             let response = try? await sender.send(request, for: accountID)
         else {
-            return .failure(.failed("Couldn’t reach Juno."))
+            return .failure(.failed("Couldn’t reach Alevr."))
         }
 
         // 428 is the route's own "connect GitHub first". Treating it as a plain

@@ -39,7 +39,7 @@ public struct NativeImportResult: Equatable, Sendable {
         case "chatgpt": "ChatGPT"
         case "claude": "Claude"
         case "gemini": "Gemini"
-        case "juno": "Juno"
+        case "juno": "Alevr"
         default: "the export"
         }
     }
@@ -71,7 +71,7 @@ public struct NativeImportClient: Sendable {
     public static func refusal(fileName: String, byteCount: Int) -> String? {
         let lower = fileName.lowercased()
         guard lower.hasSuffix(".zip") || lower.hasSuffix(".json") else {
-            return "Choose a .zip or .json export from ChatGPT, Claude, Gemini or Juno."
+            return "Choose a .zip or .json export from ChatGPT, Claude, Gemini or Alevr."
         }
         guard byteCount <= maximumBytes else { return "The export must be under 100 MB." }
         return nil

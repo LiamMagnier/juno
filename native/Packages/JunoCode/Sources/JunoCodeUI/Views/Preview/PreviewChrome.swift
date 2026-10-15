@@ -769,7 +769,7 @@ struct PreviewSecretsSheet: View {
         VStack(alignment: .leading, spacing: JunoSpace.regular) {
             Text("Preview secrets")
                 .font(Studio.Font.title)
-            Text("Kept in the Keychain for this project. Juno never shows a value to the model or writes it to a file.")
+            Text("Kept in the Keychain for this project. Alevr never shows a value to the model or writes it to a file.")
                 .font(Studio.Font.meta)
                 .foregroundStyle(Studio.Ink.secondary)
             section(

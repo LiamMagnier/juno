@@ -664,9 +664,9 @@ public enum NativeUsageError: LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .unavailable:
-            "Juno is not signed in to a server that can report usage."
+            "Alevr is not signed in to a server that can report usage."
         case .notSupportedByServer:
-            "This Juno server doesn't report detailed usage yet. Your plan limits are shown below."
+            "This Alevr server doesn't report detailed usage yet. Your plan limits are shown below."
         case .server(let message):
             message
         }
@@ -805,7 +805,7 @@ public struct NativeUsageClient: Sendable {
             let object = try? JSONSerialization.jsonObject(with: response.body) as? [String: Any]
             throw NativeUsageError.server(
                 message: (object?["error"] as? String)
-                    ?? "Juno could not load your usage (\(response.statusCode))."
+                    ?? "Alevr could not load your usage (\(response.statusCode))."
             )
         }
         return try JSONDecoder().decode(Wire.self, from: response.body)

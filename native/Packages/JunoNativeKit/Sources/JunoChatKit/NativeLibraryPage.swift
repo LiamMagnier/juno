@@ -781,7 +781,7 @@ public final class NativeLibraryPageModel {
     private func send(_ id: UUID) async {
         guard let row = uploads.first(where: { $0.id == id }), let (data, mimeType) = pendingUploadData[id] else { return }
         guard let uploader, let accountID else {
-            mark(id, failed: "Juno isn’t signed in.", retryable: false)
+            mark(id, failed: "Alevr isn’t signed in.", retryable: false)
             return
         }
         do {

@@ -175,6 +175,30 @@ export class Raster {
     if (isBlue) this.blue[i] = 1;
   }
 
+  /**
+   * The pointer's light on the drawing: every lit dot within a soft radius of
+   * (x, y) grows brighter, and the nearest ones take the presence tone. Only
+   * dots the scene already plotted respond; the lamp adds no dots of its own,
+   * so the drawing's shape never changes under the cursor.
+   */
+  lamp(x: number, y: number, radius: number, strength: number) {
+    if (strength <= 0.01) return;
+    const { n, lit, lum, blue, gw, pitch } = this;
+    const inv = 1 / (radius * radius);
+    for (let j = 0; j < n; j++) {
+      const i = lit[j];
+      const dx = ((i % gw) + 0.5) * pitch - x;
+      const dy = (((i / gw) | 0) + 0.5) * pitch - y;
+      const d2 = dx * dx + dy * dy;
+      if (d2 > radius * radius * 4) continue;
+      const f = strength * Math.exp(-d2 * inv);
+      if (f < 0.02) continue;
+      const v = lum[i] + f * 0.6;
+      lum[i] = v > 1 ? 1 : v;
+      if (f > 0.42) blue[i] = 1;
+    }
+  }
+
   /** One path per brightness level and tone: ~48 fills for the whole drawing. */
   draw(ctx: CanvasRenderingContext2D, p: Palette, glowSprite: HTMLCanvasElement | null) {
     const { n, lit, lum, blue, gw, pitch, counts, order } = this;
@@ -234,6 +258,11 @@ export class Raster {
 
 /* ───────────────────────────── Shared state ───────────────────────────── */
 
+/** The lamp's soft radius, px: about a fingertip's width on the drawing. */
+const LAMP_RADIUS = 84;
+/** A pointer that has not moved for this long stops lighting the drawing, ms. */
+const LAMP_REST = 2400;
+
 const instances = new Set<DotCanvas>();
 let raf = 0;
 let timer: ReturnType<typeof setTimeout> | null = null;
@@ -243,6 +272,9 @@ let schemeQuery: MediaQueryList | null = null;
 let themeObserver: MutationObserver | null = null;
 let parallaxUsers = 0;
 const pointer = { x: 0, y: 0 };
+let lampUsers = 0;
+/** The pointer in client px, and when it last moved (ms, performance clock). */
+const client = { x: -1e4, y: -1e4, at: 0 };
 
 type Stats = { frames: number; renders: number; ms: number; instances: number; active: number };
 const stats: Stats = { frames: 0, renders: 0, ms: 0, instances: 0, active: 0 };
@@ -315,6 +347,19 @@ function onPointer(e: PointerEvent) {
 }
 
 let themeQueued = false;
+function onLampPointer(e: PointerEvent) {
+  if (e.pointerType !== "mouse") return;
+  client.x = e.clientX;
+  client.y = e.clientY;
+  client.at = performance.now();
+  for (const inst of instances) if (inst.lamp) inst.invalidate(false);
+}
+
+function onLampLeave() {
+  client.x = client.y = -1e4;
+  for (const inst of instances) if (inst.lamp) inst.invalidate(false);
+}
+
 function onTheme() {
   if (themeQueued) return;
   themeQueued = true;
@@ -418,6 +463,29 @@ export class DotCanvas {
 
   /** Held still by the caller (a field faded out under another view). */
   paused = false;
+  /** Whether the pointer lights the drawing (fine pointers only; never under reduced motion). */
+  lamp = false;
+  private lampX = 0;
+  private lampY = 0;
+  private lampS = 0;
+
+  setLamp(on: boolean) {
+    if (this.lamp === on) return;
+    this.lamp = on;
+    if (on) {
+      if (lampUsers++ === 0) {
+        window.addEventListener("pointermove", onLampPointer, { passive: true });
+        document.documentElement.addEventListener("pointerleave", onLampLeave);
+      }
+    } else {
+      if (--lampUsers === 0) {
+        window.removeEventListener("pointermove", onLampPointer);
+        document.documentElement.removeEventListener("pointerleave", onLampLeave);
+      }
+      this.lampS = 0;
+    }
+    this.invalidate(false);
+  }
 
   setPaused(on: boolean) {
     if (this.paused === on) return;
@@ -549,6 +617,7 @@ export class DotCanvas {
     ctx.clearRect(0, 0, this.w, this.h);
     this.raster.clear();
     let wait = this.scene.render(f, this.raster, ctx);
+    if (this.lamp && !this.still) wait = Math.min(wait, this.stepLamp(now, dt));
     this.raster.draw(ctx, this.palette, this.glowSprite);
     this.scene.over?.(f, ctx);
     if (this.scene.parallax && !this.still) {
@@ -562,7 +631,40 @@ export class DotCanvas {
     return 0;
   }
 
+  /**
+   * Ease the lamp toward the pointer and light the raster. The light follows
+   * with a short lag (it reads as weight, not a cursor trail), rises over
+   * ~220ms when the pointer is over the drawing, and falls away over ~600ms
+   * once it leaves or rests for LAMP_REST. Returns ms until the next frame it
+   * needs, Infinity once settled.
+   */
+  private stepLamp(now: number, dt: number) {
+    const rect = this.host.getBoundingClientRect();
+    const x = client.x - rect.left;
+    const y = client.y - rect.top;
+    const inside = x >= 0 && y >= 0 && x <= rect.width && y <= rect.height && now - client.at < LAMP_REST;
+    const target = inside ? 1 : 0;
+    if (this.lampS < 0.01 && inside) {
+      this.lampX = x;
+      this.lampY = y;
+    }
+    const kPos = dt ? 1 - Math.exp(-dt * 10) : 1;
+    const kS = dt ? 1 - Math.exp(-dt * (inside ? 9 : 3.2)) : 0;
+    if (inside) {
+      this.lampX += (x - this.lampX) * kPos;
+      this.lampY += (y - this.lampY) * kPos;
+    }
+    this.lampS += (target - this.lampS) * kS;
+    if (this.lampS < 0.005 && !inside) this.lampS = 0;
+    this.raster.lamp(this.lampX, this.lampY, LAMP_RADIUS, this.lampS);
+    const moving = Math.abs(target - this.lampS) > 0.005 || (inside && Math.hypot(x - this.lampX, y - this.lampY) > 0.5);
+    if (moving) return 16;
+    // Resting inside: wake once more when the rest timeout dims it.
+    return inside ? Math.max(16, LAMP_REST - (now - client.at)) : Infinity;
+  }
+
   destroy() {
+    this.setLamp(false);
     this.unwatch();
     if (this.scene.parallax) this.removeParallax();
     instances.delete(this);

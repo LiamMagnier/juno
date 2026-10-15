@@ -1012,7 +1012,7 @@ public actor AgentOrchestrator {
             let response = await hooks.notify(
                 sessionID: sessionID,
                 kind: .permissionPrompt,
-                message: "Juno has waited \(waited) for your permission: \(request.summary)"
+                message: "Alevr has waited \(waited) for your permission: \(request.summary)"
             )
             await ToolScheduler.record(response.notices, sessionID: sessionID, store: store)
         case let .requested(request):
@@ -1047,7 +1047,7 @@ public actor AgentOrchestrator {
                     let response = await hooks.notify(
                         sessionID: sessionID,
                         kind: .permissionPrompt,
-                        message: "Juno needs your permission: \(request.summary)"
+                        message: "Alevr needs your permission: \(request.summary)"
                     )
                     await ToolScheduler.record(response.notices, sessionID: sessionID, store: store)
                 }
@@ -2763,7 +2763,7 @@ public actor AgentOrchestrator {
                         hookEvent: "Stop",
                         hookName: "",
                         outcome: .stopped,
-                        message: "Stop hooks sent Juno back to work \(continuations) times in one run, so it stopped here."
+                        message: "Stop hooks sent Alevr back to work \(continuations) times in one run, so it stopped here."
                     ),
                 ],
                 sessionID: sessionID,

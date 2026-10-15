@@ -269,12 +269,12 @@ public enum MCPConfigurationLoader {
                 let limit = scope == .claudeImport ? 16 * 1_024 * 1_024 : 1_024 * 1_024
                 let size = (try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
                 guard size <= limit else {
-                    problems.append("\(file.lastPathComponent) is larger than Juno reads.")
+                    problems.append("\(file.lastPathComponent) is larger than Alevr reads.")
                     continue
                 }
                 let data = try Data(contentsOf: file)
                 guard data.count <= limit else {
-                    problems.append("\(file.lastPathComponent) is larger than Juno reads.")
+                    problems.append("\(file.lastPathComponent) is larger than Alevr reads.")
                     continue
                 }
                 // `~/.claude.json` holds much more than servers; only its

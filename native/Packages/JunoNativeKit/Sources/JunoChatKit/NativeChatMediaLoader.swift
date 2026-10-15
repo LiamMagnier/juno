@@ -75,9 +75,9 @@ public enum NativeTranscriptFileError: Error, Equatable, LocalizedError, Sendabl
     public var errorDescription: String? {
         switch self {
         case .tooLarge(let maximumBytes):
-            "This file is larger than \(maximumBytes / 1_048_576) MB, so Juno can’t open it here."
+            "This file is larger than \(maximumBytes / 1_048_576) MB, so Alevr can’t open it here."
         case .unavailable:
-            "Juno couldn’t download this file. Try again in a moment."
+            "Alevr couldn’t download this file. Try again in a moment."
         case .signedOut:
             "Sign in to open this file."
         }

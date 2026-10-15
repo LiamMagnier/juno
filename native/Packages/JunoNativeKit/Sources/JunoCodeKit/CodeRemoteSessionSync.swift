@@ -393,7 +393,7 @@ public actor CodeRemoteSessionSync {
         case .inactive: nil
         case .syncing: lastReported
         case .synced: .working
-        case .retrying: .failing(lastError ?? "Juno could not be reached.")
+        case .retrying: .failing(lastError ?? "Alevr could not be reached.")
         case .stopped(let reason): .stopped(reason)
         }
         guard let status, status != lastReported else { return }

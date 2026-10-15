@@ -257,7 +257,7 @@ final class DevServerServiceTests: XCTestCase {
                     break
                 }
             case .line(let line):
-                if line.text.contains("Juno Static Preview") {
+                if line.text.contains("Alevr Static Preview") {
                     receivedLog = true
                 }
             }

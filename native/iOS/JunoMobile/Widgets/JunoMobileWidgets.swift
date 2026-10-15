@@ -48,8 +48,8 @@ struct JunoMobileQuickActionsWidget: Widget {
     StaticConfiguration(kind: kind, provider: QuickActionsProvider()) { entry in
       JunoMobileQuickActionsView(entry: entry)
     }
-    .configurationDisplayName("Juno quick actions")
-    .description("Start a Juno chat, voice conversation, Code session, or dictation.")
+    .configurationDisplayName("Alevr quick actions")
+    .description("Start a Alevr chat, voice conversation, Code session, or dictation.")
     .supportedFamilies([.systemSmall, .systemMedium])
   }
 }
@@ -261,7 +261,7 @@ private struct CodeApprovalActivityView: View {
 /// app through the same deep link a tap on the card would produce, and the
 /// app's existing authenticated client sends it.
 struct JunoMobileApprovalIntent: AppIntent {
-  static let title: LocalizedStringResource = "Respond to Juno Code approval"
+  static let title: LocalizedStringResource = "Respond to Alevr Code approval"
   static let openAppWhenRun = true
 
   @Parameter(title: "Device") var deviceID: String

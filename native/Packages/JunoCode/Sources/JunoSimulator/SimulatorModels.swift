@@ -305,8 +305,8 @@ public struct SimulatorInputCapability: Equatable, Sendable, Codable {
         transport: .externalSimulator,
         unavailableReason: """
             Apple ships no supported API for injecting touches into a booted simulator, \
-            so Juno captures frames and opens the Simulator app for you to interact with. \
-            Juno never drives your Mac through Accessibility automation.
+            so Alevr captures frames and opens the Simulator app for you to interact with. \
+            Alevr never drives your Mac through Accessibility automation.
             """
     )
 }

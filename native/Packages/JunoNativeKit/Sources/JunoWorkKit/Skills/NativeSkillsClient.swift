@@ -400,7 +400,7 @@ public struct NativeSkillsClient: Sendable {
         case 409, 429:
             return .blocked(
                 reason: body["error"]?.stringValue ?? "unavailable",
-                explanation: message ?? "Juno can’t do that right now. Try again in a moment."
+                explanation: message ?? "Alevr can’t do that right now. Try again in a moment."
             )
         case 401, 403:
             return .failed(.unauthorized, message: message)

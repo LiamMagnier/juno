@@ -332,7 +332,7 @@ extension NativeConnectorClient {
         return try decodeConnector(response)
     }
 
-    static let checkFailed = "Juno couldn’t check that server. Try again."
+    static let checkFailed = "Alevr couldn’t check that server. Try again."
 
     private func sendJSON(
         _ path: String,

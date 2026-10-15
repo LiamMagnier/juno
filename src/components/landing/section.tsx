@@ -31,7 +31,7 @@ export function Section({
     // `scroll-mt-20`: the landing header is sticky, so an anchor jump to one of
     // these ids (#models, #pricing, …) would otherwise land the heading directly
     // underneath the bar.
-    <section id={id} className={cn("scroll-mt-20", className)}>
+    <section id={id} className={cn("scroll-mt-20", className)} data-own-reveal="">
       <LandingColumn contentClassName="alevr-section-space">
         <Reveal>
           <header><h2 className="alevr-section-heading font-serif">{heading}</h2>{lede && <p className="mt-5 max-w-xl text-body-lg leading-relaxed text-muted-foreground">{lede}</p>}</header>

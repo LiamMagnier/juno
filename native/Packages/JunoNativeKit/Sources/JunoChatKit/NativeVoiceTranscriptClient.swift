@@ -217,7 +217,7 @@ public struct NativeVoiceTranscriptClient: Sendable {
         return .server(
             statusCode: response.statusCode,
             message: message
-                ?? "Juno could not save this voice conversation (\(response.statusCode))."
+                ?? "Alevr could not save this voice conversation (\(response.statusCode))."
         )
     }
 
@@ -234,7 +234,7 @@ public enum NativeVoiceTranscriptError: Error, Equatable, LocalizedError, Sendab
     public var errorDescription: String? {
         switch self {
         case .nothingToSave: "There was nothing said to save."
-        case .malformedResponse: "Juno returned an invalid response saving the transcript."
+        case .malformedResponse: "Alevr returned an invalid response saving the transcript."
         case .attachmentsUnavailable(let message): message
         case .server(_, let message): message
         }

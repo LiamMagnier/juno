@@ -185,7 +185,7 @@ private enum HookDiscoveryReadError: Error {
     var message: String {
         switch self {
         case .tooLarge:
-            return "The hook configuration exceeds Juno's size limit."
+            return "The hook configuration exceeds Alevr's size limit."
         case .unreadable:
             return "The hook configuration could not be read."
         }

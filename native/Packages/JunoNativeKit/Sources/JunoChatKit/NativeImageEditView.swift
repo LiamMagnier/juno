@@ -419,7 +419,7 @@ public struct NativeImageEditView: View {
                 attachmentID: attachmentID, for: accountID
             )
             guard let decoded = NativeSourceImage(data: data) else {
-                loadFailure = "Juno couldn't read this image."
+                loadFailure = "Alevr couldn't read this image."
                 return
             }
             source = decoded

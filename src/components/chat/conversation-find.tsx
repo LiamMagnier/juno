@@ -36,18 +36,17 @@ export function ConversationFind({
 }: {
   messages: readonly SearchableMessage[];
   /**
-   * Called when the reader starts searching. A paged transcript holds only
-   * its newest part; this brings in the rest so every match is counted — still
+   * Called when Find opens. A paged transcript holds only
+   * its newest part; prefetch the rest before typing so every match is counted — still
    * on the client, decrypted the same way it is for reading.
    */
   onSearch?: () => void;
   onClose: () => void;
 }) {
   const [query, setQuery] = React.useState("");
-  const searching = query.trim() !== "";
   React.useEffect(() => {
-    if (searching) onSearch?.();
-  }, [searching, onSearch]);
+    onSearch?.();
+  }, [onSearch]);
   const [index, setIndex] = React.useState(0);
   const inputRef = React.useRef<HTMLInputElement>(null);
 

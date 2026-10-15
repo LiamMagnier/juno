@@ -422,7 +422,7 @@ public struct StudioSessionView: View {
                 .help("What your next message does while Alevr is working")
             }
         } trailing: {
-            if let v2 {
+            if v2 != nil {
                 CodeV2ComposerTrailing(
                     context: preferences.showContextMeter ? v2Context : nil,
                     compact: { Task { await controller.compactConversation() } }

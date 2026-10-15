@@ -87,7 +87,7 @@ public struct NativeAccountDataClient: Sendable {
             for: accountID
         )
         guard (200...299).contains(response.statusCode) else {
-            throw failure(response, fallback: "Juno could not export your data")
+            throw failure(response, fallback: "Alevr could not export your data")
         }
         var url = FileManager.default.temporaryDirectory
             .appendingPathComponent(format.fileName(on: Date()))
@@ -112,7 +112,7 @@ public struct NativeAccountDataClient: Sendable {
             for: accountID
         )
         guard (200...299).contains(response.statusCode) else {
-            throw failure(response, fallback: "Juno could not delete your conversations")
+            throw failure(response, fallback: "Alevr could not delete your conversations")
         }
     }
 
@@ -145,7 +145,7 @@ public struct NativeAccountDataClient: Sendable {
             for: accountID
         )
         guard (200...299).contains(response.statusCode) else {
-            throw failure(response, fallback: "Juno could not delete this account")
+            throw failure(response, fallback: "Alevr could not delete this account")
         }
     }
 

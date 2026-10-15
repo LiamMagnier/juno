@@ -202,7 +202,7 @@ public final class NativeWorkAutomationModel {
             retriableRunNow = nil
             lastRunResult = result
             lastMutationExplanation = result.replay
-                ? "This run was already started; Juno restored its result."
+                ? "This run was already started; Alevr restored its result."
                 : "Run started."
             replaceRun(result.run)
             await refresh()
@@ -506,7 +506,7 @@ public enum NativeWorkServerSentence {
 
     /// The clients' own words for a refusal whose body said nothing.
     static func isFallback(_ message: String) -> Bool {
-        message.hasPrefix("Juno could not update Work automations (")
-            || message.hasPrefix("Juno could not reach your Work session (")
+        message.hasPrefix("Alevr could not update Work automations (")
+            || message.hasPrefix("Alevr could not reach your Work session (")
     }
 }

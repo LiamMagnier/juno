@@ -93,18 +93,18 @@ final class JunoDesignTokensTests: XCTestCase {
         XCTAssertEqual(JunoRadius.row, 8)
 
         XCTAssertEqual(JunoRadius.well, JunoGeneratedRadius.field)
-        XCTAssertEqual(JunoRadius.well, 12)
+        XCTAssertEqual(JunoRadius.well, 10)
 
         XCTAssertEqual(JunoRadius.card, JunoGeneratedRadius.card)
-        XCTAssertEqual(JunoRadius.card, 16)
+        XCTAssertEqual(JunoRadius.card, 12)
 
         XCTAssertEqual(JunoRadius.message, JunoGeneratedRadius.popover)
         XCTAssertEqual(JunoRadius.floating, JunoGeneratedRadius.popover)
-        XCTAssertEqual(JunoRadius.message, 16)
+        XCTAssertEqual(JunoRadius.message, 12)
 
         // These literals track the Soft UI ladder (docs/design/SOFT_UI.md
-        // §2.3): control 10 · field 12 · menu 14 · card 16 · popover 16 ·
-        // panel 20 · composer 22 (V3, docs/rework/brand/BRAND_IDENTITY.md). When the web retunes, the paired token
+        // §2.3): control 8 · field 10 · menu 14 · card 12 · popover 12 ·
+        // panel 16 · composer 22 (V3, docs/rework/brand/BRAND_IDENTITY.md). When the web retunes, the paired token
         // references above keep passing and only these numbers move — that
         // is this assertion doing its job, not failing at it.
         //
@@ -125,19 +125,19 @@ final class JunoDesignTokensTests: XCTestCase {
             (JunoRadius.sm, JunoGeneratedRadius.sm, 4, "sm"),
             (JunoRadius.xs, JunoGeneratedRadius.xs, 6, "xs"),
             (JunoRadius.md, JunoGeneratedRadius.md, 8, "md"),
-            (JunoRadius.control, JunoGeneratedRadius.control, 10, "control"),
-            (JunoRadius.field, JunoGeneratedRadius.field, 12, "field"),
+            (JunoRadius.control, JunoGeneratedRadius.control, 8, "control"),
+            (JunoRadius.field, JunoGeneratedRadius.field, 10, "field"),
             (JunoRadius.menu, JunoGeneratedRadius.menu, 14, "menu"),
-            (JunoRadius.card, JunoGeneratedRadius.card, 16, "card"),
-            (JunoRadius.panel, JunoGeneratedRadius.panel, 20, "panel"),
+            (JunoRadius.card, JunoGeneratedRadius.card, 12, "card"),
+            (JunoRadius.panel, JunoGeneratedRadius.panel, 16, "panel"),
         ]
         for (value, generated, number, name) in pairs {
             XCTAssertEqual(value, generated, "\(name) must alias the generated rung")
             XCTAssertEqual(value, number, "\(name) moved on the web; check the Mac still wants it")
         }
         // Errata 9: the dashed empty-state well is a field, a toast is a card.
-        XCTAssertEqual(JunoRadius.field, 12)
-        XCTAssertEqual(JunoRadius.card, 16)
+        XCTAssertEqual(JunoRadius.field, 10)
+        XCTAssertEqual(JunoRadius.card, 12)
     }
 
     /// The concentric helper is a uniform concentric rectangle with a floor, the
@@ -207,11 +207,8 @@ final class JunoDesignTokensTests: XCTestCase {
         XCTAssertNotEqual(JunoColorToken.surfaceLight, JunoColorToken.surfaceDark)
     }
 
-    /// The accent is the web's `--primary` in each appearance, never a native
-    /// retune of it. V3 lifts it on the charcoal: #2D49C9 on light, #97A6E6 on
-    /// dark — the same ultramarine hue, lighter and calmer, because the light
-    /// value is too dark to read on the dark ground (BRAND_IDENTITY.md: "dark
-    /// theme is layered charcoal with lifted/desaturated blue").
+    /// The default CTA follows the current web's graphite --primary pair.
+    /// Presence blue is a separate live-state role, not the default CTA fill.
     func testAccentIsTheWebsPrimaryInEachAppearance() {
         XCTAssertEqual(JunoColorToken.accentLight, JunoColorToken.coral)
         XCTAssertEqual(JunoColorToken.accentLight, JunoGeneratedColors.primary.light)
@@ -219,7 +216,8 @@ final class JunoDesignTokensTests: XCTestCase {
 
         let light = JunoColorToken.accentLight.hsl
         let dark = JunoColorToken.accentDark.hsl
-        XCTAssertEqual(light.h, dark.h, accuracy: 2, "one hue in both appearances")
+        XCTAssertLessThanOrEqual(light.s, 0.1, "the default CTA stays graphite")
+        XCTAssertLessThanOrEqual(dark.s, 0.1, "graphite in dark appearance too")
         XCTAssertGreaterThan(dark.l, light.l, "lifted on the charcoal")
         XCTAssertLessThan(dark.s, light.s, "and desaturated, not brightened")
     }
@@ -324,7 +322,7 @@ final class JunoDesignTokensTests: XCTestCase {
 
         let radii = [
             JunoRadius.micro, JunoRadius.sm, JunoRadius.xs, JunoRadius.md,
-            JunoRadius.control, JunoRadius.field, JunoRadius.menu, JunoRadius.card,
+            JunoRadius.control, JunoRadius.field, JunoRadius.card, JunoRadius.menu,
             JunoRadius.panel,
         ]
         XCTAssertEqual(radii, radii.sorted())

@@ -66,7 +66,7 @@ public enum NativeFailureMessage {
     /// The package declares no resource bundle, so there is nothing to look
     /// them up in.
     public static let offline =
-        "Juno can’t reach the server. Your changes are saved and will sync when you’re back online."
+        "Alevr can’t reach the server. Your changes are saved and will sync when you’re back online."
 
     public static let cancelled = "That request was cancelled." 
 }

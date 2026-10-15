@@ -261,7 +261,7 @@ public struct SimulatorTool: CodeTool {
     private func requireConsent(_ device: SimulatorDeviceSummary, sessionID: CodeSessionID) async throws {
         if await consents.allows(session: sessionID.value, udid: device.udid) { return }
         try await authorize(
-            summary: "Let Juno use the \(device.name) simulator (\(device.runtime)) for this session",
+            summary: "Let Alevr use the \(device.name) simulator (\(device.runtime)) for this session",
             risk: .execute,
             policy: .asksUnlessFullAccess,
             digestParts: ["device", sessionID.value, device.udid]

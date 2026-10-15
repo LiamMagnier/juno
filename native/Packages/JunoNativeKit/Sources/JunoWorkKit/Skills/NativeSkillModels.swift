@@ -89,7 +89,7 @@ public enum NativeSkillAttention: Sendable, Equatable {
     /// The row's words (`ATTENTION_COPY`).
     public var sentence: String {
         switch self {
-        case .blocked: "Blocked by Juno’s safety check"
+        case .blocked: "Blocked by Alevr’s safety check"
         case .consent: "Needs your approval before it can run"
         }
     }
@@ -563,7 +563,7 @@ public enum NativeSkillResult<Value: Sendable>: Sendable {
         case .failed(let cause, let message):
             if let message, !message.isEmpty { return message }
             switch cause {
-            case .offline: return "Couldn’t reach Juno. Check your connection and try again."
+            case .offline: return "Couldn’t reach Alevr. Check your connection and try again."
             case .unauthorized: return "Your session has ended. Sign in again to continue."
             case .notFound, .rejected, .server: return fallback
             }

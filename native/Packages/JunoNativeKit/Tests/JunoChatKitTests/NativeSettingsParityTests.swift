@@ -294,7 +294,7 @@ import Testing
 
     @Test func importRefusesTheWebsWay() {
         #expect(NativeImportClient.refusal(fileName: "export.pdf", byteCount: 10)
-            == "Choose a .zip or .json export from ChatGPT, Claude, Gemini or Juno.")
+            == "Choose a .zip or .json export from ChatGPT, Claude, Gemini or Alevr.")
         #expect(NativeImportClient.refusal(fileName: "conversations.zip", byteCount: 101 * 1024 * 1024)
             == "The export must be under 100 MB.")
         #expect(NativeImportClient.refusal(fileName: "Conversations.JSON", byteCount: 10) == nil)

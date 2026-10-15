@@ -981,18 +981,18 @@ public enum NativeChatAPIError: Error, Equatable, LocalizedError, Sendable {
             // Mac, and blaming the user's message for it sends them looking in
             // exactly the wrong place.
             """
-            Juno rejected an internal identifier before sending (\(value)). \
-            This is a bug in Juno, not a problem with your message.
+            Alevr rejected an internal identifier before sending (\(value)). \
+            This is a bug in Alevr, not a problem with your message.
             """
         case .invalidMessage:
             "Enter a message before sending."
         case .malformedResponse, .invalidContentType,
              .eventLineTooLarge, .eventPayloadTooLarge:
-            "Juno returned an invalid chat response."
+            "Alevr returned an invalid chat response."
         case .streamEndedWithoutTerminalEvent:
-            "The live response was interrupted. Juno is reconnecting to saved data."
+            "The live response was interrupted. Alevr is reconnecting to saved data."
         case .approvalDigestMismatch:
-            "Juno refused this approval because the action changed. Nothing was sent."
+            "Alevr refused this approval because the action changed. Nothing was sent."
         case .server(_, _, let message, _):
             message
         }

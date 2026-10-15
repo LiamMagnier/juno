@@ -18,7 +18,7 @@ public enum CodeRelayProtocolAdapter {
         public var errorDescription: String? {
             switch self {
             case .unsupportedCommand(let kind):
-                "This Mac cannot run a \"\(kind)\" command. Update Juno on the Mac and try again."
+                "This Mac cannot run a \"\(kind)\" command. Update Alevr on the Mac and try again."
             case .refusedCommand(_, let reason):
                 reason
             case .malformedCanonicalEvent:

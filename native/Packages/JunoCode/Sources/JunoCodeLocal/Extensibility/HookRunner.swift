@@ -86,7 +86,7 @@ public struct HookRunner: Sendable {
                     hookID: "hook-batch",
                     event: context.event,
                     status: .skipped(
-                        reason: String(omitted) + " matching hooks were skipped after Juno's per-event limit."
+                        reason: String(omitted) + " matching hooks were skipped after Alevr's per-event limit."
                     )
                 )
             )
@@ -196,7 +196,7 @@ public struct HookRunner: Sendable {
             } else {
                 var reason = "The hook exited with status \(result.exitCode)."
                 if result.wasTruncated {
-                    reason += " Its output passed Juno's limit and was cut off."
+                    reason += " Its output passed Alevr's limit and was cut off."
                 }
                 status = .failed(exitCode: result.exitCode, reason: reason)
             }

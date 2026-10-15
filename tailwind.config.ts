@@ -270,6 +270,13 @@ const config: Config = {
         "4.5": "1.125rem",
       },
       transitionTimingFunction: {
+        // Tailwind's stock `ease-out` (0,0,.2,1) and the bare `transition`
+        // default (.4,0,.2,1) are not on the ladder; hundreds of call sites
+        // write them. Pointing both at out-soft puts every one of those on
+        // the house curve without touching a call site (BRAND_IDENTITY.md,
+        // "Motion and interaction").
+        DEFAULT: "cubic-bezier(0.33, 1, 0.68, 1)",
+        out: "cubic-bezier(0.33, 1, 0.68, 1)",
         "out-soft": "cubic-bezier(0.33, 1, 0.68, 1)",
         "out-strong": "cubic-bezier(0.32, 0.72, 0, 1)",
         "out-expo": "cubic-bezier(0.16, 1, 0.3, 1)",
@@ -289,11 +296,12 @@ const config: Config = {
         // should settle rather than stop. See --ease-out-back in globals.css.
         "out-back": "cubic-bezier(0.34, 1.32, 0.64, 1)",
         // Soft UI (SOFT_UI.md §2.4). `spring` is the entrance curve for
-        // anything that pops into place — a milder overshoot than out-back
-        // because entrances run on opacity too. `drawer` is the sheet curve:
-        // front-loaded, overshoot-free, named for the job. Both are mirrored
-        // as --ease-spring / --ease-drawer in globals.css.
-        spring: "cubic-bezier(0.34, 1.16, 0.64, 1)",
+        // anything that pops into place: a long, overshoot-free settle (opacity
+        // past 1 just clips). `drawer` is the sheet curve: front-loaded,
+        // overshoot-free, named for the job. Both mirror --ease-spring /
+        // --ease-drawer in globals.css, the generated token source; they must
+        // stay equal so `ease-spring` and `var(--ease-spring)` move alike.
+        spring: "cubic-bezier(0.22, 1, 0.36, 1)",
         drawer: "cubic-bezier(0.32, 0.72, 0, 1)",
       },
       transitionDuration: {

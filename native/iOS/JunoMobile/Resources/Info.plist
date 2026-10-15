@@ -49,15 +49,15 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>Juno uses the camera to take a photo for a message, to show Juno what you are looking at during a voice conversation, and to scan the code that pairs this iPhone with your Mac. Screen sharing in voice uses only what is on this screen.</string>
+	<string>Alevr uses the camera to take a photo for a message, to show Alevr what you are looking at during a voice conversation, and to scan the code that pairs this iPhone with your Mac. Screen sharing in voice uses only what is on this screen.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Juno uses the microphone for voice conversations and to dictate a message instead of typing it. Audio is only captured while a call or dictation is running.</string>
+	<string>Alevr uses the microphone for voice conversations and to dictate a message instead of typing it. Audio is only captured while a call or dictation is running.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>Juno saves images you generate to your photo library when you ask it to.</string>
+	<string>Alevr saves images you generate to your photo library when you ask it to.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Juno shows your most recent photos so you can attach one without leaving the chat.</string>
+	<string>Alevr shows your most recent photos so you can attach one without leaving the chat.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Juno turns what you say into text so you can dictate a message. Recognition runs on this device whenever the language supports it.</string>
+	<string>Alevr turns what you say into text so you can dictate a message. Recognition runs on this device whenever the language supports it.</string>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
 	<key>NSUserActivityTypes</key>
@@ -93,7 +93,7 @@
 			<key>UIApplicationShortcutItemIconSymbolName</key>
 			<string>chevron.left.forwardslash.chevron.right</string>
 			<key>UIApplicationShortcutItemTitle</key>
-			<string>Juno Code</string>
+			<string>Alevr Code</string>
 			<key>UIApplicationShortcutItemType</key>
 			<string>com.liammagnier.JunoMobile.code</string>
 		</dict>
@@ -105,7 +105,10 @@
 		<string>remote-notification</string>
 	</array>
 	<key>UILaunchScreen</key>
-	<dict/>
+	<dict>
+		<key>UIColorName</key>
+		<string>LaunchBackground</string>
+	</dict>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>

@@ -14,20 +14,20 @@ public enum NativeAuthAPIError: Error, Equatable, LocalizedError, Sendable {
         switch self {
         case .server(let statusCode, let code):
             if statusCode == 401 {
-                "Your Juno session is no longer active."
+                "Your Alevr session is no longer active."
             } else if statusCode == 429 {
                 "Too many sign-in requests. Please wait a moment and try again."
             } else {
-                "Juno returned an authentication error (\(code ?? String(statusCode)))."
+                "Alevr returned an authentication error (\(code ?? String(statusCode)))."
             }
         case .malformedResponse, .invalidTokenType:
-            "Juno returned an invalid authentication response."
+            "Alevr returned an invalid authentication response."
         case .contractVersionMismatch:
-            "This version of Juno is not compatible with the server."
+            "This version of Alevr is not compatible with the server."
         case .deviceSessionMismatch:
-            "The returned Juno session belongs to another device."
+            "The returned Alevr session belongs to another device."
         case .streamingUnavailable:
-            "This Juno client cannot open a live server stream."
+            "This Alevr client cannot open a live server stream."
         }
     }
 }

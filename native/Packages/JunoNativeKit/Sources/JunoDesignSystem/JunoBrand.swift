@@ -982,6 +982,7 @@ public struct JunoIconView: View {
     private let size: CGFloat
     private let weight: JunoIcon.Weight
     @Environment(\.displayScale) private var displayScale
+    @Environment(\.junoIconHover) private var hovered
 
     public init(_ icon: JunoIcon, size: CGFloat = 19, weight: JunoIcon.Weight? = nil, isOn: Bool = false) {
         self.icon = icon
@@ -993,6 +994,9 @@ public struct JunoIconView: View {
         JunoGlyphBox.image(named: icon.assetName(weight), box: size, scale: displayScale)
             .renderingMode(.template)
             .frame(width: size, height: size)
+            // The glyph's own hover gesture, when the control around it is
+            // under the pointer (`junoIconHoverSource`). Inert otherwise.
+            .junoIconGesture(for: icon, active: hovered)
     }
 }
 

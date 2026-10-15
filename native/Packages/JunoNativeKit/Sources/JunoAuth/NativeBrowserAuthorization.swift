@@ -17,7 +17,7 @@ public enum NativeBrowserAuthorizationError: Error, Equatable, LocalizedError,
             .malformedStoredInstallationIdentifier:
             "The secure device identifier is invalid."
         case .invalidRedirectURI:
-            "The Juno sign-in callback is not configured correctly."
+            "The Alevr sign-in callback is not configured correctly."
         case .invalidCallback, .malformedAuthorizationCode:
             "The browser returned an invalid sign-in response."
         }

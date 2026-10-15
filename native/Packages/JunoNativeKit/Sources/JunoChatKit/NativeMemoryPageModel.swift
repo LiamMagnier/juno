@@ -431,10 +431,10 @@ public final class NativeMemoryPageModel {
         }
         switch kind {
         case .forget:
-            return NativeMemoryNotice(.success, "Forgotten. Juno won’t learn this again.", undoID: fact.id)
+            return NativeMemoryNotice(.success, "Forgotten. Alevr won’t learn this again.", undoID: fact.id)
         case .delete:
             return NativeMemoryNotice(
-                .success, "Deleted. Juno may learn it again from the chat it came from.", undoID: fact.id
+                .success, "Deleted. Alevr may learn it again from the chat it came from.", undoID: fact.id
             )
         }
     }
@@ -503,7 +503,7 @@ public final class NativeMemoryPageModel {
             projectSummaries = []
             edits = []
             justApplied = [:]
-            return .success("Memory reset. Juno starts fresh.")
+            return .success("Memory reset. Alevr starts fresh.")
         } catch {
             return .error("Couldn’t reset memory. Nothing was deleted.")
         }
@@ -626,8 +626,8 @@ public final class NativeMemoryPageModel {
             let created = result.created
             return (true, .success(
                 created > 0
-                    ? "Imported \(created) \(created == 1 ? "fact" : "facts") into Juno’s memory."
-                    : "Nothing new to import. Juno already knew all of that."
+                    ? "Imported \(created) \(created == 1 ? "fact" : "facts") into Alevr’s memory."
+                    : "Nothing new to import. Alevr already knew all of that."
             ))
         } catch let error as NativeMemoryRequestError where error.statusCode != 0 {
             return (false, .error(error.message == NativeMemoryRequestError.generic ? "Couldn’t import those." : error.message))

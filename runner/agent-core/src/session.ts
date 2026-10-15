@@ -3,6 +3,8 @@ import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import type { AgentEvent, ChatMessage, PermissionMode, SessionMeta } from './types.js';
+import type { RepositoryWorkingMap } from './repository.js';
+import { writeFileAtomic } from './tools/fs.js';
 
 export function junoHome(): string {
   return process.env.JUNO_HOME ?? path.join(os.homedir(), '.juno');
@@ -124,6 +126,23 @@ export class SessionStore {
     }));
     fs.writeFileSync(path.join(this.dir, 'messages.json'), JSON.stringify(persisted, null, 2));
     this.saveMeta();
+  }
+
+  loadRepositoryMap(): RepositoryWorkingMap | null {
+    try {
+      const file = path.join(this.dir, 'repository-map.json');
+      if (fs.statSync(file).size > 64 * 1024) return null;
+      const map = JSON.parse(fs.readFileSync(file, 'utf8')) as RepositoryWorkingMap;
+      if (map.version !== 1 || map.root !== fs.realpathSync(this.meta.cwd) || typeof map.fingerprint !== 'string'
+        || !Array.isArray(map.focus) || !Array.isArray(map.symbols) || !Array.isArray(map.dependencies) || !Array.isArray(map.tests)) return null;
+      // A resumed process cannot know whether another tool edited the files.
+      return { ...map, stale: true };
+    } catch { return null; }
+  }
+
+  saveRepositoryMap(map: RepositoryWorkingMap): void {
+    const json = JSON.stringify(map);
+    if (Buffer.byteLength(json) <= 64 * 1024) writeFileAtomic(path.join(this.dir, 'repository-map.json'), json);
   }
 
   appendEvent(event: AgentEvent): void {

@@ -15,6 +15,7 @@ export function Construction(props: {
   axis?: boolean;
   animate?: boolean;
   parallax?: boolean;
+  lamp?: boolean;
   zoom?: MotionValue<number>;
   paused?: boolean;
   className?: string;

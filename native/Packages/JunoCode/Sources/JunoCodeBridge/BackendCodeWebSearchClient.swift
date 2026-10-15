@@ -44,7 +44,7 @@ public struct BackendCodeWebSearchClient: CodeWebSearching {
             let message = (try? JSONDecoder().decode(
                 SearchErrorWire.self,
                 from: response.body
-            ))?.message ?? "The Juno web-search service returned HTTP \(response.statusCode)."
+            ))?.message ?? "The Alevr web-search service returned HTTP \(response.statusCode)."
             throw BackendCodeWebSearchError.server(
                 statusCode: response.statusCode,
                 message: message
@@ -85,7 +85,7 @@ public enum BackendCodeWebSearchError: Error, Equatable, LocalizedError, Sendabl
         switch self {
         case let .server(_, message): return message
         case .malformedResponse:
-            return "Juno returned an invalid web-search response."
+            return "Alevr returned an invalid web-search response."
         }
     }
 }

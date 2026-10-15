@@ -1122,7 +1122,7 @@ public struct NativeWorkClient: Sendable {
 
         return .server(
             statusCode: statusCode,
-            message: message ?? "Juno could not reach your Work session (\(statusCode)).",
+            message: message ?? "Alevr could not reach your Work session (\(statusCode)).",
             retryable: detail?["retryable"]?.boolValue ?? (500...599).contains(statusCode)
         )
     }

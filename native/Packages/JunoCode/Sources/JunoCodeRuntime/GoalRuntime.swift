@@ -340,7 +340,7 @@ public actor GoalRuntime {
         guard var verdict else {
             let failures = goal.consecutiveJudgeFailures + 1
             if failures >= 2 {
-                let reason = "Juno could not check the goal twice in a row"
+                let reason = "Alevr could not check the goal twice in a row"
                 await updateCurrent(.status) { current in
                     current.consecutiveJudgeFailures = failures
                     current.record(GoalVerdict(kind: .notMet, reason: reason, revision: ledger.workspaceRevision, at: now))
@@ -348,7 +348,7 @@ public actor GoalRuntime {
                 }
                 return .finish(.needsYou)
             }
-            let reason = "Juno could not check the goal this turn"
+            let reason = "Alevr could not check the goal this turn"
             let fallback = GoalVerdict(kind: .notMet, reason: reason, revision: ledger.workspaceRevision, at: now)
             await updateCurrent(.verdict(fallback)) { current in
                 current.consecutiveJudgeFailures = failures

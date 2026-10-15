@@ -248,12 +248,12 @@ public enum NativeSkillRules {
         case "not_installed": many ? "they aren’t installed from this repository" : "it isn’t installed from this repository"
         case "installed": many ? "they were already installed" : "it was already installed"
         case "invalid_slug":
-            many ? "Juno couldn’t turn their names into slash names" : "Juno couldn’t turn its name into a slash name"
+            many ? "Alevr couldn’t turn their names into slash names" : "Alevr couldn’t turn its name into a slash name"
         case "slug_taken": many ? "their slash names were taken" : "its slash name was taken"
         case "version_conflict":
             many ? "they were being saved somewhere else at the same moment"
                 : "it was being saved somewhere else at the same moment"
-        default: many ? "Juno couldn’t apply them" : "Juno couldn’t apply it"
+        default: many ? "Alevr couldn’t apply them" : "Alevr couldn’t apply it"
         }
     }
 }

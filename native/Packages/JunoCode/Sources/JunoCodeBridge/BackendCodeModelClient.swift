@@ -238,7 +238,7 @@ public struct BackendCodeModelClient: AgentModelClient {
                 do {
                     guard let route = resolver.route(for: request.modelID) else {
                         throw AgentModelClientError.unavailable(
-                            message: "Model \(request.modelID) cannot run the Juno Code tool protocol."
+                            message: "Model \(request.modelID) cannot run the Alevr Code tool protocol."
                         )
                     }
 

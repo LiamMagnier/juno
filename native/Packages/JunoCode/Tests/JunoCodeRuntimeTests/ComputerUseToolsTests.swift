@@ -447,7 +447,7 @@ final class ComputerUseToolsTests: XCTestCase {
         let tool = ComputerDisplayTool(computer: FakeScreen(), permissions: permissions)
         let result = try await tool.execute(input: ["action": "take_over"], context: context())
         XCTAssertEqual(result.content, "Taken over.")
-        XCTAssertEqual(asked.requests.first?.summary, "Let Juno take over Built-in Retina Display: the whole screen and the real pointer")
+        XCTAssertEqual(asked.requests.first?.summary, "Let Alevr take over Built-in Retina Display: the whole screen and the real pointer")
         XCTAssertEqual(asked.requests.first?.risk, .destructive)
     }
 

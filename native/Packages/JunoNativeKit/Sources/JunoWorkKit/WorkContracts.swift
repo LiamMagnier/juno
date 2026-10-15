@@ -114,7 +114,7 @@ public enum NativeWorkHostToggle: String, CaseIterable, Sendable, Hashable {
     /// `TOGGLE_NOUN`, for the sentence naming switches the Mac has not offered.
     public var noun: String {
         switch self {
-        case .enabled: "Juno Work"
+        case .enabled: "Work"
         case .allowsFileWork: "file access"
         case .allowsBrowser: "your browser"
         case .allowsComputerUse: "screen control"
@@ -888,23 +888,23 @@ public enum WorkRemoteError: Error, Equatable, LocalizedError, Sendable {
     public var errorDescription: String? {
         switch self {
         case .invalidIdentifier:
-            "Juno could not safely address that Mac or task."
+            "Alevr could not safely address that Mac or task."
         case .hostNotRegistered:
             "This Mac has not finished pairing with your account yet."
         case .unsupportedCommand(let kind):
             "This build cannot carry out a \"\(kind)\" instruction."
         case .malformedResponse:
-            "Juno received Work data it could not read."
+            "Alevr received Work data it could not read."
         case .hostRevoked:
-            "This Mac's access to Juno Work has been revoked."
+            "This Mac's access to Work has been revoked."
         case .hostNotEnabled:
-            "Juno Work is switched off on this Mac."
+            "Work is switched off on this Mac."
         case .capabilityNotGranted(let capability):
             "This Mac has not been granted \(capability)."
         case .approvalDigestMismatch:
-            "What Juno was about to do no longer matches what you approved, so it stopped."
+            "What Alevr was about to do no longer matches what you approved, so it stopped."
         case .approvalExpired:
-            "That approval expired before Juno could act on it. Approve it again if you still want it."
+            "That approval expired before Alevr could act on it. Approve it again if you still want it."
         case .standingApprovalForbidden:
             String(localized: "work.approval.standing-forbidden")
         case .server(_, let message, _):

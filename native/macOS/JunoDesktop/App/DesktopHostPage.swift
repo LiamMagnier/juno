@@ -351,7 +351,7 @@ struct DesktopHostSettings: View {
 
     private var asks: some View {
         VStack(alignment: .leading, spacing: JunoSpace.snug) {
-            DesktopWorkSectionHeading("When Juno stops to ask")
+            DesktopWorkSectionHeading("When Alevr stops to ask")
             VStack(alignment: .leading, spacing: JunoSpace.snug) {
                 JunoSegmented(
                     options: JunoWorkPermissionPolicy.allCases.map { policy in

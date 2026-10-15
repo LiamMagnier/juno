@@ -22,7 +22,7 @@ public enum JunoAccent: String, CaseIterable, Sendable, Identifiable {
     /// The name shown in a picker.
     public var displayName: String {
         switch self {
-        case .coral: "Coral"
+        case .coral: "Graphite"
         case .juniper: "Juniper"
         case .teal: "Teal"
         case .violet: "Violet"

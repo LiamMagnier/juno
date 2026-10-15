@@ -145,7 +145,7 @@ public struct HookConfigurationParser: Sendable {
                     path: path,
                     location: event.rawValue,
                     severity: .error,
-                    message: "The configuration exceeded Juno's hook limit; remaining hooks were ignored."
+                    message: "The configuration exceeded Alevr's hook limit; remaining hooks were ignored."
                 )
             )
             return
@@ -160,7 +160,7 @@ public struct HookConfigurationParser: Sendable {
                             path: path,
                             location: "\(event.rawValue)[\(index)]",
                             severity: .error,
-                            message: "The configuration exceeded Juno's hook limit; remaining hooks were ignored."
+                            message: "The configuration exceeded Alevr's hook limit; remaining hooks were ignored."
                         )
                     )
                     return
@@ -561,7 +561,7 @@ public struct HookConfigurationParser: Sendable {
                 HookDiagnostic(
                     path: path,
                     location: location,
-                    message: "The hook timeout was shortened to Juno's limit of \(Int(HookExecutionLimits.maximumTimeoutSeconds)) seconds."
+                    message: "The hook timeout was shortened to Alevr's limit of \(Int(HookExecutionLimits.maximumTimeoutSeconds)) seconds."
                 )
             )
             return HookExecutionLimits.maximumTimeoutSeconds

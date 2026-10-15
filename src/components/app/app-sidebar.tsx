@@ -1486,9 +1486,9 @@ export function AppSidebar({
                            down an empty list rather than under the thing it
                            is about. */
                         <p className="px-2 pb-2 pt-3 text-ui text-muted-foreground" aria-live="polite">
-                          No conversations yet.
+                          Your recent chats will
                           <br />
-                          Start one above.
+                          appear here.
                         </p>
                       )
                     )}
@@ -1837,7 +1837,7 @@ function AttentionRow({
         className={cn("flex min-w-0 flex-1 items-center gap-2.5 py-1 pr-1.5", conversation && "coarse:pr-10")}
       >
         <span className="flex size-5 shrink-0 items-center justify-center text-muted-foreground">
-          {item.agent ? <AgentFace avatar={item.agent.avatar} state={item.agent.state} size="xs" /> : <ContinuumMark size={10} tight tone="current" />}
+          {item.agent ? <AgentFace avatar={item.agent.avatar} state={item.agent.state} size="xs" /> : <ContinuumMark size={11} tight tone="current" />}
         </span>
         <span className={cn("flex min-w-0 flex-1 flex-col", conversation && KEBAB_ROOM)}>
           <span translate="no" className="truncate text-nav text-foreground">
@@ -1872,16 +1872,16 @@ function NavRow({
   layoutId,
   transition: t,
   reveal = false,
-  moves = false,
+  moves: _moves = false,
 }: {
   href?: string;
   onClick?: () => void;
   icon: React.ReactNode;
   label: string;
   /**
-   * A low-frequency destination (New chat, Projects, Library, Customize): its
-   * glyph may articulate under a fine pointer (INTERACTION_SPEC I-7). Every
-   * other row's glyph holds still.
+   * No longer gates anything: every row's glyph now answers the pointer
+   * (juno-icons/icons.css, "Hover articulation"). Kept so call sites compile.
+   * @deprecated
    */
   moves?: boolean;
   /** A hint that shows under the pointer only (a shortcut's keycap). */
@@ -1915,7 +1915,7 @@ function NavRow({
   const router = useRouter();
   const cls = cn(
     navRowClass(collapsed, !!active),
-    moves ? "jicon-trigger jicon-hover" : "jicon-trigger jicon-quiet",
+    "jicon-trigger",
     // While its popover is open the row wears the selected fill, as the More
     // trigger and the account row do for theirs.
     Trigger && "sidebar-row-selected-on-open data-[state=open]:text-foreground"

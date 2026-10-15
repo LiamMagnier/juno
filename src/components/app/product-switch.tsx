@@ -14,8 +14,6 @@ import { spring } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import type { ClientQuota } from "@/types/chat";
 import { BRAND, PRODUCT_NAME } from "@/lib/brand/names";
-import { DotRings } from "@/components/home/dot-construction";
-import type { ArcSpec, RingSpec } from "@/components/home/dot-scenes";
 
 /* ────────────────────────────────────────────────────────────────────────────
  * THE ONE PRODUCT SWITCH.
@@ -217,71 +215,48 @@ export function ProductSwitch({
 
   return (
     /*
-     * CHAT AND CODE AT THE TWO ENDS OF AN ORBIT (2026-10-04, owner).
-     *
-     * The two products are named in the greeting's serif at either end of
-     * one flattened orbit, drawn by the homepage's own dot engine
-     * (`DotRings`). The presence trajectory runs round the orbit to the
-     * product you are in and blooms there: round the FRONT going to Code,
-     * round the BACK coming home, the way the hero's trajectory travels.
-     * At rest the arc stays, so the row always says where you are.
+     * ONE TRACK, ONE THUMB (2026-10-14). The expanded switch is the rail's
+     * control laid flat: a recessed track the width of the column, two
+     * segments that abut, each with its product glyph and name, and a raised
+     * thumb that slides to the product you are in. It replaces the orbit
+     * between the two names (2026-10-04), whose 84px dot ring read as a smudge
+     * at sidebar size rather than as an orbit. The glyph articulates on hover
+     * like every other row; the thumb travels on `spring.standard`.
      *
      * Still LINKS (see the note at the top of the file), still the plan gate
-     * and the chord in the tooltip; the rail keeps its own track below.
+     * and the chord in the tooltip.
      */
-    <nav
-      aria-label={`${PRODUCT_NAME} products`}
-      className="flex h-8 w-full shrink-0 items-center gap-0.5 pl-[5px] coarse:h-12"
-    >
-      <OrbitEnd product={PRODUCTS[0]} active={active === PRODUCTS[0].id} locked={isLocked(PRODUCTS[0], plan)} onNavigate={onNavigate} />
-      <OrbitTrack active={active} />
-      <OrbitEnd product={PRODUCTS[1]} active={active === PRODUCTS[1].id} locked={isLocked(PRODUCTS[1], plan)} onNavigate={onNavigate} />
+    <nav aria-label={`${PRODUCT_NAME} products`} className="w-full shrink-0 px-2">
+      <div className="grid grid-cols-2 gap-0.5 rounded-field bg-sidebar-accent/80 p-0.5">
+        {PRODUCTS.map((product) => (
+          <Segment
+            key={product.id}
+            product={product}
+            active={product.id === active}
+            locked={isLocked(product, plan, codeOpen)}
+            thumbId={thumbId}
+            thumbTransition={thumbTransition}
+            onNavigate={onNavigate}
+          />
+        ))}
+      </div>
     </nav>
   );
 }
 
-/** One flattened orbit; the box is larger than the ring so the bloom is never cut square. */
-const ORBIT_RING: RingSpec[] = [{ cx: 0.5, cy: 0.5, rx: 0.34, ry: 0.17 }];
-/* Short trails, like the hero's trajectory: the last stretch of the way in. */
-const TRAIL_TO_CODE: ArcSpec[] = [{ ring: 0, from: 125, to: 0 }];
-const TRAIL_TO_CHAT: ArcSpec[] = [{ ring: 0, from: -55, to: -180 }];
-const REST_CHAT: ArcSpec[] = [{ ring: 0, from: 110, to: 180 }];
-const REST_CODE: ArcSpec[] = [{ ring: 0, from: 70, to: 0 }];
-
-/**
- * The orbit between the two names. The ring holds still; over it the
- * trajectory layer is remounted on each change of product (its clock restarts)
- * with its own ring drawn at zero ink, so only the blue arc and its bloom show.
- */
-function OrbitTrack({ active }: { active: ProductSurface }) {
-  const reduceMotion = useReducedMotion() ?? false;
-  const [turn, setTurn] = React.useState(0);
-  const seen = React.useRef(active);
-  React.useEffect(() => {
-    if (seen.current === active) return;
-    seen.current = active;
-    setTurn((n) => n + 1);
-  }, [active]);
-  const arcs = turn === 0 ? (active === "code" ? REST_CODE : REST_CHAT) : active === "code" ? TRAIL_TO_CODE : TRAIL_TO_CHAT;
-  return (
-    <span aria-hidden="true" className="product-orbit relative -mx-1.5 -my-2 h-12 w-[84px] shrink-0">
-      <DotRings rings={ORBIT_RING} animate={false} />
-      <span className="product-orbit-trail absolute inset-0">
-        <DotRings key={turn} rings={ORBIT_RING} arcs={arcs} animate={!reduceMotion && turn > 0} delay={0} stagger={0} draw={0.62} />
-      </span>
-    </span>
-  );
-}
-
-function OrbitEnd({
+function Segment({
   product,
   active,
   locked,
+  thumbId,
+  thumbTransition,
   onNavigate,
 }: {
   product: Product;
   active: boolean;
   locked: boolean;
+  thumbId: string;
+  thumbTransition: object;
   onNavigate?: () => void;
 }) {
   const chord = useChordLabel(product.chord);
@@ -294,17 +269,28 @@ function OrbitEnd({
           aria-current={active ? "page" : undefined}
           aria-label={accessibleName(product, locked)}
           className={cn(
-            "pressable product-orbit-name relative flex h-7 shrink-0 items-center gap-1 rounded-control px-1.5",
-            "focus-visible:outline-offset-0 motion-reduce:active:scale-100",
+            "pressable jicon-trigger group relative flex h-7 items-center justify-center gap-1.5 rounded-control px-2 text-ui font-medium",
+            "transition-colors duration-fast ease-out-soft motion-reduce:transition-none motion-reduce:active:scale-100 coarse:h-10",
             locked
               ? "text-muted-foreground/70 hover:text-muted-foreground"
               : active
                 ? "text-foreground"
-                : "text-muted-foreground/70 hover:text-foreground",
+                : "text-muted-foreground hover:text-foreground",
           )}
         >
-          {locked && <Lock className="size-3.5 shrink-0" aria-hidden="true" />}
-          {product.label}
+          {active && (
+            <motion.span
+              layoutId={thumbId}
+              aria-hidden="true"
+              transition={thumbTransition}
+              className="product-switch-thumb absolute inset-0"
+              style={{ borderRadius: 8 }}
+            />
+          )}
+          <span className="relative flex size-4 items-center justify-center [&_svg]:size-4">
+            {locked ? <Lock aria-hidden="true" /> : <SidebarMotionIcon kind={product.kind} />}
+          </span>
+          <span className="relative">{product.label}</span>
         </Link>
       </TooltipTrigger>
       <TooltipContent side="bottom">

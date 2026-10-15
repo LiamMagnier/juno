@@ -281,7 +281,7 @@ private struct JunoMobileViewfinderCorners: View {
       .shadow(color: .black.opacity(0.25), radius: 8)
       .onAppear {
         guard animated else { return }
-        withAnimation(.easeInOut(duration: 1.6).repeatForever(autoreverses: true)) { settled = true }
+        withAnimation(JunoMotion.breathe(period: JunoMotion.Loop.statusBreathe)) { settled = true }
       }
   }
 }

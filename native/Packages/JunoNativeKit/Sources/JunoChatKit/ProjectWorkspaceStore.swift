@@ -329,15 +329,15 @@ public enum ProjectWorkspaceStoreError: Error, Equatable, LocalizedError, Sendab
     public var errorDescription: String? {
         switch self {
         case .corruptRecord:
-            "Juno could not read this assistant's saved setup."
+            "Alevr could not read this assistant's saved setup."
         case .invalidProjectID:
-            "Juno could not address this assistant."
+            "Alevr could not address this assistant."
         case .invalidInstructions:
             "These instructions are too long to save."
         case .invalidPersonaName:
             "Enter an assistant name of 160 characters or fewer."
         case .concurrentWriteLimitExceeded:
-            "Juno could not save this assistant because it changed elsewhere. Try again."
+            "Alevr could not save this assistant because it changed elsewhere. Try again."
         }
     }
 }
@@ -1086,7 +1086,7 @@ public final class ProjectWorkspaceModel<Repository: AccountScopedRepository> {
             if result.acknowledged > 0 { await syncModel?.refresh() }
             await reload(knownProjectIDs: lastKnownProjectIDs)
             if result.retryScheduled > 0 {
-                lastErrorDescription = "Assistant changes are saved and will sync when Juno reconnects."
+                lastErrorDescription = "Assistant changes are saved and will sync when Alevr reconnects."
             } else if result.conflicted > 0 {
                 lastErrorDescription = "This assistant changed on another device. Refresh before retrying."
                 phase = .failed

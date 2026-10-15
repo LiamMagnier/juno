@@ -46,9 +46,9 @@ public enum NativeVoiceAttachmentContextError: Error, Equatable, LocalizedError,
     public var errorDescription: String? {
         switch self {
         case .invalidRequest:
-            "Juno could not prepare the attachment context."
+            "Alevr could not prepare the attachment context."
         case .malformedResponse:
-            "Juno returned an invalid attachment context."
+            "Alevr returned an invalid attachment context."
         case .server(_, let message):
             message
         }
@@ -121,7 +121,7 @@ public struct NativeVoiceAttachmentContextClient: Sendable {
     private static func errorMessage(from response: HTTPResponse) -> String {
         let object = try? JSONSerialization.jsonObject(with: response.body) as? [String: Any]
         return (object?["error"] as? String).flatMap { $0.isEmpty ? nil : $0 }
-            ?? "Juno could not load attachment context (\(response.statusCode))."
+            ?? "Alevr could not load attachment context (\(response.statusCode))."
     }
 }
 

@@ -57,7 +57,7 @@ public enum JunoRealtimeVoiceError: LocalizedError, Equatable {
             #if os(macOS)
             "Microphone access was blocked. Allow it in System Settings › Privacy & Security › Microphone."
             #else
-            "Microphone access was blocked. Allow it in Settings to talk to Juno."
+            "Microphone access was blocked. Allow it in Settings to talk to Alevr."
             #endif
         case .speechPermissionDenied:
             #if os(macOS)
@@ -1348,7 +1348,7 @@ public final class JunoRealtimeVoiceController {
         } catch {
             guard screenShareEpoch == epoch else { return }
             showNotice(
-                "Screen sharing needs permission. Allow Juno in System Settings › Privacy & Security › Screen & System Audio Recording, then try again."
+                "Screen sharing needs permission. Allow Alevr in System Settings › Privacy & Security › Screen & System Audio Recording, then try again."
             )
             return
         }
@@ -1957,14 +1957,14 @@ public final class JunoRealtimeVoiceController {
         let elsewhere = "Disconnect any audio accessory"
         #endif
         let wrongFormat =
-            "Juno can't record from this input's audio format. \(elsewhere), then start "
+            "Alevr can't record from this input's audio format. \(elsewhere), then start "
             + "voice again. (audio error \(status))"
         let busy =
             "The microphone is busy. Quit whatever else is recording — a call, a screen "
             + "recorder — and start voice again. (audio error \(status))"
         #if os(macOS)
         let deviceGone =
-            "The microphone Juno was using is no longer there. \(elsewhere), then start "
+            "The microphone Alevr was using is no longer there. \(elsewhere), then start "
             + "voice again. (audio error \(status))"
         #endif
 
@@ -1982,11 +1982,11 @@ public final class JunoRealtimeVoiceController {
                 return .micPermissionDenied
             }
             return .audioEngineFailed(
-                "Juno couldn't start the audio stream. Check default input in System Settings › Sound, or retry. (audio error \(status))"
+                "Alevr couldn't start the audio stream. Check default input in System Settings › Sound, or retry. (audio error \(status))"
             )
             #else
             return .audioEngineFailed(
-                "Juno couldn't open the microphone. Close anything else that might be "
+                "Alevr couldn't open the microphone. Close anything else that might be "
                     + "using it, then try again. (audio error \(status))"
             )
             #endif
@@ -1995,7 +1995,7 @@ public final class JunoRealtimeVoiceController {
         // dictation, or a session that has not finished letting go of one.
         case kAudioUnitErr_MultipleVoiceProcessors:
             return .audioEngineFailed(
-                "The microphone is already in use by another part of Juno. Stop dictation, "
+                "The microphone is already in use by another part of Alevr. Stop dictation, "
                     + "then start voice again. (audio error \(status))"
             )
 
@@ -2008,7 +2008,7 @@ public final class JunoRealtimeVoiceController {
         case kAudioUnitErr_NoConnection, kAudioUnitErr_Uninitialized,
             kAudioUnitErr_InvalidElement:
             return .audioEngineFailed(
-                "Juno couldn't build the audio path for this conversation. Start voice "
+                "Alevr couldn't build the audio path for this conversation. Start voice "
                     + "again. (audio error \(status))"
             )
 
@@ -2028,12 +2028,12 @@ public final class JunoRealtimeVoiceController {
         default:
             #if os(macOS)
             return .audioEngineFailed(
-                "Juno couldn't start recording on this Mac. Start voice again, or choose a "
+                "Alevr couldn't start recording on this Mac. Start voice again, or choose a "
                     + "different input in System Settings › Sound. (audio error \(status))"
             )
             #else
             return .audioEngineFailed(
-                "Juno couldn't start recording on this iPhone. Start voice again. "
+                "Alevr couldn't start recording on this iPhone. Start voice again. "
                     + "(audio error \(status))"
             )
             #endif

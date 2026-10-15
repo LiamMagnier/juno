@@ -38,7 +38,7 @@ final class NativeSyncModelPhaseTests: XCTestCase {
         )
         XCTAssertEqual(
             model.lastErrorDescription,
-            "This version of Juno is not compatible with the server.",
+            "This version of Alevr is not compatible with the server.",
             "The reader has to be told to update; a nil description renders as a bare offline banner."
         )
     }

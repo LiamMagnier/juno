@@ -88,7 +88,7 @@ public struct PreviewServerSnapshot: Equatable, Sendable, Identifiable {
     /// Why the agent cannot use a live server, when it cannot.
     public var agentUnavailableReason: String? {
         guard let url = phase.url, agentURL == nil else { return nil }
-        return "It listens on \(url.host ?? "a LAN address") only; Juno's agent uses loopback addresses."
+        return "It listens on \(url.host ?? "a LAN address") only; Alevr's agent uses loopback addresses."
     }
 
     /// The pane's subtitle: state in words, no badge (§4.7).
@@ -549,7 +549,7 @@ public actor PreviewRegistry {
                         entry,
                         unanswered
                             ? "Port \(port) is already in use \(owner). The Preview pane asks the reader whether to use a free port for \(configuration.name) from now on; or stop that process, or set \"autoPort\" in .juno/launch.json."
-                            : "Port \(port) is already in use \(owner). Stop it, or set \"autoPort\": true in .juno/launch.json so Juno picks a free port."
+                            : "Port \(port) is already in use \(owner). Stop it, or set \"autoPort\": true in .juno/launch.json so Alevr picks a free port."
                     )
                 }
                 environment["PORT"] = String(port)
@@ -668,7 +668,7 @@ public actor PreviewRegistry {
         }
         entry.phase = .attached(url)
         entry.startedAt = clock()
-        entry.log.append(channel: .log, text: "Using the server at \(url.absoluteString); Juno did not start it and will not stop it.", at: clock())
+        entry.log.append(channel: .log, text: "Using the server at \(url.absoluteString); Alevr did not start it and will not stop it.", at: clock())
         notify(entry.key)
         return outcome(entry, alreadyRunning: false)
     }
@@ -836,7 +836,7 @@ public actor PreviewRegistry {
     /// The app is quitting: every server Juno started stops.
     public func stopAll() async {
         for key in Array(entries.keys) {
-            await stop(key, note: "Juno is quitting.")
+            await stop(key, note: "Alevr is quitting.")
         }
     }
 

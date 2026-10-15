@@ -95,7 +95,7 @@ public enum DevServerCommandDiscovery {
                 commands: [],
                 packageManager: nil,
                 unavailableReason:
-                    "No package.json or index.html in \(workspaceRoot.lastPathComponent), so Juno cannot tell how this project starts. Start your server yourself and type its address above."
+                    "No package.json or index.html in \(workspaceRoot.lastPathComponent), so Alevr cannot tell how this project starts. Start your server yourself and type its address above."
             )
         }
         guard let data = try? Data(contentsOf: manifestURL),

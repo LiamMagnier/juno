@@ -78,7 +78,7 @@ final class SimulatorToolsTests: XCTestCase {
         _ = try await tool.execute(input: ["action": "launch", "bundle_id": "ai.example.app"], context: context())
         _ = try await tool.execute(input: ["action": "terminate", "bundle_id": "ai.example.app"], context: context())
         XCTAssertEqual(asked.requests.count, 1, "one card for the device")
-        XCTAssertEqual(asked.requests.first?.summary, "Let Juno use the iPhone 17 Pro simulator (iOS 27.0) for this session")
+        XCTAssertEqual(asked.requests.first?.summary, "Let Alevr use the iPhone 17 Pro simulator (iOS 27.0) for this session")
         XCTAssertEqual(asked.requests.first?.approvalPolicy, .asksUnlessFullAccess)
         XCTAssertNil(asked.requests.first?.suggestedRule)
         _ = try await tool.execute(input: ["action": "boot", "udid": "BBB"], context: context())
@@ -114,7 +114,7 @@ final class SimulatorToolsTests: XCTestCase {
         let asked = await answerAll(askPermissions)
         _ = try await ask.execute(input: ["action": "open_url", "url": "myapp://settings"], context: context("1"))
         XCTAssertEqual(asked.requests.map(\.summary), [
-            "Let Juno use the iPhone 17 Pro simulator (iOS 27.0) for this session",
+            "Let Alevr use the iPhone 17 Pro simulator (iOS 27.0) for this session",
             "Open myapp://settings in the iPhone 17 Pro simulator",
         ])
         let (full, fullPermissions) = tool(simulator, mode: .fullAccess, consents: consents)

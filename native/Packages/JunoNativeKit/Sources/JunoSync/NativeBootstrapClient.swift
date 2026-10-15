@@ -23,17 +23,17 @@ public enum NativeBootstrapError: Error, Equatable, LocalizedError, Sendable {
     public var errorDescription: String? {
         switch self {
         case .server(let statusCode, let code):
-            "Juno could not load your account (\(code ?? String(statusCode)))."
+            "Alevr could not load your account (\(code ?? String(statusCode)))."
         case .malformedResponse:
-            "Juno returned an invalid account bootstrap response."
+            "Alevr returned an invalid account bootstrap response."
         case .accountMismatch:
-            "The Juno bootstrap belongs to another account."
+            "The Alevr bootstrap belongs to another account."
         case .contractVersionMismatch:
-            "This version of Juno is not compatible with the server."
+            "This version of Alevr is not compatible with the server."
         case .invalidCursor:
-            "Juno returned an invalid synchronization cursor."
+            "Alevr returned an invalid synchronization cursor."
         case .invalidModelManifestVersion:
-            "Juno returned an invalid model catalog version."
+            "Alevr returned an invalid model catalog version."
         }
     }
 }

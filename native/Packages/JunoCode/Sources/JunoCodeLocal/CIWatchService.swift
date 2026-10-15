@@ -253,20 +253,20 @@ public actor CIWatchService {
                     last = status
                 }
                 if pollsWithoutChecks >= Self.maximumPollsWithoutChecks {
-                    await onUpdate(.stopped("No CI checks started on this pull request, so Juno stopped watching."))
+                    await onUpdate(.stopped("No CI checks started on this pull request, so Alevr stopped watching."))
                     break
                 }
             } catch {
                 failuresInARow += 1
                 let message = (error as? LocalizedError)?.errorDescription ?? String(describing: error)
                 if failuresInARow >= Self.maximumConsecutiveFailures {
-                    await onUpdate(.stopped("Juno stopped watching CI: it could not read the checks (\(message))."))
+                    await onUpdate(.stopped("Alevr stopped watching CI: it could not read the checks (\(message))."))
                     break
                 }
                 await onUpdate(.failed(message))
             }
             if poll + 1 >= Self.maximumPolls {
-                await onUpdate(.stopped("CI was still running after a day, so Juno stopped watching. Follow it again from the pull request."))
+                await onUpdate(.stopped("CI was still running after a day, so Alevr stopped watching. Follow it again from the pull request."))
                 break
             }
             do {

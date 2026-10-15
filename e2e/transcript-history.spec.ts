@@ -107,6 +107,9 @@ test("find in chat reaches a phrase that was not loaded", async ({ page }) => {
   await expect(page.locator(rows).filter({ hasText: "perf-anchor-6" })).toHaveCount(0);
   await page.locator(scroller).focus();
   await page.keyboard.press("ControlOrMeta+f");
+  // Opening Find starts the whole-thread read before the first keystroke.
+  await expect.poll(() => loaded(page), { timeout: 30_000 }).toBe(2000);
+  await expect(page.getByRole("textbox", { name: "Find in this conversation" })).toHaveValue("");
   await page.getByRole("textbox", { name: "Find in this conversation" }).fill("perf-anchor-6");
   await expect(page.getByRole("search")).toContainText("1 of 1", { timeout: 30_000 });
   const row = page.locator(rows).filter({ hasText: "perf-anchor-6" });

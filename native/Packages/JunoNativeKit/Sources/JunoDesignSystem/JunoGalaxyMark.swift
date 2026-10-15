@@ -55,7 +55,7 @@ public struct JunoGalaxyMark: View {
 
     public var body: some View {
         let field = JunoGalaxyField.field(forSize: size)
-        let running = moves && onScreen && scenePhase != .background
+        let running = moves && onScreen && scenePhase == .active
         TimelineView(.animation(paused: !running)) { context in
             let clock = clock(at: context.date)
             Canvas { graphics, canvasSize in

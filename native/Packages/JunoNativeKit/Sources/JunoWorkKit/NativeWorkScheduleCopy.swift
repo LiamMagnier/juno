@@ -203,11 +203,11 @@ public enum NativeWorkScheduleCopy {
     public static func optionLimit(kind: String, field: String) -> String? {
         switch (kind, field) {
         case ("email_filter", "labels"):
-            "Juno's mail reader sees the sender, the subject and the date of a message, and not its labels. A trigger that requires a label would never match anything."
+            "Alevr's mail reader sees the sender, the subject and the date of a message, and not its labels. A trigger that requires a label would never match anything."
         case ("email_filter", "requireAttachment"):
-            "Juno's mail reader cannot tell whether a message has an attachment without downloading it. A trigger that requires one would never match anything."
+            "Alevr's mail reader cannot tell whether a message has an attachment without downloading it. A trigger that requires one would never match anything."
         case ("calendar_window", "requireAttendees"):
-            "Juno's calendar reader sees the title, the times and the calendar of an event, and not who was invited. A trigger that skips meetings with no other attendees would skip every meeting."
+            "Alevr's calendar reader sees the title, the times and the calendar of an event, and not who was invited. A trigger that skips meetings with no other attendees would skip every meeting."
         default: nil
         }
     }
@@ -259,7 +259,7 @@ public enum NativeWorkScheduleCopy {
 
     /// "Fires that were missed".
     public static let missedRunOptions: [PolicyOption] = [
-        PolicyOption(value: "skip", label: "Let them go", hint: "Fires missed while Juno was down are not caught up."),
+        PolicyOption(value: "skip", label: "Let them go", hint: "Fires missed while Alevr was down are not caught up."),
         PolicyOption(value: "run_once", label: "Catch up once", hint: "One run covers everything that was missed."),
         PolicyOption(
             value: "run_all", label: "Run every one",
@@ -398,7 +398,7 @@ public enum NativeWorkScheduleCopy {
 
     public static func armingTarget(target: JunoWorkTarget, hostName: String?) -> String {
         switch target {
-        case .cloud: return "Juno's cloud. It cannot reach anything on your Macs."
+        case .cloud: return "Alevr's cloud. It cannot reach anything on your Macs."
         case .local:
             return hostName.map { "\($0), and only that Mac." }
                 ?? "One of your Macs — which one is not set yet."
@@ -456,11 +456,11 @@ public extension JunoWorkPermissionPolicy {
     var approvalModeSummary: String {
         switch self {
         case .conservative:
-            "Juno asks before it changes a file or runs anything. Reading and research go ahead."
+            "Alevr asks before it changes a file or runs anything. Reading and research go ahead."
         case .balanced:
-            "Juno makes changes it can undo, and asks before running anything or touching anything private."
+            "Alevr makes changes it can undo, and asks before running anything or touching anything private."
         case .permissive:
-            "Juno gets on with the work without asking, except for what it cannot take back (sending, publishing, paying, deleting, account and security changes) and running commands or typing on a crew member's computer, which always ask."
+            "Alevr gets on with the work without asking, except for what it cannot take back (sending, publishing, paying, deleting, account and security changes) and running commands or typing on a crew member's computer, which always ask."
         }
     }
 
@@ -513,7 +513,7 @@ public enum NativeWorkPermissionsCopy {
     /// state, most final first, or nil when it is fine.
     public static func unavailableReason(_ host: WorkHostSummary) -> String? {
         if host.revokedAt != nil { return "Access to this Mac was revoked." }
-        if !host.enabled { return "Juno Work is switched off on this Mac." }
+        if !host.enabled { return "Work is switched off on this Mac." }
         if host.state == "offline" { return "This Mac has not checked in for several minutes." }
         if host.state == "stale" { return "This Mac stopped checking in a minute ago." }
         return nil
@@ -549,7 +549,7 @@ public enum NativeWorkPermissionsCopy {
 
     public static let master = Toggle(
         key: .enabled,
-        label: "Juno Work on this Mac",
+        label: "Work on this Mac",
         detail: "The master switch. With it off, this Mac claims nothing at all — the five below stop applying, and a task that needs a real machine looks for another one."
     )
 
@@ -564,7 +564,7 @@ public enum NativeWorkPermissionsCopy {
         ),
         Toggle(
             key: .allowsComputerUse, label: "Screen control",
-            detail: "See the screen, click and type. This is also what lets Juno drive an app through its accessibility tree — the two ride one switch, because driving an app is screen control by another name."
+            detail: "See the screen, click and type. This is also what lets Alevr drive an app through its accessibility tree — the two ride one switch, because driving an app is screen control by another name."
         ),
         Toggle(
             key: .allowsShell, label: "Shell commands",
@@ -586,7 +586,7 @@ public enum NativeWorkPermissionsCopy {
         case "local_shell": "a shell on your Mac"
         case "web_research": "web research"
         case "connectors": "your connected apps"
-        case "cloud_files": "files stored with Juno"
+        case "cloud_files": "files stored with Alevr"
         case "deliverables": "document and spreadsheet creation"
         case "background_continuation": "running while your devices are offline"
         default: capability
@@ -617,6 +617,6 @@ public enum NativeWorkPermissionsCopy {
         } else {
             list = names.dropLast().joined(separator: ", ") + " and " + (names.last ?? "")
         }
-        return "This Mac has not offered \(list), so it stays off. Switch it on in Juno on the Mac itself first."
+        return "This Mac has not offered \(list), so it stays off. Switch it on in Alevr on the Mac itself first."
     }
 }

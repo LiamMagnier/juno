@@ -887,7 +887,7 @@ public struct NativeCodeTaskClient: Sendable {
         switch kind {
         case .protocolEvent:
             switch payload["type"]?.stringValue {
-            case "question.asked": title = payload["prompt"]?.stringValue ?? "Juno needs an answer"
+            case "question.asked": title = payload["prompt"]?.stringValue ?? "Alevr needs an answer"
             case "question.answered": title = "Answer received"
             case "plan.proposed": title = "Plan ready for review"; detail = payload["text"]?.stringValue
             case "plan.resolved": title = "Plan reviewed"

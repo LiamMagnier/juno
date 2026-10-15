@@ -380,9 +380,9 @@
     --ease-out-back: cubic-bezier(0.34, 1.32, 0.64, 1);
     /* Soft UI motion (SOFT_UI.md §2.4). `spring` is the entrance curve for
        anything that pops into place — a menu, a dialog, a check replacing a
-       copy glyph. A hair of overshoot (y2 = 1.16, about a 2% overrun) so the
-       arrival reads as settling rather than stopping; milder than --ease-out-back
-       because entrances run on scale AND opacity, and opacity past 1 just clips.
+       copy glyph. A long, overshoot-free deceleration so the arrival reads as
+       settling rather than stopping; no overrun, because entrances run on scale
+       AND opacity, and opacity past 1 just clips. tailwind.config.ts mirrors it.
        `drawer` is the sheet curve: front-loaded and overshoot-free, because a
        panel sliding in from an edge is being pulled by the user and must not
        bounce off the frame. Same numbers as --ease-out-strong, named for the

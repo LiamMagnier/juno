@@ -199,13 +199,13 @@ public enum NativeArtifactAPIError: Error, Equatable, LocalizedError, Sendable {
     public var errorDescription: String? {
         switch self {
         case .invalidIdentifier:
-            "Juno could not safely address this artifact."
+            "Alevr could not safely address this artifact."
         case .invalidTitle:
             "Enter an artifact title between 1 and 200 characters."
         case .invalidContent:
             "Artifact content cannot exceed 200,000 characters."
         case .malformedResponse:
-            "Juno returned invalid artifact data."
+            "Alevr returned invalid artifact data."
         case .stale:
             "This artifact changed on another device. The latest version has been loaded."
         case .server(_, let message, _):
@@ -405,7 +405,7 @@ public struct NativeArtifactAPIClient: Sendable {
         guard !(200...299).contains(response.statusCode) else { return }
         throw NativeArtifactAPIError.server(
             statusCode: response.statusCode,
-            message: serverMessage(response.body) ?? "Juno could not complete the artifact request.",
+            message: serverMessage(response.body) ?? "Alevr could not complete the artifact request.",
             retryable: response.statusCode == 408 || response.statusCode == 429
                 || response.statusCode >= 500
         )

@@ -228,7 +228,7 @@ final class NativeWorkHostPagesTests: XCTestCase {
         ))
         XCTAssertNil(NativeWorkServerSentence.refusal(
             WorkRemoteError.server(
-                statusCode: 400, message: "Juno could not update Work automations (400).", retryable: false
+                statusCode: 400, message: "Alevr could not update Work automations (400).", retryable: false
             )
         ))
     }
@@ -273,9 +273,9 @@ final class NativeWorkHostPagesTests: XCTestCase {
         )
         XCTAssertEqual(NativeWorkPermissionsCopy.alwaysAsks.count, 10)
         XCTAssertEqual(NativeWorkPermissionsCopy.refusal([.allowsShell]),
-                       "This Mac has not offered shell commands, so it stays off. Switch it on in Juno on the Mac itself first.")
+                       "This Mac has not offered shell commands, so it stays off. Switch it on in Alevr on the Mac itself first.")
         XCTAssertEqual(NativeWorkPermissionsCopy.refusal([.allowsBrowser, .allowsShell, .allowsBackground]),
-                       "This Mac has not offered your browser, shell commands and working while you are away, so it stays off. Switch it on in Juno on the Mac itself first.")
+                       "This Mac has not offered your browser, shell commands and working while you are away, so it stays off. Switch it on in Alevr on the Mac itself first.")
     }
 
     // MARK: - Helpers

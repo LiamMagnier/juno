@@ -555,7 +555,7 @@ public enum RunEndWords {
         case .stopped:
             return "Stopped"
         case .interrupted:
-            return "Juno quit while this was running"
+            return "Alevr quit while this was running"
         case .error:
             return errorSummary.map { firstLine($0, limit: 160) }
         }

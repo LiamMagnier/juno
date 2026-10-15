@@ -36,10 +36,10 @@ final class EnvServerBackendTests: XCTestCase {
         let hub = EnvServerHub(connection: EnvServerConnection(transport: transport))
         defer { hub.stop() }
         for _ in 0..<200 where !hub.isReady { try await Task.sleep(for: .milliseconds(5)) }
-        var token = "Bearer one"
+        let token = BackendTestToken("Bearer one")
         let models = CodeV2AlevrCatalog.backendModels(from: options)
         hub.backendInterval = .seconds(3_600)
-        hub.setBackend { EnvBackendConfig(baseUrl: "https://alevr.com/api/agent", authorization: token, models: models, deviceId: "mac1") }
+        hub.setBackend { EnvBackendConfig(baseUrl: "https://alevr.com/api/agent", authorization: token.value, models: models, deviceId: "mac1") }
         let configures = { transport.commands.filter { $0.kind == .envConfigure } }
         for _ in 0..<200 where configures().isEmpty { try await Task.sleep(for: .milliseconds(5)) }
         let sent = try XCTUnwrap(configures().first?.params["backend"])
@@ -51,7 +51,7 @@ final class EnvServerBackendTests: XCTestCase {
 
         await hub.pushBackend()
         XCTAssertEqual(configures().count, 1, "unchanged: not re-sent")
-        token = "Bearer two"
+        token.value = "Bearer two"
         await hub.pushBackend()
         XCTAssertEqual(configures().count, 2)
         XCTAssertEqual(configures().last?.params["backend"]?["authorization"]?.stringValue, "Bearer two")
@@ -60,4 +60,10 @@ final class EnvServerBackendTests: XCTestCase {
         hub.setBackend(nil)
         XCTAssertFalse(hub.hasBackend)
     }
+}
+
+@MainActor
+private final class BackendTestToken {
+    var value: String
+    init(_ value: String) { self.value = value }
 }

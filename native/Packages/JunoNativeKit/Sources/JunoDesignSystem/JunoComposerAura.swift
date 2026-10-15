@@ -382,7 +382,7 @@ enum JunoComposerAuraRamp {
                 RoundedRectangle(cornerRadius: JunoRadius.composer, style: .continuous)
                     .fill(.background.secondary)
                     .overlay {
-                        Text("Ask Juno anything")
+                        Text("Ask Alevr anything")
                             .font(.callout)
                             .junoMetaInk()
                     }

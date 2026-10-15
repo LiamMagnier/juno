@@ -107,9 +107,9 @@ public enum NativeNotificationsError: Error, Equatable, LocalizedError, Sendable
 
     public var errorDescription: String? {
         switch self {
-        case .invalidIdentifier: "Juno could not read that notification."
-        case .server(let statusCode, let code): "Juno could not load notifications (\(code ?? String(statusCode)))."
-        case .malformedResponse: "Juno returned notifications this app cannot read."
+        case .invalidIdentifier: "Alevr could not read that notification."
+        case .server(let statusCode, let code): "Alevr could not load notifications (\(code ?? String(statusCode)))."
+        case .malformedResponse: "Alevr returned notifications this app cannot read."
         }
     }
 }

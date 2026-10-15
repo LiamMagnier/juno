@@ -536,7 +536,7 @@ public struct NativeAgentsClient: Sendable {
         let detail = try? object(response)
         let message = detail?["message"]?.stringValue
             ?? detail?["error"]?.stringValue
-            ?? "Juno could not update your agents (\(response.statusCode))."
+            ?? "Alevr could not update your agents (\(response.statusCode))."
         throw WorkRemoteError.server(
             statusCode: response.statusCode,
             message: message,

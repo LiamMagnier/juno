@@ -442,7 +442,7 @@ public final class DevServerService: @unchecked Sendable {
                 continuation.yield(.line(DevServerLogLine(
                     id: 1,
                     channel: .stdout,
-                    text: "Juno Static Preview serving \(canonicalRoot.path) at \(server.url.absoluteString)"
+                    text: "Alevr Static Preview serving \(canonicalRoot.path) at \(server.url.absoluteString)"
                 )))
                 continuation.yield(.state(.running(server.url)))
 
@@ -451,7 +451,7 @@ public final class DevServerService: @unchecked Sendable {
                 }
             } catch {
                 continuation.yield(
-                    .state(.failed(reason: "Could not start Juno static preview server: \(error.localizedDescription)"))
+                    .state(.failed(reason: "Could not start Alevr static preview server: \(error.localizedDescription)"))
                 )
                 continuation.finish()
             }
@@ -559,7 +559,7 @@ public final class DevServerService: @unchecked Sendable {
             $0.contains("command not found") || $0.contains("not recognized")
         }) {
             parts.append(
-                "Juno runs commands with a scrubbed PATH (\(ToolchainEnvironment.defaultBasePATH) and standard user toolchain shims). A toolchain installed by nvm, asdf or mise is searched automatically."
+                "Alevr runs commands with a scrubbed PATH (\(ToolchainEnvironment.defaultBasePATH) and standard user toolchain shims). A toolchain installed by nvm, asdf or mise is searched automatically."
             )
         }
         return parts.joined(separator: "\n\n")
@@ -875,7 +875,7 @@ private final class DevServerRun: @unchecked Sendable {
         guard isNew else { return }
         let owner = ListeningSocketOwnership.owner(ofPort: port).map { " It belongs to \($0.sentence)." } ?? ""
         emit(.line(note(
-            "Juno is not using \(candidate.absoluteString): no process of this server listens on port \(port).\(owner)"
+            "Alevr is not using \(candidate.absoluteString): no process of this server listens on port \(port).\(owner)"
         )))
     }
 
@@ -885,7 +885,7 @@ private final class DevServerRun: @unchecked Sendable {
         lock.unlock()
         guard isNew else { return }
         emit(.line(note(
-            "This server listens on \(candidate.host ?? "a LAN address") only, so Juno's agent cannot use it. Bind it to 127.0.0.1 or 0.0.0.0 to let Juno check the page."
+            "This server listens on \(candidate.host ?? "a LAN address") only, so Alevr's agent cannot use it. Bind it to 127.0.0.1 or 0.0.0.0 to let Alevr check the page."
         )))
     }
 

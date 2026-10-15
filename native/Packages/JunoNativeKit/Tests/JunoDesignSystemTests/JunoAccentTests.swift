@@ -24,19 +24,17 @@ final class JunoAccentTests: XCTestCase {
         XCTAssertEqual(token.blue, blue, accuracy: 0.002, file: file, line: line)
     }
 
-    func testConvertsTheBrandPrimaryFromHSL() {
-        // `--primary: 229.231 63.415% 48.235%` — V3's ultramarine, #2D49C9.
-        // `JunoColorToken.coral` keeps the default accent's stored name and is
-        // projected from that same triple, so this cross-checks the converter,
-        // the projection and the published hex at once.
-        let converted = JunoColorToken(hsl: (229.231, 0.63415, 0.48235))
+    func testConvertsTheGraphitePrimaryFromHSL() {
+        // The current neutral CTA: globals.css --primary: 216 9% 11%.
+        // The stored default key remains "coral" for settings compatibility.
+        let converted = JunoColorToken(hsl: (216, 0.09, 0.11))
         assertToken(
             converted,
             red: JunoColorToken.coral.red,
             green: JunoColorToken.coral.green,
             blue: JunoColorToken.coral.blue
         )
-        assertToken(converted, red: 0x2D / 255, green: 0x49 / 255, blue: 0xC9 / 255)
+        assertToken(converted, red: 0.1001, green: 0.108, blue: 0.1199)
     }
 
     func testConvertsAchromaticAndPrimaryHues() {

@@ -82,8 +82,8 @@ public enum MemoryExtractionRationale: String, Codable, CaseIterable, Sendable {
         case .statedPreference: "You said you prefer this."
         case .statedHabit: "You described this as something you usually do."
         case .statedFact: "You stated this about yourself."
-        case .statedProhibition: "You asked Juno not to do this."
-        case .explicitRequest: "You asked Juno to remember this."
+        case .statedProhibition: "You asked Alevr not to do this."
+        case .explicitRequest: "You asked Alevr to remember this."
         }
     }
 }
@@ -167,7 +167,7 @@ public struct MemoryExtractionPolicy: Equatable, Sendable {
         "Immigration or legal status",
         "Sexual orientation and religion",
         "Anything in an incognito conversation",
-        "Anything Juno itself said — only your own words are read",
+        "Anything Alevr itself said — only your own words are read",
     ]
 
     /// True when this text may not be stored under any circumstances.

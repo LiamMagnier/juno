@@ -70,7 +70,7 @@ public enum NativeArtifactStoreError: Error, Equatable, LocalizedError, Sendable
     public var errorDescription: String? {
         switch self {
         case .corruptRecord:
-            "Juno could not read the locally stored artifact data."
+            "Alevr could not read the locally stored artifact data."
         case .artifactNotFound:
             "The artifact is no longer available."
         }

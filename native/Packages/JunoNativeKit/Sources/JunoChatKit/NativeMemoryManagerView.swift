@@ -80,7 +80,7 @@ public struct NativeMemoryManagerView<Repository: AccountScopedRepository>: View
             }
         }
         .confirmationDialog(
-            "Delete everything Juno remembers?",
+            "Delete everything Alevr remembers?",
             isPresented: $confirmingErase,
             titleVisibility: .visible
         ) {
@@ -117,7 +117,7 @@ public struct NativeMemoryManagerView<Repository: AccountScopedRepository>: View
                 )
                 .disabled(model.isMutating)
                 if !settings.memoryEnabled {
-                    Text("Juno won't learn anything new. Memories already saved stay until you delete them.")
+                    Text("Alevr won't learn anything new. Memories already saved stay until you delete them.")
                         .junoCaption()
                 }
             } else {
@@ -132,7 +132,7 @@ public struct NativeMemoryManagerView<Repository: AccountScopedRepository>: View
         } header: {
             Text("Memory")
         } footer: {
-            Text("Juno only learns from what you say, never from its own replies.")
+            Text("Alevr only learns from what you say, never from its own replies.")
         }
     }
 
@@ -207,7 +207,7 @@ public struct NativeMemoryManagerView<Repository: AccountScopedRepository>: View
                 // the two facts a reader needs to decide whether a memory is
                 // wrong, and inferring one from the absence of a label is a thing
                 // nobody does.
-                Text(entry.source == .automatic ? "Noticed by Juno" : "Added by you")
+                Text(entry.source == .automatic ? "Noticed by Alevr" : "Added by you")
                 if entry.kind == .suppression { Text("Never do this") }
                 if entry.isPending { Text("Saving…") }
             }
@@ -228,7 +228,7 @@ public struct NativeMemoryManagerView<Repository: AccountScopedRepository>: View
     /// about.
     private var neverStoredSection: some View {
         Section {
-            DisclosureGroup("What Juno never saves") {
+            DisclosureGroup("What Alevr never saves") {
                 VStack(alignment: .leading, spacing: JunoSpace.snug) {
                     // Read from the policy itself rather than restated here: a
                     // disclosure list that drifted from the vocabulary it

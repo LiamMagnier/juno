@@ -103,7 +103,7 @@ public enum NativeLibraryError: Error, Equatable, LocalizedError, Sendable {
 
     public var errorDescription: String? {
         switch self {
-        case .malformedResponse: "Juno returned an invalid library response."
+        case .malformedResponse: "Alevr returned an invalid library response."
         case .server(_, let message): message
         }
     }
@@ -183,7 +183,7 @@ public struct NativeLibraryClient: Sendable {
         return .server(
             statusCode: response.statusCode,
             message: envelope?.error.message
-                ?? "Juno could not read your library (\(response.statusCode))."
+                ?? "Alevr could not read your library (\(response.statusCode))."
         )
     }
 }

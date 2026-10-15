@@ -174,8 +174,9 @@ struct JunoMobileAuraLayer: View {
 // MARK: - The greeting
 
 /// Juno's home greeting: the mark, then a time-of-day phrase and the reader's
-/// first name, set in the display face (Newsreader) at hero size. The name is
-/// the italic, in a step of the account accent.
+/// first name, set in the display face (Newsreader) at hero size. Upright and
+/// in ink throughout, like the web's chat home (`empty-state.tsx`): the brand
+/// sets no italic-name greeting (BRAND_IDENTITY.md, "Typography").
 ///
 /// **Two beats, one line box.** The phrase rises at 60ms and the name at 180ms,
 /// as the browser does. The sentence is built once, as one `AttributedString`,
@@ -210,7 +211,7 @@ struct JunoMobileGreeting: View {
       JunoMark(size: 28)
         .foregroundStyle(Color.junoForeground)
         .opacity(phraseIn ? 1 : 0)
-        .scaleEffect(phraseIn ? 1 : 0.85, anchor: .bottomLeading)
+        .scaleEffect(phraseIn ? 1 : 0.94, anchor: .bottomLeading)
       sentence
     }
     .frame(maxWidth: .infinity, alignment: frameAlignment)
@@ -282,28 +283,9 @@ struct JunoMobileGreeting: View {
     if showsName { result.foregroundColor = .clear }
     guard let firstName else { return result }
     var name = AttributedString(firstName)
-    name.font = JunoMobileType.displayItalic(size)
-    name.foregroundColor = showsName ? nameColour : .clear
+    name.foregroundColor = showsName ? Color.junoForeground : .clear
     result.append(name)
     return result
-  }
-
-  /// The name's step in lightness *away* from the light behind it — up on dark
-  /// paper, down on light — `globals.css`'s `.empty-greeting__name`.
-  private var nameColour: Color {
-    let accent = JunoAccentSelection.shared.current
-    let light = accent.hsl(dark: false)
-    let dark = accent.hsl(dark: true)
-    return Color.junoAdaptive(
-      light: JunoColorToken(
-        hsl: accent == .amber
-          ? (h: light.h, s: light.s, l: light.l * 0.68)
-          : (h: light.h, s: light.s * 0.94, l: light.l * 0.82)
-      ),
-      dark: JunoColorToken(
-        hsl: (h: dark.h, s: dark.s, l: min(0.78, max(0.52, dark.l + 0.14)))
-      )
-    )
   }
 
   private var plainGreeting: String {

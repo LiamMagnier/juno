@@ -190,7 +190,7 @@ public struct SkillDiscovery: Sendable {
                     diagnostics.append(
                         SkillDiagnostic(
                             path: relative,
-                            message: "The skill instructions could not be read or exceed Juno's size limit."
+                            message: "The skill instructions could not be read or exceed Alevr's size limit."
                         )
                     )
                 }

@@ -39,7 +39,7 @@ extension WorktreeManagerError: LocalizedError {
         case .invalidBaseRevision: return "The base revision is not a safe Git revision."
         case .workspaceUnavailable: return "The workspace is unavailable."
         case .pathEscapesWorkspace: return "The worktree path is outside the granted workspace."
-        case .worktreeNotOwned: return "The worktree is not owned by Juno."
+        case .worktreeNotOwned: return "The worktree is not owned by Alevr."
         case .worktreeMissing: return "The owned worktree path is missing."
         case .worktreeNotRegistered: return "Git no longer registers this worktree path."
         case .parentHasChanges: return "The source worktree has changes; applying is blocked."

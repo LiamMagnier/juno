@@ -247,7 +247,7 @@ public struct JunoStepLab: Equatable, Sendable {
             blockId: stableId("\(seed):fallback:\(source)"),
             title: title,
             label: "Step Lab",
-            description: "This visual explanation was incomplete, so Juno is showing a safe fallback.",
+            description: "This visual explanation was incomplete, so Alevr is showing a safe fallback.",
             density: nil,
             steps: [
                 Step(

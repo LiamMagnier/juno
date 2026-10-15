@@ -15,15 +15,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { RollingNumber } from "@/components/ui/micro";
 import { removeStarredProject } from "@/lib/starred-projects";
 import { cn } from "@/lib/utils";
 import { cachedJson, peekJson } from "@/lib/client-cache";
 import { EmptyState } from "@/components/ui/empty-state";
-import { AppPage } from "@/components/app/app-page";
-import { PageHero } from "@/components/app/editorial";
+import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { ProjectsGridSkeleton } from "@/components/projects/projects-grid-skeleton";
-import { ProjectsOrbit } from "@/components/projects/projects-orbit";
 import { ProjectCover } from "@/components/projects/project-cover";
 import {
   DeleteProjectDialog,
@@ -305,22 +302,18 @@ export default function ProjectsPage() {
 
   return (
     <AppPage measure="wide">
-      <PageHero
-        className="mb-10"
+      <AppPageHeader
+        backdrop
         heading="Projects"
         lede="A topic’s chats, instructions and files, kept together. Nest folders inside a project to arrange it your way."
         actions={empty || error ? undefined : newProject}
-        figures={
-          loading || empty
-            ? undefined
-            : [
-                { label: "Projects", value: <RollingNumber value={topCount} /> },
-                { label: "Folders", value: <RollingNumber value={folderCount} /> },
-                { label: "Chats", value: <RollingNumber value={chatCount} /> },
-              ]
-        }
-        aside={!loading && !empty && !error ? <ProjectsOrbit projects={all} /> : undefined}
       />
+
+      {!loading && !empty && !error && (
+        <p className="mb-4 text-ui tabular-nums text-muted-foreground" aria-label="Project totals">
+          {topCount} projects · {folderCount} folders · {chatCount} chats
+        </p>
+      )}
 
       {!loading && !empty && !error && (
         <div className="flex flex-wrap items-center gap-2 [animation-fill-mode:backwards] motion-safe:animate-rise-in">

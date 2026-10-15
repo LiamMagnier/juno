@@ -2,6 +2,8 @@ import type { ToolSpec } from '../types.js';
 
 export interface ToolContext {
   cwd: string;
+  /** Persist bounded repository metadata beside the session, not in the workspace. */
+  recordRepositoryMap?: (map: import('../repository.js').RepositoryWorkingMap) => void;
   /** Child-process environment override (scrubbed env for untrusted runs). */
   env?: NodeJS.ProcessEnv;
   /**

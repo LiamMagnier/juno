@@ -188,7 +188,7 @@ final class VerificationGateTests: XCTestCase {
         XCTAssertEqual(gate.ui.map(\.target), ["/settings", "/", "com.example.app"])
         XCTAssertEqual(gate.source, ".juno/verify.json")
         let discovered = await VerifyGateRecipe.make(status: .discovered(recipe), runsWithoutPrompt: { _ in false })
-        XCTAssertEqual(discovered?.source, "what Juno found in this project, not saved yet")
+        XCTAssertEqual(discovered?.source, "what Alevr found in this project, not saved yet")
         let awaiting = await VerifyGateRecipe.make(status: .awaitingAcceptance(recipe), runsWithoutPrompt: { _ in true })
         XCTAssertNil(awaiting, "a recipe edited since it was accepted offers nothing")
     }

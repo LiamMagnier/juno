@@ -227,7 +227,7 @@ public struct JunoResponseStyle: Identifiable, Hashable, Sendable {
         JunoResponseStyle(
             id: "default",
             label: "Default",
-            detail: "Juno's natural voice — warm, clear, and adapts to the question."
+            detail: "Alevr's natural voice — warm, clear, and adapts to the question."
         ),
         JunoResponseStyle(
             id: "concise",

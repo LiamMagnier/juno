@@ -81,7 +81,7 @@ final class ModelTurnCollectorTests: XCTestCase {
             _ = try await ModelTurnCollector.collect(request(), model: model, sleep: { _ in })
             XCTFail("rejected credentials are not retried")
         } catch let failure as ModelTurnCollector.Failure {
-            XCTAssertEqual(failure.sentence, "The model provider rejected Juno's credentials.")
+            XCTAssertEqual(failure.sentence, "The model provider rejected Alevr's credentials.")
             XCTAssertEqual(model.receivedRequests.count, 1)
         } catch {
             XCTFail("expected a typed failure, got \(error)")

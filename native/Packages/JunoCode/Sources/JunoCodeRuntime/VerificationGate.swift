@@ -53,7 +53,7 @@ public enum VerifyGateRecipe {
         guard !checks.isEmpty || !ui.isEmpty else { return nil }
         let source = status.isAccepted
             ? ".juno/verify.json"
-            : "what Juno found in this project, not saved yet"
+            : "what Alevr found in this project, not saved yet"
         return GateRecipe(checks: checks, ui: ui, source: source)
     }
 }

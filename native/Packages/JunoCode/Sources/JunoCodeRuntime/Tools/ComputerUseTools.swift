@@ -925,7 +925,7 @@ public struct ComputerDisplayTool: CodeTool {
                     toolName: name,
                     actionDigest: digest,
                     risk: .destructive,
-                    summary: "Let Juno take over \(displayName): the whole screen and the real pointer",
+                    summary: "Let Alevr take over \(displayName): the whole screen and the real pointer",
                     approvalPolicy: .alwaysRequiresApproval,
                     subject: nil
                 )

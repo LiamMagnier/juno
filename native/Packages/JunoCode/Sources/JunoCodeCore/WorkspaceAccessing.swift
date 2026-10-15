@@ -37,17 +37,17 @@ extension WorkspaceAccessError: LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .bookmarkInvalid:
-            "Juno's permission to open this folder is no longer valid. macOS withdraws a folder grant when the app is rebuilt, re-signed, or the folder is moved."
+            "Alevr's permission to open this folder is no longer valid. macOS withdraws a folder grant when the app is rebuilt, re-signed, or the folder is moved."
         case .bookmarkStale:
-            "Juno's permission to open this folder has expired and could not be renewed."
+            "Alevr's permission to open this folder has expired and could not be renewed."
         case .rootUnavailable:
-            "Juno could not reach this folder. It may have been moved, renamed, or be on a disk that is not mounted."
+            "Alevr could not reach this folder. It may have been moved, renamed, or be on a disk that is not mounted."
         case .rootIsNotADirectory:
-            "That is a file, not a folder. Juno Code opens a project folder."
+            "That is a file, not a folder. Alevr Code opens a project folder."
         case .outsideWorkspace(let path):
-            "\(path) is outside this project folder, so Juno did not open it."
+            "\(path) is outside this project folder, so Alevr did not open it."
         case .symlinkEscapesWorkspace(let path):
-            "\(path) is a link pointing outside this project folder, so Juno did not follow it."
+            "\(path) is a link pointing outside this project folder, so Alevr did not follow it."
         case .parentDoesNotExist(let path):
             "The folder that would contain \(path) does not exist."
         }

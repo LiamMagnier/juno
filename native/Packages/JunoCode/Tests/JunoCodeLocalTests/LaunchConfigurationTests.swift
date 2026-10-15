@@ -282,7 +282,7 @@ final class LaunchConfigurationTests: XCTestCase {
         let url = try XCTUnwrap(running, "\(lines)")
         XCTAssertNotEqual(url.port, Int(foreign.port))
         XCTAssertEqual(url.host, "127.0.0.1")
-        XCTAssertTrue(lines.contains { $0.contains("Juno is not using http://127.0.0.1:\(foreign.port)/") }, "\(lines)")
+        XCTAssertTrue(lines.contains { $0.contains("Alevr is not using http://127.0.0.1:\(foreign.port)/") }, "\(lines)")
     }
 
     /// With a port configured, readiness probes it directly and passes `PORT`.

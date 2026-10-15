@@ -134,17 +134,24 @@ struct DesktopMenuBarExtraContent: View {
 ///
 /// A count of everything running would be a number that is almost always
 /// non-zero and so says nothing; what earns a glance is a session blocked on
-/// the reader. The status bar takes an `NSImage`, so the mark is loaded from
-/// the app's icon set rather than through `JunoIconView`, whose SwiftUI frame
-/// the status item ignores. The asset is a symbol, sized by a point size: 14pt
-/// sets the 256 grid at 16pt, the menu bar's glyph box.
+/// the reader. The status bar takes an `NSImage`, so the mark is rendered once
+/// to a template image rather than drawn as a SwiftUI view, whose frame the
+/// status item ignores. It is the Continuum, the app's own mark, at its 16pt
+/// optical master (the menu bar's glyph box), so the menu bar, the Dock and the
+/// web's tab icon show one identity.
 struct DesktopMenuBarExtraLabel: View {
     @State private var registry = DesktopWorkbenchRegistry.shared
     @State private var signals = DesktopNeedsYouSignals.shared
 
-    private static let mark: NSImage = {
-        let symbol = NSImage(named: JunoIcon.home.assetName)
-        let image = symbol?.withSymbolConfiguration(.init(pointSize: 14, weight: .regular)) ?? symbol ?? NSImage()
+    @MainActor private static let mark: NSImage = {
+        let renderer = ImageRenderer(
+            content: JunoContinuumShape(drawing: 16)
+                .fill(Color.black)
+                .frame(width: 16, height: 16)
+        )
+        renderer.scale = 2
+        let image = renderer.nsImage ?? NSImage()
+        image.size = NSSize(width: 16, height: 16)
         image.isTemplate = true
         return image
     }()
@@ -152,7 +159,7 @@ struct DesktopMenuBarExtraLabel: View {
     var body: some View {
         let waiting = registry.activeSessions.filter(\.status.needsApproval).count
         Image(nsImage: Self.mark)
-            .accessibilityLabel("Juno")
+            .accessibilityLabel("Alevr")
         if let count = Self.count(chats: signals.count, codeSessions: waiting) {
             Text(count)
         }

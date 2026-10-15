@@ -49,7 +49,7 @@ public enum SecurityKeychainClientError: Error, Equatable, Sendable, LocalizedEr
             // saved credential. "Authentication failed" sent users looking for
             // a password problem that does not exist; signing in again is the
             // fix, and `upsert` now clears the unreachable item so it works.
-            "the saved sign-in was stored by a different version of Juno — sign in again"
+            "the saved sign-in was stored by a different version of Alevr — sign in again"
         case errSecDecode:
             "the stored item could not be decoded"
         case errSecNotAvailable:

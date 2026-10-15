@@ -117,7 +117,7 @@ final class WorkApprovalWordsTests: XCTestCase {
         XCTAssertEqual(WorkApprovalWords.settledLine(approval("denied"), expired: false, ago: ago), "Refused 4m ago")
         XCTAssertEqual(
             WorkApprovalWords.settledLine(approval("expired"), expired: false, ago: ago),
-            "Expired unanswered — Juno stopped rather than acting on a stale approval"
+            "Expired unanswered — Alevr stopped rather than acting on a stale approval"
         )
         XCTAssertEqual(
             WorkApprovalWords.settledLine(approval("superseded"), expired: false, ago: ago),

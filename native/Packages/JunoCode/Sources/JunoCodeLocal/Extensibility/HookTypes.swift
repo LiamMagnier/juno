@@ -922,7 +922,7 @@ public struct HookExecutionPolicy: HookAuthorizing, Equatable, Codable, Sendable
               hook.timeoutSeconds > 0,
               hook.timeoutSeconds <= HookExecutionLimits.maximumTimeoutSeconds
         else {
-            return .denied(reason: "The hook timeout is outside Juno's bounded range.")
+            return .denied(reason: "The hook timeout is outside Alevr's bounded range.")
         }
         guard permissionMode != .readOnly else {
             return .denied(reason: "The session is read-only, so no hook runs.")

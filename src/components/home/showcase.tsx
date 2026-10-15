@@ -23,7 +23,7 @@ const DWELL = 7000;
 const TABS = [
   { key: "models", label: "Every model", title: "The right model for every question.", body: (n: number, l: number) => `${n}+ models from ${l} labs in one picker. Auto chooses for each message, or pick exactly the one you want.` },
   { key: "research", label: "Deep Field", title: "Research that reads the sources.", body: () => "Deep Field plans the search, reads what it finds and cites every claim, so you can check the work yourself." },
-  { key: "folio", label: "Folio", title: "Answers become finished documents.", body: () => "Briefs, diagrams, code and small apps open in Folio. Edit together, keep every version, share when it is ready." },
+  { key: "folio", label: "Documents", title: "Answers become finished documents.", body: () => "Briefs, diagrams, code and small apps open beside the conversation. Edit together, keep every version, and find them in your Library." },
 ] as const;
 
 /* ───────── Models ───────── */
