@@ -325,15 +325,17 @@ export class DockerProvider implements ComputerProvider {
       `${volume}-browser`,
     ]);
 
-    // Remove any leftover container with the same name before creating
-    await runDockerText(["rm", "-f", name], { allowNonZero: true });
-
     const createArgv = buildDockerCreateArgv({
       agentId: opts.agentId,
       userId: opts.userId,
     });
 
-    await runDockerText(createArgv);
+    const created = await runDockerText(createArgv, { allowNonZero: true });
+    // Docker's unique name is the last fence if an expired creator wakes up.
+    // It must never remove a container another worker has already created.
+    if (created.exitCode !== 0 && await this.state({ name, volume }) === "missing") {
+      throw dockerFailure(createArgv, created.exitCode, created.stderr || created.stdout);
+    }
 
     return { name, volume };
   }

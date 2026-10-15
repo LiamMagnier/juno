@@ -4706,6 +4706,9 @@ model AgentComputer {
   provider          String // "docker" | "fake"
   containerRef      String?   @db.Text // encryptSecret(container id)
   secrets           String?   @db.Text // encryptSecret(JSON {cdpToken, vncControl, vncView})
+  /// A short persisted claim, shared by web and runner, never a DB lock over Docker I/O.
+  creationToken     String?
+  creationExpiresAt DateTime?
   status            String    @default("asleep") // asleep | resting | waking | awake | error
   streamOn          Boolean   @default(false)
   leaseRunId        String?

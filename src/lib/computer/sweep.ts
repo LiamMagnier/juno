@@ -109,6 +109,7 @@ export async function sweepAgentComputers(opts?: {
   const rows = await persistence.findAllActiveUnguarded();
 
   for (const row of rows) {
+    if (row.creationToken && row.creationExpiresAt && row.creationExpiresAt.getTime() > nowMs) continue;
     const handle = decodeHandle(row.containerRef, row.agentId);
     const liveState = await provider.state(handle);
 

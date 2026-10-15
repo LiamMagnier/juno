@@ -6,14 +6,19 @@ const mod = Module as unknown as {
   _load: (request: string, parent: unknown, isMain: boolean) => unknown;
 };
 const origLoad = mod._load;
+let dockerCommandStub: typeof import("@/lib/docker-cli").runDockerBuffer | null = null;
 mod._load = function (request: string, parent: unknown, isMain: boolean) {
   if (request === "server-only") return {};
+  if (request === "@/lib/docker-cli") {
+    const actual = origLoad.call(this, request, parent, isMain) as typeof import("@/lib/docker-cli");
+    return { ...actual, runDockerBuffer: (...args: Parameters<typeof actual.runDockerBuffer>) => (dockerCommandStub ?? actual.runDockerBuffer)(...args) };
+  }
   return origLoad.call(this, request, parent, isMain);
 };
 
 const req = createRequire(import.meta.url);
 const { decryptSecret } = req("../src/lib/crypto") as typeof import("@/lib/crypto");
-const { buildDockerCreateArgv } = req(
+const { buildDockerCreateArgv, DockerProvider } = req(
   "../src/lib/computer/docker"
 ) as typeof import("@/lib/computer/docker");
 const { fakeComputerProvider } = req(
@@ -115,6 +120,47 @@ describe("agent-computer provider and lifecycle", () => {
     const decodedSecrets = JSON.parse(decryptSecret(row.secrets));
     assert.equal(typeof decodedSecrets.cdpToken, "string");
     assert.ok(decodedSecrets.cdpToken.length >= 32);
+  });
+
+  for (const recreate of [false, true]) {
+    it(`concurrent ${recreate ? "recreation" : "first enable"} creates once and shares the winning credentials`, async () => {
+      if (recreate) {
+        const awake = await ensureAwake("user_1", "agent_race", { autoEnable: true });
+        fakeComputerProvider.containers.delete(awake.handle.name);
+      }
+      const before = fakeComputerProvider.calls.filter((call) => call.method === "create").length;
+      const create = fakeComputerProvider.create;
+      fakeComputerProvider.create = async function (input) {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        return create.call(this, input);
+      };
+      try {
+        const results = await Promise.all(Array.from({ length: 3 }, () => recreate
+          ? ensureAwake("user_1", "agent_race").then((result) => result.row)
+          : enableComputer("user_1", "agent_race")));
+        assert.equal(fakeComputerProvider.calls.filter((call) => call.method === "create").length - before, 1);
+        assert.equal(new Set(results.map((row) => decryptSecret(row.secrets!))).size, 1);
+        assert.equal(memDb.rows.get("agent_race")?.creationToken, null);
+      } finally {
+        fakeComputerProvider.create = create;
+      }
+    });
+  }
+
+  it("a Docker name collision keeps the existing container", async () => {
+    const calls: string[][] = [];
+    dockerCommandStub = async (argv) => {
+      calls.push(argv);
+      return { stdout: Buffer.from(argv[0] === "inspect" ? "running" : ""), stderr: Buffer.from("name already in use"), exitCode: argv[0] === "create" ? 1 : 0, timedOut: false };
+    };
+    try {
+      const provider = new DockerProvider();
+      provider.preflight = async () => ({ ok: true });
+      assert.deepEqual(await provider.create({ agentId: "race", userId: "user_1", cdpToken: "test" }), { name: "juno-agent-race", volume: "juno-agent-race" });
+      assert.ok(!calls.some((argv) => argv[0] === "rm"), "creation never removes another worker's container");
+    } finally {
+      dockerCommandStub = null;
+    }
   });
 
   it("transitions through enable -> awake -> rest -> awake -> sleep -> reset -> disable and recreates missing containers", async () => {

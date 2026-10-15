@@ -11,6 +11,42 @@ import { randomUUID } from "node:crypto";
 
 const url = process.env.COMPUTER_TEST_DATABASE_URL;
 
+test("Postgres creation claim: concurrent enables share credentials and stale creators cannot publish", { skip: !url }, async () => {
+  assert.match(url!, /\/juno_[a-z_]*test$/);
+  process.env.DATABASE_URL = url;
+  process.env.AUTH_SECRET ??= "computer-creation-integration-test-key";
+  process.env.AGENT_COMPUTER_PROVIDER = "fake";
+  const { prismaUnguarded: db } = await import("../src/lib/prisma");
+  const computer = await import("../src/lib/computer/store");
+  const { resetComputerProviderCache } = await import("../src/lib/computer/provider");
+  const { fakeComputerProvider } = await import("../src/lib/computer/fake");
+  resetComputerProviderCache();
+  fakeComputerProvider.reset();
+  const userId = `creation_${randomUUID()}`;
+  try {
+    await db.user.create({ data: { id: userId, email: `${userId}@example.invalid` } });
+    const agent = await db.agent.create({ data: { userId, name: "Creation", role: "Tester", instructions: "Tests creation." } });
+    const results = await Promise.all(Array.from({ length: 4 }, () => computer.enableComputer(userId, agent.id)));
+    assert.equal(fakeComputerProvider.calls.filter((call) => call.method === "create").length, 1);
+    assert.equal(new Set(results.map((row) => computer.decodeSecrets(row.secrets).cdpToken)).size, 1);
+    const persistence = computer.getComputerStorePersistence();
+    const now = new Date();
+    const later = new Date(now.getTime() + 1000);
+    assert.equal(await persistence.claimCreation(userId, agent.id, "old", now, later), true);
+    assert.equal(await persistence.claimCreation(userId, agent.id, "other", now, later), false);
+    assert.equal(await persistence.claimCreation("wrong-owner", agent.id, "other", later, later), false);
+    assert.equal(await persistence.claimCreation(userId, agent.id, "replacement", new Date(later.getTime() + 1), new Date(later.getTime() + 1000)), true);
+    assert.equal(await persistence.finishCreation(userId, agent.id, "old", { secrets: "stale" }), false);
+    assert.equal(await persistence.finishCreation(userId, agent.id, "replacement", {}), true);
+    assert.equal((await db.agentComputer.findUniqueOrThrow({ where: { agentId: agent.id } })).secrets, results[0].secrets);
+  } finally {
+    delete process.env.AGENT_COMPUTER_PROVIDER;
+    resetComputerProviderCache();
+    await db.user.delete({ where: { id: userId } }).catch(() => undefined);
+    await db.$disconnect();
+  }
+});
+
 test("sweeper writes on Postgres: a renewed lease and a changed row are left alone", { skip: !url }, async () => {
   assert.match(url!, /\/juno_[a-z_]*test$/, "only a throwaway *_test database");
   process.env.DATABASE_URL = url;

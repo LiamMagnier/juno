@@ -39,6 +39,8 @@ export interface AgentComputerRow {
   provider: string;
   containerRef: string | null;
   secrets: string | null;
+  creationToken?: string | null;
+  creationExpiresAt?: Date | null;
   status: ComputerStatus;
   streamOn: boolean;
   leaseRunId: string | null;
@@ -75,6 +77,8 @@ export interface PublicAgentComputerState {
 }
 
 export interface ComputerStorePersistence {
+  claimCreation(userId: string, agentId: string, token: string, now: Date, expiresAt: Date): Promise<boolean>;
+  finishCreation(userId: string, agentId: string, token: string, data: Partial<AgentComputerRow>): Promise<boolean>;
   findByAgent(userId: string, agentId: string): Promise<AgentComputerRow | null>;
   findAllActiveUnguarded(): Promise<AgentComputerRow[]>;
   /** Every agent that has a computer row, any status: what the orphan check keeps. */
@@ -253,6 +257,22 @@ function toRow(raw: {
 }
 
 const prismaPersistence: ComputerStorePersistence = {
+  async claimCreation(userId, agentId, token, now, expiresAt) {
+    const { prisma } = await import("@/lib/db");
+    const result = await prisma.agentComputer.updateMany({
+      where: { userId, agentId, OR: [{ creationToken: null }, { creationExpiresAt: { lt: now } }] },
+      data: { creationToken: token, creationExpiresAt: expiresAt },
+    });
+    return result.count === 1;
+  },
+  async finishCreation(userId, agentId, token, data) {
+    const { prisma } = await import("@/lib/db");
+    const result = await prisma.agentComputer.updateMany({
+      where: { userId, agentId, creationToken: token },
+      data: { ...data, creationToken: null, creationExpiresAt: null },
+    });
+    return result.count === 1;
+  },
   async findByAgent(userId, agentId) {
     const { prisma } = await import("@/lib/db");
     const row = await prisma.agentComputer.findFirst({
@@ -331,10 +351,16 @@ const prismaPersistence: ComputerStorePersistence = {
       });
       return toRow(updated);
     }
-    const created = await prisma.agentComputer.create({
-      data: createData,
-    });
-    return toRow(created);
+    try {
+      return toRow(await prisma.agentComputer.create({ data: createData }));
+    } catch (error) {
+      if ((error as { code?: string }).code !== "P2002") throw error;
+      // A concurrent enable already made the unique row. Its credentials and
+      // creation claim belong to it, so the losing insert must not replace them.
+      const winner = await prisma.agentComputer.findFirst({ where: { userId, agentId } });
+      if (!winner) throw error;
+      return toRow(winner);
+    }
   },
 
   async updateByAgent(userId, agentId, data) {
@@ -479,6 +505,18 @@ export function createInMemoryComputerPersistence(): ComputerStorePersistence & 
 
   return {
     rows,
+    async claimCreation(userId, agentId, token, now, expiresAt) {
+      const row = rows.get(agentId);
+      if (!row || row.userId !== userId || (row.creationToken && (!row.creationExpiresAt || row.creationExpiresAt >= now))) return false;
+      rows.set(agentId, { ...row, creationToken: token, creationExpiresAt: expiresAt, updatedAt: now });
+      return true;
+    },
+    async finishCreation(userId, agentId, token, data) {
+      const row = rows.get(agentId);
+      if (!row || row.userId !== userId || row.creationToken !== token) return false;
+      rows.set(agentId, { ...row, ...data, creationToken: null, creationExpiresAt: null, updatedAt: new Date() });
+      return true;
+    },
     async findByAgent(userId, agentId) {
       const r = rows.get(agentId);
       return r && r.userId === userId ? { ...r } : null;
@@ -862,26 +900,16 @@ export async function enableComputer(
     throw new ComputerError("Agent computers are not configured on this server.");
   }
 
-  const existing = await activePersistence.findByAgent(userId, agentId);
-  if (existing && existing.containerRef && existing.secrets) {
-    return existing;
-  }
-
-  const cdpToken = randomBytes(24).toString("hex");
-  const handle = await provider.create({ agentId, userId, cdpToken });
-  const encryptedRef = encodeHandle(handle);
-  const encryptedSecrets = encodeSecrets({ cdpToken });
   const now = new Date();
-
-  return activePersistence.upsertByAgent(
+  await activePersistence.upsertByAgent(
     userId,
     agentId,
     {
       userId,
       agentId,
       provider: provider.name,
-      containerRef: encryptedRef,
-      secrets: encryptedSecrets,
+      containerRef: null,
+      secrets: null,
       status: "asleep",
       streamOn: false,
       leaseRunId: null,
@@ -893,14 +921,44 @@ export async function enableComputer(
       diskMb: 0,
       lastError: null,
     },
-    {
-      provider: provider.name,
-      containerRef: encryptedRef,
-      secrets: encryptedSecrets,
-      status: "asleep",
-      lastError: null,
-    }
+    {}
   );
+  return ensureComputerCreated(userId, agentId, provider);
+}
+
+/** Serialises creation across processes without retaining a DB connection. */
+async function ensureComputerCreated(userId: string, agentId: string, provider: ComputerProvider): Promise<AgentComputerRow> {
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
+    const token = randomBytes(24).toString("hex");
+    const now = new Date();
+    if (!(await activePersistence.claimCreation(userId, agentId, token, now, new Date(now.getTime() + 120_000)))) {
+      if (!(await activePersistence.findByAgent(userId, agentId))) throw new ComputerError("This agent does not have a computer enabled yet.");
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      continue;
+    }
+    try {
+      const row = await activePersistence.findByAgent(userId, agentId);
+      if (!row) throw new ComputerError("This agent does not have a computer enabled yet.");
+      // A contender may have finished while we waited. Re-read live state
+      // under the persisted claim before changing any credentials.
+      let data: Partial<AgentComputerRow> = {};
+      if (!row.containerRef || !row.secrets || await provider.state(decodeHandle(row.containerRef, agentId)) === "missing") {
+        const cdpToken = randomBytes(24).toString("hex");
+        const handle = await provider.create({ agentId, userId, cdpToken });
+        data = { containerRef: encodeHandle(handle), secrets: encodeSecrets({ cdpToken }), streamOn: false, lastError: null };
+      }
+      if (await activePersistence.finishCreation(userId, agentId, token, data)) {
+        const current = await activePersistence.findByAgent(userId, agentId);
+        if (current) return current;
+      }
+      // An expired creator cannot publish over the worker that reclaimed it.
+    } catch (error) {
+      await activePersistence.finishCreation(userId, agentId, token, { status: "error", lastError: publicComputerMessage(error) }).catch(() => false);
+      throw error;
+    }
+  }
+  throw new ComputerError("This computer is being created. Try again in a moment.");
 }
 
 export function computerCostMicroUsdPerSecond(): number {
@@ -1013,6 +1071,7 @@ export async function ensureAwake(
     if (!row) throw new ComputerError("This agent does not have a computer enabled yet.");
   }
 
+  if (row.creationToken || !row.containerRef || !row.secrets) row = await ensureComputerCreated(userId, agentId, provider);
   let handle = decodeHandle(row.containerRef, agentId);
   let secrets = decodeSecrets(row.secrets);
   const counted = (ON_STATUSES as readonly string[]).includes(row.status);
@@ -1023,14 +1082,9 @@ export async function ensureAwake(
       // Recreated on the same named volume if it still exists. The token is new:
       // the old one belonged to a container that is gone.
       if (!counted) await checkAwakeCaps(userId, agentId);
-      const cdpToken = randomBytes(24).toString("hex");
-      handle = await provider.create({ agentId, userId, cdpToken });
-      secrets = { cdpToken };
-      row = await activePersistence.updateByAgent(userId, agentId, {
-        containerRef: encodeHandle(handle),
-        secrets: encodeSecrets(secrets),
-        streamOn: false,
-      });
+      row = await ensureComputerCreated(userId, agentId, provider);
+      handle = decodeHandle(row.containerRef, agentId);
+      secrets = decodeSecrets(row.secrets);
       await recordComputerEvent(userId, agentId, "computer_recreated",
         "Its computer was lost and has been replaced; sign-ins may be gone.");
       liveState = await provider.state(handle);
