@@ -1,0 +1,312 @@
+{
+  "label": "after",
+  "profile": "local",
+  "base": "http://localhost:3201",
+  "conversation": "perf-long-2000",
+  "messageCount": 2000,
+  "runs": 5,
+  "at": "2026-10-14T20:53:15.464Z",
+  "median": {
+    "readyMs": 223,
+    "settledMs": 724,
+    "serverMs": 17.2,
+    "ttfb": 17.8,
+    "responseEnd": 39.4,
+    "domContentLoaded": 44.7,
+    "documentKb": 45,
+    "documentDecodedKb": 330.1,
+    "jsKb": 1169.1,
+    "totalKb": 1533.3,
+    "requests": 134,
+    "longTasks": 0,
+    "longTaskMs": 0,
+    "maxLongTaskMs": 0,
+    "heapMb": 93.1,
+    "elements": 1845,
+    "rows": 7
+  },
+  "serverFetch": {
+    "rsc": {
+      "ttfbMs": 2.7,
+      "totalMs": 13.4,
+      "kb": 147.8
+    },
+    "html": {
+      "ttfbMs": 14,
+      "totalMs": 28.2,
+      "kb": 330.1
+    }
+  },
+  "scroll": {
+    "reachedTop": true,
+    "longTasks": 0,
+    "longTaskMs": 0,
+    "maxLongTaskMs": 0,
+    "rowsLoaded": "2000",
+    "historyRequests": 17,
+    "historyKb": 95.9,
+    "anchorDrift": [
+      {
+        "loaded": "180",
+        "drift": 147
+      },
+      {
+        "loaded": "300",
+        "drift": 133
+      },
+      {
+        "loaded": "420",
+        "drift": 53
+      },
+      {
+        "loaded": "540",
+        "drift": 67
+      },
+      {
+        "loaded": "660",
+        "drift": -62
+      },
+      {
+        "loaded": "780",
+        "drift": -62
+      },
+      {
+        "loaded": "900",
+        "drift": 147
+      },
+      {
+        "loaded": "1020",
+        "drift": 126.3
+      },
+      {
+        "loaded": "1140",
+        "drift": 133
+      },
+      {
+        "loaded": "1260",
+        "drift": 67
+      },
+      {
+        "loaded": "1380",
+        "drift": 67
+      },
+      {
+        "loaded": "1500",
+        "drift": -62
+      },
+      {
+        "loaded": "1620",
+        "drift": -62
+      },
+      {
+        "loaded": "1740",
+        "drift": 147
+      },
+      {
+        "loaded": "1860",
+        "drift": 133
+      },
+      {
+        "loaded": "1980",
+        "drift": 133
+      },
+      {
+        "loaded": "2000",
+        "drift": 129
+      }
+    ]
+  },
+  "find": {
+    "found": true,
+    "ms": 288,
+    "status": "1 of 1",
+    "historyRequests": 1
+  },
+  "deepLink": {
+    "visibleMs": 508,
+    "documentKb": 194.5
+  },
+  "loads": [
+    {
+      "run": 0,
+      "readyMs": 261,
+      "settledMs": 735,
+      "serverMs": 14.5,
+      "ttfb": 15,
+      "responseEnd": 34,
+      "domContentLoaded": 40.2,
+      "load": 169.5,
+      "documentKb": 45,
+      "documentDecodedKb": 330.1,
+      "jsKb": 1169.1,
+      "totalKb": 1533.3,
+      "requests": 134,
+      "historyRequests": 0,
+      "longTasks": 0,
+      "longTaskMs": 0,
+      "maxLongTaskMs": 0,
+      "heapMb": 54.4,
+      "scriptS": 0.1738,
+      "rows": 7,
+      "elements": 1849
+    },
+    {
+      "run": 1,
+      "readyMs": 176,
+      "settledMs": 724,
+      "serverMs": 17,
+      "ttfb": 17.6,
+      "responseEnd": 39.4,
+      "domContentLoaded": 44.7,
+      "load": 160.8,
+      "documentKb": 45,
+      "documentDecodedKb": 330.1,
+      "jsKb": 1169.1,
+      "totalKb": 1530.2,
+      "requests": 134,
+      "historyRequests": 0,
+      "longTasks": 0,
+      "longTaskMs": 0,
+      "maxLongTaskMs": 0,
+      "heapMb": 93.3,
+      "scriptS": 0.1792,
+      "rows": 7,
+      "elements": 1844
+    },
+    {
+      "run": 2,
+      "readyMs": 222,
+      "settledMs": 669,
+      "serverMs": 17.2,
+      "ttfb": 17.8,
+      "responseEnd": 35,
+      "domContentLoaded": 41.2,
+      "load": 155.4,
+      "documentKb": 45,
+      "documentDecodedKb": 330.1,
+      "jsKb": 1169.1,
+      "totalKb": 1538.8,
+      "requests": 134,
+      "historyRequests": 0,
+      "longTasks": 1,
+      "longTaskMs": 55,
+      "maxLongTaskMs": 55,
+      "heapMb": 53.2,
+      "scriptS": 0.16390000000000002,
+      "rows": 7,
+      "elements": 1845
+    },
+    {
+      "run": 3,
+      "readyMs": 223,
+      "settledMs": 648,
+      "serverMs": 21,
+      "ttfb": 21.6,
+      "responseEnd": 39.4,
+      "domContentLoaded": 45.4,
+      "load": 163,
+      "documentKb": 45,
+      "documentDecodedKb": 330.1,
+      "jsKb": 1169.1,
+      "totalKb": 1530.2,
+      "requests": 134,
+      "historyRequests": 0,
+      "longTasks": 0,
+      "longTaskMs": 0,
+      "maxLongTaskMs": 0,
+      "heapMb": 93.1,
+      "scriptS": 0.1539,
+      "rows": 7,
+      "elements": 1843
+    },
+    {
+      "run": 4,
+      "readyMs": 261,
+      "settledMs": 763,
+      "serverMs": 22.3,
+      "ttfb": 23.1,
+      "responseEnd": 44.6,
+      "domContentLoaded": 50.9,
+      "load": 170.1,
+      "documentKb": 45,
+      "documentDecodedKb": 330.1,
+      "jsKb": 1169.1,
+      "totalKb": 1538.1,
+      "requests": 134,
+      "historyRequests": 0,
+      "longTasks": 0,
+      "longTaskMs": 0,
+      "maxLongTaskMs": 0,
+      "heapMb": 109,
+      "scriptS": 0.15480000000000002,
+      "rows": 7,
+      "elements": 1847
+    }
+  ],
+  "serverRaw": {
+    "rsc": [
+      {
+        "status": 200,
+        "ttfbMs": 4.9,
+        "totalMs": 39.7,
+        "kb": 147.8
+      },
+      {
+        "status": 200,
+        "ttfbMs": 2.8,
+        "totalMs": 13.9,
+        "kb": 147.8
+      },
+      {
+        "status": 200,
+        "ttfbMs": 2.7,
+        "totalMs": 12.9,
+        "kb": 147.8
+      },
+      {
+        "status": 200,
+        "ttfbMs": 2.7,
+        "totalMs": 13.4,
+        "kb": 147.8
+      },
+      {
+        "status": 200,
+        "ttfbMs": 2.6,
+        "totalMs": 13,
+        "kb": 147.8
+      }
+    ],
+    "html": [
+      {
+        "status": 200,
+        "ttfbMs": 28.6,
+        "totalMs": 55.4,
+        "kb": 330.1
+      },
+      {
+        "status": 200,
+        "ttfbMs": 15.8,
+        "totalMs": 29.8,
+        "kb": 330.1
+      },
+      {
+        "status": 200,
+        "ttfbMs": 14,
+        "totalMs": 28.2,
+        "kb": 330.1
+      },
+      {
+        "status": 200,
+        "ttfbMs": 13.1,
+        "totalMs": 27.9,
+        "kb": 330.1
+      },
+      {
+        "status": 200,
+        "ttfbMs": 12.9,
+        "totalMs": 27.1,
+        "kb": 330.1
+      }
+    ]
+  }
+}

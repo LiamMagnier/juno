@@ -1,0 +1,300 @@
+{
+  "label": "after",
+  "profile": "remote",
+  "base": "http://localhost:3201",
+  "conversation": "perf-long-2000",
+  "messageCount": 2000,
+  "runs": 5,
+  "at": "2026-10-14T20:50:43.047Z",
+  "median": {
+    "readyMs": 374,
+    "settledMs": 2013,
+    "serverMs": 22.6,
+    "ttfb": 23,
+    "responseEnd": 80.7,
+    "domContentLoaded": 276.2,
+    "documentKb": 45,
+    "documentDecodedKb": 330.1,
+    "jsKb": 1169.1,
+    "totalKb": 1549.3,
+    "requests": 134,
+    "longTasks": 3,
+    "longTaskMs": 227,
+    "maxLongTaskMs": 100,
+    "heapMb": 60.5,
+    "elements": 1845,
+    "rows": 7
+  },
+  "serverFetch": {
+    "rsc": {
+      "ttfbMs": 3.1,
+      "totalMs": 16.8,
+      "kb": 147.8
+    },
+    "html": {
+      "ttfbMs": 16.2,
+      "totalMs": 28.7,
+      "kb": 330.1
+    }
+  },
+  "scroll": {
+    "reachedTop": true,
+    "longTasks": 7,
+    "longTaskMs": 429,
+    "maxLongTaskMs": 73,
+    "rowsLoaded": "2000",
+    "historyRequests": 17,
+    "historyKb": 95.9,
+    "anchorDrift": [
+      {
+        "loaded": "180",
+        "drift": -101
+      },
+      {
+        "loaded": "300",
+        "drift": -206.9
+      },
+      {
+        "loaded": "420",
+        "drift": -88
+      },
+      {
+        "loaded": "540",
+        "drift": -101.3
+      },
+      {
+        "loaded": "660",
+        "drift": 13.7
+      },
+      {
+        "loaded": "900",
+        "drift": -101
+      },
+      {
+        "loaded": "1020",
+        "drift": -101
+      },
+      {
+        "loaded": "1140",
+        "drift": -88
+      },
+      {
+        "loaded": "1260",
+        "drift": -101.3
+      },
+      {
+        "loaded": "1380",
+        "drift": -101.3
+      },
+      {
+        "loaded": "1620",
+        "drift": 13.7
+      },
+      {
+        "loaded": "1740",
+        "drift": -101
+      },
+      {
+        "loaded": "1860",
+        "drift": -88
+      },
+      {
+        "loaded": "2000",
+        "drift": -74.3
+      }
+    ]
+  },
+  "find": {
+    "found": true,
+    "ms": 915,
+    "status": "1 of 1",
+    "historyRequests": 1
+  },
+  "deepLink": {
+    "visibleMs": 1909,
+    "documentKb": 194.3
+  },
+  "loads": [
+    {
+      "run": 0,
+      "readyMs": 375,
+      "settledMs": 7927,
+      "serverMs": 15.7,
+      "ttfb": 16.3,
+      "responseEnd": 82.3,
+      "domContentLoaded": 277,
+      "load": 1927.2,
+      "documentKb": 45,
+      "documentDecodedKb": 330.1,
+      "jsKb": 1169.1,
+      "totalKb": 1550,
+      "requests": 135,
+      "historyRequests": 0,
+      "longTasks": 3,
+      "longTaskMs": 227,
+      "maxLongTaskMs": 100,
+      "heapMb": 26.7,
+      "scriptS": 0.6633,
+      "rows": 7,
+      "elements": 1845
+    },
+    {
+      "run": 1,
+      "readyMs": 372,
+      "settledMs": 1982,
+      "serverMs": 26.8,
+      "ttfb": 27.3,
+      "responseEnd": 80.7,
+      "domContentLoaded": 273.9,
+      "load": 1915.9,
+      "documentKb": 45,
+      "documentDecodedKb": 330.1,
+      "jsKb": 1169.1,
+      "totalKb": 1549.3,
+      "requests": 134,
+      "historyRequests": 0,
+      "longTasks": 3,
+      "longTaskMs": 248,
+      "maxLongTaskMs": 119,
+      "heapMb": 60.5,
+      "scriptS": 0.6782999999999999,
+      "rows": 7,
+      "elements": 1845
+    },
+    {
+      "run": 2,
+      "readyMs": 370,
+      "settledMs": 1985,
+      "serverMs": 16.9,
+      "ttfb": 17.4,
+      "responseEnd": 81.7,
+      "domContentLoaded": 276.2,
+      "load": 1911.5,
+      "documentKb": 45,
+      "documentDecodedKb": 330.1,
+      "jsKb": 1169.1,
+      "totalKb": 1549.4,
+      "requests": 134,
+      "historyRequests": 0,
+      "longTasks": 3,
+      "longTaskMs": 221,
+      "maxLongTaskMs": 84,
+      "heapMb": 171.5,
+      "scriptS": 0.6642,
+      "rows": 7,
+      "elements": 1845
+    },
+    {
+      "run": 3,
+      "readyMs": 420,
+      "settledMs": 2123,
+      "serverMs": 25,
+      "ttfb": 25.5,
+      "responseEnd": 78.7,
+      "domContentLoaded": 271.5,
+      "load": 1594.7,
+      "documentKb": 45,
+      "documentDecodedKb": 330.1,
+      "jsKb": 1169.1,
+      "totalKb": 1540.8,
+      "requests": 134,
+      "historyRequests": 0,
+      "longTasks": 3,
+      "longTaskMs": 267,
+      "maxLongTaskMs": 113,
+      "heapMb": 55,
+      "scriptS": 0.7242000000000001,
+      "rows": 7,
+      "elements": 1845
+    },
+    {
+      "run": 4,
+      "readyMs": 374,
+      "settledMs": 2013,
+      "serverMs": 22.6,
+      "ttfb": 23,
+      "responseEnd": 80.7,
+      "domContentLoaded": 278.4,
+      "load": 1942.3,
+      "documentKb": 45,
+      "documentDecodedKb": 330.1,
+      "jsKb": 1169.1,
+      "totalKb": 1549.3,
+      "requests": 134,
+      "historyRequests": 0,
+      "longTasks": 3,
+      "longTaskMs": 220,
+      "maxLongTaskMs": 90,
+      "heapMb": 149.5,
+      "scriptS": 0.6766,
+      "rows": 7,
+      "elements": 1845
+    }
+  ],
+  "serverRaw": {
+    "rsc": [
+      {
+        "status": 200,
+        "ttfbMs": 7.3,
+        "totalMs": 48.7,
+        "kb": 147.8
+      },
+      {
+        "status": 200,
+        "ttfbMs": 3,
+        "totalMs": 16.5,
+        "kb": 147.8
+      },
+      {
+        "status": 200,
+        "ttfbMs": 3.1,
+        "totalMs": 16.8,
+        "kb": 147.8
+      },
+      {
+        "status": 200,
+        "ttfbMs": 3.2,
+        "totalMs": 18.2,
+        "kb": 147.8
+      },
+      {
+        "status": 200,
+        "ttfbMs": 2.5,
+        "totalMs": 16.7,
+        "kb": 147.8
+      }
+    ],
+    "html": [
+      {
+        "status": 200,
+        "ttfbMs": 63.8,
+        "totalMs": 92.1,
+        "kb": 330.1
+      },
+      {
+        "status": 200,
+        "ttfbMs": 18.5,
+        "totalMs": 36.1,
+        "kb": 330.1
+      },
+      {
+        "status": 200,
+        "ttfbMs": 15,
+        "totalMs": 28.3,
+        "kb": 330.1
+      },
+      {
+        "status": 200,
+        "ttfbMs": 16.2,
+        "totalMs": 28.7,
+        "kb": 330.1
+      },
+      {
+        "status": 200,
+        "ttfbMs": 14,
+        "totalMs": 26.4,
+        "kb": 330.1
+      }
+    ]
+  }
+}

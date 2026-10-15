@@ -313,11 +313,21 @@ export function useTranscriptWindow(
   // position), not where the stale scroll position says: drawn there, the
   // rows around the reader would mount a frame late and their first layout
   // would move the line.
+  //
+  // The same for any render with an anchor still to be written: the layout
+  // effect that measures never-measured rows re-renders before it syncs the
+  // viewport state, so that state still holds the scroll position from before
+  // the page landed, which is now over the page's rows. Drawn from it, the
+  // window mounted a dozen rows of the new page, measured them and dropped
+  // them, and remounted the dozen the reader was on: twice the rows of a
+  // landing, in about every other landing (docs/rework/program/PERFORMANCE.md,
+  // "Scroll-back long tasks").
   const priorFirst = firstKeyRef.current;
-  const prependAnchor = priorFirst !== undefined && keys[0] !== priorFirst && (layout.indexByKey.get(priorFirst) ?? 0) > 0 && !followsRef.current && !targetRef.current
-    ? pendingAnchor.current ?? readerAnchorRef.current
+  const prepended = priorFirst !== undefined && keys[0] !== priorFirst && (layout.indexByKey.get(priorFirst) ?? 0) > 0;
+  const heldAnchor = !followsRef.current && !targetRef.current
+    ? pendingAnchor.current ?? (prepended ? readerAnchorRef.current : null)
     : null;
-  const viewTop = prependAnchor ? anchoredTranscriptTop(layout, prependAnchor, viewport.top) + 24 : viewport.top;
+  const viewTop = heldAnchor ? anchoredTranscriptTop(layout, heldAnchor, viewport.top) + 24 : viewport.top;
   const top = Number.isFinite(viewTop) ? viewTop : Math.max(0, layout.total - viewport.height);
   const range = windowed ? transcriptWindow(layout, Math.max(0, top - 24), viewport.height) : { start: 0, end: messages.length };
   const indices = Array.from({ length: range.end - range.start }, (_, i) => range.start + i);

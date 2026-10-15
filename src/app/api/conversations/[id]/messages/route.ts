@@ -8,6 +8,7 @@ import { rateLimit } from "@/lib/rate-limit";
 import { isOwnerEmail } from "@/lib/owner";
 import { getConversationHistory } from "@/lib/queries";
 import { decodeHistoryCursor, MAX_PAGE_MESSAGES, OLDER_PAGE_MESSAGES } from "@/lib/chat/history-page";
+import { compressedJson } from "@/lib/compressed-json";
 
 export const runtime = "nodejs";
 
@@ -22,7 +23,8 @@ export const runtime = "nodejs";
  *
  * Answers `{ messages, history }`, messages oldest first in the same shape as
  * GET /api/conversations/[id]. Owner-scoped: another account's conversation is
- * a 404, the same as one that does not exist.
+ * a 404, the same as one that does not exist. Compressed for a client that
+ * offers brotli or gzip (lib/compressed-json.ts): `all` is megabytes of JSON.
  */
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
@@ -45,7 +47,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 
   const page = await getConversationHistory(user.id, id, { before, limit, throughMessageId: through, all: search.get("all") === "1" });
   if (!page) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  return NextResponse.json(page);
+  return compressedJson(req, page);
 }
 
 /** Raised when an attachment cannot be claimed — wrong owner, or already used. */
