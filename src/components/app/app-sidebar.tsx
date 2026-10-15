@@ -2159,6 +2159,7 @@ function InlineNameInput({
   placeholder,
   onCommit,
   onCancel,
+  onKeyClose,
   nested,
 }: {
   initial?: string;
@@ -2167,6 +2168,8 @@ function InlineNameInput({
   placeholder?: string;
   onCommit: (value: string) => void;
   onCancel: () => void;
+  /** Called just before Enter or Escape closes the field (not a blur or a Save click). */
+  onKeyClose?: () => void;
   nested?: boolean;
 }) {
   const [draft, setDraft] = React.useState(initial);
@@ -2187,8 +2190,12 @@ function InlineNameInput({
         onFocus={(e) => e.currentTarget.select()}
         onBlur={commit}
         onKeyDown={(e) => {
-          if (e.key === "Enter") commit();
-          if (e.key === "Escape") {
+          if (e.key === "Enter" && !committed.current) {
+            onKeyClose?.();
+            commit();
+          }
+          if (e.key === "Escape" && !committed.current) {
+            onKeyClose?.();
             committed.current = true;
             onCancel();
           }
@@ -2273,14 +2280,19 @@ function ConversationRow({
 
   /* The rename field replaces the row, so Enter or Escape unmounted the
      focused input and dropped focus on <body>: the reader's next Tab started
-     over at the top of the page. Put it back on the row they renamed — unless
-     the field closed because focus went somewhere else on purpose (blur). */
+     over at the top of the page. Put it back on the row they renamed, but
+     only when a key closed the field: after a blur (a click elsewhere) or a
+     Save click the pointer user is somewhere else, and focusing the row right
+     after the text field would draw the keyboard ring on it. */
   const linkRef = React.useRef<HTMLAnchorElement>(null);
   const wasRenaming = React.useRef(renaming);
+  const renameClosedByKey = React.useRef(false);
   React.useEffect(() => {
     if (wasRenaming.current === renaming) return;
     wasRenaming.current = renaming;
-    if (renaming) return;
+    const byKey = renameClosedByKey.current;
+    renameClosedByKey.current = false;
+    if (renaming || !byKey) return;
     const focused = document.activeElement;
     if (!focused || focused === document.body) linkRef.current?.focus({ preventScroll: true });
   }, [renaming]);
@@ -2298,6 +2310,9 @@ function ConversationRow({
           if (title && title !== conversation.title) patch({ title });
         }}
         onCancel={() => setRenaming(null)}
+        onKeyClose={() => {
+          renameClosedByKey.current = true;
+        }}
       />
     );
   }

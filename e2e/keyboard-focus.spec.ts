@@ -47,6 +47,22 @@ test.describe("dialogs give focus back to what opened them", () => {
     await expectFocused(composer(page));
   });
 
+  test("command menu from mid-draft gives the caret back where it was", async ({ page }) => {
+    await openChat(page);
+    await composer(page).click();
+    await page.keyboard.type("hello world");
+    for (let i = 0; i < 5; i++) await page.keyboard.press("ArrowLeft");
+    await page.keyboard.press("ControlOrMeta+k");
+    await expectFocused(page.getByRole("combobox", { name: "Command menu" }));
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expectFocused(composer(page));
+    // Focusing an editable host whose selection moved away puts the caret at
+    // its start; the draft must not grow at the front.
+    await page.keyboard.type("big ");
+    await expect(composer(page)).toHaveText("hello big world");
+  });
+
   test("confirm dialog opened from a conversation's menu", async ({ page }) => {
     await openChat(page);
     const row = page.locator("[data-conversation-row]").first();
@@ -85,6 +101,26 @@ test("inline rename returns focus to the renamed row", async ({ page }) => {
     await page.keyboard.press(key);
     await expectFocused(link);
   }
+});
+
+test("inline rename saved with the mouse leaves no keyboard focus ring on the row", async ({ page }) => {
+  await openChat(page);
+  const row = page.locator("[data-conversation-row]").first();
+  test.skip((await row.count()) === 0, "Needs a conversation in the sidebar (scripts/seed-e2e-user.ts seeds one)");
+  const id = await row.getAttribute("data-conversation-row");
+  const link = page.locator(`[data-conversation-row="${id}"] a[href="/chat/${id}"]`);
+  await row.hover();
+  await row.getByRole("button", { name: /(Conversation|Session) options/ }).click();
+  await page.getByRole("menuitem", { name: "Rename" }).click();
+  const field = page.getByRole("textbox", { name: /Rename (chat|session)/ });
+  await expectFocused(field);
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(field).toHaveCount(0);
+  // Focus handed to the row straight after the text field matches
+  // :focus-visible, so a pointer save would draw the ring. Only Enter/Escape
+  // move focus to the row.
+  await page.waitForTimeout(300);
+  await expect(link).not.toBeFocused();
 });
 
 test("incognito switch keeps focus on a control", async ({ page }) => {
