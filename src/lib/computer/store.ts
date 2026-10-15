@@ -41,6 +41,7 @@ export interface AgentComputerRow {
   secrets: string | null;
   creationToken?: string | null;
   creationExpiresAt?: Date | null;
+  billingStoppedAt?: Date | null;
   status: ComputerStatus;
   streamOn: boolean;
   leaseRunId: string | null;
@@ -125,7 +126,8 @@ export interface ComputerStorePersistence {
     userId: string,
     agentId: string,
     runId: string,
-    now: Date
+    now: Date,
+    stopping?: boolean
   ): Promise<boolean>;
   /**
    * The sweeper's cleanup of an expired lease: only the lease it read, and only while it is still
@@ -295,6 +297,7 @@ const prismaPersistence: ComputerStorePersistence = {
           { status: { in: ["awake", "starting", "resting", "stopping"] } },
           { streamOn: true },
           { leaseRunId: { not: null } },
+          { billingStoppedAt: { not: null } },
         ],
       },
     });
@@ -391,6 +394,7 @@ const prismaPersistence: ComputerStorePersistence = {
       where: {
         userId,
         agentId,
+        status: { not: "stopping" },
         OR: [
           { leaseRunId: null },
           { leaseRunId: runId },
@@ -429,7 +433,7 @@ const prismaPersistence: ComputerStorePersistence = {
     return updated.count > 0;
   },
 
-  async releaseLeaseCas(userId, agentId, runId, now) {
+  async releaseLeaseCas(userId, agentId, runId, now, stopping) {
     const { prisma } = await import("@/lib/db");
     const updated = await prisma.agentComputer.updateMany({
       where: {
@@ -438,6 +442,7 @@ const prismaPersistence: ComputerStorePersistence = {
         leaseRunId: runId,
       },
       data: {
+        ...(stopping ? { status: "stopping" } : {}),
         leaseRunId: null,
         leaseExpiresAt: null,
         lastActiveAt: now,
@@ -530,7 +535,8 @@ export function createInMemoryComputerPersistence(): ComputerStorePersistence & 
           (r) =>
             ["awake", "starting", "resting", "stopping"].includes(r.status) ||
             r.streamOn ||
-            r.leaseRunId !== null
+            r.leaseRunId !== null ||
+            r.billingStoppedAt != null
         )
         .map((r) => ({ ...r }));
     },
@@ -613,10 +619,11 @@ export function createInMemoryComputerPersistence(): ComputerStorePersistence & 
         return { acquired: false, row: null };
       }
       const canAcquire =
+        existing.status !== "stopping" && (
         existing.leaseRunId === null ||
         existing.leaseRunId === runId ||
         existing.leaseExpiresAt === null ||
-        existing.leaseExpiresAt.getTime() < now.getTime();
+        existing.leaseExpiresAt.getTime() < now.getTime());
       if (!canAcquire) {
         return { acquired: false, row: { ...existing } };
       }
@@ -644,13 +651,14 @@ export function createInMemoryComputerPersistence(): ComputerStorePersistence & 
       rows.set(agentId, next);
       return true;
     },
-    async releaseLeaseCas(userId, agentId, runId, now) {
+    async releaseLeaseCas(userId, agentId, runId, now, stopping) {
       const existing = rows.get(agentId);
       if (!existing || existing.userId !== userId || existing.leaseRunId !== runId) {
         return false;
       }
       const next: AgentComputerRow = {
         ...existing,
+        ...(stopping ? { status: "stopping" as const } : {}),
         leaseRunId: null,
         leaseExpiresAt: null,
         lastActiveAt: now,
@@ -981,7 +989,7 @@ export async function billComputerSeconds(input: {
   const costMicroUsd = secs * rate;
   if (activePersistence === prismaPersistence) {
     const { recordSpend } = await import("@/lib/spend");
-    await recordSpend({
+    const recorded = await recordSpend({
       userId: input.userId,
       model: "agent-computer",
       kind: "work",
@@ -989,10 +997,11 @@ export async function billComputerSeconds(input: {
       // Keyed on the interval's start, not on its length: two settlements in
       // one run that happened to be the same number of seconds long were
       // collapsed into one by the old key, and the second was never billed.
-      idempotencyKey: `computer:${input.agentId}:${input.runId ? `run:${input.runId}` : "idle"}:${
+      idempotencyKey: `computer:${input.agentId}:${
         (input.since ?? new Date()).getTime()
       }:${secs}`,
-    }).catch(() => {});
+    });
+    if (!recorded) throw new ComputerError("Computer usage could not be recorded. Try again shortly.");
   }
   return costMicroUsd;
 }
@@ -1010,18 +1019,32 @@ export async function settleRunComputerBilling(
     Math.floor((now.getTime() - row.lastResumedAt.getTime()) / 1000)
   );
   if (elapsedSeconds <= 0) return 0;
-  await activePersistence.updateByAgent(userId, agentId, {
-    lastResumedAt: now,
-    lastActiveAt: now,
-    activeSeconds: row.activeSeconds + elapsedSeconds,
-  });
-  return billComputerSeconds({
+  const cost = await billComputerSeconds({
     userId,
     agentId,
     seconds: elapsedSeconds,
     runId,
     since: row.lastResumedAt,
   });
+  // A failed ledger write must leave the interval available for retry.
+  await activePersistence.updateByAgent(userId, agentId, {
+    lastResumedAt: now,
+    lastActiveAt: now,
+    activeSeconds: row.activeSeconds + elapsedSeconds,
+  });
+  return cost;
+}
+
+/** Includes accrued computer time that has not reached the spend ledger yet. */
+export async function computerUsageBudgetRefusal(userId: string, agentId: string, now = new Date()): Promise<string | null> {
+  if (activePersistence !== prismaPersistence || computerCostMicroUsdPerSecond() <= 0) return null;
+  const row = await activePersistence.findByAgent(userId, agentId);
+  const seconds = row?.lastResumedAt ? Math.max(0, Math.floor(((row.billingStoppedAt ?? now).getTime() - row.lastResumedAt.getTime()) / 1000)) : 0;
+  const [{ getUserPlan }, { checkUsageWindows }] = await Promise.all([import("@/lib/usage"), import("@/lib/spend")]);
+  const windows = await checkUsageWindows(userId, await getUserPlan(userId), null, undefined, {
+    pendingMicroUsd: seconds * computerCostMicroUsdPerSecond(), now,
+  });
+  return !windows.allowed && windows.bound !== null ? windowLimitMessage(windows.bound, windows.resetsAtMs) : null;
 }
 
 export async function ensureAwake(
@@ -1039,17 +1062,8 @@ export async function ensureAwake(
     throw new ComputerError("Agent computers are not configured on this server.");
   }
 
-  if (activePersistence === prismaPersistence && computerCostMicroUsdPerSecond() > 0) {
-    const [{ getUserPlan }, { checkUsageWindows }] = await Promise.all([
-      import("@/lib/usage"),
-      import("@/lib/spend"),
-    ]);
-    const plan = await getUserPlan(userId);
-    const windows = await checkUsageWindows(userId, plan);
-    if (!windows.allowed && windows.bound !== null) {
-      throw new ComputerError(windowLimitMessage(windows.bound, windows.resetsAtMs));
-    }
-  }
+  const budgetRefusal = await computerUsageBudgetRefusal(userId, agentId);
+  if (budgetRefusal) throw new ComputerError(budgetRefusal);
 
   let row = await activePersistence.findByAgent(userId, agentId);
   if (!row) {
@@ -1177,7 +1191,7 @@ export async function restComputer(
   }
 
   const elapsedSeconds =
-    row.status === "awake" && row.lastResumedAt
+    row.lastResumedAt
       ? Math.max(0, Math.floor((now.getTime() - row.lastResumedAt.getTime()) / 1000))
       : 0;
 
@@ -1215,6 +1229,7 @@ export async function sleepComputer(
   }
 
   const handle = decodeHandle(row.containerRef, agentId);
+  await activePersistence.updateByAgent(userId, agentId, { status: "stopping" });
   try {
     let liveState = await provider.state(handle);
     if (liveState === "paused") {
@@ -1240,10 +1255,13 @@ export async function sleepComputer(
   }
 
   const elapsedSeconds =
-    row.status === "awake" && row.lastResumedAt
-      ? Math.max(0, Math.floor((now.getTime() - row.lastResumedAt.getTime()) / 1000))
+    row.lastResumedAt
+      ? Math.max(0, Math.floor(((row.billingStoppedAt ?? now).getTime() - row.lastResumedAt.getTime()) / 1000))
       : 0;
 
+  // Pin the end before the ledger call. Retrying a failed write tomorrow must
+  // neither charge tomorrow's idle time nor lose the interval we just stopped.
+  await activePersistence.updateByAgent(userId, agentId, { billingStoppedAt: row.billingStoppedAt ?? now });
   if (elapsedSeconds > 0) {
     await billComputerSeconds({
       userId,
@@ -1256,6 +1274,7 @@ export async function sleepComputer(
 
   return activePersistence.updateByAgent(userId, agentId, {
     status: "asleep",
+    billingStoppedAt: null,
     streamOn: false,
     lastResumedAt: null,
     leaseRunId: null,
@@ -1372,6 +1391,19 @@ export async function renewComputerLease(
   ttlMs = 120_000,
   now = new Date()
 ): Promise<boolean> {
+  const refusal = await computerUsageBudgetRefusal(userId, agentId, now);
+  if (refusal) {
+    // Only the owner being renewed can put it to sleep. A late heartbeat from
+    // an old task must not stop the task that has since taken the lease.
+    if (await activePersistence.releaseLeaseCas(userId, agentId, runId, now, true)) {
+      try {
+        await sleepComputer(userId, agentId, { now });
+      } finally {
+        await activePersistence.updateByAgent(userId, agentId, { lastError: refusal });
+      }
+    }
+    return false;
+  }
   const expiresAt = new Date(now.getTime() + ttlMs);
   return activePersistence.renewLeaseCas(userId, agentId, runId, now, expiresAt);
 }
@@ -1465,8 +1497,13 @@ export async function resolveRunComputerSession(input: {
       return { attached: false, fallbackReason: "unavailable", note: COMPUTER_DISK_FULL_NOTE };
     }
     const renewMs = input.renewIntervalMs ?? 40_000;
+    let renewing = false;
     const timer = setInterval(() => {
-      void renewComputerLease(input.userId, agentId, input.runId).catch(() => {});
+      if (renewing) return;
+      renewing = true;
+      void renewComputerLease(input.userId, agentId, input.runId)
+        .catch((error: unknown) => console.error("[agent-computer] lease or budget check failed", { agentId, error: String(error) }))
+        .finally(() => { renewing = false; });
     }, renewMs);
     timer.unref?.();
 
@@ -1483,7 +1520,9 @@ export async function resolveRunComputerSession(input: {
         if (released) return;
         released = true;
         clearInterval(timer);
-        await settleRunComputerBilling(input.userId, agentId, input.runId).catch(() => {});
+        await settleRunComputerBilling(input.userId, agentId, input.runId).catch((error: unknown) => {
+          console.error("[agent-computer] usage settlement failed", { agentId, error: String(error) });
+        });
         await releaseComputerLease(input.userId, agentId, input.runId).catch(() => {});
       },
     };

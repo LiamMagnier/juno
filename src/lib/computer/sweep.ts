@@ -4,6 +4,7 @@ import { stopStream } from "./live-view";
 import { computerProvider, isAgentComputerConfigured } from "./provider";
 import {
   computerStoreUsesDatabase,
+  computerUsageBudgetRefusal,
   decodeHandle,
   diskFullError,
   getComputerStorePersistence,
@@ -110,6 +111,18 @@ export async function sweepAgentComputers(opts?: {
 
   for (const row of rows) {
     if (row.creationToken && row.creationExpiresAt && row.creationExpiresAt.getTime() > nowMs) continue;
+    if (row.billingStoppedAt) {
+      await sleepComputer(row.userId, row.agentId, { now });
+      summary.slept.push(row.agentId);
+      continue;
+    }
+    // Viewing-only computers have no run heartbeat. The sweep covers them as
+    // well as a run that stopped renewing; account spend includes accrued time.
+    if (row.status === "awake" && await computerUsageBudgetRefusal(row.userId, row.agentId, now)) {
+      await sleepComputer(row.userId, row.agentId, { now });
+      summary.slept.push(row.agentId);
+      continue;
+    }
     const handle = decodeHandle(row.containerRef, row.agentId);
     const liveState = await provider.state(handle);
 

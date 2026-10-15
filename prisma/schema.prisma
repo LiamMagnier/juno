@@ -4709,6 +4709,8 @@ model AgentComputer {
   /// A short persisted claim, shared by web and runner, never a DB lock over Docker I/O.
   creationToken     String?
   creationExpiresAt DateTime?
+  /// Fixed end of an interval whose ledger write must be retried after stopping.
+  billingStoppedAt  DateTime?
   status            String    @default("asleep") // asleep | resting | waking | awake | error
   streamOn          Boolean   @default(false)
   leaseRunId        String?
