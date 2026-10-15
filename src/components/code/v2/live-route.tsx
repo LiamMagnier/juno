@@ -22,6 +22,7 @@ import type { ApprovalDecision, InteractionMode, ModelSelection, ProviderInstanc
 import { legacyToItems, type LegacySessionInput } from "@/lib/code-v2/legacy-adapter";
 import { fallbackSetupCommand, managedSetup } from "@/lib/code-v2/providers-view";
 import { queueReducer, type QueueRow } from "@/lib/code-v2/composer";
+import { overlayQueue, promoteOutcomeMessage, queueErrorMessage, reconcileQueueOps, type QueueOp } from "@/lib/code-v2/queue-sync";
 import { routingAvoidsAlevrBilling } from "@/lib/code-v2/role-routing";
 import { sessionItems } from "@/lib/code-v2/session-store";
 import type { ThreadSummary } from "@/lib/code-v2/thread-sections";
@@ -42,6 +43,9 @@ import { clearPendingCodePrompt, peekPendingCodePrompt } from "@/lib/code-sessio
 
 /** A thread with no skills chosen, as one stable value. */
 const NO_SKILLS: SkillActivation[] = [];
+
+let opCounter = 0;
+const newOpId = () => `qop${Date.now().toString(36)}${(opCounter++).toString(36)}`;
 
 export interface CodeV2RouteProps {
   conversation: {
@@ -153,7 +157,13 @@ export function CodeV2Route({ conversation, initialMessages }: CodeV2RouteProps)
 
   const items = useEnv && env.view ? sessionItems(env.view) : legacy.items;
   const state = useEnv && env.view ? env.view.state : legacy.state;
-  const queue: QueueRow[] = useEnv && env.view ? env.view.queue.map((q) => ({ id: q.id, text: q.input.text })) : localQueue;
+  // A Mac thread's queue is the env server's; Remove / Edit / reorder / Steer now are requests to it,
+  // drawn optimistically until its queue shows them (lib/code-v2/queue-sync.ts).
+  const viewQueue = useEnv && env.view ? env.view.queue : null;
+  const serverQueue = React.useMemo<QueueRow[]>(() => (viewQueue ?? []).map((q) => ({ id: q.id, text: q.input.text })), [viewQueue]);
+  const [queueOps, setQueueOps] = React.useState<QueueOp[]>([]);
+  React.useEffect(() => setQueueOps((ops) => reconcileQueueOps(serverQueue, ops)), [serverQueue]);
+  const queue: QueueRow[] = viewQueue ? overlayQueue(serverQueue, queueOps) : localQueue;
 
   // Drain the local queue when a CodeTask run settles.
   React.useEffect(() => {
@@ -228,6 +238,23 @@ export function CodeV2Route({ conversation, initialMessages }: CodeV2RouteProps)
   }, [liveView, envClient]);
   const skills = useCodeSkills({ threadKey: conversation.id, snapshotSkills: env.view?.skills, listLocal, remote: remoteSkills, listRevision: env.skillsRevision, localKind: envClient ? "mac" : cloudRepoKey ? "repo" : undefined });
 
+  /**
+   * A queue change on a Mac thread: drawn at once, sent to the env server, and
+   * taken back (with the reason) if the Mac refuses it. False off a Mac thread,
+   * where the CodeTask path's client-side queue is the real one.
+   */
+  const onMacQueue = (op: QueueOp, run: (client: NonNullable<typeof env.client>, sessionId: string) => Promise<unknown>): boolean => {
+    const client = env.client;
+    const sessionId = env.view?.id;
+    if (!useEnv || !client || !sessionId) return false;
+    setQueueOps((ops) => [...ops, op]);
+    run(client, sessionId).catch((e) => {
+      setQueueOps((ops) => ops.filter((o) => o.opId !== op.opId));
+      toast.error(queueErrorMessage(e));
+    });
+    return true;
+  };
+
   const persistRouting = (r: RoleRouting) => {
     setRoutingState(r);
     void fetch(`/api/code/routing/${conversation.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ routing: r }) }).catch(() => undefined);
@@ -288,12 +315,34 @@ export function CodeV2Route({ conversation, initialMessages }: CodeV2RouteProps)
       rememberMode({ runtimeMode, interactionMode: m });
       setPrefs((p) => ({ ...p, interactionMode: m, runtimeMode: p.runtimeMode ?? runtimeMode }));
     },
-    editQueued: (id, text) => setLocalQueue((q) => queueReducer(q, { type: "edit", id, text })),
-    removeQueued: (id) => setLocalQueue((q) => queueReducer(q, { type: "remove", id })),
-    moveQueued: (id, to) => setLocalQueue((q) => queueReducer(q, { type: "move", id, to })),
+    editQueued(id, text) {
+      if (onMacQueue({ opId: newOpId(), kind: "edit", id, text }, (client, sessionId) => client.request("queue.edit", { sessionId, queuedId: id, text }))) return;
+      setLocalQueue((q) => queueReducer(q, { type: "edit", id, text }));
+    },
+    removeQueued(id) {
+      const sent = onMacQueue({ opId: newOpId(), kind: "remove", id }, async (client, sessionId) => {
+        const { removed } = await client.request("queue.remove", { sessionId, queuedId: id });
+        if (!removed) toast.message("That message had already started, so it stays in the thread.");
+      });
+      if (!sent) setLocalQueue((q) => queueReducer(q, { type: "remove", id }));
+    },
+    moveQueued(id, to) {
+      if (onMacQueue({ opId: newOpId(), kind: "move", id, to }, (client, sessionId) => client.request("queue.move", { sessionId, queuedId: id, to }))) return;
+      setLocalQueue((q) => queueReducer(q, { type: "move", id, to }));
+    },
     steerQueued(id) {
       const row = queue.find((q) => q.id === id);
       if (!row) return;
+      // Steer now on a Mac thread is one step on the env server: never steered AND left queued.
+      const op: QueueOp = { opId: newOpId(), kind: "remove", id };
+      const sent = onMacQueue(op, async (client, sessionId) => {
+        const { outcome } = await client.request("queue.promote", { sessionId, queuedId: id });
+        const note = promoteOutcomeMessage(outcome);
+        // "next": it stays queued, at the front. Stop hiding it.
+        if (outcome === "next") setQueueOps((ops) => ops.filter((o) => o.opId !== op.opId));
+        if (note) toast.message(note);
+      });
+      if (sent) return;
       setLocalQueue((q) => queueReducer(q, { type: "take", id }));
       void actions.steer(row.text);
     },

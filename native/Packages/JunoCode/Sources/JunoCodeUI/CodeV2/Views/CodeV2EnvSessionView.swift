@@ -342,8 +342,19 @@ public struct CodeV2EnvSessionView: View {
             CodeV2ComposerTrailing(
                 context: context,
                 queue: snapshot.queue,
-                editQueued: { item in composer.draft = item.input.text; focused = true },
-                steerQueued: canSteer ? { item in Task { await session.steer(item.input.text) } } : nil
+                // Edit takes the message out of the env server's queue and into
+                // the draft (only when it was still queued, so it never runs twice).
+                editQueued: { item in
+                    Task {
+                        if await session.removeQueued(item.id) {
+                            composer.draft = item.input.text
+                            focused = true
+                        }
+                    }
+                },
+                // Steer now is one step on the env server: no queued copy is left behind.
+                steerQueued: canSteer ? { item in Task { await session.promoteQueued(item.id) } } : nil,
+                removeQueued: { item in Task { await session.removeQueued(item.id) } }
             )
             CodeComposerSpeechButtons(speech: speech)
         }

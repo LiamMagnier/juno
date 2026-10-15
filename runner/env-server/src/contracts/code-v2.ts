@@ -988,6 +988,13 @@ export const CLIENT_COMMAND_TYPE_VALUES = [
   // thread's mode applies at once, mid-turn included; switching to Full access answers the pending
   // approvals Full access would not have asked about.
   "session.setMode",
+  // queue lane (additive): the queued messages above the composer, changed on the Mac's own queue
+  // (every device sees `queue.updated`), never on a client's copy. `queue.promote` is "Steer now":
+  // one step on the env server, so a message is never both steered and left queued.
+  "queue.remove",
+  "queue.edit",
+  "queue.move",
+  "queue.promote",
 ] as const;
 export type ClientCommandType = (typeof CLIENT_COMMAND_TYPE_VALUES)[number];
 
@@ -1049,6 +1056,18 @@ export interface ClientCommandParams {
   "project.remove": { cwd: string };
   /** The thread's access mode now (`interactionMode` defaults to the thread's own). */
   "session.setMode": { sessionId: string; runtimeMode: RuntimeMode; interactionMode?: InteractionMode };
+  /** Takes a queued message out of the queue (Remove, or Edit taking it back into the composer). */
+  "queue.remove": { sessionId: string; queuedId: string };
+  /** Replaces a queued message's text; empty text removes it. A message from another conversation cannot be edited. */
+  "queue.edit": { sessionId: string; queuedId: string; text: string };
+  /** Moves a queued message to index `to` (clamped to the queue). */
+  "queue.move": { sessionId: string; queuedId: string; to: number };
+  /**
+   * Steer now: the queued message joins the running turn when its runtime can
+   * steer; otherwise it goes to the front of the queue (and starts at once
+   * when the session is idle).
+   */
+  "queue.promote": { sessionId: string; queuedId: string };
   /**
    * Applies a unified diff (paths relative to the repository root) to the
    * session's working tree, or its reverse (`reverse: true`, a rejected hunk).
@@ -1293,6 +1312,16 @@ export interface ClientCommandResults {
   "project.remove": { sessionIds: string[] };
   /** `approved`: pending approvals the new mode answered (Full access, inside the project). */
   "session.setMode": { runtimeMode: RuntimeMode; interactionMode: InteractionMode; approved: number };
+  /** `removed` is false when the message had already left the queue (it started, or another device took it). `input` is what was queued. */
+  "queue.remove": { removed: boolean; input?: UserInput };
+  "queue.edit": { updated: boolean };
+  "queue.move": { moved: boolean };
+  /**
+   * `steered`: it joined the running turn. `next`: first in the queue, it runs
+   * when the turn ends. `started`: the session was idle and it started now.
+   * `gone`: it had already left the queue.
+   */
+  "queue.promote": { outcome: "steered" | "next" | "started" | "gone" };
 }
 
 export const WIRE_ERROR_CODE_VALUES = [

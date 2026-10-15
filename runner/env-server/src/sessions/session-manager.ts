@@ -339,17 +339,24 @@ export class SessionManager {
       this.queue({ sessionId: params.sessionId, input: params.input });
       return { accepted: false };
     }
-    const instance = live.providerInstanceId ? this.#o.registry.get(live.providerInstanceId) : undefined;
-    const caps = instance ? this.#o.registry.adapterFor(instance.kind)?.capabilities(instance) : undefined;
-    const steerSkills = Array.isArray(params.input.skills) ? params.input.skills.filter(isActivation) : [];
-    const steerText = steerSkills.length ? await this.skillInstructions(live.log.meta.cwd, steerSkills) : "";
-    const steered = steerText ? { ...params.input, text: `${steerText}\n\n${params.input.text}` } : params.input;
-    if (caps?.steering && live.provider?.steer && (await live.provider.steer(steered))) {
-      this.#addItem(live, inputItem(active.turnId, params.input, "steer"));
-      return { accepted: true };
-    }
+    if (await this.#trySteer(live, active.turnId, params.input)) return { accepted: true };
     this.queue({ sessionId: params.sessionId, input: params.input });
     return { accepted: false };
+  }
+
+  /** Hands `input` to the running turn when its runtime can steer; records it as a steer. */
+  async #trySteer(live: LiveSession, turnId: string, input: UserInput): Promise<boolean> {
+    const instance = live.providerInstanceId ? this.#o.registry.get(live.providerInstanceId) : undefined;
+    const caps = instance ? this.#o.registry.adapterFor(instance.kind)?.capabilities(instance) : undefined;
+    if (!caps?.steering || !live.provider?.steer) return false;
+    const steerSkills = Array.isArray(input.skills) ? input.skills.filter(isActivation) : [];
+    const steerText = steerSkills.length ? await this.skillInstructions(live.log.meta.cwd, steerSkills) : "";
+    const steered = steerText ? { ...input, text: `${steerText}\n\n${input.text}` } : input;
+    // The turn may have ended while the skills were read.
+    if (live.active?.turnId !== turnId) return false;
+    if (!(await live.provider.steer(steered))) return false;
+    this.#addItem(live, inputItem(turnId, input, "steer"));
+    return true;
   }
 
   queue(params: ClientCommandParams["turn.queue"]): ClientCommandResults["turn.queue"] {
@@ -361,14 +368,76 @@ export class SessionManager {
     return { queuedId: entry.id };
   }
 
-  /** Edits or removes a queued entry (QueueDock). Not on the wire yet; used by the dock via turn.queue semantics. */
-  dequeue(sessionId: string, queuedId: string): boolean {
-    const live = this.#get(sessionId);
+  /*
+   * The queue lane. Every change is made here, on the session's own queue, and
+   * reaches every device as `queue.updated`: a client never edits a copy. A
+   * message that already left the queue (it started, or another device took
+   * it) answers `false` / `gone` rather than an error, because "it is not
+   * queued any more" is what the client needs to know either way.
+   */
+
+  /** Takes a queued message out (Remove, or Edit taking it back into the composer). */
+  removeQueued(params: ClientCommandParams["queue.remove"]): ClientCommandResults["queue.remove"] {
+    const live = this.#get(params.sessionId);
     const queue = live.log.snapshot.queue;
-    const next = queue.filter((q) => q.id !== queuedId);
-    if (next.length === queue.length) return false;
+    const entry = queue.find((q) => q.id === params.queuedId);
+    if (!entry) return { removed: false };
+    live.log.emit({ type: "queue.updated", queue: queue.filter((q) => q.id !== params.queuedId) });
+    return { removed: true, input: entry.input };
+  }
+
+  /** Replaces a queued message's text in place; empty text removes it. */
+  editQueued(params: ClientCommandParams["queue.edit"]): ClientCommandResults["queue.edit"] {
+    const live = this.#get(params.sessionId);
+    const queue = live.log.snapshot.queue;
+    const entry = queue.find((q) => q.id === params.queuedId);
+    if (!entry) return { updated: false };
+    // The fenced text of another conversation's message is not the user's to rewrite.
+    if (entry.input.conversation) throw new WireError("bad_request", "A message from another conversation cannot be edited. Remove it instead.");
+    const text = typeof params.text === "string" ? params.text : "";
+    const next = text.trim()
+      ? queue.map((q) => (q.id === params.queuedId ? { ...q, input: { ...q.input, text } } : q))
+      : queue.filter((q) => q.id !== params.queuedId);
     live.log.emit({ type: "queue.updated", queue: next });
-    return true;
+    return { updated: true };
+  }
+
+  /** Moves a queued message to index `to`, clamped to the queue. */
+  moveQueued(params: ClientCommandParams["queue.move"]): ClientCommandResults["queue.move"] {
+    const live = this.#get(params.sessionId);
+    const queue = live.log.snapshot.queue;
+    const from = queue.findIndex((q) => q.id === params.queuedId);
+    if (from < 0) return { moved: false };
+    const to = Math.max(0, Math.min(queue.length - 1, Number.isFinite(params.to) ? Math.trunc(params.to) : from));
+    if (to === from) return { moved: true };
+    const next = [...queue];
+    const [entry] = next.splice(from, 1);
+    next.splice(to, 0, entry);
+    live.log.emit({ type: "queue.updated", queue: next });
+    return { moved: true };
+  }
+
+  /**
+   * Steer now, in one step: the message leaves the queue before the steer is
+   * tried, so a turn ending meanwhile cannot also start it from the queue, and
+   * when the runtime cannot take it (no steering, or the turn already ended)
+   * it goes back to the FRONT of the queue, never the end.
+   */
+  async promoteQueued(params: ClientCommandParams["queue.promote"]): Promise<ClientCommandResults["queue.promote"]> {
+    const live = this.#get(params.sessionId);
+    const entry = live.log.snapshot.queue.find((q) => q.id === params.queuedId);
+    if (!entry) return { outcome: "gone" };
+    live.log.emit({ type: "queue.updated", queue: live.log.snapshot.queue.filter((q) => q.id !== params.queuedId) });
+    const active = live.active;
+    // A message from another conversation is never steered from here (its delivery records it).
+    if (active && !entry.input.conversation && (await this.#trySteer(live, active.turnId, entry.input).catch(() => false))) {
+      return { outcome: "steered" };
+    }
+    const rest = live.log.snapshot.queue.filter((q) => q.id !== params.queuedId);
+    live.log.emit({ type: "queue.updated", queue: [entry, ...rest] });
+    if (live.active) return { outcome: "next" };
+    this.#drainQueue(live);
+    return { outcome: live.log.snapshot.queue.some((q) => q.id === params.queuedId) ? "next" : "started" };
   }
 
   async interrupt(params: ClientCommandParams["turn.interrupt"]): Promise<void> {

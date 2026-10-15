@@ -86,6 +86,11 @@ export const LINK_RELAYED_COMMANDS: ReadonlySet<ClientCommandType> = new Set<Cli
   "host.upload",
   // access lane: the phone's access picker, applied to the thread at once (a waiting approval included).
   "session.setMode",
+  // queue lane: Remove, Edit, reorder and Steer now act on the thread's own queue on the Mac.
+  "queue.remove",
+  "queue.edit",
+  "queue.move",
+  "queue.promote",
 ]);
 
 /**
