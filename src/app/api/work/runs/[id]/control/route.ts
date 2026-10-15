@@ -189,13 +189,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       status: { in: pausing ? [...PAUSABLE_STATUSES] : ["paused"] },
     },
     data: pausing
-      ? { status: "paused" }
+      ? { status: "paused", pauseReason: "user" }
       : {
           // Back to `queued`, with the lease released. A resumed run has to be
           // claimable again, and the executor that held it before the pause may
           // well be gone; leaving the lease in place would strand the run until
           // it expired on its own.
           status: "queued",
+          pauseReason: null,
           claimedBy: null,
           claimedAt: null,
           leaseExpiresAt: null,

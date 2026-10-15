@@ -3178,6 +3178,8 @@ model WorkRun {
   scheduleId String?
 
   status         String  @default("queued")
+  /// user | waiting. Only runs parked waiting for an answer may expire.
+  pauseReason    String?
   /// Authoritative, set exactly once when the run leaves a live status.
   /// completed | failed | cancelled | budget_exceeded | timed_out |
   /// host_offline | interrupted | superseded.
@@ -3270,6 +3272,7 @@ model WorkRun {
   @@index([userId, createdAt])
   @@index([userId, spendReservationRef])
   @@index([status, leaseExpiresAt])
+  @@index([status, pauseReason, updatedAt])
   @@index([hostId, status])
   @@index([scheduleId, createdAt])
 }

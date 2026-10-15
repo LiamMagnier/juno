@@ -1070,6 +1070,7 @@ export async function claimRun(input: ClaimRunInput): Promise<ClaimRunResult> {
     },
     data: {
       status: "preparing",
+      pauseReason: null,
       claimedBy: input.executorId,
       claimedAt: now,
       leaseExpiresAt: new Date(now.getTime() + (input.leaseMs ?? RUN_LEASE_MS)),
@@ -1215,6 +1216,13 @@ export async function parkRun(input: ParkRunInput): Promise<boolean> {
     });
     if (moved.count !== 1) return false;
 
+    // The control route records an explicit user pause before the executor
+    // parks. Do not replace it with a wait, including when the two race.
+    await tx.workRun.updateMany({
+      where: { id: input.runId, userId: input.userId, pauseReason: null },
+      data: { pauseReason: "waiting" },
+    });
+
     const run = await tx.workRun.findFirst({
       where: { id: input.runId, userId: input.userId },
       select: { sessionId: true },
@@ -1259,6 +1267,8 @@ export interface FinishRunInput {
   executorId?: string;
   /** Cumulative provider usage at the terminal boundary. */
   usage?: WorkRunUsage;
+  /** Expiry must still match the parked wait read by the sweep. */
+  parkedBefore?: Date;
 }
 
 export type FinishRunResult =
@@ -1293,9 +1303,15 @@ export async function finishRun(input: FinishRunInput): Promise<FinishRunResult>
         userId: input.userId,
         status: { notIn: [...WORK_TERMINAL_STATUSES] },
         ...(input.executorId ? { claimedBy: input.executorId } : {}),
+        ...(input.parkedBefore ? {
+          status: "paused",
+          pauseReason: "waiting",
+          updatedAt: { lt: input.parkedBefore },
+        } : {}),
       },
       data: {
         status,
+        pauseReason: null,
         terminalReason: input.reason,
         terminalDetail: input.detail ? input.detail.slice(0, MAX_TERMINAL_DETAIL_CHARS) : null,
         finishedAt: now,
@@ -1459,6 +1475,7 @@ export async function expireParkedRoutineRuns(input: { now?: Date; limit?: numbe
   const stale = await prismaUnguarded.workRun.findMany({
     where: {
       status: "paused",
+      pauseReason: "waiting",
       scheduleId: { not: null },
       updatedAt: { lt: cutoff },
       permissionPolicy: { path: ["attended"], equals: false },
@@ -1474,6 +1491,7 @@ export async function expireParkedRoutineRuns(input: { now?: Date; limit?: numbe
       userId: run.userId,
       reason: "interrupted",
       detail: PARKED_ROUTINE_RUN_EXPIRED_DETAIL,
+      parkedBefore: cutoff,
       now,
     }).catch(() => null);
     if (ended?.finished) expired.push(run.id);
