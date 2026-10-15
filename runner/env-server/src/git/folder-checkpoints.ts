@@ -339,7 +339,7 @@ export class FolderCheckpoints {
         partial = true;
         return;
       }
-      const entry = this.#entry(path.join(cwd, rel), stat, reuse?.files[rel], persist);
+      const entry = this.#entry(path.join(cwd, rel), stat, persist);
       if (!entry) return;
       files[rel] = entry;
       count++;
@@ -394,11 +394,13 @@ export class FolderCheckpoints {
     return { version: 1, cwd, turn: -1, createdAt: new Date().toISOString(), partial, files };
   }
 
-  #entry(abs: string, stat: fs.Stats, prior: Entry | undefined, persist: boolean): Entry | undefined {
+  #entry(abs: string, stat: fs.Stats, persist: boolean): Entry | undefined {
     const size = stat.size;
     const mtime = Math.floor(stat.mtimeMs);
     if (size > this.#limits.maxFileBytes) return { h: `big:${size}:${mtime}`, s: size, m: mtime, big: true };
-    if (prior && !prior.big && prior.s === size && prior.m === mtime && (!persist || fs.existsSync(this.#blobPath(prior.h)))) return prior;
+    // Size and mtime are hints, not content identity: coarse filesystems and
+    // tools preserving timestamps can change bytes without changing either.
+    // Bounded files must be read and hashed on every checkpoint/live diff.
     let content: Buffer;
     try {
       content = fs.readFileSync(abs);

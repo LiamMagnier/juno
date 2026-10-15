@@ -99,6 +99,25 @@ test("folder checkpoints: per-turn and whole-session diffs of a folder that is n
   assert.equal(await store.diff(cwd, "missing-thread", 0, "worktree"), undefined);
 });
 
+test("folder checkpoints: same-size edits with an unchanged mtime appear live and in saved turns", async () => {
+  const cwd = tempDir("coarse-mtime");
+  const file = path.join(cwd, "value.txt");
+  const stamp = new Date("2026-10-15T12:00:00.000Z");
+  const store = new FolderCheckpoints(tempDir("store"));
+  write(cwd, "value.txt", "before\n");
+  fs.utimesSync(file, stamp, stamp);
+  await store.create(cwd, "t", 0);
+
+  write(cwd, "value.txt", "after!\n");
+  fs.utimesSync(file, stamp, stamp);
+  const live = (await store.diff(cwd, "t", 0, "worktree"))!;
+  assert.deepEqual(live.files.map((entry) => entry.path), ["value.txt"]);
+  assert.match(live.diff, /-before\n\+after!\n/);
+  const saved = await store.create(cwd, "t", 1);
+  assert.equal(saved.filesChanged, 1);
+  assert.match((await store.diff(cwd, "t", 0, 1))!.diff, /-before\n\+after!\n/);
+});
+
 test("folder checkpoints: rollback restores only the session's own files and keeps later edits", async () => {
   const cwd = tempDir("rollback");
   write(cwd, "a.txt", "a0\n");
