@@ -4,7 +4,7 @@
 // type, spacing). Regenerate with `npm run design:tokens`; `npm run design:tokens:check`
 // fails CI when this file no longer matches its sources.
 //
-// tokens-digest: 0c2a652ea76b32d1
+// tokens-digest: 33e427aa477c9c66
 //
 
 import CoreGraphics
@@ -220,6 +220,12 @@ public enum JunoGeneratedColors {
         dark: JunoColorToken(unchecked: 0.9098, 0.9137, 0.9216)
     )
 
+    /// `--galaxy-core`
+    public static let galaxyCore = JunoGeneratedPair(
+        light: JunoColorToken(unchecked: 0.5412, 0.4157, 0.2431),
+        dark: JunoColorToken(unchecked: 0.9529, 0.851, 0.6941)
+    )
+
     /// `--hairline`
     public static let hairline = JunoGeneratedPair(
         light: JunoColorToken(unchecked: 0.2016, 0.193, 0.1584, 0.06),
@@ -266,6 +272,18 @@ public enum JunoGeneratedColors {
     public static let popoverForeground = JunoGeneratedPair(
         light: JunoColorToken(unchecked: 0.098, 0.1059, 0.1176),
         dark: JunoColorToken(unchecked: 0.9098, 0.9137, 0.9216)
+    )
+
+    /// `--presence`
+    public static let presence = JunoGeneratedPair(
+        light: JunoColorToken(unchecked: 0.1765, 0.2863, 0.7882),
+        dark: JunoColorToken(unchecked: 0.5922, 0.651, 0.902)
+    )
+
+    /// `--presence-ink`
+    public static let presenceInk = JunoGeneratedPair(
+        light: JunoColorToken(unchecked: 0.1765, 0.2863, 0.7882),
+        dark: JunoColorToken(unchecked: 0.5922, 0.651, 0.902)
     )
 
     /// `--primary`
@@ -453,6 +471,13 @@ public extension JunoAccent {
                 ring: JunoGeneratedPair(light: JunoColorToken(unchecked: 0.1001, 0.1067, 0.1199), dark: JunoColorToken(unchecked: 0.9037, 0.9079, 0.9163)),
                 onPrimary: JunoGeneratedPair(light: JunoColorToken(unchecked: 1.0, 1.0, 1.0), dark: JunoColorToken(unchecked: 0.1001, 0.108, 0.1199)),
                 ink: JunoGeneratedPair(light: JunoColorToken(unchecked: 0.1001, 0.108, 0.1199), dark: JunoColorToken(unchecked: 0.9037, 0.9079, 0.9163))
+            )
+        case .ultramarine:
+            JunoGeneratedAccentPalette(
+                primary: JunoGeneratedPair(light: JunoColorToken(unchecked: 0.1765, 0.2863, 0.7882), dark: JunoColorToken(unchecked: 0.5922, 0.651, 0.902)),
+                ring: JunoGeneratedPair(light: JunoColorToken(unchecked: 0.1001, 0.1067, 0.1199), dark: JunoColorToken(unchecked: 0.9037, 0.9079, 0.9163)),
+                onPrimary: JunoGeneratedPair(light: JunoColorToken(unchecked: 1.0, 1.0, 1.0), dark: JunoColorToken(unchecked: 0.094, 0.098, 0.106)),
+                ink: JunoGeneratedPair(light: JunoColorToken(unchecked: 0.1765, 0.2863, 0.7882), dark: JunoColorToken(unchecked: 0.5922, 0.651, 0.902))
             )
         case .juniper:
             JunoGeneratedAccentPalette(

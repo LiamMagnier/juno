@@ -32,6 +32,8 @@
  * falloff stays short.
  */
 
+import { SCRIPT_COLOR } from "@/lib/design/tokens.generated";
+
 export type GlowTheme = "light" | "dark";
 
 export interface GlowVoiceColors {
@@ -50,15 +52,15 @@ export const GLOW_PALETTE: Record<GlowTheme, GlowPalette> = {
   light: {
     // oklch(0.575 0.150 50): 4.51:1 on #fcfcfd.
     you: { line: "#bc5806", glow: "#f69147", hot: "#bc5806" },
-    // Presence ink: 7.04:1 on #fcfcfd.
-    alevr: { line: "#2d49c9", glow: "#6782f2", hot: "#2d49c9" },
+    // Presence ink (--presence): 7.04:1 on #fcfcfd.
+    alevr: { line: SCRIPT_COLOR.presence.light, glow: "#6782f2", hot: SCRIPT_COLOR.presence.light },
     muted: "#9a9ca0",
   },
   dark: {
     // oklch(0.781 0.120 54): 8.54:1 on #18191b.
     you: { line: "#f3a26b", glow: "#fba962", hot: "#fdcfa6" },
-    // Presence ink: 7.47:1 on #18191b.
-    alevr: { line: "#97a6e6", glow: "#90a6f7", hot: "#ced7fb" },
+    // Presence ink (--presence): 7.47:1 on #18191b.
+    alevr: { line: SCRIPT_COLOR.presence.dark, glow: "#90a6f7", hot: "#ced7fb" },
     // Decorative ink lifted one step: #6c6e72 vanishes into a 22% border.
     muted: "#84868a",
   },

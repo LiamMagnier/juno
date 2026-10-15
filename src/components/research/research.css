@@ -14,8 +14,7 @@
 .rf {
   --rf-line: hsl(var(--foreground) / 0.12);
   --rf-hair: hsl(var(--foreground) / 0.07);
-  --rf-presence: #2d49c9;
-  --rf-presence-soft: rgb(45 73 201 / 0.1);
+  --rf-presence-soft: hsl(var(--presence) / 0.1);
   --rf-attention: hsl(var(--attention));
   --rf-ease: cubic-bezier(0.16, 1, 0.3, 1);
   /* The dot rule: the construction's matrix as a divider, 4px pitch. */
@@ -33,8 +32,7 @@
   --rf-dot-soft: hsl(var(--foreground) / 0.2);
   --rf-line: hsl(var(--foreground) / 0.14);
   --rf-hair: hsl(var(--foreground) / 0.08);
-  --rf-presence: #97a6e6;
-  --rf-presence-soft: rgb(151 166 230 / 0.12);
+  --rf-presence-soft: hsl(var(--presence) / 0.12);
 }
 .rf ::selection { background: var(--rf-presence-soft); }
 
@@ -128,7 +126,7 @@
 }
 .rf-point[data-state="read"] { background: hsl(var(--foreground) / 0.72); box-shadow: none; }
 .rf-point[data-state="cited"] { width: 9px; height: 9px; background: hsl(var(--foreground)); box-shadow: 0 0 0 3px hsl(var(--background)); }
-.rf-point[data-current] { background: var(--rf-presence); box-shadow: 0 0 0 4px var(--rf-presence-soft); }
+.rf-point[data-current] { background: hsl(var(--presence)); box-shadow: 0 0 0 4px var(--rf-presence-soft); }
 .rf-label {
   position: absolute;
   display: inline-flex;
@@ -151,7 +149,7 @@
 }
 .rf-label[data-side="start"] { translate: calc(-100% - 9px) -50%; }
 .rf-label sup { top: 0; font-size: 10px; font-weight: 600; color: hsl(var(--foreground)); }
-.rf-label[data-current] { color: var(--rf-presence); }
+.rf-label[data-current] { color: hsl(var(--presence-ink)); }
 a.rf-label:hover { color: hsl(var(--foreground)); }
 .rf-more { position: absolute; right: 2%; bottom: 4%; font-family: var(--font-mono), "JetBrains Mono", monospace; font-size: 11px; color: hsl(var(--muted-foreground)); }
 
@@ -192,7 +190,7 @@ a.rf-label:hover { color: hsl(var(--foreground)); }
 /* Controls, guidance, details. */
 .rf-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 20px; }
 .rf-guidance { margin-top: 16px; padding-block: 18px; background: var(--rf-rule-x) left top / 4px 2px repeat-x, var(--rf-rule-x) left bottom / 4px 2px repeat-x; }
-.rf-guidance textarea { width: 100%; min-height: 84px; resize: vertical; border: 1px solid hsl(var(--input)); border-radius: 10px; background: hsl(var(--background)); padding: 12px 14px; font-size: 14px; line-height: 1.5; caret-color: var(--rf-presence); transition: border-color 160ms; }
+.rf-guidance textarea { width: 100%; min-height: 84px; resize: vertical; border: 1px solid hsl(var(--input)); border-radius: 10px; background: hsl(var(--background)); padding: 12px 14px; font-size: 14px; line-height: 1.5; caret-color: hsl(var(--presence-ink)); transition: border-color 160ms; }
 .rf-guidance textarea:focus-visible { outline: none; border-color: hsl(var(--foreground) / 0.4); }
 .rf-guidance textarea::placeholder { color: hsl(var(--muted-foreground)); }
 .rf-steering { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin-top: 14px; font-size: 13px; line-height: 19px; }
@@ -245,7 +243,7 @@ a.rf-label:hover { color: hsl(var(--foreground)); }
 .rf-next-row:hover .rf-next-arrow { color: hsl(var(--foreground)); transform: translate(2px, -2px); }
 .rf-next-row:hover .rf-next-why { color: hsl(var(--foreground)); }
 /* The one now in the composer is the live object. */
-.rf-next-row[data-seeded] .rf-next-arrow { color: var(--rf-presence); }
+.rf-next-row[data-seeded] .rf-next-arrow { color: hsl(var(--presence-ink)); }
 
 /* The scope card's note when nobody (or a simpler planner) drafted the plan. */
 .rf-planned-by { max-width: 40rem; text-wrap: pretty; }

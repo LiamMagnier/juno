@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { watchCanvas } from "@/lib/canvas/canvas-lifecycle";
+import { SCRIPT_COLOR } from "@/lib/design/tokens.generated";
 import { reducedMotionAt } from "@/lib/run/loop-phase";
 import { cn } from "@/lib/utils";
 import {
@@ -45,12 +46,16 @@ export type GalaxyMarkProps = {
 let FIELD: GalaxyField | null = null;
 const field = () => (FIELD ??= galaxyField());
 
-const PRESENCE_LIGHT: RGB = [45, 73, 201]; // #2d49c9
-const PRESENCE_DARK: RGB = [151, 166, 230]; // #97a6e6
-const WARM_LIGHT: RGB = [138, 106, 62]; // #8A6A3E
-const WARM_DARK: RGB = [243, 217, 177]; // #F3D9B1
-
 type RGB = [number, number, number];
+
+const fromHex = (hex: string): RGB => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)) as RGB;
+
+/* A canvas cannot read a custom property's theme, so the two brand colours come
+   from the token projection (--presence and --galaxy-core in globals.css). */
+const PRESENCE_LIGHT = fromHex(SCRIPT_COLOR.presence.light);
+const PRESENCE_DARK = fromHex(SCRIPT_COLOR.presence.dark);
+const WARM_LIGHT = fromHex(SCRIPT_COLOR.galaxyCore.light);
+const WARM_DARK = fromHex(SCRIPT_COLOR.galaxyCore.dark);
 
 function parseColor(value: string): RGB {
   const m = value.match(/rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/);

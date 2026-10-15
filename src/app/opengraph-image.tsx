@@ -2,6 +2,12 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { ImageResponse } from "next/og";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { SCRIPT_COLOR } from "@/lib/design/tokens.generated";
+
+/** The card is a charcoal field in every context, so it takes presence's dark value. */
+const PRESENCE = SCRIPT_COLOR.presence.dark;
+const rgba = (hex: string, alpha: number) =>
+  `rgba(${[1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(",")},${alpha})`;
 
 /**
  * The link preview (Discord, Slack, iMessage, X, LinkedIn): the homepage's
@@ -51,7 +57,7 @@ export default async function OpenGraphImage() {
           display: "flex",
           position: "relative",
           background: "#111213",
-          backgroundImage: "radial-gradient(60% 70% at 85% 10%, rgba(151,166,230,0.16), rgba(17,18,19,0) 70%)",
+          backgroundImage: `radial-gradient(60% 70% at 85% 10%, ${rgba(PRESENCE, 0.16)}, rgba(17,18,19,0) 70%)`,
           fontFamily: "Newsreader",
         }}
       >
@@ -60,9 +66,9 @@ export default async function OpenGraphImage() {
           {ORBITS.map(({ rx, ry }, k) => (
             <ellipse key={k} cx={CX} cy={CY} rx={rx} ry={ry} fill="none" stroke={k >= 5 ? "rgba(255,255,255,0.07)" : "rgba(255,255,255,0.13)"} strokeWidth="1.2" />
           ))}
-          <path d={arc(traj.rx, traj.ry, 300, 376)} fill="none" stroke="#97a6e6" strokeWidth="2.4" strokeLinecap="round" />
-          <circle cx={end.x} cy={end.y} r="13" fill="none" stroke="rgba(151,166,230,0.4)" strokeWidth="1.4" />
-          <circle cx={end.x} cy={end.y} r="5" fill="#97a6e6" />
+          <path d={arc(traj.rx, traj.ry, 300, 376)} fill="none" stroke={PRESENCE} strokeWidth="2.4" strokeLinecap="round" />
+          <circle cx={end.x} cy={end.y} r="13" fill="none" stroke={PRESENCE} strokeOpacity="0.4" strokeWidth="1.4" />
+          <circle cx={end.x} cy={end.y} r="5" fill={PRESENCE} />
         </svg>
         <div style={{ position: "absolute", left: 80, top: 72, display: "flex" }}>
           {/* eslint-disable-next-line @next/next/no-img-element -- rendered by satori, not the browser */}

@@ -30,6 +30,7 @@ import { GEN_MODELS, imageEditSupport, resolveModel, type ModelInfo } from "@/li
 import { cn } from "@/lib/utils";
 import type { ClientAttachment, GenerateEditPayload } from "@/types/chat";
 import type { ImageEditInput, SendResult } from "@/hooks/use-chat";
+import { SCRIPT_COLOR } from "@/lib/design/tokens.generated";
 import "./image-edit.css";
 
 /**
@@ -384,8 +385,8 @@ export function ImageEditOverlay({
       if (!hasSelection(current)) return;
       const styles = window.getComputedStyle(frame);
       const dim = styles.getPropertyValue("--ie-dim").trim() || "rgba(12,13,15,.5)";
-      const ink = styles.getPropertyValue("--ie-presence").trim() || "#2d49c9";
-      const tint = styles.getPropertyValue("--ie-presence-tint").trim() || "rgba(45,73,201,.14)";
+      const ink = styles.getPropertyValue("--ie-presence").trim() || SCRIPT_COLOR.presence.light;
+      const tint = styles.getPropertyValue("--ie-presence-tint").trim() || `${SCRIPT_COLOR.presence.light}24`;
       ctx.clearRect(0, 0, W, H);
       ctx.globalCompositeOperation = "source-over";
       ctx.fillStyle = dim;

@@ -59,6 +59,13 @@ const config: Config = {
           foreground: "hsl(var(--secondary-foreground) / <alpha-value>)",
         },
         knob: "hsl(var(--knob) / <alpha-value>)",
+        // The brand's one live colour (--presence in globals.css): marks, rings
+        // and soft fills for work happening now. `text-presence` reads the ink
+        // half (textColor below), as `text-primary` does.
+        presence: {
+          DEFAULT: "hsl(var(--presence) / <alpha-value>)",
+          ink: "hsl(var(--presence-ink) / <alpha-value>)",
+        },
         destructive: {
           DEFAULT: "hsl(var(--destructive) / <alpha-value>)",
           foreground: "hsl(var(--destructive-foreground) / <alpha-value>)",
@@ -270,49 +277,58 @@ const config: Config = {
         "4.5": "1.125rem",
       },
       transitionTimingFunction: {
+        // Every key reads the CSS token, with the token's value as the
+        // fallback, so a utility and a hand-written `var(--ease-*)` are one
+        // curve and the reduced-motion overrides in globals.css (which flatten
+        // out-strong, out-expo, spring and drawer onto out-soft) reach the
+        // `ease-*` utilities too. They used to be literal copies the media
+        // query could not touch. The fallback keeps a document that never loads
+        // globals.css on the same curve.
+        //
         // Tailwind's stock `ease-out` (0,0,.2,1) and the bare `transition`
         // default (.4,0,.2,1) are not on the ladder; hundreds of call sites
         // write them. Pointing both at out-soft puts every one of those on
         // the house curve without touching a call site (BRAND_IDENTITY.md,
         // "Motion and interaction").
-        DEFAULT: "cubic-bezier(0.33, 1, 0.68, 1)",
-        out: "cubic-bezier(0.33, 1, 0.68, 1)",
-        "out-soft": "cubic-bezier(0.33, 1, 0.68, 1)",
-        "out-strong": "cubic-bezier(0.32, 0.72, 0, 1)",
-        "out-expo": "cubic-bezier(0.16, 1, 0.3, 1)",
+        DEFAULT: "var(--ease-out-soft, cubic-bezier(0.33, 1, 0.68, 1))",
+        out: "var(--ease-out-soft, cubic-bezier(0.33, 1, 0.68, 1))",
+        "out-soft": "var(--ease-out-soft, cubic-bezier(0.33, 1, 0.68, 1))",
+        "out-strong": "var(--ease-out-strong, cubic-bezier(0.32, 0.72, 0, 1))",
+        "out-expo": "var(--ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1))",
         // The product had NO accelerate curve, so every exit ran an entrance
         // curve — which is why dismissals felt like the UI was reluctant to let
         // go. `in-out` is for A-to-B moves where both endpoints are visible
         // (chevron rotate, accordion, sidebar width); running those on an
         // ease-out makes them look like they arrive from off-screen.
-        in: "cubic-bezier(0.4, 0, 1, 1)",
-        "in-out": "cubic-bezier(0.65, 0, 0.35, 1)",
+        in: "var(--ease-in, cubic-bezier(0.4, 0, 1, 1))",
+        "in-out": "var(--ease-in-out, cubic-bezier(0.65, 0, 0.35, 1))",
         // The only symmetric curve here, and the only one meant for a LOOP:
-        // loops have a seam that an ease-out visibly pulses at. Already inlined
-        // verbatim in the pulse-ring / status-glow / gen-sweep keyframes below;
-        // see the reasoning beside --ease-breathe in globals.css.
-        breathe: "cubic-bezier(0.45, 0, 0.55, 1)",
+        // loops have a seam that an ease-out visibly pulses at. See the
+        // reasoning beside --ease-breathe in globals.css.
+        breathe: "var(--ease-breathe, cubic-bezier(0.45, 0, 0.55, 1))",
         // The one overshooting curve — for elements with apparent mass that
         // should settle rather than stop. See --ease-out-back in globals.css.
-        "out-back": "cubic-bezier(0.34, 1.32, 0.64, 1)",
+        "out-back": "var(--ease-out-back, cubic-bezier(0.34, 1.32, 0.64, 1))",
         // Soft UI (SOFT_UI.md §2.4). `spring` is the entrance curve for
         // anything that pops into place: a long, overshoot-free settle (opacity
         // past 1 just clips). `drawer` is the sheet curve: front-loaded,
-        // overshoot-free, named for the job. Both mirror --ease-spring /
-        // --ease-drawer in globals.css, the generated token source; they must
-        // stay equal so `ease-spring` and `var(--ease-spring)` move alike.
-        spring: "cubic-bezier(0.22, 1, 0.36, 1)",
-        drawer: "cubic-bezier(0.32, 0.72, 0, 1)",
+        // overshoot-free, named for the job.
+        spring: "var(--ease-spring, cubic-bezier(0.22, 1, 0.36, 1))",
+        drawer: "var(--ease-drawer, cubic-bezier(0.32, 0.72, 0, 1))",
       },
+      // The duration ladder, read from the same custom properties (values as
+      // fallbacks) so `duration-slow` shortens to the base rung under reduced
+      // motion exactly as `var(--dur-slow)` does.
+      // tests/tailwind-motion-tokens.test.ts holds every key to its token.
       transitionDuration: {
-        press: "70ms",
-        fast: "120ms",
-        exit: "160ms",
-        base: "220ms",
-        slow: "360ms",
+        press: "var(--dur-press, 70ms)",
+        fast: "var(--dur-fast, 120ms)",
+        exit: "var(--dur-exit, 160ms)",
+        base: "var(--dur-base, 220ms)",
+        slow: "var(--dur-slow, 360ms)",
         // One rung above slow, reserved for a change the user did not cause —
         // see the reasoning beside --dur-emphasis in globals.css.
-        emphasis: "560ms",
+        emphasis: "var(--dur-emphasis, 560ms)",
       },
       fontFamily: {
         // A single product voice: Inter is every control, heading and reading
@@ -509,6 +525,10 @@ const config: Config = {
        * text, the *-foreground keys are preserved.
        */
       textColor: {
+        presence: {
+          DEFAULT: "hsl(var(--presence-ink) / <alpha-value>)",
+          ink: "hsl(var(--presence-ink) / <alpha-value>)",
+        },
         primary: {
           DEFAULT: "hsl(var(--primary-ink) / <alpha-value>)",
           foreground: "hsl(var(--primary-foreground) / <alpha-value>)",

@@ -19,8 +19,11 @@
  */
 
 import { applyBackingStore, backingStore, watchCanvas } from "@/lib/canvas/canvas-lifecycle";
+import { SCRIPT_COLOR } from "@/lib/design/tokens.generated";
 
 export type Rgb = readonly [number, number, number];
+
+const PRESENCE_RGB: Rgb = [1, 3, 5].map((i) => parseInt(SCRIPT_COLOR.presence.light.slice(i, i + 2), 16)) as unknown as Rgb;
 
 export interface Palette {
   ink: Rgb;
@@ -434,7 +437,8 @@ export class DotCanvas {
   private dirty = true;
   private visible = false;
   private still = false;
-  private palette: Palette = { ink: [26, 28, 30], presence: [45, 73, 201], sub: [107, 109, 113], strength: 0.8, glow: 0.3, floor: 0.35, size: 1, axis: 1, font: "monospace" };
+  // Until the first read of the element's colours (readPalette): presence from the token projection.
+  private palette: Palette = { ink: [26, 28, 30], presence: PRESENCE_RGB, sub: [107, 109, 113], strength: 0.8, glow: 0.3, floor: 0.35, size: 1, axis: 1, font: "monospace" };
   private geo = { x: 0.5, y: 0.5, span: 0, zoom: 1 };
   private glowSprite: HTMLCanvasElement | null = null;
   private eased = { x: 0, y: 0 };

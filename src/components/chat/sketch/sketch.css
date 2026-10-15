@@ -16,7 +16,6 @@
   --sk-key-hover: hsl(var(--foreground) / 0.06);
   --sk-key-on: hsl(var(--foreground) / 0.09);
   --sk-pill: hsl(var(--popover));
-  --sk-presence: #2d49c9;
   --sk-ease: cubic-bezier(0.16, 1, 0.3, 1);
   --sk-pad: 12px;
   --sk-radius: 28px;
@@ -55,7 +54,6 @@
   --sk-key-hover: hsl(0 0% 100% / 0.07);
   --sk-key-on: hsl(0 0% 100% / 0.1);
   --sk-pill: #222326;
-  --sk-presence: #97a6e6;
   box-shadow:
     inset 0 1px 0 hsl(0 0% 100% / 0.04),
     0 24px 64px -24px rgb(0 0 0 / 0.6),

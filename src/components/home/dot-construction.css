@@ -34,7 +34,7 @@
   pointer-events: none;
   user-select: none;
   color: var(--dots-ink, hsl(var(--foreground)));
-  border-top-color: var(--dots-presence, #2d49c9);
+  border-top-color: var(--dots-presence, hsl(var(--presence)));
   outline-color: var(--dots-sub, hsl(var(--muted-foreground)));
   font-family: var(--font-mono), "JetBrains Mono", ui-monospace, monospace;
   /* Paper: slightly larger dots, the far half held brighter, the number line
@@ -46,7 +46,6 @@
   --_dots-axis: var(--dots-axis, 0.5);
 }
 .dark .alv-dots {
-  border-top-color: var(--dots-presence, #97a6e6);
   --_dots-strength: var(--dots-strength, 0.82);
   --_dots-glow: var(--dots-glow, 0.6);
   --_dots-floor: var(--dots-floor, 0.35);

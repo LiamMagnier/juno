@@ -29,14 +29,14 @@
   --gen-travel: cubic-bezier(0.4, 0, 0.2, 1);
   --gen-reveal: 1500ms;
   --gen-lead: 220ms;
-  --gen-presence: rgb(45 73 201 / 0.11);
+  --gen-presence: hsl(var(--presence) / 0.11);
   --gen-ink: hsl(var(--foreground) / 0.075);
   --gen-light: hsl(var(--background) / 0.75);
   --gen-hair: hsl(var(--foreground) / 0.08);
   --gen-tick: hsl(var(--foreground) / 0.2);
 }
 .dark .gen-root {
-  --gen-presence: rgb(151 166 230 / 0.13);
+  --gen-presence: hsl(var(--presence) / 0.13);
   --gen-ink: hsl(var(--foreground) / 0.06);
   --gen-light: hsl(var(--background) / 0.55);
   --gen-hair: hsl(var(--foreground) / 0.1);

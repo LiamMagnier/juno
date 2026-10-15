@@ -3,6 +3,7 @@
 
 import { PRODUCT_NAME } from "@/lib/brand/names";
 import { AlevrLockup } from "@/components/brand/alevr-lockup";
+import { SCRIPT_COLOR } from "@/lib/design/tokens.generated";
 
 // This boundary replaces the root layout, so its V3 surface and font fallbacks
 // must work without Providers, global CSS or an initialized theme context.
@@ -24,7 +25,7 @@ const STYLES = `
   .actions > :first-child { background:#191b1e; color:#fcfcfd; }
   .actions > :first-child:hover { background:#4e5054; }
   .actions a:hover { background:#e6e7e9; }
-  :focus-visible { outline:2px solid #2d49c9; outline-offset:3px; }
+  :focus-visible { outline:2px solid ${SCRIPT_COLOR.presence.light}; outline-offset:3px; }
   .reference { font-size:12px; overflow-wrap:anywhere; }
   @font-face { font-family:Inter; src:url('/fonts/inter-latin.woff2') format('woff2'); font-weight:400 600; font-display:swap; }
   @font-face { font-family:Newsreader; src:url('/fonts/newsreader-regular.ttf') format('truetype'); font-weight:400; font-display:swap; }
@@ -33,7 +34,7 @@ const STYLES = `
     body { background:#18191b; color:#e8e9eb; } p { color:#95979c; }
     .actions a,button { background:#2d2e31; color:#e8e9eb; } .actions a:hover { background:#37383c; }
     .actions > :first-child { background:#e8e9eb; color:#18191b; } .actions > :first-child:hover { background:#b4b6ba; }
-    :focus-visible { outline-color:#97a6e6; }
+    :focus-visible { outline-color:${SCRIPT_COLOR.presence.dark}; }
   }
   @media(max-width:767px) { header { padding:20px 24px; } main { grid-template-columns:minmax(0,1fr); padding:48px 24px; gap:40px; } h1 { font-size:40px; } .code { font-size:140px; } }
   @keyframes public-enter { from { opacity:.5; transform:translateY(24px); } to { opacity:1; transform:none; } }

@@ -58,23 +58,20 @@
 /*
  * Juno design system
  * ------------------
- * Warm-paper light theme / warm-charcoal dark theme.
+ * Graphite neutrals on a near-white page (light) and a near-black one (dark),
+ * with presence ultramarine as the one live colour.
  * Accent is swappable at runtime via [data-accent] on <html> and drives
  * --primary + --ring. next-themes manages the `.dark` class on <html>.
  */
 
 @layer base {
   :root {
-    /* Warm neutrals: red is the highest channel and blue the lowest, on every
-       rung of the ramp. This is the brand, not a preference — a hue-240 grey
-       reads as stock shadcn, which is exactly what these tokens had drifted
-       back into. `JunoDesignSystemTests.testBrandNeutralsAreWarmInBothAppearances`
-       asserts r > b && g >= b over the whole ramp and is the gate that catches
-       the drift the next time, on both clients at once. */
-    /* Flat ground (docs/design/FLAT_UI.md §3.1). One warm plane: the page is
-       97%, a card sits two points above it as a fill with a hairline, and a
-       well sits on the page's own value. No shadow carries depth in-flow, so
-       the ground can sit close to white without starving a highlight. */
+    /* Graphite neutrals (hue 210-225, 3-9% saturation): the refoundation
+       retired the warm paper ramp these comments used to describe, and the
+       values below are what ships. The page sits at 99%, a card is pure white
+       on it, and a well sits on the page's own value. No shadow carries depth
+       in-flow (docs/design/FLAT_UI.md §3.1), so the ground can sit close to
+       white without starving a highlight. */
 
     /* Refoundation round 3: floating layers only, solid fallbacks below. */
     --faint-foreground: 217.500 3.704% 42.353%;
@@ -84,9 +81,8 @@
     --background: 240.000 20.000% 99.020%;
     --foreground: 216.000 9.091% 10.784%;
 
-    /* 98%, not a pure white. A literal #fff card floating on warm paper is the
-       one pairing that reads as somebody else's brand; a 2% step is the raised
-       rung, and the highlight in --shadow-raised is what carries the lift. */
+    /* Pure white, one step above the 99% page: the raised rung, with
+       --shadow-raised carrying the lift. */
     --card: 0.000 0.000% 100.000%;
     --card-foreground: 216.000 9.091% 10.784%;
 
@@ -98,6 +94,24 @@
     --primary: 216 9% 11%;
     --primary-foreground: 0 0% 100%;
     --primary-ink: 216 9% 11%;
+
+    /* Presence: the brand's one live colour (ultramarine, #2d49c9 / #97a6e6).
+       It marks what is working right now: the galaxy's accent stars, a live
+       ring, a recalculated cell settling, a selection being drawn. Never a
+       control fill (that is --primary) and never a status (those are the ink
+       ramps). `--presence` paints marks and fills, `--presence-ink` is the
+       same colour as text; they match today, as --primary and --primary-ink do
+       on most accents, and are split so text contrast can be tuned without
+       moving the marks. Both clear 4.5:1 on --background and --secondary in
+       both themes (tests/presence-token.test.ts). Projected to Swift and TS by
+       `npm run design:tokens`, so canvas code reads it from
+       tokens.generated.ts instead of typing the hex again. */
+    --presence: 229.231 63.415% 48.235%;
+    --presence-ink: 229.231 63.415% 48.235%;
+    /* The warmth the galaxy's core is mixed toward (12%, docs/design/GALAXY_SPEC.md):
+       #8a6a3e on paper, #f3d9b1 on charcoal. A canvas reads it from
+       tokens.generated.ts; it is never a surface or text colour. */
+    --galaxy-core: 34.737 38.000% 39.216%;
 
     --secondary: 210.000 6.667% 94.118%;
     /* The slider knob — a light disc in BOTH themes, which no existing token
@@ -275,9 +289,7 @@
 
        `--sidebar-selected-border` is no longer drawn by the row. It stays
        defined because the native clients read the token table
-       (scripts/generate-design-tokens.ts). The half-step of extra saturation
-       (22% on a 22% panel, and 6% on dark) is what keeps the fill warm paper
-       rather than grey shadow. */
+       (scripts/generate-design-tokens.ts). */
     --sidebar-hover: 210.000 4.545% 91.373%;
     --sidebar-selected: 220.000 5.455% 89.216%;
     --sidebar-selected-border: 216.000 5.618% 82.549%;
@@ -554,7 +566,7 @@
 
   .dark {
     /*
-     * Warm charcoal, NOT true black (SOFT_UI.md §2.1).
+     * Graphite near-black, NOT true black (SOFT_UI.md §2.1).
      *
      * The previous ground was #000, chosen for OLED. It cost the product its
      * depth model: a dark shadow on a black page darkens nothing, and a light
@@ -562,15 +574,14 @@
      * lightness step and a 1px rim, which is a flat UI wearing a lit edge.
      * Soft UI needs a ground with room on BOTH sides — dark enough for the
      * `--neu-dark` shadow to sink below it and light enough for a top-edge
-     * highlight to read as light rather than as a glow. 9% is
-     * the value at which both work; the ladder above it steps in threes
-     * (card 12 · popover 14 · muted 15 · accent 18 · border 20), which is the
-     * same order the light theme stacks in, so nothing that was above another
-     * thing is now below it.
+     * highlight to read as light rather than as a glow. 10% is the ground;
+     * the ladder above it steps in twos (card 14 · popover 16 · accent 18),
+     * the same order the light theme stacks in, so nothing that was above
+     * another thing is now below it.
      *
-     * Hue 30 with 6-7% saturation: warm enough that the greys belong to the
-     * same paper family the light theme uses and the coral has something to
-     * sit on, low enough that nobody can name the colour.
+     * Hue 220-225 with 4-7% saturation: the same graphite family as the light
+     * theme, low enough that nobody can name the colour. (It was a warm hue-30
+     * charcoal before the refoundation; the values moved and this note had not.)
      */
 
     /* Refoundation round 3: floating layers only, solid fallbacks below. */
@@ -590,6 +601,10 @@
     --primary: 220 7% 91%;
     --primary-foreground: 216 9% 11%;
     --primary-ink: 220 7% 91%;
+
+    --presence: 228.608 61.240% 74.706%;
+    --presence-ink: 228.608 61.240% 74.706%;
+    --galaxy-core: 36.364 73.333% 82.353%;
 
     --secondary: 225.000 4.255% 18.431%;
     /* See --knob above: light in this theme too, deliberately. */
@@ -1664,6 +1679,9 @@
     --voice-glow-you: #bc5806;
     --voice-glow-you-light: #f69147;
     --voice-glow-you-core: #bc5806;
+    /* Hex, not hsl(var(--presence)): the WebGL renderer parses these as hex
+       (voice-glow-palette.ts). They equal --presence, which
+       tests/presence-token.test.ts holds them to. */
     --voice-glow-alevr: #2d49c9;
     --voice-glow-alevr-light: #6782f2;
     --voice-glow-alevr-core: #2d49c9;

@@ -145,10 +145,9 @@ final class JunoTokenConsumptionTests: XCTestCase {
             "junoCaution": .nativeOnly(
                 "The shipped status ramp. Migrates to junoWarningInk (text) / junoWarning (fill)."
             ),
-            "junoPresence": .nativeOnly(
-                "Presence ink, the brand's live colour. The web states it in thinking-mark.css (--tm-presence), not globals.css."
-            ),
-            "junoGalaxyCore": .nativeOnly("The galaxy thinking mark's warm core (GALAXY_SPEC). No web token."),
+            "junoPresence": .generated(.junoPresence, G.presence),
+            "junoPresenceInk": .generated(.junoPresenceInk, G.presenceInk),
+            "junoGalaxyCore": .generated(.junoGalaxyCore, G.galaxyCore),
             // Builders.
             "junoAdaptive": .builder,
         ]
@@ -228,6 +227,8 @@ final class JunoTokenConsumptionTests: XCTestCase {
         let web: [JunoAccent: (light: (Double, Double, Double), dark: (Double, Double, Double))] = [
             // Graphite keeps the historical persisted key for compatibility.
             .coral: ((216, 0.09, 0.11), (220, 0.07, 0.91)),
+            // Ultramarine is presence as a control colour: the same pair as --presence.
+            .ultramarine: ((229.231, 0.63415, 0.48235), (228.608, 0.61240, 0.74706)),
             .juniper: ((152, 0.44, 0.31), (152, 0.42, 0.54)),
             .teal: ((180, 0.63, 0.315), (187, 0.58, 0.49)),
             .violet: ((249, 0.59, 0.60), (249, 0.66, 0.71)),
@@ -341,12 +342,6 @@ final class JunoTokenConsumptionTests: XCTestCase {
                 "The phone's incognito ink ground over a light app; the web states no incognito ground. Shipped (96ad8299); moves to a generated token in the iOS pass.",
             "JunoMobileIncognito.swift:deep":
                 "The phone's incognito ink ground over a dark app, a step below the canvas; no web token. Shipped (96ad8299); moves with `ground`.",
-            "JunoColors.swift:presenceLight":
-                "Presence ink (#2D49C9), which the web states in thinking-mark.css rather than globals.css.",
-            "JunoColors.swift:presenceDark":
-                "Presence ink on charcoal (#97A6E6), stated in thinking-mark.css rather than globals.css.",
-            "JunoColors.swift:galaxyCoreLight": "The galaxy mark's warm core on paper (#8A6A3E); the web lane types it in galaxy-mark.tsx.",
-            "JunoColors.swift:galaxyCoreDark": "The galaxy mark's warm core on charcoal (#F3D9B1); the web lane types it in galaxy-mark.tsx.",
             "JunoMobilePremium.swift:shadow":
                 "The phone front door's umber shadow hue, warmer than the web's --shadow-ink. Shipped (42d77b79); moves to JunoGeneratedColors.shadowInk in the iOS pass.",
         ]

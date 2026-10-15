@@ -33,7 +33,6 @@
 .cframe,
 .cparams-tip {
   --cp-ease: cubic-bezier(0.16, 1, 0.3, 1);
-  --cp-presence: #2d49c9;
   --cp-ink: hsl(var(--foreground));
   --cp-sub: hsl(var(--muted-foreground));
   --cp-hair: hsl(var(--foreground) / 0.08);
@@ -46,7 +45,6 @@
 .dark .cparams-length,
 .dark .cframe,
 .dark .cparams-tip {
-  --cp-presence: #97a6e6;
   --cp-hair: hsl(var(--foreground) / 0.09);
   --cp-line: hsl(var(--foreground) / 0.15);
 }
@@ -363,7 +361,7 @@
   height: 16px;
   margin-top: -8px;
   border-radius: 1px;
-  background-color: var(--cp-presence);
+  background-color: hsl(var(--presence));
   transform: scaleY(0);
   transition: transform 240ms var(--cp-ease);
 }
@@ -563,13 +561,13 @@
 /* The current frame: a presence hairline round the tile, its shape and
    number in presence. The one blue object in the panel. */
 .cframe__tile[aria-checked="true"] {
-  box-shadow: inset 0 0 0 1px var(--cp-presence);
+  box-shadow: inset 0 0 0 1px hsl(var(--presence));
 }
 .cframe__tile[aria-checked="true"] .cframe__shape {
-  border-color: var(--cp-presence);
+  border-color: hsl(var(--presence));
 }
 .cframe__tile[aria-checked="true"] .cframe__label {
-  color: var(--cp-presence);
+  color: hsl(var(--presence-ink));
 }
 .cframe__tile[data-conflict] .cframe__shape {
   border-color: hsl(var(--foreground) / 0.28);
