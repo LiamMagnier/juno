@@ -147,7 +147,7 @@ POST /api/chat's body and frames are classified field by field in the chat wire 
 | `/api/conversations` | GET, POST, DELETE | Native | JunoChatKit, JunoCodeKit |  |
 | `/api/conversations/[id]` | GET, PATCH, DELETE | Native | JunoChatKit |  |
 | `/api/conversations/[id]/fork` | POST | Native | JunoChatKit |  |
-| `/api/conversations/[id]/messages` | POST | Native | JunoChatKit |  |
+| `/api/conversations/[id]/messages` | GET, POST | Native | JunoChatKit |  |
 | `/api/conversations/[id]/title` | POST | Native | JunoChatKit |  |
 | `/api/conversations/[id]/tasks` | GET | Planned |  | Every task a conversation draws (all live ones plus the newest finished one), for several tasks per conversation. The apps still follow the newest task through /api/work/sessions?conversationId=, which is unchanged. |
 | `/api/folders` | GET, POST | Web only |  | The apps create and rename folders through sync (/api/v1/mutations). |
