@@ -55,6 +55,7 @@ export interface EngineApprovalRequest {
   toolName: string;
   input: unknown;
   risk: "safe" | "edit" | "command" | "sensitive";
+  requiresHuman?: boolean;
   summary: string;
   agentId?: string;
   agentLabel?: string;
@@ -95,6 +96,8 @@ export interface AlevrEngine {
   resumeSession(id: string, options: EngineSessionOptions): EngineSession;
   /** Builds the agent-core ProviderAdapter for an instance + model, or throws a plain-language error. */
   providerFor(instance: ProviderInstance, model: string, secrets: EnvSecrets): unknown;
+  /** Owner-scoped tools through Alevr's approval/audit broker. */
+  connectionTools?(sessionId: string, secrets: EnvSecrets): Promise<unknown[]>;
 }
 
 /**
@@ -119,6 +122,17 @@ export function liveAuthorizationFetch(secrets: EnvSecrets, base: typeof fetch =
 export async function loadAgentCoreEngine(): Promise<AlevrEngine> {
   const core = (await import("@juno/agent-core" as string)) as Record<string, any>;
   return {
+    connectionTools: async (sessionId, secrets) => {
+      const backend = secrets.backend;
+      if (!backend) return [];
+      const base = new URL(backend.baseUrl);
+      if (base.pathname.replace(/\/$/, "") !== "/api/agent") throw new Error("Invalid Alevr backend URL");
+      return core.brokeredMcpTools(core.mcpBridgeRequest({
+        url: new URL("/api/mcp/session", base).href,
+        sessionId,
+        authorization: () => secrets.backend?.baseUrl === backend.baseUrl ? secrets.backend.authorization : undefined,
+      }));
+    },
     createSession: (o) => core.AgentSession.create(o) as EngineSession,
     resumeSession: (id, o) => core.AgentSession.resume(id, o) as EngineSession,
     providerFor: (instance, model, secrets) => {
@@ -258,7 +272,13 @@ export class AlevrEngineAdapter implements ProviderAdapter {
 
   async openSession(instance: ProviderInstance, options: OpenSessionOptions): Promise<ProviderSession> {
     const engine = await this.#get();
-    return new EngineBackedSession(engine, instance, options, this.secrets);
+    let connections: unknown[] = [];
+    let connectionsUnavailable = false;
+    if (engine.connectionTools && this.secrets.backend) {
+      try { connections = await engine.connectionTools(options.sessionId, this.secrets); }
+      catch { connectionsUnavailable = true; options.logger.warn("Account connections could not be loaded; this session continues without them."); }
+    }
+    return new EngineBackedSession(engine, instance, { ...options, extraTools: [...(options.extraTools ?? []), ...connections] }, this.secrets, connectionsUnavailable);
   }
 }
 
@@ -298,6 +318,7 @@ class EngineBackedSession implements ProviderSession {
     private readonly instance: ProviderInstance,
     options: OpenSessionOptions,
     private readonly secrets: EnvSecrets,
+    private connectionsUnavailable = false,
   ) {
     this.#logger = options.logger;
     this.#extraTools = options.extraTools;
@@ -377,6 +398,10 @@ class EngineBackedSession implements ProviderSession {
 
   async runTurn(request: TurnRequest): Promise<TurnResult> {
     if (this.#turn) throw new Error("a turn is already running");
+    if (this.connectionsUnavailable) {
+      request.sink.notice("warning", "Account connections could not be loaded. This session continues without them.", "connections_unavailable");
+      this.connectionsUnavailable = false;
+    }
     let session: EngineSession;
     this.#runtimeMode = request.runtimeMode;
     this.#interactionMode = request.interactionMode;
@@ -472,7 +497,7 @@ class EngineBackedSession implements ProviderSession {
     // inside the folder runs; sudo, another machine or outside the folder asks.
     // A subagent's own narrower mode is kept: only its sensitive asks are ruled here.
     const eligible = !r.agentId || r.risk === "sensitive";
-    const reason = eligible ? engineGuardReason(r.toolName, r.input, this.#cwd) : "a subagent's own mode";
+    const reason = r.requiresHuman ? "project hook configuration needs your review" : eligible ? engineGuardReason(r.toolName, r.input, this.#cwd) : "a subagent's own mode";
     let guard: string | undefined;
     if (this.#runtimeMode === "full" && this.#interactionMode !== "plan" && eligible) {
       guard = reason;

@@ -344,6 +344,7 @@ export type { ToolExecuteOptions } from "@/lib/tools/types";
 
 export interface OpenMcpToolsetOptions {
   connectTimeoutMs?: number;
+  signal?: AbortSignal;
   onConnectorStatus?: (id: string, state: "ready" | import("@/types/run").ConnectorFailure) => void;
 }
 
@@ -465,6 +466,7 @@ export async function openMcpToolset(
 
   await Promise.all(
     active.map(async (c) => {
+      let client: Client | undefined;
       try {
         // A user MCP server, or a custom connector (`mcp:…`), is a URL
         // somebody typed into a form. Every request to one, the handshake,
@@ -479,10 +481,12 @@ export async function openMcpToolset(
           requestInit: { headers: c.headers },
           ...(userServer ? { fetch: safeMcpFetch } : {}),
         });
-        const client = new Client({ name: "juno", version: "1.0.0" });
-        await client.connect(transport);
+        client = new Client({ name: "juno", version: "1.0.0" });
+        const discoveryOptions = _opts?.connectTimeoutMs || _opts?.signal ? { ...(_opts.connectTimeoutMs ? { timeout: _opts.connectTimeoutMs } : {}), ...(_opts.signal ? { signal: _opts.signal } : {}) } : undefined;
+        if (discoveryOptions) await client.connect(transport, discoveryOptions);
+        else await client.connect(transport);
         clients.set(c.id, client);
-        const listed = await client.listTools();
+        const listed = discoveryOptions ? await client.listTools(undefined, discoveryOptions) : await client.listTools();
         const disabled = new Set(c.custom?.disabledTools ?? []);
         for (const t of listed.tools) {
           if (disabled.has(t.name)) continue;
@@ -519,6 +523,8 @@ export async function openMcpToolset(
           });
         }
       } catch {
+        clients.delete(c.id);
+        await client?.close().catch(() => {});
         // Connector unreachable/unauthorized — skip it; the chat proceeds without it.
       }
     })

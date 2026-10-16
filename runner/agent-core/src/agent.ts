@@ -44,6 +44,8 @@ import { BackgroundJobs, jobAwareShellTools } from './harness/jobs.js';
 import { AutoReviewer, userInstructionsFrom } from './harness/auto-review.js';
 import { loadInstructionChain, renderInstructionChain } from './harness/instructions.js';
 import { TurnItemProjector, type TurnItemOp } from './harness/turn-items.js';
+import { ProjectHooks } from './hooks.js';
+import { bashTool } from './tools/bash.js';
 
 const MAX_STEPS_PER_TURN = 60;
 /** Times a turn re-enters the loop to hand the parent its background children's notices. */
@@ -61,6 +63,8 @@ export interface AgentCallbacks {
 }
 
 export interface AgentOptions {
+  /** Exact hook config hashes reviewed outside the clone; false disables hooks. */
+  hooks?: { trustedHashes?: readonly string[] } | false;
   provider: ProviderAdapter;
   cwd: string;
   model?: string;
@@ -317,6 +321,7 @@ export class AgentSession {
   private messagingAllowed = false;
   private readonly systemAppendix: string | undefined;
   private repositoryMap: RepositoryWorkingMap | null;
+  private readonly projectHooks: ProjectHooks | null;
 
   private constructor(store: SessionStore, opts: AgentOptions) {
     this.store = store;
@@ -340,6 +345,24 @@ export class AgentSession {
       trustProjectSettings: opts.trustProjectSettings === true,
       ...(opts.userSettingsFile === undefined ? {} : { userSettingsFile: opts.userSettingsFile }),
     });
+    this.projectHooks = opts.hooks === false ? null : new ProjectHooks({
+      emit: (event) => this.emit(event),
+      requestApproval: (request) => this.callbacks.requestApproval(request),
+      trustedHashes: opts.hooks?.trustedHashes,
+      permission: (command, ctx) => {
+        const { risk } = classifyRisk(bashTool, { command });
+        const subject = ruleSubjectFor('bash', { command }, ctx.cwd);
+        return this.permissions.decide(ctx.permissionMode ?? this.mode, 'bash', risk, subject);
+      },
+    });
+    if (this.projectHooks) {
+      this.tools = this.tools.map((tool) => this.projectHooks!.wrap(tool, (ctx) => ({
+        ...ctx,
+        // Children inherit the same confinement, narrowed to their worktree.
+        ...(opts.containerSandbox && !ctx.containerSandbox ? { containerSandbox: { ...opts.containerSandbox, worktreeHostPath: ctx.cwd } } : {}),
+      })));
+      this.toolsByName = new Map(this.tools.map((tool) => [tool.spec.name, tool]));
+    }
     this.checkpoints = new CheckpointStore(store.dir);
     this.messages = store.loadMessages();
     this.repositoryMap = store.loadRepositoryMap();
@@ -883,6 +906,13 @@ export class AgentSession {
     await this.subagents?.drainActive();
     // Notices the parent will never read now (it stopped): drop them.
     this.subagents?.takeNotices();
+    if (!signal.aborted && this.projectHooks) {
+      const stopped = await this.projectHooks.run('Stop', { cwd: this.cwd, env: this.env, containerSandbox: this.containerSandbox, permissionMode: this.mode, signal });
+      if (!stopped.ok) {
+        this.emit({ type: 'error', message: stopped.reason!, code: 'hook_failed' });
+        stopReason = 'error';
+      }
+    }
     this.store.meta.turnCount = turnIndex + 1;
     this.store.saveMeta();
     const subagentUsage = this.subagents?.turnSubagentUsage;
