@@ -238,6 +238,8 @@ function PaletteShell({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         hideClose
+        // Pinned near the top so it stays above the phone keyboard: never a bottom sheet.
+        sheet={false}
         // svh + inset-x centering (no transform) so the pop-in/out keyframes own
         // `transform`, and the palette stays reachable above the mobile keyboard.
         // Surface/radius/border come from DialogContent; only the position,
