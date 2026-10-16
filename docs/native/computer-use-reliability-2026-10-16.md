@@ -48,7 +48,9 @@ Additional changes:
   integer conversions. Extreme zoom bounds are clamped before conversion.
 - Batches enforce the advertised 20-action limit before performing anything.
   Verified partial typing is a failure, stopping dependent actions; input is
-  never replayed automatically.
+  never replayed automatically. An unconfirmed Accessibility write is reported
+  as an unknown outcome; only explicitly unsupported operations may fall back
+  to another input mechanism. Stale element ids cannot fall back to a point.
 
 ## Validation
 

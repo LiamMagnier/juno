@@ -306,6 +306,21 @@ public struct SystemScreenCapture: ScreenCapturing {
 
 // MARK: - Accessibility
 
+/// A failed cross-process write can have taken effect. Only an explicitly
+/// unsupported operation is safe to replace with another input mechanism.
+enum AXWriteResult {
+    static func accepted(_ status: AXError) throws -> Bool {
+        switch status {
+        case .success: return true
+        case .actionUnsupported, .attributeUnsupported, .notImplemented: return false
+        default:
+            throw ScreenControlError.driverFailed(
+                "The app did not confirm the Accessibility input (error \(status.rawValue)). Its result is unknown; inspect a fresh screenshot before trying another action. The input was not repeated."
+            )
+        }
+    }
+}
+
 public final class SystemAccessibility: AccessibilityInspecting, @unchecked Sendable {
     private struct Node: Hashable {
         let element: AXUIElement
@@ -566,22 +581,30 @@ public final class SystemAccessibility: AccessibilityInspecting, @unchecked Send
         return nil
     }
 
-    private func perform(_ action: String, at point: ScreenPoint?, elementID: String?, pid: Int32) -> Bool {
-        let base = reference(elementID, pid: pid) ?? point.flatMap { element(at: $0, within: pid) }
+    private func perform(_ action: String, at point: ScreenPoint?, elementID: String?, pid: Int32) throws -> Bool {
+        let base: AXUIElement?
+        if let elementID {
+            guard let known = reference(elementID, pid: pid) else { throw ScreenControlError.unknownElement(elementID) }
+            base = known
+        } else {
+            base = point.flatMap { element(at: $0, within: pid) }
+        }
         guard let base, let element = performable(base, action: action) else { return false }
-        return AXUIElementPerformAction(element, action as CFString) == .success
+        return try AXWriteResult.accepted(AXUIElementPerformAction(element, action as CFString))
     }
 
     public func press(at point: ScreenPoint?, elementID: String?, pid: Int32) async throws -> Bool {
-        perform(kAXPressAction, at: point, elementID: elementID, pid: pid)
+        try perform(kAXPressAction, at: point, elementID: elementID, pid: pid)
     }
 
     public func showMenu(at point: ScreenPoint?, elementID: String?, pid: Int32) async throws -> Bool {
-        perform(kAXShowMenuAction, at: point, elementID: elementID, pid: pid)
+        try perform(kAXShowMenuAction, at: point, elementID: elementID, pid: pid)
     }
 
     public func setText(_ text: String, elementID: String?, pid: Int32, replace: Bool) async throws -> Bool {
-        guard let element = reference(elementID, pid: pid) ?? focused(pid: pid) else { return false }
+        let target = elementID.flatMap { reference($0, pid: pid) }
+        if let elementID, target == nil { throw ScreenControlError.unknownElement(elementID) }
+        guard let element = target ?? focused(pid: pid) else { return false }
         let role = string(element, kAXRoleAttribute)
         let subrole = string(element, kAXSubroleAttribute)
         if role == "AXSecureTextField" || subrole == "AXSecureTextField" { throw ScreenControlError.secureField }
@@ -592,7 +615,7 @@ public final class SystemAccessibility: AccessibilityInspecting, @unchecked Send
         guard AXUIElementIsAttributeSettable(element, name as CFString, &settable) == .success, settable.boolValue else {
             return false
         }
-        return AXUIElementSetAttributeValue(element, name as CFString, text as CFString) == .success
+        return try AXWriteResult.accepted(AXUIElementSetAttributeValue(element, name as CFString, text as CFString))
     }
 
     public func value(elementID: String?, pid: Int32) async -> String? {

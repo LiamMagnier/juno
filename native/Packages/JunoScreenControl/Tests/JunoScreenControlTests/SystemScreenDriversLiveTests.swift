@@ -8,6 +8,18 @@ import XCTest
 /// Opt-in hardware check. Reads Calculator only; it never posts input or
 /// requests macOS permission. Missing grants are a skip, not a false pass.
 final class SystemScreenDriversLiveTests: XCTestCase {
+    func testUnconfirmedAccessibilityWritesNeverTriggerFallbackInput() throws {
+        XCTAssertTrue(try AXWriteResult.accepted(.success))
+        XCTAssertFalse(try AXWriteResult.accepted(.actionUnsupported))
+        XCTAssertFalse(try AXWriteResult.accepted(.attributeUnsupported))
+        for status in [AXError.cannotComplete, .failure, .invalidUIElement, .apiDisabled] {
+            XCTAssertThrowsError(try AXWriteResult.accepted(status)) { error in
+                XCTAssertTrue(error.localizedDescription.contains("result is unknown"))
+                XCTAssertTrue(error.localizedDescription.contains("not repeated"))
+            }
+        }
+    }
+
     func testRealBackgroundWindowCaptureAndAccessibility() async throws {
         guard ProcessInfo.processInfo.environment["JUNO_LIVE_SCREEN_TESTS"] == "1" else {
             throw XCTSkip("Set JUNO_LIVE_SCREEN_TESTS=1 for the real-Mac observation check.")
