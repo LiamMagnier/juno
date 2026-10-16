@@ -274,14 +274,20 @@ if (!keyframes.length) throw new Error("No keyframes found in tailwind.config.ts
 // Sanity: the durations and easings the web's Tailwind layer names must all
 // exist as tokens in globals.css, or a `duration-base` utility on the desktop
 // would compile to a variable nothing declares.
-for (const [name] of stringEntries(twExtend["transitionDuration"])) {
-  if (!rootDecls.has(`dur-${name}`)) {
-    throw new Error(`tailwind.config.ts names duration "${name}" but globals.css has no --dur-${name}`);
+// Checked by the variable each utility READS, not by its name: `ease` (the
+// DEFAULT) and `ease-out` are aliases that read --ease-out-soft, and there is
+// no --ease-DEFAULT for them to be named after.
+const tokenRead = (value: string, prefix: string) => new RegExp(`var\\(--(${prefix}-[a-z0-9-]+)`).exec(value)?.[1];
+for (const [name, value] of stringEntries(twExtend["transitionDuration"])) {
+  const token = tokenRead(value, "dur") ?? `dur-${name}`;
+  if (!rootDecls.has(token)) {
+    throw new Error(`tailwind.config.ts duration "${name}" reads --${token}, which globals.css does not declare`);
   }
 }
-for (const [name] of stringEntries(twExtend["transitionTimingFunction"])) {
-  if (!rootDecls.has(`ease-${name}`)) {
-    throw new Error(`tailwind.config.ts names easing "${name}" but globals.css has no --ease-${name}`);
+for (const [name, value] of stringEntries(twExtend["transitionTimingFunction"])) {
+  const token = tokenRead(value, "ease") ?? `ease-${name}`;
+  if (!rootDecls.has(token)) {
+    throw new Error(`tailwind.config.ts easing "${name}" reads --${token}, which globals.css does not declare`);
   }
 }
 
