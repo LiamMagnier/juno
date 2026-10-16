@@ -9,6 +9,7 @@ import { detectFormat, findConversationsEntry } from "@/lib/history-import";
 import { PANEL_COPY } from "@/components/chat/panel/copy";
 import { PANEL_COPY_DE } from "@/components/chat/panel/copy-de";
 import { FINAL_ROUND_NOTE } from "@/lib/llm/loop.prompt";
+import { senderAddress } from "@/lib/email-sender";
 
 /**
  * G44: nobody reads the codename. The product is Alevr; "Juno" stays in
@@ -94,6 +95,9 @@ function walk(dir: string, out: string[] = []): string[] {
  */
 const SWEEP_EXEMPT = new Set([
   "runner/agent-core/src/compaction.ts",
+  // Generated at build time from every source file, the dev galleries'
+  // fixtures included; gitignored, and only rendered strings are translated.
+  "src/lib/i18n-catalog.generated.ts",
 ]);
 
 const SWEPT_TREES = ["src", "runner/agent-core/src", "runner/env-server/src"];
@@ -152,6 +156,15 @@ test("an account export is named for Alevr, and an archive from before the renam
   assert.equal(detectFormat(["alevr-export.json"]), "juno");
   assert.equal(findConversationsEntry(["juno-export.json"]), "juno-export.json");
   assert.equal(detectFormat(["nested/juno-export.json"]), "juno");
+});
+
+test("mail never arrives from the codename, whatever an old EMAIL_FROM says", () => {
+  assert.equal(senderAddress(undefined), "Alevr <hello@chat.liams.dev>");
+  assert.equal(senderAddress("Juno <hello@example.test>"), "Alevr <hello@example.test>");
+  assert.equal(senderAddress('"Juno" <hello@example.test>'), "Alevr <hello@example.test>");
+  assert.equal(senderAddress("Alevr <hello@example.test>"), "Alevr <hello@example.test>");
+  assert.equal(senderAddress("Juno Team <hi@juno.example>"), "Juno Team <hi@juno.example>", "only the bare codename is swapped; the address is never touched");
+  assert.equal(senderAddress("hello@example.test"), "hello@example.test");
 });
 
 test("downloads a person saves carry the product's name, not the codename", () => {
