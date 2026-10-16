@@ -69,12 +69,52 @@ const RESPONSES_TOOL_OUTPUTS = new Set([
   "tool_search_output",
 ]);
 
+/**
+ * Words the engine wrote whole to send the model back to work inside the turn
+ * it is already running, after the model had replied and meant to stop. The
+ * Mac engine fences them `<juno_runtime reason="…">…</juno_runtime>`
+ * (`RuntimeNote` in JunoCodeCore/RunOutcome.swift): open todos, failing
+ * checks, a goal the judge says is not met, an answer cut off at the output
+ * limit, background work checking in. A stop hook's answer is prefixed
+ * "Stop hook feedback:" (AgentLifecycleHooks.swift). Each of those is one turn
+ * going on, and a goal run the judge sends back five times is still one turn.
+ *
+ * Three reasons are the reader acting, not the engine: Retry, Resume after
+ * the app quit, and granting more steps. Those are counted, as a chat's
+ * Retry is.
+ */
+const READER_RUNTIME_REASONS = new Set(["retry", "after_quit", "keep_going"]);
+const RUNTIME_FENCE = /^<juno_runtime(?:\s[^>]*)?>/;
+const RUNTIME_CLOSE = "</juno_runtime>";
+const STOP_HOOK_PREFIX = "Stop hook feedback:\n";
+
+function isEngineContinuation(text: string): boolean {
+  if (text.startsWith(STOP_HOOK_PREFIX)) return true;
+  const fence = RUNTIME_FENCE.exec(text);
+  if (!fence || !text.trimEnd().endsWith(RUNTIME_CLOSE)) return false;
+  const reason = /\sreason="([^"]*)"/.exec(fence[0])?.[1];
+  return reason === undefined || !READER_RUNTIME_REASONS.has(reason);
+}
+
+/** The words a user message opens with: its string, or its first part when that part is text. */
+function leadingText(content: unknown): string | null {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return null;
+  const first = content[0];
+  if (!isRecord(first) || typeof first.text !== "string") return null;
+  return first.type === "text" || first.type === "input_text" ? first.text : null;
+}
+
 /** The closing user message of an Anthropic Messages body, if it is the person speaking. */
 function anthropicOpening(body: Record<string, unknown>): unknown | null {
   const messages = Array.isArray(body.messages) ? body.messages : null;
   const last = messages?.at(-1);
   if (!isRecord(last) || last.role !== "user") return null;
   const content = last.content;
+  // Consecutive user messages arrive merged into this one, so its first block
+  // is what opened the closing run.
+  const opening = leadingText(content);
+  if (opening !== null && isEngineContinuation(opening)) return null;
   if (typeof content === "string") return content.trim() ? content : null;
   if (!Array.isArray(content) || content.length === 0) return null;
   // One tool result anywhere in the closing message makes it the loop's turn:
@@ -84,28 +124,43 @@ function anthropicOpening(body: Record<string, unknown>): unknown | null {
   return content;
 }
 
-/**
- * Whether the closing user message(s) of a list sit straight after a tool's
- * result: the Chat Completions and Responses spelling of Anthropic's "a tool
- * result anywhere in the closing message". Those wires cannot carry a picture
- * inside a tool result, so the engines send a tool's screenshots as a user
- * message right after the run of results (the Swift engine's
- * `pendingImageMessages`, agent-core's compat and Responses adapters alike),
- * and text that rode along with the results lands there too. Without this,
- * every screenshot step of a computer-use or browser turn read as a new turn.
- * A person's new turn follows the model's reply, never a bare tool result;
- * the one exception (a turn stopped between its tools and the reply) is left
- * uncounted, the cheap direction to be wrong in, as on the Anthropic wire.
- */
-function followsToolResult(items: readonly unknown[], isToolResult: (item: Record<string, unknown>) => boolean): boolean {
+/** Where the run of user messages that closes the list begins, or -1 when it does not end on one. */
+function closingRunStart(items: readonly unknown[]): number {
   let index = items.length - 1;
   while (index >= 0) {
     const item = items[index];
     if (!isRecord(item) || item.role !== "user") break;
     index -= 1;
   }
-  const before = items[index];
-  return index >= 0 && index < items.length - 1 && isRecord(before) && isToolResult(before);
+  return index === items.length - 1 ? -1 : index + 1;
+}
+
+/**
+ * Whether the closing run of user messages continues the turn rather than
+ * opening one, on the wires that keep consecutive user messages apart.
+ *
+ * After a tool's result: the Chat Completions and Responses spelling of
+ * Anthropic's "a tool result anywhere in the closing message". Those wires
+ * cannot carry a picture inside a tool result, so the engines send a tool's
+ * screenshots as a user message right after the run of results (the Swift
+ * engine's `pendingImageMessages`, agent-core's compat and Responses adapters
+ * alike), and the session-state block and text that rode along with the
+ * results land there too. Without this, every screenshot step of a
+ * computer-use or browser turn read as a new turn. A person's new turn follows
+ * the model's reply, never a bare tool result; the one exception (a turn
+ * stopped between its tools and the reply) is left uncounted, the cheap
+ * direction to be wrong in, as on the Anthropic wire.
+ *
+ * Or the engine's own words opening the run (`isEngineContinuation`).
+ */
+function continuesTurn(items: readonly unknown[], isToolResult: (item: Record<string, unknown>) => boolean): boolean {
+  const start = closingRunStart(items);
+  if (start < 0) return false;
+  const before = items[start - 1];
+  if (start > 0 && isRecord(before) && isToolResult(before)) return true;
+  const first = items[start];
+  const opening = isRecord(first) ? leadingText(first.content) : null;
+  return opening !== null && isEngineContinuation(opening);
 }
 
 /** The closing message of a Chat Completions body, if it is the person speaking. */
@@ -113,7 +168,7 @@ function chatOpening(body: Record<string, unknown>): unknown | null {
   const messages = Array.isArray(body.messages) ? body.messages : null;
   const last = messages?.at(-1);
   if (!isRecord(last) || last.role !== "user") return null;
-  if (followsToolResult(messages!, (item) => item.role === "tool" || item.role === "function")) return null;
+  if (continuesTurn(messages!, (item) => item.role === "tool" || item.role === "function")) return null;
   const content = last.content;
   if (typeof content === "string") return content.trim() ? content : null;
   return Array.isArray(content) && content.length > 0 ? content : null;
@@ -130,7 +185,7 @@ function responsesOpening(body: Record<string, unknown>): unknown | null {
   // A message item may omit `type` (the easy-input form) but always has a role.
   if (last.role !== "user") return null;
   if (last.type !== undefined && last.type !== "message") return null;
-  if (followsToolResult(input, (item) => typeof item.type === "string" && RESPONSES_TOOL_OUTPUTS.has(item.type))) return null;
+  if (continuesTurn(input, (item) => typeof item.type === "string" && RESPONSES_TOOL_OUTPUTS.has(item.type))) return null;
   return last.content ?? null;
 }
 

@@ -178,6 +178,68 @@ test("a tool's screenshots on a user message after its result continue the turn"
   );
 });
 
+test("the engine's own words sending the model back to work continue the turn", () => {
+  // The Mac engine's runtime notes (RuntimeNote in JunoCodeCore/RunOutcome.swift)
+  // and a stop hook's answer, sent after the model replied and meant to stop.
+  const note = (reason: string, body = "Before finishing: 2 todos are open.") =>
+    `<juno_runtime reason="${reason}" revision="14">\n${body}\n</juno_runtime>`;
+  const reply = { role: "assistant", content: "Done, I think." };
+  const opening = { role: "user", content: "Fix the build" };
+  for (const text of [note("todos_open"), note("goal_not_met"), note("output_limit"), note("checkin"), "Stop hook feedback:\nTests still fail."]) {
+    assert.equal(opens("anthropic", { model: "claude-opus-5-5", messages: [opening, reply, { role: "user", content: text }] }), false, text);
+    // Merged with the session-state block the engine appends after it.
+    assert.equal(
+      opens("anthropic", {
+        model: "claude-opus-5-5",
+        messages: [opening, reply, { role: "user", content: [{ type: "text", text }, { type: "text", text: "<session_state>…</session_state>" }] }],
+      }),
+      false,
+      text,
+    );
+    assert.equal(
+      opens("openai-chat", {
+        model: "gpt-6-sol",
+        messages: [opening, reply, { role: "user", content: text }, { role: "user", content: "<session_state>…</session_state>" }],
+      }),
+      false,
+      text,
+    );
+    assert.equal(
+      opens("openai-responses", {
+        model: "gpt-6-sol",
+        input: [
+          { role: "user", content: [{ type: "input_text", text: "Fix the build" }] },
+          { role: "assistant", content: "Done, I think." },
+          { role: "user", content: [{ type: "input_text", text }] },
+        ],
+      }),
+      false,
+      text,
+    );
+  }
+  // The reader acting — Retry, Resume after a quit, more steps — is a turn, as a chat's Retry is.
+  for (const reason of ["retry", "after_quit", "keep_going"]) {
+    assert.equal(
+      opens("anthropic", { model: "claude-opus-5-5", messages: [opening, reply, { role: "user", content: note(reason, "Try again.") }] }),
+      true,
+      reason,
+    );
+  }
+  // The person's words followed by the state block still open a turn, and so
+  // does a message that only mentions the fence.
+  assert.equal(
+    opens("openai-chat", {
+      model: "gpt-6-sol",
+      messages: [opening, reply, { role: "user", content: "Now add tests" }, { role: "user", content: "<session_state>…</session_state>" }],
+    }),
+    true,
+  );
+  assert.equal(
+    opens("anthropic", { model: "claude-opus-5-5", messages: [opening, reply, { role: "user", content: "What does <juno_runtime> mean?" }] }),
+    true,
+  );
+});
+
 test("a side call that offers no tools is never a turn, on any wire", () => {
   // The auto-reviewer, the completion judge, a hook's prompt, a title or a
   // summary: the engine's own words in a user message, sent with no tools.
