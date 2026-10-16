@@ -148,6 +148,10 @@ export function RoutineProposalCard({
   // Was it scheduled already (this tab, another tab, before a reload)? Asked
   // once, by key. A failed read is treated as "not yet": Schedule is a replay
   // if it was, so the worst case is one press that answers with the routine.
+  // Keyed on whether the card has an owner, not on the callback itself: an
+  // owner passing a fresh arrow each render would otherwise re-ask the server
+  // on every one of its renders.
+  const owned = onClose !== undefined;
   React.useEffect(() => {
     let cancelled = false;
     void fetchScheduleForProposal(proposal.key).then((result) => {
@@ -157,12 +161,12 @@ export function RoutineProposalCard({
         setPhase("scheduled");
         return;
       }
-      setPhase(!onClose && readDismissed(proposal.key) ? "dismissed" : "open");
+      setPhase(!owned && readDismissed(proposal.key) ? "dismissed" : "open");
     });
     return () => {
       cancelled = true;
     };
-  }, [proposal.key, onClose]);
+  }, [proposal.key, owned]);
 
   React.useEffect(() => {
     if (phase === "open" && startInEdit) whenRef.current?.focus({ preventScroll: true });
@@ -181,8 +185,11 @@ export function RoutineProposalCard({
 
   const zone = draft.timezone.trim();
   const zoneOk = isValidTimeZone(zone);
-  const budgetMicro = draft.budgetUsd.trim() === "" ? 0 : runBudgetFromUsd(draft.budgetUsd);
-  const budgetOk = draft.budgetUsd.trim() === "" || budgetMicro !== null;
+  // Empty or zero is "no limit of its own", as the field's placeholder says;
+  // anything else must be a positive amount.
+  const budgetText = draft.budgetUsd.trim();
+  const budgetMicro = budgetText === "" || Number(budgetText) === 0 ? 0 : runBudgetFromUsd(budgetText);
+  const budgetOk = budgetMicro !== null;
   const nameOk = draft.name.trim().length > 0;
   const instructionsOk = draft.instructions.trim().length > 0;
   const canSchedule = parsed.ok && zoneOk && budgetOk && nameOk && instructionsOk;
@@ -303,7 +310,10 @@ export function RoutineProposalCard({
           <h3 id={titleId} className="mt-0.5 line-clamp-2 text-body font-medium text-foreground">
             {scheduled && schedule ? schedule.name : draft.name.trim() || proposal.name}
           </h3>
-          <p className="mt-px text-ui text-foreground/75" aria-live="polite">
+          {/* Live only while it is not being edited: the When field's own
+              read-back speaks while typing, and both at once read every
+              keystroke out twice. */}
+          <p className="mt-px text-ui text-foreground/75" aria-live={editing ? "off" : "polite"}>
             {scheduled && schedule ? (
               <ScheduledLine schedule={schedule} />
             ) : summary ? (

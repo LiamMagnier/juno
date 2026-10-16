@@ -156,8 +156,9 @@ function readClock(text: string): ClockRead | null | "invalid" {
     return { hour, minute, meridiem: true, rest: text.replace(twelve[0], " ") };
   }
 
-  // 08:30, 17:00, 17h30
-  const twentyFour = /\b(?:at\s+)?(\d{1,2})[:h](\d{2})\b/.exec(text);
+  // 08:30, 17:00, 17h30, 8.30 (the British way of writing it; without the
+  // dot here, "at 8.30" fell through to the bare "at 8" below and ran at 08:00)
+  const twentyFour = /\b(?:at\s+)?(\d{1,2})[:.h](\d{2})\b/.exec(text);
   if (twentyFour) {
     const hour = Number(twentyFour[1]);
     const minute = Number(twentyFour[2]);
@@ -166,6 +167,9 @@ function readClock(text: string): ClockRead | null | "invalid" {
     if (hour > 23 || minute > 59) return "invalid";
     return { hour, minute, meridiem: hour >= 13 || hour === 0, rest: text.replace(twentyFour[0], " ") };
   }
+
+  // "at 8.5" or "at 8:3" is a time typed wrong; said back, never read as 08:00.
+  if (/\bat\s+\d{1,2}[.:]\d(?!\d)/.test(text)) return "invalid";
 
   // "at 8", but not "at 8th" or "at 8 minutes past"
   const bare = /\bat\s+(\d{1,2})\b(?!\s*(?:st|nd|rd|th|minutes?|mins?|hours?|past|:))/.exec(text);
@@ -256,6 +260,22 @@ function monthdayNamed(text: string): number | null {
   return null;
 }
 
+/**
+ * The words that take days away: "except", "excluding", "but not", "other
+ * than", and a bare "but" only when a day follows it ("every day but Sunday"),
+ * so "but" in the middle of anything else is left alone.
+ */
+const EXCLUSION =
+  /\b(?:except(?:\s+(?:on|for))?|excluding|but\s+not(?:\s+on)?|apart\s+from|other\s+than|besides|not\s+on|but(?=\s+(?:on\s+)?(?:weekends?|weekdays?|(?:sun|mon|tue|wed|thu|fri|sat)[a-z]*)\b))\b/;
+
+/** A set of weekdays as the simplest trigger that says it. */
+function finishDays(days: readonly number[], hour: number, minute: number, assumedTime: boolean): SchedulePhraseResult {
+  if (days.length === 7) return finish("daily", { hour, minute }, assumedTime);
+  if (days.length === 5 && days.every((day) => day >= 1 && day <= 5)) return finish("weekdays", { hour, minute }, assumedTime);
+  if (days.length === 1) return finish("weekly", { weekday: days[0], hour, minute }, assumedTime);
+  return finish("cron", { expression: `${minute} ${hour} * * ${days.join(",")}` }, assumedTime);
+}
+
 function finish(kind: PhraseTriggerKind, config: JsonObject, assumedTime: boolean): SchedulePhraseResult {
   // The scheduler's own parser has the last word, in UTC because the zone
   // changes nothing about whether a config is well formed.
@@ -272,19 +292,20 @@ export function parseSchedulePhrase(input: string): SchedulePhraseResult {
   const text = normalise(input);
   if (!text) return refuse("empty");
 
-  if (/\bevery\s+(?:\d+\s+)?(?:minutes?|mins?|seconds?)\b|\bevery\s+half\s+(?:an\s+)?hour\b|\bminutely\b/.test(text)) {
-    return refuse("too_frequent");
-  }
-
   // Cadences the scheduler cannot express exactly. Refused rather than rounded
   // to the nearest thing it can do: "the first Monday" read as "every Monday"
-  // is four runs a month where one was asked for.
+  // is four runs a month where one was asked for. Before the too-frequent
+  // check, so "every second Tuesday" is not mistaken for "every second".
   if (
-    /\b(?:every other|every (?:two|three|four|2|3|4) (?:days|weeks|months)|fortnight(?:ly)?|bi-?weekly|bi-?monthly)\b/.test(text) ||
+    /\b(?:every other|every (?:second|third|fourth|two|three|four|five|six|\d+) (?:days?|weeks?|months?|years?|weekdays?|(?:sun|mon|tue|wed|thu|fri|sat)[a-z]*)|fortnight(?:ly)?|bi-?weekly|bi-?monthly)\b/.test(text) ||
     /\b(?:first|second|third|fourth|last|1st|2nd|3rd|4th)\s+(?:sun|mon|tue|wed|thu|fri|sat)[a-z]*\b/.test(text) ||
     /\b(?:between|from)\s+\d/.test(text)
   ) {
     return refuse("unrecognised");
+  }
+
+  if (/\bevery\s+(?:\d+\s+)?(?:minutes?|mins?|seconds?)\b|\bevery\s+half\s+(?:an\s+)?hour\b|\bminutely\b/.test(text)) {
+    return refuse("too_frequent");
   }
 
   const clockRead = readClock(text);
@@ -309,8 +330,32 @@ export function parseSchedulePhrase(input: string): SchedulePhraseResult {
     hour = DAY_PARTS[part].hour;
   }
 
+  // "Every day except weekends", "daily but not on Sundays". Read as the days
+  // left over, and only from a plain every-day or every-weekday base: without
+  // this, the excluded days were the only days named, so "every day except
+  // Sundays" became "every Sunday", the exact opposite of what was asked.
+  const exclusion = EXCLUSION.exec(rest);
+  if (exclusion) {
+    const head = rest.slice(0, exclusion.index);
+    const tail = rest.slice(exclusion.index + exclusion[0].length);
+    const excluded = new Set<number>(weekdaysNamed(tail));
+    if (/\bweekends?\b/.test(tail)) [0, 6].forEach((day) => excluded.add(day));
+    if (/\b(?:weekdays?|workdays?|work days?|working days?|business days?)\b/.test(tail)) [1, 2, 3, 4, 5].forEach((day) => excluded.add(day));
+    const base = /\b(?:weekdays?|workdays?|work days?|working days?|business days?)\b/.test(head)
+      ? [1, 2, 3, 4, 5]
+      : weekdaysNamed(head).length === 0 &&
+          !/\b(?:hours?|hourly|weeks?|weekly|months?|monthly|years?|yearly|weekends?)\b/.test(head) &&
+          (/\b(?:every|each|daily|everyday|nightly)\b/.test(head) || part !== null)
+        ? [0, 1, 2, 3, 4, 5, 6]
+        : null;
+    if (!base || excluded.size === 0) return refuse("unrecognised");
+    const days = base.filter((day) => !excluded.has(day));
+    if (days.length === 0 || days.length === base.length) return refuse("unrecognised");
+    return finishDays(days, hour, minute, assumedTime);
+  }
+
   // Every N hours.
-  const everyHours = /\bevery\s+(\d{1,2})\s*(?:hours?|hrs?|h)\b/.exec(rest);
+  const everyHours =/\bevery\s+(\d{1,2})\s*(?:hours?|hrs?|h)\b/.exec(rest);
   if (everyHours) {
     const n = Number(everyHours[1]);
     if (n < 1 || n > 23) return refuse("unrecognised");
@@ -331,14 +376,7 @@ export function parseSchedulePhrase(input: string): SchedulePhraseResult {
   }
 
   const days = weekdaysNamed(rest);
-  if (days.length > 0) {
-    if (days.length === 7) return finish("daily", { hour, minute }, assumedTime);
-    if (days.length === 5 && days.every((day) => day >= 1 && day <= 5)) {
-      return finish("weekdays", { hour, minute }, assumedTime);
-    }
-    if (days.length === 1) return finish("weekly", { weekday: days[0], hour, minute }, assumedTime);
-    return finish("cron", { expression: `${minute} ${hour} * * ${days.join(",")}` }, assumedTime);
-  }
+  if (days.length > 0) return finishDays(days, hour, minute, assumedTime);
 
   // A month named with a day is a yearly date ("every 3 March", "each year on March 3rd").
   const month = monthNamed(rest);
@@ -458,6 +496,10 @@ function describeCron(expression: string): string {
     const at = clockText(fields.hours[0], fields.minutes[0]);
     if (fields.weekdays.length === 2 && fields.weekdays[0] === 0 && fields.weekdays[1] === 6) {
       return `Every Saturday and Sunday at ${at}`;
+    }
+    if (fields.weekdays.length === 6) {
+      const missing = [0, 1, 2, 3, 4, 5, 6].find((day) => !fields.weekdays.includes(day)) ?? 0;
+      return `Every day except ${WEEKDAY_NAMES[missing]} at ${at}`;
     }
     return `Every ${listText(fields.weekdays.map((day) => WEEKDAY_NAMES[day] ?? String(day)))} at ${at}`;
   }

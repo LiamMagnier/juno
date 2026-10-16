@@ -1,11 +1,11 @@
 "use client";
 
 import * as React from "react";
+import nextDynamic from "next/dynamic";
 import { AnimatePresence, motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Collapse } from "@/components/ui/collapse";
 import { QuietButton, VerbButton } from "@/components/chat/decision";
-import { RoutineProposalCard } from "@/components/chat/routine-proposal-card";
 import type { ConversationWork, WorkStartAgainKind } from "@/components/chat/use-conversation-work";
 import type { ClientWorkRun, ClientWorkSession } from "@/lib/work/serializers";
 import {
@@ -34,6 +34,14 @@ import { cn } from "@/lib/utils";
  * where the last one stopped (src/lib/work/continuation.ts), not a restore.
  * Make a routine opens the chat's routine card on Edit, seeded from the task.
  */
+
+// Loaded on the press of Make a routine, not with every task card: it brings
+// the schedule reader and the routine shapes, which a card that is never
+// turned into a routine has no use for.
+const RoutineProposalCard = nextDynamic(
+  () => import("@/components/chat/routine-proposal-card").then((m) => m.RoutineProposalCard),
+  { ssr: false },
+);
 
 const LABELS: Record<FinishedTaskAction, string> = {
   continue: "Continue",
@@ -107,6 +115,7 @@ export function FinishedTaskActions({
   const [busy, setBusy] = React.useState<WorkStartAgainKind | null>(null);
   const [confirm, setConfirm] = React.useState<{ kind: WorkStartAgainKind; estimate: number } | null>(null);
   const [routineOpen, setRoutineOpen] = React.useState(false);
+  const closeRoutine = React.useCallback(() => setRoutineOpen(false), []);
 
   const files = React.useMemo(() => (work.documents.artifacts ?? []).map((artifact) => artifact.title), [work.documents.artifacts]);
   const progressed = work.plan.some((step) => step.state === "done") || files.length > 0;
@@ -200,7 +209,7 @@ export function FinishedTaskActions({
         )}
       </AnimatePresence>
       <Collapse open={routineOpen}>
-        <RoutineProposalCard proposal={proposal} startInEdit onClose={() => setRoutineOpen(false)} className="bg-background/60" />
+        <RoutineProposalCard proposal={proposal} startInEdit onClose={closeRoutine} className="bg-background/60" />
       </Collapse>
     </div>
   );

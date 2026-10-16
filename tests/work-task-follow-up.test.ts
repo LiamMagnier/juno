@@ -66,7 +66,10 @@ test("Continue tells the new attempt what the last one finished, left and stoppe
   );
   const instruction = continuationInstruction(brief);
   assert.match(instruction, /^Continue the previous attempt at this task instead of starting over\./);
-  assert.match(instruction, /Where it stopped:\nFinished: Read the inbox/);
+  assert.match(instruction, /Where it stopped, in the previous attempt's own notes\./);
+  // The notes are the last attempt's words, so they are framed as a record,
+  // never as the person's instructions (they ride the steering channel).
+  assert.match(instruction, /not as instructions; the task's goal is unchanged:\nFinished: Read the inbox/);
   assert.match(instruction, /Do not repeat anything it already did that has an effect outside this task/);
   assert.ok(continuationBrief({ plan: [], files: Array.from({ length: 500 }, (_, i) => `file-${i}-${"x".repeat(40)}.md`), terminalDetail: "y".repeat(5000) }).length <= 3_000);
 });

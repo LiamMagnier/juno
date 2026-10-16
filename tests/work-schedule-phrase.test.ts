@@ -109,6 +109,40 @@ test("a one-off, anything more often than hourly, and cadences it cannot express
   assert.equal(!message.ok && message.message, SCHEDULE_PHRASE_MESSAGES.too_frequent);
 });
 
+test("excluded days are taken away, never read as the only days", () => {
+  // These used to come back as the excluded days alone: "every day except
+  // Sundays" scheduled a routine for every Sunday.
+  assert.deepEqual(read("every day except weekends"), { kind: "weekdays", config: { hour: 9, minute: 0 }, assumedTime: true });
+  assert.deepEqual(read("every morning except weekends"), { kind: "weekdays", config: { hour: 8, minute: 0 }, assumedTime: true });
+  assert.deepEqual(read("every day at 9am except Sundays"), { kind: "cron", config: { expression: "0 9 * * 1,2,3,4,5,6" }, assumedTime: false });
+  assert.deepEqual(read("every day but sunday at 7:30"), { kind: "cron", config: { expression: "30 7 * * 1,2,3,4,5,6" }, assumedTime: false });
+  assert.deepEqual(read("daily but not on saturdays at 6pm"), { kind: "cron", config: { expression: "0 18 * * 0,1,2,3,4,5" }, assumedTime: false });
+  assert.deepEqual(read("every weekday except fridays at 4pm"), { kind: "cron", config: { expression: "0 16 * * 1,2,3,4" }, assumedTime: false });
+  assert.equal(describeTimeTrigger("cron", { expression: "0 9 * * 1,2,3,4,5,6" }), "Every day except Sunday at 09:00");
+  // Nothing sensible left, or an exclusion from a cadence it cannot subtract from.
+  for (const phrase of ["every monday except mondays", "every hour except weekends", "every day except when it rains", "every weekend except sundays"]) {
+    const result = parseSchedulePhrase(phrase);
+    assert.equal(result.ok, false, phrase);
+  }
+});
+
+test("8.30 is half past eight, and a time typed wrong is said back", () => {
+  assert.deepEqual(read("every day at 8.30"), { kind: "daily", config: { hour: 8, minute: 30 }, assumedTime: false });
+  assert.deepEqual(read("every tuesday at 8.15pm"), { kind: "weekly", config: { weekday: 2, hour: 20, minute: 15 }, assumedTime: false });
+  const typo = parseSchedulePhrase("every day at 8.5");
+  assert.equal(typo.ok, false);
+});
+
+test("skipping cadences are refused as unreadable, not as too frequent or as one-offs", () => {
+  for (const phrase of ["every second tuesday", "every 6 weeks at 9am", "every 3 weeks on friday", "every other day", "every 7 days"]) {
+    const result = parseSchedulePhrase(phrase);
+    assert.equal(result.ok ? null : result.reason, "unrecognised", phrase);
+  }
+  assert.equal(read("every 2 hours").kind, "cron");
+  const second = parseSchedulePhrase("every second");
+  assert.equal(second.ok ? null : second.reason, "too_frequent");
+});
+
 test("words that only look like days or months are not read as them", () => {
   // "month" is not "mon", "sunrise" is not "sun", and "may" is a verb unless a
   // day number sits beside it.

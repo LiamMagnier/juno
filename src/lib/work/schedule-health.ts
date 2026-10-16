@@ -231,6 +231,18 @@ export function scheduleHealth(input: {
   if (broken) {
     const connector = SOURCE_CONNECTOR[broken.kind];
     const unservable = broken.kind === "connector_event" || broken.kind === "folder_change";
+    if (isTransientPollError(broken.lastPollError)) {
+      // A read the poller will retry by itself: said, but not as a broken app
+      // with a Reconnect that would send the person to fix something that works.
+      return {
+        ...base,
+        state: "source_error",
+        tone: "attention",
+        label: "Couldn’t check its trigger",
+        detail: pollErrorForClient(broken.lastPollError),
+        action: null,
+      };
+    }
     return {
       ...base,
       state: "source_error",
@@ -362,7 +374,24 @@ export function codeTaskAsHealthRun(task: {
  * would teach its owner to ignore the one channel that tells them.
  */
 export function shouldNotifyTriggerFailure(previousError: string | null, nextError: string | null): boolean {
-  return previousError === null && nextError !== null;
+  // A blip the poller retries on its own ("… It will try again shortly.") is
+  // not worth a high-priority push telling somebody to reconnect an app that
+  // is fine, and it must not use up the one notice either: a real failure
+  // that follows a blip is still the first one worth saying.
+  if (nextError === null || isTransientPollError(nextError)) return false;
+  return previousError === null || isTransientPollError(previousError);
+}
+
+/**
+ * The closing words of the poller's own sentences for a failure it expects to
+ * clear by itself (scripts/work-trigger-poller.ts: an unexpected read error, a
+ * tick that could not settle). Everything else it writes names a cause the
+ * person can act on.
+ */
+const TRANSIENT_POLL_ERROR_SUFFIX = "It will try again shortly.";
+
+export function isTransientPollError(message: string | null | undefined): boolean {
+  return typeof message === "string" && message.trim().endsWith(TRANSIENT_POLL_ERROR_SUFFIX);
 }
 
 /** The notification for a trigger that has just started failing. */

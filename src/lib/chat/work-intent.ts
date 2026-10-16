@@ -94,8 +94,11 @@ export function backgroundWorkHint(verdict: BackgroundWorkVerdict): string | nul
  */
 export function recurringWorkHint(verdict: BackgroundWorkVerdict, routineToolOn: boolean): string | null {
   if (verdict.kind !== "recurring" || !routineToolOn) return null;
+  // Worded as a reading, not an order: the pattern also matches a request for
+  // a cron line, a script or a plan that merely mentions a schedule, and those
+  // are answered in chat.
   return [
-    "# This message asks for something on a schedule",
-    "Propose it with propose_routine for the user to confirm, rather than starting a task, which runs once. If when it should run, or what it should cover, is unclear, ask one short question first.",
+    "# This message may ask for something on a schedule",
+    "If the user wants you to do this repeatedly on your own, propose it with propose_routine for them to confirm, rather than starting a task, which runs once. If they want help with something that only mentions a schedule (a script, a cron line, a plan), answer normally. If when it should run, or what it should cover, is unclear, ask one short question first.",
   ].join("\n");
 }

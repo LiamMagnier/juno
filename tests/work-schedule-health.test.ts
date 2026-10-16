@@ -185,6 +185,23 @@ test("one notification on the first failure after a good read, none on the retri
   assert.equal(shouldNotifyTriggerFailure("could not read INBOX", "could not read INBOX"), false);
   assert.equal(shouldNotifyTriggerFailure("could not read INBOX", null), false);
   assert.equal(shouldNotifyTriggerFailure(null, null), false);
+  // A blip the poller retries by itself sends nothing, and does not use up
+  // the notice a real failure after it is owed.
+  const blip = "Alevr could not read this trigger's source. It will try again shortly.";
+  assert.equal(shouldNotifyTriggerFailure(null, blip), false);
+  assert.equal(shouldNotifyTriggerFailure(blip, "could not read INBOX"), true);
+  assert.equal(shouldNotifyTriggerFailure("could not read INBOX", blip), false);
+  const blipHealth = scheduleHealth({
+    scheduleId: "sch-1",
+    sessionId: "ses-1",
+    enabled: true,
+    triggers: [{ kind: "email_filter", enabled: true, lastPolledAt: NOW, lastPollError: blip }],
+    runs: [],
+    now: NOW,
+  });
+  assert.equal(blipHealth.state, "source_error");
+  assert.equal(blipHealth.tone, "attention");
+  assert.equal(blipHealth.action, null, "no Reconnect for an app that is fine");
   const notice = triggerFailureNotice({
     scheduleId: "sch-1",
     scheduleName: "Invoice watcher",
