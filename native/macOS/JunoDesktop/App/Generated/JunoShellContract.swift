@@ -13,7 +13,7 @@ enum JunoShellContract {
     /// Bumped when the contract's shape changes.
     static let version = 2
     /// SHA-256 of the contract this was generated from.
-    static let digest = "5e31caf5a3e48e427034e931a02f611bfb3d6f96c020e4bc81d634479847d225"
+    static let digest = "ab6a3ad3d766bf6726cba987fb73df19fdf0da0321fe29164ec31b142c332173"
 }
 
 /// An account's plan, lowest to highest (`Plan` in prisma/schema.prisma,
@@ -356,7 +356,7 @@ enum JunoShellPlusRow: String, CaseIterable, Sendable {
         case .project: "Add to project"
         case .connectors: "Apps"
         case .skill: "Run a skill"
-        case .research: "Deep Field"
+        case .research: "Deep research"
         case .search: "Web search"
         case .memory: "Memory"
         }
@@ -374,7 +374,7 @@ enum JunoShellPlusRow: String, CaseIterable, Sendable {
         case .project: "Add to Project"
         case .connectors: "Apps"
         case .skill: "Run a Skill"
-        case .research: "Deep Field"
+        case .research: "Deep Research"
         case .search: "Web Search"
         case .memory: "Memory"
         }
@@ -590,4 +590,1347 @@ enum JunoShellSettingsSection: String, CaseIterable, Sendable {
         guard let value else { return defaultSection }
         return Self(rawValue: value) ?? aliases[value] ?? defaultSection
     }
+}
+
+/// The languages the shared string table carries (`strings.locales`).
+enum JunoShellLanguage: String, CaseIterable, Sendable {
+    case en
+    case fr
+
+    /// The app's language: the first localization the bundle resolves to.
+    static var current: Self {
+        let preferred = Bundle.main.preferredLocalizations.first ?? "en"
+        return Self(rawValue: String(preferred.prefix(2)).lowercased()) ?? .en
+    }
+
+    enum PluralCategory: Sendable { case one, other }
+
+    /// CLDR integer plural rules: English `one` is 1; French `one` is 0 and 1.
+    func plural(_ count: Int) -> PluralCategory {
+        switch self {
+        case .en: count == 1 ? .one : .other
+        case .fr: count == 0 || count == 1 ? .one : .other
+        }
+    }
+}
+
+/// The shared string table (wave 2 spec §6.18): every product string the web,
+/// the Mac and the iPhone show alike, English and French. Read these instead of
+/// typing the words again.
+enum JunoShellStrings {
+    /// `home.greeting`: Home greeting when the account has no first name.
+    static func homeGreeting(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "What’s next?"
+        case .fr: "Et maintenant\u{00A0}?"
+        }
+    }
+    static var homeGreeting: String { homeGreeting(in: .current) }
+
+    /// `home.greetingNamed`: Home greeting.
+    static func homeGreetingNamed(firstName: String, in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "What’s next, \(firstName)?"
+        case .fr: "Et maintenant, \(firstName)\u{00A0}?"
+        }
+    }
+
+    /// `composer.placeholderHome`: Composer placeholder on home.
+    static func composerPlaceholderHome(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Ask Alevr"
+        case .fr: "Demander à Alevr"
+        }
+    }
+    static var composerPlaceholderHome: String { composerPlaceholderHome(in: .current) }
+
+    /// `composer.placeholderThread`: Composer placeholder in a thread.
+    static func composerPlaceholderThread(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Ask a follow-up"
+        case .fr: "Poser une question de suivi"
+        }
+    }
+    static var composerPlaceholderThread: String { composerPlaceholderThread(in: .current) }
+
+    /// `incognito.name`: The incognito chat's name, set in display above the disc.
+    static func incognitoName(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Incognito chat"
+        case .fr: "Conversation incognito"
+        }
+    }
+    static var incognitoName: String { incognitoName(in: .current) }
+
+    /// `incognito.promise`: What incognito promises today. The training clause waits for owner sign-off S8.
+    static func incognitoPromise(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "This chat won’t appear in your history and won’t be added to memory."
+        case .fr: "Cette conversation n’apparaîtra pas dans votre historique et ne sera pas ajoutée à la mémoire."
+        }
+    }
+    static var incognitoPromise: String { incognitoPromise(in: .current) }
+
+    /// `incognito.confirmTitle`: Asked when leaving a non-empty incognito chat by in-app navigation.
+    static func incognitoConfirmTitle(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "End this incognito chat?"
+        case .fr: "Mettre fin à cette conversation incognito\u{00A0}?"
+        }
+    }
+    static var incognitoConfirmTitle: String { incognitoConfirmTitle(in: .current) }
+
+    /// `incognito.confirmBody`: Body of the incognito confirmation.
+    static func incognitoConfirmBody(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "It isn’t saved, so leaving ends it."
+        case .fr: "Elle n’est pas enregistrée\u{00A0}: la quitter y met fin."
+        }
+    }
+    static var incognitoConfirmBody: String { incognitoConfirmBody(in: .current) }
+
+    /// `incognito.confirmEnd`: Incognito confirmation, the leaving button.
+    static func incognitoConfirmEnd(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "End chat"
+        case .fr: "Mettre fin"
+        }
+    }
+    static var incognitoConfirmEnd: String { incognitoConfirmEnd(in: .current) }
+
+    /// `incognito.confirmKeep`: Incognito confirmation, the staying button.
+    static func incognitoConfirmKeep(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Keep chatting"
+        case .fr: "Continuer"
+        }
+    }
+    static var incognitoConfirmKeep: String { incognitoConfirmKeep(in: .current) }
+
+    /// `incognito.dontAskAgain`: Checkbox, stored per device.
+    static func incognitoDontAskAgain(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Don’t ask again"
+        case .fr: "Ne plus demander"
+        }
+    }
+    static var incognitoDontAskAgain: String { incognitoDontAskAgain(in: .current) }
+
+    /// `status.running`: Status word: Alevr is working.
+    static func statusRunning(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Running"
+        case .fr: "En cours"
+        }
+    }
+    static var statusRunning: String { statusRunning(in: .current) }
+
+    /// `status.needsYou`: Status word: waiting on the reader.
+    static func statusNeedsYou(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Needs you"
+        case .fr: "Vous attend"
+        }
+    }
+    static var statusNeedsYou: String { statusNeedsYou(in: .current) }
+
+    /// `status.ready`: Status word: finished and not yet seen.
+    static func statusReady(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Ready"
+        case .fr: "Prêt"
+        }
+    }
+    static var statusReady: String { statusReady(in: .current) }
+
+    /// `status.blocked`: Status word: failed or blocked.
+    static func statusBlocked(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Blocked"
+        case .fr: "Bloqué"
+        }
+    }
+    static var statusBlocked: String { statusBlocked(in: .current) }
+
+    /// `now.heading`: Sidebar section heading.
+    static func nowHeading(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Now"
+        case .fr: "Maintenant"
+        }
+    }
+    static var nowHeading: String { nowHeading(in: .current) }
+
+    /// `now.headingCount`: Sidebar Now fold label with its count.
+    static func nowHeadingCount(n: Int, in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Now · \(n)"
+        case .fr: "Maintenant · \(n)"
+        }
+    }
+
+    /// `now.more`: Now shows at most 5 rows.
+    static func nowMore(n: Int, in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: language.plural(n) == .one ? "+\(n) more" : "+\(n) more"
+        case .fr: language.plural(n) == .one ? "+\(n) autre" : "+\(n) autres"
+        }
+    }
+
+    /// `now.inFlight`: Home strip heading, shown only when Now is not empty.
+    static func nowInFlight(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "In flight"
+        case .fr: "Activité en cours"
+        }
+    }
+    static var nowInFlight: String { nowInFlight(in: .current) }
+
+    /// `now.updates`: Pill for inserts held while the pointer is over the list.
+    static func nowUpdates(n: Int, in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: language.plural(n) == .one ? "\(n) update" : "\(n) updates"
+        case .fr: language.plural(n) == .one ? "\(n) mise à jour" : "\(n) mises à jour"
+        }
+    }
+
+    /// `now.open`: Trailing button on an In flight row.
+    static func nowOpen(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Open"
+        case .fr: "Ouvrir"
+        }
+    }
+    static var nowOpen: String { nowOpen(in: .current) }
+
+    /// `now.announceNeedsYou`: Polite announcement, at most one per 5 seconds.
+    static func nowAnnounceNeedsYou(n: Int, in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: language.plural(n) == .one ? "\(n) chat needs you" : "\(n) chats need you"
+        case .fr: language.plural(n) == .one ? "\(n) conversation vous attend" : "\(n) conversations vous attendent"
+        }
+    }
+
+    /// `product.routines`: Routines destination (the /automations route stays).
+    static func productRoutines(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Routines"
+        case .fr: "Routines"
+        }
+    }
+    static var productRoutines: String { productRoutines(in: .current) }
+    /// The macOS menu bar's Title Case form.
+    static func productRoutinesTitle(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Routines"
+        case .fr: "Routines"
+        }
+    }
+
+    /// `product.newRoutine`: Create a routine.
+    static func productNewRoutine(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "New routine"
+        case .fr: "Nouvelle routine"
+        }
+    }
+    static var productNewRoutine: String { productNewRoutine(in: .current) }
+    /// The macOS menu bar's Title Case form.
+    static func productNewRoutineTitle(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "New Routine"
+        case .fr: "Nouvelle routine"
+        }
+    }
+
+    /// `product.research`: The research feature's visible label.
+    static func productResearch(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Deep research"
+        case .fr: "Recherche approfondie"
+        }
+    }
+    static var productResearch: String { productResearch(in: .current) }
+
+    /// `product.researchBrand`: The research feature's brand subtitle. Not translated.
+    static func productResearchBrand(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Deep Field"
+        case .fr: "Deep Field"
+        }
+    }
+    static var productResearchBrand: String { productResearchBrand(in: .current) }
+
+    /// `turn.thinking`: TurnStatus phase word.
+    static func turnThinking(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Thinking"
+        case .fr: "Réflexion"
+        }
+    }
+    static var turnThinking: String { turnThinking(in: .current) }
+
+    /// `turn.searching`: TurnStatus phase word.
+    static func turnSearching(n: Int, in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: language.plural(n) == .one ? "Searching \(n) site" : "Searching \(n) sites"
+        case .fr: language.plural(n) == .one ? "Recherche sur \(n) site" : "Recherche sur \(n) sites"
+        }
+    }
+
+    /// `turn.runningCode`: TurnStatus phase word.
+    static func turnRunningCode(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Running code"
+        case .fr: "Exécution du code"
+        }
+    }
+    static var turnRunningCode: String { turnRunningCode(in: .current) }
+
+    /// `turn.elapsed`: Seconds elapsed, after a middle dot, from 3s.
+    static func turnElapsed(n: Int, in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "\(n)s"
+        case .fr: "\(n) s"
+        }
+    }
+
+    /// `turn.thoughtFor`: Settled summary when reasoning happened (n rounded up).
+    static func turnThoughtFor(n: Int, in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Thought for \(n)s"
+        case .fr: "Réflexion de \(n) s"
+        }
+    }
+
+    /// `turn.workedFor`: Settled summary when tools ran without reasoning.
+    static func turnWorkedFor(n: Int, in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Worked for \(n)s"
+        case .fr: "Travail de \(n) s"
+        }
+    }
+
+    /// `turn.sources`: Summary part, only when true.
+    static func turnSources(k: Int, in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: language.plural(k) == .one ? "\(k) source" : "\(k) sources"
+        case .fr: language.plural(k) == .one ? "\(k) source" : "\(k) sources"
+        }
+    }
+
+    /// `turn.ranCode`: Summary part, only when true. Lower case: it follows a middle dot.
+    static func turnRanCode(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "ran code"
+        case .fr: "code exécuté"
+        }
+    }
+    static var turnRanCode: String { turnRanCode(in: .current) }
+
+    /// `turn.reconnecting`: Stream dropped, retrying for up to 15s.
+    static func turnReconnecting(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Reconnecting…"
+        case .fr: "Reconnexion…"
+        }
+    }
+    static var turnReconnecting: String { turnReconnecting(in: .current) }
+
+    /// `turn.stopped`: Summary after a failed reconnect or a mid-stream failure.
+    static func turnStopped(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Stopped"
+        case .fr: "Arrêté"
+        }
+    }
+    static var turnStopped: String { turnStopped(in: .current) }
+
+    /// `turn.failed`: Failure box.
+    static func turnFailed(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Something went wrong. Try again."
+        case .fr: "Une erreur s’est produite. Réessayez."
+        }
+    }
+    static var turnFailed: String { turnFailed(in: .current) }
+
+    /// `turn.needsApproval`: A tool inside the turn needs approval.
+    static func turnNeedsApproval(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Needs your approval"
+        case .fr: "Attend votre approbation"
+        }
+    }
+    static var turnNeedsApproval: String { turnNeedsApproval(in: .current) }
+
+    /// `turn.userStopped`: Settled-stopped summary.
+    static func turnUserStopped(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "You stopped this answer"
+        case .fr: "Vous avez arrêté cette réponse"
+        }
+    }
+    static var turnUserStopped: String { turnUserStopped(in: .current) }
+
+    /// `turn.continue`: Continue a stopped answer.
+    static func turnContinue(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Continue"
+        case .fr: "Continuer"
+        }
+    }
+    static var turnContinue: String { turnContinue(in: .current) }
+
+    /// `turn.fallback`: Auto fell back to another model.
+    static func turnFallback(failed: String, used: String, in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "\(failed) was unavailable, so Auto used \(used)."
+        case .fr: "\(failed) n’était pas disponible\u{00A0}: Auto a utilisé \(used)."
+        }
+    }
+
+    /// `turn.capacity`: HTTP 429.
+    static func turnCapacity(s: Int, in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Waiting for capacity · \(s)s"
+        case .fr: "En attente de capacité · \(s) s"
+        }
+    }
+
+    /// `turn.answerReady`: The one polite announcement on settle.
+    static func turnAnswerReady(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Answer ready"
+        case .fr: "Réponse prête"
+        }
+    }
+    static var turnAnswerReady: String { turnAnswerReady(in: .current) }
+
+    /// `transcript.jumpToLatest`: n counts parts that arrived while the reader was away.
+    static func transcriptJumpToLatest(n: Int, in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: language.plural(n) == .one ? "Jump to latest · \(n) new" : "Jump to latest · \(n) new"
+        case .fr: language.plural(n) == .one ? "Aller au plus récent · \(n) nouveau" : "Aller au plus récent · \(n) nouveaux"
+        }
+    }
+
+    /// `transcript.modelUnavailable`: A model the user chose is unavailable.
+    static func transcriptModelUnavailable(model: String, in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "\(model) isn’t available right now."
+        case .fr: "\(model) n’est pas disponible pour le moment."
+        }
+    }
+
+    /// `transcript.useAuto`: Button beside the model-unavailable line.
+    static func transcriptUseAuto(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Use Auto"
+        case .fr: "Utiliser Auto"
+        }
+    }
+    static var transcriptUseAuto: String { transcriptUseAuto(in: .current) }
+
+    /// `transcript.showMore`: A clamped user bubble.
+    static func transcriptShowMore(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Show more"
+        case .fr: "Afficher plus"
+        }
+    }
+    static var transcriptShowMore: String { transcriptShowMore(in: .current) }
+
+    /// `transcript.selection`: The quote card's label.
+    static func transcriptSelection(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Selection"
+        case .fr: "Sélection"
+        }
+    }
+    static var transcriptSelection: String { transcriptSelection(in: .current) }
+
+    /// `transcript.dropToAttach`: Drop overlay.
+    static func transcriptDropToAttach(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Drop files to attach"
+        case .fr: "Déposez des fichiers pour les joindre"
+        }
+    }
+    static var transcriptDropToAttach: String { transcriptDropToAttach(in: .current) }
+
+    /// `composer.queuedOne`: A refused second queued send.
+    static func composerQueuedOne(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "One message is already waiting"
+        case .fr: "Un message est déjà en attente"
+        }
+    }
+    static var composerQueuedOne: String { composerQueuedOne(in: .current) }
+
+    /// `composer.uploadingFiles`: Upload progress in the controls row, before composer.uploadProgress.
+    static func composerUploadingFiles(n: Int, in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: language.plural(n) == .one ? "Uploading \(n) file" : "Uploading \(n) files"
+        case .fr: language.plural(n) == .one ? "Envoi de \(n) fichier" : "Envoi de \(n) fichiers"
+        }
+    }
+
+    /// `composer.uploadProgress`: Upload progress: files is composer.uploadingFiles.
+    static func composerUploadProgress(files: String, p: Int, in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "\(files) · \(p)%"
+        case .fr: "\(files) · \(p) %"
+        }
+    }
+
+    /// `composer.uploadWait`: Tooltip on the disabled send button.
+    static func composerUploadWait(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Waiting for the upload to finish"
+        case .fr: "En attente de la fin de l’envoi"
+        }
+    }
+    static var composerUploadWait: String { composerUploadWait(in: .current) }
+
+    /// `composer.quota`: Quota strip.
+    static func composerQuota(plan: String, time: String, in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "You’ve reached your \(plan) limit. It resets at \(time)."
+        case .fr: "Vous avez atteint la limite de votre forfait \(plan). Elle sera réinitialisée à \(time)."
+        }
+    }
+
+    /// `composer.quotaTooltip`: Tooltip on the disabled send button.
+    static func composerQuotaTooltip(time: String, in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Limit reached · resets at \(time)"
+        case .fr: "Limite atteinte · réinitialisation à \(time)"
+        }
+    }
+
+    /// `composer.upgrade`: Quota strip action, where an upgrade exists.
+    static func composerUpgrade(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Upgrade"
+        case .fr: "Mettre à niveau"
+        }
+    }
+    static var composerUpgrade: String { composerUpgrade(in: .current) }
+
+    /// `state.offline`: Offline banner.
+    static func stateOffline(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Offline · you can read, sending is paused"
+        case .fr: "Hors ligne · lecture possible, envoi en pause"
+        }
+    }
+    static var stateOffline: String { stateOffline(in: .current) }
+
+    /// `state.notFound`: In-app 404 title.
+    static func stateNotFound(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "This page isn’t here"
+        case .fr: "Cette page n’existe pas"
+        }
+    }
+    static var stateNotFound: String { stateNotFound(in: .current) }
+
+    /// `state.backToChat`: Error and 404 link.
+    static func stateBackToChat(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Back to chat"
+        case .fr: "Retour aux conversations"
+        }
+    }
+    static var stateBackToChat: String { stateBackToChat(in: .current) }
+
+    /// `state.backToCode`: Error link inside Code.
+    static func stateBackToCode(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Back to Code"
+        case .fr: "Retour à Code"
+        }
+    }
+    static var stateBackToCode: String { stateBackToCode(in: .current) }
+
+    /// `state.searchEverything`: 404 action and palette mode.
+    static func stateSearchEverything(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Search everything"
+        case .fr: "Tout rechercher"
+        }
+    }
+    static var stateSearchEverything: String { stateSearchEverything(in: .current) }
+
+    /// `state.sessionExpired`: Session-expired dialog.
+    static func stateSessionExpired(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Your session expired. Sign in again to continue."
+        case .fr: "Votre session a expiré. Reconnectez-vous pour continuer."
+        }
+    }
+    static var stateSessionExpired: String { stateSessionExpired(in: .current) }
+
+    /// `state.signIn`: Session-expired dialog action.
+    static func stateSignIn(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Sign in"
+        case .fr: "Se connecter"
+        }
+    }
+    static var stateSignIn: String { stateSignIn(in: .current) }
+
+    /// `state.signedOut`: Toast after signing out.
+    static func stateSignedOut(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Signed out"
+        case .fr: "Déconnecté"
+        }
+    }
+    static var stateSignedOut: String { stateSignedOut(in: .current) }
+
+    /// `state.tryAgain`: Retry action.
+    static func stateTryAgain(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Try again"
+        case .fr: "Réessayer"
+        }
+    }
+    static var stateTryAgain: String { stateTryAgain(in: .current) }
+
+    /// `sidebar.empty`: Under the Recent heading; the shortcut in the platform form.
+    static func sidebarEmpty(shortcut: String, in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "No chats yet. Start one with \(shortcut)."
+        case .fr: "Aucune conversation pour l’instant. Commencez-en une avec \(shortcut)."
+        }
+    }
+
+    /// `library.restored`: Toast after restoring from trash.
+    static func libraryRestored(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Restored to Library"
+        case .fr: "Restauré dans la bibliothèque"
+        }
+    }
+    static var libraryRestored: String { libraryRestored(in: .current) }
+
+    /// `library.open`: Toast action after restoring.
+    static func libraryOpen(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Open"
+        case .fr: "Ouvrir"
+        }
+    }
+    static var libraryOpen: String { libraryOpen(in: .current) }
+
+    /// `approval.run`: Approval verb.
+    static func approvalRun(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Run"
+        case .fr: "Exécuter"
+        }
+    }
+    static var approvalRun: String { approvalRun(in: .current) }
+
+    /// `approval.editFiles`: Approval verb.
+    static func approvalEditFiles(n: Int, in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: language.plural(n) == .one ? "Edit \(n) file" : "Edit \(n) files"
+        case .fr: language.plural(n) == .one ? "Modifier \(n) fichier" : "Modifier \(n) fichiers"
+        }
+    }
+
+    /// `approval.send`: Approval verb.
+    static func approvalSend(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Send"
+        case .fr: "Envoyer"
+        }
+    }
+    static var approvalSend: String { approvalSend(in: .current) }
+
+    /// `approval.deleteForGood`: Approval verb.
+    static func approvalDeleteForGood(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Delete for good"
+        case .fr: "Supprimer définitivement"
+        }
+    }
+    static var approvalDeleteForGood: String { approvalDeleteForGood(in: .current) }
+
+    /// `approval.buy`: Approval verb.
+    static func approvalBuy(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Buy"
+        case .fr: "Acheter"
+        }
+    }
+    static var approvalBuy: String { approvalBuy(in: .current) }
+
+    /// `approval.notNow`: Approval secondary action. Esc never denies.
+    static func approvalNotNow(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Not now"
+        case .fr: "Pas maintenant"
+        }
+    }
+    static var approvalNotNow: String { approvalNotNow(in: .current) }
+
+    /// `approval.tellInstead`: Approval action: reply instead of approving.
+    static func approvalTellInstead(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Tell Alevr instead"
+        case .fr: "Dire autre chose à Alevr"
+        }
+    }
+    static var approvalTellInstead: String { approvalTellInstead(in: .current) }
+
+    /// `approval.keepPlanning`: Plan approval secondary action.
+    static func approvalKeepPlanning(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Keep planning"
+        case .fr: "Continuer à planifier"
+        }
+    }
+    static var approvalKeepPlanning: String { approvalKeepPlanning(in: .current) }
+
+    /// `approval.approveAndBuild`: Plan approval primary action.
+    static func approvalApproveAndBuild(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Approve and build"
+        case .fr: "Approuver et construire"
+        }
+    }
+    static var approvalApproveAndBuild: String { approvalApproveAndBuild(in: .current) }
+
+    /// `approval.allowSession`: Standing grant behind the verb's caret.
+    static func approvalAllowSession(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Allow for this session"
+        case .fr: "Autoriser pour cette session"
+        }
+    }
+    static var approvalAllowSession: String { approvalAllowSession(in: .current) }
+
+    /// `approval.armed`: Screen-reader text while the verb is disarmed (500ms).
+    static func approvalArmed(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Available in a moment"
+        case .fr: "Disponible dans un instant"
+        }
+    }
+    static var approvalArmed: String { approvalArmed(in: .current) }
+
+    /// `approval.review`: Button inserted after the active input when an approval announces.
+    static func approvalReview(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Review approval"
+        case .fr: "Examiner la demande"
+        }
+    }
+    static var approvalReview: String { approvalReview(in: .current) }
+
+    /// `approval.showAll`: A command longer than 8 lines.
+    static func approvalShowAll(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Show all"
+        case .fr: "Tout afficher"
+        }
+    }
+    static var approvalShowAll: String { approvalShowAll(in: .current) }
+
+    /// `approval.announceOne`: The first, assertive announcement.
+    static func approvalAnnounceOne(title: String, in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Approval needed: \(title)"
+        case .fr: "Approbation requise\u{00A0}: \(title)"
+        }
+    }
+
+    /// `approval.announceMany`: Batched polite announcement.
+    static func approvalAnnounceMany(n: Int, in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: language.plural(n) == .one ? "\(n) approval waiting" : "\(n) approvals waiting"
+        case .fr: language.plural(n) == .one ? "\(n) approbation en attente" : "\(n) approbations en attente"
+        }
+    }
+
+    /// `voice.tapToTalk`: Voice, ready.
+    static func voiceTapToTalk(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Tap to talk"
+        case .fr: "Touchez pour parler"
+        }
+    }
+    static var voiceTapToTalk: String { voiceTapToTalk(in: .current) }
+
+    /// `voice.listening`: Voice, listening (also announced).
+    static func voiceListening(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Listening"
+        case .fr: "Écoute"
+        }
+    }
+    static var voiceListening: String { voiceListening(in: .current) }
+
+    /// `voice.thinking`: Voice, thinking.
+    static func voiceThinking(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Thinking"
+        case .fr: "Réflexion"
+        }
+    }
+    static var voiceThinking: String { voiceThinking(in: .current) }
+
+    /// `voice.speaking`: Voice, speaking (announced).
+    static func voiceSpeaking(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Alevr is speaking"
+        case .fr: "Alevr parle"
+        }
+    }
+    static var voiceSpeaking: String { voiceSpeaking(in: .current) }
+
+    /// `voice.interrupted`: The user talked over the answer.
+    static func voiceInterrupted(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Go ahead"
+        case .fr: "Allez-y"
+        }
+    }
+    static var voiceInterrupted: String { voiceInterrupted(in: .current) }
+
+    /// `voice.muted`: Voice, muted.
+    static func voiceMuted(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Muted"
+        case .fr: "Micro coupé"
+        }
+    }
+    static var voiceMuted: String { voiceMuted(in: .current) }
+
+    /// `voice.deniedTitle`: Microphone permission denied.
+    static func voiceDeniedTitle(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Alevr can’t hear you"
+        case .fr: "Alevr ne vous entend pas"
+        }
+    }
+    static var voiceDeniedTitle: String { voiceDeniedTitle(in: .current) }
+
+    /// `voice.deniedBody`: place is one of the voice.place* strings.
+    static func voiceDeniedBody(place: String, in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Microphone access is off. Turn it on in \(place)."
+        case .fr: "L’accès au micro est désactivé. Activez-le dans \(place)."
+        }
+    }
+
+    /// `voice.placeMac`: Where to turn the microphone on, macOS.
+    static func voicePlaceMac(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "System Settings"
+        case .fr: "Réglages Système"
+        }
+    }
+    static var voicePlaceMac: String { voicePlaceMac(in: .current) }
+
+    /// `voice.placeIOS`: Where to turn the microphone on, iOS.
+    static func voicePlaceIOS(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Settings"
+        case .fr: "Réglages"
+        }
+    }
+    static var voicePlaceIOS: String { voicePlaceIOS(in: .current) }
+
+    /// `voice.placeWeb`: Where to turn the microphone on, web.
+    static func voicePlaceWeb(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "your browser’s site settings"
+        case .fr: "les paramètres du site dans votre navigateur"
+        }
+    }
+    static var voicePlaceWeb: String { voicePlaceWeb(in: .current) }
+
+    /// `voice.openSettings`: Native only.
+    static func voiceOpenSettings(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Open settings"
+        case .fr: "Ouvrir les réglages"
+        }
+    }
+    static var voiceOpenSettings: String { voiceOpenSettings(in: .current) }
+
+    /// `voice.disconnected`: Followed by Try again.
+    static func voiceDisconnected(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Voice disconnected"
+        case .fr: "Voix déconnectée"
+        }
+    }
+    static var voiceDisconnected: String { voiceDisconnected(in: .current) }
+
+    /// `voice.ended`: Voice, ended.
+    static func voiceEnded(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Ended"
+        case .fr: "Terminé"
+        }
+    }
+    static var voiceEnded: String { voiceEnded(in: .current) }
+
+    /// `plan.codeLocked`: Tooltip on the locked Code segment.
+    static func planCodeLocked(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Code is on Pro"
+        case .fr: "Code est inclus dans Pro"
+        }
+    }
+    static var planCodeLocked: String { planCodeLocked(in: .current) }
+
+    /// `plan.codeTitle`: Plan-gating dialog title.
+    static func planCodeTitle(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Code is part of Pro"
+        case .fr: "Code fait partie de Pro"
+        }
+    }
+    static var planCodeTitle: String { planCodeTitle(in: .current) }
+
+    /// `plan.codeBody`: Plan-gating dialog body.
+    static func planCodeBody(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Run coding agents on your repositories and your Mac."
+        case .fr: "Exécutez des agents de code sur vos dépôts et votre Mac."
+        }
+    }
+    static var planCodeBody: String { planCodeBody(in: .current) }
+
+    /// `plan.seePlans`: Plan-gating dialog primary action.
+    static func planSeePlans(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "See plans"
+        case .fr: "Voir les forfaits"
+        }
+    }
+    static var planSeePlans: String { planSeePlans(in: .current) }
+
+    /// `plan.notNow`: Plan-gating dialog secondary action.
+    static func planNotNow(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Not now"
+        case .fr: "Pas maintenant"
+        }
+    }
+    static var planNotNow: String { planNotNow(in: .current) }
+
+    /// `signIn.title`: Sign-in title, in display.
+    static func signInTitle(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Welcome back"
+        case .fr: "Bon retour"
+        }
+    }
+    static var signInTitle: String { signInTitle(in: .current) }
+
+    /// `signIn.subtitle`: Sign-in lede.
+    static func signInSubtitle(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Sign in to continue to Alevr."
+        case .fr: "Connectez-vous pour continuer sur Alevr."
+        }
+    }
+    static var signInSubtitle: String { signInSubtitle(in: .current) }
+
+    /// `signIn.newHere`: Before the create-account link.
+    static func signInNewHere(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "New to Alevr?"
+        case .fr: "Nouveau sur Alevr\u{00A0}?"
+        }
+    }
+    static var signInNewHere: String { signInNewHere(in: .current) }
+
+    /// `signIn.createAccount`: Create-account link.
+    static func signInCreateAccount(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Create an account"
+        case .fr: "Créer un compte"
+        }
+    }
+    static var signInCreateAccount: String { signInCreateAccount(in: .current) }
+
+    /// `signIn.google`: Provider button.
+    static func signInGoogle(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Continue with Google"
+        case .fr: "Continuer avec Google"
+        }
+    }
+    static var signInGoogle: String { signInGoogle(in: .current) }
+
+    /// `signIn.apple`: Provider button.
+    static func signInApple(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Continue with Apple"
+        case .fr: "Continuer avec Apple"
+        }
+    }
+    static var signInApple: String { signInApple(in: .current) }
+
+    /// `signIn.email`: Field label.
+    static func signInEmail(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Email"
+        case .fr: "E-mail"
+        }
+    }
+    static var signInEmail: String { signInEmail(in: .current) }
+
+    /// `signIn.password`: Field label.
+    static func signInPassword(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Password"
+        case .fr: "Mot de passe"
+        }
+    }
+    static var signInPassword: String { signInPassword(in: .current) }
+
+    /// `signIn.continue`: Step button.
+    static func signInContinue(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Continue"
+        case .fr: "Continuer"
+        }
+    }
+    static var signInContinue: String { signInContinue(in: .current) }
+
+    /// `signIn.change`: Change the email on step 2.
+    static func signInChange(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Change"
+        case .fr: "Modifier"
+        }
+    }
+    static var signInChange: String { signInChange(in: .current) }
+
+    /// `signIn.magicLink`: Step 2 alternative.
+    static func signInMagicLink(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Email me a link instead"
+        case .fr: "M’envoyer un lien par e-mail"
+        }
+    }
+    static var signInMagicLink: String { signInMagicLink(in: .current) }
+
+    /// `signIn.forgotPassword`: Web.
+    static func signInForgotPassword(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Forgot your password?"
+        case .fr: "Mot de passe oublié\u{00A0}?"
+        }
+    }
+    static var signInForgotPassword: String { signInForgotPassword(in: .current) }
+
+    /// `signIn.forgotPasswordShort`: macOS.
+    static func signInForgotPasswordShort(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Forgot password?"
+        case .fr: "Mot de passe oublié\u{00A0}?"
+        }
+    }
+    static var signInForgotPasswordShort: String { signInForgotPasswordShort(in: .current) }
+
+    /// `signIn.providerHint`: Web, step 2.
+    static func signInProviderHint(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Signed up with Google or Apple? Use those buttons above."
+        case .fr: "Inscrit avec Google ou Apple\u{00A0}? Utilisez les boutons ci-dessus."
+        }
+    }
+    static var signInProviderHint: String { signInProviderHint(in: .current) }
+
+    /// `signIn.providerHintMac`: macOS, until native provider sign-in (G68).
+    static func signInProviderHintMac(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Signed up with Google or Apple? Continue in the browser."
+        case .fr: "Inscrit avec Google ou Apple\u{00A0}? Continuez dans le navigateur."
+        }
+    }
+    static var signInProviderHintMac: String { signInProviderHintMac(in: .current) }
+
+    /// `signIn.notLinked`: OAuthAccountNotLinked, shown only after the provider authenticated the owner.
+    static func signInNotLinked(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "This email already has a password. Sign in with it below."
+        case .fr: "Un mot de passe existe déjà pour cet e-mail. Connectez-vous ci-dessous avec ce mot de passe."
+        }
+    }
+    static var signInNotLinked: String { signInNotLinked(in: .current) }
+
+    /// `signIn.inFrench`: After a legal link whose page is in French.
+    static func signInInFrench(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "(in French)"
+        case .fr: "(en français)"
+        }
+    }
+    static var signInInFrench: String { signInInFrench(in: .current) }
+
+    /// `onboarding.title`: Page 1 title, in display.
+    static func onboardingTitle(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Make Alevr yours"
+        case .fr: "Faites d’Alevr le vôtre"
+        }
+    }
+    static var onboardingTitle: String { onboardingTitle(in: .current) }
+
+    /// `onboarding.name`: Field label.
+    static func onboardingName(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Name"
+        case .fr: "Nom"
+        }
+    }
+    static var onboardingName: String { onboardingName(in: .current) }
+
+    /// `onboarding.theme`: Field label.
+    static func onboardingTheme(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Theme"
+        case .fr: "Thème"
+        }
+    }
+    static var onboardingTheme: String { onboardingTheme(in: .current) }
+
+    /// `onboarding.accent`: Field label.
+    static func onboardingAccent(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Accent"
+        case .fr: "Couleur d’accent"
+        }
+    }
+    static var onboardingAccent: String { onboardingAccent(in: .current) }
+
+    /// `onboarding.saveFailed`: Inline field error.
+    static func onboardingSaveFailed(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Couldn’t save this. Try again."
+        case .fr: "Impossible d’enregistrer. Réessayez."
+        }
+    }
+    static var onboardingSaveFailed: String { onboardingSaveFailed(in: .current) }
+
+    /// `onboarding.import`: Web page 2.
+    static func onboardingImport(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Import from ChatGPT or Claude"
+        case .fr: "Importer depuis ChatGPT ou Claude"
+        }
+    }
+    static var onboardingImport: String { onboardingImport(in: .current) }
+
+    /// `onboarding.commandsTip`: Web page 2, the palette tip.
+    static func onboardingCommandsTip(shortcut: String, in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Press \(shortcut) for commands"
+        case .fr: "Appuyez sur \(shortcut) pour les commandes"
+        }
+    }
+
+    /// `onboarding.macTitle`: macOS page 2 title.
+    static func onboardingMacTitle(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Alevr on your Mac"
+        case .fr: "Alevr sur votre Mac"
+        }
+    }
+    static var onboardingMacTitle: String { onboardingMacTitle(in: .current) }
+
+    /// `onboarding.quickEntry`: macOS page 2 row.
+    static func onboardingQuickEntry(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Quick Entry"
+        case .fr: "Saisie rapide"
+        }
+    }
+    static var onboardingQuickEntry: String { onboardingQuickEntry(in: .current) }
+
+    /// `onboarding.chooseShortcut`: When the default Quick Entry shortcut is taken.
+    static func onboardingChooseShortcut(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Choose a shortcut"
+        case .fr: "Choisir un raccourci"
+        }
+    }
+    static var onboardingChooseShortcut: String { onboardingChooseShortcut(in: .current) }
+
+    /// `onboarding.tryIt`: macOS page 2 action.
+    static func onboardingTryIt(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Try it"
+        case .fr: "Essayer"
+        }
+    }
+    static var onboardingTryIt: String { onboardingTryIt(in: .current) }
+
+    /// `onboarding.menuBar`: macOS page 2 row.
+    static func onboardingMenuBar(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Menu bar"
+        case .fr: "Barre des menus"
+        }
+    }
+    static var onboardingMenuBar: String { onboardingMenuBar(in: .current) }
+
+    /// `onboarding.notifyWhenDone`: macOS page 2 row.
+    static func onboardingNotifyWhenDone(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Tell me when work finishes"
+        case .fr: "Me prévenir quand un travail se termine"
+        }
+    }
+    static var onboardingNotifyWhenDone: String { onboardingNotifyWhenDone(in: .current) }
+
+    /// `onboarding.importShort`: macOS page 2 row.
+    static func onboardingImportShort(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Import"
+        case .fr: "Importer"
+        }
+    }
+    static var onboardingImportShort: String { onboardingImportShort(in: .current) }
+
+    /// `onboarding.notifications`: iOS page 2 row.
+    static func onboardingNotifications(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Notifications"
+        case .fr: "Notifications"
+        }
+    }
+    static var onboardingNotifications: String { onboardingNotifications(in: .current) }
+
+    /// `onboarding.widgets`: iOS page 2 row.
+    static func onboardingWidgets(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Widgets and Control Center"
+        case .fr: "Widgets et centre de contrôle"
+        }
+    }
+    static var onboardingWidgets: String { onboardingWidgets(in: .current) }
+
+    /// `onboarding.pairMac`: iOS page 2 row, optional.
+    static func onboardingPairMac(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Pair a Mac"
+        case .fr: "Associer un Mac"
+        }
+    }
+    static var onboardingPairMac: String { onboardingPairMac(in: .current) }
+
+    /// `onboarding.skip`: Skip a page.
+    static func onboardingSkip(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Skip"
+        case .fr: "Passer"
+        }
+    }
+    static var onboardingSkip: String { onboardingSkip(in: .current) }
+
+    /// `onboarding.getStarted`: Finish onboarding; focus moves to the composer.
+    static func onboardingGetStarted(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Get started"
+        case .fr: "Commencer"
+        }
+    }
+    static var onboardingGetStarted: String { onboardingGetStarted(in: .current) }
+
+    /// `menu.askAlevr`: Menu bar extra's first item and Quick Entry.
+    static func menuAskAlevr(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Ask Alevr…"
+        case .fr: "Demander à Alevr…"
+        }
+    }
+    static var menuAskAlevr: String { menuAskAlevr(in: .current) }
+    /// The macOS menu bar's Title Case form.
+    static func menuAskAlevrTitle(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Ask Alevr…"
+        case .fr: "Demander à Alevr…"
+        }
+    }
+
+    /// `menu.newChat`: Menu command.
+    static func menuNewChat(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "New chat"
+        case .fr: "Nouvelle conversation"
+        }
+    }
+    static var menuNewChat: String { menuNewChat(in: .current) }
+    /// The macOS menu bar's Title Case form.
+    static func menuNewChatTitle(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "New Chat"
+        case .fr: "Nouvelle conversation"
+        }
+    }
+
+    /// `menu.newCodeSession`: Menu command and palette action.
+    static func menuNewCodeSession(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "New code session"
+        case .fr: "Nouvelle session Code"
+        }
+    }
+    static var menuNewCodeSession: String { menuNewCodeSession(in: .current) }
+    /// The macOS menu bar's Title Case form.
+    static func menuNewCodeSessionTitle(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "New Code Session"
+        case .fr: "Nouvelle session Code"
+        }
+    }
+
+    /// `menu.search`: Menu command.
+    static func menuSearch(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Search"
+        case .fr: "Rechercher"
+        }
+    }
+    static var menuSearch: String { menuSearch(in: .current) }
+    /// The macOS menu bar's Title Case form.
+    static func menuSearchTitle(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "Search"
+        case .fr: "Rechercher"
+        }
+    }
+
+    /// `quickEntry.conflict`: Quick Entry when its hotkey is taken.
+    static func quickEntryConflict(shortcut: String, in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "\(shortcut) is used by another app"
+        case .fr: "\(shortcut) est utilisé par une autre app"
+        }
+    }
+
+    /// `quickEntry.rebindFailed`: A rebind that failed.
+    static func quickEntryRebindFailed(in language: JunoShellLanguage = .current) -> String {
+        switch language {
+        case .en: "That shortcut is in use by another app."
+        case .fr: "Ce raccourci est déjà utilisé par une autre app."
+        }
+    }
+    static var quickEntryRebindFailed: String { quickEntryRebindFailed(in: .current) }
+
+    /// Strings no surface may show any more.
+    static let retired: [String] = ["How can I help you today?", "Private chat", "What can I help with?", "Automations", "New automation"]
 }
