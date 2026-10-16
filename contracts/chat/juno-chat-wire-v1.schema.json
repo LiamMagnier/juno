@@ -3385,15 +3385,15 @@
           "type": "boolean"
         },
         {
-          "type": "object",
-          "properties": {},
-          "additionalProperties": {
+          "type": "array",
+          "items": {
             "$ref": "#/$defs/JsonValue"
           }
         },
         {
-          "type": "array",
-          "items": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": {
             "$ref": "#/$defs/JsonValue"
           }
         },

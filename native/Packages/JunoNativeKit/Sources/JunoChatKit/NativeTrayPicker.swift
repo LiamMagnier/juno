@@ -704,8 +704,9 @@ public enum NativeComposerTrayPickers {
     }
 
     static func projectSubtitle(_ project: NativeComposerTrayProject, now: Date) -> String? {
-        let edited = project.updatedAt.map { edited($0, now: now) }
-        switch (project.parentName, edited) {
+        // Not named `edited`: that would shadow the function it calls (Xcode 26 rejects it).
+        let editedLine = project.updatedAt.map { Self.edited($0, now: now) }
+        switch (project.parentName, editedLine) {
         case let (parent?, edited?): return "In \(parent) \u{00B7} \(edited.prefix(1).lowercased() + edited.dropFirst())"
         case let (parent?, nil): return "In \(parent)"
         case let (nil, edited): return edited
