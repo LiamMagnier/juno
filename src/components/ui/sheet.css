@@ -1,0 +1,154 @@
+/*
+ * SHEETS ON A PHONE (G54): the CSS half of sheet-gesture.ts, shared by
+ * ui/sheet.tsx (drawers and bottom sheets) and ui/dialog.tsx (a dialog is a
+ * bottom sheet below 640px). Imported once, by the root layout: the tests
+ * load those components without a CSS loader.
+ *
+ * Motion, on the house ladder: a sheet rises on the drawer curve over the
+ * slow rung (it travels its own height, further than a dialog's pop) and
+ * leaves on the accelerate at the base rung, about 0.65 of the way in. The
+ * keyframes multiply their travel by --motion-shift, so the reduced tier
+ * keeps a fade and drops the travel. A finger-driven move is direct
+ * manipulation and is never animated over; only the settle after release is.
+ */
+
+/* ——— The gesture protocol (data-gesture, set by sheet-gesture.ts) ——————— */
+
+[data-swipe-panel][data-gesture="drag"],
+[data-swipe-panel][data-gesture="settle"],
+[data-swipe-panel][data-gesture="gone"],
+[data-swipe-panel][data-gesture="held"][data-state="open"],
+[data-swipe-panel][data-gesture="held"]:not([data-state]),
+[data-swipe-scrim][data-gesture="drag"],
+[data-swipe-scrim][data-gesture="settle"],
+[data-swipe-scrim][data-gesture="gone"],
+[data-swipe-scrim][data-gesture="held"][data-state="open"] {
+  animation: none !important;
+}
+
+/* ——— The edge pull (useEdgeSwipeOpen): the drawer under the finger ——————— */
+
+html[data-sheet-pull] [data-sheet-pull-target] {
+  animation: none !important;
+}
+html[data-sheet-pull] .ui-sheet[data-sheet-pull-target] {
+  transform: translate3d(var(--sheet-pull-x, -100%), 0, 0);
+}
+html[data-sheet-pull] [data-swipe-scrim][data-sheet-pull-target] {
+  opacity: var(--sheet-pull-progress, 0);
+}
+html[data-sheet-pull="settle"] .ui-sheet[data-sheet-pull-target] {
+  transition: transform var(--sheet-pull-ms, 220ms) var(--ease-drawer);
+}
+html[data-sheet-pull="settle"] [data-swipe-scrim][data-sheet-pull-target] {
+  transition: opacity var(--sheet-pull-ms, 220ms) var(--ease-out-soft);
+}
+
+/* ——— Bottom sheets ———————————————————————————————————————————————— */
+
+@keyframes ui-sheet-rise {
+  from {
+    /* Travel when motion is on; a fade when the reduced tier zeroes it. */
+    opacity: var(--motion-shift, 1);
+    transform: translate3d(0, calc(100% * var(--motion-shift, 1)), 0);
+  }
+}
+@keyframes ui-sheet-sink {
+  to {
+    opacity: var(--motion-shift, 1);
+    transform: translate3d(0, calc(100% * var(--motion-shift, 1)), 0);
+  }
+}
+
+/* Above the on-screen keyboard (sheet-gesture.ts sets --sheet-keyboard while
+   it is up). The keys cover the home indicator, so its strip goes with them.
+   `bottom` follows the keyboard on the base rung; the reduced tier keeps it
+   (it is the panel staying under the eye, not travel for its own sake). */
+.ui-sheet[data-side="bottom"] {
+  bottom: var(--sheet-keyboard, 0px);
+  transition: bottom var(--dur-base) var(--ease-out-soft);
+}
+.ui-sheet[data-side="bottom"][data-keyboard] {
+  padding-bottom: 0;
+  max-height: calc(100dvh - var(--sheet-keyboard, 0px) - env(safe-area-inset-top, 0px) - 1.5rem);
+}
+
+.ui-sheet[data-side="bottom"][data-state="open"] {
+  animation: ui-sheet-rise var(--dur-slow) var(--ease-drawer) both;
+}
+.ui-sheet[data-side="bottom"][data-state="closed"] {
+  animation: ui-sheet-sink var(--dur-base) var(--ease-in) both;
+}
+
+/* The grabber: a pill to see, a wider strip to catch a mouse or pen (a
+   finger can pull from anywhere on the sheet). */
+.ui-sheet-grabber {
+  display: none;
+}
+.ui-sheet[data-side="bottom"] > .ui-sheet-grabber {
+  display: block;
+}
+.ui-sheet-grabber {
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  left: 50%;
+  translate: -50% 0;
+  width: 56px;
+  height: 20px;
+  cursor: grab;
+  touch-action: none;
+}
+.ui-sheet-grabber::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 7px;
+  width: 36px;
+  height: 4px;
+  translate: -50% 0;
+  border-radius: 999px;
+  background: hsl(var(--foreground) / 0.18);
+}
+.ui-sheet-grabber:active {
+  cursor: grabbing;
+}
+
+/* ——— A dialog on a phone is a bottom sheet ————————————————————————— */
+
+/* The doubled class outranks a call site's own position, width and entrance
+   utilities (`top-[15%]`, `max-w-md`, `data-[state=open]:animate-*`), so a
+   dialog cannot opt out by accident; `sheet={false}` is the way out. */
+@media (max-width: 639.98px) {
+  .ui-dialog.ui-dialog[data-phone-sheet] {
+    top: auto;
+    right: 0;
+    left: 0;
+    translate: none;
+    width: 100%;
+    max-width: none;
+    max-height: calc(100dvh - env(safe-area-inset-top, 0px) - 1.5rem);
+    border-radius: 16px 16px 0 0;
+    /* The home indicator's strip, as a transparent edge in the sheet's own
+       colour: a call site's padding (often p-0) is left alone, and content
+       never scrolls under the indicator. */
+    border-bottom: env(safe-area-inset-bottom, 0px) solid transparent;
+    overscroll-behavior: contain;
+    /* Above the on-screen keyboard; see the bottom sheet above. */
+    bottom: var(--sheet-keyboard, 0px);
+    transition: bottom var(--dur-base) var(--ease-out-soft);
+  }
+  .ui-dialog.ui-dialog[data-phone-sheet][data-keyboard] {
+    border-bottom-width: 0;
+    max-height: calc(100dvh - var(--sheet-keyboard, 0px) - env(safe-area-inset-top, 0px) - 1.5rem);
+  }
+  .ui-dialog.ui-dialog[data-phone-sheet][data-state="open"] {
+    animation: ui-sheet-rise var(--dur-slow) var(--ease-drawer) both;
+  }
+  .ui-dialog.ui-dialog[data-phone-sheet][data-state="closed"] {
+    animation: ui-sheet-sink var(--dur-base) var(--ease-in) both;
+  }
+  .ui-dialog[data-phone-sheet] > .ui-sheet-grabber {
+    display: block;
+  }
+}

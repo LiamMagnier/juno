@@ -65,7 +65,7 @@ export function canonicalLang(raw?: string | null): string {
 // Canonical language key → file extension for downloads. The stored `language`
 // is a language NAME ("python", "typescript"), never a usable suffix.
 const FILE_EXTENSIONS: Record<string, string> = {
-  design: "juno.design.json",
+  design: "alevr.design.json",
   javascript: "js", typescript: "ts", jsx: "jsx", tsx: "tsx",
   python: "py", html: "html", svg: "svg", css: "css", mermaid: "mmd", markdown: "md",
   bash: "sh", sql: "sql", go: "go", rust: "rs", c: "c", cpp: "cpp", csharp: "cs",

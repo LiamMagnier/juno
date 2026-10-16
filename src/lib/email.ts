@@ -4,6 +4,7 @@ import { rateLimit } from "@/lib/rate-limit";
 import { budgetAlert } from "@/lib/email-templates";
 import { emailParagraph, escapeEmailHtml, renderEmailLayout } from "@/lib/email-layout";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { senderAddress } from "@/lib/email-sender";
 
 /**
  * Thin Resend REST client (no SDK) + the lifecycle senders that wrap it.
@@ -21,7 +22,7 @@ export function isEmailEnabled(): boolean {
 }
 
 function fromAddress(): string {
-  return process.env.EMAIL_FROM ?? `${PRODUCT_NAME} <hello@chat.liams.dev>`;
+  return senderAddress(process.env.EMAIL_FROM);
 }
 
 export interface SendEmailInput {

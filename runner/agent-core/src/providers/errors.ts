@@ -312,16 +312,16 @@ function sentenceFor(
         retryAfterMs != null
           ? ` It asked to be tried again in about ${Math.max(1, Math.round(retryAfterMs / 1000))} seconds.`
           : '';
-      return `${providerLabel} is limiting how fast Juno may call it, so this run could not continue.${when}`;
+      return `${providerLabel} is limiting how fast Alevr may call it, so this run could not continue.${when}`;
     }
     case 'overloaded':
       return `${providerLabel} is overloaded and turned the request away, so this run could not continue.`;
     case 'transient':
       return `${providerLabel} did not answer, so this run could not continue.`;
     case 'auth':
-      return `${providerLabel} rejected Juno's credentials, so this run could not start. This is a problem with the deployment rather than with the task.`;
+      return `${providerLabel} rejected Alevr's credentials, so this run could not start. This is a problem with the deployment rather than with the task.`;
     case 'insufficient_balance':
-      return `${providerLabel} refused the request because the account Juno bills it to has run out of credit. Nothing is wrong with the task, and another model can run it.`;
+      return `${providerLabel} refused the request because the account Alevr bills it to has run out of credit. Nothing is wrong with the task, and another model can run it.`;
     case 'plan_limit':
       return "You've used up your plan's usage limit, so this run stopped. Nothing is wrong with the task, and it can be run again once the limit frees up.";
     case 'context_overflow':
@@ -331,7 +331,7 @@ function sentenceFor(
     case 'invalid_request':
       return `${providerLabel} rejected the request as one it cannot serve. The model may have been retired or renamed.`;
     case 'unknown':
-      return `${providerLabel} failed in a way Juno does not recognise, so this run stopped rather than guessing.`;
+      return `${providerLabel} failed in a way Alevr does not recognise, so this run stopped rather than guessing.`;
   }
 }
 

@@ -38,7 +38,7 @@ import { VoiceComposerGlow } from "@/components/voice/voice-composer-glow";
 import type { CodeVoiceBriefingInput } from "@/components/code/code-voice-briefing";
 import { useApp } from "@/components/app/app-provider";
 import { useUploads } from "@/hooks/use-uploads";
-import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
+import { useDictationSupported } from "@/hooks/use-dictation-support";
 import { CodeIcons, StatusIcons } from "@/lib/app-icons";
 import {
   CLOUD_RUNTIME_APPROVALS,
@@ -60,6 +60,7 @@ import { clampReasoningEffort, defaultReasoning, reasoningOptions, type Reasonin
 import { setPendingCodePrompt } from "@/lib/code-session-handoff";
 import type { CodePrefill, CodePrefillNote } from "@/lib/code-prefill";
 import { cn } from "@/lib/utils";
+import { touchReturnBreaksLine } from "@/lib/touch-keyboard";
 import { CODE_COMPOSER_SEED_EVENT } from "@/components/code/code-seed";
 import { LandingSkillsChip, seedThreadSkills, useLandingSkills } from "@/components/code/code-landing-skills";
 import type { ClientAttachment, ClientConversation } from "@/types/chat";
@@ -433,7 +434,8 @@ export function CodeComposer({
   const [dictating, setDictating] = React.useState(false);
   const canAttach = features.storage;
 
-  const { supported: speechSupported } = useSpeechRecognition();
+  // Web Speech or the server's transcription, whichever can work here (G36).
+  const speechSupported = useDictationSupported();
   const { uploads, addFiles, addAttachments, remove, clear, readyAttachments, isUploading } = useUploads(null);
 
   // —— Submission & Status ——
@@ -683,7 +685,8 @@ export function CodeComposer({
   );
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+    // Return on an on-screen keyboard breaks the line; the button sends (G35).
+    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && !touchReturnBreaksLine(e)) {
       e.preventDefault();
       if (canSubmit) void submit();
     }

@@ -452,7 +452,7 @@ test("round budgets by effort, voice unchanged", () => {
   assert.equal(roundBudgetFor("xhigh", false), 24);
   assert.equal(roundBudgetFor("max", false), 24);
   assert.equal(roundBudgetFor("max", true), 7);
-  assert.match(FINAL_ROUND_NOTE, /^\[Juno: this is the last step\. Do not call tools\./);
+  assert.match(FINAL_ROUND_NOTE, /^\[Alevr: this is the last step\. Do not call tools\./);
 });
 
 // ── The estimate line (SPEC §9.2) ─────────────────────────────────────────────

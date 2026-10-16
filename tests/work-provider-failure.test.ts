@@ -42,7 +42,7 @@ test("classifies an empty-bodied 429 as a rate limit rather than an opaque strin
   assert.equal(classified.worthFailingOver, true);
   // The whole point: what a person reads is a sentence, and the SDK's string is
   // nowhere in it.
-  assert.match(classified.message, /Mistral is limiting how fast Juno may call it/);
+  assert.match(classified.message, /Mistral is limiting how fast Alevr may call it/);
   assert.doesNotMatch(classified.message, /429|status code|no body/);
 });
 

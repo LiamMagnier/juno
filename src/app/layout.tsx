@@ -11,6 +11,9 @@ import "@/components/home/dot-construction.css";
 import "@/components/app/editorial.css";
 // Workbooks, documents and decks render on chat, canvas, library and share pages.
 import "@/components/semantic/semantic.css";
+// Every dialog, drawer and phone sheet (ui/dialog.tsx, ui/sheet.tsx, the Code
+// v2 composer sheet): global for the same reason as the kit above.
+import "@/components/ui/sheet.css";
 import { headers } from "next/headers";
 import { Providers } from "@/components/providers";
 import { FONT_SIZE_BOOT_SCRIPT } from "@/components/settings/font-size";
@@ -117,6 +120,11 @@ export const viewport: Viewport = {
   ],
   width: "device-width",
   initialScale: 1,
+  // Edge to edge (G54): without `cover`, every env(safe-area-inset-*) in the
+  // product reads 0, so the installed app's composer and sheets sat under the
+  // home indicator. The shell, the phone bar, sheets and the composer pad
+  // themselves by those insets (pl/pr/pt/pb-safe).
+  viewportFit: "cover",
 };
 
 export default async function RootLayout({
@@ -162,7 +170,10 @@ export default async function RootLayout({
           dangerouslySetInnerHTML={{ __html: UI_PREFS_BOOT_SCRIPT }}
         />
       </head>
-      <body className="min-h-dvh antialiased">
+      {/* pl/pr-safe: with viewport-fit=cover a phone on its side would put
+          the notch over every page's edge; fixed layers (sheets, the phone
+          drawer) pad themselves. */}
+      <body className="min-h-dvh pl-safe pr-safe antialiased">
         <Providers
           defaultTheme={theme}
           session={session}

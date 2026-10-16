@@ -70,12 +70,13 @@ const buttonVariants = cva(
         default: "h-9 px-4 py-2 coarse:h-11",
         // Same face as `default` — a small button is shorter, not quieter. It
         // was text-xs (12px), a size between two rungs of the type scale.
-        sm: "h-8 px-3 text-ui coarse:h-10",
+        sm: "h-8 px-3 text-ui coarse:h-10 hit-44",
         // text-body IS 0.9375rem — the arbitrary value was the token spelled out
         // longhand, minus the 1.6 line-height that comes with it.
         lg: "h-11 rounded-field px-6 text-body",
         icon: "size-9 coarse:size-11",
-        "icon-sm": "size-8 coarse:size-10",
+        // The two 40px touch rungs reach 44 with an invisible pad (G54).
+        "icon-sm": "size-8 coarse:size-10 hit-44",
       },
     },
     defaultVariants: { variant: "default", size: "default" },

@@ -17,6 +17,7 @@ import { formatKey } from "@/lib/code-v2/keymap";
 import { cn } from "@/lib/utils";
 import { useReducedMotion } from "@/lib/motion-preference";
 import { usePresence } from "@/lib/use-presence";
+import { useMergedRef, useSwipeDismiss } from "@/components/ui/sheet-gesture";
 
 export function Glyph({ name, size = 16, className, spin, title }: { name: string; size?: number; className?: string; spin?: boolean; title?: string }) {
   return (
@@ -130,37 +131,24 @@ export function ComposerPopover({
   role?: "dialog" | "menu";
 }) {
   const ref = useDismiss(open, onClose, anchorRef);
-  const drag = React.useRef<{ y: number; t: number } | null>(null);
-  const [dy, setDy] = React.useState(0);
   // It stays mounted for its exit (0.65 x the entrance, accelerating), so a
   // menu leaves the way it arrived instead of vanishing.
   const presence = usePresence(open, 240);
+  // Below 761 px a downward throw dismisses it: the shared sheet gesture
+  // (ui/sheet-gesture.ts) that every web dialog uses on a phone. A throw marks
+  // the panel data-gesture="gone", which turns the exit animation off (the
+  // finger already moved it away); presence's fallback then unmounts it.
+  const scrimRef = React.useRef<HTMLDivElement>(null);
+  const swipeRef = useSwipeDismiss({ axis: "y", sign: 1, enabled: () => window.innerWidth <= 760, scrimRef, onDismiss: onClose });
+  const panelRef = useMergedRef<HTMLDivElement>(ref, swipeRef);
   if (!presence.mounted) return null;
   const state = presence.closing ? "closed" : "open";
-  const onPointerDown = (e: React.PointerEvent) => {
-    if (window.innerWidth > 760) return;
-    drag.current = { y: e.clientY, t: performance.now() };
-    (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
-  };
-  const onPointerMove = (e: React.PointerEvent) => {
-    if (!drag.current) return;
-    const d = e.clientY - drag.current.y;
-    setDy(d > 0 ? d : d * 0.3);
-  };
-  const onPointerUp = (e: React.PointerEvent) => {
-    if (!drag.current) return;
-    const d = e.clientY - drag.current.y;
-    const v = d / Math.max(1, performance.now() - drag.current.t);
-    drag.current = null;
-    const h = ref.current?.offsetHeight ?? 400;
-    if (v > 0.6 || d > h * 0.3) onClose();
-    setDy(0);
-  };
   return (
     <>
-      <div className="cv2-pop-scrim" data-state={state} onClick={onClose} aria-hidden />
+      <div ref={scrimRef} data-swipe-scrim="" className="cv2-pop-scrim" data-state={state} onClick={onClose} aria-hidden />
       <div
-        ref={ref}
+        ref={panelRef}
+        data-swipe-panel=""
         role={role}
         aria-label={label}
         data-state={state}
@@ -171,10 +159,9 @@ export function ComposerPopover({
           width,
           ...(align === "right" ? { right: offset } : { left: offset }),
           ["--cv2-origin" as string]: align === "right" ? "bottom right" : "bottom left",
-          ...(dy ? { transform: `translateY(${dy}px)`, transition: "none" } : {}),
         }}
       >
-        <div className="cv2-pop-grab" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} />
+        <div className="cv2-pop-grab" data-sheet-handle="" />
         {children}
       </div>
     </>

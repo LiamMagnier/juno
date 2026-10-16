@@ -33,17 +33,24 @@ export function EmptyGreeting() {
  * but the pointer lights it: the dots near the cursor brighten and the nearest
  * take presence blue, then fade once the pointer rests or leaves (the lamp in
  * dot-engine.ts). Decorative.
+ *
+ * CALM (G34). Once the starter chips are on screen the content owns the empty
+ * state, so the field steps back: it fades to a lower ink on the slow rung and
+ * the pointer no longer lights it (a lamp under the chips competed with the
+ * one thing the pointer is there to choose). The drawing and its one live
+ * trajectory stay; nothing is paused mid-draw.
  */
-export function HomeField({ visible = true }: { visible?: boolean }) {
+export function HomeField({ visible = true, calm = false }: { visible?: boolean; calm?: boolean }) {
   return (
     <div
       aria-hidden="true"
+      data-calm={calm ? "" : undefined}
       className={cn(
         "alv chat-home__field [&.alv]:bg-transparent",
-        visible ? "opacity-100" : "opacity-0",
+        visible ? (calm ? "opacity-[0.55]" : "opacity-100") : "opacity-0",
       )}
     >
-      <Construction ticks={false} paused={!visible} lamp />
+      <Construction ticks={false} paused={!visible} lamp={!calm} />
     </div>
   );
 }

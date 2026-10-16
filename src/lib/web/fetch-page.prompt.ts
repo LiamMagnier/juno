@@ -2,13 +2,15 @@
  * What `web_fetch` tells the model (SPEC §3.8.2, §6.2.5). English, constant,
  * and in a `*.prompt.ts` file so the i18n extractor never harvests it (INV-29).
  *
- * The metadata lines are Juno's and sit OUTSIDE the untrusted envelope; the
+ * The metadata lines are Alevr's and sit OUTSIDE the untrusted envelope; the
  * page's title, text and links sit inside it (INV-30). Refusals say what
  * happened, that nothing was fetched where that is true, and what to do next.
  */
 
+import { PRODUCT_NAME } from "@/lib/brand/names";
+
 export const NOT_IN_PRIOR_CONTEXT_TEXT =
-  "Juno only opens links that appeared in this conversation: typed by the user, or returned by an earlier search or page. This link did not, so nothing was fetched. Use web_search to find the page, or ask the user to paste the link.";
+  `${PRODUCT_NAME} only opens links that appeared in this conversation: typed by the user, or returned by an earlier search or page. This link did not, so nothing was fetched. Use web_search to find the page, or ask the user to paste the link.`;
 
 export const URL_NOT_ALLOWED_TEXT = "This address cannot be opened. Do not retry it.";
 

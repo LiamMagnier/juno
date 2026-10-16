@@ -79,7 +79,8 @@ test("the runner reads memory inside the untrusted envelope, before the task", (
   assert.match(fn, /const memory = await memorySource\(/);
   assert.match(fn, /if \(memory\) sources\.push\(memory\);/);
   assert.match(fn, /input\.runtime\.wrapUntrusted\(untrustedLabel\(source\.label\), source\.body\)/);
-  assert.match(fn, /what Juno\s*"\s*\+\s*"remembers about the user/);
+  // The product's name, never the codename (G44).
+  assert.match(fn, /what \$\{PRODUCT_NAME\}\s*`\s*\+\s*"remembers about the user/);
 });
 
 test("the runner ranks memory under the run's own provider", () => {

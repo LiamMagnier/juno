@@ -947,6 +947,23 @@ const config: Config = {
         ".pb-safe": { paddingBottom: "env(safe-area-inset-bottom, 0px)" },
         ".pl-safe": { paddingLeft: "env(safe-area-inset-left, 0px)" },
         ".pr-safe": { paddingRight: "env(safe-area-inset-right, 0px)" },
+        // A 44px hit area on touch for a control drawn smaller (G54): the box
+        // keeps its drawn size and its neighbours their places; an invisible
+        // pad centred on it takes the finger. Needs `position: relative`,
+        // which Button and Pressable carry.
+        ".hit-44": {
+          "@media (pointer: coarse)": {
+            "&::before": {
+              content: '""',
+              position: "absolute",
+              left: "50%",
+              top: "50%",
+              width: "max(100%, 2.75rem)",
+              height: "max(100%, 2.75rem)",
+              translate: "-50% -50%",
+            },
+          },
+        },
       });
     }),
   ],

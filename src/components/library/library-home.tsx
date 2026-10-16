@@ -264,7 +264,9 @@ export function LibraryHome() {
               <Button variant="ghost" size="sm" asChild className="h-9 gap-2 border-foreground/10 px-3 font-normal text-muted-foreground hover:border-foreground/[0.16] hover:text-foreground active:scale-[0.97] coarse:h-11 dark:border-white/10 dark:hover:border-white/[0.16]">
                 <Link href="/library?view=trash">
                   <Trash2 className="size-4" aria-hidden="true" />
-                  Recently deleted
+                  {/* A glyph and its count on a phone (G54), so both actions
+                      share the title's line; the name stays for a screen reader. */}
+                  <span className="sr-only @[40rem]/page:not-sr-only">Recently deleted</span>
                   {deletedCount ? <span className="-mr-0.5 font-mono text-label leading-none tabular-nums text-muted-foreground/80">{deletedCount}</span> : null}
                 </Link>
               </Button>

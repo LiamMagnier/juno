@@ -17,7 +17,7 @@ import { Pressable } from "@/components/ui/pressable";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { DictationSwap } from "@/components/ui/dictation-swap";
 import { LibraryPicker } from "@/components/chat/library-picker";
-import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
+import { useDictationSupported } from "@/hooks/use-dictation-support";
 import { WorkThreadAddPanel } from "@/components/work/composer/work-thread-add-panel";
 import {
   WorkThreadControlsNote,
@@ -29,6 +29,7 @@ import { useWorkThreadFiles } from "@/components/work/composer/work-thread-files
 import { useComposerProjects } from "@/components/work/composer-home/use-composer-projects";
 import type { ClientWorkSession } from "@/lib/work/serializers";
 import { cn, formatBytes } from "@/lib/utils";
+import { touchReturnBreaksLine } from "@/lib/touch-keyboard";
 
 /**
  * The box at the bottom of a Work thread. It is always there.
@@ -207,7 +208,8 @@ export function WorkThreadComposer({
   // SpeechRecognition — work-composer.tsx, chat/composer.tsx, code-session-view
   // all gate on this. This one did not, so a Firefox reader got the one mic in
   // Juno that opens a dictation panel which can never hear anything.
-  const { supported: speechSupported } = useSpeechRecognition();
+  // Web Speech or the server's transcription, whichever can work here (G36).
+  const speechSupported = useDictationSupported();
 
   /*
    * A run is under way in exactly the two modes that describe one: `steer` is a
@@ -441,7 +443,7 @@ export function WorkThreadComposer({
                   event.currentTarget.blur();
                   return;
                 }
-                if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing && !touchReturnBreaksLine(event)) {
                   event.preventDefault();
                   void submit(draft);
                 }

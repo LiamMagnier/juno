@@ -113,7 +113,8 @@ test("a call with no loop of its own gets what its kind of call needs", () => {
 });
 
 test("the final-round note is one English line addressed to the model", () => {
-  assert.match(FINAL_ROUND_NOTE, /^\[Juno: .*\]$/);
+  // Signed with the product's name, never the codename (G44).
+  assert.match(FINAL_ROUND_NOTE, /^\[Alevr: .*\]$/);
   assert.doesNotMatch(FINAL_ROUND_NOTE, /\n/);
 });
 
