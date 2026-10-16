@@ -2685,7 +2685,9 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
                     {!agent ? (
                       <HomeStarters
                         composerRef={emptyComposerRef}
-                        hidden={Boolean(privateMode || chat.pendingClarification || handoff === "leaving")}
+                        // A voice call owns the composer: a starter would seed
+                        // text, or swap in an image model, under a live call.
+                        hidden={Boolean(privateMode || chat.pendingClarification || voiceOpen || handoff === "leaving")}
                         onShownChange={setStartersShown}
                       />
                     ) : null}

@@ -109,6 +109,8 @@ test("the home draws the starters and calms its field while they show", () => {
   const view = read("src/components/chat/chat-view.tsx");
   assert.match(view, /<HomeStarters\s+composerRef=\{emptyComposerRef\}/);
   assert.match(view, /calm=\{startersShown\}/);
+  // Incognito, a clarification, a voice call and the send handoff each put the row away.
+  assert.match(view, /hidden=\{Boolean\(privateMode \|\| chat\.pendingClarification \|\| voiceOpen \|\| handoff === "leaving"\)\}/);
   const field = read("src/components/chat/empty-state.tsx");
   assert.match(field, /lamp=\{!calm\}/, "the pointer stops lighting the dots under the chips");
   const starters = read("src/components/chat/home-starters.tsx");
