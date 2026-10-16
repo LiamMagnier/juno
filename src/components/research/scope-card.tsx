@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { RunGlyph } from "@/components/chat/run/run-glyph";
+import { RunGalaxy } from "@/components/chat/run/run-galaxy";
 import { RESEARCH_COPY, estimateLine, isResearchRefusal, phrase, researchRefusalLine } from "@/components/research/copy";
 import {
   MAX_QUESTION_CHARS,
@@ -50,7 +50,7 @@ import { cn } from "@/lib/utils";
  * favours plus any the reader adds, and the estimate line, with Start as the
  * primary action. Nothing is spent on the research itself until Start.
  *
- * - While the run plans: a skeleton the height of the Research row (the glyph
+ * - While the run plans: a skeleton the height of the Research row (the galaxy
  *   and "Planning the research"), no card chrome, so the card's arrival is
  *   the only change.
  * - At the tail of the transcript it is full size. Elsewhere (the reader kept
@@ -112,7 +112,7 @@ function localStore(): Storage | null {
   }
 }
 
-/** The skeleton and the one-line row share the Research row's geometry: 2.25rem, glyph, one line. */
+/** The skeleton and the one-line row share the Research row's geometry: 2.25rem, galaxy, one line. */
 function RowFrame({ children, className }: { children: React.ReactNode; className?: string }) {
   return <div className={cn("flex h-9 min-h-9 items-center gap-2.5 px-2 leading-6 coarse:h-11", className)}>{children}</div>;
 }
@@ -122,7 +122,7 @@ function PlanningSkeleton({ runId }: { runId: string }) {
   React.useEffect(() => claimLoop(loopId, 4), [loopId]);
   return (
     <RowFrame className="text-reading text-muted-foreground">
-      <RunGlyph phase="thinking" calm loopId={loopId} />
+      <RunGalaxy phase="thinking" loopId={loopId} />
       <span role="status">
         <Phrase text={RESEARCH_COPY.phase.planning} />
       </span>
@@ -172,7 +172,7 @@ export function ScopeCard({ runId, atTail, onStarted, embedded = false }: ScopeC
         aria-expanded={false}
         className="h-9 min-h-9 gap-2.5 rounded-control px-2 py-0 leading-6 coarse:h-11 coarse:min-h-11"
       >
-        <RunGlyph phase="waiting" loopId={`research-plan:${runId}`} />
+        <RunGalaxy phase="waiting" loopId={`research-plan:${runId}`} />
         <PhraseWithArgs
           spec={[phrase(RESEARCH_COPY.scope.planReady), phrase(RESEARCH_COPY.scope.review)]}
           className="min-w-0 flex-1 truncate text-ui text-foreground/80"

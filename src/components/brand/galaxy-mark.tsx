@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import * as React from "react";
 import { watchCanvas } from "@/lib/canvas/canvas-lifecycle";
 import { SCRIPT_COLOR } from "@/lib/design/tokens.generated";
 import { reducedMotionAt, subscribeReducedMotion } from "@/lib/motion-preference";
@@ -81,17 +81,17 @@ const isPending = (p: ThinkingPhase) => p === "thinking" || p === "working";
  * or idle marks step back to 60% over the exit duration.
  */
 export function GalaxyMark({ phase, size = 16, label, reducedMotion, className }: GalaxyMarkProps) {
-  const canvas = useRef<HTMLCanvasElement>(null);
-  const phaseRef = useRef(phase);
-  const wake = useRef<() => void>(() => {});
+  const canvas = React.useRef<HTMLCanvasElement>(null);
+  const phaseRef = React.useRef(phase);
+  const wake = React.useRef<() => void>(() => {});
 
   // Phase changes wake the loop (it sleeps once a stopped galaxy has settled).
-  useEffect(() => {
+  React.useEffect(() => {
     phaseRef.current = phase;
     wake.current();
   }, [phase]);
 
-  useEffect(() => {
+  React.useEffect(() => {
     const el = canvas.current;
     if (!el) return;
     const ctx = el.getContext("2d");

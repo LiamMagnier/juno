@@ -142,12 +142,13 @@ function AddCustomConnectorFlow() {
             </Button>
           </form>
 
-          {/* One line of motion while a stranger's server answers: the address
-              itself, shimmering, so the wait names what it is waiting on. */}
+          {/* While a stranger's server answers, the line names what the wait is
+              for. It stays still: the spinner in Check, the button just
+              pressed, is the one thing moving. */}
           <div aria-live="polite" className="min-h-0">
             {checking ? (
               <p className="mt-3 truncate text-caption text-muted-foreground motion-safe:animate-fade-in">
-                <span className="shimmer-text">Looking for a server at {hostOf(address)}…</span>
+                Looking for a server at {hostOf(address)}…
               </p>
             ) : refusal !== null ? (
               <WorkStateNote tone="error" className="mt-3 motion-safe:animate-rise-in">

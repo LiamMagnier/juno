@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { GalaxyMark } from "@/components/brand/galaxy-mark";
 import { AnimatePresence, MotionConfig, motion, type Variants } from "framer-motion";
 import { ChevronRight, Loader2, type IconComponent } from "@/components/ui/icons";
 
@@ -375,7 +376,7 @@ export function CodeRunStack({
           ) : steering.phase === "failed" ? (
             <StatusIcons.error className="mt-px size-3.5 shrink-0" aria-hidden="true" />
           ) : (
-            <Loader2 className="mt-px size-3.5 shrink-0 animate-spin" aria-hidden="true" />
+            <GalaxyMark phase="working" size={14} className="mt-px" />
           )}
           <span className="min-w-0 flex-1">
             <span>{steeringCopy(steering)}</span>

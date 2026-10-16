@@ -1,5 +1,6 @@
 "use client";
 
+import { GalaxyMark } from "@/components/brand/galaxy-mark";
 import { Loader2, Minus, X, type IconComponent } from "@/components/ui/icons";
 import { StatusIcons } from "@/lib/app-icons";
 import { useWorkArrivals } from "@/components/work/motion/use-work-arrivals";
@@ -63,6 +64,7 @@ export function planTally(steps: readonly PlanStep[]): PlanTally {
  * only reason the tick and the cross used to be handed a `strokeWidth`.
  */
 const MARK_ICON: Partial<Record<PlanStepState, IconComponent>> = {
+  // Listed so the layer exists; it is drawn as the galaxy, not this glyph.
   active: Loader2,
   done: StatusIcons.success,
   skipped: Minus,
@@ -119,15 +121,13 @@ function StepMark({ state }: { state: PlanStepState }) {
               on ? "scale-100 opacity-100" : "scale-75 opacity-0 motion-reduce:scale-100"
             )}
           >
-            <Icon
-              motion="none"
-              className={cn(
-                layer === "done" || layer === "failed" ? "size-2.5" : "size-3",
-                // Live state is the one thing allowed to loop, and only while
-                // it is live: a hidden spinner does not keep turning.
-                layer === "active" && on && "motion-safe:animate-spin"
-              )}
-            />
+            {layer === "active" ? (
+              // Live state is the one thing allowed to move, and only while it
+              // is live: the galaxy stops the moment the step is not.
+              <GalaxyMark phase={on ? "working" : "idle"} size={12} />
+            ) : (
+              <Icon motion="none" className={layer === "done" || layer === "failed" ? "size-2.5" : "size-3"} />
+            )}
           </span>
         );
       })}

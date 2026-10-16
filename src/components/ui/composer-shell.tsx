@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { GalaxyMark } from "@/components/brand/galaxy-mark";
 import Image from "next/image";
 import { AnimatePresence, MotionConfig, motion } from "framer-motion";
 import { AudioLines, Loader2, Send, Square } from "@/components/ui/icons";
@@ -862,7 +863,7 @@ export function ComposerAttachmentTile({
       ) : null}
       {upload.status === "uploading" && (
         <span className="absolute inset-0 grid place-items-center bg-card/70">
-          <Loader2 className="size-4 animate-spin text-foreground" aria-hidden="true" />
+          <GalaxyMark phase="working" size={16} className="text-foreground" />
         </span>
       )}
       {/* Said out loud too: a reader who cannot see the tile still needs the

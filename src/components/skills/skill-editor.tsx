@@ -1,8 +1,9 @@
 "use client";
 
 import * as React from "react";
+import { GalaxyMark } from "@/components/brand/galaxy-mark";
 import { toast } from "sonner";
-import { Loader2, Plus } from "@/components/ui/icons";
+import { Plus } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -216,7 +217,7 @@ export function SkillEditor({
             {pending.map((upload) => (
               <li key={upload.localId} className="flex items-center gap-2.5 px-3 py-2">
                 {upload.status === "uploading" ? (
-                  <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" aria-hidden="true" />
+                  <GalaxyMark phase="working" size={16} className="text-muted-foreground" />
                 ) : (
                   <CodeIcons.file className="size-4 shrink-0 text-destructive" aria-hidden="true" />
                 )}

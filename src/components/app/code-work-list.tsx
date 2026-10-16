@@ -62,7 +62,8 @@ import { cn } from "@/lib/utils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { DeviceLinkTransport, EnvClient } from "@/lib/code-v2/env-client";
-import { prefersReducedMotion } from "@/lib/motion-preference";
+import { reducedMotionAt } from "@/lib/motion-preference";
+import { GalaxyMark } from "@/components/brand/galaxy-mark";
 
 interface RemovableCodeProject { id: string; key?: string | null; name: string; path: string }
 
@@ -74,7 +75,7 @@ function useFlip(container: React.RefObject<HTMLElement | null>, key: string) {
     if (!root) return;
     const rows = [...root.querySelectorAll<HTMLElement>("[data-flip]")];
     const next = new Map(rows.map((r) => [r.dataset.flip!, r.offsetTop]));
-    const reduce = prefersReducedMotion() || root.closest("[data-reduced-motion='true']");
+    const reduce = reducedMotionAt(root);
     if (prev.current.size && !reduce) {
       const plan = planFlip(prev.current, next);
       for (const row of rows) {
@@ -117,7 +118,8 @@ function WorkRow({
         <span className={cn("min-w-0 flex-1 truncate text-nav", t.unread && "font-medium text-foreground")}>{t.title}</span>
         <span className="flex shrink-0 items-center text-caption tabular-nums text-muted-foreground">
           {t.state === "running" ? (
-            <Icon name="loading" size={12} className="animate-spin text-[hsl(var(--signal))] motion-reduce:animate-none" />
+            // The galaxy in Code's coral: the one working mark, still the moment the run stops.
+            <GalaxyMark phase="working" size={14} className="text-[hsl(var(--signal))]" />
           ) : t.state === "waiting" ? (
             <Icon name="hand" size={14} className="text-[hsl(var(--signal))]" />
           ) : (

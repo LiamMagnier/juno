@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { GalaxyMark } from "@/components/brand/galaxy-mark";
 import { Loader2, Mic, Plus } from "@/components/ui/icons";
 import { ActionIcons, CodeIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
@@ -371,10 +372,7 @@ export function WorkThreadComposer({
                             </p>
                           </div>
                           {upload.status === "uploading" && (
-                            <Loader2
-                              className="size-3.5 animate-spin text-muted-foreground"
-                              aria-hidden="true"
-                            />
+                            <GalaxyMark phase="working" size={14} className="text-muted-foreground" />
                           )}
                           {added ? (
                             // Handed over: the tick settles into the slot the

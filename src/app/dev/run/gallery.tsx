@@ -6,7 +6,7 @@ import { useTheme } from "next-themes";
 import { Markdown } from "@/components/chat/markdown";
 import { RunAnnouncer } from "@/components/chat/run/run-announcer";
 import { RunBlock } from "@/components/chat/run/run-block";
-import { RunGlyph } from "@/components/chat/run/run-glyph";
+import { RunGalaxy } from "@/components/chat/run/run-galaxy";
 import { ACCENT_IDS, type AccentId } from "@/lib/accents";
 import type { LiveMessage } from "@/lib/chat/live-message";
 import { UiLocaleOverride } from "@/lib/i18n-format";
@@ -138,7 +138,7 @@ function AnswerBody({ message, streaming }: { message: LiveMessage; streaming: b
 function ResearchRowStub() {
   return (
     <div className="flex min-h-9 items-center gap-2.5 rounded-card border border-border/60 px-3 text-ui text-muted-foreground">
-      <RunGlyph phase="searching" loopId="dev-run:research-row" claim={4} />
+      <RunGalaxy phase="searching" loopId="dev-run:research-row" claim={4} />
       <span>Research row stand-in, searching</span>
     </div>
   );

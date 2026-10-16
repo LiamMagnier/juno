@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { GalaxyMark } from "@/components/brand/galaxy-mark";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Info, Loader2, MessageCircleQuestion } from "@/components/ui/icons";
@@ -235,7 +236,7 @@ export async function copyText(text: string): Promise<void> {
 export function ViewerLoading({ label, progress }: { label: string; progress?: number | null }) {
   return (
     <div role="status" className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
-      <Loader2 className="size-5 text-muted-foreground motion-safe:animate-spin" aria-hidden />
+      <GalaxyMark phase="working" size={20} className="text-muted-foreground" />
       <p className="text-ui text-muted-foreground">{label}</p>
       {progress != null && (
         <div className="h-1 w-40 overflow-hidden rounded-full bg-border/70" aria-hidden>

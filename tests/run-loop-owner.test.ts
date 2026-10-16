@@ -188,34 +188,41 @@ test("Research phases announce the plan once, start, pause, writing and the end"
   assert.equal(researchAnnouncementKey("r", "writing", "writing"), null);
 });
 
-// ── The glyph and the shimmer on the server: the static signature first ──────
+// ── The working mark and the label on the server: still until the loop is owned ──
 
-test("the glyph renders its 3 × 3 grid, and without the loop until it owns it", async () => {
+test("the run's working mark is the galaxy, still until it owns the loop", async () => {
   const React = await import("react");
   const { renderToStaticMarkup } = await import("react-dom/server");
-  const { RunGlyph, glyphPeriodMs } = await import("@/components/chat/run/run-glyph");
+  const { RunGalaxy, galaxyPhaseFor, isTurningPhase } = await import("@/components/chat/run/run-galaxy");
   const { RunLabel } = await import("@/components/chat/run/run-label");
   resetRunStoreForTests();
-  const html = renderToStaticMarkup(React.createElement(RunGlyph, { phase: "thinking", loopId: "line:x" }));
-  assert.equal((html.match(/<i /g) ?? []).length, 9);
-  assert.match(html, /data-phase="thinking"/);
-  assert.match(html, /data-loop="off"/, "the server's first frame is the static signature");
-  assert.doesNotMatch(html, /data-run-loop-owner/);
-  assert.match(html, /data-r="1" data-c="1" data-centre=""/);
-  assert.match(html, /--s:8/, "the centre is last in the thinking sequence");
-  assert.match(html, /aria-hidden="true"/);
-  assert.deepEqual([glyphPeriodMs("thinking", false), glyphPeriodMs("tool", false), glyphPeriodMs("tool", true)], [2_400, 1_200, 4_800]);
+  const html = renderToStaticMarkup(React.createElement(RunGalaxy, { phase: "thinking", loopId: "line:x" }));
+  assert.match(html, /class="alevr-galaxy-mark/);
+  assert.match(html, /<canvas /);
+  assert.match(html, /aria-hidden="true"/, "the words beside it carry the phase");
+  assert.match(html, /data-phase="waiting"/, "the server's first frame does not own the loop, so it is the still frame");
+
+  // Only the loop owner turns; every other working mark holds the still frame.
+  assert.equal(galaxyPhaseFor("thinking", true), "thinking");
+  assert.equal(galaxyPhaseFor("queued", true), "thinking");
+  assert.equal(galaxyPhaseFor("searching", true), "working");
+  assert.equal(galaxyPhaseFor("tool", false), "waiting");
+  assert.equal(galaxyPhaseFor("waiting", true), "waiting", "waiting on the person never turns");
+  assert.equal(galaxyPhaseFor("failed", true), "error");
+  for (const settled of ["answering", "done", "stopped"] as const) assert.equal(galaxyPhaseFor(settled, true), "finished");
+  assert.deepEqual(
+    (["queued", "thinking", "searching", "reading", "tool", "writing", "waiting", "answering", "done", "paused"] as const).filter(isTurningPhase),
+    ["queued", "thinking", "searching", "reading", "tool", "writing"],
+  );
 
   const label = renderToStaticMarkup(
-    React.createElement(RunLabel, { line: [{ parts: [{ phrase: "Thinking" }] }], motionKey: "thinking|", live: true, loopId: "line:x" }),
+    React.createElement(RunLabel, { line: [{ parts: [{ phrase: "Thinking" }] }], motionKey: "thinking|", live: true }),
   );
   assert.match(label, /class="run-label__item text-reading text-muted-foreground leading-6"/, "leading pinned in both states");
-  assert.match(label, /class="run-sweep" data-loop="off"/);
-  assert.match(label, /class="run-sweep__window" aria-hidden="true"/);
+  assert.doesNotMatch(label, /run-sweep|shimmer/, "the live words stay still: the galaxy is the one moving thing");
   const settled = renderToStaticMarkup(
-    React.createElement(RunLabel, { line: [{ parts: [{ phrase: "Thought for" }] }], motionKey: "summary:done", live: false, loopId: "line:x" }),
+    React.createElement(RunLabel, { line: [{ parts: [{ phrase: "Thought for" }] }], motionKey: "summary:done", live: false }),
   );
-  assert.doesNotMatch(settled, /run-sweep/, "no shimmer at rest");
   assert.match(settled, /text-ui font-medium text-foreground\/80 leading-6/);
 });
 

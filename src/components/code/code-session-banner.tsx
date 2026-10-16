@@ -2,13 +2,12 @@
 
 import * as React from "react";
 import { AnimatePresence, MotionConfig, motion } from "framer-motion";
-import { Loader2 } from "@/components/ui/icons";
 
 import { AgentStatusBadge, type AgentRunStatus } from "@/components/ui/agent-status-badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Switch } from "@/components/ui/switch";
 import { AppIcons, CodeIcons, StatusIcons } from "@/lib/app-icons";
-import { PhaseOrb } from "@/components/effects/phase-orb";
+import { GalaxyMark } from "@/components/brand/galaxy-mark";
 import { checksLabel, type ChecksReport } from "@/lib/code-checks";
 import { transition, variants } from "@/lib/motion";
 import { cn } from "@/lib/utils";
@@ -219,7 +218,7 @@ export function CodeSessionBanner({
           {/* Where it runs, as a quiet glyph (CODE_SYSTEM.md: no badges around state). */}
           <span className="flex size-6 shrink-0 items-center justify-center text-muted-foreground">
             {resolving ? (
-              <Loader2 className="size-4 motion-safe:animate-spin" aria-hidden="true" />
+              <GalaxyMark phase="working" size={16} />
             ) : isCloud ? (
               <CodeIcons.cloud className="size-4" aria-hidden="true" />
             ) : (
@@ -435,7 +434,7 @@ export function CodeSessionBanner({
               animate={{ opacity: activity ? 1 : 0 }}
               transition={transition.fast}
             >
-              {activity && <PhaseOrb state="working" className="-my-1" />}
+              {activity && <GalaxyMark phase="working" size={14} eventKey={shownActivity ?? undefined} />}
               <span className="min-w-0 truncate font-mono">{shownActivity}</span>
             </motion.p>
           </div>

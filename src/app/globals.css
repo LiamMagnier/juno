@@ -372,9 +372,8 @@
                           loop has no seam where it turns around. An ease-out loop
                           visibly pulses at the join, which is exactly what makes
                           a slow breath read as a flash. Already inlined verbatim
-                          in three tailwind keyframes (status-glow, gen-sweep,
-                          pulse-ring); this names it so the fourth does not have
-                          to guess. */
+                          in tailwind keyframes (pulse-ring); this names it so
+                          the next one does not have to guess. */
     --ease-out-soft: cubic-bezier(0.33, 1, 0.68, 1);
     --ease-out-strong: cubic-bezier(0.32, 0.72, 0, 1);
     --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
@@ -860,7 +859,7 @@
    * carried meaning.
    *
    *   Tier A  opacity, colour, background-color and anything carrying real state
-   *           (thinking-matrix, status-glow, gen-sweep, the stream tail) are NOT
+   *           (the galaxy's eased stop, the stream tail) are NOT
    *           touched. Removing feedback is not an accessibility win.
    *   Tier B  transforms collapse to identity via the two vars below, so an
    *           entrance keeps its fade and loses its travel. Long and overshooting
@@ -1219,39 +1218,6 @@
     .control-primary:active { transform: none; }
   }
 
-  /* ChatGPT-style thinking shimmer: the status sentence is painted with a
-     gradient that sweeps through it, so "Thinking…" reads as live without a
-     spinner beside it. The gradient is muted → foreground → muted, so at every
-     instant most of the line is at the muted ink and one band is lit. Text is
-     clipped to the background, which means colour must be transparent — the
-     reduced-motion fallback below restores a plain muted colour and drops the
-     background, so the line is static, legible text rather than a frozen
-     gradient. Never on prose: this is a status affordance, not a text style. */
-  .shimmer-text {
-    color: transparent;
-    background-image: linear-gradient(
-      90deg,
-      hsl(var(--muted-foreground)) 0%,
-      hsl(var(--muted-foreground)) 35%,
-      hsl(var(--foreground)) 50%,
-      hsl(var(--muted-foreground)) 65%,
-      hsl(var(--muted-foreground)) 100%
-    );
-    background-size: 250% 100%;
-    background-position: 100% 0;
-    -webkit-background-clip: text;
-    background-clip: text;
-    animation: shimmer-text 2.2s linear infinite;
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .shimmer-text {
-      color: hsl(var(--muted-foreground));
-      background-image: none;
-      -webkit-background-clip: border-box;
-      background-clip: border-box;
-    }
-  }
-
   /* Copy → check. Put it on the glyph that REPLACES the copy icon: it springs
      in from a small, slightly rotated start. Reads --motion-scale-from, so the
      reduced-motion tier keeps the fade and drops the pop. */
@@ -1259,14 +1225,10 @@
     animation: check-morph var(--dur-base) var(--ease-spring) both;
     transform-origin: center;
   }
-  /* Both keyframes live HERE, not only in tailwind.config.ts: Tailwind emits a
-     keyframe only when its `animate-*` utility is used somewhere, and the two
-     classes above reference them from plain CSS. The config declares the same
-     pair (identically) for `animate-shimmer-text` / `animate-check-morph`. */
-  @keyframes shimmer-text {
-    from { background-position: 100% 0; }
-    to { background-position: -100% 0; }
-  }
+  /* The keyframe lives HERE, not only in tailwind.config.ts: Tailwind emits a
+     keyframe only when its `animate-*` utility is used somewhere, and the class
+     above references it from plain CSS. The config declares the same one
+     (identically) for `animate-check-morph`. */
   @keyframes check-morph {
     from {
       opacity: 0;
@@ -1944,45 +1906,8 @@
    * library is not to redraw it.
    * ------------------------------------------------------------------------- */
 
-  /*
-   * THE SHINE. One valley of reduced alpha sweeps through the text, rather than a
-   * bright band travelling over it — which is why it reads as breathing rather
-   * than as a loading skeleton. Shared by the thinking label, the search label,
-   * the generation label and the active to-do.
-   *
-   * `--aicss-shine` is the colour the text settles at; the gradient derives its
-   * own valley from it, so a caller only ever names one colour.
-   */
-  .aicss-shine {
-    --aicss-shine: var(--muted-foreground);
-    color: transparent;
-    -webkit-text-fill-color: transparent;
-    background-image: linear-gradient(
-      90deg,
-      hsl(var(--aicss-shine)) 0%,
-      hsl(var(--aicss-shine)) 30%,
-      hsl(var(--aicss-shine) / .45) 45%,
-      hsl(var(--aicss-shine) / .45) 55%,
-      hsl(var(--aicss-shine)) 70%,
-      hsl(var(--aicss-shine)) 100%
-    );
-    background-size: 300% 100%;
-    -webkit-background-clip: text;
-    background-clip: text;
-    animation: aicss-shine 2.25s var(--ease-breathe) infinite;
-  }
-  /* Settled: the same node keeps its box and simply stops moving, so nothing
-     reflows at the moment a run completes. */
-  .aicss-shine[data-settled="true"] {
-    animation: none;
-    background-image: none;
-    color: hsl(var(--aicss-shine));
-    -webkit-text-fill-color: hsl(var(--aicss-shine));
-  }
-  @keyframes aicss-shine {
-    0%, 18% { background-position: 100% 0; }
-    82%, 100% { background-position: 0% 0; }
-  }
+  /* No shine. AIcss swept a valley of alpha through its live labels; here the
+     galaxy is the one working mark (GALAXY_SPEC.md) and live words stay still. */
 
   /* ---- Thinking State ---- */
   .aicss-thinking {
@@ -2190,11 +2115,6 @@
     /* 500 — the type scale defines 400/500/600 and nothing between. */
     font-weight: 500;
     white-space: nowrap;
-  }
-  .aicss-ws-label .aicss-shine {
-    --aicss-shine: var(--foreground);
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
   .aicss-ws-quote { overflow: hidden; text-overflow: ellipsis; }
   .aicss-ws-chevron {
@@ -2879,37 +2799,9 @@
   }
   .aicss-todo-icon[data-on="true"] { opacity: 1; }
   .aicss-todo-icon-strong { color: hsl(var(--foreground)); }
-  /* The active label crossfades from muted into a shining foreground copy of
-     itself, layered via data-label so the two states occupy one box and the row
-     cannot shift as a task starts. */
-  .aicss-todo-label { position: relative; color: hsl(var(--muted-foreground)); font-weight: 400; transition: color 360ms var(--ease-out-soft); }
-  .aicss-todo-label::before {
-    content: attr(data-label);
-    position: absolute;
-    inset: 0;
-    background-image: linear-gradient(
-      90deg,
-      hsl(var(--foreground)) 0%,
-      hsl(var(--foreground)) 30%,
-      hsl(var(--foreground) / .45) 45%,
-      hsl(var(--foreground) / .45) 55%,
-      hsl(var(--foreground)) 70%,
-      hsl(var(--foreground)) 100%
-    );
-    background-size: 300% 100%;
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-    -webkit-text-fill-color: transparent;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 360ms var(--ease-out-soft);
-  }
-  .aicss-todo-item[data-state="active"] .aicss-todo-label { color: transparent; }
-  .aicss-todo-item[data-state="active"] .aicss-todo-label::before {
-    opacity: 1;
-    animation: aicss-shine 2.25s var(--ease-breathe) infinite;
-  }
+  /* The active label steps from muted to the first ink; no shine travels it. */
+  .aicss-todo-label { color: hsl(var(--muted-foreground)); font-weight: 400; transition: color 360ms var(--ease-out-soft); }
+  .aicss-todo-item[data-state="active"] .aicss-todo-label { color: hsl(var(--foreground)); }
   .aicss-todo-item[data-state="done"] .aicss-todo-label { color: hsl(var(--muted-foreground)); text-decoration: line-through; }
 
   /*
@@ -2919,13 +2811,6 @@
    * translating, the rows arrive already in place.
    */
   @media (prefers-reduced-motion: reduce) {
-    .aicss-shine,
-    .aicss-todo-item[data-state="active"] .aicss-todo-label::before {
-      animation: none;
-      background-image: none;
-      color: hsl(var(--aicss-shine, var(--foreground)));
-      -webkit-text-fill-color: hsl(var(--aicss-shine, var(--foreground)));
-    }
     .aicss-tr,
     .aicss-tr-sentence,
     .aicss-ws-site,
@@ -4066,74 +3951,8 @@
  * are unlayered, at the end of this file, beside the other decorative loops.
  */
 @layer components {
-  /* ── Run glyph (Concept A) ───────────────────────────────────────────── */
-  .run-glyph {
-    --dot: 4px; --gap: 3px;
-    display: inline-grid; grid-template-columns: repeat(3, var(--dot)); gap: var(--gap);
-    direction: ltr;   /* an icon: under dir="rtl" the grid must not mirror, or the gather moves outward */
-    flex-shrink: 0; color: hsl(var(--foreground));
-    transition: color var(--dur-base) var(--ease-out-soft);
-  }
-  .run-glyph[data-size="sm"] { --dot: 3px; --gap: 2.5px; }
-  .run-glyph[data-swapping] { color: transparent; transition: color var(--dur-fast) var(--ease-in); }
-  .run-glyph > i {
-    position: relative; inline-size: var(--dot); block-size: var(--dot); border-radius: 999px;
-    background: hsl(var(--muted-foreground) / 0.25);
-    transition: translate var(--dur-slow) var(--ease-out-strong), scale var(--dur-slow) var(--ease-out-strong),
-      opacity var(--dur-base) var(--ease-out-soft), background-color var(--dur-base) var(--ease-out-soft);
-  }
-  .run-glyph > i::after {
-    content: ""; position: absolute; inset: 0; border-radius: inherit; background: currentColor; opacity: 0;
-    animation: var(--lit-name, none) var(--lit-period, var(--loop)) linear infinite;
-    animation-delay: calc(var(--loop-phase, 0ms) + var(--lit-delay, 0ms));
-  }
-  .run-glyph:is([data-phase="queued"], [data-phase="thinking"]) > i { --lit-name: run-lit; --lit-delay: calc(var(--s) * 266ms); }
-  .run-glyph[data-phase="searching"] > i { --lit-name: run-lit-bar; --lit-delay: calc(var(--c) * 200ms); }
-  .run-glyph[data-phase="reading"]   > i { --lit-name: run-lit-bar; --lit-delay: calc(var(--r) * 200ms); }
-  .run-glyph[data-phase="tool"]      > i { --lit-name: run-lit; --lit-period: var(--loop-beat); --lit-delay: calc(var(--s) * 150ms); }
-  .run-glyph[data-phase="tool"]      > i[data-centre]::after { animation: none; opacity: 0.6; }
-  .run-glyph[data-phase="writing"]   > i[data-r="2"] { --lit-name: run-lit-type; --lit-delay: calc(var(--c) * 200ms); }
-  .run-glyph[data-calm] > i { --lit-period: var(--loop-calm); }
-  .run-glyph[data-phase="waiting"] > i[data-centre] { background: hsl(var(--primary)); }
-  .run-glyph[data-phase="failed"]  > i[data-centre] { background: hsl(var(--warning)); }
-  .run-glyph:is([data-phase="answering"], [data-phase="done"], [data-phase="stopped"]) > i:not([data-centre]) {
-    opacity: 0; scale: 0.4;
-    translate: calc((1 - var(--c)) * 7px * var(--motion-shift, 1)) calc((1 - var(--r)) * 7px * var(--motion-shift, 1));
-  }
-  .run-glyph:is([data-phase="answering"], [data-phase="done"], [data-phase="stopped"]) > i[data-centre] {
-    scale: 1.5; background: hsl(var(--muted-foreground) / 0.45);
-  }
-  .run-glyph[data-offscreen] > i::after,
-  .run-glyph[data-offscreen] { animation-play-state: paused; }
-  /* Not the loop owner (§7.9.1): the phase's static signature, exactly as under reduced motion. */
-  .run-glyph[data-loop="off"] > i::after { animation: none; }
-  .run-glyph[data-loop="off"]:is([data-phase="queued"], [data-phase="thinking"]) > i[data-centre]::after,
-  .run-glyph[data-loop="off"][data-phase="searching"] > i[data-c="1"]::after,
-  .run-glyph[data-loop="off"][data-phase="reading"]   > i[data-r="1"]::after,
-  .run-glyph[data-loop="off"][data-phase="tool"]      > i:is([data-r="0"], [data-r="2"]):is([data-c="0"], [data-c="2"])::after,
-  .run-glyph[data-loop="off"][data-phase="writing"]   > i[data-r="2"]::after { opacity: 1; }
-  /* paused (Research): resting grid only */
-  .run-glyph[data-phase="paused"] > i::after { animation: none; opacity: 0; }
-  @keyframes run-lit      { 0% { opacity: 0 } 6% { opacity: 1 } 30% { opacity: .3 } 42%, 100% { opacity: 0 } }
-  @keyframes run-lit-bar  { 0% { opacity: 0 } 8% { opacity: 1 } 28% { opacity: .25 } 40%, 100% { opacity: 0 } }
-  @keyframes run-lit-type { 0% { opacity: 0 } 4% { opacity: 1 } 60% { opacity: .7 } 80%, 100% { opacity: 0 } }
-
-  /* ── Compositor-only shimmer for the live label ─────────────────────── */
-  .run-sweep { position: relative; display: inline-block; max-inline-size: 100%; overflow: hidden; contain: paint; vertical-align: bottom; }
-  .run-sweep__text { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: hsl(var(--muted-foreground)); }
-  .run-sweep__window {
-    position: absolute; inset: 0; pointer-events: none; user-select: none;
-    -webkit-mask-image: linear-gradient(90deg, transparent 35%, #000 50%, transparent 65%);
-            mask-image: linear-gradient(90deg, transparent 35%, #000 50%, transparent 65%);
-    animation: run-sweep-window var(--loop) linear infinite; animation-delay: var(--loop-phase, 0ms);
-  }
-  .run-sweep__text--hi { color: hsl(var(--foreground)); animation: run-sweep-counter var(--loop) linear infinite; animation-delay: var(--loop-phase, 0ms); }
-  .run-sweep:dir(rtl) :is(.run-sweep__window, .run-sweep__text--hi) { animation-direction: reverse; }
-  .run-sweep:is([data-settled="true"], [data-calm], [data-loop="off"]) .run-sweep__window { display: none; }
-  .run-sweep[data-loop="off"] .run-sweep__text--hi { animation: none; }
-  .run-sweep[data-offscreen] :is(.run-sweep__window, .run-sweep__text--hi) { animation-play-state: paused; }
-  @keyframes run-sweep-window  { 0% { transform: translateX(-65%); } 75%, 100% { transform: translateX(65%); } }
-  @keyframes run-sweep-counter { 0% { transform: translateX(65%); } 75%, 100% { transform: translateX(-65%); } }
+  /* The working mark is the galaxy (run-galaxy.tsx, GALAXY_SPEC.md), drawn on
+     a canvas: it has no rules here. The live label does not shimmer. */
 
   /* ── Phase-label swap (mount-only entrance) ─────────────────────────── */
   .run-label { display: grid; min-inline-size: 0; }
@@ -4253,7 +4072,7 @@
  * BEFORE specificity: an unlayered rule beats every layered one, and among
  * layers the later wins regardless of how the selectors compare. Every loop
  * named here is declared in `components` or `utilities` — `.skeleton` in
- * utilities, `.shimmer-text` and `.aicss-shine` in components, the
+ * utilities, the shimmers it once named in components, the
  * `animate-*` utilities in utilities — so `base` lost to all of them, every
  * time. The guard read as careful and was decorative: someone who asked their
  * operating system to stop non-essential motion got the shimmer, the skeletons
@@ -4267,8 +4086,6 @@
  */
 @media (prefers-reduced-motion: reduce) {
   .skeleton,
-  .shimmer-text,
-  .aicss-shine,
   [class*="animate-icon-breathe"],
   [class*="animate-gen-"],
   [class*="animate-ultra-"] {
@@ -4431,22 +4248,7 @@
  * loops it is meant to stop.
  */
 @media (prefers-reduced-motion: reduce) {
-  .run-sweep__window { display: none; }
-  .run-glyph > i::after { animation: none; }
-  .run-glyph:is([data-phase="queued"], [data-phase="thinking"]) > i[data-centre]::after,
-  .run-glyph[data-phase="searching"] > i[data-c="1"]::after,
-  .run-glyph[data-phase="reading"]   > i[data-r="1"]::after,
-  .run-glyph[data-phase="tool"]      > i:is([data-r="0"], [data-r="2"]):is([data-c="0"], [data-c="2"])::after,
-  .run-glyph[data-phase="writing"]   > i[data-r="2"]::after { opacity: 1; }
   /* The opacity breath only on the loop owner, and only while it is on screen; phase-locked like every loop. */
-  .run-glyph:not([data-loop="off"]):not([data-offscreen]):is([data-phase="queued"], [data-phase="thinking"], [data-phase="searching"],
-                [data-phase="reading"], [data-phase="tool"], [data-phase="writing"]) {
-    animation: run-breathe-opacity var(--loop-calm) var(--ease-breathe) infinite; animation-delay: var(--loop-phase, 0ms); }
-  .run-glyph > i { transition-duration: var(--dur-fast); }
-  /* Gather: cross-fade only, no travel or scale; the resting dot is drawn at 6 px. */
-  .run-glyph:is([data-phase="answering"], [data-phase="done"], [data-phase="stopped"]) > i:not([data-centre]) { scale: 1; translate: none; }
-  .run-glyph:is([data-phase="answering"], [data-phase="done"], [data-phase="stopped"]) > i[data-centre] {
-    scale: 1; inline-size: 6px; block-size: 6px; margin: -1px; }
   .run-marker[data-state="running"]:not([data-loop="off"]):not([data-offscreen])::before {
     animation-name: run-breathe-opacity; animation-duration: var(--loop-calm); animation-delay: var(--loop-phase, 0ms); }
   .run-step, .run-fav { transition-delay: 0ms !important; }
@@ -4456,11 +4258,6 @@
 }
 @keyframes run-breathe-opacity { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
 @media (forced-colors: active) {
-  .run-sweep__window { display: none; }
-  .run-glyph > i { forced-color-adjust: none; background: GrayText; }
-  .run-glyph > i::after { background: CanvasText; }
-  .run-glyph[data-phase="waiting"] > i[data-centre] { background: Highlight; }
-  .run-glyph[data-phase="failed"]  > i[data-centre] { background: Mark; }
   /* box-shadow is removed in forced colours: draw the rings with outline. */
   .run-marker::before { box-shadow: none; outline: 1.5px solid CanvasText; outline-offset: -1.5px; }
   .run-marker[data-state="waiting"]::before { outline-color: Highlight; }

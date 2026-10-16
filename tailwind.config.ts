@@ -15,10 +15,9 @@ import containerQueries from "@tailwindcss/container-queries";
  * Overlays .............. animate-{pop-in,pop-out} (floating layers, spring) · animate-{sheet-in,sheet-out}
  *                         (drawers) · animate-{overlay-in,overlay-out} (backdrops) ·
  *                         animate-{tooltip-in,tooltip-out} (the quick, small-offset tooltip pair) — pair
- *                         with Radix data-[state=open/closed]. animate-shimmer-text (thinking status),
- *                         animate-check-morph (copy → check).
- * Icons ................. src/components/ui/icons.tsx (Phosphor geometry, one set); hover
- *                         articulation is svg.icon[data-motion] in globals.css.
+ *                         with Radix data-[state=open/closed]. animate-check-morph (copy → check).
+ * Icons ................. src/components/ui/icons.tsx (one set); hover articulation is
+ *                         juno-icons/icons.css, on destinations marked data-jicon-articulate only.
  * Touch ................. p{t,b,l,r}-safe (env safe-area insets) · .pressable (press feedback, globals.css)
  * Elevation ............. Flat kit (docs/design/FLAT_UI.md): shadow-{raised,raised-lg,inset,
  *                         pressed,float} — theme-aware via --shadow-* CSS vars; inset and
@@ -29,8 +28,8 @@ import containerQueries from "@tailwindcss/container-queries";
  * Radius ................ control 8 · field 10 · card 12 (= lg = surface = popover) · menu 14 ·
  *                         panel 16 · composer 22. Nested: nest-<rung> nest-p-<n> → rounded-inner.
  * Dot atoms ............. h-dot / w-dot / gap-dot-gap — the dot/ASCII signature unit
- * Thinking .............. animate-thinking-matrix (3×3 mark) · animate-status-glow ·
- *                         animate-icon-breathe + .scroll-fade-y (globals.css)
+ * Working ............... the galaxy (components/brand/galaxy-mark.tsx, docs/design/GALAXY_SPEC.md)
+ *                         is the one working mark; spinners only inside the button just pressed.
  * Keep raw hex out of components; drive everything from these tokens + the HSL vars.
  */
 
@@ -596,41 +595,6 @@ const config: Config = {
           "0%, 60%, 100%": { transform: "translateY(0)", opacity: "0.4" },
           "30%": { transform: "translateY(-4px)", opacity: "1" },
         },
-        // A dark point travels through a still 3×3 matrix. Adjacent staggered
-        // peaks overlap just enough to leave a soft trail. Opacity only: the
-        // box-shadow stops it used to carry repainted every dot on every frame.
-        "thinking-matrix": {
-          "0%, 100%": { opacity: "0" },
-          "8%": { opacity: "0.28" },
-          "15%": { opacity: "0.95" },
-          "30%": { opacity: "0" },
-        },
-        // The reduced-motion substitute for the matrix above, and it did not
-        // exist. `thinking-dots.tsx` has always applied
-        // `motion-reduce:animate-thinking-pulse` to the centre dot and its
-        // docstring describes exactly this — "the centre point falls back to an
-        // opacity-only pulse … no translate, no scale" — but no such keyframe was
-        // ever written, so Tailwind emitted no class and a reduced-motion reader
-        // got a completely static dot grid while the model was still thinking.
-        // That is the one thing the signature exists to prevent, and it failed
-        // silently for precisely the users who cannot fall back to the animation.
-        //
-        // Opacity only, on the loop curve: an eased loop pulses at the seam
-        // where it turns around, which is the whole reason --ease-breathe exists.
-        "thinking-pulse": {
-          "0%, 100%": { opacity: "0.3" },
-          "50%": { opacity: "1" },
-        },
-        // The sentence remains neutral and only breathes slightly toward the
-        // foreground, matching the monochrome reference instead of using coral.
-        // A live status breathes between two inks. It used to also animate a
-        // text-shadow — a literal glow on text, on a 2.8s loop, at six call
-        // sites — which is the one decoration this design language has no
-        // room for. The colour alone says "still going".
-        "status-glow": {
-          "0%, 100%": { color: "hsl(var(--muted-foreground) / 0.8)" },
-          "50%": { color: "hsl(var(--foreground) / 0.78)" },
-        },
         "icon-breathe": {
           "0%, 100%": { transform: "scale(1)", opacity: "0.85" },
           "50%": { transform: "scale(1.1)", opacity: "1" },
@@ -685,15 +649,6 @@ const config: Config = {
             opacity: "0",
             transform: "translateX(calc(var(--sheet-from, -100%) * var(--motion-shift, 1)))",
           },
-        },
-        // The thinking-status shimmer (`.shimmer-text`, globals.css, which
-        // declares the same keyframe for its plain-CSS consumer). A gradient
-        // sized 250% pans through text-clipped copy; linear, because the band
-        // teleports from one end to the other and an eased loop pulses at the
-        // seam.
-        "shimmer-text": {
-          from: { backgroundPosition: "100% 0" },
-          to: { backgroundPosition: "-100% 0" },
         },
         // Copy → check (`.check-morph`). Springs in from small-and-tilted; both
         // vars read so the reduced tier is a fade.
@@ -837,12 +792,6 @@ const config: Config = {
           "0%, 100%": { opacity: "0.35" },
           "50%": { opacity: "0.75" },
         },
-        // Indeterminate hairline: a 1/3-width bar; translateX(300%) of its own
-        // width crosses the full track, so the sweep exits cleanly on the right.
-        "gen-sweep": {
-          "0%": { transform: "translateX(-100%)" },
-          "100%": { transform: "translateX(300%)" },
-        },
         // ---- Reasoning slider, top tier ("Max") ----
         // The gradient is sized 200% and panned, so the hue drifts without the
         // element itself moving. Paired with `bg-[length:200%_100%]`.
@@ -907,7 +856,6 @@ const config: Config = {
         // every exit here does.
         "sheet-in": "sheet-in var(--dur-base) var(--ease-drawer) both",
         "sheet-out": "sheet-out var(--dur-exit) var(--ease-in) both",
-        "shimmer-text": "shimmer-text 2.2s linear infinite",
         "check-morph": "check-morph var(--dur-base) var(--ease-spring) both",
         // Live UI steps/quiz: direction-aware step navigation (strong), one-shot
         // wrong-answer nudge (soft), one-shot SVG path draw (expo).
@@ -917,12 +865,6 @@ const config: Config = {
         // A loop turns around at both ends, so it takes the symmetric curve —
         // `ease-in-out` the keyword is NOT --ease-in-out the token, and neither
         // is the loop curve. See --ease-breathe.
-        // Thinking signature (ThinkingDots) + live reasoning header (ActivityTimeline).
-        "thinking-matrix": "thinking-matrix 1.8s var(--ease-breathe) infinite",
-        // Same period as the matrix it stands in for, so the two read as one
-        // signature running at two fidelities rather than as two indicators.
-        "thinking-pulse": "thinking-pulse 1.8s var(--ease-breathe) infinite",
-        "status-glow": "status-glow 2.8s var(--ease-breathe) infinite",
         "icon-breathe": "icon-breathe 2.6s var(--ease-breathe) infinite",
         "title-out": "title-out var(--dur-exit) var(--ease-in)",
         // Floating layers: data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out
@@ -959,8 +901,6 @@ const config: Config = {
         // sweep. `linear` is deliberate — an eased loop visibly pulses at the
         // seam, which is the thing that looked like flashing.
         // Per-particle durations (7-13s) are set inline; this is only the fallback.
-        // Media-generation placeholder (generation-placeholder.tsx).
-        "gen-sweep": "gen-sweep 1.8s var(--ease-breathe) infinite",
       },
     },
   },

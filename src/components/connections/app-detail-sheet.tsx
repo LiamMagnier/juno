@@ -1,9 +1,10 @@
 "use client";
 
 import * as React from "react";
+import { GalaxyMark } from "@/components/brand/galaxy-mark";
 import Link from "next/link";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
-import { Loader2, Plug, X } from "@/components/ui/icons";
+import { Plug, X } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
@@ -204,7 +205,7 @@ export function AppDetailSheet({
                 )}
                 {agents === null ? (
                   <p className="flex min-h-9 items-center gap-2 text-caption text-muted-foreground" role="status">
-                    <Loader2 className="size-3.5 motion-safe:animate-spin" aria-hidden="true" />
+                    <GalaxyMark phase="working" size={14} />
                     Checking your {AGENT_NOUN.plural}
                   </p>
                 ) : agents.length > 0 ? (
