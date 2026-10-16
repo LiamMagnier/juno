@@ -1605,7 +1605,7 @@
      was cubic-bezier(0.34, 1.56, 0.64, 1) — the token with roughly four times the
      overshoot its own comment permits, on the product's own mark. */
   .juno-mark-popping {
-    animation: juno-mark-pop 0.5s var(--ease-out-back) both;
+    animation: juno-mark-pop var(--dur-emphasis) var(--ease-out-back) both;
   }
   @media (prefers-reduced-motion: reduce) {
     .juno-mark-popping { animation: none; }
@@ -1658,7 +1658,7 @@
     line-height: 20px;
     letter-spacing: -0.01em;
     font-optical-sizing: auto;
-    transition: color 200ms ease-out;
+    transition: color var(--dur-base) var(--ease-out-soft);
   }
   .product-orbit {
     --dots-pitch: 2.4px;
@@ -2048,7 +2048,7 @@
     }
   }
   .reasoning-fast-toggle[aria-pressed="true"] .reasoning-fast-icon {
-    animation: reasoning-fast-charge 480ms var(--ease-out-strong) both;
+    animation: reasoning-fast-charge var(--dur-emphasis) var(--ease-out-strong) both;
   }
   /* The animated carriers intentionally span a full lane before translating.
      Clip their invisible overflow while retaining enough margin for the thumb's
@@ -2274,7 +2274,7 @@
   .aicss-tr {
     display: flex;
     flex-direction: column;
-    animation: aicss-fade-in 320ms var(--ease-out-soft) both;
+    animation: aicss-fade-in var(--dur-slow) var(--ease-out-soft) both;
   }
   .aicss-tr-header {
     display: inline-flex;
@@ -2413,7 +2413,7 @@
        and it ran simultaneously with a second raw curve, inside the transcript,
        on a surface someone is reading. --ease-breathe is the symmetric loop
        curve that exists so a cycle has no seam to pulse at. */
-    animation: aicss-ig-morph 4.2s var(--ease-breathe) infinite;
+    animation: aicss-ig-morph var(--loop-calm) var(--ease-breathe) infinite;
   }
   @keyframes aicss-ig-morph {
     0%   { mask-size: 52% 46%, 40% 40%; -webkit-mask-size: 52% 46%, 40% 40%; mask-position: 16% 20%, 30% 32%; -webkit-mask-position: 16% 20%, 30% 32%; }
@@ -2548,19 +2548,19 @@
     justify-content: center;
     color: hsl(var(--muted-foreground) / .7);
   }
-  .aicss-ws-dots { opacity: 1; transition: opacity .32s var(--ease-out-strong); pointer-events: none; }
+  .aicss-ws-dots { opacity: 1; transition: opacity var(--dur-slow) var(--ease-out-strong); pointer-events: none; }
   .aicss-ws-site[data-state="loading"] .aicss-ws-dots,
   .aicss-ws-site[data-state="done"] .aicss-ws-dots { opacity: 0; }
   .aicss-ws-globe {
     opacity: 0;
     transform: scale(.88);
-    transition: opacity .32s var(--ease-out-strong), transform .36s var(--ease-out-strong);
+    transition: opacity var(--dur-slow) var(--ease-out-strong), transform var(--dur-slow) var(--ease-out-strong);
   }
   .aicss-ws-site[data-state="loading"] .aicss-ws-globe { opacity: 1; transform: scale(1); }
   .aicss-ws-site[data-state="done"] .aicss-ws-globe {
     opacity: 0;
     transform: scale(.775);
-    transition: opacity .22s var(--ease-out-strong), transform .26s var(--ease-out-strong);
+    transition: opacity var(--dur-base) var(--ease-out-strong), transform var(--dur-base) var(--ease-out-strong);
   }
   .aicss-ws-check {
     display: inline-flex;
@@ -2569,7 +2569,7 @@
     color: hsl(var(--success-ink));
     opacity: 0;
     transform: scale(1.175);
-    transition: opacity .24s var(--ease-out-strong) .06s, transform .28s var(--ease-out-strong) .06s;
+    transition: opacity var(--dur-base) var(--ease-out-strong) calc(var(--dur-fast) / 2), transform var(--dur-base) var(--ease-out-strong) calc(var(--dur-fast) / 2);
   }
   .dark .aicss-ws-check { color: hsl(var(--success)); }
   .aicss-ws-site[data-state="done"] .aicss-ws-check { opacity: 1; transform: scale(1); }
@@ -3139,7 +3139,8 @@
     line-height: 18px;
     color: hsl(var(--muted-foreground));
     animation: aicss-todo-in var(--dur-slow) var(--ease-out-soft) backwards;
-    animation-delay: calc(var(--aicss-todo-i, 0) * 50ms);
+    /* At most four rows stagger (D17); later ones paint with the fourth. */
+    animation-delay: calc(min(var(--aicss-todo-i, 0), var(--stagger-max) - 1) * var(--stagger-row));
   }
   @keyframes aicss-todo-in {
     from { opacity: 0; transform: translateY(calc(-7px * var(--motion-shift, 1))); }
@@ -3486,7 +3487,7 @@
    * plain CSS.
    */
   .skeleton {
-    animation: skeleton-breathe 1.8s var(--ease-breathe, ease-in-out) infinite;
+    animation: skeleton-breathe var(--loop-breathe) var(--ease-breathe, ease-in-out) infinite;
   }
   @keyframes skeleton-breathe {
     0%, 100% { opacity: 1; }
@@ -3667,7 +3668,7 @@
      --ease-breathe, not an ease-out: an asymmetric loop snaps at the turn, and
      a ring that snaps is a ring that flashes. */
   .work-breathing {
-    animation: work-breathing 5.2s var(--ease-breathe) infinite;
+    animation: work-breathing var(--loop-calm) var(--ease-breathe) infinite;
   }
   @keyframes work-breathing {
     0%,
@@ -4227,7 +4228,7 @@
      the pointer. Only transform moves; still under reduced motion. */
   .agent-face__gaze {
     transform: translate(calc(var(--gaze-x, 0) * 2.4px), calc(var(--gaze-y, 0) * 1.8px));
-    transition: transform 260ms var(--ease-out-soft);
+    transition: transform var(--dur-base) var(--ease-out-soft);
   }
   @media (prefers-reduced-motion: reduce) {
     .agent-face__gaze { transform: none; transition: none; }
@@ -4269,15 +4270,15 @@
   .agent-face[data-state="thinking"] .agent-face__dots circle { opacity: 0.55; }
 
   @media (prefers-reduced-motion: no-preference) {
-    .agent-face[data-state="working"] .agent-face__eyes { animation: agent-face-look 2.4s var(--ease-in-out) infinite; }
-    .agent-face[data-state="working"] .agent-face__body { animation: agent-face-breathe 2.4s var(--ease-breathe) infinite; }
-    .agent-face[data-state="waiting"] .agent-face__all { animation: agent-face-lift 2.4s var(--ease-breathe) infinite; }
+    .agent-face[data-state="working"] .agent-face__eyes { animation: agent-face-look var(--loop) var(--ease-in-out) infinite; }
+    .agent-face[data-state="working"] .agent-face__body { animation: agent-face-breathe var(--loop) var(--ease-breathe) infinite; }
+    .agent-face[data-state="waiting"] .agent-face__all { animation: agent-face-lift var(--loop) var(--ease-breathe) infinite; }
     .agent-face[data-state="done"] .agent-face__all { animation: agent-face-settle var(--dur-emphasis) var(--ease-spring) 1 both; }
-    .agent-face[data-state="thinking"] .agent-face__dots circle { animation: agent-face-dot 1.2s var(--ease-in-out) infinite; }
-    .agent-face[data-state="thinking"] .agent-face__dots circle:nth-child(2) { animation-delay: 0.2s; }
-    .agent-face[data-state="thinking"] .agent-face__dots circle:nth-child(3) { animation-delay: 0.4s; }
+    .agent-face[data-state="thinking"] .agent-face__dots circle { animation: agent-face-dot var(--loop-beat) var(--ease-in-out) infinite; }
+    .agent-face[data-state="thinking"] .agent-face__dots circle:nth-child(2) { animation-delay: calc(var(--loop-beat) / 6); }
+    .agent-face[data-state="thinking"] .agent-face__dots circle:nth-child(3) { animation-delay: calc(var(--loop-beat) / 3); }
     :is(a, button, [role="link"], [role="button"], [data-face-trigger]):hover .agent-face[data-state="idle"] .agent-face__eyes {
-      animation: agent-face-blink 180ms var(--ease-in-out) 1;
+      animation: agent-face-blink var(--dur-exit) var(--ease-in-out) 1;
     }
     /* `listening` is driven by audio, not a timer: the pupils widen with the
        caller's level, which an open call writes as `--level` (0..1) on an
@@ -4352,7 +4353,7 @@
   .run-label { display: grid; min-inline-size: 0; }
   .run-label__item {
     grid-area: 1 / 1; min-inline-size: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
-    transition: opacity var(--dur-base) var(--ease-out-soft) 40ms, translate var(--dur-base) var(--ease-out-soft) 40ms;
+    transition: opacity var(--dur-base) var(--ease-out-soft) calc(var(--dur-fast) / 3), translate var(--dur-base) var(--ease-out-soft) calc(var(--dur-fast) / 3);
   }
   @starting-style { .run-label__item { opacity: 0; translate: 0 calc(var(--shift-label) * var(--motion-shift, 1)); } }
   .run-label__item[data-leaving] {
@@ -4485,6 +4486,9 @@
   [class*="animate-ultra-"] {
     animation: none !important;
   }
+  /* A stopped skeleton holds at 0.8 rather than at full ink (C21), so it
+     still reads as a placeholder and not as content. */
+  .skeleton { opacity: 0.8; }
 }
 
 /*
@@ -4515,7 +4519,7 @@
      out (`[animation-play-state:paused]`). */
   .animate-spin {
     animation-name: reduced-working;
-    animation-duration: 1.6s;
+    animation-duration: var(--loop-breathe);
     animation-timing-function: var(--ease-breathe);
     animation-iteration-count: infinite;
   }
@@ -4586,7 +4590,7 @@
     mask-image: linear-gradient(to right, transparent, black 8%, black 92%, transparent);
   }
   .marquee-track {
-    animation: marquee 48s linear infinite;
+    animation: marquee calc(var(--loop-calm) * 10) linear infinite;
   }
   .marquee:hover .marquee-track,
   .marquee:focus-within .marquee-track { animation-play-state: paused; }
