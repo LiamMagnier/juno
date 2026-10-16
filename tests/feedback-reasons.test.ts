@@ -210,7 +210,7 @@ test("Message.feedbackNote is only touched where the message keyring is too", ()
 });
 
 test("the migration is additive: nullable columns, no defaults, no rewrites", () => {
-  const sql = read("prisma/migrations/20261015120000_feedback_reason/migration.sql")
+  const sql = read("prisma/migrations/20261016170001_feedback_reason/migration.sql")
     .split("\n")
     .filter((line) => line.trim() && !line.trim().startsWith("--"));
   assert.deepEqual(sql, [
