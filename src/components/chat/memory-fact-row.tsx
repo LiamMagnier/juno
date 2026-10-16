@@ -167,6 +167,7 @@ export function MemoryFactRow({
   const [error, setError] = React.useState<string | null>(null);
   const fieldRef = React.useRef<HTMLTextAreaElement>(null);
   const editButtonRef = React.useRef<HTMLButtonElement>(null);
+  const viewRef = React.useRef<HTMLAnchorElement>(null);
 
   React.useEffect(() => {
     if (!editing) return;
@@ -180,7 +181,13 @@ export function MemoryFactRow({
     setError(null);
     const failure = await forgetMemoryFact(fact.id, { undo: saved });
     setBusy(null);
-    if (failure) setError(failure);
+    if (failure) {
+      setError(failure);
+      return;
+    }
+    // The pressed control is replaced by a status line; focus moves to the
+    // row's link instead of falling to the page.
+    requestAnimationFrame(() => viewRef.current?.focus());
   };
 
   const save = async () => {
@@ -337,7 +344,7 @@ export function MemoryFactRow({
               </button>
             </>
           )}
-          <Link href={memoryEntryHref(fact.id)} onClick={onNavigate} className={linkClass}>
+          <Link ref={viewRef} href={memoryEntryHref(fact.id)} onClick={onNavigate} className={linkClass}>
             View in memory
           </Link>
           {source?.kind === "this" && <span className="text-muted-foreground/80">Learned in this chat</span>}

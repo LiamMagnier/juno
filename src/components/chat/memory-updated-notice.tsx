@@ -53,6 +53,8 @@ export function MemoryUpdatedNotice({ write, onDismiss }: { write: ClientMemoryW
   /** The exit's timer, once the notice has started to leave. */
   const exitTimer = React.useRef<number | null>(null);
   const dismissRef = React.useRef(onDismiss);
+  /** Where focus goes once Undo has taken its own button (and Edit) away. */
+  const closeRef = React.useRef<HTMLButtonElement>(null);
   React.useEffect(() => {
     dismissRef.current = onDismiss;
   }, [onDismiss]);
@@ -108,7 +110,9 @@ export function MemoryUpdatedNotice({ write, onDismiss }: { write: ClientMemoryW
       )}
     >
       <span className="shrink-0 font-mono text-label text-muted-foreground">
-        {allUndone ? "Memory change undone" : first ? "Memory updated" : "Forgotten"}
+        {/* "Forgotten" only when the turn named what it forgot; a write it
+            could not name (no receipt on the row) is still an update. */}
+        {allUndone ? "Memory change undone" : !first && forgotten.length > 0 ? "Forgotten" : "Memory updated"}
       </span>
       {summary && !allUndone && (
         <span className="hidden min-w-0 truncate text-label text-foreground/85 sm:inline">
@@ -142,8 +146,10 @@ export function MemoryUpdatedNotice({ write, onDismiss }: { write: ClientMemoryW
             </PopoverContent>
           </Popover>
         )}
-        {first && saved.length === 1 && !allUndone && <UndoButton id={first.id} />}
-        <button type="button" aria-label="Dismiss" onClick={() => leave()} className={cn(actionClass, "px-1.5")}>
+        {first && saved.length === 1 && !allUndone && (
+          <UndoButton id={first.id} onUndone={() => requestAnimationFrame(() => closeRef.current?.focus())} />
+        )}
+        <button ref={closeRef} type="button" aria-label="Dismiss" onClick={() => leave()} className={cn(actionClass, "px-1.5")}>
           <X aria-hidden="true" className="size-3.5" />
         </button>
       </span>
@@ -156,7 +162,7 @@ export function MemoryUpdatedNotice({ write, onDismiss }: { write: ClientMemoryW
  * its word: the notice it sits in has just named the fact, and a sentence
  * built around the fact would never reach the translation catalog.
  */
-function UndoButton({ id }: { id: string }) {
+function UndoButton({ id, onUndone }: { id: string; onUndone: () => void }) {
   const [busy, setBusy] = React.useState(false);
   const [failed, setFailed] = React.useState(false);
   return (
@@ -169,6 +175,9 @@ function UndoButton({ id }: { id: string }) {
         const failure = await forgetMemoryFact(id, { undo: true });
         setBusy(false);
         setFailed(failure !== null);
+        // The button goes with the change it undid; a keyboard reader's focus
+        // moves on to Dismiss rather than falling to the page.
+        if (failure === null) onUndone();
       }}
       className={cn(actionClass, failed && "text-destructive hover:text-destructive")}
     >

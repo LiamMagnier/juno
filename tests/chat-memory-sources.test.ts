@@ -151,6 +151,11 @@ test("'Memory updated' names the fact and offers View, Edit and Undo", () => {
   );
   assert.match(forgot, /Forgotten/);
   assert.doesNotMatch(forgot, />Undo</);
+  // A write the turn could not name is still an update, never "Forgotten".
+  const unnamed = renderToStaticMarkup(React.createElement(MemoryUpdatedNotice, { write: null, onDismiss: () => undefined }));
+  assert.match(unnamed, /Memory updated/);
+  assert.doesNotMatch(unnamed, /Forgotten/);
+  assert.match(unnamed, /href="\/memory"[^>]*>View</);
 });
 
 test("the notice owns one timer per notice, cleared on unmount, and the chat keys each update", () => {

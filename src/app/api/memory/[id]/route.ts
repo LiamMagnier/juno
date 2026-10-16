@@ -145,7 +145,11 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
           lastVerifiedAt: now,
         },
       });
-      if (!body.undo) return 0;
+      // Only while this fact is still the one believed. An Undo pressed on an
+      // old receipt after something newer replaced it ("lives in Berlin" after
+      // "lives in Madrid") must not bring back what it replaced ("Lisbon")
+      // beside the newer fact: that would be two answers to one question.
+      if (!body.undo || existing.status !== "active") return 0;
       // Undo: the rows this fact superseded (`supersede` in memory.ts marks
       // them "superseded" and points them here) are believed again. A row
       // something else has since replaced points elsewhere and stays as it is.

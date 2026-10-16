@@ -159,6 +159,25 @@ if (!DB_URL) {
     assert.equal(((await forgot.json()) as { restored?: number }).restored, 0);
     assert.equal(await status(madrid), "suppressed");
     assert.equal(await status(lisbon), "superseded", "Forget is not a claim the older fact holds again");
+
+    // An old receipt's Undo, pressed after something newer replaced its fact,
+    // retires that fact but brings nothing back beside the newer one.
+    const faro = await save("The user lives in Faro.");
+    const braga = await save("The user lives in Braga.");
+    const coimbra = await save("The user lives in Coimbra.");
+    assert.equal(await status(faro), "superseded");
+    assert.equal(await status(braga), "superseded");
+    const stale = await patch(braga, { forget: true, undo: true });
+    assert.equal(stale.status, 200);
+    assert.equal(((await stale.json()) as { restored?: number }).restored, 0);
+    assert.equal(await status(braga), "suppressed");
+    assert.equal(await status(faro), "superseded", "what the stale fact replaced stays replaced");
+    assert.equal(await status(coimbra), "active");
+    assert.equal(
+      await prisma.memoryEntry.count({ where: { userId: user.id, kind: "FACT", status: "active" } }),
+      1,
+      "one answer to where the user lives",
+    );
   });
 
   test("Not relevant marks a fact in use, on its own, and can be taken back", async (t) => {
