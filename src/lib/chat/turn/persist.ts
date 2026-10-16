@@ -126,6 +126,10 @@ export function createAssistantTurnWriter({
                 ? (parts.values as unknown as Prisma.InputJsonValue)
                 : Prisma.DbNull,
             feedback: null, // a fresh answer starts with clean feedback
+            // …and so does the reason a thumbs-down gave: it was about the
+            // answer this one replaces (feedbackWrite clears both off DOWN).
+            feedbackReason: null,
+            feedbackNote: null,
             sources: sources.length ? (sources as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
             createdAt: new Date(), // the timestamp reflects the current version
           },

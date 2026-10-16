@@ -5,6 +5,7 @@ import * as React from "react";
 import { toast } from "sonner";
 import type { ChatMessage } from "@/hooks/use-chat";
 import type { ClientAttachment, ClientMessage } from "@/types/chat";
+import type { FeedbackDetail } from "@/lib/feedback-reasons";
 import { canSteerRun } from "@/lib/code-steer-policy";
 import { CodeTaskTranscript, type CodeActivityRow } from "@/lib/agent-protocol/code-task-transcript";
 
@@ -1078,7 +1079,13 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
     [activeTask],
   );
 
-  const setFeedback = React.useCallback((messageId: string, feedback: "UP" | "DOWN" | null) => {
+  const setFeedback = React.useCallback((
+    messageId: string,
+    feedback: "UP" | "DOWN" | null,
+    // The reason picker's answer (message-feedback.tsx), sent only with DOWN,
+    // exactly as the chat's own setFeedback sends it.
+    detail?: FeedbackDetail,
+  ) => {
     // A live bubble is a client-side id with no row behind it — POSTing would
     // 404. The view hides feedback for these, so reaching here means a race
     // (the run settled mid-click); drop it rather than fake success.
@@ -1100,7 +1107,7 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
     fetch(`/api/messages/${messageId}/feedback`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ feedback }),
+      body: JSON.stringify(feedback === "DOWN" && detail ? { feedback, ...detail } : { feedback }),
     })
       .then((res) => {
         if (!res.ok) rollback();

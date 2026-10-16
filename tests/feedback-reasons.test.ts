@@ -158,6 +158,26 @@ test("the route accepts reason and note, seals the note, mirrors only the catego
   assert.ok(!/feedbackNote/.test(signal.slice(0, signal.indexOf(");"))), "the note never reaches routing telemetry");
 });
 
+test("a regenerated answer drops the old answer's reason and note with its rating", () => {
+  // persist.ts rewrites the stale assistant row in place; a reason left behind
+  // would describe an answer that is no longer there.
+  const persist = read("src/lib/chat/turn/persist.ts");
+  const update = persist.slice(persist.indexOf("feedback: null, // a fresh answer"));
+  const block = update.slice(0, update.indexOf("sources:"));
+  assert.match(block, /feedbackReason: null,/);
+  assert.match(block, /feedbackNote: null,/);
+});
+
+test("code sessions send the picker's reason too, not a bare DOWN", () => {
+  // The code view mounts the same MessageFeedback; dropping `detail` there
+  // would thank the reader for a reason that was never stored.
+  for (const file of ["src/hooks/use-chat.ts", "src/hooks/use-code-session.ts"]) {
+    const hook = read(file);
+    assert.match(hook, /detail\?: FeedbackDetail/, file);
+    assert.match(hook, /feedback === "DOWN" && detail \? \{ feedback, \.\.\.detail \} : \{ feedback \}/, file);
+  }
+});
+
 /** Every .ts/.tsx under `dir`. */
 function walk(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(join(ROOT, dir))) {
