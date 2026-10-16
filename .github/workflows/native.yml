@@ -392,6 +392,27 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             build
 
+      # A Stable build must carry the env server bundle: JunoDesktop's "Env
+      # server bundle" phase fails it without one, on purpose, so a release
+      # can never ship the app without its sidecar. The bundle is gitignored,
+      # so it is built here the way release-macos.sh builds it: esbuild from
+      # the root install, agent-core bundled from source, the env server's own
+      # dependencies. Without it the phase finds no installed toolchain to
+      # bundle with and fails the Stable build before any Swift compiles.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Bundle the env server
+        run: |
+          set -euo pipefail
+          npm ci
+          npm ci --prefix runner/agent-core
+          npm ci --prefix runner/env-server
+          npm run env-server:bundle:mac
+          test -s native/macOS/JunoDesktop/Resources/env-server/alevr-env.mjs
+
       - name: Build JunoDesktop (Stable, strict)
         run: |
           xcodebuild \
