@@ -269,6 +269,8 @@ function Segment({
           onClick={onNavigate}
           aria-current={active ? "page" : undefined}
           aria-label={accessibleName(product, locked)}
+          // Primary navigation: a destination, so its glyph answers the pointer (icons.css).
+          data-jicon-articulate={locked ? undefined : ""}
           className={cn(
             "pressable jicon-trigger group relative flex h-7 items-center justify-center gap-1.5 rounded-control px-2 text-ui font-medium",
             "transition-colors duration-fast ease-out-soft motion-reduce:transition-none motion-reduce:active:scale-100 coarse:h-10",

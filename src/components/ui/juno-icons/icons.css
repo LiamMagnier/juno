@@ -8,29 +8,30 @@
  * and each icon's motion lives next to its drawing.
  *
  * Tokens (INTERACTION_SPEC §1, the V3 ladder: press 70, fast 120, exit 160,
- * base 220, slow 360; revision 2 puts every duration on it): hover
- * articulation goes out on out-soft in `base` (220 ms) and comes back in
- * `exit` (160 ms); the press dip is `press` (70 ms) on out-strong to the
- * spec's 0.97, and lets go in `fast`; state swaps are `fast` (120 ms); a turn
- * to an on state (plus to close, a chevron opening) is `base` on in-out.
- * One-shots are `base`, except the three that travel furthest (the bell's
- * damped swing, the crew's hop, retry's turn), which take `slow` (360 ms).
- * Nothing loops. Only transform and opacity move.
+ * base 220, slow 360): every duration and curve here is the product's own
+ * `--dur-*` / `--ease-*` custom property, not a private copy, so the
+ * reduced-motion overrides in globals.css reach the icons too. Hover
+ * articulation goes out on out-back in `base` and comes back in `exit`; the
+ * press dip is `press` on out-strong to the spec's 0.97, and lets go in
+ * `fast`; state swaps are `fast`; a turn to an on state (plus to close, a
+ * chevron opening) is `base` on in-out. One-shots are `base`, except the three
+ * that travel furthest (the bell's damped swing, the crew's hop, retry's
+ * turn), which take `slow`. Nothing loops. Only transform and opacity move.
  *
- * Revision 1: hover articulation is opt-in (.jicon-hover), the press dip is
- * for icon buttons only, and no hover pose is a turn that lands where it
- * started (plus, close) or a full spin (retry).
+ * Hover articulation is opt-in (G46, see "Hover articulation" below), the
+ * press dip is for icon buttons only, and no hover pose is a turn that lands
+ * where it started (plus, close) or a full spin (retry).
  */
 
 .ji {
-  --ji-soft: cubic-bezier(0.33, 1, 0.68, 1);
-  --ji-strong: cubic-bezier(0.32, 0.72, 0, 1);
-  --ji-inout: cubic-bezier(0.65, 0, 0.35, 1);
-  --ji-in: cubic-bezier(0.4, 0, 1, 1);
+  --ji-soft: var(--ease-out-soft);
+  --ji-strong: var(--ease-out-strong);
+  --ji-inout: var(--ease-in-out);
+  --ji-in: var(--ease-in);
   flex: none;
   overflow: visible;
   vertical-align: middle;
-  transition: scale 120ms var(--ji-soft);
+  transition: scale var(--dur-fast) var(--ji-soft);
 }
 
 .ji .jsnap,
@@ -52,10 +53,10 @@
 .ji .jp {
   opacity: var(--ro, 1);
   transition:
-    translate 160ms var(--ji-soft),
-    rotate 160ms var(--ji-soft),
-    scale 160ms var(--ji-soft),
-    opacity 120ms var(--ji-soft);
+    translate var(--dur-exit) var(--ji-soft),
+    rotate var(--dur-exit) var(--ji-soft),
+    scale var(--dur-exit) var(--ji-soft),
+    opacity var(--dur-fast) var(--ji-soft);
 }
 /* A drawn stroke: one dash as long as the path, then a gap twice as long, so
  * while it draws in no second dash (a round cap's dot) shows at the far end. */
@@ -65,13 +66,25 @@
 }
 
 /* ——————————————————————————— Hover articulation ———————————————————————————
- * On by default (owner, 2026-10-14: icons should answer the pointer the way
- * Claude's do; this supersedes INTERACTION_SPEC I-7's opt-in). Any interactive
- * element around the icon (a .jicon-trigger, a link, a button, a tab, a menu
- * row) plays the
- * drawing's own hover pose under a fine pointer. Never on keyboard focus
- * alone, never inside a disabled control, never under reduced motion.
- * .jicon-quiet still turns it off for everything inside.
+ * Destinations only (G46, 2026-10-15). For one day every link, button, tab
+ * and menu row played its glyph's gesture (owner note 2026-10-14), and a
+ * pointer crossing a menu, a recents list or a message's action row set a
+ * dozen glyphs twitching: motion with no state change behind it, which
+ * ChatGPT and Claude both keep still. So the gesture answers the pointer only
+ * where it says "this is a place you can go":
+ *
+ *   [data-jicon-articulate]            the control itself: a sidebar
+ *                                      destination (NavRow `moves`), the
+ *                                      product switch's tabs
+ *   [data-jicon-articulate="within"]   a region whose links and buttons all
+ *                                      qualify: an empty state's actions
+ *   .jicon-hover                       the gallery's spelling of the first
+ *
+ * Menus, lists, the composer and message actions carry none of these and stay
+ * still; their glyphs still change state (fill, swap, turn) when the state
+ * does. Fine pointer only, never on keyboard focus alone, never inside a
+ * disabled control, never under reduced motion; .jicon-quiet still turns it
+ * off for everything inside.
  *
  * --ji-amp scales every drawn pose a little past its grid value so the
  * gesture is felt at 16px (a 1.5px nudge read as nothing), and the outbound
@@ -80,24 +93,24 @@
 .ji { --ji-amp: 1.35; }
 
 @media (hover: hover) and (pointer: fine) {
-  :is(.jicon-trigger, a, button, summary, label, [role="button"], [role="link"], [role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"], [role="option"], [role="tab"], [data-icon-trigger]):not(.jicon-quiet, .jicon-quiet *, :disabled, [aria-disabled="true"], [data-disabled]):hover .ji:not([data-state="disabled"]) .jp:not([data-anim]) {
+  :is([data-jicon-articulate]:not([data-jicon-articulate="within"]), [data-jicon-articulate="within"] :is(a, button, [role="button"], [role="link"]), .jicon-hover):not(.jicon-quiet, .jicon-quiet *, :disabled, [aria-disabled="true"], [data-disabled]):hover .ji:not([data-state="disabled"]) .jp:not([data-anim]) {
     translate: calc(var(--hx, 0px) * var(--ji-amp)) calc(var(--hy, 0px) * var(--ji-amp));
     rotate: calc(var(--hr, 0deg) * var(--ji-amp));
     scale: calc(1 + (var(--hsx, 1) - 1) * var(--ji-amp)) calc(1 + (var(--hsy, 1) - 1) * var(--ji-amp));
     opacity: var(--ho, 1);
-    transition-duration: 220ms, 360ms, 220ms, 120ms;
+    transition-duration: var(--dur-base), var(--dur-slow), var(--dur-base), var(--dur-fast);
     transition-timing-function: var(--ease-out-back), var(--ease-out-back), var(--ease-out-back), var(--ji-soft);
     transition-delay: var(--hd, 0ms);
   }
-  :is(.jicon-trigger, a, button, summary, label, [role="button"], [role="link"], [role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"], [role="option"], [role="tab"], [data-icon-trigger]):not(.jicon-quiet, .jicon-quiet *, :disabled, [aria-disabled="true"], [data-disabled]):hover .ji:not([data-state="disabled"]) .jp[data-anim] {
+  :is([data-jicon-articulate]:not([data-jicon-articulate="within"]), [data-jicon-articulate="within"] :is(a, button, [role="button"], [role="link"]), .jicon-hover):not(.jicon-quiet, .jicon-quiet *, :disabled, [aria-disabled="true"], [data-disabled]):hover .ji:not([data-state="disabled"]) .jp[data-anim] {
     opacity: var(--ho, 1);
-    animation: var(--ji-anim) var(--ji-anim-dur, 220ms) var(--ji-soft) var(--hd, 0ms) 1 both;
+    animation: var(--ji-anim) var(--ji-anim-dur, var(--dur-base)) var(--ji-soft) var(--hd, 0ms) 1 both;
   }
-  :is(.jicon-trigger, a, button, summary, label, [role="button"], [role="link"], [role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"], [role="option"], [role="tab"], [data-icon-trigger]):not(.jicon-quiet, .jicon-quiet *, :disabled, [aria-disabled="true"], [data-disabled]):hover .ji:not([data-state="disabled"]) .jg-hover {
+  :is([data-jicon-articulate]:not([data-jicon-articulate="within"]), [data-jicon-articulate="within"] :is(a, button, [role="button"], [role="link"]), .jicon-hover):not(.jicon-quiet, .jicon-quiet *, :disabled, [aria-disabled="true"], [data-disabled]):hover .ji:not([data-state="disabled"]) .jg-hover {
     opacity: 1;
   }
-  :is(.jicon-trigger, a, button, summary, label, [role="button"], [role="link"], [role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"], [role="option"], [role="tab"], [data-icon-trigger]):not(.jicon-quiet, .jicon-quiet *, :disabled, [aria-disabled="true"], [data-disabled]):hover .ji:not([data-state="disabled"]) .jg-hover ~ .jg-fill,
-  :is(.jicon-trigger, a, button, summary, label, [role="button"], [role="link"], [role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"], [role="option"], [role="tab"], [data-icon-trigger]):not(.jicon-quiet, .jicon-quiet *, :disabled, [aria-disabled="true"], [data-disabled]):hover .ji:not([data-state="disabled"]):not([data-state="active"]) .jg-base:has(~ .jg-hover) {
+  :is([data-jicon-articulate]:not([data-jicon-articulate="within"]), [data-jicon-articulate="within"] :is(a, button, [role="button"], [role="link"]), .jicon-hover):not(.jicon-quiet, .jicon-quiet *, :disabled, [aria-disabled="true"], [data-disabled]):hover .ji:not([data-state="disabled"]) .jg-hover ~ .jg-fill,
+  :is([data-jicon-articulate]:not([data-jicon-articulate="within"]), [data-jicon-articulate="within"] :is(a, button, [role="button"], [role="link"]), .jicon-hover):not(.jicon-quiet, .jicon-quiet *, :disabled, [aria-disabled="true"], [data-disabled]):hover .ji:not([data-state="disabled"]):not([data-state="active"]) .jg-base:has(~ .jg-hover) {
     opacity: 0;
   }
 }
@@ -126,47 +139,47 @@
 
 .ji .jp[data-anim="swing"] {
   --ji-anim: ji-swing;
-  --ji-anim-dur: 360ms;
+  --ji-anim-dur: var(--dur-slow);
 }
 .ji .jp[data-anim="nod"] {
   --ji-anim: ji-nod;
-  --ji-anim-dur: 220ms;
+  --ji-anim-dur: var(--dur-base);
 }
 .ji .jp[data-anim="pop"] {
   --ji-anim: ji-pop;
-  --ji-anim-dur: 220ms;
+  --ji-anim-dur: var(--dur-base);
 }
 .ji .jp[data-anim="levels"] {
   --ji-anim: ji-levels;
-  --ji-anim-dur: 220ms;
+  --ji-anim-dur: var(--dur-base);
 }
 .ji .jp[data-anim="wave"] {
   --ji-anim: ji-wave;
-  --ji-anim-dur: 220ms;
+  --ji-anim-dur: var(--dur-base);
 }
 .ji .jp[data-anim="blink"] {
   --ji-anim: ji-blink;
-  --ji-anim-dur: 220ms;
+  --ji-anim-dur: var(--dur-base);
 }
 /* The text cursor: one blink (out and back), as a caret does when it lands. Never repeats. */
 .ji .jp[data-anim="caret"] {
   --ji-anim: ji-caret;
-  --ji-anim-dur: 220ms;
+  --ji-anim-dur: var(--dur-base);
 }
 .ji .jp[data-anim="spin"] {
   --ji-anim: ji-spin;
-  --ji-anim-dur: 360ms;
+  --ji-anim-dur: var(--dur-slow);
 }
 .ji .jp[data-anim="hop"] {
   --ji-anim: ji-hop;
-  --ji-anim-dur: 360ms;
+  --ji-anim-dur: var(--dur-slow);
 }
 .ji .jp[data-anim="draw"] {
   --ji-anim: none;
 }
 @media (hover: hover) and (pointer: fine) {
-  :is(.jicon-trigger, a, button, summary, label, [role="button"], [role="link"], [role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"], [role="option"], [role="tab"], [data-icon-trigger]):not(.jicon-quiet, .jicon-quiet *, :disabled, [aria-disabled="true"], [data-disabled]):hover .ji:not([data-state="disabled"]) .jp[data-anim="draw"] .jd {
-    animation: ji-draw 220ms var(--ji-soft) var(--hd, 0ms) 1 both;
+  :is([data-jicon-articulate]:not([data-jicon-articulate="within"]), [data-jicon-articulate="within"] :is(a, button, [role="button"], [role="link"]), .jicon-hover):not(.jicon-quiet, .jicon-quiet *, :disabled, [aria-disabled="true"], [data-disabled]):hover .ji:not([data-state="disabled"]) .jp[data-anim="draw"] .jd {
+    animation: ji-draw var(--dur-base) var(--ji-soft) var(--hd, 0ms) 1 both;
   }
 }
 
@@ -300,7 +313,7 @@
 .ji[data-pose="press"] {
   /* INTERACTION_SPEC's press token: the 0.97 dip in 70 ms (revision 1 dipped to 0.9). */
   scale: 0.97;
-  transition: scale 70ms var(--ji-strong);
+  transition: scale var(--dur-press) var(--ji-strong);
 }
 
 /* ——————————————————————————— States ——————————————————————————— */
@@ -319,9 +332,9 @@
 .ji .jg-alt,
 .ji .jg-hover {
   transition:
-    opacity 120ms var(--ji-soft),
-    scale 120ms var(--ji-soft),
-    rotate 220ms var(--ji-inout);
+    opacity var(--dur-fast) var(--ji-soft),
+    scale var(--dur-fast) var(--ji-soft),
+    rotate var(--dur-base) var(--ji-inout);
 }
 
 /* fill: the on drawing grows into the outline (a pinned pin, a starred star)
@@ -364,7 +377,7 @@
 .ji[data-turned][data-state="active"][data-on="draw"] .jd,
 .ji[data-turned][data-state="active"] .jg-alt .jd,
 .ji[data-on="draw"] .jg-enter .jd {
-  animation: ji-draw 220ms var(--ji-soft) 40ms 1 both;
+  animation: ji-draw var(--dur-base) var(--ji-soft) 40ms 1 both;
 }
 
 /* disabled */
@@ -375,14 +388,14 @@
 /* ——————————————————————————— Name changes ——————————————————————————— */
 
 .ji .jg-enter {
-  animation: ji-in 120ms var(--ji-soft) both;
+  animation: ji-in var(--dur-fast) var(--ji-soft) both;
 }
 .ji .jg-exit {
-  animation: ji-out 120ms var(--ji-in) both;
+  animation: ji-out var(--dur-fast) var(--ji-in) both;
   pointer-events: none;
 }
 .ji .jg-turnin {
-  animation: ji-turnin 220ms var(--ji-inout) both;
+  animation: ji-turnin var(--dur-base) var(--ji-inout) both;
 }
 @keyframes ji-in {
   from {
@@ -455,10 +468,10 @@
   }
   .ji .jg-enter,
   .ji .jg-turnin {
-    animation: ji-fade-in 120ms linear both;
+    animation: ji-fade-in var(--dur-fast) linear both;
   }
   .ji .jg-exit {
-    animation: ji-fade-out 120ms linear both;
+    animation: ji-fade-out var(--dur-fast) linear both;
   }
   /* A live meter stays live: a static bar per level, no easing (index.tsx holds each value for 250 ms). */
   .ji .jp[data-lv] {
@@ -466,32 +479,32 @@
     transition: none;
   }
 }
-:is([data-rm], [data-motion="reduced"]) .ji,
-:is([data-rm], [data-motion="reduced"]) .ji .jp,
-:is([data-rm], [data-motion="reduced"]) .ji .jg-fill,
-:is([data-rm], [data-motion="reduced"]) .ji .jg-alt,
-:is([data-rm], [data-motion="reduced"]) .ji .jg-base {
+[data-rm] .ji,
+[data-rm] .ji .jp,
+[data-rm] .ji .jg-fill,
+[data-rm] .ji .jg-alt,
+[data-rm] .ji .jg-base {
   transition-property: opacity !important;
   translate: none !important;
   rotate: none !important;
   scale: none !important;
 }
-:is([data-rm], [data-motion="reduced"]) .ji .jp,
-:is([data-rm], [data-motion="reduced"]) .ji .jd {
+[data-rm] .ji .jp,
+[data-rm] .ji .jd {
   animation: none !important;
 }
-:is([data-rm], [data-motion="reduced"]) .ji[data-state="active"][data-on="turn"] .jg-base {
+[data-rm] .ji[data-state="active"][data-on="turn"] .jg-base {
   rotate: var(--on-turn, 0deg) !important;
   transition: none;
 }
-:is([data-rm], [data-motion="reduced"]) .ji .jg-enter,
-:is([data-rm], [data-motion="reduced"]) .ji .jg-turnin {
-  animation: ji-fade-in 120ms linear both;
+[data-rm] .ji .jg-enter,
+[data-rm] .ji .jg-turnin {
+  animation: ji-fade-in var(--dur-fast) linear both;
 }
-:is([data-rm], [data-motion="reduced"]) .ji .jg-exit {
-  animation: ji-fade-out 120ms linear both;
+[data-rm] .ji .jg-exit {
+  animation: ji-fade-out var(--dur-fast) linear both;
 }
-:is([data-rm], [data-motion="reduced"]) .ji .jp[data-lv] {
+[data-rm] .ji .jp[data-lv] {
   scale: 1 var(--lv, 1) !important;
   transition: none;
 }

@@ -13,7 +13,7 @@
  * <Icon name="voice" levels={[.2,.8,.5,.9,.3]} />   the bars follow live input
  * <Icon name="progress" value={0.42} />       the arc shows real progress
  *
- * MOTION CONTRACT (revision 1: hover is opt-in, INTERACTION_SPEC I-7).
+ * MOTION CONTRACT (G46: hover is opt-in, INTERACTION_SPEC I-7).
  *
  *   .jicon-trigger           the control that owns the icon. Gives the press
  *                            dip (scale 0.97, 70 ms) only when the control is the
@@ -21,12 +21,13 @@
  *                            marks itself data-solo); a row or a labelled button
  *                            presses tonally and its glyph stays still. State
  *                            changes (state="active", a name change) always run.
- *   .jicon-hover             opt-in hover articulation, on the trigger itself or
- *                            on a region of triggers. For F2 destinations only
- *                            (New chat, Projects, Library, Customize) and the
- *                            gallery; never the composer, the action row, menus
- *                            or rows scanned in lists. Fine pointer only, never
- *                            on keyboard focus.
+ *   [data-jicon-articulate]  opt-in hover articulation, on a destination
+ *                            control (a sidebar destination, the product
+ *                            switch); `="within"` on a region makes its links and
+ *                            buttons qualify (an empty state's actions).
+ *                            `.jicon-hover` is the gallery's spelling. Never the
+ *                            composer, the action row, menus or rows scanned in
+ *                            lists. Fine pointer only, never on keyboard focus.
  *   .jicon-quiet             turns hover off for everything inside (wins over
  *                            .jicon-hover). Kept for older call sites.
  *   .jicon-press             forces the press dip on a trigger that has a label.

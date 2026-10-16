@@ -38,9 +38,8 @@
 [data-instrument] *, [data-instrument] *::before, [data-instrument] *::after { box-sizing: border-box; }
 [data-instrument] ::selection { background: color-mix(in oklab, var(--in-signal) 45%, transparent); color: var(--in-ink); }
 
-/* Hover is tonal, not spatial: the shared icon set's hover articulations are off here. */
-[data-instrument] svg.icon[data-motion] { translate: none !important; rotate: none !important; scale: none !important; }
-[data-instrument] svg.icon .juno-part { transform: none !important; }
+/* Hover is tonal, not spatial. The shared icons articulate only on
+   destinations (juno-icons/icons.css), and nothing here is one. */
 
 [data-instrument] :focus { outline: none; }
 [data-instrument] :focus-visible { outline: 2px solid var(--in-focus); outline-offset: 2px; }

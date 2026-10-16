@@ -1873,16 +1873,17 @@ function NavRow({
   layoutId,
   transition: t,
   reveal = false,
-  moves: _moves = false,
+  moves = false,
 }: {
   href?: string;
   onClick?: () => void;
   icon: React.ReactNode;
   label: string;
   /**
-   * No longer gates anything: every row's glyph now answers the pointer
-   * (juno-icons/icons.css, "Hover articulation"). Kept so call sites compile.
-   * @deprecated
+   * A destination: its glyph plays its one hover gesture
+   * (`data-jicon-articulate`, juno-icons/icons.css). Only places you go to
+   * move; actions (Search, Notifications) and every list row stay still, as
+   * menus and message actions do.
    */
   moves?: boolean;
   /** A hint that shows under the pointer only (a shortcut's keycap). */
@@ -1985,6 +1986,7 @@ function NavRow({
   // (`[.bg-sidebar-accent_&]:text-foreground`), which could not tell the hover
   // fill from the active one.
   const activeAttr = active ? "" : undefined;
+  const articulate = moves ? "" : undefined;
   const el = href ? (
     <Link
       href={href}
@@ -1995,6 +1997,7 @@ function NavRow({
       prefetch={false}
       {...intentPrefetch(router, href)}
       data-active={activeAttr}
+      data-jicon-articulate={articulate}
       aria-current={active ? "page" : undefined}
       aria-label={collapsed || detail ? name : undefined}
       className={cls}
@@ -2006,6 +2009,7 @@ function NavRow({
       type="button"
       onClick={onClick}
       data-active={activeAttr}
+      data-jicon-articulate={articulate}
       aria-label={collapsed || detail ? name : undefined}
       className={cn(cls, "text-left")}
     >
