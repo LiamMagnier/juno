@@ -1486,6 +1486,7 @@
      translucency the flat material does not use anywhere else. */
   .surface-float {
     background-color: hsl(var(--popover));
+    --scroll-fade-ground: var(--popover);
     color: hsl(var(--popover-foreground));
     border: 1px solid hsl(var(--border) / .9);
     box-shadow: var(--shadow-float);
@@ -2152,6 +2153,7 @@
   .overlay-glass {
     border: 1px solid hsl(var(--border) / .7);
     background-color: hsl(var(--popover));
+    --scroll-fade-ground: var(--popover);
     color: hsl(var(--popover-foreground));
     box-shadow: var(--shadow-float);
   }
@@ -3522,7 +3524,9 @@
      It used to be a two-layer progressive BLUR (backdrop-filter, masked). No
      backdrop-filter in product chrome (spec D15): a blur band composites and
      repaints on every scrolled frame. `--scroll-fade-ground` is the surface
-     the scroller sits on (the page by default). The opacity fade is Tier A,
+     the scroller sits on (the page by default; the sidebar frame and the
+     floating surfaces set their own, so the band never paints a lighter or
+     darker stripe over a ground that is not the page). The opacity fade is Tier A,
      so it keeps its timing under reduced motion. */
   .scroll-fade-edge {
     position: absolute;
@@ -4069,6 +4073,8 @@
   .app-sidebar-frame {
     background-color: hsl(var(--sidebar));
     box-shadow: none;
+    /* ScrollFade's edge bands fade from this ground, not the page's. */
+    --scroll-fade-ground: var(--sidebar);
   }
   /* At md–lg the expanded panel floats over the content (app-shell.tsx):
      it takes the floating rung's throw so it reads as lifted, not as a wider

@@ -205,6 +205,19 @@ test("no backdrop-filter in globals.css product rules (D15)", () => {
   assert.doesNotMatch(stripped, /backdrop-filter\s*:/);
 });
 
+test("scroll-edge bands fade from their own surface, not the page, where the ground is not the page", () => {
+  // The bands are opaque gradients now (no backdrop blur), so a band on the
+  // sidebar or a popover that faded from --background would paint a stripe.
+  const groundOf = (selector: string) => {
+    const re = new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \\{[^}]*--scroll-fade-ground: var\\(--([a-z-]+)\\)`);
+    return re.exec(stripped)?.[1];
+  };
+  assert.equal(groundOf(".app-sidebar-frame"), "sidebar");
+  assert.equal(groundOf(".surface-float"), "popover");
+  assert.equal(groundOf(".overlay-glass"), "popover");
+  assert.match(stripped, /\.scroll-fade-edge\[data-edge="top"\] \{[^}]*hsl\(var\(--scroll-fade-ground, var\(--background\)\)\)/);
+});
+
 test("type rungs a fontSize cannot finish, and the corner-shape enhancement", () => {
   assert.match(stripped, /:where\(\.text-label, \.text-kbd\) \{\s*font-family: var\(--font-mono\)[^;]*;\s*font-variant-numeric: tabular-nums;/);
   assert.match(stripped, /@media \(max-width: 639\.98px\) \{\s*\.text-page-title\.text-page-title \{ font-size: 1\.75rem; \}/);
