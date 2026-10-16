@@ -20,6 +20,7 @@ import { ConversationFind } from "@/components/chat/conversation-find";
 import { Composer } from "@/components/chat/composer";
 import { AnimatedTitle } from "@/components/app/animated-title";
 import { EmptyGreeting, HomeField, PrivateGreeting } from "@/components/chat/empty-state";
+import { HomeStarters } from "@/components/chat/home-starters";
 import { FollowUpSuggestions } from "@/components/chat/follow-up-suggestions";
 import { LiveUIHostProvider } from "@/components/chat/live-ui/host";
 import { PrivateChatToggle } from "@/components/chat/private-chat-toggle";
@@ -1540,6 +1541,8 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
   const handoffArmedAtRef = React.useRef(0);
   const handoffFromTopRef = React.useRef<number | null>(null);
   const emptyComposerRef = React.useRef<HTMLDivElement>(null);
+  /** The home starters are on screen, so the field behind the composer calms (G34). */
+  const [startersShown, setStartersShown] = React.useState(false);
   const dockComposerRef = React.useRef<HTMLDivElement>(null);
   if (hasMessages !== handoffSeen) {
     // Render-phase adjustment (the documented React pattern), so the exit beat
@@ -2669,15 +2672,24 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
                     ref={emptyComposerRef}
                     className="chat-home__composer relative isolate w-full"
                   >
-                    {!agent ? <HomeField visible={!privateMode && !chat.pendingClarification} /> : null}
+                    {!agent ? <HomeField visible={!privateMode && !chat.pendingClarification} calm={startersShown} /> : null}
                     {voiceOpen && <VoiceCallNotices voice={realtimeVoice} />}
                     {voiceSaveNotice}
                     {composer}
                   </div>
                   {/* The third track balances the first, so the composer sits
                       at the panel's centre. What the suggestions offered (a
-                      project, an app) is the composer's tray now. */}
-                  <div className="chat-home__suggest" />
+                      project, an app) is the composer's tray now; this track
+                      holds the starter chips (G34, home-starters.tsx). */}
+                  <div className="chat-home__suggest">
+                    {!agent ? (
+                      <HomeStarters
+                        composerRef={emptyComposerRef}
+                        hidden={Boolean(privateMode || chat.pendingClarification || handoff === "leaving")}
+                        onShownChange={setStartersShown}
+                      />
+                    ) : null}
+                  </div>
               </div>
             </div>
           )}

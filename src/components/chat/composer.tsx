@@ -90,7 +90,7 @@ const ComposerClarificationPopover = nextDynamic(
   { ssr: false },
 );
 import { resolveModel, type ModelInfo } from "@/lib/models";
-import { isAutoModelId } from "@/lib/auto-model";
+import { AUTO_MODEL_ID, isAutoModelId } from "@/lib/auto-model";
 import {
   reasoningOptions,
   defaultReasoning,
@@ -1105,6 +1105,12 @@ function ComposerImpl({
   const researchSeedAllowed = planAllowsResearch && researchAvailable;
   const researchSeedAllowedRef = React.useRef(researchSeedAllowed);
   researchSeedAllowedRef.current = researchSeedAllowed;
+  // A home starter may also name the model it needs (G34, home-starters.tsx):
+  // "Create image" an image model this account can use, the others a model
+  // that writes (an image model left selected would answer "Plan my week"
+  // with a picture). Only a model in this account's list is taken.
+  const seedModelRef = React.useRef({ models, modality, changeModel, defaultModel: settings.defaultModel, researchPlan: planAllowsResearch && !privateMode });
+  seedModelRef.current = { models, modality, changeModel, defaultModel: settings.defaultModel, researchPlan: planAllowsResearch && !privateMode };
   React.useEffect(() => {
     const seed = (event: Event) => {
       const detail = event instanceof CustomEvent ? (event.detail as unknown) : null;
@@ -1116,7 +1122,20 @@ function ComposerImpl({
             : "";
       const armResearch = !!detail && typeof detail === "object" && (detail as { research?: unknown }).research === true;
       if (!value && !armResearch) return;
-      if (armResearch && researchSeedAllowedRef.current) setResearch(true);
+      let nowWrites = false;
+      if (detail && typeof detail === "object") {
+        const { model: wanted, modality: wantedModality } = detail as { model?: unknown; modality?: unknown };
+        const current = seedModelRef.current;
+        if (typeof wanted === "string" && current.models.some((m) => m.id === wanted)) {
+          current.changeModel(wanted as ModelId);
+        } else if (wantedModality === "chat" && current.modality !== "chat") {
+          const fallback = resolveModel(current.defaultModel);
+          current.changeModel(fallback && fallback.modality === "chat" ? fallback.id : AUTO_MODEL_ID);
+          // Research is allowed on the model just chosen, not the image model it replaced.
+          nowWrites = current.researchPlan;
+        }
+      }
+      if (armResearch && (researchSeedAllowedRef.current || nowWrites)) setResearch(true);
       setText(value);
       requestAnimationFrame(() => {
         const field = textareaRef.current;
