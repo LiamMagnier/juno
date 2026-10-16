@@ -25,7 +25,15 @@ export function usePaletteMessageSearch({
   const here = React.useMemo(() => messageMatches(items, query), [items, query]);
   const [elsewhere, setElsewhere] = React.useState<MessageMatch[]>([]);
   const [searching, setSearching] = React.useState(false);
-  const titles = React.useMemo(() => new Map(threads.map((t) => [t.id, t.title])), [threads]);
+  // Keyed on the list's content, not its identity: the palette's caller builds a fresh array on
+  // every render, and a streaming turn re-renders several times a second, which would abort the
+  // other-sessions search before it ever answered.
+  const threadsKey = threads.map((t) => `${t.id}\u0001${t.title}`).join("\u0002");
+  const titles = React.useMemo(
+    () => new Map(threads.map((t) => [t.id, t.title])),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- threadsKey is the content of threads
+    [threadsKey],
+  );
 
   React.useEffect(() => {
     const q = query.trim();

@@ -289,8 +289,10 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
     setUnseenAgents([]);
   }, [model.thread.id]);
   React.useEffect(() => {
+    // The first pass with items is history, not news. A Mac thread renders empty until its log
+    // arrives from the env server, so an empty pass is "not loaded yet", not "no agents".
+    if (!seenAgents.current && model.items.length === 0) return;
     const ids = model.items.filter((i) => i.kind === "subagent").map((i) => i.agentId);
-    // The first pass after a thread loads is history, not news.
     const fresh = seenAgents.current ? newAgentIds(seenAgents.current, ids) : [];
     seenAgents.current = new Set(ids);
     if (fresh.length && !agentsInView) setUnseenAgents((u) => [...new Set([...u, ...fresh])]);
