@@ -51,6 +51,9 @@ Additional changes:
   never replayed automatically. An unconfirmed Accessibility write is reported
   as an unknown outcome; only explicitly unsupported operations may fall back
   to another input mechanism. Stale element ids cannot fall back to a point.
+- The full native gate exposed an existing root-URL traversal hang in
+  plain-folder change review. Repository detection now stops explicitly at
+  the filesystem root; both the root and non-repository cases are tested.
 
 ## Validation
 
