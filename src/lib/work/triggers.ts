@@ -395,7 +395,21 @@ export function triggerSupport(kind: string, config: unknown): TriggerSupport {
     if (parsed.parsed.kind !== "connector_event" || !isFirstPartyId(parsed.parsed.config.connector)) {
       return { servable: false, field: "connector", message: `${PRODUCT_NAME} cannot watch a connector without a real event source. Choose Gmail, Google Calendar, Google Drive, Outlook, Microsoft 365 or Slack.` };
     }
-    const { connector, attributes } = parsed.parsed.config;
+    const { connector, attributes, events } = parsed.parsed.config;
+    const eventTypes: Record<string, readonly string[]> = {
+      gmail: ["message_received", "message_changed", "message_deleted"],
+      "google-calendar": ["event_changed", "event_deleted"],
+      "google-drive": ["file_changed", "file_deleted"],
+      outlook: ["message_changed", "message_deleted"],
+      "microsoft-365": ["file_changed", "file_deleted"],
+      slack: ["message_received"],
+    };
+    if (events.some((event) => !eventTypes[connector].includes(event))) {
+      return { servable: false, field: "events", message: `Choose an event this app produces: ${eventTypes[connector].join(", ")}. Leave the list empty to watch them all.` };
+    }
+    if (Object.keys(attributes).some((key) => key !== "resourceId" && key !== "stream")) {
+      return { servable: false, field: "attributes", message: "This event source can filter only by resourceId and stream." };
+    }
     if (connector === "slack" && !/^[A-Z0-9]{2,64}$/.test(attributes.stream ?? "")) {
       return { servable: false, field: "attributes", message: "Choose a Slack channel ID as the stream to watch." };
     }

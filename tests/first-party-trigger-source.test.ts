@@ -6,13 +6,23 @@ import { FIRST_PARTY_IDS } from "@/lib/first-party-connectors/providers";
 
 for (const provider of FIRST_PARTY_IDS) test(`${provider}: a real first-party event source is accepted`, () => {
   const attributes = provider === "slack" ? { stream: "C123456" } : {};
-  const config = { connector: provider, events: ["message_received"], attributes };
+  const config = { connector: provider, events: [], attributes };
   assert.deepEqual(triggerSupport("connector_event", config), { servable: true, connectorId: provider });
   const normalized = normalizeTriggerDrafts([{ kind: "connector_event", config }], "Europe/Paris");
   assert.equal(normalized.ok, true);
 });
 test("unsupported apps, malformed configs, missing Slack channels and bad streams remain refused", () => {
   for (const config of [{ connector: "linear" }, { connector: "github" }, { connector: "user_mcp:fake" }, {}, { connector: "slack" }, { connector: "slack", attributes: { stream: "../../private" } }, { connector: "gmail", attributes: { stream: " " } }]) assert.equal(triggerSupport("connector_event", config).servable, false);
+});
+test("event names must have a real producer for the selected app", () => {
+  assert.equal(triggerSupport("connector_event", { connector: "gmail", events: ["message_received"] }).servable, true);
+  assert.equal(triggerSupport("connector_event", { connector: "google-drive", events: ["file_changed"] }).servable, true);
+  assert.equal(triggerSupport("connector_event", { connector: "google-drive", events: ["message_received"] }).servable, false);
+  assert.equal(triggerSupport("connector_event", { connector: "slack", events: ["issue.created"], attributes: { stream: "C123" } }).servable, false);
+});
+test("unsupported event attributes are refused instead of silently matching nothing", () => {
+  assert.equal(triggerSupport("connector_event", { connector: "gmail", attributes: { team: "core" } }).servable, false);
+  assert.equal(triggerSupport("connector_event", { connector: "gmail", attributes: { resourceId: "message1" } }).servable, true);
 });
 
 const calls: unknown[][] = [];
