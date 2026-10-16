@@ -421,6 +421,11 @@ struct DesktopCodeWorkspace: View {
                     Color.clear
                 }
             }
+            // A pane's wrapping text (Screen's waiting line, a frame's
+            // caption) must not set the window's minimum height: measured at
+            // a zero width it can ask for thousands of points, and the window
+            // then draws every column outside itself.
+            .studioBoundedMinimumHeight()
             .inspectorColumnWidth(
                 min: Studio.Metrics.panelMinimum,
                 ideal: Studio.Metrics.panelIdeal,

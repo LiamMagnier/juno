@@ -231,6 +231,9 @@ public struct StudioSessionView: View {
                 StudioCommandStatusLines(commands: controller.commands)
                 composer
             }
+            // Outside the scroll view, so its minimum is the column's: an
+            // approval card must never make the window taller than itself.
+            .studioBoundedMinimumHeight()
             .frame(maxWidth: Studio.Metrics.measure)
             .padding(.horizontal, Studio.Metrics.gutter)
             .padding(.bottom, JunoSpace.regular)
