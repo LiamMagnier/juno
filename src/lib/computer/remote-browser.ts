@@ -49,8 +49,105 @@ export function agentNavigationVerdict(input: {
   return input.policy(input.url);
 }
 
-export interface RemoteAgentBrowser extends WorkBrowser {
+/** What is under a point, or focused, in the page in front, in words. */
+export interface PageTarget {
+  role: string;
+  name: string;
+  host: string;
+}
+
+/**
+ * Turns a screen point into words, for the sentences a person is shown
+ * ("Click the “Sign in” button on example.com"). Null whenever the answer
+ * would be a guess: Chromium is not the window in front, the point is on the
+ * browser's own toolbar or outside the page, or the element is a frame.
+ */
+export interface PointDescriber {
+  describePoint(x: number, y: number): Promise<PageTarget | null>;
+  describeFocus(): Promise<PageTarget | null>;
+}
+
+export interface RemoteAgentBrowser extends WorkBrowser, PointDescriber {
   withPage<T>(fn: (page: Page) => Promise<T>): Promise<T>;
+}
+
+/** Whether a browser can describe points (the runner holds it as a plain WorkBrowser). */
+export function canDescribePoints(browser: unknown): browser is PointDescriber {
+  const candidate = browser as Partial<PointDescriber> | null;
+  return typeof candidate?.describePoint === "function" && typeof candidate?.describeFocus === "function";
+}
+
+/*
+ * Runs inside the page. A string rather than a function on purpose: the runner
+ * is executed through a transpiler that may wrap named functions in helpers
+ * the page does not have, and a string is sent exactly as written.
+ *
+ * The point arrives in screen pixels. The page's own viewport starts below the
+ * browser's toolbar and inside its border, so it is moved by the window's
+ * position and chrome before `elementFromPoint`. Nothing reads a field's
+ * value except a button's caption: a typed password must never become a name.
+ */
+export const DESCRIBE_TARGET_SCRIPT = String.raw`(function (arg) {
+  if (typeof document.hasFocus === "function" && !document.hasFocus()) return null;
+  if (document.visibilityState && document.visibilityState !== "visible") return null;
+  var el = null;
+  if (arg && typeof arg.x === "number" && typeof arg.y === "number") {
+    var dpr = window.devicePixelRatio || 1;
+    var side = Math.max(0, (window.outerWidth - window.innerWidth) / 2);
+    var top = Math.max(0, window.outerHeight - window.innerHeight - side);
+    var vx = arg.x / dpr - window.screenX - side;
+    var vy = arg.y / dpr - window.screenY - top;
+    if (vx < 0 || vy < 0 || vx >= window.innerWidth || vy >= window.innerHeight) return null;
+    el = document.elementFromPoint(vx, vy);
+  } else {
+    el = document.activeElement;
+    if (!el || el === document.body || el === document.documentElement) return null;
+  }
+  if (!el) return null;
+  var first = String(el.tagName || "").toLowerCase();
+  if (first === "iframe" || first === "frame") return null;
+  var target = (el.closest && el.closest('a[href],button,input,select,textarea,summary,label,[role],[contenteditable="true"]')) || el;
+  var tag = String(target.tagName || "").toLowerCase();
+  var type = String(target.getAttribute("type") || "").toLowerCase();
+  var explicit = String(target.getAttribute("role") || "").toLowerCase().split(" ")[0];
+  var buttonInput = tag === "input" && (type === "submit" || type === "button" || type === "reset" || type === "image");
+  var role = explicit || (
+    tag === "a" ? "link" :
+    tag === "button" || tag === "summary" || buttonInput ? "button" :
+    tag === "select" ? "combobox" :
+    tag === "textarea" ? "textbox" :
+    tag === "input" && type === "password" ? "password" :
+    tag === "input" && (type === "checkbox" || type === "radio") ? type :
+    tag === "input" && type === "search" ? "searchbox" :
+    tag === "input" ? "textbox" :
+    tag === "img" ? "img" :
+    /^h[1-6]$/.test(tag) ? "heading" :
+    target.isContentEditable ? "textbox" : "");
+  var labelled = "";
+  var ids = String(target.getAttribute("aria-labelledby") || "").split(/\s+/);
+  for (var i = 0; i < ids.length && !labelled; i++) {
+    var named = ids[i] ? document.getElementById(ids[i]) : null;
+    if (named) labelled = String(named.textContent || "");
+  }
+  var fieldLabel = target.labels && target.labels.length ? String(target.labels[0].textContent || "") : "";
+  var field = tag === "input" || tag === "textarea" || tag === "select";
+  var text = field ? "" : String(target.innerText || target.textContent || "");
+  var name = text.trim() || target.getAttribute("aria-label") || labelled.trim() || fieldLabel.trim() ||
+    target.getAttribute("alt") || target.getAttribute("placeholder") || target.getAttribute("title") ||
+    (buttonInput ? target.getAttribute("value") : "") || "";
+  return { role: role, name: String(name).replace(/\s+/g, " ").trim().slice(0, 120), host: String(location.hostname || "") };
+})`;
+
+/** A page's answer, checked: the page is untrusted, so nothing is taken on faith. */
+export function readPageTarget(raw: unknown): PageTarget | null {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const { role, name, host } = raw as Record<string, unknown>;
+  if (typeof role !== "string" || typeof name !== "string" || typeof host !== "string") return null;
+  const cleanRole = role.toLowerCase().trim();
+  if (cleanRole.length > 40 || !/^[a-z]*$/.test(cleanRole)) return null;
+  const cleanHost = host.toLowerCase().trim();
+  if (!/^[a-z0-9.-]{1,253}$/.test(cleanHost)) return null;
+  return { role: cleanRole, name: name.slice(0, 200), host: cleanHost };
 }
 
 function createFakeAgentBrowser(): RemoteAgentBrowser {
@@ -133,6 +230,9 @@ function createFakeAgentBrowser(): RemoteAgentBrowser {
     async withPage(): Promise<never> {
       throw new Error("withPage is only available on real CDP browsers");
     },
+    // No Chromium behind the fake: every sentence falls back to coordinates.
+    describePoint: async () => null,
+    describeFocus: async () => null,
     async close(): Promise<void> {
       // No-op for fake browser
     },
@@ -391,6 +491,34 @@ export function connectAgentBrowser(
       return fn(current);
     },
 
+    describePoint(x: number, y: number) {
+      return describeInFront({ x, y });
+    },
+
+    describeFocus() {
+      return describeInFront(null);
+    },
+
     close,
   };
+
+  /**
+   * Asks each open tab; only the one that is visible and focused answers
+   * (the script returns null everywhere else). Never connects just to look:
+   * a run that has not used the browser yet gets coordinates.
+   */
+  async function describeInFront(point: { x: number; y: number } | null): Promise<PageTarget | null> {
+    const pages = context ? context.pages().filter((candidate) => !candidate.isClosed()) : [];
+    const ordered = page && !page.isClosed() ? [page, ...pages.filter((candidate) => candidate !== page)] : pages;
+    const expression = `${DESCRIBE_TARGET_SCRIPT}(${JSON.stringify(point)})`;
+    for (const candidate of ordered.slice(0, 8)) {
+      try {
+        const answer = readPageTarget(await candidate.evaluate(expression));
+        if (answer) return answer;
+      } catch {
+        // A tab mid-navigation has no document to ask; the next one might.
+      }
+    }
+    return null;
+  }
 }

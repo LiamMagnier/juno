@@ -6,6 +6,7 @@ import { finishRun } from "@/lib/work/store";
 import { serializeRun, serializeSession } from "@/lib/work/serializers";
 import { pendingApprovalsForRun } from "@/lib/work/approvals";
 import { patchSessionSchema } from "@/app/api/work/protocol";
+import { deleteRunFrames } from "@/lib/computer/frames";
 
 export const runtime = "nodejs";
 
@@ -108,6 +109,12 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
     where: { id, userId: user.id, deletedAt: null },
     data: { deletedAt: new Date() },
   });
+
+  // The rows stay for the audit trail; the screenshots of the agent's screen
+  // do not (src/lib/computer/frames.ts). Best effort: the frames route already
+  // refuses every frame of a deleted session.
+  const runs = await prisma.workRun.findMany({ where: { sessionId: id, userId: user.id }, select: { id: true } });
+  for (const run of runs) await deleteRunFrames(run.id, user.id).catch(() => 0);
 
   return NextResponse.json({ ok: true });
 }

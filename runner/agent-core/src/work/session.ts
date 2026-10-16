@@ -75,9 +75,43 @@ import {
   type WorkRiskLevel,
   type WorkTerminalReason,
   type WorkToolDefinition,
+  type WorkToolPoint,
+  type WorkToolPreview,
+  type WorkToolResult,
   type WorkValidationCheck,
   type WorkValidationResult,
 } from './types.js';
+
+/**
+ * The step facts a tool reported, copied onto `tool_finished` only when they
+ * are well-formed: a frame reference the frames route can serve, and timings
+ * that are real durations. A failed call carries no frame — what it saw is
+ * not a step anybody should be shown as having happened.
+ */
+function stepFacts(
+  result: WorkToolResult,
+  isError: boolean,
+): Pick<WorkToolResult, 'frame' | 'settleMs' | 'captureMs'> {
+  const facts: Pick<WorkToolResult, 'frame' | 'settleMs' | 'captureMs'> = {};
+  const frame = result.frame;
+  if (
+    !isError &&
+    frame &&
+    typeof frame.ref === 'string' &&
+    /^[A-Za-z0-9_-]{1,128}$/.test(frame.ref) &&
+    Number.isFinite(frame.width) &&
+    Number.isFinite(frame.height) &&
+    frame.width > 0 &&
+    frame.height > 0
+  ) {
+    facts.frame = { ref: frame.ref, width: Math.round(frame.width), height: Math.round(frame.height) };
+  }
+  for (const key of ['settleMs', 'captureMs'] as const) {
+    const value = result[key];
+    if (typeof value === 'number' && Number.isFinite(value) && value >= 0) facts[key] = Math.round(value);
+  }
+  return facts;
+}
 import { FileStateGuard } from '../harness/guards.js';
 
 /**
@@ -881,6 +915,36 @@ export class WorkAgentSession {
     return { type: 'tool_result', toolCallId: callId, content, isError };
   }
 
+  /** The tool's preview of a call, or null. A preview that throws is no preview. */
+  private async previewCall(
+    tool: WorkToolDefinition,
+    call: { id: string; input: Record<string, unknown> },
+    forApproval: boolean,
+  ): Promise<WorkToolPreview | null> {
+    if (!tool.preview) return null;
+    try {
+      return await tool.preview(call.input, {
+        callId: call.id,
+        forApproval,
+        ...(this.aborter ? { signal: this.aborter.signal } : {}),
+      });
+    } catch {
+      return null;
+    }
+  }
+
+  /** Where a screen action lands, when the tool says and the numbers are sane. */
+  private pointFor(tool: WorkToolDefinition, input: Record<string, unknown>): WorkToolPoint | null {
+    if (!tool.pointFor) return null;
+    try {
+      const point = tool.pointFor(input);
+      if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return null;
+      return { x: Math.round(point.x), y: Math.round(point.y) };
+    } catch {
+      return null;
+    }
+  }
+
   private async executeToolCall(call: {
     id: string;
     name: string;
@@ -928,11 +992,16 @@ export class WorkAgentSession {
     const provenance = tool.provenanceFor(call.input);
 
     const floored = requiresExplicitApproval(action, risk);
-    if (
+    const asks =
       approvalAsksUnder(action, risk, this.options.approvalMode ?? 'conservative') &&
-      (floored || !this.grantedAlways.has(action))
-    ) {
-      const answer = await this.gateApproval(call, tool, action, risk);
+      (floored || !this.grantedAlways.has(action));
+    // Worked out once, before the gate: the sentence the person is asked and
+    // the feed shows ("Click the “Sign in” button on example.com"), and what
+    // the card draws beside it. Never part of the digest (see `gateApproval`).
+    const preview = await this.previewCall(tool, call, asks);
+    const summary = preview?.summary?.trim() || tool.summarize(call.input);
+    if (asks) {
+      const answer = await this.gateApproval(call, tool, action, risk, summary, preview?.detail);
       if (answer !== 'allowed' && answer !== 'allowed_always') {
         const reason =
           answer === 'expired'
@@ -953,6 +1022,7 @@ export class WorkAgentSession {
       return this.toolResult(call.id, stale, true);
     }
 
+    const point = this.pointFor(tool, call.input);
     this.emit({
       kind: 'tool_started',
       callId: call.id,
@@ -960,8 +1030,9 @@ export class WorkAgentSession {
       intent,
       tier: tool.tier,
       risk,
-      summary: tool.summarize(call.input),
+      summary,
       provenance,
+      ...(point ? { point } : {}),
     });
 
     const ctx: ToolContext = {
@@ -974,11 +1045,13 @@ export class WorkAgentSession {
     let output: string;
     let isError = false;
     let images: ReadonlyArray<{ mediaType: 'image/jpeg' | 'image/png'; data: string }> | undefined;
+    let step: Pick<WorkToolResult, 'frame' | 'settleMs' | 'captureMs'> = {};
     try {
-      const result = await tool.execute(call.input, ctx);
+      const result: WorkToolResult = await tool.execute(call.input, ctx);
       output = result.output;
       isError = result.isError ?? false;
       images = result.images;
+      step = stepFacts(result, isError);
     } catch (err) {
       output = `Tool crashed: ${err instanceof Error ? err.message : String(err)}`;
       isError = true;
@@ -1013,6 +1086,7 @@ export class WorkAgentSession {
       durationMs: this.clock.now() - startedAt,
       provenance,
       ...(injection ? { injection } : {}),
+      ...step,
     });
 
     const resultBlock = this.toolResult(call.id, content, isError);
@@ -1374,7 +1448,12 @@ export class WorkAgentSession {
     tool: WorkToolDefinition,
     action: string,
     risk: WorkRiskLevel,
+    summary: string,
+    extra?: Record<string, unknown>,
   ): Promise<WorkApprovalAnswer> {
+    // The digest is over the action, the tool and the input — never over the
+    // detail — so the preview's frame reference, point and body can be shown
+    // without changing what an answer authorises or what the server verifies.
     const digestInput = canonicalJson({ action, tool: call.name, input: call.input });
     const request: WorkApprovalRequest = {
       id: `${this.runId}:${call.id}`,
@@ -1382,8 +1461,9 @@ export class WorkAgentSession {
       action,
       tool: call.name,
       risk,
-      summary: tool.summarize(call.input),
-      detail: { intent: tool.intentFor(call.input), tier: tool.tier },
+      summary,
+      // `intent` and `tier` last: a preview cannot overwrite them.
+      detail: { ...(extra ?? {}), intent: tool.intentFor(call.input), tier: tool.tier },
       digestInput,
       actionDigest: sha256(digestInput),
       policyDigest: this.policyDigest,

@@ -140,6 +140,33 @@ async function runDockerText(
 }
 
 /**
+ * The whole capture in one `docker exec`: scrot writes the frame, cat hands it
+ * back on stdout. A fixed string, so there is nothing to quote or inject.
+ */
+export const SCREENSHOT_SCRIPT = "scrot -o -z /tmp/juno-shot.png && cat /tmp/juno-shot.png";
+
+export function screenshotArgv(container: string): string[] {
+  return ["exec", "--user", "1000", "-e", "DISPLAY=:0", container, "sh", "-c", SCREENSHOT_SCRIPT];
+}
+
+/** The most presses one `computer_key` call may send. */
+const MAX_KEY_PRESSES = 32;
+
+/**
+ * "ctrl+l Return" → ["ctrl+l", "Return"]: xdotool presses each argument in
+ * turn, but reads one argument holding a space as a single unknown key name,
+ * so the space-separated sequences the tool accepts never reached it whole.
+ */
+export function keySequence(keys: string): string[] {
+  return keys
+    .split(/\s+/)
+    .map((key) => key.trim())
+    // After xdotool's `--`, so a name that starts with a dash is still a key.
+    .filter((key) => key.length > 0 && key.length <= 64)
+    .slice(0, MAX_KEY_PRESSES);
+}
+
+/**
  * Whether a resolved path inside the container is one the agent may write:
  * under /home/agent/work, with no dot-directory or dotfile on the way. Writing
  * `~/.bashrc`, `~/.profile` or `~/.config/autostart/*.desktop` would run what
@@ -470,26 +497,10 @@ export class DockerProvider implements ComputerProvider {
   }
 
   async screenshot(handle: ComputerHandle): Promise<Shot> {
-    await runDockerText([
-      "exec",
-      "--user",
-      "1000",
-      "-e",
-      "DISPLAY=:0",
-      handle.name,
-      "scrot",
-      "-o",
-      "-z",
-      "/tmp/juno-shot.png",
-    ]);
-    const raw = await runDockerBuffer([
-      "exec",
-      "--user",
-      "1000",
-      handle.name,
-      "cat",
-      "/tmp/juno-shot.png",
-    ]);
+    // One exec, not two: a `docker exec` costs tens of milliseconds before it
+    // runs anything, and every step now captures at least twice while the
+    // screen settles. The script is a constant — nothing is interpolated.
+    const raw = await runDockerBuffer(screenshotArgv(handle.name));
     if (raw.exitCode !== 0 || raw.stdout.byteLength === 0) {
       throw new ComputerError(COMPUTER_NOT_RESPONDING, "screenshot was empty");
     }
@@ -551,6 +562,8 @@ export class DockerProvider implements ComputerProvider {
   }
 
   async key(handle: ComputerHandle, keys: string): Promise<void> {
+    const sequence = keySequence(keys);
+    if (sequence.length === 0) throw new ComputerError("Say which key to press.");
     await runDockerText([
       "exec",
       "--user",
@@ -561,7 +574,7 @@ export class DockerProvider implements ComputerProvider {
       "xdotool",
       "key",
       "--",
-      keys,
+      ...sequence,
     ]);
   }
 

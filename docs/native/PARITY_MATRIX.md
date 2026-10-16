@@ -22,7 +22,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 
 ## Summary
 
-349 routes: 226 native, 53 planned, 56 web only, 14 internal. 50 pages: on the Mac 37 native, 2 partial, 2 planned, 9 web only; on iOS 24 native, 9 partial, 8 planned, 9 web only.
+350 routes: 226 native, 54 planned, 56 web only, 14 internal. 50 pages: on the Mac 37 native, 2 partial, 2 planned, 9 web only; on iOS 24 native, 9 partial, 8 planned, 9 web only.
 
 | Feature | Pages (Mac) | Pages (iOS) | Routes native | Planned | Web only | Internal |
 |---|---|---|---|---|---|---|
@@ -38,7 +38,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 | [Connections](#connections) | 2/2 | 2/2 | 16 | 1 | 5 | 3 |
 | [Skills](#skills) | 4/4 | 2/4 (+1 partial) | 10 | 3 | 0 | 0 |
 | [Assistants](#assistants) | 1/1 | 0/1 | 2 | 1 | 0 | 0 |
-| [Tasks in chat](#tasks) | 2/2 | 0/2 (+2 partial) | 13 | 1 | 2 | 0 |
+| [Tasks in chat](#tasks) | 2/2 | 0/2 (+2 partial) | 13 | 2 | 2 | 0 |
 | [Automations](#automations) | 3/3 | 2/3 (+1 partial) | 5 | 0 | 0 | 0 |
 | [Permissions and this Mac as a host](#permissions) | 2/2 | 0/2 | 6 | 0 | 0 | 0 |
 | [Agents](#agents) | 4/4 | 4/4 | 18 | 8 | 1 | 0 |
@@ -378,6 +378,7 @@ The web retired its task pages: a task lives in its chat (Phase 5). `/api/tasks`
 | `/api/work/artifacts/[id]/download` | GET | Native | JunoWorkKit |  |
 | `/api/work/artifacts/[id]/preview` | GET | Web only |  | A spreadsheet deliverable as a grid for the browser; the Mac opens deliverables in Quick Look (register #58). |
 | `/api/work/runs/[id]/control` | POST | Native | JunoWorkKit |  |
+| `/api/work/runs/[id]/frames/[callId]` | GET | Planned |  | One step's screenshot from a cloud computer run, owner only, for the web filmstrip and the marked approval card (src/lib/computer/frames.ts). The apps do not draw the filmstrip or the approval frame yet. |
 | `/api/work/sessions` | GET, POST | Native | JunoWorkKit |  |
 | `/api/work/sessions/[id]` | GET, PATCH, DELETE | Native | JunoWorkKit |  |
 | `/api/work/sessions/[id]/answer` | POST | Native | JunoWorkKit |  |

@@ -71,6 +71,11 @@ export {
   type WorkTerminalReason,
   type WorkToolCandidate,
   type WorkToolDefinition,
+  type WorkToolFrame,
+  type WorkToolPoint,
+  type WorkToolPreview,
+  type WorkToolPreviewContext,
+  type WorkToolResult,
   type WorkToolTierId,
   type WorkValidationCheck,
   type WorkValidationResult,
@@ -185,6 +190,7 @@ export { evaluateEgress, hostMatches, normalizeHost, type EgressPolicy } from '.
  */
 export {
   DEFAULT_STREAM_SILENCE_MS,
+  IMAGE_PRUNE_BATCH,
   OMITTED_SCREENSHOT_MARKER,
   ProviderSilenceError,
   pruneOldMessageImages,
@@ -277,14 +283,26 @@ export {
 
 export {
   ARBITRARY_CODE_RISK,
+  MAX_WAIT_SECONDS,
   REMOTE_TOOL_NAMES,
+  SETTLE_INTERVAL_MS,
+  SETTLE_TIMEOUT_MS,
+  TARGET_CHANGED_TEXT,
+  computerFrameRef,
   computerTools,
+  describeClickTarget,
+  describeTypeTarget,
   isNavigationKeypress,
+  settleScreen,
   TAKEOVER_OVERLAP_TEXT,
   isSafeComputerWritePath,
   type ComputerExecOutcome,
   type ComputerFileEntryItem,
+  type ComputerPointTarget,
   type ComputerShotData,
+  type ComputerStoredFrame,
   type ComputerToolsDeps,
+  type ComputerZoomRegion,
+  type SettledShot,
 } from './computer-tools.js';
 
