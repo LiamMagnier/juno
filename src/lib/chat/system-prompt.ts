@@ -57,6 +57,13 @@ export interface SystemPromptOptions {
    */
   routineProposals?: boolean;
   /**
+   * The reply is an agent's, in its own thread or a room. Its routines are set
+   * up through `propose_setup_change` (and its brief tells it to suggest
+   * them), so ROUTINE_UNAVAILABLE_LINE, which says no routine can be made in
+   * this conversation, would contradict the tool it has.
+   */
+  agentThread?: boolean;
+  /**
    * The client renders Live UI views (```live-ui fences, docs/design/LIVE_UI.md):
    * the web, and native builds that declare the `live_ui` client feature.
    * Adds LIVE_UI_SECTION to the stable tier. Never on a voice turn.
@@ -332,7 +339,7 @@ You write the content; the USER picks the download format. Never say you attache
   // that cannot draw the card, a plain sentence pointing at Routines. Never a
   // task, which runs once.
   if (opts.routineProposals && !opts.voiceMode) parts.push(ROUTINE_SECTION);
-  else if (opts.taskHandoff && !opts.voiceMode) parts.push(ROUTINE_UNAVAILABLE_LINE);
+  else if (opts.taskHandoff && !opts.voiceMode && !opts.agentThread) parts.push(ROUTINE_UNAVAILABLE_LINE);
 
   // Interactive views: the one interactive-answer system, for clients that
   // draw them (the web, native builds declaring `live_ui`). Never on voice.

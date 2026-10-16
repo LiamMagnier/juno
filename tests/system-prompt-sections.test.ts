@@ -115,6 +115,9 @@ test("a recurring request is never routed to a task that runs once (G07)", () =>
   const tasksOnly = buildSystemPromptSections({ ...base, taskHandoff: true });
   assert.ok(tasksOnly.stable.includes(ROUTINE_UNAVAILABLE_LINE));
   assert.ok(!tasksOnly.stable.includes(ROUTINE_SECTION));
+  // An agent's thread makes its routines with propose_setup_change, so it is
+  // never told that no routine can be made in this conversation.
+  assert.ok(!buildSystemPromptSections({ ...base, taskHandoff: true, agentThread: true }).stable.includes(ROUTINE_UNAVAILABLE_LINE));
   // Neither tool: nothing about routines, so the cached head is unchanged.
   assert.doesNotMatch(buildSystemPromptSections(base).stable, /# Routines/);
   // Never on a voice turn.

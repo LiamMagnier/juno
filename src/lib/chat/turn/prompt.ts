@@ -103,6 +103,9 @@ export function composeTurnSystem({
     untrustedContent: untrustedContentInTurn,
     taskHandoff: taskToolOn,
     routineProposals: routineToolOn,
+    // An agent's thread sets its own routines up (`propose_setup_change`,
+    // and its brief says so), so it is never told routines cannot be made here.
+    agentThread: agentContext !== null && agentContext !== undefined,
     // Interactive views: the web always renders them; a native build only
     // when it says so (shipped builds would show raw JSON).
     liveUi: legacyChatClientForOrigin(input) === "web" || (input.clientFeatures?.includes("live_ui") ?? false),
