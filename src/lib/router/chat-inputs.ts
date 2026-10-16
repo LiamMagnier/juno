@@ -22,6 +22,7 @@ import { checkBudget, checkUsageWindows, type BillingPeriod } from "@/lib/spend"
 import { parsePaidTierAttestation } from "@/lib/router/data-policy";
 import { classifyTask, type TaskClass } from "@/lib/router/task-class";
 import { autoContextTokens, estimateAutoContext } from "./chat-context";
+import { ON_ACTIVE_PATH } from "@/lib/chat/branches";
 
 export { autoContextTokens } from "./chat-context";
 
@@ -80,7 +81,7 @@ export async function autoRoutingContext({
   const conversation = input.conversationId
     ? await prisma.conversation.findFirst({
         where: { id: input.conversationId, userId },
-        select: { id: true, projectId: true, activeConnectors: true, _count: { select: { messages: true } } },
+        select: { id: true, projectId: true, activeConnectors: true, _count: { select: { messages: { where: ON_ACTIVE_PATH } } } },
       })
     : null;
   const attachmentIds = [...new Set([
@@ -89,7 +90,7 @@ export async function autoRoutingContext({
   ])];
   const [history, attachments, lineage] = await Promise.all([
     conversation ? prisma.message.findMany({
-      where: { conversationId: conversation.id, conversation: { userId } },
+      where: { conversationId: conversation.id, conversation: { userId }, ...ON_ACTIVE_PATH },
       orderBy: { createdAt: "desc" },
       take: HISTORY_LIMIT + HISTORY_STEP - 1,
       select: {

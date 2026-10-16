@@ -105,6 +105,7 @@ import {
 } from "@/lib/research/view";
 import type { ResearchPlan } from "@/lib/research/domain";
 import type { ResearchRunSummary, ResearchRunViewAdditions, ResearchScope } from "@/types/research";
+import { ON_ACTIVE_PATH } from "@/lib/chat/branches";
 
 /**
  * The durable research job, wired to Postgres and to the real search backend.
@@ -919,7 +920,7 @@ export async function researchAccountFacts(userId: string, conversationId?: stri
 export async function conversationContextFor(conversationId: string | null | undefined, userId: string): Promise<string | null> {
   if (!conversationId) return null;
   const rows = await prisma.message.findMany({
-    where: { conversationId, conversation: { userId } },
+    where: { conversationId, conversation: { userId }, ...ON_ACTIVE_PATH },
     orderBy: { createdAt: "desc" },
     take: 6,
     select: { role: true, content: true },

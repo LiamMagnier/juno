@@ -36,6 +36,19 @@ export interface ImportedMessage {
   costMicroUsd?: number | null;
   sources?: unknown;
   activity?: unknown;
+  /**
+   * Its place in the conversation's branch tree, from a Juno export made with
+   * `?branches=all` (src/lib/chat/branches.ts): its own `id` in the export
+   * (which the pointers name; a re-exported import keeps a different
+   * `sourceId`), the export ids of the message it follows and of its group of
+   * alternatives, and whether it was on the shown branch. Absent on a linear
+   * export.
+   */
+  exportId?: string;
+  parentSourceId?: string | null;
+  branchGroupSourceId?: string | null;
+  onActivePath?: boolean;
+  branchSelected?: boolean;
 }
 
 export interface ImportedConversation {
@@ -424,6 +437,7 @@ function parseJunoConversation(item: Record<string, unknown>): ImportedConversat
     const feedback = entry.feedback === "UP" || entry.feedback === "DOWN" ? entry.feedback : null;
     const numberValue = (value: unknown) => (typeof value === "number" && Number.isInteger(value) ? value : null);
     const jsonValue = (value: unknown) => (value && typeof value === "object" ? value : null);
+    const idValue = (value: unknown) => (typeof value === "string" && value.length <= 200 ? value : null);
     raw.push({
       role,
       content: clampContent(text),
@@ -440,6 +454,15 @@ function parseJunoConversation(item: Record<string, unknown>): ImportedConversat
       costMicroUsd: numberValue(entry.costMicroUsd),
       sources: jsonValue(entry.sources),
       activity: jsonValue(entry.activity),
+      ...(typeof entry.onActivePath === "boolean"
+        ? {
+            ...(idValue(entry.id) ? { exportId: idValue(entry.id)! } : {}),
+            parentSourceId: idValue(entry.parentId),
+            branchGroupSourceId: idValue(entry.branchGroupId),
+            onActivePath: entry.onActivePath,
+            ...(typeof entry.branchSelected === "boolean" ? { branchSelected: entry.branchSelected } : {}),
+          }
+        : {}),
     });
   }
   if (raw.length === 0) return null;

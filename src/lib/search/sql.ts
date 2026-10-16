@@ -491,6 +491,9 @@ export function messageScanConversationsSql(
  * by `userId`, and the join re-checks ownership anyway. Message carries no
  * userId column of its own, so the join IS the scope — dropping it would make
  * this the one query in the file that reads another account's rows.
+ *
+ * Only the shown branch of each conversation (src/lib/chat/branches.ts): a
+ * result must open on a message the transcript actually shows.
  */
 export function messageScanSql(o: {
   userId: string;
@@ -509,6 +512,7 @@ export function messageScanSql(o: {
       FROM "Message" m
       JOIN "Conversation" c ON c."id" = m."conversationId"
      WHERE c."userId" = ${o.userId}
+       AND m."onActivePath" = true
        AND m."conversationId" IN (${Prisma.join(o.conversationIds)})${optional(
          o.since ? Prisma.sql`m."createdAt" >= ${o.since}` : null
        )}
@@ -656,13 +660,20 @@ export function recallPendingCountSql(o: { userId: string; version: number; keyI
   `;
 }
 
-/** The bodies of a few already-authorised candidates, for verification and excerpts. */
+/**
+ * The bodies of a few already-authorised candidates, for verification and
+ * excerpts. Only messages on their conversation's shown branch
+ * (src/lib/chat/branches.ts): a hidden alternative stays indexed, so it is
+ * found again when its branch is shown, but until then it has no body here
+ * and drops out like a deleted message.
+ */
 export function recallBodiesSql(o: { userId: string; messageIds: readonly string[] }): Prisma.Sql {
   return Prisma.sql`
     SELECT m."id", m."content"
       FROM "Message" m
       JOIN "Conversation" c ON c."id" = m."conversationId"
      WHERE c."userId" = ${o.userId}
+       AND m."onActivePath" = true
        AND m."id" IN (${Prisma.join([...o.messageIds])})
   `;
 }
