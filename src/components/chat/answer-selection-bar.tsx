@@ -145,6 +145,9 @@ function AnswerSelectionBarImpl({
   capturedRef.current = captured;
   // The quote this bar handed the composer, and the range it came from.
   const asked = React.useRef<{ quote: AnswerQuote; range: Range } | null>(null);
+  // Where Tab came from when it jumped into the bar, so leaving hands focus
+  // back there rather than to the top of the transcript.
+  const cameFrom = React.useRef<HTMLElement | null>(null);
   const coarse = React.useMemo(
     () => typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(pointer: coarse)").matches,
     [],
@@ -217,9 +220,21 @@ function AnswerSelectionBarImpl({
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented) return;
       const inBar = !!barRef.current?.contains(document.activeElement);
-      // Back to the transcript the selection was in, not to <body>.
-      const goHome = () => (captured.bounds ?? scopeRef.current)?.focus({ preventScroll: true });
-      if (e.key === "Escape") {
+      // A bar parked out of sight (its selection scrolled out of the
+      // transcript) claims no keys: a hidden button cannot take focus, so Tab
+      // would be swallowed, and Esc belongs to whatever is on screen.
+      const bar = barRef.current;
+      const shownNow = bar ? getComputedStyle(bar).visibility !== "hidden" : false;
+      // Back to where Tab came from when it entered the bar (a keyboard reader
+      // keeps their place); else to the transcript the selection was in, not
+      // to <body>.
+      const goHome = () => {
+        const back = cameFrom.current;
+        cameFrom.current = null;
+        if (back?.isConnected) back.focus({ preventScroll: true });
+        else (captured.bounds ?? scopeRef.current)?.focus({ preventScroll: true });
+      };
+      if (e.key === "Escape" && (inBar || shownNow)) {
         e.preventDefault();
         dismiss({ clearSelection: true });
         if (inBar) goHome();
@@ -237,8 +252,10 @@ function AnswerSelectionBarImpl({
       }
       if (e.key === "Tab" && !e.shiftKey && !e.altKey && !e.metaKey && !e.ctrlKey && !inBar && !isEditable(document.activeElement)) {
         const first = barRef.current?.querySelector<HTMLButtonElement>("button");
-        if (!first) return;
+        if (!first || !shownNow) return;
         e.preventDefault();
+        const from = document.activeElement;
+        cameFrom.current = from instanceof HTMLElement && from !== document.body ? from : null;
         first.focus();
       }
     };
