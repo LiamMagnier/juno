@@ -130,7 +130,14 @@ struct StudioAutonomySettings: View {
         HStack {
             Text(title)
             Spacer()
-            TextField("no limit", value: Binding(get: { value }, set: set), format: .number)
+            // The setter is called through a closure literal, never passed as
+            // the function value itself. `Binding.init(set:)` takes an
+            // `@isolated(any) @Sendable (Value) -> Void` with `Value` lowered
+            // indirectly, so handing it an already-`@MainActor` `(Int?) -> Void`
+            // needs a reabstraction thunk (`$sSiSgScA_pSgIeAghyg_AAIeAghn_TR`)
+            // that crashes Xcode 26's IRGen. A literal inherits the main actor
+            // and needs no thunk. The same fix as JunoMobileAttachmentMenu's.
+            TextField("no limit", value: Binding(get: { value }, set: { set($0) }), format: .number)
                 .textFieldStyle(.roundedBorder)
                 .frame(width: 72)
                 .multilineTextAlignment(.trailing)
