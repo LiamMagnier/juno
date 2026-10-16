@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { AudioLines, Loader2, Mic } from "@/components/ui/icons";
+import { GalaxyMark } from "@/components/brand/galaxy-mark";
+import { AudioLines, Mic } from "@/components/ui/icons";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -338,7 +339,7 @@ export function CodeSessionComposer({
                     className="hidden h-8 min-w-0 items-center gap-1.5 px-2 text-ui text-muted-foreground sm:flex coarse:h-10"
                   >
                     {resolving ? (
-                      <Loader2 className="size-3.5 shrink-0 animate-spin" aria-hidden="true" />
+                      <GalaxyMark phase="working" size={14} />
                     ) : isCloud ? (
                       <CodeIcons.cloud className="size-3.5 shrink-0" aria-hidden="true" />
                     ) : (

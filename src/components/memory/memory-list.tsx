@@ -19,6 +19,7 @@ import { DATE_BUCKETS, dateBucket, relativeTime } from "@/components/memory/memo
 import type { ProjectOption, ProjectOptions } from "@/components/memory/use-project-options";
 import type { RemovalKind } from "@/components/memory/use-deferred-removal";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { prefersReducedMotion } from "@/lib/motion-preference";
 
 /*
  * Everything Juno remembers, as one list.
@@ -226,7 +227,7 @@ export function MemoryList({
     const el = sectionRefs.current.get(id);
     if (!el) return;
     setCurrent(id);
-    el.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
+    el.scrollIntoView({ behavior: prefersReducedMotion() ? "auto" : "smooth", block: "start" });
   }, []);
   React.useImperativeHandle(handleRef, () => ({ jumpTo }), [jumpTo]);
 

@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { XCircle, ShieldAlert, Terminal, type IconComponent } from "@/components/ui/icons";
-import { PhaseOrb, type OrbState } from "@/components/effects/phase-orb";
+import { GalaxyMark } from "@/components/brand/galaxy-mark";
 import { cn } from "@/lib/utils";
 
 export type AgentRunStatus =
@@ -37,8 +37,8 @@ interface AgentStatusBadgeProps extends React.HTMLAttributes<HTMLDivElement> {
  *  - ATTENTION (needs input, needs approval, failed): a small icon and the
  *    words in the state's colour. Still no container: colour and the mark say
  *    it, and a filled capsule is what made every state look urgent.
- *  - IN PROGRESS (thinking, running, generating): a Thinking orb sized to the
- *    text line (the brand matrix for its first two seconds) and muted words.
+ *  - IN PROGRESS (thinking, running, generating): the galaxy, the one working
+ *    mark (GALAXY_SPEC.md), sized to the text line, and muted words.
  *  - NORMAL (ready, done, stopped): muted words, nothing else.
  *
  * Still `role="status"` with the full sentence as its name, so a screen
@@ -50,10 +50,10 @@ const ATTENTION: Partial<Record<AgentRunStatus, { Icon: IconComponent; text: str
   failed: { Icon: XCircle, text: "text-destructive-ink" },
 };
 
-const IN_PROGRESS: Partial<Record<AgentRunStatus, OrbState>> = {
-  thinking: "breathing",
+const IN_PROGRESS: Partial<Record<AgentRunStatus, "thinking" | "working">> = {
+  thinking: "thinking",
   running: "working",
-  streaming: "composing",
+  streaming: "working",
 };
 
 const LABEL: Record<AgentRunStatus, string> = {
@@ -98,7 +98,7 @@ export function AgentStatusBadge({
       {attention ? (
         <attention.Icon aria-hidden="true" className="size-3.5 shrink-0" />
       ) : orb ? (
-        <PhaseOrb state={orb} className="-my-1" />
+        <GalaxyMark phase={orb} size={size === "lg" ? 16 : 14} />
       ) : null}
       <span className="truncate">{displayLabel}</span>
       {subtext && <span className="truncate text-muted-foreground">{subtext}</span>}

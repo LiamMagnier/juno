@@ -6,6 +6,7 @@ import {
   anchoredTranscriptTop, transcriptAnchor, transcriptLayout, transcriptWindow,
   TRANSCRIPT_FOCUS_EVENT, type TranscriptAnchor,
 } from "@/lib/chat/transcript-window";
+import { prefersReducedMotion } from "@/lib/motion-preference";
 
 const GAP = 24;
 /**
@@ -109,7 +110,7 @@ export function useTranscriptWindow(
   const follow = React.useCallback((instant = false) => {
     const el = scrollRef.current;
     if (!el) return;
-    const reduce = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    const reduce = prefersReducedMotion();
     if (instant || reduce) {
       if (glideRef.current) cancelAnimationFrame(glideRef.current);
       glideRef.current = 0;

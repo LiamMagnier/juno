@@ -1,16 +1,22 @@
 import Observation
 import SwiftUI
 
-/// The six accents the account can choose between, converted from the web's
+/// The seven accents the account can choose between, converted from the web's
 /// `[data-accent]` blocks in `src/app/globals.css`.
 ///
-/// Each one drives `--primary` and `--ring` there, and four of the six carry a
+/// Each one drives `--primary` and `--ring` there, and most carry a
 /// *different* value in dark mode — a teal that reads at 31.5% lightness on
-/// paper disappears on a warm near-black. Both values are kept here for that
+/// paper disappears on a near-black. Both values are kept here for that
 /// reason; taking the light one for both is what makes a themed app look like it
 /// only half-supports its own themes.
+///
+/// The cases are the web's `ACCENT_IDS` (`src/lib/accents.ts`), in its order:
+/// `npm run design:tokens:check` fails when the two lists differ. Ultramarine
+/// was offered on the web for a release while this enum had six cases, so an
+/// account that chose it read as Graphite on the Mac and the phone.
 public enum JunoAccent: String, CaseIterable, Sendable, Identifiable {
     case coral
+    case ultramarine
     case juniper
     case teal
     case violet
@@ -23,6 +29,7 @@ public enum JunoAccent: String, CaseIterable, Sendable, Identifiable {
     public var displayName: String {
         switch self {
         case .coral: "Graphite"
+        case .ultramarine: "Ultramarine"
         case .juniper: "Juniper"
         case .teal: "Teal"
         case .violet: "Violet"

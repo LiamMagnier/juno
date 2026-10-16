@@ -1,11 +1,12 @@
 "use client";
 
 import * as React from "react";
-import { LazyMotion, domAnimation, m, useMotionValueEvent, useReducedMotion, useScroll, useTransform, useInView } from "framer-motion";
+import { LazyMotion, domAnimation, m, useMotionValueEvent, useScroll, useTransform, useInView } from "framer-motion";
 import { RotateCcw } from "@/components/ui/icons";
 import { PublicAction } from "@/components/public/public-motion";
 import { Construction } from "./construction";
 import { ProductWindow } from "./product-window";
+import { useReducedMotion } from "@/lib/motion-preference";
 
 /**
  * The hero is one continuous move. At rest: the promise, the construction

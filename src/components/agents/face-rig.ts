@@ -19,6 +19,8 @@
  * not follow a coarse pointer (there is no hover on touch).
  */
 
+import { prefersReducedMotion } from "@/lib/motion-preference";
+
 type RigState = string;
 
 interface Entry {
@@ -61,10 +63,6 @@ let pointer: { x: number; y: number; at: number } | null = null;
 let frame = 0;
 let observer: IntersectionObserver | null = null;
 let listening = false;
-
-function prefersReducedMotion(): boolean {
-  return typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-}
 
 function finePointer(): boolean {
   return typeof window !== "undefined" && !window.matchMedia?.("(pointer: coarse)").matches;

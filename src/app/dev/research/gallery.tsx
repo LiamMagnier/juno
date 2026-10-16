@@ -272,7 +272,7 @@ export function ResearchGallery() {
   }, [locale, accent, textSize]);
 
   return (
-    <div dir={dir} data-motion={reduced === "on" ? "reduce" : undefined} className="min-h-dvh bg-background text-foreground">
+    <div dir={dir} data-motion={reduced === "on" ? "reduced" : undefined} className="min-h-dvh bg-background text-foreground">
       <header className="sticky top-0 z-10 space-y-2 border-b border-border/70 bg-background/95 px-4 py-3 backdrop-blur-sm">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h1 className="text-heading font-semibold">Research — dev gallery</h1>

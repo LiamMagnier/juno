@@ -7,6 +7,7 @@ import { ContinuumMark } from "@/components/brand/continuum-mark";
 import { GalaxyMark } from "@/components/brand/galaxy-mark";
 import type { Provider } from "@/lib/providers";
 import { DotRings } from "./dot-construction";
+import { prefersReducedMotion } from "@/lib/motion-preference";
 
 /**
  * From a question to finished work: one wide stage, three scenes. The tabs
@@ -158,7 +159,7 @@ export function Showcase({ labs, modelsFloor, totalLabs }: { labs: Lab[]; models
   const ref = React.useRef<HTMLElement>(null);
 
   React.useEffect(() => {
-    setReduce(window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+    setReduce(prefersReducedMotion());
     const el = ref.current;
     if (!el) return;
     const io = new IntersectionObserver(([e]) => setVisible(e.isIntersecting), { threshold: 0.45 });

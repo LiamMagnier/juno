@@ -8,15 +8,13 @@
 .mem {
   --mem-line: hsl(var(--foreground) / 0.12);
   --mem-hair: hsl(var(--foreground) / 0.07);
-  --mem-presence: #2d49c9;
-  --mem-presence-soft: rgb(45 73 201 / 0.1);
+  --mem-presence-soft: hsl(var(--presence) / 0.1);
   --mem-ease: cubic-bezier(0.16, 1, 0.3, 1);
 }
 .dark .mem {
   --mem-line: hsl(var(--foreground) / 0.14);
   --mem-hair: hsl(var(--foreground) / 0.08);
-  --mem-presence: #97a6e6;
-  --mem-presence-soft: rgb(151 166 230 / 0.12);
+  --mem-presence-soft: hsl(var(--presence) / 0.12);
 }
 
 /* Type */
@@ -74,8 +72,8 @@
 .dark .mem-dots { --dots-strength: 0.82; }
 .mem-node { fill: hsl(var(--foreground)); transition: transform 320ms var(--mem-ease), fill 200ms; transform-box: fill-box; transform-origin: center; }
 .mem-node-hit { fill: transparent; cursor: pointer; }
-.mem-node-ring { fill: none; stroke: var(--mem-presence); stroke-width: 1; vector-effect: non-scaling-stroke; }
-.mem-node-live { fill: var(--mem-presence); }
+.mem-node-ring { fill: none; stroke: hsl(var(--presence)); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.mem-node-live { fill: hsl(var(--presence)); }
 .mem-center { fill: hsl(var(--foreground)); }
 .mem-label {
   fill: hsl(var(--muted-foreground));
@@ -118,7 +116,7 @@
   50% { opacity: 0.15; transform: scale(1.6); }
 }
 
-.mem-new { color: var(--mem-presence); }
+.mem-new { color: hsl(var(--presence-ink)); }
 
 /* Rows enter in sequence the first time their section scrolls in; rows that
    arrive later (Show all, an Undo) play the list's own unfold instead. */

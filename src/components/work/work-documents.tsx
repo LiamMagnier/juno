@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { ChevronRight, Link2, Loader2 } from "@/components/ui/icons";
+import { GalaxyMark } from "@/components/brand/galaxy-mark";
+import { ChevronRight, Link2 } from "@/components/ui/icons";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Collapse } from "@/components/ui/collapse";
@@ -325,7 +326,7 @@ function DocumentCard({ artifact }: { artifact: ClientWorkArtifact }) {
         <div className="space-y-1.5 border-t border-border/60 px-3 py-2.5">
           {loading && detail === null ? (
             <p className="flex items-center gap-1.5 font-mono text-micro text-muted-foreground">
-              <Loader2 className="size-3 animate-spin" aria-hidden="true" /> Checking the file…
+              <GalaxyMark phase="working" size={12} /> Checking the file…
             </p>
           ) : failed && detail === null ? (
             <div className="flex flex-wrap items-center gap-2">
@@ -353,7 +354,7 @@ function DocumentCard({ artifact }: { artifact: ClientWorkArtifact }) {
       <Collapse open={open} innerClassName="border-t border-border/60 px-3 py-2.5">
         {loading ? (
           <p className="flex items-center gap-1.5 font-mono text-micro text-muted-foreground">
-            <Loader2 className="size-3 animate-spin" aria-hidden="true" /> Reading its history…
+            <GalaxyMark phase="working" size={12} /> Reading its history…
           </p>
         ) : failed ? (
           <div className="flex flex-wrap items-center gap-2">

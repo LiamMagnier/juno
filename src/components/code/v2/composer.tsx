@@ -40,6 +40,7 @@ import { matchSkills, readCodeSkillInvocation, type CodeSkillChoice } from "@/li
 import { ComposerPopover, Glyph, MenuList, ModelMark, useIsMac, type MenuEntry } from "./primitives";
 import type { WorkspaceModel } from "./types";
 import { cn } from "@/lib/utils";
+import { useHeightSwap } from "@/lib/use-height-swap";
 
 /** `model` opens the model chip on its effort stage; `catalog` on the model list. */
 export type PopoverName = "model" | "catalog" | "context" | "team" | "overflow" | "attach" | "queue" | "device" | "mode" | "skills" | null;
@@ -272,6 +273,7 @@ export const Composer = React.forwardRef<
   const [roleTab, setRoleTab] = React.useState<RoleTab>("lead");
   const textarea = React.useRef<HTMLTextAreaElement>(null);
   const footRef = React.useRef<HTMLDivElement>(null);
+  const shellRef = React.useRef<HTMLDivElement>(null);
   const stripRef = React.useRef<HTMLDivElement>(null);
   const fileInput = React.useRef<HTMLInputElement>(null);
 
@@ -501,6 +503,11 @@ export const Composer = React.forwardRef<
   const effort = effectiveEffort(instances, selection);
   const toggle = (p: PopoverName) => setPopover(popover === p ? null : p);
 
+  // An approval, a plan or a limit takes the textarea's place: the box eases
+  // to its new height instead of jumping (and moving the thread above it).
+  const bodyKind = pending.length ? "approval" : plan && !revising ? "plan" : model.state === "limited" && instance ? "limited" : "draft";
+  useHeightSwap(shellRef, bodyKind);
+
   // ── Child thread (a subagent in full view) ──
   if (model.child) {
     return (
@@ -626,7 +633,7 @@ export const Composer = React.forwardRef<
     <div className="cv2-cstack">
       <DictationSwap active={dictating} draft={draft} onCancel={() => setDictating(false)} onClose={closeDictation}>
       <VoiceComposerGlow call={call}>
-      <div className={cn("cv2-composer", tone, call && "voice-glow-host")} data-state={tone || (running ? "running" : "idle")}>
+      <div ref={shellRef} className={cn("cv2-composer", tone, call && "voice-glow-host")} data-state={tone || (running ? "running" : "idle")}>
         {menuOpen && trigger && (
           <div className="cv2-menu-anchor">
             <div className="cv2-pop" role="listbox" aria-label={trigger.kind === "slash" ? "Commands" : "Mentions"}>

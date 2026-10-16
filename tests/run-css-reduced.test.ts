@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 import test from "node:test";
+import postcss, { type AcceptedPlugin } from "postcss";
+
+const motionPreference = createRequire(path.join(process.cwd(), "package.json"))("./postcss/motion-preference.cjs") as AcceptedPlugin;
 
 /*
  * The run UI's CSS under reduced motion (SPEC §7.9, U5).
@@ -22,7 +26,9 @@ function customProperties(block: string): string[] {
 
 /** The unlayered `@media (prefers-reduced-motion: reduce)` block for the run UI, dedented. */
 function reducedBlock(): string {
-  const start = css.indexOf("@media (prefers-reduced-motion: reduce) {\n  .run-sweep__window");
+  const heading = css.indexOf("The run UI's loops under the preference");
+  assert.notEqual(heading, -1, "the run UI's reduced-motion block is missing");
+  const start = css.indexOf("@media (prefers-reduced-motion: reduce) {", heading);
   assert.notEqual(start, -1, "the run UI's reduced-motion block is missing");
   const body = css.slice(css.indexOf("{", start) + 1, css.indexOf("\n}\n", start));
   return body
@@ -32,16 +38,11 @@ function reducedBlock(): string {
     .trim();
 }
 
-/** The gallery's `[data-motion="reduce"]` root rule and the prefixed copy that follows it. */
-function galleryCopy(): { root: string; rules: string } {
-  const start = css.indexOf('[data-motion="reduce"] {\n');
-  assert.notEqual(start, -1, "the gallery copy is missing");
-  const end = css.indexOf("\n}\n", start);
-  return {
-    root: css.slice(start, end + 2),
-    rules: css.slice(end + 3).trim().replaceAll('[data-motion="reduce"] ', ""),
-  };
+/** globals.css through the in-app motion compiler (postcss/motion-preference.cjs), as the build runs it. */
+function compiled(): string {
+  return postcss([motionPreference]).process(css, { from: undefined }).css;
 }
+const REDUCED_SCOPE = ':where([data-motion^="reduce"], [data-motion^="reduce"] *)';
 
 test("the run tokens, the z rung and the print rule landed", () => {
   for (const token of ["--loop-beat: 1.2s;", "--loop: 2.4s;", "--loop-calm: 4.8s;", "--z-panel: 30;", "--spring-pop-dur: 370ms;"]) {
@@ -51,18 +52,27 @@ test("the run tokens, the z rung and the print rule landed", () => {
   assert.match(css, /@media print \{ \[data-print-document\] a\[href\^="http"\]::after \{ content: " \(" attr\(href\) "\)"; \} \}/);
 });
 
-test("the gallery's reduced-motion copy is the media block, prefixed", () => {
-  assert.equal(galleryCopy().rules, reducedBlock());
+test("the in-app and gallery twin of the run UI's reduced block is compiled, not hand-kept", () => {
+  // The hand-kept `[data-motion="reduce"]` copy drifted; the build now derives it.
+  assert.doesNotMatch(withoutComments(css), /\[data-motion="reduce"\] \.run-/, "a hand-kept gallery copy is back");
+  const out = compiled();
+  for (const selector of [".run-peek__list", ".run-collapse"]) {
+    const [first, ...rest] = selector.split(" ");
+    const head = first.includes("::") ? first.replace("::", `${REDUCED_SCOPE}::`) : `${first}${REDUCED_SCOPE}`;
+    assert.ok(out.includes([head, ...rest].join(" ")), `${selector} has no in-app reduced twin`);
+  }
 });
 
-test("the gallery's reduced-motion tokens are the preference's", () => {
+test("the in-app reduced tokens are the preference's", () => {
   // The real preference also shortens the slow duration and flattens every curve with travel;
-  // setting only --motion-shift would let the gallery approve motion reduced-motion users never see.
+  // setting only --motion-shift would let the app (or a gallery) approve motion reduced-motion users never see.
   const base = /@media \(prefers-reduced-motion: reduce\) \{\s*:root \{([^}]*)\}/.exec(css);
   assert.ok(base, "the reduced :root block in the base layer is missing");
   const preference = customProperties(base[1]);
   assert.ok(preference.includes("--motion-shift: 0"));
-  assert.deepEqual(customProperties(galleryCopy().root), preference);
+  const twin = /\n\s*\[data-motion\^="reduce"\] \{([^}]*)\}/.exec(compiled());
+  assert.ok(twin, "no compiled [data-motion^=reduce] token block");
+  assert.deepEqual(customProperties(twin[1]), preference);
 });
 
 test("no reduced-motion loop runs offscreen", () => {
@@ -77,14 +87,16 @@ test("no reduced-motion loop runs offscreen", () => {
       assert.match(one, /:not\(\[data-offscreen\]\)/, `${one.trim()} can loop offscreen`);
     }
   }
-  assert.ok(loops >= 2, "the glyph breath and the marker breath");
+  // The marker's breath. The run's working mark is the galaxy, a canvas that
+  // draws one still frame under the preference (galaxy-mark.tsx), so it has no rule here.
+  assert.ok(loops >= 1, "the marker breath");
 });
 
 // ── WS5: every loop has a reduced rule and an offscreen pause ─────────────────
 
-/** The run UI's component rules: from the glyph's heading to the end of that layer block. */
+/** The run UI's component rules: from the working-mark note to the end of that layer block. */
 function runComponents(): string {
-  const start = css.indexOf("/* ── Run glyph (Concept A)");
+  const start = css.indexOf("/* The working mark is the galaxy (run-galaxy.tsx");
   assert.notEqual(start, -1, "the run components block is missing");
   return css.slice(start, css.indexOf("\n}\n", start));
 }
@@ -95,18 +107,6 @@ function runComponents(): string {
  * that pauses it offscreen, or while it does not own the loop.
  */
 const LOOPS: Record<string, { reduced: string; offscreen: string }> = {
-  "run-lit": { reduced: ".run-glyph > i::after { animation: none; }", offscreen: ".run-glyph[data-offscreen] > i::after" },
-  "run-lit-bar": { reduced: ".run-glyph > i::after { animation: none; }", offscreen: ".run-glyph[data-offscreen] > i::after" },
-  "run-lit-type": { reduced: ".run-glyph > i::after { animation: none; }", offscreen: ".run-glyph[data-offscreen] > i::after" },
-  "run-sweep-window": {
-    reduced: ".run-sweep__window { display: none; }",
-    offscreen: ".run-sweep[data-offscreen] :is(.run-sweep__window, .run-sweep__text--hi) { animation-play-state: paused; }",
-  },
-  "run-sweep-counter": {
-    // The full-ink copy lives inside the window, which is hidden.
-    reduced: ".run-sweep__window { display: none; }",
-    offscreen: ".run-sweep[data-offscreen] :is(.run-sweep__window, .run-sweep__text--hi) { animation-play-state: paused; }",
-  },
   "run-breathe": {
     reduced: ".run-marker[data-state=\"running\"]:not([data-loop=\"off\"]):not([data-offscreen])::before {\n  animation-name: run-breathe-opacity;",
     offscreen: ".run-marker[data-state=\"running\"]:is([data-loop=\"off\"], [data-offscreen])::before { animation: none;",
@@ -121,7 +121,7 @@ test("every loop in the run components has a reduced rule and an offscreen pause
     if (name.startsWith("run-")) used.add(name);
   }
   for (const [, name] of block.matchAll(/--lit-name:\s*(run-[\w-]+)/g)) used.add(name);
-  assert.ok(used.size >= 5, `found ${[...used].join(", ")}`);
+  assert.ok(used.size >= 1, `found ${[...used].join(", ")}`);
   const reduced = reducedBlock();
   for (const name of used) {
     const rule = LOOPS[name];

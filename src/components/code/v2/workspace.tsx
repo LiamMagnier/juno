@@ -27,6 +27,7 @@ import { openSettings as openAppSettings } from "@/components/settings/settings-
 import { Thread, ThreadSkeleton, type DockRequest } from "./thread";
 import type { WorkspaceModel, WorkspaceUiState } from "./types";
 import { cn } from "@/lib/utils";
+import { useLatest, usePresence } from "@/lib/use-presence";
 import type { ByokClient } from "@/lib/code-v2/byok-client";
 import type { ProviderInstance } from "@/lib/code-v2/contracts";
 
@@ -75,7 +76,20 @@ export interface CodeWorkspaceProps {
   className?: string;
 }
 
-function Palette({ onClose, onRun, threads, onOpenThread }: { onClose: () => void; onRun: (command: string) => void; threads: { id: string; title: string }[]; onOpenThread: (id: string) => void }) {
+/**
+ * A surface leaving (usePresence): `data-state="closed"` plays its exit in
+ * code-v2.css at about 0.65x the entrance on the accelerate curve, and the
+ * animation's end unmounts it.
+ */
+type ExitProps = { state: "open" | "closed"; onAnimationEnd: (event: React.AnimationEvent<Element>) => void };
+
+const exitOf = (p: ReturnType<typeof usePresence>): ExitProps => ({ state: p.closing ? "closed" : "open", onAnimationEnd: p.onAnimationEnd });
+
+/** Upper bounds for the exits in code-v2.css (0.65 x --dur-mid / --dur-wide); the animation's end normally unmounts first. */
+const EXIT_MID_MS = 160;
+const EXIT_WIDE_MS = 220;
+
+function Palette({ onClose, onRun, threads, onOpenThread, exit }: { onClose: () => void; onRun: (command: string) => void; threads: { id: string; title: string }[]; onOpenThread: (id: string) => void; exit: ExitProps }) {
   const mac = useIsMac();
   const [q, setQ] = React.useState("");
   const [hi, setHi] = React.useState(0);
@@ -88,11 +102,14 @@ function Palette({ onClose, onRun, threads, onOpenThread }: { onClose: () => voi
   ].filter((r) => !q.trim() || r.label.toLowerCase().includes(q.trim().toLowerCase()));
   return (
     <>
-      <div className="cv2-scrim" style={{ background: "transparent" }} onClick={onClose} aria-hidden />
+      <div className="cv2-scrim" style={{ background: "transparent" }} data-state={exit.state} onClick={onClose} aria-hidden />
       <div
         className="cv2-palette"
         role="dialog"
         aria-label="Command palette"
+        data-state={exit.state}
+        inert={exit.state === "closed"}
+        onAnimationEnd={exit.onAnimationEnd}
         onKeyDown={(e) => {
           if (e.key === "Escape") onClose();
           else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
@@ -141,12 +158,21 @@ function Palette({ onClose, onRun, threads, onOpenThread }: { onClose: () => voi
   );
 }
 
-function Shortcuts({ onClose }: { onClose: () => void }) {
+function Shortcuts({ onClose, exit }: { onClose: () => void; exit: ExitProps }) {
   const mac = useIsMac();
   return (
     <>
-      <div className="cv2-scrim" onClick={onClose} aria-hidden />
-      <div className="cv2-sheet narrow" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts" onKeyDown={(e) => e.key === "Escape" && onClose()}>
+      <div className="cv2-scrim" data-state={exit.state} onClick={onClose} aria-hidden />
+      <div
+        className="cv2-sheet narrow"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Keyboard shortcuts"
+        data-state={exit.state}
+        inert={exit.state === "closed"}
+        onAnimationEnd={exit.onAnimationEnd}
+        onKeyDown={(e) => e.key === "Escape" && onClose()}
+      >
         <div className="cv2-page">
           <div className="cv2-row">
             <h1 className="cv2-h1 cv2-grow">Keyboard</h1>
@@ -188,6 +214,11 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
   const [composerFocus, setComposerFocus] = React.useState(false);
   const [hidden, setHidden] = React.useState(false);
   const [toast, setToast] = React.useState<string | null>(null);
+  const palettePresence = usePresence(palette, EXIT_MID_MS);
+  const shortcutsPresence = usePresence(shortcuts, EXIT_WIDE_MS);
+  const dockPresence = usePresence(dock.open, EXIT_WIDE_MS);
+  const toastPresence = usePresence(toast !== null, EXIT_MID_MS);
+  const toastText = useLatest(toast);
   const composer = React.useRef<ComposerHandle>(null);
   const escArmed = React.useRef<number | null>(null);
   const headRef = React.useRef<HTMLDivElement>(null);
@@ -465,7 +496,7 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
   }, []);
   if (settings) {
     return (
-      <div className={cn("cv2 cv2-app", !(sidebar && sideOpen) && "no-side", className)} data-reduced-motion={ui.reducedMotion ? "true" : undefined}>
+      <div className={cn("cv2 cv2-app", !(sidebar && sideOpen) && "no-side", className)} data-motion={ui.reducedMotion ? "reduced" : undefined}>
         {sidebar && sideOpen && <SettingsSidebar pane={settings} onPane={setSettings} onBack={() => setSettings(null)} />}
         <main className="cv2-main" aria-label="Settings">
           <div className="cv2-left">
@@ -508,7 +539,7 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
   return (
     <div
       className={cn("cv2 cv2-app", !(sidebar && sideOpen) && "no-side", className)}
-      data-reduced-motion={ui.reducedMotion ? "true" : undefined}
+      data-motion={ui.reducedMotion ? "reduced" : undefined}
       data-hidden={hidden ? "true" : undefined}
       data-composer-focus={composerFocus ? "true" : undefined}
     >
@@ -612,10 +643,11 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
           </div>
         </div>
         </div>
-          {dock.open && (
+          {dockPresence.mounted && (
             <>
-              <div className="cv2-scrim cv2-only-overlay" onClick={() => dispatch({ type: "close" })} aria-hidden />
+              <div className="cv2-scrim cv2-only-overlay" data-state={dockPresence.closing ? "closed" : "open"} onClick={() => dispatch({ type: "close" })} aria-hidden />
               <Dock
+                exit={exitOf(dockPresence)}
                 model={model}
                 dock={dock}
                 dispatch={dispatch}
@@ -629,15 +661,16 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
             </>
           )}
       </main>
-      {palette && (
+      {palettePresence.mounted && (
         <Palette
+          exit={exitOf(palettePresence)}
           onClose={() => setPalette(false)}
           onRun={(c) => run(c)}
           threads={(model.threads ?? []).filter((t) => t.id !== model.thread.id).map((t) => ({ id: t.id, title: t.title }))}
           onOpenThread={(id) => model.actions.openThread?.(id)}
         />
       )}
-      {shortcuts && <Shortcuts onClose={() => setShortcuts(false)} />}
+      {shortcutsPresence.mounted && <Shortcuts exit={exitOf(shortcutsPresence)} onClose={() => setShortcuts(false)} />}
       {connections && (
         <ConnectionsPanel
           sheet
@@ -659,9 +692,9 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
           }}
         />
       )}
-      {toast && (
-        <div className="cv2-toast" role="status">
-          {toast}
+      {toastPresence.mounted && (
+        <div className="cv2-toast" role="status" data-state={toastPresence.closing ? "closed" : "open"} onAnimationEnd={toastPresence.onAnimationEnd}>
+          {toastText}
         </div>
       )}
     </div>

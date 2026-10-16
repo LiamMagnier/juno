@@ -58,12 +58,9 @@ export function ComposerAttachmentTray({
  * The "+" menu: photos, files, library.
  *
  * The shared 32px flat icon button; the plus turns into a × while the menu is
- * open, which is the only motion the trigger makes. That is why the glyph
- * opts out of its default hover `turn` (`motion="none"`): a plus that spun a
- * quarter on hover and then an eighth on open would be two gestures saying
- * one thing — and the articulation's own `transition` on `svg.icon[data-motion]`
- * outranks the `transition-transform` below, so while it was on, the open
- * rotation snapped instead of turning.
+ * open, which is the only motion the trigger makes: composer controls carry
+ * no hover articulation (juno-icons/icons.css plays it on destinations only),
+ * so the open rotation below is the glyph's one gesture.
  */
 export function ComposerAddMenu({
   open,

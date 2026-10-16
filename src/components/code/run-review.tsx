@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { GalaxyMark } from "@/components/brand/galaxy-mark";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { CornerDownRight, GitCompare, Loader2, Send } from "@/components/ui/icons";
@@ -329,7 +330,7 @@ export function RunReviewPane({
 
       {detail.loading ? (
         <div className="flex flex-1 items-center justify-center p-8">
-          <Loader2 className="size-4 animate-spin text-muted-foreground" aria-hidden="true" />
+          <GalaxyMark phase="working" size={16} className="text-muted-foreground" />
           <span className="sr-only">Loading changes</span>
         </div>
       ) : files.length === 0 ? (

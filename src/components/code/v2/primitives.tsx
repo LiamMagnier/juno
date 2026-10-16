@@ -6,14 +6,17 @@
  * narrow), menus with submenu panes, the segmented control, keycaps.
  */
 import * as React from "react";
-import { motion, useReducedMotion } from "framer-motion";
+import { motion } from "framer-motion";
 import { Icon } from "@/components/ui/juno-icons";
 import { ProviderLogo } from "@/components/brand/provider-logo";
 import { ContinuumMark } from "@/components/brand/continuum-mark";
+import { GalaxyMark } from "@/components/brand/galaxy-mark";
 import { instanceMark, modelLab } from "@/lib/code-v2/providers-view";
 import type { ProviderInstance } from "@/lib/code-v2/contracts";
 import { formatKey } from "@/lib/code-v2/keymap";
 import { cn } from "@/lib/utils";
+import { useReducedMotion } from "@/lib/motion-preference";
+import { usePresence } from "@/lib/use-presence";
 
 export function Glyph({ name, size = 16, className, spin, title }: { name: string; size?: number; className?: string; spin?: boolean; title?: string }) {
   return (
@@ -23,9 +26,23 @@ export function Glyph({ name, size = 16, className, spin, title }: { name: strin
   );
 }
 
-/** Spinner glyph: the icon set's loader turning (static under reduced motion). */
+/**
+ * Spinner glyph: the icon set's loader turning (static under reduced motion).
+ * Only inside the button that was just pressed; work that is running anywhere
+ * else shows the galaxy (LiveMark).
+ */
 export function Spinner({ size = 16, className }: { size?: number; className?: string }) {
   return <Glyph name="loading" size={size} spin className={className} />;
+}
+
+/**
+ * The working mark beside a live row: the galaxy (docs/design/GALAXY_SPEC.md),
+ * the same one Chat and Work draw, turning only while the work is real. It
+ * replaced the T3-style shine that swept the live verb: the verb now sits
+ * still in the first ink and the galaxy is the one moving thing.
+ */
+export function LiveMark({ size = 14, className }: { size?: number; className?: string }) {
+  return <GalaxyMark phase="working" size={size} className={cn("cv2-mark", className)} />;
 }
 
 export function InstanceMark({ instance, size = 16, className }: { instance: Pick<ProviderInstance, "id" | "kind" | "acpCommand">; size?: number; className?: string }) {
@@ -115,7 +132,11 @@ export function ComposerPopover({
   const ref = useDismiss(open, onClose, anchorRef);
   const drag = React.useRef<{ y: number; t: number } | null>(null);
   const [dy, setDy] = React.useState(0);
-  if (!open) return null;
+  // It stays mounted for its exit (0.65 x the entrance, accelerating), so a
+  // menu leaves the way it arrived instead of vanishing.
+  const presence = usePresence(open, 240);
+  if (!presence.mounted) return null;
+  const state = presence.closing ? "closed" : "open";
   const onPointerDown = (e: React.PointerEvent) => {
     if (window.innerWidth > 760) return;
     drag.current = { y: e.clientY, t: performance.now() };
@@ -137,11 +158,14 @@ export function ComposerPopover({
   };
   return (
     <>
-      <div className="cv2-pop-scrim" onClick={onClose} aria-hidden />
+      <div className="cv2-pop-scrim" data-state={state} onClick={onClose} aria-hidden />
       <div
         ref={ref}
         role={role}
         aria-label={label}
+        data-state={state}
+        inert={presence.closing}
+        onAnimationEnd={presence.onAnimationEnd}
         className={cn("cv2-pop", down && "down", className)}
         style={{
           width,

@@ -3,6 +3,7 @@
 import * as React from "react";
 import { useCanvasRenderer } from "@/hooks/use-canvas-renderer";
 import { cn } from "@/lib/utils";
+import { prefersReducedMotion } from "@/lib/motion-preference";
 
 /**
  * A faint dotted grid background. Sizes to its own box; honors
@@ -73,7 +74,7 @@ export function DotField({
 
   React.useEffect(() => {
     const canvas = ref.current;
-    if (!canvas || !interactive || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    if (!canvas || !interactive || prefersReducedMotion()) return;
     let raf = 0;
     let lastMove = 0;
     let lastSample = 0;

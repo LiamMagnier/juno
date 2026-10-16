@@ -11,6 +11,7 @@
  */
 
 import * as React from "react";
+import type { MotionPref as MotionPreference } from "@/lib/motion-preference";
 import {
   DEFAULT_VOICE_REASONING_EFFORT,
   VOICE_REASONING_EFFORTS,
@@ -19,7 +20,8 @@ import {
 
 export type ChatFont = "default" | "system" | "serif" | "mono";
 export type TranscriptWidth = "narrow" | "medium" | "wide";
-export type MotionPref = "system" | "reduced";
+/** System follows the OS; Reduced and Full override it either way (lib/motion-preference.ts). */
+export type MotionPref = MotionPreference;
 export type SendKey = "enter" | "mod-enter";
 
 export interface UiPrefs {
@@ -78,7 +80,7 @@ function sanitize(raw: unknown): UiPrefs {
   };
   pick("chatFont", ["default", "system", "serif", "mono"]);
   pick("transcriptWidth", ["narrow", "medium", "wide"]);
-  pick("motion", ["system", "reduced"]);
+  pick("motion", ["system", "reduced", "full"]);
   pick("sendKey", ["enter", "mod-enter"]);
   pick("voiceEffort", VOICE_REASONING_EFFORTS);
   pick("voiceGeminiEffort", ["low", "medium", "high"]);

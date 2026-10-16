@@ -8,6 +8,7 @@ import {
   type AuraDrive,
   type AuraState,
 } from "@/lib/aura";
+import { prefersReducedMotion, subscribeReducedMotion } from "@/lib/motion-preference";
 
 /**
  * The light around the bottom of the window that says what the product is doing.
@@ -418,16 +419,15 @@ export function AmbientAura() {
     if (!ctx) return;
 
     const hasMatchMedia = typeof window.matchMedia === "function";
-    const reducedQuery = hasMatchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
-    // Read into a variable rather than consulted through the MediaQueryList on
-    // every frame, and kept current by a `change` listener: the previous
-    // version captured the value at effect setup and never re-read it, so
-    // flipping the OS preference mid-session did nothing at all.
-    let reduced = reducedQuery?.matches ?? false;
-    const onReducedChange = (e: MediaQueryListEvent) => {
-      reduced = e.matches;
-    };
-    reducedQuery?.addEventListener("change", onReducedChange);
+    // Read into a variable rather than consulted on every frame, and kept
+    // current by a subscription: the previous version captured the value at
+    // effect setup and never re-read it, so flipping the OS preference
+    // mid-session did nothing at all. The subscription also follows the
+    // in-app Motion choice (lib/motion-preference.ts).
+    let reduced = prefersReducedMotion();
+    const unsubscribeReduced = subscribeReducedMotion(() => {
+      reduced = prefersReducedMotion();
+    });
 
     let width = 0;
     let height = 0;
@@ -851,7 +851,7 @@ export function AmbientAura() {
       observer.disconnect();
       colourObserver.disconnect();
       schemeQuery?.removeEventListener("change", onScheme);
-      reducedQuery?.removeEventListener("change", onReducedChange);
+      unsubscribeReduced();
       document.removeEventListener("visibilitychange", onVisibility);
     };
   }, []);

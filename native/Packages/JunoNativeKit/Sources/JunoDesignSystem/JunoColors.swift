@@ -566,24 +566,19 @@ private extension NSColor {
 
 // MARK: - Presence
 
-/// Presence ink and the galaxy's warm core.
+/// Presence and the galaxy's warm core, read from the projection.
 ///
-/// The web states these in its brand layer, not in `globals.css`: presence is
-/// `--tm-presence` in `thinking-mark.css` (#2D49C9 / #97A6E6, BRAND_IDENTITY.md:
-/// "Presence — live work, voice"), and the core warmth is the galaxy spec's
-/// #8A6A3E / #F3D9B1. The generator has no variable to project, so they are
-/// typed here once and registered in `JunoTokenConsumptionTests`.
-public extension JunoColorToken {
-    static let presenceLight = JunoColorToken(unchecked: 0.1765, 0.2863, 0.7882)
-    static let presenceDark = JunoColorToken(unchecked: 0.5922, 0.6510, 0.9020)
-    static let galaxyCoreLight = JunoColorToken(unchecked: 0.5412, 0.4157, 0.2431)
-    static let galaxyCoreDark = JunoColorToken(unchecked: 0.9529, 0.8510, 0.6941)
-}
-
+/// These were typed here by hand while the web kept them in its brand layer
+/// (four scoped `--*-presence` variables and a dozen literals). The web now
+/// declares `--presence`, `--presence-ink` and `--galaxy-core` in
+/// `globals.css`, so they arrive through `JunoGeneratedColors` like every
+/// other colour and cannot drift.
 public extension Color {
     /// The brand's one live colour: what is working right now. Spent on a few
-    /// stars of ``JunoGalaxyMark`` and nowhere else by default.
-    static let junoPresence = Color.junoAdaptive(light: .presenceLight, dark: .presenceDark)
+    /// stars of ``JunoGalaxyMark`` and the dot matrix's live head.
+    static let junoPresence = Color.junoAdaptive(JunoGeneratedColors.presence)
+    /// `--presence-ink`: presence as text, for a live label beside a mark.
+    static let junoPresenceInk = Color.junoAdaptive(JunoGeneratedColors.presenceInk)
     /// The warmth the galaxy's core is mixed toward (12%).
-    static let junoGalaxyCore = Color.junoAdaptive(light: .galaxyCoreLight, dark: .galaxyCoreDark)
+    static let junoGalaxyCore = Color.junoAdaptive(JunoGeneratedColors.galaxyCore)
 }

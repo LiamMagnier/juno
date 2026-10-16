@@ -50,6 +50,7 @@ import {
   type TextObject,
 } from "@/lib/sketch/sketch-core";
 import { drawObject, exportSketchPng, measureText } from "@/lib/sketch/sketch-render";
+import { SCRIPT_COLOR } from "@/lib/design/tokens.generated";
 import "./sketch.css";
 
 /*
@@ -121,7 +122,8 @@ interface TextDraft {
   color: string;
 }
 
-const SELECT_BLUE = "#2d49c9";
+/** The selection is drawn in presence on the paper, which is white in both themes. */
+const SELECT_BLUE = SCRIPT_COLOR.presence.light;
 
 interface EditorHandlers {
   keyDown: (e: React.KeyboardEvent) => void;

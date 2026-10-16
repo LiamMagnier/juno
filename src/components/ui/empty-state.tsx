@@ -110,7 +110,10 @@ export function EmptyState({
         </p>
       )}
       {action && (
-        <div className={cn("flex flex-wrap items-center justify-center gap-2", page ? "mt-6" : "mt-4")}>{action}</div>
+        // An empty state's actions are where the page sends you next, so their glyphs answer the pointer (icons.css).
+        <div data-jicon-articulate="within" className={cn("flex flex-wrap items-center justify-center gap-2", page ? "mt-6" : "mt-4")}>
+          {action}
+        </div>
       )}
     </div>
   );

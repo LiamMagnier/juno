@@ -198,13 +198,8 @@ html.dark:has(.cv) body {
   color: inherit;
 }
 
-/* Icons from the app set carry hover articulations (a nudge, a turn).
-   Canvas hovers are tonal, never spatial: neutralise them here. */
-.cv svg.icon[data-motion] {
-  --icon-hover-t: 0 0;
-  --icon-hover-r: 0deg;
-  --icon-hover-s: 1;
-}
+/* Canvas hovers are tonal, never spatial. Nothing to neutralise: the app's
+   icons articulate only on destinations (juno-icons/icons.css). */
 .cv .cv-i {
   width: 16px;
   height: 16px;

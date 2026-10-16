@@ -11,7 +11,6 @@
   --tpp-line: hsl(var(--foreground) / 0.1);
   --tpp-dot: hsl(var(--foreground) / 0.2);
   --tpp-dot-rest: hsl(var(--foreground) / 0.11);
-  --tpp-presence: #2d49c9;
   --tpp-ease: cubic-bezier(0.16, 1, 0.3, 1);
   --dots-pitch: 3.4px;
   --dots-strength: 0.5;
@@ -20,7 +19,6 @@
   --tpp-line: hsl(var(--foreground) / 0.12);
   --tpp-dot: hsl(var(--foreground) / 0.26);
   --tpp-dot-rest: hsl(var(--foreground) / 0.1);
-  --tpp-presence: #97a6e6;
   --dots-strength: 0.62;
 }
 
@@ -89,8 +87,8 @@
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(circle, var(--tpp-presence) 1px, transparent 1.4px) 0 0 / var(--_pitch) calc(var(--_row) * 2),
-    radial-gradient(circle, var(--tpp-presence) 1px, transparent 1.4px) calc(var(--_pitch) / 2) var(--_row) / var(--_pitch) calc(var(--_row) * 2);
+    radial-gradient(circle, hsl(var(--presence)) 1px, transparent 1.4px) 0 0 / var(--_pitch) calc(var(--_row) * 2),
+    radial-gradient(circle, hsl(var(--presence)) 1px, transparent 1.4px) calc(var(--_pitch) / 2) var(--_row) / var(--_pitch) calc(var(--_row) * 2);
   -webkit-mask: linear-gradient(90deg, transparent 0%, rgb(0 0 0 / 0.18) 45%, rgb(0 0 0 / 0.6) 82%, #000 96%, transparent 100%) 0 0 / 46% 100% no-repeat;
   mask: linear-gradient(90deg, transparent 0%, rgb(0 0 0 / 0.18) 45%, rgb(0 0 0 / 0.6) 82%, #000 96%, transparent 100%) 0 0 / 46% 100% no-repeat;
   opacity: 0;

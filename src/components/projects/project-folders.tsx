@@ -342,7 +342,7 @@ export function DeleteProjectDialog({
                   value={option.value}
                   checked={mode === option.value}
                   onChange={() => setMode(option.value)}
-                  className="mt-1 accent-[var(--pj-presence)]"
+                  className="mt-1 accent-presence"
                 />
                 <span className="min-w-0">
                   <span className="block text-ui font-medium text-foreground">{option.title}</span>
@@ -508,7 +508,7 @@ function PickerRow({
       )}
       style={{ paddingLeft: `${12 + (depth - 1) * 18}px` }}
     >
-      <Icon className={cn("size-4 shrink-0", selected ? "text-[var(--pj-presence)]" : "text-muted-foreground")} aria-hidden="true" />
+      <Icon className={cn("size-4 shrink-0", selected ? "text-presence" : "text-muted-foreground")} aria-hidden="true" />
       <span className={cn("min-w-0 flex-1 truncate", selected && "font-medium")}>{label}</span>
       {current && <span className="pj-annot shrink-0">Current</span>}
       {disabledReason && !current && <span className="pj-annot shrink-0">{disabledReason}</span>}

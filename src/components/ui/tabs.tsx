@@ -2,11 +2,12 @@
 
 import * as React from "react";
 import * as TabsPrimitive from "@radix-ui/react-tabs";
-import { motion, useReducedMotion } from "framer-motion";
+import { motion } from "framer-motion";
 
 import { SEGMENTED_METRICS, type SegmentedSize } from "@/components/ui/segmented-control";
 import { spring } from "@/lib/motion";
 import { cn } from "@/lib/utils";
+import { useReducedMotion } from "@/lib/motion-preference";
 
 /**
  * Which tab is showing, for the thumb only.

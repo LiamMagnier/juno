@@ -1,8 +1,9 @@
 "use client";
 
 import * as React from "react";
+import { GalaxyMark } from "@/components/brand/galaxy-mark";
 import Link from "next/link";
-import { AudioLines, FileUp, Loader2 } from "@/components/ui/icons";
+import { AudioLines, FileUp } from "@/components/ui/icons";
 import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Pressable } from "@/components/ui/pressable";
@@ -118,7 +119,7 @@ export function WorkThreadAddPanel({
 
         {!context.reachKnown && !context.reachUnreadable && (
           <p className="flex items-center gap-2 font-mono text-caption text-muted-foreground">
-            <Loader2 className="size-3 animate-spin" aria-hidden="true" />
+            <GalaxyMark phase="working" size={12} />
             Reading what this task is working with…
           </p>
         )}

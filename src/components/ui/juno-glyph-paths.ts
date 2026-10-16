@@ -1,12 +1,11 @@
 /**
  * The geometry of Juno's own marks, as data — no JSX, no React, no imports.
  *
- * Two readers draw from this one file, which is why it exists:
+ * Its reader is the native pipeline. (The web renderer, `juno-glyphs.tsx`,
+ * was retired: nothing imported it once the V3 family in `juno-icons/` drew
+ * the web's marks, and its hover poses lived in CSS that matched nothing.)
  *
- * - `juno-glyphs.tsx` renders each drawing as an `<svg>` for the web, element
- *   for element, so the web's marks are exactly what they were when the path
- *   builders lived inline there.
- * - `scripts/generate-native-icons.mjs` hands the same drawings to the native
+ * - `scripts/generate-native-icons.mjs` hands these drawings to the native
  *   pipeline, which outlines the strokes and ships them as SF Symbol templates
  *   (`juno.chat`, `juno.code`, …). A mark redrawn here reaches the Mac and iPhone
  *   on the next `npm run native:icons -- --outline-juno`, and the icon check
@@ -15,7 +14,7 @@
  * Keeping it JSX-free is what lets plain Node import it (type stripping only —
  * so no enums, namespaces or other syntax that needs compiling).
  *
- * THE GRID IS PHOSPHOR'S (see `juno-glyphs.tsx` for the drawings' rationale): a
+ * THE GRID IS PHOSPHOR'S (the drawings' rationale is in docs/design/ICONS_AND_MOTION.md): a
  * 256-unit box, a 16-unit line at `regular`, round caps and joins, and the live
  * area inside 24–232. Every weight is the same drawing at a different line;
  * `fill` is a solid drawing of its own, for the selected state.

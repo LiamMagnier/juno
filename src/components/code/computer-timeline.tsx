@@ -16,6 +16,7 @@ import {
   type TimelineFrame,
 } from "@/lib/code-v2/computer-timeline";
 import { cn } from "@/lib/utils";
+import { prefersReducedMotion } from "@/lib/motion-preference";
 
 /*
  * THE SCREENSHOT TIMELINE FOR COMPUTER USE (SPEC §3.12).
@@ -84,7 +85,7 @@ export function ComputerTimeline({
     const thumb = strip?.querySelector<HTMLElement>(`[data-index="${current}"]`);
     if (!strip || !thumb) return;
     const left = thumb.offsetLeft - strip.clientWidth / 2 + thumb.clientWidth / 2;
-    strip.scrollTo({ left, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+    strip.scrollTo({ left, behavior: prefersReducedMotion() ? "auto" : "smooth" });
   }, [current, collapsed]);
 
   if (count === 0) return null;

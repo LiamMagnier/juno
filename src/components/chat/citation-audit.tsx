@@ -22,6 +22,7 @@ import {
 import { cn } from "@/lib/utils";
 import type { ClientSource } from "@/types/chat";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { prefersReducedMotion } from "@/lib/motion-preference";
 
 /**
  * The citation audit under a research answer (program §8.3).
@@ -570,7 +571,7 @@ export function focusClaimInAnswer(found: { block: HTMLElement; range: Range | n
   // screen, and scrollIntoView walks nested scrollers correctly where a manual
   // scrollTop against the wrong container would not.
   found.block.scrollIntoView({
-    behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+    behavior: prefersReducedMotion() ? "auto" : "smooth",
     block: "center",
   });
 }

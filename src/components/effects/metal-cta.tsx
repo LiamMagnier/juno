@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
  * The one liquid-metal object on a page (Libraries.dev Liquid metal, premium
  * brief): the CTA that sells a plan. Nothing else in the web app wears metal,
  * so a page never has two, and every page that uses it uses `silver`, the
- * preset closest to Juno's warm neutrals (chromatic is a rainbow sheen and
+ * preset closest to the graphite neutrals (chromatic is a rainbow sheen and
  * gold fights the coral).
  *
  * The package renders a fallback on the server and the canvas on the client,

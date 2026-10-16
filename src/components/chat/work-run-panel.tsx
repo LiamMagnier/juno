@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { Markdown } from "@/components/chat/markdown";
 import { Button } from "@/components/ui/button";
 import { Collapse } from "@/components/ui/collapse";
@@ -28,9 +28,11 @@ import { StatusIcons } from "@/lib/app-icons";
 import { TIMING } from "@/lib/interaction";
 import { transition } from "@/lib/motion";
 import { cn } from "@/lib/utils";
+import { useHeightSwap } from "@/lib/use-height-swap";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 import { ActivityLines } from "@/components/chat/team-activity";
 import { isTeamActivity, teamMemberLines, workSummaryLines } from "@/lib/agents/activity-words";
+import { useReducedMotion } from "@/lib/motion-preference";
 
 /**
  * The task the model started, drawn inside the conversation that started it.
@@ -117,6 +119,13 @@ export function WorkRunPanel({
   const action = finished ? null : work.currentAction;
   const actionTitle = useHeldPhase(action?.title ?? "");
   const actionSeconds = useLiveSeconds(!finished && action !== null, action?.since ?? null);
+  // Live and finished are two different bodies. The box eases between their
+  // heights while the new body fades in, instead of the old one leaving first
+  // and the card collapsing to its header in between.
+  const bodyKey = finished ? "terminal" : "live";
+  const [firstBodyKey] = React.useState(bodyKey);
+  const bodyRef = React.useRef<HTMLDivElement>(null);
+  useHeightSwap(bodyRef, bodyKey);
   if (session === null) return null;
 
   const asking = work.questions.length > 0;
@@ -196,22 +205,15 @@ export function WorkRunPanel({
         </AnimatePresence>
       </header>
 
-      {/* Live and finished are two different bodies, so the swap between them
-          is a cross-fade: the old one leaves on the exit rung first. */}
-      <AnimatePresence mode="wait" initial={false}>
-        <motion.div
-          key={finished ? "terminal" : "live"}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1, transition: transition.base }}
-          exit={{ opacity: 0, transition: transition.exit }}
-        >
+      <div ref={bodyRef}>
+        <div key={bodyKey} className={cn(bodyKey !== firstBodyKey && "animate-fade-in")}>
           {finished ? (
             <TerminalRun session={session} run={run} work={work} spoken={spoken} actor={actor} />
           ) : (
             <LiveRun work={work} spoken={spoken} />
           )}
-        </motion.div>
-      </AnimatePresence>
+        </div>
+      </div>
 
       {hasDetails && (
         <>

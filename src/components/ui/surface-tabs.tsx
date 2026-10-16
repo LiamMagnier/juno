@@ -2,11 +2,12 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { motion, useReducedMotion } from "framer-motion";
+import { motion } from "framer-motion";
 
 import { spring } from "@/lib/motion";
 import { useTravelSquash } from "@/components/ui/micro";
 import { cn } from "@/lib/utils";
+import { useReducedMotion } from "@/lib/motion-preference";
 
 /**
  * LEVEL 2 — which view of a product you are looking at.

@@ -15,10 +15,9 @@ import containerQueries from "@tailwindcss/container-queries";
  * Overlays .............. animate-{pop-in,pop-out} (floating layers, spring) · animate-{sheet-in,sheet-out}
  *                         (drawers) · animate-{overlay-in,overlay-out} (backdrops) ·
  *                         animate-{tooltip-in,tooltip-out} (the quick, small-offset tooltip pair) — pair
- *                         with Radix data-[state=open/closed]. animate-shimmer-text (thinking status),
- *                         animate-check-morph (copy → check).
- * Icons ................. src/components/ui/icons.tsx (Phosphor geometry, one set); hover
- *                         articulation is svg.icon[data-motion] in globals.css.
+ *                         with Radix data-[state=open/closed]. animate-check-morph (copy → check).
+ * Icons ................. src/components/ui/icons.tsx (one set); hover articulation is
+ *                         juno-icons/icons.css, on destinations marked data-jicon-articulate only.
  * Touch ................. p{t,b,l,r}-safe (env safe-area insets) · .pressable (press feedback, globals.css)
  * Elevation ............. Flat kit (docs/design/FLAT_UI.md): shadow-{raised,raised-lg,inset,
  *                         pressed,float} — theme-aware via --shadow-* CSS vars; inset and
@@ -29,8 +28,8 @@ import containerQueries from "@tailwindcss/container-queries";
  * Radius ................ control 8 · field 10 · card 12 (= lg = surface = popover) · menu 14 ·
  *                         panel 16 · composer 22. Nested: nest-<rung> nest-p-<n> → rounded-inner.
  * Dot atoms ............. h-dot / w-dot / gap-dot-gap — the dot/ASCII signature unit
- * Thinking .............. animate-thinking-matrix (3×3 mark) · animate-status-glow ·
- *                         animate-icon-breathe + .scroll-fade-y (globals.css)
+ * Working ............... the galaxy (components/brand/galaxy-mark.tsx, docs/design/GALAXY_SPEC.md)
+ *                         is the one working mark; spinners only inside the button just pressed.
  * Keep raw hex out of components; drive everything from these tokens + the HSL vars.
  */
 
@@ -59,6 +58,13 @@ const config: Config = {
           foreground: "hsl(var(--secondary-foreground) / <alpha-value>)",
         },
         knob: "hsl(var(--knob) / <alpha-value>)",
+        // The brand's one live colour (--presence in globals.css): marks, rings
+        // and soft fills for work happening now. `text-presence` reads the ink
+        // half (textColor below), as `text-primary` does.
+        presence: {
+          DEFAULT: "hsl(var(--presence) / <alpha-value>)",
+          ink: "hsl(var(--presence-ink) / <alpha-value>)",
+        },
         destructive: {
           DEFAULT: "hsl(var(--destructive) / <alpha-value>)",
           foreground: "hsl(var(--destructive-foreground) / <alpha-value>)",
@@ -270,49 +276,58 @@ const config: Config = {
         "4.5": "1.125rem",
       },
       transitionTimingFunction: {
+        // Every key reads the CSS token, with the token's value as the
+        // fallback, so a utility and a hand-written `var(--ease-*)` are one
+        // curve and the reduced-motion overrides in globals.css (which flatten
+        // out-strong, out-expo, spring and drawer onto out-soft) reach the
+        // `ease-*` utilities too. They used to be literal copies the media
+        // query could not touch. The fallback keeps a document that never loads
+        // globals.css on the same curve.
+        //
         // Tailwind's stock `ease-out` (0,0,.2,1) and the bare `transition`
         // default (.4,0,.2,1) are not on the ladder; hundreds of call sites
         // write them. Pointing both at out-soft puts every one of those on
         // the house curve without touching a call site (BRAND_IDENTITY.md,
         // "Motion and interaction").
-        DEFAULT: "cubic-bezier(0.33, 1, 0.68, 1)",
-        out: "cubic-bezier(0.33, 1, 0.68, 1)",
-        "out-soft": "cubic-bezier(0.33, 1, 0.68, 1)",
-        "out-strong": "cubic-bezier(0.32, 0.72, 0, 1)",
-        "out-expo": "cubic-bezier(0.16, 1, 0.3, 1)",
+        DEFAULT: "var(--ease-out-soft, cubic-bezier(0.33, 1, 0.68, 1))",
+        out: "var(--ease-out-soft, cubic-bezier(0.33, 1, 0.68, 1))",
+        "out-soft": "var(--ease-out-soft, cubic-bezier(0.33, 1, 0.68, 1))",
+        "out-strong": "var(--ease-out-strong, cubic-bezier(0.32, 0.72, 0, 1))",
+        "out-expo": "var(--ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1))",
         // The product had NO accelerate curve, so every exit ran an entrance
         // curve — which is why dismissals felt like the UI was reluctant to let
         // go. `in-out` is for A-to-B moves where both endpoints are visible
         // (chevron rotate, accordion, sidebar width); running those on an
         // ease-out makes them look like they arrive from off-screen.
-        in: "cubic-bezier(0.4, 0, 1, 1)",
-        "in-out": "cubic-bezier(0.65, 0, 0.35, 1)",
+        in: "var(--ease-in, cubic-bezier(0.4, 0, 1, 1))",
+        "in-out": "var(--ease-in-out, cubic-bezier(0.65, 0, 0.35, 1))",
         // The only symmetric curve here, and the only one meant for a LOOP:
-        // loops have a seam that an ease-out visibly pulses at. Already inlined
-        // verbatim in the pulse-ring / status-glow / gen-sweep keyframes below;
-        // see the reasoning beside --ease-breathe in globals.css.
-        breathe: "cubic-bezier(0.45, 0, 0.55, 1)",
+        // loops have a seam that an ease-out visibly pulses at. See the
+        // reasoning beside --ease-breathe in globals.css.
+        breathe: "var(--ease-breathe, cubic-bezier(0.45, 0, 0.55, 1))",
         // The one overshooting curve — for elements with apparent mass that
         // should settle rather than stop. See --ease-out-back in globals.css.
-        "out-back": "cubic-bezier(0.34, 1.32, 0.64, 1)",
+        "out-back": "var(--ease-out-back, cubic-bezier(0.34, 1.32, 0.64, 1))",
         // Soft UI (SOFT_UI.md §2.4). `spring` is the entrance curve for
         // anything that pops into place: a long, overshoot-free settle (opacity
         // past 1 just clips). `drawer` is the sheet curve: front-loaded,
-        // overshoot-free, named for the job. Both mirror --ease-spring /
-        // --ease-drawer in globals.css, the generated token source; they must
-        // stay equal so `ease-spring` and `var(--ease-spring)` move alike.
-        spring: "cubic-bezier(0.22, 1, 0.36, 1)",
-        drawer: "cubic-bezier(0.32, 0.72, 0, 1)",
+        // overshoot-free, named for the job.
+        spring: "var(--ease-spring, cubic-bezier(0.22, 1, 0.36, 1))",
+        drawer: "var(--ease-drawer, cubic-bezier(0.32, 0.72, 0, 1))",
       },
+      // The duration ladder, read from the same custom properties (values as
+      // fallbacks) so `duration-slow` shortens to the base rung under reduced
+      // motion exactly as `var(--dur-slow)` does.
+      // tests/tailwind-motion-tokens.test.ts holds every key to its token.
       transitionDuration: {
-        press: "70ms",
-        fast: "120ms",
-        exit: "160ms",
-        base: "220ms",
-        slow: "360ms",
+        press: "var(--dur-press, 70ms)",
+        fast: "var(--dur-fast, 120ms)",
+        exit: "var(--dur-exit, 160ms)",
+        base: "var(--dur-base, 220ms)",
+        slow: "var(--dur-slow, 360ms)",
         // One rung above slow, reserved for a change the user did not cause —
         // see the reasoning beside --dur-emphasis in globals.css.
-        emphasis: "560ms",
+        emphasis: "var(--dur-emphasis, 560ms)",
       },
       fontFamily: {
         // A single product voice: Inter is every control, heading and reading
@@ -509,6 +524,10 @@ const config: Config = {
        * text, the *-foreground keys are preserved.
        */
       textColor: {
+        presence: {
+          DEFAULT: "hsl(var(--presence-ink) / <alpha-value>)",
+          ink: "hsl(var(--presence-ink) / <alpha-value>)",
+        },
         primary: {
           DEFAULT: "hsl(var(--primary-ink) / <alpha-value>)",
           foreground: "hsl(var(--primary-foreground) / <alpha-value>)",
@@ -576,41 +595,6 @@ const config: Config = {
           "0%, 60%, 100%": { transform: "translateY(0)", opacity: "0.4" },
           "30%": { transform: "translateY(-4px)", opacity: "1" },
         },
-        // A dark point travels through a still 3×3 matrix. Adjacent staggered
-        // peaks overlap just enough to leave a soft trail. Opacity only: the
-        // box-shadow stops it used to carry repainted every dot on every frame.
-        "thinking-matrix": {
-          "0%, 100%": { opacity: "0" },
-          "8%": { opacity: "0.28" },
-          "15%": { opacity: "0.95" },
-          "30%": { opacity: "0" },
-        },
-        // The reduced-motion substitute for the matrix above, and it did not
-        // exist. `thinking-dots.tsx` has always applied
-        // `motion-reduce:animate-thinking-pulse` to the centre dot and its
-        // docstring describes exactly this — "the centre point falls back to an
-        // opacity-only pulse … no translate, no scale" — but no such keyframe was
-        // ever written, so Tailwind emitted no class and a reduced-motion reader
-        // got a completely static dot grid while the model was still thinking.
-        // That is the one thing the signature exists to prevent, and it failed
-        // silently for precisely the users who cannot fall back to the animation.
-        //
-        // Opacity only, on the loop curve: an eased loop pulses at the seam
-        // where it turns around, which is the whole reason --ease-breathe exists.
-        "thinking-pulse": {
-          "0%, 100%": { opacity: "0.3" },
-          "50%": { opacity: "1" },
-        },
-        // The sentence remains neutral and only breathes slightly toward the
-        // foreground, matching the monochrome reference instead of using coral.
-        // A live status breathes between two inks. It used to also animate a
-        // text-shadow — a literal glow on text, on a 2.8s loop, at six call
-        // sites — which is the one decoration this design language has no
-        // room for. The colour alone says "still going".
-        "status-glow": {
-          "0%, 100%": { color: "hsl(var(--muted-foreground) / 0.8)" },
-          "50%": { color: "hsl(var(--foreground) / 0.78)" },
-        },
         "icon-breathe": {
           "0%, 100%": { transform: "scale(1)", opacity: "0.85" },
           "50%": { transform: "scale(1.1)", opacity: "1" },
@@ -665,15 +649,6 @@ const config: Config = {
             opacity: "0",
             transform: "translateX(calc(var(--sheet-from, -100%) * var(--motion-shift, 1)))",
           },
-        },
-        // The thinking-status shimmer (`.shimmer-text`, globals.css, which
-        // declares the same keyframe for its plain-CSS consumer). A gradient
-        // sized 250% pans through text-clipped copy; linear, because the band
-        // teleports from one end to the other and an eased loop pulses at the
-        // seam.
-        "shimmer-text": {
-          from: { backgroundPosition: "100% 0" },
-          to: { backgroundPosition: "-100% 0" },
         },
         // Copy → check (`.check-morph`). Springs in from small-and-tilted; both
         // vars read so the reduced tier is a fade.
@@ -817,12 +792,6 @@ const config: Config = {
           "0%, 100%": { opacity: "0.35" },
           "50%": { opacity: "0.75" },
         },
-        // Indeterminate hairline: a 1/3-width bar; translateX(300%) of its own
-        // width crosses the full track, so the sweep exits cleanly on the right.
-        "gen-sweep": {
-          "0%": { transform: "translateX(-100%)" },
-          "100%": { transform: "translateX(300%)" },
-        },
         // ---- Reasoning slider, top tier ("Max") ----
         // The gradient is sized 200% and panned, so the hue drifts without the
         // element itself moving. Paired with `bg-[length:200%_100%]`.
@@ -887,7 +856,6 @@ const config: Config = {
         // every exit here does.
         "sheet-in": "sheet-in var(--dur-base) var(--ease-drawer) both",
         "sheet-out": "sheet-out var(--dur-exit) var(--ease-in) both",
-        "shimmer-text": "shimmer-text 2.2s linear infinite",
         "check-morph": "check-morph var(--dur-base) var(--ease-spring) both",
         // Live UI steps/quiz: direction-aware step navigation (strong), one-shot
         // wrong-answer nudge (soft), one-shot SVG path draw (expo).
@@ -897,12 +865,6 @@ const config: Config = {
         // A loop turns around at both ends, so it takes the symmetric curve —
         // `ease-in-out` the keyword is NOT --ease-in-out the token, and neither
         // is the loop curve. See --ease-breathe.
-        // Thinking signature (ThinkingDots) + live reasoning header (ActivityTimeline).
-        "thinking-matrix": "thinking-matrix 1.8s var(--ease-breathe) infinite",
-        // Same period as the matrix it stands in for, so the two read as one
-        // signature running at two fidelities rather than as two indicators.
-        "thinking-pulse": "thinking-pulse 1.8s var(--ease-breathe) infinite",
-        "status-glow": "status-glow 2.8s var(--ease-breathe) infinite",
         "icon-breathe": "icon-breathe 2.6s var(--ease-breathe) infinite",
         "title-out": "title-out var(--dur-exit) var(--ease-in)",
         // Floating layers: data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out
@@ -939,8 +901,6 @@ const config: Config = {
         // sweep. `linear` is deliberate — an eased loop visibly pulses at the
         // seam, which is the thing that looked like flashing.
         // Per-particle durations (7-13s) are set inline; this is only the fallback.
-        // Media-generation placeholder (generation-placeholder.tsx).
-        "gen-sweep": "gen-sweep 1.8s var(--ease-breathe) infinite",
       },
     },
   },

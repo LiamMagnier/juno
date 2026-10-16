@@ -91,12 +91,11 @@ export const menuShellClass = `${menuShellFrameClass} nest-p-1.5`;
  * stays at the call site: Radix spells it differently per primitive, and a row
  * that shipped its own focus colour is how a "shared" recipe stops being shared.
  *
- * The row's glyph needs nothing from here to move. A glyph from the icon set
- * carries its one hover articulation itself (`data-motion`, icons.tsx), and
- * globals.css plays it on `[data-highlighted]` — which Radix stamps on the row
- * whether the pointer or the arrow keys put it there — so the fill arriving and
- * the pencil tilting are the same event, at the same time, for both. Carets
- * (a submenu's chevron) and ticks carry no articulation by design.
+ * The row's glyph stays still when the row is highlighted. Menus are scanned,
+ * not visited, so hover articulation plays on destinations only
+ * (juno-icons/icons.css, G46): the fill arriving is the whole of the
+ * highlight. The glyph still changes state with the row's state (a tick
+ * drawing in, a star filling).
  */
 export const menuRowClass =
   "menu-item group/menu-item relative flex min-h-8 cursor-pointer select-none items-center gap-2.5 " +
@@ -137,9 +136,8 @@ export const menuRowClass =
  * the row's own fill. It is one arbitrary `transition` rather than the
  * `duration-*` / `ease-*` utilities, which tailwindcss-animate also reads as
  * ANIMATION timing. And it is written at ZERO specificity
- * (`:where(.row) svg`) on purpose: a glyph with a hover articulation already
- * fades its colour in its own list (`svg.icon[data-motion]`, globals.css), a
- * glyph that states its own `transition-*` means it, and the sidebar's
+ * (`:where(.row) svg`) on purpose: a glyph that states its own `transition-*`
+ * means it, and the sidebar's
  * folder mark cross-fades its two drawings on opacity
  * (`.sidebar-motion-icon__glyph`). Any of those outranks this and keeps its
  * list; only a glyph with no transition of its own picks it up.

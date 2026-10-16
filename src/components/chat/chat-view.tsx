@@ -1,12 +1,13 @@
 "use client";
 
 import * as React from "react";
+import { GalaxyMark } from "@/components/brand/galaxy-mark";
 import Link from "next/link";
 import nextDynamic from "next/dynamic";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { ContinueOnMenu } from "@/components/chat/continue-on-menu";
-import { EyeOff, GitFork, GripVertical, Loader2 } from "@/components/ui/icons";
+import { EyeOff, GitFork, GripVertical } from "@/components/ui/icons";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useChat, type ChatMessage } from "@/hooks/use-chat";
@@ -96,6 +97,7 @@ import { cachedJson } from "@/lib/client-cache";
 import { useLatestHandler } from "@/hooks/use-latest-handler";
 import { CrossMessageRow } from "@/components/chat/cross-message-row";
 import { useCrossMessages } from "@/components/chat/use-cross-messages";
+import { prefersReducedMotion } from "@/lib/motion-preference";
 
 interface ChatViewProps {
   conversationId: string | null;
@@ -1574,7 +1576,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
       // append for ~3.5s before the transcript exists.
       Date.now() - handoffArmedAtRef.current < 8000 &&
       typeof window !== "undefined" &&
-      !window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      !prefersReducedMotion()
     ) {
       setHandoff("leaving");
     }
@@ -2006,7 +2008,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
           voiceSaving ? "bg-primary/10 text-primary" : "bg-destructive/10 text-destructive"
         )}
       >
-        {voiceSaving ? <Loader2 className="size-4 animate-spin" /> : <StatusIcons.error className="size-4" />}
+        {voiceSaving ? <GalaxyMark phase="working" size={16} /> : <StatusIcons.error className="size-4" />}
       </span>
       <div className="min-w-0 flex-1">
         <p className="font-medium text-foreground">{voiceSaving ? "Saving voice transcript…" : "Voice transcript isn’t saved yet"}</p>

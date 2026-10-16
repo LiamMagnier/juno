@@ -2,10 +2,11 @@
 
 import * as React from "react";
 
-import { RunGlyph } from "@/components/chat/run/run-glyph";
+import { RunGalaxy } from "@/components/chat/run/run-galaxy";
 import { Collapse } from "@/components/ui/collapse";
 import { ChevronRight, Info, Plug, TriangleAlert } from "@/components/ui/icons";
 import type { ClientActionApproval } from "@/lib/action-approval";
+import { reducedMotionAt } from "@/lib/motion-preference";
 import { Phrase, PhraseWithArgs } from "@/lib/i18n-phrase";
 import { sourceDomain } from "@/lib/panel/sources-split";
 import type { PhraseSpec, RunItem, RunView } from "@/lib/run/types";
@@ -41,7 +42,7 @@ import type { PanelMessage } from "./use-panel-message";
  * The one loop owner (§7.9.1, §8.4): while the panel is open on a working run,
  * ActivityPanel holds the priority-1 claim for its live item whatever tab is
  * showing, so the transcript line goes still. Here the live item — the running
- * call's marker, or the live reasoning glyph when nothing runs — is the element
+ * call's marker, or the live reasoning galaxy when nothing runs — is the element
  * that loops, and only while that claim owns the loop.
  */
 
@@ -49,10 +50,8 @@ const FOLLOW_SLACK_PX = 24;
 
 const useIsomorphicLayoutEffect = typeof window === "undefined" ? React.useEffect : React.useLayoutEffect;
 
-function prefersReducedMotion(from: Element | null): boolean {
-  if (from?.closest('[data-motion="reduce"]')) return true;
-  return typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
-}
+/** The OS, the in-app Motion choice, or a gallery's simulation at `from`. */
+const prefersReducedMotion = (from: Element | null): boolean => reducedMotionAt(from);
 
 /**
  * Keeps the panel's scroller at the newest row while the reader is already
@@ -134,7 +133,7 @@ interface ReasoningRowProps {
   instant: boolean;
   /** This item is the panel's live item and the panel holds the loop. */
   owner: boolean;
-  /** The panel's claim on the loop, which the glyph reads while it is the owner. */
+  /** The panel's claim on the loop, which the galaxy reads while it is the owner. */
   loopId: string;
 }
 
@@ -149,7 +148,7 @@ const ReasoningRow = React.memo(
     return (
       <li className="run-step flex gap-2.5 py-2" data-instant={instant ? "" : undefined}>
         <span className="mt-1 grid size-5 shrink-0 place-items-center">
-          {live && item.live ? <RunGlyph phase="thinking" loopId={owner ? loopId : `panel-item:${item.key}`} /> : null}
+          {live && item.live ? <RunGalaxy phase="thinking" loopId={owner ? loopId : `panel-item:${item.key}`} /> : null}
         </span>
         {/* Model prose: never translated, never clamped (the panel scrolls). */}
         <div className="min-w-0 flex-1" data-no-auto-translate>

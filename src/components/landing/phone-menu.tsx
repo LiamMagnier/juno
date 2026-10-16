@@ -130,8 +130,8 @@ export function LandingPhoneMenu({ links }: { links: readonly { href: string; la
           than one glyph replacing the other in a frame. This is <IconSwap>
           driven by the element's state instead of a prop, so it also works
           without script: the transition sits on the FACE, never on the
-          glyph, because X carries a hover turn and `svg.icon[data-motion]`
-          would replace a glyph-level transition list with its own. The scale
+          glyph, which keeps its own transition list (juno-icons/icons.css)
+          for its state changes. The scale
           reads --motion-scale-from, so reduced motion keeps the fade and
           drops the scale. */}
       <summary

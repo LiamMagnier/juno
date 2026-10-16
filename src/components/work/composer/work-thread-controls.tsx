@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { ChevronDown, Loader2 } from "@/components/ui/icons";
+import { GalaxyMark } from "@/components/brand/galaxy-mark";
+import { ChevronDown } from "@/components/ui/icons";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import {
@@ -158,10 +159,7 @@ export function WorkThreadRunContext({
       />
 
       {held && (
-        <Loader2
-          className="ml-0.5 size-3 shrink-0 animate-spin text-muted-foreground"
-          aria-hidden="true"
-        />
+        <GalaxyMark phase="working" size={12} className="ml-0.5 text-muted-foreground" />
       )}
     </>
   );

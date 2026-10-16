@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { createPortal } from "react-dom";
-import { AnimatePresence, useReducedMotion } from "framer-motion";
+import { AnimatePresence } from "framer-motion";
 import { MAX_CONTEXT_TOKENS, contextTokenKey, type ContextToken } from "@/lib/chat/context-tokens";
 import {
   CONTEXT_CLIPBOARD_TYPE,
@@ -33,6 +33,7 @@ import { MentionPalette, TokenPopover, markSource, tokenAccessibleName, type Pal
 import { ContextTokenMark } from "./context-token-mark";
 import { uiPref } from "@/lib/ui-prefs";
 import { enterIntent, enterKeyOf } from "@/lib/composer-keys";
+import { useReducedMotion } from "@/lib/motion-preference";
 
 /*
  * THE COMPOSER'S FIELD: a contenteditable sentence with context tokens in it

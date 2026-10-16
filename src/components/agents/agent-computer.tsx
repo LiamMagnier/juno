@@ -3,7 +3,7 @@
 import * as React from "react";
 import nextDynamic from "next/dynamic";
 import { toast } from "sonner";
-import { ThinkingOrb } from "thinking-orbs";
+import { GalaxyMark } from "@/components/brand/galaxy-mark";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -216,7 +216,7 @@ export function AgentComputerOverlay({
             ) : (
               <p className="flex min-w-0 items-center gap-2 text-ui text-muted-foreground">
                 {status === "waking" || status === "starting" || status === "resting" ? (
-                  <ThinkingOrb size={20} state="working" />
+                  <GalaxyMark phase="working" size={16} />
                 ) : null}
                 <span className="truncate">{caption}</span>
               </p>

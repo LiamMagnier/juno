@@ -556,13 +556,10 @@ export function ArtifactInlineCard({
         </div>
       </header>
 
-      {/* Hairline divider doubles as the progress track: a soft primary band
-          sweeps across it while the source streams in. */}
-      <div aria-hidden className="relative h-px overflow-hidden bg-border/60">
-        {streaming && (
-          <span className="absolute inset-y-0 left-0 hidden w-1/3 bg-gradient-to-r from-transparent via-primary to-transparent motion-safe:block motion-safe:animate-gen-sweep" />
-        )}
-      </div>
+      {/* A still hairline. It used to double as a progress track with a band
+          sweeping across it, a second working signal beside the "Writing"
+          word and the live line; the galaxy is the one (GALAXY_SPEC.md). */}
+      <div aria-hidden className="h-px bg-border/60" />
 
       {waiting && (
         <SuggestionBar

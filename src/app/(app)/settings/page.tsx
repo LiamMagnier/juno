@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { motion, useReducedMotion } from "framer-motion";
+import { motion } from "framer-motion";
 import { ArrowLeft } from "@/components/ui/icons";
 import { SettingsRail } from "@/components/settings/settings-rail";
 import { SettingsPane } from "@/components/settings/settings-pane";
@@ -10,6 +10,7 @@ import { resolveSettingsSection, settingsHref } from "@/components/settings/sett
 import { readReturnPath } from "@/components/settings/settings-modal-lazy";
 import { transition } from "@/lib/motion";
 import SettingsLoading from "./loading";
+import { useReducedMotion } from "@/lib/motion-preference";
 
 /**
  * Settings as a full window (ChatGPT's model, the owner's request): its own

@@ -1,9 +1,10 @@
 "use client";
 
 import * as React from "react";
-import { LazyMotion, domAnimation, m, useReducedMotion, useScroll, useTransform, type MotionValue } from "framer-motion";
+import { LazyMotion, domAnimation, m, useScroll, useTransform, type MotionValue } from "framer-motion";
 import { User } from "@/components/ui/icons";
 import { DotRings } from "./dot-construction";
+import { useReducedMotion } from "@/lib/motion-preference";
 
 /**
  * Orbit: you at the centre, your agents on their own orbits around you. As

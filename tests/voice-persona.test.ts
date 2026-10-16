@@ -222,7 +222,9 @@ test("the pupils follow the level only while listening, and only where motion is
   const header = src("src/components/agents/agent-thread-header.tsx");
   assert.match(header, /const listening = state === "listening" && !!levelRef;/);
   assert.match(header, /if \(!listening \|\| !levelRef \|\| !face\) return;/);
-  assert.match(header, /matchMedia\?\.\("\(prefers-reduced-motion: reduce\)"\)\.matches\) return;/);
+  // The OS and Settings › Motion together (lib/motion-preference.ts), not the OS query alone.
+  assert.match(header, /if \(prefersReducedMotion\(\)\) return;/);
+  assert.doesNotMatch(header, /matchMedia\?\.\("\(prefers-reduced-motion/);
   assert.match(header, /cancelAnimationFrame\(raf\);\s+face\.style\.removeProperty\("--level"\);/);
   const chat = src("src/components/chat/chat-view.tsx");
   assert.match(chat, /threadAgentState\(agent, chat\.isBusy, taskSessions, voiceOpen \? voicePhaseOf\(realtimeVoice\) : null\)/);
