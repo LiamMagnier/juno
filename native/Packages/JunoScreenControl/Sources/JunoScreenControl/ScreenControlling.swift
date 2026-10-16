@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(CoreGraphics)
+import CoreGraphics
+#endif
 
 /// Takeover or not.
 public enum ScreenControlMode: String, Hashable, Codable, Sendable {
@@ -211,13 +214,56 @@ public struct ScreenPresenceState: Hashable, Sendable {
 
     public static let idle = ScreenPresenceState()
 
-    /// "Juno is using TextEdit · Esc to stop".
+    /// "Alevr is using TextEdit · Esc to stop". The one place the presence
+    /// says how to stop: the action overlay's label does not repeat it.
     public var caption: String? {
         guard let holder else { return nil }
-        let app = holder.appName.map { "Juno is using \($0)" } ?? "Juno is using apps"
-        return paused ? "You took over · Juno is waiting" : app + " · Esc to stop"
+        let app = holder.appName.map { "\(ScreenControlBrand.productName) is using \($0)" } ?? "\(ScreenControlBrand.productName) is using apps"
+        return paused ? "You took over · \(ScreenControlBrand.productName) is waiting" : app + " · Esc to stop"
     }
 }
+
+#if canImport(CoreGraphics)
+/// Where the presence draws, in AppKit's global coordinates (bottom-left
+/// origin, the space `NSScreen.frame` and ``ScreenPresenceState``'s frames
+/// flipped by the app share). Plain geometry, so the placement is tested
+/// here rather than in the app.
+public enum ScreenPresenceLayout {
+    /// The screen the caption belongs on: the one holding most of the driven
+    /// window (or, in takeover, the driven display), else the main screen,
+    /// else the first. Nil only when there are no screens.
+    public static func screenIndex(holding target: CGRect?, screens: [CGRect], mainIndex: Int?) -> Int? {
+        guard !screens.isEmpty else { return nil }
+        let fallback = mainIndex.flatMap { screens.indices.contains($0) ? $0 : nil } ?? 0
+        guard let target, !target.isNull, !target.isEmpty else { return fallback }
+        var best: (index: Int, area: CGFloat)?
+        for (index, screen) in screens.enumerated() {
+            let overlap = screen.intersection(target)
+            guard !overlap.isNull, !overlap.isEmpty else { continue }
+            let area = overlap.width * overlap.height
+            if area > (best?.area ?? 0) { best = (index, area) }
+        }
+        return best?.index ?? fallback
+    }
+
+    /// Below the menu bar, centred: `visibleFrame` is the screen minus the
+    /// menu bar and the Dock.
+    public static func captionFrame(size: CGSize, visibleFrame: CGRect, gap: CGFloat = 8) -> CGRect {
+        CGRect(
+            x: (visibleFrame.midX - size.width / 2).rounded(),
+            y: (visibleFrame.maxY - size.height - gap).rounded(),
+            width: size.width,
+            height: size.height
+        )
+    }
+
+    /// The driven window's outline: just outside its edge, so it frames the
+    /// window rather than covering its content.
+    public static func outlineFrame(around window: CGRect, outset: CGFloat = 4) -> CGRect {
+        window.insetBy(dx: -outset, dy: -outset)
+    }
+}
+#endif
 
 /// The agent-facing surface of screen control, keyed by session id.
 ///

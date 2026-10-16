@@ -189,8 +189,8 @@ public enum AppCategories {
     /// The warning line on the grant sheet, where one is owed.
     public static func warning(for category: AppCategory) -> String? {
         switch category {
-        case .refused: "Juno never controls this app."
-        case .terminal: "Juno uses its own shell for commands, where your command rules apply."
+        case .refused: "\(ScreenControlBrand.productName) never controls this app."
+        case .terminal: "\(ScreenControlBrand.productName) uses its own shell for commands, where your command rules apply."
         case .ide: "Typing into an editor's terminal or task runner would get past your command rules."
         case .browser: "Can navigate and interact with your browser session. Sending, buying, deleting and signing in ask first."
         case .finance: "Only if you allow it in Settings."

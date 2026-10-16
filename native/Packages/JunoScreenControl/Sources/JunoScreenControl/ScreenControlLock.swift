@@ -45,7 +45,7 @@ public struct ScreenControlHolder: Hashable, Codable, Sendable {
 
     /// "Alevr is using TextEdit for ‘Fix the export sheet’".
     public var sentence: String {
-        let what = appName.map { "Alevr is using \($0)" } ?? "Alevr is already using apps"
+        let what = appName.map { "\(ScreenControlBrand.productName) is using \($0)" } ?? "\(ScreenControlBrand.productName) is already using apps"
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             switch kind {
@@ -109,7 +109,7 @@ public enum ScreenControlStopReason: String, Hashable, Codable, Sendable {
     case stopButton
     /// Esc, anywhere.
     case escapeKey
-    /// "Stop Juno using apps" in the menu bar.
+    /// "Stop Alevr using apps" in the menu bar.
     case menuBar
     /// The app is quitting, or the account signed out.
     case appQuit
@@ -121,8 +121,8 @@ public enum ScreenControlStopReason: String, Hashable, Codable, Sendable {
         switch self {
         case .stopButton: "You pressed Stop."
         case .escapeKey: "You pressed Esc."
-        case .menuBar: "You stopped Alevr from the menu bar."
-        case .appQuit: "Alevr is closing."
+        case .menuBar: "You stopped \(ScreenControlBrand.productName) from the menu bar."
+        case .appQuit: "\(ScreenControlBrand.productName) is closing."
         case .handedOff: "Another conversation took over this app."
         }
     }
@@ -243,7 +243,7 @@ public actor ScreenControlLock {
             case let .held(by: record):
                 throw ScreenControlError.lockHeld(holder: record.sentence)
             case .contended:
-                throw ScreenControlError.lockHeld(holder: "Another copy of Alevr is taking the desktop right now")
+                throw ScreenControlError.lockHeld(holder: "Another copy of \(ScreenControlBrand.productName) is taking the desktop right now")
             }
         }
         generation &+= 1

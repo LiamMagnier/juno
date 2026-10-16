@@ -303,7 +303,7 @@ final class ScreenControlHardeningTests: XCTestCase {
             _ = try await fixture.service.prepare(sessionID: "s1", action: ScreenAction(kind: .key, text: "cmd+s"))
             XCTFail("keys went to Juno")
         } catch let error as ScreenControlError {
-            XCTAssertTrue(error.errorDescription!.contains("Juno's own window has the keyboard"))
+            XCTAssertTrue(error.errorDescription!.contains("Alevr's own window has the keyboard"))
         }
     }
 
@@ -515,7 +515,7 @@ final class ScreenControlHardeningTests: XCTestCase {
         _ = try await fixture.service.lock.claim(ScreenControlHolder(id: "work:run-1", kind: .workTask, title: "Tidy downloads"))
         try await waitUntil { fixture.tap.started >= 1 }
         let caption = await fixture.service.presenceState().caption
-        XCTAssertEqual(caption, "Juno is using apps · Esc to stop", "the caption shows for Work too")
+        XCTAssertEqual(caption, "Alevr is using apps · Esc to stop", "the caption shows for Work too")
         fixture.tap.pressEscape()
         try await waitUntil { await fixture.service.lock.currentHolder == nil }
         try await waitUntil { fixture.tap.stopped >= 1 }
