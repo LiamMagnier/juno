@@ -1,3 +1,4 @@
+import { oauthMcpConfigs } from "@/lib/mcp-config-store";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
@@ -45,7 +46,7 @@ export async function GET() {
   // connected: the row's `enabled` is the one switch (see lib/user-mcp.ts), and
   // a disabled server must not look available in a picker it will not serve.
   const userMcpRows = await prisma.userMcpServer.findMany({
-    where: { userId: user.id },
+    where: { userId: user.id, NOT: { id: { startsWith: "mcp:" } } },
     orderBy: { createdAt: "desc" },
   });
   const userMcpConnectors = userMcpRows.map((row) => {
@@ -76,7 +77,7 @@ export async function GET() {
 
   // Servers the user added by URL. Listed whether or not they are signed in,
   // so a half-finished add shows up with a Connect button rather than vanishing.
-  const customs = await prisma.customConnector.findMany({ where: { userId: user.id }, orderBy: { createdAt: "asc" } });
+  const customs = await oauthMcpConfigs.findMany({ where: { userId: user.id }, orderBy: { createdAt: "asc" } });
   const customConnectors = customs.map((custom) => {
     const view = toCustomConnectorView(custom, byProvider.get(custom.id));
     const toolCount = view.tools ? view.tools.filter((t) => !view.disabledTools.includes(t.name)).length : null;

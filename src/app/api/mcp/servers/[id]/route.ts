@@ -29,7 +29,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
-  const existing = await prisma.userMcpServer.findFirst({ where: { id, userId: user.id } });
+  const existing = await prisma.userMcpServer.findFirst({ where: { id, userId: user.id, NOT: { id: { startsWith: "mcp:" } } } });
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const parsed = patchSchema.safeParse(await req.json().catch(() => null));
@@ -77,7 +77,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
 
   const row = await prisma.userMcpServer.update({
-    where: { id, userId: user.id },
+    where: { id, userId: user.id, NOT: { id: { startsWith: "mcp:" } } },
     data: {
       ...(data.name !== undefined ? { name: data.name } : {}),
       ...(data.url !== undefined ? { url: data.url } : {}),
@@ -104,9 +104,9 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
-  const existing = await prisma.userMcpServer.findFirst({ where: { id, userId: user.id }, select: { id: true } });
+  const existing = await prisma.userMcpServer.findFirst({ where: { id, userId: user.id, NOT: { id: { startsWith: "mcp:" } } }, select: { id: true } });
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  await prisma.userMcpServer.delete({ where: { id, userId: user.id } });
+  await prisma.userMcpServer.delete({ where: { id, userId: user.id, NOT: { id: { startsWith: "mcp:" } } } });
   return NextResponse.json({ ok: true });
 }

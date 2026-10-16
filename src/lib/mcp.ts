@@ -1,3 +1,4 @@
+import { oauthMcpConfigs } from "@/lib/mcp-config-store";
 import "server-only";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
@@ -128,13 +129,13 @@ export async function getActiveConnectors(
   const customIds = connectionProviders.filter(isCustomConnectorId);
   const customs = customIds.length
     ? new Map(
-        (await prisma.customConnector.findMany({ where: { userId, id: { in: customIds } } })).map((c) => [c.id, c])
+        (await oauthMcpConfigs.findMany({ where: { userId, id: { in: customIds } } })).map((c) => [c.id, c])
       )
     : new Map();
 
   if (userMcpRowIds.length > 0) {
     const servers = await prisma.userMcpServer.findMany({
-      where: { userId, id: { in: userMcpRowIds }, enabled: true },
+      where: { userId, id: { in: userMcpRowIds }, enabled: true, NOT: { id: { startsWith: "mcp:" } } },
     });
     for (const server of servers) {
       // A broken row is skipped quietly here on purpose: one dead connector

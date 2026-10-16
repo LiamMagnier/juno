@@ -31,7 +31,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
 
   const { id } = await params;
-  const row = await prisma.userMcpServer.findFirst({ where: { id, userId: user.id } });
+  const row = await prisma.userMcpServer.findFirst({ where: { id, userId: user.id, NOT: { id: { startsWith: "mcp:" } } } });
   if (!row) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const raw = await req.text();
@@ -53,7 +53,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
   await recordUserMcpTest(user.id, row.id, result);
 
-  const updated = await prisma.userMcpServer.findFirst({ where: { id, userId: user.id } });
+  const updated = await prisma.userMcpServer.findFirst({ where: { id, userId: user.id, NOT: { id: { startsWith: "mcp:" } } } });
   return NextResponse.json({
     result,
     server: updated ? serializeUserMcpServer(updated) : null,

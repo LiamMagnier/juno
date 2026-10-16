@@ -4,9 +4,11 @@ import * as React from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { ArrowLeft, KeyRound, ShieldCheck, SlidersHorizontal } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { SkillDialogContent, SkillDialogStep } from "@/components/skills/skill-dialog-shell";
+import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { SkillDialogStep } from "@/components/skills/skill-dialog-shell";
 import { WorkStateNote } from "@/components/work/work-vocabulary";
 import {
   beginCustomConnectorSignIn,
@@ -40,20 +42,28 @@ type Ready = Extract<ProbeResponse, { ok: true }>;
 export function AddCustomConnectorDialog({
   open,
   onOpenChange,
+  onSaved,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onSaved?: () => void;
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <SkillDialogContent className="max-w-lg" aria-describedby={undefined}>
-        {open ? <AddCustomConnectorFlow /> : null}
-      </SkillDialogContent>
+      <DialogContent className="surface-float max-w-lg gap-0 p-0 sm:p-0" aria-describedby={undefined}>
+        {open ? <AddCustomConnectorFlow onSaved={() => { onSaved?.(); onOpenChange(false); }} /> : null}
+      </DialogContent>
     </Dialog>
   );
 }
 
-function AddCustomConnectorFlow() {
+function AddCustomConnectorFlow({ onSaved }: { onSaved: () => void }) {
+  // The ordinary dialog scrolls as credential fields expand, without a
+  // layout transform translating fields outside the visible panel.
+  const Step = StaticMcpStep;
+  const [authMode, setAuthMode] = React.useState("sign_in");
+  const [header, setHeader] = React.useState("");
+  const fieldId = React.useId();
   const [address, setAddress] = React.useState("");
   const [checking, setChecking] = React.useState(false);
   const [refusal, setRefusal] = React.useState<string | null>(null);
@@ -73,6 +83,16 @@ function AddCustomConnectorFlow() {
     setChecking(true);
     setRefusal(null);
     try {
+      if (authMode === "token") {
+        const response = await fetch("/api/mcp/servers", {
+          method: "POST", headers: { "Content-Type": "application/json" }, signal: controller.signal,
+          body: JSON.stringify({ name: name.trim(), url: value, authHeader: header.trim() || null }),
+        });
+        const body = await response.json();
+        if (!response.ok || !body.server) throw new Error(body.error || "Could not save this server.");
+        if (!controller.signal.aborted) onSaved();
+        return;
+      }
       const result = await probeCustomConnector(value, controller.signal);
       if (controller.signal.aborted) return;
       if (!result.ok) {
@@ -83,7 +103,7 @@ function AddCustomConnectorFlow() {
       setName(result.existing?.name ?? result.suggestedName);
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") return;
-      setRefusal(err instanceof CustomConnectorError ? err.message : `${PRODUCT_NAME} couldn't check that server. Try again.`);
+      setRefusal(err instanceof Error ? err.message : `${PRODUCT_NAME} couldn't check that server. Try again.`);
     } finally {
       if (inflight.current === controller) setChecking(false);
     }
@@ -105,13 +125,30 @@ function AddCustomConnectorFlow() {
   return (
     <AnimatePresence mode="popLayout" initial={false}>
       {ready === null ? (
-        <SkillDialogStep key="address" className="p-5 sm:p-6">
+        <Step key="address" className="shrink-0 p-5 sm:p-6">
           <div className="pr-10">
             <DialogTitle>Add an MCP server</DialogTitle>
             <DialogDescription className="mt-1 text-ui">
               {`Paste the server’s address. ${PRODUCT_NAME} checks it before anything is saved.`}
             </DialogDescription>
           </div>
+
+          <fieldset className="mt-4" disabled={checking}>
+            <legend className="mb-2 text-ui">How this server connects</legend>
+            <RadioGroup aria-label="How this server connects" value={authMode} onValueChange={(value) => { setAuthMode(value); setRefusal(null); setHeader(""); }} className="flex flex-wrap gap-4">
+              <Label className="flex items-center gap-2"><RadioGroupItem value="sign_in" />Sign in</Label>
+              <Label className="flex items-center gap-2"><RadioGroupItem value="token" />Use a token or no sign-in</Label>
+            </RadioGroup>
+          </fieldset>
+
+          {authMode === "token" ? (
+            <div className="mt-4 flex flex-col gap-2">
+              <Label htmlFor={`${fieldId}-name`}>Server name</Label>
+              <Input id={`${fieldId}-name`} value={name} onChange={(e) => setName(e.target.value)} maxLength={80} disabled={checking} />
+              <Label htmlFor={`${fieldId}-token`}>Authorization header (optional)</Label>
+              <Input id={`${fieldId}-token`} type="password" value={header} onChange={(e) => setHeader(e.target.value)} autoComplete="off" spellCheck={false} maxLength={4000} disabled={checking} placeholder="Bearer …" />
+            </div>
+          ) : null}
 
           <form
             className="mt-5 flex flex-col gap-2 sm:flex-row"
@@ -136,8 +173,8 @@ function AddCustomConnectorFlow() {
               disabled={checking}
               className="h-10 flex-1 font-mono text-ui"
             />
-            <Button type="submit" className="h-10 sm:w-28" disabled={!address.trim()} loading={checking}>
-              Check
+            <Button type="submit" className="h-10 sm:w-28" disabled={!address.trim() || (authMode === "token" && !name.trim())} loading={checking}>
+              {authMode === "token" ? "Save server" : "Check"}
             </Button>
           </form>
 
@@ -156,9 +193,9 @@ function AddCustomConnectorFlow() {
           </div>
 
           <p className="mt-5 text-caption leading-5 text-muted-foreground">
-            {`Servers sign in with OAuth, so ${PRODUCT_NAME} never sees your password. Only add servers you trust: their tools can read and act on whatever you connect them to.`}
+            {authMode === "token" ? "Tokens are stored encrypted. Leave the header blank only when the server needs no sign-in. Only add servers you trust." : `Servers sign in with OAuth, so ${PRODUCT_NAME} never sees your password. Only add servers you trust: their tools can read and act on whatever you connect them to.`}
           </p>
-        </SkillDialogStep>
+        </Step>
       ) : (
         <SkillDialogStep key="ready" className="p-5 sm:p-6">
           <ReadyStep
@@ -178,6 +215,10 @@ function AddCustomConnectorFlow() {
     </AnimatePresence>
   );
 }
+
+const StaticMcpStep = React.forwardRef<HTMLDivElement, { children: React.ReactNode; className?: string }>(function StaticMcpStep({ children, className }, ref) {
+  return <div ref={ref} className={cn("flex flex-col", className)}>{children}</div>;
+});
 
 function ReadyStep({
   ready,

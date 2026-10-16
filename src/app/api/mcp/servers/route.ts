@@ -28,7 +28,7 @@ export async function GET() {
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const rows = await prisma.userMcpServer.findMany({
-    where: { userId: user.id },
+    where: { userId: user.id, NOT: { id: { startsWith: "mcp:" } } },
     orderBy: { createdAt: "desc" },
   });
   return NextResponse.json({ servers: rows.map(serializeUserMcpServer) });
