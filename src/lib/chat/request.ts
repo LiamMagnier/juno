@@ -280,6 +280,16 @@ export const chatBodySchema = z
      */
     workHandoff: z.boolean().optional(),
     /**
+     * How often a task the model starts from this turn stops to ask: the
+     * composer's choice, one of the Work approval modes
+     * (src/lib/chat/task-approval-mode.ts). Saved on the conversation as it
+     * is accepted, so a brand-new chat keeps the mode picked before its first
+     * message. Absent leaves the conversation's saved mode alone. The values
+     * are repeated as literals for the reason `skillSlug` gives: this module
+     * is imported by clients that must not pull in Work.
+     */
+    taskApprovalMode: z.enum(["conservative", "balanced", "permissive"]).optional(),
+    /**
      * The folder on the person's Mac this chat works in (the Mac's "Work in a
      * folder"): its display name and the access they chose, never a path.
      * Read only together with the `local_folder` client feature

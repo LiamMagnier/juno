@@ -317,7 +317,7 @@ function ApprovalModes() {
     <section className="mt-8">
       <h2 className="text-heading">How much it asks otherwise</h2>
       <p className="mt-1 text-ui text-muted-foreground">
-        {`Below that floor, how often ${PRODUCT_NAME} stops is set per task — on the composer before you start it, and from the task itself while it runs. A Mac can also hold a stricter ceiling than a task asks for, and the stricter of the two always wins.`}
+        {`Below that floor, how often ${PRODUCT_NAME} stops is set per task: from the hand next to the model in a chat’s composer, which every task that chat starts follows; on the Work composer before you start one; and from a task’s run settings, which apply from its next attempt. A project or a Mac can hold a stricter mode than a task asks for, and the stricter one always wins.`}
       </p>
       <div className="mt-4 grid gap-3 sm:grid-cols-3">
         {WORK_PERMISSION_POLICIES.map((policy) => (

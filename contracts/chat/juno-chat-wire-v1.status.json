@@ -89,6 +89,10 @@
     "request.skillSlug": "native",
     "request.generationId": "native",
     "request.workHandoff": "native",
+    "request.taskApprovalMode": {
+      "status": "planned",
+      "note": "How often a task the model starts from this turn asks (src/lib/chat/task-approval-mode.ts), saved on the conversation as the turn is accepted. The apps have no composer control for it yet; absent, the server uses the conversation's saved mode or the default."
+    },
     "request.localFolder": "native",
     "request.roomTurn": {
       "status": "planned",
@@ -302,6 +306,10 @@
     "ClientActivityEvent.createdAt": "native",
     "ClientActivityEvent.tool": "native",
     "ClientActivityEvent.memoryReceipt": "native",
+    "ClientActivityEvent.memoryWrite": {
+      "status": "planned",
+      "note": "What a turn saved or forgot, by memory id, on the \"Memory updated\" / \"Forgotten\" row (src/lib/chat/memory-receipts.ts). The web turns it into View, Edit and Undo; the apps still draw the row's title and detail only."
+    },
     "ClientActivityEvent.artifactVerification": {
       "status": "planned",
       "note": "The artifact check's receipt (verified, repaired, refused) is not drawn on the Mac yet."

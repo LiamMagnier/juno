@@ -40,6 +40,7 @@ import type {
   ClientArtifact,
   ClientAttachment,
   ClientMessage,
+  ClientMemoryWrite,
   ClientQuota,
   ConversationHistory,
   GenerateEditPayload,
@@ -47,6 +48,7 @@ import type {
   ReasoningEffort,
   TitleSource,
 } from "@/types/chat";
+import { memoryWriteOf } from "@/lib/chat/memory-receipts";
 
 /**
  * Add an activity event, or update the one already holding its id WHERE IT IS.
@@ -244,11 +246,18 @@ interface UseChatOptions {
    *  models that support it. */
   proMode?: boolean;
   connectors?: string[];
+  /**
+   * The composer's mode for tasks this chat starts
+   * (src/lib/chat/task-approval-mode.ts), read at send time. A getter because
+   * the chat view learns a new chat's id only after this hook has run.
+   */
+  taskApprovalMode?: () => "conservative" | "balanced" | "permissive" | null;
   privateMode?: boolean;
   onMeta?: (meta: { conversationId: string; title: string; titleSource: TitleSource; isNew: boolean }) => void;
   onTitle?: (conversationId: string, title: string, titleSource?: TitleSource) => void;
   onQuota?: (quota: ClientQuota) => void;
-  onMemoryUpdated?: () => void;
+  /** The turn wrote to memory; `write` names what, when the turn could (src/lib/chat/memory-receipts.ts). */
+  onMemoryUpdated?: (write: ClientMemoryWrite | null) => void;
   /**
    * The model handed this turn to a background task (`start_task`), and the
    * server has already created it and dispatched its first run. The caller
@@ -264,6 +273,8 @@ interface UseChatOptions {
 }
 
 export function useChat(opts: UseChatOptions) {
+  // Read at send time; held apart so calling it is not a call on `opts`.
+  const readTaskApprovalMode = opts.taskApprovalMode;
   const [messages, setMessages] = React.useState<ChatMessage[]>(opts.initialMessages);
   const [history, setHistory] = React.useState<ConversationHistory>(opts.initialHistory ?? COMPLETE_HISTORY);
   const historyRef = React.useRef(history);
@@ -784,7 +795,7 @@ export function useChat(opts: UseChatOptions) {
               );
               setArtifacts((prev) => applyTurnArtifacts(prev, chunk.artifacts, chunk.message.id));
               opts.onQuota?.(chunk.quota);
-              if (chunk.memoryUpdated) opts.onMemoryUpdated?.();
+              if (chunk.memoryUpdated) opts.onMemoryUpdated?.(memoryWriteOf(chunk.message.activity));
               opts.onDone?.(chunk.message, {
                 finishReason: chunk.finishReason ?? chunk.message.finishReason,
                 title: chunk.title,
@@ -1454,6 +1465,10 @@ export function useChat(opts: UseChatOptions) {
           // panel under the reply), so the route may offer `start_task`. Never
           // in private mode: that path writes no rows for a task to hang from.
           workHandoff: opts.privateMode ? undefined : true,
+          // How often a task the model starts here stops to ask. Rides every
+          // send so a new chat keeps the mode picked before it existed; the
+          // server saves it on the conversation.
+          taskApprovalMode: opts.privateMode ? undefined : readTaskApprovalMode?.() ?? undefined,
           privateMode: opts.privateMode,
           privateHistory: opts.privateMode
             ? [...messages, userMsg]
@@ -1496,6 +1511,7 @@ export function useChat(opts: UseChatOptions) {
       opts.connectors,
       opts.projectId,
       opts.privateMode,
+      readTaskApprovalMode,
       messages,
     ]
   );

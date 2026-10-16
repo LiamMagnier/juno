@@ -5,6 +5,7 @@ import { AppProvider, useApp } from "@/components/app/app-provider";
 import { AppShell } from "@/components/app/app-shell";
 import { MessageList } from "@/components/chat/message-list";
 import { WorkRunPanel } from "@/components/chat/work-run-panel";
+import { MemoryUpdatedNotice } from "@/components/chat/memory-updated-notice";
 import type { ConversationWork } from "@/components/chat/use-conversation-work";
 import type { ChatMessage } from "@/hooks/use-chat";
 import type { ClientActionApproval } from "@/lib/action-approval";
@@ -155,9 +156,28 @@ I've asked Mira to check usage on all three and flag the ones worth a call.`;
 
 const ANSWER_ACTIVITY = [
   { id: "a-ctx", kind: "reasoning", title: "Thinking", createdAt: at(1), contextReceipt: RECEIPT },
+  {
+    id: "a-mem",
+    kind: "context",
+    title: "Remembered about you",
+    createdAt: at(1),
+    memoryReceipt: [
+      { id: "mem-fy", content: "The user's fiscal year starts in February.", category: "workflows" },
+      { id: "mem-eur", content: "The user reports revenue in euros, not dollars.", category: "preferences" },
+    ],
+  },
   { id: "a-1", kind: "tool", title: "Using Drive", detail: "read Q3 Forecast.xlsx", createdAt: at(2), tool: { server: "Drive", name: "drive__read_file", args: "{}", result: "…" } },
   { id: "a-2", kind: "tool", title: "Using Stripe", detail: "list subscriptions", createdAt: at(4), tool: { server: "Stripe", name: "stripe__list_subscriptions", args: "{}", result: "…" } },
   { id: "a-3", kind: "write", title: "Writing", createdAt: at(8) },
+  {
+    id: "a-mem-saved",
+    kind: "context",
+    title: "Memory updated",
+    detail: "Halvorsen is the user's largest renewal this quarter.",
+    url: "/memory?entry=mem-halvorsen",
+    createdAt: at(10),
+    memoryWrite: { saved: [{ id: "mem-halvorsen", content: "Halvorsen is the user's largest renewal this quarter.", category: "projects" }] },
+  },
   { id: "a-4", kind: "done", title: "Done", createdAt: at(11) },
 ] as unknown as ClientActivityEvent[];
 
@@ -293,11 +313,22 @@ export function ThreadScene({ scene }: { scene: "thread" | "thinking" | "settled
   const messages = React.useMemo(() => messagesFor(scene), [scene]);
   const work = React.useMemo(() => workFor(scene), [scene]);
   const noop = React.useCallback(() => undefined, []);
+  const [memoryNotice, setMemoryNotice] = React.useState(true);
   return (
     <AppProvider bootstrap={BOOTSTRAP}>
       <SelectConversation id="c-q3" />
       <AppShell>
         <div className="flex h-full min-h-0 flex-1 flex-col" data-thread-scene={scene}>
+          {/* The actionable "Memory updated" notice, as chat-view draws it
+              after the turn that saved the fact (G20). */}
+          {scene === "thread" && memoryNotice && (
+            <div className="flex justify-center px-4 pt-2">
+              <MemoryUpdatedNotice
+                write={ANSWER_ACTIVITY.find((row) => row.memoryWrite)?.memoryWrite ?? null}
+                onDismiss={() => setMemoryNotice(false)}
+              />
+            </div>
+          )}
           <MessageList
             messages={messages}
             inlineRuns={[{ id: "w-mira", createdAt: at(12), node: <WorkRunPanel work={work} actor="Mira" className="mt-5" /> }]}

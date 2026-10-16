@@ -175,6 +175,12 @@ interface ComposerProps {
   /** An explicit destination choice; shown in both ordinary and steering mode. */
   modeControl?: React.ReactNode;
   /**
+   * How often a task started from this chat asks (task-mode-chip.tsx), drawn
+   * just before the model chip. The caller decides whether this chat can start
+   * tasks at all; absent, the row is as it was.
+   */
+  taskModeControl?: React.ReactNode;
+  /**
    * A durable run is going on this conversation, and this composer steers it.
    *
    * Two things arrive here: a deep-research run gathering, and a delegated task
@@ -511,6 +517,7 @@ function ComposerImpl({
   onStop,
   steering,
   modeControl,
+  taskModeControl,
   pendingClarification,
   onSubmitClarification,
   onSkipClarification,
@@ -3312,6 +3319,9 @@ function ComposerImpl({
           }
           trailing={
             voiceCall ? voiceCall.controls : <>
+              {taskModeControl && modality === "chat" && !steerMode && (
+                <div className={cn("shrink-0", controlsLocked && "pointer-events-none")}>{taskModeControl}</div>
+              )}
               {/* The model chip — and, inside its popover, the thinking effort
                   for that model (`thinkingControl`). One chip for one decision. */}
               <div className={cn("min-w-0", controlsLocked && "pointer-events-none")}>

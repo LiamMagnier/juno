@@ -1,5 +1,7 @@
 "use client";
 
+import { TaskModeChip } from "@/components/chat/task-mode-chip";
+import { parseChatTaskMode, type ChatTaskMode } from "@/lib/chat/task-approval-mode";
 import * as React from "react";
 import { AppProvider } from "@/components/app/app-provider";
 import { DictationStageContext, dictationStageFromParam, type DictationStage } from "@/components/chat/composer-dictation-stage";
@@ -329,6 +331,8 @@ function DockView(common: React.ComponentProps<typeof Composer>) {
 export function ComposerLandingFixture() {
   const [model, setModel] = React.useState<ModelId>(AUTO_MODEL_ID);
   const [effort, setEffort] = React.useState<ReasoningEffort | null>(null);
+  // The chat composer's task mode (G15); `?taskMode=permissive` opens on one.
+  const [taskMode, setTaskMode] = React.useState<ChatTaskMode | null>(null);
   const [view, setView] = React.useState<"all" | "home" | "dock" | "tasks" | "private" | "clarify">("all");
   // `?dictation=demo|silent|transcribing`: the mic opens a staged take (no microphone).
   const [dictation, setDictation] = React.useState<DictationStage | null>(null);
@@ -339,6 +343,7 @@ export function ComposerLandingFixture() {
     // `?model=<id>` opens on a named model, so the effort dial can be checked.
     const wantedModel = new URLSearchParams(window.location.search).get("model");
     if (wantedModel) setModel(wantedModel as ModelId);
+    setTaskMode(parseChatTaskMode(new URLSearchParams(window.location.search).get("taskMode")));
   }, []);
   const common: React.ComponentProps<typeof Composer> = {
     conversationId: null,
@@ -355,6 +360,9 @@ export function ComposerLandingFixture() {
     onToggleConnector: () => {},
     onOpenVoiceMode: () => {},
     loadMentions: (query) => loadMentionFixtures(query),
+    taskModeControl: (
+      <TaskModeChip chosen={taskMode} effective={taskMode ?? "balanced"} narrowedBy={null} onChange={setTaskMode} />
+    ),
   };
 
   return (

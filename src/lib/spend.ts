@@ -855,7 +855,7 @@ export interface SpendReservationResult {
  * `checkBudget` on its own is read-then-act: it reads settled spend, and the
  * ledger is only written when a turn ENDS, so the window in which two turns can
  * both be admitted is the whole duration of every in-flight generation. This
- * closes it the way `reserveCodeMessage` closes the message-count equivalent —
+ * closes it the way `consumeMessage` closes the message-count equivalent —
  * ONE conditional UPDATE, with the predicate evaluated by the database, so two
  * concurrent callers cannot both observe the same under-ceiling total.
  *

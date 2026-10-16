@@ -92,7 +92,7 @@ import { serializeQuote, type AnswerQuote, type ComposerQuote, type DocumentQuot
 import { AnswerSelectionBar } from "@/components/chat/answer-selection-bar";
 import { fileExtension } from "@/lib/documents/viewer-kind";
 import type { DocumentAsk } from "@/components/documents/types";
-import type { ClientArtifact, ClientAttachment, ClientMessage, ClientConversation, ConversationHistory, ReasoningEffort, TitleSource } from "@/types/chat";
+import type { ClientArtifact, ClientAttachment, ClientMemoryWrite, ClientMessage, ClientConversation, ConversationHistory, ReasoningEffort, TitleSource } from "@/types/chat";
 import { Pressable } from "@/components/ui/pressable";
 import { announceReplyFinished } from "@/lib/ui-prefs";
 import { cachedJson } from "@/lib/client-cache";
@@ -100,6 +100,10 @@ import { useLatestHandler } from "@/hooks/use-latest-handler";
 import { CrossMessageRow } from "@/components/chat/cross-message-row";
 import { useCrossMessages } from "@/components/chat/use-cross-messages";
 import { prefersReducedMotion } from "@/lib/motion-preference";
+import { TaskModeChip } from "@/components/chat/task-mode-chip";
+import { MemoryUpdatedNotice } from "@/components/chat/memory-updated-notice";
+import { useConversationTaskMode } from "@/hooks/use-conversation-task-mode";
+import type { ChatTaskMode } from "@/lib/chat/task-approval-mode";
 
 interface ChatViewProps {
   conversationId: string | null;
@@ -314,8 +318,10 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
   const [thoughtContainer, setThoughtContainer] = React.useState<HTMLDivElement | null>(null);
   // Entrance animation, armed on mount and disarmed by the first drag.
   const [animateDock, setAnimateDock] = React.useState(true);
-  const [memoryFlash, setMemoryFlash] = React.useState(false);
-  const [memoryLeaving, setMemoryLeaving] = React.useState(false);
+  // "Memory updated" (G20): one notice at a time, keyed so a newer update
+  // replaces an older one with its own timer (memory-updated-notice.tsx).
+  const [memoryNotice, setMemoryNotice] = React.useState<{ key: number; write: ClientMemoryWrite | null } | null>(null);
+  const dismissMemoryNotice = React.useCallback(() => setMemoryNotice(null), []);
   const [voiceOpen, setVoiceOpen] = React.useState(false);
   const [voiceSaving, setVoiceSaving] = React.useState(false);
   const [voiceSaveError, setVoiceSaveError] = React.useState<string | null>(null);
@@ -455,6 +461,11 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
     setActiveConversationId(conversationId);
   }, [conversationId, setActiveConversationId]);
 
+  // The composer's task mode reaches the request through a getter: the hook
+  // that holds it follows the conversation id this chat learns from useChat.
+  const taskModeRef = React.useRef<ChatTaskMode | null>(null);
+  const readTaskMode = React.useCallback(() => taskModeRef.current, []);
+
   const chat = useChat({
     conversationId,
     initialMessages,
@@ -468,6 +479,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
     ultraFast,
     proMode,
     connectors: enabledConnectors,
+    taskApprovalMode: readTaskMode,
     privateMode,
     onQuota: setQuota,
     onTitle: (id, title, titleSource) => updateConversation(id, { title, titleSource: titleSource ?? "ai" }),
@@ -536,15 +548,8 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
       adoptWorkRef.current(session);
       window.dispatchEvent(new CustomEvent(WORK_SYNC_EVENT));
     },
-    onMemoryUpdated: () => {
-      setMemoryFlash(true);
-      setMemoryLeaving(false);
-      // Fade the pill out (title-out, 180ms) before unmounting it.
-      setTimeout(() => setMemoryLeaving(true), 3800);
-      setTimeout(() => {
-        setMemoryFlash(false);
-        setMemoryLeaving(false);
-      }, 4000);
+    onMemoryUpdated: (write) => {
+      setMemoryNotice((previous) => ({ key: (previous?.key ?? 0) + 1, write }));
     },
   });
   // A paged conversation (lib/chat/history-page.ts): how much of it is here,
@@ -576,6 +581,28 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
   const currentConversationId =
     conversationId ??
     (activeConversationId && activeConversationId === ownedConversationIdRef.current ? activeConversationId : createdIdRef.current);
+
+  // How often a task this chat starts stops to ask (G15). Offered where a
+  // turn can start a task at all: a saved chat on a plan with agents.
+  const tasksPossible = !privateMode && PLANS[quota.plan].agents;
+  const taskMode = useConversationTaskMode(currentConversationId, tasksPossible);
+  React.useEffect(() => {
+    taskModeRef.current = tasksPossible ? taskMode.chosen : null;
+  }, [taskMode.chosen, tasksPossible]);
+  // Memoised like the composer's other props: the composer is `React.memo`, and
+  // a fresh element on every streamed token would re-render it for each one.
+  const taskModeControl = React.useMemo(
+    () =>
+      tasksPossible ? (
+        <TaskModeChip
+          chosen={taskMode.chosen}
+          effective={taskMode.effective}
+          narrowedBy={taskMode.narrowedBy}
+          onChange={taskMode.change}
+        />
+      ) : undefined,
+    [tasksPossible, taskMode.chosen, taskMode.effective, taskMode.narrowedBy, taskMode.change],
+  );
 
   // A room: who answers each message, and the bounded follow-up turns the
   // server planned. Null in every other chat (nothing is fetched for them).
@@ -2100,6 +2127,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
       model={model}
       onModelChange={setModel}
       onSend={onComposerSend}
+      taskModeControl={taskModeControl}
       modeControl={researchSteering?.accepting ? (
         <GuideModeSwitch mode={researchGuideMode} onModeChange={setResearchGuideMode} disabled={research.busy || research.disconnected || research.failed} className="mb-2" />
       ) : undefined}
@@ -2411,23 +2439,11 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
           </div>
         )}
 
-        {memoryFlash && (
-          <div className="flex justify-center pt-2">
-            <span
-              role="status"
-              className={cn(
-                // Same reason as the project pill: this is a floating status
-                // token wearing `shadow-glass`, so it belongs on the floating
-                // rung rather than on 80% of a fill that is itself near black.
-                // Words only (owner directive, 2026-09-26): this was a
-                // floating pill with a pulsing coral dot for an event that
-                // has already happened. It fades in and out as plain text.
-                "inline-flex items-center",
-                memoryLeaving ? "motion-safe:animate-title-out motion-safe:[animation-fill-mode:forwards]" : "motion-safe:animate-rise-in"
-              )}
-            >
-              <span className="font-mono text-label text-muted-foreground">Memory updated</span>
-            </span>
+        {memoryNotice && (
+          <div className="flex justify-center px-4 pt-2">
+            {/* Names what was saved and offers View, Edit and Undo; owns its
+                own timer, so a second update never inherits the first's. */}
+            <MemoryUpdatedNotice key={memoryNotice.key} write={memoryNotice.write} onDismiss={dismissMemoryNotice} />
           </div>
         )}
 

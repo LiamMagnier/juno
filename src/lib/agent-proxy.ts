@@ -1,6 +1,7 @@
 import { emptyAnthropicUsage, foldAnthropicUsage, type RawAnthropicUsage } from "@/lib/anthropic-round";
 import { compatPromptCacheTokens, type CompatPromptCacheFields } from "@/lib/pricing";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { codeTurnOpening, type CodeTurnOpening } from "@/lib/metering/code-turn";
 
 /**
  * The pure half of the provider proxy at /api/agent/<provider>/<path>.
@@ -308,6 +309,12 @@ export interface AgentRequest {
    * The floor a call is billed at when the provider never says what it used.
    */
   promptChars: number;
+  /**
+   * Whether this call opens a Code turn, read off the body the provider will
+   * read (src/lib/metering/code-turn.ts). The proxy counts the turn when this
+   * call is billed. Optional so a request built by hand (a test) need not say.
+   */
+  turn?: CodeTurnOpening;
 }
 
 /** What the proxy will forward, or why it will not. */
@@ -390,7 +397,14 @@ export function inspectAgentRequest(wire: ProviderWire, raw: string): AgentReque
   }
   return {
     ok: true,
-    request: { body, model, streamed, fastRequested, promptChars: promptTextChars(wire, parsed) },
+    request: {
+      body,
+      model,
+      streamed,
+      fastRequested,
+      promptChars: promptTextChars(wire, parsed),
+      turn: codeTurnOpening(wire, parsed),
+    },
   };
 }
 

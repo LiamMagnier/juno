@@ -304,6 +304,7 @@ export async function acceptTurn({
               titleSource: "default",
               projectId: newConversationProjectId,
               activeConnectors: connectorSelection ?? [],
+              ...(input.taskApprovalMode ? { taskApprovalMode: input.taskApprovalMode } : {}),
             },
           });
         }
@@ -422,6 +423,7 @@ export async function acceptTurn({
         titleSource: "default",
         projectId: newConversationProjectId,
         activeConnectors: connectorSelection ?? [],
+        ...(input.taskApprovalMode ? { taskApprovalMode: input.taskApprovalMode } : {}),
       },
     });
   } else if (
@@ -435,6 +437,16 @@ export async function acceptTurn({
       data: { activeConnectors: connectorSelection },
     });
     conversation = { ...conversation, activeConnectors: connectorSelection };
+  }
+  // The composer's task mode (src/lib/chat/task-approval-mode.ts), saved the
+  // way the connectors are: a chat keeps the mode it was last sent with, on
+  // every device. A request that names none leaves the saved one alone.
+  if (input.taskApprovalMode && conversation.taskApprovalMode !== input.taskApprovalMode) {
+    await prisma.conversation.updateMany({
+      where: { id: conversation.id, userId: user.id },
+      data: { taskApprovalMode: input.taskApprovalMode },
+    });
+    conversation = { ...conversation, taskApprovalMode: input.taskApprovalMode };
   }
 
   if (input.regenerate) {

@@ -341,6 +341,17 @@ export interface ClientMemoryReceipt {
   sourceMessageId?: string | null;
 }
 
+/**
+ * What a turn wrote to memory: the facts it saved (or believed again), each
+ * with the id that Undo and Edit act on, and the statements it forgot when the
+ * person said "forget that" in the chat. Rides the "Memory updated" activity
+ * row, so it is saved with the turn and the receipt survives a reload.
+ */
+export interface ClientMemoryWrite {
+  saved: ClientMemoryReceipt[];
+  forgotten?: string[];
+}
+
 export interface ClientAgentChangeItem {
   label: string;
   from?: string;
@@ -394,6 +405,8 @@ export interface ClientActivityEvent {
   tool?: ClientToolDetail;
   /** Structured memory receipt; detail remains a compact legacy-friendly line. */
   memoryReceipt?: ClientMemoryReceipt[];
+  /** What this turn wrote to memory (the "Memory updated" row); see ClientMemoryWrite. */
+  memoryWrite?: ClientMemoryWrite;
   /** Durable parse/verify/repair receipt for generated chat artifacts. */
   artifactVerification?: {
     version: 1;
@@ -706,6 +719,8 @@ export interface ChatRequestBody {
   generationId?: string;
   /** The client can draw a task the model starts (see `workHandoff` in request.ts). */
   workHandoff?: boolean;
+  /** How often a task the model starts stops to ask (see `taskApprovalMode` in request.ts). */
+  taskApprovalMode?: "conservative" | "balanced" | "permissive";
   /** Mac only: the folder this chat works in, by display name (see `localFolder` in request.ts). */
   localFolder?: { name: string; access: "read" | "read_write" };
   /** Durable creation surface for a newly saved conversation. */
