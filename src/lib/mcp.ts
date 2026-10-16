@@ -200,7 +200,7 @@ export async function getActiveConnectors(
 
     // Credentials connectors point at our own MCP route: hand out a short-lived
     // signed token instead of the stored credential (which never leaves the server).
-    if (def.kind === "credentials") {
+    if (def.kind === "credentials" || def.firstParty) {
       out.push({
         id: def.id,
         label: def.label,

@@ -525,6 +525,14 @@
         "/api/mcp/servers/test": {
           "status": "native",
           "note": "Mac only: Test in the add sheet before saving."
+        },
+        "/api/connectors/[id]/sync": {
+          "status": "web-only",
+          "note": "Authenticated first-party incremental sync entrypoint; native clients do not expose a sync action yet."
+        },
+        "/api/mcp/first-party/[id]": {
+          "status": "internal",
+          "note": "First-party provider adapter called only by the server MCP dispatcher with a short-lived connector token."
         }
       }
     },

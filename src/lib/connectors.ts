@@ -9,6 +9,7 @@ import {
   registerClient,
 } from "@/lib/mcp-oauth";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { firstPartyDefinitions, type FirstPartyId } from "@/lib/first-party-connectors/providers";
 
 /*
  * Registry of external tool connectors the user can link. Three shapes exist:
@@ -29,7 +30,7 @@ import { PRODUCT_NAME } from "@/lib/brand/names";
  * server (see lib/mcp.ts) so it can call the provider's tools as the user.
  */
 
-export type ConnectorId = "github" | "figma" | "notion" | "apple-calendar" | "apple-mail" | "apple-music";
+export type ConnectorId = "github" | "figma" | "notion" | "apple-calendar" | "apple-mail" | "apple-music" | FirstPartyId;
 export type ConnectorKind = "oauth_app" | "mcp_oauth" | "credentials";
 
 /**
@@ -55,6 +56,10 @@ export interface ConnectorTokens {
 export const DEFAULT_TOKEN_TTL_MS = 60 * 60_000;
 
 export interface ConnectorDef {
+  /** Our server owns the API adapter; provider tokens never go to a model. */
+  firstParty?: boolean;
+  pkce?: boolean;
+  authorizeParams?: Record<string, string>;
   id: ConnectorId;
   kind: ConnectorKind;
   label: string;
@@ -90,7 +95,7 @@ export interface ConnectorOAuthSession {
   resource: string;
 }
 
-const CONNECTORS: Record<ConnectorId, ConnectorDef> = {
+const CONNECTORS: Record<string, ConnectorDef> = {
   github: {
     id: "github",
     kind: "oauth_app",
@@ -205,6 +210,7 @@ const CONNECTORS: Record<ConnectorId, ConnectorDef> = {
       return null;
     },
   },
+  ...Object.fromEntries(firstPartyDefinitions(env.appUrl, process.env).map((def) => [def.id, def])),
 };
 
 export function getConnector(id: string): ConnectorDef | undefined {
@@ -273,10 +279,20 @@ export async function buildAuthorizeUrl(
   u.searchParams.set("scope", def.scope);
   u.searchParams.set("state", state);
   u.searchParams.set("response_type", "code");
+  for (const [key, value] of Object.entries(def.authorizeParams ?? {})) u.searchParams.set(key, value);
+  if (def.id === "slack") u.searchParams.delete("scope");
+  if (def.pkce) {
+    const pkce = createPkce();
+    u.searchParams.set("code_challenge", pkce.challenge);
+    u.searchParams.set("code_challenge_method", "S256");
+    return { url: u.toString(), session: { codeVerifier: pkce.verifier, clientId: def.cfg.clientId!, tokenEndpoint: def.tokenUrl, resource: "" } };
+  }
   return { url: u.toString() };
 }
 
 type TokenResponse = {
+  ok?: boolean;
+  authed_user?: TokenResponse;
   access_token?: string;
   refresh_token?: string;
   scope?: string;
@@ -287,7 +303,10 @@ type TokenResponse = {
 
 /** Normalize a provider's token response, throwing a useful error when it fails. */
 function toTokens(data: TokenResponse): ConnectorTokens {
-  if (!data.access_token) throw new Error(data.error_description || data.error || "No access token returned");
+  if (data.ok === false || data.error) throw new Error("Provider refused the token request");
+  // Slack initial user tokens are nested; rotation responses are top-level.
+  if (data.authed_user?.access_token) data = data.authed_user;
+  if (!data.access_token) throw new Error("No access token returned");
   return {
     accessToken: data.access_token,
     refreshToken: data.refresh_token, // may be absent on refresh — caller keeps the old one
@@ -334,10 +353,14 @@ export async function exchangeCodeForTokens(
     redirect_uri: connectorRedirectUri(def.id),
     grant_type: "authorization_code",
   });
-  const res = await fetch(def.tokenUrl, { method: "POST", headers: tokenRequestHeaders(def, body), body });
+  if (def.pkce) {
+    if (!session?.codeVerifier || session.clientId !== def.cfg.clientId) throw new Error("Missing OAuth PKCE session");
+    body.set("code_verifier", session.codeVerifier);
+  }
+  const res = await fetch(def.tokenUrl, { method: "POST", headers: tokenRequestHeaders(def, body), body, signal: AbortSignal.timeout(15_000), redirect: "error" });
   if (!res.ok) {
-    const detail = await res.text().catch(() => "");
-    throw new Error(`Token exchange failed (${res.status})${detail ? `: ${detail.slice(0, 300)}` : ""}`);
+    // Provider bodies can contain credentials; callers log this error.
+    throw new Error(`Token exchange failed (${res.status})`);
   }
   return toTokens((await res.json()) as TokenResponse);
 }
@@ -365,7 +388,7 @@ export async function refreshTokens(
 
   if (!def.refreshUrl) throw new Error(`${def.label} does not support token refresh`);
   const body = new URLSearchParams({ refresh_token: refreshToken, grant_type: "refresh_token" });
-  const res = await fetch(def.refreshUrl, { method: "POST", headers: tokenRequestHeaders(def, body), body });
+  const res = await fetch(def.refreshUrl, { method: "POST", headers: tokenRequestHeaders(def, body), body, signal: AbortSignal.timeout(15_000), redirect: "error" });
   if (!res.ok) throw new Error(`Token refresh failed (${res.status})`);
   return toTokens((await res.json()) as TokenResponse);
 }
