@@ -162,18 +162,23 @@ public struct SensitiveSurface: Hashable, Sendable {
 /// across four boxes passes no Luhn check. Treating this as containment means
 /// shipping a system whose safety depends on a stranger's HTML being polite.
 ///
-/// **The real boundary is two things, and neither of them is here.** The first
+/// **The real boundary is three things, and none of them is here.** The first
 /// is ``AutomationPermission``: a default-deny allowlist, a block that beats the
 /// allowlist, and restricted categories that are refused even when explicitly
 /// allowed — so the password manager and the bank are unreachable whether or not
 /// any field on them is recognised. The second is the approval receipt from
 /// ``WorkApprovalCoordinator``: anything that sends, publishes, buys, deletes or
-/// changes a setting stops and asks a person, bound to the exact action.
+/// changes a setting stops and asks a person, bound to the exact action. The
+/// third is ``WorkScreenFloor``, the consequential-action floor Juno Code uses,
+/// read against the hit-tested control: a click on "Send" asks in every policy
+/// whatever intent the model filed it under, and finance apps are refused.
 ///
-/// What this type is *for* is the two jobs a boundary cannot do: refusing to
-/// type into a box that announces itself as a password, and building the
-/// redaction plan ``ScreenshotPolicy`` applies before an image is stored. Both
-/// are improvements on a system that is already safe without them.
+/// What this type is *for* is only ever an extra deny, never a reason to ask
+/// or to allow: refusing to type into a box that announces itself as a
+/// password, a card number or a one-time code (``WorkScreenTarget``), and
+/// building the redaction plan ``ScreenshotPolicy`` applies before an image is
+/// stored. Both are improvements on a system that is already safe without
+/// them, so a miss here never opens anything the boundary above has closed.
 public enum SensitiveSurfaceDetector {
     /// The surface this field is, or nil.
     public static func classify(_ field: AccessibilityFieldDescriptor) -> SensitiveSurface? {

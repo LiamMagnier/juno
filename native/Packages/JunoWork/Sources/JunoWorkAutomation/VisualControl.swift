@@ -190,6 +190,13 @@ public actor VisualPacer {
 /// 5. A ``WorkApprovalReceipt`` exists, bound to this exact action, for anything
 ///    that sends, publishes, buys, deletes or changes a setting.
 /// 6. Coordinates are inside the display, and actions are paced.
+/// 7. The consequential-action floor Code uses (``WorkScreenFloor``) reads the
+///    hit-tested target: a click that lands on "Send", "Delete" or "Pay", or
+///    text whose Return sends in a messaging app, asks in every policy, Full
+///    access included. Finance apps are refused outright.
+///
+/// Every click and every typed run draws on the app-wide action overlay
+/// (``WorkActionOverlay``): the ring and label a Code session's actions get.
 public struct VisualControl: AutomationControl, WorkTool {
     public let tier: AutomationTier = .visual
     public let declaredIntents: Set<AutomationIntent> = [
@@ -201,17 +208,23 @@ public struct VisualControl: AutomationControl, WorkTool {
     private let gate: AutomationGate
     private let redactor: any ScreenRedacting
     private let pacer: VisualPacer
+    private let targets: (any WorkScreenTargeting)?
+    private let overlay: WorkActionOverlay
 
     public init(
         driver: any VisualScreenDriving,
         gate: AutomationGate,
         redactor: any ScreenRedacting = CoreGraphicsScreenRedactor(),
-        pacer: VisualPacer = VisualPacer()
+        pacer: VisualPacer = VisualPacer(),
+        targets: (any WorkScreenTargeting)? = nil,
+        overlay: WorkActionOverlay = .none
     ) {
         self.driver = driver
         self.gate = gate
         self.redactor = redactor
         self.pacer = pacer
+        self.targets = targets
+        self.overlay = overlay
     }
 
     public func health() async -> AutomationControlHealth {
@@ -299,7 +312,7 @@ public struct VisualControl: AutomationControl, WorkTool {
         }
 
         do {
-            let result = try await perform(request, token: token)
+            let result = try await perform(request, input: input, context: context, token: token)
             await gate.finish(
                 token,
                 characterCount: request.intent == .enterText ? request.text?.count : nil
@@ -317,6 +330,8 @@ public struct VisualControl: AutomationControl, WorkTool {
 
     private func perform(
         _ request: AutomationRequest,
+        input: WorkToolValue,
+        context: WorkToolContext,
         token: AutomationRunToken
     ) async throws -> WorkToolResult {
         try await pacer.admit(at: gate.now())
@@ -363,8 +378,38 @@ public struct VisualControl: AutomationControl, WorkTool {
             guard let text = request.text else {
                 throw AutomationRefusal(.intentNotServed, "Juno had nothing to type.")
             }
-            try await driver.type(text)
+            // Keys reach the focused control of the app in front, and Return
+            // presses the window's default button: the floor reads both.
+            let focus = await targets?.focusedTarget(bundleIdentifier: frontmost)
             try await gate.checkpoint(token)
+            if let surface = focus?.sensitiveSurface {
+                // An extra deny, never a reason to ask: no approval makes
+                // typing a password or a card number something to delegate.
+                throw AutomationRefusal(
+                    .sensitiveSurface,
+                    "That field is for \(surface.kind.phrase), so nothing was typed. Ask the person to enter it."
+                )
+            }
+            let appName = focus?.appName ?? frontmost
+            let label = "Type \(text.count) characters in \(appName)"
+            try await applyFloor(
+                .type(text),
+                bundleIdentifier: frontmost,
+                target: focus,
+                label: label,
+                request: request,
+                input: input,
+                context: context,
+                token: token
+            )
+            try await overlay.around(
+                runID: token.runID,
+                label: label,
+                point: focus?.center,
+                appName: appName,
+                input: { try await driver.type(text) },
+                checkpoint: { try await gate.checkpoint(token) }
+            )
             return WorkToolResult(content: "Typed \(text.count) characters.")
         case .activateControl, .sendMessage, .publish, .purchase, .deleteItem,
              .changeAccountSetting:
@@ -383,14 +428,108 @@ public struct VisualControl: AutomationControl, WorkTool {
                     "That position is not on this Mac's screen."
                 )
             }
-            try await driver.click(at: point)
+            // What a click here would actually press, hit-tested system-wide:
+            // the floor reads the target, never the model's word for it.
+            let hit = await targets?.target(at: point)
             try await gate.checkpoint(token)
+            if let hit, !hit.bundleIdentifier.isEmpty,
+               AutomationPermission.normalizeIdentifier(hit.bundleIdentifier)
+                != AutomationPermission.normalizeIdentifier(frontmost)
+            {
+                // Another app's window is over that point: the click would go
+                // to an app nobody checked.
+                throw AutomationRefusal(
+                    .focusMoved,
+                    "Another app's window is over that position, so nothing was clicked."
+                )
+            }
+            let appName = hit?.appName ?? frontmost
+            let label = hit?.spokenName.map { "Click the \($0) in \(appName)" } ?? "Click in \(appName)"
+            try await applyFloor(
+                .press,
+                bundleIdentifier: frontmost,
+                target: hit,
+                label: label,
+                request: request,
+                input: input,
+                context: context,
+                token: token
+            )
+            try await overlay.around(
+                runID: token.runID,
+                label: label,
+                point: point,
+                appName: appName,
+                input: { try await driver.click(at: point) },
+                checkpoint: { try await gate.checkpoint(token) }
+            )
             return WorkToolResult(content: "Clicked once on this Mac's screen.")
         case .navigate, .changeSecuritySetting:
             throw AutomationRefusal(
                 .intentNotServed,
                 "Screen control will not do that on this Mac."
             )
+        }
+    }
+
+    /// The floor, against the hit-tested target: refuses, asks (suspending
+    /// until the person answers), or lets the input through. Re-checks the
+    /// stop afterwards, because an answer can take minutes.
+    private func applyFloor(
+        _ gesture: WorkScreenFloor.Gesture,
+        bundleIdentifier: String,
+        target: WorkScreenTarget?,
+        label: String,
+        request: AutomationRequest,
+        input: WorkToolValue,
+        context: WorkToolContext,
+        token: AutomationRunToken
+    ) async throws {
+        switch WorkScreenFloor.ruling(
+            gesture,
+            bundleIdentifier: bundleIdentifier,
+            appStoreCategory: target?.appStoreCategory,
+            texts: target?.texts ?? []
+        ) {
+        case .clear:
+            return
+        case .deny(let refusal):
+            throw refusal
+        case .ask(let reason):
+            try await WorkScreenFloor.confirm(
+                tool: name,
+                request: request,
+                input: input,
+                actionDigest: actionDigest(input: input),
+                reason: reason,
+                summary: label + ".",
+                context: context,
+                now: gate.now
+            )
+            try await gate.checkpoint(token)
+            // The answer can take minutes. What was approved is this app and,
+            // for a click, this control: if either changed meanwhile, the
+            // approval is for something no longer there.
+            let front = try await driver.frontmostBundleIdentifier()
+            try await gate.checkpoint(token)
+            guard front.map(AutomationPermission.normalizeIdentifier)
+                == AutomationPermission.normalizeIdentifier(bundleIdentifier)
+            else {
+                throw AutomationRefusal(
+                    .focusMoved,
+                    "A different app came to the front while you were being asked, so nothing was done."
+                )
+            }
+            if case .press = gesture, let x = request.x, let y = request.y, let targets {
+                let again = await targets.target(at: AutomationPoint(x: Double(x), y: Double(y)))
+                try await gate.checkpoint(token)
+                guard again?.bundleIdentifier == target?.bundleIdentifier, again?.texts == target?.texts else {
+                    throw AutomationRefusal(
+                        .focusMoved,
+                        "What is at that position changed while you were being asked, so nothing was clicked."
+                    )
+                }
+            }
         }
     }
 

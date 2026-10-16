@@ -415,7 +415,10 @@ final class DesktopWorkLocalRuntime {
                 relayPermitted: false
             ),
             audit: audit,
-            drivers: .system(permission: permission)
+            drivers: .system(permission: permission),
+            // Work's clicks and keys draw the same ring and label as a Code
+            // session's, on the app's one action feed (CU one-pipeline).
+            overlay: .app
         )
     }
 
