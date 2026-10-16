@@ -174,6 +174,8 @@ test("report-export.tsx no longer forks the format through an unprovided context
   // Word goes through the research export route; Share publishes the saved artifact.
   assert.match(source, /\/api\/research\/\$\{encodeURIComponent\(run\.id\)\}\/export/);
   assert.match(source, /<ShareDialog kind="ARTIFACT" artifactId=\{artifactId\}/);
+  // Open in canvas is offered only when there is a saved report to open.
+  assert.match(source, /const canOpenInCanvas = !!artifactId;/);
 });
 
 test("the recap's Saved in Library is a link once the run knows the artifact", () => {

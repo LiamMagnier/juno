@@ -106,7 +106,10 @@ export function ReportExportButtons({
   const canvasName = usePhrase(RESEARCH_COPY.report.openInCanvasName);
   const shareName = usePhrase(RESEARCH_COPY.report.shareName);
   const artifactId = run.reportArtifactId ?? null;
-  const canOpenInCanvas = !!artifactId || !!run.conversationId;
+  // Only a report saved as an artifact has a canvas to open: without one (a run
+  // from before reports were saved, or one moved to Recently deleted) the
+  // button would close the reader and open nothing.
+  const canOpenInCanvas = !!artifactId;
 
   const copy = async () => {
     try {

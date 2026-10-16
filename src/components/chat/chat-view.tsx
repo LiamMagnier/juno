@@ -1187,14 +1187,16 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
   React.useEffect(() => {
     const open = (event: Event) => {
       const detail = (event as CustomEvent<OpenArtifactDetail>).detail;
-      if (!detail || (detail.conversationId && detail.conversationId !== conversationId)) return;
+      // currentConversationId, not the route's: a chat begun at /chat has a
+      // null route id but is this chat all the same.
+      if (!detail || (detail.conversationId && detail.conversationId !== currentConversationId)) return;
       if (!openableArtifactsRef.current.some((x) => x.identifier === detail.identifier)) return;
       openArtifactByIdentifier(detail.identifier);
       detail.opened = true;
     };
     window.addEventListener(OPEN_ARTIFACT_EVENT, open);
     return () => window.removeEventListener(OPEN_ARTIFACT_EVENT, open);
-  }, [conversationId, openArtifactByIdentifier]);
+  }, [currentConversationId, openArtifactByIdentifier]);
 
   const openThoughtPanel = React.useCallback(
     (id: string | null) => {
