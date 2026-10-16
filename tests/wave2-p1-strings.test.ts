@@ -116,7 +116,7 @@ test("macOS menu commands are Title Case; everything else is sentence case", () 
 test("no retired string is in the table", () => {
   assert.deepEqual([...SHELL_RETIRED_STRINGS], ["How can I help you today?", "Private chat", "What can I help with?", "Automations", "New automation"]);
   const all = Object.values(SHELL_STRINGS).flatMap((e) => [e.en, e.fr].flatMap((v) => (typeof v === "string" ? [v] : Object.values(v))));
-  for (const retired of SHELL_RETIRED_STRINGS) assert.ok(!all.includes(retired), retired);
+  for (const retired of SHELL_RETIRED_STRINGS) assert.ok(!(all as string[]).includes(retired), retired);
 });
 
 test("names.ts supplies Routines and Deep research, the same words as the table", () => {
