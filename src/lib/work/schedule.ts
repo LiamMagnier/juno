@@ -51,6 +51,7 @@ import { WORK_NOTIFY_POLICIES } from "@/lib/work/notifications";
 import { WORK_SCHEDULE_RUN_KINDS, codeRoutineInputSchema } from "@/lib/work/code-routine";
 import { FIELD_DECRYPT_PLACEHOLDER } from "@/lib/field-crypto-placeholder";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { pollErrorForClient, type ClientScheduleHealth } from "@/lib/work/schedule-health";
 
 // ---------------------------------------------------------------------------
 // Wall clock in a zone
@@ -1230,6 +1231,9 @@ export interface WorkTriggerRow {
   lastEventKey: string | null;
   lastFiredAt: Date | null;
   dedupeWindowSec: number;
+  /** The poller's last read of an event trigger's source, and why it failed. */
+  lastPolledAt?: Date | null;
+  lastPollError?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -1242,6 +1246,14 @@ export interface ClientWorkTrigger {
   enabled: boolean;
   lastFiredAt: string | null;
   dedupeWindowSec: number;
+  /**
+   * When the poller last read this trigger's source, and why the last read
+   * failed (null once a read succeeds). Without these a trigger broken by an
+   * expired password looked exactly like one that worked. Absent from writers
+   * that predate them.
+   */
+  lastPolledAt?: string | null;
+  lastPollError?: string | null;
 }
 
 export interface ClientWorkSchedule {
@@ -1291,6 +1303,12 @@ export interface ClientWorkSchedule {
   createdAt: string;
   updatedAt: string;
   triggers: ClientWorkTrigger[];
+  /**
+   * Whether it is working: its trigger, its last runs, a run waiting on the
+   * person (src/lib/work/schedule-health.ts). Set by the list and detail
+   * routes; absent from writers that did not read the runs.
+   */
+  health?: ClientScheduleHealth | null;
 }
 
 /**
@@ -1348,6 +1366,8 @@ export function serializeSchedule(
       enabled: trigger.enabled,
       lastFiredAt: trigger.lastFiredAt?.toISOString() ?? null,
       dedupeWindowSec: trigger.dedupeWindowSec,
+      ...(trigger.lastPolledAt !== undefined ? { lastPolledAt: trigger.lastPolledAt?.toISOString() ?? null } : {}),
+      ...(trigger.lastPollError !== undefined ? { lastPollError: pollErrorForClient(trigger.lastPollError) } : {}),
     })),
   };
 }

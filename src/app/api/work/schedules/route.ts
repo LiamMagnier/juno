@@ -18,6 +18,7 @@ import {
   codeRoutineRefusal,
 } from "@/lib/work/code-routine";
 import { createWorkSession } from "@/lib/work/store";
+import { loadScheduleHealth } from "@/lib/work/schedule-health-store";
 import { admissionRefusal } from "@/app/api/work/protocol";
 
 export const runtime = "nodejs";
@@ -48,11 +49,17 @@ export async function GET(req: Request) {
     include: { triggers: true },
   });
 
-  const spent = await routineSpendThisPeriod(user.id, schedules.map((s) => s.id));
+  const [spent, health] = await Promise.all([
+    routineSpendThisPeriod(user.id, schedules.map((s) => s.id)),
+    // Whether each routine is working (src/lib/work/schedule-health.ts): the
+    // row shows it, and a trigger that cannot read its source says so.
+    loadScheduleHealth(user.id, schedules),
+  ]);
   return NextResponse.json({
     schedules: schedules.map((schedule) => ({
       ...serializeSchedule(schedule, schedule.triggers),
       spentThisPeriodMicroUsd: spent.get(schedule.id) ?? 0,
+      health: health.get(schedule.id) ?? null,
     })),
   });
 }

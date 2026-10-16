@@ -41,6 +41,7 @@ import {
   type WorkScheduleHistory,
 } from "@/components/work/work-transport";
 import { ScheduleFireCard } from "@/components/work/schedules/fire-card";
+import { ScheduleHealthNotice } from "@/components/work/schedule-health-notice";
 import { WorkStateNote, WorkStatusPill, workTimeAgo } from "@/components/work/work-vocabulary";
 import { staggerDelay } from "@/lib/motion";
 import { cn } from "@/lib/utils";
@@ -252,6 +253,8 @@ export default function AutomationPage() {
         </>
       }
     >
+      {/* Whether it is working, and the one fix it needs (G42). */}
+      <ScheduleHealthNotice health={schedule.health} className="mb-7" />
       <WorkScheduleEditor
         // Remounted whenever the saved row changes, so the form is re-seeded
         // from what the server actually stored — the trigger set it normalised,
